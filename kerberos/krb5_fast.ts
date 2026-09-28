@@ -177,16 +177,48 @@ const ANONYMOUS_NAME = { type: 11, name: ['WELLKNOWN', 'ANONYMOUS'] };
 // 5.4.6's replay check: the same CIPHERTEXT twice).
 const CHALLENGE_SCOPE = 'krb5.encrypted-challenge';
 
+/**
+ * Kerberos FAST (RFC 6113), OTP pre-authentication (RFC 6560) and
+ * authentication indicators (RFC 8129 over RFC 7751) for the KDC's AS and TGS
+ * exchanges.
+ *
+ * The way in for a person a password alone will not do for: the password as the
+ * OTP PIN and an authenticator app code, inside a tunnel armored by a host's
+ * TGT. Reached by the KDC through the key source; it registers nothing.
+ */
 class Krb5Fast {
+  /**
+   * The authentication indicator an OTP pre-authentication puts in a ticket,
+   * `otp`.
+   */
   static readonly OTP_INDICATOR = OTP_INDICATOR;
+  /**
+   * How long a PA-FX-COOKIE, and so an OTP challenge's nonce, may be answered,
+   * in milliseconds.
+   */
   static readonly COOKIE_LIFETIME_MS = COOKIE_LIFETIME_MS;
+  /**
+   * The claim scope an encrypted challenge's ciphertext is spent under, for the
+   * replay check.
+   */
   static readonly CHALLENGE_SCOPE = CHALLENGE_SCOPE;
 
+  /**
+   * Builds the FAST handler over the given dependencies.
+   *
+   * @param deps - the modules it uses
+   */
   constructor(private readonly deps: Krb5FastDeps) {
     deps.log.debug('Entering Krb5Fast.constructor().');
     deps.log.debug('Leaving Krb5Fast.constructor().');
   }
 
+  /**
+   * Returns the dependencies the key source builds this with, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): Krb5FastDeps {
     helpers.log.debug('Entering Krb5Fast.defaultDeps().');
     helpers.log.debug('Leaving Krb5Fast.defaultDeps().');
@@ -282,6 +314,12 @@ class Krb5Fast {
   // PA-FX-FAST with an empty value (RFC 6113 section 5.4.2's MUST). It is
   // what makes MIT's `kinit -T` upgrade an ordinary exchange to an armored
   // one.
+  /**
+   * Returns what the KDC advertises outside FAST in every
+   * KDC_ERR_PREAUTH_REQUIRED: PA-FX-FAST with an empty value.
+   *
+   * @returns the PA-DATA
+   */
   outerAdvertisement(): Json {
     const { log, codec } = this.deps;
     log.debug('Entering Krb5Fast.outerAdvertisement().');
@@ -298,6 +336,12 @@ class Krb5Fast {
   // the ticket's own encrypted part, and the inner KRB-ERROR (wrapError()).
   // `outerClient()` answers `{ crealm, cname }` for the outer message.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether the armored request set hide-client-names.
+   *
+   * @param fast - the exchange's FAST state, or null
+   * @returns whether it did
+   */
   hidesClientNames(fast: FastState | null): boolean {
     const { log } = this.deps;
     log.debug('Entering Krb5Fast.hidesClientNames().');
@@ -307,6 +351,15 @@ class Krb5Fast {
     return hides;
   }
 
+  /**
+   * Returns the client names for an outer, cleartext message: the anonymous
+   * principal under hide-client-names, the real ones otherwise.
+   *
+   * @param fast - the exchange's FAST state, or null
+   * @param crealm - the client's realm
+   * @param cname - the client's principal name
+   * @returns `{ crealm, cname }`
+   */
   outerClient(fast: FastState | null, crealm: string, cname: Json): Json {
     const { log } = this.deps;
     log.debug('Entering Krb5Fast.outerClient().');
@@ -325,6 +378,17 @@ class Krb5Fast {
   // bind a KrbFastResponse to; RFC 6113 section 5.4.4 lets a client read it as
   // the KDC being unable to accept the armor.
   // -------------------------------------------------------------------------
+  /**
+   * Opens an armored AS-REQ: the AP-REQ armor, the armor key, and the
+   * KrbFastReq whose req-body and padata replace the outer ones.
+   *
+   * A refusal here is sent unarmored.
+   *
+   * @param request - the decoded AS-REQ
+   * @param pa - its PA-FX-FAST
+   * @returns a promise of `{ ok: true, fast, padata, reqBody }`, or a refusal
+   *   `{ ok: false, code, errorCode, eText }`
+   */
   async openAsRequest(request: Json, pa: Json): Promise<Json> {
     const { log, codec, msgs, kcrypto, principals } = this.deps;
     log.debug('Entering Krb5Fast.openAsRequest().');
@@ -647,6 +711,15 @@ class Krb5Fast {
   // section 5.4.3's MUST — reject a TGS reply without PA-FX-FAST — could not
   // use this KDC at all. Samba's fast_tests found it.
   // -------------------------------------------------------------------------
+  /**
+   * Opens an armored TGS-REQ once its PA-TGS-REQ has verified, with the
+   * implicit armor of the Authenticator's subkey, or an explicit armor opened
+   * as in an AS-REQ.
+   *
+   * @param pa - the PA-FX-FAST
+   * @param ctx - `{ apReqBytes, ticketKey, subkey, realm, client }`
+   * @returns a promise of the inner request, or a refusal
+   */
   async openTgsRequest(pa: Json, ctx: Json): Promise<Json> {
     const { log, codec, kcrypto, principals } = this.deps;
     log.debug('Entering Krb5Fast.openTgsRequest().');
@@ -724,6 +797,14 @@ class Krb5Fast {
   // padata beside it, and the outer KRB-ERROR's e-data is a METHOD-DATA
   // holding only PA-FX-FAST.
   // -------------------------------------------------------------------------
+  /**
+   * Armors a KRB-ERROR the KDC built: the error goes inside a KrbFastResponse
+   * as PA-FX-ERROR, and the outer error carries only PA-FX-FAST.
+   *
+   * @param errorBytes - the KRB-ERROR
+   * @param fast - the exchange's FAST state
+   * @returns a promise of the outer KRB-ERROR
+   */
   async wrapError(errorBytes: Uint8Array, fast: FastState):
       Promise<Uint8Array> {
     const { log, msgs, asn1, codec, kcrypto } = this.deps;
@@ -772,6 +853,16 @@ class Krb5Fast {
   // authenticator app learns, after proving their password and only then,
   // what the refusal is about.
   // -------------------------------------------------------------------------
+  /**
+   * Returns what a KDC_ERR_PREAUTH_REQUIRED offers inside FAST: the OTP
+   * challenge where the KDC asks for it, the encrypted challenge, and a sealed
+   * cookie.
+   *
+   * @param client - the client principal
+   * @param fast - the exchange's FAST state
+   * @param opts - `otp`, whether to offer OTP pre-authentication
+   * @returns a promise of the PA-DATA
+   */
   async offers(client: Json, fast: FastState, opts: Json):
       Promise<Json[]> {
     const { log, codec } = this.deps;
@@ -890,6 +981,16 @@ class Krb5Fast {
   // long-term key's the client used, which the KDC replies under — or a
   // refusal.
   // -------------------------------------------------------------------------
+  /**
+   * Checks an encrypted challenge, the password factor inside FAST, with its
+   * replay check, and builds the KDC's half.
+   *
+   * @param client - the client principal
+   * @param etype - the etype asked for
+   * @param pa - the PA-ENCRYPTED-CHALLENGE
+   * @param fast - the exchange's FAST state
+   * @returns a promise of `{ ok: true, kdcPadata, etype }`, or a refusal
+   */
   async checkEncryptedChallenge(client: Json, etype: number, pa: Json,
                                 fast: FastState): Promise<Json> {
     const { log, msgs, asn1, kcrypto, principals, codec, claims } = this.deps;
@@ -993,6 +1094,17 @@ class Krb5Fast {
   // refusal. The order is the one the header argues: the nonce, the PIN (the
   // password), then the code.
   // -------------------------------------------------------------------------
+  /**
+   * Checks an OTP request: the nonce, then the PIN (the person's password, by
+   * the Kerberos key it derives), then the authenticator app code, spent once
+   * as at the sign-in screen.
+   *
+   * @param client - the client principal
+   * @param etype - the etype asked for
+   * @param pa - the PA-OTP-REQUEST
+   * @param fast - the exchange's FAST state
+   * @returns a promise of `{ ok: true, replyKey, indicators }`, or a refusal
+   */
   async checkOtpRequest(client: Json, etype: number, pa: Json,
                         fast: FastState): Promise<Json> {
     const { log, codec, kcrypto, prim, principals, credentials } = this.deps;
@@ -1123,6 +1235,15 @@ class Krb5Fast {
   // `{ padata, replyKey }`: the outer AS-REP's padata (PA-FX-FAST alone) and
   // the key its enc-part is sealed under.
   // -------------------------------------------------------------------------
+  /**
+   * Builds an armored AS reply: the padata in an encrypted KrbFastResponse, a
+   * KrbFastFinished over the ticket, and a strengthened reply key.
+   *
+   * @param opts - the exchange's `fast` state, the `replyKey`, and what the
+   *   reply is built from
+   * @returns a promise of `{ padata, replyKey }`: the outer AS-REP's padata and
+   *   the key its enc-part is sealed under
+   */
   async finishAsReply(opts: Json): Promise<Json> {
     const { log, msgs, kcrypto, codec } = this.deps;
     log.debug('Entering Krb5Fast.finishAsReply().');
@@ -1181,6 +1302,15 @@ class Krb5Fast {
   // as its authorization data and nothing else. Answers the AD entries to put
   // in the ticket, or [] for no indicators.
   // -------------------------------------------------------------------------
+  /**
+   * Builds a ticket's authentication indicators: an AD-AUTHENTICATION-INDICATOR
+   * in an AD-CAMMAC in AD-IF-RELEVANT, with a kdc-verifier and a svc-verifier.
+   *
+   * @param opts - `indicators`, `kdcKey`, `serviceKey`, and
+   *   `encodeTicketPart(ad)`, which encodes the EncTicketPart with `ad` as its
+   *   authorization data
+   * @returns a promise of the AD entries, or [] for no indicators
+   */
   async indicatorAuthData(opts: Json): Promise<Json[]> {
     const { log, msgs, kcrypto, codec } = this.deps;
     log.debug('Entering Krb5Fast.indicatorAuthData().');
@@ -1223,6 +1353,15 @@ class Krb5Fast {
   // and MUST NOT use an indicator outside one). Answers `{ indicators,
   // problem }`; `problem` names a CAMMAC that did not verify, whose
   // indicators were dropped.
+  /**
+   * Reads the indicators a ticket carries; only a CAMMAC whose svc-verifier
+   * verifies under the ticket's key counts.
+   *
+   * @param authorizationData - the ticket's authorization data
+   * @param ticketKey - the key the ticket is sealed with
+   * @returns a promise of `{ indicators, problem }`; `problem` names a CAMMAC
+   *   that did not verify
+   */
   async ticketIndicators(authorizationData: Json[], ticketKey: Key):
       Promise<Json> {
     const { log, msgs, asn1, kcrypto, codec } = this.deps;
@@ -1294,6 +1433,12 @@ class Krb5Fast {
   // WHAT THE KDC DOES, for `/admin/kerberos` and `GET /admin-api/kerberos`
   // (rule 7) — per the AMBIENT realm, because the mode is a realm's.
   // -------------------------------------------------------------------------
+  /**
+   * Describes what the KDC does with FAST in the ambient realm, for the console
+   * and the management API.
+   *
+   * @returns the description
+   */
   policy(): Json {
     const { log, mode, codec } = this.deps;
     log.debug('Entering Krb5Fast.policy().');

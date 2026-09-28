@@ -222,10 +222,28 @@ MEMBERS.forEach(function (row) { MEMBER_BY_NAME[row.name] = row; });
 // the module that owns the outbound policy is where one copy of it lives. The
 // two methods below ask it and keep this import's own refusal codes.
 // ---------------------------------------------------------------------------
+/**
+ * Reads an RFC 9728 protected resource metadata document, pasted, uploaded or
+ * fetched, so that `/admin/applications/new` can create an application from it.
+ */
 class ProtectedResourceMetadata {
+  /**
+   * The well-known path suffix of a protected resource's metadata (section 3).
+   */
   static readonly WELL_KNOWN = WELL_KNOWN;
+  /**
+   * The members RFC 9728 defines, each with the type checked and what the
+   * import writes it to.
+   */
   static readonly MEMBERS = MEMBERS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the URL, HTTP clients, settings, outbound HTTP policy,
+   *   validation, application registry, authorization server register, audit
+   *   log, error codes, mode and other modules this class reads
+   */
   constructor(private readonly deps: ProtectedResourceMetadataDeps) {
     deps.log.debug("Entering ProtectedResourceMetadata.constructor().");
     deps.log.debug("Leaving ProtectedResourceMetadata.constructor().");
@@ -233,6 +251,11 @@ class ProtectedResourceMetadata {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): ProtectedResourceMetadataDeps {
     helpers.log.debug("Entering ProtectedResourceMetadata.defaultDeps().");
     helpers.log.debug("Leaving ProtectedResourceMetadata.defaultDeps().");
@@ -260,6 +283,13 @@ class ProtectedResourceMetadata {
   // A member name, with section 2.1's language tag taken off it — so
   // `resource_name#en` is `resource_name`. Only the four members that may carry
   // one are resolved that way; `scopes_supported#en` is an extension member.
+  /**
+   * Returns the `MEMBERS` row for a member name, with section 2.1's language
+   * tag taken off the four members that may carry one.
+   *
+   * @param name - the member name, possibly `name#tag`
+   * @returns the row, or null for an extension member
+   */
   memberRowFor(name: Json) {
     const { log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.memberRowFor().");
@@ -403,6 +433,14 @@ class ProtectedResourceMetadata {
   // recipient ignores what it does not understand and an import that dropped it
   // would store a different document from the one the operator loaded.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses and type-checks one document. A member RFC 9728 does not define is
+   * kept and listed as an extension.
+   *
+   * @param text - the document's JSON text
+   * @returns `{ ok: true, document, members, extensions, signedMetadata,
+   *   warnings }`, or a refusal
+   */
   parseDocument(text: Json) {
     const { URL, validation, log } = this.deps;
     const self = this;
@@ -524,6 +562,12 @@ class ProtectedResourceMetadata {
   // `https://api.example.com/v1` has
   // `https://api.example.com/.well-known/oauth-protected-resource/v1`.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a resource identifier's well-known metadata URL (section 3.1).
+   *
+   * @param resource - the resource identifier
+   * @returns the URL, or '' for an identifier it cannot be built from
+   */
   wellKnownUrlFor(resource: Json) {
     const { URL, log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.wellKnownUrlFor().");
@@ -544,6 +588,13 @@ class ProtectedResourceMetadata {
   // The resource identifiers a well-known URL could have been built from, or
   // null for a URL that is not one. Two where the path is empty, for the
   // terminating-slash rule above.
+  /**
+   * Returns the resource identifiers a well-known URL could have been built
+   * from: two where the path is empty.
+   *
+   * @param url - the well-known URL
+   * @returns the identifiers, or null for a URL that is not one
+   */
   resourcesForWellKnownUrl(url: Json) {
     const { URL, log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.resourcesForWellKnownUrl().");
@@ -574,6 +625,14 @@ class ProtectedResourceMetadata {
 
   // SECTION 3.3, as a verdict: whether it could be checked, whether it matched,
   // and what it was compared against.
+  /**
+   * Makes section 3.3's check that a fetched document's `resource` is the one
+   * its URL was built from.
+   *
+   * @param document - the parsed document
+   * @param url - the URL it was fetched from, or '' when pasted or uploaded
+   * @returns `{ checked, matches, expected, wellKnownUrl, why }`
+   */
   resourceCheckFor(document: Json, url: Json) {
     const { log } = this.deps;
     const self = this;
@@ -618,6 +677,13 @@ class ProtectedResourceMetadata {
   // judged as the IPv4 address inside it, whichever of its two spellings
   // arrived, because `::ffff:127.0.0.1` reaches loopback exactly as `127.0.0.1`
   // does.
+  /**
+   * Says why an address may not be dialled; an IPv4-mapped IPv6 address is
+   * judged as the IPv4 address inside it.
+   *
+   * @param address - the IP address
+   * @returns the reason, or ''
+   */
   internalAddressProblem(address: Json) {
     const { fedHttp, log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.internalAddressProblem(). " +
@@ -660,6 +726,12 @@ class ProtectedResourceMetadata {
   // refusal, and it NEVER rejects — `federation_http.ts`'s rule, for its
   // reason.
   // ---------------------------------------------------------------------------
+  /**
+   * Fetches one document by URL, under the outbound policy. Never rejects.
+   *
+   * @param url - the document's URL
+   * @returns a promise of `{ ok: true, text, url, status }`, or a refusal
+   */
   fetchDocument(url: Json) {
     const { http, https, URL, config, fedHttp, USER_AGENT, log } = this.deps;
     const self = this;
@@ -799,6 +871,13 @@ class ProtectedResourceMetadata {
   // discovery documents are built from) calls, so the comparison is against
   // what a client of this realm would actually read.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists this trust realm's authorization servers with the issuer each
+   * publishes at the request's address.
+   *
+   * @param req - the request
+   * @returns rows of `{ id, label, issuer }`
+   */
   authorizationServersOf(req: Req) {
     const { helpers, jwtAccessToken, authorizationServers, log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.authorizationServersOf().");
@@ -828,6 +907,13 @@ class ProtectedResourceMetadata {
     return String(issuer || '').trim().replace(/\/+$/, '');
   }
 
+  /**
+   * Compares a document's `authorization_servers` with this realm's.
+   *
+   * @param document - the parsed document
+   * @param known - `authorizationServersOf()`'s answer
+   * @returns `{ listed, matched, allMatched, anyUnmatched, rows, realm }`
+   */
   compareAuthorizationServers(document: Json, known: Json) {
     const { log } = this.deps;
     const self = this;
@@ -865,6 +951,12 @@ class ProtectedResourceMetadata {
   // application imported here and one that registered itself cannot be told
   // apart by their identifiers. One already in the registry is drawn again.
   // ---------------------------------------------------------------------------
+  /**
+   * Mints a random client_id in the shape a dynamic client registration does,
+   * drawing again for one already registered.
+   *
+   * @returns the client_id
+   */
   generateClientId() {
     const { helpers, config, applications, log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.generateClientId().");
@@ -887,6 +979,14 @@ class ProtectedResourceMetadata {
   // resource's own base followed by something — so the permission identifier
   // this service composes is the scope the document advertised.
   // ---------------------------------------------------------------------------
+  /**
+   * Turns one advertised scope into a permission of the resource, taking the
+   * resource's base off where it prefixes the scope.
+   *
+   * @param scope - the scope
+   * @param resource - the resource identifier
+   * @returns `{ scope, name, stripped, id, ... }`
+   */
   permissionFor(scope: Json, resource: Json) {
     const { applications, log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.permissionFor().");
@@ -905,6 +1005,13 @@ class ProtectedResourceMetadata {
   // ---------------------------------------------------------------------------
   // THE APPLICATION THE DOCUMENT DESCRIBES, as defaults a person then edits.
   // ---------------------------------------------------------------------------
+  /**
+   * Plans the application a document describes, as defaults a person then
+   * edits.
+   *
+   * @param document - the parsed document
+   * @returns the plan
+   */
   planFor(document: Json) {
     const { applications, log } = this.deps;
     const self = this;
@@ -1051,6 +1158,14 @@ class ProtectedResourceMetadata {
     return result;
   }
 
+  /**
+   * Loads a document given exactly one way (pasted, uploaded or a URL) and
+   * analyses it; a refusal is audited.
+   *
+   * @param input - `document`, `file` or `url`
+   * @param context - the caller's context, `actor` among it
+   * @returns a promise of `analyse()`'s answer, or a refusal
+   */
   load(input: Json, context: Json) {
     const { log } = this.deps;
     const self = this;
@@ -1113,6 +1228,15 @@ class ProtectedResourceMetadata {
   // THE HALF OF LOAD THAT NEEDS NO NETWORK — also what redraws the page after a
   // refused create, from the document the form carried back, without fetching
   // it again.
+  /**
+   * Parses and checks a document already in hand and plans its application,
+   * with no network; also redraws the page after a refused create.
+   *
+   * @param text - the document's JSON text
+   * @param origin - `source`, `url`, `filename` and `contentType`
+   * @param context - the caller's context
+   * @returns the analysis, or a refusal
+   */
   analyse(text: Json, origin: Json, context: Json) {
     const { mode, authorizationServers, log } = this.deps;
     const self = this;
@@ -1198,6 +1322,13 @@ class ProtectedResourceMetadata {
   // kept exactly as they were. Returns the compact JSON to store, or '' where
   // the form carried no document.
   // ---------------------------------------------------------------------------
+  /**
+   * Rebuilds the stored document from the console form: an edited member's box
+   * replaces it, an emptied one removes it, and every other member is kept.
+   *
+   * @param body - the form body
+   * @returns the compact JSON to store, or '' when the form carried no document
+   */
   documentFromForm(body: Json) {
     const { log } = this.deps;
     const self = this;
@@ -1274,10 +1405,29 @@ const slot = new InstanceSlot<ProtectedResourceMetadata>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9728 protected resource metadata, imported as an application.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   ProtectedResourceMetadata: ProtectedResourceMetadata,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: ProtectedResourceMetadata): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   WELL_KNOWN: ProtectedResourceMetadata.WELL_KNOWN,
   MEMBERS: ProtectedResourceMetadata.MEMBERS,

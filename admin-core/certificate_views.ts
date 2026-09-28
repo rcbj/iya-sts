@@ -115,6 +115,9 @@ import InstanceSlot = require('../common/instance_slot');
 // own path to the renderer, so this list decides nothing at request time; it
 // is what the management API's description and the test read, so a third
 // page added without being listed here is a page nothing checks.
+/**
+ * The console pages a certificate details view is drawn on.
+ */
 const PAGES = ['/admin/pki', '/admin/crypto-metadata'];
 
 interface CertificateViewsDeps {
@@ -136,7 +139,22 @@ interface CertificateViewsDeps {
   pkijs: typeof pkijs;
 }
 
+/**
+ * Which certificates a details view may show, and the two views both admin
+ * surfaces draw: the realm's certificate list and one certificate with its
+ * chain.
+ *
+ * A certificate is named by its SHA-256 and looked up in the catalogue of what
+ * this service holds; any other fingerprint is refused.
+ */
 class CertificateViews {
+  /**
+   * Builds the views over their dependencies.
+   *
+   * @param deps - the logger, lazy loaders for the TLS server, the SPIFFE CA
+   *   and the admin views, the certificate describer, error codes, and the PKI,
+   *   realm, application and person-assertion modules
+   */
   constructor(private readonly deps: CertificateViewsDeps) {
     deps.log.debug("Entering CertificateViews.constructor().");
     deps.log.debug("Leaving CertificateViews.constructor().");
@@ -144,6 +162,11 @@ class CertificateViews {
 
   // What the composition root passes, from the real modules, with the three
   // lazy requires as loaders (see the header).
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): CertificateViewsDeps {
     log.debug("Entering CertificateViews.defaultDeps().");
     log.debug("Leaving CertificateViews.defaultDeps().");
@@ -410,6 +433,13 @@ class CertificateViews {
   // A fingerprint as a person may type or copy it: colons and spaces allowed,
   // case ignored. Anything else is not a SHA-256 and is refused before the
   // catalogue is built.
+  /**
+   * Normalises a fingerprint as a person may type it: colons and spaces
+   * allowed, case ignored.
+   *
+   * @param text - the fingerprint
+   * @returns 64 lower-case hex digits, or '' when it is not a SHA-256
+   */
   normalFingerprint(text) {
     const { log } = this.deps;
     log.debug("Entering CertificateViews.normalFingerprint().");
@@ -429,6 +459,14 @@ class CertificateViews {
   // ONE CERTIFICATE, WITH ITS CHAIN. Resolves to the details model, or to a
   // refusal naming why; never throws for anything a request can cause.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes one certificate from the catalogue, with its chain.
+   *
+   * @param req - the request, whose `certificate` query names the fingerprint
+   * @param fingerprintText - the fingerprint, instead of the query
+   * @returns the details model, or a coded refusal naming why; never throws for
+   *   anything a request can cause
+   */
   async detailsView(req, fingerprintText?) {
     const { log, details, errorCodes, realms } = this.deps;
     log.debug("Entering CertificateViews.detailsView().");
@@ -494,6 +532,13 @@ class CertificateViews {
   // fingerprint it wants. Paged the way every list on `/admin-api` is, and
   // filterable by `q` over the subject, the issuer and where it appears.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists every certificate this realm holds, paged and filterable by `q` over
+   * the subject, the issuer and where it appears.
+   *
+   * @param req - the request, with the paging and filter query
+   * @returns the page of rows and its paging
+   */
   listView(req) {
     const { log, realms, x509, pkijs, loadAdminViews } = this.deps;
     log.debug("Entering CertificateViews.listView().");
@@ -572,6 +617,11 @@ const slot = new InstanceSlot<CertificateViews>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Which certificates a details view may show, and the views both admin surfaces
+ * read (`/admin/pki`, `/admin/crypto-metadata`, `GET /admin-api/certificates`).
+ * @namespace
+ */
 export = {
   CertificateViews: CertificateViews,
   PAGES: PAGES,

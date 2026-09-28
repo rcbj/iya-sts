@@ -39,12 +39,28 @@ interface OidfedAdminDeps {
   adminViews: () => Json;
 }
 
+/**
+ * Protocols → OpenID Federation, `/admin/oidfed`: every fact from one
+ * `oidfed.view()` call and every control one of `oidfed.act()`'s actions, the
+ * same two `/admin-api/oidfed` answers with (rule 7).
+ */
 class OidfedAdmin {
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - the logger, the body parser, the error-code table, the
+   * console, the federation entity and the lazily loaded gate state
+   */
   constructor(private readonly deps: OidfedAdminDeps) {
     deps.log.debug("Entering OidfedAdmin.constructor().");
     deps.log.debug("Leaving OidfedAdmin.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): OidfedAdminDeps {
     helpers.log.debug("Entering OidfedAdmin.defaultDeps().");
     helpers.log.debug("Leaving OidfedAdmin.defaultDeps().");
@@ -58,6 +74,12 @@ class OidfedAdmin {
   }
 
   // Who is acting, for the audit row: the console's signed-in operator.
+  /**
+   * Answers who is acting, for the audit row: the console's signed-in operator.
+   *
+   * @param req - the request
+   * @returns the operator's name, or ''
+   */
   actorOf(req: Json): string {
     const { log, adminViews } = this.deps;
     log.debug("Entering OidfedAdmin.actorOf().");
@@ -73,18 +95,37 @@ class OidfedAdmin {
     return (state && state.username) || '';
   }
 
+  /**
+   * Draws a value as `<code>`, escaped.
+   *
+   * @param value - the value
+   * @returns the markup
+   */
   code(value: Json): string {
     this.deps.log.debug("Entering OidfedAdmin.code().");
     this.deps.log.debug("Leaving OidfedAdmin.code().");
     return '<code>' + esc(value == null ? '' : String(value)) + '</code>';
   }
 
+  /**
+   * Draws a quiet placeholder such as "none".
+   *
+   * @param text - the placeholder; "none" when empty
+   * @returns the markup
+   */
   none(text: string): string {
     this.deps.log.debug("Entering OidfedAdmin.none().");
     this.deps.log.debug("Leaving OidfedAdmin.none().");
     return '<span class="sub">' + esc(text || 'none') + '</span>';
   }
 
+  /**
+   * Draws a hidden form field.
+   *
+   * @param name - the field's name
+   * @param value - its value
+   * @returns the markup
+   */
   hidden(name: string, value: Json): string {
     this.deps.log.debug("Entering OidfedAdmin.hidden().");
     this.deps.log.debug("Leaving OidfedAdmin.hidden().");
@@ -94,6 +135,16 @@ class OidfedAdmin {
 
   // One POST control: the action, its hidden fields, the visible ones and a
   // button.
+  /**
+   * Draws one POST control: the action, its hidden fields, the visible ones and
+   * a button.
+   *
+   * @param action - the action's name
+   * @param fields - the fields' markup
+   * @param button - the button's label
+   * @param danger - whether the button is drawn as dangerous
+   * @returns the markup
+   */
   form(action: string, fields: string, button: string,
        danger?: boolean): string {
     this.deps.log.debug("Entering OidfedAdmin.form(). " + action);
@@ -104,6 +155,12 @@ class OidfedAdmin {
            '</button></form>';
   }
 
+  /**
+   * Draws the section about this realm as a federation entity.
+   *
+   * @param json - `oidfed.view()`'s answer
+   * @returns the markup
+   */
   sectionEntity(json: Json): string {
     const { log, admin } = this.deps;
     const self = this;
@@ -131,6 +188,12 @@ class OidfedAdmin {
           '</pre></details>' : '');
   }
 
+  /**
+   * Draws the Federation Entity Keys section.
+   *
+   * @param json - `oidfed.view()`'s answer
+   * @returns the markup
+   */
   sectionKeys(json: Json): string {
     const { log, admin } = this.deps;
     const self = this;
@@ -167,6 +230,12 @@ class OidfedAdmin {
         'Emergency rotation', true);
   }
 
+  /**
+   * Draws the subordinates section, with each one's history and controls.
+   *
+   * @param json - `oidfed.view()`'s answer
+   * @returns the markup
+   */
   sectionSubordinates(json: Json): string {
     const { log, admin } = this.deps;
     const self = this;
@@ -232,6 +301,12 @@ class OidfedAdmin {
   }
 
   // One subordinate's history (#137), folded: a <details> needs no script.
+  /**
+   * Draws one subordinate's history, folded in a `<details>`.
+   *
+   * @param events - the subordinate's events
+   * @returns the markup
+   */
   history(events: Json): string {
     this.deps.log.debug("Entering OidfedAdmin.history().");
     const list: Json[] = Array.isArray(events) ? events : [];
@@ -252,6 +327,12 @@ class OidfedAdmin {
   }
 
   // The subordinates this realm revoked, whose histories it keeps (#137).
+  /**
+   * Draws the subordinates this realm revoked, whose histories it keeps.
+   *
+   * @param json - `oidfed.view()`'s answer
+   * @returns the markup
+   */
   sectionFormer(json: Json): string {
     const { log } = this.deps;
     const self = this;
@@ -272,6 +353,12 @@ class OidfedAdmin {
   }
 
   // The Entity Collection (#136): the crawl kept, and Crawl now.
+  /**
+   * Draws the Entity Collection section: the last crawl, and Crawl now.
+   *
+   * @param json - `oidfed.view()`'s answer
+   * @returns the markup
+   */
   sectionCollection(json: Json): string {
     const { log, admin } = this.deps;
     log.debug("Entering OidfedAdmin.sectionCollection().");
@@ -310,6 +397,12 @@ class OidfedAdmin {
       kept + this.form('crawl-collection', '', 'Crawl now');
   }
 
+  /**
+   * Draws the Trust Anchors section.
+   *
+   * @param json - `oidfed.view()`'s answer
+   * @returns the markup
+   */
   sectionAnchors(json: Json): string {
     const { log, admin } = this.deps;
     const self = this;
@@ -340,6 +433,12 @@ class OidfedAdmin {
       '</button></p></form>';
   }
 
+  /**
+   * Draws the Trust Marks section.
+   *
+   * @param json - `oidfed.view()`'s answer
+   * @returns the markup
+   */
   sectionMarks(json: Json): string {
     const { log, admin } = this.deps;
     const self = this;
@@ -419,6 +518,13 @@ class OidfedAdmin {
       'type="submit">Set the policy</button></p></form>';
   }
 
+  /**
+   * Draws the Resolve an entity section, and the last resolution's result.
+   *
+   * @param json - `oidfed.view()`'s answer
+   * @param extra - a resolution to show, if any
+   * @returns the markup
+   */
   sectionResolve(json: Json, extra: Json): string {
     const { log, admin } = this.deps;
     log.debug("Entering OidfedAdmin.sectionResolve().");
@@ -439,6 +545,15 @@ class OidfedAdmin {
       shown;
   }
 
+  /**
+   * Draws the whole page in the console's shell, or its JSON.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param extraTop - markup to draw above the sections, such as an action's
+   * result
+   * @param resolution - a resolution to show, if any
+   */
   async draw(req: Json, res: Json, extraTop: string,
              resolution: Json): Promise<void> {
     const { log, admin, oidfed } = this.deps;
@@ -464,6 +579,11 @@ class OidfedAdmin {
     log.debug("Leaving OidfedAdmin.draw().");
   }
 
+  /**
+   * Registers `GET` and `POST /admin/oidfed`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: Json): void {
     const { log, parseBody, admin, oidfed, errorCodes } = this.deps;
     const self = this;
@@ -513,9 +633,22 @@ const slot = new InstanceSlot<OidfedAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Protocols → OpenID Federation, the console page for the realm as a federation
+ * entity.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   OidfedAdmin: OidfedAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: OidfedAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin()
 };

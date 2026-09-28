@@ -95,18 +95,31 @@ import stats = require('../common/admin_stats');
 // authenticated — both libraries beside this file, argued in their headers.
 import documentSettings = require('./document_settings');
 import authnContext = require('./authn_context');
+/**
+ * The SAML 1.1 assertion namespace.
+ */
 const SAML11_NS = 'urn:oasis:names:tc:SAML:1.0:assertion';
 // The one every relying party here can read, and the only one this service
 // could honestly claim: nothing about the NameIdentifier it writes is a
 // persistent identifier or an email address, because the username is whatever
 // was typed.
+/**
+ * The `unspecified` NameIdentifier format, the one this service writes.
+ */
 const NAMEID_FORMAT_UNSPECIFIED =
     'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified';
+/**
+ * The bearer confirmation method, which the Browser/POST profile requires.
+ */
 const CONFIRMATION_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
 // The Browser/Artifact profile's, and NOT interchangeable with the one above —
 // see the `confirmationMethod` option. It says the assertion was pulled back
 // through a SOAP channel rather than carried by the browser, which is the whole
 // difference between the two profiles.
+/**
+ * The artifact confirmation method, which the Browser/Artifact profile
+ * requires.
+ */
 const CONFIRMATION_ARTIFACT = 'urn:oasis:names:tc:SAML:1.0:cm:artifact';
 
 interface Saml11AssertionsDeps {
@@ -119,7 +132,17 @@ interface Saml11AssertionsDeps {
   authnContext: typeof authnContext;
 }
 
+/**
+ * SAML 1.1 assertions: building one and signing it, for WS-Federation and the
+ * SAML 1.1 browser profiles.
+ */
 class Saml11Assertions {
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the helpers, settings, crypto, the document settings, the
+   * authentication context and the statistics
+   */
   constructor(private readonly deps: Saml11AssertionsDeps) {
     deps.helpers.log.debug("Entering Saml11Assertions.constructor().");
     deps.helpers.log.debug("Leaving Saml11Assertions.constructor().");
@@ -127,6 +150,11 @@ class Saml11Assertions {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): Saml11AssertionsDeps {
     helpers.log.debug("Entering Saml11Assertions.defaultDeps().");
     helpers.log.debug("Leaving Saml11Assertions.defaultDeps().");
@@ -179,6 +207,13 @@ class Saml11Assertions {
   // NOT already on that default list — see saml2_sso.ts, which records the
   // opposite case: naming `ID` for SAML 2.0 unshifts a DUPLICATE and trips the
   // same guard.
+  /**
+   * Signs a SAML 1.1 assertion with an enveloped XML Signature referencing its
+   * `AssertionID`.
+   *
+   * @param xml - the assertion
+   * @returns the signed assertion
+   */
   signSaml11Assertion(xml) {
     const { documentSettings, stsCrypto } = this.deps;
     const { STS, log, logArtifact } = this.deps.helpers;
@@ -320,6 +355,15 @@ class Saml11Assertions {
   //                       accepts an unsigned assertion has a hole in it and
   //                       this is how somebody finds that out — and it is why
   //                       signing is a setting in the browser profiles.
+  /**
+   * Builds a SAML 1.1 assertion and, unless told not to, signs it.
+   *
+   * @param opts - `subject`, `audience`, `lifetimeMin` (60 by default),
+   * `authnMethod`, `authnInstant`, `attributes`, `issuer`, `nameIdFormat`,
+   * `nameIdValue`, `nameQualifier`, `confirmationMethod`, `subjectLocality`,
+   * `doNotCache`, `authenticationStatement` and `sign`
+   * @returns the assertion's XML
+   */
   buildSaml11Assertion(opts) {
     const { authnContext, config, errorCodes, stats } = this.deps;
     const { genId, iso, log, xmlEscape } = this.deps.helpers;
@@ -520,9 +564,22 @@ const slot = new InstanceSlot<Saml11Assertions>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * SAML 1.1 assertions: building one and signing it. A separate specification
+ * from SAML 2.0, not a dialect of it, and so a separate builder.
+ * @namespace
+ */
 export = {
   Saml11Assertions: Saml11Assertions,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: Saml11Assertions): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   SAML11_NS: SAML11_NS,
   // The two the browser profiles need by name: an artifact-profile assertion

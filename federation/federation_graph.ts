@@ -135,9 +135,24 @@ interface GraphFilter {
 // ---------------------------------------------------------------------------
 const STS_ID = 'sts';
 
+/**
+ * The federation register of one trust realm as a graph: this realm, its
+ * applications, and the foreign service and identity providers it has
+ * relationships with.
+ *
+ * The model behind `/admin/federation/map`; it holds no geometry and no HTML.
+ */
 class FederationGraph {
+  /**
+   * The node id of this realm, which is always present.
+   */
   static readonly STS_ID = STS_ID;
 
+  /**
+   * Builds the graph model over the given dependencies.
+   *
+   * @param deps - the logger, the realms module and the federation register
+   */
   constructor(private readonly deps: FederationGraphDeps) {
     deps.log.debug("Entering FederationGraph.constructor().");
     deps.log.debug("Leaving FederationGraph.constructor().");
@@ -145,6 +160,12 @@ class FederationGraph {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): FederationGraphDeps {
     helpers.log.debug("Entering FederationGraph.defaultDeps().");
     helpers.log.debug("Leaving FederationGraph.defaultDeps().");
@@ -189,6 +210,14 @@ class FederationGraph {
   // two things a table row has no room for — who is configured to use it, and
   // what a person arriving at the identity-provider side actually meets.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes one relationship with everything the map and the tables under it
+   * need: a superset of the list page's row, adding who is configured to use it
+   * and what a person arriving at the identity-provider side meets.
+   *
+   * @param record - the federation relationship
+   * @returns the description
+   */
   describe(record) {
     const { log, federation } = this.deps;
     log.debug("Entering FederationGraph.describe(). id=" + record.fedId);
@@ -389,6 +418,16 @@ class FederationGraph {
   // realm federates with nobody* instead of drawing an empty rectangle and
   // leaving somebody to wonder whether the drawing failed.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the realm's federation graph, narrowed as a whole by the list
+   * page's three filters.
+   *
+   * An empty register answers with this realm's node alone and `empty: true`;
+   * it never throws.
+   *
+   * @param wanted - `role`, `protocol` and `q` (a text match), each optional
+   * @returns `{ realm, nodes, edges, relationships, empty, filtered, counts }`
+   */
   graph(wanted) {
     const { log, realms, federation } = this.deps;
     log.debug("Entering FederationGraph.graph().");
@@ -620,14 +659,39 @@ const slot = new InstanceSlot<FederationGraph>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The federation register of one trust realm, as a graph for the console's
+ * federation map.
+ *
+ * A library: it registers no route.
+ *
+ * @namespace
+ */
 export = {
   FederationGraph: FederationGraph,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: FederationGraph): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   STS_ID: FederationGraph.STS_ID,
+  /**
+   * Forwards to `FederationGraph.graph()` on the installed instance.
+   */
   graph: slot.forward('graph'),
   // Exported for the relationship drill-down on /admin/federation, which shows
   // ONE relationship and reads it through the same describe() the whole
   // picture uses rather than making a second reading of the same entry.
+  /**
+   * Forwards to `FederationGraph.describe()` on the installed instance.
+   */
   describe: slot.forward('describe')
 };

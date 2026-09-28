@@ -376,10 +376,28 @@ interface GnapSchemasDeps {
   schemas: Record<string, any>;
 }
 
+/**
+ * The JSON Schemas of every document a GNAP client or resource server sends,
+ * compiled with ajv and enforced before a handler reads a member.
+ *
+ * The shape layer, between the service-wide sanitisation and the handler's own
+ * checks.
+ */
 class GnapSchemas {
+  /**
+   * The schema table, by document name (`grantRequest` and the rest).
+   */
   static readonly SCHEMAS = SCHEMAS;
+  /**
+   * The pattern every string must match: no C0 control character and no DEL.
+   */
   static readonly SAFE = SAFE;
 
+  /**
+   * Builds the validator from the compiled tables and the modules it reads.
+   *
+   * @param deps - the modules and compiled schemas the composition root passes
+   */
   constructor(private readonly deps: GnapSchemasDeps) {
     deps.log.debug("Entering GnapSchemas.constructor().");
     deps.log.debug("Leaving GnapSchemas.constructor().");
@@ -388,6 +406,14 @@ class GnapSchemas {
   // `{ ok: true }` or `{ ok: false, path, detail }`. The detail names the
   // member by its JSON Pointer, because the client developer's first question
   // is which one.
+  /**
+   * Validates a document against a named schema.
+   *
+   * @param name - the schema's name in `SCHEMAS`
+   * @param document - the parsed JSON document
+   * @returns `{ ok: true }`, or `{ ok: false, path, detail }` with the member
+   *   named by its JSON Pointer
+   */
   validate(name: string, document: unknown): Verdict {
     const { log, compiled, schemas } = this.deps;
     log.debug("Entering GnapSchemas.validate(). schema=" + name);
@@ -434,6 +460,12 @@ class GnapSchemas {
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before. The tables are the ones
   // compiled at load.
+  /**
+   * Returns the real modules and the tables compiled at load, as the instance
+   * was built from before the composition root (#50, R2).
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapSchemasDeps {
     helpers.log.debug("Entering GnapSchemas.defaultDeps().");
     helpers.log.debug("Leaving GnapSchemas.defaultDeps().");
@@ -462,9 +494,25 @@ const slot = new InstanceSlot<GnapSchemas>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The JSON Schemas of every document a GNAP client or resource server sends,
+ * compiled with ajv.
+ *
+ * @namespace
+ */
 export = {
   GnapSchemas: GnapSchemas,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapSchemas): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   SCHEMAS: GnapSchemas.SCHEMAS,
   validate: slot.forward('validate')

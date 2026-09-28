@@ -68,6 +68,9 @@ import stsCrypto = require('../common/crypto');
 import outbound = require('../federation/federation_http');
 
 // The job's id on /admin/scheduler.
+/**
+ * The refresh job's id on `/admin/scheduler`.
+ */
 const JOB = 'spiffe.sigstore-tuf-refresh';
 // The TUF reference client's bound on root rotations in one refresh.
 const MAX_ROOT_ROTATIONS = 32;
@@ -94,12 +97,30 @@ interface TufDeps {
   store: { get(key: string): any; set(key: string, value: any): any };
 }
 
+/**
+ * A TUF client for sigstore's `trusted_root.json`: the Update Framework's
+ * detailed client workflow (section 5), run as a scheduler job.
+ *
+ * The verified state is kept in a store shared by every node; a refresh that
+ * fails keeps the last verified set.
+ */
 class SigstoreTuf {
+  /**
+   * Builds the client over its dependencies.
+   *
+   * @param deps - the logger, file system, configuration, error codes, crypto,
+   *   a URL fetcher, a clock and the row store
+   */
   constructor(private readonly deps: TufDeps) {
     deps.log.debug("Entering SigstoreTuf.constructor().");
     deps.log.debug("Leaving SigstoreTuf.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service builds the client with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): TufDeps {
     helpers.log.debug("Entering SigstoreTuf.defaultDeps().");
     helpers.log.debug("Leaving SigstoreTuf.defaultDeps().");
@@ -116,6 +137,12 @@ class SigstoreTuf {
   }
 
   // The repository URL, without a trailing slash; '' when TUF is off.
+  /**
+   * Returns the TUF repository URL from `spiffe.dockerSigstoreTufUrl`, without
+   * a trailing slash.
+   *
+   * @returns the URL, or '' when TUF is off
+   */
   repository(): string {
     const { log, config } = this.deps;
     log.debug("Entering SigstoreTuf.repository().");
@@ -124,6 +151,12 @@ class SigstoreTuf {
       .replace(/\/+$/, '');
   }
 
+  /**
+   * Returns the path of the operator's first root, from
+   * `spiffe.dockerSigstoreTufRootFile`.
+   *
+   * @returns the path, or ''
+   */
   rootFile(): string {
     const { log, config } = this.deps;
     log.debug("Entering SigstoreTuf.rootFile().");
@@ -132,6 +165,11 @@ class SigstoreTuf {
   }
 
   // Why TUF is off, or ''.
+  /**
+   * Says why TUF is off, when one of its two settings is empty.
+   *
+   * @returns the reason, or '' when it is on
+   */
   off(): string {
     const { log } = this.deps;
     log.debug("Entering SigstoreTuf.off().");
@@ -146,6 +184,12 @@ class SigstoreTuf {
   }
 
   // The operator's first root, read from its file, and the row key.
+  /**
+   * Reads the operator's first root from its file.
+   *
+   * @returns the parsed root, and the store key derived from the repository and
+   *   the file's bytes
+   */
   firstRoot(): { root: any; key: string } {
     const { log, fs, stsCrypto } = this.deps;
     log.debug("Entering SigstoreTuf.firstRoot().");
@@ -157,6 +201,11 @@ class SigstoreTuf {
   }
 
   // The verified state for the configured repository and root, or null.
+  /**
+   * Returns the verified state held for the configured repository and root.
+   *
+   * @returns the state, or null when TUF is off or nothing is held
+   */
   current(): any {
     const { log, store } = this.deps;
     log.debug("Entering SigstoreTuf.current().");
@@ -178,6 +227,12 @@ class SigstoreTuf {
 
   // The trusted_root.json the last verified refresh fetched, parsed, or
   // null when TUF is off or has never completed.
+  /**
+   * Returns the `trusted_root.json` the last verified refresh fetched.
+   *
+   * @returns the parsed document, or null when TUF is off or has never
+   *   completed
+   */
   trustedRoot(): any {
     const { log } = this.deps;
     log.debug("Entering SigstoreTuf.trustedRoot().");
@@ -191,6 +246,13 @@ class SigstoreTuf {
   }
 
   // One document, capped; throws a sentence.
+  /**
+   * Fetches one document from the repository, capped in size.
+   *
+   * @param name - the document's name in the repository
+   * @returns its bytes, or null when the repository answers 404 or 403
+   * @throws an Error carrying a sentence when the fetch fails
+   */
   async get(name: string): Promise<Buffer | null> {
     const { log, fetch } = this.deps;
     log.debug("Entering SigstoreTuf.get(). " + name);
@@ -215,6 +277,16 @@ class SigstoreTuf {
   }
 
   // A metadata file verified under `role` of `root`, of `type`; throws.
+  /**
+   * Parses a metadata file and verifies it under a role of a root.
+   *
+   * @param bytes - the metadata file
+   * @param root - the root whose role's keys and threshold apply
+   * @param roleName - the role
+   * @param type - the `_type` the document must carry
+   * @returns the parsed document
+   * @throws an Error carrying a sentence when it does not verify
+   */
   async verified(bytes: Buffer, root: any, roleName: string,
                  type: string): Promise<any> {
     const { log, stsCrypto } = this.deps;
@@ -247,6 +319,13 @@ class SigstoreTuf {
   }
 
   // Refuse metadata past its `expires`.
+  /**
+   * Refuses metadata past its `expires`.
+   *
+   * @param doc - the parsed metadata
+   * @param name - its name, for the message
+   * @throws an Error when it has expired
+   */
   notExpired(doc: any, name: string): void {
     const { log, nowMs } = this.deps;
     log.debug("Entering SigstoreTuf.notExpired(). " + name);
@@ -262,6 +341,14 @@ class SigstoreTuf {
 
   // Bytes against a `{ length, hashes }` meta entry, when it gives them;
   // throws.
+  /**
+   * Checks bytes against a `{ length, hashes }` meta entry, when it gives them.
+   *
+   * @param bytes - the fetched bytes
+   * @param meta - the meta entry
+   * @param name - the document's name, for the message
+   * @throws an Error when the length or a hash does not match
+   */
   matchesMeta(bytes: Buffer, meta: any, name: string): void {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering SigstoreTuf.matchesMeta(). " + name);
@@ -287,6 +374,14 @@ class SigstoreTuf {
   }
 
   // Whether `a` and `b` name the same keys for `roleName`.
+  /**
+   * Asks whether two roots name the same keys for a role.
+   *
+   * @param a - one root
+   * @param b - the other root
+   * @param roleName - the role
+   * @returns whether they do
+   */
   sameRoleKeys(a: any, b: any, roleName: string): boolean {
     const { log } = this.deps;
     log.debug("Entering SigstoreTuf.sameRoleKeys(). " + roleName);
@@ -300,6 +395,12 @@ class SigstoreTuf {
 
   // ONE REFRESH (see the header). Resolves `{ ok, summary }`; the state is
   // written only on success.
+  /**
+   * Runs one refresh of the workflow; the state is written only on success, and
+   * a failure is recorded beside the last verified set.
+   *
+   * @returns `ok`, and a summary of what was verified or why it failed
+   */
   async refresh(): Promise<{ ok: boolean; summary: string }> {
     const { log, store, errorCodes } = this.deps;
     log.debug("Entering SigstoreTuf.refresh().");
@@ -339,6 +440,15 @@ class SigstoreTuf {
   }
 
   // The workflow itself; throws on the first failure.
+  /**
+   * Runs the client workflow itself: root rotations, timestamp, snapshot,
+   * targets and the `trusted_root.json` target.
+   *
+   * @param firstRoot - the operator's first root
+   * @param held - the state verified last time, or null
+   * @returns the new verified state
+   * @throws an Error on the first failure
+   */
   async walk(firstRoot: any, held: any): Promise<any> {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering SigstoreTuf.walk().");
@@ -463,6 +573,12 @@ class SigstoreTuf {
   }
 
   // What GET /spiffe draws.
+  /**
+   * Describes TUF's state for `GET /spiffe`.
+   *
+   * @returns whether it is off and why, the repository, whether a set is
+   *   verified, the root and targets versions, and the last error
+   */
   state(): any {
     const { log } = this.deps;
     log.debug("Entering SigstoreTuf.state().");
@@ -478,6 +594,9 @@ class SigstoreTuf {
   }
 
   // THE JOB, registered at load in every process (cluster/CLAUDE.md).
+  /**
+   * Registers the refresh job with the scheduler, once per process.
+   */
   registerJob(): void {
     const { log } = this.deps;
     const self = this;
@@ -515,9 +634,16 @@ class SigstoreTuf {
   }
 }
 
+/**
+ * The one client the service uses; registers its job at load.
+ */
 const shared = new SigstoreTuf(SigstoreTuf.defaultDeps());
 shared.registerJob();
 
+/**
+ * The sigstore trust root fetched through TUF as a scheduler job (#170).
+ * @namespace
+ */
 export = {
   SigstoreTuf: SigstoreTuf,
   JOB: JOB,

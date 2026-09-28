@@ -471,16 +471,57 @@ const GROUP_ATTRIBUTES: MapRow[] = [
 // ---------------------------------------------------------------------------
 const NOT_STORED = ['entrydn', 'createtimestamp', 'modifytimestamp'];
 
+/**
+ * What a SCIM resource is in terms of LDAP attributes, in both directions:
+ * which attribute each SCIM member is, and the conversions between an entry and
+ * a User or Group resource.
+ *
+ * A library (rule 3d-iii); it registers nothing and asks the directory nothing.
+ */
 class ScimMap {
+  /**
+   * The core User schema URN (RFC 7643 section 4.1).
+   */
   static readonly USER_SCHEMA = USER_SCHEMA;
+  /**
+   * The core Group schema URN (RFC 7643 section 4.2).
+   */
   static readonly GROUP_SCHEMA = GROUP_SCHEMA;
+  /**
+   * The Enterprise User extension schema URN (RFC 7643 section 4.3).
+   */
   static readonly ENTERPRISE_SCHEMA = ENTERPRISE_SCHEMA;
+  /**
+   * This service's own User extension schema URN, carrying which federation
+   * partners' subjects are linked to the person (#109).
+   */
   static readonly IYA_STS_USER_SCHEMA = IYA_STS_USER_SCHEMA;
+  /**
+   * The LDAP attribute types this mapping introduces, which the directory
+   * merges into what it knows.
+   */
   static readonly OWN_NAMES = OWN_NAMES;
+  /**
+   * The User mapping table: one row per SCIM member, with its LDAP attribute
+   * and kind.
+   */
   static readonly USER_ATTRIBUTES = USER_ATTRIBUTES;
+  /**
+   * The Group mapping table: one row per SCIM member, with its LDAP attribute
+   * and kind.
+   */
   static readonly GROUP_ATTRIBUTES = GROUP_ATTRIBUTES;
+  /**
+   * The operational attributes a read produces that a write must never store
+   * back.
+   */
   static readonly NOT_STORED = NOT_STORED;
 
+  /**
+   * Builds the mapping from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: ScimMapDeps) {
     deps.log.debug("Entering ScimMap.constructor().");
     deps.log.debug("Leaving ScimMap.constructor().");
@@ -490,6 +531,11 @@ class ScimMap {
   // run by `common/instance_slot.ts` once for whichever instance is
   // installed: the spelling check, which ran at require time as it always
   // did and now runs when the instance is installed.
+  /**
+   * Runs the spelling check once, for whichever instance is installed.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: ScimMap): void {
     helpers.log.debug("Entering ScimMap.wire().");
     instance.checkSpellings();
@@ -497,6 +543,11 @@ class ScimMap {
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): ScimMapDeps {
     helpers.log.debug("Entering ScimMap.defaultDeps().");
     helpers.log.debug("Leaving ScimMap.defaultDeps().");
@@ -517,6 +568,10 @@ class ScimMap {
   // the FIRST spelling learnt and could not say which list disagreed. Here the
   // answer is specific.
   // -------------------------------------------------------------------------
+  /**
+   * Checks that every row whose LDAP attribute `vc_claims.ts` already knows
+   * spells it the same way, warning on a disagreement.
+   */
   checkSpellings(): void {
     const { log, canonicalNames } = this.deps;
     log.debug("Entering ScimMap.checkSpellings().");
@@ -556,6 +611,14 @@ class ScimMap {
   // assumed either produces a resource with an empty userName rather than an
   // error.
   // -------------------------------------------------------------------------
+  /**
+   * Returns every value of an attribute on an entry, the name matched
+   * case-insensitively.
+   *
+   * @param attributes - the entry's attributes
+   * @param name - the attribute's name
+   * @returns the values, empty when there are none
+   */
   valuesOf(attributes: Record<string, any> | null | undefined,
            name: string): any[] {
     const { log } = this.deps;
@@ -573,6 +636,14 @@ class ScimMap {
     return [];
   }
 
+  /**
+   * Returns the first value of an attribute on an entry, the name matched
+   * case-insensitively.
+   *
+   * @param attributes - the entry's attributes
+   * @param name - the attribute's name
+   * @returns the value, or ''
+   */
   firstOf(attributes: Record<string, any> | null | undefined,
           name: string): string {
     const { log } = this.deps;
@@ -770,6 +841,17 @@ class ScimMap {
     return uuid ? String(uuid) : String((entry && entry.dn) || '');
   }
 
+  /**
+   * Returns a person's entry as a SCIM User resource.
+   *
+   * The result is padded — every multi-valued and complex member present — for
+   * scimmy's filter matcher; `prune()` takes the padding off before a client
+   * sees it.
+   *
+   * @param entry - the directory entry
+   * @param context - the person's groups and the `meta` location prefixes
+   * @returns the User resource
+   */
   toScimUser(entry: EntryObject, context?: ResourceContext | null): any {
     const { log } = this.deps;
     log.debug("Entering ScimMap.toScimUser(). dn=" + (entry && entry.dn));
@@ -949,6 +1031,14 @@ class ScimMap {
   // exception thrown through scimmy's ingress handler comes back as a 404 (see
   // the note in scim.ts).
   // -------------------------------------------------------------------------
+  /**
+   * Converts a SCIM User into the whole attribute set to write, carrying
+   * through everything outside the mapping's window.
+   *
+   * @param resource - the SCIM User
+   * @param existing - the entry's current attributes, or none for a create
+   * @returns `{ attributes, errors }`; never throws
+   */
   fromScimUser(resource: any,
                existing?: Record<string, any> | null): Converted {
     const { log } = this.deps;
@@ -1094,6 +1184,14 @@ class ScimMap {
   // group_claims.js gives about the same data: that module owns WHAT A GROUP
   // IS and this owns what SCIM says about one.
   // -------------------------------------------------------------------------
+  /**
+   * Returns a group's entry as a SCIM Group resource, its members already
+   * resolved by the caller.
+   *
+   * @param entry - the directory entry, with its resolved members
+   * @param context - the `meta` location prefixes
+   * @returns the Group resource
+   */
   toScimGroup(entry: EntryObject, context?: ResourceContext | null): any {
     const { log } = this.deps;
     log.debug("Entering ScimMap.toScimGroup(). dn=" + (entry && entry.dn));
@@ -1160,6 +1258,14 @@ class ScimMap {
   // because SCIM's `members` is the whole membership and leaving half of it in
   // a second attribute would make a client that removed everybody find the
   // group still populated.
+  /**
+   * Converts a SCIM Group into the whole attribute set to write; membership
+   * held in `uniqueMember` or `memberUid` is cleared as well.
+   *
+   * @param resource - the SCIM Group
+   * @param existing - the entry's current attributes, or none for a create
+   * @returns `{ attributes, errors }`; never throws
+   */
   fromScimGroup(resource: any,
                 existing?: Record<string, any> | null): Converted {
     const { log } = this.deps;
@@ -1220,6 +1326,13 @@ class ScimMap {
   // as "we know their name and it is nothing". The padding exists for scimmy's
   // filter matcher (see toScimUser()) and this is where it stops being useful.
   // -------------------------------------------------------------------------
+  /**
+   * Removes the empty arrays and objects the padding added, before a resource
+   * goes to a client.
+   *
+   * @param resource - the padded resource
+   * @returns the pruned resource
+   */
   prune(resource: Record<string, any>): Record<string, any> {
     const { log } = this.deps;
     log.debug("Entering ScimMap.prune().");
@@ -1275,6 +1388,13 @@ class ScimMap {
   // endpoints call it. This module is a LIBRARY — rule 3d-iii,
   // `scim/CLAUDE.md` — so it registers nothing and either caller may require
   // it.
+  /**
+   * Describes one mapping row for the console page and the API: its SCIM
+   * member, LDAP attribute, kind, type, parent and flags.
+   *
+   * @param row - the mapping row
+   * @returns the description
+   */
   describeRow(row: MapRow) {
     const { log } = this.deps;
     log.debug("Entering ScimMap.describeRow().");
@@ -1291,6 +1411,12 @@ class ScimMap {
              schema: row.schema || '', note: row.note || '' };
   }
 
+  /**
+   * Describes the whole mapping, User and Group, the one projection both
+   * endpoints return.
+   *
+   * @returns `{ user, group }`
+   */
   describeMapping() {
     const { log } = this.deps;
     log.debug("Entering ScimMap.describeMapping().");
@@ -1320,9 +1446,24 @@ const slot = new InstanceSlot<ScimMap>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What a SCIM resource is in terms of LDAP attributes, in both directions.
+ *
+ * @namespace
+ */
 export = {
   ScimMap: ScimMap,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: ScimMap): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   USER_SCHEMA: ScimMap.USER_SCHEMA,
   describeRow: slot.forward('describeRow'),

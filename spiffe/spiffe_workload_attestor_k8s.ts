@@ -74,16 +74,43 @@ interface K8sDeps {
   sleep(ms: number): Promise<void>;
 }
 
+/**
+ * The `k8s` workload attestor: the Kubernetes pod and container the caller's
+ * process runs in, as the node's kubelet reports them.
+ *
+ * It attests by PID, after SPIRE's plugin; a process in no container, or one
+ * this service cannot see, gets no selectors.
+ */
 class K8sWorkloadAttestor {
+  /**
+   * The workload attestor's name, as `spiffe.workloadAttestors` lists it.
+   */
   readonly type = 'k8s';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'The Kubernetes pod and container the caller\'s ' +
     'process runs in, as the node\'s kubelet reports them.';
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, file system, environment, configuration, the
+   *   outbound HTTP client, the container-info reader and a sleep
+   */
   constructor(private readonly deps: K8sDeps) {
     deps.log.debug("Entering K8sWorkloadAttestor.constructor().");
     deps.log.debug("Leaving K8sWorkloadAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @param containerInfo - reads the pod UID and container ID from a process's
+   *   cgroups
+   * @returns the production dependency set
+   */
   static defaultDeps(containerInfo: K8sDeps['containerInfo']): K8sDeps {
     helpers.log.debug("Entering K8sWorkloadAttestor.defaultDeps().");
     helpers.log.debug("Leaving K8sWorkloadAttestor.defaultDeps().");
@@ -98,6 +125,12 @@ class K8sWorkloadAttestor {
     };
   }
 
+  /**
+   * Reads a file that may be absent.
+   *
+   * @param path - the file's path
+   * @returns its text, or '' when it cannot be read
+   */
   readOptional(path: string): string {
     const { log, fs } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.readOptional(). " + path);
@@ -114,6 +147,12 @@ class K8sWorkloadAttestor {
   }
 
   // The kubelet's pod list; throws a sentence.
+  /**
+   * Reads the kubelet's pod list, over the read-only port or the secure port.
+   *
+   * @returns the pods
+   * @throws an Error carrying a sentence when the kubelet cannot be read
+   */
   async podList(): Promise<any[]> {
     const { log, config, env, outbound } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.podList().");
@@ -163,6 +202,12 @@ class K8sWorkloadAttestor {
   }
 
   // A namespace's labels, from the API server in-cluster.
+  /**
+   * Reads a namespace's labels from the API server, in-cluster.
+   *
+   * @param namespace - the namespace's name
+   * @returns the labels
+   */
   async namespaceLabels(namespace: string): Promise<Record<string, string>> {
     const { log, env, outbound } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.namespaceLabels(). " + namespace);
@@ -193,6 +238,13 @@ class K8sWorkloadAttestor {
   }
 
   // The status of `containerId` among a pod's containers, or null.
+  /**
+   * Finds a container's status among a pod's containers.
+   *
+   * @param pod - the pod
+   * @param containerId - the container ID
+   * @returns the container status, or null
+   */
   containerStatus(pod: any, containerId: string): any {
     const { log } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.containerStatus().");
@@ -213,6 +265,13 @@ class K8sWorkloadAttestor {
   }
 
   // SPIRE's getPodImageIdentifiers(): every image and image ID, once.
+  /**
+   * SPIRE's getPodImageIdentifiers(): every image and image ID in a list of
+   * container statuses, once each.
+   *
+   * @param list - the container statuses
+   * @returns the image identifiers
+   */
   imagesOf(list: any[]): string[] {
     const { log } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.imagesOf().");
@@ -226,6 +285,12 @@ class K8sWorkloadAttestor {
   }
 
   // SPIRE's getSelectorValuesFromPodInfo().
+  /**
+   * SPIRE's getSelectorValuesFromPodInfo(): the pod-level selectors.
+   *
+   * @param pod - the pod
+   * @returns the selector values
+   */
   podSelectors(pod: any): string[] {
     const { log } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.podSelectors().");
@@ -261,6 +326,15 @@ class K8sWorkloadAttestor {
   // SPIRE's attestByPodReference() (see the header). Resolves `{ found:
   // false, why }` for a pod not on this node — NOT_FOUND at the broker — or
   // `{ found: true, values, pod }`; a kubelet that cannot be read throws.
+  /**
+   * SPIRE's attestByPodReference(): the selectors of a pod the Broker API
+   * references by UID, namespace and name.
+   *
+   * @param ref - the pod's UID, namespace and name
+   * @returns `found: false` with `why` for a pod not on this node, or `found:
+   *   true` with the selector values and the pod
+   * @throws an Error carrying a sentence when the kubelet cannot be read
+   */
   async attestPodReference(ref: { uid: string; namespace: string;
                                   name: string }):
       Promise<{ found: boolean; why?: string; values?: string[];
@@ -307,6 +381,15 @@ class K8sWorkloadAttestor {
     return { found: true, values: values, pod: pod };
   }
 
+  /**
+   * Attests the caller's pod and container, polling the kubelet's pod list for
+   * a container that has just started.
+   *
+   * @param facts - the caller's peer facts from `spiffe_peer.ts`, taken at
+   *   accept
+   * @returns the `k8s` selector values, empty when the process is in no
+   *   container or not visible
+   */
   async attest(facts: any): Promise<string[]> {
     const { log, config, containerInfo, sleep } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.attest(). " + facts.tag);
@@ -372,6 +455,10 @@ class K8sWorkloadAttestor {
   }
 }
 
+/**
+ * The `k8s` workload attestor (#40), after SPIRE's plugin.
+ * @namespace
+ */
 export = {
   K8sWorkloadAttestor: K8sWorkloadAttestor
 };

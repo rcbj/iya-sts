@@ -91,6 +91,11 @@ interface StackSockets {
   debuggerServer: any;
 }
 
+/**
+ * The composition root: requires every module in the require order, builds
+ * the instances of the modules on #50's R2 pattern, and registers each
+ * converted module's routes in the route order.
+ */
 class ProtocolStack {
   private registered: string[] = [];
   private installed: Array<{ what: string; mod: InstalledModule }> = [];
@@ -118,6 +123,13 @@ class ProtocolStack {
   // Every module this root builds, and where its instance came from now.
   // After `load()` each must say `root`: a `default` means something in the
   // service built its own, which R2 exists to rule out.
+  /**
+   * Lists every module this root builds and where its instance came from now.
+   *
+   * After `load()` each should say `root`; `default` means something in the
+   * service built its own.
+   * @returns one row per built module: its path and its instance's origin
+   */
   instanceOrigins(): Array<{ what: string; origin: string }> {
     helpers.log.debug("Entering ProtocolStack.instanceOrigins().");
     const out = this.installed.map(function (row) {
@@ -169,12 +181,28 @@ class ProtocolStack {
   }
 
   // The modules whose routes this root registered, in order.
+  /**
+   * Lists the modules whose routes this root registered, in order.
+   *
+   * @returns a copy of the list of module paths
+   */
   registeredModules(): string[] {
     helpers.log.debug("Entering ProtocolStack.registeredModules().");
     helpers.log.debug("Leaving ProtocolStack.registeredModules().");
     return this.registered.slice();
   }
 
+  /**
+   * Requires, builds and registers the whole protocol stack against `app`.
+   *
+   * Starts no listener; the socket owners are returned for `server.js` to
+   * start from `listen()`.
+   * @param app - the shared express app from `common/app`
+   * @returns the six socket-owning modules: the KDC, the Kerberos service, the
+   *   TLS server, the LDAP server, the SPIFFE server and the debugger server
+   * @throws an Error when a module this root builds holds an instance it did
+   *   not build
+   */
   load(app: any): StackSockets {
     helpers.log.debug("Entering ProtocolStack.load().");
     // Every module loaded from here on waits for `installInstance()` instead of
@@ -508,6 +536,11 @@ class ProtocolStack {
     this.build('debugger/debugger_access',
                require('../debugger/debugger_access'),
                'DebuggerAccess');
+    // A gated permission goes with the subject's roles (#302, #303). A
+    // library `oauth2`, the management API's gate and the XACML PIP read,
+    // built before the first of them for the debugger permission's reason.
+    this.build('common/role_permissions',
+               require('./role_permissions'), 'RolePermissions');
     this.build('oauth-oidc/oauth2', require('../oauth-oidc/oauth2'),
                'OAuth2Server');
     // The Credential Offer pages BEFORE the authorization server's own routes,
@@ -1692,8 +1725,20 @@ class ProtocolStack {
 // process that wants the routes and requires only one module has to call
 // that module's `registerRoutes(app)` itself.
 const stack = new ProtocolStack();
+/**
+ * The socket owners the one stack's `load()` returned.
+ */
 const sockets = stack.load(appModule);
 
+/**
+ * The composition root: the one place the require order and the route order
+ * are kept.
+ *
+ * Requiring this module loads the whole stack once against the shared app
+ * (TRANSITIONAL until #50's R2 is complete); its exports are that instance's
+ * reports and the modules that own sockets.
+ * @namespace
+ */
 export = {
   ProtocolStack: ProtocolStack,
   registeredModules: stack.registeredModules.bind(stack) as

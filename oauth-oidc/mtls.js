@@ -88,6 +88,9 @@ const config = require('../common/config');
 // RFC 8705 section 3.1's confirmation member. Spelt out as a constant because
 // the `#` in it is legal in a JSON member name and looks like a mistake every
 // time somebody reads it.
+/**
+ * RFC 8705 section 3.1's confirmation member, `x5t#S256`.
+ */
 const CONFIRMATION_MEMBER = 'x5t#S256';
 
 // ---------------------------------------------------------------------------
@@ -97,6 +100,13 @@ const CONFIRMATION_MEMBER = 'x5t#S256';
 // presented — `{}` — so the test is for the raw DER rather than for the object,
 // which is the trap this function exists to hold in one place.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the client certificate the TLS connection was made with, testing for
+ * its DER because node answers `{}` rather than null.
+ *
+ * @param req - the request
+ * @returns the certificate, or null
+ */
 function peerCertificate(req) {
   log.debug("Entering peerCertificate().");
   const socket = req && req.socket;
@@ -140,6 +150,14 @@ function peerCertificate(req) {
 // somebody debugging a mutual-TLS deployment WHICH of a dozen things went
 // wrong.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether the connection's client certificate verified against the client
+ * truststore, with revocation consulted.
+ *
+ * @param req - the request
+ * @returns `{ verified, presented, error, why, revocation, ... }`, `error`
+ *   being node's own reason string
+ */
 function peerVerified(req) {
   log.debug("Entering peerVerified().");
   const socket = req && req.socket;
@@ -247,6 +265,13 @@ function peerVerified(req) {
 // `peerVerified()`'s reason: it reaches the certificate authority, and a
 // process with none answers "not issued here".
 // ---------------------------------------------------------------------------
+/**
+ * Names the person or application this realm issued the connection's client
+ * certificate to, and whether they still hold it.
+ *
+ * @param request - the request
+ * @returns `{ identity, held }`
+ */
 function issuedIdentityOf(request) {
   log.debug("Entering issuedIdentityOf().");
   let identity = { issuedHere: false, accepted: false };
@@ -269,6 +294,13 @@ function issuedIdentityOf(request) {
 // `tls/tls_server.js` prints as colon-hex and `spiffe/spiffe_ca.ts` truncates
 // as an authority id — three spellings of one computation, which is why the
 // shared function takes a format and the three that each computed it are one.
+/**
+ * Computes a certificate's RFC 8705 `x5t#S256`: SHA-256 over the DER,
+ * base64url.
+ *
+ * @param cert - the certificate, with its `raw` DER
+ * @returns the thumbprint, or '' for none
+ */
 function thumbprintOf(cert) {
   log.debug("Entering thumbprintOf().");
   if (!cert || !cert.raw) {
@@ -281,6 +313,12 @@ function thumbprintOf(cert) {
 
 // The thumbprint of whatever certificate this request arrived with, or ''. The
 // one function anything outside this file should need.
+/**
+ * Returns the thumbprint of the certificate this request arrived with.
+ *
+ * @param req - the request
+ * @returns the thumbprint, or ''
+ */
 function presentedThumbprint(req) {
   log.debug("Entering presentedThumbprint().");
   log.debug("Leaving presentedThumbprint().");
@@ -293,6 +331,14 @@ function presentedThumbprint(req) {
 // DPoP `jkt` rather than replacing it, because a client that both presented a
 // certificate and sent a proof has demonstrated both and a token that recorded
 // one of them would be throwing away a check somebody performed.
+/**
+ * Returns the `cnf` value to put on an issued token, merged with an existing
+ * DPoP `jkt`.
+ *
+ * @param req - the request
+ * @param existing - the `cnf` value already made, if any
+ * @returns the `cnf` value, or undefined when there is nothing to bind to
+ */
 function confirmationFor(req, existing) {
   log.debug("Entering confirmationFor().");
   const thumbprint = presentedThumbprint(req);
@@ -314,6 +360,12 @@ function confirmationFor(req, existing) {
 }
 
 // What a token says about its own certificate binding, or ''.
+/**
+ * Returns the certificate thumbprint a token is bound to.
+ *
+ * @param claims - the token's claims
+ * @returns the thumbprint, or ''
+ */
 function boundThumbprintOf(claims) {
   log.debug("Entering boundThumbprintOf().");
   const cnf = claims && claims.cnf;
@@ -341,6 +393,17 @@ function boundThumbprintOf(claims) {
 // the confirmation claim is something anybody could have written, so enforcing
 // it would be theatre performed on an unverified string.
 // ---------------------------------------------------------------------------
+/**
+ * Holds a certificate-bound token to the connection's certificate, at a
+ * resource server (section 3.1). A token this service did not issue is not
+ * checked.
+ *
+ * @param claims - the token's claims
+ * @param req - the request
+ * @param verified - whether this service verified the token
+ * @param noun - what to call the token in a refusal
+ * @returns null, or `{ errorCode, error, description }`
+ */
 function checkBinding(claims, req, verified, noun) {
   log.debug("Entering checkBinding().");
   // What to CALL the thing in the refusal. The refresh grant checks a refresh
@@ -400,6 +463,9 @@ function checkBinding(claims, req, verified, noun) {
 }
 
 // The two RFC 8705 section 2 client authentication methods, spelt once.
+/**
+ * The two RFC 8705 section 2 client authentication methods.
+ */
 const CERTIFICATE_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth'];
 
 // ---------------------------------------------------------------------------
@@ -429,6 +495,14 @@ const CERTIFICATE_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth'];
 //     client failed to authenticate, the request simply cannot produce what the
 //     client registered for.
 // ---------------------------------------------------------------------------
+/**
+ * Holds a client, in every mode, to a certificate method or certificate-bound
+ * tokens it declared.
+ *
+ * @param opts - `registered` (the client's entry), `observation` (what the
+ *   endpoint observed of its authentication) and `request`
+ * @returns null, or `{ status, error, errorCode, description }`
+ */
 function declaredRefusal(opts) {
   log.debug("Entering declaredRefusal().");
   const o = opts || {};
@@ -489,6 +563,16 @@ function declaredRefusal(opts) {
 // ANOTHER client's certificate-bound refresh token would otherwise be let past
 // the one binding that refresh token has. `clientId` is compared with the
 // token's `client_id` claim before the check is skipped.
+/**
+ * Tells whether a refresh token's certificate binding is checked: not for its
+ * own client authenticated by a certificate, which may present a new one
+ * (section 6.3).
+ *
+ * @param observation - what the endpoint observed of client authentication
+ * @param claims - the refresh token's claims
+ * @param clientId - the client redeeming it
+ * @returns true when the binding is checked
+ */
 function refreshBindingApplies(observation, claims, clientId) {
   log.debug("Entering refreshBindingApplies().");
   const o = observation || {};
@@ -505,12 +589,24 @@ function refreshBindingApplies(observation, claims, clientId) {
 // it. It is a property of the listener rather than of a request: `global.https`
 // is what makes `server.js` ask for a client certificate, and without TLS there
 // is no certificate to ask for.
+/**
+ * Tells whether this deployment can bind a token to a certificate at all
+ * (`global.https`).
+ *
+ * @returns true when it can
+ */
 function available() {
   log.debug("Entering available().");
   log.debug("Leaving available().");
   return !!config.value('global.https');
 }
 
+/**
+ * RFC 8705 certificate-bound access tokens and the certificate facts of a
+ * request.
+ *
+ * @namespace
+ */
 module.exports = {
   CONFIRMATION_MEMBER: CONFIRMATION_MEMBER,
   peerCertificate: peerCertificate,

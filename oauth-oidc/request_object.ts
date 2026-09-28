@@ -321,12 +321,37 @@ const DIRECT_KEY_BYTES: Record<string, number> = {
   'A128CBC-HS256': 32, 'A192CBC-HS384': 48, 'A256CBC-HS512': 64
 };
 
+/**
+ * RFC 9101's JWT-secured authorization request and OpenID Connect Core section
+ * 6's request object: resolving `request` and `request_uri`, verifying the
+ * object, and remembering its `jti`.
+ */
 class RequestObject {
+  /**
+   * The explicit type of a request object (RFC 9101 section 4).
+   */
   static readonly TYP = TYP;
+  /**
+   * The media type of a request object fetched by `request_uri`.
+   */
   static readonly MEDIA_TYPE = MEDIA_TYPE;
+  /**
+   * RFC 9126's URN, which names a pushed request held here.
+   */
   static readonly PAR_URN_PREFIX = PAR_URN_PREFIX;
+  /**
+   * This service's own round-trip fields, which the section 6.3 replacement
+   * keeps from the query.
+   */
   static readonly ROUND_TRIP_FIELDS = ROUND_TRIP_FIELDS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the settings, helpers, crypto, application registry, FAPI
+   *   module, used-assertion history, error codes and other modules this class
+   *   reads
+   */
   constructor(private readonly deps: RequestObjectDeps) {
     deps.log.debug("Entering RequestObject.constructor().");
     deps.log.debug("Leaving RequestObject.constructor().");
@@ -334,6 +359,11 @@ class RequestObject {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): RequestObjectDeps {
     helpers.log.debug("Entering RequestObject.defaultDeps().");
     helpers.log.debug("Leaving RequestObject.defaultDeps().");
@@ -383,6 +413,15 @@ class RequestObject {
 
   // Whether a signed request object is REQUIRED for this request: the setting,
   // the client's entry, or the selected authorization server's profile.
+  /**
+   * Tells whether a signed request object is required for this request: by the
+   * setting, the client's entry, the selected authorization server's profile or
+   * FAPI.
+   *
+   * @param client - the client's configuration
+   * @param profile - what the selected authorization server publishes
+   * @returns true when one is required
+   */
   signedRequired(client: Json, profile: Json): Json {
     const { config, log } = this.deps;
     log.debug("Entering RequestObject.signedRequired().");
@@ -398,6 +437,15 @@ class RequestObject {
 
   // Section 10.8: a type naming ANOTHER kind of JWT is refused; none, `JWT` and
   // this type are not. RFC 7515 section 4.1.9's case and prefix rules.
+  /**
+   * Checks a request object's `typ` header (section 10.8): a type naming
+   * another kind of JWT is refused, and none is refused when typing is
+   * required.
+   *
+   * @param typ - the header value
+   * @param required - true when explicit typing is required
+   * @returns a sentence naming the problem, or ''
+   */
   typProblem(typ: Json, required: Json): Json {
     const { log } = this.deps;
     log.debug("Entering RequestObject.typProblem().");
@@ -979,6 +1027,16 @@ class RequestObject {
   // JSON a query would have carried. `request` and `request_uri` never reach
   // here: `verifyObject()` refuses an object carrying either (section 4).
   // ---------------------------------------------------------------------------
+  /**
+   * Turns a verified object's claims into authorization request parameters, as
+   * the endpoint reads a query (section 6.3), with the client_id and the
+   * round-trip fields of the outer query.
+   *
+   * @param claims - the object's claims
+   * @param outer - the query it arrived with
+   * @param clientId - the client it was verified for
+   * @returns the parameters
+   */
   parametersFrom(claims: Json, outer: Json, clientId: Json): Json {
     const { log } = this.deps;
     log.debug("Entering RequestObject.parametersFrom().");
@@ -1022,6 +1080,14 @@ class RequestObject {
   // against what was fetched, in every mode; any other fragment is the client's
   // own and is not read.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a `request_uri` fragment shaped like a SHA-256 against the content
+   * fetched (OpenID Connect Core section 6.2), unless the check is off.
+   *
+   * @param uri - the request_uri
+   * @param content - what it answered
+   * @returns a sentence naming the problem, or ''
+   */
   fragmentProblem(uri: Json, content: Json): Json {
     const { nodeCrypto, log, config } = this.deps;
     log.debug("Entering RequestObject.fragmentProblem().");
@@ -1119,6 +1185,14 @@ class RequestObject {
   // Resolves `{ ok: true, params, alg, encrypted }` or a refusal. Never
   // rejects.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies a request object, decrypting it where it is a JWE.
+   *
+   * @param opts - `jwt`, `client`, `clientId`, `issuer`, `asBase`, `profile`,
+   *   `keySet` and an optional `query`
+   * @returns a promise of `{ ok: true, params, alg, encrypted }`, or a refusal;
+   *   it never rejects
+   */
   async verifyObject(opts: Json): Promise<Json> {
     const { config, helpers, log } = this.deps;
     const self = this;
@@ -1304,6 +1378,14 @@ class RequestObject {
   // optional, and where present `verifyObject()` has already required it to be
   // that client.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns what the used-assertion history knows a verified object by.
+   *
+   * @param claims - the object's claims
+   * @param clientId - the client it was verified for
+   * @returns `{ issuer, identifier, expiresAt }`, or null for no `jti` or while
+   *   `oauth2.requestObjectJtiOnce` is off
+   */
   onceOf(claims: Json, clientId: Json): Json {
     const { config, log } = this.deps;
     const self = this;
@@ -1344,6 +1426,13 @@ class RequestObject {
 
   // The look every pass takes. Resolves null when the object may go on, or a
   // refusal when its `jti` is already spent or reserved.
+  /**
+   * Looks a request object's `jti` up in the used-assertion history.
+   *
+   * @param once - `onceOf()`'s answer
+   * @returns a promise of null when the object may go on, or a refusal when its
+   *   `jti` is already spent or reserved
+   */
   async lookUp(once: Json): Promise<Json> {
     const { usedAssertions, log } = this.deps;
     const self = this;
@@ -1372,6 +1461,14 @@ class RequestObject {
   // `keepBelow` keeps it, anything else releases it — and `clientId` is the
   // client asking, for the console's row. Resolves `{ ok: true }` or a refusal
   // carrying the HTTP `status` to answer it with.
+  /**
+   * Spends a request object's `jti`, bound to its response: a status under
+   * `keepBelow` keeps it, anything else releases it.
+   *
+   * @param opts - `once`, `clientId`, `request` and `keepBelow`
+   * @returns a promise of `{ ok: true }`, or a refusal carrying the HTTP
+   *   `status`
+   */
   async spend(opts: Json): Promise<Json> {
     const { usedAssertions, errorCodes, log } = this.deps;
     const self = this;
@@ -1488,6 +1585,17 @@ class RequestObject {
   // `{ ok: true, used: true, params, source, alg, encrypted, once }` for one
   // that is, or a refusal. NEVER rejects.
   // ---------------------------------------------------------------------------
+  /**
+   * Resolves an authorization request's `request` or `request_uri`: the one
+   * entry point for the authorization endpoint.
+   *
+   * @param opts - `query`, `client`, `issuer`, `asBase`, `profile` (what the
+   *   selected authorization server publishes), `keySet`, `authorizationServer`
+   *   and `req`
+   * @returns a promise of `{ ok: true, used: false }` for a request that is not
+   *   JWT-secured, `{ ok: true, used: true, params, source, alg, encrypted,
+   *   once }` for one that is, or a refusal; it never rejects
+   */
   async resolve(opts: Json): Promise<Json> {
     const { applications, config, log } = this.deps;
     const self = this;
@@ -1695,9 +1803,29 @@ const slot = new InstanceSlot<RequestObject>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9101 JWT-secured authorization requests and OpenID Connect request
+ * objects.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   RequestObject: RequestObject,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: RequestObject): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   TYP: RequestObject.TYP,
   MEDIA_TYPE: RequestObject.MEDIA_TYPE,

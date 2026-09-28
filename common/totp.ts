@@ -216,9 +216,25 @@ interface TotpDeps {
 // ---------------------------------------------------------------------------
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
+/**
+ * Time-based one-time passwords (RFC 6238 over RFC 4226): a second factor
+ * that can never be a first one, verified for real in both modes.
+ *
+ * A code is accepted once: `verify()` answers the step it matched, and the
+ * caller stores it as the record's last counter.
+ */
 class Totp {
+  /**
+   * The RFC 4648 section 6 base32 alphabet.
+   */
   static readonly BASE32_ALPHABET = BASE32_ALPHABET;
 
+  /**
+   * Builds the instance over its dependencies.
+   *
+   * @param deps - the logger, `config`, `crypto`, `realms`, the authentication
+   *   policy, `error_codes`, a random source and a lazy loader of `qrcode`
+   */
   constructor(private readonly deps: TotpDeps) {
     deps.log.debug("Entering Totp.constructor().");
     deps.log.debug("Leaving Totp.constructor().");
@@ -226,6 +242,12 @@ class Totp {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the composition root builds the instance with.
+   *
+   * @returns the real modules, node's `randomBytes` and a lazy require of
+   *   `qrcode`
+   */
   static defaultDeps(): TotpDeps {
     helpers.log.debug("Entering Totp.defaultDeps().");
     helpers.log.debug("Leaving Totp.defaultDeps().");
@@ -245,6 +267,13 @@ class Totp {
     };
   }
 
+  /**
+   * Encodes bytes as RFC 4648 base32 without padding, as the otpauth
+   * convention expects.
+   *
+   * @param buffer - the bytes (a string is taken as UTF-8)
+   * @returns the unpadded base32 text
+   */
   base32Encode(buffer: Buffer | string): string {
     const { log } = this.deps;
     log.debug('Entering Totp.base32Encode(). bytes=' +
@@ -270,6 +299,13 @@ class Totp {
     return out;
   }
 
+  /**
+   * Decodes base32, ignoring case, spaces, hyphens and trailing padding.
+   *
+   * @param text - the base32 text
+   * @returns the decoded bytes
+   * @throws Error naming the first character that is not base32
+   */
   base32Decode(text: unknown): Buffer {
     const { log } = this.deps;
     log.debug('Entering Totp.base32Decode().');
@@ -305,6 +341,12 @@ class Totp {
   // The manual-entry rendering: groups of four, which is what every
   // authenticator app's own setup screen shows and what a person transcribing
   // thirty-two characters needs in order not to lose their place.
+  /**
+   * Renders a secret in groups of four characters, for manual entry.
+   *
+   * @param secret - the base32 secret
+   * @returns the grouped text
+   */
   grouped(secret: unknown): string {
     const { log } = this.deps;
     log.debug("Entering Totp.grouped().");
@@ -339,6 +381,14 @@ class Totp {
       ? fallback : n;
   }
 
+  /**
+   * Reads the TOTP settings of the ambient realm, bounded to their ranges.
+   *
+   * `enabled` is the authentication policy's answer for TOTP as a second
+   * factor; it stops new enrolments, never a secret already held.
+   * @returns `{ enabled, issuer, algorithm, digits, period, window,
+   *   secretBytes, enrolmentTtlMs }`
+   */
   settings(): TotpSettings {
     const { log, config, crypto } = this.deps;
     log.debug("Entering Totp.settings().");
@@ -386,6 +436,11 @@ class Totp {
   // DOWNGRADED every one of those accounts to a password alone would be a
   // security control with an off switch that says something else. What it
   // stops is new enrolments. `/admin/totp` says so beside the setting.
+  /**
+   * Tells whether new TOTP enrolments are offered in the ambient realm.
+   *
+   * @returns the policy's answer
+   */
   offered(): boolean {
     const { log } = this.deps;
     log.debug("Entering Totp.offered().");
@@ -402,6 +457,12 @@ class Totp {
   // counter: a secret guessable from a name is a list of accounts whose second
   // factor is no factor.
   // -------------------------------------------------------------------------
+  /**
+   * Generates a new random shared secret, base32-encoded.
+   *
+   * @param opts - optional; `bytes` overrides `totp.secretBytes`
+   * @returns the secret
+   */
   generateSecret(opts?: { bytes?: number | string }): string {
     const { log, randomBytes } = this.deps;
     log.debug('Entering Totp.generateSecret().');
@@ -414,6 +475,13 @@ class Totp {
 
   // The step number RFC 6238 section 4.2 calls T. `at` is milliseconds, so
   // that callers pass `Date.now()` and the one division lives here.
+  /**
+   * Returns the RFC 6238 step number T for a moment.
+   *
+   * @param at - the moment in milliseconds
+   * @param period - the step length in seconds
+   * @returns the step number
+   */
   counterAt(at: number | string, period: number | string): number {
     const { log } = this.deps;
     log.debug("Entering Totp.counterAt().");
@@ -427,6 +495,16 @@ class Totp {
   // never tells anybody what the current code is, which would make the whole
   // mechanism a decoration.
   // -------------------------------------------------------------------------
+  /**
+   * Computes the code for a secret at a moment; never used to answer a
+   * request.
+   *
+   * @param secret - the base32 secret
+   * @param at - optional moment in milliseconds; now by default
+   * @param opts - optional `{ period, digits, algorithm }`; the realm's period
+   *   by default
+   * @returns the code
+   */
   codeAt(secret: unknown, at?: number,
          opts?: { period?: number | string } & HotpOptions): string {
     const { log, crypto } = this.deps;
@@ -473,6 +551,19 @@ class Totp {
   // alternative is the `===` this repository's credential module was written
   // to abolish.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies a presented code against an enrolled record, in constant time,
+   * across the skew window.
+   *
+   * The digits, period and algorithm come from the record; the window is read
+   * live. A code at or below the record's `lastCounter` is refused as already
+   * spent. A refusal carries its error code.
+   * @param record - the enrolled TOTP record
+   * @param presented - the code as typed (spaces and hyphens ignored)
+   * @param opts - optional `{ at, window }` to override the moment and window
+   * @returns `{ ok: true, counter, drift }`, or `{ ok: false, reason, detail }`
+   *   with `reason` one of `shape`, `store`, `mismatch` or `replay`
+   */
   verify(record: TotpRecord | null | undefined, presented: unknown,
          opts?: { at?: number; window?: number | string }): VerifyResult {
     const { log, crypto, errorCodes } = this.deps;
@@ -588,6 +679,13 @@ class Totp {
   // authenticator showing two accounts both labelled `mock STS` is one a
   // person cannot use.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the issuer an authenticator app shows: `totp.issuer` when set,
+   * otherwise the service's host with the realm id beside it.
+   *
+   * @param base - the service's base URL
+   * @returns the issuer name
+   */
   issuerFor(base: unknown): string {
     const { log, realms } = this.deps;
     log.debug("Entering Totp.issuerFor().");
@@ -609,6 +707,14 @@ class Totp {
     return id ? host + ' (' + id + ')' : host;
   }
 
+  /**
+   * Builds the `otpauth://totp/` URI (Google's Key Uri Format): the issuer on
+   * the label and as a parameter, the secret unpadded, and the algorithm,
+   * digits and period always written out.
+   *
+   * @param spec - `{ issuer, account, secret, algorithm, digits, period }`
+   * @returns the URI
+   */
   otpauthUri(spec: OtpauthSpec | null | undefined): string {
     const { log } = this.deps;
     log.debug('Entering Totp.otpauthUri(). account=' +
@@ -656,6 +762,13 @@ class Totp {
   // work is a few hundred microseconds of squares, not a post-quantum
   // signature.
   // -------------------------------------------------------------------------
+  /**
+   * Draws a URI as a QR code on the server, as an SVG data URI, so the portal
+   * needs no script.
+   *
+   * @param uri - the text to encode, usually from `otpauthUri()`
+   * @returns a promise of the `data:image/svg+xml;base64,` URI
+   */
   qrSvgDataUri(uri: unknown): Promise<string> {
     const { log, loadQrcode } = this.deps;
     log.debug('Entering Totp.qrSvgDataUri().');
@@ -683,6 +796,12 @@ class Totp {
   // table lives with the code that performs the algorithm, so the report
   // cannot describe something this service does not do.
   // -------------------------------------------------------------------------
+  /**
+   * Describes the mechanism for `/admin/crypto-metadata`: whether it is
+   * offered, the HMAC algorithms and which is in use, and the live parameters.
+   *
+   * @returns the report object
+   */
   report() {
     const { log, crypto } = this.deps;
     log.debug("Entering Totp.report().");
@@ -726,9 +845,22 @@ const slot = new InstanceSlot<Totp>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Time-based one-time passwords (RFC 6238, RFC 4226) as a second factor.
+ *
+ * The method names below forward to the instance the composition root
+ * installs.
+ * @namespace
+ */
 export = {
   Totp: Totp,
+  /**
+   * Installs the instance the composition root built.
+   */
   installInstance: (instance: Totp): void => slot.install(instance),
+  /**
+   * Names where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   BASE32_ALPHABET: Totp.BASE32_ALPHABET,
   base32Encode: slot.forward('base32Encode'),

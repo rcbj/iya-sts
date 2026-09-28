@@ -104,6 +104,14 @@ const TIER_MAP_MEMBERS = ['issuing'];
 // parsed from the store, or assembled with `Object.assign` — would compare
 // unequal and turn an unchanged member into a conflict.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a canonical JSON spelling of a value, object keys sorted.
+ *
+ * Two records built by different code paths compare equal through it.
+ * `undefined` is spelled `(undefined)`.
+ * @param value - the value to spell
+ * @returns the canonical string
+ */
 function canonical(value) {
   log.debug("Entering canonical().");
   if (value === undefined) {
@@ -134,6 +142,13 @@ function same(a, b) {
 // no leading zeros. A copy of that module's `normalSerial()` rather than a
 // require of it, because that module requires `pki.js`, which requires the
 // keystore, which requires this: a cycle (rule 2).
+/**
+ * Normalises a certificate serial: lower case, no separators, no leading
+ * zeros.
+ *
+ * @param text - a serial in any spelling
+ * @returns the normalised hex serial, `0` when empty
+ */
 function normalSerial(text) {
   log.debug("Entering normalSerial().");
   const hex = String(text || '').toLowerCase().replace(/[^0-9a-f]/g, '');
@@ -176,6 +191,15 @@ function keysOf(...objects) {
 
 // A record displaced from a certificate slot, as the issued register keeps
 // one: serial, subject, expiry, what it was — never a key.
+/**
+ * Builds the issued-register record for a certificate displaced from a slot.
+ *
+ * It carries serial, subject, expiry and what the certificate was, never a
+ * key.
+ * @param slot - the certificate slot the record was displaced from
+ * @param record - the displaced certificate record
+ * @returns the issued-register record
+ */
 function displacedRecord(slot, record) {
   log.debug("Entering displacedRecord().");
   log.debug("Leaving displacedRecord().");
@@ -408,6 +432,15 @@ function liveTierSerials(row) {
   return out;
 }
 
+/**
+ * Removes from a row's revocation lists every revocation of a tier the row
+ * publishes as live.
+ *
+ * Mutates `row.revoked` in place and reports what it dropped, because the
+ * drop is evidence of a lost write that the caller logs.
+ * @param row - the PKI row, modified in place
+ * @returns the dropped entries, each `{ ca, serialHex, reason }`
+ */
 function liveAgain(row) {
   log.debug("Entering liveAgain().");
   const live = liveTierSerials(row);
@@ -436,6 +469,15 @@ function liveAgain(row) {
 // the request pool's channel. `lists` is one or more `revoked` members.
 // Answers the serials, normalised.
 // ---------------------------------------------------------------------------
+/**
+ * Finds the live tiers of a row that the given revocation lists mark
+ * `superseded`.
+ *
+ * Such a row is a copy made before a rebuild; `keystore.js` refuses it.
+ * @param row - the PKI row
+ * @param lists - one or more `revoked` members to look in
+ * @returns the normalised serials found
+ */
 function supersededLiveTiers(row, lists) {
   log.debug("Entering supersededLiveTiers().");
   const live = liveTierSerials(row || {});
@@ -477,6 +519,15 @@ function supersededLiveTiers(row, lists) {
 // Issuing CA that signed it. A record with no chain (none is written without
 // one) and a use case the row holds no Issuing CA for are left alone.
 // ---------------------------------------------------------------------------
+/**
+ * Lists the certificate slots of a row whose certificate was not signed by
+ * the row's own Issuing CA for that use case.
+ *
+ * Reported, not dropped: the caller certifies each slot's key again.
+ * Pinned signers with an operator-supplied chain are never listed.
+ * @param row - the PKI row
+ * @returns the slot names
+ */
 function orphanedSlots(row) {
   log.debug("Entering orphanedSlots().");
   const certs = (row && row.certs) || {};
@@ -507,6 +558,19 @@ function orphanedSlots(row) {
 // live tier dropped, and the certificate slots the row's own Issuing CAs did
 // not sign (`orphanedSlots()`).
 // ---------------------------------------------------------------------------
+/**
+ * Merges three copies of a PKI row: a revocation or issued serial is never
+ * lost, tiers and certificate slots are first writer wins, and everything
+ * else is a plain three-way merge.
+ *
+ * @param base - the row as this process last read or wrote it
+ * @param mine - the row this process wants to write
+ * @param theirs - the row the store holds now
+ * @param options - optional; `now` overrides the clock in milliseconds
+ * @returns `{ row, lost, displaced, published, orphaned }`: the row to write,
+ *   the tier members lost, the count of displaced records kept, the
+ *   revocations of live tiers dropped and the orphaned slots
+ */
 function merge(base, mine, theirs, options) {
   log.debug("Entering merge().");
   const b = base || {};
@@ -590,6 +654,14 @@ function merge(base, mine, theirs, options) {
            published: published, orphaned: orphaned };
 }
 
+/**
+ * The three-way merge of one certificate authority row written by several
+ * nodes at once.
+ *
+ * Used under the row's lock by the postgres store's `mergeKeys()`. A leaf:
+ * it decrypts nothing, talks to no store and holds no state.
+ * @namespace
+ */
 module.exports = {
   merge: merge,
   // The invariant on its own, for `keystore.js`: a row is sealed through one

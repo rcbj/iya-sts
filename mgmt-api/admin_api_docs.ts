@@ -70,6 +70,14 @@ const { log, xmlEscape } = helpers;
 // it is the one line in this list that must never be removed — see the note
 // above contentSecurityPolicy() in app.js for why frame-ancestors has no
 // fallback and cannot be inherited from default-src.
+/**
+ * The explorer's relaxed Content-Security-Policy: `script-src 'self'` and
+ * `connect-src 'self'` over the service default, `frame-ancestors 'none'` kept.
+ *
+ * Still exported; no route reads it since the page moved to
+ * `admin-ui/api_explorer.ts`, which sets its policy through
+ * `app.contentSecurityPolicy()`.
+ */
 const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "script-src 'self'",
@@ -88,9 +96,16 @@ const CONTENT_SECURITY_POLICY = [
 // The browser script, read once at require time. A file rather than a string
 // constant in this module, so that it is readable, diffable and syntax-checked
 // like any other source here; see its own header.
+/**
+ * The explorer's browser script, `admin_api_explorer.js`, read off disk once at
+ * load and served verbatim.
+ */
 const SCRIPT = fs.readFileSync(
   path.join(__dirname, 'admin_api_explorer.js'), 'utf8');
 
+/**
+ * The explorer's stylesheet, one string.
+ */
 const STYLE = [
   'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;',
   'background:#f4f4f7;margin:0;padding:2rem 1rem;color:#222;line-height:1.45}',
@@ -182,13 +197,28 @@ interface AdminApiDocsDeps {
   xmlEscape: typeof xmlEscape;
 }
 
+/**
+ * The API explorer's page builder: the standalone page and the body drawn
+ * inside the admin console's shell.
+ */
 class AdminApiDocs {
+  /**
+   * Builds an explorer page builder over the given dependencies.
+   *
+   * @param deps - the logger and the XML escaper
+   */
   constructor(private readonly deps: AdminApiDocsDeps) {
     deps.log.debug("Entering AdminApiDocs.constructor().");
     deps.log.debug("Leaving AdminApiDocs.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the logger and the XML escaper
+   */
   static defaultDeps(): AdminApiDocsDeps {
     log.debug("Entering AdminApiDocs.defaultDeps().");
     log.debug("Leaving AdminApiDocs.defaultDeps().");
@@ -217,6 +247,18 @@ class AdminApiDocs {
   // everywhere else, so it is worth the extra parameter rather than a note
   // saying not to.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the standalone explorer as a whole HTML document, banner first.
+   *
+   * Kept and exported, but no route serves it since 2026-09-09.
+   *
+   * @param baseUrl - the service's base URL (unused by the markup)
+   * @param base - the management API's base path, e.g. `/admin-api`
+   * @param version - the version string drawn on the page
+   * @param realmPrefix - the trust realm's path prefix, which the script
+   *   prepends to every call it makes; empty for the default realm
+   * @returns the HTML document
+   */
   page(baseUrl, base, version, realmPrefix) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering AdminApiDocs.page(). base=" + base + ", realm prefix=" +
@@ -276,6 +318,16 @@ class AdminApiDocs {
   // true of this API for as long as this page hung off it and is now false
   // twice over — the API takes a token and this page takes a session.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the explorer as the inner markup of an admin console page: its
+   * stylesheet, the `#app` element the script reads, and the script tag.
+   *
+   * @param opts - `specUrl` (the OpenAPI document), `scriptUrl`, `version`,
+   *   `realmPrefix`, and `token`, `who` and `scope` describing the access token
+   *   minted for the session; with no `token` the page says that Try it will be
+   *   refused
+   * @returns the markup for inside the console's shell
+   */
   consoleBody(opts) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering AdminApiDocs.consoleBody(). spec=" + opts.specUrl);
@@ -332,13 +384,38 @@ const slot = new InstanceSlot<AdminApiDocs>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The API explorer: the page that reads the management API's OpenAPI document
+ * and renders a form per operation that calls it.
+ *
+ * A library: it registers no route; `admin-ui/api_explorer.ts` serves it.
+ *
+ * @namespace
+ */
 export = {
   AdminApiDocs: AdminApiDocs,
   CONTENT_SECURITY_POLICY: CONTENT_SECURITY_POLICY,
   SCRIPT: SCRIPT,
   STYLE: STYLE,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: AdminApiDocs): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
+  /**
+   * Forwards to `AdminApiDocs.page()` on the installed instance.
+   */
   page: slot.forward('page'),
+  /**
+   * Forwards to `AdminApiDocs.consoleBody()` on the installed instance.
+   */
   consoleBody: slot.forward('consoleBody')
 };

@@ -112,6 +112,9 @@ import templates = require('./xacml_templates');
 import validate = require('./xacml_validate');
 import alfa = require('./xacml_alfa');
 import pip = require('./xacml_pip');
+// THE ONE REQUEST BUILDER (#306).
+import xacmlRequest = require('./xacml_request');
+const { AuthorizationRequest } = xacmlRequest;
 import peps = require('./xacml_pep_registry');
 import pepHttp = require('./xacml_pep_http');
 // A remote PEP's HTTPS listener certificate (2026-09-13). A LIBRARY over
@@ -231,17 +234,47 @@ const EDITOR_ACTIONS = ['remove', 'add-rule', 'add-target-anyof', 'add-allof',
                         'add-policy-reference', 'add-policyset-reference',
                         'edit-reference'];
 
+/**
+ * The Policy Administration Point's console pages under `/admin/xacml`: the
+ * settings, the repository, the guided editor, the remote PEPs, the decide
+ * form and the monitor.
+ *
+ * Every control is a plain form POST; the editor holds no state of its own,
+ * the stored policy being the draft.
+ */
 class XacmlAdmin {
+  /**
+   * The remote-PEP actions; `issue-pep-certificate` is the one answered with
+   * a promise.
+   */
   static readonly PEP_ACTIONS = PEP_ACTIONS;
+  /**
+   * The repository actions.
+   */
   static readonly POLICY_ACTIONS = POLICY_ACTIONS;
+  /**
+   * The guided editor's actions.
+   */
   static readonly EDITOR_ACTIONS = EDITOR_ACTIONS;
 
+  /**
+   * Builds the pages over the dependencies given.
+   *
+   * @param deps - the console shell, settings, audit log, policy store,
+   * editor, templates, engine modules, PIP, PEP register and monitor
+   */
   constructor(private readonly deps: XacmlAdminDeps) {
     deps.log.debug("Entering XacmlAdmin.constructor().");
     deps.log.debug("Leaving XacmlAdmin.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, as the composition
+   * root passes them.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): XacmlAdminDeps {
     helpers.log.debug("Entering XacmlAdmin.defaultDeps().");
     helpers.log.debug("Leaving XacmlAdmin.defaultDeps().");
@@ -317,6 +350,13 @@ class XacmlAdmin {
   // ---------------------------------------------------------------------------
   // /admin/xacml — SETTINGS AND WHAT THE PDP DECIDES WITH.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes `/admin/xacml`: whether XACML is on, the PEP bias, the policy
+   * counts, the root policy, whether the PIP has a directory, and the
+   * settings.
+   *
+   * @returns the overview as JSON
+   */
   overviewJson(): Record<string, any> {
     const { log, config, admin, store, pip } = this.deps;
     log.debug('Entering XacmlAdmin.overviewJson().');
@@ -346,6 +386,12 @@ class XacmlAdmin {
   // ---------------------------------------------------------------------------
   // /admin/xacml/policies — THE REPOSITORY.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the policy repository: every policy with its state, whether it
+   * is the root, and any validation problems, plus the templates.
+   *
+   * @returns the repository view as JSON
+   */
   policiesJson(): Record<string, any> {
     const self = this;
     const { log, store, templates, validate } = this.deps;
@@ -600,6 +646,12 @@ class XacmlAdmin {
   // mid-pull; one that is stale and not current is the state worth seeing, and
   // it is invisible from every other page in this console.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the register of remote enforcement points, including whether
+   * each is current with the repository and whether it has gone stale.
+   *
+   * @returns the remote PEP view as JSON
+   */
   pepsJson(): Record<string, any> {
     const { log, config, peps, pepHttp, pepTls, pki } = this.deps;
     log.debug('Entering XacmlAdmin.pepsJson().');
@@ -783,6 +835,12 @@ class XacmlAdmin {
   // since this process started, the page says so with the timestamp, and a
   // restart is the only thing that clears them.
   // ===========================================================================
+  /**
+   * Describes the decision counters for `/admin/xacml/monitor`, per
+   * enforcement point, since this process started.
+   *
+   * @returns the monitor view as JSON
+   */
   monitorJson(): Record<string, any> {
     const { log, store, peps, monitor } = this.deps;
     log.debug('Entering XacmlAdmin.monitorJson().');
@@ -917,6 +975,14 @@ class XacmlAdmin {
   }
 
   // A plain result, or a promise of one for `issue-pep-certificate`.
+  /**
+   * Applies one remote-PEP action: enable, disable, forget, or issue a
+   * listener certificate.
+   *
+   * @param body - the form or API body, with `action` and the PEP's `name`
+   * @returns a result with `ok` and `what` or `why`, or a promise of one for
+   * `issue-pep-certificate`
+   */
   pepAction(body?: any): any {
     const { log, audit, errorCodes, peps, pepTls } = this.deps;
     log.debug('Entering XacmlAdmin.pepAction(). action=' + (body || {}).action);
@@ -1060,6 +1126,15 @@ class XacmlAdmin {
     });
   }
 
+  /**
+   * Applies one repository action: enable, disable, set the root, delete,
+   * create from a template, or import ALFA.
+   *
+   * @param body - the form or API body, with `action`, `name` and the
+   * action's own fields
+   * @param req - the request, when there is one
+   * @returns a result with `ok` and `what` or `why`
+   */
   policyAction(body?: any, req?: Req | null): ActionResult {
     const self = this;
     const { log, audit, errorCodes, xml, store, templates, alfa } = this.deps;
@@ -1234,6 +1309,13 @@ class XacmlAdmin {
     }
   }
 
+  /**
+   * Describes the guided editor's view of one policy: the tree with the
+   * choices valid at each node, its problems and its ALFA rendering.
+   *
+   * @param name - the policy to edit; the root, or the first, when omitted
+   * @returns the editor view as JSON
+   */
   editorJson(name?: string): Record<string, any> {
     const self = this;
     const { log, store, editor, validate } = this.deps;
@@ -1664,6 +1746,15 @@ class XacmlAdmin {
   // tolerable: you cannot break the running policy by half-finishing an
   // expression, because the half-finished version never lands.
   // ---------------------------------------------------------------------------
+  /**
+   * Applies one editor action to a stored policy and writes it back.
+   *
+   * The write validates, so an edit that would leave the policy invalid is
+   * refused and the stored document is unchanged.
+   * @param body - the form or API body, with `policy`, `path`, `action` and
+   * the action's own fields
+   * @returns a result with `ok` and `what` or `why`
+   */
   editorAction(body?: any): ActionResult {
     const { log, audit, errorCodes, xml, store, editor } = this.deps;
     log.debug('Entering XacmlAdmin.editorAction(). action=' +
@@ -1729,6 +1820,13 @@ class XacmlAdmin {
   // POLICIES applied, what the PIP found, and what the PEP would then do with
   // it. All four are on this page.
   // ---------------------------------------------------------------------------
+  /**
+   * Asks the PDP a question built from a subject, action and resource, and
+   * reports the decision, the applicable policies and what the PEP would do.
+   *
+   * @param query - `subject`, `action` and `resource`
+   * @returns the answer as JSON, or `{ asked: false }` when nothing was asked
+   */
   decideJson(query?: any): Record<string, any> {
     const { log, model, loadXacml } = this.deps;
     log.debug('Entering XacmlAdmin.decideJson().');
@@ -1744,31 +1842,21 @@ class XacmlAdmin {
     // would be a cycle, and node answers a cycle with a half-initialised module
     // whose exports are undefined rather than with an error.
     const xacml = loadXacml();
-    const categories = [
-      { category: model.CATEGORY.ACCESS_SUBJECT, id: null, content: null,
-        attributes: subject
-          ? [{ attributeId: model.ATTRIBUTE.SUBJECT_ID, issuer: null,
-               includeInResult: true,
-               values: [{ type: model.TYPE.STRING, lexical: subject }] }]
-          : [] },
-      { category: model.CATEGORY.ACTION, id: null, content: null,
-        attributes: [{ attributeId: model.ATTRIBUTE.ACTION_ID, issuer: null,
-                       includeInResult: true,
-                       values: [{ type: model.TYPE.STRING,
-                                  lexical: action }] }] },
-      { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-        attributes: [] }
-    ];
-    if (resource) {
-      categories.push({ category: model.CATEGORY.RESOURCE, id: null,
-                        content: null,
-                        attributes: [{ attributeId: model.ATTRIBUTE.RESOURCE_ID,
-                                       issuer: null, includeInResult: true,
-                                       values: [{ type: model.TYPE.ANYURI,
-                                                  lexical: resource }] }] });
+    // THROUGH THE ONE BUILDER (#306), in this page's order: subject,
+    // action, environment, and the resource only when one was named.
+    const built = new AuthorizationRequest({ includeInResult: true });
+    [model.CATEGORY.ACCESS_SUBJECT, model.CATEGORY.ACTION,
+     model.CATEGORY.ENVIRONMENT].forEach(function (id) {
+      built.category(id);
+    });
+    if (subject) {
+      built.subject(model.ATTRIBUTE.SUBJECT_ID, [subject]);
     }
-    const request = { returnPolicyIdList: true, combinedDecision: false,
-                      categories: categories };
+    built.requestedAction(action);
+    if (resource) {
+      built.target(resource, model.TYPE.ANYURI);
+    }
+    const request = built.build();
     const answer = xacml.decide(request);
     const enforcement = xacml.enforce(answer);
     log.debug('Leaving XacmlAdmin.decideJson(). ' + answer.decision);
@@ -1786,6 +1874,11 @@ class XacmlAdmin {
                             bias: enforcement.bias, why: enforcement.why } };
   }
 
+  /**
+   * Lists every action `combinedAction()` accepts.
+   *
+   * @returns the repository, editor and PEP action names
+   */
   actionNames(): string[] {
     const { log } = this.deps;
     log.debug("Entering XacmlAdmin.actionNames().");
@@ -1794,6 +1887,14 @@ class XacmlAdmin {
   }
 
   // A plain result, or a promise of one (see `PEP_ACTIONS`).
+  /**
+   * Routes an action to the repository, the editor or the PEP register by
+   * its name, as the management API calls it.
+   *
+   * @param body - the body, with `action`
+   * @returns the routed action's result, or a promise of it; a refusal
+   * naming every action when the name is unknown
+   */
   combinedAction(body?: any): any {
     const self = this;
     const { log, errorCodes } = this.deps;
@@ -1823,6 +1924,11 @@ class XacmlAdmin {
   }
 
   // Every route, in the order this file has always registered them.
+  /**
+   * Registers the `/admin/xacml` pages and their POST handlers.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteTable): void {
     const self = this;
     const { log, parseBody, errorCodes, admin, store, editor, esc } = this.deps;
@@ -2801,6 +2907,10 @@ class XacmlAdmin {
   // itself. The console keeps two endpoints because a form posts back to the
   // page it came from.
   // -------------------------------------------------------------------------
+  /**
+   * Fills the console's XACML slot (`admin.setXacmlPages()`) with this
+   * instance's views and actions.
+   */
   installSlot(): void {
     const self = this;
     const { log, admin } = this.deps;
@@ -2865,6 +2975,11 @@ class XacmlAdmin {
   // installed: the console's slot fill. The root installs this instance
   // before it registers the routes, so the slot is still filled before they
   // exist; nothing reads it until a request arrives.
+  /**
+   * Runs the load-time work for the installed instance: the slot fill.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: XacmlAdmin): void {
     helpers.log.debug("Entering XacmlAdmin.wire().");
     instance.installSlot();
@@ -2895,6 +3010,14 @@ const slot = new InstanceSlot<XacmlAdmin>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The XACML Policy Administration Point's console pages and the views and
+ * actions the management API shares with them.
+ *
+ * Exports the class for the composition root and facades that forward to
+ * the installed instance.
+ * @namespace
+ */
 export = {
   registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   XacmlAdmin: XacmlAdmin,

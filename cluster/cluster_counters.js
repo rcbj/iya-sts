@@ -101,6 +101,13 @@ function store() {
     ? candidate : null;
 }
 
+/**
+ * Digests a counter's key under its scope, the form in which it is stored.
+ *
+ * @param scope - the kind of counter
+ * @param key - the one counter, such as a credential id
+ * @returns the SHA-256 digest, base64url
+ */
 function digestOf(scope, key) {
   log.debug("Entering digestOf().");
   const out = nodeCrypto.createHash('sha256')
@@ -143,6 +150,13 @@ function verdictOf(wanted, answer) {
 // `{ ok: false, reason: 'store', why }`. It never rejects.
 // ---------------------------------------------------------------------------
 /**
+ * Advances a counter that may only go up, agreed by every node sharing the
+ * store: accepted only when the value is above the highest ever stored (or
+ * both are 0). `opts` holds `scope`, `key`, `value` and `realm` (the ambient
+ * realm by default). Resolves `{ ok: true, advanced, highest }`, or
+ * `{ ok: false, reason: 'behind' | 'store' }`; the caller refuses on either,
+ * and it never rejects.
+ *
  * @param {any} opts
  * @returns {Promise<import('../types/cluster').AdvanceResult>}
  */
@@ -235,6 +249,12 @@ function windowStore() {
 
 // Is there a store every process shares a window in? Synchronous, so a caller
 // can choose its path before it has to become asynchronous at all.
+/**
+ * Says, synchronously, whether a store every process shares a rate-limit
+ * window in is open.
+ *
+ * @returns true when countInWindow() will reach a shared store
+ */
 function sharesWindows() {
   log.debug("Entering sharesWindows().");
   const out = !!windowStore();
@@ -247,6 +267,14 @@ function sharesWindows() {
 // every process shares. It was piggy-backed on the next count in every
 // process. Registered at the first count against a shared store, lazily for
 // `cluster_claims.js`'s reason.
+/**
+ * Registers the `cluster.rate-window-purge` scheduler job once per process.
+ *
+ * Does nothing until a scheduler with `register()` is reachable, so a call
+ * through a half-loaded scheduler can be repeated.
+ * @param schedulerInstance - the scheduler, when the caller is it; otherwise
+ *   it is required
+ */
 function ensureWindowPurgeJob(schedulerInstance) {
   log.debug("Entering ensureWindowPurgeJob().");
   if (windowJobRegistered) {
@@ -341,6 +369,11 @@ function windowFailure(what, scope, e) {
 // or `{ ok: false, reason: 'store' | 'unshared', why }`. Never rejects.
 // ---------------------------------------------------------------------------
 /**
+ * Counts one attempt in a fixed window shared by every node. `opts` holds
+ * `scope`, `key`, `windowMs` and `realm` ('' by default). Resolves
+ * `{ ok: true, count, remainingMs }`, where `count` includes this attempt, or
+ * `{ ok: false, reason: 'store' | 'unshared', why }`; it never rejects.
+ *
  * @param {any} opts
  * @returns {Promise<import('../types/cluster').WindowResult>}
  */
@@ -369,6 +402,9 @@ function countInWindow(opts) {
 
 // The count of a window, counting nothing.
 /**
+ * Reads a window's count without counting. Takes and resolves what
+ * countInWindow() does.
+ *
  * @param {any} opts
  * @returns {Promise<import('../types/cluster').WindowResult>}
  */
@@ -394,6 +430,12 @@ function peekWindow(opts) {
 }
 
 // Forgets a window — a success clearing its bucket.
+/**
+ * Forgets a window, as a success clears its bucket.
+ *
+ * @param opts - `scope`, `key` and `realm`, as for countInWindow()
+ * @returns a promise of `{ ok: true }` or `{ ok: false, reason, why }`
+ */
 function clearWindow(opts) {
   log.debug("Entering clearWindow().");
   const args = windowArgs(opts);
@@ -415,12 +457,22 @@ function clearWindow(opts) {
 }
 
 // For tests: forget this process's memory store.
+/**
+ * Forgets this process's in-memory counters. For tests.
+ */
 function reset() {
   log.debug("Entering reset().");
   memory.clear();
   log.debug("Leaving reset().");
 }
 
+/**
+ * Values every node agrees on (#46 section 2): counters that only go up
+ * (WebAuthn signature counts, spent TOTP steps) and counts in a fixed window
+ * (the rate limiter), each settled by one conditional upsert in the shared
+ * store, or in this process's memory where the store cannot be shared.
+ * @namespace
+ */
 module.exports = {
   advance: advance,
   sharesWindows: sharesWindows,

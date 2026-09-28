@@ -133,16 +133,32 @@ interface ClientAttestationDeps {
   usedAssertions: typeof usedAssertions;
 }
 
+/**
+ * The draft revision of OAuth 2.0 Attestation-Based Client Authentication
+ * implemented.
+ */
 const DRAFT = 'draft-ietf-oauth-attestation-based-client-auth-11';
 
 // Section 15.6 and 15.7: the two token endpoint authentication methods.
+/**
+ * The token endpoint authentication method using a Client Attestation PoP JWT.
+ */
 const ATTEST = 'attest_jwt_client_auth';
+/**
+ * The token endpoint authentication method using the DPoP proof as the PoP.
+ */
 const ATTEST_DPOP = 'attest_jwt_client_auth_dpop';
+/**
+ * The two attestation-based authentication methods.
+ */
 const METHODS = [ATTEST, ATTEST_DPOP];
 
 // Section 15.8, lower case as node hands request header names over.
 const HEADER = 'oauth-client-attestation';
 const POP_HEADER = 'oauth-client-attestation-pop';
+/**
+ * The response header a fresh challenge is handed out in.
+ */
 const CHALLENGE_HEADER = 'OAuth-Client-Attestation-Challenge';
 
 // Sections 4 and 5.1.
@@ -151,6 +167,9 @@ const POP_TYP = 'oauth-client-attestation-pop+jwt';
 
 // Section 15.5.2's proof-of-possession methods, as section 7.6's metadata
 // names them.
+/**
+ * The proof-of-possession methods section 7.6's metadata names.
+ */
 const POP_METHODS = ['attestation_pop_jwt', 'dpop_combined'];
 
 // RFC 9110 section 11.2's token68, which section 4 and 5.1 give both fields.
@@ -218,20 +237,54 @@ const challengesCount = cacheRegistry.register({
   }
 });
 
+/**
+ * OAuth 2.0 Attestation-Based Client Authentication (#229): a client instance
+ * authenticated by an attester's Client Attestation JWT and a proof of the
+ * instance key, through `client_auth.js`'s one path.
+ */
 class ClientAttestation {
+  /**
+   * The draft revision implemented.
+   */
   static readonly DRAFT = DRAFT;
+  /**
+   * The method using a Client Attestation PoP JWT.
+   */
   static readonly ATTEST = ATTEST;
+  /**
+   * The method using the DPoP proof as the PoP.
+   */
   static readonly ATTEST_DPOP = ATTEST_DPOP;
+  /**
+   * The two attestation-based authentication methods.
+   */
   static readonly METHODS = METHODS;
+  /**
+   * The response header a fresh challenge is handed out in.
+   */
   static readonly CHALLENGE_HEADER = CHALLENGE_HEADER;
+  /**
+   * The proof-of-possession methods section 7.6's metadata names.
+   */
   static readonly POP_METHODS = POP_METHODS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, settings, error codes, crypto module, PKI module
+   *   and the used-assertion history
+   */
   constructor(private readonly deps: ClientAttestationDeps) {
     deps.log.debug("Entering ClientAttestation.constructor().");
     deps.log.debug("Leaving ClientAttestation.constructor().");
   }
 
   // What the composition root passes.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): ClientAttestationDeps {
     helpers.log.debug("Entering ClientAttestation.defaultDeps().");
     helpers.log.debug("Leaving ClientAttestation.defaultDeps().");
@@ -263,6 +316,12 @@ class ClientAttestation {
     return this.seconds('oauth2.clientAssertionSkewS', 60);
   }
 
+  /**
+   * Tells whether a PoP must carry a challenge this service issued
+   * (`oauth2.clientAttestationChallengeRequired`).
+   *
+   * @returns true when a challenge is required
+   */
   challengeRequired(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering ClientAttestation.challengeRequired().");
@@ -335,6 +394,12 @@ class ClientAttestation {
 
   // Whether this realm trusts any attester at all. Nothing is advertised,
   // and no challenge is handed out, in a realm that trusts nobody.
+  /**
+   * Tells whether this realm trusts any attester; nothing is advertised or
+   * challenged in a realm that trusts none.
+   *
+   * @returns true when an attester is trusted
+   */
   configured(): boolean {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.configured().");
@@ -343,6 +408,13 @@ class ClientAttestation {
     return yes;
   }
 
+  /**
+   * Tells whether an authentication method is one of the two attestation
+   * methods.
+   *
+   * @param method - the method name
+   * @returns true when it is
+   */
   isMethod(method: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.isMethod().");
@@ -351,6 +423,12 @@ class ClientAttestation {
   }
 
   // Whether this request carries the attestation header at all.
+  /**
+   * Tells whether a request carries the client attestation header.
+   *
+   * @param req - the request
+   * @returns true when it does
+   */
   presented(req: Req): boolean {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.presented().");
@@ -364,6 +442,13 @@ class ClientAttestation {
   // one (section 7.5 lets a token request omit client_id). The attestation is
   // then verified with `sub` required to be that client — so a forged `sub`
   // selects a client it will not authenticate as.
+  /**
+   * Reads the attestation's `sub` unverified, to choose which registered client
+   * to verify the request against when nothing else names one.
+   *
+   * @param req - the request
+   * @returns the `sub`, or ''
+   */
   subjectOf(req: Req): string {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.subjectOf().");
@@ -390,6 +475,11 @@ class ClientAttestation {
   // conformance suite's own check asks for at least sixteen characters of
   // that alphabet, and 32 is what this makes.
   // -------------------------------------------------------------------------
+  /**
+   * Issues a single-use challenge (section 6): 192 random bits, base64url.
+   *
+   * @returns the challenge
+   */
   issueChallenge(): string {
     const { log, stsCrypto, config } = this.deps;
     log.debug("Entering ClientAttestation.issueChallenge().");
@@ -885,6 +975,17 @@ class ClientAttestation {
   // (the RFC 9700 policy, then the observation), and a second verification
   // would find the first one's jti.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies a request's attestation and its proof of possession, once per
+   * request however many times it is asked.
+   *
+   * @param req - the request
+   * @param opts - `method` (what the client declared, or anything else to
+   *   accept either proof), `clientId` and `issuer`, the audience a PoP must
+   *   name
+   * @returns a promise of `{ ok: true, method, alg, jti, jkt }`, or `{ ok:
+   *   false, errorCode, ... }`
+   */
   verifyRequest(req: Req, opts: Json): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.verifyRequest().");
@@ -1032,6 +1133,15 @@ class ClientAttestation {
   // AT THE TOKEN AND PAR ENDPOINTS, after the observation (see the header).
   // Answers a refusal `{ status, error, description, errorCode }` or null.
   // -------------------------------------------------------------------------
+  /**
+   * Decides at the token and PAR endpoints, after the authentication
+   * observation, whether the request is refused for its attestation.
+   *
+   * @param opts - `registered`, `observation`, `request`, `clientId` and
+   *   `issuer`
+   * @returns a promise of null, or a refusal `{ status, error, description,
+   *   errorCode }`
+   */
   async requestRefusal(opts: Json): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.requestRefusal().");
@@ -1078,6 +1188,15 @@ class ClientAttestation {
   // the thumbprint a refresh token or an authorization code carries; the
   // request must have verified an attestation for that same key.
   // -------------------------------------------------------------------------
+  /**
+   * Refuses a request whose verified attestation is not for the instance key a
+   * refresh token or authorization code was bound to (sections 10.3 and 10.4).
+   *
+   * @param req - the request
+   * @param bound - the thumbprint the refresh token or code carries
+   * @param what - what was bound, named in the refusal
+   * @returns null, or a refusal
+   */
   bindingRefusal(req: Req, bound: unknown, what: string): Json {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.bindingRefusal(). " + what);
@@ -1107,6 +1226,13 @@ class ClientAttestation {
 
   // What the authorization server metadata says (section 8), or {} in a
   // realm that trusts no attester. `challengeEndpoint` is the URL.
+  /**
+   * Returns the authorization server metadata members for attestation-based
+   * client authentication (section 8).
+   *
+   * @param challengeEndpoint - the challenge endpoint's URL
+   * @returns the members, or {} in a realm that trusts no attester
+   */
   metadata(challengeEndpoint: string): Json {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.metadata().");
@@ -1142,10 +1268,29 @@ const slot = new InstanceSlot<ClientAttestation>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * OAuth 2.0 Attestation-Based Client Authentication.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   ClientAttestation: ClientAttestation,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: ClientAttestation): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   DRAFT: DRAFT,
   ATTEST: ATTEST,

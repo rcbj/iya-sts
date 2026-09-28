@@ -102,6 +102,9 @@ function accountSignals() {
   return require('../ssf/account_signals');
 }
 
+/**
+ * The use case of the realm Issuing CA these certificates come from.
+ */
 const USE_CASE = 'tls-client';
 
 // What a browser and every TLS stack worth talking to will present: RSA and the
@@ -110,12 +113,23 @@ const USE_CASE = 'tls-client';
 // client-certificate support, and a certificate that installs and is then never
 // offered is the worst version of this feature. RSA 2048 is the default because
 // it is the one every certificate store on every operating system imports.
+/**
+ * The key algorithms a TLS client certificate is issued with: the ones
+ * browsers present.
+ */
 const KEY_ALGS = ['rsa-2048', 'rsa-3072', 'ec-p256', 'ec-p384'];
+/**
+ * The key algorithm used when none is asked for.
+ */
 const DEFAULT_KEY_ALG = 'rsa-2048';
 
 // The two RFC 5280 reasons a person can honestly give about their own
 // certificate. `cessationOfOperation` is "I stopped using it"; `keyCompromise`
 // is "somebody else may have the key". The others are an authority's to state.
+/**
+ * The two RFC 5280 reasons a holder may give when revoking their own
+ * certificate.
+ */
 const REVOCATION_REASONS = ['cessationOfOperation', 'keyCompromise'];
 
 // ---------------------------------------------------------------------------
@@ -132,11 +146,21 @@ const REVOCATION_REASONS = ['cessationOfOperation', 'keyCompromise'];
 // at a sign-in), this service's own TLS server certificates (`tls`) and a
 // remote PEP's.
 // ---------------------------------------------------------------------------
+/**
+ * The authorities whose clientAuth leaves are identities: this module's own
+ * and the three enrollment protocols'.
+ */
 const IDENTITY_USE_CASES = ['tls-client', 'acme', 'est', 'scep'];
 
 const CLIENT_AUTH_OID = '1.3.6.1.5.5.7.3.2';
 const PERSON_URN = 'urn:sts:person:';
+/**
+ * The subjectAltName URI prefix naming an application.
+ */
 const APPLICATION_URN = 'urn:sts:application:';
+/**
+ * The shortest password a PKCS#12 file is protected with.
+ */
 const PKCS12_PASSWORD_MIN = 8;
 
 // ---------------------------------------------------------------------------
@@ -185,6 +209,12 @@ function slotFor(holder, kind) {
 }
 
 // `{ kind, id }` for a slot this module wrote, or null.
+/**
+ * Reads the holder out of a register slot this module wrote.
+ *
+ * @param slot - the slot, `person:<id>:<random>` or `application:<id>:<random>`
+ * @returns `{ kind, id }`, or null when the slot is not one of this module's
+ */
 function slotHolder(slot) {
   log.debug("Entering slotHolder().");
   const text = String(slot || '');
@@ -195,6 +225,12 @@ function slotHolder(slot) {
 
 // The PERSON a slot names, or null — what every caller before applications
 // could hold one asked, and still asks.
+/**
+ * Reads the person a register slot names.
+ *
+ * @param slot - the slot
+ * @returns the username, or null when the slot names no person
+ */
 function holderOfSlot(slot) {
   log.debug("Entering holderOfSlot().");
   const holder = slotHolder(slot);
@@ -215,6 +251,12 @@ function maxPerPerson() {
   return Number(config.value('pki.personTlsClientCertificateMax'));
 }
 
+/**
+ * Answers the most valid certificates one holder of a kind may hold.
+ *
+ * @param kind - 'person' or 'application'; a person when absent
+ * @returns the configured cap
+ */
 function maxPerHolder(kind) {
   log.debug("Entering maxPerHolder().");
   const k = kindOf(kind) || 'person';
@@ -237,6 +279,15 @@ function revocation() {
 // revocation like any other — it is what a rebuilt branch writes — and it is reported as
 // what it is rather than folded into "revoked".
 // ---------------------------------------------------------------------------
+/**
+ * Lists the TLS client certificates one holder has been issued in a realm,
+ * each with its state: valid, expired, revoked or superseded.
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param username - the holder's username or application identifier
+ * @param kind - 'person' or 'application'; a person when absent
+ * @returns one row per certificate
+ */
 function listFor(realmId, username, kind) {
   log.debug("Entering listFor().");
   const scope = scopeOf(realmId);
@@ -279,6 +330,14 @@ function listFor(realmId, username, kind) {
   return rows;
 }
 
+/**
+ * Lists the holder's certificates that are still valid.
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param username - the holder's username or application identifier
+ * @param kind - 'person' or 'application'; a person when absent
+ * @returns the valid rows of `listFor()`
+ */
 function activeFor(realmId, username, kind) {
   log.debug("Entering activeFor().");
   log.debug("Leaving activeFor().");
@@ -291,6 +350,13 @@ function activeFor(realmId, username, kind) {
 // the certificate register and on this person's own page. Letters, digits,
 // spaces and a little punctuation, because it is also the friendly name inside
 // the PKCS#12, which several certificate stores draw verbatim.
+/**
+ * Checks a certificate's label: at most 40 letters, digits, spaces, dots,
+ * dashes, underscores and brackets.
+ *
+ * @param label - the label
+ * @returns the sentence describing the problem, or an empty string
+ */
 function labelProblem(label) {
   log.debug("Entering labelProblem().");
   const text = String(label || '');
@@ -317,6 +383,20 @@ function labelProblem(label) {
 // OCSP responder, and a responder with no record of the serial answers
 // `unknown` about a certificate that sends a relying party there to ask.
 // ---------------------------------------------------------------------------
+/**
+ * Issues a TLS client certificate carrying clientAuth to a person or an
+ * application, from the realm's `tls-client` Issuing CA.
+ *
+ * The caller has already decided who. The private key is handed back once
+ * and not kept; expired records of the holder are forgotten first, and a
+ * person's issue raises a CAEP credential-change event.
+ * @param realmId - the realm; the ambient realm when absent
+ * @param spec - `kind` ('person' or 'application'), `username` or
+ *   `application`, `keyAlg`, `label`, `email` (a person's, for an
+ *   rfc822Name) and `days`
+ * @returns `{ ok: true, issued }` with the certificate, chain and key pair,
+ *   or `{ ok: false, errors }` marked with its code
+ */
 async function issue(realmId, spec) {
   log.debug("Entering issue().");
   const scope = scopeOf(realmId);
@@ -496,6 +576,13 @@ async function issue(realmId, spec) {
 // **THE PASSWORD IS NEVER STORED, LOGGED OR AUDITED**, and it is not this
 // service's credential for anything: it protects a file on somebody's disk.
 // ---------------------------------------------------------------------------
+/**
+ * Checks the password chosen for the PKCS#12 and encrypted key files.
+ *
+ * @param password - the password
+ * @param confirm - its confirmation; not compared when absent
+ * @returns the sentence describing the problem, or an empty string
+ */
 function pkcs12PasswordProblem(password, confirm) {
   log.debug("Entering pkcs12PasswordProblem().");
   const text = String(password || '');
@@ -522,6 +609,16 @@ function fileStem(issued) {
   return (base || 'client') + '-tls-client';
 }
 
+/**
+ * Packages what `issue()` handed back as three files: a PKCS#12, an
+ * encrypted PKCS#8 PEM key, and the PEM chain.
+ *
+ * The password is never stored, logged or audited.
+ * @param issued - the `issued` object from `issue()`
+ * @param password - the password protecting the key in both key files
+ * @returns `{ pkcs12, key, chain }`, each with a file name and MIME type,
+ *   the PKCS#12 as base64 and the two PEM files as text
+ */
 async function bundle(issued, password) {
   log.debug("Entering bundle().");
   const stem = fileStem(issued);
@@ -562,6 +659,21 @@ async function bundle(issued, password) {
 // somebody else matches nothing, so the route taking one from a form body
 // cannot be used to revoke another person's certificate.
 // ---------------------------------------------------------------------------
+/**
+ * Revokes one of the holder's own certificates, found by serial among that
+ * holder's certificates only.
+ *
+ * A person's revocation raises CAEP (and, for `keyCompromise`, RISC)
+ * events.
+ * @param realmId - the realm; the ambient realm when absent
+ * @param username - the holder's username or application identifier
+ * @param serialHex - the certificate's serial number in hex
+ * @param reasonId - one of `REVOCATION_REASONS`; `cessationOfOperation`
+ *   otherwise
+ * @param kind - 'person' or 'application'; a person when absent
+ * @returns the revocation's outcome with the certificate and reason, or
+ *   `{ ok: false, errors }` when the holder holds no such serial
+ */
 function revoke(realmId, username, serialHex, reasonId, kind) {
   log.debug("Entering revoke().");
   const scope = scopeOf(realmId);
@@ -628,6 +740,13 @@ function revoke(realmId, username, serialHex, reasonId, kind) {
 // the listener is re-certified under the new Root, which is exactly the moment
 // this answer changes.
 // ---------------------------------------------------------------------------
+/**
+ * Answers the anchor the client truststore adds: the service Root, read on
+ * each call.
+ *
+ * @returns the Root's PEM, or an empty string when
+ *   `tls.trustIssuedClientCertificates` is off or there is no Root
+ */
 function trustAnchorPem() {
   log.debug("Entering trustAnchorPem().");
   if (config.value('tls.trustIssuedClientCertificates') === false) {
@@ -765,6 +884,19 @@ function currentHolderOf(answer) {
                                   certifiedName: answer.username });
 }
 
+/**
+ * Recognises a verified client certificate as an identity, or refuses it.
+ *
+ * A chain through no authority this process holds is `issuedHere: false`.
+ * One through a held authority is accepted only from a realm Issuing CA in
+ * `IDENTITY_USE_CASES`, with clientAuth, naming exactly one person or
+ * application; a person is then resolved to whoever holds their subject
+ * now. Memoised by leaf digest and held authorities.
+ * @param input - `{ leaf, chain, verified }`, from
+ *   `revocation_status.fromSocket()`
+ * @returns `{ issuedHere, accepted }`, with `realm`, `kind`, `username`,
+ *   `serialHex` and `authority` when accepted, or `error` and `why` when not
+ */
 function identityOf(input) {
   log.debug("Entering identityOf().");
   if (!input || !input.leaf || input.verified !== true) {
@@ -899,6 +1031,15 @@ function identityOf(input) {
 // refused a revoked certificate before this is reached, and a second answer to
 // "is it revoked" is the one that disagrees with the first.
 // ---------------------------------------------------------------------------
+/**
+ * Answers whether the entry an accepted certificate names still lists it:
+ * the register slot for this module's authority, the entry's enrolled
+ * certificate for the enrollment authorities.
+ *
+ * Revocation is not asked here.
+ * @param identity - an accepted answer from `identityOf()`
+ * @returns true when the holder's record still lists the certificate
+ */
 function stillHeld(identity) {
   log.debug("Entering stillHeld().");
   if (!identity || !identity.accepted || !identity.authority) {
@@ -956,6 +1097,14 @@ function stillHeld(identity) {
 // certificate this service issued for something else, or one from another
 // realm's authority.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a main-port socket's client certificate against the ambient realm.
+ *
+ * @param socket - the TLS socket
+ * @returns `{ ok: true, identity }` for no opinion or a certificate from
+ *   this realm's authority, or `{ ok: false, identity, error, why }` for a
+ *   certificate issued here for something else or by another realm
+ */
 function checkSocket(socket) {
   log.debug("Entering checkSocket().");
   let input = null;
@@ -990,6 +1139,12 @@ function checkSocket(socket) {
 }
 
 // What `/tls` and the portal page say about this arrangement.
+/**
+ * Reports the arrangement for `/tls` and the portal: whether the Root is
+ * trusted for client certificates, the key algorithms and the cap.
+ *
+ * @returns the report
+ */
 function report() {
   log.debug("Entering report().");
   const on = config.value('tls.trustIssuedClientCertificates') !== false;
@@ -1024,6 +1179,12 @@ function report() {
   };
 }
 
+/**
+ * A person's or application's TLS client certificate: issued from the realm's
+ * `tls-client` Issuing CA, packaged as PKCS#12 and PEM, and recognised as an
+ * identity only when that is what it was issued as.
+ * @namespace
+ */
 module.exports = {
   USE_CASE: USE_CASE,
   IDENTITY_USE_CASES: IDENTITY_USE_CASES,

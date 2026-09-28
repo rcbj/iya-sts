@@ -215,39 +215,56 @@ type Json = any;
 // THE VOCABULARY. Closed lists, each read by a later phase's policy or
 // signal, so a value outside one is refused rather than stored.
 // ---------------------------------------------------------------------------
+/** What may own a device: `person` or `application`. */
 const OWNER_KINDS = ['person', 'application'];
+/** The kinds of key a device holds: `x509`, `jwk` and `webauthn`. */
 const KEY_KINDS = ['x509', 'jwk', 'webauthn'];
 // What a key-kind FILTER may name: the three kinds, and the Native SSO
 // secret, which is not a key but is the fourth way a device is recognised.
+/** What a key-kind filter may name: the three key kinds and `native-sso`. */
 const KEY_KIND_FILTERS = KEY_KINDS.concat(['native-sso']);
+/** How a device key was proven when it was registered. */
 const KEY_PROOFS = ['admin', 'webauthn', 'jwk-proof', 'dpop', 'est', 'scep',
                     'mtls'];
 // `bearer` (#265) is a remembered browser known only by the cookie it
 // carries: it proved no key, so anybody holding a copy of the cookie is it.
 // The LOWEST level, never compliant (setCompliance()), never meets the
 // compliant-device acr. A key added later lifts it to the key's level.
+/** A device's attestation levels: `attested`, `self-asserted` and `bearer`. */
 const ATTESTATION_LEVELS = ['attested', 'self-asserted', 'bearer'];
 // The WebAuthn attestation statement formats (the IANA registry of WebAuthn
 // Level 3 section 8), and the three key attestations decision 7 names for
 // EST/SCEP (TCG TPM 2.0 key attestation) and JWK proofs (Android Key
 // Attestation, Apple App Attest).
+/** The attestation statement formats a key's attestation may name. */
 const ATTESTATION_FORMATS = ['none', 'packed', 'tpm', 'android-key',
                              'android-safetynet', 'fido-u2f', 'apple',
                              'compound', 'tcg-tpm2-key',
                              'android-key-attestation', 'apple-app-attest'];
+/** A device's compliance: `compliant`, `not-compliant` or `unknown`. */
 const COMPLIANCE_STATES = ['compliant', 'not-compliant', 'unknown'];
+/**
+ * Who may set a device's compliance: `admin`, `mdm`, `test-control`,
+ * `caep`.
+ */
 const COMPLIANCE_SOURCES = ['admin', 'mdm', 'test-control', 'caep'];
+/** How a device came to be registered. */
 const ENROLMENT_METHODS = ['native-sso', 'admin', 'portal', 'est', 'scep',
                            'browser'];
+/** A device's status: `active` or `compromised`. */
 const STATUSES = ['active', 'compromised'];
+/** The platforms a device may name. */
 const PLATFORMS = ['ios', 'ipados', 'android', 'macos', 'windows', 'linux',
                    'chromeos', 'other'];
+/** The kinds of event the register counts: created, removed and evicted. */
 const EVENT_KINDS = ['created', 'removed', 'evicted'];
 // CAEP's risk-level vocabulary (section 3.8.1): a device's level is one of
 // the three, or absent (never assessed).
+/** CAEP's risk levels: `LOW`, `MEDIUM` and `HIGH`. */
 const RISK_LEVELS = ['LOW', 'MEDIUM', 'HIGH'];
 // Who set a device's risk level: phase 5's risk scoring, a compromise, an
 // administrator.
+/** Who set a device's risk level: `risk`, `compromise` or `admin`. */
 const RISK_SOURCES = ['risk', 'compromise', 'admin'];
 // Where a compliance source's act comes from, in CAEP section 2's
 // `initiating_entity` words: an administrator is `admin`; an MDM or posture
@@ -268,7 +285,9 @@ const COMPLIANCE_INITIATORS: Record<string, string> = {
 // chose — so each is a URN in this service's own namespace, the approach
 // #236 suggested, which a receiver that does not know it still reads as "a
 // credential changed" (the member is an open enumeration).
+/** The CAEP credential type a device's JWK key goes out as. */
 const DEVICE_KEY_CREDENTIAL_TYPE = 'urn:iya:sts:credential-type:device-key';
+/** The CAEP credential type a Native SSO device secret goes out as. */
 const DEVICE_SECRET_CREDENTIAL_TYPE =
   'urn:iya:sts:credential-type:device-secret';
 // JWK members that make a key PRIVATE (RFC 7518 section 6, RFC 8037, and
@@ -418,30 +437,69 @@ const eventsCounter = cacheRegistry.register({
   }
 });
 
+/**
+ * The device register: devices as entries under `ou=devices`, each with one
+ * owner, the applications that used it, and the keys that identify it.
+ *
+ * Holds compliance, status and risk level, and sends CAEP and RISC when
+ * they change.
+ */
 class Devices {
+  /** What may own a device: `person` or `application`. */
   static readonly OWNER_KINDS = OWNER_KINDS;
+  /** The kinds of key a device holds: `x509`, `jwk` and `webauthn`. */
   static readonly KEY_KINDS = KEY_KINDS;
+  /** What a key-kind filter may name: the three key kinds and `native-sso`. */
   static readonly KEY_KIND_FILTERS = KEY_KIND_FILTERS;
+  /** How a device key was proven when it was registered. */
   static readonly KEY_PROOFS = KEY_PROOFS;
+  /**
+   * A device's attestation levels: `attested`, `self-asserted` and `bearer`.
+   */
   static readonly ATTESTATION_LEVELS = ATTESTATION_LEVELS;
+  /** The attestation statement formats a key's attestation may name. */
   static readonly ATTESTATION_FORMATS = ATTESTATION_FORMATS;
+  /** A device's compliance: `compliant`, `not-compliant` or `unknown`. */
   static readonly COMPLIANCE_STATES = COMPLIANCE_STATES;
+  /**
+   * Who may set a device's compliance: `admin`, `mdm`, `test-control`,
+   * `caep`.
+   */
   static readonly COMPLIANCE_SOURCES = COMPLIANCE_SOURCES;
+  /** How a device came to be registered. */
   static readonly ENROLMENT_METHODS = ENROLMENT_METHODS;
+  /** A device's status: `active` or `compromised`. */
   static readonly STATUSES = STATUSES;
+  /** The platforms a device may name. */
   static readonly PLATFORMS = PLATFORMS;
+  /** The kinds of event the register counts: created, removed and evicted. */
   static readonly EVENT_KINDS = EVENT_KINDS;
+  /** CAEP's risk levels: `LOW`, `MEDIUM` and `HIGH`. */
   static readonly RISK_LEVELS = RISK_LEVELS;
+  /** Who set a device's risk level: `risk`, `compromise` or `admin`. */
   static readonly RISK_SOURCES = RISK_SOURCES;
+  /** The CAEP credential type a device's JWK key goes out as. */
   static readonly DEVICE_KEY_CREDENTIAL_TYPE = DEVICE_KEY_CREDENTIAL_TYPE;
+  /** The CAEP credential type a Native SSO device secret goes out as. */
   static readonly DEVICE_SECRET_CREDENTIAL_TYPE =
     DEVICE_SECRET_CREDENTIAL_TYPE;
 
+  /**
+   * Builds the register over the given dependencies.
+   *
+   * @param deps - the logger, settings, `crypto` and the other services the
+   *   register reads and signals through
+   */
   constructor(private readonly deps: DevicesDeps) {
     deps.log.debug("Entering Devices.constructor().");
     deps.log.debug("Leaving Devices.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): DevicesDeps {
     helpers.log.debug("Entering Devices.defaultDeps().");
     helpers.log.debug("Leaving Devices.defaultDeps().");
@@ -456,6 +514,12 @@ class Devices {
 
   // `authn/authn` as it is loaded in THIS process, found in `require.cache`,
   // or null — never required (header).
+  /**
+   * Returns `authn/authn` as it is loaded in this process, found in
+   * `require.cache`; it is never required from here.
+   *
+   * @returns the module, or null when it is not loaded
+   */
   static loadedAuthn(): Json {
     helpers.log.debug("Entering Devices.loadedAuthn().");
     let id = '';
@@ -475,6 +539,12 @@ class Devices {
 
   // The SHA-256 a secret is kept as. A device_secret is 256 random bits, so
   // a fast hash is enough — there is nothing to guess.
+  /**
+   * Returns the SHA-256 a device secret is kept as.
+   *
+   * @param secret - the secret
+   * @returns the hash
+   */
   static hashOf(secret: unknown): string {
     helpers.log.debug("Entering Devices.hashOf().");
     helpers.log.debug("Leaving Devices.hashOf().");
@@ -578,6 +648,15 @@ class Devices {
   // The device's attestation level, from its keys: attested when any key's
   // attestation was verified, self-asserted otherwise (decision 7) — and
   // `bearer` for a remembered browser that holds no key at all (#265).
+  /**
+   * Returns a device's attestation level from its keys.
+   *
+   * @param keys - the device's keys
+   * @param rememberedBrowser - true for a remembered browser, which is
+   *   `bearer` while it holds no key
+   * @returns `attested` when any key's attestation verified, `bearer` for a
+   *   keyless remembered browser, `self-asserted` otherwise
+   */
   static levelOf(keys: DeviceKey[], rememberedBrowser?: boolean): string {
     helpers.log.debug("Entering Devices.levelOf().");
     const attested = (keys || []).some(function (k) {
@@ -688,6 +767,11 @@ class Devices {
   }
 
   // This realm's events, oldest first.
+  /**
+   * Returns this realm's device events, oldest first.
+   *
+   * @returns the events
+   */
   events(): Json[] {
     const { log } = this.deps;
     log.debug("Entering Devices.events().");
@@ -707,6 +791,14 @@ class Devices {
   // change (#164 phase 3) is counted by its SOURCE — admin, mdm,
   // test-control, caep — in each row's `compliance` and in the totals', which
   // is what "compliance changes over time by source" reads.
+  /**
+   * Returns the events of the last `days` UTC days, one row per day oldest
+   * first, and the totals over every event this realm holds; compliance
+   * changes are counted by source.
+   *
+   * @param days - how many days
+   * @returns `{ days, rows, totals, since }`
+   */
   timeline(days?: number): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.timeline().");
@@ -751,6 +843,11 @@ class Devices {
   }
 
   // One counter per compliance source, at zero.
+  /**
+   * Returns one counter per compliance source, at zero.
+   *
+   * @returns the counters
+   */
   static zeroSources(): Json {
     helpers.log.debug("Entering Devices.zeroSources().");
     const out: Json = {};
@@ -762,6 +859,11 @@ class Devices {
   }
 
   // Every device in the realm.
+  /**
+   * Returns every device in the realm.
+   *
+   * @returns the devices
+   */
   all(): Device[] {
     const { log } = this.deps;
     log.debug("Entering Devices.all().");
@@ -771,6 +873,14 @@ class Devices {
     return out;
   }
 
+  /**
+   * Says whether two DNs are the same, ignoring case and the spaces around
+   * commas.
+   *
+   * @param a - one DN
+   * @param b - the other
+   * @returns true when they match and the first is not empty
+   */
   static sameDn(a: string, b: string): boolean {
     helpers.log.debug("Entering Devices.sameDn().");
     const norm = function (dn: string): string {
@@ -787,6 +897,12 @@ class Devices {
   }
 
   // An owner's devices, most recently used first. [] for no owner.
+  /**
+   * Returns an owner's devices, most recently used first.
+   *
+   * @param ownerDn - the owner's DN
+   * @returns the devices, empty for no owner
+   */
   listForOwner(ownerDn: unknown): Device[] {
     const { log } = this.deps;
     log.debug("Entering Devices.listForOwner().");
@@ -799,6 +915,12 @@ class Devices {
   }
 
   // A person's devices, most recently used first. [] for nobody.
+  /**
+   * Returns a person's devices, most recently used first.
+   *
+   * @param username - the person
+   * @returns the devices, empty for nobody
+   */
   listFor(username: unknown): Device[] {
     const { log } = this.deps;
     log.debug("Entering Devices.listFor(). user=" + username);
@@ -826,6 +948,16 @@ class Devices {
   // misspelt `compliance=complaint` answering the whole register would read
   // as "every device is complaint".
   // -------------------------------------------------------------------------
+  /**
+   * Returns the realm's devices, filtered, most recently used first.
+   *
+   * Every member of the filter is optional and they are ANDed; a value
+   * outside a closed list matches nothing.
+   * @param filter - `owner`, `application`, `compliance`, `attestation`,
+   *   `keyKind`, `status` and `q` (a substring of the id, label, owner, a
+   *   key's thumbprint or label, the platform, model or OS)
+   * @returns the matching devices
+   */
   list(filter?: Json): Device[] {
     const { log } = this.deps;
     log.debug("Entering Devices.list().");
@@ -885,6 +1017,14 @@ class Devices {
   // One page of `list(filter)`: `page` from 1, `per` rows, the page clamped
   // to the last one — the console's `pagingOf()` rule, for a caller without
   // the console (a test, a later phase's job).
+  /**
+   * Returns one page of `list(filter)`, the page clamped to the last one.
+   *
+   * @param filter - as for `list()`
+   * @param page - the page, from 1
+   * @param per - rows per page
+   * @returns `{ rows, total, page, pages, perPage }`
+   */
   page(filter: Json, page?: unknown, per?: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.page().");
@@ -899,6 +1039,13 @@ class Devices {
 
   // The kinds of key a device can be recognised by — its keys' kinds, and
   // `native-sso` while it holds a secret.
+  /**
+   * Returns the kinds of key a device can be recognised by: its keys' kinds,
+   * and `native-sso` while it holds a secret.
+   *
+   * @param device - the device
+   * @returns the kinds
+   */
   static keyKindsOf(device: Device): string[] {
     helpers.log.debug("Entering Devices.keyKindsOf().");
     const out: string[] = [];
@@ -939,6 +1086,12 @@ class Devices {
     return found && test(found) ? found : null;
   }
 
+  /**
+   * Returns the device with this id.
+   *
+   * @param id - the device's id
+   * @returns the device, or null
+   */
   byId(id: unknown): Device | null {
     const { log } = this.deps;
     log.debug("Entering Devices.byId().");
@@ -953,6 +1106,14 @@ class Devices {
   // The device a key thumbprint belongs to, or null — what phase 2's
   // recognition asks. `kind` narrows it where the caller knows it; without
   // it each kind's index value is asked in turn.
+  /**
+   * Returns the device a key thumbprint belongs to.
+   *
+   * @param thumbprint - the key's thumbprint
+   * @param kind - the key's kind, where the caller knows it; otherwise each
+   *   kind is asked in turn
+   * @returns the device, or null
+   */
   byKeyThumbprint(thumbprint: unknown, kind?: unknown): Device | null {
     const { log } = this.deps;
     log.debug("Entering Devices.byKeyThumbprint().");
@@ -978,6 +1139,12 @@ class Devices {
   // The device a linked WebAuthn credential id belongs to, or null — what
   // recognition asks at a sign-in, where the assertion names its credential
   // by id (phase 2).
+  /**
+   * Returns the device a linked WebAuthn credential id belongs to.
+   *
+   * @param credentialId - the credential id
+   * @returns the device, or null
+   */
   byCredentialId(credentialId: unknown): Device | null {
     const { log } = this.deps;
     log.debug("Entering Devices.byCredentialId().");
@@ -1004,6 +1171,13 @@ class Devices {
   // still names this owner. A compromised device counts — the person still
   // registered one, and a sign-in from elsewhere is still not from it.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether a person owns any device at all; a compromised device
+   * counts.
+   *
+   * @param username - the person
+   * @returns true when at least one device names them as owner
+   */
   holdsAny(username: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering Devices.holdsAny().");
@@ -1021,6 +1195,16 @@ class Devices {
   // `devices.lastUsedResolutionSeconds` unless an application is new to it,
   // so a busy device is not a directory write on every token request.
   // Answers whether anything was written.
+  /**
+   * Moves a recognised device's last use and links the application it was
+   * recognised for.
+   *
+   * Written at most once per `devices.lastUsedResolutionSeconds` unless the
+   * application is new to the device.
+   * @param device - the device
+   * @param clientId - the application it was recognised for
+   * @returns whether anything was written
+   */
   noteRecognized(device: Device, clientId?: unknown): boolean {
     const { log, config } = this.deps;
     log.debug("Entering Devices.noteRecognized(). id=" + device.id);
@@ -1041,6 +1225,13 @@ class Devices {
   }
 
   // The device a secret belongs to, or null — compared in constant time.
+  /**
+   * Returns the device a Native SSO device secret belongs to, compared in
+   * constant time.
+   *
+   * @param secret - the device secret
+   * @returns the device, or null
+   */
   bySecret(secret: unknown): Device | null {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering Devices.bySecret().");
@@ -1063,6 +1254,13 @@ class Devices {
 
   // Who owns a DN: { kind, name, dn }, or null where the directory holds no
   // person or application entry there.
+  /**
+   * Says who owns a DN.
+   *
+   * @param dn - the owner's DN
+   * @returns `{ kind, name, dn }`, or null where the directory holds no person
+   *   or application entry there
+   */
   ownerOf(dn: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.ownerOf().");
@@ -1182,6 +1380,13 @@ class Devices {
   }
 
   // A key's CAEP credential-change members: its type and what identifies it.
+  /**
+   * Returns a key's CAEP credential-change members: its credential type and
+   * what identifies it.
+   *
+   * @param key - the device key
+   * @returns the members
+   */
   static credentialOf(key: DeviceKey): Json {
     helpers.log.debug("Entering Devices.credentialOf(). " + key.kind);
     const m = key.material || {};
@@ -1358,6 +1563,18 @@ class Devices {
   // there was none ("the Receiver MUST assume that the previous risk level
   // is unknown").
   // =========================================================================
+  /**
+   * Sets a device's risk level, sending CAEP risk-level-change with
+   * principal DEVICE when the level moved.
+   *
+   * @param id - the device's id
+   * @param level - `LOW`, `MEDIUM` or `HIGH`, or empty to forget the
+   *   assessment (which sends nothing)
+   * @param reason - CAEP's `risk_reason`
+   * @param options - `source` (`risk` by default, `compromise` or `admin`),
+   *   `actor` and `initiatingEntity`
+   * @returns `{ ok, device, previous, level, changed }`, or a refusal
+   */
   setRiskLevel(id: unknown, level: unknown, reason?: unknown,
                options?: Json): Json {
     const { log } = this.deps;
@@ -1438,6 +1655,14 @@ class Devices {
   // clientId, sessionId, presented, label, isLive(sessionId) }. Returns
   // { ok, secret, device, reused } or { ok: false, error }.
   // -------------------------------------------------------------------------
+  /**
+   * Issues the first app's device secret for a Native SSO grant, binding a
+   * device to the session.
+   *
+   * @param spec - `username`, `clientId`, `sessionId`, `presented`, `label`
+   *   and `isLive(sessionId)`
+   * @returns `{ ok, secret, device, reused }`, or `{ ok: false, error }`
+   */
   issueForSession(spec: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.issueForSession(). user=" + spec.username);
@@ -1537,6 +1762,13 @@ class Devices {
   // every time the token it holds is issued again. Nothing here interprets
   // it; that module owns what a generation means.
   // -------------------------------------------------------------------------
+  /**
+   * Writes a remembered browser's state, as `browser_devices.ts` gives it.
+   *
+   * @param id - the device's id
+   * @param state - the state, uninterpreted here
+   * @returns whether it was written
+   */
   setBrowserState(id: unknown, state: Json): boolean {
     const { log } = this.deps;
     log.debug("Entering Devices.setBrowserState().");
@@ -1553,6 +1785,12 @@ class Devices {
   }
 
   // A device a second app has used (the Native SSO exchange).
+  /**
+   * Records that a second app used a device (the Native SSO exchange).
+   *
+   * @param device - the device
+   * @param clientId - the application that used it
+   */
   noteUse(device: Device, clientId: unknown): void {
     const { log } = this.deps;
     log.debug("Entering Devices.noteUse().");
@@ -1564,6 +1802,14 @@ class Devices {
 
   // RFC 7009 for a device_secret (#130): the secret stops being accepted;
   // the device stays. True when there was one to revoke.
+  /**
+   * Revokes a device secret (RFC 7009): the secret stops being accepted and
+   * the device stays.
+   *
+   * @param secret - the device secret
+   * @param options - who acted, for the audit row and signals
+   * @returns true when there was one to revoke
+   */
   revokeSecret(secret: unknown, options?: ActOptions): boolean {
     const { log } = this.deps;
     log.debug("Entering Devices.revokeSecret().");
@@ -1639,6 +1885,12 @@ class Devices {
   }
 
   // "a, b and c" — the list shape the parity tests read out of a refusal.
+  /**
+   * Joins a list as "a, b and c".
+   *
+   * @param list - the items
+   * @returns the sentence
+   */
   static sentence(list: string[]): string {
     helpers.log.debug("Entering Devices.sentence().");
     helpers.log.debug("Leaving Devices.sentence().");
@@ -1896,6 +2148,15 @@ class Devices {
   // `spec` is { label, ownerKind, owner, platform, model, os, applications,
   // keys: [keySpec], method }. Answers { ok, device } or a refusal.
   // -------------------------------------------------------------------------
+  /**
+   * Registers a device.
+   *
+   * @param spec - `label`, `ownerKind`, `owner`, `platform`, `model`, `os`,
+   *   `applications`, `keys` and `method`
+   * @param actor - who did it
+   * @param options - who acted, for the audit row and signals
+   * @returns `{ ok, device }`, or a refusal
+   */
   create(spec: Json, actor?: unknown, options?: ActOptions): Json {
     const { log, config } = this.deps;
     log.debug("Entering Devices.create().");
@@ -1998,6 +2259,16 @@ class Devices {
   // A new owner is held to its own bound, and takes the device WITHOUT its
   // Native SSO secret (header).
   // -------------------------------------------------------------------------
+  /**
+   * Changes a device's label, owner, platform, model, OS or applications.
+   *
+   * A new owner is held to its own bound and takes the device without its
+   * Native SSO secret.
+   * @param id - the device's id
+   * @param changes - the fields to change
+   * @param actor - who did it
+   * @returns `{ ok, device, … }`, or a refusal
+   */
   update(id: unknown, changes: Json, actor?: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.update().");
@@ -2080,6 +2351,17 @@ class Devices {
   // credential-change and, for a person's device, RISC sessions-revoked.
   // `options.quiet` removes it and nothing else (a device `cert_enrollment`
   // created for an issuance that then failed).
+  /**
+   * Removes a device and everything that follows from it: its certificates
+   * revoked, the sessions it authenticated ended, and the CAEP and RISC
+   * signals.
+   *
+   * @param id - the device's id
+   * @param username - the owner, when a person removes their own
+   * @param actor - who did it
+   * @param options - `quiet` removes it and nothing else
+   * @returns `{ ok, removed, … }`, or a refusal
+   */
   remove(id: unknown, username?: unknown, actor?: unknown,
          options?: ActOptions): Json {
     const { log } = this.deps;
@@ -2121,6 +2403,16 @@ class Devices {
   // Adds one key to a device. `options.renewal` says the key replaces one
   // `removeKey()` just took off for a certificate re-issue, which is a
   // credential-change `update` rather than a `create`.
+  /**
+   * Adds one key to a device.
+   *
+   * @param id - the device's id
+   * @param spec - the key
+   * @param actor - who did it
+   * @param options - `renewal` when the key replaces one just removed for a
+   *   certificate re-issue
+   * @returns `{ ok, key, device, … }`, or a refusal
+   */
   addKey(id: unknown, spec: Json, actor?: unknown,
          options?: ActOptions): Json {
     const { log, config } = this.deps;
@@ -2178,6 +2470,17 @@ class Devices {
   // `superseded` for a re-issue (`options.renewal`, which also sends no
   // signal: `addKey()` sends the one `update`), cessationOfOperation
   // otherwise.
+  /**
+   * Removes one key from a device, by its id or thumbprint, revoking a
+   * certificate this service issued for it.
+   *
+   * @param id - the device's id
+   * @param keyId - the key's id or thumbprint
+   * @param actor - who did it
+   * @param options - `renewal` for a re-issue: revoked `superseded` and no
+   *   signal sent
+   * @returns `{ ok, device, removed, … }`, or a refusal
+   */
   removeKey(id: unknown, keyId: unknown, actor?: unknown,
             options?: ActOptions): Json {
     const { log } = this.deps;
@@ -2246,6 +2549,18 @@ class Devices {
   // happen. `initiating_entity` is the source's (COMPLIANCE_INITIATORS);
   // `reason_admin` is the reason given, or a sentence naming the source.
   // -------------------------------------------------------------------------
+  /**
+   * Sets a device's compliance and sends CAEP device-compliance-change when
+   * the status a receiver can be told moved (`unknown` is sent as
+   * `not-compliant`).
+   *
+   * @param id - the device's id
+   * @param status - `compliant`, `not-compliant` or `unknown`
+   * @param source - `admin`, `mdm`, `test-control` or `caep`
+   * @param actor - who did it
+   * @param reason - why, for `reason_admin`
+   * @returns `{ ok, device, previous, status, … }`, or a refusal
+   */
   setCompliance(id: unknown, status: unknown, source: unknown,
                 actor?: unknown, reason?: unknown): Json {
     const { log } = this.deps;
@@ -2348,6 +2663,20 @@ class Devices {
   // back: a revoked certificate is re-issued, a secret re-minted at the next
   // sign-in.
   // -------------------------------------------------------------------------
+  /**
+   * Marks a device compromised or restores it to active.
+   *
+   * Compromised revokes its secret and certificates, ends the sessions its
+   * keys authenticated, raises its risk level to HIGH and sends CAEP and
+   * RISC; the device stays in the register. Restoring undoes only the risk
+   * level the compromise set.
+   * @param id - the device's id
+   * @param status - `active` or `compromised`
+   * @param actor - who did it
+   * @param reason - why
+   * @param options - who acted, for the audit row and signals
+   * @returns `{ ok, device, … }`, or a refusal
+   */
   setStatus(id: unknown, status: unknown, actor?: unknown,
             reason?: unknown, options?: ActOptions): Json {
     const { log } = this.deps;
@@ -2455,6 +2784,13 @@ class Devices {
   // THE COUNTS Monitoring → Devices draws. `isLive(device)` says whether a
   // device's Native SSO secret is bound to a live session.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the counts Monitoring → Devices draws.
+   *
+   * @param isLive - whether a device's Native SSO secret is bound to a live
+   *   session
+   * @returns the counts
+   */
   counts(isLive?: (device: Device) => boolean): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.counts().");
@@ -2516,6 +2852,14 @@ class Devices {
 
   // What a page or the API shows of a device: never the hash, never the
   // session id. `isLive(session)` is asked about the secret's session.
+  /**
+   * Returns what a page or the API shows of a device: never the hash, never
+   * the session id.
+   *
+   * @param device - the device
+   * @param isLive - whether the secret's session is live
+   * @returns the view
+   */
   static view(device: Device, isLive?: (session: string) => boolean): Json {
     helpers.log.debug("Entering Devices.view().");
     const attestedBy = device.keys.filter(function (k) {
@@ -2565,6 +2909,10 @@ class Devices {
   // THE SCHEMA, for `/admin/ldap/devices` — the object classes and every
   // attribute, as the other container pages publish theirs.
   // -------------------------------------------------------------------------
+  /**
+   * The object classes and attributes of a device entry, for
+   * `/admin/ldap/devices`.
+   */
   static readonly SCHEMA = {
     objectClasses: [
       { name: 'device', where: 'RFC 4519 section 3.4', standard: true,
@@ -2649,9 +2997,26 @@ const slot = new InstanceSlot<Devices>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The device register: devices as directory entries under `ou=devices`.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   Devices: Devices,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: Devices): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   hashOf: Devices.hashOf,
   view: Devices.view,

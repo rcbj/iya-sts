@@ -82,17 +82,34 @@ interface SpiffePeerDeps {
   loadAddon(): any;
 }
 
+/**
+ * Who is on the other end of the Workload API's Unix socket: the kernel's peer
+ * credentials and a pidfd, kept per connection.
+ *
+ * Uses the `native/peercred.node` addon; without it workload attestation cannot
+ * run.
+ */
 class SpiffePeer {
   private addon: any = undefined;
   private addonProblem = '';
   private readonly connections = new Map<string, PeerFacts>();
   private counter = 0;
 
+  /**
+   * Builds the tracker over its dependencies.
+   *
+   * @param deps - the logger, file system, configuration and the addon loader
+   */
   constructor(private readonly deps: SpiffePeerDeps) {
     deps.log.debug("Entering SpiffePeer.constructor().");
     deps.log.debug("Leaving SpiffePeer.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service builds the tracker with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SpiffePeerDeps {
     helpers.log.debug("Entering SpiffePeer.defaultDeps().");
     helpers.log.debug("Leaving SpiffePeer.defaultDeps().");
@@ -105,6 +122,11 @@ class SpiffePeer {
   }
 
   // The native module, loaded once; null when it is not there.
+  /**
+   * Returns the native module, loaded once.
+   *
+   * @returns the addon, or null when it is not there
+   */
   native(): any {
     const { log, loadAddon } = this.deps;
     log.debug("Entering SpiffePeer.native().");
@@ -129,6 +151,11 @@ class SpiffePeer {
   }
 
   // Whether workload attestation can run here, and why not when it cannot.
+  /**
+   * Reports whether workload attestation can run here.
+   *
+   * @returns `available`, and `problem`: why not when it cannot
+   */
   availability(): { available: boolean; problem: string } {
     const { log } = this.deps;
     log.debug("Entering SpiffePeer.availability().");
@@ -137,6 +164,11 @@ class SpiffePeer {
     return { available: !!native, problem: native ? '' : this.addonProblem };
   }
 
+  /**
+   * Returns where /proc is, from `spiffe.workloadProcRoot`.
+   *
+   * @returns the path
+   */
   procRoot(): string {
     const { log, config } = this.deps;
     log.debug("Entering SpiffePeer.procRoot().");
@@ -145,6 +177,13 @@ class SpiffePeer {
   }
 
   // A process's start time (field 22 of /proc/<pid>/stat), or ''.
+  /**
+   * Reads a process's start time, field 22 of /proc/<pid>/stat.
+   *
+   * @param procRoot - the proc file system's root
+   * @param pid - the process id
+   * @returns the start time, or ''
+   */
   starttimeOf(procRoot: string, pid: number): string {
     const { log, fs } = this.deps;
     log.debug("Entering SpiffePeer.starttimeOf(). pid=" + pid);
@@ -164,6 +203,13 @@ class SpiffePeer {
   }
 
   // The executable's device and inode, or zeros.
+  /**
+   * Reads the device and inode of a process's executable.
+   *
+   * @param procRoot - the proc file system's root
+   * @param pid - the process id
+   * @returns the device and inode, or zeros
+   */
   exeOf(procRoot: string, pid: number): { dev: number; ino: number } {
     const { log, fs } = this.deps;
     log.debug("Entering SpiffePeer.exeOf(). pid=" + pid);
@@ -180,6 +226,15 @@ class SpiffePeer {
 
   // AT ACCEPT: what the kernel says about the socket's peer. Never throws; a
   // failure is `facts.error`, and the connection's calls are refused with it.
+  /**
+   * Records at accept what the kernel says about a socket's peer: its
+   * credentials, a pidfd, the start time and the executable inode.
+   *
+   * Never throws; a failure is `facts.error`, and the connection's calls are
+   * refused with it.
+   * @param socket - the accepted Unix socket
+   * @returns the facts, kept in the connection table under their tag
+   */
   observe(socket: any): PeerFacts {
     const { log } = this.deps;
     log.debug("Entering SpiffePeer.observe().");
@@ -242,6 +297,14 @@ class SpiffePeer {
   // run (no native module, a /proc entry that cannot be read);
   // `facts.missing` when no such process exists, which the Broker API
   // answers NOT_FOUND.
+  /**
+   * Records the same facts as `observe()` from a pid rather than a socket, for
+   * a Broker API reference; they are not kept in the connection table.
+   *
+   * @param pid - the process id
+   * @returns the facts; `error` when attestation cannot run, `missing` when no
+   *   such process exists
+   */
   observePid(pid: number): PeerFacts & { missing?: boolean } {
     const { log, fs } = this.deps;
     log.debug("Entering SpiffePeer.observePid(). pid=" + pid);
@@ -288,6 +351,11 @@ class SpiffePeer {
   }
 
   // The pidfd `observePid()` opened, closed.
+  /**
+   * Closes the pidfd `observePid()` opened.
+   *
+   * @param facts - the facts it returned
+   */
   release(facts: PeerFacts): void {
     const { log } = this.deps;
     log.debug("Entering SpiffePeer.release().");
@@ -300,6 +368,13 @@ class SpiffePeer {
 
   // ON EVERY CALL: '' when `facts` still describe the process holding the
   // connection, otherwise why not.
+  /**
+   * Checks on every call whether the facts still describe the process holding
+   * the connection: the pidfd live, the start time and executable unchanged.
+   *
+   * @param facts - the connection's facts
+   * @returns '' when they do, otherwise why not
+   */
   stillValid(facts: PeerFacts): string {
     const { log } = this.deps;
     log.debug("Entering SpiffePeer.stillValid(). " + facts.tag);
@@ -327,6 +402,12 @@ class SpiffePeer {
   }
 
   // The facts for a call's peer string (`unix:attested-7:7`), or null.
+  /**
+   * Returns the facts for a call's peer string, such as `unix:attested-7:7`.
+   *
+   * @param peer - the gRPC peer string
+   * @returns the facts, or null
+   */
   factsFor(peer: string): PeerFacts | null {
     const { log } = this.deps;
     log.debug("Entering SpiffePeer.factsFor().");
@@ -336,6 +417,11 @@ class SpiffePeer {
   }
 
   // When the connection closes.
+  /**
+   * Forgets a connection's facts when it closes, closing its pidfd.
+   *
+   * @param tag - the connection's tag
+   */
   forget(tag: string): void {
     const { log } = this.deps;
     log.debug("Entering SpiffePeer.forget(). " + tag);
@@ -348,6 +434,11 @@ class SpiffePeer {
   }
 
   // What the pages draw.
+  /**
+   * Describes the native module and the open connections for the pages.
+   *
+   * @returns `nativeModule`, `problem` and one row per connection
+   */
   state() {
     const { log } = this.deps;
     log.debug("Entering SpiffePeer.state().");
@@ -366,8 +457,16 @@ class SpiffePeer {
   }
 }
 
+/**
+ * The one tracker the service uses; the module's functions forward to it.
+ */
 const shared = new SpiffePeer(SpiffePeer.defaultDeps());
 
+/**
+ * The Workload API socket's peers (#40): SO_PEERCRED and a pidfd per
+ * connection, revalidated on every call.
+ * @namespace
+ */
 export = {
   SpiffePeer: SpiffePeer,
   shared: shared,

@@ -129,15 +129,46 @@ const GROUP_MEMBER_ATTRIBUTES = ['member', 'uniquemember', 'memberuid'];
 // withheld from a visible entry — and the filter needs it for `(entryDN=...)`.
 const ALWAYS_WITH_THE_ENTRY = ['entrydn'];
 
+/**
+ * Who may read what over the directory's own socket: a pure rule table that
+ * answers whether an entry is visible to a reader and which of its attributes
+ * are readable.
+ *
+ * It reads no store, setting or clock. An invisible entry is treated as absent,
+ * not refused; credentials are withheld separately by `ldap_server.js`.
+ */
 export = class DirectoryReadPolicy {
+  /**
+   * The attributes of a container a non-administrator may read: its naming
+   * attributes.
+   */
   static readonly CONTAINER_ATTRIBUTES = CONTAINER_ATTRIBUTES;
+  /**
+   * The attributes of a group a direct member may read: `objectClass`, `cn` and
+   * `description`.
+   */
   static readonly GROUP_ATTRIBUTES = GROUP_ATTRIBUTES;
+  /**
+   * The membership attributes, readable on a group only with
+   * `ldap.groupMembersReadable`.
+   */
   static readonly GROUP_MEMBER_ATTRIBUTES = GROUP_MEMBER_ATTRIBUTES;
 
   // Does this reader see this entry at all? Asked once per entry in scope of a
   // search, before its filter, so no Entering/Leaving pair — a subtree search
   // of a large directory would drown the log in them (the hot-path exception
   // the code style allows, stated here as it requires).
+  /**
+   * Says whether a reader sees an entry at all: an administrator or an
+   * unrestricted reader sees everything; anybody sees a CRL distribution point;
+   * anybody bound sees their own entry and the containers; a person sees
+   * another person only when `ldap.directoryReadableAttributes` names
+   * something, and a group only as a direct member.
+   *
+   * @param reader - who is asking
+   * @param entry - what the entry is
+   * @returns true when it is visible
+   */
   static visible(reader: DirectoryReader, entry: DirectoryEntryFacts)
       : boolean {
     if (reader.kind === 'unrestricted' || reader.kind === 'administrator') {
@@ -170,6 +201,13 @@ export = class DirectoryReadPolicy {
   // Which attributes of a VISIBLE entry this reader may read. Asked once per
   // entry, for the hot-path reason above; the answer is then asked per
   // attribute through `readable()`.
+  /**
+   * Returns which attributes of a visible entry a reader may read.
+   *
+   * @param reader - who is asking
+   * @param entry - what the entry is
+   * @returns `{ all, names }`: every attribute, or the lower-cased names
+   */
   static attributeRule(reader: DirectoryReader, entry: DirectoryEntryFacts)
       : AttributeRule {
     if (reader.kind === 'unrestricted' || reader.kind === 'administrator' ||
@@ -198,6 +236,14 @@ export = class DirectoryReadPolicy {
   // Is one attribute readable under a rule? Case-insensitive, and an RFC 4522
   // `;binary` option is the attribute it options. Asked per attribute per
   // entry: the hot-path exception above.
+  /**
+   * Says whether one attribute is readable under a rule, case-insensitively,
+   * reading an RFC 4522 `;binary` option as the attribute it options.
+   *
+   * @param rule - the entry's attribute rule
+   * @param name - the attribute's name
+   * @returns true when it is readable
+   */
   static readable(rule: AttributeRule, name: string): boolean {
     if (rule.all) {
       return true;

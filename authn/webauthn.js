@@ -182,6 +182,14 @@ function cborRead(buf, offset, depth) {
   log.debug('Leaving cborRead().');
 }
 
+/**
+ * Decodes the first CBOR data item in a buffer (definite lengths only).
+ *
+ * @param buf - the bytes
+ * @param offset - where the item starts; 0 when omitted
+ * @returns a pair of the decoded value and the offset just past it
+ * @throws when the bytes are not CBOR this reader decodes
+ */
 function cborDecodeFirst(buf, offset) {
   log.debug("Entering cborDecodeFirst().");
   log.debug("Leaving cborDecodeFirst().");
@@ -190,6 +198,9 @@ function cborDecodeFirst(buf, offset) {
 
 // --- COSE_Key -> JWK ----------------------------------------------------------
 
+/**
+ * COSE elliptic curve identifiers mapped to their JOSE curve names.
+ */
 const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519' };
 // PS256/384/512 are RFC 8230's RSASSA-PSS, which TPM authenticators commonly
 // use (#105). ML-DSA-44/65/87 are RFC 9964's (published May 2026 from
@@ -198,6 +209,10 @@ const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519' };
 // `verifyCoseSignature()`, so a copy of this file loaded ON ITS OWN (see the
 // header) recognises them and refuses their signatures rather than
 // misreading them — it has no RSASSA-PSS salt rule and no ML-DSA.
+/**
+ * The COSE algorithm identifiers this relying party accepts, mapped to their
+ * JOSE names (ECDSA, EdDSA, RSASSA-PKCS1-v1_5, RSASSA-PSS and ML-DSA).
+ */
 const COSE_ALGS = {
   '-7': 'ES256', '-35': 'ES384', '-36': 'ES512', '-8': 'EdDSA',
   '-257': 'RS256', '-258': 'RS384', '-259': 'RS512',
@@ -205,6 +220,9 @@ const COSE_ALGS = {
   '-48': 'ML-DSA-44', '-49': 'ML-DSA-65', '-50': 'ML-DSA-87',
 };
 // COSE key type AKP (RFC 9964 section 4) and its `pub` label.
+/**
+ * The COSE key type AKP (RFC 9964), which an ML-DSA key has.
+ */
 const COSE_KTY_AKP = 7;
 // The hash each classical algorithm signs with, for the standalone path.
 const STANDALONE_HASHES = {
@@ -213,6 +231,10 @@ const STANDALONE_HASHES = {
 };
 // WebAuthn Level 3 section 7.1: a credential id longer than this SHOULD fail
 // the registration, and here it does.
+/**
+ * The longest credential id a registration accepts (WebAuthn Level 3,
+ * section 7.1).
+ */
 const MAX_CREDENTIAL_ID_BYTES = 1023;
 
 // base64url, from common/crypto.js — see the note beside helpers.js's. This
@@ -225,6 +247,14 @@ function b64uStandalone(buf) {
 
 const b64u = stsCrypto ? stsCrypto.b64u : b64uStandalone;
 
+/**
+ * Converts a COSE_Key map to a JWK, carrying the key's algorithm on it.
+ *
+ * @param coseKey - the decoded COSE_Key, a Map
+ * @returns the JWK, the JOSE algorithm name (or null) and the COSE `alg`
+ * @throws when the value is not a COSE_Key or its key type or curve is not
+ * supported
+ */
 function coseKeyToJwk(coseKey) {
   log.debug('Entering coseKeyToJwk().');
   if (!(coseKey instanceof Map)) {
@@ -276,6 +306,14 @@ function coseKeyToJwk(coseKey) {
 
 // --- authenticator data --------------------------------------------------------
 
+/**
+ * Parses authenticator data: the RP ID hash, the flags, the signature
+ * counter, and the attested credential data and extensions when present.
+ *
+ * @param buf - the raw authenticator data
+ * @returns the parsed fields, with the credential public key still as CBOR
+ * @throws when the data is too short or its lengths run past the end
+ */
 function parseAuthenticatorData(buf) {
   log.debug('Entering parseAuthenticatorData(). bytes=' + buf.length);
   if (buf.length < 37) {
@@ -373,6 +411,14 @@ function collect() {
 // carries one, and otherwise what a key stored before #105 was always checked
 // with — SHA-256 for RSA and P-256, the curve's own hash for P-384 and P-521
 // (which the old code got wrong), EdDSA for an OKP key.
+/**
+ * Returns the COSE algorithm a stored JWK is checked with.
+ *
+ * The JWK's own `alg` where it carries one; otherwise the algorithm implied
+ * by its key type and curve, as for a key stored before #105.
+ * @param jwk - the stored public key
+ * @returns the COSE algorithm identifier
+ */
 function coseAlgOfJwk(jwk) {
   log.debug("Entering coseAlgOfJwk().");
   const j = jwk || {};
@@ -455,6 +501,23 @@ function plainOf(value) {
   return value;
 }
 
+/**
+ * Verifies a registration ceremony (WebAuthn section 7.1), apart from the
+ * attestation statement.
+ *
+ * Checks the client data type, challenge and origin, the RP ID hash, user
+ * presence (and verification when required), the attested credential data,
+ * the backup flags, the offered algorithms and the credential id's length.
+ * The attestation statement is returned for
+ * `authn/webauthn_attestation.ts` to verify.
+ * @param input - `attestationObject` and `clientDataJSON` (base64url),
+ * `expectedChallenge`, `expectedOrigin`, `expectedRpId`, and optionally
+ * `requireUserVerification` and `expectedAlgorithms`
+ * @returns `ok`, every check with its result, the credential id, public key
+ * JWK, algorithm, signature counter, flags and the attestation inputs
+ * @throws when the attestation object or authenticator data cannot be
+ * decoded
+ */
 function verifyRegistration(input) {
   log.debug('Entering verifyRegistration().');
   const c = collect();
@@ -549,6 +612,21 @@ function verifyRegistration(input) {
   return result;
 }
 
+/**
+ * Verifies an authentication assertion (WebAuthn section 7.2).
+ *
+ * Checks the client data type, challenge and origin, the RP ID hash, user
+ * presence (and verification when required), that the signature counter
+ * advanced when a previous one is given, and the signature over the
+ * authenticator data and the client data hash.
+ * @param input - `authenticatorData`, `clientDataJSON` and `signature`
+ * (base64url), `publicKeyJwk`, `expectedChallenge`, `expectedOrigin`,
+ * `expectedRpId`, and optionally `requireUserVerification` and
+ * `previousSignCount`
+ * @returns `ok`, every check with its result, whether the signature is
+ * valid, the signature counter and the flags
+ * @throws when the authenticator data cannot be parsed
+ */
 function verifyAssertion(input) {
   log.debug('Entering verifyAssertion().');
   const c = collect();
@@ -617,6 +695,14 @@ function verifyAssertion(input) {
   return result;
 }
 
+/**
+ * The relying party's server-side WebAuthn verification: registrations and
+ * assertions.
+ *
+ * Written independently of the debugger's own implementation and loadable
+ * on its own; the attestation statement is verified elsewhere.
+ * @namespace
+ */
 module.exports = {
   // The COSE tables, for `admin-ui/crypto_metadata.ts`, which reports what
   // this relying party will accept rather than keeping a second copy of it.

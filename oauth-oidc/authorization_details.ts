@@ -167,9 +167,23 @@ const definitionCount = cacheRegistry.register({
 // two different request workers.
 const consented = realms.map({ persist: 'authorization_details.consented' });
 
+/**
+ * RFC 9396 rich authorization requests: the types applications declare, the
+ * parsing and checking of `authorization_details`, section 6's subset rule, the
+ * audience the details address, and the consent they need.
+ */
 class AuthorizationDetails {
+  /**
+   * Section 2.2's common data fields that are arrays of strings.
+   */
   static readonly COMMON_ARRAYS = COMMON_ARRAYS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the crypto module, application registry, settings, error
+   *   codes and logger
+   */
   constructor(private readonly deps: AuthorizationDetailsDeps) {
     deps.log.debug("Entering AuthorizationDetails.constructor().");
     deps.log.debug("Leaving AuthorizationDetails.constructor().");
@@ -177,6 +191,11 @@ class AuthorizationDetails {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): AuthorizationDetailsDeps {
     helpers.log.debug("Entering AuthorizationDetails.defaultDeps().");
     helpers.log.debug("Leaving AuthorizationDetails.defaultDeps().");
@@ -248,6 +267,13 @@ class AuthorizationDetails {
   // declared by two applications is a configuration mistake answered by the
   // FIRST in identifier order, with a warning, so the answer does not depend on
   // the order the store happened to walk.
+  /**
+   * Returns the types this realm's applications declare, each with the
+   * application that declared it; an unusable or duplicate declaration is
+   * skipped with a warning.
+   *
+   * @returns type to definition
+   */
   declaredTypes(): Record<string, Json> {
     const { log, applications, errorCodes } = this.deps;
     const self = this;
@@ -319,6 +345,12 @@ class AuthorizationDetails {
 
   // The realm's `authorization_details_types_supported`: the built-in type and
   // every declared one, sorted so two processes publish the same document.
+  /**
+   * Returns the realm's `authorization_details_types_supported`: the built-in
+   * type and every declared one, sorted.
+   *
+   * @returns the type names
+   */
   typesSupported(): string[] {
     const { log, applications } = this.deps;
     log.debug("Entering AuthorizationDetails.typesSupported().");
@@ -409,6 +441,17 @@ class AuthorizationDetails {
   // whose `error` is the sentence for `invalid_authorization_details`. NEVER
   // throws.
   // -------------------------------------------------------------------------
+  /**
+   * Parses and checks one `authorization_details` value. Never throws.
+   *
+   * @param raw - JSON text or an array
+   * @param opts - `clientTypes` (the client's registered types, [] for any),
+   *   `profileTypes` (the selected authorization server's list, or null) and
+   *   `builtIn`, the `openid_credential` check
+   * @returns `{ ok: true, details: null }` when nothing was sent, `{ ok: true,
+   *   details, resolved }` when every detail passed, or a refusal whose `error`
+   *   is the sentence for `invalid_authorization_details`
+   */
   parse(raw: unknown, opts?: Json): Json {
     const { log, config, applications, errorCodes } = this.deps;
     const self = this;
@@ -590,6 +633,14 @@ class AuthorizationDetails {
   // equal to the grant's. Members only the grant carries are fine — that is
   // what an ENRICHED detail (section 7) looks like, and a token request is not
   // expected to repeat what the server added.
+  /**
+   * Tells whether one granted detail covers one requested detail: the same
+   * type, each common array a subset, and every other requested member equal.
+   *
+   * @param granted - the granted detail
+   * @param requested - the requested detail
+   * @returns true when it is covered
+   */
   covers(granted: Json, requested: Json): boolean {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.covers().");
@@ -626,6 +677,14 @@ class AuthorizationDetails {
 
   // SECTION 6: a token request's details, against what the grant authorized.
   // As a sentence for `invalid_authorization_details`, or ''.
+  /**
+   * Checks a token request's details against what the grant authorized (section
+   * 6).
+   *
+   * @param requested - the token request's details
+   * @param granted - the grant's details
+   * @returns a sentence for `invalid_authorization_details`, or ''
+   */
   coveredProblem(requested: Json[], granted: Json): string {
     const { log } = this.deps;
     const self = this;
@@ -657,6 +716,15 @@ class AuthorizationDetails {
   // granted one covering it, which carries what the server added (OpenID4VCI's
   // `credential_identifiers`) and which the request is not expected to repeat.
   // Call it only after `coveredProblem()` answered ''.
+  /**
+   * Returns what a token carries for a covered subset: the requested details,
+   * with a built-in detail replaced by the granted one covering it. Call only
+   * after `coveredProblem()` answered ''.
+   *
+   * @param requested - the token request's details
+   * @param granted - the grant's details
+   * @returns the details for the token
+   */
   narrow(requested: Json[], granted: Json): Json[] {
     const { log, applications } = this.deps;
     const self = this;
@@ -688,6 +756,13 @@ class AuthorizationDetails {
   // credential endpoint. Details carried on a grant from before a definition
   // was removed resolve to nothing rather than throwing.
   // -------------------------------------------------------------------------
+  /**
+   * Tells which resource a set of details addresses, for
+   * `jwt_access_token.audiencePlan()`.
+   *
+   * @param details - the details
+   * @returns `{ resources, audiences, identifiers }`
+   */
   audienceFor(details: Json[]): Json {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.audienceFor().");
@@ -724,6 +799,13 @@ class AuthorizationDetails {
   // Whether a request's details need the consent screen: any detail of a type
   // an application declares. See the header for why `openid_credential` does
   // not.
+  /**
+   * Tells whether a request's details need the consent screen: any detail of a
+   * type an application declares.
+   *
+   * @param details - the details
+   * @returns true when consent is needed
+   */
   needsConsent(details: Json[]): boolean {
     const { log, applications } = this.deps;
     log.debug("Entering AuthorizationDetails.needsConsent().");
@@ -738,6 +820,13 @@ class AuthorizationDetails {
   // What the consent screen draws, one row per detail: the type, what the
   // resource said the type means, the resource, and every other member as it
   // was sent. Values are strings for the screen to escape.
+  /**
+   * Describes the details for the consent screen, one row per detail, with
+   * values as strings for the screen to escape.
+   *
+   * @param details - the details
+   * @returns the rows
+   */
   describe(details: Json[]): Json[] {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.describe().");
@@ -771,6 +860,13 @@ class AuthorizationDetails {
 
   // A SHA-256 of the canonical array, base64url. What Allow is recorded
   // against, so an Allow for one amount is not an Allow for another.
+  /**
+   * Returns a SHA-256 of the canonical details array, base64url, which Allow is
+   * recorded against.
+   *
+   * @param details - the details
+   * @returns the digest
+   */
   digestOf(details: Json[]): string {
     const { log, crypto } = this.deps;
     log.debug("Entering AuthorizationDetails.digestOf().");
@@ -798,6 +894,13 @@ class AuthorizationDetails {
   }
 
   // The person pressed Allow on these details for this client.
+  /**
+   * Records that a person pressed Allow on these details for this client.
+   *
+   * @param username - the person
+   * @param clientId - the client
+   * @param digest - `digestOf()` the details
+   */
   noteConsented(username: unknown, clientId: unknown, digest: unknown): void {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.noteConsented().");
@@ -814,6 +917,15 @@ class AuthorizationDetails {
 
   // Whether they did, SPENDING the answer: one Allow is one authorization
   // response. A second request carrying the same array asks again.
+  /**
+   * Tells whether the person allowed these details, spending the answer: one
+   * Allow is one authorization response.
+   *
+   * @param username - the person
+   * @param clientId - the client
+   * @param digest - `digestOf()` the details
+   * @returns true when an Allow was found and spent
+   */
   consumeConsented(username: unknown, clientId: unknown,
                    digest: unknown): boolean {
     const { log } = this.deps;
@@ -850,10 +962,29 @@ const slot = new InstanceSlot<AuthorizationDetails>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9396, OAuth 2.0 Rich Authorization Requests.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   AuthorizationDetails: AuthorizationDetails,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: AuthorizationDetails): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   COMMON_ARRAYS: AuthorizationDetails.COMMON_ARRAYS,
   declaredTypes: slot.forward('declaredTypes'),

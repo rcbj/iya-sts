@@ -103,6 +103,14 @@ interface CredentialChange {
   fido2Aaguid?: string;
 }
 
+/**
+ * Reports credential and account changes made at the console, the API and the
+ * portal as CAEP and RISC events, by handing them to a loaded `ssf/ssf.ts`.
+ *
+ * It never requires `ssf.ts`: it finds it in `require.cache`, and in a process
+ * that never loaded it every call resolves having sent nothing. Nothing here
+ * throws, and callers do not await the answer.
+ */
 class AccountSignals {
   // A security key, in CAEP's credential-type vocabulary. Since #145
   // (2026-09-22) a key's record keeps the authenticator attachment the
@@ -111,9 +119,18 @@ class AccountSignals {
   // enrolled before that date has no attachment recorded and stays
   // `fido2-roaming`, the reading that is true of every key this service's
   // ceremony enrolled by default.
+  /**
+   * CAEP's credential type for a roaming security key, `fido2-roaming`.
+   */
   static readonly KEY_CREDENTIAL_TYPE = 'fido2-roaming';
+  /**
+   * CAEP's credential type for a platform authenticator, `fido2-platform`.
+   */
   static readonly PLATFORM_KEY_CREDENTIAL_TYPE = 'fido2-platform';
   // An authenticator app, in the same vocabulary: CAEP's `app`.
+  /**
+   * CAEP's credential type for an authenticator app, `app`.
+   */
   static readonly TOTP_CREDENTIAL_TYPE = 'app';
   // -------------------------------------------------------------------------
   // THE PERSON-HELD CREDENTIALS CAEP 1.0 SECTION 3.3.1 HAS NO VALUE FOR
@@ -139,17 +156,38 @@ class AccountSignals {
   // RISC's `credential-compromise` takes the same values (RISC 1.0 section
   // 2.7 defines `credential_type` by reference to CAEP's).
   // -------------------------------------------------------------------------
+  /**
+   * This service's credential type for the emailed second factor.
+   */
   static readonly EMAIL_OTP_CREDENTIAL_TYPE =
     'urn:iya:sts:credential-type:email-otp';
+  /**
+   * This service's credential type for a SIOPv2 self-issued key.
+   */
   static readonly SELF_ISSUED_KEY_CREDENTIAL_TYPE =
     'urn:iya:sts:credential-type:self-issued-key';
+  /**
+   * This service's credential type for an ACME External Account Binding key.
+   */
   static readonly ACME_EAB_KEY_CREDENTIAL_TYPE =
     'urn:iya:sts:credential-type:acme-eab-key';
+  /**
+   * This service's credential type for a HOBA public key registered for SCIM.
+   */
   static readonly HOBA_KEY_CREDENTIAL_TYPE =
     'urn:iya:sts:credential-type:hoba-key';
+  /**
+   * This service's credential type for a person's Kerberos long-term keys.
+   */
   static readonly KERBEROS_KEY_CREDENTIAL_TYPE =
     'urn:iya:sts:credential-type:kerberos-key';
 
+  /**
+   * Builds the reporter from its dependencies.
+   *
+   * @param deps - the logger and `findSsf()`, which answers `ssf.ts`'s
+   * exports when it is loaded in this process
+   */
   constructor(private readonly deps: AccountSignalsDeps) {
     deps.log.debug('Entering AccountSignals.constructor().');
     deps.log.debug('Leaving AccountSignals.constructor().');
@@ -157,6 +195,12 @@ class AccountSignals {
 
   // What the composition root passes: the service logger, and the
   // `require.cache` lookup below as the way to find a loaded `ssf.js`.
+  /**
+   * Returns the service logger and `AccountSignals.loadedSsf` as the
+   * dependencies.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AccountSignalsDeps {
     helpers.log.debug('Entering AccountSignals.defaultDeps().');
     helpers.log.debug('Leaving AccountSignals.defaultDeps().');
@@ -165,6 +209,12 @@ class AccountSignals {
 
   // `ssf.ts` as it is loaded in THIS process, found in `require.cache`, or
   // null. The default `findSsf` for the transitional instance below.
+  /**
+   * Returns `ssf.ts`'s exports as loaded in this process, found in
+   * `require.cache`, without loading it.
+   *
+   * @returns the exports, or null when it is not loaded
+   */
   static loadedSsf(): SsfEmitters | null {
     const { log } = helpers;
     log.debug('Entering AccountSignals.loadedSsf().');
@@ -233,6 +283,14 @@ class AccountSignals {
   }
 
   // A key record's CAEP credential type, from its recorded attachment.
+  /**
+   * Returns a security key record's CAEP credential type from its recorded
+   * authenticator attachment: `fido2-platform` for `platform`, otherwise
+   * `fido2-roaming`.
+   *
+   * @param record - the key record
+   * @returns the credential type
+   */
   static keyCredentialType(record?: { attachment?: string } | null): string {
     helpers.log.debug('Entering AccountSignals.keyCredentialType().');
     helpers.log.debug('Leaving AccountSignals.keyCredentialType().');
@@ -242,6 +300,15 @@ class AccountSignals {
   }
 
   // CAEP credential-change.
+  /**
+   * Reports a CAEP credential-change, and queues the security notice mail.
+   *
+   * @param change - the change: username, credentialType, changeType,
+   * friendlyName, initiatingEntity, reasons and CAEP's identifying members
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   credentialChanged(change?: CredentialChange): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.credentialChanged().');
@@ -254,6 +321,15 @@ class AccountSignals {
   // CAEP credential-change about an X.509 certificate (#145): `pem` is the
   // certificate, and its issuer and serial go out as `x509_issuer` and
   // `x509_serial` — a serial names a certificate only beside its issuer.
+  /**
+   * Reports a CAEP credential-change about an X.509 certificate, with the
+   * certificate's issuer and serial as `x509_issuer` and `x509_serial`.
+   *
+   * @param change - the change, with `pem` the certificate
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   certificateChanged(change?: CredentialChange & { pem?: string }):
       Promise<Delivery> {
     const { log } = this.deps;
@@ -271,6 +347,15 @@ class AccountSignals {
 
   // RISC account-credential-change-required: a password was reset for
   // somebody or a reset link issued, so what they held is no longer trusted.
+  /**
+   * Reports a RISC account-credential-change-required: a password was reset for
+   * somebody or a reset link issued.
+   *
+   * @param notice - who and why
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   credentialChangeRequired(notice?: object): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.credentialChangeRequired().');
@@ -287,6 +372,16 @@ class AccountSignals {
   // forgot-password form, or (#235) a person signed in with a recovery code.
   // `mailNotice: false` is the last: the person is at the screen, and is not
   // mailed about what they just typed.
+  /**
+   * Reports a RISC recovery-activated: account recovery was started.
+   *
+   * The security notice mail is queued unless `notice.mailNotice` is false.
+   *
+   * @param notice - who and why, and optionally `mailNotice`
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   recoveryActivated(notice?: object): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.recoveryActivated().');
@@ -308,6 +403,18 @@ class AccountSignals {
   // required `credential_type`. `mailed: true` says the door has already
   // told the person in words of its own, so the generic notice is not sent
   // a second time.
+  /**
+   * Reports a RISC credential-compromise, with `credentialType` (default
+   * `password`) as the event's `credential_type`.
+   *
+   * The security notice mail is queued unless `notice.mailed` says the door has
+   * told the person already.
+   *
+   * @param notice - who, the credential type, and optionally `mailed`
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   credentialCompromised(notice?: Record<string, any>):
       Promise<Delivery> {
     const { log } = this.deps;
@@ -325,6 +432,14 @@ class AccountSignals {
 
   // One of RISC section 2.8's opt-out moves, made by the account holder on
   // /portal/signals (#146): optOutInitiated, optOutCancelled or optIn.
+  /**
+   * Reports one of RISC's opt-out moves made on `/portal/signals`.
+   *
+   * @param notice - the move (its `act`) and who made it
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   optOutMoved(notice?: Record<string, any>): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.optOutMoved().');
@@ -343,6 +458,16 @@ class AccountSignals {
   // and holds it to `caep.autoEmitTypes`. No mail notice: a device's owner
   // is told by the portal, and a compliance feed must not become mail.
   // ---------------------------------------------------------------------
+  /**
+   * Reports a CAEP event about a registered device: a compliance change, a
+   * risk-level change or a credential change for a device key or secret.
+   *
+   * @param notice - `{ type, act, deviceId, username, values,
+   * initiatingEntity, reasonAdmin, reasonUser }`
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   deviceEvent(notice?: Record<string, any>): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.deviceEvent().');
@@ -355,6 +480,15 @@ class AccountSignals {
   // RISC sessions-revoked (#164 phase 4): every session of a person ON ONE
   // DEVICE was ended — the device compromised or removed. `notice` carries
   // `deviceId`, which puts the device beside the person in the subject.
+  /**
+   * Reports a RISC sessions-revoked: every session of a person on one device
+   * was ended.
+   *
+   * @param notice - who, and the `deviceId`
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   sessionsRevoked(notice?: Record<string, any>): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.sessionsRevoked().');
@@ -371,6 +505,16 @@ class AccountSignals {
   // function answering them, called only if the person holds something
   // live), and optionally `protocol`, `reasonAdmin`, `reasonUser`.
   // ---------------------------------------------------------------------
+  /**
+   * Reports a CAEP token-claims-change from a door that is not a directory
+   * attribute.
+   *
+   * @param notice - `username`, `claims` (the moved claims, or a function
+   * answering them), and optionally `protocol` and the reasons
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   claimsChanged(notice?: Record<string, any>): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.claimsChanged().');
@@ -383,6 +527,16 @@ class AccountSignals {
   // (#238): `match(record)` picks the live artifacts it shaped, and
   // `claimsFor(bearer)` answers the moved claims for one holder. See
   // `ssf.ts`'s claimsFanOut(), which walks them in slices.
+  /**
+   * Reports a CAEP token-claims-change to every holder a configuration change
+   * moved.
+   *
+   * @param notice - `match(record)`, which picks the live artifacts, and
+   * `claimsFor(bearer)`, which answers the moved claims for one holder
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   claimsFanOut(notice?: Record<string, any>): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.claimsFanOut().');
@@ -394,6 +548,15 @@ class AccountSignals {
   // CAEP assurance-level-change for a person's IDENTITY assurance (#243):
   // `username`, `namespace`, `current`, and where known `previous` and
   // `direction`. `common/identity_assurance.ts` decides all four.
+  /**
+   * Reports a CAEP assurance-level-change for a person's identity assurance.
+   *
+   * @param notice - `username`, `namespace`, `current`, and where known
+   * `previous` and `direction`
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   assuranceChanged(notice?: Record<string, any>): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.assuranceChanged().');
@@ -406,6 +569,15 @@ class AccountSignals {
   // cleared, confirmed, or (#235) one of them spent — at sign-in or on the
   // forgot-password form. A recovery ADDRESS added, changed, removed or
   // verified is read off the directory write by `risc.ts` instead.
+  /**
+   * Reports a RISC recovery-information-changed: a person's recovery codes were
+   * cleared, confirmed or one of them spent.
+   *
+   * @param notice - who and why
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
   recoveryInformationChanged(notice?: object): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.recoveryInformationChanged().');
@@ -434,9 +606,24 @@ const slot = new InstanceSlot<AccountSignals>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Shared Signals reporter for credential and account changes, for the doors
+ * that cannot require `ssf/ssf.ts`.
+ *
+ * Exports the `AccountSignals` class, its credential-type constants, and
+ * facades that forward to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   AccountSignals: AccountSignals,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: AccountSignals): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   credentialChanged: slot.forward('credentialChanged'),
   certificateChanged: slot.forward('certificateChanged'),

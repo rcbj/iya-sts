@@ -127,7 +127,20 @@ interface AppPermissionsDeps {
   errorCodes: typeof errorCodes;
 }
 
+/**
+ * The configured register of delegated permissions: which client applications
+ * are granted which permissions on which resource applications.
+ *
+ * Entra ID's model: a resource carries a base URI and permissions, a client is
+ * granted a permission by its composed identifier. Kept apart from the observed
+ * register in `common/delegation.js`.
+ */
 class AppPermissions {
+  /**
+   * Builds the permission register.
+   *
+   * @param deps - the logger, `applications.js` and the error-code table
+   */
   constructor(private readonly deps: AppPermissionsDeps) {
     deps.log.debug("Entering AppPermissions.constructor().");
     deps.log.debug("Leaving AppPermissions.constructor().");
@@ -135,6 +148,11 @@ class AppPermissions {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the service logger, `applications.js` and the error-code table
+   */
   static defaultDeps(): AppPermissionsDeps {
     helpers.log.debug("Entering AppPermissions.defaultDeps().");
     helpers.log.debug("Leaving AppPermissions.defaultDeps().");
@@ -162,6 +180,15 @@ class AppPermissions {
   // `is a resource` test that required both would have hidden the second one —
   // which is the one that is actually broken.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the whole register, both directions, from one walk of
+   * `ou=applications`.
+   *
+   * A resource is an entry carrying a base URI or a permission.
+   *
+   * @returns the resources, the permissions, the grants (each marked dangling,
+   *   asked or not) and the counts
+   */
   register() {
     const { log, applications } = this.deps;
     log.debug("Entering AppPermissions.register().");
@@ -336,6 +363,13 @@ class AppPermissions {
   // `/admin/applications` and for the message an action answers with. Built
   // from `register()` rather than from a read of the one entry, because half
   // the answer — who holds MY permissions — is on other entries entirely.
+  /**
+   * Returns everything one application is on either side of.
+   *
+   * @param identifier - the application's identifier
+   * @returns the permissions it exposes, the grants it holds, and the grants
+   *   others hold on its permissions
+   */
   forApplication(identifier) {
     const { log } = this.deps;
     const self = this;
@@ -383,6 +417,18 @@ class AppPermissions {
   // ---------------------------------------------------------------------------
 
   // THE BASE URI. Set it, or clear it by sending an empty value.
+  /**
+   * Sets or clears a resource application's permission base URI.
+   *
+   * A trailing separator is added when missing, so base plus name reads as a
+   * path.
+   *
+   * @param resource - the resource application's identifier
+   * @param value - the base URI, or empty to clear it
+   * @param actor - who made the change, for the audit row
+   * @returns `applications.updateApplication()`'s result, with a message about
+   *   the relationship
+   */
   setBaseUri(resource, value, actor) {
     const { log, applications } = this.deps;
     log.debug("Entering AppPermissions.setBaseUri(). resource=" + resource);
@@ -422,6 +468,16 @@ class AppPermissions {
   // separately and are joined here, because `name|description` is the SCHEMA's
   // spelling and a caller should not have to know it — that is exactly the kind
   // of thing that ends up spelled two ways.
+  /**
+   * Defines a permission on a resource application; it is granted to nobody.
+   *
+   * @param resource - the resource application's identifier
+   * @param name - the permission's name
+   * @param description - its description
+   * @param actor - who made the change
+   * @returns `applications.updateApplication()`'s result, with a message naming
+   *   the permission's identifier
+   */
   definePermission(resource, name, description, actor) {
     const { log, applications } = this.deps;
     log.debug("Entering AppPermissions.definePermission(). resource=" +
@@ -454,6 +510,18 @@ class AppPermissions {
   // description and all — so it is composed from the permission this module
   // found rather than from what a form typed, which is why the caller passes
   // the NAME and this looks the raw value up.
+  /**
+   * Removes a permission from a resource application.
+   *
+   * Grants naming it are not revoked; they become dangling, and the message
+   * counts them.
+   *
+   * @param resource - the resource application's identifier
+   * @param name - the permission's name
+   * @param actor - who made the change
+   * @returns `applications.updateApplication()`'s result, or a refusal when the
+   *   application or the permission does not exist
+   */
   removePermission(resource, name, actor) {
     const { log, applications, errorCodes } = this.deps;
     const self = this;
@@ -516,6 +584,18 @@ class AppPermissions {
   // GRANT one to a client. The ordering rule — the permission must already
   // exist — is checked in `applications.updateApplication()`; see this file's
   // header for why it is there and not here.
+  /**
+   * Grants a permission to a client application.
+   *
+   * The permission must already exist; `applications.updateApplication()`
+   * checks that.
+   *
+   * @param client - the client application's identifier
+   * @param permissionId - the permission's full identifier (base URI and name)
+   * @param actor - who made the change
+   * @returns `applications.updateApplication()`'s result, with a message about
+   *   what the grant allows
+   */
   grant(client, permissionId, actor) {
     const { log, applications } = this.deps;
     log.debug("Entering AppPermissions.grant(). client=" + client);
@@ -544,6 +624,15 @@ class AppPermissions {
     });
   }
 
+  /**
+   * Revokes a permission from a client application.
+   *
+   * @param client - the client application's identifier
+   * @param permissionId - the permission's full identifier
+   * @param actor - who made the change
+   * @returns `applications.updateApplication()`'s result, with a message about
+   *   what changes
+   */
   revoke(client, permissionId, actor) {
     const { log, applications } = this.deps;
     log.debug("Entering AppPermissions.revoke(). client=" + client);
@@ -601,6 +690,13 @@ class AppPermissions {
   // `2` would hide which permissions were granted — which is the only thing the
   // picture is being asked.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the register as a graph in `delegation.graph()`'s shape: one
+   * application box per party and one edge per granted permission.
+   *
+   * @param rows - the grants to draw; the whole register's when omitted
+   * @returns the `{ nodes, edges }` graph
+   */
   graph(rows?) {
     const { log, applications } = this.deps;
     const self = this;
@@ -790,6 +886,15 @@ class AppPermissions {
   // the part that actually matters — a second chance to disagree with the
   // picture drawn beside it about which entries are resources.
   // ---------------------------------------------------------------------------
+  /**
+   * Partitions the register into groups: the connected components of the grant
+   * graph, with direction ignored.
+   *
+   * @param reg - a `register()` answer already in hand; read afresh when
+   *   omitted
+   * @returns the groups (largest first), a map from identifier to group key,
+   *   and the counts
+   */
   clusters(reg?) {
     const { log, applications } = this.deps;
     const self = this;
@@ -964,6 +1069,14 @@ class AppPermissions {
   // `graph()` gives above and `applications.js` gives at length: nothing here
   // case-folds an identifier, and matching loosely in this one function would
   // be this module deciding a comparison rule on that one's behalf.
+  /**
+   * Returns the one group an application is in.
+   *
+   * @param identifier - the application's identifier, compared exactly
+   * @param reg - a `clusters()` answer already in hand; computed when omitted
+   * @returns the group, or null when the register has never heard of the
+   *   application
+   */
   clusterFor(identifier, reg) {
     const { log } = this.deps;
     const self = this;
@@ -1001,9 +1114,24 @@ const slot = new InstanceSlot<AppPermissions>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Delegated permissions: who may reach what, decided beforehand.
+ *
+ * The configured half of the delegation question, beside the observed acts in
+ * `common/delegation.js`. The exports forward to the instance the composition
+ * root installs.
+ *
+ * @namespace
+ */
 export = {
   AppPermissions: AppPermissions,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: AppPermissions): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   register: slot.forward('register'),
   forApplication: slot.forward('forApplication'),

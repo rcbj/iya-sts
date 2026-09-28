@@ -71,8 +71,17 @@ import InstanceSlot = require('./instance_slot');
 
 type Json = any;
 
+/**
+ * The hourly scheduled rotation job's id.
+ */
 const ROTATE_JOB = 'signing.rotate';
+/**
+ * The id of the manual rotation job the console and the API queue.
+ */
 const ROTATE_NOW_JOB = 'signing.rotate-now';
+/**
+ * The hourly job's id that drops retired keys past their grace.
+ */
 const RETIRE_JOB = 'signing.retire';
 const SECRET_EXPIRY_JOB = 'oauth2.client-secret-expiry';
 const CHECK_EVERY_MS = 3600000;
@@ -121,20 +130,47 @@ interface SigningRotationDeps {
   now: () => number;
 }
 
+/**
+ * Decides when a realm's signing-key units move on, and runs the rotation
+ * and retirement jobs on the scheduler.
+ *
+ * It changes no key itself: every change goes through `helpers`' generation
+ * functions. The schedule is off in development mode; a rotation asked for
+ * by hand runs in every mode.
+ */
 class SigningRotation {
   // The pinned keys warned about today (#263), `scope|kid` to the day number,
   // so the hourly `signing.retire` says it once a day. As many entries as
   // there are pinned keys near their end.
   private readonly pinWarned = new Map<string, number>();
+  /**
+   * The module's `ROTATE_JOB`.
+   */
   static readonly ROTATE_JOB = ROTATE_JOB;
+  /**
+   * The module's `ROTATE_NOW_JOB`.
+   */
   static readonly ROTATE_NOW_JOB = ROTATE_NOW_JOB;
+  /**
+   * The module's `RETIRE_JOB`.
+   */
   static readonly RETIRE_JOB = RETIRE_JOB;
 
+  /**
+   * Builds the instance over its dependencies.
+   *
+   * @param deps - the modules it uses, most of them reached lazily, and a clock
+   */
   constructor(private readonly deps: SigningRotationDeps) {
     deps.log.debug("Entering SigningRotation.constructor().");
     deps.log.debug("Leaving SigningRotation.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root builds the instance with.
+   *
+   * @returns the real modules and `Date.now`
+   */
   static defaultDeps(): SigningRotationDeps {
     helpers.log.debug("Entering SigningRotation.defaultDeps().");
     helpers.log.debug("Leaving SigningRotation.defaultDeps().");
@@ -203,6 +239,14 @@ class SigningRotation {
   }
 
   // The unit an algorithm signs with in this realm, or ''.
+  /**
+   * Returns the signing unit a JWS algorithm signs with in this realm; any RSA
+   * algorithm signs with `jose:RS256`.
+   *
+   * @param alg - a JWS algorithm
+   * @param keys - optional key set; the ambient realm's by default
+   * @returns the unit, or '' when none signs it
+   */
   unitForAlg(alg: string, keys?: Json): string {
     const { log, helpers } = this.deps;
     log.debug("Entering SigningRotation.unitForAlg(). " + alg);
@@ -241,6 +285,12 @@ class SigningRotation {
   }
 
   // The unit `oid4vci.credentialSigningAlgorithm` signs with, or ''.
+  /**
+   * Returns the unit `oid4vci.credentialSigningAlgorithm` signs with.
+   *
+   * @param keys - optional key set; the ambient realm's by default
+   * @returns the unit, or ''
+   */
   credentialUnit(keys?: Json): string {
     const { log, config } = this.deps;
     log.debug("Entering SigningRotation.credentialUnit().");
@@ -273,6 +323,15 @@ class SigningRotation {
   }
 
   // How long a unit's key works before its next one is promoted.
+  /**
+   * Returns how long a unit's key works before its next key is promoted.
+   *
+   * A credential-only signer uses `signing.credentialRotationIntervalDays`; a
+   * unit tokens also sign with keeps the shorter of the two intervals.
+   * @param unit - the signing unit
+   * @param keys - optional key set
+   * @returns the interval in milliseconds (0 means off)
+   */
   intervalMs(unit: string, keys?: Json): number {
     const { log, config } = this.deps;
     log.debug("Entering SigningRotation.intervalMs(). " + unit);
@@ -316,6 +375,15 @@ class SigningRotation {
   }
 
   // How long a key goes on verifying after it is retired.
+  /**
+   * Returns how long a retired key goes on verifying: the setting, or the
+   * longest lifetime of anything it could have signed (credentials included for
+   * a credential signer) plus clock skew, whichever is longer.
+   *
+   * @param unit - the signing unit
+   * @param keys - optional key set
+   * @returns the grace in milliseconds
+   */
   graceMs(unit: string, keys?: Json): number {
     const { log, config } = this.deps;
     log.debug("Entering SigningRotation.graceMs(). " + unit);
@@ -337,6 +405,12 @@ class SigningRotation {
 
   // How long a retired refresh-token key set goes on OPENING tokens (D7): the
   // longest refresh token any client is issued, or the setting if longer.
+  /**
+   * Returns how long a retired refresh-token key set goes on opening tokens:
+   * the longest refresh-token lifetime plus skew, or the setting if longer.
+   *
+   * @returns the grace in milliseconds
+   */
   refreshGraceMs(): number {
     const { log, config } = this.deps;
     log.debug("Entering SigningRotation.refreshGraceMs().");
@@ -371,6 +445,11 @@ class SigningRotation {
   }
 
   // Why rotation is off for a realm right now, or ''.
+  /**
+   * Says why scheduled rotation is off for the ambient realm.
+   *
+   * @returns the reason, or '' when rotation is on
+   */
   offReason(): string {
     const { log, config, mode } = this.deps;
     log.debug("Entering SigningRotation.offReason().");
@@ -415,6 +494,16 @@ class SigningRotation {
   }
 
   // ---------------------------------------------------------------------------
+  /**
+   * Runs the scheduled rotation of one realm: a next key for every unit
+   * lacking one, and every unit whose next key has been published for a whole
+   * interval promoted. A pinned unit is left alone.
+   *
+   * @param realmId - the realm id
+   * @param ctx - optional scheduler context: `nowMs`, `stillOwner`, `trigger`
+   * @returns a promise of `{ minted, rotated, generation }`, with `abandoned`
+   *   when the node stopped owning the job midway
+   */
   async rotateDue(realmId: string, ctx?: Json): Promise<Json> {
     const { log, helpers } = this.deps;
     log.debug("Entering SigningRotation.rotateDue(). realm=" + realmId);
@@ -473,6 +562,18 @@ class SigningRotation {
   // ROTATE NOW — the named units (or every unit), each by its OWN grace, then
   // the audit row and the Shared Signals event. What P4's controls queue.
   // ---------------------------------------------------------------------------
+  /**
+   * Rotates the named units (or every unit and the refresh-token keys) now,
+   * each retired key keeping its own grace, then writes the audit row and sends
+   * the Shared Signals event.
+   *
+   * An emergency rotation drops the retired keys at once, revokes the units'
+   * certificates for keyCompromise and ends every session in the realm.
+   * @param realmId - the realm id
+   * @param options - optional `{ units, emergency, reason, trigger,
+   *   requestedBy }`
+   * @returns a promise of `{ rotated, generation, revoked, sessionsEnded }`
+   */
   async rotate(realmId: string, options?: Json): Promise<Json> {
     const { log, helpers, audit, errorCodes } = this.deps;
     const o = options || {};
@@ -676,6 +777,18 @@ class SigningRotation {
   // and the refresh-token keys. An emergency needs `confirm` to be the word
   // `compromised`, because it signs everybody out and cannot be undone.
   // ---------------------------------------------------------------------------
+  /**
+   * Queues a run of `signing.rotate-now` for the console or the API; nothing
+   * rotates in the request.
+   *
+   * An emergency must carry `confirm: 'compromised'`.
+   * @param realmId - the realm id
+   * @param options - `{ units, emergency, confirm, requestedBy, via,
+   *   channel }`; no units means every unit
+   * @returns `{ ok: true, runId, alreadyQueued, emergency, units }`, or
+   *   `{ ok: false, errorCode, status, why }` for an unknown unit, an
+   *   unconfirmed emergency or a scheduler refusal
+   */
   requestRotation(realmId: string, options?: Json): Json {
     const { log, scheduler, helpers } = this.deps;
     const o = options || {};
@@ -720,6 +833,14 @@ class SigningRotation {
   // THE ROTATION STATE of a realm, for `/admin/keys` and `GET /admin-api/keys`:
   // every unit with its current, next and retired kids, when it last rotated,
   // its interval and grace, and whether the schedule is on.
+  /**
+   * Builds the rotation state of a realm for `/admin/keys` and
+   * `GET /admin-api/keys`.
+   *
+   * @param realmId - the realm id
+   * @returns `{ scheduled, offReason, units, refresh }`: each unit's current,
+   *   next and retired kids, last rotation, interval and grace
+   */
   rotationView(realmId: string): Json {
     const { log, helpers } = this.deps;
     log.debug("Entering SigningRotation.rotationView(). realm=" + realmId);
@@ -795,6 +916,15 @@ class SigningRotation {
   // superseded on its Issuing CA's list: the key it vouched for signs and
   // verifies nothing here any more.
   // ---------------------------------------------------------------------------
+  /**
+   * Drops every retired key past its grace and supersedes its certificate on
+   * its Issuing CA's list; also drops unpinned keys past their grace and warns
+   * about pinned certificates near their end.
+   *
+   * @param realmId - the realm id
+   * @param ctx - optional scheduler context carrying `nowMs`
+   * @returns `{ dropped, superseded, generation, pinnedDropped, pinnedWarned }`
+   */
   retireDue(realmId: string, ctx?: Json): Json {
     const { log, helpers, pki, revocation, audit } = this.deps;
     log.debug("Entering SigningRotation.retireDue(). realm=" + realmId);
@@ -909,6 +1039,18 @@ class SigningRotation {
   // PIN — `/admin/pki`'s and `POST /admin-api/pki/pin-key`'s act. With the
   // realm's setting off this is `pki.pinKeyPair()` as it always was; on,
   // a pin into a signer slot is announced as a rotation `requested`.
+  /**
+   * Pins an operator's key pair into a slot through `pki.pinKeyPair()`; where
+   * the realm's pinned signers are on and the slot signs, the pin is audited
+   * and announced as a requested rotation.
+   *
+   * @param scopeId - the realm id ('' for the ambient realm)
+   * @param useCaseId - the certificate use case (`jose`, `xml`, ...)
+   * @param slot - the slot within it
+   * @param material - the key pair and certificate to pin
+   * @param requestedBy - optional username for the audit row
+   * @returns a promise of `pki.pinKeyPair()`'s answer
+   */
   async pinSigningKey(scopeId: string, useCaseId: string, slot: string,
                       material: Json, requestedBy?: string): Promise<Json> {
     const { log, pki, audit, realms } = this.deps;
@@ -952,6 +1094,16 @@ class SigningRotation {
 
   // UNPIN — the generated key signs again (it was published all along), and
   // the pinned key verifies through its unit's grace.
+  /**
+   * Unpins a slot's key: the generated key signs again and the pinned one
+   * verifies through its unit's grace; audited and announced when it signed.
+   *
+   * @param scopeId - the realm id ('' for the ambient realm)
+   * @param useCaseId - the certificate use case
+   * @param slot - the slot within it
+   * @param requestedBy - optional username for the audit row
+   * @returns `pki.unpinKeyPair()`'s answer
+   */
   unpinSigningKey(scopeId: string, useCaseId: string, slot: string,
                   requestedBy?: string): Json {
     const { log, pki, audit, realms } = this.deps;
@@ -1070,6 +1222,12 @@ class SigningRotation {
   }
 
   // The two jobs, registered once per process.
+  /**
+   * Registers `signing.rotate`, `signing.rotate-now`, `signing.retire` and the
+   * client-secret expiry job with the scheduler, once per process.
+   *
+   * @returns true when registered, false when they already were
+   */
   registerJobs(): boolean {
     const { log, scheduler } = this.deps;
     log.debug("Entering SigningRotation.registerJobs().");
@@ -1180,9 +1338,22 @@ const slot = new InstanceSlot<SigningRotation>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Signing-key rotation on the scheduler (#42), and its emergency form (#48).
+ *
+ * A library that registers jobs and no route. The method names below forward
+ * to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   SigningRotation: SigningRotation,
+  /**
+   * Installs the instance the composition root built.
+   */
   installInstance: (instance: SigningRotation): void => slot.install(instance),
+  /**
+   * Names where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   ROTATE_JOB: ROTATE_JOB,
   ROTATE_NOW_JOB: ROTATE_NOW_JOB,

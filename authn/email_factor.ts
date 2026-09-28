@@ -84,6 +84,10 @@ import authn = require('./authn');
 const { log, xmlEscape } = helpers;
 
 // The cookie that ties a mailed link to the browser that asked for it.
+/**
+ * The cookie that ties a mailed sign-in link to the browser that asked for
+ * it.
+ */
 const BINDING_COOKIE = 'sts_email_binding';
 
 // How often the waiting page of a link refreshes itself.
@@ -151,14 +155,37 @@ interface EmailFactorDeps {
 
 type RouteApp = { get: Function; post: Function };
 
+/**
+ * The emailed code and the emailed sign-in link, as a first or a second
+ * factor, where the realm's authentication policy allows them (#64).
+ *
+ * Only a verified address is mailed, the secret is kept only as a hash and
+ * spent once for the cluster, and a link finishes only in the browser that
+ * started the sign-in. Off by default.
+ */
 class EmailFactor {
+  /**
+   * The link-binding cookie's name, as a static member.
+   */
   static readonly BINDING_COOKIE = BINDING_COOKIE;
 
+  /**
+   * Builds the factor over the dependencies given.
+   *
+   * @param deps - the logger, settings, sign-in service, mail channel and
+   * factor library, rate limits, cluster claims, audit log and clock
+   */
   constructor(private readonly deps: EmailFactorDeps) {
     deps.log.debug("Entering EmailFactor.constructor().");
     deps.log.debug("Leaving EmailFactor.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules, as the composition
+   * root passes them.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): EmailFactorDeps {
     log.debug("Entering EmailFactor.defaultDeps().");
     log.debug("Leaving EmailFactor.defaultDeps().");
@@ -524,6 +551,15 @@ class EmailFactor {
 
   // A SECOND FACTOR: the step exists and asks for an emailed factor. The
   // first one is sent at once — the person is expecting it.
+  /**
+   * Starts an emailed second factor on a pending step, sending the first
+   * code or link at once, and answers with the code page or the waiting page.
+   *
+   * @param req - the request
+   * @param res - the response, which this writes
+   * @param base - the service's base URL (unused)
+   * @param mfaId - the id of the pending second-factor step
+   */
   async beginSecondFactor(req: any, res: any, base: string,
                           mfaId: string): Promise<void> {
     const { log, authn } = this.deps;
@@ -550,6 +586,20 @@ class EmailFactor {
   }
 
   // A FIRST FACTOR, from the sign-in screen's two buttons.
+  /**
+   * Starts an emailed code or link as a first factor from the sign-in
+   * screen.
+   *
+   * Every reason a real sign-in cannot proceed (no account, no verified
+   * address, a disabled account) gets the same page on a decoy step that no
+   * code can finish, and nothing is mailed; the refusal is audited.
+   * @param req - the request
+   * @param res - the response, which this writes
+   * @param base - the service's base URL
+   * @param record - the pending authorization record
+   * @param username - the name typed on the sign-in screen
+   * @param kind - `code` or `link`
+   */
   async beginFirstFactor(req: any, res: any, base: string, record: any,
                          username: string, kind: Kind): Promise<void> {
     const { log, authn, authnPolicy, websecurity, errorCodes, mailFactor,
@@ -713,6 +763,13 @@ class EmailFactor {
   // -------------------------------------------------------------------------
   // THE HANDLERS.
   // -------------------------------------------------------------------------
+  /**
+   * Draws the code page for a live step, or the page that asks before a code
+   * is mailed when none has been sent. Sends nothing.
+   *
+   * @param req - the request, with `mfa` in the query
+   * @param res - the response
+   */
   async handleCodeGet(req: any, res: any): Promise<void> {
     const { log, validation, errorCodes } = this.deps;
     log.debug("Entering EmailFactor.handleCodeGet().");
@@ -736,6 +793,14 @@ class EmailFactor {
     log.debug("Leaving EmailFactor.handleCodeGet().");
   }
 
+  /**
+   * Sends a new code when asked to, or checks a typed code and, when it is
+   * right and unexpired, spends it and finishes the step.
+   *
+   * Wrong codes are counted and end the step at the policy's limit.
+   * @param req - the request, with `mfa_id`, `code` or `action` in the form
+   * @param res - the response
+   */
   async handleCodePost(req: any, res: any): Promise<void> {
     const { log, validation, parseBody, errorCodes, websecurity,
             mailFactor, now } = this.deps;
@@ -805,6 +870,13 @@ class EmailFactor {
     log.debug("Leaving EmailFactor.handleCodePost().");
   }
 
+  /**
+   * Draws the page that waits for a mailed link to be opened, or the page
+   * that asks before one is mailed. Sends nothing.
+   *
+   * @param req - the request, with `mfa` in the query
+   * @param res - the response
+   */
   async handleLinkGet(req: any, res: any): Promise<void> {
     const { log, validation, errorCodes } = this.deps;
     log.debug("Entering EmailFactor.handleLinkGet().");
@@ -835,6 +907,12 @@ class EmailFactor {
     log.debug("Leaving EmailFactor.handleLinkGet().");
   }
 
+  /**
+   * Mails a new sign-in link and draws the waiting page.
+   *
+   * @param req - the request, with `mfa_id` in the form
+   * @param res - the response
+   */
   async handleLinkPost(req: any, res: any): Promise<void> {
     const { log, validation, parseBody, errorCodes } = this.deps;
     log.debug("Entering EmailFactor.handleLinkPost().");
@@ -863,6 +941,13 @@ class EmailFactor {
 
   // WHERE THE MAILED LINK LANDS. Spends nothing: a Continue button, posting
   // the same two values back.
+  /**
+   * Answers a mailed link being opened with a Continue button, in the browser
+   * that started the sign-in only. Spends nothing.
+   *
+   * @param req - the request, with `mfa` and the token `t` in the query
+   * @param res - the response
+   */
   async handleOpenGet(req: any, res: any): Promise<void> {
     const { log, validation, errorCodes, xmlEscape } = this.deps;
     log.debug("Entering EmailFactor.handleOpenGet().");
@@ -903,6 +988,13 @@ class EmailFactor {
     log.debug("Leaving EmailFactor.handleOpenGet().");
   }
 
+  /**
+   * Checks a mailed link's token in the browser that started the sign-in and,
+   * when it matches and is unexpired, spends it and finishes the step.
+   *
+   * @param req - the request, with `mfa_id` and `t` in the form
+   * @param res - the response
+   */
   async handleOpenPost(req: any, res: any): Promise<void> {
     const { log, validation, parseBody, errorCodes, websecurity,
             mailFactor, now } = this.deps;
@@ -975,6 +1067,11 @@ class EmailFactor {
   }
 
   // THE ROUTES, registered by the composition root just after `authn`.
+  /**
+   * Registers the three `/authn/email-*` paths, GET and POST each.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, authn } = this.deps;
     const self = this;
@@ -1010,6 +1107,13 @@ const slot = new InstanceSlot<EmailFactor>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The emailed code and sign-in link, as first or second factors (#64).
+ *
+ * Exports the class for the composition root and facades that forward to
+ * the installed instance; `authn.ts` calls the two `begin` functions.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   EmailFactor: EmailFactor,

@@ -49,12 +49,28 @@ const JSON_TEXT = function (what: string): Json {
   return { description: what + ', as a JSON object or its text.' };
 };
 
+/**
+ * The OpenID Federation operations of `/admin-api`: `GET /admin-api/oidfed` and
+ * `POST /admin-api/oidfed/:action`, mirroring `/admin/oidfed`. It registers no
+ * route and requires `oidfed.ts` lazily.
+ */
 class OidfedApi {
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - the logger, the body parser, the error-code table and the
+   * lazy loader of `oidfed.ts`
+   */
   constructor(private readonly deps: OidfedApiDeps) {
     deps.log.debug("Entering OidfedApi.constructor().");
     deps.log.debug("Leaving OidfedApi.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): OidfedApiDeps {
     helpers.log.debug("Entering OidfedApi.defaultDeps().");
     helpers.log.debug("Leaving OidfedApi.defaultDeps().");
@@ -66,12 +82,25 @@ class OidfedApi {
     };
   }
 
+  /**
+   * Builds the route rows for the installed instance.
+   *
+   * @param instance - the instance being installed
+   */
   static wire(instance: OidfedApi): void {
     helpers.log.debug("Entering OidfedApi.wire().");
     routes = instance.buildRoutes();
     helpers.log.debug("Leaving OidfedApi.wire().");
   }
 
+  /**
+   * Sends a JSON reply, uncached, with the page's protocol endpoints added to a
+   * successful object reply.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the reply
+   */
   send(res: Json, status: number, body: Json): void {
     const { log } = this.deps;
     log.debug("Entering OidfedApi.send(). status=" + status);
@@ -87,6 +116,19 @@ class OidfedApi {
   }
 
   // One action's row: its body schema from `properties` and `required`.
+  /**
+   * Builds one action's row for the OpenAPI document: its body schema from its
+   * properties and required members.
+   *
+   * @param action - the action's name
+   * @param operationId - the OpenAPI operation id
+   * @param summary - the operation's summary
+   * @param description - its description
+   * @param properties - the body's properties
+   * @param required - the required members
+   * @param example - an example body
+   * @returns the action's row
+   */
   action(action: string, operationId: string, summary: string,
          description: string, properties: Json, required: string[],
          example: Json): Json {
@@ -104,6 +146,11 @@ class OidfedApi {
     };
   }
 
+  /**
+   * Builds the route rows `mgmt-api/admin_api.ts` spreads into its routes.
+   *
+   * @returns the rows
+   */
   buildRoutes(): Json[] {
     const { log, loadOidfed, errorCodes, parseBody } = this.deps;
     const self = this;
@@ -372,10 +419,26 @@ const slot = new InstanceSlot<OidfedApi>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OpenID Federation operations of `/admin-api`, as route rows the
+ * management API spreads into its own.
+ * @namespace
+ */
 export = {
   OidfedApi: OidfedApi,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: OidfedApi): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
+  /**
+   * The route rows, built for the installed instance when first asked for.
+   */
   get ROUTES(): Json[] {
     log.debug("Entering ROUTES().");
     slot.get();

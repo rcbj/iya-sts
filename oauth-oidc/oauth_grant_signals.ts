@@ -132,11 +132,21 @@ const ENTITIES = ['admin', 'user', 'policy', 'system'];
 // receiver is told to be idempotent about (CAEP section 3.1).
 const ANNOUNCED_CAP = 5000;
 
+/**
+ * Announces an OAuth grant's revocation as a CAEP `session-revoked` about the
+ * grant (#239), by observing the one revocation set.
+ */
 class OAuthGrantSignals {
   private pending: Map<string, Pending> = new Map();
   private flushing: Promise<Json[]> | null = null;
   private announced: Map<string, Map<string, number>> = new Map();
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, realms, error codes, statistics module, subject
+   *   resolver and lazy loaders of the SSF modules
+   */
   constructor(private readonly deps: OAuthGrantSignalsDeps) {
     deps.log.debug("Entering OAuthGrantSignals.constructor().");
     deps.log.debug("Leaving OAuthGrantSignals.constructor().");
@@ -147,6 +157,19 @@ class OAuthGrantSignals {
   // Decides whether the revocation ends a grant and queues it; never throws
   // on its own account and sends nothing itself.
   // -------------------------------------------------------------------------
+  /**
+   * Decides whether a newly revoked token ends a grant, and queues the grant to
+   * be announced once. Called by `admin_stats.revoke()` for each jti.
+   *
+   * A superseded token, a kind that ends no grant, an access token whose grant
+   * holds a refresh token and a token with no person behind it are ignored.
+   * Sends nothing itself.
+   *
+   * @param record - the revoked token's record
+   * @param via - the door that revoked it
+   * @param how - `initiatingEntity`, `superseded` and `replay`
+   * @returns true when a grant was queued, or already was
+   */
   observe(record: Json, via: unknown, how?: RevocationHow): boolean {
     const { log, realms } = this.deps;
     log.debug("Entering OAuthGrantSignals.observe().");
@@ -214,6 +237,11 @@ class OAuthGrantSignals {
 
   // What the queue became. For the tests, which await it; the service never
   // does.
+  /**
+   * Returns what the queue flush in progress becomes. For tests.
+   *
+   * @returns a promise of the flushed results, or of [] when none is running
+   */
   settled(): Promise<Json[]> {
     const { log } = this.deps;
     log.debug("Entering OAuthGrantSignals.settled().");
@@ -266,6 +294,13 @@ class OAuthGrantSignals {
   // SSF 1.0 section 3.3's complex subject, GNAP's shape: the person, and the
   // grant as the session, prefixed so it cannot be read as a sign-on
   // session's id of the same bytes.
+  /**
+   * Builds SSF 1.0 section 3.3's complex subject for a grant: the person, and
+   * the grant as the session.
+   *
+   * @param one - the queued grant
+   * @returns the complex subject
+   */
   subjectFor(one: Pending): Json {
     const { log, subjectForName, loadSsfHttp } = this.deps;
     log.debug("Entering OAuthGrantSignals.subjectFor().");
@@ -300,6 +335,13 @@ class OAuthGrantSignals {
 
   // The events one grant's end sends: the risk signal first where it was a
   // replay, then `session-revoked`. Never rejects.
+  /**
+   * Sends the events one grant's end calls for: a risk signal first where it
+   * was a replay, then `session-revoked`.
+   *
+   * @param one - the queued grant
+   * @returns a promise of what was sent; it never rejects
+   */
   announce(one: Pending): Promise<Json> {
     const { log, errorCodes, loadSsf, loadCaep } = this.deps;
     log.debug("Entering OAuthGrantSignals.announce(). grant=" + one.grantId);
@@ -359,6 +401,9 @@ class OAuthGrantSignals {
   }
 
   // The slot this file fills (`admin_stats.setRevocationObserver()`).
+  /**
+   * Fills `admin_stats.setRevocationObserver()` with `observe()`.
+   */
   install(): void {
     const { log, stats } = this.deps;
     log.debug("Entering OAuthGrantSignals.install().");
@@ -368,6 +413,11 @@ class OAuthGrantSignals {
 
   // What the composition root passes (#50, R2): the real modules, each lazy
   // one behind a loader.
+  /**
+   * Returns the real modules, each lazy one behind a loader.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): OAuthGrantSignalsDeps {
     helpers.log.debug("Entering OAuthGrantSignals.defaultDeps().");
     helpers.log.debug("Leaving OAuthGrantSignals.defaultDeps().");
@@ -390,6 +440,11 @@ class OAuthGrantSignals {
   }
 
   // What loading this module does with its instance: fill the slot.
+  /**
+   * Installs an instance's observer, which is all loading this module does.
+   *
+   * @param instance - the instance to wire
+   */
   static wire(instance: OAuthGrantSignals): void {
     helpers.log.debug("Entering OAuthGrantSignals.wire().");
     instance.install();
@@ -410,10 +465,29 @@ const slot = new InstanceSlot<OAuthGrantSignals>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * OAuth grant revocations announced as CAEP `session-revoked` events.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   OAuthGrantSignals: OAuthGrantSignals,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: OAuthGrantSignals): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   observe: slot.forward('observe'),
   settled: slot.forward('settled'),

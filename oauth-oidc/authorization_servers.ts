@@ -525,12 +525,35 @@ const ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,63}$/;
 // ---------------------------------------------------------------------------
 const MAX_PROFILES = 200;
 
+/**
+ * Several authorization servers out of one process: each a profile, selected by
+ * a path component, that overrides or removes members of the metadata this
+ * service would publish (RFC 9700 section 2.6).
+ */
 class AuthorizationServers {
+  /**
+   * The profile a request selects when its URL carries no path component.
+   */
   static readonly DEFAULT_ID = DEFAULT_ID;
+  /**
+   * The shape a profile id must have to be a URL path segment.
+   */
   static readonly ID_SHAPE = ID_SHAPE;
+  /**
+   * The metadata members a profile can override or remove, with how each is
+   * read and checked.
+   */
   static readonly MEMBERS = MEMBERS;
+  /**
+   * The member groups, each once, in the order `MEMBERS` names them.
+   */
   static readonly GROUPS = GROUPS;
 
+  /**
+   * Builds the register from its dependencies.
+   *
+   * @param deps - the logger and settings
+   */
   constructor(private readonly deps: AuthorizationServersDeps) {
     deps.log.debug("Entering AuthorizationServers.constructor().");
     deps.log.debug("Leaving AuthorizationServers.constructor().");
@@ -538,6 +561,11 @@ class AuthorizationServers {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): AuthorizationServersDeps {
     helpers.log.debug("Entering AuthorizationServers.defaultDeps().");
     helpers.log.debug("Leaving AuthorizationServers.defaultDeps().");
@@ -550,6 +578,12 @@ class AuthorizationServers {
   // Which document a member belongs to: 'gnap' for the rows marked so, and
   // 'oauth' for everything else — including a member no row describes,
   // because every override made before GNAP existed was an OAuth one.
+  /**
+   * Tells which document a member belongs to.
+   *
+   * @param member - the member name
+   * @returns `gnap` for a GNAP member, `oauth` for everything else
+   */
   documentOf(member: string): string {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.documentOf().");
@@ -594,6 +628,12 @@ class AuthorizationServers {
              createdAt: Date.now(), seenAt: 0, seen: 0, autoCreated: false };
   }
 
+  /**
+   * Returns how many profiles may be recorded
+   * (`oauth2.maxAuthorizationServerProfiles`).
+   *
+   * @returns the cap
+   */
   maxProfiles(): number {
     const { log, config } = this.deps;
     log.debug("Entering AuthorizationServers.maxProfiles().");
@@ -623,6 +663,14 @@ class AuthorizationServers {
   // it would have had anyway — and simply not recorded, so a load generator
   // cannot take the feature away from the names that matter.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the profile an id names, creating it with the defaults on first
+   * sight; past the cap a name is served with the defaults and not recorded.
+   *
+   * @param id - the profile id, from a URL path
+   * @param options - `autoCreated`, and `seen` to count a use
+   * @returns the profile, or null for an unusable id or one past the cap
+   */
   ensure(id: unknown, options?: Json): Json {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.ensure().");
@@ -677,6 +725,12 @@ class AuthorizationServers {
     return profiles.get(String(id || '')) || null;
   }
 
+  /**
+   * Tells whether a profile is recorded.
+   *
+   * @param id - the profile id
+   * @returns true when it is
+   */
   has(id: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.has().");
@@ -684,6 +738,11 @@ class AuthorizationServers {
     return profiles.has(String(id || ''));
   }
 
+  /**
+   * Counts the recorded profiles.
+   *
+   * @returns the count
+   */
   count(): number {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.count().");
@@ -704,6 +763,14 @@ class AuthorizationServers {
   // worth finding out about; removing a member is what the removals list is
   // for.
   // -------------------------------------------------------------------------
+  /**
+   * Applies a profile to the metadata this service would otherwise publish:
+   * overrides, then removals, so a removal wins.
+   *
+   * @param metadata - the document this service would publish
+   * @param id - the profile id
+   * @returns the published document
+   */
   apply(metadata: Json, id?: string): Json {
     const { log } = this.deps;
     const self = this;
@@ -753,6 +820,15 @@ class AuthorizationServers {
   // that refused every method on the strength of having removed the member
   // would be enforcing something it never said.
   // -------------------------------------------------------------------------
+  /**
+   * Returns what a profile publishes of the members that drive a check; a
+   * removed member is `undefined`, and its check does not run.
+   *
+   * @param id - the profile id
+   * @param defaults - the values this service would publish
+   * @param document - `oauth` or `gnap`
+   * @returns the capabilities
+   */
   capabilitiesOf(id: unknown, defaults?: Json, document?: string): Json {
     const { log } = this.deps;
     const self = this;
@@ -781,6 +857,14 @@ class AuthorizationServers {
   // One capability as a LIST, for the four members that are lists and drive a
   // check. `null` means the server said nothing — see above — and every
   // caller distinguishes that from an empty list, which means it said "none".
+  /**
+   * Returns one list capability of a profile.
+   *
+   * @param id - the profile id
+   * @param defaults - the values this service would publish
+   * @param member - the member
+   * @returns the list, or null where the server said nothing
+   */
   capabilityList(id: unknown, defaults: Json, member: string): string[] {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.capabilityList().");
@@ -807,6 +891,14 @@ class AuthorizationServers {
   // `code_challenge_methods_supported` does not know PKCE is unavailable, it
   // knows nothing, and section 2.6's whole argument is about that difference.
   // -------------------------------------------------------------------------
+  /**
+   * Lists where a profile's published document differs from what this service
+   * would publish, removals included.
+   *
+   * @param id - the profile id
+   * @param truth - the document this service would publish
+   * @returns the drift rows
+   */
   driftOf(id: unknown, truth: Json): Json[] {
     const { log } = this.deps;
     const self = this;
@@ -880,6 +972,12 @@ class AuthorizationServers {
   // shape every other console action uses, so `admin.js` renders them the
   // same way without knowing what a profile is.
   // -------------------------------------------------------------------------
+  /**
+   * Creates a profile, for the console and the API.
+   *
+   * @param detail - `id`, `label` and `description`
+   * @returns `{ ok: true, ... }`, or `{ ok: false, errors }`
+   */
   create(detail: Json): Json {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.create().");
@@ -923,6 +1021,14 @@ class AuthorizationServers {
     return { ok: true, profile: this.view(id) };
   }
 
+  /**
+   * Overrides one member of a profile.
+   *
+   * @param id - the profile id
+   * @param member - the member name
+   * @param rawValue - the value as submitted, read by the member's row
+   * @returns `{ ok: true, ... }`, or `{ ok: false, errors }`
+   */
   setMember(id: unknown, member: unknown, rawValue: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.setMember(). id=" + id +
@@ -1009,6 +1115,13 @@ class AuthorizationServers {
                       'is allowed: any configuration is valid here.') };
   }
 
+  /**
+   * Publishes a member as absent from a profile's document.
+   *
+   * @param id - the profile id
+   * @param member - the member name
+   * @returns `{ ok: true, ... }`, or `{ ok: false, errors }`
+   */
   removeMember(id: unknown, member: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.removeMember(). id=" + id +
@@ -1050,6 +1163,13 @@ class AuthorizationServers {
   // One member back to what this service would publish. Different from
   // removing it, and the difference is the whole reason both exist: this
   // UNDOES an override, that PUBLISHES an absence.
+  /**
+   * Undoes a profile's override or removal of one member.
+   *
+   * @param id - the profile id
+   * @param member - the member name
+   * @returns `{ ok: true, ... }`, or `{ ok: false, errors }`
+   */
   resetMember(id: unknown, member: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.resetMember(). id=" + id +
@@ -1081,6 +1201,12 @@ class AuthorizationServers {
                  '", so nothing changed.' };
   }
 
+  /**
+   * Deletes a profile.
+   *
+   * @param id - the profile id
+   * @returns `{ ok: true, ... }`, or `{ ok: false, errors }`
+   */
   remove(id: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.remove(). id=" + id);
@@ -1104,6 +1230,12 @@ class AuthorizationServers {
   }
 
   // What the module exports as `get`.
+  /**
+   * Describes one profile for a page or the API; exported as `get`.
+   *
+   * @param id - the profile id
+   * @returns the view, or null
+   */
   view(id: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering AuthorizationServers.view().");
@@ -1144,6 +1276,11 @@ class AuthorizationServers {
     };
   }
 
+  /**
+   * Lists every profile, sorted by id.
+   *
+   * @returns the views
+   */
   list(): Json[] {
     const { log } = this.deps;
     const self = this;
@@ -1179,10 +1316,29 @@ const log = helpers.log;
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Several authorization servers out of one process, as metadata profiles.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   AuthorizationServers: AuthorizationServers,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: AuthorizationServers): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   documentOf: slot.forward('documentOf'),
   DEFAULT_ID: AuthorizationServers.DEFAULT_ID,
@@ -1190,6 +1346,9 @@ export = {
   // `<base>/<id>` as a named authorization server's only if the id is one this
   // module would have accepted — the same shape, not a second regex.
   ID_SHAPE: AuthorizationServers.ID_SHAPE,
+  /**
+   * How many profiles may be recorded, read from the installed instance.
+   */
   get MAX_PROFILES() {
     log.debug("Entering MAX_PROFILES().");
     log.debug("Leaving MAX_PROFILES().");

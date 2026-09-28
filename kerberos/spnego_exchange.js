@@ -97,6 +97,10 @@ const capabilities = require('../cluster/cluster_capabilities');
 // because it is the only thing here that works — NTLM is listed by every real
 // Windows server and is not implemented, so offering it would be a lie a client
 // could act on.
+/**
+ * The mechanism OIDs this acceptor supports, in its order of preference:
+ * Kerberos, then Microsoft's Kerberos OID.
+ */
 const SUPPORTED_MECHS = [spnego.KRB5_MECH_OID, spnego.MS_KRB5_MECH_OID];
 
 // The canonical SPN both doors are behind, in the AMBIENT trust realm. One
@@ -121,6 +125,10 @@ function spn() {
 // it must not draw "you could not be signed in" over a reply that is asking
 // for the next round trip.
 // ---------------------------------------------------------------------------
+/**
+ * Every outcome a negotiation can have, by code; `terminal` says whether the
+ * exchange is over.
+ */
 const OUTCOMES = {
   'no-authorization':        { terminal: false, what: 'no Authorization ' +
                                                       'header; the bare RFC ' +
@@ -196,6 +204,12 @@ const OUTCOMES = {
 // same two headers: a sign-in door that volunteered a different SPN from the
 // page documenting it would be worse than one that volunteered nothing.
 // ---------------------------------------------------------------------------
+/**
+ * Sets the two diagnostic headers naming the SPN this service holds a key for
+ * and every host it answers for.
+ *
+ * @param res - the response
+ */
 function volunteerTheSpn(res) {
   log.debug('Entering volunteerTheSpn().');
   res.set('X-Krb5-Service-Principal', spn() + '@' + principals.REALM);
@@ -207,6 +221,14 @@ function volunteerTheSpn(res) {
 // `WWW-Authenticate` the protocol asked for. The BODY is the caller's, which is
 // the whole point of the split — this function is everything about the answer
 // that is not prose.
+/**
+ * Puts a verdict on a response: the status, the error code, the
+ * `WWW-Authenticate` header, the pending-negotiation cookie, the SPN headers
+ * and `Cache-Control: no-store`. The body is the caller's.
+ *
+ * @param res - the response
+ * @param verdict - what `negotiate()` returned
+ */
 function applyVerdict(res, verdict) {
   log.debug('Entering applyVerdict(). code=' + verdict.code);
   if (verdict.errorCode) {
@@ -497,6 +519,17 @@ function rejection(door, code, facts) {
 //             spnego_authn.js, where a sign-in must be ONE row on /admin/users
 //             and not a ticket acceptance beside a session start.
 // ---------------------------------------------------------------------------
+/**
+ * Runs the whole SPNEGO exchange, from the Authorization header to a verdict;
+ * it writes nothing to the response.
+ *
+ * @param req - the request
+ * @param opts - `door` (the endpoint's path), `supported` (the mechanism OIDs),
+ *   `wantMic`, `mutualOff`, `via`, and `record` (false when the caller records
+ *   the authentication itself)
+ * @returns a promise of the verdict: `code` (one of `OUTCOMES`), `ok`,
+ *   `status`, `wwwAuthenticate`, `reason`, `checks` and the outcome's facts
+ */
 async function negotiate(req, opts) {
   log.debug('Entering negotiate().');
   const options = opts || {};
@@ -982,9 +1015,21 @@ async function accept(door, ctx) {
 // claim (`continuation()`).
 capabilities.provide('spnego.pending');
 
+/**
+ * The SPNEGO exchange with no page on it: the RFC 4178 negotiation and the RFC
+ * 4559 header around the Kerberos acceptor, shared by `/spnego/protected` and
+ * the `/authn/spnego` sign-in.
+ *
+ * A library: it registers no route and returns a verdict, never a response.
+ *
+ * @namespace
+ */
 module.exports = {
   // The acceptor's SPN in the AMBIENT realm. A getter since 2026-09-15, for
   // `krb5_principals.js`'s reason.
+  /**
+   * The acceptor's service principal name in the ambient realm.
+   */
   get SPN() {
     log.debug("Entering SPN().");
     log.debug("Leaving SPN().");
@@ -995,6 +1040,11 @@ module.exports = {
   negotiate: negotiate,
   applyVerdict: applyVerdict,
   volunteerTheSpn: volunteerTheSpn,
+  /**
+   * Returns the record of the last exchange, for the diagnostic page.
+   *
+   * @returns the record, or null
+   */
   lastExchange: function () {
     log.debug("Entering lastExchange().");
     log.debug("Leaving lastExchange().");

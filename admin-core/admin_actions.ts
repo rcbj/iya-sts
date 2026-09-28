@@ -220,6 +220,9 @@ import errorCodes = require('../common/error_codes');
 // the action layer, because the action is what applies it and the require
 // between the two halves goes one way, views to actions: `admin_views.ts`
 // re-exports it for the form that preselects it.
+/**
+ * What a create that names no credential gets: `generate`.
+ */
 const DEFAULT_CREDENTIAL = 'generate';
 import krb5Principals = require('../kerberos/krb5_principals');
 // STORED KERBEROS KEYS (2026-09-12). A LIBRARY (rule 3) that registers no
@@ -261,6 +264,10 @@ let truststore = null;
 // `back` and `from` are here for the same reason: they are how a form says
 // where the reader was, and a handler that treated them as settings would
 // refuse every button that keeps somebody's place.
+/**
+ * The form fields that are never settings: `action`, `csrf_token`, `back` and
+ * `from`.
+ */
 const FORM_FURNITURE = {
   action: true,
   csrf_token: true,
@@ -273,6 +280,9 @@ const FORM_FURNITURE = {
 // tests/vendored/admin_api.js READS the refusal sentence to check that every
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
+/**
+ * The actions `permissionsAction()` answers.
+ */
 const PERMISSION_ACTIONS = ['set-permission-base', 'define-permission',
                             'remove-permission', 'grant-permission',
                             'revoke-permission'];
@@ -298,6 +308,9 @@ const PERMISSION_ACTIONS = ['set-permission-base', 'define-permission',
 // is the value, and a `postalAddress` legitimately containing a `$` separator
 // would be cut into pieces by anything cleverer.
 // ---------------------------------------------------------------------------
+/**
+ * The prefix of a form field that names a person's attribute, `field.`.
+ */
 const USER_FIELD_PREFIX = 'field.';
 
 // ---------------------------------------------------------------------------
@@ -328,6 +341,9 @@ const USER_FIELD_PREFIX = 'field.';
 // for the same reason: `tests/vendored/sts_admin_api_operations.js` reads the
 // refusal sentence to discover what to check for, so a list that is short by
 // one turns the parity check off for that action.
+/**
+ * The actions `usersAction()` answers.
+ */
 const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
                        // The emailed second factor, and the address
@@ -478,12 +494,19 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
 // names, so a future field called `name` or `action` cannot be mistaken for an
 // attribute.
 // ---------------------------------------------------------------------------
+/**
+ * The prefix of a form field that names an application's attribute, `field.`.
+ */
 const FIELD_PREFIX = 'field.';
 
 // The actions this handler answers, in the order the switch below takes them.
 // It exists so that the refusal at the bottom of that switch can be BUILT from
 // it rather than typed beside it — see the comment there, and rule 7 in
 // ../mgmt-api/CLAUDE.md, which is the rule that sentence serves.
+/**
+ * The actions `applicationsAction()` answers, in the order its switch takes
+ * them.
+ */
 const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'confirm-address', 'discard-address',
                              'regenerate-secret', 'rotate-secret',
@@ -521,6 +544,9 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
 // all. Three of them are facts about THIS SERVICE. So the drill-down here links
 // to that page for the entry and does not reproduce it.
 // ---------------------------------------------------------------------------
+/**
+ * The application kind a SAML 2.0 service provider is registered as.
+ */
 const SAML2_SP_KIND = 'saml2-service-provider';
 
 // ---------------------------------------------------------------------------
@@ -552,6 +578,9 @@ const SAML2_SP_KIND = 'saml2-service-provider';
 // goes through `applications.createApplication()` — the same function
 // /admin/applications posts to and the same one an `ldapadd` reaches.
 // ---------------------------------------------------------------------------
+/**
+ * The application kind a SAML 1.1 relying party is registered as.
+ */
 const SAML11_RP_KIND = saml11.RP_KIND;
 
 // The two acts, through the one switch that has them — **BEHIND A GUARD OF ITS
@@ -570,6 +599,9 @@ const SAML11_RP_KIND = saml11.RP_KIND;
 // So the repertoire is stated here and the WORK is not duplicated: an action
 // outside these two is refused in this resource's own words, and the two that
 // belong to it are handed to the one switch that performs them.
+/**
+ * The actions the MFA resource answers, all of them handed to `usersAction()`.
+ */
 const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
@@ -577,6 +609,9 @@ const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
 // tests/vendored/admin_api.js READS the refusal sentence to check that every
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
+/**
+ * The actions `consentAction()` answers.
+ */
 const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
                          'revoke-consent', 'revoke-application-consent',
                          'forget-user-consent'];
@@ -585,12 +620,20 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
 // this repository's own tests/vendored/admin_api.js READS the refusal sentence
 // to check that every console action has an /admin-api operation, so a list
 // that is short by one turns the parity check off for that action.
+/**
+ * The actions `rolesAction()` answers.
+ */
 const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
-                      'remove-member', 'describe-role'];
+                      'remove-member', 'describe-role', 'add-permission',
+                      'remove-permission'];
 
 // The three kinds of thing that can hold a role, in one table because four
 // places have to agree about them — the two member actions, the console's
 // select, the management API's enum and the register's own attribute names.
+/**
+ * The three kinds of thing that can hold a role — a person, a group, an
+ * application — each with its label, field and description.
+ */
 const ROLE_MEMBER_KINDS = [
   { kind: 'user', label: 'a person', field: 'users',
     what: 'A username. The person need not exist yet: this service creates a ' +
@@ -630,6 +673,9 @@ const ROLE_MEMBER_KINDS = [
 // allowance applied when reading one back. Written once, and every part of
 // this page and its two API operations is derived from it, so a seventh
 // setting is one entry here.
+/**
+ * The settings `/admin/token-lifetimes` owns, in the order the page draws them.
+ */
 const TOKEN_LIFETIME_KEYS = ['oauth2.accessTokenTtlS', 'oauth2.idTokenTtlS',
                              'oauth2.refreshTokenTtlS',
                              'oauth2.refreshIdleSeconds',
@@ -645,6 +691,10 @@ const TOKEN_LIFETIME_KEYS = ['oauth2.accessTokenTtlS', 'oauth2.idTokenTtlS',
 // what makes these fifteen defaults rather than settings. Written once, and
 // every part of this page, its two API operations and the per-application
 // resolver's documentation is derived from it.
+/**
+ * The settings `/admin/saml-assertions` owns, each with its unit, the artifact
+ * kind it governs and the per-application attribute that overrides it.
+ */
 const SAML_ASSERTION_SETTINGS = [
   { key: 'saml2.assertionLifetimeMin', unit: 'min', kind: 'SAML 2.0',
     profile: 'saml2', field: 'saml2AssertionLifetimeMin' },
@@ -692,6 +742,9 @@ const SAML_ASSERTION_SETTINGS = [
   { key: 'saml.clockSkewS', unit: 's', kind: null, profile: '', field: '' }
 ];
 
+/**
+ * The keys of `SAML_ASSERTION_SETTINGS`.
+ */
 const SAML_ASSERTION_KEYS = SAML_ASSERTION_SETTINGS.map(function (row) {
   return row.key;
 });
@@ -700,6 +753,9 @@ const SAML_ASSERTION_KEYS = SAML_ASSERTION_SETTINGS.map(function (row) {
 // stream — see `clearFor()`: clearing what a receiver has been shown and
 // tearing down the agreement to send it more are two different acts, and the
 // second one is `/admin/ssf`'s.
+/**
+ * The actions `signalsAction()` answers: `clear`.
+ */
 const SIGNALS_CONSOLE_ACTIONS = ['clear'];
 
 // ---------------------------------------------------------------------------
@@ -726,10 +782,19 @@ const SIGNALS_CONSOLE_ACTIONS = ['clear'];
 // from `tls.trustAnchorsFile` still comes back at the next start however it was
 // removed.
 // ---------------------------------------------------------------------------
+/**
+ * The actions `truststoreAction()` answers: `add` and `remove`.
+ */
 const TRUSTSTORE_ACTIONS = ['add', 'remove'];
 
+/**
+ * The actions `spiffeEntriesAction()` answers.
+ */
 const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
 
+/**
+ * The actions `spiffeAgentsAction()` answers.
+ */
 const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
 // WHAT EVERY TOKEN REVOCATION ON `/admin/tokens` AND `/admin-api/tokens`
 // STATES (#239): an administrator's act, which CAEP's `session-revoked` about
@@ -743,6 +808,9 @@ const SPIFFE_BROKER_ACTIONS = ['set', 'remove'];
 // names it the way the DIRECTORY does. One map, here, rather than two
 // vocabularies that drift: a form offering `dnsNames` while the table says
 // `spiffeDnsName` would refuse every edit the form offers.
+/**
+ * The directory attribute each registration entry form field names.
+ */
 const SPIFFE_FIELD_ATTRIBUTES = {
   spiffeId: 'spiffeId', parentId: 'spiffeParentId', selectors: 'spiffeSelector',
   dnsNames: 'spiffeDnsName', federatesWith: 'spiffeFederatesWith',
@@ -754,6 +822,9 @@ const SPIFFE_FIELD_ATTRIBUTES = {
 // The three the SPIFFE page offers. It travels with spiffeAction() because
 // that is the only thing that dispatches on it, and the page draws its
 // buttons from the same array.
+/**
+ * The actions `spiffeAction()` answers.
+ */
 const SPIFFE_ACTIONS = ['rotate', 'federation-set', 'federation-remove'];
 
 // ---------------------------------------------------------------------------
@@ -800,6 +871,9 @@ const SPIFFE_ACTIONS = ['rotate', 'federation-set', 'federation-remove'];
 // answers with the run's id. The second keeps nothing — every TGT in the
 // realm is refused afterwards — and needs `confirm: "invalidate"`.
 // `drop-previous-service-keys` takes the krbtgt's own name as well.
+/**
+ * The actions `kerberosPrincipalsAction()` answers.
+ */
 const KERBEROS_PRINCIPAL_ACTIONS = ['create-service', 'rotate-service',
                                     'delete-service', 'clear-person-keys',
                                     'drop-previous-service-keys',
@@ -862,13 +936,32 @@ interface AdminActionsDeps {
   krbtgtRotation: () => any;
 }
 
+/**
+ * What the admin console and the management API both do: every write behind a
+ * control on `/admin` and an operation on `/admin-api` (rule 7).
+ *
+ * An action takes a parsed body and an actor, calls the domain module that owns
+ * the change, writes the audit row and returns `{ ok, errors, … }`. It never
+ * sees `req` or `res` and builds no HTML.
+ */
 class AdminActions {
+  /**
+   * Builds the actions over their dependencies.
+   *
+   * @param deps - the domain modules the actions call, the audit log, the
+   *   logger and the helpers they share
+   */
   constructor(private readonly deps: AdminActionsDeps) {
     deps.log.debug("Entering AdminActions.constructor().");
     deps.log.debug("Leaving AdminActions.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): AdminActionsDeps {
     helpers.log.debug("Entering AdminActions.defaultDeps().");
     helpers.log.debug("Leaving AdminActions.defaultDeps().");
@@ -962,6 +1055,12 @@ class AdminActions {
     return result;
   }
 
+  /**
+   * Fills the slot for the logout model (`logout/logout.ts`); a module that
+   * cannot be required from here fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setLogoutReader(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.setLogoutReader().");
@@ -969,6 +1068,12 @@ class AdminActions {
     log.debug("Leaving AdminActions.setLogoutReader().");
   }
 
+  /**
+   * Fills the slot for the directory writer (`ldap/ldap_server.js`); a module
+   * that cannot be required from here fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setDirectoryWriter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.setDirectoryWriter().");
@@ -976,6 +1081,12 @@ class AdminActions {
     log.debug("Leaving AdminActions.setDirectoryWriter().");
   }
 
+  /**
+   * Fills the slot for the directory group writer; a module that cannot be
+   * required from here fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setGroupWriter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.setGroupWriter().");
@@ -983,6 +1094,12 @@ class AdminActions {
     log.debug("Leaving AdminActions.setGroupWriter().");
   }
 
+  /**
+   * Fills the slot for the Shared Signals console (`ssf/ssf.ts`); a module that
+   * cannot be required from here fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setSignalsReporter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.setSignalsReporter().");
@@ -990,6 +1107,12 @@ class AdminActions {
     log.debug("Leaving AdminActions.setSignalsReporter().");
   }
 
+  /**
+   * Fills the slot for the CAEP console (`ssf/ssf.ts`); a module that cannot be
+   * required from here fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setCaepReporter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.setCaepReporter().");
@@ -997,6 +1120,12 @@ class AdminActions {
     log.debug("Leaving AdminActions.setCaepReporter().");
   }
 
+  /**
+   * Fills the slot for the RISC console (`ssf/ssf.ts`); a module that cannot be
+   * required from here fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setRiscReporter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.setRiscReporter().");
@@ -1004,6 +1133,12 @@ class AdminActions {
     log.debug("Leaving AdminActions.setRiscReporter().");
   }
 
+  /**
+   * Fills the slot for the XACML pages (`xacml/xacml_admin.ts`); a module that
+   * cannot be required from here fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setXacmlPages(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.setXacmlPages().");
@@ -1011,6 +1146,12 @@ class AdminActions {
     log.debug("Leaving AdminActions.setXacmlPages().");
   }
 
+  /**
+   * Fills the slot for the client-certificate truststore; `protocol_stack.ts`
+   * fills it (rule 3e).
+   *
+   * @param value - the truststore
+   */
   setTruststore(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.setTruststore().");
@@ -1029,6 +1170,14 @@ class AdminActions {
   // RFC 7009's endpoint does verify, because there the token is the credential
   // being presented; here it is merely a way of typing a jti that is 22
   // characters long.
+  /**
+   * Reads the `jti` out of what an administrator pasted: a jti, a JWT, or an
+   * encrypted refresh token opened with this realm's keys. The signature is not
+   * verified; the jti is only looked up in this service's own registry.
+   *
+   * @param target - the pasted text
+   * @returns the jti, and how it was read
+   */
   jtiFrom(target) {
     const { log, b64uDecode, refreshTokenCrypto } = this.deps;
     log.debug("Entering AdminActions.jtiFrom().");
@@ -1076,6 +1225,14 @@ class AdminActions {
     }
   }
 
+  /**
+   * Revokes or restores what `/admin/tokens` lists: one token or artifact, a
+   * token set, a subject, a user, a kind, or everything.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   tokenAction(body) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminActions.tokenAction(). action=" + (body.action ||
@@ -1401,6 +1558,14 @@ class AdminActions {
   // The `key` comes off the row rather than out of a name box, because
   // terminate() is keyed on an identity and the row already knows which one; a
   // posted key that names nobody simply ends nothing, and says so.
+  /**
+   * Ends a sign-on session from `/admin/sessions`, through the logout model's
+   * `terminate()`; the one action is `revoke`.
+   *
+   * @param body - the parsed body, with `action` and the row's `key`
+   * @param opts - who is acting (`actor`) and from where (`by`)
+   * @returns `{ ok, errors, … }` reporting what was ended and what could not be
+   */
   sessionsAction(body, opts) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.sessionsAction().");
@@ -1465,6 +1630,15 @@ class AdminActions {
   // The action behind every control on this page, and behind
   // POST /admin-api/logout/{action}. Four of them, and the two NON-SPEC ones
   // are labelled as such wherever they appear — see the header.
+  /**
+   * Performs a `/admin/logout` action: end an identity's sessions, the global
+   * sign-out, restore a token or Kerberos ticket, or retry a back-channel
+   * delivery.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   logoutAction(body) {
     const { log, stats, krb5Principals, mode } = this.deps;
     log.debug("Entering AdminActions.logoutAction(). action=" + (body.action ||
@@ -1631,6 +1805,14 @@ class AdminActions {
                                       'retry-backchannel.'] });
   }
 
+  /**
+   * Defines, removes, grants or revokes an application permission, or sets the
+   * permission base, on `/admin/delegation`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   permissionsAction(body) {
     const { log, numberWord, appPermissions } = this.deps;
     log.debug("Entering AdminActions.permissionsAction(). action=" +
@@ -1733,6 +1915,12 @@ class AdminActions {
                                       PERMISSION_ACTIONS.join(', ') + '.'] });
   }
 
+  /**
+   * Returns the answer given when the XACML module is not loaded in this
+   * process.
+   *
+   * @returns `xacml: false` and a message saying why
+   */
   noXacml() {
     const { log } = this.deps;
     log.debug("Entering AdminActions.noXacml().");
@@ -1768,6 +1956,13 @@ class AdminActions {
   // other XACML defects did: that job is this repository's OWN and had not been
   // run against the branch.
   // ---------------------------------------------------------------------------
+  /**
+   * Performs an XACML console action through `xacml_admin.ts`, converting its
+   * `{ ok, why }` answer to the `{ ok, errors }` every other resource answers.
+   *
+   * @param body - the parsed body, whose `action` names the act
+   * @returns `{ ok, errors, why, … }`, or a promise of it
+   */
   xacmlAction(body) {
     const { log } = this.deps;
     const self = this;
@@ -1804,6 +1999,13 @@ class AdminActions {
     }
   }
 
+  /**
+   * Collects a person's attributes from a body: a JSON `attributes` object,
+   * then every `field.`-prefixed form field.
+   *
+   * @param body - the parsed body
+   * @returns the attributes by name
+   */
   userFieldsFrom(body) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.userFieldsFrom().");
@@ -1841,6 +2043,12 @@ class AdminActions {
   // `yes` or `no`, and a JSON caller sends a real boolean — so all three are
   // read here rather than at the three call sites. Anything else is false,
   // including the empty string an unfilled hidden field posts.
+  /**
+   * Reads a form's yes: `true`, `on` or `yes`; anything else is false.
+   *
+   * @param value - the posted value
+   * @returns whether it is yes
+   */
   truthy(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.truthy().");
@@ -2580,6 +2788,17 @@ class AdminActions {
                  'to is being ended.' };
   }
 
+  /**
+   * Performs a `/admin/users` action on a person: create, set a password or
+   * mail address, issue an activation link, clear a second factor, disable or
+   * enable, edit an attribute, or link a federated identity.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`), through which door (`via`), and
+   *   the base URL a reset link is built on (`base`)
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   usersAction(body, context?) {
     const { log, numberWord, credentials, auditLog,
             accountSignals } = this.deps;
@@ -3329,6 +3548,14 @@ class AdminActions {
   // token can DO — with the two console roles as the only exceptions, and those
   // are granted on /admin/rbac rather than here.
   // ---------------------------------------------------------------------------
+  /**
+   * Creates a group or adds a member, on `/admin/groups`; a group grants
+   * nothing by being a group.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   groupsAction(body) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.groupsAction(). action=" + (body.action ||
@@ -3434,6 +3661,13 @@ class AdminActions {
                                       'is an ldapdelete or a SCIM DELETE.'] });
   }
 
+  /**
+   * Collects an application's attributes from a body: a JSON `fields` object,
+   * then every `field.`-prefixed form field.
+   *
+   * @param body - the parsed body
+   * @returns the attributes by name
+   */
   applicationFieldsFrom(body) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.applicationFieldsFrom().");
@@ -3473,6 +3707,19 @@ class AdminActions {
   // addressed by the base URL of the REQUEST. The route computes it and hands
   // it down — `listField()`'s arrangement one argument along — so this function
   // still never sees `req`.
+  /**
+   * Performs a `/admin/applications` action: create, edit attributes, confirm
+   * or discard an observed address, manage secrets, software statements and TLS
+   * client certificates, import RFC 9728 metadata, or forget one.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param protocols - the declared protocol families, read at the transport
+   *   edge
+   * @param context - the authorization servers of the request's realm, for
+   *   `load-resource-metadata`
+   * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
+   *   with the sentence naming every action
+   */
   applicationsAction(body, protocols, context) {
     const { log, numberWord, applications, spMetadata, resourceMetadata,
       softwareStatement, tlsClientCertificates } = this.deps;
@@ -3904,6 +4151,14 @@ class AdminActions {
                                           ', ') + '.'] });
   }
 
+  /**
+   * Creates, changes, resets or deletes one of the realm's named authorization
+   * servers.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   asAction(body) {
     const { log, authorizationServers } = this.deps;
     log.debug("Entering AdminActions.asAction(). action=" + (body.action ||
@@ -3975,6 +4230,14 @@ class AdminActions {
   // see the header — so this function decides nothing except which attribute
   // and which mode, and the registry refuses an attribute that is derived
   // rather than declared without being asked twice.
+  /**
+   * Registers or configures a SAML 2.0 service provider: its logout service,
+   * its signing certificates, its metadata by upload, refresh or MDQ import.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
+   *   with the sentence naming every action
+   */
   saml2Action(body): any {
     const { log, applications, saml2 } = this.deps;
     const self = this;
@@ -4198,6 +4461,13 @@ class AdminActions {
   // ONE action, where /admin/saml2 has four, and the three it does not have are
   // the three SAML 1.1 has no protocol for: a logout service to declare, a
   // request signature to record, and a signing certificate to hold it in.
+  /**
+   * Registers a SAML 1.1 relying party, the one action `/admin/saml11` has.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   saml11Action(body) {
     const { log, applications, saml11 } = this.deps;
     log.debug("Entering AdminActions.saml11Action(). action=" + (body.action ||
@@ -4240,6 +4510,15 @@ class AdminActions {
         'There is one: register.'] });
   }
 
+  /**
+   * Clears a person's TOTP, security key or emailed factor, handing the action
+   * to `usersAction()`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`) and through which door (`via`)
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   mfaAction(body, context) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.mfaAction(). action=" + (body.action ||
@@ -4267,6 +4546,14 @@ class AdminActions {
   // `admin.role.change` audit row can say WHO made the grant — the one question
   // an audit log of permissions changes exists to answer, and the one nothing
   // else on the row could reconstruct.
+  /**
+   * Grants or revokes a console role, through `admin_rbac.js`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`) and through which door (`via`)
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   rbacAction(body, context) {
     const { log, realms, rbac } = this.deps;
     log.debug("Entering AdminActions.rbacAction(). action=" + (body.action ||
@@ -4301,6 +4588,14 @@ class AdminActions {
                                       'There are two: grant and revoke.'] });
   }
 
+  /**
+   * Grants or revokes global consent, or revokes or forgets a person's consent
+   * records, on `/admin/consent`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   consentAction(body) {
     const { log, numberWord, auditLog, consent } = this.deps;
     log.debug("Entering AdminActions.consentAction(). action=" + (body.action ||
@@ -4402,6 +4697,12 @@ class AdminActions {
                                       CONSENT_ACTIONS.join(', ') + '.'] });
   }
 
+  /**
+   * Returns one of `ROLE_MEMBER_KINDS` by kind.
+   *
+   * @param kind - `user`, `group` or `application`
+   * @returns the kind, or null
+   */
   roleMemberKindOf(kind) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.roleMemberKindOf().");
@@ -4417,6 +4718,15 @@ class AdminActions {
   // and the cap — so this function reads fields off a body and decides nothing.
   // It is the same division `rbacAction()` has with `admin_rbac.js`.
   // ---------------------------------------------------------------------------
+  /**
+   * Creates, describes or deletes a role, or adds or removes a member or a
+   * permission, through `common/roles.js`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`)
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   rolesAction(body, context) {
     const { log, numberWord, auditLog, applications, roles } = this.deps;
     log.debug("Entering AdminActions.rolesAction(). action=" + (body.action ||
@@ -4508,7 +4818,7 @@ class AdminActions {
       // this file that would be silent and total.
       const result = roles.write(name, {
         description: description, users: row.users, groups: row.groups,
-        applications: row.applications
+        applications: row.applications, permissions: row.permissions
       });
       log.debug("Leaving AdminActions.rolesAction(). describe-role " +
                 (result.ok ? 'ok.' : 'refused.'));
@@ -4598,7 +4908,7 @@ class AdminActions {
       }
       const result = roles.write(name, {
         description: row.description, users: held.users, groups: held.groups,
-        applications: held.applications
+        applications: held.applications, permissions: row.permissions
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.rolesAction(). The write was refused.");
@@ -4618,6 +4928,119 @@ class AdminActions {
                  : '"' + member + '" no longer holds "' + name + '".' };
     }
 
+    // -------------------------------------------------------------------------
+    // WHAT A ROLE AUTHORIZES (#303, part B of #88). `rolePermission` on the
+    // role entry names the permissions a holder may be ISSUED, by the full
+    // identifier a client asks for — a resource's `oauthPermissionBaseUri`
+    // followed by the name. The same ordering rule as a delegated grant
+    // (`applications.js`): a permission must be DEFINED before a role can
+    // authorize it, so a typo cannot become a role authorizing nothing that
+    // looks as if it authorized something. It matters only where the
+    // resource GATES the permission (`oauthRoleGatedPermission`); the reply
+    // says when it does not, because a role authorizing an ungated
+    // permission changes nothing yet. A console role's permission is fixed,
+    // and a native one (`admin:read`, `admin:write`) is authorized by those
+    // two roles alone — see `common/roles.js`.
+    // -------------------------------------------------------------------------
+    if (action === 'add-permission' || action === 'remove-permission') {
+      const permission = String(body.permission || '').trim();
+      const row = roles.read(name);
+      if (!row) {
+        log.debug("Leaving AdminActions.rolesAction(). No such role.");
+        return this.refused(roles.isBuiltIn(name) ? 'STS-ADMIN-0546'
+                                                  : 'STS-ADMIN-0543',
+          { ok: false, errors: [roles.isBuiltIn(name)
+            ? '"' + name + '" is a BUILT-IN role. It is computed from the ' +
+              'context of each decision and authorizes nothing by itself.'
+            : 'There is no role called "' + name + '". Create it first.'] });
+      }
+      if (row.console) {
+        log.debug("Leaving AdminActions.rolesAction(). A console role.");
+        return this.refused('STS-ADMIN-0823', { ok: false, errors: ['"' +
+          name + '" is one of the two console roles, and what it authorizes ' +
+          'is fixed: ' + row.permissions.join(', ') + '. A role authorizing ' +
+          'anything else would make the management API\'s roles mean ' +
+          'something the console\'s do not.'] });
+      }
+      if (!permission) {
+        log.debug("Leaving AdminActions.rolesAction(). No permission named.");
+        return this.refused('STS-ADMIN-0824', { ok: false, errors: [
+          '`permission` names what the role authorizes: the full ' +
+          'identifier a client asks for, the resource\'s ' +
+          'oauthPermissionBaseUri followed by the permission name ' +
+          '(https://api.example/write).'] });
+      }
+      const at = row.permissions.indexOf(permission);
+      let gated = null;
+      if (action === 'add-permission') {
+        if (roles.isConsoleRole(name) || roles.CONSOLE_ROLES.some(
+          function (one) { return one.permission === permission; })) {
+          log.debug("Leaving AdminActions.rolesAction(). A native " +
+                    "permission.");
+          return this.refused('STS-ADMIN-0825', { ok: false, errors: ['"' +
+            permission + '" is a native permission of this service and is ' +
+            'authorized by ' + roles.CONSOLE_ROLES.map(function (one) {
+              return one.name;
+            }).join(' and ') + ' alone. Put the application in one of those ' +
+            'roles, or grant the person the console role on /admin/rbac.'] });
+        }
+        gated = applications.roleGatingFor(permission);
+        if (!gated) {
+          log.debug("Leaving AdminActions.rolesAction(). Not a defined " +
+                    "permission.");
+          return this.refused('STS-ADMIN-0826', { ok: false, errors: [
+            'No application in this realm defines the permission "' +
+            permission + '", and a permission must be DEFINED before a ' +
+            'role can authorize it. Give the resource application an ' +
+            'oauthPermissionBaseUri and an oauthPermission, then name the ' +
+            'two joined together.'] });
+        }
+        if (at >= 0) {
+          log.debug("Leaving AdminActions.rolesAction(). Already there.");
+          return this.refused('STS-ADMIN-0827', { ok: false, errors: ['"' +
+            name + '" already authorizes "' + permission + '".'] });
+        }
+      } else if (at < 0) {
+        log.debug("Leaving AdminActions.rolesAction(). Not there.");
+        return this.refused('STS-ADMIN-0828', { ok: false, errors: ['"' +
+          name + '" does not authorize "' + permission + '".'] });
+      }
+      const permissions = row.permissions.slice();
+      if (action === 'add-permission') {
+        permissions.push(permission);
+      } else {
+        permissions.splice(at, 1);
+      }
+      const result = roles.write(name, {
+        description: row.description, users: row.users, groups: row.groups,
+        applications: row.applications, permissions: permissions
+      });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). The write was refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
+                            { ok: false, errors: [result.why] });
+      }
+      auditLog.audit({
+        action: action === 'add-permission' ? 'roles.authorize'
+                                             : 'roles.unauthorize',
+        actor: actor, target: permission, protocol: 'XACML', channel: 'http',
+        detail: 'the role "' + name + '" ' + (action === 'add-permission'
+          ? 'now authorizes' : 'no longer authorizes') + ' "' + permission +
+          '"' });
+      const notGated = !!(gated && !gated.gated);
+      log.debug("Leaving AdminActions.rolesAction(). " + action + " ok.");
+      return { ok: true, role: name, permission: permission,
+               gated: gated ? gated.gated : undefined,
+               message: action === 'add-permission'
+                 ? '"' + name + '" now authorizes "' + permission + '".' +
+                   (notGated ? ' Its resource application, ' +
+                     gated.identifier + ', does not gate it yet ' +
+                     '(oauthRoleGatedPermission), so it is still issued to ' +
+                     'anybody who may ask for it until it does.' : '')
+                 : '"' + name + '" no longer authorizes "' + permission +
+                   '".' };
+    }
+
     log.debug("Leaving AdminActions.rolesAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
@@ -4626,6 +5049,15 @@ class AdminActions {
                                       ROLE_ACTIONS.join(', ') + '.'] });
   }
 
+  /**
+   * Saves or resets one kind of policy on Directory → Policies, the kind found
+   * by its action's name (`policy_kinds.ts`).
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`)
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   policiesAction(body, context) {
     const { log, auditLog, policyKinds, numberWord } = this.deps;
     log.debug("Entering AdminActions.policiesAction(). action=" +
@@ -4745,6 +5177,17 @@ class AdminActions {
   // a set whose page it is not on and then redirecting to a page that cannot
   // show what it did. It defaults to all five, which is what a caller that has
   // not been given a family — nothing today — would get.
+  /**
+   * Changes one of the five claim sets — `/admin/claims`,
+   * `/admin/saml-attributes` and `/admin/userinfo-claims` all post here.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param names - the attribute names the form repeated, read at the transport
+   *   edge; only `attributes` reads them
+   * @param allowed - the claim set ids the page being posted to carries
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   claimsAction(body, names, allowed) {
     const { log, stats, claimAttributes } = this.deps;
     log.debug("Entering AdminActions.claimsAction(). action=" + (body.action ||
@@ -4924,6 +5367,13 @@ class AdminActions {
   // that changed nothing in the directory, because "0 entries gained anything"
   // and "there is no directory here" are different facts and the page must not
   // read the same for both.
+  /**
+   * Describes the outcome of a directory sweep as a sentence, appended to an
+   * action's message.
+   *
+   * @param sweep - the sweep's outcome
+   * @returns the sentence
+   */
   sweepText(sweep) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.sweepText().");
@@ -4948,6 +5398,16 @@ class AdminActions {
            ' of them gained ' + sweep.values + ' value(s).';
   }
 
+  /**
+   * Changes which claims an issued credential carries, on `/admin/vc`, and
+   * populates the directory.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param names - the claim names the form repeated, read at the transport
+   *   edge
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   vcAction(body, names) {
     const { log, vcClaims } = this.deps;
     log.debug("Entering AdminActions.vcAction(). action=" + (body.action ||
@@ -5076,6 +5536,16 @@ class AdminActions {
   // rather than in one it issues — the dcql_query in the next Authorization
   // Request.
   // ---------------------------------------------------------------------------
+  /**
+   * Changes what the Verifier asks for in its next `dcql_query`, on
+   * `/admin/vc-verifier-config`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param names - the claim names the form repeated, read at the transport
+   *   edge
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   vpConfigAction(body, names) {
     const { log, vpConfig } = this.deps;
     log.debug("Entering AdminActions.vpConfigAction(). action=" +
@@ -5179,6 +5649,14 @@ class AdminActions {
   // The four writes. One function, the way every other page here has one, so
   // that the console form and POST /admin-api/realms cannot come to disagree
   // about what "remove" means.
+  /**
+   * Creates, updates or removes a trust realm, or sets or unsets one of its
+   * settings, on `/admin/realms`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
+   *   with the sentence naming every action
+   */
   realmsAction(body) {
     const { log, credentials, realms, rbac, mode, errorCodes } = this.deps;
     log.debug("Entering AdminActions.realmsAction(). action=" + (body &&
@@ -5409,6 +5887,14 @@ class AdminActions {
   // would make a partly-applied section the ordinary outcome of a mistake in
   // any one of them. So set-many is ALL-OR-NOTHING: every field is checked
   // before any is written.
+  /**
+   * Sets or resets a setting on `/admin/config`; `set-many` is all or nothing,
+   * every field checked before any is written.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   configAction(body) {
     const { log, config } = this.deps;
     const self = this;
@@ -5534,6 +6020,12 @@ class AdminActions {
   // which throws on an unknown key by design — the throw is right for a caller
   // that has a key it believes in, and wrong for a form body whose field names
   // arrived from outside.
+  /**
+   * Asks whether this service has a setting of that name.
+   *
+   * @param key - the setting's name
+   * @returns whether it does
+   */
   configKnows(key) {
     const { log, config } = this.deps;
     log.debug("Entering AdminActions.configKnows().");
@@ -5543,6 +6035,12 @@ class AdminActions {
     });
   }
 
+  /**
+   * Returns the row `config.js` describes a setting with.
+   *
+   * @param key - the setting's name
+   * @returns the row, or undefined
+   */
   configSettingFor(key) {
     const { log, config } = this.deps;
     log.debug("Entering AdminActions.configSettingFor().");
@@ -5565,6 +6063,14 @@ class AdminActions {
   // set on another page — that is the sort of button that is used once and
   // regretted, and "reset all" already exists on /admin/config for whoever
   // wants it.
+  /**
+   * Sets the token lifetimes all at once, or restores their defaults, on
+   * `/admin/token-lifetimes`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   tokenLifetimesAction(body) {
     const { log, config } = this.deps;
     const self = this;
@@ -5673,6 +6179,12 @@ class AdminActions {
         'The two are: set, defaults.'] });
   }
 
+  /**
+   * Returns one row of `SAML_ASSERTION_SETTINGS` by key.
+   *
+   * @param key - the setting's name
+   * @returns the row, or null
+   */
   samlAssertionRowFor(key) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.samlAssertionRowFor().");
@@ -5688,6 +6200,13 @@ class AdminActions {
   // fields at once, and applying some before refusing one would leave this
   // service issuing assertions with a combination nobody asked for and the page
   // showing it as though it had been chosen.
+  /**
+   * Sets the SAML assertion settings all at once, or restores their defaults.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   samlAssertionsAction(body) {
     const { log, config } = this.deps;
     const self = this;
@@ -5795,6 +6314,13 @@ class AdminActions {
         'The two are: set, defaults.'] });
   }
 
+  /**
+   * Empties this console's Shared Signals inbox; the stream is untouched.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   signalsAction(body) {
     const { log, signals } = this.deps;
     log.debug("Entering AdminActions.signalsAction(). action=" + String((body ||
@@ -5836,6 +6362,13 @@ class AdminActions {
   // dead-letter pair arrived on 2026-09-14), shared with
   // `POST /admin-api/ssf/:action`. It resolves
   // rather than returning, for the reason the slot's header gives.
+  /**
+   * Performs a Shared Signals console action through `ssf/ssf.ts`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
+   *   with the sentence naming every action
+   */
   ssfAction(body) {
     const { log } = this.deps;
     const self = this;
@@ -5856,6 +6389,13 @@ class AdminActions {
     });
   }
 
+  /**
+   * Performs a CAEP console action through `ssf/ssf.ts`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
+   *   with the sentence naming every action
+   */
   caepAction(body) {
     const { log } = this.deps;
     const self = this;
@@ -5876,6 +6416,13 @@ class AdminActions {
     });
   }
 
+  /**
+   * Performs a RISC console action through `ssf/ssf.ts`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
+   *   with the sentence naming every action
+   */
   riscAction(body) {
     const { log } = this.deps;
     const self = this;
@@ -5896,6 +6443,15 @@ class AdminActions {
     });
   }
 
+  /**
+   * Adds an anchor to the client-certificate truststore, or removes one; an add
+   * is persisted where a store is installed, and the result says which.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`) and through which door (`via`)
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   truststoreAction(body, context) {
     const { log, numberWord, auditLog } = this.deps;
     log.debug("Entering AdminActions.truststoreAction(). action=" +
@@ -6045,6 +6601,12 @@ class AdminActions {
   // is in `spiffe_registry.js` and `spiffe_ca.js`, which the SPIRE Server API
   // also calls.
   // ---------------------------------------------------------------------------
+  /**
+   * Splits a comma-separated field into trimmed, non-empty values.
+   *
+   * @param value - the field
+   * @returns the values
+   */
   spiffeCommaList(value) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.spiffeCommaList().");
@@ -6054,6 +6616,13 @@ class AdminActions {
       .filter(Boolean);
   }
 
+  /**
+   * Builds the refusal for an unknown SPIFFE action.
+   *
+   * @param action - the action asked for
+   * @param known - the actions there are
+   * @returns `{ ok: false, errors }`
+   */
   spiffeUnknownAction(action, known) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.spiffeUnknownAction().");
@@ -6064,6 +6633,14 @@ class AdminActions {
       'The actions here are: ' + known.join(', ') + '.'] });
   }
 
+  /**
+   * Creates, updates or deletes a registration entry, through
+   * `spiffe_registry.ts`.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   spiffeEntriesAction(body) {
     const { log, spiffeCa, spiffeRegistry, spiffeIdLib } = this.deps;
     log.debug("Entering AdminActions.spiffeEntriesAction(). action=" +
@@ -6175,6 +6752,12 @@ class AdminActions {
     return this.spiffeUnknownAction(action, SPIFFE_ENTRY_ACTIONS);
   }
 
+  /**
+   * Returns the directory attribute a registration entry form field names.
+   *
+   * @param field - the form field
+   * @returns the attribute, or ''
+   */
   fieldToAttribute(field) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.fieldToAttribute().");
@@ -6182,6 +6765,13 @@ class AdminActions {
     return SPIFFE_FIELD_ATTRIBUTES[String(field)] || '';
   }
 
+  /**
+   * Bans, unbans or deletes an attested agent.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   spiffeAgentsAction(body) {
     const { log, spiffeRegistry } = this.deps;
     log.debug("Entering AdminActions.spiffeAgentsAction(). action=" +
@@ -6239,6 +6829,14 @@ class AdminActions {
   // call — and an entry that would not parse is refused before anything is
   // written (STS-SPIFFE-0141).
   // ---------------------------------------------------------------------------
+  /**
+   * Adds or replaces a SPIFFE Broker API broker in `spiffe.brokers`, or removes
+   * one (#170).
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns `{ ok, errors, … }`; an unknown action is refused with the
+   *   sentence naming every action
+   */
   spiffeBrokersAction(body) {
     const { log, config, spiffeAuth } = this.deps;
     log.debug("Entering AdminActions.spiffeBrokersAction(). action=" +
@@ -6310,6 +6908,14 @@ class AdminActions {
   // create (the relationship's encryption key is issued with it), `set` of
   // `fedEncryptionKeyType` (a key of the new type), and `rotate-key`.
   // Issuing is `pki.js`'s, and it awaits. Both callers take the promise.
+  /**
+   * Creates, changes, enables, disables or deletes a federation relationship,
+   * or rotates its encryption key.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
+   *   with the sentence naming every action
+   */
   async federationAction(body) {
     const { log, federation, fedEncryption } = this.deps;
     log.debug("Entering AdminActions.federationAction(). action=" +
@@ -6435,6 +7041,14 @@ class AdminActions {
                            'disable, rotate-key, delete.'] });
   }
 
+  /**
+   * Rotates the realm's SPIFFE authorities, or sets or removes a federated
+   * bundle.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
+   *   with the sentence naming every action
+   */
   async spiffeAction(body) {
     const { log, auditLog, spiffeCa } = this.deps;
     log.debug("Entering AdminActions.spiffeAction(). action=" + (body.action ||
@@ -6640,6 +7254,15 @@ class AdminActions {
     });
   }
 
+  /**
+   * Creates, rotates or deletes a service principal, clears or drops a person's
+   * stored keys, or queues a krbtgt rotation.
+   *
+   * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`) and through which door (`via`)
+   * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
+   *   with the sentence naming every action
+   */
   kerberosPrincipalsAction(body, context) {
     const self = this;
     const { log, numberWord, realms, krb5PersonKeys } = this.deps;
@@ -6706,6 +7329,11 @@ class AdminActions {
   // A COPY each time, because the caller gets the list and the table is this
   // file's.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns a copy of `TOKEN_LIFETIME_KEYS`.
+   *
+   * @returns the keys
+   */
   tokenLifetimeKeys() {
     const { log } = this.deps;
     log.debug("Entering AdminActions.tokenLifetimeKeys().");
@@ -6713,6 +7341,11 @@ class AdminActions {
     return TOKEN_LIFETIME_KEYS.slice();
   }
 
+  /**
+   * Returns a copy of `SAML_ASSERTION_KEYS`.
+   *
+   * @returns the keys
+   */
   samlAssertionKeys() {
     const { log } = this.deps;
     log.debug("Entering AdminActions.samlAssertionKeys().");
@@ -6739,6 +7372,11 @@ const slot = new InstanceSlot<AdminActions>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What the admin console and the management API both do: the action layer
+ * behind every control on `/admin` and operation on `/admin-api` (rule 7).
+ * @namespace
+ */
 export = {
   AdminActions: AdminActions,
   installInstance: (instance: AdminActions): void => slot.install(instance),

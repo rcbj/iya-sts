@@ -261,11 +261,23 @@ const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
                      'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
                      'thirteen', 'fourteen', 'fifteen'];
 
+/**
+ * Protocols → PKI, `/admin/pki`: the realm's certificate authority (Root,
+ * Intermediate, Issuing), the key pairs it issues, the Certificate & Key
+ * Configuration pane, revocation and pinned signing keys, every control a form
+ * field and every computation on the server.
+ */
 class PkiAdmin {
   // The table the comments here call PURPOSE_WRITES — see
   // `purposeWritesTable()`.
   private readonly purposeWrites: Record<string, any>;
 
+  /**
+   * Builds an instance and its table of what each key-pair purpose writes.
+   *
+   * @param deps - the certificate authority, the authoring pane, the registers
+   * and the console
+   */
   constructor(private readonly deps: PkiAdminDeps) {
     deps.log.debug("Entering PkiAdmin.constructor().");
     this.purposeWrites = this.purposeWritesTable();
@@ -274,6 +286,11 @@ class PkiAdmin {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): PkiAdminDeps {
     helpers.log.debug("Entering PkiAdmin.defaultDeps().");
     helpers.log.debug("Leaving PkiAdmin.defaultDeps().");
@@ -300,6 +317,11 @@ class PkiAdmin {
   }
 
   // The action names this page's form can post, for the management API.
+  /**
+   * Answers the action names the page's form can post, for the management API.
+   *
+   * @returns a copy of the action list
+   */
   pkiActionNames() {
     const { log } = this.deps;
     log.debug("Entering PkiAdmin.pkiActionNames().");
@@ -730,6 +752,15 @@ class PkiAdmin {
   // than this file's: `describe()` drops every one of them on the way out, so a
   // caller here could not leak the Root's key by forgetting.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the page's model, which `GET /admin-api/pki` also answers: the
+   * hierarchy, the issued key pairs, the pane, revocation and pinned signers.
+   *
+   * No private key is in it; `common/pki.js`'s `describe()` drops every one.
+   * @param req - the request, for paging
+   * @param draft - the pane's draft to draw, after a pane action
+   * @returns the model
+   */
   pkiJson(req: Json, draft?: Json) {
     const { log, pki, authoring, applications, personAssertions, pqcSupport,
             adminViews, admin } = this.deps;
@@ -1320,6 +1351,17 @@ class PkiAdmin {
                   'them.' };
   }
 
+  /**
+   * Performs one of the page's actions, for the console's POST and
+   * `/admin-api/pki/{action}` alike.
+   *
+   * An action that names a branch this realm does not draw is refused, and an
+   * unknown action is refused with the list of known ones; a pane action
+   * answers with a `draft` as well as a verdict.
+   * @param body - `action` and its fields
+   * @returns `ok` with a message (and a draft for a pane action), or a refusal
+   * carrying its error code
+   */
   async pkiAction(body: Json) {
     const { log, config, pki, pkiRevocation, authoring, applications,
             errorCodes } = this.deps;
@@ -3310,6 +3352,14 @@ class PkiAdmin {
 
   // The whole pane: the three columns, the extensions, the buttons and the
   // store, in one form.
+  /**
+   * Draws the Certificate & Key Configuration pane: its three columns, the
+   * extensions, the buttons and the store, in one form.
+   *
+   * @param json - `pkiJson()`'s model
+   * @param draft - the pane's draft
+   * @returns the pane's markup
+   */
   certificatePane(json: Json, draft: Json) {
     const { log, admin, esc } = this.deps;
     const self = this;
@@ -3566,6 +3616,12 @@ class PkiAdmin {
   // THE PINNED SIGNING KEYS (#263): the model `GET /admin-api/pki` carries and
   // the section this page draws from it. Read in the realm this page is for.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the realm's pinned signing keys, each with whether its
+   * certificate is expiring soon.
+   *
+   * @returns whether pinning is on, the pinned keys and their warnings
+   */
   pinnedSignersModel() {
     const { log, pki, config, realms } = this.deps;
     log.debug("Entering PkiAdmin.pinnedSignersModel().");
@@ -4728,6 +4784,14 @@ class PkiAdmin {
   // `permissionsReturnTo()`'s reason: a redirect target taken out of a request
   // body is an open redirect.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers where a PKI action goes back to: the application's or person's own
+   * page when the form was posted from there, otherwise `/admin/pki`, rebuilt
+   * from the body rather than taken from it.
+   *
+   * @param body - the posted body: `from`, `identifier` and paging
+   * @returns the path to redirect to
+   */
   pkiReturnTo(body: Json) {
     const { log, adminViews, admin } = this.deps;
     const self = this;
@@ -4762,6 +4826,12 @@ class PkiAdmin {
     return '/admin/pki';
   }
 
+  /**
+   * Registers `/admin/pki`, its actions, the certificate view and export, and a
+   * person's key-pair actions.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, parseBody, authoring, errorCodes, certificateViews,
             certificateDialog, admin, esc } = this.deps;
@@ -5125,10 +5195,24 @@ const slot = new InstanceSlot<PkiAdmin>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Protocols → PKI, `/admin/pki`: the realm's certificate authority and the key
+ * pairs it issues, and the functions `mgmt-api/admin_api.ts` reaches it through
+ * (rule 7).
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   PkiAdmin: PkiAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: PkiAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts`. Rule 7: every control on this page has an
   // operation, and both go through THESE functions so the API decides nothing

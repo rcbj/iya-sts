@@ -205,6 +205,11 @@ import InstanceSlot = require('./instance_slot');
 // `authorization_code` rows at the token endpoint, and a reader seeing both
 // should not conclude there were two sign-ins.
 // ---------------------------------------------------------------------------
+/**
+ * One row per OAuth grant or authorization-endpoint flow a token can record:
+ * its protocol, its OAuth and OIDC names, its specification and whether it
+ * runs through the browser.
+ */
 const FLOWS = [
   { flow: 'authorization_code', protocol: 'OAuth 2.0 / OIDC',
     label: 'Authorization Code grant', oidc: 'Authorization Code Flow',
@@ -281,6 +286,9 @@ const FLOWS = [
           'browser flow.' }
 ];
 
+/**
+ * The flow identifiers in FLOWS, in order.
+ */
 const FLOW_IDS = FLOWS.map(function (one) { return one.flow; });
 
 const FLOW_BY_ID = {};
@@ -293,6 +301,9 @@ FLOWS.forEach(function (one) { FLOW_BY_ID[one.flow] = one; });
 // response is a reply rather than the product of one. The console prints this
 // sentence instead of an empty cell, for the reason /admin/users prints it
 // beside the same column.
+/**
+ * The row a token that states no grant is filed under.
+ */
 const FLOW_NOT_STATED = {
   flow: '', protocol: '', label: 'No grant was stated', oidc: '', spec: '',
   browser: false,
@@ -323,6 +334,10 @@ const FLOW_NOT_STATED = {
 // authentication lines say which families were used; this line says what came
 // out.
 // ---------------------------------------------------------------------------
+/**
+ * The issuance mechanism of each artifact family with no OAuth grant (SAML,
+ * Kerberos, SPIFFE, OpenID4VCI), matched on the artifact's kind.
+ */
 const ARTIFACT_FLOWS = [
   { match: 'SAML 2.0', protocol: 'SAML 2.0', label: 'A SAML 2.0 assertion',
     spec: 'saml-core-2.0-os §2.3',
@@ -373,12 +388,28 @@ interface UserGraphDeps {
     'forAudience' | 'forClientId' | 'forPermissionBase' | 'permissionsOf'>;
 }
 
+/**
+ * One person's activity as one graph: every credential issued in their name,
+ * every delegation act naming them, and the applications on the other side.
+ *
+ * A library with no routes; the console draws it at /admin/delegation/user.
+ */
 class UserGraph {
+  /** The grant and flow table, FLOWS. */
   static readonly FLOWS = FLOWS;
+  /** The flow identifiers, FLOW_IDS. */
   static readonly FLOW_IDS = FLOW_IDS;
+  /** The row for a token that states no grant. */
   static readonly FLOW_NOT_STATED = FLOW_NOT_STATED;
+  /** The artifact mechanism table, ARTIFACT_FLOWS. */
   static readonly ARTIFACT_FLOWS = ARTIFACT_FLOWS;
 
+  /**
+   * Builds a graph over the given registers.
+   *
+   * @param deps - the logger, the statistics, delegation and application
+   *   registers
+   */
   constructor(private readonly deps: UserGraphDeps) {
     deps.log.debug("Entering UserGraph.constructor().");
     deps.log.debug("Leaving UserGraph.constructor().");
@@ -386,6 +417,11 @@ class UserGraph {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the load-time default instance is built from.
+   *
+   * @returns the logger and the three registers
+   */
   static defaultDeps(): UserGraphDeps {
     helpers.log.debug("Entering UserGraph.defaultDeps().");
     helpers.log.debug("Leaving UserGraph.defaultDeps().");
@@ -403,6 +439,14 @@ class UserGraph {
   // the page then shows `device_code — not in this console's table`, which is a
   // bug report. Collapsing it into the not-stated row would hide the omission
   // behind a sentence that is not true of it.
+  /**
+   * Returns the FLOWS row for a recorded grant.
+   *
+   * An empty grant gets FLOW_NOT_STATED; an unknown one comes back named after
+   * itself with `unknown: true`, and a warning is logged.
+   * @param id - the recorded grant string
+   * @returns the flow row
+   */
   flowRow(id) {
     const { log } = this.deps;
     log.debug("Entering UserGraph.flowRow().");
@@ -432,6 +476,13 @@ class UserGraph {
   // because the kind carries the FORMAT — `Credential (sd-jwt-vc)` — and three
   // formats sharing one sentence is right where three specifications would not
   // be.
+  /**
+   * Returns the ARTIFACT_FLOWS row for an artifact's kind, matched exactly or
+   * as a prefix.
+   *
+   * @param kind - the artifact's recorded kind
+   * @returns the row, or a placeholder row naming the kind
+   */
   artifactFlowRow(kind) {
     const { log } = this.deps;
     log.debug("Entering UserGraph.artifactFlowRow().");
@@ -471,6 +522,13 @@ class UserGraph {
   // A credential with no holder is not an error and must not be drawn as one.
   // The empty string is the answer and the caller draws the shorter line.
   // ---------------------------------------------------------------------------
+  /**
+   * Names the application that holds a credential: a token's `client_id`, an
+   * assertion's or SVID's audience, or a ticket's service.
+   *
+   * @param record - an issued-credential record with its `family`
+   * @returns the holder, or an empty string when the credential has none
+   */
   holderOf(record) {
     const { log } = this.deps;
     log.debug("Entering UserGraph.holderOf().");
@@ -541,6 +599,17 @@ class UserGraph {
   // relationship is worse than a placeholder box, and this only ever happens
   // for a token recorded before that field existed.
   // ---------------------------------------------------------------------------
+  /**
+   * Resolves a credential's audience, which may be several space-separated
+   * values, to the parties it names.
+   *
+   * Each value is looked up in the application register; one on the issuer's
+   * own origin that no application registered is dropped.
+   * @param audience - the recorded audience
+   * @param issuer - the credential's issuer, used to recognise this service's
+   *   own origin
+   * @returns one `{ identifier, audience, registered }` per party
+   */
   audienceParties(audience, issuer) {
     const { log, applications } = this.deps;
     log.debug("Entering UserGraph.audienceParties(). audience=" + audience);
@@ -658,6 +727,17 @@ class UserGraph {
   // what `applications.forPermissionBase()` was added for, and its header
   // argues why the four lookups that were already there cannot answer this.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the scope values on a credential that its audience's application
+   * defines as permissions.
+   *
+   * Only names the resolved resource defines are returned. Nothing here asks
+   * whether the permission was granted.
+   * @param scope - the credential's space-delimited scope
+   * @param audience - the credential's audience
+   * @returns the permission names, or an empty list when the audience
+   *   resolves to no application
+   */
   permissionsAddressedTo(scope, audience) {
     const { log, applications } = this.deps;
     log.debug("Entering UserGraph.permissionsAddressedTo(). audience=" +
@@ -738,6 +818,12 @@ class UserGraph {
   // own family uses. It is one column rather than five mostly-empty ones, which
   // is the argument `userArtifactTable()` in admin.js already makes about the
   // same four families.
+  /**
+   * Describes a credential in one line, in the vocabulary of its own family.
+   *
+   * @param record - an issued-credential record with its `family`
+   * @returns the detail line
+   */
   detailOf(record) {
     const { log } = this.deps;
     log.debug("Entering UserGraph.detailOf().");
@@ -877,6 +963,14 @@ class UserGraph {
   // usually the one somebody wants, where thirty people are a history and the
   // one somebody wants is nearly always the one they just drove a client as.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists every identity worth offering in the chooser: the union of the
+   * identity register and the identities named in a delegation act.
+   *
+   * Each row says whether it was `authenticated`, `delegated` or both. Most
+   * recently active first.
+   * @returns the identity rows
+   */
   userList() {
     const { log, stats, delegation } = this.deps;
     log.debug("Entering UserGraph.userList().");
@@ -973,6 +1067,13 @@ class UserGraph {
     return node;
   }
 
+  /**
+   * Builds one person's graph: the delegation acts naming them, drawn by
+   * delegation.graph(), with the credentials issued to them folded on.
+   *
+   * @param key - the identity key
+   * @returns `{ graph, acts, credentials, skipped }`
+   */
   graphFor(key) {
     const { log, stats, delegation } = this.deps;
     log.debug("Entering UserGraph.graphFor(). key=" + key);
@@ -1468,6 +1569,14 @@ class UserGraph {
   // selected (or with a name nothing has happened to) is how somebody gets here
   // from a bookmark.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns everything the console page needs about one person in one call:
+   * the entry, the graph, the acts, the credentials, the flows used and the
+   * counts.
+   *
+   * @param key - the identity key
+   * @returns the activity, or null when the identity is in neither register
+   */
   activityFor(key) {
     const { log } = this.deps;
     log.debug("Entering UserGraph.activityFor(). key=" + key);
@@ -1547,9 +1656,20 @@ const slot = new InstanceSlot<UserGraph>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * One person, end to end: everything issued in their name, everything
+ * delegated on their behalf, and every application on the other side, as one
+ * graph.
+ *
+ * The functions forward to the UserGraph instance the composition root
+ * installs.
+ * @namespace
+ */
 export = {
   UserGraph: UserGraph,
+  /** Installs the instance the composition root built. */
   installInstance: (instance: UserGraph): void => slot.install(instance),
+  /** Says where the installed instance came from. */
   instanceOrigin: (): string => slot.origin(),
   FLOWS: FLOWS,
   FLOW_IDS: FLOW_IDS,

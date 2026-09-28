@@ -123,6 +123,14 @@ const ORIGIN_COMMENT = '# sts-origin: ';
 // whose encoding is guessed by whoever opens it is a file that will come back
 // wrong, and base64 removes the guess.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether an LDIF value must be written base64-encoded.
+ *
+ * True for anything that is not an RFC 2849 SAFE-STRING — a leading space,
+ * colon or '<', a trailing space, NUL, LF or CR — and for anything non-ASCII.
+ * @param value - the attribute value, converted to a string
+ * @returns true when the value needs the `::` base64 form
+ */
 function needsBase64(value) {
   log.debug("Entering needsBase64().");
   const s = String(value);
@@ -154,6 +162,12 @@ function needsBase64(value) {
 // a single SPACE, and the continuation is what that space introduces — so a
 // value that itself begins with a space would be ambiguous, which is exactly
 // why such a value is base64 above.
+/**
+ * Builds one `name: value` LDIF line, encoded and folded at 76 columns.
+ * @param name - the attribute name (or `dn`)
+ * @param value - the value, base64-encoded when `needsBase64()` says so
+ * @returns the line, with continuation lines joined by a newline and a space
+ */
 function ldifLine(name, value) {
   log.debug("Entering ldifLine().");
   let line;
@@ -201,6 +215,15 @@ function entryToLdif(entry) {
   return lines.join('\n');
 }
 
+/**
+ * Serialises stored directory entries as an RFC 2849 LDIF document.
+ *
+ * Each entry's `origin` is carried as a `# sts-origin:` comment above its
+ * record.
+ * @param rows - the stored entries, each `{ dn, attributes, origin }`
+ * @param header - comment lines written above `version: 1`
+ * @returns the LDIF text
+ */
 function toLdif(rows, header) {
   log.debug("Entering toLdif().");
   const out = [];
@@ -267,6 +290,17 @@ function parseLine(line) {
            value: rest.charAt(0) === ' ' ? rest.slice(1) : rest };
 }
 
+/**
+ * Parses an LDIF document back into stored directory entries.
+ *
+ * URL-valued attributes and lines before the first `dn:` are skipped and
+ * reported in one warning; `createdAt` and `modifiedAt` are rebuilt from the
+ * `createTimestamp` and `modifyTimestamp` attributes.
+ * @param text - the LDIF text
+ * @param log - the logger to report on
+ * @returns the entries, each `{ dn, attributes, createdAt, modifiedAt }` with
+ * `origin` where the file carried one
+ */
 function fromLdif(text, log) {
   log.debug('Entering fromLdif().');
   const lines = unfold(text);
@@ -355,6 +389,16 @@ function fromLdif(text, log) {
 // ---------------------------------------------------------------------------
 // The driver.
 // ---------------------------------------------------------------------------
+/**
+ * Creates the ldif persistence driver over a data directory.
+ *
+ * The directory holds one `realm-<id>.ldif` per realm plus JSON files for the
+ * realm registry, the overrides, the sealed keys and the used-assertion
+ * history; every write is to a temporary file renamed over the target.
+ * @param options - `dir`, the data directory, and `log`, the logger
+ * @returns the driver object, with the `open`, `close`, `load*` and `save*`
+ * methods the persistence contract names
+ */
 function create(options) {
   const dir = options.dir;
   const log = options.log;
@@ -830,6 +874,14 @@ function create(options) {
   };
 }
 
+/**
+ * The ldif persistence driver: local development's store as files, the
+ * directory in LDIF.
+ *
+ * Written for `persistence.mode=ldif`, a run with no database. The codec
+ * functions are exported for the tests.
+ * @namespace
+ */
 module.exports = {
   create: create,
   // Exported for tests/ and for nothing else in this service: the codec is the

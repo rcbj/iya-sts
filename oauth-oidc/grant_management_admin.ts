@@ -49,12 +49,27 @@ interface GrantManagementAdminDeps {
   adminViews: () => Json;
 }
 
+/**
+ * The console page `/admin/grants`: every OAuth grant the realm holds, with a
+ * Revoke button on each.
+ */
 class GrantManagementAdmin {
+  /**
+   * Builds the page from its dependencies.
+   *
+   * @param deps - the logger, body parser, error codes, console shell, grant
+   *   register and a lazy loader of the console's gate state
+   */
   constructor(private readonly deps: GrantManagementAdminDeps) {
     deps.log.debug("Entering GrantManagementAdmin.constructor().");
     deps.log.debug("Leaving GrantManagementAdmin.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): GrantManagementAdminDeps {
     helpers.log.debug("Entering GrantManagementAdmin.defaultDeps().");
     helpers.log.debug("Leaving GrantManagementAdmin.defaultDeps().");
@@ -68,6 +83,12 @@ class GrantManagementAdmin {
   }
 
   // Who is acting, for the audit row: the console's signed-in operator.
+  /**
+   * Returns the signed-in console operator, for the audit row.
+   *
+   * @param req - the console request
+   * @returns the operator's username, or ''
+   */
   actorOf(req: Json): string {
     const { log, adminViews } = this.deps;
     log.debug("Entering GrantManagementAdmin.actorOf().");
@@ -84,6 +105,12 @@ class GrantManagementAdmin {
   }
 
   // The page body for `json`, the view `GET /admin-api/grants` answers.
+  /**
+   * Draws the page body.
+   *
+   * @param json - the view `GET /admin-api/grants` answers
+   * @returns the HTML
+   */
   body(json: Json): string {
     const { log, admin } = this.deps;
     log.debug("Entering GrantManagementAdmin.body().");
@@ -138,6 +165,11 @@ class GrantManagementAdmin {
       '<code>GET /admin-api/grants</code></p>';
   }
 
+  /**
+   * Registers `GET` and `POST /admin/grants`: the page, and its one act.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: Json): void {
     const { log, parseBody, admin, grants, errorCodes } = this.deps;
     const self = this;
@@ -180,10 +212,28 @@ const slot = new InstanceSlot<GrantManagementAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The console page `/admin/grants` (#142), Grant Management's register.
+ *
+ * The composition root builds the instance and calls `registerRoutes()`.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   GrantManagementAdmin: GrantManagementAdmin,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: GrantManagementAdmin): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin()
 };

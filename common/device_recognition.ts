@@ -89,6 +89,10 @@ import mtls = require('../oauth-oidc/mtls');
 
 type Json = any;
 
+/**
+ * The ways a device can be recognised, in order of strength: x509, webauthn,
+ * jwk, native-sso and browser-cookie.
+ */
 const VIAS = ['x509', 'webauthn', 'jwk', 'native-sso', 'browser-cookie'];
 
 // Per realm at the declaration (common/CLAUDE.md), NOT persisted: counters
@@ -107,14 +111,32 @@ interface DeviceRecognitionDeps {
   now: () => number;
 }
 
+/**
+ * Which registered device a request came from, and by which key.
+ *
+ * Answers a fact or null and decides nothing; the device's key, proven at
+ * enrolment, identifies it.
+ */
 class DeviceRecognition {
+  /** The ways a device can be recognised, in order of strength. */
   static readonly VIAS = VIAS;
 
+  /**
+   * Builds a recogniser over the given dependencies.
+   *
+   * @param deps - the logger, the device register, `mtls`, `crypto`, the
+   *   remembered-browser reader and a clock
+   */
   constructor(private readonly deps: DeviceRecognitionDeps) {
     deps.log.debug("Entering DeviceRecognition.constructor().");
     deps.log.debug("Leaving DeviceRecognition.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): DeviceRecognitionDeps {
     helpers.log.debug("Entering DeviceRecognition.defaultDeps().");
     helpers.log.debug("Leaving DeviceRecognition.defaultDeps().");
@@ -186,6 +208,19 @@ class DeviceRecognition {
   // the request is for, which sets `ownerMatches`, `clientId` the
   // application the device is linked to. Answers the fact or null.
   // =========================================================================
+  /**
+   * Recognises the registered device a request's evidence names.
+   *
+   * When several devices are named, the strongest evidence wins and the others
+   * are listed in `conflict`. A compromised device is still recognised. Moves
+   * the device's last use and counts the recognition.
+   * @param evidence - any of `request`, `webauthnCredentialId`, `dpopJkt`,
+   *   `deviceSecret`, `clientId` (the application the device is linked to)
+   *   and `subject` (the username the request is for, which sets
+   *   `ownerMatches`)
+   * @returns the fact `{ id, via, keyId, owner, ownerKind, ownerName, status,
+   *   attestation, compliance, … }`, or null when no device is recognised
+   */
   recognize(evidence: Json): Json {
     const { log, devices } = this.deps;
     log.debug("Entering DeviceRecognition.recognize().");
@@ -294,6 +329,15 @@ class DeviceRecognition {
   // longer registered is not a registered device. A fact with no id, or no
   // fact, is answered as given.
   // =========================================================================
+  /**
+   * Brings a recorded fact up to date from the register.
+   *
+   * Status, compliance, attestation, risk level and, for a device given away
+   * since, the owner are read again; the evidence stays as recorded.
+   * @param fact - a fact `recognize()` answered earlier
+   * @returns the refreshed fact, the fact as given when it has no id, or null
+   *   for a device since removed
+   */
   current(fact: Json): Json {
     const { log, devices } = this.deps;
     log.debug("Entering DeviceRecognition.current().");
@@ -331,6 +375,14 @@ class DeviceRecognition {
   // application — by the owner's kind and name, which recognition names
   // and `current()` looks up again for a device given away since.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether a fact's device belongs to the party an issuance is about.
+   *
+   * @param fact - a device fact
+   * @param subject - `{ kind: user | application, name }`, the issuance gate's
+   *   shape
+   * @returns true when the owner's kind and name match
+   */
   static ownedBy(fact: Json, subject: Json): boolean {
     helpers.log.debug("Entering DeviceRecognition.ownedBy().");
     const who = subject || {};
@@ -346,6 +398,13 @@ class DeviceRecognition {
   }
 
   // An enrolment through `method` whose key was `level` in `format`.
+  /**
+   * Counts an enrolment for Monitoring → Devices.
+   *
+   * @param method - how the device was enrolled (`portal`, `est`, `scep`)
+   * @param level - `attested` or `self-asserted`
+   * @param format - the attestation format, or empty for none
+   */
   noteEnrolment(method: string, level: string, format: string): void {
     this.deps.log.debug("Entering DeviceRecognition.noteEnrolment().");
     this.bump('enrolments', String(method));
@@ -356,6 +415,12 @@ class DeviceRecognition {
 
   // A statement in `format` that did not verify, or a key product refused
   // for having none (`format` 'unattested').
+  /**
+   * Counts an attestation statement that did not verify, or a key refused for
+   * having none.
+   *
+   * @param format - the statement's format, or `unattested`
+   */
   noteAttestationRefused(format: string): void {
     this.deps.log.debug("Entering DeviceRecognition." +
                         "noteAttestationRefused().");
@@ -364,6 +429,12 @@ class DeviceRecognition {
   }
 
   // What Monitoring → Devices draws: this realm's counters in this process.
+  /**
+   * Returns what Monitoring → Devices draws: this realm's counters in this
+   * process, which are not persisted.
+   *
+   * @returns recognitions, enrolments and attestation counts by kind
+   */
   activity(): Json {
     this.deps.log.debug("Entering DeviceRecognition.activity().");
     const read = function (table: string, keys: string[]): Json {
@@ -401,10 +472,28 @@ const slot = new InstanceSlot<DeviceRecognition>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Which registered device a request came from, and by which key.
+ *
+ * A library that registers nothing; the functions forward to the instance
+ * the composition root installs.
+ * @namespace
+ */
 export = {
   DeviceRecognition: DeviceRecognition,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: DeviceRecognition): void =>
     slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   VIAS: VIAS,
   recognize: slot.forward('recognize'),

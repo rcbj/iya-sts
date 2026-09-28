@@ -53,11 +53,26 @@ const { log } = require('../common/helpers');
 const config = require('../common/config');
 const stsCrypto = require('../common/crypto');
 
+/**
+ * The name of the cookie that carries the OP browser state.
+ */
 const COOKIE = 'sts_op_browser_state';
+/**
+ * The OP iframe's path.
+ */
 const IFRAME_PATH = '/oauth2/check_session';
+/**
+ * The path of the OP iframe's script.
+ */
 const SCRIPT_PATH = '/oauth2/check_session.js';
 
 // Whether Session Management is on in the ambient realm.
+/**
+ * Tells whether Session Management is on in the ambient realm
+ * (`oauth2.sessionManagement`, off by default).
+ *
+ * @returns true when it is on
+ */
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
@@ -67,6 +82,12 @@ function enabled() {
 // The OP browser state of a session: its `browserState` when somebody is
 // signed in to it, and '' otherwise (no session, an arrival session, a
 // session minted before this existed).
+/**
+ * Returns a session's OP browser state.
+ *
+ * @param session - the sign-on session
+ * @returns its browser state when somebody is signed in to it, or ''
+ */
 function browserStateOf(session) {
   log.debug("Entering browserStateOf().");
   const state = session && session.authenticated !== false &&
@@ -80,6 +101,14 @@ function browserStateOf(session) {
 // there it is `Lax` — which no third-party iframe will ever be sent, and the
 // card says so. `secure` defaults to the port's own scheme (`global.https`,
 // restart-only); a test names it.
+/**
+ * Builds the cookie line that puts a browser state in the browser, or clears it
+ * for ''; `SameSite=None; Secure` over TLS, `Lax` otherwise.
+ *
+ * @param state - the browser state, or ''
+ * @param secure - whether to mark it Secure; the port's scheme by default
+ * @returns the `Set-Cookie` value
+ */
 function cookieLine(state, secure) {
   log.debug("Entering cookieLine().");
   const onTls = secure === undefined
@@ -94,6 +123,12 @@ function cookieLine(state, secure) {
 // Appends the browser-state cookie to a response, beside whatever else it
 // sets. Appending, `clearSessionCookie()`'s reason: `res.set()` would throw
 // away the session cookie the same response may carry.
+/**
+ * Appends the browser-state cookie to a response, beside whatever else it sets.
+ *
+ * @param res - the response
+ * @param state - the browser state, or '' to clear it
+ */
 function writeCookie(res, state) {
   log.debug("Entering writeCookie().");
   if (res && typeof res.append === 'function') {
@@ -107,6 +142,12 @@ function writeCookie(res, state) {
 // The origin section 3 hashes: the redirect URI's. A private-use scheme or an
 // unparseable URI has no web origin, and so no `session_state` — a native
 // application has no iframe to ask.
+/**
+ * Returns the web origin of a redirect URI, which section 3 hashes.
+ *
+ * @param redirectUri - the redirect URI
+ * @returns the origin, or '' for a private-use scheme or an unparseable URI
+ */
 function originOf(redirectUri) {
   log.debug("Entering originOf().");
   let origin = '';
@@ -125,6 +166,16 @@ function originOf(redirectUri) {
 // The `session_state` for one authentication response, or '' where none is
 // owed: the feature off, no client, not an OpenID Connect request, or a
 // redirect URI with no web origin.
+/**
+ * Computes the `session_state` for one authentication response.
+ *
+ * @param clientId - the client
+ * @param redirectUri - the redirect URI
+ * @param scope - the granted scope
+ * @param session - the sign-on session
+ * @returns the `session_state`, or '' where none is owed (the feature off, no
+ *   client, not an OpenID Connect request, or no web origin)
+ */
 function sessionStateFor(clientId, redirectUri, scope, session) {
   log.debug("Entering sessionStateFor().");
   const origin = originOf(redirectUri);
@@ -139,6 +190,12 @@ function sessionStateFor(clientId, redirectUri, scope, session) {
 }
 
 // Who may frame the iframe: the realm's registered relying parties.
+/**
+ * Returns who may frame the OP iframe: every http(s) origin of a redirect URI
+ * registered in the realm.
+ *
+ * @returns the origins
+ */
 function frameAncestors() {
   log.debug("Entering frameAncestors().");
   const applications = require('../common/applications');
@@ -148,6 +205,12 @@ function frameAncestors() {
 
 // The OP iframe itself. The script is a sibling resource, named relatively so
 // a realm's prefix carries over; the page carries no inline script.
+/**
+ * Returns the OP iframe's page, which loads its script as a sibling resource
+ * and carries none inline.
+ *
+ * @returns the HTML
+ */
 function iframePage() {
   log.debug("Entering iframePage().");
   log.debug("Leaving iframePage().");
@@ -176,6 +239,11 @@ function iframePage() {
 // node's in `tests/session_management.js`; the value hashed is not a
 // secret the page did not already hold.
 // ---------------------------------------------------------------------------
+/**
+ * The OP iframe's script: it answers a relying party's `postMessage` with
+ * `changed`, `unchanged` or `error`, hashing with Web Crypto where it works and
+ * a plain SHA-256 where it does not.
+ */
 const IFRAME_SCRIPT = [
   '(function () {',
   '  "use strict";',
@@ -303,6 +371,12 @@ const IFRAME_SCRIPT = [
   ''
 ].join('\n');
 
+/**
+ * OpenID Connect Session Management 1.0 (#121): the OP browser state, the
+ * `session_state` on each authentication response, and the OP iframe.
+ *
+ * @namespace
+ */
 module.exports = {
   COOKIE: COOKIE,
   IFRAME_PATH: IFRAME_PATH,

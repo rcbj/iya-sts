@@ -199,6 +199,9 @@ interface PersonEditorDeps {
 // The longest value an edit may write. A postal address or a description is
 // the long case; a directory value longer than this is a document, and a
 // document does not belong in a person's entry.
+/**
+ * The longest value an attribute edit may write: 1024 characters.
+ */
 const MAX_VALUE_LENGTH = 1024;
 
 // SINGLE-VALUE in the schema that defines each (see the header), and this
@@ -236,6 +239,10 @@ const MANAGED: Record<string, string> = {
         'VERIFIED and the former address is told it changed.'
 };
 
+/**
+ * The three edits: `set` (replace every value with one, or clear with an empty
+ * value), `add` and `remove` (one value).
+ */
 const MODES = ['set', 'add', 'remove'];
 
 // C0 controls, DEL and the C1 range. A newline in particular: nothing in a
@@ -258,16 +265,42 @@ const DN_SHAPE = /^\s*[A-Za-z][A-Za-z0-9-]*\s*=\s*[^,=]+(\s*,\s*[A-Za-z][A-Za-z0
 // which may come before the composition root installs this module.
 let directory: PersonDirectory | null = null;
 
+/**
+ * What an administrator may change on a person's entry, one attribute at a
+ * time: the schema's person attributes and the credential catalogue's, minus
+ * the secret, binary and managed ones and the attribute the entry is named by.
+ *
+ * An attribute outside that allowlist is refused by name. `add` is refused on a
+ * single-valued attribute.
+ */
 class PersonEditor {
+  /**
+   * The longest value an edit may write; the module's `MAX_VALUE_LENGTH`.
+   */
   static readonly MAX_VALUE_LENGTH = MAX_VALUE_LENGTH;
+  /**
+   * The three edits; the module's `MODES`.
+   */
   static readonly MODES = MODES;
 
+  /**
+   * Builds the editor from its dependencies.
+   *
+   * @param deps - the modules it reads, from `PersonEditor.defaultDeps()` or
+   * the composition root
+   */
   constructor(private readonly deps: PersonEditorDeps) {
     deps.log.debug("Entering PersonEditor.constructor().");
     deps.log.debug("Leaving PersonEditor.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the real modules the editor depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): PersonEditorDeps {
     helpers.log.debug("Entering PersonEditor.defaultDeps().");
     helpers.log.debug("Leaving PersonEditor.defaultDeps().");
@@ -357,6 +390,11 @@ class PersonEditor {
   }
 
   // Every editable attribute, whoever the person is.
+  /**
+   * Lists every editable attribute, whoever the person is.
+   *
+   * @returns the rows
+   */
   editableAttributes(): EditableRow[] {
     const { log } = this.deps;
     log.debug("Entering PersonEditor.editableAttributes().");
@@ -366,6 +404,12 @@ class PersonEditor {
 
   // The attributes of the schema that are NOT editable, each with the door to
   // use instead.
+  /**
+   * Lists the schema's attributes that are not editable, each with the door to
+   * use instead.
+   *
+   * @returns the rows
+   */
   withheldAttributes(): Withheld[] {
     const { log } = this.deps;
     log.debug("Entering PersonEditor.withheldAttributes().");
@@ -375,6 +419,11 @@ class PersonEditor {
 
   // Whether a directory has been installed, for a page deciding whether to
   // draw a form at all.
+  /**
+   * Says whether a directory has been installed.
+   *
+   * @returns true when one has
+   */
   available(): boolean {
     const { log } = this.deps;
     log.debug("Entering PersonEditor.available().");
@@ -388,6 +437,15 @@ class PersonEditor {
   // for the attribute the entry is named by. `null` where there is no
   // directory or no such person, which the page reads as "draw nothing".
   // -------------------------------------------------------------------------
+  /**
+   * Returns one person's editor: every editable attribute with the values the
+   * entry holds, and whether this entry lets it be edited (not the attribute
+   * the entry is named by).
+   *
+   * @param key - the person's username or DN
+   * @returns `{ dn, attributes, withheld, mail }`, or null where there is no
+   * directory or no such person
+   */
   editorFor(key: string) {
     const { log } = this.deps;
     log.debug("Entering PersonEditor.editorFor(). key=" + key);
@@ -514,6 +572,17 @@ class PersonEditor {
   // THE EDIT. `mode` is `set`, `add` or `remove`; see the header for what
   // each does and what each refuses.
   // -------------------------------------------------------------------------
+  /**
+   * Makes one edit to one attribute of a person's entry, after validating the
+   * attribute, the mode and the value. Audited.
+   *
+   * @param key - the person's username or DN
+   * @param request - `attribute`, `mode` (`set`, `add` or `remove`) and
+   * `value`
+   * @param context - `actor` and `via`, for the audit row
+   * @returns `{ ok: true, dn, attribute, mode, values, message }`, or
+   * `{ ok: false, errors }` marked with its error code
+   */
   update(key: string, request: EditRequest, context?: EditContext) {
     const { log, audit } = this.deps;
     const ctx = context || {};
@@ -657,14 +726,36 @@ const slot = new InstanceSlot<PersonEditor>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The person attribute editor behind `/admin/users` and `/admin-api/users`'s
+ * attribute actions.
+ *
+ * Exports the `PersonEditor` class, its constants, the directory slot, and
+ * facades that forward to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   PersonEditor: PersonEditor,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: PersonEditor): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   MAX_VALUE_LENGTH: MAX_VALUE_LENGTH,
   MODES: MODES,
   // The directory's slot (rule 3e), filled by `ldap/ldap_server.js`. Both
   // members or nothing: see the header.
+  /**
+   * Fills the directory slot with `locate()` and `write()`, or empties it with
+   * null; a directory lacking either is refused.
+   *
+   * @param d - the directory, or null
+   * @returns true when it was installed
+   */
   setDirectory: function (d: PersonDirectory | null): boolean {
     helpers.log.debug("Entering setDirectory().");
     if (d && (typeof d.locate !== 'function' ||

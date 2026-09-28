@@ -164,6 +164,13 @@ function missingModule(pkg, provider, err) {
 // Manager stores a database credential, how a mounted file can hold two
 // things, and what `node-vault` already hands back. See `pick()`.
 // ===========================================================================
+/**
+ * The key-encryption key's descriptor: the setting keys that name its
+ * provider, location and field.
+ *
+ * Every other secret falls back to its location and to how its store is
+ * reached.
+ */
 const KEK = {
   id: 'kek',
   label: 'the key-encryption key',
@@ -187,6 +194,10 @@ const KEK = {
   token: 'keys.kekToken'
 };
 
+/**
+ * The database password's descriptor: its own provider, location and field
+ * rows, with the key-encryption key's location and store as the fallback.
+ */
 const DATABASE_PASSWORD = {
   id: 'database-password',
   label: 'the database password',
@@ -244,13 +255,25 @@ function mailSecret(id, label, prefix, defaultField) {
   };
 }
 
+/**
+ * The SMTP relay password's descriptor (#63).
+ */
 const MAIL_SMTP_PASSWORD = mailSecret('mail-smtp-password',
   'the SMTP relay password', 'mail.smtpPassword', 'smtpPassword');
+/**
+ * The DKIM private key's descriptor (#63).
+ */
 const MAIL_DKIM_KEY = mailSecret('mail-dkim-key',
   'the DKIM private key', 'mail.dkimKey', 'dkimKey');
+/**
+ * The Azure Communication Services connection string's descriptor (#63).
+ */
 const MAIL_ACS_CONNECTION_STRING = mailSecret('mail-acs-connection-string',
   'the Azure Communication Services connection string',
   'mail.acsConnectionString', 'acsConnectionString');
+/**
+ * The Gmail API service account key's descriptor (#63).
+ */
 const MAIL_GMAIL_KEY = mailSecret('mail-gmail-key',
   'the Gmail API service account key', 'mail.gmailKey',
   'gmailServiceAccount');
@@ -271,6 +294,14 @@ const MAIL_GMAIL_KEY = mailSecret('mail-gmail-key',
 // `which` is 'vault', 'region' or 'token'. A secret with no row of its own for
 // it — the KEK is the one every other secret falls back to — reads the KEK's.
 // ---------------------------------------------------------------------------
+/**
+ * Answers how a secret reaches its store: its own Vault endpoint, AWS region
+ * or Vault token row, or the key-encryption key's when its own is empty.
+ *
+ * @param spec - the secret's descriptor; the key-encryption key's when absent
+ * @param which - 'vault', 'region' or 'token'
+ * @returns the configured value, or an empty string when none is set
+ */
 function reachOf(spec, which) {
   log.debug("Entering reachOf().");
   const secret = spec || KEK;
@@ -665,6 +696,14 @@ function vaultTls() {
 // trailing slashes are forgiven because `-path=cert/` is how the CLI prints
 // one; anything outside a path's own alphabet — `..`, a query, a space — is
 // refused by name rather than put into a request line.
+/**
+ * Answers the path segment Vault's `cert` auth method is mounted at, from
+ * `keys.vaultCertAuthMount` (`cert` by default), slashes trimmed.
+ *
+ * @returns the mount path
+ * @throws an Error (STS-KEYS-0052) when the value holds anything outside a
+ *   path's own alphabet, or a `.` or `..` segment
+ */
 function certAuthMount() {
   log.debug("Entering certAuthMount().");
   const raw = String(config.value('keys.vaultCertAuthMount') || 'cert').trim()
@@ -840,8 +879,17 @@ const vaultProvider = {
 
 const PROVIDERS = [fileProvider, awsProvider, gcpProvider, azureProvider,
                    vaultProvider];
+/**
+ * The ids of the five providers: file, aws, gcp, azure and vault.
+ */
 const PROVIDER_IDS = PROVIDERS.map(function (one) { return one.id; });
 
+/**
+ * Finds a provider by its id.
+ *
+ * @param id - the provider id; `file` when empty
+ * @returns the provider, or null when no provider has that id
+ */
 function providerFor(id) {
   log.debug("Entering providerFor().");
   const wanted = String(id || 'file');
@@ -855,6 +903,13 @@ function providerFor(id) {
 //
 // `current()` keeps its old shape — no argument means the KEK — because eight
 // call sites read it that way and none of them is about the second secret.
+/**
+ * Answers the provider configured for a secret, read from its setting on
+ * every call.
+ *
+ * @param spec - the secret's descriptor; the key-encryption key's when absent
+ * @returns the provider, or null when the setting names none
+ */
 function current(spec) {
   log.debug("Entering current().");
   log.debug("Leaving current().");
@@ -865,6 +920,13 @@ function current(spec) {
 // password can answer no: its provider row offers `none`, which is the
 // default and means *the password is where it always was, in the connection
 // string*. The KEK has no such state — product mode cannot start without one.
+/**
+ * Answers whether a secret is configured to come from a provider at all.
+ *
+ * Only a secret whose provider row offers `none` can answer false.
+ * @param spec - the secret's descriptor
+ * @returns true when the provider setting is set and is not `none`
+ */
 function configuredFor(spec) {
   log.debug("Entering configuredFor().");
   const named = String(config.value(spec.provider) || '').trim();
@@ -931,6 +993,13 @@ function tagReadFailure(spec, err) {
   return err;
 }
 
+/**
+ * Reads the key-encryption key from its configured provider.
+ *
+ * @returns the key as the provider handed it back, bytes or text
+ * @throws an Error, tagged with its code, when the provider is unknown or
+ *   the read fails
+ */
 async function readKek() {
   log.debug('Entering readKek().');
   const value = await read(KEK);
@@ -950,6 +1019,14 @@ async function readKek() {
 // a newline, and a password with a trailing newline fails to authenticate with
 // a message about the password being wrong.
 // ---------------------------------------------------------------------------
+/**
+ * Reads the database password from its configured provider, decoded as text
+ * and trimmed.
+ *
+ * @returns the password, or null when no provider is configured (the
+ *   password is then in `persistence.databaseUrl`)
+ * @throws an Error when the read fails or finds an empty value
+ */
 async function readDatabasePassword() {
   log.debug('Entering readDatabasePassword().');
   if (!configuredFor(DATABASE_PASSWORD)) {
@@ -981,6 +1058,14 @@ async function readDatabasePassword() {
 // key. Only the four mail descriptors are accepted: the key and the database
 // password have their own readers, and the key is never text.
 // ---------------------------------------------------------------------------
+/**
+ * Reads one of the four mail secrets as text, decoded and trimmed.
+ *
+ * @param spec - one of the mail secrets' descriptors
+ * @returns the secret's text, or null when its provider is `none`
+ * @throws an Error when the descriptor is not a mail secret's, when the read
+ *   fails, or when it finds an empty value (the secret's `emptyCode`)
+ */
 async function readSecretText(spec) {
   log.debug('Entering readSecretText(). secret=' + (spec && spec.id));
   if (MAIL_SECRETS.indexOf(spec) < 0) {
@@ -1035,6 +1120,12 @@ function describeSecret(spec) {
   };
 }
 
+/**
+ * Describes where the key-encryption key is configured to come from, never
+ * what it is.
+ *
+ * @returns the description the console and the API draw
+ */
 function describe() {
   log.debug("Entering describe().");
   log.debug("Leaving describe().");
@@ -1044,6 +1135,12 @@ function describe() {
 // WHERE THE DATABASE PASSWORD COMES FROM, for `/admin/persistence` and
 // `GET /admin-api/persistence`. It says WHERE and never WHAT, which is the
 // rule `describe()` above states for the key and is the same rule.
+/**
+ * Describes where the database password is configured to come from, never
+ * what it is, for `/admin/persistence` and `GET /admin-api/persistence`.
+ *
+ * @returns the description
+ */
 function describeDatabasePassword() {
   log.debug("Entering describeDatabasePassword().");
   log.debug("Leaving describeDatabasePassword().");
@@ -1128,6 +1225,14 @@ function recordRead(spec, provider, tookMs, error) {
 // What the ledger holds, for a secret or for all of them. A secret never read
 // is ABSENT rather than false, because "not yet" and "failed" are the two
 // things this page exists to tell apart.
+/**
+ * Answers what the ledger of reads holds, for one secret or for all.
+ *
+ * A secret never read is absent, which is how "not yet" is told from
+ * "failed".
+ * @param spec - the secret's descriptor; every secret's rows when absent
+ * @returns the one row or null, or an object of rows by secret id
+ */
 function readLedger(spec) {
   log.debug("Entering readLedger().");
   if (spec) {
@@ -1154,6 +1259,10 @@ function readLedger(spec) {
 // ITSELF in a member called `id`, which is the single most plausible way a
 // credential would end up on this page.
 // ---------------------------------------------------------------------------
+/**
+ * The member names `scrub()` removes from anything a probe answers, whatever
+ * the depth.
+ */
 const NEVER_REPORTED = ['value', 'values', 'data', 'token', 'client_token',
                         'id', 'password', 'passphrase', 'secret', 'secret_id',
                         'private_key', 'privateKey', 'accessor', 'wrap_info',
@@ -1168,6 +1277,14 @@ const NEVER_REPORTED = ['value', 'values', 'data', 'token', 'client_token',
 // The pair below carries no value, so nothing secret reaches the log, but the
 // exception this comment claimed is not what the code does (the 2026-09-12
 // style sweep added the pair); whether to restore it is an open question.
+/**
+ * Copies a probe's answer with every member named in `NEVER_REPORTED` removed,
+ * arrays capped at fifty rows and nesting past six levels replaced.
+ *
+ * @param what - the value to copy
+ * @param depth - the current nesting level; 0 when absent
+ * @returns the scrubbed copy
+ */
 function scrub(what, depth) {
   log.debug("Entering scrub().");
   const level = depth || 0;
@@ -1305,6 +1422,11 @@ function certificateFacts(pemPath) {
 // connection for the life of one report, so a render costs ONE login, which is
 // also the one the startup read makes.
 // ===========================================================================
+/**
+ * The probes the secret-store report runs, by id: asked once per store or
+ * once per secret location, each handed a session that memoizes the
+ * connection for one report.
+ */
 const PROBES = {};
 
 // ---------------------------------------------------------------------------
@@ -2055,9 +2177,16 @@ PROBES.azure = {
 // Two secrets in one store share a store row; two secrets in two stores get
 // one each.
 // ===========================================================================
+/**
+ * The four mail secrets' descriptors.
+ */
 const MAIL_SECRETS = [MAIL_SMTP_PASSWORD, MAIL_DKIM_KEY,
                       MAIL_ACS_CONNECTION_STRING, MAIL_GMAIL_KEY];
 
+/**
+ * Every secret this service reads: the key-encryption key, the database
+ * password and the four mail secrets.
+ */
 const SECRETS = [KEK, DATABASE_PASSWORD].concat(MAIL_SECRETS);
 
 // Which store a secret lives in, as a key that is equal for two secrets in the
@@ -2107,6 +2236,13 @@ function storeLabelFor(spec, provider) {
   return provider.label;
 }
 
+/**
+ * Builds the secret-store report behind `/admin/secrets` and
+ * `GET /admin-api/secrets`: each store and secret, whether it was read, and
+ * what the probes found, with nothing secret in it.
+ *
+ * @returns the report: the stores, the secrets and the probes that failed
+ */
 async function storeReport() {
   log.debug('Entering storeReport().');
   const out = {
@@ -2239,6 +2375,14 @@ async function storeReport() {
   return out;
 }
 
+/**
+ * Where this service's primordial secrets come from: the key-encryption key,
+ * the database password and the mail secrets, read through one of five
+ * providers (file, AWS, GCP, Azure, Vault) named per secret.
+ *
+ * A library: no route. No secret is ever logged or cached on disk.
+ * @namespace
+ */
 module.exports = {
   PROVIDER_IDS: PROVIDER_IDS,
   providerFor: providerFor,

@@ -4719,9 +4719,11 @@ container: `EVERYBODY`, `ALL_AUTHENTICATED_USERS`,
 `ALL_UNAUTHENTICATED_USERS`, `ALL_APPLICATIONS`,
 `ALL_AUTHENTICATED_APPLICATIONS`, `ALL_UNAUTHENTICATED_APPLICATIONS`.
 
-**THERE ARE ELEVEN NOW.** `ADMIN_READ` and `ADMIN_WRITE` (2026-09-09) are read off
-the scopes of an access token for `/admin-api`, and `DEVICE_COMPLIANCE` (#164)
-off `device:compliance`; `roles.js` argues them at their rows. **The other two are a different shape again.** The six above
+**THERE ARE NINE NOW.** `DEVICE_COMPLIANCE` (#164) is read off the scope
+`device:compliance`; `roles.js` argues it at its row. `ADMIN_READ` and
+`ADMIN_WRITE` were read off the admin scopes from 2026-09-09 until #303
+(2026-09-27) made them CONFIGURED roles — see *A role authorizes permissions*,
+below. **The other two are a different shape again.** The six above
 read `kind` and `authenticated` and touch no store. `REMOTE_PEPS` (2026-09-06)
 and `XACML_USER` (beside it) are held by whoever is in one named GROUP —
 `roles.remotePepGroup` and `roles.xacmlUserGroup` — which makes them hybrids,
@@ -4759,6 +4761,55 @@ The consequence for a reader is the sentence `/admin/ldap/roles` and
 `GET /admin-api/ldap/roles` both carry: **an empty `ou=roles` is the ordinary
 state of a service refusing nobody**, not a sign that the feature failed to
 load.
+
+### A role authorizes permissions (#303, part B of #88, 2026-09-27)
+
+A THIRD relation, beside membership and requirement, stored on the ROLE entry
+because rcbj decided it lives there: `rolePermission` names what a holder may
+be ISSUED. #88's rule is that **a scope never grants authorization by
+itself** — it is what a client ASKS for — and this is where the authorization
+is written down.
+
+|  | Stored on | Edited at | Means |
+|---|---|---|---|
+| AUTHORIZATION | the ROLE entry, `rolePermission` | `/admin/roles`, `add-permission` | which permissions a holder may be issued |
+| GATING | the resource APPLICATION, `oauthRoleGatedPermission` | the application's page (the attribute editor) | which of its permissions need a role at all |
+
+* **A permission is named as a client asks for it.** A generic application
+  permission by its full identifier — `oauthPermissionBaseUri` + name — and a
+  NATIVE one by this service's own name (`admin:read`, `admin:write`); rcbj
+  chose to keep the native names rather than re-spell them.
+* **Gating is the resource's choice (#88 decision 1)**, so every existing
+  client keeps working until an operator opts a permission in. The native
+  admin scopes are always gated.
+* **Narrowed, not refused, until nothing is left (decision 2)**:
+  `STS-ADMIN-0821` for what was taken off, `invalid_scope` (`STS-ADMIN-0822`)
+  when nothing else was asked for.
+* **The question is `role_permissions.ts`'s, not this file's** — `roles.js`
+  stays the leaf. It is asked at the authorization endpoint and in
+  `tokenSet()` (every grant, `client_credentials` included), at
+  `/admin-api`'s gate on every call (held ∩ carried), and by the XACML PIP's
+  role designator (`urn:sts:xacml:role`, with `urn:sts:xacml:subject-kind`
+  saying person or application) — so the remote PEP decides on the same roles
+  issuance does, for a subject that came with no scopes at all.
+
+**ADMIN_READ AND ADMIN_WRITE ARE THE TWO CONSOLE ROLES.** Configured entries
+seeded in every realm (`seedConsoleRoles()`, beside the internal
+applications), each authorizing its own admin scope, each held by the
+realm's `sts-management-api`. Their groups are `admin.readGroup` /
+`admin.writeGroup`, read when the entry is read rather than stored; a PERSON's
+membership is answered by the console roster (`admin_rbac.ts`), which carries
+development's open console and the bootstrap administrator's claim to the API
+door (rcbj's decision 2 on #303). So `/admin/rbac` is the one door for people,
+and a person or group written onto them here is refused (`STS-XACML-0075`);
+they cannot be deleted (`STS-XACML-0076`) and their permission cannot change.
+**A machine must HOLD the role (decision 3)**: declaring `admin:*` in
+`oauthAllowedScope` is no longer enough on `client_credentials`.
+
+**WHAT IS NOT DONE**: `DEVICE_COMPLIANCE` is still read off a scope — the
+pattern this removed for the admin ones — and roles scoped to ONE application
+(Entra-style app roles) do not exist; a role is per realm. Both are recorded on
+#88.
 
 ### `roles.js` is a LEAF and must stay one
 

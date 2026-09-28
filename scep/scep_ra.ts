@@ -73,10 +73,18 @@ import core = require('../common/cert_enrollment');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('../common/instance_slot');
 
+/**
+ * The PKI slot the RA certificate is issued under, beneath the realm's SCEP
+ * Issuing CA.
+ */
 const SLOT = 'scep-ra';
 
 // An RA certificate this close to expiry is replaced before it is served: a
 // client that fetched it today must still be able to encrypt to it tomorrow.
+/**
+ * How close to expiry an RA certificate is replaced before it is served: thirty
+ * days.
+ */
 const RENEW_WITHIN_MS = 30 * 86400000;
 
 // The one re-issue per realm in flight in this process.
@@ -103,7 +111,20 @@ interface ScepRaDeps {
   loadPkiRevocation(): typeof import('../common/pki_revocation');
 }
 
+/**
+ * The SCEP registration authority certificate, one per trust realm: the RSA key
+ * SCEP clients encrypt their requests to and verify CertRep signatures against.
+ *
+ * A leaf of the realm's SCEP Issuing CA, issued through `pki.certify()` and
+ * kept in the realm's PKI row.
+ */
 class ScepRa {
+  /**
+   * Builds the RA's owner.
+   *
+   * @param deps - node's crypto, the logger, settings, error codes, `pki.js`,
+   *   the enrollment core and a lazy loader of the revocation module
+   */
   constructor(private readonly deps: ScepRaDeps) {
     deps.log.debug("Entering ScepRa.constructor().");
     deps.log.debug("Leaving ScepRa.constructor().");
@@ -111,6 +132,11 @@ class ScepRa {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time instance is built from
+   */
   static defaultDeps(): ScepRaDeps {
     log.debug("Entering ScepRa.defaultDeps().");
     log.debug("Leaving ScepRa.defaultDeps().");
@@ -127,6 +153,11 @@ class ScepRa {
     };
   }
 
+  /**
+   * Returns the RSA modulus length `scep.raKeyAlgorithm` asks for.
+   *
+   * @returns 2048, 3072 or 4096
+   */
   wantedBits() {
     const { log, config } = this.deps;
     log.debug("Entering ScepRa.wantedBits().");
@@ -136,6 +167,12 @@ class ScepRa {
     return match ? Number(match[1]) : 2048;
   }
 
+  /**
+   * Returns the RA certificate a realm holds.
+   *
+   * @param realmId - the realm
+   * @returns the PKI record, or null
+   */
   recordOf(realmId) {
     const { log, pki } = this.deps;
     log.debug("Entering ScepRa.recordOf().");
@@ -151,6 +188,14 @@ class ScepRa {
   }
 
   // Why the held RA certificate would not be served, or '' when it would.
+  /**
+   * Says why a held RA certificate would not be served.
+   *
+   * @param realmId - the realm
+   * @param held - the held record
+   * @returns `missing`, `expiring`, `algorithm` or `issuer`, or '' when it
+   *   would be served
+   */
   staleness(realmId, held) {
     const { log, nodeCrypto, core } = this.deps;
     log.debug("Entering ScepRa.staleness().");
@@ -184,6 +229,14 @@ class ScepRa {
     return '';
   }
 
+  /**
+   * Issues a new RA certificate for a realm, revoking the one it replaces.
+   *
+   * @param realmId - the realm
+   * @param previous - the record being replaced, or null
+   * @param reason - why it is being issued
+   * @returns a promise of `ok` and the new record, or a refusal
+   */
   async issue(realmId, previous, reason) {
     const { log, nodeCrypto, pki, errorCodes, core,
             loadPkiRevocation } = this.deps;
@@ -254,6 +307,16 @@ class ScepRa {
   // Reissue, which replaces a current certificate and so has no "already there"
   // answer.
   // ---------------------------------------------------------------------------
+  /**
+   * Issues one RA certificate for the cluster, under a claim of its own, after
+   * reading the row again in case another node already issued a current one.
+   *
+   * @param realmId - the realm
+   * @param held - the record held when the caller looked
+   * @param why - why it is being issued
+   * @param force - the console's Reissue, which replaces a current certificate
+   * @returns a promise of `ok` and the record, or a refusal
+   */
   issueInTheCluster(realmId, held, why, force) {
     const { log, pki } = this.deps;
     const self = this;
@@ -280,6 +343,14 @@ class ScepRa {
 
   // The RA to use now: `{ ok, certificatePem, privateKeyPem, record }`, issuing
   // one first when the held one is stale. `options.force` re-issues regardless.
+  /**
+   * Returns the RA to use now, issuing one first when the held one is stale.
+   *
+   * @param realmId - the realm
+   * @param options - `force`, to re-issue regardless
+   * @returns a promise of `ok`, the certificate, the private key and the
+   *   record; or a refusal
+   */
   async ensure(realmId, options?) {
     const { log, core, errorCodes } = this.deps;
     log.debug("Entering ScepRa.ensure(). realm=" + realmId);
@@ -317,6 +388,14 @@ class ScepRa {
   }
 
   // What a page and /admin-api show, and no private key.
+  /**
+   * Describes a realm's RA certificate for a page or `/admin-api`, with no
+   * private key.
+   *
+   * @param realmId - the realm
+   * @returns whether one is present, its status, subject, serial, key algorithm
+   *   (held and wanted), validity, thumbprint and certificate
+   */
   describe(realmId) {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering ScepRa.describe().");
@@ -373,9 +452,23 @@ capabilities.provide('scep.ra-agreement');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The SCEP registration authority certificate, per trust realm (RFC 8894
+ * section 2.5.1).
+ *
+ * The exports forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
   ScepRa: ScepRa,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: ScepRa): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   SLOT: SLOT,
   RENEW_WITHIN_MS: RENEW_WITHIN_MS,

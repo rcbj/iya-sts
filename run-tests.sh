@@ -198,21 +198,35 @@ STS_SAML_KEYCLOAK_CONTAINER_NAME="${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
-# `up`s each mode from whatever `rcbj/sts` points at by then, so another
-# checkout building that name mid-run changed the code under the remaining
-# modes with every job still green. A named project builds its own tags; an
-# unnamed run keeps the compose files' names.
+# `up`s each mode from whatever the sts image name points at by then, so
+# another checkout building that name mid-run changed the code under the
+# remaining modes with every job still green. A named project builds its own
+# tags.
+#
+# THE NAMES ARE UNDER ghcr.io SINCE 2026-09-27 (IMAGE_REGISTRY, default
+# ghcr.io/rcbj/iya-sts): tests.yml pushes what a run built
+# (.github/scripts/push-stack-images.sh). The tag is IMAGE_TAG when set (CI
+# sets the commit), the named project otherwise, and `latest` for an unnamed
+# local run — the compose files' own default. Always set, because the
+# one-shot containers below name STS_IMAGE directly.
 # ---------------------------------------------------------------------------
-if [ -n "${STS_DOCKER_TEST_PROJECT:-}" ];
+IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}"
+if [ -n "${IMAGE_TAG:-}" ];
 then
-  STS_IMAGE="${STS_IMAGE:-rcbj/sts:${COMPOSE_PROJECT}}"
-  XACML_PEP_IMAGE="${XACML_PEP_IMAGE:-rcbj/xacml-pep:${COMPOSE_PROJECT}}"
-  STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-rcbj/mock-sts-tests:${COMPOSE_PROJECT}}"
-  SAML_SHIB_IMAGE="${SAML_SHIB_IMAGE:-rcbj/sts-saml-shibboleth:${COMPOSE_PROJECT}}"
-  SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-rcbj/sts-saml-simplesamlphp:${COMPOSE_PROJECT}}"
-  SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-rcbj/sts-saml-pysaml2:${COMPOSE_PROJECT}}"
-  SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-rcbj/sts-saml-keycloak:${COMPOSE_PROJECT}}"
+  imageTag="${IMAGE_TAG}"
+elif [ -n "${STS_DOCKER_TEST_PROJECT:-}" ];
+then
+  imageTag="${COMPOSE_PROJECT}"
+else
+  imageTag="latest"
 fi
+STS_IMAGE="${STS_IMAGE:-${IMAGE_REGISTRY}/sts:${imageTag}}"
+XACML_PEP_IMAGE="${XACML_PEP_IMAGE:-${IMAGE_REGISTRY}/xacml-pep:${imageTag}}"
+STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-${IMAGE_REGISTRY}/mock-sts-tests:${imageTag}}"
+SAML_SHIB_IMAGE="${SAML_SHIB_IMAGE:-${IMAGE_REGISTRY}/sts-saml-shibboleth:${imageTag}}"
+SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-${IMAGE_REGISTRY}/sts-saml-simplesamlphp:${imageTag}}"
+SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-${IMAGE_REGISTRY}/sts-saml-pysaml2:${imageTag}}"
+SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-${IMAGE_REGISTRY}/sts-saml-keycloak:${imageTag}}"
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
@@ -331,6 +345,10 @@ DOCKER_SUDO=""
 COMPOSE_CMD=""
 COMPOSE_ENV=()
 STACK_UP=0
+# Whether the mode that is up has had its container logs taken (2026-09-27):
+# teardown() takes them if it has not, which is what an interrupted mode
+# needs — a cancelled CI job used to lose every service log with the stack.
+LOGS_TAKEN=0
 
 # The header of this file IS the usage, printed by reading it back rather than
 # by keeping a second copy of it in a here-document — which is the only way the
@@ -909,6 +927,12 @@ if [ -n "${STS_TESTS_IMAGE:-}" ];
 then
   COMPOSE_ENV+=("STS_TESTS_IMAGE=${STS_TESTS_IMAGE}")
 fi
+# Where the third-party images come from (the ghcr.io mirror): forwarded
+# only when set, so the compose files' default stands otherwise.
+if [ -n "${IMAGE_MIRROR:-}" ];
+then
+  COMPOSE_ENV+=("IMAGE_MIRROR=${IMAGE_MIRROR}")
+fi
 for peerImage in SAML_SHIB_IMAGE SAML_SSP_IMAGE SAML_PYSAML2_IMAGE \
                  SAML_KEYCLOAK_IMAGE;
 do
@@ -1155,7 +1179,7 @@ schedulerTakeover()
               -v "${CURRENT_DIR}:/repo:ro"
               -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}"
               -e NODE_PATH=/usr/src/sts/node_modules
-              -w /usr/src/sts "${STS_IMAGE:-rcbj/sts}"
+              -w /usr/src/sts "${STS_IMAGE}"
               node /repo/tests/tools/scheduler-takeover.js)
   mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
   echo ""
@@ -1213,6 +1237,17 @@ teardown()
     echo "  stop it: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${files} down -v"
     return 0
   fi
+  # A MODE INTERRUPTED BEFORE ITS LOGS WERE TAKEN (2026-09-27): a cancelled
+  # CI job, a Ctrl-C. The stack is about to go, and the service's log with
+  # it — the only record of why a job in that mode failed — so it is taken
+  # first, into the mode's report as usual. Bounded like everything here.
+  if [ "${STACK_UP}" = "1" ] && [ "${LOGS_TAKEN}" = "0" ] &&
+     [ -n "${MODE:-}" ];
+  then
+    echo "Interrupted in the ${MODE} mode: taking its container logs first."
+    captureContainerLogs "${MODE}" || true
+    LOGS_TAKEN=1
+  fi
   # BOUNDED. This is the EXIT trap, so an unbounded call here can hold a run
   # open after everything it was asked to do is finished and reported — which
   # is the shape of the 2026-09-10 incident, one function along.
@@ -1221,6 +1256,11 @@ teardown()
     > /dev/null 2>&1 || true
 }
 trap teardown EXIT
+# A SIGNAL GOES THROUGH THE EXIT TRAP (2026-09-27). bash runs an EXIT trap on
+# `exit`, not when a signal kills it, and GitHub cancels a job with SIGINT and
+# then SIGTERM: without these the stack and its logs were simply abandoned.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # A stack left behind by an interrupted run holds the container names this one
 # is about to ask for. Removing it is safe BECAUSE of the project name: this
@@ -1354,7 +1394,7 @@ mintAdminApiToken()
        -e "STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET}" \
        -e NODE_PATH=/usr/src/sts/node_modules \
        -w /usr/src/sts \
-       "${STS_IMAGE:-rcbj/sts}" \
+       "${STS_IMAGE}" \
        node /repo/tests/tools/admin-api-token.js \
          "$(serviceUrl)" \
        2>&1)";
@@ -1429,7 +1469,7 @@ mintThePepCredential()
        -e NODE_PATH=/usr/src/sts/node_modules \
        -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}" \
        -w /usr/src/sts \
-       "${STS_IMAGE:-rcbj/sts}" \
+       "${STS_IMAGE}" \
        sh -c '
          # THE SERVICE'"'"'S OWN CERTIFICATE FIRST (2026-09-21). The gated
          # door VERIFIES the connection, because it carries the token, and
@@ -1779,6 +1819,7 @@ do
   )
 
   STACK_UP=1
+  LOGS_TAKEN=0
   MODE_RC=0
   # This mode's start, which modeWroteReport() compares a report against, so a
   # report from an earlier mode or run is never taken for this one's.
@@ -1952,6 +1993,7 @@ do
   fi
 
   captureContainerLogs "${MODE}"
+  LOGS_TAKEN=1
 
   # KEPT: the last mode under --keep-stack stays up for the teardown trap to
   # describe, and is the one stack this launcher leaves behind.

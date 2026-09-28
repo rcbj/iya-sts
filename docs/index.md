@@ -5,7 +5,7 @@ nav_order: 1
 
 # iya-sts
 
-An identity service that speaks **nineteen protocol families** in one small
+An identity service that speaks every protocol family the sidebar lists in one
 Node process, in one of two modes (`global.mode`).
 
 **Development mode, the default, exists to exercise *clients*:** it checks no
@@ -17,7 +17,7 @@ behaviour it is trying to detect.
 
 **Product mode is meant to be deployed:** it verifies every password, creates
 nothing because something named it, invents no claim value, and implies RFC
-9700 mode. Neither mode attests a workload.
+9700 mode.
 [What is not checked](what-is-not-checked.md) says exactly where the line is in
 each.
 

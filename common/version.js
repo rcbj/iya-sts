@@ -125,6 +125,9 @@ var log = {
   }
 };
 
+/**
+ * The name of the file at the package root that declares M.N.
+ */
 const VERSION_FILE = 'VERSION';
 
 // THE ERROR CODES BELOW ARE WRITTEN OUT AS `[STS-CORE-nnnn] ` RATHER THAN
@@ -133,6 +136,9 @@ const VERSION_FILE = 'VERSION';
 // root of the `xacml-pep/` image, where a require of the registry would throw
 // at load. The bracketed prefix is exactly what `tag()` produces, so a search
 // for `[STS-` finds these lines with every other one.
+/**
+ * The name of the file a build stamps its version record into.
+ */
 const STAMP_FILE = 'version.json';
 
 // THE PACKAGE ROOT: the directory the VERSION file is in. Every path below is
@@ -244,6 +250,13 @@ function gitCommit() {
 }
 
 // Compute a fresh version record for a build happening now.
+/**
+ * Computes a fresh version record for a build happening now.
+ *
+ * The build number is BUILD_NUMBER when set, and otherwise the UTC instant
+ * as YYYYMMDDHHMMSS. The record is marked `stamped: false`.
+ * @returns `{ version, major, minor, build, commit, builtAt, stamped }`
+ */
 function resolve() {
   log.debug("Entering resolve().");
   const { major, minor } = readMajorMinor();
@@ -270,6 +283,14 @@ function resolve() {
 }
 
 // Human-readable provenance, for the tooltip beside the version.
+/**
+ * Describes a version record's provenance in one line, for the tooltip
+ * beside a drawn version.
+ *
+ * @param v - a version record from load() or resolve()
+ * @returns the build number, when it was built or started, the commit, and
+ *   whether the record is a stamped build
+ */
 function buildInfo(v) {
   log.debug("Entering buildInfo().");
   log.debug("Leaving buildInfo().");
@@ -279,6 +300,14 @@ function buildInfo(v) {
 }
 
 // Write the record next to the artifact so it ships with it.
+/**
+ * Computes a version record, marks it stamped and writes it as version.json
+ * into a directory, so it ships with the artifact.
+ *
+ * A failure to write is logged, not thrown.
+ * @param dir - the directory to write into, created if missing
+ * @returns the record written
+ */
 function stamp(dir) {
   log.debug("Entering stamp().");
   const v = resolve();
@@ -325,6 +354,16 @@ let cachedDefault = null;
 // always reports the build it came from. `dir` defaults to the package root,
 // which is where the Dockerfile stamps — every caller in this service wants
 // that, so none of them has to say it.
+/**
+ * Returns the version this process reports: the stamped record if the
+ * artifact has one, otherwise one computed now.
+ *
+ * With no directory the result is cached for the life of the process, so
+ * every module reports the same record.
+ * @param dir - optional; the directory to read version.json from, the
+ *   package root when omitted
+ * @returns the version record
+ */
 function load(dir) {
   log.debug("Entering load().");
   if (!dir && cachedDefault) {
@@ -382,8 +421,18 @@ function load(dir) {
 // rename this constant exists to make a one-line change, and it was. The
 // package is still called mock-sts (the repository became iya-sts on
 // 2026-09-15); this is the name on the wire, which is a different thing.
+/**
+ * The product token this service names itself by on the wire.
+ */
 const PRODUCT = 'sts';
 
+/**
+ * Builds the outbound User-Agent, `sts/<M.N.O> (<component>)` in RFC 9110
+ * product form.
+ *
+ * @param component - optional; what is making the request, put in the comment
+ * @returns the User-Agent header value
+ */
 function userAgent(component) {
   log.debug("Entering userAgent(). component=" + component);
   const v = load();
@@ -420,8 +469,17 @@ function userAgent(component) {
 // image still holds exactly `helpers.js`, and `tests/xacml_pep.js` pins it:
 // exactly one COPY may write into that directory. The shim's emptiness is
 // still the evidence, and the PEP reports a real build.
+/**
+ * The package.json files, relative to the package root, whose version must
+ * follow VERSION.
+ */
 const MANIFESTS = ['package.json', 'xacml-pep/package.json'];
 
+/**
+ * Returns the version every package.json should carry: M.N with a patch of 0.
+ *
+ * @returns the semver string
+ */
 function manifestVersion() {
   log.debug("Entering manifestVersion().");
   const { major, minor } = readMajorMinor();
@@ -432,6 +490,12 @@ function manifestVersion() {
 // [{ path, actual, expected, ok }] for each manifest present in the tree. In
 // the service image `xacml-pep/` has been removed by the Dockerfile, so this is
 // one entry there rather than two — absence is not drift.
+/**
+ * Compares each manifest present in the tree against manifestVersion().
+ *
+ * A manifest that is absent or unreadable is left out rather than reported.
+ * @returns one `{ path, actual, expected, ok }` per manifest found
+ */
 function checkManifests() {
   log.debug("Entering checkManifests().");
   const want = manifestVersion();
@@ -453,6 +517,12 @@ function checkManifests() {
 }
 
 // Rewrite any stale manifest (and its lock's root entry) in place.
+/**
+ * Rewrites any stale manifest's version in place, and its lock file's root
+ * entry where there is one.
+ *
+ * @returns one line per manifest changed, `path: old -> new`
+ */
 function syncManifests() {
   log.debug("Entering syncManifests().");
   const want = manifestVersion();
@@ -484,6 +554,14 @@ function syncManifests() {
   return changed;
 }
 
+/**
+ * The application version, M.N.O, the same scheme the parent project uses.
+ *
+ * M.N comes from the VERSION file; the build number is fixed when an artifact
+ * is built and stamped into version.json. Every surface that draws a version
+ * reads it here. Run directly it stamps, checks or syncs the manifests.
+ * @namespace
+ */
 module.exports = { resolve, stamp, load, buildInfo, userAgent, checkManifests,
     syncManifests, manifestVersion, PRODUCT, STAMP_FILE, VERSION_FILE,
     MANIFESTS };

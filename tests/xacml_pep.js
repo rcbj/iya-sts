@@ -252,8 +252,12 @@ async function run(t) {
     loaded = null;
   }
   if (loaded) {
-    t.equal(loaded.modules.length, 7,
-            'the container carries the seven engine modules');
+    // EIGHT SINCE #306: the seven engine modules and the one request
+    // builder, which is engine-side so this container builds as the
+    // service does.
+    t.equal(loaded.modules.length, 8,
+            'the container carries the seven engine modules and the request ' +
+            'builder');
     t.check(loaded.functions === 'function',
             'the function library is usable in there',
             'engine.functions.lookup is ' + loaded.functions);

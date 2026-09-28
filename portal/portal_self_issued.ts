@@ -217,18 +217,42 @@ class PortalSelfIssuedPage {
   }
 }
 
+/**
+ * The portal page at /portal/self-issued: where a person enrols the wallet keys
+ * that sign them in with SIOPv2 (#129).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalSelfIssued {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalSelfIssuedDeps) {
     deps.log.debug("Entering PortalSelfIssued.constructor().");
     deps.log.debug("Leaving PortalSelfIssued.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalSelfIssuedDeps {
     helpers.log.debug("Entering PortalSelfIssued.defaultDeps().");
     helpers.log.debug("Leaving PortalSelfIssued.defaultDeps().");
     return { log: helpers.log, siop: siop };
   }
 
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalSelfIssued.register().");
     const page = new PortalSelfIssuedPage(this.deps, context);
@@ -248,6 +272,10 @@ const slot = new InstanceSlot<PortalSelfIssued>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/self-issued, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalSelfIssued: PortalSelfIssued,
   installInstance: (instance: PortalSelfIssued): void =>

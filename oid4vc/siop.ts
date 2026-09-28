@@ -67,6 +67,10 @@ type Json = any;
 
 // SIOPv2 section 8's `subject_syntax_types_supported`: the JWK Thumbprint
 // syntax and the three DID methods this Verifier resolves.
+/**
+ * SIOPv2 section 8's `subject_syntax_types_supported`: the JWK Thumbprint
+ * syntax, `did:jwk`, `did:key` and `did:web`.
+ */
 const SUBJECT_SYNTAX_TYPES = Object.freeze([
   'urn:ietf:params:oauth:jwk-thumbprint', 'did:jwk', 'did:key', 'did:web']);
 
@@ -74,9 +78,15 @@ const THUMBPRINT_URI_PREFIX = 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:';
 
 // A self-issued ID Token is signed with an asymmetric key: a MAC would need a
 // secret this Verifier shares with nobody, and `none` signs nothing.
+/**
+ * The algorithms a self-issued ID Token may be signed with: asymmetric only.
+ */
 const ID_TOKEN_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.slice();
 
 // How many subjects one person may enrol. One entry value each.
+/**
+ * How many self-issued subjects one person may enrol.
+ */
 const MAX_SUBJECTS = 10;
 
 // Clock skew allowed on `exp` and on an `iat` in the future.
@@ -93,11 +103,32 @@ interface SiopDeps {
   nowSec: () => number;
 }
 
+/**
+ * Self-Issued OpenID Provider v2, the relying party's half (#129): the
+ * enrolment of a self-issued subject on a person's entry, the check of a
+ * self-issued ID Token (section 11.1), and whom it signs in.
+ *
+ * An unenrolled subject signs nobody in, in either mode.
+ */
 class Siop {
+  /**
+   * The subject syntax types this Verifier supports (SIOPv2 section 8).
+   */
   static readonly SUBJECT_SYNTAX_TYPES = SUBJECT_SYNTAX_TYPES;
+  /**
+   * The algorithms a self-issued ID Token may be signed with.
+   */
   static readonly ID_TOKEN_ALGS = ID_TOKEN_ALGS;
+  /**
+   * How many self-issued subjects one person may enrol.
+   */
   static readonly MAX_SUBJECTS = MAX_SUBJECTS;
 
+  /**
+   * Builds the relying party half from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: SiopDeps) {
     deps.log.debug("Entering Siop.constructor().");
     deps.log.debug("Leaving Siop.constructor().");
@@ -105,6 +136,12 @@ class Siop {
 
   // What the composition root passes. `federation_http` is reached LAZILY,
   // for the one fetch, as `oauth-oidc/client_jwks.js` reaches it.
+  /**
+   * Returns the dependencies built from the real modules, with the fetcher
+   * reached lazily.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): SiopDeps {
     helpers.log.debug("Entering Siop.defaultDeps().");
     helpers.log.debug("Leaving Siop.defaultDeps().");
@@ -140,6 +177,14 @@ class Siop {
   // or an RFC 9278 thumbprint URI. Accepts a bare base64url SHA-256
   // thumbprint and a public JWK (as JSON) as well, which is what an
   // administrator is likely to have in hand. '' for anything else.
+  /**
+   * Normalises a subject to the spelling this service keeps: a DID without a
+   * fragment, or an RFC 9278 thumbprint URI. A bare thumbprint and a public JWK
+   * as JSON are accepted too.
+   *
+   * @param raw - the subject as given
+   * @returns the normalised subject, or '' for anything else
+   */
   normalise(raw: unknown): string {
     const { log, stsCrypto, vcDataIntegrity } = this.deps;
     log.debug("Entering Siop.normalise().");
@@ -192,6 +237,13 @@ class Siop {
 
   // Every subject a person has enrolled, as { subject, label, enrolledAt,
   // by }. null where the directory holds no entry for them.
+  /**
+   * Returns every subject a person has enrolled.
+   *
+   * @param username - the person
+   * @returns `{ subject, label, enrolledAt, by }` rows, or null when the
+   *   directory holds no entry for them
+   */
   list(username: unknown): Json[] | null {
     const { log, credentials } = this.deps;
     log.debug("Entering Siop.list(). user=" + username);
@@ -209,6 +261,12 @@ class Siop {
   }
 
   // Whose subject this is in the current realm: a username, or ''.
+  /**
+   * Returns whose subject this is in the current realm.
+   *
+   * @param subject - the subject
+   * @returns the username, or ''
+   */
   ownerOf(subject: unknown): string {
     const { log, credentials } = this.deps;
     const self = this;
@@ -229,6 +287,17 @@ class Siop {
   // Enrols a subject on a person. Returns { ok, enrolled } or { ok: false,
   // error }. The caller decides who may: the portal only after a SIOPv2
   // round trip proved the key, the console and the API for Admin Write.
+  /**
+   * Enrols a subject on a person. The caller decides who may: the portal after
+   * a SIOPv2 round trip proved the key, the console and the API for Admin
+   * Write.
+   *
+   * @param username - the person
+   * @param subject - the subject
+   * @param label - a label for it
+   * @param by - who enrolled it
+   * @returns `{ ok, enrolled }`, or `{ ok: false, error }`
+   */
   enrol(username: unknown, subject: unknown, label: unknown,
         by: unknown): Json {
     const { log, credentials } = this.deps;
@@ -281,6 +350,14 @@ class Siop {
 
   // `by` is who removed it, as `enrol()` takes it: the person's own name
   // from the portal, an administrator's from the console and the API.
+  /**
+   * Removes an enrolled subject from a person.
+   *
+   * @param username - the person
+   * @param subject - the subject
+   * @param by - who removed it
+   * @returns `{ ok: true, removed }`, or `{ ok: false, error }`
+   */
   remove(username: unknown, subject: unknown, by?: unknown): Json {
     const { log, credentials } = this.deps;
     log.debug("Entering Siop.remove(). user=" + username);
@@ -349,6 +426,12 @@ class Siop {
   // WHAT A REQUEST CARRIES (section 8): the RP metadata members a
   // self-issued request adds to `client_metadata`.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the relying party metadata members a self-issued request adds to
+   * `client_metadata` (section 8).
+   *
+   * @returns the members
+   */
   clientMetadata(): Json {
     const { log } = this.deps;
     log.debug("Entering Siop.clientMetadata().");
@@ -364,6 +447,12 @@ class Siop {
   // -------------------------------------------------------------------------
 
   // A did:web's document URL (DID Web Method section 3.2).
+  /**
+   * Returns a `did:web`'s document URL (DID Web Method section 3.2).
+   *
+   * @param did - the `did:web`
+   * @returns the URL
+   */
   static didWebUrl(did: string): string {
     helpers.log.debug("Entering Siop.didWebUrl().");
     const parts = did.slice('did:web:'.length).split(':')
@@ -441,6 +530,13 @@ class Siop {
   // THE SELF-ISSUED ID TOKEN (section 11.1). `expect` is { clientId, nonce }.
   // Returns { ok, checks, subject, jwk, claims }; never throws.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies a self-issued ID Token (section 11.1). Never throws.
+   *
+   * @param token - the ID Token
+   * @param expect - `{ clientId, nonce }`
+   * @returns `{ ok, checks, subject, jwk, claims }`
+   */
   async verifyIdToken(token: unknown, expect: Json): Promise<Json> {
     const { log, stsCrypto, vcDataIntegrity, config, nowSec } = this.deps;
     log.debug("Entering Siop.verifyIdToken().");
@@ -547,6 +643,14 @@ class Siop {
   // the holder the presentation's key binding proved. Compared as RFC 7638
   // thumbprints, which is the one spelling both sides have.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether a combined response's ID Token subject is the holder the
+   * presentation's key binding proved, compared as RFC 7638 thumbprints.
+   *
+   * @param idTokenJwk - the ID Token's key
+   * @param holderJwk - the presentation's holder key
+   * @returns true when they are the same key
+   */
   sameHolder(idTokenJwk: Json, holderJwk: Json): boolean {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering Siop.sameHolder().");
@@ -568,6 +672,13 @@ class Siop {
   // its subject, in both modes, and nobody otherwise. The shape of
   // `vc_verifier.ts`'s `signInOutcome()`.
   // -------------------------------------------------------------------------
+  /**
+   * Returns whom a verified self-issued ID Token signs in: the person who
+   * enrolled its subject, and nobody otherwise.
+   *
+   * @param verified - `verifyIdToken()`'s result
+   * @returns `{ ok, errorCode, reason, username, ... }`
+   */
   signInOutcome(verified: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Siop.signInOutcome().");
@@ -611,9 +722,25 @@ const slot = new InstanceSlot<Siop>(
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Self-Issued OpenID Provider v2, the relying party's half: enrolment of
+ * self-issued subjects and the check of a self-issued ID Token.
+ *
+ * @namespace
+ */
 export = {
   Siop: Siop,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: Siop): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   SUBJECT_SYNTAX_TYPES: SUBJECT_SYNTAX_TYPES,
   ID_TOKEN_ALGS: ID_TOKEN_ALGS,

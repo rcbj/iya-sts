@@ -139,6 +139,10 @@ const replication = require('../persistence/persistence_replication');
 // service polices only some of the types (`policed` below, and see
 // `authorizedBy`).
 // ---------------------------------------------------------------------------
+/**
+ * The two modes of an act: impersonation, whose output names only the
+ * initial identity, and delegation, whose output carries the chain.
+ */
 const MODES = [
   { mode: 'impersonation', label: 'Impersonation',
     what: 'What comes out names the initial identity and nothing else. The ' +
@@ -151,6 +155,7 @@ const MODES = [
           'is really asking, and can decide differently because of it.' }
 ];
 
+/** The mode names, in `MODES`' order. */
 const MODE_IDS = MODES.map(function (one) { return one.mode; });
 
 // The ten, as the specifications name them. `spec` is cited on the page for
@@ -163,6 +168,10 @@ const MODE_IDS = MODES.map(function (one) { return one.mode; });
 // two assertion-grant rows always were, and WS-Trust and token exchange are
 // decided by `common/delegation_policy.ts` — enforced in PRODUCT mode, and in
 // development asked and recorded on the row as "would have been refused".
+/**
+ * The delegation mechanisms, as the specifications name them, each with
+ * its mode, its specification and whether this service polices it.
+ */
 const TYPES = [
   { type: 'krb5-s4u2self', protocol: 'Kerberos v5', mode: 'impersonation',
     label: 'S4U2Self (protocol transition)', spec: '[MS-SFU] 3.2.5.1',
@@ -283,6 +292,7 @@ const TYPES = [
           'hold separate key pairs, and neither can sign for the other.' }
 ];
 
+/** The mechanism names, in `TYPES`' order. */
 const TYPE_IDS = TYPES.map(function (one) { return one.type; });
 
 const TYPE_BY_ID = {};
@@ -292,6 +302,7 @@ TYPES.forEach(function (one) { TYPE_BY_ID[one.type] = one; });
 // cannot happen: `error` there means this service failed, and a delegation is
 // decided rather than performed — there is no third answer between issuing the
 // credential and refusing to.
+/** The two outcomes of an act: `issued` or `refused`. */
 const OUTCOMES = ['issued', 'refused'];
 
 // The three layers of the architecture, in the order a request moves through
@@ -299,6 +310,10 @@ const OUTCOMES = ['issued', 'refused'];
 // a Kerberos front end, a WS-Trust requester and an OAuth client doing an
 // exchange are the same position in the same picture, and naming the position
 // after one of them would make the other two look like special cases.
+/**
+ * The three positions in a chain, in the order a request moves through
+ * them: initial identity, intermediary and target.
+ */
 const ROLES = [
   { role: 'initial', label: 'Initial identity',
     what: 'Who the credential is ABOUT. The person who signed in somewhere ' +
@@ -315,6 +330,7 @@ const ROLES = [
           'and it is the layer that decides whether any of this mattered.' }
 ];
 
+/** The role names, in `ROLES`' order. */
 const ROLE_IDS = ROLES.map(function (one) { return one.role; });
 
 // ---------------------------------------------------------------------------
@@ -339,6 +355,12 @@ let dropped = 0;
 // Read per record rather than captured at require time, which is what the
 // `runtime: true` on the setting claims. Lowering the cap trims on the very
 // next act rather than one row per act thereafter.
+/**
+ * Returns `delegation.maxRecords`, read per record so a lowered cap trims
+ * on the next act.
+ *
+ * @returns the cap on acts this process holds per realm, at least 1
+ */
 function maxRecords() {
   log.debug("Entering maxRecords().");
   const value = parseInt(config.value('delegation.maxRecords'), 10);
@@ -486,6 +508,16 @@ function credentials(list) {
 //                 no browser anywhere in it
 //   note          one sentence of context for the row
 // ---------------------------------------------------------------------------
+/**
+ * Records one act of delegation or impersonation.
+ *
+ * It never throws: a failure is logged under `STS-REG-0033` and the
+ * protocol is left alone.
+ * @param detail - `protocol`, `type`, `outcome`, `initial`, `intermediary`,
+ *   `target` (each `{ presented, application, what }`), `authorizedBy`,
+ *   `reason`, `consumed`, `produced`, `sessionId` and `note`
+ * @returns the recorded row, or null when it could not be recorded
+ */
 function record(detail) {
   log.debug("Entering record().");
   try {
@@ -629,6 +661,12 @@ function merged() {
 
 // Newest first, the way the audit log and the tokens page both answer. A copy,
 // because the caller filters and pages it.
+/**
+ * Returns every act, this process's and every other's, newest first; a
+ * copy the caller may filter.
+ *
+ * @returns the acts
+ */
 function list() {
   log.debug("Entering list(). " + acts.length + " act(s) held here.");
   const out = merged().reverse();
@@ -644,6 +682,14 @@ function list() {
 // visualisation will draw. It is reported beside `held` deliberately: eleven
 // acts over two chains and eleven acts over eleven chains are very different
 // pictures, and a single count cannot tell them apart.
+/**
+ * Returns the counts the page's tiles and the API's summary need, in one
+ * pass.
+ *
+ * @returns acts held (in total and here), processes, what this process
+ *   recorded and dropped, the cap, distinct chains, and counts by type,
+ *   mode, outcome and protocol
+ */
 function summary() {
   log.debug("Entering summary().");
   const byType = {};
@@ -701,6 +747,13 @@ function summary() {
 // this layer: what counts as one chain is a statement about the store, and a
 // second opinion about it in the renderer is the drift this codebase keeps
 // warning about. admin.js renders what it is handed.
+/**
+ * Returns every distinct chain, newest act first, with how many acts are on
+ * it and how they came out.
+ *
+ * @param rows - the acts to group; every act when omitted
+ * @returns one row per chain
+ */
 function chainList(rows) {
   log.debug("Entering chainList().");
   const source = rows || list();
@@ -824,6 +877,13 @@ function chainList(rows) {
 // The table is deliberately left alone: it shows both spellings side by side in
 // two columns, where seeing them is the point, and changing `chainKey` would
 // change what `/admin-api/delegation` calls a chain.
+/**
+ * Returns the key a party is drawn under, so two spellings of one identity
+ * or application are one box.
+ *
+ * @param party - a party `{ key, presented, application }`
+ * @returns the node id
+ */
 function nodeIdOf(party) {
   log.debug("Entering nodeIdOf().");
   if (party.key) {
@@ -912,6 +972,15 @@ function credentialList(folded) {
 // what it dropped: a truncated list must say it was truncated.
 const MAX_TOKEN_ROWS = 250;
 
+/**
+ * Builds the picture of these acts as a model: nodes (one per identity, and
+ * the issuer), edges with what each consumed and produced, and the list of
+ * tokens.
+ *
+ * @param rows - the acts; every act when omitted
+ * @returns `{ realm, issuer, nodes, edges, tokens, tokensLeftOff,
+ *   maxTokenRows, acts, chains }`
+ */
 function graph(rows) {
   log.debug("Entering graph().");
   const source = rows || list();
@@ -1189,6 +1258,13 @@ function graph(rows) {
 // what counts as one chain is a statement about the store, and a `filter()` in
 // a renderer would be a second opinion about it.
 // ---------------------------------------------------------------------------
+/**
+ * Returns one chain's acts, for the page that draws a single relationship.
+ *
+ * @param rows - the acts; every act when omitted
+ * @param chainKey - the chain's key
+ * @returns the acts on that chain, empty when there are none
+ */
 function actsOfChain(rows, chainKey) {
   log.debug("Entering actsOfChain().");
   const wanted = String(chainKey == null ? '' : chainKey);
@@ -1234,6 +1310,13 @@ function actsOfChain(rows, chainKey) {
 // and this service was never told who it was handed to, and an S4U2Self names
 // its requester as the intermediary and as the target. An array for that reason
 // and not for symmetry with applicationRolesIn().
+/**
+ * Returns which roles an identity played in one act; it can be two.
+ *
+ * @param row - the act
+ * @param key - the identity's key
+ * @returns the role names
+ */
 function identityRolesIn(row, key) {
   log.debug("Entering identityRolesIn().");
   const wanted = String(key == null ? '' : key);
@@ -1256,6 +1339,13 @@ function identityRolesIn(row, key) {
 // `identityRolesIn()` rather than a comparison of its own, for the reason
 // `actsForApplication()` gives: the page that says which role somebody played
 // and the page that decides whether to show the act cannot come to disagree.
+/**
+ * Returns every act an identity took part in, whatever role it played.
+ *
+ * @param rows - the acts
+ * @param key - the identity's key
+ * @returns the acts
+ */
 function actsForIdentity(rows, key) {
   log.debug("Entering actsForIdentity().");
   const wanted = String(key == null ? '' : key);
@@ -1281,6 +1371,13 @@ function actsForIdentity(rows, key) {
 // this service puts their name here and nowhere else. The console unions this
 // list with the identity register for exactly that reason and marks which side
 // each name came from.
+/**
+ * Returns every distinct identity among these acts, with what it did, for
+ * the person chooser.
+ *
+ * @param rows - the acts
+ * @returns one row per identity, the most active first
+ */
 function identityList(rows) {
   log.debug("Entering identityList().");
   const source = rows || list();
@@ -1394,6 +1491,13 @@ function identityList(rows) {
 // only where it currently occurs is a page that would go quietly wrong the day
 // a fourth mechanism was recorded.
 // ---------------------------------------------------------------------------
+/**
+ * Normalises an application identifier the way `nodeIdOf()` does, so two
+ * spellings are one application.
+ *
+ * @param identifier - the identifier as a protocol spelled it
+ * @returns the key, or empty
+ */
 function applicationKeyOf(identifier) {
   log.debug("Entering applicationKeyOf().");
   const raw = String(identifier == null ? '' : identifier).trim();
@@ -1404,6 +1508,13 @@ function applicationKeyOf(identifier) {
 // Which roles this application played in this ONE act, and it can genuinely be
 // two: an S4U2Self names the requester as the intermediary and as the target,
 // which is the case that makes this an array rather than a string.
+/**
+ * Returns which roles an application played in one act; it can be two.
+ *
+ * @param row - the act
+ * @param key - the application's key
+ * @returns the role names
+ */
 function applicationRolesIn(row, key) {
   log.debug("Entering applicationRolesIn().");
   const wanted = String(key == null ? '' : key);
@@ -1426,6 +1537,13 @@ function applicationRolesIn(row, key) {
 // is `applicationRolesIn()` rather than a comparison of its own, so the page
 // that says which role it played and the page that decides whether to show the
 // act cannot come to disagree.
+/**
+ * Returns every act an application took part in, whatever role it played.
+ *
+ * @param rows - the acts
+ * @param key - the application's key
+ * @returns the acts
+ */
 function actsForApplication(rows, key) {
   log.debug("Entering actsForApplication().");
   const wanted = String(key == null ? '' : key);
@@ -1451,6 +1569,14 @@ function actsForApplication(rows, key) {
 // THROUGH it, and one produced where it was the target was issued FOR it. Both
 // are "related to" it, which is the question being asked, and a count that
 // silently meant one of them would be the wrong answer half the time.
+/**
+ * Returns every distinct application among these acts, with how many acts
+ * it took part in by role and what they produced, for the chooser on
+ * `/admin/delegation`.
+ *
+ * @param rows - the acts
+ * @returns one row per application
+ */
 function applicationList(rows) {
   log.debug("Entering applicationList().");
   const source = rows || list();
@@ -1536,6 +1662,15 @@ function applicationList(rows) {
   return out;
 }
 
+/**
+ * Delegation: who acted on whose behalf, through what, to reach what.
+ *
+ * The one protocol-independent model Kerberos, WS-Trust, token exchange and
+ * the assertion grants record their acts against, and the views
+ * `/admin/delegation` and `/admin-api/delegation` draw from it. A library
+ * that registers no route.
+ * @namespace
+ */
 module.exports = {
   MODES: MODES,
   MODE_IDS: MODE_IDS,

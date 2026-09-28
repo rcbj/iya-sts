@@ -62,6 +62,9 @@ type NodeAttestationResult =
 
 const DEFAULT_TEMPLATE = '/{{ .PluginName }}/{{ .TenantID }}/' +
   '{{ .SubscriptionID }}/{{ .VMID }}';
+/**
+ * The optional Azure SDK packages the attestor loads for its selectors.
+ */
 const PACKAGES = ['@azure/identity', '@azure/arm-resourcegraph',
                   '@azure/arm-compute'];
 const ALPHANUMERIC = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' +
@@ -83,19 +86,45 @@ interface AzureImdsDeps {
   load(pkg: string): any;
 }
 
+/**
+ * The `azure_imds` node attestor: verifies an Azure attested document carrying
+ * this server's nonce, after SPIRE's `azureimds` plugin.
+ *
+ * The one node attestor that challenges first; the document must chain to the
+ * Azure roots and name a configured tenant and allowed subscription, and a VM
+ * attests once (trust on first use).
+ */
 class AzureImdsAttestor {
+  /**
+   * The attestation type an agent names in `params.data.type`.
+   */
   readonly type = 'azure_imds';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'An Azure attested document carrying this server\'s ' +
     'nonce, signed under the Azure roots, for a configured tenant and ' +
     'subscription; once per VM.';
   // Tenant domain → tenant ID, looked up once.
   private tenantIds: Record<string, string> = {};
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, file system, configuration, crypto, PKI, SPIFFE
+   *   and gRPC helpers, the outbound HTTP client and a package loader
+   */
   constructor(private readonly deps: AzureImdsDeps) {
     deps.log.debug("Entering AzureImdsAttestor.constructor().");
     deps.log.debug("Leaving AzureImdsAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): AzureImdsDeps {
     helpers.log.debug("Entering AzureImdsAttestor.defaultDeps().");
     helpers.log.debug("Leaving AzureImdsAttestor.defaultDeps().");
@@ -109,6 +138,15 @@ class AzureImdsAttestor {
     };
   }
 
+  /**
+   * Marks an error code on the call and returns the gRPC status error to throw.
+   *
+   * @param call - the gRPC call the refusal is for
+   * @param code - the `STS-SPIFFE-…` error code to record
+   * @param grpcCode - the gRPC status code
+   * @param message - the message the client is sent
+   * @returns the status error
+   */
   refuse(call: any, code: string, grpcCode: number, message: string): Error {
     const { log, errorCodes, rpc } = this.deps;
     log.debug("Entering AzureImdsAttestor.refuse(). " + code);
@@ -120,6 +158,13 @@ class AzureImdsAttestor {
   }
 
   // The realm's tenants, or throws a sentence.
+  /**
+   * Reads and checks `spiffe.azureImdsTenants`.
+   *
+   * @returns the tenants by domain
+   * @throws an Error carrying a sentence when no tenant is configured or one is
+   *   misconfigured
+   */
   tenants(): Record<string, any> {
     const { log, config } = this.deps;
     log.debug("Entering AzureImdsAttestor.tenants().");
@@ -151,6 +196,12 @@ class AzureImdsAttestor {
     return parsed;
   }
 
+  /**
+   * Reads a list setting, given as an array or a comma-separated string.
+   *
+   * @param key - the setting's name
+   * @returns the trimmed, non-empty values
+   */
   csv(key: string): string[] {
     const { log, config } = this.deps;
     log.debug("Entering AzureImdsAttestor.csv(). " + key);
@@ -164,6 +215,15 @@ class AzureImdsAttestor {
 
   // A tenant domain's ID: configured, or looked up once (SPIRE's
   // `lookupTenantID()`), or throws a sentence.
+  /**
+   * Returns a tenant domain's ID: configured, or looked up once as SPIRE's
+   * `lookupTenantID()` does.
+   *
+   * @param domain - the tenant's domain
+   * @param tenant - the tenant's configuration
+   * @returns the tenant ID
+   * @throws an Error carrying a sentence when it cannot be found
+   */
   async tenantIdOf(domain: string, tenant: any): Promise<string> {
     const { log, config, outbound } = this.deps;
     log.debug("Entering AzureImdsAttestor.tenantIdOf(). " + domain);
@@ -199,6 +259,14 @@ class AzureImdsAttestor {
 
   // SPIRE's `validateAttestedDocument()`: resolves the signed content, or
   // throws a sentence.
+  /**
+   * SPIRE's `validateAttestedDocument()`: verifies the PKCS#7 document's
+   * signature, its signer's domain and its chain to the Azure roots.
+   *
+   * @param document - the attested document the agent sent
+   * @returns the signed content
+   * @throws an Error carrying a sentence when the document is refused
+   */
   async validatedContent(document: any): Promise<any> {
     const { log, config, stsCrypto, pki, outbound } = this.deps;
     log.debug("Entering AzureImdsAttestor.validatedContent().");
@@ -294,6 +362,15 @@ class AzureImdsAttestor {
   }
 
   // The SDK credential for a tenant.
+  /**
+   * Builds the Azure SDK credential for a tenant: a token file when the tenant
+   * configures one, otherwise the default credential chain.
+   *
+   * @param sdk - the `@azure/identity` module
+   * @param tenantId - the tenant's ID
+   * @param tenant - the tenant's configuration
+   * @returns the credential
+   */
   credential(sdk: any, tenantId: string, tenant: any): any {
     const { log, fs } = this.deps;
     log.debug("Entering AzureImdsAttestor.credential().");
@@ -310,6 +387,14 @@ class AzureImdsAttestor {
   }
 
   // One Resource Graph query's rows.
+  /**
+   * Runs one Azure Resource Graph query.
+   *
+   * @param client - the Resource Graph client
+   * @param query - the query text
+   * @param subscription - the subscription to confine it to, or ''
+   * @returns the query's rows
+   */
   async graph(client: any, query: string, subscription: string):
       Promise<any[]> {
     const { log } = this.deps;
@@ -323,6 +408,18 @@ class AzureImdsAttestor {
   }
 
   // SPIRE's `buildSelectors()`.
+  /**
+   * SPIRE's `buildSelectors()`: the VM's selectors from Resource Graph, or from
+   * the scale set's VM list.
+   *
+   * @param modules - the loaded SDK modules
+   * @param cred - the SDK credential
+   * @param tenant - the tenant's configuration
+   * @param vmssName - the scale set the agent named, or ''
+   * @param vmId - the verified VM ID
+   * @param subscription - the verified subscription ID
+   * @returns the selectors as `type:value` strings, sorted
+   */
   async selectors(modules: any, cred: any, tenant: any, vmssName: string,
                   vmId: string, subscription: string): Promise<string[]> {
     const { log } = this.deps;
@@ -418,6 +515,13 @@ class AzureImdsAttestor {
 
   // A scale set VM's network configuration as the Resource Graph rows are
   // shaped (SPIRE's `buildVirtualMachineFromVMSSInstance()`).
+  /**
+   * Shapes a scale set VM's network configuration as the Resource Graph rows
+   * are shaped (SPIRE's `buildVirtualMachineFromVMSSInstance()`).
+   *
+   * @param instance - the scale set VM
+   * @returns its network interfaces
+   */
   vmssInterfaces(instance: any): any[] {
     const { log } = this.deps;
     log.debug("Entering AzureImdsAttestor.vmssInterfaces().");
@@ -441,6 +545,16 @@ class AzureImdsAttestor {
     return out;
   }
 
+  /**
+   * Challenges the agent with a nonce, verifies the attested document it
+   * answers with, and derives the agent's ID and selectors.
+   *
+   * @param context - the attestation context
+   * @returns the agent's ID from `spiffe.azureImdsAgentPathTemplate` with
+   *   SPIRE's Azure selectors
+   * @throws a gRPC status error when the document, tenant or subscription is
+   *   refused
+   */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
     const { log, config, stsCrypto, spiffeId, rpc, agentPath, load } =
@@ -605,6 +719,11 @@ class AzureImdsAttestor {
   }
 }
 
+/**
+ * The `azure_imds` node attestor (#40): an Azure attested document, verified as
+ * SPIRE's plugin verifies it; the Azure SDK is an optional peer dependency.
+ * @namespace
+ */
 export = {
   AzureImdsAttestor: AzureImdsAttestor,
   PACKAGES: PACKAGES

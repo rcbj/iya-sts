@@ -80,6 +80,11 @@ if (logLevelProblem) {
 // uncompressed point with its 0x04 prefix removed. Carrying the prefix would
 // be a public key every implementation reads and none agrees on the length of.
 // ---------------------------------------------------------------------------
+/**
+ * The traditional halves of the composites, by JOSE `alg`: curve, hash,
+ * encoding prefixes and the lengths of the key and signature as a composite
+ * carries them (`x || y` for the EC curves, without the 0x04 prefix).
+ */
 const TRAD = {
   ES256: { kind: 'ec', curve: 'prime256v1', hash: 'sha256',
            oid: [0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07],
@@ -100,6 +105,11 @@ const TRAD = {
 // draft-ietf-jose-pq-composite-sigs. The label is the domain separator that
 // goes into the composite message AND into the ML-DSA context string, which is
 // what stops a signature made for one composite being replayed as another.
+/**
+ * The six composite ML-DSA + traditional algorithms of
+ * draft-ietf-jose-pq-composite-sigs, by JOSE `alg`: the ML-DSA parameter set,
+ * the traditional half, the prehash and the domain-separation label.
+ */
 const COMPOSITES = {
   'ML-DSA-44-ES256': { ml: 'ML-DSA-44', trad: 'ES256', ph: 'sha256',
                        label: 'COMPSIG-MLDSA44-ECDSA-P256-SHA256' },
@@ -127,10 +137,21 @@ const SLH = { 'SLH-DSA-SHA2-128s': slh_dsa_sha2_128s,
               'SLH-DSA-SHAKE-128s': slh_dsa_shake_128s };
 
 // Every algorithm this file speaks, in the order they are offered.
+/**
+ * Every JOSE `alg` this module speaks, in the order they are offered: the
+ * three ML-DSA sets, the two SLH-DSA sets, then the six composites.
+ */
 const PQ_ALGS = Object.keys(ML)
   .concat(Object.keys(SLH))
   .concat(Object.keys(COMPOSITES));
 
+/**
+ * Tells whether a JOSE `alg` is one of the post-quantum or composite
+ * algorithms this module speaks.
+ *
+ * @param alg - a JOSE algorithm name
+ * @returns true when `alg` is in `PQ_ALGS`
+ */
 function isPqAlg(alg) {
   log.debug('Entering isPqAlg(). alg=' + alg);
   log.debug('Leaving isPqAlg().');
@@ -154,6 +175,14 @@ function prehash(name, message) {
 }
 
 // M' = "CompositeAlgorithmSignatures2025" || label || 0x00 || PH(message)
+/**
+ * Builds a composite's message M' = "CompositeAlgorithmSignatures2025" ||
+ * label || 0x00 || PH(message), which both halves sign.
+ *
+ * @param cfg - a row of `COMPOSITES`
+ * @param message - the bytes being signed
+ * @returns M' as a Buffer
+ */
 function compositeMessage(cfg, message) {
   log.debug('Entering compositeMessage().');
   const out = Buffer.concat([COMPOSITE_PREFIX,
@@ -289,6 +318,17 @@ function tradVerify(spec, pub, mPrime, signature) {
 // every time, which costs nothing and keeps the JWK to the size the RFC
 // defines. SLH-DSA's `priv` is its own secret key, which has no seed form.
 // ---------------------------------------------------------------------------
+/**
+ * Generates a key pair for a post-quantum or composite algorithm.
+ *
+ * An ML-DSA private key is its 32-byte seed (RFC 9964 section 3.2); an
+ * SLH-DSA one is its secret key; a composite's is the ML-DSA seed followed by
+ * the traditional private key, and its public key the two public keys
+ * concatenated.
+ * @param alg - one of `PQ_ALGS`
+ * @returns `{ pub, priv }`, both Buffers
+ * @throws Error when `alg` is not one of `PQ_ALGS`
+ */
 function generate(alg) {
   log.debug('Entering generate(). alg=' + alg);
   if (ML[alg]) {
@@ -360,6 +400,20 @@ function signingRandomness(alg, opts, bytes) {
   return new Uint8Array(nodeCrypto.randomBytes(bytes));
 }
 
+/**
+ * Signs a message, hedged (FIPS 204 section 3.4, FIPS 205 section 9.2) unless
+ * `opts.deterministic` is true.
+ *
+ * A composite's ML-DSA half signs M' with the label as its context string,
+ * and the two signatures are concatenated.
+ * @param alg - one of `PQ_ALGS`
+ * @param priv - the private key as `generate()` returns it
+ * @param message - the bytes to sign
+ * @param opts - optional; `deterministic: true` is for comparing with NIST's
+ *   deterministic test vectors only
+ * @returns the signature as a Buffer
+ * @throws Error for an unknown algorithm or a private key of the wrong length
+ */
 function sign(alg, priv, message, opts) {
   log.debug('Entering sign(). alg=' + alg);
   const msg = Buffer.from(message);
@@ -407,6 +461,17 @@ function sign(alg, priv, message, opts) {
   return Buffer.concat([Buffer.from(mlSig), tradSign(spec, tradPriv, mPrime)]);
 }
 
+/**
+ * Verifies a signature; a composite verifies only when both halves do.
+ *
+ * @param alg - one of `PQ_ALGS`
+ * @param pub - the public key as `generate()` returns it
+ * @param message - the signed bytes
+ * @param signature - the signature to check
+ * @returns true when the signature verifies; false for a composite of the
+ *   wrong length
+ * @throws Error when `alg` is not one this module can verify
+ */
 function verify(alg, pub, message, signature) {
   log.debug('Entering verify(). alg=' + alg);
   const msg = Buffer.from(message);
@@ -483,6 +548,13 @@ function verify(alg, pub, message, signature) {
 // ---------------------------------------------------------------------------
 let workerPool = null;
 
+/**
+ * Fills the worker-pool slot the three `*Async` functions hand work to.
+ *
+ * `common/worker_pool.js` fills it; a worker process never does, so the
+ * asynchronous forms compute in place there.
+ * @param pool - the pool, or null to compute in this process
+ */
 function setWorkerPool(pool) {
   log.debug('Entering setWorkerPool(). pool=' + (pool ? 'given' : 'null'));
   workerPool = pool;
@@ -509,6 +581,17 @@ function withoutPool(compute) {
 // signatures go to one worker. It is a routing preference and never a
 // correctness requirement — a worker remembers nothing — so a caller with no
 // session to name simply omits it.
+/**
+ * Signs as `sign()` does, on the worker pool when one is set and in this
+ * process (an already-settled promise) otherwise.
+ *
+ * @param alg - one of `PQ_ALGS`
+ * @param priv - the private key
+ * @param message - the bytes to sign
+ * @param opts - optional pool options; `session` names a session so that its
+ *   signatures go to one worker (a routing preference only)
+ * @returns a promise of the signature
+ */
 function signAsync(alg, priv, message, opts) {
   log.debug('Entering signAsync(). alg=' + alg);
   if (!workerPool) {
@@ -523,6 +606,16 @@ function signAsync(alg, priv, message, opts) {
     });
 }
 
+/**
+ * Verifies as `verify()` does, on the worker pool when one is set.
+ *
+ * @param alg - one of `PQ_ALGS`
+ * @param pub - the public key
+ * @param message - the signed bytes
+ * @param signature - the signature to check
+ * @param opts - optional pool options, as for `signAsync()`
+ * @returns a promise of true or false
+ */
 function verifyAsync(alg, pub, message, signature, opts) {
   log.debug('Entering verifyAsync(). alg=' + alg);
   if (!workerPool) {
@@ -540,6 +633,14 @@ function verifyAsync(alg, pub, message, signature, opts) {
     });
 }
 
+/**
+ * Generates a key pair as `generate()` does, on the worker pool when one is
+ * set.
+ *
+ * @param alg - one of `PQ_ALGS`
+ * @param opts - optional pool options, as for `signAsync()`
+ * @returns a promise of `{ pub, priv }`
+ */
 function generateAsync(alg, opts) {
   log.debug('Entering generateAsync(). alg=' + alg);
   if (!workerPool) {
@@ -553,6 +654,15 @@ function generateAsync(alg, opts) {
 // RFC 9964 section 3: the key type is AKP, the parameters are `pub` and
 // `priv`, and `alg` is REQUIRED — an AKP JWK without it names no algorithm
 // and there is no way to guess one from the key material.
+/**
+ * Builds the public AKP JWK of RFC 9964 section 3 for a key: `kty`, `alg`
+ * (which is required), `use: sig`, `pub` and the `kid` when given.
+ *
+ * @param alg - one of `PQ_ALGS`
+ * @param pub - the public key bytes
+ * @param kid - optional key identifier
+ * @returns the JWK object
+ */
 function akpPublicJwk(alg, pub, kid) {
   log.debug('Entering akpPublicJwk(). alg=' + alg);
   const jwk = { kty: 'AKP', alg: alg, use: 'sig',
@@ -564,6 +674,16 @@ function akpPublicJwk(alg, pub, kid) {
   return jwk;
 }
 
+/**
+ * Post-quantum and composite JWS: ML-DSA (FIPS 204, RFC 9964), SLH-DSA
+ * (FIPS 205) and the six composite algorithms of
+ * draft-ietf-jose-pq-composite-sigs.
+ *
+ * Written from the specifications rather than shared with the debugger, so
+ * that the two remain an independent cross-check; the traditional half of a
+ * composite runs on node's OpenSSL.
+ * @namespace
+ */
 module.exports = {
   PQ_ALGS: PQ_ALGS,
   COMPOSITES: COMPOSITES,

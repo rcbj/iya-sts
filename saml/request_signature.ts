@@ -168,13 +168,29 @@ interface RequestSignatureDeps {
 // parameter in a query can collide with it.
 const REPEATED = Symbol('repeated');
 
+/**
+ * Decides whether a SAML 2.0 service provider's message is signed by that
+ * service provider: the Redirect, POST and SimpleSign bindings, and the SOAP
+ * responders' callers.
+ */
 class RequestSignature {
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, settings, the mode, crypto and the error-code
+   * table
+   */
   constructor(private readonly deps: RequestSignatureDeps) {
     deps.log.debug("Entering RequestSignature.constructor().");
     deps.log.debug("Leaving RequestSignature.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): RequestSignatureDeps {
     helpers.log.debug("Entering RequestSignature.defaultDeps().");
     helpers.log.debug("Leaving RequestSignature.defaultDeps().");
@@ -216,6 +232,14 @@ class RequestSignature {
   // MUST THIS SERVICE PROVIDER'S REQUESTS BE SIGNED? `{ required, why }`, and
   // `why` names what decided it, for the refusal and the console.
   // -------------------------------------------------------------------------
+  /**
+   * Answers whether a service provider's requests must be signed: its consumed
+   * metadata, then `saml2.requireSignedAuthnRequests`, then (on `auto`) the
+   * mode.
+   *
+   * @param fields - the application entry's fields
+   * @returns `{ required, why }`, `why` naming what decided it
+   */
   requiresSignedRequests(fields?: Record<string, unknown>):
       { required: boolean; why: string } {
     const { config, mode, log } = this.deps;
@@ -246,6 +270,13 @@ class RequestSignature {
 
   // What this identity provider's metadata says in WantAuthnRequestsSigned
   // for one service provider, or for everybody when `fields` is absent.
+  /**
+   * Answers what the identity provider's metadata says in
+   * `WantAuthnRequestsSigned`.
+   *
+   * @param fields - one service provider's entry fields; everybody when absent
+   * @returns the value to publish
+   */
   wantsSignedRequests(fields?: Record<string, unknown>): boolean {
     const { log } = this.deps;
     log.debug("Entering RequestSignature.wantsSignedRequests().");
@@ -254,6 +285,13 @@ class RequestSignature {
   }
 
   // The registered certificates, base64 DER, deduplicated.
+  /**
+   * Answers the certificates registered on a service provider's entry, base64
+   * DER, deduplicated.
+   *
+   * @param fields - the application entry's fields
+   * @returns the certificates
+   */
   registeredCertificates(fields?: Record<string, unknown>): string[] {
     const { log } = this.deps;
     log.debug("Entering RequestSignature.registeredCertificates().");
@@ -275,6 +313,14 @@ class RequestSignature {
   // percent-encoded — '+' included, because a signer signed the octets it
   // sent and a '+' it sent is a '+' in those octets.
   // -------------------------------------------------------------------------
+  /**
+   * Reads a raw query string's parameters: the first occurrence of each name,
+   * its value still percent-encoded; names that repeat are recorded under a
+   * Symbol.
+   *
+   * @param rawQuery - the query string as it arrived, without the '?'
+   * @returns the raw parameters
+   */
   rawParameters(rawQuery: string): Record<string, string> {
     const { log } = this.deps;
     log.debug("Entering RequestSignature.rawParameters().");
@@ -309,6 +355,14 @@ class RequestSignature {
 
   // The octet string section 3.4.4.1 signs, or '' when the parameters needed
   // are not there.
+  /**
+   * Builds the octet string the HTTP-Redirect binding signs
+   * (saml-bindings-2.0-os section 3.4.4.1).
+   *
+   * @param rawQuery - the query string as it arrived
+   * @param messageField - `SAMLRequest` or `SAMLResponse`
+   * @returns the octets, or '' when a parameter it needs is missing or repeated
+   */
   redirectOctets(rawQuery: string, messageField: string): string {
     const { log } = this.deps;
     log.debug("Entering RequestSignature.redirectOctets().");
@@ -361,6 +415,14 @@ class RequestSignature {
   // any other implementation failed here. OpenSAML's SimpleSigningRule is
   // the reference reading and decodes the control.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the octet string the HTTP-POST-SimpleSign binding signs: the message
+   * base64-decoded, then RelayState and SigAlg.
+   *
+   * @param params - the form's controls
+   * @param messageField - `SAMLRequest` or `SAMLResponse`
+   * @returns the octets, or '' when a field it needs is missing or repeated
+   */
   simpleSignOctets(params: Record<string, unknown>, messageField: string):
       string {
     const { log } = this.deps;
@@ -440,6 +502,16 @@ class RequestSignature {
   // ASSESS ONE MESSAGE. Never throws; the answer says what was found, and
   // `refusal()` says what to do about it.
   // -------------------------------------------------------------------------
+  /**
+   * Assesses one message's signature against the service provider's registered
+   * certificates. Never throws.
+   *
+   * @param spec - the binding, the raw query or parameters, the decoded message
+   * and its root's local name, the message field, the entry's fields and any
+   * certificates trusted for this message alone
+   * @returns whether it was signed, the outcome, the algorithm and whether it
+   * is weak, why, and its error code
+   */
   assess(spec: AssessSpec): Assessment {
     const { log, stsCrypto, errorCodes } = this.deps;
     const self = this;
@@ -568,6 +640,15 @@ class RequestSignature {
   // signature is refused in every mode; an unsigned (or unverifiable for want
   // of a certificate) one only where signatures are required.
   // -------------------------------------------------------------------------
+  /**
+   * Decides what to do about an assessment: a failed signature is refused in
+   * every mode; an unsigned or unverifiable one only where signatures are
+   * required.
+   *
+   * @param assessment - `assess()`'s answer
+   * @param fields - the application entry's fields
+   * @returns `{ refuse, errorCode, why }`
+   */
   refusal(assessment: Assessment, fields?: Record<string, unknown>):
       { refuse: boolean; errorCode: string; why: string } {
     const { log } = this.deps;
@@ -625,6 +706,18 @@ class RequestSignature {
   // `{ refuse, errorCode, why, via, assessment }`, `via` being `signature`,
   // `tls` or `none`.
   // -------------------------------------------------------------------------
+  /**
+   * Authenticates the caller of a SOAP responder (artifact resolution, the SAML
+   * 1.1 responder): a signature verifying against the party's registered
+   * certificates, or a TLS client certificate that is one of them.
+   *
+   * An anonymous caller is refused where signed requests are required
+   * (`STS-SAML-0077`) and accepted where they are not.
+   * @param spec - the message, its root's local name, the entry's fields, the
+   * TLS client certificate and any implicitly trusted certificates
+   * @returns `{ refuse, errorCode, why, via, assessment }`, `via` being
+   * `signature`, `tls` or `none`
+   */
   authenticateSoapCaller(spec: { xml: string; rootLocalName: string;
                                  fields?: Record<string, unknown>;
                                  tlsCertificate?: string;
@@ -684,6 +777,13 @@ class RequestSignature {
 
   // The one-line record written onto the entry and the audit row:
   // `<outcome> <binding> <sigAlg>`.
+  /**
+   * Answers the one-line record written onto the entry and the audit row:
+   * `<outcome> <binding> <sigAlg>`.
+   *
+   * @param assessment - `assess()`'s answer
+   * @returns the summary
+   */
   summary(assessment: Assessment): string {
     const { log } = this.deps;
     log.debug("Entering RequestSignature.summary().");
@@ -708,9 +808,23 @@ const slot = new InstanceSlot<RequestSignature>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Whether a SAML 2.0 service provider's request is signed by that service
+ * provider: verified in every mode where present, required where the policy
+ * says.
+ * @namespace
+ */
 export = {
   RequestSignature: RequestSignature,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: RequestSignature): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   requiresSignedRequests: slot.forward('requiresSignedRequests'),
   wantsSignedRequests: slot.forward('wantsSignedRequests'),

@@ -288,18 +288,42 @@ class PortalClaimSourcesPage {
   }
 }
 
+/**
+ * The portal page at /portal/claim-sources: where a person links the claims
+ * providers that answer claims their entry does not (#147).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalClaimSources {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalClaimSourcesDeps) {
     deps.log.debug("Entering PortalClaimSources.constructor().");
     deps.log.debug("Leaving PortalClaimSources.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalClaimSourcesDeps {
     helpers.log.debug("Entering PortalClaimSources.defaultDeps().");
     helpers.log.debug("Leaving PortalClaimSources.defaultDeps().");
     return { log: helpers.log, claimsProviders: claimsProviders };
   }
 
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalClaimSources.register().");
     const page = new PortalClaimSourcesPage(this.deps, context);
@@ -319,6 +343,10 @@ const slot = new InstanceSlot<PortalClaimSources>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/claim-sources, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalClaimSources: PortalClaimSources,
   installInstance: (instance: PortalClaimSources): void =>

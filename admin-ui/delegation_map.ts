@@ -240,6 +240,10 @@ const WIDE = 'mwMW@%';
 // always in the <title> of the shape, so nothing is LOST by the cut — a hover
 // says the rest — and a picture whose boxes are as wide as a
 // `did:jwk:eyJrdHkiOi…` is a picture of one box.
+/**
+ * How many characters of a box's label are drawn before it is cut; the whole
+ * value is always in the shape's `<title>`.
+ */
 const MAX_LABEL_CHARS = 30;
 
 // WRAPPING AN IDENTIFIER, WHICH IS NOT WRAPPING A SENTENCE. There are no spaces
@@ -482,15 +486,35 @@ const SIGNED_IN_CHARS = 44;
 
 // The palette as the key beside the picture reads it — see the export at the
 // bottom.
+/**
+ * The picture's palette, by name, which the key beside the picture draws its
+ * swatches from.
+ */
 const COLOURS = {
   ink: INK, indigo: INDIGO, green: GREEN, amber: AMBER, red: RED,
   grey: GREY, quiet: QUIET, line: LINE, panel: PANEL, paper: PAPER, wash: WASH
 };
 
+/**
+ * The delegation picture: `common/delegation.js`'s graph laid out with dagre
+ * and drawn as SVG. A library that registers no route and reads nothing but its
+ * arguments.
+ */
 class DelegationMap {
+  /**
+   * See the module's `COLOURS`.
+   */
   static readonly COLOURS = COLOURS;
+  /**
+   * See the module's `MAX_LABEL_CHARS`.
+   */
   static readonly MAX_LABEL_CHARS = MAX_LABEL_CHARS;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the XML escaper, the error-code table and dagre
+   */
   constructor(private readonly deps: DelegationMapDeps) {
     deps.log.debug("Entering DelegationMap.constructor().");
     deps.log.debug("Leaving DelegationMap.constructor().");
@@ -498,6 +522,11 @@ class DelegationMap {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): DelegationMapDeps {
     helpers.log.debug("Entering DelegationMap.defaultDeps().");
     helpers.log.debug("Leaving DelegationMap.defaultDeps().");
@@ -524,6 +553,14 @@ class DelegationMap {
     return 'dm-tail-' + colour.replace('#', '');
   }
 
+  /**
+   * Estimates how wide a string is drawn, from three buckets of character
+   * width.
+   *
+   * @param text - the text
+   * @param size - the font size
+   * @returns the estimated width in the drawing's units
+   */
   textWidth(text, size) {
     const { log } = this.deps;
     log.debug("Entering DelegationMap.textWidth().");
@@ -545,6 +582,16 @@ class DelegationMap {
     return units * size;
   }
 
+  /**
+   * Wraps an identifier onto lines, breaking after the characters identifiers
+   * are built out of (`/@.-_:+` and space) and cutting an unbroken run hard.
+   *
+   * Whatever does not fit is marked with an ellipsis on the last line.
+   * @param text - the label
+   * @param maxChars - the most characters on a line
+   * @param maxLines - the most lines
+   * @returns the lines, at least one
+   */
   wrapLabel(text, maxChars, maxLines) {
     const { log } = this.deps;
     log.debug("Entering DelegationMap.wrapLabel().");
@@ -677,6 +724,16 @@ class DelegationMap {
   // A STICK FIGURE. Head, spine, arms, legs, drawn around (0,0) at its own top
   // left. `stroke-linecap:round` is what stops the limbs looking like a diagram
   // of a bridge.
+  /**
+   * Draws a stick figure, the shape of a person, at its own top left.
+   *
+   * @param x - the left edge
+   * @param y - the top edge
+   * @param colour - the stroke colour
+   * @param dashed - whether the strokes are dashed
+   * @param scale - a scale factor; 1 when absent
+   * @returns the SVG group
+   */
   personGlyph(x, y, colour, dashed, scale) {
     const { log } = this.deps;
     const self = this;
@@ -713,6 +770,15 @@ class DelegationMap {
   // A HEXAGON, for this service. Flat-topped, which is the shape nothing else
   // here is: a rectangle is an application, a rounded rectangle would read as
   // one, and a circle beside a stick figure's head reads as a second person.
+  /**
+   * Answers the path of a flat-topped hexagon, the shape of this service.
+   *
+   * @param x - the left edge
+   * @param y - the top edge
+   * @param w - the width
+   * @param h - the height
+   * @returns the SVG path data
+   */
   hexPath(x, y, w, h) {
     const { log } = this.deps;
     const self = this;
@@ -1197,6 +1263,16 @@ class DelegationMap {
   // and a stack trace where the diagram should be is worth less than a
   // sentence.
   // ---------------------------------------------------------------------------
+  /**
+   * Lays out and draws a delegation graph as SVG.
+   *
+   * It cannot throw: a failure is logged under `STS-ADMIN-0600` and comes back
+   * as a picture saying it could not be drawn.
+   * @param graph - `common/delegation.js`'s `graph()`
+   * @param options - `resolve(node)`, `links` (wrap each box in a link to its
+   * console page) and `id` (a prefix for every generated id)
+   * @returns the SVG, its width and height, and the laid-out nodes and edges
+   */
   render(graph: any, options?: any): Drawing {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -2379,6 +2455,15 @@ class DelegationMap {
   // so the two cannot drift in the way that matters, which is one of them being
   // changed and the other not.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws a sample line for the key beside the picture, with the same round
+   * tail and pointed head as the drawing's edges.
+   *
+   * @param colour - the stroke colour
+   * @param dash - a `stroke-dasharray`, when dashed
+   * @param weight - the stroke width; 1.8 when absent
+   * @returns the SVG markup
+   */
   edgeSample(colour: string, dash?: string, weight?: number): string {
     const { log } = this.deps;
     const self = this;
@@ -2423,9 +2508,23 @@ const slot = new InstanceSlot<DelegationMap>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The delegation picture: `common/delegation.js`'s graph, drawn as SVG for
+ * `/admin/delegation/map`, and the text metric, identifier wrap and palette the
+ * federation picture shares with it.
+ * @namespace
+ */
 export = {
   DelegationMap: DelegationMap,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: DelegationMap): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   render: slot.forward('render'),
   // The key beside the picture draws its sample lines with this, so that the

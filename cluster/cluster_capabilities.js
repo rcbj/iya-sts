@@ -47,6 +47,11 @@ config.registerLogger(log);
 // `section` is the heading of issue #46 the failure is described under.
 // `by` names the module expected to call provide() — which is what a reader
 // opens to see the fix, and what the test holds the call to.
+/**
+ * The table of what active-active mode depends on, one row per failure
+ * issue #46 describes: `id`, the issue `section`, the module expected to
+ * provide it (`by`) and `what` the fix guarantees.
+ */
 const CAPABILITIES = [
   // ---- the foundation ------------------------------------------------------
   { id: 'cluster.membership', section: '8',
@@ -206,6 +211,14 @@ const provided = new Map();
 // A module saying it has fixed one row. Called at require time. An id that is
 // not a row is a programming error and is thrown, because a capability nobody
 // can see in the table is a refusal that can never be satisfied or explained.
+/**
+ * Records that a capability is provided; called at require time by the module
+ * that implements it.
+ *
+ * @param id - the capability's id, a row of CAPABILITIES
+ * @param detail - optional; its `note` is shown beside the row
+ * @throws Error when the id is not a row of CAPABILITIES
+ */
 function provide(id, detail) {
   log.debug("Entering provide(). id=" + id);
   if (!byId.has(id)) {
@@ -218,6 +231,12 @@ function provide(id, detail) {
   log.debug("Leaving provide().");
 }
 
+/**
+ * Says whether a capability has been provided in this process.
+ *
+ * @param id - the capability's id
+ * @returns true when provide() was called for it
+ */
 function isProvided(id) {
   log.debug("Entering isProvided().");
   log.debug("Leaving isProvided().");
@@ -227,6 +246,12 @@ function isProvided(id) {
 // The operator's list, from `cluster.acceptMissingCapabilities`, with anything
 // that is not a real id kept apart — a typo there must be SAID, not silently
 // accept nothing.
+/**
+ * Reads `cluster.acceptMissingCapabilities`, the operator's named exceptions.
+ *
+ * @returns `known`, the ids that are rows of the table, and `unknown`, the
+ *   entries that are not (a typo to be reported, not ignored)
+ */
 function accepted() {
   log.debug("Entering accepted().");
   const raw = config.value('cluster.acceptMissingCapabilities');
@@ -242,6 +267,13 @@ function accepted() {
 
 // The whole table as a page and the API draw it, and the verdict active-active
 // is held to.
+/**
+ * Reports every capability with whether it is provided or accepted as missing,
+ * and the verdict active-active mode is held to.
+ *
+ * @returns `rows`, `missing`, `acceptedMissing`, `unknownAccepted`, and
+ *   `ready`, true when nothing required is missing
+ */
 function report() {
   log.debug("Entering report().");
   const ok = accepted();
@@ -269,12 +301,24 @@ function report() {
 }
 
 // For tests only.
+/**
+ * Forgets every provided capability. For tests only.
+ */
 function reset() {
   log.debug("Entering reset().");
   provided.clear();
   log.debug("Leaving reset().");
 }
 
+/**
+ * What active-active mode depends on, as data (#46): a table of capabilities,
+ * each provided by the module that fixed it.
+ *
+ * `cluster/cluster.js` refuses to start a node in active-active mode while a
+ * required capability is missing and not named in
+ * `cluster.acceptMissingCapabilities`.
+ * @namespace
+ */
 module.exports = {
   CAPABILITIES: CAPABILITIES,
   provide: provide,

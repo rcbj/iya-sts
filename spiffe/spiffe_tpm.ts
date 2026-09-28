@@ -48,6 +48,9 @@ const { log } = helpers;
 import stsCrypto = require('../common/crypto');
 
 // TPM_ALG_ID values used here (Part 2, table 9).
+/**
+ * The TPM_ALG_ID values this module reads (TPM 2.0 Library Part 2, table 9).
+ */
 const ALG = {
   RSA: 0x0001, SHA1: 0x0004, AES: 0x0006, SHA256: 0x000b, SHA384: 0x000c,
   SHA512: 0x000d, NULL: 0x0010, RSASSA: 0x0014, RSAPSS: 0x0016,
@@ -149,18 +152,39 @@ interface TpmDeps {
   stsCrypto: typeof stsCrypto;
 }
 
+/**
+ * The TPM 2.0 structures and credential activation the `tpm_devid` node
+ * attestor needs: the part of go-tpm's `tpm2` a server uses.
+ */
 class Tpm {
+  /**
+   * Builds the reader over its dependencies.
+   *
+   * @param deps - the logger, node's crypto and `common/crypto.js`
+   */
   constructor(private readonly deps: TpmDeps) {
     deps.log.debug("Entering Tpm.constructor().");
     deps.log.debug("Leaving Tpm.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service builds the reader with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): TpmDeps {
     helpers.log.debug("Entering Tpm.defaultDeps().");
     helpers.log.debug("Leaving Tpm.defaultDeps().");
     return { log: log, crypto: nodeCrypto, stsCrypto: stsCrypto };
   }
 
+  /**
+   * Returns node's name for a TPM hash algorithm.
+   *
+   * @param alg - the TPM_ALG_ID
+   * @returns the hash name, such as `sha256`
+   * @throws an Error for a hash algorithm that is not supported
+   */
   hashName(alg: number): string {
     const { log } = this.deps;
     log.debug("Entering Tpm.hashName().");
@@ -176,6 +200,12 @@ class Tpm {
   }
 
   // TPMT_SYM_DEF_OBJECT.
+  /**
+   * Reads a TPMT_SYM_DEF_OBJECT.
+   *
+   * @param reader - the reader positioned at it
+   * @returns the algorithm, key size and mode; the size and mode are 0 for NULL
+   */
   symmetric(reader: Reader): { alg: number; keyBits: number; mode: number } {
     const { log } = this.deps;
     log.debug("Entering Tpm.symmetric().");
@@ -191,6 +221,12 @@ class Tpm {
   }
 
   // A scheme: an algorithm and, unless it is NULL, a hash.
+  /**
+   * Reads a scheme: an algorithm and, unless it is NULL, a hash.
+   *
+   * @param reader - the reader positioned at it
+   * @returns the algorithm and hash
+   */
   scheme(reader: Reader): { alg: number; hash: number } {
     const { log } = this.deps;
     log.debug("Entering Tpm.scheme().");
@@ -200,6 +236,13 @@ class Tpm {
   }
 
   // TPMT_PUBLIC, or TPM2B_PUBLIC around one.
+  /**
+   * Decodes a TPMT_PUBLIC, or a TPM2B_PUBLIC around one.
+   *
+   * @param bytes - the encoded structure
+   * @returns the decoded public area
+   * @throws an Error when the bytes are neither form
+   */
   decodePublic(bytes: Buffer): TpmPublic {
     const { log } = this.deps;
     log.debug("Entering Tpm.decodePublic().");
@@ -219,6 +262,13 @@ class Tpm {
     }
   }
 
+  /**
+   * Decodes a TPMT_PUBLIC for an RSA or ECC object.
+   *
+   * @param bytes - the encoded structure
+   * @returns the decoded public area, with the raw bytes it was read from
+   * @throws an Error for a truncated structure or an unsupported type
+   */
   decodeTpmtPublic(bytes: Buffer): TpmPublic {
     const { log } = this.deps;
     log.debug("Entering Tpm.decodeTpmtPublic().");
@@ -256,6 +306,12 @@ class Tpm {
   }
 
   // The public key of a TPM object, as node key material.
+  /**
+   * Returns the public key of a TPM object as node key material.
+   *
+   * @param pub - the decoded public area
+   * @returns the key object
+   */
   keyOf(pub: TpmPublic): nodeCrypto.KeyObject {
     const { log, crypto } = this.deps;
     log.debug("Entering Tpm.keyOf().");
@@ -287,6 +343,13 @@ class Tpm {
   }
 
   // TPM2B_NAME's contents for an object: nameAlg ‖ H_nameAlg(TPMT_PUBLIC).
+  /**
+   * Returns a TPM2B_NAME's contents for an object: nameAlg ‖
+   * H_nameAlg(TPMT_PUBLIC).
+   *
+   * @param pub - the decoded public area
+   * @returns the name
+   */
   name(pub: TpmPublic): Buffer {
     const { log, crypto } = this.deps;
     log.debug("Entering Tpm.name().");
@@ -299,6 +362,14 @@ class Tpm {
 
   // Does `name` (a TPM2B_NAME's contents) name `pub`? Computed with the
   // name's own algorithm, as go-tpm's `MatchesPublic()` does.
+  /**
+   * Checks whether a name names an object, computed with the name's own
+   * algorithm as go-tpm's `MatchesPublic()` does.
+   *
+   * @param name - a TPM2B_NAME's contents
+   * @param pub - the decoded public area
+   * @returns whether it matches
+   */
   nameMatches(name: Buffer, pub: TpmPublic): boolean {
     const { log, crypto } = this.deps;
     log.debug("Entering Tpm.nameMatches().");
@@ -321,6 +392,14 @@ class Tpm {
   }
 
   // TPMS_ATTEST from TPM2_Certify: the certified object's Name, or an error.
+  /**
+   * Reads the certified object's Name out of a TPMS_ATTEST made by
+   * TPM2_Certify.
+   *
+   * @param bytes - the encoded attestation structure
+   * @returns the certified object's Name
+   * @throws an Error for a structure that is not TPM-generated or not a certify
+   */
   decodeCertifyName(bytes: Buffer): Buffer {
     const { log } = this.deps;
     log.debug("Entering Tpm.decodeCertifyName().");
@@ -351,6 +430,15 @@ class Tpm {
   // `checkSignature()`: the AK must be a signing RSA key, and the signature
   // PKCS#1 v1.5 with the hash its scheme names. The structure is read here;
   // the signature is `common/crypto.js`'s to check. Resolves '' or why not.
+  /**
+   * SPIRE's `checkSignature()`: whether the AK signed data, with a
+   * TPMT_SIGNATURE that must be PKCS#1 v1.5 with the hash its scheme names.
+   *
+   * @param ak - the attestation key's public area; it must be a signing RSA key
+   * @param data - the signed data
+   * @param signature - the TPMT_SIGNATURE
+   * @returns '' when the signature verifies, otherwise why not
+   */
   async checkSignature(ak: TpmPublic, data: Buffer, signature: Buffer):
       Promise<string> {
     const { log, stsCrypto } = this.deps;
@@ -388,6 +476,17 @@ class Tpm {
   // here, and the credential is built by `common/crypto.js`'s
   // `tpmMakeCredential()` — go-tpm's `credactivation.Generate()`, which
   // SPIRE calls. Throws for an EK that is not RSA with an AES-CFB scheme.
+  /**
+   * TPM2_MakeCredential for an EK and an AK, built by `common/crypto.js`'s
+   * `tpmMakeCredential()`; only a TPM holding the EK, activating for that AK,
+   * recovers the secret.
+   *
+   * @param akName - the AK's Name
+   * @param ek - the endorsement key's public area
+   * @param secret - the secret to protect
+   * @returns the credential blob and the encrypted secret
+   * @throws an Error for an EK that is not RSA with an AES-CFB scheme
+   */
   makeCredential(akName: Buffer, ek: TpmPublic, secret: Buffer):
       { credential: Buffer; secret: Buffer } {
     const { log, stsCrypto } = this.deps;
@@ -408,6 +507,11 @@ class Tpm {
 
 const shared = new Tpm(Tpm.defaultDeps());
 
+/**
+ * TPM 2.0 structures and credential activation for the `tpm_devid` node
+ * attestor (#40); the functions forward to one shared `Tpm`.
+ * @namespace
+ */
 export = {
   Tpm: Tpm,
   ALG: ALG,

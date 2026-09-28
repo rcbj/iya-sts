@@ -101,10 +101,30 @@ const KEY_FORMATS = ['jwk', 'cert', 'cert#S256'];
 // refused by this list as well as by its kty.
 const PRIVATE_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k', 'priv'];
 
+/**
+ * Reads a GNAP key in every shape RFC 9635 section 7.1 lets one arrive in — by
+ * value in one of three formats, or by reference — into a descriptor.
+ *
+ * A descriptor's `identity` is a thumbprint, so the same key in different JSON
+ * is the same key (section 2.3).
+ */
 class GnapKeys {
+  /**
+   * The proofing methods this service accepts: `httpsig`, `mtls`, `jwsd` and
+   * `jws`.
+   */
   static readonly PROOF_METHODS = PROOF_METHODS;
+  /**
+   * The three formats a key by value may carry, exactly one of which may be
+   * present: `jwk`, `cert` and `cert#S256`.
+   */
   static readonly KEY_FORMATS = KEY_FORMATS;
 
+  /**
+   * Builds the key reader from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapKeysDeps) {
     deps.log.debug("Entering GnapKeys.constructor().");
     deps.log.debug("Leaving GnapKeys.constructor().");
@@ -123,6 +143,14 @@ class GnapKeys {
   // would pick for that key. A client that wants anything else uses the
   // object form, which names `alg` explicitly and wins.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the HTTP-signature algorithm a key means when the proof is the
+   * string form (section 7.3.1): the algorithm a JOSE library would pick for
+   * that key type.
+   *
+   * @param keyObject - a node public KeyObject
+   * @returns a JWS algorithm name, or null for a key type with none
+   */
   jwsAlgForKeyObject(keyObject: any): string | null {
     const { log } = this.deps;
     log.debug("Entering GnapKeys.jwsAlgForKeyObject().");
@@ -173,6 +201,13 @@ class GnapKeys {
   // REQUIRED in object form); an object for any other method is a key this
   // service cannot interpret, and section 7.3 gives it no meaning to guess.
   // -------------------------------------------------------------------------
+  /**
+   * Normalises a proofing method in either of its two shapes (section 7.3): a
+   * method name, or an object whose parameters only `httpsig` defines.
+   *
+   * @param proof - the `proof` member as presented
+   * @returns `{ ok: true, ... }` with the normalised proof, or a refusal
+   */
   normaliseProof(proof: any): KeyResult {
     const { log } = this.deps;
     log.debug("Entering GnapKeys.normaliseProof().");
@@ -227,6 +262,13 @@ class GnapKeys {
 
   // A certificate from a `cert` member: PEM, with or without its header and
   // footer, internal whitespace allowed (section 7.1 citing RFC 7468).
+  /**
+   * Reads a certificate from a `cert` member: PEM with or without its header
+   * and footer (section 7.1, citing RFC 7468).
+   *
+   * @param value - the member's value
+   * @returns the certificate, or null when it does not parse
+   */
   certificateFrom(value: unknown): nodeCrypto.X509Certificate | null {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering GnapKeys.certificateFrom().");
@@ -264,6 +306,17 @@ class GnapKeys {
   // "unknown", which the caller turns into `invalid_client` — section 2.3.1
   // and 7.1.1.
   // -------------------------------------------------------------------------
+  /**
+   * Turns a key by value or by reference into a descriptor.
+   *
+   * A reference is resolved through `options.resolveReference()`, which answers
+   * null for an unknown one; the caller turns that into `invalid_client`.
+   *
+   * @param key - the key, an object or a reference string
+   * @param options - `resolveReference(reference)`, how a reference becomes key
+   *   material
+   * @returns `{ ok: true, ... }` carrying the descriptor, or a refusal
+   */
   describe(key: any, options?: DescribeOptions): KeyResult {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering GnapKeys.describe().");
@@ -445,6 +498,14 @@ class GnapKeys {
   // The confirmation an access token carries for a descriptor (RFC 9767
   // section 2.1.4): `jkt` for a JWK, `x5t#S256` for a certificate, `kid` for
   // a reference.
+  /**
+   * Returns the confirmation an access token carries for a descriptor (RFC 9767
+   * section 2.1.4): `jkt` for a JWK, `x5t#S256` for a certificate, `kid` for a
+   * reference.
+   *
+   * @param descriptor - the key descriptor
+   * @returns the confirmation object, or null with no descriptor
+   */
   confirmationOf(descriptor: any): Record<string, any> | null {
     const { log } = this.deps;
     log.debug("Entering GnapKeys.confirmationOf().");
@@ -467,6 +528,13 @@ class GnapKeys {
   // Whether a presented descriptor is the key a confirmation names. Used by
   // the demonstration RS and by every format's verify(), which is handed this
   // shape as `presentedKey`.
+  /**
+   * Returns the confirmation of a presented key, the shape every token format's
+   * `verify()` is handed as `presentedKey`.
+   *
+   * @param descriptor - the presented key's descriptor
+   * @returns the confirmation object, or null
+   */
   presentedFor(descriptor: any): Record<string, any> | null {
     const { log } = this.deps;
     log.debug("Entering GnapKeys.presentedFor().");
@@ -476,6 +544,14 @@ class GnapKeys {
 
   // Section 6.1.1: "The proofing method and parameters for the new key MUST
   // be the same as those established for the previous key."
+  /**
+   * Says whether two proofing methods and their parameters are the same, as key
+   * rotation requires (section 6.1.1).
+   *
+   * @param a - the established proof
+   * @param b - the new key's proof
+   * @returns true when they are the same
+   */
   sameProof(a: any, b: any): boolean {
     const { log } = this.deps;
     log.debug("Entering GnapKeys.sameProof().");
@@ -489,6 +565,12 @@ class GnapKeys {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapKeysDeps {
     helpers.log.debug("Entering GnapKeys.defaultDeps().");
     helpers.log.debug("Leaving GnapKeys.defaultDeps().");
@@ -518,9 +600,27 @@ const slot = new InstanceSlot<GnapKeys>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What a GNAP key is (RFC 9635 section 7.1), in every shape it can arrive in,
+ * as a descriptor every holder of a key keeps.
+ *
+ * A route-free library.
+ *
+ * @namespace
+ */
 export = {
   GnapKeys: GnapKeys,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapKeys): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   PROOF_METHODS: GnapKeys.PROOF_METHODS,
   KEY_FORMATS: GnapKeys.KEY_FORMATS,

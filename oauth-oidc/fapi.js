@@ -83,14 +83,31 @@ const config = require('../common/config');
 
 // The profiles this service implements, in the order the specifications were
 // published. #139–#141 add theirs here.
+/**
+ * The FAPI profiles this service implements, in the order the specifications
+ * were published.
+ */
 const PROFILES = ['1-baseline', '1-advanced', '2-security',
                   '2-message-signing'];
+/**
+ * The FAPI 1.0 Advanced profile's value.
+ */
 const ADVANCED = '1-advanced';
+/**
+ * The FAPI 2.0 Security Profile's value.
+ */
 const FAPI2 = '2-security';
+/**
+ * The FAPI 2.0 Message Signing profile's value.
+ */
 const MESSAGE_SIGNING = '2-message-signing';
 
 // The switch's own "no profile", and what a named authorization server may
 // say to be NOT a FAPI server even though its realm is.
+/**
+ * The value that says no profile, which a named authorization server may use to
+ * opt out of its realm's.
+ */
 const NONE = 'off';
 
 const BASELINE = 'FAPI 1.0 Part 1: Baseline Security Profile (final)';
@@ -108,11 +125,17 @@ const ADVANCED_URL =
 
 // The confidential client authentication methods Baseline section 5.2.2
 // item 4 allows: RFC 8705's two, and OIDC Core section 9's two JWT ones.
+/**
+ * The confidential client authentication methods FAPI 1.0 Baseline allows.
+ */
 const BASELINE_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth',
                           'private_key_jwt', 'client_secret_jwt'];
 
 // Part 2 section 5.2.2 item 14: no client_secret_jwt, and (item 16) no public
 // client.
+/**
+ * The client authentication methods FAPI 1.0 Advanced allows.
+ */
 const ADVANCED_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth',
                           'private_key_jwt'];
 
@@ -133,8 +156,14 @@ const ADVANCED_RESPONSE_TYPES = ['code id_token', 'code'];
 
 // Part 2 section 8.6: "shall use PS256 or ES256" for every JWS, both ends; and
 // 8.6.1: never RSA1_5.
+/**
+ * The JWS algorithms FAPI 1.0 Advanced allows: PS256 and ES256.
+ */
 const ADVANCED_SIGNING_ALGS = ['PS256', 'ES256'];
 // FAPI 2.0 section 5.4.1 item 2: PS256, ES256 or EdDSA (Ed25519).
+/**
+ * The JWS algorithms FAPI 2.0 allows: PS256, ES256 and EdDSA.
+ */
 const FAPI2_SIGNING_ALGS = ['PS256', 'ES256', 'EdDSA'];
 // FAPI 2.0 section 5.3.2.2 item 1.
 const FAPI2_RESPONSE_TYPES = ['code'];
@@ -179,16 +208,29 @@ const ENCRYPTION_ALG_LISTS = ['id_token_encryption_alg_values_supported',
   'introspection_encryption_alg_values_supported'];
 
 // Part 2 section 5.2.2 items 13 and 17: a request object's lifetime and age.
+/**
+ * The longest lifetime a request object may have under FAPI 1.0 Advanced.
+ */
 const MAX_REQUEST_OBJECT_LIFETIME_S = 3600;
 const MAX_REQUEST_OBJECT_AGE_S = 3600;
 
 // Section 5.2.2 items 5 and 6.
+/**
+ * The smallest RSA key a client may register.
+ */
 const MIN_RSA_BITS = 2048;
+/**
+ * The smallest elliptic-curve key a client may register.
+ */
 const MIN_EC_BITS = 160;
 
 // Section 5.2.2 item 21: "should issue access tokens with a lifetime of under
 // 10 minutes unless the tokens are sender-constrained". A SHOULD, enforced as
 // a cap here — the stricter reading, per rcbj's standing rule.
+/**
+ * The longest lifetime of an access token that is not sender-constrained, under
+ * FAPI 1.0.
+ */
 const MAX_UNBOUND_ACCESS_TOKEN_S = 600;
 
 // ---------------------------------------------------------------------------
@@ -197,6 +239,10 @@ const MAX_UNBOUND_ACCESS_TOKEN_S = 600;
 // profile turns that mode on), 'already' (true of this service whatever the
 // setting) or 'no' with the reason in `note`.
 // ---------------------------------------------------------------------------
+/**
+ * What FAPI 1.0 Baseline asks of the authorization server, row by row, each
+ * with whether it is enforced.
+ */
 const REQUIREMENTS = [
   { id: 'implies-rfc9700', section: '5.2.2', level: 'SHALL',
     enforced: 'inherited',
@@ -290,6 +336,9 @@ const REQUIREMENTS = [
 // 5.2.2 and 8.6). Under `1-advanced` GET /oauth2/fapi lists both tables, and
 // the Baseline row `pkce-s256` reads as relaxed to pushed requests.
 // ---------------------------------------------------------------------------
+/**
+ * What FAPI 1.0 Advanced asks beyond Baseline, row by row.
+ */
 const ADVANCED_REQUIREMENTS = [
   { id: 'signed-request-object', section: '5.2.2 item 1', level: 'SHALL',
     enforced: 'yes',
@@ -353,6 +402,10 @@ const ADVANCED_REQUIREMENTS = [
 // row (sections 5.3.2.1, 5.3.2.2, 5.4). Its own table: 2.0 is not 1.0 plus
 // something, and the FAPI 1.0 rows are not listed under it.
 // ---------------------------------------------------------------------------
+/**
+ * What the FAPI 2.0 Security Profile asks of the authorization server, row by
+ * row.
+ */
 const FAPI2_REQUIREMENTS = [
   { id: 'implies-rfc9700', section: '5.3.2.1 items 2, 7', level: 'SHALL',
     enforced: 'inherited',
@@ -434,6 +487,9 @@ const FAPI2_REQUIREMENTS = [
 // by row. Under `2-message-signing` GET /oauth2/fapi lists these after the
 // Security Profile's.
 // ---------------------------------------------------------------------------
+/**
+ * What FAPI 2.0 Message Signing adds to the Security Profile, row by row.
+ */
 const MESSAGE_SIGNING_REQUIREMENTS = [
   { id: 'signed-request-at-par', section: '5.3.2 item 1', level: 'SHALL',
     enforced: 'yes',
@@ -504,6 +560,12 @@ const MESSAGE_SIGNING_REQUIREMENTS = [
 const ambient = new AsyncLocalStorage();
 
 // Whether `value` is something the switch accepts.
+/**
+ * Tells whether a value is one the `oauth2.fapi` switch accepts.
+ *
+ * @param value - the value
+ * @returns true for '', `off` or a profile
+ */
 function known(value) {
   log.debug("Entering known().");
   const text = String(value || '');
@@ -513,6 +575,14 @@ function known(value) {
 
 // Runs `fn` with `value` as the request's FAPI profile — a named
 // authorization server's own. An empty value leaves the realm's in force.
+/**
+ * Runs a function with a named authorization server's FAPI profile in force; an
+ * empty value leaves the realm's.
+ *
+ * @param value - the profile
+ * @param fn - the function to run
+ * @returns what the function returns
+ */
 function withProfile(value, fn) {
   log.debug("Entering withProfile(). " + (value || '(the realm\'s)'));
   log.debug("Leaving withProfile().");
@@ -521,6 +591,12 @@ function withProfile(value, fn) {
 
 // The FAPI profile in force: the named authorization server's, then the
 // realm's (or the process's) setting. '' when none.
+/**
+ * Returns the FAPI profile in force: the named authorization server's, then the
+ * realm's setting.
+ *
+ * @returns the profile, or '' when none
+ */
 function profile() {
   log.debug("Entering profile().");
   const held = ambient.getStore();
@@ -534,6 +610,11 @@ function profile() {
   return PROFILES.indexOf(value) >= 0 ? value : '';
 }
 
+/**
+ * Tells whether any FAPI profile is in force.
+ *
+ * @returns true when one is
+ */
 function enabled() {
   log.debug("Entering enabled().");
   const on = profile() !== '';
@@ -558,6 +639,12 @@ function allowedMethods() {
 }
 
 // Whether the FAPI 2.0 Security Profile is in force.
+/**
+ * Tells whether the FAPI 2.0 Security Profile is in force, Message Signing
+ * included.
+ *
+ * @returns true when it is
+ */
 function fapi2() {
   log.debug("Entering fapi2().");
   const on = profile() === FAPI2 || profile() === MESSAGE_SIGNING;
@@ -566,6 +653,11 @@ function fapi2() {
 }
 
 // Whether FAPI 2.0 Message Signing is in force (and so the Security Profile).
+/**
+ * Tells whether FAPI 2.0 Message Signing is in force.
+ *
+ * @returns true when it is
+ */
 function messageSigning() {
   log.debug("Entering messageSigning().");
   const on = profile() === MESSAGE_SIGNING;
@@ -574,6 +666,11 @@ function messageSigning() {
 }
 
 // Whether a FAPI 1.0 profile (Baseline or Advanced) is in force.
+/**
+ * Tells whether a FAPI 1.0 profile, Baseline or Advanced, is in force.
+ *
+ * @returns true when one is
+ */
 function v1() {
   log.debug("Entering v1().");
   const on = enabled() && !fapi2();
@@ -582,6 +679,11 @@ function v1() {
 }
 
 // The JWS algorithms the profile in force allows, or null for no limit.
+/**
+ * Returns the JWS algorithms the profile in force allows.
+ *
+ * @returns the algorithms, or null for no limit
+ */
 function profileSigningAlgs() {
   log.debug("Entering profileSigningAlgs().");
   log.debug("Leaving profileSigningAlgs().");
@@ -590,6 +692,11 @@ function profileSigningAlgs() {
 }
 
 // Whether FAPI 1.0 Advanced is in force.
+/**
+ * Tells whether FAPI 1.0 Advanced is in force.
+ *
+ * @returns true when it is
+ */
 function advanced() {
   log.debug("Entering advanced().");
   const on = profile() === ADVANCED;
@@ -634,6 +741,13 @@ function httpsUri(uri) {
 // Whether a redirect URI is acceptable to the profile in force: https, and —
 // under FAPI 2.0 only — http to a loopback address, which section 5.3.2.2
 // item 8 excepts for native clients.
+/**
+ * Tells whether a redirect URI is acceptable to the profile in force: https, or
+ * under FAPI 2.0 http to a loopback address.
+ *
+ * @param uri - the redirect URI
+ * @returns true when it is acceptable
+ */
 function redirectUriAllowed(uri) {
   log.debug("Entering redirectUriAllowed().");
   if (httpsUri(uri)) {
@@ -659,6 +773,14 @@ function redirectUriAllowed(uri) {
 // `query` is the request's parameters; `context.pushed` whether it arrived by
 // PAR — the one thing Advanced's PKCE rule turns on.
 // ---------------------------------------------------------------------------
+/**
+ * Checks an authorization request, or a pushed one, against the profile in
+ * force.
+ *
+ * @param query - the request's parameters
+ * @param context - `pushed`, whether it arrived by PAR
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function authorizationRefusal(query, context) {
   log.debug("Entering authorizationRefusal().");
   if (!enabled()) {
@@ -786,6 +908,12 @@ function authorizationRefusal(query, context) {
 
 // A response_type with its values in a fixed order, so that `id_token code`
 // is `code id_token`.
+/**
+ * Returns a response_type with its values in a fixed order.
+ *
+ * @param value - the response_type
+ * @returns the normalised response_type
+ */
 function responseTypeOf(value) {
   log.debug("Entering responseTypeOf().");
   const words = String(value || '').split(/\s+/).filter(Boolean).sort();
@@ -795,6 +923,9 @@ function responseTypeOf(value) {
 
 // JARM's response modes (JARM section 2.3). Kept here as well as in
 // `jarm.ts` because this file is a leaf that may require nothing.
+/**
+ * JARM's response modes (JARM section 2.3).
+ */
 const JARM_MODES = ['jwt', 'query.jwt', 'fragment.jwt', 'form_post.jwt'];
 
 // ---------------------------------------------------------------------------
@@ -802,6 +933,13 @@ const JARM_MODES = ['jwt', 'query.jwt', 'fragment.jwt', 'form_post.jwt'];
 // Basic header's, the body's client_id, a client assertion's sub — must be the
 // same one. `ids` is what the endpoint read, empty strings for absent ones.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses a request whose client identifiers (the Basic header's, the body's, a
+ * client assertion's `sub`) are not all the same one.
+ *
+ * @param ids - the identifiers read, '' for absent ones
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function clientIdentifierRefusal(ids) {
   log.debug("Entering clientIdentifierRefusal().");
   const named = (ids || []).map(String).filter(function (one) {
@@ -828,6 +966,13 @@ function clientIdentifierRefusal(ids) {
 // what the client's entry declares (`bcp.observeClientAuthentication()`'s
 // `method`); `none` is a public client, which section 5.2.3 allows.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses, at the token and PAR endpoints, a client authentication method the
+ * profile in force does not allow.
+ *
+ * @param method - the method the client's entry declares
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function clientAuthenticationRefusal(method) {
   log.debug("Entering clientAuthenticationRefusal(). " + method);
   const used = String(method || '');
@@ -859,6 +1004,12 @@ function clientAuthenticationRefusal(method) {
 }
 
 // The size of one JWK's key in bits, or 0 when it is not RSA or EC.
+/**
+ * Returns the size of a JWK's key.
+ *
+ * @param jwk - the key
+ * @returns the bits, or 0 when it is not RSA or EC
+ */
 function keyBits(jwk) {
   log.debug("Entering keyBits().");
   const key = jwk || {};
@@ -884,6 +1035,13 @@ function keyBits(jwk) {
 // ---------------------------------------------------------------------------
 // A CLIENT REGISTRATION (RFC 7591), before anything is written.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses a client registration (RFC 7591) the profile in force does not allow,
+ * before anything is written.
+ *
+ * @param metadata - the registration metadata
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function registrationRefusal(metadata) {
   log.debug("Entering registrationRefusal().");
   if (!enabled()) {
@@ -1012,6 +1170,13 @@ function advancedRegistrationProblem(meta) {
 // authentication and the algorithms are the ordinary checks, asked by the
 // endpoint through `clientAuthenticationRefusal()` and `signingAlgRefusal()`.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses a CIBA request that lacks what the profile in force needs beyond
+ * CIBA Core: push delivery is refused and a binding message is required.
+ *
+ * @param opts - `mode` (the client's delivery mode) and `bindingMessage`
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function cibaRefusal(opts) {
   log.debug("Entering cibaRefusal().");
   if (!enabled()) {
@@ -1038,12 +1203,23 @@ function cibaRefusal(opts) {
   return null;
 }
 
+/**
+ * Returns the default signing algorithm under FAPI 1.0 Advanced or 2.0.
+ *
+ * @returns PS256, or '' outside those profiles
+ */
 function defaultSigningAlg() {
   log.debug("Entering defaultSigningAlg().");
   log.debug("Leaving defaultSigningAlg().");
   return (advanced() || fapi2()) ? ADVANCED_DEFAULT_SIGNING_ALG : '';
 }
 
+/**
+ * Tells whether the profile in force allows a JWS algorithm.
+ *
+ * @param alg - the algorithm
+ * @returns true when it is allowed
+ */
 function signingAlgAllowed(alg) {
   log.debug("Entering signingAlgAllowed(). " + alg);
   const list = profileSigningAlgs();
@@ -1054,6 +1230,13 @@ function signingAlgAllowed(alg) {
 // RSA1_5 is refused under FAPI 1.0 Advanced (section 8.6.1) and under 2.0,
 // whose section 5.4.1 item 1 holds every JWT to RFC 8725, and RFC 8725
 // section 3.2 is the one that retires RSA1_5.
+/**
+ * Tells whether the profile in force allows a JWE key-management algorithm;
+ * RSA1_5 is refused under FAPI 1.0 Advanced and 2.0.
+ *
+ * @param alg - the algorithm
+ * @returns true when it is allowed
+ */
 function encryptionAlgAllowed(alg) {
   log.debug("Entering encryptionAlgAllowed(). " + alg);
   log.debug("Leaving encryptionAlgAllowed().");
@@ -1063,6 +1246,15 @@ function encryptionAlgAllowed(alg) {
 
 // FAPI 2.0 section 5.3.2.1 item 13: a JWT's `iat` or `nbf` more than 60
 // seconds in the future. `what` names the JWT in the sentence.
+/**
+ * Refuses, under FAPI 2.0, a JWT whose `iat` or `nbf` is more than 60 seconds
+ * in the future.
+ *
+ * @param claims - the JWT's claims
+ * @param what - what the JWT is, named in the refusal
+ * @param now - the time, in seconds
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function futureTimestampRefusal(claims, what, now) {
   log.debug("Entering futureTimestampRefusal().");
   if (!fapi2()) {
@@ -1087,12 +1279,23 @@ function futureTimestampRefusal(claims, what, now) {
 
 // FAPI 2.0 section 5.3.2.2 items 2-4: every authorization request is pushed,
 // and a push is client-authenticated.
+/**
+ * Tells whether every authorization request must be pushed: under FAPI 2.0.
+ *
+ * @returns true when it must
+ */
 function requiresPar() {
   log.debug("Entering requiresPar().");
   log.debug("Leaving requiresPar().");
   return fapi2();
 }
 
+/**
+ * Refuses, under FAPI 2.0, a push that did not authenticate its client.
+ *
+ * @param authenticated - whether the client authenticated
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function parAuthenticationRefusal(authenticated) {
   log.debug("Entering parAuthenticationRefusal().");
   if (!fapi2() || authenticated) {
@@ -1107,6 +1310,12 @@ function parAuthenticationRefusal(authenticated) {
 
 // FAPI 2.0 section 5.3.2.1 item 8: a client assertion's `aud` is the issuer,
 // as a string. OAuth 2.1 mode's rule, asked for by this profile too.
+/**
+ * Tells whether a client assertion's `aud` must be the issuer, as a string:
+ * under FAPI 2.0.
+ *
+ * @returns true when it must
+ */
 function strictAssertionAudience() {
   log.debug("Entering strictAssertionAudience().");
   log.debug("Leaving strictAssertionAudience().");
@@ -1116,6 +1325,11 @@ function strictAssertionAudience() {
 // FAPI 2.0 section 5.3.2.1 item 9: no refresh token rotation — true when the
 // profile turns it off, which `sender_constraints.js`'s `rotationRequired()`
 // asks before any mode. `oauth2.refreshTokenRotation` still forces it.
+/**
+ * Tells whether the profile turns refresh token rotation off: FAPI 2.0.
+ *
+ * @returns true when it does
+ */
 function forbidsRotation() {
   log.debug("Entering forbidsRotation().");
   log.debug("Leaving forbidsRotation().");
@@ -1124,6 +1338,12 @@ function forbidsRotation() {
 
 // FAPI 2.0 section 5.3.2.1 item 11 and 5.3.2.2 item 12: the lifetimes a code
 // and a pushed request_uri may have, given what the settings ask for.
+/**
+ * Returns the lifetime a code may have, capped under FAPI 2.0.
+ *
+ * @param asked - the lifetime the settings ask for, in milliseconds
+ * @returns the lifetime, in milliseconds
+ */
 function codeLifetimeMs(asked) {
   log.debug("Entering codeLifetimeMs().");
   const wanted = Number(asked) || 0;
@@ -1132,6 +1352,12 @@ function codeLifetimeMs(asked) {
                  : wanted;
 }
 
+/**
+ * Returns the lifetime a pushed request_uri may have, capped under FAPI 2.0.
+ *
+ * @param asked - the lifetime the settings ask for, in seconds
+ * @returns the lifetime, in seconds
+ */
 function requestUriLifetimeS(asked) {
   log.debug("Entering requestUriLifetimeS().");
   const wanted = Number(asked) || 0;
@@ -1142,6 +1368,14 @@ function requestUriLifetimeS(asked) {
 
 // A JWS a client presented (a client assertion, a request object) signed with
 // an algorithm section 8.6 does not allow. `what` names it in the sentence.
+/**
+ * Refuses a JWS a client presented signed with an algorithm the profile in
+ * force does not allow.
+ *
+ * @param alg - the algorithm
+ * @param what - what the JWS is, named in the refusal
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function signingAlgRefusal(alg, what) {
   log.debug("Entering signingAlgRefusal(). " + alg);
   if (signingAlgAllowed(alg)) {
@@ -1156,6 +1390,12 @@ function signingAlgRefusal(alg, what) {
 }
 
 // Part 2 section 5.2.2 item 1: a signed request object is required.
+/**
+ * Tells whether a signed request object is required: under FAPI 1.0 Advanced or
+ * FAPI 2.0 Message Signing.
+ *
+ * @returns true when it is
+ */
 function requiresSignedRequestObject() {
   log.debug("Entering requiresSignedRequestObject().");
   log.debug("Leaving requiresSignedRequestObject().");
@@ -1166,6 +1406,15 @@ function requiresSignedRequestObject() {
 // PART 2 SECTION 5.2.2 ITEMS 13, 15 AND 17 — a verified request object's
 // claims. `issuer` is this authorization server's; `now` seconds.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a verified request object's claims against FAPI 1.0 Advanced (items
+ * 13, 15 and 17).
+ *
+ * @param claims - the request object's claims
+ * @param issuer - this authorization server's issuer
+ * @param now - the time, in seconds
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function requestObjectRefusal(claims, issuer, now) {
   log.debug("Entering requestObjectRefusal().");
   // FAPI 1.0 Advanced items 13, 15, 17, and FAPI 2.0 Message Signing section
@@ -1228,12 +1477,25 @@ function requestObjectRefusal(claims, issuer, now) {
 // DPoP counts unless `oauth2.fapiRequireMtls` is on (rcbj's decision on
 // #139): FAPI 1.0 names mutual TLS, and the flag is strict compliance.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether only mutual TLS counts as a sender constraint
+ * (`oauth2.fapiRequireMtls`).
+ *
+ * @returns true when it does
+ */
 function requiresMtls() {
   log.debug("Entering requiresMtls().");
   log.debug("Leaving requiresMtls().");
   return advanced() && !!config.value('oauth2.fapiRequireMtls');
 }
 
+/**
+ * Refuses, under FAPI 1.0 Advanced or 2.0, an access token about to be issued
+ * that is not sender-constrained enough.
+ *
+ * @param binding - `dpop` and `mtls`, what binds the token
+ * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
+ */
 function senderConstraintRefusal(binding) {
   log.debug("Entering senderConstraintRefusal().");
   if (!advanced() && !fapi2()) {
@@ -1261,6 +1523,14 @@ function senderConstraintRefusal(binding) {
 
 // Section 5.2.2 item 21: the lifetime an access token may have. `bound` is
 // whether it carries a cnf (DPoP or mTLS).
+/**
+ * Returns the lifetime an access token may have: capped under FAPI 1.0 when it
+ * is not sender-constrained.
+ *
+ * @param asked - the lifetime the settings ask for, in seconds
+ * @param bound - whether the token carries a `cnf`
+ * @returns the lifetime, in seconds
+ */
 function accessTokenLifetime(asked, bound) {
   log.debug("Entering accessTokenLifetime().");
   const wanted = Number(asked) || 0;
@@ -1273,6 +1543,11 @@ function accessTokenLifetime(asked, bound) {
 }
 
 // Section 5.2.2 item 15: whether the granted scope is always returned.
+/**
+ * Tells whether the granted scope is always returned: under any profile.
+ *
+ * @returns true when it is
+ */
 function alwaysReturnsScope() {
   log.debug("Entering alwaysReturnsScope().");
   log.debug("Leaving alwaysReturnsScope().");
@@ -1281,6 +1556,12 @@ function alwaysReturnsScope() {
 
 // Section 5.2.2 item 12: whether an administrator's global consent may stand
 // in for the user's own approval.
+/**
+ * Tells whether an administrator's global consent may stand in for the user's
+ * own: not under FAPI 1.0.
+ *
+ * @returns true when it may
+ */
 function honoursGlobalConsent() {
   log.debug("Entering honoursGlobalConsent().");
   log.debug("Leaving honoursGlobalConsent().");
@@ -1289,6 +1570,11 @@ function honoursGlobalConsent() {
 
 // Whether the profile makes the consent screen compulsory — FAPI 1.0 item
 // 12. FAPI 2.0 leaves consent to the ordinary rules (rcbj, #140).
+/**
+ * Tells whether the consent screen is compulsory: under FAPI 1.0.
+ *
+ * @returns true when it is
+ */
 function requiresConsent() {
   log.debug("Entering requiresConsent().");
   log.debug("Leaving requiresConsent().");
@@ -1297,6 +1583,13 @@ function requiresConsent() {
 
 // What this profile does to the metadata an authorization server publishes.
 // RFC 9700 mode's own narrowing has already run.
+/**
+ * Applies the profile in force to the metadata an authorization server
+ * publishes, after RFC 9700 mode's own narrowing.
+ *
+ * @param metadata - the discovery document
+ * @returns the document
+ */
 function applyToMetadata(metadata) {
   log.debug("Entering applyToMetadata().");
   if (!enabled()) {
@@ -1363,6 +1656,11 @@ function applyToMetadata(metadata) {
 }
 
 // What GET /oauth2/fapi publishes.
+/**
+ * Describes the profile in force as `GET /oauth2/fapi` publishes it.
+ *
+ * @returns the description
+ */
 function state() {
   log.debug("Entering state().");
   const on = profile();
@@ -1422,6 +1720,14 @@ function state() {
   return view;
 }
 
+/**
+ * The FAPI profiles as a mode (`oauth2.fapi`): FAPI 1.0 Baseline and Advanced,
+ * and FAPI 2.0's Security Profile and Message Signing.
+ *
+ * A leaf that requires nothing of this service's protocol modules.
+ *
+ * @namespace
+ */
 module.exports = {
   PROFILES: PROFILES,
   ADVANCED: ADVANCED,

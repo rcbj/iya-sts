@@ -127,6 +127,9 @@ import clusterCounters = require('../cluster/cluster_counters');
 // Who a request came from. A LEAF. See `addressOf()`.
 import clientAddress = require('./client_address');
 import InstanceSlot = require('./instance_slot');
+/**
+ * The name of the hidden form field that carries the CSRF token.
+ */
 const CSRF_FIELD = 'csrf_token';
 
 // What a `WebSecurity` needs from the rest of the service, each named for the
@@ -219,11 +222,28 @@ const MAX_BUCKETS = 20000;
 // `WebSecurity.bucketChecks()`.
 const SHARED_SCOPE = 'security.rate-limit';
 
+/**
+ * The two controls every browser-facing form needs: a CSRF token derived
+ * from the session, and a fixed-window rate limiter keyed by identity and by
+ * address.
+ *
+ * A library with no routes. Where the persistence store is shared the
+ * limiter's `*Shared` methods count in one window for every node.
+ */
 class WebSecurity {
+  /** The name of the hidden CSRF form field. */
   static readonly CSRF_FIELD = CSRF_FIELD;
+  /** The most rate-limit buckets held before the oldest are dropped. */
   static readonly MAX_BUCKETS = MAX_BUCKETS;
+  /** The scope the shared rate-limit windows are counted under. */
   static readonly SHARED_SCOPE = SHARED_SCOPE;
 
+  /**
+   * Builds the controls over the given dependencies.
+   *
+   * @param deps - the logger, config, crypto, error codes, the cluster's
+   *   secrets and counters, the client address reader and the bucket store
+   */
   constructor(private readonly deps: WebSecurityDeps) {
     deps.log.debug("Entering WebSecurity.constructor().");
     deps.log.debug("Leaving WebSecurity.constructor().");
@@ -231,6 +251,11 @@ class WebSecurity {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the load-time default instance is built from.
+   *
+   * @returns the modules and the module-scope bucket store
+   */
   static defaultDeps(): WebSecurityDeps {
     helpers.log.debug("Entering WebSecurity.defaultDeps().");
     helpers.log.debug("Leaving WebSecurity.defaultDeps().");
@@ -248,6 +273,13 @@ class WebSecurity {
 
   // The token for a session. A pure function of the id, so it is the same on
   // every page of one session and needs no storage.
+  /**
+   * Derives the CSRF token for a session: HMAC-SHA256 of the session id under
+   * the cluster's shared CSRF key.
+   *
+   * @param sessionId - the session id
+   * @returns the base64url token, or an empty string when there is no session
+   */
   tokenFor(sessionId: unknown): string {
     const { log, clusterSecrets } = this.deps;
     log.debug("Entering WebSecurity.tokenFor().");
@@ -264,6 +296,12 @@ class WebSecurity {
 
   // The hidden input a form carries. Returns '' when there is no session, so a
   // form on an unauthenticated page renders unchanged.
+  /**
+   * Returns the hidden input a form carries for a session's CSRF token.
+   *
+   * @param sessionId - the session id
+   * @returns the HTML input, or an empty string when there is no session
+   */
   field(sessionId: unknown): string {
     const { log } = this.deps;
     log.debug("Entering WebSecurity.field().");
@@ -281,6 +319,16 @@ class WebSecurity {
   //
   // `ok: true` with `reason: 'no-session'` for a request with no session — see
   // the header for why that is not a hole.
+  /**
+   * Checks that a POST carries the right CSRF token for its session,
+   * compared in constant time.
+   *
+   * A request with no session passes with `reason: 'no-session'`. A refusal
+   * (`missing` or `mismatch`) carries its error code.
+   * @param sessionId - the session id
+   * @param body - the parsed form body
+   * @returns `{ ok, reason, detail? }`
+   */
   checkCsrf(sessionId: unknown,
             body?: any): { ok: boolean; reason: string; detail?: string } {
     const { log, errorCodes, crypto } = this.deps;
@@ -340,6 +388,13 @@ class WebSecurity {
   // `unknown` for every caller in a request worker, whose socket has no peer
   // address. That file argues the boundary; with `global.trustedProxies` empty
   // it is the old rule exactly, outside a request worker.
+  /**
+   * Returns the address a request came from, as client_address.js decides it
+   * under the trusted-proxy settings.
+   *
+   * @param req - the express request
+   * @returns the client address
+   */
   addressOf(req: any): string {
     const { log, clientAddress } = this.deps;
     log.debug("Entering WebSecurity.addressOf().");
@@ -419,6 +474,21 @@ class WebSecurity {
     return Number(raw) > 0 ? Math.floor(Number(raw)) : 0;
   }
 
+  /**
+   * Counts one attempt in this process's buckets and says whether it is
+   * allowed.
+   *
+   * Two buckets are counted, by identity (when one is given) and by address,
+   * in a fixed window of `security.rateLimitWindowS`. A refusal is logged and
+   * names the bucket that refused.
+   * @param what - the door being limited, part of each bucket's key
+   * @param req - the express request, for the address
+   * @param identity - optional; the identity attempted
+   * @param limit - optional; a ceiling for both buckets, or
+   *   `{ identity, address }`, overriding the settings
+   * @returns `{ ok: true }`, or `{ ok: false, kind, limit, retryAfterS,
+   *   detail }`
+   */
   attempt(what: string, req: any, identity?: unknown,
           limit?: NamedLimit): LimitAnswer {
     const { log, buckets, errorCodes } = this.deps;
@@ -500,6 +570,17 @@ class WebSecurity {
   // same window, same limits and the same `limit` argument as `attempt()` —
   // one limiter with a read beside its write, not a second limiter.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether a caller is at a limit right now, without counting anything.
+   *
+   * For a door whose successes are many: it asks this first, counts only a
+   * failure with attempt(), and clears on success with succeeded().
+   * @param what - the door being limited
+   * @param req - the express request, for the address
+   * @param identity - optional; the identity attempted
+   * @param limit - optional; the ceiling, as for attempt()
+   * @returns the refusal, or null when not blocked
+   */
   blocked(what: string, req: any, identity?: unknown,
           limit?: NamedLimit): LimitAnswer | null {
     const { log, buckets, errorCodes } = this.deps;
@@ -552,6 +633,15 @@ class WebSecurity {
   // address's failure count between guesses at every other DN by binding as
   // themselves once — the address limit would never be reached by the one
   // caller it exists for.
+  /**
+   * Forgets the counters for one identity and, unless `keepAddress` is set,
+   * for the request's address, after a successful attempt.
+   *
+   * @param what - the door being limited
+   * @param req - the express request, for the address
+   * @param identity - optional; the identity that succeeded
+   * @param options - optional; `keepAddress` leaves the address bucket alone
+   */
   succeeded(what: string, req: any, identity?: unknown,
             options?: { keepAddress?: boolean } | null): void {
     const { log, buckets } = this.deps;
@@ -674,6 +764,18 @@ class WebSecurity {
     return Math.max(1, Math.ceil((Number(remainingMs) || 0) / 1000));
   }
 
+  /**
+   * Counts one attempt in the window every node shares, as attempt() does in
+   * one process.
+   *
+   * With no shared store it is attempt(), resolved. A store that cannot be
+   * asked falls back to this process's buckets, logged STS-CLUSTER-0023.
+   * @param what - the door being limited
+   * @param req - the express request, for the address
+   * @param identity - optional; the identity attempted
+   * @param limit - optional; the ceiling, as for attempt()
+   * @returns a promise of the answer, as attempt() gives it
+   */
   attemptShared(what: string, req: any, identity?: unknown,
                 limit?: NamedLimit): Promise<LimitAnswer> {
     const { log, clusterCounters, errorCodes } = this.deps;
@@ -720,6 +822,16 @@ class WebSecurity {
     });
   }
 
+  /**
+   * Says whether a caller is at a limit in the shared window, counting
+   * nothing, as blocked() does in one process.
+   *
+   * @param what - the door being limited
+   * @param req - the express request, for the address
+   * @param identity - optional; the identity attempted
+   * @param limit - optional; the ceiling, as for attempt()
+   * @returns a promise of the refusal, or of null when not blocked
+   */
   blockedShared(what: string, req: any, identity?: unknown,
                 limit?: NamedLimit): Promise<LimitAnswer | null> {
     const { log, clusterCounters, errorCodes } = this.deps;
@@ -763,6 +875,17 @@ class WebSecurity {
   // count is `attemptShared()`'s — the one atomic increment — so the decision
   // is the same whichever node, however many at once. See the block above.
   // -------------------------------------------------------------------------
+  /**
+   * Counts a failure in the shared window and says whether it may still be
+   * answered as a failure.
+   *
+   * @param what - the door being limited
+   * @param req - the express request, for the address
+   * @param identity - optional; the identity attempted
+   * @param limit - optional; the ceiling, as for attempt()
+   * @returns a promise of null within the limit, or of the lockout refusal
+   *   once the count is past it
+   */
   failedShared(what: string, req: any, identity?: unknown,
                limit?: NamedLimit): Promise<LimitAnswer | null> {
     const { log } = this.deps;
@@ -778,6 +901,11 @@ class WebSecurity {
   // — for a caller that must stay synchronous where nothing is shared (the
   // LDAP bind, whose operation is run synchronously by its in-process
   // callers).
+  /**
+   * Says whether the shared methods count in a store every process shares.
+   *
+   * @returns true when the windows are shared
+   */
   sharesLimits(): boolean {
     const { log, clusterCounters } = this.deps;
     log.debug("Entering WebSecurity.sharesLimits().");
@@ -793,6 +921,20 @@ class WebSecurity {
   // only while the bucket is under the limit — see the block above
   // `failedShared()`. Resolves to the lockout refusal, clearing nothing, when
   // it is at the limit; null otherwise.
+  /**
+   * Forgets the counters after a success, in this process and in the shared
+   * store.
+   *
+   * With `unlessBlocked` a success is answered only while the bucket is under
+   * the limit: at the limit it resolves to the lockout refusal and clears
+   * nothing.
+   * @param what - the door being limited
+   * @param req - the express request, for the address
+   * @param identity - optional; the identity that succeeded
+   * @param options - optional `keepAddress`, `unlessBlocked` and `limit`
+   * @returns a promise of the refusal when locked out, otherwise of null or
+   *   nothing
+   */
   succeededShared(what: string, req: any, identity?: unknown,
                   options?: { keepAddress?: boolean; unlessBlocked?: boolean;
                               limit?: NamedLimit } | null):
@@ -837,6 +979,12 @@ class WebSecurity {
   }
 
   // For the console and the tests.
+  /**
+   * Describes the CSRF control and the limiter's settings and state, for the
+   * console and the tests.
+   *
+   * @returns `{ csrf, rateLimit }`
+   */
   report(): Record<string, any> {
     const { log, buckets, clusterCounters } = this.deps;
     log.debug("Entering WebSecurity.report().");
@@ -862,6 +1010,9 @@ class WebSecurity {
   }
 
   // Tests only — see the same note on keystore.reset().
+  /**
+   * Empties this process's rate-limit buckets. For the tests only.
+   */
   reset(): void {
     const { log, buckets } = this.deps;
     log.debug("Entering WebSecurity.reset().");
@@ -895,9 +1046,19 @@ const slot = new InstanceSlot<WebSecurity>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * CSRF tokens and rate limiting for every browser-facing form and every door
+ * that takes a guessable secret.
+ *
+ * The functions forward to the WebSecurity instance the composition root
+ * installs.
+ * @namespace
+ */
 export = {
   WebSecurity: WebSecurity,
+  /** Installs the instance the composition root built. */
   installInstance: (instance: WebSecurity): void => slot.install(instance),
+  /** Says where the installed instance came from. */
   instanceOrigin: (): string => slot.origin(),
   CSRF_FIELD: WebSecurity.CSRF_FIELD,
   tokenFor: slot.forward('tokenFor'),

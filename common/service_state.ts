@@ -70,7 +70,21 @@ interface ServiceStateDeps {
   log: { debug(message: string): void; info(message: string): void };
 }
 
+/**
+ * Brings a process's state up in the one order there is: the store, the
+ * signing keys, the cluster's agreement and shared secrets, the minted rows,
+ * coordination and the certificate authority.
+ *
+ * Both `server.js` and every request worker run it, so the two cannot
+ * disagree about whether a process is up to date.
+ */
 class ServiceState {
+  /**
+   * Builds the instance over its dependencies.
+   *
+   * @param deps - the store, the keystore, the certificate authority, the realm
+   *   registry, `helpers`, the two cluster libraries and the logger
+   */
   constructor(private readonly deps: ServiceStateDeps) {
     deps.log.debug("Entering ServiceState.constructor().");
     deps.log.debug("Leaving ServiceState.constructor().");
@@ -97,6 +111,14 @@ class ServiceState {
   // person waits on. Where nothing arbitrates — development, `ldif`, keys not
   // persisted — nothing is made here that was not made before.
   // ---------------------------------------------------------------------------
+  /**
+   * Makes or restores the signing keys of every realm (the default realm
+   * alone unless active-active) and awaits their writes to the store, so that
+   * no node signs with a set the store is about to replace.
+   *
+   * Does nothing when the keystore does not arbitrate.
+   * @returns a promise of the keystore's settle outcomes, or null
+   */
   settleSigningKeys(): Promise<any> {
     const { log, keystore, cluster, realms, helpers } = this.deps;
     log.debug("Entering ServiceState.settleSigningKeys().");
@@ -147,6 +169,14 @@ class ServiceState {
     });
   }
 
+  /**
+   * Runs the whole start-up chain in order, before any listener binds.
+   *
+   * A failure to open the store, read the signing keys, agree the cluster's
+   * settings, read the shared secrets or restore minted rows rejects (fatal);
+   * coordination and the certificate authority report and carry on.
+   * @returns a promise of `{ started, keys, minted, coordinating, pki }`
+   */
   start(): Promise<any> {
     const { log, persistence, keystore, cluster, clusterSecrets, pki, realms,
             helpers } = this.deps;
@@ -309,6 +339,12 @@ const serviceState = new ServiceState({
   log: helpers.log
 });
 
+/**
+ * Bringing this process's state up, in the one order there is.
+ *
+ * `start` is bound to a transitional instance built from the real modules.
+ * @namespace
+ */
 export = {
   ServiceState: ServiceState,
   start: serviceState.start.bind(serviceState) as ServiceState['start']

@@ -256,7 +256,13 @@ import risc = require('../ssf/risc');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 
+/**
+ * The portal's root path.
+ */
 const BASE = '/portal';
+/**
+ * The activation link's path.
+ */
 const ACTIVATE = BASE + '/activate';
 // A PASSWORD RESET LINK an administrator issued (2026-09-13). Unauthenticated,
 // like ACTIVATE, and for its reason: the token is the credential.
@@ -1036,10 +1042,30 @@ interface PortalDeps {
   baseUrlOf: typeof helpers.baseUrlOf;
 }
 
+/**
+ * The user portal: the pages that belong to the person looking at them, behind
+ * a navigation column of their own.
+ *
+ * An OpenID Connect relying party of this service's own authorization server.
+ * No route takes an identity from the request; the person is always the one the
+ * portal's session names.
+ */
 class Portal {
+  /**
+   * The portal's root path, `/portal`.
+   */
   static readonly BASE = BASE;
+  /**
+   * The activation link's path, `/portal/activate`, the one page reached
+   * without signing in to spend a link.
+   */
   static readonly ACTIVATE = ACTIVATE;
 
+  /**
+   * Builds the portal over its dependencies.
+   *
+   * @param deps - the app and the modules the pages read and write through
+   */
   constructor(private readonly deps: PortalDeps) {
     deps.log.debug("Entering Portal.constructor().");
     deps.log.debug("Leaving Portal.constructor().");
@@ -1047,6 +1073,11 @@ class Portal {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalDeps {
     helpers.log.debug("Entering Portal.defaultDeps().");
     helpers.log.debug("Leaving Portal.defaultDeps().");
@@ -1088,6 +1119,13 @@ class Portal {
   // report: the non-enumerable mark, or an `errorCode` member on an internal
   // result. Its own is the more specific; this portal's code names the door
   // otherwise.
+  /**
+   * Returns the error code a library already put on a result the portal is
+   * about to report.
+   *
+   * @param result - the result
+   * @returns the code, or ''
+   */
   innerCode(result) {
     const { errorCodes, log } = this.deps;
     log.debug("Entering Portal.innerCode().");
@@ -1142,6 +1180,14 @@ class Portal {
   // ===========================================================================
   private directory: DirectoryHooks | null = null;
 
+  /**
+   * Fills the directory slot, through which the Overview reads the person's own
+   * entry; `ldap/ldap_server.js` fills it. Something without `personEntry()` is
+   * refused whole.
+   *
+   * @param hooks - the directory's functions
+   * @returns whether they were taken
+   */
   setDirectory(hooks) {
     const self = this;
     const { errorCodes, log } = this.deps;
@@ -1202,6 +1248,12 @@ class Portal {
 
   // Everything drawn here goes through it. The console has its own; this is a
   // separate application and shares no markup with it.
+  /**
+   * Escapes a value for HTML; everything the portal draws goes through it.
+   *
+   * @param value - the value
+   * @returns the escaped text
+   */
   esc(value) {
     const { log } = this.deps;
     log.debug("Entering Portal.esc().");
@@ -1252,6 +1304,13 @@ class Portal {
       encodeURIComponent(realms.DEFAULT_ID) : '');
   }
 
+  /**
+   * Sends a page, always with `Cache-Control: no-store`.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param html - the page
+   */
   send(res, status, html) {
     const { log } = this.deps;
     log.debug("Entering Portal.send().");
@@ -1318,6 +1377,17 @@ class Portal {
   // after a successful write says so with `?done=`, and a refused write
   // re-draws the page it was posted from with the reason on it.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws a signed-in page: the navigation column, the heading and sign-out,
+   * the message or error the page was reached with, and the cards.
+   *
+   * @param active - the page's path, which the column highlights
+   * @param session - the portal session
+   * @param message - a success message to draw, if any
+   * @param error - an error to draw, if any
+   * @param cards - the page's body
+   * @returns the page's HTML
+   */
   shell(active, session, message, error, cards) {
     const self = this;
     const { log, websecurity } = this.deps;
@@ -1544,6 +1614,12 @@ class Portal {
   // malformed, which is true whether or not anybody is signed in — the same
   // line `common/validation.js` draws between shape and existence.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers a malformed request with a 400 page in the portal's shell.
+   *
+   * @param res - the response
+   * @param why - the validation failure, with its field and detail
+   */
   // error-code: none — the helper's definition, not a call to it.
   refuseShape(res, why) {
     const self = this;
@@ -1755,6 +1831,14 @@ class Portal {
   // the forgot-password form and the address verification link
   // (`portal_mail.ts`, #63), beside the reset and activation pages that use
   // `page()` directly.
+  /**
+   * Draws a page with no navigation column, for the pages nobody is signed in
+   * to.
+   *
+   * @param title - the page's title
+   * @param inner - the page's body
+   * @returns the page's HTML
+   */
   bare(title, inner) {
     const { log } = this.deps;
     log.debug("Entering Portal.bare().");
@@ -1809,6 +1893,17 @@ class Portal {
   // for anybody to change, which is the only version of OWASP A01 that survives
   // somebody adding a page later without reading this comment.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the portal session for a request, after the access policy allows
+   * it; otherwise starts the sign-in, or answers the realm chooser or a
+   * refusal.
+   *
+   * @param req - the request
+   * @param res - the response, written when there is no session
+   * @param returnTo - where to come back to after signing in
+   * @param want - what the policy is asked for
+   * @returns the session, or null when the response has been answered
+   */
   requireSignIn(req, res, returnTo, want) {
     const self = this;
     const { accessGate, errorCodes, log, oidcRp, realmChooser } = this.deps;
@@ -1950,6 +2045,13 @@ class Portal {
 
   // What `requireSignIn()` does with the answer: nothing when the browser was
   // sent on, and the refusal page when it could not be.
+  /**
+   * Finishes what `requireSignIn()` started: nothing when the browser was sent
+   * on, a 503 page naming the reason when it could not be.
+   *
+   * @param res - the response
+   * @param started - the sign-in's outcome
+   */
   startedSignIn(res, started) {
     const self = this;
     const { errorCodes, log } = this.deps;
@@ -4370,6 +4472,12 @@ class Portal {
   // NAV rather than listed again — a page added to the column is a page in this
   // list, and one removed leaves nothing behind for `sts_metadata.js` to report
   // as described-but-not-registered.
+  /**
+   * Returns every path the portal registers, the signed-in pages read off the
+   * navigation table, for `sts_metadata.ts`.
+   *
+   * @returns the paths
+   */
   paths(): string[] {
     const { log } = this.deps;
     log.debug("Entering Portal.paths().");
@@ -4389,6 +4497,13 @@ class Portal {
                BASE + '/devices/challenge', BASE + '/devices/proof']);
   }
 
+  /**
+   * Registers the portal's own routes on the app; `common/protocol_stack.ts`
+   * calls it (#50, R1), and the module's export then registers each page
+   * module's.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: typeof import('../common/app')): void {
     const self = this;
     const { accessGate, accountSignals, audit, authn, baseUrlOf, config,
@@ -6426,6 +6541,10 @@ const portalClaimSources = require('./portal_claim_sources');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The user portal: the pages that belong to the person looking at them.
+ * @namespace
+ */
 export = {
   registerRoutes: (target: any): void => {
     slot.get().registerRoutes(target);

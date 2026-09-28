@@ -194,11 +194,32 @@ const FIELD_IDENTIFIER = 2;
 const FIELD_VID = 4;
 const FIELD_SIGNATURE = 6;
 
+/**
+ * The `macaroon` GNAP token format (RFC 9767 section 5.3.2), on libmacaroons'
+ * v2 binary serialisation: an identifier and caveats chained under HMAC-SHA256.
+ *
+ * A route-free library. Anybody holding a macaroon can attenuate it without a
+ * key.
+ */
 class TokenMacaroon {
+  /**
+   * The format's name, `macaroon`.
+   */
   static readonly FORMAT = FORMAT;
+  /**
+   * The prefix of every macaroon identifier this service mints, `gnap:v1:`.
+   */
   static readonly IDENTIFIER_PREFIX = IDENTIFIER_PREFIX;
+  /**
+   * The caveat kinds that may appear at most once in the authority section.
+   */
   static readonly OPTIONAL_ONCE = OPTIONAL_ONCE;
 
+  /**
+   * Builds the format from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: TokenMacaroonDeps) {
     deps.log.debug("Entering TokenMacaroon.constructor().");
     deps.log.debug("Leaving TokenMacaroon.constructor().");
@@ -211,6 +232,12 @@ class TokenMacaroon {
     return access.refusal(code, why);
   }
 
+  /**
+   * Encodes a macaroon in libmacaroons' v2 binary serialisation.
+   *
+   * @param mac - the macaroon
+   * @returns the serialised bytes
+   */
   encodeBinaryV2(mac: any): Buffer {
     const { log } = this.deps;
     log.debug("Entering TokenMacaroon.encodeBinaryV2().");
@@ -286,6 +313,12 @@ class TokenMacaroon {
   // -------------------------------------------------------------------------
   // One caveat to `{ kind, value }`, or null when it is outside the grammar.
   // -------------------------------------------------------------------------
+  /**
+   * Parses one caveat into `{ kind, value }`.
+   *
+   * @param text - the caveat
+   * @returns the parsed caveat, or null when it is outside the grammar
+   */
   parseCaveat(text: string): Caveat | null {
     const { log, access } = this.deps;
     log.debug("Entering TokenMacaroon.parseCaveat().");
@@ -345,6 +378,13 @@ class TokenMacaroon {
   // gives. Returns `{ ok:true, caveats }` or a refusal when a value cannot be
   // spelt in the grammar (whitespace inside an audience, say).
   // -------------------------------------------------------------------------
+  /**
+   * Returns the caveats a token model is written as, in the authority order.
+   *
+   * @param model - the token model
+   * @returns `{ ok: true, caveats }`, or a refusal when a value cannot be spelt
+   *   in the grammar
+   */
   caveatsFor(model: any): any {
     const { log, access } = this.deps;
     log.debug("Entering TokenMacaroon.caveatsFor().");
@@ -406,6 +446,13 @@ class TokenMacaroon {
   // -------------------------------------------------------------------------
   // mint(model, keys): keys = { rootKey: Buffer of 32+ bytes, location }.
   // -------------------------------------------------------------------------
+  /**
+   * Mints a macaroon carrying a token model.
+   *
+   * @param model - the token model `gnap_access` validates
+   * @param keys - `{ rootKey, location }`: a root key of at least 32 bytes
+   * @returns `{ value, format, jti }`, or a refusal
+   */
   async mint(model: any, keys: any): Promise<any> {
     const { log, errorCodes, access, macaroon } = this.deps;
     log.debug("Entering TokenMacaroon.mint().");
@@ -607,6 +654,15 @@ class TokenMacaroon {
   // keys = { rootKey }. OPTIONAL_ONCE is enforced by readCaveats()'s repeat
   // check, which covers every authority kind.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies a macaroon under its root key and checks it against the
+   * presentation context.
+   *
+   * @param value - the presented token value
+   * @param keys - `{ rootKey }`
+   * @param context - the presentation to check the token against
+   * @returns `{ ok: true, model, attenuated }`, or a refusal
+   */
   async verify(value: unknown, keys: any, context?: any): Promise<any> {
     const { log, access } = this.deps;
     log.debug("Entering TokenMacaroon.verify().");
@@ -679,6 +735,15 @@ class TokenMacaroon {
   // the point of the format. Returns `{ ok:true, value, format }` or a
   // refusal.
   // -------------------------------------------------------------------------
+  /**
+   * Appends caveats to a macaroon, deriving a narrower token without calling
+   * the AS (RFC 9767 section 2.2). Needs no key.
+   *
+   * @param value - the macaroon to attenuate
+   * @param caveats - each `{ exp }`, `{ nbf }`, `{ aud }`, `{ access }`, or a
+   *   caveat string in one of those grammars
+   * @returns `{ ok: true, value, format }`, or a refusal
+   */
   async attenuate(value: unknown, caveats: any[]): Promise<any> {
     const { log, errorCodes } = this.deps;
     log.debug("Entering TokenMacaroon.attenuate().");
@@ -741,6 +806,12 @@ class TokenMacaroon {
     return { ok: true, value: out, format: FORMAT };
   }
 
+  /**
+   * Describes the format for the console: its library, algorithms and the
+   * fields it carries.
+   *
+   * @returns the format's description
+   */
   describe() {
     const { log, access } = this.deps;
     log.debug("Entering TokenMacaroon.describe().");
@@ -767,6 +838,12 @@ class TokenMacaroon {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): TokenMacaroonDeps {
     helpers.log.debug("Entering TokenMacaroon.defaultDeps().");
     helpers.log.debug("Leaving TokenMacaroon.defaultDeps().");
@@ -796,9 +873,26 @@ const slot = new InstanceSlot<TokenMacaroon>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The `macaroon` GNAP token format (RFC 9767 section 5.3.2).
+ *
+ * A route-free library: mint, verify, attenuate and describe.
+ *
+ * @namespace
+ */
 export = {
   TokenMacaroon: TokenMacaroon,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: TokenMacaroon): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   FORMAT: TokenMacaroon.FORMAT,
   IDENTIFIER_PREFIX: TokenMacaroon.IDENTIFIER_PREFIX,

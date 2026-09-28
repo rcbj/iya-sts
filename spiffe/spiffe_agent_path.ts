@@ -53,6 +53,10 @@ type Node = { kind: 'text'; text: string } |
             { kind: 'action'; pipeline: Command[] };
 
 // sprig's functions, with sprig's argument order (the piped value LAST).
+/**
+ * The sprig functions a template may call, with sprig's argument order (the
+ * piped value last); the module exports their names.
+ */
 const FUNCTIONS: Record<string, (...args: any[]) => any> = {
   lower: function (s) {
     return String(s).toLowerCase();
@@ -136,10 +140,24 @@ interface AgentPathDeps {
   log: typeof log;
 }
 
+/**
+ * A parsed SPIRE agent path template: the subset of Go's `text/template` an
+ * agent path needs.
+ *
+ * Anything outside the subset is refused when the template is parsed, and a
+ * missing field is an error when it is rendered.
+ */
 class AgentPathTemplate {
   private readonly nodes: Node[];
 
   // Parses `text`; throws an Error naming what it could not understand.
+  /**
+   * Parses a template.
+   *
+   * @param text - the template text
+   * @param deps - the logger
+   * @throws an Error naming what could not be understood
+   */
   constructor(readonly text: string,
               private readonly deps: AgentPathDeps = { log: log }) {
     deps.log.debug("Entering AgentPathTemplate.constructor().");
@@ -147,6 +165,14 @@ class AgentPathTemplate {
     deps.log.debug("Leaving AgentPathTemplate.constructor().");
   }
 
+  /**
+   * Parses template text into text and action nodes, honouring the `{{-` and
+   * `-}}` trim markers.
+   *
+   * @param text - the template text
+   * @returns the nodes
+   * @throws an Error naming what could not be understood
+   */
   parse(text: string): Node[] {
     const { log } = this.deps;
     log.debug("Entering AgentPathTemplate.parse().");
@@ -186,6 +212,13 @@ class AgentPathTemplate {
   }
 
   // A pipeline: commands separated by `|`, outside quotes.
+  /**
+   * Parses a pipeline: commands separated by `|`, outside quotes.
+   *
+   * @param body - the action's body
+   * @returns the commands
+   * @throws an Error when the pipeline is empty or not understood
+   */
   pipeline(body: string): Command[] {
     const { log } = this.deps;
     const self = this;
@@ -211,6 +244,13 @@ class AgentPathTemplate {
     return commands;
   }
 
+  /**
+   * Splits an action's body into words, quoted strings and `|`.
+   *
+   * @param body - the action's body
+   * @returns the tokens
+   * @throws an Error when part of the body cannot be tokenized
+   */
   tokens(body: string): string[] {
     const { log } = this.deps;
     log.debug("Entering AgentPathTemplate.tokens().");
@@ -231,6 +271,15 @@ class AgentPathTemplate {
     return out;
   }
 
+  /**
+   * Parses one command: an operand, or a function from `FUNCTIONS` and its
+   * arguments.
+   *
+   * @param words - the command's tokens
+   * @returns the command
+   * @throws an Error for an empty command, an unsupported function, or a value
+   *   given arguments
+   */
   command(words: string[]): Command {
     const { log } = this.deps;
     const self = this;
@@ -265,6 +314,13 @@ class AgentPathTemplate {
     return { fn: '', args: [this.operand(head)] };
   }
 
+  /**
+   * Parses one operand: `.`, a field path, a quoted string or an integer.
+   *
+   * @param word - the token
+   * @returns the operand
+   * @throws an Error for a token that is none of those
+   */
   operand(word: string): Operand {
     const { log } = this.deps;
     log.debug("Entering AgentPathTemplate.operand().");
@@ -296,6 +352,14 @@ class AgentPathTemplate {
 
   // Render over `data`. A field that is not there is an error, as SPIRE's
   // `missingkey=error` makes it.
+  /**
+   * Renders the template over data.
+   *
+   * @param data - the values the attestor verified
+   * @returns the rendered path
+   * @throws an Error when a field is missing, as SPIRE's `missingkey=error`
+   *   makes it
+   */
   execute(data: Record<string, any>): string {
     const { log } = this.deps;
     const self = this;
@@ -319,6 +383,14 @@ class AgentPathTemplate {
     return out;
   }
 
+  /**
+   * Evaluates an operand over data.
+   *
+   * @param operand - the operand
+   * @param data - the values the attestor verified
+   * @returns the literal, or the field's value
+   * @throws an Error when the field is missing
+   */
   value(operand: Operand, data: Record<string, any>): any {
     const { log } = this.deps;
     log.debug("Entering AgentPathTemplate.value().");
@@ -343,6 +415,13 @@ class AgentPathTemplate {
   }
 
   // Go's default formatting of the kinds a field here can hold.
+  /**
+   * Formats a value as Go's default formatting prints the kinds a field here
+   * can hold.
+   *
+   * @param value - the value
+   * @returns its text
+   */
   print(value: any): string {
     const { log } = this.deps;
     const self = this;
@@ -360,6 +439,11 @@ class AgentPathTemplate {
   }
 }
 
+/**
+ * SPIRE's agent path templates (#40), as a stated subset of Go's
+ * `text/template`.
+ * @namespace
+ */
 export = {
   AgentPathTemplate: AgentPathTemplate,
   FUNCTIONS: Object.keys(FUNCTIONS)

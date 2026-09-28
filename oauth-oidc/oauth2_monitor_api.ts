@@ -59,7 +59,17 @@ interface OAuth2MonitorApiDeps {
 
 const BASE = '/admin-api';
 
+/**
+ * The `/admin-api` operations mirroring `/admin/oauth2/monitor` and its one
+ * control, both through `oauth2_monitor_console.ts`.
+ */
 class OAuth2MonitorApi {
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, body parser, error codes and a loader of the
+   *   console's view model
+   */
   constructor(private readonly deps: OAuth2MonitorApiDeps) {
     deps.log.debug("Entering OAuth2MonitorApi.constructor().");
     deps.log.debug("Leaving OAuth2MonitorApi.constructor().");
@@ -68,6 +78,12 @@ class OAuth2MonitorApi {
   // What the composition root passes: the deps the module built its own
   // instance from before R2 — the view model as a LOADER, so it is still
   // required lazily.
+  /**
+   * Returns the dependencies built from this module's own imports, with the
+   * module it serves loaded lazily.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): OAuth2MonitorApiDeps {
     helpers.log.debug("Entering OAuth2MonitorApi.defaultDeps().");
     helpers.log.debug("Leaving OAuth2MonitorApi.defaultDeps().");
@@ -83,6 +99,11 @@ class OAuth2MonitorApi {
 
   // The work loading this module did with its own instance before R2: the
   // route table, built once for whichever instance is installed.
+  /**
+   * Builds the route table for the installed instance.
+   *
+   * @param instance - the instance installed
+   */
   static wire(instance: OAuth2MonitorApi): void {
     helpers.log.debug("Entering OAuth2MonitorApi.wire().");
     routes = instance.buildRoutes();
@@ -90,6 +111,13 @@ class OAuth2MonitorApi {
   }
 
   // error-code: none — the helper's definition, not a call to it.
+  /**
+   * Sends a JSON body with `Cache-Control: no-store`.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the body, serialised with indentation
+   */
   sendJson(res: Res, status: number, body: Json): void {
     const { log } = this.deps;
     log.debug("Entering OAuth2MonitorApi.sendJson(). status=" + status);
@@ -115,6 +143,12 @@ class OAuth2MonitorApi {
              description: description };
   }
 
+  /**
+   * Builds the operations' route table, each row carrying its OpenAPI
+   * description and its handler.
+   *
+   * @returns the route rows
+   */
   buildRoutes(): Json[] {
     const { log, parseBody, errorCodes } = this.deps;
     const self = this;
@@ -304,14 +338,36 @@ const slot = new InstanceSlot<OAuth2MonitorApi>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OAuth 2.0 / OpenID Connect monitoring operations of `/admin-api`.
+ *
+ * It registers no route: the management API spreads `ROUTES` into its table.
+ *
+ * @namespace
+ */
 export = {
   OAuth2MonitorApi: OAuth2MonitorApi,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: OAuth2MonitorApi): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   // A GETTER, so the table is the installed instance's: under the root it is
   // built when the root installs that instance, and `mgmt-api/admin_api.ts`
   // reads it after that.
+  /**
+   * The installed instance's route table, which `mgmt-api/admin_api.ts` spreads
+   * into its own.
+   */
   get ROUTES(): Json[] {
     helpers.log.debug("Entering ROUTES().");
     slot.get();

@@ -48,9 +48,16 @@ type Req = any;
 type Res = any;
 type Json = any;
 
+/**
+ * The console path of Verifiable Credentials → Credential status.
+ */
 const PAGE = '/admin/vc-status';
 
 // The acts the control performs, and the status each sets.
+/**
+ * The acts the page's control performs, and the status each sets: suspend (2),
+ * reinstate (0) and revoke (1).
+ */
 const ACTIONS = { suspend: 2, reinstate: 0, revoke: 1 };
 
 interface VcStatusAdminDeps {
@@ -62,15 +69,35 @@ interface VcStatusAdminDeps {
   parseBody: typeof helpers.parseBody;
 }
 
+/**
+ * Verifiable Credentials → Credential status: the realm's status lists, every
+ * live credential's index and status, and the one control they have.
+ */
 class VcStatusAdmin {
+  /**
+   * See the module's `PAGE`.
+   */
   static readonly PAGE = PAGE;
+  /**
+   * See the module's `ACTIONS`.
+   */
   static readonly ACTIONS = ACTIONS;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the console and `oid4vc/vc_status.ts`
+   */
   constructor(private readonly deps: VcStatusAdminDeps) {
     deps.log.debug("Entering VcStatusAdmin.constructor().");
     deps.log.debug("Leaving VcStatusAdmin.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): VcStatusAdminDeps {
     helpers.log.debug("Entering VcStatusAdmin.defaultDeps().");
     helpers.log.debug("Leaving VcStatusAdmin.defaultDeps().");
@@ -85,6 +112,15 @@ class VcStatusAdmin {
   }
 
   // The page's JSON, and the management API's answer.
+  /**
+   * Builds the page's JSON and the management API's answer: where the realm's
+   * status lists are served, their size, and every live credential's status,
+   * paged.
+   *
+   * @param req - the request
+   * @param query - the query's values, for paging
+   * @returns the JSON and its paging
+   */
   statusView(req: Req, query?: Json): Json {
     const { log, vcStatus, adminViews } = this.deps;
     log.debug("Entering VcStatusAdmin.statusView().");
@@ -105,6 +141,14 @@ class VcStatusAdmin {
   // `suspend`, `reinstate`, `revoke`. Answers `{ ok, message }` or a refusal
   // carrying its code under the Symbol `error_codes.js` reads.
   // ---------------------------------------------------------------------------
+  /**
+   * Changes one credential's status: suspend, reinstate (from suspended only)
+   * or revoke, which is final.
+   *
+   * @param body - `{ idx, action }`
+   * @param via - which surface asked, for the audit row
+   * @returns `{ ok, message }`, or a refusal carrying its error code
+   */
   statusAction(body: Json, via: string): Json {
     const { log, vcStatus, errorCodes } = this.deps;
     log.debug("Entering VcStatusAdmin.statusAction().");
@@ -224,6 +268,11 @@ class VcStatusAdmin {
        'status yet.</td></tr>') + '</tbody></table>' + nav.foot;
   }
 
+  /**
+   * Registers `GET /admin/vc-status` and its control.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
@@ -265,10 +314,24 @@ const slot = new InstanceSlot<VcStatusAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Verifiable Credentials → Credential status, `/admin/vc-status`: the realm's
+ * status lists, and the control that suspends, reinstates or revokes one
+ * credential.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   VcStatusAdmin: VcStatusAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: VcStatusAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
   // For `mgmt-api/admin_api.ts` (rule 7).

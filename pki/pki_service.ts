@@ -113,7 +113,20 @@ interface PkiServiceDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The revocation endpoints: a CRL and an OCSP responder per CA, each CA's
+ * own certificate, and the chain documents, all public by construction.
+ *
+ * Served on the main port and on a plain-HTTP listener of their own, which
+ * also carries SCEP.
+ */
 class PkiService {
+  /**
+   * Builds the service over the given dependencies.
+   *
+   * @param deps - the logger, settings, the express app, `pki`, the
+   *   revocation module, error codes and the HTTP and PROXY-protocol modules
+   */
   constructor(private readonly deps: PkiServiceDeps) {
     deps.log.debug("Entering PkiService.constructor().");
     deps.log.debug("Leaving PkiService.constructor().");
@@ -121,6 +134,11 @@ class PkiService {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): PkiServiceDeps {
     helpers.log.debug("Entering PkiService.defaultDeps().");
     helpers.log.debug("Leaving PkiService.defaultDeps().");
@@ -152,6 +170,12 @@ class PkiService {
   // ---------------------------------------------------------------------------
   // The floor is the setting row's own `min: 1`; see `crlLifetimeMs()` in
   // common/pki_revocation.js for why a second floor of 60 here was a bug.
+  /**
+   * Returns how long a CRL may be cached, from the same setting its validity
+   * window is computed from.
+   *
+   * @returns seconds
+   */
   cacheSeconds() {
     const { log, config } = this.deps;
     log.debug("Entering PkiService.cacheSeconds().");
@@ -160,6 +184,15 @@ class PkiService {
     return Math.max(1, Number.isFinite(minutes) ? minutes : 60) * 60;
   }
 
+  /**
+   * Sends DER bytes with their media type, cacheable for the CRL lifetime or
+   * `no-store`.
+   *
+   * @param res - the express response
+   * @param mediaType - the Content-Type
+   * @param der - the bytes
+   * @param cacheable - whether a client may cache them
+   */
   sendDer(res, mediaType, der, cacheable) {
     const { log } = this.deps;
     log.debug("Entering PkiService.sendDer().");
@@ -176,6 +209,14 @@ class PkiService {
   // A refusal a revocation client can read. **NOT JSON and not a page**: it is
   // text, because there is no error format either protocol defines for the
   // transport layer and a client that meets one is being debugged by a person.
+  /**
+   * Sends a refusal a revocation client can read: plain text, not JSON and
+   * not a page.
+   *
+   * @param res - the express response
+   * @param status - the HTTP status
+   * @param sentence - what went wrong
+   */
   // error-code: none — the definition of this helper, not a call to it
   refuse(res, status, sentence) {
     const { log } = this.deps;
@@ -185,6 +226,15 @@ class PkiService {
     log.debug("Leaving PkiService.refuse().");
   }
 
+  /**
+   * Answers a CA's signed CRL, DER; 404 for an authority this scope does not
+   * hold.
+   *
+   * @param req - the express request
+   * @param res - the express response
+   * @param scopeSegment - the scope as the path spells it
+   * @param caId - the certificate authority's id
+   */
   crlFor(req, res, scopeSegment, caId) {
     const { log, revocation, errorCodes } = this.deps;
     const self = this;
@@ -223,6 +273,15 @@ class PkiService {
     log.debug("Leaving PkiService.crlFor().");
   }
 
+  /**
+   * Answers a CA's own certificate, DER; 404 for an authority this scope does
+   * not hold.
+   *
+   * @param req - the express request
+   * @param res - the express response
+   * @param scopeSegment - the scope as the path spells it
+   * @param caId - the certificate authority's id
+   */
   caCertificateFor(req, res, scopeSegment, caId) {
     const { log, revocation, errorCodes, nodeCrypto } = this.deps;
     log.debug("Entering PkiService.caCertificateFor().");
@@ -280,6 +339,14 @@ class PkiService {
   // `unauthorized`, `internalError`) is not authoritative**, carries no
   // `nextUpdate` and stays `no-store`.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends an OCSP response with RFC 5019 section 6.2's cache headers: an
+   * authoritative answer cacheable until `nextUpdate`, one carrying a nonce
+   * `private, max-age=0`, a refusal `no-store`.
+   *
+   * @param res - the express response
+   * @param made - the response the responder made
+   */
   sendOcsp(res, made) {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering PkiService.sendOcsp().");
@@ -304,6 +371,16 @@ class PkiService {
     log.debug("Leaving PkiService.sendOcsp(). Authoritative.");
   }
 
+  /**
+   * Answers an OCSP request to one CA's responder. Even a refusal is an OCSP
+   * response with HTTP status 200.
+   *
+   * @param req - the express request
+   * @param res - the express response
+   * @param scopeSegment - the scope as the path spells it
+   * @param caId - the certificate authority's id
+   * @param der - the DER request
+   */
   answer(req, res, scopeSegment, caId, der) {
     const { log, revocation, errorCodes } = this.deps;
     const self = this;
@@ -338,6 +415,13 @@ class PkiService {
     log.debug("Leaving PkiService.answer().");
   }
 
+  /**
+   * Handles a request on the plain-HTTP listener: `/pki/`, SCEP and
+   * `/healthcheck` are handed to the app, everything else is a 404.
+   *
+   * @param req - the node request
+   * @param res - the node response
+   */
   revocationOnly(req, res) {
     const { log, app, errorCodes } = this.deps;
     log.debug("Entering PkiService.revocationOnly().");
@@ -373,6 +457,14 @@ class PkiService {
     log.debug("Leaving PkiService.revocationOnly(). Not a revocation path.");
   }
 
+  /**
+   * Binds the plain-HTTP revocation listener on `pki.httpPort`, unless it is
+   * 0.
+   *
+   * A failure to bind is recorded for `status()` rather than thrown.
+   * @returns `{ whenReady, server }`, `whenReady` resolving to `{ port }` or,
+   *   when switched off, `{ port: null, why }`
+   */
   listen() {
     const { log, config, http, proxyProtocol } = this.deps;
     log.debug("Entering PkiService.listen().");
@@ -403,6 +495,11 @@ class PkiService {
     return { whenReady: whenReady, server: server };
   }
 
+  /**
+   * Returns the plain-HTTP listener's state.
+   *
+   * @returns `{ listening, port, listenError }`
+   */
   status() {
     const { log } = this.deps;
     log.debug("Entering PkiService.status().");
@@ -415,6 +512,12 @@ class PkiService {
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order
   // is unchanged (rule 1). Nothing calls it at load.
+  /**
+   * Registers the revocation routes on the shared app; the composition root
+   * calls it where requiring the module used to register them.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, certificateHeader, revocation, errorCodes, pki,
             config } = this.deps;
@@ -774,10 +877,29 @@ let httpBoundPort = 0;
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The certificate authority's public surface: CRLs, OCSP responders, CA
+ * certificates and chain documents, per CA.
+ *
+ * Requiring it registers nothing; `registerRoutes()` does. The functions
+ * forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   PkiService: PkiService,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: PkiService): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   // `listen()` is what `server.js` calls. The other three are exported so a
   // caller can read the listener's state, the CRL cache policy and the path

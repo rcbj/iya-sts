@@ -286,11 +286,17 @@ let truststore = null;
 // How many results a chooser pane shows at a time. One number for the console
 // (chooserPane()) and for the replies that page the same list, so a page and
 // its resource cannot come to show different twenties.
+/**
+ * The most matches a chooser lists.
+ */
 const CHOOSER_HITS = 20;
 
 // Rows per page when nobody said. Small enough that the table is the first
 // thing on screen rather than the last, and the paging controls above and below
 // it say what the rest of the list is.
+/**
+ * Rows per page when the query names none.
+ */
 const DEFAULT_PER_PAGE = 50;
 
 // Rows per page for EVERY list on /admin/delegation, which is the one page here
@@ -310,6 +316,9 @@ const DEFAULT_PER_PAGE = 50;
 // `?per=` still overrides it for all seven together, exactly as it does on the
 // drill-downs, and perPageOptions() offers this value because it offers
 // whatever is in force. A number somebody typed is a number they meant.
+/**
+ * Rows per page for every list on `/admin/delegation`.
+ */
 const DELEGATION_PER_PAGE = 10;
 
 // How many rows of a list a page will draw. A cap is needed — 5,000 token rows
@@ -322,6 +331,9 @@ const DELEGATION_PER_PAGE = 10;
 // more. The cap stays because the reason for it never went away — `?per=` is a
 // number a caller types, and without a ceiling `?per=5000` is the page the cap
 // existed to prevent.
+/**
+ * The most rows of a list a page draws.
+ */
 const MAX_ROWS = 300;
 
 // The credential choice, as four radios. A RADIO GROUP rather than a select for
@@ -338,8 +350,14 @@ const MAX_ROWS = 300;
 // hand with no credential is, in PRODUCT mode, a person who cannot sign in, and
 // the default should be the thing that works in the mode this service is
 // becoming. `none` is still one click or one field away.
+/**
+ * What a create that names no credential gets, from `admin_actions.ts`.
+ */
 const DEFAULT_CREDENTIAL = adminActions.DEFAULT_CREDENTIAL;
 
+/**
+ * The credential choices the new-user form offers, each with what it means.
+ */
 const CREDENTIAL_CHOICES = [
   { id: 'none', label: 'No credential at all',
     what: 'The entry exists and nothing is set on it. <strong>In development ' +
@@ -393,6 +411,10 @@ const CREDENTIAL_CHOICES = [
 // them would leave "Revoked …" at the top of every page the reader clicked to
 // afterwards, and would put a stale one in the `back` field of the next revoke,
 // which answers with two.
+/**
+ * The query parameters that are not part of a view: `format`, `notice` and
+ * `error`.
+ */
 const NOT_A_VIEW = ['format', 'notice', 'error'];
 
 // Rows per page for a list whose ROW IS A TABLE. There is one of those — the
@@ -404,6 +426,9 @@ const NOT_A_VIEW = ['format', 'notice', 'error'];
 //
 // `?per=` still overrides it, for the same reason it overrides everything else:
 // a number somebody typed is a number they meant.
+/**
+ * Rows per page for a list whose row is itself a table.
+ */
 const DEFAULT_BLOCKS_PER_PAGE = 5;
 
 interface AdminViewsDeps {
@@ -479,13 +504,30 @@ interface AdminViewsDeps {
   samlAssertionRowFor: typeof adminActions.samlAssertionRowFor;
 }
 
+/**
+ * What the two admin surfaces both read: the pure JSON views behind the
+ * console's pages and the `/admin-api` operations that mirror them (rule 7).
+ *
+ * Each view computes the machine answer and reaches no markup, so a page and
+ * its operation cannot disagree.
+ */
 class AdminViews {
+  /**
+   * Builds the views over their dependencies.
+   *
+   * @param deps - the domain modules, registers and helpers the views read
+   */
   constructor(private readonly deps: AdminViewsDeps) {
     deps.log.debug("Entering AdminViews.constructor().");
     deps.log.debug("Leaving AdminViews.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): AdminViewsDeps {
     helpers.log.debug("Entering AdminViews.defaultDeps().");
     helpers.log.debug("Leaving AdminViews.defaultDeps().");
@@ -564,6 +606,12 @@ class AdminViews {
     };
   }
 
+  /**
+   * Fills the slot for the directory's group reader; the module that owns it
+   * fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setGroupReader(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setGroupReader().");
@@ -571,6 +619,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setGroupReader().");
   }
 
+  /**
+   * Fills the slot for the directory's group writer; the module that owns it
+   * fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setGroupWriter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setGroupWriter().");
@@ -578,6 +632,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setGroupWriter().");
   }
 
+  /**
+   * Fills the slot for the directory writer; the module that owns it fills it
+   * (rule 3e).
+   *
+   * @param value - the filler
+   */
   setDirectoryWriter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setDirectoryWriter().");
@@ -585,6 +645,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setDirectoryWriter().");
   }
 
+  /**
+   * Fills the slot for the directory reader; the module that owns it fills it
+   * (rule 3e).
+   *
+   * @param value - the filler
+   */
   setDirectoryReader(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setDirectoryReader().");
@@ -592,6 +658,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setDirectoryReader().");
   }
 
+  /**
+   * Fills the slot for the SPIFFE listener reader; the module that owns it
+   * fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setSpiffeReader(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setSpiffeReader().");
@@ -599,6 +671,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setSpiffeReader().");
   }
 
+  /**
+   * Fills the slot for the Shared Signals report; the module that owns it fills
+   * it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setSignalsReporter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setSignalsReporter().");
@@ -606,6 +684,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setSignalsReporter().");
   }
 
+  /**
+   * Fills the slot for the CAEP report; the module that owns it fills it (rule
+   * 3e).
+   *
+   * @param value - the filler
+   */
   setCaepReporter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setCaepReporter().");
@@ -613,6 +697,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setCaepReporter().");
   }
 
+  /**
+   * Fills the slot for the RISC report; the module that owns it fills it (rule
+   * 3e).
+   *
+   * @param value - the filler
+   */
   setRiscReporter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setRiscReporter().");
@@ -620,6 +710,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setRiscReporter().");
   }
 
+  /**
+   * Fills the slot for the logout model; the module that owns it fills it (rule
+   * 3e).
+   *
+   * @param value - the filler
+   */
   setLogoutReader(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setLogoutReader().");
@@ -627,6 +723,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setLogoutReader().");
   }
 
+  /**
+   * Fills the slot for the crypto report; the module that owns it fills it
+   * (rule 3e).
+   *
+   * @param value - the filler
+   */
   setCryptoReporter(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setCryptoReporter().");
@@ -634,6 +736,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setCryptoReporter().");
   }
 
+  /**
+   * Fills the slot for the XACML pages; the module that owns it fills it (rule
+   * 3e).
+   *
+   * @param value - the filler
+   */
   setXacmlPages(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setXacmlPages().");
@@ -641,6 +749,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setXacmlPages().");
   }
 
+  /**
+   * Fills the slot for the directory pages; the module that owns it fills it
+   * (rule 3e).
+   *
+   * @param value - the filler
+   */
   setDirectoryPages(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setDirectoryPages().");
@@ -648,6 +762,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setDirectoryPages().");
   }
 
+  /**
+   * Fills the slot for the SCIM reader; the module that owns it fills it (rule
+   * 3e).
+   *
+   * @param value - the filler
+   */
   setScimReader(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setScimReader().");
@@ -655,6 +775,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setScimReader().");
   }
 
+  /**
+   * Fills the slot for the role previewer; the module that owns it fills it
+   * (rule 3e).
+   *
+   * @param value - the filler
+   */
   setRolePreviewer(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setRolePreviewer().");
@@ -662,6 +788,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setRolePreviewer().");
   }
 
+  /**
+   * Fills the slot for the configuration settings view; the module that owns it
+   * fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setConfigSettingsJson(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setConfigSettingsJson().");
@@ -669,6 +801,12 @@ class AdminViews {
     log.debug("Leaving AdminViews.setConfigSettingsJson().");
   }
 
+  /**
+   * Fills the slot for the client-certificate truststore; the module that owns
+   * it fills it (rule 3e).
+   *
+   * @param value - the filler
+   */
   setTruststore(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.setTruststore().");
@@ -701,6 +839,13 @@ class AdminViews {
   // open this console. `oidc_rp.js` runs the console's whole flow in that realm
   // for exactly that reason.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the console's relying-party session for a request, which is always
+   * in the default realm.
+   *
+   * @param req - the request
+   * @returns the session with its realm, or null when not signed in
+   */
   consoleRpSession(req) {
     const { log, realms, oidcRp } = this.deps;
     log.debug("Entering AdminViews.consoleRpSession().");
@@ -720,6 +865,13 @@ class AdminViews {
   // again, found a roster that a concurrent grant had just filled — so the page
   // said "signed in, holding no role" above a console it had just allowed. One
   // function, one answer.
+  /**
+   * Works out the console gate's state for a request in one pass: who is signed
+   * in, which roles they hold, and whether the gate lets them in.
+   *
+   * @param req - the request
+   * @returns the gate's state
+   */
   gateStateFor(req) {
     const { log, config, mode, realms, rbac } = this.deps;
     log.debug("Entering AdminViews.gateStateFor().");
@@ -839,6 +991,12 @@ class AdminViews {
   // until something reads them (sessionOf() drops one when it finds it stale),
   // so the state is computed here rather than assumed — otherwise the console
   // would report a session that no request would honour.
+  /**
+   * Lists the browser sign-on sessions as rows, computing whether each is still
+   * live.
+   *
+   * @returns the rows
+   */
   signOnSessionRows() {
     const { log, sessions, sessionStartedAt } = this.deps;
     log.debug("Entering AdminViews.signOnSessionRows().");
@@ -881,6 +1039,11 @@ class AdminViews {
   // answered and what the parent project's tests read — so the console's route
   // uses this object for the markup too rather than taking a second snapshot a
   // few microseconds later.
+  /**
+   * Takes one metrics snapshot, for `/admin/metrics` and its JSON.
+   *
+   * @returns the snapshot and what the page draws from it
+   */
   metricsJson() {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.metricsJson().");
@@ -922,6 +1085,13 @@ class AdminViews {
   // can open any row of that table and a test need not know which kind it has
   // in its hand.
   // ---------------------------------------------------------------------------
+  /**
+   * Opens one token set by its key, for `GET /admin-api/tokens/set`.
+   *
+   * @param query - the query, whose `id` names the set
+   * @returns the key asked, the set, and the JSON answer saying why when it is
+   *   not found
+   */
   tokenSetView(query) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokenSetView().");
@@ -956,6 +1126,11 @@ class AdminViews {
   // The register and its picture, in one place so that the page, `?format=json`
   // and `GET /admin-api/permissions` cannot come to disagree about what is in
   // it — the same property `delegationView()` gives the acts half.
+  /**
+   * Builds the delegated permission register and its picture.
+   *
+   * @returns the register and its clusters
+   */
   permissionsView() {
     const { log, appPermissions } = this.deps;
     log.debug("Entering AdminViews.permissionsView().");
@@ -980,6 +1155,12 @@ class AdminViews {
   // the API cannot compute an answer the console does not draw — which is what
   // makes "every /admin page has an /admin-api operation" a property of the
   // code.
+  /**
+   * Builds the crypto report as JSON.
+   *
+   * @param req - the request; only its query and realm are read
+   * @returns the report
+   */
   cryptoView(req) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminViews.cryptoView().");
@@ -996,6 +1177,12 @@ class AdminViews {
   // The key inventory, for admin_api.js. A LIST and never key material: the
   // export is the other function, so a caller that only wanted to know what
   // this process holds cannot be handed a private key by accident.
+  /**
+   * Lists the keys this process holds; never key material.
+   *
+   * @param req - the request; only its query and realm are read
+   * @returns the inventory
+   */
   keysView(req) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminViews.keysView().");
@@ -1012,6 +1199,15 @@ class AdminViews {
   // The export, for admin_api.js. Returns the vendored exporter's own answer —
   // `{ok, files, status}` or `{ok: false, errors}` — and decides nothing, so
   // the API and the page cannot refuse different things.
+  /**
+   * Exports one key through the vendored exporter, deciding nothing itself.
+   *
+   * @param key - which key
+   * @param format - the export format
+   * @param password - the password to protect it with, where the format takes
+   *   one
+   * @returns `{ ok, files, status }` or `{ ok: false, errors }`
+   */
   keysExport(key, format, password) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.keysExport(). key=" + key + ", format=" +
@@ -1024,6 +1220,12 @@ class AdminViews {
     return cryptoReporter.exportKey(key, format, password);
   }
 
+  /**
+   * Returns the XACML overview from the XACML pages.
+   *
+   * @param req - the request
+   * @returns the view, or the no-XACML answer when the module is not loaded
+   */
   xacmlView(req) {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlView().');
@@ -1032,6 +1234,12 @@ class AdminViews {
     return json;
   }
 
+  /**
+   * Returns the XACML policy list from the XACML pages.
+   *
+   * @param req - the request
+   * @returns the view, or the no-XACML answer when the module is not loaded
+   */
   xacmlPoliciesView(req) {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlPoliciesView().');
@@ -1040,6 +1248,12 @@ class AdminViews {
     return json;
   }
 
+  /**
+   * Returns one policy in the XACML editor, named by the `policy` query.
+   *
+   * @param req - the request
+   * @returns the view, or the no-XACML answer when the module is not loaded
+   */
   xacmlEditorView(req) {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlEditorView().');
@@ -1049,6 +1263,12 @@ class AdminViews {
     return json;
   }
 
+  /**
+   * Returns the remote PEPs from the XACML pages.
+   *
+   * @param req - the request
+   * @returns the view, or the no-XACML answer when the module is not loaded
+   */
   xacmlPepsView(req) {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlPepsView().');
@@ -1057,6 +1277,12 @@ class AdminViews {
     return json;
   }
 
+  /**
+   * Returns the XACML decision tester's answer for the query.
+   *
+   * @param req - the request
+   * @returns the view, or the no-XACML answer when the module is not loaded
+   */
   xacmlDecideView(req) {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlDecideView().');
@@ -1069,6 +1295,12 @@ class AdminViews {
   // configuration. It takes no argument at all — there is nothing to filter and
   // nothing to name — which is why it is the shortest of the seven and not a
   // sign that something was left out.
+  /**
+   * Returns the XACML decision counts from the XACML pages.
+   *
+   * @param req - the request (unused)
+   * @returns the view, or the no-XACML answer when the module is not loaded
+   */
   xacmlMonitorView(req) {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlMonitorView().');
@@ -1079,6 +1311,13 @@ class AdminViews {
 
   // What `mgmt-api/admin_api.ts` calls. The `?format=json` half of each page,
   // which is the same object the page itself is built from.
+  /**
+   * Returns the JSON half of one `/admin/ldap/*` page.
+   *
+   * @param name - the directory page's name
+   * @param req - the request
+   * @returns the page's JSON, or a no-directory answer when none is loaded
+   */
   directoryPageJson(name, req) {
     const { log } = this.deps;
     log.debug('Entering AdminViews.directoryPageJson(). name=' + name);
@@ -1099,6 +1338,11 @@ class AdminViews {
   // The register, in one place so that the page, `?format=json` and
   // `GET /admin-api/consent` cannot come to disagree about what is in it — the
   // same property `permissionsView()` gives the delegated permission register.
+  /**
+   * Builds the consent register: the overrides and the recorded consents.
+   *
+   * @returns the register
+   */
   consentView() {
     const { log, consent } = this.deps;
     log.debug("Entering AdminViews.consentView().");
@@ -1140,6 +1384,13 @@ class AdminViews {
   // application and the scope; the overrides are configuration, one row per
   // thing somebody typed, and are paged rather than searched.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/consent`: the register paged, the recorded half searched by
+   * `q`.
+   *
+   * @param query - the request's query
+   * @returns the page's JSON
+   */
   consentPageView(query) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.consentPageView().");
@@ -1184,6 +1435,12 @@ class AdminViews {
   // `GET /admin-api/roles` cannot come to disagree about what is in it — the
   // same property `consentView()` and `permissionsView()` give their registers.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the role register: the built-in and configured roles and who holds
+   * them.
+   *
+   * @returns the register
+   */
   rolesRegister() {
     const { log, config, applications, roles } = this.deps;
     log.debug("Entering AdminViews.rolesRegister().");
@@ -1216,6 +1473,17 @@ class AdminViews {
         })
       };
     });
+    const permissions = [];
+    applications.list().forEach(function (row) {
+      applications.permissionsOf(row).forEach(function (one) {
+        if (one.id) {
+          const gating = applications.roleGatingFor(one.id);
+          permissions.push({ id: one.id, application: row.identifier,
+                             name: one.name,
+                             gated: !!(gating && gating.gated) });
+        }
+      });
+    });
     const out = {
       // The store, so a reader can say where these entries are and reach them
       // with an ldapsearch.
@@ -1229,6 +1497,14 @@ class AdminViews {
       policy: rolePreviewer ? rolePreviewer.policy() : null,
       builtIn: roles.builtInCatalogue(),
       roles: configured,
+      // EVERY PERMISSION A ROLE MAY AUTHORIZE (#303): each application
+      // permission defined in this realm, by the identifier a client asks
+      // for, marked `gated` where its resource opted in. The console's
+      // suggestions and the API's answer to "what could I name".
+      permissions: permissions,
+      permissionIds: permissions.map(function (one) {
+        return one.id;
+      }),
       requiring: requiring,
       counts: {
         builtIn: roles.BUILT_IN_NAMES.length,
@@ -1248,6 +1524,11 @@ class AdminViews {
     return out;
   }
 
+  /**
+   * Returns the role register for `/admin/roles`.
+   *
+   * @returns the register
+   */
   rolesView() {
     const { log } = this.deps;
     log.debug("Entering AdminViews.rolesView().");
@@ -1401,6 +1682,12 @@ class AdminViews {
     return out;
   }
 
+  /**
+   * Builds Directory → Policies: every kind of policy and its profiles.
+   *
+   * @param query - the request's query
+   * @returns the page's JSON
+   */
   policiesView(query) {
     const { log, mode, policyKinds } = this.deps;
     log.debug("Entering AdminViews.policiesView().");
@@ -1461,6 +1748,13 @@ class AdminViews {
   // preview that agreed with the enforcement only by coincidence is impossible
   // — which is the property that makes it worth having at all.
   // ---------------------------------------------------------------------------
+  /**
+   * Previews an issuance decision through the same call the issuance sites
+   * make: the dry run on `/admin/roles`.
+   *
+   * @param query - the query, naming the application and the subject
+   * @returns the decision and what it rested on
+   */
   rolesPreview(query) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.rolesPreview().");
@@ -1506,6 +1800,12 @@ class AdminViews {
   // real values rather than an invented person nobody can look up — the same
   // rule and the same default /admin/vc uses, deliberately, so the two pages
   // preview the same person unless somebody says otherwise.
+  /**
+   * Returns the person the claims pages preview.
+   *
+   * @param query - the request's query
+   * @returns the username
+   */
   claimsPreviewUser(query) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.claimsPreviewUser().");
@@ -1526,6 +1826,14 @@ class AdminViews {
   // again. Separate builders would have been previews that could disagree about
   // one person, which is precisely the thing every preview here is built
   // through the issuance path to prevent.
+  /**
+   * Builds the JSON of some claim sets, each with one person's values as they
+   * would be issued.
+   *
+   * @param ids - the claim set ids
+   * @param previewUser - the person to preview
+   * @returns the sets
+   */
   claimSetsJson(ids, previewUser) {
     const { log, stats, claimAttributes, groupClaims } = this.deps;
     log.debug("Entering AdminViews.claimSetsJson(). " + ids.length +
@@ -1591,6 +1899,13 @@ class AdminViews {
   // this service sets itself and refuses. It is in the reply rather than only
   // in the document because the first thing a caller of POST
   // /admin-api/claims/add needs is the list of names it will be refused for.
+  /**
+   * Builds `/admin/claims`'s JSON: the two JWT sets and the reserved claim
+   * names.
+   *
+   * @param previewUser - the person to preview
+   * @returns the JSON
+   */
   claimsJson(previewUser) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.claimsJson(). previewUser=" + previewUser);
@@ -1610,6 +1925,12 @@ class AdminViews {
   // called `exp` collides with nothing. Reporting
   // it here would have told a caller their call would be refused when it will
   // succeed.
+  /**
+   * Builds `/admin/saml-attributes`'s JSON: the two SAML attribute sets.
+   *
+   * @param previewUser - the person to preview
+   * @returns the JSON
+   */
   samlAttributesJson(previewUser) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.samlAttributesJson(). previewUser=" +
@@ -1628,6 +1949,12 @@ class AdminViews {
   // one is a JSON document rather than a name, and a cap that truncated a
   // legitimate request would produce a parse error that pointed at this service
   // instead of at the request.
+  /**
+   * Returns the `claims` request parameter the UserInfo page previews, capped.
+   *
+   * @param query - the request's query
+   * @returns the parameter
+   */
   claimsRequestParameter(query) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.claimsRequestParameter().");
@@ -1640,6 +1967,12 @@ class AdminViews {
   // fresh start rather than an invented person nobody can look up. The
   // parameter wins where it is given; the cap is there because this string is
   // echoed.
+  /**
+   * Returns the person `/admin/vc` previews.
+   *
+   * @param query - the request's query
+   * @returns the username
+   */
   vcPreviewUser(query) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.vcPreviewUser().");
@@ -1652,6 +1985,13 @@ class AdminViews {
   // minted right now. The preview is in the JSON as well as on the page because
   // "what would this issue" is the question the selection exists to answer, and
   // a caller with no browser has no other way to ask it.
+  /**
+   * Builds `/admin/vc`'s JSON: the catalogue, the selection, and one person's
+   * claims as they would be minted now.
+   *
+   * @param previewUser - the person to preview
+   * @returns the JSON
+   */
   vcJson(previewUser) {
     const { log, vcClaims } = this.deps;
     log.debug("Entering AdminViews.vcJson(). previewUser=" + previewUser);
@@ -1675,6 +2015,12 @@ class AdminViews {
   // is built by the function that builds the REAL one — see the note in
   // vc_verifier_config.js — so a caller reading this reply is reading the next
   // Authorization Request rather than a description of one.
+  /**
+   * Builds `/admin/vc-verifier-config`'s JSON: what the Verifier asks for and
+   * the `dcql_query` that carries it.
+   *
+   * @returns the JSON
+   */
   vpConfigJson() {
     const { log, vpConfig } = this.deps;
     log.debug("Entering AdminViews.vpConfigJson().");
@@ -1714,6 +2060,12 @@ class AdminViews {
   // prints is built from it, because a page read inside `acme` still has to be
   // able to name `default`'s endpoints — and baseUrlOf() adds the ambient
   // prefix by design.
+  /**
+   * Returns this service's base URL without any realm prefix.
+   *
+   * @param req - the request
+   * @returns the URL
+   */
   realmRootUrl(req) {
     const { log, baseUrlOf, realms } = this.deps;
     log.debug("Entering AdminViews.realmRootUrl().");
@@ -1728,6 +2080,12 @@ class AdminViews {
   // realm being listed. So the raw value the realm carries is shown, beside
   // what that setting is called — which is what a person checking a realm's
   // configuration is actually reading.
+  /**
+   * Lists a realm's own settings as rows, with each setting's label.
+   *
+   * @param realm - the realm's record
+   * @returns the rows
+   */
   realmSettingRows(realm) {
     const { log, configSettingFor } = this.deps;
     log.debug("Entering AdminViews.realmSettingRows(). realm=" + realm.id);
@@ -1745,6 +2103,14 @@ class AdminViews {
   // One realm as JSON. The same shape the list and the drill-down both answer
   // with, and the same shape GET /admin-api/realms answers with, so that a test
   // reading one has read all three.
+  /**
+   * Describes one realm, in the shape the list, the drill-down and the API
+   * share.
+   *
+   * @param req - the request
+   * @param realm - the realm's record
+   * @returns the realm
+   */
   realmJson(req, realm) {
     const { log, stsKeysFor, realms } = this.deps;
     log.debug("Entering AdminViews.realmJson().");
@@ -1789,6 +2155,12 @@ class AdminViews {
     };
   }
 
+  /**
+   * Builds `/admin/realms`'s JSON.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   realmsJson(req) {
     const { log, config, realms } = this.deps;
     const self = this;
@@ -1829,6 +2201,11 @@ class AdminViews {
   // GET /admin-api/token-lifetimes. Built here rather than in the route so the
   // page and the API cannot come to describe different settings — the rule
   // usersView() and groupsView() follow for the same reason.
+  /**
+   * Builds `/admin/token-lifetimes`'s JSON.
+   *
+   * @returns the JSON
+   */
   tokenLifetimesJson() {
     const { log, config, stats, configSettingFor } = this.deps;
     log.debug("Entering AdminViews.tokenLifetimesJson().");
@@ -1868,6 +2245,12 @@ class AdminViews {
   // comparison on this page — skew against lifetime, the warnings below — has
   // to be made in one unit, and doing it at each comparison is how two of them
   // come to disagree.
+  /**
+   * Returns a SAML assertion setting's value in seconds, whatever its unit.
+   *
+   * @param key - the setting's name
+   * @returns seconds
+   */
   samlAssertionSeconds(key) {
     const { log, config, samlAssertionRowFor } = this.deps;
     log.debug("Entering AdminViews.samlAssertionSeconds().");
@@ -1880,6 +2263,11 @@ class AdminViews {
   // The JSON view, answered by GET /admin/saml-assertions?format=json and by
   // GET /admin-api/saml-assertions. Built here rather than in the route so the
   // page and the API cannot come to describe different settings.
+  /**
+   * Builds `/admin/saml-assertions`'s JSON.
+   *
+   * @returns the JSON
+   */
   samlAssertionsJson() {
     const { log, config, stats, configSettingFor } = this.deps;
     log.debug("Entering AdminViews.samlAssertionsJson().");
@@ -1974,6 +2362,12 @@ class AdminViews {
   // the page, because a reader adding the column up will otherwise conclude the
   // counting is broken.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/scim`'s JSON.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   scimJson(req) {
     const { log, stats, scimMap } = this.deps;
     log.debug("Entering AdminViews.scimJson().");
@@ -2079,6 +2473,12 @@ class AdminViews {
   // either. Same argument as `/admin/xacml/monitor`'s, made again rather than
   // cited, because the second refusal is not cheaper than the first.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/scim/monitor`'s JSON: what SCIM has been asked to do.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   scimMonitorJson(req) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.scimMonitorJson().");
@@ -2135,6 +2535,12 @@ class AdminViews {
   // straight to `.map()`: `Array.prototype.map` hands the callback an INDEX as
   // its second argument, and a projection that later grew a second parameter
   // would start receiving row numbers.
+  /**
+   * Describes one row of the SCIM attribute mapping.
+   *
+   * @param row - the mapping row
+   * @returns its description
+   */
   scimMappingRow(row) {
     const { log, scimMap } = this.deps;
     log.debug("Entering AdminViews.scimMappingRow().");
@@ -2189,6 +2595,16 @@ class AdminViews {
   // the cap on it, and one capped parameter is one place the cap can be got
   // right.
   // ---------------------------------------------------------------------------
+  /**
+   * Works out one list's paging from the query: the page, the rows per page
+   * (capped) and the offset.
+   *
+   * @param query - the query
+   * @param total - how many rows the list has
+   * @param options - the list's name, when a page has several, and its default
+   *   rows per page
+   * @returns the paging
+   */
   pagingOf(query, total, options?) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pagingOf().");
@@ -2236,6 +2652,12 @@ class AdminViews {
   // up there it is `matched`, which is the count AFTER a filter — there is no
   // filter on a drill-down's lists, so the honest name for the number is the
   // plain one.
+  /**
+   * Returns the paging a JSON answer publishes.
+   *
+   * @param pg - the paging from `pagingOf()`
+   * @returns the published members
+   */
   pagingJson(pg) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pagingJson().");
@@ -2266,6 +2688,13 @@ class AdminViews {
   // a row only where one is missing or has changed, so in the steady state
   // neither door writes anything.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the signing key history of a realm, filtered by unit.
+   *
+   * @param query - the query, whose `unit` filters
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the history
+   */
   signingHistoryView(query, realmId?) {
     const { log, realms, signingHistory: history } = this.deps;
     log.debug("Entering AdminViews.signingHistoryView().");
@@ -2298,6 +2727,14 @@ class AdminViews {
     return view;
   }
 
+  /**
+   * Pages a list of rows.
+   *
+   * @param query - the query
+   * @param rows - the rows
+   * @param options - as `pagingOf()` takes them
+   * @returns the paging and the rows shown
+   */
   pagedRows(query, rows, options?) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pagedRows().");
@@ -2311,6 +2748,12 @@ class AdminViews {
   // intermediate step of it — and a second walk of the same list a few lines
   // later is how a table and the JSON beside it come to disagree about a
   // revocation that happened in between.
+  /**
+   * Builds `/admin/tokens`: the issued tokens and sets, filtered and paged.
+   *
+   * @param query - the request's query
+   * @returns the view
+   */
   tokensView(query) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokensView().");
@@ -2481,6 +2924,12 @@ class AdminViews {
   // have signed in THROUGH — `session.via` is a federation relationship's name
   // on a federated sign-in — and a hand-written list would be a select with
   // entries that match nothing beside sign-ins it cannot name.
+  /**
+   * Returns the protocols the sign-on sessions came through, for the filter.
+   *
+   * @param rows - the session rows
+   * @returns the protocols
+   */
   sessionProtocolsIn(rows) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.sessionProtocolsIn().");
@@ -2500,6 +2949,12 @@ class AdminViews {
   // that GET /admin-api/sessions makes the same one — the rule every view in
   // this file follows, and the reason the management API cannot come to
   // disagree with the page about who is signed in.
+  /**
+   * Builds `/admin/sessions`: every sign-on session, filtered and paged.
+   *
+   * @param req - the request
+   * @returns the view
+   */
   sessionsView(req) {
     const { log } = this.deps;
     const self = this;
@@ -2607,6 +3062,12 @@ class AdminViews {
   // asked for beyond the end is re-read at the last page rather than drawn
   // empty under a line saying rows matched.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the used-assertion history, paged.
+   *
+   * @param query - the request's query
+   * @returns the view
+   */
   usedAssertionsView(query) {
     const { log, usedAssertions } = this.deps;
     const self = this;
@@ -2675,6 +3136,12 @@ class AdminViews {
   // so that the one row saying the table is incomplete survives, and this is
   // the page somebody would look for it on.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/error-codes`: the error-code table and the codes recorded.
+   *
+   * @param query - the request's query
+   * @returns the view
+   */
   errorCodesView(query) {
     const { log, auditLog, errorCodes } = this.deps;
     log.debug("Entering AdminViews.errorCodesView().");
@@ -2772,6 +3239,12 @@ class AdminViews {
   // admin-ui/admin.ts gives: this console and /admin-api are two callers, and
   // two hand-built copies of the same filtering would be two answers that each
   // look right alone.
+  /**
+   * Builds `/admin/audit`: the audit log, filtered and paged.
+   *
+   * @param query - the request's query
+   * @returns the view
+   */
   auditView(query) {
     const { log, auditLog } = this.deps;
     log.debug("Entering AdminViews.auditView().");
@@ -2873,6 +3346,12 @@ class AdminViews {
   // consoleJson() (admin-ui/admin.ts) gives: the filtering and the paging are
   // work both need, and two copies of it would be two answers that each looked
   // right alone.
+  /**
+   * Builds `/admin/delegation`: the delegation acts, filtered and paged.
+   *
+   * @param query - the request's query
+   * @returns the view
+   */
   delegationView(query) {
     const { log, delegation, krb5Principals } = this.deps;
     log.debug("Entering AdminViews.delegationView().");
@@ -3030,6 +3509,12 @@ class AdminViews {
   // the two person flags on the person's page and POST
   // /admin-api/users/set-not-delegated and /set-may-act.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the delegation policy: who may act for whom.
+   *
+   * @param query - the request's query
+   * @returns the view
+   */
   delegationPolicyView(query) {
     const { log, delegationPolicy } = this.deps;
     log.debug("Entering AdminViews.delegationPolicyView().");
@@ -3067,6 +3552,13 @@ class AdminViews {
   // group in the worst case — a caller asking *what is joined to what* would be
   // handed the answer to a question they did not ask, and the reply would grow
   // with the square of the register on exactly the service where that matters.
+  /**
+   * Summarises one cluster of the permission picture: its key, members and
+   * counts.
+   *
+   * @param group - the cluster
+   * @returns the summary
+   */
   clusterSummary(group) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.clusterSummary().");
@@ -3099,6 +3591,13 @@ class AdminViews {
   // `group: null` and a 200 — having no permissions configured is the ordinary
   // state of most entries in the registry, and it is a fact rather than an
   // error.
+  /**
+   * Builds the permission register's clusters, or one application's cluster.
+   *
+   * @param query - the query
+   * @param view - the register, when already built
+   * @returns the clusters, or the one asked for
+   */
   permissionGroupsView(query, view?) {
     const { log, appPermissions } = this.deps;
     log.debug("Entering AdminViews.permissionGroupsView().");
@@ -3154,6 +3653,13 @@ class AdminViews {
   // parameter is repeated, and String() on one is "a,b" — a search nothing
   // matches, reached by a link somebody clicked twice. The same rule
   // pageParamsOf() applies.
+  /**
+   * Reads one query parameter, the first when it is repeated.
+   *
+   * @param query - the query
+   * @param key - the parameter
+   * @returns its value, or ''
+   */
   queryOne(query, key) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.queryOne().");
@@ -3171,6 +3677,13 @@ class AdminViews {
   // out of the acts table four inches up the page is pasting the OTHER one
   // about half the time, and a search that answers "nothing matches" to a
   // string printed on the same page is worse than no search at all.
+  /**
+   * Asks whether any of an identity's names contains a search, ignoring case.
+   *
+   * @param names - the names
+   * @param wanted - the search
+   * @returns whether one matches
+   */
   chooserMatches(names, wanted) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.chooserMatches().");
@@ -3203,6 +3716,14 @@ class AdminViews {
   // shows is the refusal a client would get — which is the thing somebody is
   // here to see.
   // ---------------------------------------------------------------------------
+  /**
+   * Previews a `claims` request parameter for a person, or the refusal the
+   * endpoint would give it.
+   *
+   * @param previewUser - the person to preview
+   * @param raw - the parameter's JSON text
+   * @returns the preview
+   */
   claimsRequestPreview(previewUser, raw) {
     const { log, userFor, oauth2 } = this.deps;
     log.debug("Entering AdminViews.claimsRequestPreview(). user=" +
@@ -3239,6 +3760,13 @@ class AdminViews {
   // ask for is the thing a caller with no browser most needs, and a list
   // published by the page that the API answered differently would be two
   // answers to one question.
+  /**
+   * Builds the claims request half of the UserInfo page's JSON.
+   *
+   * @param previewUser - the person to preview
+   * @param raw - the parameter's JSON text
+   * @returns the JSON
+   */
   claimsRequestJson(previewUser, raw) {
     const { log, claimAttributes, oauth2 } = this.deps;
     log.debug("Entering AdminViews.claimsRequestJson().");
@@ -3312,6 +3840,13 @@ class AdminViews {
   // `reservedJwtClaims` IS here, unlike the SAML page's reply, and the reason
   // is in the page header: every name on that list is load-bearing in at least
   // one of this response's two shapes.
+  /**
+   * Builds `/admin/userinfo-claims`'s JSON.
+   *
+   * @param previewUser - the person to preview
+   * @param raw - the `claims` parameter to preview
+   * @returns the JSON
+   */
   userinfoClaimsJson(previewUser, raw) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.userinfoClaimsJson(). previewUser=" +
@@ -3340,6 +3875,12 @@ class AdminViews {
   // GET /admin-api/signals are the same document, rule 7 — built by the
   // receiver module so that the console, the management API and the portal
   // cannot come to three different opinions about what a delivered event is.
+  /**
+   * Builds `/admin/signals`'s JSON, through the receiver module.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   signalsJson(req) {
     const { log, signals } = this.deps;
     log.debug("Entering AdminViews.signalsJson().");
@@ -3368,6 +3909,13 @@ class AdminViews {
   // out of a complaint, an event name, a `jti` out of a transmitter's log, or a
   // stream id. They do not know which column it will be in, so it is one box
   // over all of them rather than four.
+  /**
+   * Filters and pages the delivered events for `/admin/signals`.
+   *
+   * @param req - the request
+   * @param view - the receiver's report
+   * @returns the rows shown and their paging
+   */
   signalsState(req, view) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.signalsState().");
@@ -3403,6 +3951,12 @@ class AdminViews {
   // truststore holds certificates and nothing else. Each row carries its PEM,
   // which is the half of a key pair meant to be handed around.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the client-certificate truststore's JSON; certificates only.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   truststoreJson(req) {
     const { log, mode, realms, adminActions } = this.deps;
     log.debug("Entering AdminViews.truststoreJson().");
@@ -3487,6 +4041,11 @@ class AdminViews {
   // The krbtgt block of `kerberosPrincipalsJson()` and of `/admin/kerberos`'s
   // status (#169). A process without the rotation module — a console loaded
   // without the composition root — answers the register's state alone.
+  /**
+   * Describes the realm's krbtgt key and its rotation (#169).
+   *
+   * @returns the state
+   */
   krbtgtView() {
     const { log, krb5PersonKeys, krbtgtRotation } = this.deps;
     log.debug("Entering AdminViews.krbtgtView().");
@@ -3502,6 +4061,12 @@ class AdminViews {
     }
   }
 
+  /**
+   * Builds `/admin/kerberos/principals`'s JSON.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   kerberosPrincipalsJson(req) {
     const { log, config, realms, krb5Principals, krb5PersonKeys,
       adminActions } = this.deps;
@@ -3603,6 +4168,12 @@ class AdminViews {
   // The whole report, for this page and for `GET /admin-api/ssf`. One function,
   // so the page and the API cannot disagree about what this transmitter is
   // doing — which is rule 7's entire subject.
+  /**
+   * Builds `/admin/ssf`'s report.
+   *
+   * @param req - the request
+   * @returns the report
+   */
   ssfJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.ssfJson().");
@@ -3639,6 +4210,13 @@ class AdminViews {
   // "which ones am I looking at" are two questions, and `matched` answers the
   // second.
   // ---------------------------------------------------------------------------
+  /**
+   * Filters and pages the Shared Signals dead letters.
+   *
+   * @param req - the request
+   * @param report - the transmitter's report
+   * @returns the rows shown, the count matched and the paging
+   */
   ssfDeadLettersState(req, report) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.ssfDeadLettersState().");
@@ -3671,6 +4249,12 @@ class AdminViews {
              page: page };
   }
 
+  /**
+   * Builds the Shared Signals dead-letter page's JSON.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   ssfDeadLettersJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.ssfDeadLettersJson().");
@@ -3704,6 +4288,12 @@ class AdminViews {
   // The whole report, for both pages and for `GET /admin-api/caep`. ONE
   // function, so the two pages and the API cannot come to disagree about what
   // this transmitter has said — rule 7's entire subject.
+  /**
+   * Builds the CAEP report.
+   *
+   * @param req - the request
+   * @returns the report
+   */
   caepJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.caepJson().");
@@ -3745,6 +4335,13 @@ class AdminViews {
   // have to agree about what was filtered and what was drawn, and two walks of
   // one list is how they come to disagree about a session that ended in
   // between.
+  /**
+   * Filters and pages the CAEP sessions.
+   *
+   * @param req - the request
+   * @param report - the CAEP report
+   * @returns the rows shown and their paging
+   */
   caepSessionsState(req, report) {
     const { log } = this.deps;
     const self = this;
@@ -3773,6 +4370,13 @@ class AdminViews {
   // types: a receiver that takes none of the eight is exactly the row somebody
   // is looking for when they ask why nothing arrived, and a search that hid it
   // would hide the answer.
+  /**
+   * Filters and pages the CAEP receivers.
+   *
+   * @param req - the request
+   * @param report - the CAEP report
+   * @returns the rows shown and their paging
+   */
   caepApplicationsState(req, report) {
     const { log } = this.deps;
     const self = this;
@@ -3796,6 +4400,12 @@ class AdminViews {
   // drill- down is `?session=`, which is one operation answering two shapes for
   // the reason /admin-api/permissions/groups gives: they are the same question
   // at two scales and the console draws them with one register.
+  /**
+   * Builds the CAEP sessions page's JSON, or one session's with `?session=`.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   caepSessionsJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.caepSessionsJson().");
@@ -3827,6 +4437,12 @@ class AdminViews {
   // The whole report, for both pages and for `GET /admin-api/risc`. ONE
   // function, so the two pages and the API cannot come to disagree about what
   // this transmitter has said — rule 7's entire subject.
+  /**
+   * Builds the RISC report.
+   *
+   * @param req - the request
+   * @returns the report
+   */
   riscJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.riscJson().");
@@ -3872,6 +4488,13 @@ class AdminViews {
   // they are chasing — is routinely the one the account no longer has. A search
   // that matched only the current spelling would hide exactly the row somebody
   // came to find.
+  /**
+   * Filters and pages the RISC accounts.
+   *
+   * @param req - the request
+   * @param report - the RISC report
+   * @returns the rows shown and their paging
+   */
   riscAccountsState(req, report) {
     const { log } = this.deps;
     const self = this;
@@ -3891,6 +4514,13 @@ class AdminViews {
     return { wanted: wanted, matched: matched, page: page };
   }
 
+  /**
+   * Filters and pages the RISC receivers.
+   *
+   * @param req - the request
+   * @param report - the RISC report
+   * @returns the rows shown and their paging
+   */
   riscApplicationsState(req, report) {
     const { log } = this.deps;
     const self = this;
@@ -3914,6 +4544,12 @@ class AdminViews {
   // drill-down is `?account=`, one operation answering two shapes for the
   // reason the CAEP pair gives: they are the same question at two scales and
   // the console draws them from one register.
+  /**
+   * Builds the RISC accounts page's JSON, or one account's with `?account=`.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   riscAccountsJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.riscAccountsJson().");
@@ -3955,6 +4591,12 @@ class AdminViews {
   // so every caller renders the same "nothing bound" table instead of each
   // having to guard. The bundle path falls back to the configured value, which
   // is what that module reads too — one setting, two readers, no third opinion.
+  /**
+   * Returns the SPIFFE listeners and the bundle path; empty listeners when the
+   * slot is unfilled.
+   *
+   * @returns the listeners
+   */
   spiffeListeners() {
     const { log, config } = this.deps;
     log.debug("Entering AdminViews.spiffeListeners().");
@@ -3967,6 +4609,12 @@ class AdminViews {
   // ---------------------------------------------------------------------------
   // THE TRUST DOMAIN PAGE.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/spiffe`'s JSON: the trust domain page.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   spiffeJson(req) {
     const { log, config, spiffeRegistry, spiffeCa, spiffeAuth } = this.deps;
     log.debug("Entering AdminViews.spiffeJson().");
@@ -4040,6 +4688,12 @@ class AdminViews {
   // ---------------------------------------------------------------------------
   // THE REGISTRATION ENTRIES.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/spiffe/entries`'s JSON: the registration entries.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   spiffeEntriesJson(req) {
     const { log, spiffeRegistry } = this.deps;
     const self = this;
@@ -4084,6 +4738,13 @@ class AdminViews {
   // parse is listed WITH its problem — it authorizes nothing, and a list
   // that hid it would leave an operator wondering why a broker is refused.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/spiffe/brokers`'s JSON: the brokers and what each may
+   * reference, an unparsed entry listed with its problem.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   spiffeBrokersJson(req) {
     const { log, config, spiffeAuth } = this.deps;
     log.debug("Entering AdminViews.spiffeBrokersJson().");
@@ -4119,6 +4780,12 @@ class AdminViews {
   // ---------------------------------------------------------------------------
   // THE AGENTS.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/spiffe/agents`'s JSON: the attested agents.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   spiffeAgentsJson(req) {
     const { log, spiffeRegistry } = this.deps;
     const self = this;
@@ -4148,6 +4815,12 @@ class AdminViews {
     return { json: json, paging: pg };
   }
 
+  /**
+   * Writes a selector as `type:value`.
+   *
+   * @param selector - the selector
+   * @returns the text
+   */
   spiffeSelectorText(selector) {
     const { log, spiffeRegistry } = this.deps;
     log.debug("Entering AdminViews.spiffeSelectorText().");
@@ -4169,6 +4842,12 @@ class AdminViews {
   // property rule 7 asks for and the reason the json was next to the markup to
   // begin with.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/applications/new`'s JSON: the vocabulary the form draws.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   newApplicationJson(req) {
     const { log, realms, applications } = this.deps;
     log.debug("Entering AdminViews.newApplicationJson().");
@@ -4240,6 +4919,14 @@ class AdminViews {
   // `/admin-api` publishes were the same computation written twice in one
   // function, with a form between them.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/users/new`'s JSON: the attribute catalogue and credential
+   * choices.
+   *
+   * @param req - the request
+   * @param prefill - values to fill the form with
+   * @returns the JSON
+   */
   newUserJson(req, prefill?) {
     const { log, credentials, mode, realms, vcClaims } = this.deps;
     log.debug("Entering AdminViews.newUserJson().");
@@ -4303,6 +4990,11 @@ class AdminViews {
   // read in. `directoryReader('')` is the same slot the drill-down uses, asked
   // with no name: it answers about the DIRECTORY rather than about a person,
   // which is what a note above an empty form has to do.
+  /**
+   * Returns the container a new user lands in, in the ambient realm.
+   *
+   * @returns the DN
+   */
   newUserContainer() {
     const { log, realms } = this.deps;
     log.debug("Entering AdminViews.newUserContainer().");
@@ -4326,6 +5018,12 @@ class AdminViews {
   // json publishes it, and a second call to work it out again for the document
   // would be the page and the API asking the register two different questions.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/rbac`'s JSON: who holds each console role.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   rbacListJson(req) {
     const { log, realms, rbac } = this.deps;
     const self = this;
@@ -4528,6 +5226,11 @@ class AdminViews {
   // know is named without a link and with the reason. Reading it once per page
   // rather than once per row is deliberate: userRows() walks the whole
   // registry.
+  /**
+   * Returns the keys of every identity the console's user registry knows.
+   *
+   * @returns a set of keys, as an object
+   */
   knownUserKeys() {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.knownUserKeys().");
@@ -4546,6 +5249,12 @@ class AdminViews {
   // built FROM is here, and so is the json, so the table a person reads and the
   // document a client fetches are one pass over the registry.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/saml2`'s list of service providers.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   saml2ListJson(req) {
     const { log, baseUrlOf, saml2, spMetadata } = this.deps;
     const self = this;
@@ -4624,6 +5333,13 @@ class AdminViews {
     };
   }
 
+  /**
+   * Builds one SAML 2.0 service provider's drill-down.
+   *
+   * @param req - the request
+   * @param identifier - the entityID
+   * @returns the JSON
+   */
   saml2DetailJson(req, identifier) {
     const { log, baseUrlOf, applications, requestSignature } = this.deps;
     const self = this;
@@ -4669,6 +5385,13 @@ class AdminViews {
 
   // `<outcome> <binding> <sigAlg> [weak]`, as the SSO service records it, as
   // an object.
+  /**
+   * Parses a recorded request verification, `<outcome> <binding> <sigAlg>
+   * [weak]`.
+   *
+   * @param value - the recorded text
+   * @returns the outcome, binding, signature method and whether it was weak
+   */
   verificationOf(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.verificationOf().");
@@ -4687,6 +5410,14 @@ class AdminViews {
   // no document has been consumed onto. Since the #37 follow-up `state` is
   // `sp_metadata.ts`'s freshness — fresh, stale or expired, ENFORCED — and
   // `refresh` is what the background refresher last found.
+  /**
+   * Describes the SAML metadata consumed onto a service provider's entry, and
+   * its freshness.
+   *
+   * @param fields - the entry's attributes
+   * @param entityId - the entityID
+   * @returns the description; `consumed` is false when none was
+   */
   consumedMetadataOf(fields, entityId?) {
     const { log, spMetadata, config } = this.deps;
     const self = this;
@@ -4748,6 +5479,12 @@ class AdminViews {
   // it — `?sp=` means the drill-down. It is here rather than in the management
   // API so that the page and the document cannot disagree about what a query
   // string means.
+  /**
+   * Builds `/admin/saml2`'s JSON: the list, or the drill-down with `?sp=`.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   saml2Json(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.saml2Json().");
@@ -4760,6 +5497,11 @@ class AdminViews {
   // Every application this profile has answered for. Read off the registry
   // rather than kept, so a service provider created by an `ldapadd` appears
   // here with no help from this file.
+  /**
+   * Lists every application the SAML 2.0 profile has answered for.
+   *
+   * @returns the applications
+   */
   saml2ServiceProviders() {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.saml2ServiceProviders().");
@@ -4775,6 +5517,14 @@ class AdminViews {
   // One service provider's four URLs and its entityID, from the profile's own
   // functions (`saml/saml2_sso.ts`). Never rebuilt here, so the page cannot
   // publish an address the profile does not answer on.
+  /**
+   * Returns one service provider's four URLs and its entityID, from the
+   * profile's own functions.
+   *
+   * @param base - the base URL
+   * @param identifier - the entityID
+   * @returns the facts
+   */
   saml2Facts(base, identifier) {
     const { log, saml2 } = this.deps;
     log.debug("Entering AdminViews.saml2Facts().");
@@ -4795,6 +5545,12 @@ class AdminViews {
   // registry hands back a string for a single-valued attribute and an array for
   // a multi-valued one, and a JSON reply that varied between the two shapes
   // would be one a caller has to test the type of.
+  /**
+   * Returns an attribute's values as an array, whatever its kind.
+   *
+   * @param value - the value or values
+   * @returns the values
+   */
   valuesFor(value) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.valuesFor().");
@@ -4809,6 +5565,12 @@ class AdminViews {
   // WHAT /admin/saml11 ANSWERS. Built the same way as the SAML 2.0 pair above
   // and kept separate from it for the reason saml/CLAUDE.md gives about the two
   // profiles: they share a framework and almost no spelling.
+  /**
+   * Builds `/admin/saml11`'s list of relying parties.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   saml11ListJson(req) {
     const { log, baseUrlOf, saml11 } = this.deps;
     const self = this;
@@ -4870,6 +5632,13 @@ class AdminViews {
     };
   }
 
+  /**
+   * Builds one SAML 1.1 relying party's drill-down.
+   *
+   * @param req - the request
+   * @param identifier - the providerID
+   * @returns the JSON
+   */
   saml11DetailJson(req, identifier) {
     const { log, baseUrlOf, applications, saml11 } = this.deps;
     const self = this;
@@ -4910,6 +5679,12 @@ class AdminViews {
 
   // `?rp=` means the drill-down here where SAML 2.0 uses `?sp=` — one of the
   // six spellings saml/CLAUDE.md tabulates.
+  /**
+   * Builds `/admin/saml11`'s JSON: the list, or the drill-down with `?rp=`.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   saml11Json(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.saml11Json().");
@@ -4933,6 +5708,11 @@ class AdminViews {
   // to know when reading this list: a row here may have arrived through /wsfed
   // and never touched /saml11, which is why the profiles column says what it
   // has actually used.
+  /**
+   * Lists every application the SAML 1.1 profile has answered for.
+   *
+   * @returns the applications
+   */
   saml11RelyingParties() {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.saml11RelyingParties().");
@@ -4948,6 +5728,14 @@ class AdminViews {
   // One relying party's three URLs and its providerID, from the profile's own
   // functions (`saml/saml11_sso.ts`). Never rebuilt here, for saml2Facts()'s
   // reason.
+  /**
+   * Returns one relying party's three URLs and its providerID, from the
+   * profile's own functions.
+   *
+   * @param base - the base URL
+   * @param identifier - the providerID
+   * @returns the facts
+   */
   saml11Facts(base, identifier) {
     const { log, saml11 } = this.deps;
     log.debug("Entering AdminViews.saml11Facts().");
@@ -4964,6 +5752,12 @@ class AdminViews {
   }
 
   // WHAT /admin/authorization-servers ANSWERS: the profiles, and one of them.
+  /**
+   * Builds `/admin/authorization-servers`'s list of profiles.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   asListJson(req) {
     const { log, authorizationServers } = this.deps;
     const self = this;
@@ -4993,6 +5787,14 @@ class AdminViews {
   // The drill-down. `capabilities` is the document the authorization server
   // publishes and `drift` is where its members disagree with this service's own
   // — both are what the page draws AND what the resource answers.
+  /**
+   * Builds one authorization server's drill-down: its published capabilities
+   * and where they drift from this service's own.
+   *
+   * @param req - the request
+   * @param id - the profile's id
+   * @returns the JSON
+   */
   asDetailJson(req, id) {
     const { log, oauth2, authorizationServers } = this.deps;
     log.debug("Entering AdminViews.asDetailJson(). id=" + id);
@@ -5015,6 +5817,13 @@ class AdminViews {
   }
 
   // `?profile=` means the drill-down.
+  /**
+   * Builds `/admin/authorization-servers`'s JSON: the list, or the drill-down
+   * with `?profile=`.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   authorizationServersJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.authorizationServersJson().");
@@ -5024,6 +5833,13 @@ class AdminViews {
            this.asListJson(req).json;
   }
 
+  /**
+   * Lists where a named authorization server's metadata differs from this
+   * service's own.
+   *
+   * @param id - the profile's id
+   * @returns the drift rows
+   */
   asDriftRows(id) {
     const { log, oauth2, authorizationServers } = this.deps;
     log.debug("Entering AdminViews.asDriftRows().");
@@ -5042,6 +5858,12 @@ class AdminViews {
   // /admin/sts-metadata already assume when they name a URL: the console is
   // being read by somebody who reached this process, and the comparison is
   // about MEMBERS rather than about hostnames.
+  /**
+   * Builds the request this service's own metadata is computed for, at its
+   * default host.
+   *
+   * @returns the request
+   */
   asTruthRequest() {
     const { log, config } = this.deps;
     log.debug("Entering AdminViews.asTruthRequest().");
@@ -5062,6 +5884,12 @@ class AdminViews {
   // although the page declares them among its markup: they are one reduce each
   // over the same list, and the tiles a person reads are the numbers the
   // resource publishes.
+  /**
+   * Builds `/admin/groups`'s list, with its totals.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   groupsListJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.groupsListJson().");
@@ -5120,6 +5948,13 @@ class AdminViews {
 
   // The group drill-down. Two paged lists on one page, so the answer carries
   // both pagings; the page draws the navs from them.
+  /**
+   * Builds one group's drill-down, with its two paged lists.
+   *
+   * @param req - the request
+   * @param wantedDn - the group's DN
+   * @returns the JSON
+   */
   groupDetailJson(req, wantedDn) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.groupDetailJson(). dn=" + wantedDn);
@@ -5171,6 +6006,13 @@ class AdminViews {
   // exactly as it does on the page. Without it a build with no ldap_server.js
   // reaches `groupReader(...)` and throws, where the page answers "the page
   // exists, the directory does not", which are different facts about a process.
+  /**
+   * Builds `/admin/groups`'s JSON: the list, the drill-down with `?group=`, or
+   * the no-directory answer.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   groupsJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.groupsJson().");
@@ -5185,6 +6027,13 @@ class AdminViews {
            this.groupsListJson(req).json;
   }
 
+  /**
+   * Returns a query's view parameters, first value each, without `format`,
+   * `notice` and `error`.
+   *
+   * @param query - the query
+   * @returns the parameters
+   */
   pageParamsOf(query) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pageParamsOf().");
@@ -5209,6 +6058,12 @@ class AdminViews {
   // WHAT /admin/applications ANSWERS. `registeredCount` comes with the
   // computation although the page declares it among the markup: the tile a
   // person reads and the number the resource publishes are one count.
+  /**
+   * Builds `/admin/applications`'s list, with its registered count.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   applicationsListJson(req) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.applicationsListJson().");
@@ -5270,6 +6125,14 @@ class AdminViews {
 
   // The application drill-down: the entry, its attributes as a paged list, and
   // the delegated permissions it holds and exposes.
+  /**
+   * Builds one application's drill-down: the entry, its attributes paged, and
+   * the delegated permissions it holds and exposes.
+   *
+   * @param req - the request
+   * @param identifier - the application
+   * @returns the JSON
+   */
   applicationDetailJson(req, identifier) {
     const { log, applications } = this.deps;
     const self = this;
@@ -5726,6 +6589,13 @@ class AdminViews {
   // is. `recordFor()` opens the seal to answer that, and nothing opened leaves
   // this function.
   // ---------------------------------------------------------------------------
+  /**
+   * Reports which of a person's RFC 7523 and RFC 7522 credentials are held;
+   * never what they are.
+   *
+   * @param key - the person
+   * @returns the state
+   */
   personCredentialsState(key) {
     const { log, config, applications, personAssertions, keystore,
       pki } = this.deps;
@@ -5813,6 +6683,13 @@ class AdminViews {
   }
 
   // `?application=` means the drill-down.
+  /**
+   * Builds `/admin/applications`'s JSON: the list, or the drill-down with
+   * `?application=`.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   applicationsJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationsJson().");
@@ -5875,6 +6752,14 @@ class AdminViews {
   // still be granted to it — in a pure function for permissionsListState()'s
   // reason: the drill-down's `?format=json` has to report the same answer, and
   // there is no reading it back out of a string of markup.
+  /**
+   * Builds one application's delegated permissions, both halves, and what may
+   * still be granted to it.
+   *
+   * @param query - the request's query
+   * @param identifier - the application
+   * @returns the state
+   */
   applicationPermissionsState(query, identifier) {
     const { log, appPermissions } = this.deps;
     log.debug("Entering AdminViews.applicationPermissionsState(). identifier=" +
@@ -5931,6 +6816,12 @@ class AdminViews {
   }
 
   // WHAT /admin/federation ANSWERS: the relationships, and one of them.
+  /**
+   * Builds `/admin/federation`'s list of relationships.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   federationListJson(req) {
     const { log, federation } = this.deps;
     log.debug("Entering AdminViews.federationListJson().");
@@ -5973,6 +6864,14 @@ class AdminViews {
   // The relationship drill-down. The three URLs are the ones the page prints
   // AND the ones the resource publishes — computed once so a partner reading
   // the document and an operator reading the page are told the same endpoint.
+  /**
+   * Builds one federation relationship's drill-down, with the three URLs a
+   * partner uses.
+   *
+   * @param req - the request
+   * @param id - the relationship's id
+   * @returns the JSON
+   */
   federationDetailJson(req, id) {
     const { log, baseUrlOf, realms, federation, fedLinks, fedEncryption } =
       this.deps;
@@ -6129,6 +7028,12 @@ class AdminViews {
   // dispatch has to read the same query key the page reads, or the resource
   // answers the LIST for every drill-down and a caller asking about one
   // relationship is told about all of them.
+  /**
+   * Builds `/admin/federation`'s JSON: the list, or one relationship.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   federationJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.federationJson().");
@@ -6143,6 +7048,12 @@ class AdminViews {
   // page prints it and the API answers it, and two computations of "is this
   // partner usable" would be two answers to the question the whole page is
   // about.
+  /**
+   * Describes one relationship as a row, with its readiness.
+   *
+   * @param record - the relationship
+   * @returns the row
+   */
   federationRow(record) {
     const { log, federation } = this.deps;
     log.debug("Entering AdminViews.federationRow().");
@@ -6182,6 +7093,13 @@ class AdminViews {
   // list, and the tiles a person reads must be the numbers the resource
   // publishes. The second-factor roster is exactly that: one tally, two
   // renderings.
+  /**
+   * Builds `/admin/users`'s list of people, with its tiles and the
+   * second-factor roster.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   usersListJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersListJson().");
@@ -6351,6 +7269,12 @@ class AdminViews {
   // UNIONED rather than one of them winning: holding a key under one spelling
   // and an app under another is holding both.
   // ===========================================================================
+  /**
+   * Lists the people, one row per person, folding their spellings and uniting
+   * their factors.
+   *
+   * @returns the rows
+   */
   peopleRows() {
     const { log, credentials, stats } = this.deps;
     const self = this;
@@ -6444,6 +7368,12 @@ class AdminViews {
   // The rows are still on `stats.userRows()` for every page that is about
   // IDENTITIES rather than people — the delegation map, the token holders.
   // ---------------------------------------------------------------------------
+  /**
+   * Asks whether a user-registry row is an application rather than a person.
+   *
+   * @param row - the row
+   * @returns whether it is
+   */
   isApplicationRow(row) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.isApplicationRow().");
@@ -6471,6 +7401,13 @@ class AdminViews {
   // Taking the first would answer "no second factor" for somebody who has one
   // under their other name, which is the wrong answer in the direction that
   // matters: this table is read to find people who are NOT protected.
+  /**
+   * Folds one spelling's second factors into a person's, as a union.
+   *
+   * @param into - the factors held so far, or nothing for the first spelling
+   * @param holder - the other spelling's facts
+   * @returns the united factors
+   */
   mergeFactors(into, holder) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.mergeFactors().");
@@ -6541,6 +7478,13 @@ class AdminViews {
   // declares them among its markup — the resource publishes each one's paging.
   // One person's federation links as rows, paged (#109). Shared by the
   // console's panel and the JSON beside it, so the two cannot disagree.
+  /**
+   * Lists one person's federation links as rows, paged (#109).
+   *
+   * @param query - the request's query
+   * @param key - the person
+   * @returns the rows and their paging
+   */
   federationLinksOf(query, key) {
     const { log, federation, fedLinks } = this.deps;
     log.debug("Entering AdminViews.federationLinksOf().");
@@ -6563,6 +7507,14 @@ class AdminViews {
   // `risk` is the person's current standing (#62), read by `riskFor()`
   // before this synchronous view runs and handed in, because a view reads
   // nothing off the request but its query.
+  /**
+   * Builds one person's drill-down on `/admin/users`.
+   *
+   * @param req - the request
+   * @param key - the person
+   * @param risk - the person's current risk standing, read by `riskFor()`
+   * @returns the JSON
+   */
   userDetailJson(req, key, risk?: any) {
     const { log, subjectForName, stats } = this.deps;
     const self = this;
@@ -6795,6 +7747,14 @@ class AdminViews {
   // Undefined when no person is named; null when never assessed or the store
   // could not say. Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Reads the risk standing of the person the query names (#62), for the view
+   * to be handed.
+   *
+   * @param query - the query
+   * @returns the standing; undefined when no person is named, null when never
+   *   assessed or the store could not say; never rejects
+   */
   async riskFor(query: any): Promise<any> {
     const { log, subjectForName } = this.deps;
     log.debug("Entering AdminViews.riskFor().");
@@ -6817,6 +7777,13 @@ class AdminViews {
     }
   }
 
+  /**
+   * Builds `/admin/users`'s JSON: the list, or one person.
+   *
+   * @param req - the request
+   * @param risk - the person's risk standing, for the drill-down
+   * @returns the JSON
+   */
   usersJson(req, risk?: any) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersJson().");
@@ -6840,6 +7807,12 @@ class AdminViews {
   //
   // IT CARRIES NO CODES AND NO PUBLIC KEYS — see the comments inside. A caller
   // holding admin:read is never handed a working second factor.
+  /**
+   * Describes a person's second factors; no codes and no public keys.
+   *
+   * @param key - the person
+   * @returns the description
+   */
   mfaJson(key) {
     const { log, credentials, totp, webauthnPolicy, backupCodes } = this.deps;
     log.debug("Entering AdminViews.mfaJson(). key=" + key);
@@ -6926,6 +7899,13 @@ class AdminViews {
   // `credentials.passwordOnlyDoors()`, with the sentence the page and the API
   // both carry.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the password-only doors and whether each accepts this person's
+   * password.
+   *
+   * @param key - the person
+   * @returns the doors and the sentence both surfaces carry
+   */
   passwordOnlyDoorsFor(key) {
     const { log, credentials, appPasswords } = this.deps;
     log.debug("Entering AdminViews.passwordOnlyDoorsFor().");
@@ -6966,6 +7946,12 @@ class AdminViews {
   // /admin-api/users/app-passwords`, the list the person's /admin/users page
   // draws and `/portal/app-passwords` draws for themselves. Never a hash.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists one person's app passwords, paged (#101); never a hash.
+   *
+   * @param query - the request's query
+   * @returns the JSON
+   */
   appPasswordsJson(query) {
     const { log, credentials, appPasswords } = this.deps;
     log.debug("Entering AdminViews.appPasswordsJson().");
@@ -7003,6 +7989,13 @@ class AdminViews {
   // directory withholds the attribute from every LDAP read for exactly that
   // reason. Beside it, the vocabularies a record is made from.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists one person's identity assurance verifications and the vocabularies a
+   * record is made from.
+   *
+   * @param query - the request's query
+   * @returns the JSON
+   */
   verificationsJson(query) {
     const { log, identityAssurance } = this.deps;
     log.debug("Entering AdminViews.verificationsJson().");
@@ -7035,6 +8028,12 @@ class AdminViews {
   // on their /admin/users page draws. At most `siop.MAX_SUBJECTS`, so not
   // paged.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists one person's enrolled self-issued subjects.
+   *
+   * @param query - the request's query
+   * @returns the JSON
+   */
   selfIssuedSubjectsJson(query) {
     const { log, siop, config } = this.deps;
     log.debug("Entering AdminViews.selfIssuedSubjectsJson().");
@@ -7059,6 +8058,12 @@ class AdminViews {
   // `devices.maxPerPerson`, so not paged. The whole register, paged and
   // filtered, is `admin-ui/devices_admin.ts`'s (#218).
   // ---------------------------------------------------------------------------
+  /**
+   * Lists one person's registered devices; never a secret or its hash.
+   *
+   * @param query - the request's query
+   * @returns the JSON
+   */
   devicesJson(query) {
     const { log, devices, oauth2, config } = this.deps;
     log.debug("Entering AdminViews.devicesJson().");
@@ -7080,6 +8085,12 @@ class AdminViews {
   // `ldapObjectSection()` draws: `directoryReader(key)`, or null where no
   // directory is loaded in this process. The section keeps the markup and takes
   // this for its answer.
+  /**
+   * Returns a person's directory entry.
+   *
+   * @param key - the person
+   * @returns the entry, or null when no directory is loaded
+   */
   ldapObjectJson(key) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.ldapObjectJson(). key=" + key);
@@ -7096,6 +8107,13 @@ class AdminViews {
   // dropped `?kind=` would be page 2 of a different list — the bug this exists
   // to make impossible rather than merely avoidable. Empty values are omitted
   // so the URL of the unfiltered first page is the bare path.
+  /**
+   * Builds a query string from parameters and overrides, omitting empty values.
+   *
+   * @param params - the current parameters
+   * @param overrides - the parameters to change
+   * @returns the query string with its `?`, or '' when nothing is left
+   */
   queryWith(params, overrides) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.queryWith().");
@@ -7117,6 +8135,12 @@ class AdminViews {
   // opaque id and hold a user object, so the match is on the identity rather
   // than the string: the session says `alice` and the tokens say
   // `urn:uuid:<entryUUID>`, and these have to end up on the same page.
+  /**
+   * Lists the live sign-on sessions of one person, matched by identity.
+   *
+   * @param key - the person
+   * @returns the rows
+   */
   sessionRowsFor(key) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.sessionRowsFor(). key=" + key);
@@ -7136,6 +8160,13 @@ class AdminViews {
   // that is exactly the state an OIDC client is in when its ID Token still
   // verifies and the browser would be asked to sign in again. Showing those
   // under "no session" would say something false about how they were issued.
+  /**
+   * Groups a person's tokens under the sessions they came from.
+   *
+   * @param tokens - the tokens
+   * @param sessionRows - the sessions
+   * @returns the groups
+   */
   tokensBySession(tokens, sessionRows) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.tokensBySession(). " + tokens.length +
@@ -7183,6 +8214,12 @@ class AdminViews {
   // `people[].mfaRequired` is not a caller that should have to learn this page
   // moved. `GET /admin-api/users` is where the rows carry `factors` instead.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the second-factor roster, in the shape `/admin/mfa` always had.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   mfaRosterJson(req) {
     const { log, totp, webauthnPolicy } = this.deps;
     log.debug("Entering AdminViews.mfaRosterJson().");
@@ -7266,6 +8303,13 @@ class AdminViews {
   // (`backchannelDeliveriesPage`, `per` shared), with `backchannelCounts`
   // beside it — the dead letters an operator retries are
   // `deliveryState=dead`.
+  /**
+   * Builds `/admin/logout`'s JSON: an identity's live inventory, or the
+   * families, with the back-channel deliveries filtered and paged.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
   logoutJson(req): any {
     const { log, stats, backchannel } = this.deps;
     log.debug("Entering AdminViews.logoutJson().");
@@ -7354,6 +8398,12 @@ class AdminViews {
   // NULL when the slot is unfilled — not an empty inventory, which would read
   // as "nothing is live". logoutJson() turns the null into its own no-reader
   // answer, and the page renders its own explanation from that.
+  /**
+   * Returns what is live for one identity, from the logout model.
+   *
+   * @param key - the identity
+   * @returns the inventory, or null when the slot is unfilled
+   */
   logoutInventoryFor(key) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.logoutInventoryFor(). key=" + key);
@@ -7371,6 +8421,11 @@ class AdminViews {
   // The families, for the summary table and for the filter. Read off the slot
   // so that a family added to logout.ts appears here with no edit — the reason
   // the prose lives over there and not in this file.
+  /**
+   * Returns the logout families, read from the logout model.
+   *
+   * @returns the families
+   */
   logoutFamilies() {
     const { log } = this.deps;
     log.debug("Entering AdminViews.logoutFamilies().");
@@ -7397,6 +8452,11 @@ const slot = new InstanceSlot<AdminViews>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What the two admin surfaces both read: the pure JSON views behind the console
+ * and `/admin-api` (rule 7).
+ * @namespace
+ */
 export = {
   AdminViews: AdminViews,
   installInstance: (instance: AdminViews): void => slot.install(instance),

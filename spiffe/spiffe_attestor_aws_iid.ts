@@ -61,6 +61,10 @@ type NodeAttestationResult =
 
 const DEFAULT_TEMPLATE = '/{{ .PluginName }}/{{ .AccountID }}/' +
   '{{ .Region }}/{{ .InstanceID }}';
+/**
+ * The optional AWS SDK packages the attestor loads; missing any of them refuses
+ * the attestation rather than stopping the service.
+ */
 const PACKAGES = ['@aws-sdk/client-ec2', '@aws-sdk/client-iam',
                   '@aws-sdk/client-organizations', '@aws-sdk/client-eks',
                   '@aws-sdk/client-auto-scaling',
@@ -86,8 +90,23 @@ interface AwsIidDeps {
   now(): number;
 }
 
+/**
+ * The `aws_iid` node attestor: verifies an EC2 instance identity document
+ * signed by AWS for its region, after SPIRE's `awsiid` plugin.
+ *
+ * It also checks the instance through the EC2 API (running, and the block
+ * device check), optionally organization and EKS membership, and attests an
+ * instance once (trust on first use).
+ */
 class AwsIidAttestor {
+  /**
+   * The attestation type an agent names in `params.data.type`.
+   */
   readonly type = 'aws_iid';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'An EC2 instance identity document signed by AWS for ' +
     'its region, for a running instance that passes the block device check; ' +
     'once per instance.';
@@ -95,11 +114,22 @@ class AwsIidAttestor {
   private orgCache: Record<string, any> = {};
   private eksCache: Record<string, any> = {};
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, configuration, crypto, PKI, SPIFFE and gRPC
+   *   helpers, the agent path template, a package loader and a clock
+   */
   constructor(private readonly deps: AwsIidDeps) {
     deps.log.debug("Entering AwsIidAttestor.constructor().");
     deps.log.debug("Leaving AwsIidAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): AwsIidDeps {
     helpers.log.debug("Entering AwsIidAttestor.defaultDeps().");
     helpers.log.debug("Leaving AwsIidAttestor.defaultDeps().");
@@ -115,6 +145,15 @@ class AwsIidAttestor {
     };
   }
 
+  /**
+   * Marks an error code on the call and returns the gRPC status error to throw.
+   *
+   * @param call - the gRPC call the refusal is for
+   * @param code - the `STS-SPIFFE-…` error code to record
+   * @param grpcCode - the gRPC status code
+   * @param message - the message the client is sent
+   * @returns the status error
+   */
   refuse(call: any, code: string, grpcCode: number, message: string): Error {
     const { log, errorCodes, rpc } = this.deps;
     log.debug("Entering AwsIidAttestor.refuse(). " + code);
@@ -125,6 +164,12 @@ class AwsIidAttestor {
     return rpc.statusError(grpcCode, message);
   }
 
+  /**
+   * Reads a list setting, given as an array or a comma-separated string.
+   *
+   * @param key - the setting's name
+   * @returns the trimmed, non-empty values
+   */
   csv(key: string): string[] {
     const { log, config } = this.deps;
     log.debug("Entering AwsIidAttestor.csv(). " + key);
@@ -137,6 +182,12 @@ class AwsIidAttestor {
   }
 
   // The SDK modules, or the name of the first one missing.
+  /**
+   * Loads the optional AWS SDK modules.
+   *
+   * @returns the modules by package name, and `missing`: '' or the first
+   *   package that could not be loaded
+   */
   sdk(): { modules: Record<string, any>; missing: string } {
     const { log, load } = this.deps;
     log.debug("Entering AwsIidAttestor.sdk().");
@@ -156,6 +207,17 @@ class AwsIidAttestor {
   }
 
   // One client of an SDK, for a region, assuming `roleArn` when given.
+  /**
+   * Builds one AWS SDK client for a region, assuming `roleArn` when given and
+   * honouring `spiffe.awsIidEndpoint`.
+   *
+   * @param modules - the loaded SDK modules
+   * @param pkg - the package the client class is in
+   * @param ctor - the client class's name
+   * @param region - the AWS region
+   * @param roleArn - a role to assume, or ''
+   * @returns the client
+   */
   client(modules: Record<string, any>, pkg: string, ctor: string,
          region: string, roleArn: string): any {
     const { log, config } = this.deps;
@@ -175,6 +237,13 @@ class AwsIidAttestor {
 
   // The organization check's configuration, or null when there is none.
   // Throws a sentence for one that is not usable.
+  /**
+   * Reads and checks `spiffe.awsIidVerifyOrganization`.
+   *
+   * @returns the organization check's configuration with its defaults, or null
+   *   when there is none
+   * @throws an Error carrying a sentence when the configuration is not usable
+   */
   orgConfig(): any {
     const { log, config } = this.deps;
     log.debug("Entering AwsIidAttestor.orgConfig().");
@@ -220,6 +289,18 @@ class AwsIidAttestor {
 
   // A cached set that is reloaded when stale and, on a miss, refreshed up to
   // REFRESH_RETRIES times per TTL — SPIRE's orgValidator and eksValidator.
+  /**
+   * Asks whether an id is in a cached set, reloading the set when stale and, on
+   * a miss, up to a bounded number of times per TTL — SPIRE's orgValidator and
+   * eksValidator.
+   *
+   * @param cache - the cache the set is kept in
+   * @param key - the cache key, the configuration the set was read under
+   * @param id - the account or instance id asked about
+   * @param ttlSeconds - how long a loaded set is kept
+   * @param loader - loads the set afresh
+   * @returns whether the id is a member
+   */
   async cachedMember(cache: Record<string, any>, key: string, id: string,
                      ttlSeconds: number,
                      loader: () => Promise<Set<string>>): Promise<boolean> {
@@ -242,6 +323,14 @@ class AwsIidAttestor {
   }
 
   // Every ACTIVE account of the organization.
+  /**
+   * Lists every ACTIVE account of the organization, or the configured account
+   * list.
+   *
+   * @param modules - the loaded SDK modules
+   * @param org - the organization check's configuration
+   * @returns the account ids
+   */
   async organizationAccounts(modules: any, org: any): Promise<Set<string>> {
     const { log } = this.deps;
     log.debug("Entering AwsIidAttestor.organizationAccounts().");
@@ -270,6 +359,15 @@ class AwsIidAttestor {
   }
 
   // Every instance in a node group of the configured EKS clusters.
+  /**
+   * Lists every instance in a node group of the configured EKS clusters.
+   *
+   * @param modules - the loaded SDK modules
+   * @param region - the AWS region
+   * @param roleArn - a role to assume, or ''
+   * @param clusters - the EKS cluster names
+   * @returns the instance ids
+   */
   async eksInstances(modules: any, region: string, roleArn: string,
                      clusters: string[]): Promise<Set<string>> {
     const { log } = this.deps;
@@ -315,6 +413,13 @@ class AwsIidAttestor {
   }
 
   // SPIRE's `checkBlockDevice()`: '' or why not.
+  /**
+   * SPIRE's `checkBlockDevice()`: the root volume and the first network
+   * interface must have been attached within a minute of each other.
+   *
+   * @param instance - the instance as DescribeInstances returns it
+   * @returns '' when the check passes, otherwise why not
+   */
   blockDeviceProblem(instance: any): string {
     const { log } = this.deps;
     log.debug("Entering AwsIidAttestor.blockDeviceProblem().");
@@ -352,6 +457,17 @@ class AwsIidAttestor {
     return '';
   }
 
+  /**
+   * Verifies an instance identity document and its instance, and derives the
+   * agent's ID and selectors.
+   *
+   * @param context - the attestation context; the payload is the document, its
+   *   signature and the RSA-2048 form
+   * @returns the agent's ID from `spiffe.awsIidAgentPathTemplate`, with the
+   *   tag, security group, IAM role, account, image, instance, region and zone
+   *   selectors
+   * @throws a gRPC status error when the document or the instance is refused
+   */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
     const { log, config, stsCrypto, pki, spiffeId, rpc, agentPath } =
@@ -618,6 +734,12 @@ class AwsIidAttestor {
   }
 }
 
+/**
+ * The `aws_iid` node attestor (#40): an EC2 instance identity document,
+ * verified as SPIRE's plugin verifies it; the AWS SDK is an optional peer
+ * dependency.
+ * @namespace
+ */
 export = {
   AwsIidAttestor: AwsIidAttestor,
   PACKAGES: PACKAGES

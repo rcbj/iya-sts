@@ -116,12 +116,19 @@ import InstanceSlot = require('../common/instance_slot');
 const vz = validation.z;
 const vt = validation.types;
 
+/**
+ * The four SCEP operations: GetCACaps, GetCACert, GetNextCACert (answered 501)
+ * and PKIOperation.
+ */
 const OPERATIONS = ['GetCACaps', 'GetCACert', 'GetNextCACert',
                     'PKIOperation'];
 
 // RFC 8894 section 3.5.2. `SCEPStandard` asserts AES, POSTPKIOperation and
 // SHA-256; each is still named, because older clients read the list rather
 // than the umbrella. `GetNextCACert` is deliberately absent — see the header.
+/**
+ * The capabilities GetCACaps announces (RFC 8894 section 3.5.2).
+ */
 const CAPABILITIES = ['POSTPKIOperation', 'SHA-256', 'SHA-512', 'AES',
                       'SCEPStandard', 'Renewal'];
 
@@ -141,7 +148,14 @@ const QUERY = vz.object({
 // retried request, and how many a realm keeps. A result is a public
 // certificate, so the bound is about the store's size rather than a secret's
 // lifetime; a day covers any client that retries after losing a reply.
+/**
+ * How long a completed transaction's result is kept for CertPoll and a retried
+ * request: one day.
+ */
 const TRANSACTION_TTL_MS = 24 * 3600 * 1000;
+/**
+ * How many completed transactions a realm keeps.
+ */
 const MAX_TRANSACTIONS = 1000;
 
 const transactions = realms.map({ persist: 'scep.transactions',
@@ -207,7 +221,20 @@ interface ScepDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The Simple Certificate Enrolment Protocol (RFC 8894), per trust realm, at
+ * `/enroll/scep`.
+ *
+ * It decides which SCEP message it is looking at and what a CertRep says back;
+ * who gets a certificate is `common/cert_enrollment.ts`'s decision.
+ */
 class Scep {
+  /**
+   * Builds the SCEP server.
+   *
+   * @param deps - the modules it uses, with lazy loaders of persistence and the
+   *   revocation module
+   */
   constructor(private readonly deps: ScepDeps) {
     deps.log.debug("Entering Scep.constructor().");
     deps.log.debug("Leaving Scep.constructor().");
@@ -215,6 +242,11 @@ class Scep {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time instance is built from
+   */
   static defaultDeps(): ScepDeps {
     log.debug("Entering Scep.defaultDeps().");
     log.debug("Leaving Scep.defaultDeps().");
@@ -240,6 +272,11 @@ class Scep {
     };
   }
 
+  /**
+   * Returns the persistence module, loaded lazily.
+   *
+   * @returns the module
+   */
   persistenceModule() {
     const { log, loadPersistence } = this.deps;
     log.debug("Entering Scep.persistenceModule().");
@@ -249,6 +286,12 @@ class Scep {
     return loadPersistence();
   }
 
+  /**
+   * Waits a number of milliseconds.
+   *
+   * @param ms - the wait
+   * @returns a promise that resolves after it
+   */
   pause(ms) {
     const { log } = this.deps;
     log.debug("Entering Scep.pause().");
@@ -258,6 +301,15 @@ class Scep {
     });
   }
 
+  /**
+   * Runs a transaction's handler under a cluster claim on its transactionID,
+   * waiting for another node's answer rather than racing it.
+   *
+   * @param key - the realm and transactionID
+   * @param fn - the handler
+   * @returns a promise of the handler's answer, or a FAILURE when the wait ran
+   *   out or the store could not be asked
+   */
   async acrossNodes(key, fn) {
     const { log, claims, errorCodes, cms } = this.deps;
     log.debug("Entering Scep.acrossNodes().");
@@ -322,6 +374,16 @@ class Scep {
   // ---------------------------------------------------------------------------
   // THE HTTP ERROR, for a request that cannot be answered with a CertRep.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends the plain-text HTTP error for a request that cannot be answered with
+   * a CertRep.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param code - the STS error code
+   * @param text - the message
+   * @param headers - extra headers
+   */
   // error-code: none — the definition of this helper, not a call to it
   scepError(res, status, code, text, headers?) {
     const { log, errorCodes } = this.deps;
@@ -337,6 +399,11 @@ class Scep {
     log.debug("Leaving Scep.scepError().");
   }
 
+  /**
+   * Says whether SCEP is on in this realm (`scep.enabled`).
+   *
+   * @returns true unless the setting is false
+   */
   enabled() {
     const { log, config } = this.deps;
     log.debug("Entering Scep.enabled().");
@@ -344,6 +411,11 @@ class Scep {
     return config.value('scep.enabled') !== false;
   }
 
+  /**
+   * Returns the largest PKIOperation message accepted (`scep.maxRequestBytes`).
+   *
+   * @returns the byte count
+   */
   maxBytes() {
     const { log, config } = this.deps;
     log.debug("Entering Scep.maxBytes().");
@@ -351,6 +423,11 @@ class Scep {
     return Number(config.value('scep.maxRequestBytes'));
   }
 
+  /**
+   * Records one request on the enrollment monitor.
+   *
+   * @param detail - the operation, outcome, status and error code
+   */
   record(detail) {
     const { log, monitor } = this.deps;
     log.debug("Entering Scep.record().");
@@ -361,6 +438,10 @@ class Scep {
   // ---------------------------------------------------------------------------
   // THE TRANSACTION STORE.
   // ---------------------------------------------------------------------------
+  /**
+   * Drops expired transactions from the realm's store, and the oldest past the
+   * cap.
+   */
   prune() {
     const { log } = this.deps;
     log.debug("Entering Scep.prune().");
@@ -380,6 +461,12 @@ class Scep {
     log.debug("Leaving Scep.prune().");
   }
 
+  /**
+   * Returns a completed transaction's stored result.
+   *
+   * @param id - the transactionID
+   * @returns the result, or null when absent or expired
+   */
   transactionOf(id) {
     const { log } = this.deps;
     log.debug("Entering Scep.transactionOf().");
@@ -389,6 +476,12 @@ class Scep {
     return held;
   }
 
+  /**
+   * Stores a completed transaction's result for CertPoll and retries.
+   *
+   * @param id - the transactionID
+   * @param result - the result
+   */
   remember(id, result) {
     const { log } = this.deps;
     log.debug("Entering Scep.remember().");
@@ -402,6 +495,14 @@ class Scep {
     log.debug("Leaving Scep.remember().");
   }
 
+  /**
+   * Runs a transaction's handler one at a time per transactionID, in this
+   * process and across the cluster.
+   *
+   * @param key - the realm and transactionID
+   * @param fn - the handler
+   * @returns a promise of the handler's answer
+   */
   serialized(key, fn) {
     const { log } = this.deps;
     const self = this;
@@ -431,6 +532,15 @@ class Scep {
   // ---------------------------------------------------------------------------
   // A REFUSAL, AS A CertRep FAILURE WILL CARRY IT.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a refusal as a CertRep FAILURE will carry it.
+   *
+   * @param code - the STS error code
+   * @param why - the reason
+   * @param failInfo - the failInfo
+   * @param extra - further members
+   * @returns `ok: false`, the code, reason and failInfo
+   */
   failed(code, why, failInfo, extra?) {
     const { log, cms } = this.deps;
     log.debug("Entering Scep.failed(). code=" + code);
@@ -442,6 +552,12 @@ class Scep {
 
   // Every core refusal, as the failInfo a client is told. The table beside each
   // code in common/error_codes.js says the same thing in its `spec` column.
+  /**
+   * Returns the failInfo a client is told for an enrollment core refusal.
+   *
+   * @param code - the core's error code
+   * @returns the failInfo value; badRequest for a code the table does not name
+   */
   failInfoForCore(code) {
     const { log, cms } = this.deps;
     log.debug("Entering Scep.failInfoForCore(). code=" + code);
@@ -456,6 +572,13 @@ class Scep {
     return cms.FAIL_INFO[byCode[code] || 'badRequest'];
   }
 
+  /**
+   * Turns an enrollment core refusal into a CertRep FAILURE.
+   *
+   * @param refusal - the core's refusal
+   * @param extra - further members
+   * @returns the FAILURE
+   */
   fromCore(refusal, extra?) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Scep.fromCore().");
@@ -477,6 +600,14 @@ class Scep {
   // ---------------------------------------------------------------------------
   // THE MESSAGE TYPES.
   // ---------------------------------------------------------------------------
+  /**
+   * Opens a request's envelope with the RA key and parses the PKCS #10 inside
+   * it.
+   *
+   * @param message - the parsed pkiMessage
+   * @param raKeys - the RA's certificate and private key
+   * @returns a promise of the CSR and the content cipher, or a `refusal`
+   */
   async readRequest(message, raKeys) {
     const { log, cms, core, nodeCrypto } = this.deps;
     log.debug("Entering Scep.readRequest().");
@@ -507,6 +638,15 @@ class Scep {
   }
 
   // The stored result of a transactionID, when this request is a retry of it.
+  /**
+   * Returns the stored result of a transaction when this request is a retry of
+   * it.
+   *
+   * @param message - the parsed pkiMessage
+   * @param read - the opened request
+   * @returns the stored result as a replay, a FAILURE when the retry differs,
+   *   or null
+   */
   replayed(message, read) {
     const { log, cms } = this.deps;
     log.debug("Entering Scep.replayed().");
@@ -552,6 +692,17 @@ class Scep {
              principal: held.principal, serialHex: held.serialHex };
   }
 
+  /**
+   * Answers a PKCSReq: a certificate for the entry a challenge password was
+   * issued for.
+   *
+   * A request signed by a certificate this realm issued is answered as a
+   * RenewalReq.
+   *
+   * @param ctx - the parsed `message`, the `ra` keys, the `urlProfile` and the
+   *   request
+   * @returns a promise of the issued certificate, or a FAILURE
+   */
   async pkcsReq(ctx) {
     const { log, cms, core, realms } = this.deps;
     log.debug("Entering Scep.pkcsReq().");
@@ -692,6 +843,13 @@ class Scep {
   }
 
   // The entry a signing certificate belongs to — RenewalReq, GetCert, GetCRL.
+  /**
+   * Authenticates a message's signing certificate as an enrolled certificate of
+   * an entry, for RenewalReq, GetCert and GetCRL.
+   *
+   * @param message - the parsed pkiMessage
+   * @returns a promise of `ok` and the principal, or a FAILURE
+   */
   async signerEntry(message) {
     const { log, core, cms } = this.deps;
     log.debug("Entering Scep.signerEntry().");
@@ -710,6 +868,14 @@ class Scep {
     return answer;
   }
 
+  /**
+   * Answers a RenewalReq: a new certificate for the entry whose enrolled
+   * certificate signed the request, replacing it.
+   *
+   * @param ctx - the parsed `message`, the `ra` keys, the `urlProfile` and the
+   *   request
+   * @returns a promise of the issued certificate, or a FAILURE
+   */
   async renewalReq(ctx) {
     const { log, core, cms } = this.deps;
     log.debug("Entering Scep.renewalReq().");
@@ -784,6 +950,12 @@ class Scep {
                            identity: identity, replaced: identity }, done);
   }
 
+  /**
+   * Answers a CertPoll with what the completed transaction produced.
+   *
+   * @param ctx - the parsed `message` and the `ra` keys
+   * @returns a promise of the stored certificate, or a FAILURE
+   */
   async certPoll(ctx) {
     const { log, cms } = this.deps;
     log.debug("Entering Scep.certPoll().");
@@ -825,6 +997,12 @@ class Scep {
              serialHex: held.serialHex, identity: message.transactionID };
   }
 
+  /**
+   * Answers a GetCert with a certificate the signer's entry holds.
+   *
+   * @param ctx - the parsed `message` and the `ra` keys
+   * @returns a promise of the certificate, or a FAILURE
+   */
   async getCert(ctx) {
     const { log, cms, core } = this.deps;
     log.debug("Entering Scep.getCert().");
@@ -867,6 +1045,12 @@ class Scep {
              identity: auth.principal.certificateSerial };
   }
 
+  /**
+   * Answers a GetCRL with the CRL of the SCEP Issuing CA.
+   *
+   * @param ctx - the parsed `message` and the `ra` keys
+   * @returns a promise of the CRL, or a FAILURE
+   */
   async getCrl(ctx) {
     const { log, cms, core, loadPkiRevocation, realms, errorCodes } = this.deps;
     log.debug("Entering Scep.getCrl().");
@@ -924,6 +1108,14 @@ class Scep {
              principal: entryUri, identity: auth.principal.certificateSerial };
   }
 
+  /**
+   * Verifies a pkiMessage's signer and dispatches it to the handler for its
+   * messageType.
+   *
+   * @param ctx - the parsed `message`, the `ra` keys, the `urlProfile` and the
+   *   request
+   * @returns a promise of the handler's answer, or a FAILURE
+   */
   async answerMessage(ctx) {
     const { log, cms, realms } = this.deps;
     log.debug("Entering Scep.answerMessage().");
@@ -963,6 +1155,13 @@ class Scep {
   // ---------------------------------------------------------------------------
   // THE FOUR OPERATIONS.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers GetCACaps with the capabilities list.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param operation - the operation name, for the monitor
+   */
   getCaCaps(req, res, operation) {
     const { log } = this.deps;
     log.debug("Entering Scep.getCaCaps().");
@@ -974,6 +1173,14 @@ class Scep {
     log.debug("Leaving Scep.getCaCaps().");
   }
 
+  /**
+   * Answers GetCACert with the RA certificate and the CA chain as a
+   * certificates-only SignedData.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param operation - the operation name, for the monitor
+   */
   async getCaCert(req, res, operation) {
     const { log, ra, realms, core, errorCodes, cms } = this.deps;
     log.debug("Entering Scep.getCaCert().");
@@ -999,6 +1206,15 @@ class Scep {
     log.debug("Leaving Scep.getCaCert().");
   }
 
+  /**
+   * Reads a PKIOperation's message: the POST body, or the GET binding's base64
+   * `message` parameter, bounded by `scep.maxRequestBytes`.
+   *
+   * @param req - the request
+   * @param res - the response, which is answered when the message is refused
+   * @param operation - the operation name, for the monitor
+   * @returns the bytes, or null when refused
+   */
   messageBytes(req, res, operation) {
     const { log } = this.deps;
     log.debug("Entering Scep.messageBytes().");
@@ -1079,6 +1295,15 @@ class Scep {
     return bytes;
   }
 
+  /**
+   * Answers a PKIOperation: reads, verifies and answers the pkiMessage with a
+   * signed CertRep.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param operation - the operation name
+   * @param urlProfile - the profile the path named
+   */
   async pkiOperation(req, res, operation, urlProfile) {
     const { log, core, errorCodes, cms, audit, ra, realms } = this.deps;
     log.debug("Entering Scep.pkiOperation().");
@@ -1233,6 +1458,13 @@ class Scep {
   // ---------------------------------------------------------------------------
   // ONE HANDLER FOR THE EIGHT ROUTES.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles a request on any of the SCEP routes, dispatching by its `operation`
+   * parameter.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   async handle(req, res) {
     const { log, validation } = this.deps;
     log.debug("Entering Scep.handle(). " + req.method + " " + req.path);
@@ -1293,6 +1525,13 @@ class Scep {
     log.debug("Leaving Scep.handle().");
   }
 
+  /**
+   * The route handler: answers the request, and a 500 (STS-SCEP-0044) when
+   * handling it failed unexpectedly.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   route(req, res) {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -1312,6 +1551,12 @@ class Scep {
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order
   // is unchanged (rule 1). Nothing calls it at load.
+  /**
+   * Registers the GET and POST routes on the four SCEP paths; called by
+   * `common/protocol_stack.ts`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log } = this.deps;
     const self = this;
@@ -1353,6 +1598,10 @@ const HANDLERS = { 19: slot.forward('pkcsReq'),
 
 // `pkiclient.exe` BEFORE `:profile`, so the literal CGI name every SCEP client
 // appends is never read as a profile called "pkiclient.exe".
+/**
+ * The four SCEP paths, the CGI name before the profile segment so it is never
+ * read as a profile.
+ */
 const PATHS = ['/enroll/scep', '/enroll/scep/pkiclient.exe',
                '/enroll/scep/:profile/pkiclient.exe',
                '/enroll/scep/:profile'];
@@ -1381,10 +1630,26 @@ require('./scep_admin');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Simple Certificate Enrolment Protocol (RFC 8894), per trust realm.
+ *
+ * The exports forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Registers the SCEP routes on the installed instance.
+   */
   registerRoutes: slot.forward('registerRoutes'),
   Scep: Scep,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: Scep): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   OPERATIONS: OPERATIONS,
   CAPABILITIES: CAPABILITIES,

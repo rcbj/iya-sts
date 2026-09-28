@@ -102,9 +102,15 @@ import usedAssertions = require('../common/used_assertions');
 type Json = any;
 
 // The lease the leader holds.
+/**
+ * The lease the scheduler's leader holds; only its holder runs cluster jobs.
+ */
 const LEADER_LEASE = 'ops.scheduler';
 
 // The claim scope a run is taken under.
+/**
+ * The claim scope a cluster run is claimed under, its value the run's id.
+ */
 const RUN_SCOPE = 'scheduler.run';
 
 // The store's keys that are not runs.
@@ -244,6 +250,10 @@ function compareRows(a: Json, b: Json): number {
 // PERSISTED where this service persists what it mints, TOMBSTONED — a
 // removed run must not be brought back by a node holding an old copy — and
 // MERGED by rank.
+/**
+ * The persisted, tombstoned, per-realm store of run rows, the leader's row,
+ * per-process rows and queued commands; replicas merge by rank.
+ */
 const runStore = realms.map({
   persist: 'scheduler.runs',
   tombstone: true,
@@ -257,10 +267,28 @@ const runStore = realms.map({
 // A quiet job's run is recorded at most this often while its outcome holds.
 const QUIET_RECORD_MS = 60000;
 
+/**
+ * The one scheduler for every periodic job (#49): a cluster job runs once for
+ * the service on the leader, fenced by a claim per run; a per-process job
+ * runs in every process that holds the state it cleans. Every run is a row in
+ * the store, so any process reports the same figures.
+ */
 class Scheduler {
+  /**
+   * The leader's lease name.
+   */
   static readonly LEADER_LEASE = LEADER_LEASE;
+  /**
+   * The claim scope of a cluster run.
+   */
   static readonly RUN_SCOPE = RUN_SCOPE;
+  /**
+   * A run's states: queued, running, succeeded, failed and abandoned.
+   */
   static readonly STATES = STATES;
+  /**
+   * Orders two copies of a run row by rank; the higher one wins a merge.
+   */
   static readonly compareRows = compareRows;
 
   private readonly jobs = new Map<string, JobSpec>();
@@ -286,11 +314,22 @@ class Scheduler {
   private clockOffset = 0;
   private lastClockAt = 0;
 
+  /**
+   * Builds a scheduler from its dependencies.
+   *
+   * @param deps - the logger, settings, realms, cluster, claims, store and
+   *   clock functions, and timers
+   */
   constructor(private readonly deps: SchedulerDeps) {
     deps.log.debug("Entering Scheduler.constructor().");
     deps.log.debug("Leaving Scheduler.constructor().");
   }
 
+  /**
+   * Returns the dependencies the process's scheduler is built from.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): SchedulerDeps {
     helpers.log.debug("Entering Scheduler.defaultDeps().");
     helpers.log.debug("Leaving Scheduler.defaultDeps().");
@@ -343,6 +382,12 @@ class Scheduler {
   // The database's clock where the store has one (postgres), this process's
   // otherwise — which on a store nothing else shares is the same thing.
   // LAZY: `persistence.js` requires half the service.
+  /**
+   * Reads the database's clock where the store has one, this process's
+   * otherwise; a failure falls back to this process's clock.
+   *
+   * @returns a promise of the time in milliseconds
+   */
   static databaseNow(): Promise<number> {
     helpers.log.debug("Entering Scheduler.databaseNow().");
     const persistence = require('../persistence/persistence');
@@ -365,6 +410,14 @@ class Scheduler {
 
   // CRON THROUGH CRONER, AND NOTHING ELSE THROUGH IT (D1). In UTC, so every
   // node reads an expression the same way whatever its container's zone.
+  /**
+   * Returns a cron expression's most recent occurrence at or before a time, in
+   * UTC.
+   *
+   * @param expr - the cron expression
+   * @param ms - the reference time, in milliseconds
+   * @returns the occurrence in milliseconds, or null when there is none
+   */
   static cronPrev(expr: string, ms: number): number | null {
     helpers.log.debug("Entering Scheduler.cronPrev().");
     const { Cron } = require('croner');
@@ -379,6 +432,14 @@ class Scheduler {
     return runs && runs[0] ? runs[0].getTime() : null;
   }
 
+  /**
+   * Returns a cron expression's next occurrence after a time, in UTC.
+   *
+   * @param expr - the cron expression
+   * @param ms - the reference time, in milliseconds
+   * @returns the occurrence in milliseconds, or null when there is none
+   * @throws Error when croner cannot read the expression
+   */
   static cronNext(expr: string, ms: number): number | null {
     helpers.log.debug("Entering Scheduler.cronNext().");
     const { Cron } = require('croner');
@@ -395,6 +456,16 @@ class Scheduler {
   // the page that never runs, and a registration happens at require time,
   // where a throw is a programming error the first test finds.
   // -------------------------------------------------------------------------
+  /**
+   * Registers a job. Registering starts nothing.
+   *
+   * @param spec - the job: an id, title, describe, owner, run(), and exactly
+   *   one of everyMs, everySetting, cron and manualOnly; optionally kind
+   *   ('cluster' or 'per-process'), scope ('service' or 'realm') and off()
+   * @returns the registered job, with its defaults filled in
+   * @throws Error (STS-SCHED-0009) when a member is missing or malformed, or
+   *   the id is taken
+   */
   register(spec: JobSpec): JobSpec {
     const { log, errorCodes, cronNext } = this.deps;
     log.debug("Entering Scheduler.register(). " + (spec && spec.id));
@@ -463,6 +534,12 @@ class Scheduler {
     return job;
   }
 
+  /**
+   * Returns a registered job.
+   *
+   * @param id - the job's id
+   * @returns the job, or null
+   */
   job(id: string): JobSpec | null {
     const { log } = this.deps;
     log.debug("Entering Scheduler.job().");
@@ -470,6 +547,11 @@ class Scheduler {
     return this.jobs.get(String(id)) || null;
   }
 
+  /**
+   * Returns the ids of every registered job, sorted.
+   *
+   * @returns the ids
+   */
   jobIds(): string[] {
     const { log } = this.deps;
     log.debug("Entering Scheduler.jobIds().");
@@ -478,6 +560,12 @@ class Scheduler {
   }
 
   // For tests: a registration forgotten, so a test can register its own.
+  /**
+   * Forgets a registration. For tests.
+   *
+   * @param id - the job's id
+   * @returns true when a job was removed
+   */
   unregister(id: string): boolean {
     const { log } = this.deps;
     log.debug("Entering Scheduler.unregister().");
@@ -502,6 +590,12 @@ class Scheduler {
     });
   }
 
+  /**
+   * Returns the time by the database's clock, carried between readings by its
+   * offset from this process's clock.
+   *
+   * @returns the time in milliseconds
+   */
   nowMs(): number {
     const { log, now } = this.deps;
     log.debug("Entering Scheduler.nowMs().");
@@ -523,6 +617,12 @@ class Scheduler {
   // all would leave every request in this process waiting on the store —
   // which is what 11:00:07 was. So at least one is always left, whatever
   // the setting says.
+  /**
+   * Returns how many cluster runs the leader may have going at once:
+   * `scheduler.maxConcurrentRuns`, always leaving one store connection free.
+   *
+   * @returns the limit, at least 1
+   */
   maxConcurrentRuns(): number {
     const { log } = this.deps;
     log.debug("Entering Scheduler.maxConcurrentRuns().");
@@ -554,6 +654,14 @@ class Scheduler {
   // rounded up to the tick. Floored at 100 ms so that a boundary crossed
   // while a tick ran cannot spin.
   // -------------------------------------------------------------------------
+  /**
+   * Returns how long until the next tick of one kind of job: until the earliest
+   * slot boundary of such a job that is on, at most `scheduler.tickS` and at
+   * least 100 ms.
+   *
+   * @param kind - 'cluster' or 'per-process'
+   * @returns the delay in milliseconds
+   */
   nextDelayMs(kind: string): number {
     const { log } = this.deps;
     log.debug("Entering Scheduler.nextDelayMs(). " + kind);
@@ -589,6 +697,12 @@ class Scheduler {
   // Read directly from its setting: 0 is a legal value there and means OFF
   // (the root CLAUDE.md's `|| n` rule), which `offReason()` reports.
   // -------------------------------------------------------------------------
+  /**
+   * Returns a job's interval, from `everyMs()` or its setting.
+   *
+   * @param job - the job
+   * @returns the interval in milliseconds, 0 for a job with none
+   */
   intervalMs(job: JobSpec): number {
     const { log, config } = this.deps;
     log.debug("Entering Scheduler.intervalMs(). " + job.id);
@@ -609,6 +723,14 @@ class Scheduler {
   // The slot a cluster job is due for at `at`, and when the next one starts:
   // `{ slot, startsAt, nextAt }`, or null when it has none (on demand only,
   // or an interval of 0).
+  /**
+   * Returns the slot a job is due for at a time, and when the next starts.
+   *
+   * @param job - the job
+   * @param at - the time, in milliseconds by the database's clock
+   * @returns `{ slot, startsAt, nextAt }`, or null for a job on demand only or
+   *   with an interval of 0
+   */
   slotAt(job: JobSpec, at: number): Json {
     const { log, cronPrev, cronNext } = this.deps;
     log.debug("Entering Scheduler.slotAt(). " + job.id);
@@ -634,6 +756,12 @@ class Scheduler {
   }
 
   // In words, for the page and the API.
+  /**
+   * Describes a job's schedule in words, for the page and the API.
+   *
+   * @param job - the job
+   * @returns the description
+   */
   scheduleText(job: JobSpec): string {
     const { log } = this.deps;
     log.debug("Entering Scheduler.scheduleText().");
@@ -654,6 +782,12 @@ class Scheduler {
   }
 
   // "4 min 12 s", "2 h 5 min", "90 d" — two units at most.
+  /**
+   * Formats a duration in at most two units, such as "4 min 12 s".
+   *
+   * @param ms - the duration in milliseconds
+   * @returns the text
+   */
   static span(ms: number): string {
     helpers.log.debug("Entering Scheduler.span().");
     const s = Math.max(0, Math.round(ms / 1000));
@@ -678,6 +812,14 @@ class Scheduler {
   // the scheduler itself, the job's own id in `scheduler.disabledJobs`, and
   // whatever the job says (its interval setting at 0, a mode predicate).
   // -------------------------------------------------------------------------
+  /**
+   * Says why a job is off: the scheduler disabled, the job named in
+   * `scheduler.disabledJobs`, an interval of 0, or the job's own `off()`.
+   *
+   * @param job - the job
+   * @param realmId - the realm asked about; the default realm when omitted
+   * @returns the reason, or '' when the job is on
+   */
   offReason(job: JobSpec, realmId?: string): string {
     const { log, config } = this.deps;
     log.debug("Entering Scheduler.offReason(). " + job.id);
@@ -707,6 +849,11 @@ class Scheduler {
     return own;
   }
 
+  /**
+   * Returns the job ids named in `scheduler.disabledJobs`.
+   *
+   * @returns the ids
+   */
   disabledIds(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering Scheduler.disabledIds().");
@@ -797,6 +944,14 @@ class Scheduler {
   // front process campaigns for the lease; with clustering off `lead()`
   // answers at once. Idempotent.
   // -------------------------------------------------------------------------
+  /**
+   * Starts the scheduler: a front process campaigns for the leader's lease and
+   * runs per-process jobs; a request worker runs per-process jobs only.
+   * Idempotent.
+   *
+   * @param role - 'front' or 'per-process'
+   * @returns true when started by this call, false when already started
+   */
   start(role?: string): boolean {
     const { log, cluster, isRequestWorker } = this.deps;
     const self = this;
@@ -828,6 +983,9 @@ class Scheduler {
     return true;
   }
 
+  /**
+   * Stops the scheduler's timers and gives up leading in this instance.
+   */
   stop(): void {
     const { log, clearTimer } = this.deps;
     log.debug("Entering Scheduler.stop().");
@@ -844,6 +1002,11 @@ class Scheduler {
     log.debug("Leaving Scheduler.stop().");
   }
 
+  /**
+   * Says whether this process is the scheduler's leader.
+   *
+   * @returns true when leading
+   */
   isLeading(): boolean {
     const { log } = this.deps;
     log.debug("Entering Scheduler.isLeading().");
@@ -974,6 +1137,13 @@ class Scheduler {
   // ONE TICK OF THE LEADER. Serialised: a tick that is still going when the
   // next is asked for is the one that answers.
   // -------------------------------------------------------------------------
+  /**
+   * Runs one tick of the leader: obeys queued commands and starts due cluster
+   * runs. Serialised: a call during a tick gets that tick's promise, and a
+   * failure is logged rather than rejected.
+   *
+   * @returns a promise that settles when the tick ends
+   */
   tick(): Promise<void> {
     const { log } = this.deps;
     const self = this;
@@ -1267,6 +1437,12 @@ class Scheduler {
   }
 
   // A job's answer, kept small: the row is replicated and drawn on a page.
+  /**
+   * Reduces a job's result to text of at most 500 characters for its run row.
+   *
+   * @param result - what the job's run() returned
+   * @returns the text, or null for no result
+   */
   static summaryOf(result: Json): Json {
     helpers.log.debug("Entering Scheduler.summaryOf().");
     if (result === undefined || result === null) {
@@ -1315,6 +1491,12 @@ class Scheduler {
     log.debug("Leaving Scheduler.scheduleProcessTick().");
   }
 
+  /**
+   * Runs every per-process job whose slot this process has not yet run, and
+   * records each process's latest run in the store.
+   *
+   * @returns a promise that settles when done
+   */
   async processTick(): Promise<void> {
     const { log } = this.deps;
     const self = this;
@@ -1411,6 +1593,17 @@ class Scheduler {
   // is the same run. Answers `{ ok, runId, run }` or `{ ok: false,
   // errorCode, why }`; the caller answers 202 or 400.
   // -------------------------------------------------------------------------
+  /**
+   * Queues a manual run for the leader to pick up at its next tick; a request
+   * matching one already queued is that run.
+   *
+   * @param jobId - the job's id
+   * @param opts - `realm` (for a realm-scoped job), `params`, `requestedBy`,
+   *   `via` and `channel`
+   * @returns `{ ok: true, runId, run }`, or `{ ok: false, errorCode, status,
+   *   why }` for an unknown or off job, one not run by hand, or an unknown
+   *   realm
+   */
   requestRun(jobId: string, opts?: Json): Json {
     const { log, realms } = this.deps;
     log.debug("Entering Scheduler.requestRun(). " + jobId);
@@ -1482,6 +1675,14 @@ class Scheduler {
   // STEPPING DOWN (D10): a command row the leader obeys at its next tick —
   // wherever the request was answered, which behind a balancer is any node.
   // -------------------------------------------------------------------------
+  /**
+   * Queues a command asking the scheduler's leader to stand down, obeyed at its
+   * next tick on whichever node leads.
+   *
+   * @param opts - `requestedBy`, `via` and `channel`
+   * @returns `{ ok: true, command, leaderAtRequest }`, or `{ ok: false, ... }`
+   *   when the service is not clustered
+   */
   requestStepDown(opts?: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Scheduler.requestStepDown().");
@@ -1555,6 +1756,14 @@ class Scheduler {
   // `scheduler.maxRuns` per realm the oldest finished ones go first — never a
   // queued or running row, and never a job's latest run.
   // -------------------------------------------------------------------------
+  /**
+   * Removes finished runs older than `scheduler.historyDays`, then the oldest
+   * past `scheduler.maxRuns` per realm; never a queued or running row, and
+   * never a job's latest run.
+   *
+   * @param at - the time to prune at; now by default
+   * @returns how many rows were removed
+   */
   prune(at?: number): number {
     const { log, realms } = this.deps;
     const self = this;
@@ -1615,6 +1824,15 @@ class Scheduler {
   // same figures. `realmId` confines it to one realm's realm-scoped rows (a
   // realm administrator's view), with the service jobs shown read-only.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the report `/admin/scheduler` draws and the API answers: the
+   * leader, every job's view, recent runs and queued commands, read from the
+   * store on the database's clock.
+   *
+   * @param opts - `realm` confines it to one realm's realm-scoped rows; also
+   *   the filters of recentRuns()
+   * @returns a promise of the report
+   */
   async status(opts?: Json): Promise<Json> {
     const { log, realms } = this.deps;
     const self = this;
@@ -1853,6 +2071,12 @@ class Scheduler {
     log.debug("Leaving Scheduler.nextRunOf(). " + view.nextRunState + ".");
   }
 
+  /**
+   * Returns a run row as the page and the API show it, times as ISO strings.
+   *
+   * @param row - the stored row
+   * @returns the view
+   */
   runView(row: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runView().");
@@ -1934,6 +2158,13 @@ class Scheduler {
   }
 
   // Recent runs, newest first, filtered by job, realm and outcome.
+  /**
+   * Returns recent runs, newest first.
+   *
+   * @param opts - filters: `realm`, `job` and `outcome`
+   * @param at - accepted for the caller's convenience and not read
+   * @returns the runs' views
+   */
   recentRuns(opts: Json, at?: number): Json[] {
     const { log, realms } = this.deps;
     const self = this;
@@ -1974,6 +2205,12 @@ class Scheduler {
   }
 
   // One run by id, in whichever realm holds it.
+  /**
+   * Finds a run by id, in whichever realm holds it.
+   *
+   * @param runId - the run's id
+   * @returns the run's view, or null
+   */
   findRun(runId: string): Json | null {
     const { log, realms } = this.deps;
     const self = this;
@@ -1993,6 +2230,10 @@ class Scheduler {
   }
 
   // For tests: forget what this instance holds in memory.
+  /**
+   * Stops the scheduler and forgets what this instance holds in memory. For
+   * tests.
+   */
   resetForTests(): void {
     const { log } = this.deps;
     log.debug("Entering Scheduler.resetForTests().");
@@ -2008,6 +2249,9 @@ class Scheduler {
 // THE ONE SCHEDULER OF THIS PROCESS. Every job's owner registers with it at
 // require time; `server.js` and `common/request_worker.ts` start it.
 // ---------------------------------------------------------------------------
+/**
+ * The one scheduler of this process, which every job's owner registers with.
+ */
 const scheduler = new Scheduler(Scheduler.defaultDeps());
 
 // The scheduler's own housekeeping is a job like any other.
@@ -2044,6 +2288,14 @@ clusterClaims.ensurePurgeJob(scheduler);
 clusterCounters.ensureWindowPurgeJob(scheduler);
 usedAssertions.ensurePurgeJob(scheduler);
 
+/**
+ * One scheduler for every periodic job in this service (#49), each job run on
+ * exactly one node or, for a per-process job, in every process.
+ *
+ * The functions exported beside `Scheduler` are the process's scheduler's
+ * methods, bound.
+ * @namespace
+ */
 export = {
   Scheduler: Scheduler,
   scheduler: scheduler,

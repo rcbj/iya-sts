@@ -309,6 +309,12 @@ function dropSettledWaiter() {
 // A ticket for a request about to be sent to `entry`. Cleared when that worker
 // reports a commit — see receiveCommitted(), which clears everything the worker
 // owes, because its flush covers every request it has finished.
+/**
+ * Issues a read-barrier ticket for a request about to be sent to a worker.
+ *
+ * @param entry - the worker's table entry
+ * @returns the ticket number, or undefined when read-your-write is off
+ */
 function dispatchTicket(entry) {
   log.debug("Entering dispatchTicket().");
   if (!readYourWrite()) {
@@ -338,6 +344,13 @@ function dispatchTicket(entry) {
 // committed — which is a stale read, silent, and rare enough to look like
 // nothing. It cost one lost group member in five thousand in the bulk-load
 // job, which is exactly what a race like this looks like from outside.
+/**
+ * Marks a ticket's response finished, so that it may now block readers
+ * until the worker reports the write committed.
+ *
+ * @param entry - the worker's table entry
+ * @param ticket - the ticket number
+ */
 function ticketFinished(entry, ticket) {
   log.debug("Entering ticketFinished().");
   if (!ticket || !entry.tickets || !entry.tickets.has(ticket)) {
@@ -380,6 +393,13 @@ function ticketFinished(entry, ticket) {
 // the handler and the failure was on the way back. That is harmless:
 // receiveCommitted() skips a ticket the entry no longer owns.
 // ---------------------------------------------------------------------------
+/**
+ * Drops a ticket the worker never answered (a 502), rather than marking it
+ * finished, and reconsiders every waiting reader.
+ *
+ * @param entry - the worker's table entry, or null
+ * @param ticket - the ticket number
+ */
 function ticketAbandoned(entry, ticket) {
   log.debug("Entering ticketAbandoned().");
   if (!ticket) {
@@ -425,6 +445,14 @@ let reaped = 0;
 // `at` is the clock, and it is a parameter for one reason: the threshold is
 // thirty seconds and a test that waited thirty seconds to assert one `if` is a
 // test nobody runs. Every caller in this file passes nothing.
+/**
+ * Drops finished tickets at or below `need` that no worker has reported
+ * committed for more than thirty seconds, and releases waiting readers.
+ *
+ * Changes no read's outcome, only how long the next reader waits.
+ * @param need - the highest ticket the timed-out reader was waiting below
+ * @param clock - optional; the current time in milliseconds, for tests
+ */
 function reapStuckTickets(need, clock) {
   log.debug('Entering reapStuckTickets(). need=' + need);
   const now = clock || Date.now();
@@ -524,6 +552,15 @@ function warnSparingly(code, message) {
   log.debug("Leaving warnSparingly().");
 }
 
+/**
+ * Waits until every write answered before now has been reported committed,
+ * bounded at two seconds.
+ *
+ * Resolves at once when read-your-write is off or nothing blocks; a timeout
+ * is logged and the read is served anyway.
+ * @param servedBy - the worker entry that will serve the read
+ * @returns a promise that resolves when the reader may go on
+ */
 function awaitCommitConfirmations(servedBy) {
   log.debug("Entering awaitCommitConfirmations().");
   if (!readYourWrite()) {
@@ -575,6 +612,13 @@ function awaitCommitConfirmations(servedBy) {
 }
 
 
+/**
+ * Records the TLS certificate every worker must present and pin.
+ *
+ * @param material - `{ certPem, keyPem, chainPem, trustAnchorPem,
+ *   extraCertPems }`; the first two are required
+ * @throws Error when `certPem` or `keyPem` is missing
+ */
 function setServerCertificate(material) {
   log.debug("Entering setServerCertificate().");
   if (!material || !material.certPem || !material.keyPem) {
@@ -624,6 +668,10 @@ const IS_REQUEST_WORKER = !!process.env.STS_REQUEST_WORKER;
 // in proxy() has to name them too — a header a client may not set is only safe
 // while every place that touches it agrees what it is called.
 // ---------------------------------------------------------------------------
+/**
+ * The internal header that carries a client certificate to a worker;
+ * stripped from what a client sends.
+ */
 const PEER_CERT_HEADER = 'x-sts-peer-certificate';
 
 // ---------------------------------------------------------------------------
@@ -648,6 +696,11 @@ const PEER_CERT_HEADER = 'x-sts-peer-certificate';
 // a client that could set it could sign anybody out of the directory. It is
 // deleted on the way in before anything else touches the request.
 // ---------------------------------------------------------------------------
+/**
+ * The internal response header in which a worker names the identities whose
+ * directory connections the front process must close; stripped from what a
+ * client sends.
+ */
 const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 
 // THE TICKET THIS REQUEST WAS DISPATCHED UNDER, told to the worker so that the
@@ -655,6 +708,10 @@ const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 // Stripped from what the client sent, exactly like the two above: nothing a
 // caller says about it may be believed.
 const POOL_TICKET_HEADER = 'x-sts-pool-ticket';
+/**
+ * The internal header that tells a worker whether the client certificate
+ * verified; stripped from what a client sends.
+ */
 const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
 
 // ---------------------------------------------------------------------------
@@ -682,6 +739,11 @@ const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
 // sent anyway, like every header here that this process writes, so that no
 // handler ever sees a value that did not come from the pool.
 // ---------------------------------------------------------------------------
+/**
+ * The internal header that tells a hosted-surface worker which protocol
+ * worker holds the browser's session, for its back channel; a routing hint,
+ * not a credential.
+ */
 const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
 
 // The JA4 reader, loaded on first use — see the note at the requires.
@@ -699,6 +761,15 @@ function clientHelloModule() {
 // client sent nothing, and those are the same answer to the worker: no
 // certificate. The DIFFERENCE between them is reported by the surfaces that
 // care, out of `global.https`, exactly as it is today.
+/**
+ * Encodes what the front process saw of a request's client certificate,
+ * issuer chain included, for the header a worker is handed.
+ *
+ * The chain is dropped first when the header would be too large.
+ * @param req - the request
+ * @returns `{ cert, authorized }`, `cert` base64 JSON, or null when no
+ *   certificate was presented or it is too large to forward
+ */
 function peerOf(req) {
   log.debug("Entering peerOf().");
   const socket = req && req.socket;
@@ -810,6 +881,9 @@ function peerOf(req) {
 // direction would have dragged authn's routes to the front of the router
 // (rule 1, before #50's R1) — and would still run authn's load-time code, and
 // reach its JavaScript requires, from underneath app.js.
+/**
+ * The sign-on session cookie, the main affinity key.
+ */
 const SESSION_COOKIE = 'sts_session';
 
 // AND THE TWO RELYING-PARTY COOKIES (2026-09-08). Since this service's own
@@ -886,7 +960,13 @@ const AFFINITY_MAX = 5000;
 // would share ONE key in the protocol pool's map — every such browser sent to
 // the same protocol worker. That is not a locality loss; it is a funnel.
 // ---------------------------------------------------------------------------
+/**
+ * The name of the pool that runs every protocol family.
+ */
 const PROTOCOL_POOL = 'protocol';
+/**
+ * The name of the pool kept for the console and the portal.
+ */
 const SURFACE_POOL = 'surfaces';
 const POOLS = [PROTOCOL_POOL, SURFACE_POOL];
 
@@ -963,6 +1043,12 @@ let starting = null;
 // ---------------------------------------------------------------------------
 // `pool` defaults to the protocol pool, which is what every caller written
 // before the second pool existed means by "the pool".
+/**
+ * Reads a pool's configured worker count.
+ *
+ * @param pool - `SURFACE_POOL`, or anything else for the protocol pool
+ * @returns the count; 0 when unset or when there is no configuration
+ */
 function size(pool) {
   log.debug('Entering size().');
   const key = pool === SURFACE_POOL ? 'workers.surfaceCount'
@@ -1040,6 +1126,11 @@ function dispatchList() {
 
 // An entry that names a URL. `*` is in BOTH halves because it names everything,
 // and it has to be in this one for `dispatched()`'s wildcard branch to see it.
+/**
+ * Returns the path prefixes in `workers.dispatch`, and `*` when present.
+ *
+ * @returns the prefixes
+ */
 function dispatchPrefixes() {
   log.debug("Entering dispatchPrefixes().");
   log.debug("Leaving dispatchPrefixes().");
@@ -1067,6 +1158,12 @@ function dispatchPrefixes() {
 // page under `/admin/ldap/*`, which is the admin UI and therefore holds
 // affinity like the rest of the console.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the dispatched path prefixes that fan out rather than hold
+ * affinity (`workers.fanout`).
+ *
+ * @returns the prefixes
+ */
 function fanoutPrefixes() {
   log.debug("Entering fanoutPrefixes().");
   let raw;
@@ -1114,6 +1211,12 @@ function matchesAny(url, prefixes) {
 
 // Whether this request fans out. A dispatched path that is NOT named fans in —
 // it holds affinity — which is the way round the header above argues for.
+/**
+ * Tells whether a request fans out to the least-loaded worker.
+ *
+ * @param url - the request URL; a realm prefix is ignored
+ * @returns true when a fanout prefix names it
+ */
 function fansOut(url) {
   log.debug("Entering fansOut().");
   log.debug("Leaving fansOut().");
@@ -1173,6 +1276,12 @@ function batchPrefixes() {
   });
 }
 
+/**
+ * Tells whether a request is batch traffic (`workers.batch`).
+ *
+ * @param url - the request URL; a realm prefix is ignored
+ * @returns true when a batch prefix names it
+ */
 function isBatch(url) {
   log.debug("Entering isBatch().");
   log.debug("Leaving isBatch().");
@@ -1194,6 +1303,14 @@ function batchNumber(key, fallback) {
 
 // How many of `count` workers batch traffic may use. At least one; one fewer
 // than the pool unless the pool has one worker or the share is 100.
+/**
+ * Computes how many of a pool's workers batch traffic may use.
+ *
+ * @param count - the number of workers
+ * @param share - the percentage allowed, defaulting to 50
+ * @returns at least one, and fewer than `count` unless the pool has one
+ *   worker or the share is 100
+ */
 function laneSize(count, share) {
   log.debug("Entering laneSize().");
   if (count <= 1) {
@@ -1210,6 +1327,13 @@ function laneSize(count, share) {
 // The ready workers of a pool batch traffic may be routed to. The FIRST ones
 // by fork order, so the lane is stable across requests and a batch client's
 // binding lands on a worker the lane will keep.
+/**
+ * Picks the workers of the batch lane: the first ones by fork order, so the
+ * lane is stable.
+ *
+ * @param ready - the pool's ready workers
+ * @returns the lane's workers
+ */
 function laneOf(ready) {
   log.debug("Entering laneOf().");
   const live = (ready || []).slice().sort(function (a, b) {
@@ -1270,6 +1394,17 @@ function refuseBatch(res, code, why) {
 
 // Run `dispatch(release)` when the pool's lane has room, or queue it. `release`
 // must be called exactly once when the dispatched request is finished.
+/**
+ * Dispatches a batch request now if the pool's lane has room, or queues it.
+ *
+ * A full queue, or a wait past `workers.batchQueueTimeoutS`, is answered 503
+ * with Retry-After.
+ * @param pool - the pool name
+ * @param req - the request
+ * @param res - the response
+ * @param dispatch - called with `release`, which must be called exactly once
+ *   when the dispatched request finishes
+ */
 function admitBatch(pool, req, res, dispatch) {
   log.debug("Entering admitBatch().");
   const state = batchStateOf(pool);
@@ -1358,6 +1493,12 @@ function drainBatch(pool) {
 }
 
 // For stats(): each pool's lane, as numbers.
+/**
+ * Reports each pool's batch lane.
+ *
+ * @returns per pool: `inFlight`, `waiting`, `cap`, `laneWorkers`,
+ *   `queuedEver`, `refused` and `timedOut`
+ */
 function batchStats() {
   log.debug("Entering batchStats().");
   const out = {};
@@ -1376,6 +1517,12 @@ function batchStats() {
 // The prefixes the hosted-surface pool answers. Read the way the fanout list
 // is, for the same reasons; see the `workers.surfaces` row for why the default
 // stops at `/admin` and `/portal` and does not take `/admin-api`.
+/**
+ * Returns the path prefixes the hosted-surface pool answers
+ * (`workers.surfaces`).
+ *
+ * @returns the prefixes
+ */
 function surfacePrefixes() {
   log.debug("Entering surfacePrefixes().");
   let raw;
@@ -1417,6 +1564,14 @@ function surfacePrefixes() {
 // and stable from then on, so it is not the timing-dependent half-dispatch the
 // header at the top of this file refuses.
 // ---------------------------------------------------------------------------
+/**
+ * Chooses the pool a dispatched request goes to.
+ *
+ * The protocol pool unless the surface pool has workers, has not given up,
+ * and one of its prefixes names the path.
+ * @param url - the request URL
+ * @returns `PROTOCOL_POOL` or `SURFACE_POOL`
+ */
 function poolFor(url) {
   log.debug("Entering poolFor().");
   if (size(SURFACE_POOL) > 0 && !givenUp[SURFACE_POOL] &&
@@ -1540,6 +1695,14 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           '/admin/spiffe/brokers',
                           '/admin-api/spiffe/brokers'];
 
+/**
+ * Tells whether a request is handled in a request worker rather than here.
+ *
+ * Paths in the never-dispatched list, such as `/tls`, always stay in the
+ * front process.
+ * @param url - the request URL; a realm prefix is ignored
+ * @returns true when it is dispatched
+ */
 function dispatched(url) {
   log.debug("Entering dispatched().");
   // A SEGMENT BOUNDARY RATHER THAN A BARE PREFIX, and the loose version was
@@ -1638,6 +1801,13 @@ function ensureSocketDir() {
 // **THE WORKER THAT WROTE IS MOVED FORWARD WITH IT**, exactly as proxy() did:
 // it has the write in its own memory and must not be sent to fetch it.
 // ---------------------------------------------------------------------------
+/**
+ * Handles a worker's announcement that its flush committed: clears the
+ * tickets it covered and moves the generation when something was written.
+ *
+ * @param entry - the announcing worker's table entry
+ * @param committed - the worker's announcement
+ */
 function receiveCommitted(entry, committed) {
   log.debug("Entering receiveCommitted().");
   if (!readYourWrite()) {
@@ -1819,6 +1989,12 @@ function publishDirectoryConnections(rows) {
 // Called with whatever the worker put in the header — one or more identity
 // keys, comma separated and percent-encoded, because a key is a username and a
 // header is bytes.
+/**
+ * Closes the LDAP connections a worker named in `LDAP_DROP_HEADER`.
+ *
+ * @param header - the header value: identity keys, comma separated and
+ *   percent-encoded
+ */
 function closeDirectoryConnections(header) {
   log.debug("Entering closeDirectoryConnections().");
   const raw = String(header || '');
@@ -1977,6 +2153,15 @@ let listenerPass = null;          // the pass running now, or null
 let listenerPassAgain = null;     // null, or { repair } for the pass after it
 let listenerRepairTimer = null;
 
+/**
+ * Reconciles the listener certificate with the current hierarchy and hands
+ * a re-issued one to every worker; one pass at a time.
+ *
+ * A call during a pass queues one more pass after it.
+ * @param options - optional; `repair: true` lets the pass build the process
+ *   branch
+ * @returns a promise of the running pass
+ */
 function reconcileTheListener(options) {
   log.debug("Entering reconcileTheListener().");
   const repair = !!(options && options.repair);
@@ -2031,6 +2216,11 @@ function armListenerRepair(armed) {
 }
 
 // Whether the fallback above is armed — for the test, which cannot wait for it.
+/**
+ * Tells whether the fallback pass that may rebuild the branch is armed.
+ *
+ * @returns true when armed
+ */
 function listenerRepairArmed() {
   log.debug("Entering listenerRepairArmed().");
   log.debug("Leaving listenerRepairArmed().");
@@ -2095,6 +2285,15 @@ function runListenerPass(repair) {
 // process can do is the socket — `receivePublishedPki()`'s second half, for a
 // hierarchy that arrived from another CONTAINER rather than from a worker.
 // ---------------------------------------------------------------------------
+/**
+ * Reconciles the listener after a certificate authority row another node
+ * wrote was adopted from the store.
+ *
+ * Does nothing in a request worker, or until the service or process row and
+ * the process branch's TLS Issuing CA are present.
+ * @param scopeId - the scope whose row arrived
+ * @returns the reconcile's promise, or null
+ */
 function hierarchyArrived(scopeId) {
   log.debug("Entering hierarchyArrived(). scope=" + scopeId);
   if (process.env.STS_REQUEST_WORKER) {
@@ -2171,6 +2370,14 @@ function maxSocketsPerWorker() {
 // STS_REQUEST_WORKER_SLOT so that its persistence origin is the same one the
 // worker in that position had before a restart (2026-09-18, `adoptOrigin()` in
 // persistence/persistence_postgres.js).
+/**
+ * Forks one request worker into a pool and adds it to the worker table.
+ *
+ * @param pool - the pool name; the protocol pool unless `SURFACE_POOL`
+ * @param slot - the worker's position in its pool, which names its
+ *   persistence origin
+ * @returns the worker's table entry
+ */
 function fork(pool, slot) {
   log.debug('Entering fork(). pool=' + (pool || PROTOCOL_POOL));
   const which = pool === SURFACE_POOL ? SURFACE_POOL : PROTOCOL_POOL;
@@ -2529,6 +2736,16 @@ function reap(entry, code, signal) {
 // A decision over its arguments, exported for tests/request_worker_
 // replacement.js; `state` defaults to this module's own.
 // ---------------------------------------------------------------------------
+/**
+ * Decides whether a dead worker is replaced, and in which slot.
+ *
+ * Not while stopping, not after the pool gave up, and never past the
+ * configured size.
+ * @param dead - the dead worker's entry
+ * @param live - the worker table
+ * @param state - optional overrides `{ stopped, givenUp, wanted }`, for tests
+ * @returns `{ replace, pool, slot }`, or `{ replace: false, pool, why }`
+ */
 function replacementFor(dead, live, state) {
   log.debug("Entering replacementFor().");
   const pool = (dead && dead.pool) || PROTOCOL_POOL;
@@ -2568,6 +2785,11 @@ function replacementFor(dead, live, state) {
 
 // For tests/request_worker_replacement.js only: fork a stub in place of
 // request_worker.js. reset() restores the real module.
+/**
+ * Sets the module a forked worker runs; for tests only.
+ *
+ * @param modulePath - the module, or nothing for the real worker
+ */
 function useWorkerModule(modulePath) {
   log.debug("Entering useWorkerModule().");
   workerModule = modulePath || WORKER_MODULE;
@@ -2575,6 +2797,11 @@ function useWorkerModule(modulePath) {
 }
 
 // A copy of the worker table, for the same test.
+/**
+ * Returns a copy of the worker table; for tests.
+ *
+ * @returns the entries
+ */
 function workerTable() {
   log.debug("Entering workerTable().");
   log.debug("Leaving workerTable().");
@@ -2617,6 +2844,14 @@ function readyWorkers(pool) {
 // queued behind another, and the second stops a burst landing on whichever
 // child was forked first.
 // `among`, when given, narrows the choice to those workers — the batch lane.
+/**
+ * Picks the ready worker with the fewest requests in flight, then the
+ * fewest served.
+ *
+ * @param pool - the pool name
+ * @param among - optional; the workers to choose from, such as the batch lane
+ * @returns the worker's entry, or null when none is ready
+ */
 function leastLoaded(pool, among) {
   log.debug("Entering leastLoaded().");
   const live = among || readyWorkers(pool);
@@ -2699,6 +2934,9 @@ const FLOW_PARAMS = ['authn', 'consent', 'device_code', 'SAMLart'];
 //     gone; `workerFor()` then picks a live one and re-binds, which is the same
 //     recovery every other affinity key gets.
 // ---------------------------------------------------------------------------
+/**
+ * The protocol pool's routing cookie: names a worker, not a credential.
+ */
 const POOL_COOKIE = 'sts_pool';
 
 // AND THE SURFACE POOL'S, a second name for the reason the two-pools block at
@@ -2709,6 +2947,9 @@ const POOL_COOKIE = 'sts_pool';
 // `tests/vendored/sts_metadata_anonymous.js` reads POOL_COOKIE's spelling out
 // of this file to exempt it on metadata documents; this one needs no such
 // exemption, because no metadata document is under a surface prefix.
+/**
+ * The surface pool's routing cookie.
+ */
 const SURFACE_POOL_COOKIE = 'sts_pool_surfaces';
 
 function poolCookieFor(pool) {
@@ -2794,6 +3035,14 @@ function credentialKeyOf(req) {
     .digest('base64url').slice(0, 22);
 }
 
+/**
+ * Returns the affinity key for a fanout request: the resource for a write
+ * that names one, else a digest of the credential.
+ *
+ * @param req - the request
+ * @param url - the request URL
+ * @returns `r:<path>`, `c:<digest>`, or `''` when there is neither
+ */
 function mutationKeyOf(req, url) {
   log.debug("Entering mutationKeyOf().");
   if (!mayWrite(req.method)) {
@@ -2836,6 +3085,14 @@ function sidOfCookieValue(value) {
   return dot > 0 ? text.slice(0, dot) : text;
 }
 
+/**
+ * Returns what a request is stuck to in a pool: its routing cookie, a
+ * session cookie's sid, or the flow it carries in the URL.
+ *
+ * @param req - the request
+ * @param pool - the pool, which decides the routing cookie read
+ * @returns the key, or `''` when there is none
+ */
 function affinityKeyOf(req, pool) {
   log.debug("Entering affinityKeyOf().");
   const POOL_COOKIE = poolCookieFor(pool);
@@ -3110,6 +3367,13 @@ function heldWorker(key, pool) {
 // Exported for `tests/request_routing.js`: the decision is two settings and a
 // list, and reaching it through start() needs a coordinating store first.
 // ---------------------------------------------------------------------------
+/**
+ * Checks the surface pool's configuration.
+ *
+ * @returns null when there is nothing wrong, else `{ code, fatal, message }`:
+ *   not reached by `workers.dispatch` (not fatal), or read-your-write off
+ *   (fatal)
+ */
 function surfacePoolProblem() {
   log.debug("Entering surfacePoolProblem().");
   const count = size(SURFACE_POOL);
@@ -3170,6 +3434,14 @@ function surfacePoolProblem() {
 // process is not answering yet at this point, so the cost is paid where nobody
 // is waiting.
 // ---------------------------------------------------------------------------
+/**
+ * Forks both pools and waits for their workers to be ready; called once from
+ * `server.js` before the listener binds.
+ *
+ * Rejects when anything is dispatched while the store does not coordinate,
+ * or when the surface pool's configuration is fatal.
+ * @returns a promise of `{ started, wanted, pools }`
+ */
 function start() {
   log.debug('Entering start().');
   if (starting) {
@@ -3446,6 +3718,11 @@ function start() {
 // is the behaviour that existed before it, and the setting is the way to ask
 // for more.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether the read barrier is on (`workers.readYourWrite`).
+ *
+ * @returns the setting; false with no configuration
+ */
 function readYourWrite() {
   log.debug("Entering readYourWrite().");
   try {
@@ -3509,6 +3786,14 @@ let generation = 0;
 // ---------------------------------------------------------------------------
 let localWritesSeen = -1;
 
+/**
+ * Moves the generation when this process has committed change rows of its
+ * own since the last sample, so every worker catches up.
+ *
+ * The first sample only sets the baseline.
+ * @param written - this process's committed change-row count
+ * @returns true when the generation moved
+ */
 function noteLocalWrites(written) {
   log.debug("Entering noteLocalWrites().");
   if (!readYourWrite()) {
@@ -3601,6 +3886,15 @@ const pendingSyncs = new Map();
 // that never answers costs one round rather than wedging every later reader
 // behind a sync that will not come back.
 // ---------------------------------------------------------------------------
+/**
+ * Waits for a worker to catch up to a generation, sharing one sync round
+ * per worker among readers.
+ *
+ * Resolves on every path, at most after five seconds.
+ * @param entry - the worker's table entry
+ * @param wanted - the generation it must reach
+ * @returns a promise of whether it caught up
+ */
 function barrier(entry, wanted) {
   log.debug('Entering barrier(). pid=' + entry.pid + ' want=' + wanted);
   if (entry.generation >= wanted) {
@@ -3727,6 +4021,12 @@ function startSyncRound(entry, wanted) {
   return round;
 }
 
+/**
+ * Delivers a worker's answer to a sync round.
+ *
+ * @param entry - the worker's table entry
+ * @param message - the worker's message, carrying the round's `id`
+ */
 function receiveSync(entry, message) {
   log.debug("Entering receiveSync().");
   const waiter = pendingSyncs.get(message.id);
@@ -3747,6 +4047,15 @@ function receiveSync(entry, message) {
 // the realm is what the worker has to be told and app.js's first middleware is
 // what works it out.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the dispatch middleware that streams a dispatched request to a
+ * worker and its answer back.
+ *
+ * In a request worker it is a pass-through. A request kept here runs the
+ * read barrier for this process first.
+ * @param options - optional; `enterRealm` is app.js's realm middleware
+ * @returns the express middleware
+ */
 function middleware(options) {
   log.debug("Entering middleware().");
   // `enterRealm` is app.js's realm middleware, asked once more for a request
@@ -3953,6 +4262,15 @@ const REPLAY_BODY_BYTES = 1024 * 1024;
 // How many requests were sent again that way, for stats().
 let replayCount = 0;
 
+/**
+ * Streams one request to a worker and the answer back, copying no body.
+ *
+ * @param entry - the worker's table entry
+ * @param req - the request
+ * @param res - the response
+ * @param atGeneration - the generation the worker was brought to
+ * @param ticket - the request's read-barrier ticket
+ */
 function proxy(entry, req, res, atGeneration, ticket) {
   log.debug('Entering proxy(). pid=' + entry.pid + ' ' + req.method + ' ' +
             req.url);
@@ -4699,6 +5017,12 @@ const pendingOperations = new Map();
 // The other half of the SAME list — the entries that do not name a URL. See
 // `dispatchList()`: the leading slash is what tells the two apart, and `*` is
 // in both halves because it names everything.
+/**
+ * Returns the operation kinds in `workers.dispatch`: the entries without a
+ * leading slash, and `*`.
+ *
+ * @returns the kinds
+ */
 function operationKinds() {
   log.debug("Entering operationKinds().");
   log.debug("Leaving operationKinds().");
@@ -4711,6 +5035,13 @@ function operationKinds() {
 // list entry may name the whole family (`ldap`), one of its operations
 // (`ldap.search`), or everything (`*`) — so a family can be moved a piece at a
 // time, which is how a store this size has any chance of being moved safely.
+/**
+ * Tells whether an operation is dispatched: its kind, its family or `*` is
+ * listed.
+ *
+ * @param kind - `family.operation`
+ * @returns true when dispatched
+ */
 function operationDispatched(kind) {
   log.debug("Entering operationDispatched().");
   const kinds = operationKinds();
@@ -4753,6 +5084,17 @@ function operationDispatched(kind) {
 // reasons. **WAIT, THEN TAKE THE TICKET**: the other order deadlocks on a
 // ticket the waiter holds itself.
 // ---------------------------------------------------------------------------
+/**
+ * Runs one operation in a protocol worker, through the read barrier.
+ *
+ * Resolves `{ dispatched: false }` when it is not dispatched or no worker
+ * is ready, so the caller does the work itself.
+ * @param kind - `family.operation`
+ * @param args - the operation's arguments
+ * @param opts - optional; `affinity` names what to stick to, such as an LDAP
+ *   connection id
+ * @returns a promise of `{ dispatched, result }`
+ */
 function runOperation(kind, args, opts) {
   log.debug('Entering runOperation(). kind=' + kind);
   const options = opts || {};
@@ -4907,6 +5249,13 @@ function failOperations(entry) {
 // the reason worker_pool.js gives: this is called from the SIGTERM handler,
 // where a rejection would replace the sentence saying what was flushed.
 // ---------------------------------------------------------------------------
+/**
+ * Drains every worker for shutdown, killing any that does not finish in
+ * time. Never rejects.
+ *
+ * @param timeoutMs - how long to wait, 8000 by default
+ * @returns a promise of `{ stopped, killed }`
+ */
 function stop(timeoutMs) {
   log.debug('Entering stop().');
   stopped = true;
@@ -4992,6 +5341,12 @@ function removeSocketDir() {
 
 // What the pool is doing, for `/admin` and for the tests. A copy, so a reader
 // cannot reach into the live entries.
+/**
+ * Reports what both pools are doing, as a copy.
+ *
+ * @returns the protocol pool's counts at the top level, and `pools`,
+ *   `batch`, `tickets`, `workers` and the barrier's generation
+ */
 function stats() {
   log.debug("Entering stats().");
   log.debug("Leaving stats().");
@@ -5043,6 +5398,9 @@ function stats() {
 }
 
 // For the tests, which have to drive the give-up path and then keep going.
+/**
+ * Clears the pool's bookkeeping; for tests.
+ */
 function reset() {
   log.debug("Entering reset().");
   generation = 0;
@@ -5073,6 +5431,15 @@ function reset() {
   log.debug("Leaving reset().");
 }
 
+/**
+ * The front process's end of the request workers: fork, route, proxy,
+ * drain.
+ *
+ * Routes dispatched paths to workers by affinity or fanout, keeps the read
+ * barrier that gives read-your-write across workers, and hands the
+ * listener certificate to every worker.
+ * @namespace
+ */
 module.exports = {
   size: size,
   start: start,

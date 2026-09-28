@@ -70,10 +70,29 @@ const NAMESPACE_SEPARATOR = '~';
 
 type Json = any;
 
+/**
+ * The link between a federation partner's subject and a local person: the
+ * `federationLink` value format, and what removing a link ends.
+ *
+ * A value is `<relationship id> <issuer> <subject>`. A static utility class
+ * that holds no state.
+ */
 export = class FederationLinks {
+  /**
+   * The SAML 2.0 transient NameID format, which is never linked.
+   */
   static readonly SAML2_TRANSIENT = SAML2_TRANSIENT;
+  /**
+   * The longest link value written, in characters.
+   */
   static readonly LINK_MAX = LINK_MAX;
+  /**
+   * The separator in a namespaced entry's name, `<relationship>~<name>`.
+   */
   static readonly NAMESPACE_SEPARATOR = NAMESPACE_SEPARATOR;
+  /**
+   * The directory attribute a link is stored in.
+   */
   static readonly ATTRIBUTE = 'federationLink';
 
   // -------------------------------------------------------------------------
@@ -81,6 +100,15 @@ export = class FederationLinks {
   // would move the boundary the parse reads, and a line break anywhere would
   // be two values in an LDIF export.
   // -------------------------------------------------------------------------
+  /**
+   * Says why a link cannot be written: white space in the relationship id or
+   * the issuer, an empty subject, a line break, or a value over `LINK_MAX`.
+   *
+   * @param fedId - the relationship id
+   * @param issuer - the partner's issuer
+   * @param subject - the partner's subject for the person
+   * @returns the problem, or the empty string when the link is usable
+   */
   static linkProblem(fedId: unknown, issuer: unknown,
                      subject: unknown): string {
     const { log } = helpers;
@@ -107,6 +135,14 @@ export = class FederationLinks {
   }
 
   // The value, or '' where linkProblem() has something to say.
+  /**
+   * Returns the link value for a relationship, issuer and subject.
+   *
+   * @param fedId - the relationship id
+   * @param issuer - the partner's issuer
+   * @param subject - the partner's subject for the person
+   * @returns the value, or the empty string where `linkProblem()` objects
+   */
   static linkValue(fedId: unknown, issuer: unknown, subject: unknown): string {
     const { log } = helpers;
     log.debug("Entering FederationLinks.linkValue().");
@@ -120,6 +156,13 @@ export = class FederationLinks {
 
   // One value, read back. null for a value that is not three parts — which
   // only an `ldapmodify` can have written, and which matches nothing.
+  /**
+   * Parses one link value back into its parts.
+   *
+   * @param value - the stored value
+   * @returns `{ relationship, issuer, subject, value }`, or null for a value
+   *   that is not three parts
+   */
   static parse(value: unknown): Json {
     const { log } = helpers;
     log.debug("Entering FederationLinks.parse().");
@@ -149,6 +192,17 @@ export = class FederationLinks {
   // affiliation says otherwise; a transient one is refused, because nothing
   // about it outlives the exchange.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the stable subject a verified federated sign-in carries, as a link.
+   *
+   * The issuer is the verified one (a SAML persistent NameID's `NameQualifier`
+   * first); a transient NameID is refused.
+   *
+   * @param record - the federation relationship
+   * @param result - the protocol branch's verified result (`subject`, `issuer`,
+   *   `nameFormat`, `nameQualifier`)
+   * @returns `{ ok, issuer, subject, value, why }`
+   */
   static stableSubjectOf(record: Json, result: Json): Json {
     const { log } = helpers;
     log.debug("Entering FederationLinks.stableSubjectOf().");
@@ -181,6 +235,14 @@ export = class FederationLinks {
   }
 
   // `<relationship>~<name>`, the name of an entry `jit-namespaced` creates.
+  /**
+   * Returns the name of an entry `jit-namespaced` creates,
+   * `<relationship>~<name>`.
+   *
+   * @param fedId - the relationship id
+   * @param username - the name the partner asserted
+   * @returns the namespaced name
+   */
   static namespacedName(fedId: unknown, username: unknown): string {
     const { log } = helpers;
     log.debug("Entering FederationLinks.namespacedName().");
@@ -196,6 +258,17 @@ export = class FederationLinks {
   // relationship does not verify could never match. Answers `{ ok, value }`
   // or `{ ok: false, code, why }`.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves a link an administrator asked for, from the console, `/admin-api`
+   * or SCIM.
+   *
+   * The relationship must be service-provider-side in this realm, and an issuer
+   * given must be its `fedPeer`; an omitted one is taken to be it.
+   *
+   * @param asked - `relationship`, `issuer` (optional) and `subject`
+   * @returns `{ ok: true, record, value, relationship, issuer, subject }`, or
+   *   `{ ok: false, code, why }`
+   */
   static resolveRequest(asked: Json): Json {
     const { log } = helpers;
     log.debug("Entering FederationLinks.resolveRequest().");
@@ -249,6 +322,14 @@ export = class FederationLinks {
   // A session the person made some other way is not touched: the partner lost
   // the right to assert them, and nothing else changed.
   // -------------------------------------------------------------------------
+  /**
+   * Handles removed links from any door: after the write is answered, ends
+   * every live session the partner signed the person in to, in the entry's
+   * realm.
+   *
+   * @param change - `username`, `removed` (the removed values), `realm` and
+   *   `kind` (what wrote it)
+   */
   static linksRemoved(change: Json): void {
     const { log } = helpers;
     log.debug("Entering FederationLinks.linksRemoved().");
@@ -272,6 +353,17 @@ export = class FederationLinks {
 
   // The synchronous half of the above: ends the sessions and answers how
   // many. `links` are parsed values.
+  /**
+   * Ends the person's sessions whose events came through one of the given
+   * links' relationships, and audits the unlink.
+   *
+   * A failure is logged under `STS-FED-0110` and the unlink stands.
+   *
+   * @param username - the person
+   * @param links - parsed link values
+   * @param opts - `kind`, what removed the links, for the audit row
+   * @returns how many sessions were ended
+   */
   static endPartnerSessions(username: string, links: Json[],
                             opts?: Json): number {
     const { log } = helpers;

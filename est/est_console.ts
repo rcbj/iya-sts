@@ -57,8 +57,15 @@ import adminViews = require('../admin-core/admin_views');
 import codec = require('./est_codec');
 import InstanceSlot = require('../common/instance_slot');
 
+/**
+ * The enrollment family's name in the core and the monitor, `est`.
+ */
 const FAMILY = 'est';
 
+/**
+ * The four console and API actions: `issue-server-key`, `revoke-certificate`,
+ * `add-host-name` and `remove-host-name`.
+ */
 const EST_ACTIONS = ['issue-server-key', 'revoke-certificate',
                      'add-host-name', 'remove-host-name'];
 
@@ -66,6 +73,10 @@ const EST_ACTIONS = ['issue-server-key', 'revoke-certificate',
 // `est.ts` registers from would be a require of a route module from a view
 // model; the operations are six names fixed by RFC 7030 section 3.2.2, so they
 // are written here and `tests/est_handlers.js` compares the two.
+/**
+ * RFC 7030's six operations, each with its method, section and a description,
+ * for the endpoint list.
+ */
 const OPERATIONS = [
   { name: 'cacerts', method: 'GET', section: '4.1',
     what: 'the CA certificates (unauthenticated)' },
@@ -81,6 +92,9 @@ const OPERATIONS = [
     what: 'not implemented: answers 501' }
 ];
 
+/**
+ * The RFC 5280 revocation reasons a revoke may name.
+ */
 const REVOCATION_REASONS = ['unspecified', 'keyCompromise', 'cACompromise',
                             'affiliationChanged', 'superseded',
                             'cessationOfOperation', 'certificateHold',
@@ -123,7 +137,21 @@ interface EstConsoleDeps {
   codec: typeof codec;
 }
 
+/**
+ * The one model behind the two EST console pages and their management API
+ * operations: a view that computes every fact once and an action that changes
+ * state once, with no route, response or markup.
+ *
+ * Every action is `common/cert_enrollment.ts`'s; this adds the body shape, the
+ * principal and the result.
+ */
 class EstConsole {
+  /**
+   * Builds the model from its dependencies.
+   *
+   * @param deps - the modules it reads, from `EstConsole.defaultDeps()` or the
+   * composition root
+   */
   constructor(private readonly deps: EstConsoleDeps) {
     deps.log.debug("Entering EstConsole.constructor().");
     deps.log.debug("Leaving EstConsole.constructor().");
@@ -131,6 +159,12 @@ class EstConsole {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the real modules the model depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): EstConsoleDeps {
     helpers.log.debug("Entering EstConsole.defaultDeps().");
     helpers.log.debug("Leaving EstConsole.defaultDeps().");
@@ -150,6 +184,14 @@ class EstConsole {
     };
   }
 
+  /**
+   * Returns a refusal marked with its error code.
+   *
+   * @param code - the error code
+   * @param status - the HTTP status
+   * @param sentence - what is wrong
+   * @returns `{ ok: false, status, errors }`
+   */
   refused(code, status, sentence) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering EstConsole.refused(). code=" + code);
@@ -158,6 +200,11 @@ class EstConsole {
                            code);
   }
 
+  /**
+   * Returns the EST settings group's rows.
+   *
+   * @returns the settings
+   */
   settingsJson() {
     const { log, config } = this.deps;
     log.debug("Entering EstConsole.settingsJson().");
@@ -171,6 +218,14 @@ class EstConsole {
   // Who is acting, for `createdBy` / `by` and the principal. The console's
   // signed-in person; the management API, which authenticates a token rather
   // than a person, is named as itself.
+  /**
+   * Names who is acting: the console's signed-in person, or `admin-api` for the
+   * management API.
+   *
+   * @param req - the request
+   * @param via - `console` or `api`
+   * @returns the name
+   */
   actorOf(req, via) {
     const { log, adminViews } = this.deps;
     log.debug("Entering EstConsole.actorOf(). via=" + via);
@@ -189,6 +244,12 @@ class EstConsole {
     return username || 'console';
   }
 
+  /**
+   * Returns an enrolled certificate as the pages and the API list it.
+   *
+   * @param one - the certificate's record
+   * @returns the row
+   */
   certificateRow(one) {
     const { log } = this.deps;
     log.debug("Entering EstConsole.certificateRow().");
@@ -204,6 +265,12 @@ class EstConsole {
     };
   }
 
+  /**
+   * Returns what the mode requires of certificate enrollment in development and
+   * in product, and which mode is current.
+   *
+   * @returns `{ current, development, product, where }`
+   */
   modeNote() {
     const { log, mode } = this.deps;
     log.debug("Entering EstConsole.modeNote().");
@@ -220,6 +287,15 @@ class EstConsole {
   // ---------------------------------------------------------------------------
   // GET /admin/est — what the EST server IS in this realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds what `/admin/est` draws and `GET /admin-api/est` answers: the
+   * endpoints (and the label form), the Issuing CA, authentication, the
+   * profiles, host names, enrolled certificates, CSR attributes, the mode and
+   * the settings.
+   *
+   * @param req - the request, for its query and base URL
+   * @returns the view
+   */
   estView(req) {
     const { log, baseUrlOf, core, adminViews, config, keyMaterial,
             codec, realms } = this.deps;
@@ -333,6 +409,12 @@ class EstConsole {
     return json;
   }
 
+  /**
+   * Turns counts by name into rows, biggest first and then by name.
+   *
+   * @param counts - the counts
+   * @returns `{ name, count }` rows
+   */
   tableOf(counts) {
     const { log } = this.deps;
     log.debug("Entering EstConsole.tableOf().");
@@ -347,6 +429,13 @@ class EstConsole {
   // ---------------------------------------------------------------------------
   // GET /admin/est/monitor — what the EST server has DONE in this realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds what `/admin/est/monitor` draws and `GET /admin-api/est/monitor`
+   * answers: what EST has done in this realm, with recent requests paged.
+   *
+   * @param req - the request, for its query
+   * @returns the view
+   */
   estMonitorView(req) {
     const { log, monitor, adminViews, core } = this.deps;
     log.debug("Entering EstConsole.estMonitorView().");
@@ -398,6 +487,15 @@ class EstConsole {
   //
   // context: { via: 'console' | 'api', req }
   // ---------------------------------------------------------------------------
+  /**
+   * Performs one of the four actions after validating the body, as the
+   * console's administrator or the management API.
+   *
+   * @param body - `action` and its fields (`kind`, `identifier`, `profile`,
+   * `keyAlg`, `serialHex`, `reason`, `hostName`)
+   * @param context - `via` (`console` or `api`) and `req`
+   * @returns a promise of the outcome, or a refusal with its status
+   */
   async estAction(body, context) {
     const { log, validation, core, monitor } = this.deps;
     const self = this;
@@ -478,6 +576,17 @@ class EstConsole {
   // and the management API's token gate have both required Admin Write before a
   // POST reaches here, and that — not the roster read again — is what
   // authorizes naming any entry in the realm.
+  /**
+   * Issues a certificate with a key pair this service generates, for any person
+   * or application in the realm; the private key is returned once.
+   *
+   * @param asked - the validated body: `kind`, `identifier`, `profile` and
+   * `keyAlg`
+   * @param actor - who asked
+   * @param via - `console` or `api`
+   * @returns a promise of the outcome, carrying the certificate and the key, or
+   * a refusal
+   */
   async issueServerKey(asked, actor, via) {
     const { log, config, core, keyMaterial } = this.deps;
     log.debug("Entering EstConsole.issueServerKey().");
@@ -545,9 +654,23 @@ const slot = new InstanceSlot<EstConsole>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The EST console pages' and management API operations' one model.
+ *
+ * Exports the `EstConsole` class, its tables, and facades that forward to the
+ * installed instance.
+ *
+ * @namespace
+ */
 export = {
   EstConsole: EstConsole,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: EstConsole): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   FAMILY: FAMILY,
   EST_ACTIONS: EST_ACTIONS,

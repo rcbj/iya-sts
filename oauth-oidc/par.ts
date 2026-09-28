@@ -136,9 +136,22 @@ const DEFAULT_AUTHORIZATION_SERVER = 'default';
 const pushedRequests = realms.map({ persist: 'oauth2.pushedRequests',
                                     retain: 'age' });
 
+/**
+ * The store of RFC 9126 pushed authorization requests and the request_uri each
+ * is answered with; the endpoint and the validation are `oauth2.ts`'s.
+ */
 class PushedRequests {
+  /**
+   * The URN namespace every request_uri issued here is in (section 2.2).
+   */
   static readonly REQUEST_URI_PREFIX = REQUEST_URI_PREFIX;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, settings, error codes and monitor this class
+   *   reads
+   */
   constructor(private readonly deps: PushedRequestsDeps) {
     deps.log.debug("Entering PushedRequests.constructor().");
     deps.log.debug("Leaving PushedRequests.constructor().");
@@ -146,6 +159,11 @@ class PushedRequests {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): PushedRequestsDeps {
     helpers.log.debug("Entering PushedRequests.defaultDeps().");
     helpers.log.debug("Leaving PushedRequests.defaultDeps().");
@@ -169,6 +187,11 @@ class PushedRequests {
   // The lifetime, bounded by the row's own range (5..600) — read directly,
   // not `|| 60`, for the code-style rule about a legal value the fallback
   // would hide.
+  /**
+   * Returns how long a pushed request lives, in seconds (5 to 600).
+   *
+   * @returns the lifetime
+   */
   lifetimeS(): number {
     const { log, config } = this.deps;
     log.debug("Entering PushedRequests.lifetimeS().");
@@ -191,6 +214,13 @@ class PushedRequests {
   // Whether a value is a request_uri in the namespace this file issues from.
   // Case-sensitive in the reference and not in the URN's own letters, which
   // RFC 8141 section 3.1 makes case-insensitive in the NID.
+  /**
+   * Tells whether a value is a request_uri in the namespace this module issues
+   * from.
+   *
+   * @param value - a request_uri
+   * @returns true when it is in the namespace
+   */
   isPushedRequestUri(value: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering PushedRequests.isPushedRequestUri().");
@@ -238,6 +268,12 @@ class PushedRequests {
   // Drop every record past its expiry. A spent one is simply gone; one that
   // expired UNSPENT is counted, because a request_uri a client pushed and
   // never used is the thing somebody debugging a client wants to see.
+  /**
+   * Drops every record past its expiry, counting those that expired unspent.
+   *
+   * @param now - the time to compare with, in milliseconds
+   * @returns how many records were dropped
+   */
   sweep(now?: number): number {
     const { log, monitor } = this.deps;
     log.debug("Entering PushedRequests.sweep().");
@@ -280,6 +316,17 @@ class PushedRequests {
   // endpoint's job to have validated everything first; this checks only what
   // it owns.
   // -------------------------------------------------------------------------
+  /**
+   * Keeps a validated pushed request, bound to the client that pushed it and
+   * the authorization server it was pushed at, and mints its request_uri.
+   *
+   * The caller has validated the request; this checks only what it owns.
+   *
+   * @param entry - `clientId`, `authorizationServer`, `params`,
+   *   `clientAuthenticated`, `method`, `source`, `alg`, `encrypted`, `dpopJkt`,
+   *   `attestedJkt` and `redirectRelaxed`
+   * @returns `{ ok, requestUri, expiresIn }`, or a refusal
+   */
   push(entry: Json): Json {
     const { log, errorCodes, monitor } = this.deps;
     log.debug("Entering PushedRequests.push().");
@@ -371,6 +418,16 @@ class PushedRequests {
   //
   // Counts one read. It does NOT spend — see decision 2 in the header.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the pushed request a request_uri names, for the authorization
+   * endpoint. It counts a read and does not spend the request_uri.
+   *
+   * @param requestUri - the request_uri presented
+   * @param clientId - the client_id of the authorization request
+   * @param opts - `authorizationServer` the request selected, and `req`
+   * @returns `{ ok: true, params, alg, encrypted, pushed }`, or a refusal whose
+   *   error is `invalid_request_uri`
+   */
   resolve(requestUri: unknown, clientId: unknown, opts?: Json): Json {
     const { log, monitor } = this.deps;
     const self = this;
@@ -464,6 +521,13 @@ class PushedRequests {
   // whether anything was spent. Kept until its expiry, marked, so a replay is
   // refused as USED rather than as unknown.
   // -------------------------------------------------------------------------
+  /**
+   * Marks a request_uri spent when an authorization response is issued on it,
+   * so a replay is refused as used.
+   *
+   * @param requestUri - the request_uri
+   * @returns true when something was spent
+   */
   spend(requestUri: unknown): boolean {
     const { log, monitor } = this.deps;
     log.debug("Entering PushedRequests.spend().");
@@ -485,6 +549,13 @@ class PushedRequests {
   // paginated. `opts.state` narrows to 'live', 'spent' or 'all' (the default,
   // which is every record not yet swept); `opts.clientId` to one client.
   // -------------------------------------------------------------------------
+  /**
+   * Lists the pushed requests, newest first and paginated.
+   *
+   * @param opts - `state` (`live`, `spent` or `all`), `clientId`, `offset` and
+   *   `limit`
+   * @returns `{ total, offset, limit, capacity, lifetime_s, items }`
+   */
   list(opts?: Json): Json {
     const { log } = this.deps;
     const self = this;
@@ -525,6 +596,12 @@ class PushedRequests {
     };
   }
 
+  /**
+   * Describes one pushed request.
+   *
+   * @param requestUri - the request_uri
+   * @returns its description, or null
+   */
   get(requestUri: unknown): Json | null {
     const { log } = this.deps;
     log.debug("Entering PushedRequests.get().");
@@ -535,6 +612,12 @@ class PushedRequests {
   }
 
   // An administrator withdrew a request_uri. Answers whether there was one.
+  /**
+   * Withdraws a request_uri, for an administrator.
+   *
+   * @param requestUri - the request_uri
+   * @returns true when there was one
+   */
   remove(requestUri: unknown): boolean {
     const { log, monitor } = this.deps;
     log.debug("Entering PushedRequests.remove().");
@@ -569,9 +652,27 @@ const slot = new InstanceSlot<PushedRequests>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9126 pushed authorization requests: the store and the request_uri.
+ *
+ * The composition root builds the instance; each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   PushedRequests: PushedRequests,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: PushedRequests): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   REQUEST_URI_PREFIX: PushedRequests.REQUEST_URI_PREFIX,
   isPushedRequestUri: slot.forward('isPushedRequestUri'),

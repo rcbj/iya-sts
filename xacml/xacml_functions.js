@@ -71,6 +71,12 @@ const model = require('./xacml_model');
 const datatypes = require('./xacml_datatypes');
 
 const TYPE = model.TYPE;
+/**
+ * The standard function library, keyed by function identifier.
+ *
+ * Each entry declares its parameters as `primitive` or `bag`, its return,
+ * and an `apply`; a `lazy` entry receives unevaluated arguments.
+ */
 const FUNCTIONS = {};
 
 // The three URI prefixes the standard functions live under. Spelt out for the
@@ -880,6 +886,14 @@ allTypes().forEach(function (uri) {
 // of the target month, and an implementation that let the day overflow would
 // turn 2024-01-31 plus one month into 2024-03-02.
 // ---------------------------------------------------------------------------
+/**
+ * Adds a number of months to a date value, clamping the day to the last
+ * day of the target month as XML Schema requires.
+ *
+ * @param value - a parsed date or dateTime value
+ * @param months - the months to add, possibly negative
+ * @returns a new value; the input is not changed
+ */
 function addMonths(value, months) {
   log.debug("Entering addMonths().");
   const total = (value.year * 12) + (value.month - 1) + months;
@@ -935,6 +949,13 @@ function addSeconds(value, seconds) {
 // The inverse of `daysFromCivil()` in the datatype table, and it lives here
 // rather than there because only this file needs it — date arithmetic is the
 // only thing that turns a day count back into a date.
+/**
+ * Converts a count of days since 1970-01-01 to a civil date.
+ *
+ * The inverse of `daysFromCivil()` in `xacml_datatypes.js`.
+ * @param days - the day count
+ * @returns an object with `year`, `month` and `day`
+ */
 function civilFromDays(days) {
   log.debug("Entering civilFromDays().");
   const z = days + 719468;
@@ -1010,6 +1031,16 @@ temporalArithmetic('date-subtract-yearMonthDuration', TYPE.DATE,
 // refuses rather than guessing on 3 — a class subtraction silently
 // mistranslated is a regex that matches the wrong things.
 // ---------------------------------------------------------------------------
+/**
+ * Translates an XML Schema regular expression into an anchored JavaScript
+ * RegExp.
+ *
+ * Handles the anchoring and the `\i` and `\c` classes.
+ * @param pattern - the XML Schema pattern
+ * @returns the RegExp
+ * @throws a processing error for character class subtraction, which is
+ *   refused rather than approximated
+ */
 function xmlSchemaRegExp(pattern) {
   log.debug('Entering xmlSchemaRegExp().');
   if (/\[[^\]]*-\[/.test(pattern)) {
@@ -1369,6 +1400,18 @@ define(F3 + 'xpath-node-count', {
 // actually enforced, in ONE place — so a function definition cannot forget to
 // check, because it never sees an unchecked argument.
 // ---------------------------------------------------------------------------
+/**
+ * Invokes a function with already-resolved argument bags.
+ *
+ * Checks the arity, and hands a `primitive` parameter its one value; a
+ * bag of any other size is a processing error.
+ * @param definition - the function's entry in `FUNCTIONS`
+ * @param argumentBags - one bag per argument
+ * @param context - the evaluation context, for functions that need one
+ * @returns the result bag
+ * @throws a processing error on wrong arity or a primitive argument whose
+ *   bag does not hold exactly one value
+ */
 function invoke(definition, argumentBags, context) {
   log.debug('Entering invoke(). uri=' + definition.uri);
   const expected = definition.args || [];
@@ -1407,18 +1450,37 @@ function invoke(definition, argumentBags, context) {
   return result;
 }
 
+/**
+ * Returns the function registered for an identifier.
+ *
+ * @param uri - the function identifier
+ * @returns the definition, or null when the identifier is unknown
+ */
 function lookup(uri) {
   log.debug("Entering lookup().");
   log.debug("Leaving lookup().");
   return FUNCTIONS[uri] || null;
 }
 
+/**
+ * Lists every registered function identifier.
+ *
+ * @returns the identifiers, sorted
+ */
 function names() {
   log.debug("Entering names().");
   log.debug("Leaving names().");
   return Object.keys(FUNCTIONS).sort();
 }
 
+/**
+ * The XACML 3.0 standard function library, generated over the datatype
+ * table rather than written out.
+ *
+ * Every value is a bag; `invoke()` enforces the primitive / bag
+ * distinction in one place.
+ * @namespace
+ */
 module.exports = {
   FUNCTIONS: FUNCTIONS,
   lookup: lookup,

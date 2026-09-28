@@ -305,6 +305,9 @@ const pki = require('./pki');
 const pkiRevocation = require('./pki_revocation');
 const USER_AGENT = require('./version').userAgent('crl-fetch');
 
+/**
+ * The values `pki.revocationCheck` may take.
+ */
 const POLICIES = ['auto', 'off', 'soft-fail', 'hard-fail'];
 
 // The two REFUSAL codes, named once, because `decide()` marks a verdict with
@@ -312,7 +315,14 @@ const POLICIES = ['auto', 'off', 'soft-fail', 'hard-fail'];
 // STS-PKI-0120 (a CRL could not be fetched) and STS-PKI-0121 (it could not be
 // used) — are written as literals at each log line, where
 // `tests/error_codes.js` looks for a code beside a failure.
+/**
+ * The error code a verdict refused as revoked carries.
+ */
 const CODE_REVOKED = 'STS-PKI-0118';
+/**
+ * The error code a verdict refused for an unknown status carries, when no
+ * narrower code applies.
+ */
 const CODE_UNKNOWN = 'STS-PKI-0119';
 // THREE MORE REFUSAL CODES (#174, 2026-09-23), each a refusal an operator acts
 // on differently from "a server did not answer". NOT DIALLED is this service's
@@ -333,6 +343,14 @@ const MAX_DEPTH = 8;
 // THE POLICY IN FORCE, read per call and never cached — it is runtime and per
 // realm, exactly like every other setting here.
 // ---------------------------------------------------------------------------
+/**
+ * Reads the revocation policy in force, per call and never cached.
+ *
+ * `auto` asks the mode: product hard-fails, development soft-fails; and
+ * product also refuses a certificate that names no distribution point.
+ * @returns `{ configured, effective, requireDistributionPoint,
+ *   requireDistributionPointConfigured, decidedBy }`
+ */
 function policy() {
   log.debug('Entering policy().');
   const configured = String(config.value('pki.revocationCheck') || 'auto');
@@ -635,6 +653,12 @@ function heldAuthorities() {
 // `common/tls_client_certificates.js`'s identity gate — and must not go on
 // believing it once an authority has been replaced: a rebuilt Issuing CA has
 // a different thumbprint, so the key moves and the memo misses.
+/**
+ * Returns one string naming every authority this process holds and its
+ * thumbprint, for a caller that memoises something worked out from the walk.
+ *
+ * @returns the key; it changes when an authority is replaced
+ */
 function heldAuthorityKey() {
   log.debug("Entering heldAuthorityKey().");
   const key = heldAuthorities().map(function (one) {
@@ -1148,6 +1172,14 @@ function pointsOfExtension(ext) {
   return out;
 }
 
+/**
+ * Reads the CRL distribution points from a certificate.
+ *
+ * @param cert - the certificate
+ * @param extensionOid - the extension to read; the CRL distribution points
+ *   extension when omitted
+ * @returns `{ points, fetchable, other, indirect }`
+ */
 function distributionPointsOf(cert, extensionOid) {
   log.debug("Entering distributionPointsOf().");
   log.debug("Leaving distributionPointsOf().");
@@ -1156,6 +1188,13 @@ function distributionPointsOf(cert, extensionOid) {
                                        OID.CRL_DISTRIBUTION_POINTS));
 }
 
+/**
+ * Reads the OCSP responder addresses from a certificate's Authority
+ * Information Access extension.
+ *
+ * @param cert - the certificate
+ * @returns `{ fetchable, other }`: the http(s) addresses and every other URI
+ */
 function ocspRespondersOf(cert) {
   log.debug("Entering ocspRespondersOf().");
   const out = { fetchable: [], other: [] };
@@ -1470,6 +1509,15 @@ const LDAP_CRL_ATTRIBUTES = ['certificaterevocationlist',
                              'deltarevocationlist'];
 const LDAP_CERTIFICATE_ATTRIBUTES = ['cacertificate'];
 
+/**
+ * Parses an RFC 4516 LDAP URL as a CRL or certificate address.
+ *
+ * Refuses one with no host, a scope other than `base`, or a critical
+ * extension.
+ * @param text - the URL
+ * @returns `{ ok: true, scheme, host, port, dn, attributes, filter }`, or
+ *   `{ ok: false, why }`
+ */
 function parseLdapUrl(text) {
   log.debug('Entering parseLdapUrl().');
   const match = /^(ldaps?):\/\/([^/?]*)(?:\/([^?]*)(?:\?([^?]*)(?:\?([^?]*)(?:\?([^?]*)(?:\?(.*))?)?)?)?)?$/i
@@ -2897,6 +2945,15 @@ async function ocspFrom(url, target) {
 // handed where it is the worker's shim (`common/request_pool.js`'s `peerOf()`),
 // because that shim carries the leaf and, without this, nothing above it.
 // ---------------------------------------------------------------------------
+/**
+ * Builds a verdict input from a TLS socket's presented certificate.
+ *
+ * Reads node's issuer links on a real socket and the `issuerChain` a
+ * request worker's shim carries, and recovers the chain of a resumed
+ * session.
+ * @param socket - the TLS socket, or a request worker's shim
+ * @returns `{ leaf, chain, verified }`, or null when nothing was presented
+ */
 function fromSocket(socket) {
   log.debug('Entering fromSocket().');
   if (!socket || typeof socket.getPeerCertificate !== 'function') {
@@ -2964,6 +3021,15 @@ function fromSocket(socket) {
 // ask for (`verifyLeaf()` walks a path that is ours by construction, and the
 // SPIRE Server API has no revocation mechanism for a federated SVID).
 // ---------------------------------------------------------------------------
+/**
+ * Walks a presented chain from the leaf up, one link per certificate.
+ *
+ * A link this service signed is answered from its register; a self-signed
+ * one is an anchor; any other is marked `unknown` with source `crl` for a
+ * fetch to resolve. Nothing is fetched here.
+ * @param input - `{ leaf, chain, verified }`, certificates in any spelling
+ * @returns `{ links, readable }`
+ */
 function walk(input) {
   log.debug('Entering walk().');
   const leaf = x509Of(input && input.leaf);
@@ -4165,6 +4231,17 @@ function summarise(links, checked) {
 // `input.crls` DER or PEM buffers. Resolves `{ status, why }`, `status`
 // one of `good`, `revoked` and `unknown`. Never rejects.
 // ---------------------------------------------------------------------------
+/**
+ * Decides one certificate's status from CRLs already in hand, never
+ * fetching.
+ *
+ * The same route a fetched list takes; used by the x509-limbo and PKITS
+ * tests. Never rejects.
+ * @param input - `{ certificate, issuer, others, crls }`: the certificate,
+ *   its issuer, other certificates that may sign an indirect CRL, and the
+ *   CRLs as DER or PEM
+ * @returns `{ status, why }`, the status `good`, `revoked` or `unknown`
+ */
 async function crlInHandVerdict(input) {
   log.debug('Entering crlInHandVerdict().');
   const cert = x509Of(input && input.certificate);
@@ -4196,6 +4273,17 @@ async function crlInHandVerdict(input) {
 // THE ONE FUNCTION. Asynchronous because a foreign list may have to be
 // fetched; never rejects.
 // ---------------------------------------------------------------------------
+/**
+ * Answers whether a presented chain is revoked, and applies the policy.
+ *
+ * The one function every door asks. A foreign certificate is looked up at
+ * its OCSP responder and CRL only when the chain verified. Never rejects.
+ * @param input - `{ leaf, chain, verified }`
+ * @param options - optional; `external: 'not-consulted'` fetches nothing
+ * @returns the decided verdict: `status`, `refused`, `policy`, `why`,
+ *   `links`, `unknown` and `revoked`, marked with its refusal code when
+ *   refused
+ */
 async function verdictFor(input, options) {
   log.debug('Entering verdictFor().');
   const opts = options || {};
@@ -4250,6 +4338,15 @@ async function verdictFor(input, options) {
 // The SYNCHRONOUS door: the register only, never a fetch. For a path this
 // service built (`verifyLeaf()`) and for a surface with no revocation mechanism
 // of its own for a foreign certificate (the SPIRE Server API).
+/**
+ * Answers from the register only, synchronously, and applies the policy.
+ *
+ * For a path this service built and for a surface with no revocation
+ * mechanism of its own for a foreign certificate. Foreign links are
+ * reported as not consulted.
+ * @param input - `{ leaf, chain, verified }`
+ * @returns the decided verdict, as `verdictFor()`'s
+ */
 function localVerdictFor(input) {
   log.debug('Entering localVerdictFor().');
   const pol = policy();
@@ -4332,6 +4429,9 @@ function localVerdictFor(input) {
 // wait for it, because a registered certificate is usually somebody else's and
 // the register alone would answer nothing about it.
 // ---------------------------------------------------------------------------
+/**
+ * The error code a refused verdict about a registered certificate carries.
+ */
 const CODE_REGISTERED = 'STS-PKI-0129';
 
 // One certificate out of whatever spelling it was registered in: PEM, base64
@@ -4382,6 +4482,14 @@ function registeredChainOf(value) {
 
 // The material a registered JWK carries: its x5c, or nothing, which is a bare
 // key.
+/**
+ * Takes the certificate material out of a registered JWK.
+ *
+ * @param jwk - the registered key
+ * @param source - what the key is, for the verdict's sentences
+ * @returns `{ certificate, chain, source, kid }`; `certificate` is empty for
+ *   a bare key
+ */
 function registeredKeyMaterial(jwk, source) {
   log.debug("Entering registeredKeyMaterial().");
   const x5c = jwk && Array.isArray(jwk.x5c) ? jwk.x5c : [];
@@ -4475,6 +4583,16 @@ function asRegistered(verdict, material, extra) {
   return verdict;
 }
 
+/**
+ * Answers whether a certificate an operator registered has been revoked,
+ * at the moment it is used.
+ *
+ * Its issuer is looked for in the registered chain, among this service's
+ * authorities, then at each certificate's caIssuers address. A bare key is
+ * reported as unchecked with `bare: true`, never as good.
+ * @param material - `{ certificate, chain, source }`
+ * @returns the decided verdict, marked with `CODE_REGISTERED` when refused
+ */
 async function registeredVerdictFor(material) {
   log.debug('Entering registeredVerdictFor().');
   const m = material || {};
@@ -4531,6 +4649,13 @@ async function registeredVerdictFor(material) {
 }
 
 // A registered JWK: its x5c answered as above, or reported bare.
+/**
+ * Answers `registeredVerdictFor()` for a registered JWK's x5c.
+ *
+ * @param jwk - the registered key
+ * @param source - what the key is
+ * @returns a promise of the decided verdict
+ */
 function registeredKeyVerdictFor(jwk, source) {
   log.debug("Entering registeredKeyVerdictFor().");
   log.debug("Leaving registeredKeyVerdictFor().");
@@ -4538,6 +4663,13 @@ function registeredKeyVerdictFor(jwk, source) {
 }
 
 // A short sentence for a door's audit row and log line.
+/**
+ * Summarises a registered certificate's verdict in one short sentence for
+ * an audit row or log line.
+ *
+ * @param verdict - the verdict
+ * @returns the sentence, empty when there is no verdict
+ */
 function registeredSummary(verdict) {
   log.debug("Entering registeredSummary().");
   if (!verdict) {
@@ -4591,6 +4723,17 @@ function unknownCodeOf(unknown) {
 // THE POLICY APPLIED. Sets `refused`, `policy` and a sentence, and marks the
 // verdict with its refusal code non-enumerably.
 // ---------------------------------------------------------------------------
+/**
+ * Applies the policy to a verdict: sets `refused`, `policy`,
+ * `policyConfigured` and `why`.
+ *
+ * Revoked is always refused; unknown is refused under hard-fail when a link
+ * is refusable, and an RFC 9608 invalid certificate always. A refused
+ * verdict is marked with its error code non-enumerably.
+ * @param verdict - the undecided verdict, modified in place
+ * @param pol - the policy, or omitted to read it now
+ * @returns the same verdict
+ */
 function decide(verdict, pol) {
   log.debug('Entering decide(). status=' + verdict.status);
   const p = pol || policy();
@@ -4666,6 +4809,15 @@ function decide(verdict, pol) {
 // dispatched one — which is where the certificate is evaluated, and where the
 // register is visible because it is a `pki:` row every process holds.
 // ---------------------------------------------------------------------------
+/**
+ * Computes the verdict for a request's client certificate onto
+ * `req.certificateRevocation`, for synchronous doors to read.
+ *
+ * Refuses nothing, and never fails the request: an error is logged and
+ * nothing is set.
+ * @param req - the express request
+ * @returns the verdict, or null when nothing was presented or it failed
+ */
 async function annotateRequest(req) {
   log.debug('Entering annotateRequest().');
   try {
@@ -4688,6 +4840,12 @@ async function annotateRequest(req) {
 }
 
 // What a door reads. Null when nothing was annotated.
+/**
+ * Returns the verdict `annotateRequest()` put on a request.
+ *
+ * @param req - the express request
+ * @returns the verdict, or null when nothing was annotated
+ */
 function requestVerdict(req) {
   log.debug("Entering requestVerdict().");
   log.debug("Leaving requestVerdict().");
@@ -4695,6 +4853,12 @@ function requestVerdict(req) {
 }
 
 // The refusal code a refused verdict carries, for a door that marks a response.
+/**
+ * Returns the refusal code a refused verdict carries.
+ *
+ * @param verdict - the verdict
+ * @returns its marked code, or `CODE_REVOKED` / `CODE_UNKNOWN` by status
+ */
 function codeOf(verdict) {
   log.debug("Entering codeOf().");
   log.debug("Leaving codeOf().");
@@ -4740,6 +4904,13 @@ function notDialledNow(p) {
   });
 }
 
+/**
+ * Describes the revocation policy in force, for every surface that draws
+ * it.
+ *
+ * @returns the policy's fields, the addresses not dialled, where it is and
+ *   is not consulted, the OCSP and LDAP settings, and one `sentence`
+ */
 function describePolicy() {
   log.debug('Entering describePolicy().');
   const p = policy();
@@ -4838,6 +5009,11 @@ function describePolicy() {
   return out;
 }
 
+/**
+ * Reports the cached CRLs and OCSP responses.
+ *
+ * @returns `{ lists, ocspResponses, failures }`
+ */
 function cacheReport() {
   log.debug("Entering cacheReport().");
   const out = [];
@@ -5087,6 +5263,9 @@ function registerCaches() {
 }
 
 // For a test: forget every cached list and failure.
+/**
+ * Forgets every cached list, response, certificate and failure; for tests.
+ */
 function resetCache() {
   log.debug("Entering resetCache().");
   crlCache.clear();
@@ -5102,6 +5281,15 @@ function resetCache() {
 
 registerCaches();
 
+/**
+ * Revocation, consulted: whether a presented or registered certificate is
+ * revoked.
+ *
+ * One verdict for every door: this service's own authorities answer from
+ * the register, anybody else's from its OCSP responder and CRL, and
+ * `pki.revocationCheck` decides what an unknown status means.
+ * @namespace
+ */
 module.exports = {
   POLICIES: POLICIES,
   CODE_REVOKED: CODE_REVOKED,

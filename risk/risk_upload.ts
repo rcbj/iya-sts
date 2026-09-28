@@ -101,6 +101,7 @@ const RESERVE_BYTES = 16 * 1024 * 1024;
 
 // The fields an upload may carry, whichever door it came through. The
 // console's form adds `csrf_token`, which the door checks.
+/** The fields an upload may carry, whichever door it came through. */
 const FIELDS = ['dataset', 'format', 'realm', 'version', 'sha256',
                 'publishedAt', 'provider', 'licence', 'attribution',
                 'activate', 'acceptTerms', 'overrideSignature'];
@@ -109,6 +110,7 @@ const FIELDS = ['dataset', 'format', 'realm', 'version', 'sha256',
 // is read — its first bytes do (`risk_expand.ts`) — but a caller naming a
 // type says it is sending a file, and anything else is refused rather than
 // guessed at.
+/** The request body types the API door takes. */
 const API_TYPES = ['application/octet-stream', 'application/gzip',
                    'application/zip'];
 
@@ -119,10 +121,15 @@ const MAX_PARTS = 40;
 
 // This process's own mark on the files it writes, so the clean-up job can
 // tell its files from another process's.
+/**
+ * This process's mark on the upload files it writes, so the clean-up job
+ * can tell its files from another process's.
+ */
 const PROCESS_TAG = String(process.pid) + 'x' +
   nodeCrypto.randomBytes(4).toString('hex');
 const FILE_NAME = /^risk-upload-([a-z0-9]+)-[0-9a-f-]{36}\.part$/;
 
+/** The id of the per-process upload clean-up job. */
 const CLEANUP_JOB = 'risk.upload-cleanup';
 
 // Who is uploading, and the checks a gate could not make on headers alone.
@@ -165,20 +172,42 @@ interface RiskUploadDeps {
   scheduler(): Json;
 }
 
+/**
+ * A risk dataset file, uploaded through the console's form or the
+ * management API's body, written to the upload directory and imported.
+ *
+ * Authenticated before a byte is accepted, bounded in size and fields, and
+ * the file deleted when its import ends.
+ */
 class RiskUpload {
+  /** The fields an upload may carry. */
   static readonly FIELDS = FIELDS;
+  /** The request body types the API door takes. */
   static readonly API_TYPES = API_TYPES;
+  /** The id of the per-process upload clean-up job. */
   static readonly CLEANUP_JOB = CLEANUP_JOB;
+  /** This process's mark on the upload files it writes. */
   static readonly PROCESS_TAG = PROCESS_TAG;
 
   // The files this process is writing or importing now.
   private readonly held = new Set<string>();
 
+  /**
+   * Builds the uploader over the given dependencies.
+   *
+   * @param deps - the logger, settings, the dataset importer, a clock, a
+   *   free-space reader and the scheduler
+   */
   constructor(private readonly deps: RiskUploadDeps) {
     deps.log.debug("Entering RiskUpload.constructor().");
     deps.log.debug("Leaving RiskUpload.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): RiskUploadDeps {
     log.debug("Entering RiskUpload.defaultDeps().");
     log.debug("Leaving RiskUpload.defaultDeps().");
@@ -203,6 +232,12 @@ class RiskUpload {
   }
 
   // Where uploads are written, resolved.
+  /**
+   * Returns the directory uploads are written to, resolved against the
+   * package root.
+   *
+   * @returns the absolute path
+   */
   directory(): string {
     const { log, config } = this.deps;
     log.debug("Entering RiskUpload.directory().");
@@ -593,6 +628,15 @@ class RiskUpload {
   // -------------------------------------------------------------------------
   // THE API DOOR: the body is the file, the query the fields.
   // -------------------------------------------------------------------------
+  /**
+   * Receives an upload through the API door: the request body is the file,
+   * the query the fields.
+   *
+   * @param req - the express request, its body unread
+   * @param door - the audit channel, source, actor, and the realm-scope check
+   * @returns `{ status, code, body, close }`: the version recorded `loading`,
+   *   or the refusal
+   */
   async receiveRaw(req: Json, door: UploadDoor): Promise<UploadAnswer> {
     const { log } = this.deps;
     log.debug("Entering RiskUpload.receiveRaw().");
@@ -657,6 +701,18 @@ class RiskUpload {
   // and checked when it begins; a field after the file, a second file, or
   // no file at all is refused.
   // -------------------------------------------------------------------------
+  /**
+   * Receives an upload through the console door: `multipart/form-data`, the
+   * fields first and then the one file.
+   *
+   * A field after the file, a second file or no file is refused; the CSRF
+   * token and fields are checked when the file part begins.
+   * @param req - the express request, its body unread
+   * @param door - the audit channel, source, actor, the CSRF check and the
+   *   realm-scope check
+   * @returns `{ status, code, body, close }`: the version recorded `loading`,
+   *   or the refusal
+   */
   async receiveForm(req: Json, door: UploadDoor): Promise<UploadAnswer> {
     const { log, config } = this.deps;
     const self = this;
@@ -878,6 +934,13 @@ class RiskUpload {
   // stopped — is removed. A file whose name is not an upload's is never
   // touched: the directory may be a volume an operator also uses.
   // -------------------------------------------------------------------------
+  /**
+   * Runs the per-process clean-up: touches the files this process holds and
+   * removes leftover uploads — this process's that it no longer holds, and
+   * another's untouched for `risk.importStallMinutes`.
+   *
+   * @returns `{ held, removed }`
+   */
   async sweep(): Promise<Json> {
     const { log, config, now } = this.deps;
     log.debug("Entering RiskUpload.sweep().");
@@ -948,6 +1011,11 @@ class RiskUpload {
 
   // The per-process job, registered in every process when the instance is
   // wired, as the scheduler asks.
+  /**
+   * Registers the per-process clean-up job with the scheduler.
+   *
+   * @returns true when it was registered, false when there was nothing to do
+   */
   registerJobs(): boolean {
     const { log, scheduler } = this.deps;
     log.debug("Entering RiskUpload.registerJobs().");
@@ -992,9 +1060,26 @@ const slot = new InstanceSlot<RiskUpload>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * A risk dataset file, uploaded and imported.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   RiskUpload: RiskUpload,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: RiskUpload): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   FIELDS: RiskUpload.FIELDS,
   API_TYPES: RiskUpload.API_TYPES,

@@ -223,16 +223,48 @@ const STYLE = 'body{font-family:system-ui,Segoe UI,Helvetica,Arial,' +
   'font-size:.9rem;vertical-align:top}.sub{color:#555;font-size:.9rem}' +
   '.cannot{color:#a00}';
 
+/**
+ * A federation partner's sign-out, in both directions: the endpoints a
+ * partner's logout message arrives at, and the messages that tell a partner a
+ * session here ended.
+ *
+ * A sign-out is authenticated exactly as a sign-in through the same
+ * relationship is.
+ */
 class FederationSlo {
+  /**
+   * The path a SAML 2.0 or WS-Federation sign-out, or the return from an OpenID
+   * Provider's end-session endpoint, arrives at (`/{id}` appended).
+   */
   static readonly SLO_PATH = SLO_PATH;
+  /**
+   * The path a partner's OpenID Connect Back-Channel Logout Token is posted to
+   * (`/{id}` appended).
+   */
   static readonly BACKCHANNEL_PATH = BACKCHANNEL_PATH;
+  /**
+   * The path of OpenID Connect Front-Channel Logout as the relying party
+   * (`/{id}` appended).
+   */
   static readonly FRONTCHANNEL_PATH = FRONTCHANNEL_PATH;
 
+  /**
+   * Builds the sign-out handler over the given dependencies.
+   *
+   * @param deps - the modules it uses, with `logout` and `issuerOf` reached
+   *   lazily
+   */
   constructor(private readonly deps: FederationSloDeps) {
     deps.log.debug("Entering FederationSlo.constructor().");
     deps.log.debug("Leaving FederationSlo.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): FederationSloDeps {
     helpers.log.debug("Entering FederationSlo.defaultDeps().");
     helpers.log.debug("Leaving FederationSlo.defaultDeps().");
@@ -281,6 +313,12 @@ class FederationSlo {
   // -------------------------------------------------------------------------
   // THE ROUTES, in the order `common/protocol_stack.ts` registers them.
   // -------------------------------------------------------------------------
+  /**
+   * Registers the sign-out endpoints: GET and POST on the SLO path, POST on the
+   * back-channel path and GET on the front-channel path, each under `/:id`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteRegistrar): void {
     const { log } = this.deps;
     log.debug("Entering FederationSlo.registerRoutes().");
@@ -1674,6 +1712,14 @@ class FederationSlo {
   // `base` is the sign-out request's own, which names this service to the
   // partner exactly as its sign-in did.
   // =========================================================================
+  /**
+   * Says whether a partner can be told that a session here ended: the
+   * relationship must still be a usable service-provider-side one, in a
+   * protocol with a sign-out, with the partner's endpoint configured.
+   *
+   * @param held - the session's `fedPartnerSession`
+   * @returns `{ ok, record, why }`
+   */
   canTellPartner(held) {
     const { federation, log } = this.deps;
     log.debug("Entering FederationSlo.canTellPartner().");
@@ -1702,6 +1748,15 @@ class FederationSlo {
     return { ok: !why, record: record, why: why };
   }
 
+  /**
+   * Builds what tells the partner a session here ended, as a link or a form the
+   * sign-out page draws: a signed SAML LogoutRequest, an OpenID Connect
+   * RP-Initiated Logout redirect, or a WS-Federation wsignout1.0.
+   *
+   * @param session - the sign-on session that ended
+   * @param base - the sign-out request's base URL
+   * @returns `{ ok: true, target }`, or `{ ok: false, why }`
+   */
   partnerLogoutFor(session, base) {
     const { fedSp, iso, xmlEscape, log, config } = this.deps;
     log.debug("Entering FederationSlo.partnerLogoutFor().");
@@ -1777,6 +1832,13 @@ class FederationSlo {
   }
 
   // How the sign-out page draws the targets partnerLogoutFor() built.
+  /**
+   * Draws the targets `partnerLogoutFor()` built as a table of links and forms
+   * for the sign-out page.
+   *
+   * @param targets - the targets
+   * @returns the HTML, or the empty string when there are none
+   */
   renderPartnerLogouts(targets) {
     const { log, xmlEscape } = this.deps;
     const self = this;
@@ -1815,13 +1877,44 @@ const slot = new InstanceSlot<FederationSlo>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * A federation partner's sign-out in both directions: the endpoints a partner's
+ * SAML 2.0, WS-Federation or OpenID Connect logout arrives at, and what tells a
+ * partner that a session here ended.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Forwards to `FederationSlo.registerRoutes()` on the installed instance.
+   */
   registerRoutes: slot.forward('registerRoutes'),
   FederationSlo: FederationSlo,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: FederationSlo): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
+  /**
+   * Forwards to `FederationSlo.canTellPartner()` on the installed instance.
+   */
   canTellPartner: slot.forward('canTellPartner'),
+  /**
+   * Forwards to `FederationSlo.partnerLogoutFor()` on the installed instance.
+   */
   partnerLogoutFor: slot.forward('partnerLogoutFor'),
+  /**
+   * Forwards to `FederationSlo.renderPartnerLogouts()` on the installed
+   * instance.
+   */
   renderPartnerLogouts: slot.forward('renderPartnerLogouts'),
   SLO_PATH: FederationSlo.SLO_PATH,
   BACKCHANNEL_PATH: FederationSlo.BACKCHANNEL_PATH,

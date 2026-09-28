@@ -139,6 +139,9 @@ interface KeyFacts {
 // five certificates deep (a leaf under a SPIFFE downstream CA: Root, realm
 // Intermediate, SPIFFE Issuing CA, downstream CA, leaf); a limit well past
 // that is only a guard against a loop two certificates could make.
+/**
+ * How many certificates a path walk may pass before it is stopped as a loop.
+ */
 const MAX_PATH = 8;
 
 // ---------------------------------------------------------------------------
@@ -159,7 +162,18 @@ const EXTENSION_LABELS: Record<string, string> = {
   tlsFeature: 'TLS Feature (Must-Staple)'
 };
 
+/**
+ * The model of one certificate, every field, and the path it builds: what
+ * `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates`
+ * answer from.
+ *
+ * The mechanism is the vendored inspector's (`common/vendored/x509.js`); this
+ * class adds what a details view owes.
+ */
 class CertificateDetails {
+  /**
+   * How many certificates a path walk may pass.
+   */
   static readonly MAX_PATH = MAX_PATH;
 
   // -------------------------------------------------------------------------
@@ -170,6 +184,12 @@ class CertificateDetails {
   // -------------------------------------------------------------------------
   private readonly dnByOid: Record<string, { short: string; label: string }>;
 
+  /**
+   * Builds the model, indexing the vendored inspector's DN attributes by OID.
+   *
+   * @param deps - the logger, node's crypto, pkijs, asn1js and the vendored
+   *   X.509 and post-quantum inspectors
+   */
   constructor(private readonly deps: CertificateDetailsDeps) {
     deps.log.debug("Entering CertificateDetails.constructor().");
     this.dnByOid = CertificateDetails.buildDnByOid(deps);
@@ -178,6 +198,11 @@ class CertificateDetails {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time instance is built from
+   */
   static defaultDeps(): CertificateDetailsDeps {
     log.debug("Entering CertificateDetails.defaultDeps().");
     log.debug("Leaving CertificateDetails.defaultDeps().");
@@ -204,6 +229,15 @@ class CertificateDetails {
     return out;
   }
 
+  /**
+   * Returns an extension's readable label, derived from the vendored
+   * inspector's name for it.
+   *
+   * @param name - the inspector's name for the extension
+   * @param oid - its OID
+   * @returns the label, or "Unrecognised extension" when the inspector does not
+   *   know it
+   */
   extensionLabel(name: string, oid: string): string {
     const { log } = this.deps;
     log.debug("Entering CertificateDetails.extensionLabel().");
@@ -233,6 +267,12 @@ class CertificateDetails {
 
   // Every PEM certificate in a bundle, in order. A chain attribute on a
   // directory entry is several certificates concatenated.
+  /**
+   * Splits a bundle into its PEM certificates, in order.
+   *
+   * @param text - the bundle
+   * @returns each certificate's PEM
+   */
   splitPem(text: unknown): string[] {
     const { log } = this.deps;
     log.debug("Entering CertificateDetails.splitPem().");
@@ -257,6 +297,13 @@ class CertificateDetails {
   // HANDLE a page links a certificate by, and it is the same computation
   // `common/pki.js`'s `thumbprintOf()` makes, so a thumbprint already printed
   // on either page is a handle that works.
+  /**
+   * Returns a certificate's SHA-256 fingerprint: the handle a page links a
+   * certificate by, the same as `pki.js`'s `thumbprintOf()`.
+   *
+   * @param pem - the certificate
+   * @returns lower-case hex with no separators
+   */
   fingerprintOf(pem: unknown): string {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering CertificateDetails.fingerprintOf().");
@@ -389,6 +436,14 @@ class CertificateDetails {
   // RFC 5280 section 4.1 writes them in and the order `openssl x509 -text`
   // prints them in, and a reader comparing the two should not have to hunt.
   // -------------------------------------------------------------------------
+  /**
+   * Describes one certificate whole, its fields in ASN.1 order.
+   *
+   * @param pem - the certificate
+   * @returns a promise of the inspector's summary and every field: names RDN by
+   *   RDN, validity with its time type, the key, the extensions and both
+   *   signature algorithms
+   */
   async describe(pem: string) {
     const { log, x509, nodeCrypto } = this.deps;
     const self = this;
@@ -544,6 +599,19 @@ class CertificateDetails {
     }
   }
 
+  /**
+   * Walks the path from a certificate up to a self-signed one over the
+   * candidates given.
+   *
+   * At each hop a candidate is taken only when its key verifies the signature,
+   * not merely because its subject matches.
+   *
+   * @param pem - the certificate
+   * @param candidates - the certificates the path may use, as PEM strings or
+   *   objects carrying `pem`
+   * @returns a promise of the path and its status (`complete`, `incomplete`,
+   *   `unverified` or `too-deep`) with the reason
+   */
   async pathFor(pem: string, candidates?: Candidate[] | null):
       Promise<PathResult> {
     const { log, x509 } = this.deps;
@@ -638,6 +706,17 @@ class CertificateDetails {
   // ends at a self-signed certificate says whether it is one anybody here has
   // installed.
   // -------------------------------------------------------------------------
+  /**
+   * Describes a certificate and its trust chain, as a details view draws them.
+   *
+   * @param pem - the certificate
+   * @param candidates - the certificates the path may use
+   * @param options - `anchors`, a map from fingerprint to a sentence naming
+   *   what that anchor is to this service
+   * @returns a promise of the certificate, each link of the chain (role,
+   *   signature validity, expiry, whether its issuer may certify, anchor), the
+   *   chain status, and whether the chain is trusted
+   */
   async detailsFor(pem: string, candidates?: Candidate[] | null,
                    options?: DetailsOptions | null) {
     const { log, x509 } = this.deps;
@@ -719,10 +798,24 @@ const slot = new InstanceSlot<CertificateDetails>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * One certificate, every field, and the path it builds: the model both
+ * certificate pages and the management API answer from.
+ *
+ * The exports forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
   CertificateDetails: CertificateDetails,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: CertificateDetails): void =>
     slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   MAX_PATH: CertificateDetails.MAX_PATH,
   fingerprintOf: slot.forward('fingerprintOf'),

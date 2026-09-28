@@ -168,17 +168,38 @@ interface SpiffeApiDeps {
   loadAsn1js(): typeof import('asn1js');
 }
 
+/**
+ * The SPIRE Server API: six gRPC services and forty-two methods — Entry, Agent,
+ * Bundle, SVID, TrustDomain and Debug — over the registry and the CA.
+ *
+ * A library of handlers that `spiffe_server.ts` mounts; who may call what is
+ * `spiffe_auth.ts`'s decision. The methods it does not implement are listed
+ * with their reasons in `NOT_IMPLEMENTED`.
+ */
 class SpiffeApi {
   // Built by `nodeAttestation()` on first use.
   private attestationTable: any = null;
   private joinTokenAttestorInstance: any = null;
 
+  /**
+   * Builds the API over its dependencies.
+   *
+   * @param deps - the logger, configuration, crypto, audit, statistics, error
+   *   codes, the SPIFFE ID, CA, registry, gRPC, authentication, claims and node
+   *   attestation modules, the attestors, gRPC status codes and lazy loaders
+   *   for pkijs and asn1js
+   */
   constructor(private readonly deps: SpiffeApiDeps) {
     deps.log.debug("Entering SpiffeApi.constructor().");
     deps.log.debug("Leaving SpiffeApi.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SpiffeApiDeps {
     helpers.log.debug("Entering SpiffeApi.defaultDeps().");
     helpers.log.debug("Leaving SpiffeApi.defaultDeps().");
@@ -242,6 +263,11 @@ class SpiffeApi {
     };
   }
 
+  /**
+   * Returns the ambient realm's trust domain name.
+   *
+   * @returns the trust domain
+   */
   trustDomain() {
     const { log, ca } = this.deps;
     log.debug("Entering SpiffeApi.trustDomain().");
@@ -259,6 +285,14 @@ class SpiffeApi {
   // an entry that expires in the year 56000 and is reported by every tool as
   // valid.
   // ---------------------------------------------------------------------------
+  /**
+   * Converts a registration entry to `spire.api.types.Entry`, with times in
+   * seconds, honouring a mask.
+   *
+   * @param entry - the registry's record
+   * @param mask - the EntryMask, if any
+   * @returns the message, or null
+   */
   entryToProto(entry, mask) {
     const { log, spiffeId } = this.deps;
     log.debug('Entering SpiffeApi.entryToProto().');
@@ -297,6 +331,13 @@ class SpiffeApi {
   //
   // `id` is never masked out — it is the handle to everything else, and an
   // entry without one is a result a caller cannot act on.
+  /**
+   * Keeps only the fields an EntryMask names; `id` is never masked out.
+   *
+   * @param full - the whole message
+   * @param mask - the EntryMask
+   * @returns the masked message
+   */
   applyEntryMask(full, mask) {
     const { log } = this.deps;
     log.debug("Entering SpiffeApi.applyEntryMask().");
@@ -323,6 +364,13 @@ class SpiffeApi {
   // what SPIRE does for an entry describing a workload rather than a node, and
   // is what makes `spire-server entry create -spiffeID x -selector y` work with
   // no parent given.
+  /**
+   * Converts a `spire.api.types.Entry` to the registry's record; the parent
+   * defaults to this server's own SPIFFE ID.
+   *
+   * @param message - the message
+   * @returns the record
+   */
   entryFromProto(message) {
     const { log, spiffeId } = this.deps;
     log.debug('Entering SpiffeApi.entryFromProto().');
@@ -348,6 +396,13 @@ class SpiffeApi {
     };
   }
 
+  /**
+   * Converts an attested agent to `spire.api.types.Agent`, honouring a mask.
+   *
+   * @param agent - the registry's agent
+   * @param mask - the AgentMask, if any
+   * @returns the message, or null
+   */
   agentToProto(agent, mask) {
     const { log, spiffeId } = this.deps;
     log.debug('Entering SpiffeApi.agentToProto().');
@@ -390,6 +445,12 @@ class SpiffeApi {
   // the epoch, which is what the protobuf carries. Returns 0 rather than NaN on
   // anything unparseable: a `created_at` of NaN serialises as an error naming
   // the field, and 0 at least reads as "unknown".
+  /**
+   * Converts a GeneralizedTime to seconds since the epoch.
+   *
+   * @param text - the GeneralizedTime
+   * @returns the seconds, or 0 when it cannot be parsed
+   */
   secondsFromGeneralizedTime(text) {
     const { log } = this.deps;
     log.debug("Entering SpiffeApi.secondsFromGeneralizedTime().");
@@ -405,6 +466,13 @@ class SpiffeApi {
                       1000);
   }
 
+  /**
+   * Builds a `spire.api.types.Status` for one batch item.
+   *
+   * @param code - the gRPC status code
+   * @param message - the message
+   * @returns the status
+   */
   statusFor(code, message) {
     const { log, status } = this.deps;
     log.debug("Entering SpiffeApi.statusFor().");
@@ -412,6 +480,11 @@ class SpiffeApi {
     return { code: code, message: message || (code === status.OK ? 'OK' : '') };
   }
 
+  /**
+   * Builds the OK status for one batch item.
+   *
+   * @returns the status
+   */
   okStatus() {
     const { log, status } = this.deps;
     log.debug("Entering SpiffeApi.okStatus().");
@@ -425,6 +498,16 @@ class SpiffeApi {
   // condition; the status handed back is exactly what `statusFor()` builds.
   // `target` is the item (an entry id, a trust domain), which is a name and
   // never a credential.
+  /**
+   * Records one refused item of a batch on an audit row of its own and returns
+   * its status; the call itself answers OK.
+   *
+   * @param code - the `STS-SPIFFE-…` error code
+   * @param grpcCode - the item's gRPC status code
+   * @param message - the item's message
+   * @param target - the item, an entry id or a trust domain
+   * @returns the item's status
+   */
   refusedItem(code, grpcCode, message, target) {
     const { log, audit } = this.deps;
     log.debug("Entering SpiffeApi.refusedItem().");
@@ -461,6 +544,15 @@ class SpiffeApi {
   // literal, is its default). It bounds what one call may ask for; a request
   // with no page_size still gets every row, which is what it always got and
   // what a client that does not page expects.
+  /**
+   * Pages a list, capped at `spiffe.maxPageSize`; a request with no page size
+   * gets every row.
+   *
+   * @param rows - the rows
+   * @param pageSize - the page size asked for
+   * @param pageToken - the offset token from the previous page
+   * @returns the page's rows and the next page's token, '' at the end
+   */
   page(rows, pageSize, pageToken) {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeApi.page().");
@@ -490,6 +582,12 @@ class SpiffeApi {
   // that makes `spire-server entry show -selector unix:uid:1000` return nothing
   // on a deployment where it should return everything.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a set of `type:value` strings from a selector list.
+   *
+   * @param list - the selectors
+   * @returns the set
+   */
   selectorSet(list) {
     const { log, registry } = this.deps;
     log.debug("Entering SpiffeApi.selectorSet().");
@@ -502,6 +600,14 @@ class SpiffeApi {
     return set;
   }
 
+  /**
+   * Applies a selector filter's match behaviour — exact, subset, superset or
+   * any — to an entry's selectors.
+   *
+   * @param entrySelectors - the entry's selectors
+   * @param match - the filter's selector match, if any
+   * @returns whether the entry passes
+   */
   selectorMatches(entrySelectors, match) {
     const { log } = this.deps;
     log.debug('Entering SpiffeApi.selectorMatches().');
@@ -539,6 +645,14 @@ class SpiffeApi {
     return true;
   }
 
+  /**
+   * Applies a federates-with filter's match behaviour to an entry's trust
+   * domains.
+   *
+   * @param entryFederates - the entry's `federatesWith`
+   * @param match - the filter's match, if any
+   * @returns whether the entry passes
+   */
   federatesWithMatches(entryFederates, match) {
     const { log } = this.deps;
     log.debug('Entering SpiffeApi.federatesWithMatches().');
@@ -584,6 +698,12 @@ class SpiffeApi {
   // means "do not filter on hint" and `by_hint: {value: ""}` means "entries
   // whose hint is empty" — so reading `.value` without checking presence turns
   // the first into the second and silently filters everything out.
+  /**
+   * Reads a `google.protobuf` wrapper, telling absent from empty.
+   *
+   * @param value - the wrapper
+   * @returns its value, or undefined when absent
+   */
   wrapped(value) {
     const { log } = this.deps;
     log.debug("Entering SpiffeApi.wrapped().");
@@ -600,6 +720,13 @@ class SpiffeApi {
     return value;
   }
 
+  /**
+   * Applies a ListEntries filter.
+   *
+   * @param rows - the entries
+   * @param filter - the filter, if any
+   * @returns the entries that pass
+   */
   filterEntries(rows, filter) {
     const { log, spiffeId } = this.deps;
     const self = this;
@@ -628,6 +755,13 @@ class SpiffeApi {
     });
   }
 
+  /**
+   * Applies a ListAgents filter.
+   *
+   * @param rows - the agents
+   * @param filter - the filter, if any
+   * @returns the agents that pass
+   */
   filterAgents(rows, filter) {
     const { log } = this.deps;
     const self = this;
@@ -662,6 +796,12 @@ class SpiffeApi {
   // run by `common/instance_slot.ts` once for whichever instance is
   // installed: building each service's handlers, in the order loading this
   // module registered them with `spiffe_grpc.ts`, and the table of them.
+  /**
+   * Builds each service's handlers for the installed instance, in the order
+   * loading this module registered them, and the table of them (#50, R2).
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: SpiffeApi): void {
     helpers.log.debug("Entering SpiffeApi.wire().");
     const byName = {
@@ -679,6 +819,11 @@ class SpiffeApi {
     helpers.log.debug("Leaving SpiffeApi.wire().");
   }
 
+  /**
+   * Builds the Entry service's handlers.
+   *
+   * @returns the handlers by method name
+   */
   buildEntryHandlers() {
     const { log, rpc, registry, errorCodes, status } = this.deps;
     const self = this;
@@ -850,6 +995,12 @@ class SpiffeApi {
   // caller, or one with no verified SPIFFE ID, is authorized for nothing — the
   // policy table has already refused such a caller, so this is the second lock
   // rather than the first.
+  /**
+   * Returns the entries the authenticated agent on a call is authorized for.
+   *
+   * @param call - the gRPC call
+   * @returns the entries; none for a caller with no verified SPIFFE ID
+   */
   authorizedEntriesOf(call) {
     const { log, registry } = this.deps;
     log.debug('Entering SpiffeApi.authorizedEntriesOf().');
@@ -866,6 +1017,14 @@ class SpiffeApi {
   // set GetAuthorizedEntries tells it about. Until 2026-09-16 an agent could
   // name ANY entry id to BatchNewX509SVID or NewJWTSVID and be issued that
   // identity, whatever it had been told.
+  /**
+   * Asks whether the agent on a call may be issued an SVID from an entry: the
+   * same set GetAuthorizedEntries tells it about.
+   *
+   * @param call - the gRPC call
+   * @param entry - the registration entry
+   * @returns whether it may
+   */
   authorizedFor(call, entry) {
     const { log } = this.deps;
     log.debug('Entering SpiffeApi.authorizedFor(). entry=' +
@@ -878,6 +1037,14 @@ class SpiffeApi {
     return answer;
   }
 
+  /**
+   * Returns the refusal message for an entry that is not beneath the calling
+   * agent.
+   *
+   * @param call - the gRPC call
+   * @param entry - the registration entry
+   * @returns the message
+   */
   notBeneath(call, entry) {
     const { log } = this.deps;
     log.debug('Entering SpiffeApi.notBeneath().');
@@ -892,6 +1059,14 @@ class SpiffeApi {
   // Which fields of a submitted entry to apply. No mask, or an empty one, means
   // all of them — which is what the specification says and is what
   // `spire-server entry update` relies on.
+  /**
+   * Selects the fields of a submitted entry an EntryMask names; no mask means
+   * all of them.
+   *
+   * @param submitted - the submitted record
+   * @param mask - the EntryMask, if any
+   * @returns the changes to apply
+   */
   maskedChanges(submitted, mask) {
     const { log } = this.deps;
     log.debug('Entering SpiffeApi.maskedChanges().');
@@ -920,6 +1095,12 @@ class SpiffeApi {
     return changes;
   }
 
+  /**
+   * Returns the store key of a join token: its SHA-256, base64url.
+   *
+   * @param token - the token
+   * @returns the key
+   */
   joinTokenKey(token) {
     const { log, crypto } = this.deps;
     log.debug("Entering SpiffeApi.joinTokenKey().");
@@ -928,6 +1109,12 @@ class SpiffeApi {
       .digest('base64url');
   }
 
+  /**
+   * Builds the Agent service's handlers: attesting, renewing, listing, banning
+   * and join tokens.
+   *
+   * @returns the handlers by method name
+   */
   buildAgentHandlers() {
     const { log, rpc, registry, spiffeId, errorCodes, ca, auth, nowSec,
             crypto, stats, status, audit, config } = this.deps;
@@ -1421,6 +1608,12 @@ class SpiffeApi {
   // `signCsr()` treats a non-positive ttl as the service default. Stated here
   // because 0 is a legal, meaningful value and must never be read as "unset,
   // use something".
+  /**
+   * Returns the lifetime of an agent's SVID, `spiffe.agentSvidTtl`; 0 means
+   * `spiffe.svidTtl`.
+   *
+   * @returns the lifetime in seconds
+   */
   agentSvidTtl() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeApi.agentSvidTtl().");
@@ -1434,6 +1627,12 @@ class SpiffeApi {
   // every realm's sockets. `join_token` is registered here rather than in the
   // table's own module because its store is this module's: `CreateJoinToken`
   // writes it.
+  /**
+   * Returns the node attestation table, built once with every attestor this
+   * server can verify.
+   *
+   * @returns the table
+   */
   nodeAttestation() {
     const { log, attestation, joinTokenAttestor, nowSec, crypto, errorCodes,
             spiffeId, rpc, claims } = this.deps;
@@ -1462,6 +1661,12 @@ class SpiffeApi {
 
   // What `GET /spiffe` and the console draw about node attestation, in the
   // ambient realm.
+  /**
+   * Describes node attestation in the ambient realm for `GET /spiffe` and the
+   * console.
+   *
+   * @returns the table's state
+   */
   nodeAttestationState() {
     const { log } = this.deps;
     log.debug("Entering SpiffeApi.nodeAttestationState().");
@@ -1472,6 +1677,12 @@ class SpiffeApi {
   // ===========================================================================
   // THE BUNDLE SERVICE.
   // ===========================================================================
+  /**
+   * Builds this trust domain's `spire.api.types.Bundle`, honouring a mask.
+   *
+   * @param mask - the BundleMask, if any
+   * @returns the message
+   */
   async ownBundleProto(mask) {
     const { log, ca } = this.deps;
     const self = this;
@@ -1527,6 +1738,13 @@ class SpiffeApi {
   // not PEM. The bundle document publishes JWKs and this message publishes DER,
   // so the conversion has to happen somewhere — here, once, rather than in each
   // of the three methods that build a Bundle.
+  /**
+   * Converts a JWK to the DER SubjectPublicKeyInfo a `JWTKey.public_key`
+   * carries.
+   *
+   * @param jwk - the key
+   * @returns the DER, empty when it cannot be converted
+   */
   derFromJwk(jwk) {
     const { log, crypto, errorCodes } = this.deps;
     log.debug('Entering SpiffeApi.derFromJwk().');
@@ -1547,6 +1765,14 @@ class SpiffeApi {
     log.debug('Leaving SpiffeApi.derFromJwk().');
   }
 
+  /**
+   * Builds a federated trust domain's `spire.api.types.Bundle`, honouring a
+   * mask.
+   *
+   * @param entry - the federated bundle as the CA holds it
+   * @param mask - the BundleMask, if any
+   * @returns the message
+   */
   federatedBundleProto(entry, mask) {
     const { log } = this.deps;
     const self = this;
@@ -1591,6 +1817,13 @@ class SpiffeApi {
   // holds. The reverse of the two functions above, and it is where a federated
   // bundle submitted over gRPC becomes one `/spiffe/bundle` and the Workload
   // API can serve.
+  /**
+   * Converts a `spire.api.types.Bundle` to the JWK Set document this service
+   * holds.
+   *
+   * @param message - the message
+   * @returns the bundle document
+   */
   bundleDocumentFromProto(message) {
     const { log, crypto } = this.deps;
     log.debug('Entering SpiffeApi.bundleDocumentFromProto().');
@@ -1645,6 +1878,11 @@ class SpiffeApi {
     };
   }
 
+  /**
+   * Builds the Bundle service's handlers.
+   *
+   * @returns the handlers by method name
+   */
   buildBundleHandlers() {
     const { log, rpc, ca, errorCodes, status, registry } = this.deps;
     const self = this;
@@ -1841,6 +2079,13 @@ class SpiffeApi {
     return bundleHandlers;
   }
 
+  /**
+   * Sets one federated bundle from a batch item.
+   *
+   * @param message - the submitted bundle
+   * @param mask - the BundleMask, if any
+   * @returns the item's status and the bundle as stored, or null when refused
+   */
   setFederated(message, mask) {
     const { log, ca, status } = this.deps;
     log.debug("Entering SpiffeApi.setFederated().");
@@ -1861,6 +2106,11 @@ class SpiffeApi {
                                                mask) };
   }
 
+  /**
+   * Writes the audit row for a change to the trust bundle.
+   *
+   * @param what - what changed
+   */
   auditBundleChange(what) {
     const { log, audit, ca } = this.deps;
     log.debug("Entering SpiffeApi.auditBundleChange().");
@@ -1875,6 +2125,12 @@ class SpiffeApi {
   // ===========================================================================
   // THE SVID SERVICE.
   // ===========================================================================
+  /**
+   * Builds the SVID service's handlers: minting on demand and signing an
+   * agent's CSRs.
+   *
+   * @returns the handlers by method name
+   */
   buildSvidHandlers() {
     const { log, rpc, ca, errorCodes, stats, spiffeId, status,
             registry } = this.deps;
@@ -2103,6 +2359,12 @@ class SpiffeApi {
     return svidHandlers;
   }
 
+  /**
+   * Reads the SPIFFE ID from a CSR's URI subjectAltName.
+   *
+   * @param csr - the CSR's DER
+   * @returns the SPIFFE ID, or '' when there is none
+   */
   spiffeIdFromCsr(csr) {
     const { log, loadPkijs, loadAsn1js, spiffeId } = this.deps;
     log.debug('Entering SpiffeApi.spiffeIdFromCsr().');
@@ -2152,6 +2414,13 @@ class SpiffeApi {
     log.debug('Leaving SpiffeApi.spiffeIdFromCsr().');
   }
 
+  /**
+   * Writes the audit row for an SVID issued on the SPIRE Server API; no SVID
+   * and no key go on it.
+   *
+   * @param summary - one sentence on what was issued
+   * @param subject - the SPIFFE ID
+   */
   auditSvid(summary, subject) {
     const { log, audit } = this.deps;
     log.debug("Entering SpiffeApi.auditSvid().");
@@ -2172,6 +2441,14 @@ class SpiffeApi {
   // itself. This service holds all of it and FETCHES NOTHING — see
   // `spiffe_ca.setFederatedBundle()` and `RefreshBundle` below.
   // ===========================================================================
+  /**
+   * Builds a `spire.api.types.FederationRelationship` from a federated bundle,
+   * honouring a mask.
+   *
+   * @param entry - the federated bundle as the CA holds it
+   * @param mask - the mask, if any
+   * @returns the message
+   */
   relationshipProto(entry, mask) {
     const { log } = this.deps;
     log.debug('Entering SpiffeApi.relationshipProto().');
@@ -2206,6 +2483,15 @@ class SpiffeApi {
     return out;
   }
 
+  /**
+   * Sets one federation relationship from a batch item, keeping the bundle
+   * already held when none is given; nothing is fetched.
+   *
+   * @param message - the submitted relationship
+   * @param mask - the mask, if any
+   * @returns the item's status and the relationship as stored, or null when
+   *   refused
+   */
   setRelationship(message, mask) {
     const { log, ca, status } = this.deps;
     log.debug('Entering SpiffeApi.setRelationship().');
@@ -2236,6 +2522,11 @@ class SpiffeApi {
                                                              mask) };
   }
 
+  /**
+   * Builds the TrustDomain service's handlers: federation relationships.
+   *
+   * @returns the handlers by method name
+   */
   buildTrustDomainHandlers() {
     const { log, rpc, ca, errorCodes, status } = this.deps;
     const self = this;
@@ -2372,6 +2663,11 @@ class SpiffeApi {
   // ===========================================================================
   // THE DEBUG SERVICE — one method, and the cheapest health check here.
   // ===========================================================================
+  /**
+   * Builds the Debug service's one handler, GetInfo.
+   *
+   * @returns the handlers by method name
+   */
   buildDebugHandlers() {
     const { log, rpc, ca, spiffeId, registry } = this.deps;
     const self = this;
@@ -2465,6 +2761,10 @@ const slot = new InstanceSlot<SpiffeApi>(
 // the value did: `joinTokenKey()` is the one spelling, and nothing here holds
 // the token after CreateJoinToken has returned it. Same argument, same shape,
 // as `oid4vc/vc_offers.ts`'s deferred access tokens.
+/**
+ * The realm's unspent join tokens, keyed by a SHA-256 of the token, never the
+ * token itself.
+ */
 const joinTokens = realms.map({ persist: 'spiffe.joinTokens' });
 
 // ===========================================================================
@@ -2485,6 +2785,10 @@ const joinTokens = realms.map({ persist: 'spiffe.joinTokens' });
 // agent to renew; mutual TLS on the SPIRE Server API answered that, and the
 // method now renews the agent on the connection. It still refuses, with the
 // same argument, where nothing identifies the caller — see the handler.
+/**
+ * The SPIRE Server API methods this service does not implement, each with its
+ * reason, for `GET /spiffe` and the console.
+ */
 const NOT_IMPLEMENTED = {
   'Bundle.AppendBundle':
     'It would publish an authority this server holds no key for, which every ' +
@@ -2536,17 +2840,28 @@ const SERVICE_ROWS = [
 ];
 
 // Every service with its handlers, built by `SpiffeApi.wire()`.
+/**
+ * Every service with its handlers, built by `SpiffeApi.wire()`.
+ */
 let SERVICE_HANDLERS: Array<{ name: string; label: string; handlers: any;
                               what: string }> | null = null;
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The SPIRE Server API: six services and forty-two methods over the registry
+ * and the CA.
+ * @namespace
+ */
 export = {
   SpiffeApi: SpiffeApi,
   installInstance: (instance: SpiffeApi): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   // Built by `SpiffeApi.wire()`, so read once the instance exists.
+  /**
+   * Every service with its handlers, once the instance exists.
+   */
   get SERVICE_HANDLERS(): Array<{ name: string; label: string;
                                   handlers: any; what: string }> {
     log.debug("Entering SERVICE_HANDLERS().");

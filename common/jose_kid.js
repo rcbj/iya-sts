@@ -94,17 +94,32 @@ const log = bunyan.createLogger({
   level: config.value('global.logLevel')
 });
 
+/**
+ * The setting that chooses the `kid` format per trust realm: `keys.kidFormat`.
+ */
 const SETTING = 'keys.kidFormat';
 
 // The two answers the setting may give. `common/config.js` writes the same
 // list into the row's `enumValues`, and `tests/jose_kid.js` holds the two
 // together.
+/**
+ * The two values `keys.kidFormat` may take: `internal` and
+ * `jwk-thumbprint-uri`.
+ */
 const FORMATS = ['internal', 'jwk-thumbprint-uri'];
 
+/**
+ * The format used when the setting is unset or unreadable: `internal`.
+ */
 const DEFAULT_FORMAT = 'internal';
 
 // What the setting says in the ambient realm. An unreadable value is the
 // default: a setting nobody could read has not been switched on by anybody.
+/**
+ * Reads `keys.kidFormat` in the ambient realm.
+ *
+ * @returns one of `FORMATS`; the default for an unreadable value
+ */
 function formatFor() {
   log.debug("Entering formatFor().");
   const raw = String(config.value(SETTING) || '');
@@ -112,12 +127,23 @@ function formatFor() {
   return FORMATS.indexOf(raw) >= 0 ? raw : DEFAULT_FORMAT;
 }
 
+/**
+ * Tells whether the ambient realm publishes RFC 9278 thumbprint URIs as `kid`s.
+ *
+ * @returns true under `jwk-thumbprint-uri`
+ */
 function usesThumbprintUri() {
   log.debug("Entering usesThumbprintUri().");
   log.debug("Leaving usesThumbprintUri().");
   return formatFor() === 'jwk-thumbprint-uri';
 }
 
+/**
+ * Tells whether a `kid` is an RFC 9278 JWK Thumbprint URI.
+ *
+ * @param kid - the key identifier to test
+ * @returns true when it starts with the thumbprint URI prefix
+ */
 function isThumbprintUri(kid) {
   log.debug("Entering isThumbprintUri().");
   log.debug("Leaving isThumbprintUri().");
@@ -178,6 +204,17 @@ function remember(map, key, value) {
 // function, so a signature under `internal`, or a cached answer, never
 // computes one. Throws where there is no key or no thumbprint for it; the two
 // callers below decide what that means.
+/**
+ * Computes the RFC 9278 JWK Thumbprint URI of a key, cached by its internal
+ * `kid`.
+ *
+ * @param internalKid - the key's internal `kid`, the cache key
+ * @param publicJwkOf - the key's public JWK, or a function answering it, called
+ * only on a cache miss
+ * @returns the thumbprint URI
+ * @throws Error when there is no key, or RFC 7638 has no thumbprint for its
+ * type
+ */
 function thumbprintUriFor(internalKid, publicJwkOf) {
   log.debug("Entering thumbprintUriFor().");
   const cacheKey = String(internalKid || '');
@@ -205,6 +242,18 @@ function thumbprintUriFor(internalKid, publicJwkOf) {
 // THE `kid` TO PUT IN A HEADER. The internal one under `internal`, and under
 // `jwk-thumbprint-uri` wherever the URI cannot be computed.
 // ---------------------------------------------------------------------------
+/**
+ * Chooses the `kid` a signer puts in a header: the internal one under
+ * `internal`, the thumbprint URI under `jwk-thumbprint-uri`.
+ *
+ * A key whose thumbprint cannot be computed is published under its internal
+ * `kid`, and the failure is logged once per key (STS-KEYS-0055); it never stops
+ * a signature.
+ *
+ * @param internalKid - the key's internal `kid`
+ * @param publicJwkOf - the key's public JWK, or a function answering it
+ * @returns the `kid` to publish
+ */
 function publishedKid(internalKid, publicJwkOf) {
   log.debug("Entering publishedKid().");
   if (!internalKid || !usesThumbprintUri()) {
@@ -232,6 +281,15 @@ function publishedKid(internalKid, publicJwkOf) {
 // DOES A HEADER'S `kid` NAME THIS KEY — under either spelling, whatever the
 // setting says now (see the header).
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether a header's `kid` names a key, under either spelling, whatever
+ * the setting says now.
+ *
+ * @param headerKid - the `kid` from the token's header
+ * @param internalKid - the key's internal `kid`
+ * @param publicJwkOf - the key's public JWK, or a function answering it
+ * @returns true when the header names this key
+ */
 function names(headerKid, internalKid, publicJwkOf) {
   log.debug("Entering names().");
   const kid = String(headerKid || '');
@@ -264,6 +322,16 @@ function names(headerKid, internalKid, publicJwkOf) {
 // second entry, and its tokens carry the internal kid (`publishedKid()`), so
 // the set and the tokens agree about it.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the second JWK Set entry for each signing key: the same members under
+ * its thumbprint URI.
+ *
+ * Empty under `internal`; a key with no thumbprint, or already named by one,
+ * gets no entry.
+ *
+ * @param publicJwks - the signing keys' public JWKs
+ * @returns the additional entries
+ */
 function thumbprintUriEntries(publicJwks) {
   log.debug("Entering thumbprintUriEntries().");
   if (!usesThumbprintUri()) {
@@ -290,6 +358,13 @@ function thumbprintUriEntries(publicJwks) {
 
 // A JWK Set's signing entries followed by their second entries — the shape
 // `oauth2.js`'s `sendJwks()` publishes.
+/**
+ * Returns a JWK Set's signing entries followed by their thumbprint URI entries,
+ * the shape the JWKS endpoint publishes.
+ *
+ * @param publicJwks - the signing keys' public JWKs
+ * @returns the entries, then their second entries
+ */
 function withThumbprintUriEntries(publicJwks) {
   log.debug("Entering withThumbprintUriEntries().");
   const list = publicJwks || [];
@@ -297,6 +372,15 @@ function withThumbprintUriEntries(publicJwks) {
   return list.concat(thumbprintUriEntries(list));
 }
 
+/**
+ * The `kid` a signed token carries: this service's internal name for the key,
+ * or an RFC 9278 JWK Thumbprint URI, per `keys.kidFormat`.
+ *
+ * The internal `kid` stays the key's name inside the service; the thumbprint
+ * URI is a translation applied at the edges, and a lookup accepts either.
+ *
+ * @namespace
+ */
 module.exports = {
   SETTING: SETTING,
   FORMATS: FORMATS,

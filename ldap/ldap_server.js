@@ -380,6 +380,9 @@ const krb5PersonKeys = require('../kerberos/krb5_person_keys');
 // exists. Changing it means the parent project's api has to allow the new port
 // in `ldapAllowedPorts` or its LDAP client will refuse to reach it — the same
 // coupling KRB5_KDC_PORT has with krb5AllowedPorts, and for the same reason.
+/**
+ * The plain LDAP listener's port (`ldap.port`, 389 by default).
+ */
 const LDAP_PORT = config.value('ldap.port');
 
 // The LDAPS port. 636 is the IANA-assigned one for LDAP over TLS and, like 389,
@@ -398,6 +401,9 @@ const LDAP_PORT = config.value('ldap.port');
 // do. It is also worth knowing that LDAPS is the one of the two that no RFC
 // defines: RFC 4513 standardised StartTLS and left `ldaps://` as the de-facto
 // scheme it already was. Every client speaks it anyway.
+/**
+ * The LDAPS listener's port (`ldap.tlsPort`, 636 by default).
+ */
 const LDAPS_PORT = config.value('ldap.tlsPort');
 
 // ---------------------------------------------------------------------------
@@ -662,6 +668,11 @@ function writeCrlEntry(scopeId, caId, der, base, dn) {
 // built from — the same shape `helpers.baseUrlOf()` has for URLs, and for the
 // same reason: one place that knows about realms, and a hundred call sites that
 // do not.
+/**
+ * Returns the ambient realm's base DN, which every other DN here is built from.
+ *
+ * @returns the base DN
+ */
 function baseDn() {
   log.debug("Entering baseDn().");
   log.debug("Leaving baseDn().");
@@ -671,12 +682,22 @@ function baseDn() {
 // Where auto-created people and hand-made groups live. Derived rather than
 // configured: two values that could disagree with the base would produce
 // entries in a tree nobody is searching.
+/**
+ * Returns the ambient realm's people container, `ou=users` under the base.
+ *
+ * @returns the DN
+ */
 function usersDn() {
   log.debug("Entering usersDn().");
   log.debug("Leaving usersDn().");
   return 'ou=users,' + baseDn();
 }
 
+/**
+ * Returns the ambient realm's groups container, `ou=groups` under the base.
+ *
+ * @returns the DN
+ */
 function groupsDn() {
   log.debug("Entering groupsDn().");
   log.debug("Leaving groupsDn().");
@@ -685,6 +706,12 @@ function groupsDn() {
 
 // The third container, and the one whose entries are a REGISTRY rather than a
 // description of one. See the applications section further down.
+/**
+ * Returns the ambient realm's application registry container, `ou=applications`
+ * under the base.
+ *
+ * @returns the DN
+ */
 function applicationsDn() {
   log.debug("Entering applicationsDn().");
   log.debug("Leaving applicationsDn().");
@@ -846,18 +873,34 @@ function authnPoliciesDn() {
 // internally between what an application may do and what it has done — made
 // structural here, because a registration entry and an attested agent share no
 // attributes at all.
+/**
+ * Returns the ambient realm's SPIFFE container, `ou=spiffe` under the base.
+ *
+ * @returns the DN
+ */
 function spiffeDn() {
   log.debug("Entering spiffeDn().");
   log.debug("Leaving spiffeDn().");
   return 'ou=spiffe,' + baseDn();
 }
 
+/**
+ * Returns the SPIFFE registration entries' container, `ou=entries` under
+ * `ou=spiffe`.
+ *
+ * @returns the DN
+ */
 function spiffeEntriesDn() {
   log.debug("Entering spiffeEntriesDn().");
   log.debug("Leaving spiffeEntriesDn().");
   return 'ou=entries,' + spiffeDn();
 }
 
+/**
+ * Returns the attested SPIFFE agents' container, `ou=agents` under `ou=spiffe`.
+ *
+ * @returns the DN
+ */
 function spiffeAgentsDn() {
   log.debug("Entering spiffeAgentsDn().");
   log.debug("Leaving spiffeAgentsDn().");
@@ -875,6 +918,12 @@ function spiffeAgentsDn() {
 // setting, and the setting can still turn seeding off in development — which is
 // the right shape for a policy that a mode tightens: the AND cannot be
 // loosened by editing configuration.
+/**
+ * Says whether an entry is created for whoever authenticates:
+ * `ldap.autocreateUsers`, and never in product mode.
+ *
+ * @returns true when entries are auto-created
+ */
 function autocreateUsers() {
   log.debug("Entering autocreateUsers().");
   log.debug("Leaving autocreateUsers().");
@@ -894,6 +943,10 @@ function autocreateUsers() {
 // can hold "invalid" as a real password, which is a password nobody should
 // hold. Keeping it in both modes means a negative test means the same thing
 // against either.
+/**
+ * The one password refused at every door that takes a password, in both modes,
+ * so that a wrong-credential result is always reachable.
+ */
 const REFUSED_PASSWORD = 'invalid';
 
 // The characters RFC 4514 reserves in a DN value. See nameUsableInDn() for why
@@ -904,6 +957,12 @@ const DN_RESERVED = /[,=+<>#;"\\]/;
 // on its own (every authentication can add an entry), so an unbounded one is a
 // memory leak with a protocol in front of it. When it is reached, new entries
 // are refused with LDAP_ADMIN_LIMIT_EXCEEDED rather than silently dropped.
+/**
+ * Returns the ceiling on how many entries this process's directory may hold
+ * (`ldap.maxEntries`); a write past it is refused.
+ *
+ * @returns the ceiling
+ */
 function maxEntries() {
   log.debug("Entering maxEntries().");
   log.debug("Leaving maxEntries().");
@@ -919,6 +978,12 @@ function maxEntries() {
 // truth for what this service knows about a client, and a store that quietly
 // dropped the oldest entry to make room would be the worst possible one. Read
 // per call, like every other runtime setting.
+/**
+ * Returns how many entries may live under `ou=applications`
+ * (`applications.max`); a write past it is refused.
+ *
+ * @returns the ceiling
+ */
 function maxApplications() {
   log.debug("Entering maxApplications().");
   log.debug("Leaving maxApplications().");
@@ -954,6 +1019,11 @@ function maxPeps() {
   return config.value('xacml.maxPeps');
 }
 
+/**
+ * Returns how many entries one search may return (`ldap.sizeLimit`).
+ *
+ * @returns the limit
+ */
 function maxSearchResults() {
   log.debug("Entering maxSearchResults().");
   log.debug("Leaving maxSearchResults().");
@@ -1022,6 +1092,9 @@ let boundTlsPort = LDAPS_PORT;
 // showing `givenname` where every schema document says `givenName` reads as a
 // bug in the debugger.
 // ---------------------------------------------------------------------------
+/**
+ * The directory's entries, one Map per trust realm, keyed by normalised DN.
+ */
 const entries = realms.map();
 
 // EVERY REALM'S STORE, ADDED UP. The one number that is still about the process
@@ -1700,6 +1773,11 @@ function namingContexts() {
 // `ldap.maxEntries` ceiling is checked against THAT: the cap is on the memory
 // this process occupies, and a per-realm ceiling would let n realms hold n
 // times the number somebody set.
+/**
+ * Returns how many entries the ambient realm holds.
+ *
+ * @returns the count
+ */
 function realmEntryCount() {
   log.debug("Entering realmEntryCount().");
   log.debug("Leaving realmEntryCount().");
@@ -2348,6 +2426,14 @@ scimMap.OWN_NAMES.forEach(function (spelling) {
 // normalise escaping or attribute-value syntax, so a DN written with `\,` in a
 // value is compared byte-wise. That is enough for a directory whose DNs this
 // service and its own debugger write.
+/**
+ * Returns a DN as a comparison key: each RDN trimmed and case-folded. A
+ * simplification of RFC 4518 string preparation; escaping is compared
+ * byte-wise.
+ *
+ * @param value - the DN
+ * @returns the key
+ */
 function normalizeDn(value) {
   log.debug("Entering normalizeDn().");
   const text = String(value == null ? '' : value).trim();
@@ -2598,6 +2684,12 @@ function backfilledEntryUuid(realmId, key) {
                        String(key));
 }
 
+/**
+ * Returns an entry's `entryUUID`, lower-cased.
+ *
+ * @param stored - the entry
+ * @returns the UUID; empty when it has none
+ */
 function entryUuidOf(stored) {
   log.debug("Entering entryUuidOf().");
   const value = stored && stored.attributes &&
@@ -2658,6 +2750,14 @@ function generalizedTimeSeconds(text) {
 // What the entry should say after `incoming` replaced `local` at one key:
 // `{ uuid, aliases }`, or null when there is nothing to reconcile. Pure, so
 // the rule can be asked without a store.
+/**
+ * Works out what an entry should say after another process's copy replaced this
+ * one at the same key: the UUID to keep and the aliases to record. Pure.
+ *
+ * @param local - this process's entry
+ * @param incoming - the entry that replaced it
+ * @returns `{ uuid, aliases }`, or null when there is nothing to reconcile
+ */
 function mergeCreateRace(local, incoming) {
   log.debug("Entering mergeCreateRace().");
   const mine = entryUuidOf(local);
@@ -2724,6 +2824,13 @@ const uuidIndexes = realms.keyed(function () {
 // SCIM and for a client that stored an id before the change; a dangling DN
 // (a member whose entry is gone) has no UUID and is reported as itself.
 // ---------------------------------------------------------------------------
+/**
+ * Resolves a SCIM resource id (the entry's `entryUUID`) to its DN; a DN is
+ * returned as it is.
+ *
+ * @param id - the UUID, `urn:uuid:` form, or a DN
+ * @returns the DN, or the id itself when no entry holds that UUID
+ */
 function dnForResourceId(id) {
   log.debug("Entering dnForResourceId().");
   const text = String(id == null ? '' : id).trim();
@@ -2736,6 +2843,13 @@ function dnForResourceId(id) {
   return text;
 }
 
+/**
+ * Returns the SCIM resource id of the entry at a DN: its `entryUUID`.
+ *
+ * @param dn - the DN
+ * @returns the UUID, or the DN itself for an entry with none (a dangling
+ * member)
+ */
 function resourceIdOfDn(dn) {
   log.debug("Entering resourceIdOfDn().");
   const value = entryUuidOf(getEntry(String(dn || '')));
@@ -2743,6 +2857,13 @@ function resourceIdOfDn(dn) {
   return value || String(dn || '');
 }
 
+/**
+ * Finds the entry of the ambient realm with an `entryUUID`, through an index
+ * rebuilt when the store has changed.
+ *
+ * @param uuid - the UUID, bare or `urn:uuid:`
+ * @returns the entry, or null
+ */
 function entryByUuid(uuid) {
   log.debug("Entering entryByUuid().");
   const wanted = String(uuid || '').trim().toLowerCase()
@@ -3496,6 +3617,10 @@ realms.onCreate(function (id) {
     // directory slot, which resolves the container from the ambient realm —
     // the same reason `seed()` is in here.
     applications.seedInternalApplications({ scope: 'every' });
+    // THE TWO CONSOLE ROLES (#303) — ADMIN_READ and ADMIN_WRITE, configured
+    // roles in every realm, each held by the realm's own management API
+    // client. After the applications, whose client they name.
+    roles.seedConsoleRoles();
   });
   log.info('ldap: built the "' + id + '" realm\'s subtree at ' +
            realmBaseDn(id) + '.');
@@ -4139,6 +4264,13 @@ function commonNameOf(dn) {
 // so believing the class would fold a person onto a group. Placement is the
 // rule that cannot be lied to.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the name a person is known by from their entry's RDN value,
+ * unescaped, whether the entry is named by `uid` or by `cn`.
+ *
+ * @param stored - the entry
+ * @returns the name
+ */
 function usernameOfEntry(stored) {
   log.debug("Entering usernameOfEntry().");
   const rdn = splitRdns(stored.dn)[0] || '';
@@ -4204,6 +4336,14 @@ function entryBySpiffeSubject(id) {
   return found;
 }
 
+/**
+ * Finds a person's entry by the name they authenticate under: the `uid` DN
+ * directly under `ou=users` first, then any entry there whose RDN value matches
+ * case-insensitively.
+ *
+ * @param name - the username
+ * @returns the entry, or null
+ */
 function existingUserEntry(name) {
   log.debug('Entering existingUserEntry().');
   const wanted = String(name == null ? '' : name).trim().toLowerCase();
@@ -5337,6 +5477,14 @@ function recordSpiffeCredentialStatus(detail) {
 // ---------------------------------------------------------------------------
 // An entry for whoever authenticated, anywhere in this service.
 // ---------------------------------------------------------------------------
+/**
+ * Creates, or finds, the entry for whoever authenticated anywhere in this
+ * service; a federated sign-in goes on even where nothing is auto-created.
+ *
+ * @param detail - what the authentication knows: `key` (the name) and the facts
+ * it carries, `federation` for a federated sign-in
+ * @returns the entry, or null when nothing was created or found
+ */
 function autoCreateUser(detail) {
   log.debug('Entering autoCreateUser(). key=' + (detail && detail.key));
   // A FEDERATED sign-in goes on even when this service creates nobody: see
@@ -5631,6 +5779,13 @@ function autoCreateUser(detail) {
 // checks the two role-group names it seeds with this function, and a `const`
 // declared down here does not exist yet when it does.)
 
+/**
+ * Says whether a name can be used as a DN value without escaping: it holds none
+ * of RFC 4514's reserved characters.
+ *
+ * @param name - the name
+ * @returns true when it can
+ */
 function nameUsableInDn(name) {
   log.debug("Entering nameUsableInDn().");
   log.debug("Leaving nameUsableInDn().");
@@ -5777,6 +5932,16 @@ function personAttributesFrom(given) {
 //     recorded" is a statement about this create rather than a permanent
 //     property of the entry. /admin/users/new says so on the page.
 // ---------------------------------------------------------------------------
+/**
+ * Creates a person on purpose, from the console or the management API, at
+ * `uid=<name>,ou=users`.
+ *
+ * @param name - the username
+ * @param options - `attributes` (the values typed), `invent` (false to invent
+ * no attribute values) and `mailSource`
+ * @returns `{ ok: true, dn, username, typed, invented, entry }`, or a refusal
+ * marked with its error code
+ */
 function createUser(name, options) {
   log.debug('Entering createUser(). name=' + name);
   const opts = options || {};
@@ -6165,6 +6330,13 @@ function personaKeyOf(stored) {
 // organizationalUnit — an `ou=users` carrying a nationality is not a person, it
 // is a bug that reads as one.
 // ---------------------------------------------------------------------------
+/**
+ * Fills every missing credential claim attribute on every person under
+ * `ou=users` in the ambient realm; nothing runs in a mode that invents no claim
+ * values.
+ *
+ * @returns `{ examined, changed, values, attributes, ... }`
+ */
 function populateVcAttributes() {
   log.debug('Entering populateVcAttributes().');
   const wanted = vcClaims.selectedNames();
@@ -6246,6 +6418,13 @@ function populateVcAttributes() {
 // The two tests below are the sweep's own, applied to the one entry so that it
 // is treated exactly as the walk would have treated it.
 // ---------------------------------------------------------------------------
+/**
+ * Fills the missing credential claim attributes of one person's entry, as the
+ * sweep would.
+ *
+ * @param dn - the entry's DN
+ * @returns `{ examined, changed, values }`
+ */
 function populateVcAttributesAt(dn) {
   log.debug('Entering populateVcAttributesAt(). dn=' + dn);
   const stored = getEntry(dn);
@@ -6427,6 +6606,14 @@ function locateEntry(key) {
   return { dn: dn, stored: null };
 }
 
+/**
+ * Describes a person for the console: the entry this service files them under
+ * (by name, certificate subject, DID or SPIFFE ID), every other entry naming
+ * the same person, and the directory's state.
+ *
+ * @param name - the name or identifier
+ * @returns the description
+ */
 function objectFor(name) {
   log.debug('Entering objectFor(). name=' + name);
   const key = String(name == null ? '' : name).trim();
@@ -6740,6 +6927,14 @@ function directoryState() {
 // With no DN it is the list. With one it is the list AND that group in full —
 // the list costs one pass over a store capped at maxEntries() and it is what
 // lets the detail page carry its own way back to the siblings.
+/**
+ * Lists the ambient realm's groups for the console and, given a DN, that group
+ * in full.
+ *
+ * @param dn - the group's DN, or empty for the list alone
+ * @returns the directory's state with `groups`, and `group`, `found` and
+ * `notAGroup` for a requested DN
+ */
 function groupsFor(dn) {
   log.debug('Entering groupsFor(). dn=' + (dn || '(the whole list)'));
   const wanted = String(dn == null ? '' : dn).trim();
@@ -7034,6 +7229,12 @@ function groupIndexNow() {
   return cache.index;
 }
 
+/**
+ * Lists the groups a person is a member of.
+ *
+ * @param key - the person's name or identifier
+ * @returns `{ key, dn, entryFound, groups, baseDn, groupsDn }`
+ */
 function groupsOfUser(key) {
   log.debug('Entering groupsOfUser(). key=' + key);
   const wanted = String(key == null ? '' : key).trim();
@@ -11258,6 +11459,12 @@ let remoteDropper = null;
 // process holding anything for me". The first is an ordinary empty snapshot —
 // a service nobody has bound to — and must leave this process mirrored; the
 // second is how a test puts itself back to holding its own sockets.
+/**
+ * In a request worker, installs the front process's snapshot of bound
+ * connections; anything but an array uninstalls it.
+ *
+ * @param rows - the snapshot
+ */
 function setConnectionMirror(rows) {
   log.debug("Entering setConnectionMirror().");
   const first = connectionMirror === null;
@@ -11282,6 +11489,12 @@ function setConnectionMirror(rows) {
 // ORDER — that the socket is closed before the answer to this request reaches
 // the client — and the mechanism that keeps that promise is the response
 // itself.
+/**
+ * In a request worker, installs the function that carries a sign-out's key to
+ * the front process.
+ *
+ * @param fn - the dropper, or anything else to remove it
+ */
 function setRemoteDropper(fn) {
   log.debug("Entering setRemoteDropper().");
   remoteDropper = (typeof fn === 'function') ? fn : null;
@@ -11329,6 +11542,11 @@ servers.forEach(function (one) {
 // A socket this process now holds, until it closes. A function of its own so
 // that `tests/cluster_signout_signals.js` can hand it a socket without a
 // listener: the cross-node close is only worth asserting against the real Set.
+/**
+ * Holds a connection until it closes, publishing the change.
+ *
+ * @param socket - the connection
+ */
 function holdSocket(socket) {
   log.debug("Entering holdSocket().");
   liveConnections.add(socket);
@@ -11352,6 +11570,12 @@ function holdSocket(socket) {
 // this node's. `ldap_cluster_connections.js` argues the table and the
 // instruction; the hooks below are the only way it reaches a socket.
 // ---------------------------------------------------------------------------
+/**
+ * Lists every bound LDAP connection: this process's own (or its front process's
+ * mirror) and, in an active-active cluster, what every other node published.
+ *
+ * @returns the rows, each with its DN, identity key, port and when it bound
+ */
 function boundConnections() {
   log.debug("Entering boundConnections().");
   const local = localBoundConnections();
@@ -11365,6 +11589,12 @@ function boundConnections() {
 // DN is read live, per the note above; `key` is the console's identity key for
 // that person, derived the same way every other door here derives it, so a row
 // on /logout and a row on /admin/users name one person rather than two.
+/**
+ * Lists the connections this node holds, with who is bound on each, from the
+ * sockets or, in a request worker, from the mirror.
+ *
+ * @returns the rows
+ */
 function localBoundConnections() {
   log.debug("Entering localBoundConnections().");
   // A PROCESS WITH NO LISTENER ANSWERS OUT OF THE MIRROR. See the block above:
@@ -11472,6 +11702,15 @@ function remoteDropsFor(wanted) {
 // rows other nodes have published are returned after this node's with
 // `remote: true, pending: true`: instructed, closed when that node applies the
 // change log. See ldap_cluster_connections.js.
+/**
+ * Closes every connection bound as an identity, LDAP's only sign-out, and says
+ * which. In an active-active cluster it first writes the sign-out instruction
+ * for every other node.
+ *
+ * @param key - the identity key
+ * @param options - `localOnly`, to close this node's connections only
+ * @returns the connections closed, followed by other nodes' as instructed
+ */
 function dropConnectionsFor(key, options) {
   log.debug("Entering dropConnectionsFor(). key=" + key);
   const wanted = String(key || '');
@@ -11898,6 +12137,14 @@ function plainChanges(changes) {
 // handed a half-described request would answer confidently about the wrong
 // thing.
 // ---------------------------------------------------------------------------
+/**
+ * Describes an LDAP request as a plain object a request worker can run.
+ *
+ * @param operation - the operation's name
+ * @param req - the ldapjs request
+ * @returns the shape
+ * @throws when the request has a shape this function cannot describe
+ */
 function operationRequest(operation, req) {
   log.debug('Entering operationRequest(). operation=' + operation);
   const shape = {
@@ -11950,6 +12197,14 @@ function operationRequest(operation, req) {
 // **A FILTER IS RE-PARSED AND NEVER RECONSTRUCTED** — the handler calls
 // `req.filter.matches()`, which no plain object has, and the submodule that
 // parsed it on the way in is the one parsing it here.
+/**
+ * Rebuilds a request the handlers can read from a plain shape, re-parsing its
+ * DN and filter.
+ *
+ * @param operation - the operation's name
+ * @param shape - what `operationRequest()` made
+ * @returns the request
+ */
 function operationContext(operation, shape) {
   log.debug('Entering operationContext(). operation=' + operation);
   const req = {
@@ -12009,6 +12264,14 @@ function operationContext(operation, shape) {
 // diagnosticMessage, a worker's TypeError would otherwise describe this
 // service's internals to whoever is connected. The audit row keeps it.
 // ---------------------------------------------------------------------------
+/**
+ * Rebuilds an LDAP error from its name, or an `OperationsError` telling the
+ * client `internal error` when the name is not an LDAP error.
+ *
+ * @param name - the error's constructor name
+ * @param message - its message
+ * @returns the error
+ */
 function ldapErrorNamed(name, message) {
   log.debug('Entering ldapErrorNamed(). name=' + name);
   const candidate = /Error$/.test(String(name || '')) ? ldap[name] : null;
@@ -12091,6 +12354,16 @@ function collectingResponse() {
 // branch did it on the socket. Here it would hang them just as completely, one
 // process further away, so it is turned into a refusal naming the operation.
 // ---------------------------------------------------------------------------
+/**
+ * Runs one LDAP operation with the handler the socket would call, collecting
+ * its answer; a handler that neither ended nor failed is reported as a failure.
+ *
+ * @param operation - the operation's name
+ * @param shape - the request, as `operationRequest()` described it
+ * @returns the outcome, `{ ok, entries, ... }` or `{ ok: false, errorName, ...
+ * }`, or a promise of it
+ * @throws when this process has no handler for the operation
+ */
 function performOperation(operation, shape) {
   log.debug('Entering performOperation(). operation=' + operation);
   const handler = LOCAL_HANDLERS[operation];
@@ -12190,6 +12463,16 @@ function operationOutcome(operation, req, res, failure) {
 // header: the worker decides, this process stamps the connection and publishes
 // the snapshot, because the connection is this process's.
 // ---------------------------------------------------------------------------
+/**
+ * Writes an operation's outcome to the real response, sending a search's
+ * entries first and applying a bind's effects on the connection here.
+ *
+ * @param operation - the operation's name
+ * @param req - the ldapjs request
+ * @param res - the ldapjs response
+ * @param next - the handler chain's next
+ * @param result - the outcome
+ */
 function applyOperationResult(operation, req, res, next, result) {
   log.debug('Entering applyOperationResult(). operation=' + operation);
   // THE ENTRIES GO OUT FIRST, WHETHER OR NOT THE OPERATION SUCCEEDED. A
@@ -12318,6 +12601,10 @@ function throughTheRequestPool(operation, local) {
 // which in a process that loads this module twice would turn a duplicate
 // require into a startup failure about a feature that is off.
 // ---------------------------------------------------------------------------
+/**
+ * Registers the LDAP operations a request worker runs; only in a process that
+ * is a worker, and idempotent.
+ */
 function registerWorkerOperations() {
   log.debug('Entering registerWorkerOperations().');
   // ONLY IN A PROCESS THAT IS ACTUALLY A WORKER (2026-09-12). Requiring
@@ -12720,6 +13007,12 @@ server.bind('', function (req, res, next) {
 // ---------------------------------------------------------------------------
 let connectionWatcher = null;
 
+/**
+ * In the front process, installs the function a snapshot of bound connections
+ * is pushed to on every change.
+ *
+ * @param fn - the watcher, or anything else to remove it
+ */
 function setConnectionWatcher(fn) {
   log.debug("Entering setConnectionWatcher().");
   connectionWatcher = (typeof fn === 'function') ? fn : null;
@@ -12729,6 +13022,12 @@ function setConnectionWatcher(fn) {
 // What travels: everything boundConnections() reports EXCEPT the socket, which
 // is the one member that cannot cross a process boundary and the one no reader
 // but dropConnectionsFor() has ever used.
+/**
+ * Returns this node's bound connections without their sockets, the snapshot
+ * pushed to request workers.
+ *
+ * @returns the rows
+ */
 function connectionSnapshot() {
   log.debug("Entering connectionSnapshot().");
   // THIS NODE'S ONLY: another node's rows reach a worker through the cluster
@@ -12779,6 +13078,10 @@ function publishConnections() {
 // ---------------------------------------------------------------------------
 let publishScheduled = false;
 
+/**
+ * Publishes the bound connections a tick later, to the cluster table and the
+ * front process's watcher, coalescing a burst of changes.
+ */
 function publishConnectionsSoon() {
   log.debug("Entering publishConnectionsSoon().");
   // The cluster table first, and whatever the in-container watcher is doing:
@@ -15775,6 +16078,8 @@ federation.setDirectory({
 // line above this one. `applications.seedInternal` decides whether it happens
 // at all, and is read over there.
 applications.seedInternalApplications();
+// And the two console roles (#303), for the realm-builder's reason above.
+roles.seedConsoleRoles();
 
 // ---------------------------------------------------------------------------
 // THE SPIFFE CONTAINERS AS A STORE.
@@ -16055,6 +16360,13 @@ spiffeRegistry.setDirectory({
 // same test populateVcAttributes() applies, and for the same reason: this
 // directory is schemaless, so what an entry IS cannot be read off an
 // objectClass, and placement is the only rule that cannot be argued with.
+/**
+ * Says whether an entry is a person: placed under `ou=users`, the container
+ * itself excepted.
+ *
+ * @param stored - the entry
+ * @returns true for a person
+ */
 function isPersonEntry(stored) {
   log.debug("Entering isPersonEntry().");
   log.debug("Leaving isPersonEntry().");
@@ -16062,6 +16374,11 @@ function isPersonEntry(stored) {
          normalizeDn(stored.dn) !== normalizeDn(usersDn());
 }
 
+/**
+ * Counts the people in the ambient realm.
+ *
+ * @returns the count
+ */
 function personCount() {
   log.debug("Entering personCount().");
   let n = 0;
@@ -16076,6 +16393,11 @@ function personCount() {
 // SCIM list response comes back in is stable across calls — scimmy sorts and
 // pages on top of this, and a list whose underlying order changed between two
 // pages would drop and repeat people with nothing looking wrong.
+/**
+ * Lists every person in the ambient realm, sorted by normalised DN.
+ *
+ * @returns the entries
+ */
 function allPersons() {
   log.debug('Entering allPersons().');
   const rows = [];
@@ -16098,6 +16420,13 @@ function allPersons() {
 // handed an application entry because it guessed the right DN, and answering
 // 404 for it is the same answer any other directory would give for a resource
 // that is not of the type asked for.
+/**
+ * Reads one person by SCIM id or DN.
+ *
+ * @param dn - the SCIM id or DN
+ * @returns the entry, or null for nothing there or an entry that is not a
+ * person
+ */
 function readPerson(dn) {
   log.debug('Entering readPerson(). dn=' + dn);
   // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
@@ -16155,6 +16484,12 @@ function readPerson(dn) {
 // ---------------------------------------------------------------------------
 let accountObserver = null;
 
+/**
+ * Fills the account observer slot Shared Signals uses, told of every write to a
+ * person's entry.
+ *
+ * @param fn - the observer, or anything else to clear it
+ */
 function setAccountObserver(fn) {
   log.debug('Entering setAccountObserver().');
   accountObserver = typeof fn === 'function' ? fn : null;
@@ -16169,6 +16504,12 @@ function setAccountObserver(fn) {
 // it never throws into a write.
 const accountListeners = [];
 
+/**
+ * Adds another listener told of every write to a person's entry, beside the
+ * slot.
+ *
+ * @param fn - the listener
+ */
 function addAccountObserver(fn) {
   log.debug('Entering addAccountObserver().');
   if (typeof fn === 'function' && accountListeners.indexOf(fn) < 0) {
@@ -16676,6 +17017,16 @@ function sameAttributesApartFromTimestamps(a, b) {
 // rather than a warning — unlike writeApplication(), where the application's
 // own request had already succeeded and only the record was at stake, here the
 // request IS the write.
+/**
+ * Creates or replaces a person's entry, telling the account observers what
+ * moved.
+ *
+ * @param dn - the entry's DN
+ * @param attributes - the whole entry's attributes
+ * @param options - `mailSource`, saying who vouches for the address
+ * @returns `{ ok: true, created, dn, ... }`, or `{ ok: false, reason }`
+ * (`notAPerson`, `full` or `noParent`) marked with its error code
+ */
 function writePerson(dn, attributes, options) {
   log.debug('Entering writePerson(). dn=' + dn);
   const existing = getEntry(dn);
@@ -16777,6 +17128,13 @@ function isBootstrapAdministratorEntry(stored) {
 // documents: referential integrity is a directory feature and not a protocol
 // rule, and a dangling member is exactly what /admin/groups exists to report. A
 // SCIM client that means to remove somebody from their groups has to say so.
+/**
+ * Deletes a person's entry, leaving its DN in any group that lists it.
+ *
+ * @param dn - the SCIM id or DN
+ * @returns `{ ok: true, dn, dangling }`, or a refusal marked with its error
+ * code
+ */
 function deletePerson(dn) {
   log.debug('Entering deletePerson(). dn=' + dn);
   // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
@@ -16817,6 +17175,12 @@ function deletePerson(dn) {
 // each one matched comes back on it, because a SCIM client that finds a Group
 // outside ou=groups deserves to be able to see why this service thinks it is
 // one.
+/**
+ * Lists every group in the ambient realm, by placement or objectClass, sorted
+ * by normalised DN.
+ *
+ * @returns the entries, each with the rule it matched
+ */
 function allGroupEntries() {
   log.debug('Entering allGroupEntries().');
   const rows = [];
@@ -16850,6 +17214,12 @@ function allGroupEntries() {
 // nothing about a group's own definition could have caught it. Each door was
 // guarded by hand first and the store split made the guard structural — these
 // now read the realm's own store and could not reach another's if they tried.
+/**
+ * Reads one group of the ambient realm by SCIM id or DN.
+ *
+ * @param dn - the SCIM id or DN
+ * @returns the entry, or null for nothing there or an entry that is not a group
+ */
 function readGroupEntry(dn) {
   log.debug('Entering readGroupEntry(). dn=' + dn);
   // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
@@ -16873,6 +17243,12 @@ function readGroupEntry(dn) {
 // objectClass — scim_map.js adds groupOfNames — so a group created over SCIM is
 // one by both rules rather than by where it happens to sit, and stays one if a
 // client moves it.
+/**
+ * Returns where a new group goes: `cn=<displayName>,ou=groups`.
+ *
+ * @param displayName - the group's name
+ * @returns the DN
+ */
 function groupDnFor(displayName) {
   log.debug("Entering groupDnFor().");
   log.debug("Leaving groupDnFor().");
@@ -16918,6 +17294,13 @@ function createClaimSpec(what) {
 
 // The same, claimed. Resolves to the answer `directory_create_claims.claim()`
 // gives.
+/**
+ * Claims a create's DN and name across the nodes of a cluster.
+ *
+ * @param what - `{ username }`, `{ group }` or `{ dn, uids }`
+ * @returns a promise of the claim, as `directory_create_claims.claim()` answers
+ * it
+ */
 function claimCreate(what) {
   log.debug("Entering claimCreate().");
   let spec = null;
@@ -16941,6 +17324,15 @@ function claimCreate(what) {
 // /admin/groups, which is the one place a reader can tell a group somebody
 // PATCHed over SCIM from one the console created. It defaults to `scim`, so the
 // call site that predates the parameter says exactly what it always meant.
+/**
+ * Creates or replaces a group's entry.
+ *
+ * @param dn - the group's DN
+ * @param attributes - the whole entry's attributes
+ * @param origin - which door wrote it (default `scim`)
+ * @returns `{ ok: true, created, dn, ... }`, or `{ ok: false, reason }` marked
+ * with its error code
+ */
 function writeGroupEntry(dn, attributes, origin) {
   log.debug('Entering writeGroupEntry(). dn=' + dn + ', origin=' +
             (origin || 'scim'));
@@ -16981,6 +17373,12 @@ function writeGroupEntry(dn, attributes, origin) {
            entry: readGroupEntry(stored.dn) };
 }
 
+/**
+ * Deletes a group's entry.
+ *
+ * @param dn - the SCIM id or DN
+ * @returns `{ ok: true, dn }`, or a refusal marked with its error code
+ */
 function deleteGroupEntry(dn) {
   log.debug('Entering deleteGroupEntry(). dn=' + dn);
   // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
@@ -17045,6 +17443,16 @@ function deleteGroupEntry(dn) {
 // avoid — and the page that reports the state is right there to say it
 // happened.
 // ---------------------------------------------------------------------------
+/**
+ * Creates a group by hand, from the console or the management API, with the
+ * members named; an empty group is allowed.
+ *
+ * @param displayName - the group's name
+ * @param options - `members`, `note`, and `actor`, `channel`, `origin` and
+ * `protocol` for the audit row
+ * @returns `{ ok: true, dn, group, members, dangling, entry }`, or a refusal
+ * marked with its error code
+ */
 function createGroup(displayName, options) {
   log.debug('Entering createGroup(). displayName=' + displayName);
   const opts = options || {};
@@ -17181,6 +17589,13 @@ function createGroup(displayName, options) {
 // beside the entry it was meant to name. With nobody there, the uid form is
 // where a person created later will be, so the value resolves the moment they
 // arrive.
+/**
+ * Resolves a group member to a DN: a DN as given, or a name to the person's own
+ * entry (or where one would be created).
+ *
+ * @param nameOrDn - the name or DN
+ * @returns `{ dn, present, wasDn }`
+ */
 function memberDnFor(nameOrDn) {
   log.debug('Entering memberDnFor(). ' + nameOrDn);
   const wanted = String(nameOrDn == null ? '' : nameOrDn).trim();
@@ -17229,6 +17644,17 @@ function memberDnFor(nameOrDn) {
 // a script that adds on every run fail on its second one — and the bulk-load
 // jobs in tests/vendored are exactly such a script.
 // ---------------------------------------------------------------------------
+/**
+ * Adds a member to a group; adding one already there answers ok with `changed:
+ * false`.
+ *
+ * @param group - the group's `cn` or DN
+ * @param member - the member's name or DN
+ * @param options - `actor`, `channel`, `origin` and `protocol`, for the audit
+ * row
+ * @returns `{ ok: true, changed, dn, member, present }`, or a refusal marked
+ * with its error code
+ */
 function addGroupMember(group, member, options) {
   log.debug('Entering addGroupMember(). group=' + group + ', member=' + member);
   const opts = options || {};
@@ -18703,6 +19129,13 @@ if (typeof admin.setDirectoryPages === 'function') {
            'nine directory pages. The pages themselves are unaffected.');
 }
 
+/**
+ * Starts the plain LDAP and the LDAPS listeners. A failure to bind is recorded
+ * and published on `GET /admin/ldap/service`, never thrown.
+ *
+ * @returns `{ server, secureServer, whenReady }`, `whenReady` a promise of both
+ * listeners' ports and state
+ */
 function listen() {
   log.debug('Entering listen().');
   const whenPlain = new Promise(function (resolve, reject) {
@@ -18863,6 +19296,9 @@ function listen() {
            whenReady: whenReady };
 }
 
+/**
+ * Closes the listeners, ignoring one that never bound.
+ */
 function close() {
   log.debug('Entering close().');
   servers.forEach(function (one) {
@@ -19102,6 +19538,13 @@ function describeDirectoryCaches() {
 
 describeDirectoryCaches();
 
+/**
+ * The embedded LDAP directory: the per-realm entry store for people, groups,
+ * applications and the SPIFFE registry, the LDAP and LDAPS listeners, and the
+ * doors SCIM, the console and the management API write through.
+ *
+ * @namespace
+ */
 module.exports = {
   listen: listen,
   close: close,
@@ -19162,6 +19605,11 @@ module.exports = {
   // caller cannot install one: `LOCAL_HANDLERS` is what a worker runs, and a
   // handle on it would be a second door onto the seven handlers.
   // ---------------------------------------------------------------------
+  /**
+   * Lists the LDAP operations that can be dispatched to a request worker.
+   *
+   * @returns the operation names
+   */
   dispatchableOperations: function () {
     log.debug("Entering dispatchableOperations().");
     log.debug("Leaving dispatchableOperations().");
@@ -19172,6 +19620,12 @@ module.exports = {
   // is idempotent (a kind already registered is skipped), which is what makes
   // calling it a second time safe rather than a throw.
   registerWorkerOperations: registerWorkerOperations,
+  /**
+   * Returns the handler a request worker runs for an operation.
+   *
+   * @param operation - the operation's name
+   * @returns the handler, or undefined
+   */
   localHandler: function (operation) {
     log.debug("Entering localHandler().");
     log.debug("Leaving localHandler().");
@@ -19197,11 +19651,22 @@ module.exports = {
   // A global sign-out's instruction to every other node, whether or not this
   // process listed anything for the identity (logout.js's terminate()). Null
   // outside active-active. See ldap_cluster_connections.js.
+  /**
+   * Writes a sign-out instruction for an identity to every other node.
+   *
+   * @param key - the identity key
+   * @returns `{ instructed, at, node }`, or null outside active-active
+   */
   signOutAcrossCluster: function (key) {
     log.debug("Entering signOutAcrossCluster().");
     log.debug("Leaving signOutAcrossCluster().");
     return clusterConnections.instructSignOut(key);
   },
+  /**
+   * Reports the cluster connection mirror's state.
+   *
+   * @returns the report
+   */
   clusterConnectionsReport: function () {
     log.debug("Entering clusterConnectionsReport().");
     log.debug("Leaving clusterConnectionsReport().");

@@ -101,16 +101,38 @@ import audit = require('../common/audit');
 // the same string everywhere the service is deployed, which is what a
 // permission identifier has to be. Microsoft Entra ID's `api://` is the same
 // idea.
+/**
+ * The debugger api's permission base URI, a URN so the scope is the same
+ * wherever the service is deployed.
+ */
 const PERMISSION_BASE = 'urn:sts:debugger-api:';
+/**
+ * The name of the debugger api's one delegated permission.
+ */
 const PERMISSION_NAME = 'debugger';
+/**
+ * The scope value that grants use of the debugger:
+ * `urn:sts:debugger-api:debugger`.
+ */
 const PERMISSION_ID = PERMISSION_BASE + PERMISSION_NAME;
 
 // The two seeded applications. The UI is the client a person signs in through;
 // the api is the resource server that exposes the permission.
+/**
+ * The client_id of the seeded debugger UI application a person signs in
+ * through.
+ */
 const UI_CLIENT_ID = 'sts-debugger-ui';
+/**
+ * The identifier of the seeded resource-server application that defines the
+ * permission.
+ */
 const API_IDENTIFIER = 'sts-debugger-api';
 
 // The console roles, as `admin_rbac.rolesOf()` names them. Either is enough.
+/**
+ * The console roles, either of which lets a person use the debugger.
+ */
 const CONSOLE_ROLES = ['read', 'write'];
 
 // What `DebuggerAccess` needs from the rest of the service: the modules this
@@ -124,7 +146,20 @@ interface DebuggerAccessDeps {
   audit: typeof audit;
 }
 
+/**
+ * Decides who may use the embedded protocol debugger: any console
+ * administrator of the default realm, and nobody else.
+ *
+ * Asked when the permission would be issued and again on every call the
+ * debugger's gate forwards.
+ */
 class DebuggerAccess {
+  /**
+   * Builds the decision over the given modules.
+   *
+   * @param deps - the logger, realms, the access gate, the console's RBAC and
+   *   the audit log
+   */
   constructor(private readonly deps: DebuggerAccessDeps) {
     deps.log.debug("Entering DebuggerAccess.constructor().");
     deps.log.debug("Leaving DebuggerAccess.constructor().");
@@ -132,6 +167,11 @@ class DebuggerAccess {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the load-time default instance is built from.
+   *
+   * @returns the real modules
+   */
   static defaultDeps(): DebuggerAccessDeps {
     helpers.log.debug("Entering DebuggerAccess.defaultDeps().");
     helpers.log.debug("Leaving DebuggerAccess.defaultDeps().");
@@ -152,6 +192,16 @@ class DebuggerAccess {
   // is never a debugger user, because the debugger is a PERSON's tool and rcbj
   // chose that no machine client holds the permission.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a subject may use the debugger: a person, authenticated,
+   * holding Admin Read or Admin Write in the default realm, and allowed by
+   * the access policy.
+   *
+   * Refused as well while the console is open only because its roster is
+   * empty, and for the bootstrap administrator before it claims the console.
+   * @param subject - `{ name, authenticated, kind, path, sessionId }`
+   * @returns `{ allowed, why, code, roles }`
+   */
   isAdministrator(subject) {
     const { log, realms, adminRbac, accessGate } = this.deps;
     log.debug("Entering DebuggerAccess.isAdministrator().");
@@ -245,6 +295,12 @@ class DebuggerAccess {
   }
 
   // Whether a space-delimited scope carries the permission.
+  /**
+   * Says whether a space-delimited scope carries the debugger permission.
+   *
+   * @param scope - the scope string
+   * @returns true when PERMISSION_ID is among its values
+   */
   asksForPermission(scope) {
     const { log } = this.deps;
     log.debug("Entering DebuggerAccess.asksForPermission().");
@@ -266,6 +322,17 @@ class DebuggerAccess {
   // realm the value is taken off whoever asks. A person in `acme` who shares a
   // name with a default-realm administrator is somebody else.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the scope to grant: unchanged, unless it names the debugger
+   * permission for somebody who may not hold it, in which case that one
+   * value is removed and the removal audited.
+   *
+   * Outside the default realm the permission is always removed.
+   * @param scope - the scope about to be granted
+   * @param subject - the issuance subject, as isAdministrator() takes it
+   * @param context - `{ clientId, grant }`, for the audit row
+   * @returns the scope string to grant
+   */
   narrowScope(scope, subject, context) {
     const { log, realms, audit } = this.deps;
     log.debug("Entering DebuggerAccess.narrowScope().");
@@ -334,9 +401,18 @@ const slot = new InstanceSlot<DebuggerAccess>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Who may use the embedded protocol debugger, decided in one place.
+ *
+ * The functions forward to the DebuggerAccess instance the composition root
+ * installs.
+ * @namespace
+ */
 export = {
   DebuggerAccess: DebuggerAccess,
+  /** Installs the instance the composition root built. */
   installInstance: (instance: DebuggerAccess): void => slot.install(instance),
+  /** Says where the installed instance came from. */
   instanceOrigin: (): string => slot.origin(),
   PERMISSION_BASE: PERMISSION_BASE,
   PERMISSION_NAME: PERMISSION_NAME,

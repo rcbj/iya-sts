@@ -154,12 +154,29 @@ interface ApiExplorerDeps {
   oauth2: typeof oauth2;
 }
 
+/**
+ * The console path of the API explorer page; its OpenAPI document and script
+ * are served under it.
+ */
 const PATH = '/admin/api-explorer';
 const VERSION = version.load().version;
 
+/**
+ * The API explorer as a console page: every `/admin-api` operation with a form
+ * that calls it, behind the console's session and roles.
+ */
 class ApiExplorer {
+  /**
+   * See the module's `PATH`.
+   */
   static readonly PATH = PATH;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, realms, the console and its gate, the management
+   * API, its OpenAPI builders and the authorization server
+   */
   constructor(private readonly deps: ApiExplorerDeps) {
     deps.log.debug("Entering ApiExplorer.constructor().");
     deps.log.debug("Leaving ApiExplorer.constructor().");
@@ -167,6 +184,11 @@ class ApiExplorer {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): ApiExplorerDeps {
     helpers.log.debug("Entering ApiExplorer.defaultDeps().");
     helpers.log.debug("Leaving ApiExplorer.defaultDeps().");
@@ -269,6 +291,14 @@ class ApiExplorer {
   // OpenAPI document: that is what the route below serves, and repeating it
   // here would be a second copy of a large thing in a reply whose subject is
   // the PAGE.
+  /**
+   * Describes the page for `?format=json` and the operation that mirrors it;
+   * not the whole OpenAPI document, which the page's own route serves.
+   *
+   * The access token the page's calls use is never in this reply.
+   * @param req - the console request
+   * @returns the page's JSON view
+   */
   explorerJson(req: Req): Json {
     const { log, adminViews, adminApi, spec } = this.deps;
     const self = this;
@@ -305,6 +335,12 @@ class ApiExplorer {
     };
   }
 
+  /**
+   * Registers the page, the OpenAPI document it reads and the browser script
+   * that renders it, below the console's gate.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: Json): void {
     const { log, realms, admin, adminViews, adminApi, spec,
             docs } = this.deps;
@@ -437,10 +473,24 @@ helpers.log.info('The API explorer is at ' + PATH + ': every operation of ' +
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The API explorer at `/admin/api-explorer`: every operation of `/admin-api`
+ * with a form that calls it, on a console page whose calls carry a token minted
+ * for the reader with exactly what their roles grant.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   ApiExplorer: ApiExplorer,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: ApiExplorer): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PATH: PATH,
   explorerJson: slot.forward('explorerJson')

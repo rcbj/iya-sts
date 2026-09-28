@@ -4,10 +4,11 @@
 # Builds the mock STS container image.
 #
 # On every push to main (which is what a merged pull request is) and on demand
-# from the Actions tab. It does not publish: nothing here logs in to a registry,
-# so the image exists only for the life of the job. Pushing to rcbj/sts is the
-# parent project's business, and adding it here would need credentials this
-# repository does not have.
+# from the Actions tab. It does not publish: the image exists only for the life
+# of the job, and tests.yml is what pushes this repository's images. It does
+# log in to ghcr.io, READ-ONLY, because both of the Dockerfile's base images
+# come from the private image mirror (.github/image-mirror.txt) since
+# 2026-09-27.
 #
 # The build alone is worth running. This service is a shell — server.js requires
 # the other modules and listens — so a module that never reaches the image is not
@@ -24,6 +25,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  # The private image mirror on ghcr.io, read for the base images.
+  packages: read
 
 jobs:
   build:
@@ -69,6 +75,12 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
+      # THE BASE IMAGES ARE PRIVATE COPIES ON GHCR.IO (2026-09-27): see
+      # build-contexts below and .github/image-mirror.txt.
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       # load: true puts the result in the local daemon under the name compose
       # uses, so the smoke test below can run it. Without it buildx leaves the
       # image in its own cache and `docker run rcbj/sts` would pull from Docker
@@ -94,6 +106,13 @@ jobs:
           build-args: |
             BUILD_NUMBER=${{ github.run_number }}
             GIT_COMMIT=${{ github.sha }}
+          # Every FROM from the ghcr.io mirror, as docker-compose-run-tests.yml's
+          # x-mirror-contexts does (`ubuntu`, not `ubuntu:latest`: BuildKit
+          # drops `:latest` when it looks a name up).
+          # tests/image_mirror_coverage.js holds this list to the Dockerfile.
+          build-contexts: |
+            ubuntu=docker-image://ghcr.io/rcbj/iya-sts/mirror/ubuntu:latest
+            node:24.16.0-bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:24.16.0-bookworm-slim
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

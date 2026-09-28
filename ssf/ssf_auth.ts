@@ -204,8 +204,23 @@ const SCHEMES: Scheme[] = [
 // all. The same value and the same reasoning as SCIM's.
 const REFUSED_PASSWORD = 'invalid';
 
+/**
+ * The gate in front of the Shared Signals stream endpoints: OAuth 2.0 bearer
+ * tokens, GNAP and HTTP Basic, with a read and a write scope.
+ *
+ * In development mode Basic accepts any password but `invalid`; in product mode
+ * it verifies the password through `common/credentials.ts`.
+ */
 class SsfAuth {
+  /**
+   * The three schemes this gate knows, each with its id, name, `spec_urn` and a
+   * description, in the order a 401 offers them.
+   */
   static readonly SCHEMES = SCHEMES;
+  /**
+   * The one password Basic refuses in development mode, so that a
+   * wrong-credential path exists.
+   */
   static readonly REFUSED_PASSWORD = REFUSED_PASSWORD;
 
   // ---------------------------------------------------------------------------
@@ -221,6 +236,16 @@ class SsfAuth {
   // invisible to every development-mode run. A CLIENT's token is its
   // client_id in both modes now; a person's `sub` is untouched.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the stream-owner principal named by an access token's claims.
+   *
+   * A client's token is its `client_id` in both modes, whether `sub` is the
+   * bare client_id or `urn:sts:client:<client_id>`; otherwise `sub`.
+   *
+   * @param claims - the verified access token's claims
+   * @returns the client_id for a client's token, else `sub` (or the client_id
+   * when there is no `sub`)
+   */
   static principalOfClaims(claims: any): string {
     helpers.log.debug('Entering SsfAuth.principalOfClaims().');
     const sub = String((claims && claims.sub) || '');
@@ -234,6 +259,12 @@ class SsfAuth {
     return sub || clientId;
   }
 
+  /**
+   * Builds the gate from its dependencies.
+   *
+   * @param deps - the modules it reads, from `SsfAuth.defaultDeps()` or the
+   * composition root
+   */
   constructor(private readonly deps: SsfAuthDeps) {
     deps.helpers.log.debug("Entering SsfAuth.constructor().");
     deps.helpers.log.debug("Leaving SsfAuth.constructor().");
@@ -287,6 +318,12 @@ class SsfAuth {
   // setting is gone with the other three: "is authentication required here"
   // had four answers across this service and now has one. See
   // common/mode.js.
+  /**
+   * Whether these endpoints require a credential, which is the mode's answer
+   * (`mode.gatesSharedSignals()`).
+   *
+   * @returns true when a credential is required
+   */
   authRequired(): boolean {
     const { helpers: { log }, mode } = this.deps;
     log.debug("Entering SsfAuth.authRequired().");
@@ -295,6 +332,12 @@ class SsfAuth {
     return on;
   }
 
+  /**
+   * Returns the scope that permits reading a stream, its status and the poll
+   * queue (`ssf.authScopeRead`, default `ssf:read`).
+   *
+   * @returns the read scope
+   */
   scopeRead(): string {
     const { helpers: { log }, config } = this.deps;
     log.debug("Entering SsfAuth.scopeRead().");
@@ -303,6 +346,12 @@ class SsfAuth {
     return value;
   }
 
+  /**
+   * Returns the scope that permits changing streams, subjects, status and
+   * asking for verification (`ssf.authScopeWrite`, default `ssf:write`).
+   *
+   * @returns the write scope
+   */
   scopeWrite(): string {
     const { helpers: { log }, config } = this.deps;
     log.debug("Entering SsfAuth.scopeWrite().");
@@ -313,6 +362,11 @@ class SsfAuth {
 
   // The realm named in every challenge. One string, so a client that caches a
   // credential per realm caches it once.
+  /**
+   * Returns the realm named in every challenge, always `ssf`.
+   *
+   * @returns the challenge realm
+   */
   realm(): string {
     const { helpers: { log } } = this.deps;
     log.debug("Entering SsfAuth.realm().");
@@ -321,6 +375,14 @@ class SsfAuth {
   }
 
   // What a 401 offers, in the order this service prefers them.
+  /**
+   * Returns the `WWW-Authenticate` challenges a 401 offers, in this service's
+   * order of preference: Bearer, then Basic when offered, then GNAP when
+   * offered and a request is given (its `as_uri` needs the request's base).
+   *
+   * @param req - the request, when there is one
+   * @returns the challenge strings
+   */
   challenges(req?: AuthRequest | null): string[] {
     const { helpers: { log, baseUrlOf } } = this.deps;
     log.debug("Entering SsfAuth.challenges().");
@@ -753,6 +815,19 @@ class SsfAuth {
   // body, because a stream management refusal and a poll refusal are
   // different documents.
   // -------------------------------------------------------------------------
+  /**
+   * Authenticates a request to a protected endpoint and decides whether it
+   * holds the scope the operation needs.
+   *
+   * It tries OAuth, then GNAP, then Basic. It sends nothing itself: the
+   * decision carries `ok`, `status`, `err`, `description`, `headers` (the
+   * challenges on a 401), `principal`, `scheme`, `scopes` and, on a refusal,
+   * the error code, and the route writes the body.
+   *
+   * @param req - the incoming request
+   * @param need - `read`, `write` or `none` (the default)
+   * @returns the decision
+   */
   authenticate(req: AuthRequest, need?: string): Decision {
     const { helpers: { log }, mode } = this.deps;
     log.debug("Entering SsfAuth.authenticate(). need=" + need);
@@ -810,6 +885,12 @@ class SsfAuth {
   // defines only `spec_urn` on each entry, so that is the only member emitted
   // — a document carrying this service's own prose would be inviting a
   // receiver to depend on a member no specification defines.
+  /**
+   * Returns the `authorization_schemes` member of the transmitter
+   * configuration: one `{ spec_urn }` per scheme offered right now.
+   *
+   * @returns the schemes, in preference order
+   */
   schemesForMetadata(): Array<{ spec_urn: string }> {
     const { helpers: { log } } = this.deps;
     log.debug("Entering SsfAuth.schemesForMetadata().");
@@ -821,6 +902,13 @@ class SsfAuth {
   }
 
   // What this gate is, as data, for `GET /ssf` and `/admin/ssf`.
+  /**
+   * Describes this gate as data, for `GET /ssf` and `/admin/ssf`: whether it is
+   * required, the realm, the scopes, the schemes and whether each is offered,
+   * and a note on what the current mode verifies.
+   *
+   * @returns the description
+   */
   describe(): Record<string, any> {
     const { helpers: { log }, mode } = this.deps;
     log.debug("Entering SsfAuth.describe().");
@@ -855,6 +943,12 @@ class SsfAuth {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules this gate depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): SsfAuthDeps {
     helpers.log.debug("Entering SsfAuth.defaultDeps().");
     helpers.log.debug("Leaving SsfAuth.defaultDeps().");
@@ -896,9 +990,23 @@ const slot = new InstanceSlot<SsfAuth>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Shared Signals endpoints' authentication gate.
+ *
+ * Exports the `SsfAuth` class and facades that forward to the instance the
+ * composition root installs (or a default one built at load).
+ *
+ * @namespace
+ */
 export = {
   SsfAuth: SsfAuth,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SsfAuth): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   SCHEMES: SsfAuth.SCHEMES,
   REFUSED_PASSWORD: SsfAuth.REFUSED_PASSWORD,

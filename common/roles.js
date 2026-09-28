@@ -67,9 +67,27 @@
 // application is narrowing a list rather than switching on a subsystem that
 // has never run.
 //
-// The other four — ADMIN_READ and ADMIN_WRITE (read off an access token's
-// scopes), REMOTE_PEPS and XACML_USER (held through a named group) — are
-// argued at their rows in `BUILT_IN` below.
+// The others — DEVICE_COMPLIANCE (read off an access token's scope),
+// REMOTE_PEPS and XACML_USER (held through a named group) — are argued at
+// their rows in `BUILT_IN` below. ADMIN_READ and ADMIN_WRITE were built-ins
+// read off the scopes until #303 (2026-09-27) made them CONFIGURED roles; see
+// THE TWO CONSOLE ROLES, below the table.
+//
+// ---------------------------------------------------------------------------
+// A ROLE AUTHORIZES PERMISSIONS (#303, part B of #88, 2026-09-27).
+//
+// A third relation, stored on the ROLE entry beside its members because
+// rcbj decided it lives there: `rolePermission` names the permissions a
+// holder of the role may be ISSUED. A permission is named the way a client
+// asks for it — a generic application permission by its full scope value
+// (`https://api.example/write`, base + name), and a NATIVE one of this
+// service by its own name (`admin:read`, `admin:write`), which rcbj chose to
+// keep rather than re-spell. #88's rule is that a scope never grants
+// authorization by itself: it is a REQUEST, and the role is what authorizes
+// it. Which permissions need a role at all is the resource application's
+// choice (`oauthRoleGatedPermission`, #88 decision 1) — a permission nobody
+// gated is issued under the rules it always had — and the question is asked
+// in `common/role_permissions.ts`, not here: this file stays the leaf.
 //
 // The pairs are deliberately NOT complementary by accident — they are
 // complementary on purpose, and both halves exist because "everyone who did
@@ -110,6 +128,10 @@ const errorCodes = require('./error_codes');
 // is, because this directory is schemaless and a container of entries carrying
 // invented attributes has to say what they mean somewhere.
 // ---------------------------------------------------------------------------
+/**
+ * The `ou=roles` schema published on `/admin/ldap/roles`: the `stsRole`
+ * object class and what each of its attributes means.
+ */
 const SCHEMA = {
   objectClasses: [
     { name: 'stsRole',
@@ -139,6 +161,16 @@ const SCHEMA = {
             'person. Multi-valued. NOT the same relation as ' +
             '`appRequiredRole` on the application entry, which is what that ' +
             'application DEMANDS of others.' },
+    { name: 'rolePermission',
+      what: 'A permission a holder of this role may be ISSUED (#303). ' +
+            'Multi-valued. Named as a client asks for it: a generic ' +
+            'application permission by its full scope value — the resource ' +
+            'application\'s `oauthPermissionBaseUri` followed by the name — ' +
+            'and a native permission of this service by its own name ' +
+            '(`admin:read`, `admin:write`). It matters only for a permission ' +
+            'its resource application GATES (`oauthRoleGatedPermission`); ' +
+            'a gated permission is issued only to a subject holding a role ' +
+            'that names it, and an ungated one as it always was.' },
     { name: 'description',
       what: 'What the role is for, for the next person.' }
   ]
@@ -160,6 +192,13 @@ const SCHEMA = {
 // The numbers in the prose around it are the part that goes stale — this
 // heading said "six" for the whole of the day REMOTE_PEPS existed.
 // ---------------------------------------------------------------------------
+/**
+ * The built-in roles, computed from the context of a decision rather than
+ * stored: each row's `name`, `what` and `holds(context)`.
+ *
+ * `BUILT_IN_NAMES`, `builtInCatalogue()` and `isBuiltIn()` are derived from
+ * this array, so adding a row is the whole of adding a built-in role.
+ */
 const BUILT_IN = [
   { name: 'EVERYBODY',
     what: 'Anybody at all, authenticated or not, person or application. ' +
@@ -189,53 +228,18 @@ const BUILT_IN = [
       log.debug("Leaving holds().");
       return who.kind === 'user' && !who.authenticated;
     } },
-  // ---------------------------------------------------------------------
-  // THE TWO MANAGEMENT-API ROLES (2026-09-09), and they are the first
-  // built-ins computed from a CREDENTIAL rather than from what the party IS.
-  //
-  // `/admin-api` is reached with an OAuth 2.0 access token whose audience is
-  // the management API and whose scopes say what it may do. A scope is not a
-  // role — it is what the client ASKED FOR and the authorization server
-  // granted — so the mapping is stated here, once, and the policy is written
-  // in terms of roles like every other policy in this service. That is what
-  // lets `/admin/xacml` express "a read needs ADMIN_READ" without the
-  // document having to know that scopes exist.
-  //
-  // They are built-in rather than configured for the same reason
-  // ALL_AUTHENTICATED_USERS is: nobody grants them, they are READ OFF the
-  // request, and a deployment that could edit the membership of "holds
-  // admin:write" would have two answers to one question.
-  // ---------------------------------------------------------------------
-  { name: 'ADMIN_READ',
-    what: 'A caller presenting an access token for the management API that ' +
-          'carries the `admin:read` scope. Every READ operation on ' +
-          '/admin-api requires it.',
-    holds: function (who) {
-      log.debug("Entering holds().");
-      log.debug("Leaving holds().");
-      return who.scopes.indexOf('admin:read') >= 0;
-    } },
-  { name: 'ADMIN_WRITE',
-    what: 'A caller presenting an access token for the management API that ' +
-          'carries the `admin:write` scope. Every operation on /admin-api ' +
-          'that CHANGES anything requires it. It does not imply ADMIN_READ: ' +
-          'a token may carry either, both or neither, and the policy asks ' +
-          'for the one the operation needs.',
-    holds: function (who) {
-      log.debug("Entering holds().");
-      log.debug("Leaving holds().");
-      return who.scopes.indexOf('admin:write') >= 0;
-    } },
   // -------------------------------------------------------------------------
-  // THE THIRD COMPUTED FROM A CREDENTIAL (#164 phase 3, 2026-09-26), for the
+  // COMPUTED FROM A CREDENTIAL (#164 phase 3, 2026-09-26), for the
   // one `/admin-api` operation that is NOT an administrator's: an MDM or
   // posture feed reporting device compliance (`POST
   // /admin-api/device-compliance`). Its token carries `device:compliance`
   // and nothing else, so the feed can report posture and cannot read the
   // directory or change anything but a device's compliance — which is the
   // whole reason it is a scope and a role of its own rather than
-  // `admin:write` (rcbj's decision 2 on #164). Read off the scopes for
-  // ADMIN_WRITE's reason: nobody grants it, the token carries it.
+  // `admin:write` (rcbj's decision 2 on #164). Read off the scope — nobody
+  // grants it, the token carries it. It is the last role read off a scope:
+  // ADMIN_READ and ADMIN_WRITE, which it was modelled on, became configured
+  // roles authorizing their scopes in #303, and this one has not followed.
   // -------------------------------------------------------------------------
   { name: 'DEVICE_COMPLIANCE',
     what: 'A caller presenting an access token for the management API that ' +
@@ -398,6 +402,9 @@ function xacmlUserGroupName() {
   return String(config.value('roles.xacmlUserGroup') || '').trim();
 }
 
+/**
+ * The names of the built-in roles, in table order.
+ */
 const BUILT_IN_NAMES = BUILT_IN.map(function (one) {
   return one.name;
 });
@@ -405,14 +412,137 @@ const BUILT_IN_NAMES = BUILT_IN.map(function (one) {
 // The default requirement, and the one name in this file that other modules
 // hard-code. Exported so that `applications.js`, the console and the XACML PEP
 // all mean the same string by "the permissive default".
+/**
+ * The requirement of an application that names none: EVERYBODY, which
+ * everybody holds, so nothing is refused.
+ */
 const DEFAULT_REQUIRED_ROLE = 'EVERYBODY';
 
+/**
+ * Tells whether a role name is one of the built-in, computed roles.
+ *
+ * @param name - a role name
+ * @returns true for a built-in role
+ */
 function isBuiltIn(name) {
   log.debug("Entering isBuiltIn().");
   log.debug("Leaving isBuiltIn().");
   return BUILT_IN_NAMES.indexOf(String(name)) >= 0;
 }
 
+// ---------------------------------------------------------------------------
+// THE TWO CONSOLE ROLES (#303, part B of #88, 2026-09-27).
+//
+// ADMIN_READ and ADMIN_WRITE were BUILT-IN until today and were read off an
+// access token's scopes: a token carrying `admin:write` WAS Admin Write. That
+// is the pattern #88 exists to remove — a scope granting authorization by
+// itself — so they are CONFIGURED roles now, one entry each under
+// `ou=roles` in every realm, seeded at startup and when a realm is built,
+// and what they AUTHORIZE is the native permission of the same name
+// (`rolePermission`). The scope is what a client ASKS for; the role is what
+// lets it be issued.
+//
+// **THEY ARE CONFIGURED ROLES OVER THE CONSOLE'S TWO GROUPS, AND THE CONSOLE
+// ROSTER DECIDES WHICH PEOPLE HOLD THEM (rcbj's decision 4 on #88).** Their
+// groups are not stored: they are `admin.readGroup` and `admin.writeGroup`,
+// read when the entry is read — ADMIN_READ over both, because Admin Write
+// implies Admin Read on the roster — so a renamed group cannot leave a stale
+// copy here. Membership for a PERSON is answered by the roster
+// (`admin-ui/admin_rbac.ts`) in `common/role_permissions.ts`, which is what
+// carries development's open console and the bootstrap administrator's claim
+// to the API door; this file is a leaf and resolves the groups alone, which
+// is the same answer everywhere but those two windows. So `/admin/rbac` is
+// the one door for people, and a person or group written onto these entries
+// here is refused: two places granting one role would be two answers.
+//
+// **AN APPLICATION IS AN ORDINARY MEMBER**, and that is what changed for
+// machines (decision 3 on #303): a client on `client_credentials` is issued
+// `admin:*` only while it holds the role, so declaring the scope in
+// `oauthAllowedScope` is no longer enough. `sts-management-api` — the
+// machine door every launcher uses — is seeded as a member of both.
+//
+// They cannot be deleted, and their permission cannot be changed: a realm
+// without them could never be administered by a machine, and ADMIN_READ
+// authorizing `admin:write` would be the scope-as-authorization mistake
+// written into the register instead.
+// ---------------------------------------------------------------------------
+/**
+ * The two console roles, ADMIN_READ and ADMIN_WRITE: configured roles seeded
+ * in every realm, each authorizing the native permission of the same name.
+ *
+ * Their groups are read from the `admin.readGroup` / `admin.writeGroup`
+ * settings, never stored; people hold them through the console roster.
+ */
+const CONSOLE_ROLES = [
+  { name: 'ADMIN_READ', consoleRole: 'read', permission: 'admin:read',
+    groupSettings: ['admin.readGroup', 'admin.writeGroup'],
+    what: 'Admin Read: every READ on /admin-api. Held by the console\'s ' +
+          'Admin Read and Admin Write groups (Admin Write implies Admin ' +
+          'Read) and by the applications listed here. Authorizes the ' +
+          'admin:read permission.' },
+  { name: 'ADMIN_WRITE', consoleRole: 'write', permission: 'admin:write',
+    groupSettings: ['admin.writeGroup'],
+    what: 'Admin Write: every /admin-api operation that CHANGES anything. ' +
+          'Held by the console\'s Admin Write group and by the applications ' +
+          'listed here. Authorizes the admin:write permission. It does not ' +
+          'imply Admin Read on a token: a token may carry either scope, and ' +
+          'the policy asks for the one the operation needs.' }
+];
+
+// The application the seed puts in both. The management API's own seeded
+// client, `common/applications.js`'s `sts-management-api`.
+/**
+ * The application seeded as a member of both console roles: the management
+ * API's own client.
+ */
+const CONSOLE_ROLE_APPLICATION = 'sts-management-api';
+
+/**
+ * Returns the `CONSOLE_ROLES` row of a role name.
+ *
+ * @param name - a role name
+ * @returns the row, or null when the name is not a console role
+ */
+function consoleRoleFor(name) {
+  log.debug("Entering consoleRoleFor().");
+  const wanted = String(name == null ? '' : name);
+  log.debug("Leaving consoleRoleFor().");
+  return CONSOLE_ROLES.filter(function (one) {
+    return one.name === wanted;
+  })[0] || null;
+}
+
+/**
+ * Tells whether a role name is one of the two console roles.
+ *
+ * @param name - a role name
+ * @returns true for ADMIN_READ or ADMIN_WRITE
+ */
+function isConsoleRole(name) {
+  log.debug("Entering isConsoleRole().");
+  log.debug("Leaving isConsoleRole().");
+  return !!consoleRoleFor(name);
+}
+
+// The group names a console role is held through, from the settings.
+function consoleRoleGroups(row) {
+  log.debug("Entering consoleRoleGroups().");
+  const out = [];
+  row.groupSettings.forEach(function (key) {
+    const group = String(config.value(key) || '').trim();
+    if (group && out.indexOf(group) < 0) {
+      out.push(group);
+    }
+  });
+  log.debug("Leaving consoleRoleGroups().");
+  return out;
+}
+
+/**
+ * Lists the built-in roles for a menu or a policy author.
+ *
+ * @returns `{ name, what, builtIn: true }` per built-in role
+ */
 function builtInCatalogue() {
   log.debug("Entering builtInCatalogue().");
   log.debug("Leaving builtInCatalogue().");
@@ -427,6 +557,13 @@ function builtInCatalogue() {
 let directory = null;
 let warnedAboutNoDirectory = false;
 
+/**
+ * Fills the directory slot through which the register reads and writes
+ * `ou=roles`; `ldap/ldap_server.js` fills it.
+ *
+ * @param hooks - the directory's role hooks (`allRoles`, `writeRole`,
+ *   `deleteRole`, `groupsOfUser`), or null
+ */
 function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
   directory = hooks || null;
@@ -438,6 +575,12 @@ function setDirectory(hooks) {
 // back what was there rather than `null` — `xacml_store.js` argues why that
 // distinction is not pedantry, and it is the same one process, one reference
 // situation here.
+/**
+ * Returns what the directory slot currently holds, so a test that stubs it
+ * can put back what was there.
+ *
+ * @returns the installed hooks, or null
+ */
 function directoryInstalled() {
   log.debug("Entering directoryInstalled().");
   log.debug("Leaving directoryInstalled().");
@@ -489,6 +632,16 @@ function allValues(attributes, name) {
   });
 }
 
+/**
+ * Lists the configured roles in the ambient realm's `ou=roles`, sorted by
+ * name.
+ *
+ * A console role's groups and permission come from the settings and the
+ * table, not the entry.
+ * @returns one row per role: `name`, `dn`, `description`, `users`, `groups`,
+ *   `applications`, `permissions`, `console` and `builtIn: false`; empty
+ *   with no directory
+ */
 function all() {
   log.debug('Entering all().');
   if (!haveDirectory()) {
@@ -497,13 +650,20 @@ function all() {
   }
   const rows = directory.allRoles().map(function (entry) {
     const at = entry.attributes || {};
+    const consoleRow = consoleRoleFor(entry.name);
     return {
       name: entry.name,
       dn: entry.dn,
       description: firstValue(at, 'description'),
-      users: allValues(at, 'roleMemberUser'),
-      groups: allValues(at, 'roleMemberGroup'),
+      // A console role's people and groups are the roster's, never stored:
+      // see THE TWO CONSOLE ROLES.
+      users: consoleRow ? [] : allValues(at, 'roleMemberUser'),
+      groups: consoleRow ? consoleRoleGroups(consoleRow)
+                         : allValues(at, 'roleMemberGroup'),
       applications: allValues(at, 'roleMemberApplication'),
+      permissions: consoleRow ? [consoleRow.permission]
+                              : allValues(at, 'rolePermission'),
+      console: !!consoleRow,
       builtIn: false
     };
   });
@@ -514,6 +674,12 @@ function all() {
   return rows;
 }
 
+/**
+ * Returns one configured role by name.
+ *
+ * @param name - the role name
+ * @returns the row as `all()` draws it, or null
+ */
 function read(name) {
   log.debug('Entering read(). name=' + name);
   const wanted = String(name || '');
@@ -528,6 +694,13 @@ function read(name) {
 // built-in ones, in one list, marked. One list because a policy author
 // choosing a required role does not care which kind it is — and the mark is
 // there because everything else about them differs.
+/**
+ * Lists every role a policy or console menu may name: the built-in ones and
+ * the configured ones, each marked `builtIn`.
+ *
+ * @returns `{ name, what, builtIn }` per role, with `members` (a count) on a
+ *   configured one
+ */
 function catalogue() {
   log.debug('Entering catalogue().');
   const out = builtInCatalogue().concat(all().map(function (row) {
@@ -542,6 +715,13 @@ function catalogue() {
 // ---------------------------------------------------------------------------
 // WRITING.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a proposed role name: present, not a built-in name, and up to 64
+ * characters that can be an LDAP RDN and a claim value.
+ *
+ * @param name - the proposed name
+ * @returns a sentence saying what is wrong, or null when the name is good
+ */
 function checkName(name) {
   log.debug("Entering checkName().");
   const text = String(name || '').trim();
@@ -568,6 +748,16 @@ function checkName(name) {
   return null;
 }
 
+/**
+ * Creates or replaces a configured role in the ambient realm's `ou=roles`.
+ *
+ * A person or a foreign group on a console role is refused: its people are
+ * the console roster's. A console role's permission is fixed.
+ * @param name - the role name
+ * @param record - `{ description, users, groups, applications, permissions }`
+ * @returns `{ ok: true, name }`, or `{ ok: false, why }` carrying an error
+ *   code
+ */
 function write(name, record) {
   log.debug('Entering write(). name=' + name);
   const problem = checkName(name);
@@ -583,6 +773,22 @@ function write(name, record) {
              'STS-XACML-0026');
   }
   const given = record || {};
+  const consoleRow = consoleRoleFor(name);
+  if (consoleRow && ((given.users || []).length ||
+                     (given.groups || []).some(function (group) {
+                       return consoleRoleGroups(consoleRow)
+                         .indexOf(String(group)) < 0;
+                     }))) {
+    log.debug('Leaving write(). A person or group on a console role.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" is one of the two console roles, and the ' +
+                  'people who hold it are the console roster\'s: add them to ' +
+                  'the Admin Read or Admin Write group on /admin/rbac (or ' +
+                  'POST /admin-api/rbac/grant). Its groups are the settings ' +
+                  'admin.readGroup and admin.writeGroup, and two places ' +
+                  'granting one role would be two answers. An application ' +
+                  'is added here.' }, 'STS-XACML-0075');
+  }
   // THE CLASS THE SCHEMA ABOVE DECLARES, written on the entry (2026-09-23).
   // Until then a role was the one registry entry carrying no objectClass at
   // all — `cn` and the role attributes only — so `(objectClass=stsRole)`
@@ -599,8 +805,16 @@ function write(name, record) {
     description: String(given.description || ''),
     roleMemberUser: (given.users || []).map(String),
     roleMemberGroup: (given.groups || []).map(String),
-    roleMemberApplication: (given.applications || []).map(String)
+    roleMemberApplication: (given.applications || []).map(String),
+    // A console role's permission is fixed (see THE TWO CONSOLE ROLES) and
+    // written as such, so an ldapsearch shows what the role authorizes.
+    rolePermission: consoleRow ? [consoleRow.permission]
+                               : (given.permissions || []).map(String)
   };
+  if (consoleRow) {
+    attributes.roleMemberUser = [];
+    attributes.roleMemberGroup = [];
+  }
   const written = directory.writeRole(String(name), attributes);
   if (!written) {
     log.debug('Leaving write(). The directory refused.');
@@ -612,6 +826,12 @@ function write(name, record) {
   return { ok: true, name: String(name) };
 }
 
+/**
+ * Deletes a configured role; a built-in or console role is refused.
+ *
+ * @param name - the role name
+ * @returns `{ ok: true }`, or `{ ok: false, why }` carrying an error code
+ */
 function remove(name) {
   log.debug('Entering remove(). name=' + name);
   if (isBuiltIn(name)) {
@@ -621,6 +841,14 @@ function remove(name) {
                   'than stored, so there is nothing to delete — and an ' +
                   'application requiring it would be requiring something ' +
                   'that no longer existed.' }, 'STS-XACML-0056');
+  }
+  if (isConsoleRole(name)) {
+    log.debug('Leaving remove(). A console role.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" is one of the two console roles, and a ' +
+                  'realm without it could never be administered through ' +
+                  '/admin-api by a machine. Take an application out of it ' +
+                  'with remove-member instead.' }, 'STS-XACML-0076');
   }
   if (!haveDirectory() || !directory.deleteRole(String(name))) {
     log.debug('Leaving remove(). Not here.');
@@ -633,6 +861,68 @@ function remove(name) {
 }
 
 // ---------------------------------------------------------------------------
+// SEEDING THE TWO CONSOLE ROLES, in the AMBIENT realm — `ldap_server.js`
+// calls it where it seeds this process's own applications, for the default
+// realm at startup and inside each realm's builder. An entry already there
+// is left exactly as it is, as `applications.js` leaves its seeded clients:
+// an operator who took the management API's client out of a role meant it.
+// Returns how many were created.
+// ---------------------------------------------------------------------------
+/**
+ * Creates the two console roles in the ambient realm when they are missing,
+ * with the management API's client as a member; an existing entry is left as
+ * it is.
+ *
+ * @returns how many were created
+ */
+function seedConsoleRoles() {
+  log.debug('Entering seedConsoleRoles().');
+  if (!haveDirectory()) {
+    log.debug('Leaving seedConsoleRoles(). No directory.');
+    return 0;
+  }
+  let made = 0;
+  CONSOLE_ROLES.forEach(function (row) {
+    if (read(row.name)) {
+      return;
+    }
+    const written = write(row.name, { description: row.what,
+                                      applications: [CONSOLE_ROLE_APPLICATION] });
+    if (written.ok) {
+      made += 1;
+    } else {
+      log.warn(errorCodes.tag('STS-XACML-0077') + 'roles: the console role "' +
+               row.name + '" was not seeded: ' + written.why + ' Machine ' +
+               'clients cannot be issued ' + row.permission + ' in this ' +
+               'realm until it exists.');
+    }
+  });
+  log.debug('Leaving seedConsoleRoles(). ' + made + ' created.');
+  return made;
+}
+
+// The configured roles whose `rolePermission` names this permission, exactly
+// (a permission identifier is compared as the string a client sends).
+/**
+ * Lists the configured roles whose `rolePermission` names a permission,
+ * compared exactly.
+ *
+ * @param permission - a permission as a client asks for it
+ * @returns the role names
+ */
+function rolesAuthorizing(permission) {
+  log.debug('Entering rolesAuthorizing().');
+  const wanted = String(permission == null ? '' : permission);
+  const out = all().filter(function (row) {
+    return row.permissions.indexOf(wanted) >= 0;
+  }).map(function (row) {
+    return row.name;
+  });
+  log.debug('Leaving rolesAuthorizing(). ' + out.length + ' role(s).');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE RESOLVER: WHICH ROLES DOES THIS PARTY HOLD.
 //
 // `who` is the SECURITY CONTEXT of one decision:
@@ -641,8 +931,8 @@ function remove(name) {
 //     name: the username or the application's client id / handle,
 //     authenticated: whether this party proved anything,
 //     groups: the group names a person is in (a user only),
-//     scopes: an access token's scopes, where there is one — ADMIN_READ and
-//             ADMIN_WRITE are read off them }
+//     scopes: an access token's scopes, where there is one — DEVICE_COMPLIANCE
+//             is read off them }
 //
 // THE GROUPS ARE PASSED IN RATHER THAN LOOKED UP HERE where the caller already
 // has them, and looked up through the directory slot where it does not. Both,
@@ -656,6 +946,15 @@ function remove(name) {
 // still contains EVERYBODY and therefore still admits everybody an unedited
 // application admits.
 // ---------------------------------------------------------------------------
+/**
+ * Returns every role a party holds in one decision: the built-in roles that
+ * apply and the configured ones.
+ *
+ * It never throws; a register that fails answers the built-in roles only.
+ * @param who - the security context `{ kind, name, authenticated, groups,
+ *   scopes }`; groups are looked up through the directory when not given
+ * @returns the role names
+ */
 function rolesOf(who) {
   log.debug('Entering rolesOf(). kind=' + (who || {}).kind);
   const context = normalizeContext(who);
@@ -704,8 +1003,8 @@ function normalizeContext(who) {
     authenticated: given.authenticated === true,
     groups: Array.isArray(given.groups) ? given.groups.map(String) : null,
     // THE SCOPES OF THE ACCESS TOKEN THIS DECISION IS BEING MADE FOR, when
-    // there is one. Two built-in roles below are computed from them — see
-    // ADMIN_READ — and everything else ignores them, so a caller that
+    // there is one. One built-in role is computed from them — see
+    // DEVICE_COMPLIANCE — and everything else ignores them, so a caller that
     // presented no token is exactly what it was.
     scopes: Array.isArray(given.scopes)
       ? given.scopes.map(String)
@@ -785,6 +1084,16 @@ function contains(list, wanted) {
 // tell a relying party nothing it did not already know from holding the token.
 // They exist to be REQUIRED, not to be carried.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the roles claim for a token or assertion: the configured roles the
+ * party holds, under `roles.claimName`.
+ *
+ * Built-in roles are never carried, and a party with no configured role gets
+ * no claim at all.
+ * @param who - the security context, as for `rolesOf()`
+ * @returns `{ <claimName>: [roles] }`, or null when the claim is off, empty
+ *   or the register failed
+ */
 function claimFor(who) {
   log.debug('Entering claimFor().');
   if (config.value('roles.claim') === false) {
@@ -830,6 +1139,14 @@ function claimFor(who) {
 // request and the policy may match it — which is the mock's usual bargain, and
 // it is written down here rather than discovered.
 // ---------------------------------------------------------------------------
+/**
+ * Reads the roles out of a presented token's claims: an array, a single
+ * string, or a space- or comma-separated string.
+ *
+ * What it returns is trusted no more than the token it came from.
+ * @param claims - the token's claims
+ * @returns the role names found, or an empty list
+ */
 function rolesInClaims(claims) {
   log.debug('Entering rolesInClaims().');
   if (!claims || typeof claims !== 'object') {
@@ -858,6 +1175,14 @@ function rolesInClaims(claims) {
   return out;
 }
 
+/**
+ * The role register: who holds a role, the built-in computed roles, the two
+ * console roles, and the roles claim.
+ *
+ * A library and a leaf (rule 3): it requires only `helpers`, `config` and
+ * `error_codes`, and reaches the directory through a slot.
+ * @namespace
+ */
 module.exports = {
   SCHEMA: SCHEMA,
   BUILT_IN: BUILT_IN,
@@ -865,6 +1190,12 @@ module.exports = {
   DEFAULT_REQUIRED_ROLE: DEFAULT_REQUIRED_ROLE,
   isBuiltIn: isBuiltIn,
   builtInCatalogue: builtInCatalogue,
+  CONSOLE_ROLES: CONSOLE_ROLES,
+  CONSOLE_ROLE_APPLICATION: CONSOLE_ROLE_APPLICATION,
+  consoleRoleFor: consoleRoleFor,
+  isConsoleRole: isConsoleRole,
+  seedConsoleRoles: seedConsoleRoles,
+  rolesAuthorizing: rolesAuthorizing,
   setDirectory: setDirectory,
   directoryInstalled: directoryInstalled,
   all: all,

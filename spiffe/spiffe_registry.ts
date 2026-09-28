@@ -152,13 +152,31 @@ interface SpiffeRegistryDeps {
   stats: typeof stats;
 }
 
+/**
+ * Registration entries and attested agents, kept in the embedded directory.
+ *
+ * This class owns what an entry is — the schema, both conversions, what may be
+ * changed — and `ldap_server.js` owns where it lives, filling the directory
+ * slot through `setDirectory()`.
+ */
 class SpiffeRegistry {
+  /**
+   * Builds the registry over its dependencies.
+   *
+   * @param deps - crypto, the logger, configuration, mode, audit, the SPIFFE ID
+   *   grammar and statistics
+   */
   constructor(private readonly deps: SpiffeRegistryDeps) {
     deps.log.debug("Entering SpiffeRegistry.constructor().");
     deps.log.debug("Leaving SpiffeRegistry.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SpiffeRegistryDeps {
     helpers.log.debug("Entering SpiffeRegistry.defaultDeps().");
     helpers.log.debug("Leaving SpiffeRegistry.defaultDeps().");
@@ -173,6 +191,11 @@ class SpiffeRegistry {
     };
   }
 
+  /**
+   * Returns the cap on registration entries, `spiffe.maxEntries`.
+   *
+   * @returns the cap
+   */
   maxEntries() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeRegistry.maxEntries().");
@@ -180,6 +203,11 @@ class SpiffeRegistry {
     return config.value('spiffe.maxEntries');
   }
 
+  /**
+   * Returns the cap on attested agents, `spiffe.maxAgents`.
+   *
+   * @returns the cap
+   */
   maxAgents() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeRegistry.maxAgents().");
@@ -191,6 +219,14 @@ class SpiffeRegistry {
   // spelled on the way OUT of the directory and lower-cased in the store. An
   // index assuming either produces a record with an empty identifier rather
   // than an error — the defect `applications.js` names in its own header.
+  /**
+   * Returns an attribute's values by its name, whatever case either side spells
+   * it in.
+   *
+   * @param attributes - the entry's attributes
+   * @param name - the attribute's name
+   * @returns the values, or []
+   */
   byLowerName(attributes, name) {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.byLowerName().");
@@ -209,6 +245,13 @@ class SpiffeRegistry {
     return Array.isArray(found) ? found : [found];
   }
 
+  /**
+   * Returns an attribute's first value.
+   *
+   * @param attributes - the entry's attributes
+   * @param name - the attribute's name
+   * @returns the value, or ''
+   */
   firstValue(attributes, name) {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.firstValue().");
@@ -217,6 +260,13 @@ class SpiffeRegistry {
     return values.length ? String(values[0]) : '';
   }
 
+  /**
+   * Reads an attribute as an LDAP boolean.
+   *
+   * @param attributes - the entry's attributes
+   * @param name - the attribute's name
+   * @returns whether it is TRUE
+   */
   boolValue(attributes, name) {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.boolValue().");
@@ -224,6 +274,13 @@ class SpiffeRegistry {
     return /^true$/i.test(this.firstValue(attributes, name));
   }
 
+  /**
+   * Reads an attribute as an integer.
+   *
+   * @param attributes - the entry's attributes
+   * @param name - the attribute's name
+   * @returns the integer, or 0
+   */
   intValue(attributes, name) {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.intValue().");
@@ -232,6 +289,12 @@ class SpiffeRegistry {
     return Number.isFinite(n) ? n : 0;
   }
 
+  /**
+   * Fills the directory slot with the store's functions; `ldap_server.js` calls
+   * it at its require.
+   *
+   * @param fns - the directory's read and write functions
+   */
   setDirectory(fns) {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.setDirectory().');
@@ -240,6 +303,13 @@ class SpiffeRegistry {
               (directory ? 'now has' : 'no longer has') + ' a store.');
   }
 
+  /**
+   * Asks whether the directory slot is filled, warning when a write is
+   * attempted before it is.
+   *
+   * @param what - the write attempted, for the warning
+   * @returns whether there is a store
+   */
   haveDirectory(what) {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.haveDirectory().");
@@ -263,6 +333,12 @@ class SpiffeRegistry {
   // splitting on every colon gives a selector nobody wrote and an entry that
   // never matches.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses one `type:value` selector, split on the first colon only.
+   *
+   * @param text - the selector
+   * @returns the type and value, or null when it has no colon
+   */
   parseSelector(text) {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.parseSelector().");
@@ -276,6 +352,12 @@ class SpiffeRegistry {
     return { type: value.slice(0, colon), value: value.slice(colon + 1) };
   }
 
+  /**
+   * Writes a selector back as `type:value`.
+   *
+   * @param selector - the selector, or its text
+   * @returns the text, or ''
+   */
   selectorText(selector) {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.selectorText().");
@@ -300,6 +382,14 @@ class SpiffeRegistry {
   // SPIRE's matching rule, written once: the ENTRY'S selectors must all be
   // present on the workload. See the header for why it is neither equality nor
   // intersection.
+  /**
+   * SPIRE's matching rule: every one of the entry's selectors must be present
+   * on the workload.
+   *
+   * @param entrySelectors - the entry's selectors
+   * @param workloadSelectors - the workload's selectors
+   * @returns whether the entry matches
+   */
   selectorsMatch(entrySelectors, workloadSelectors) {
     const { log } = this.deps;
     const self = this;
@@ -340,6 +430,13 @@ class SpiffeRegistry {
   // cannot learn where the entry lives) and the write speaks only in
   // attributes.
   // ---------------------------------------------------------------------------
+  /**
+   * Converts a directory entry to the record callers work with, keeping the
+   * whole entry, its DN included.
+   *
+   * @param entry - the directory entry
+   * @returns the record, or null
+   */
   recordFromEntry(entry) {
     const { log } = this.deps;
     const self = this;
@@ -384,6 +481,13 @@ class SpiffeRegistry {
     return record;
   }
 
+  /**
+   * Converts a record to the directory attributes a write stores.
+   *
+   * @param record - the record
+   * @param existing - the entry's current record, when updating
+   * @returns the attributes
+   */
   attributesFromRecord(record, existing) {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.attributesFromRecord().');
@@ -431,6 +535,12 @@ class SpiffeRegistry {
     return attributes;
   }
 
+  /**
+   * Formats a time as LDAP GeneralizedTime, in UTC.
+   *
+   * @param when - the time, or now
+   * @returns the formatted time
+   */
   generalizedTime(when?) {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.generalizedTime().");
@@ -446,6 +556,11 @@ class SpiffeRegistry {
            two(d.getUTCSeconds()) + 'Z';
   }
 
+  /**
+   * Returns a new random registration entry id.
+   *
+   * @returns 32 hex digits
+   */
   newEntryId() {
     const { log, crypto } = this.deps;
     log.debug("Entering SpiffeRegistry.newEntryId().");
@@ -475,6 +590,15 @@ class SpiffeRegistry {
   // granting one identity under different parents is a real and useful
   // configuration, and SPIRE allows it.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a registration entry record before it is written: its SPIFFE ID in
+   * the trust domain and not reserved, its parent, its selectors and its
+   * lifetimes.
+   *
+   * @param record - the record
+   * @param trustDomain - the trust domain it must belong to
+   * @returns `ok`, the errors, and the error code of the first refusal
+   */
   checkRecord(record, trustDomain) {
     const { log, spiffeId } = this.deps;
     const self = this;
@@ -558,6 +682,13 @@ class SpiffeRegistry {
   // matches every selector. SPIRE itself refuses an entry with an empty
   // selector list.
   // ---------------------------------------------------------------------------
+  /**
+   * Asks whether a selector list identifies a workload: at least one selector
+   * whose type is not merely descriptive (#166).
+   *
+   * @param selectors - the entry's selectors
+   * @returns whether it does
+   */
   identifiesWorkload(selectors) {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.identifiesWorkload().');
@@ -575,6 +706,13 @@ class SpiffeRegistry {
   // in development stays in the registry and answers nobody once the realm is
   // in product — the mode is runtime, so the read is the guard — said once
   // per entry per process (STS-SPIFFE-0123).
+  /**
+   * Asks whether an entry may answer a workload now: always in development, in
+   * product only if it identifies one.
+   *
+   * @param entry - the registration entry
+   * @returns whether it may
+   */
   answersWorkloads(entry) {
     const { log, mode } = this.deps;
     log.debug('Entering SpiffeRegistry.answersWorkloads().');
@@ -601,6 +739,11 @@ class SpiffeRegistry {
   // ---------------------------------------------------------------------------
   // READING.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns every registration entry of the ambient realm, sorted by SPIFFE ID.
+   *
+   * @returns the records, or [] before the store exists
+   */
   allEntries() {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.allEntries().');
@@ -619,6 +762,12 @@ class SpiffeRegistry {
     return rows;
   }
 
+  /**
+   * Returns one registration entry by id.
+   *
+   * @param id - the entry id
+   * @returns the record, or null
+   */
   entryById(id): Record<string, any> {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.entryById().");
@@ -637,6 +786,13 @@ class SpiffeRegistry {
 
   // Every entry granting a given SPIFFE ID. A list rather than one, because two
   // entries may grant one identity under different parents.
+  /**
+   * Returns every entry granting a SPIFFE ID; two entries may grant one
+   * identity under different parents.
+   *
+   * @param id - the SPIFFE ID
+   * @returns the records
+   */
   entriesForSpiffeId(id) {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.entriesForSpiffeId().");
@@ -651,6 +807,14 @@ class SpiffeRegistry {
   // `parentId` is optional: omitted, the parent is not considered, which is
   // what the console's "what would match" view wants and what this service's
   // own Workload API — which attests nobody — needs.
+  /**
+   * Returns every live entry a workload with these selectors would match, under
+   * a parent when one is given.
+   *
+   * @param selectors - the workload's selectors
+   * @param parentId - the parent SPIFFE ID, or nothing to ignore the parent
+   * @returns the records
+   */
   entriesForWorkload(selectors, parentId) {
     const { log } = this.deps;
     const self = this;
@@ -684,6 +848,14 @@ class SpiffeRegistry {
   // this function exists to stop giving; SPIRE refuses such an alias at
   // creation.
   // ---------------------------------------------------------------------------
+  /**
+   * SPIRE's answer to GetAuthorizedEntries: the entries reachable from an
+   * agent's own SPIFFE ID through the node aliases its selectors match.
+   *
+   * @param agentId - the agent's SPIFFE ID
+   * @param trustDomain - the trust domain
+   * @returns the live entries the agent is authorized for
+   */
   entriesAuthorizedFor(agentId, trustDomain) {
     const { log, spiffeId } = this.deps;
     const self = this;
@@ -738,6 +910,11 @@ class SpiffeRegistry {
     return out;
   }
 
+  /**
+   * Returns how many registration entries the ambient realm holds.
+   *
+   * @returns the count
+   */
   entryCount() {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.entryCount().");
@@ -754,6 +931,15 @@ class SpiffeRegistry {
   // indistinguishable from auto-created ones on the page whose whole job is to
   // tell them apart.
   // ---------------------------------------------------------------------------
+  /**
+   * Creates a registration entry after checking it and the cap, and audits it.
+   *
+   * @param record - the entry's record
+   * @param origin - how the entry got here, recorded on it
+   * @param trustDomain - the trust domain it must belong to
+   * @param actor - who created it, for the audit row
+   * @returns `ok`, the errors, and on success the id and the entry
+   */
   createEntry(record, origin, trustDomain, actor) {
     const { log, stats } = this.deps;
     log.debug('Entering SpiffeRegistry.createEntry(). spiffeId=' +
@@ -811,6 +997,16 @@ class SpiffeRegistry {
     return { ok: true, errors: [], id: id, entry: this.entryById(id) };
   }
 
+  /**
+   * Updates a registration entry's editable fields after checking the result,
+   * and audits it.
+   *
+   * @param id - the entry id
+   * @param changes - the fields to change
+   * @param trustDomain - the trust domain it must belong to
+   * @param actor - who changed it, for the audit row
+   * @returns `ok`, the errors, and on success the id and the entry
+   */
   updateEntry(id, changes, trustDomain, actor) {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.updateEntry(). id=' + id);
@@ -852,6 +1048,13 @@ class SpiffeRegistry {
     return { ok: true, errors: [], id: id, entry: this.entryById(id) };
   }
 
+  /**
+   * Deletes a registration entry, and audits it.
+   *
+   * @param id - the entry id
+   * @param actor - who deleted it, for the audit row
+   * @returns `ok`, the errors, and the id
+   */
   deleteEntry(id, actor) {
     const { log, stats } = this.deps;
     log.debug('Entering SpiffeRegistry.deleteEntry(). id=' + id);
@@ -900,6 +1103,12 @@ class SpiffeRegistry {
   // deliberately does NOT bump the revision number: a revision is a change to
   // what the entry SAYS, and an agent that re-fetched every entry because one
   // of them had been used would poll this service into the ground.
+  /**
+   * Counts an SVID minted against an entry, without bumping its revision
+   * number.
+   *
+   * @param id - the entry id
+   */
   noteSvidIssued(id) {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.noteSvidIssued(). id=' + id);
@@ -939,6 +1148,11 @@ class SpiffeRegistry {
   // The ONE refusal is a BAN, and it exists so that the ban button is not a
   // lie: a banned agent is refused at AttestAgent and at RenewAgent.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns every attested agent of the ambient realm, sorted by id.
+   *
+   * @returns the agents, or [] before the store exists
+   */
   allAgents() {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.allAgents().');
@@ -956,6 +1170,12 @@ class SpiffeRegistry {
     return rows;
   }
 
+  /**
+   * Converts an agent's directory entry to the agent record.
+   *
+   * @param entry - the directory entry
+   * @returns the agent, or null
+   */
   agentFromEntry(entry) {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.agentFromEntry().');
@@ -983,6 +1203,12 @@ class SpiffeRegistry {
     };
   }
 
+  /**
+   * Returns one attested agent by SPIFFE ID.
+   *
+   * @param id - the agent's SPIFFE ID
+   * @returns the agent, or null
+   */
   agentById(id): Record<string, any> {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.agentById().");
@@ -999,6 +1225,11 @@ class SpiffeRegistry {
     return this.agentFromEntry(directory.readAgent(key));
   }
 
+  /**
+   * Returns how many attested agents the ambient realm holds.
+   *
+   * @returns the count
+   */
   agentCount() {
     const { log } = this.deps;
     log.debug("Entering SpiffeRegistry.agentCount().");
@@ -1010,6 +1241,16 @@ class SpiffeRegistry {
   // it afterwards, which is the `seen()` shape `applications.js` uses — one
   // function for both, because two would eventually disagree about what a first
   // sighting records.
+  /**
+   * Records an attestation, creating the agent on first sight and updating it
+   * afterwards; at the cap the oldest agent is dropped.
+   *
+   * @param id - the agent's SPIFFE ID
+   * @param detail - what was attested: the attestation type, selectors and the
+   *   rest of the agent entry
+   * @returns `banned: true` with the agent when it is banned (the one refusal),
+   *   otherwise the agent and whether it was created; null with no store
+   */
   recordAttestation(id, detail) {
     const { log, audit, stats } = this.deps;
     log.debug('Entering SpiffeRegistry.recordAttestation(). id=' + id);
@@ -1084,6 +1325,15 @@ class SpiffeRegistry {
     return { banned: false, agent: this.agentById(id), created: !existing };
   }
 
+  /**
+   * Bans or unbans an agent, and audits it; a banned agent is refused at
+   * AttestAgent and RenewAgent.
+   *
+   * @param id - the agent's SPIFFE ID
+   * @param banned - whether to ban it
+   * @param actor - who did it, for the audit row
+   * @returns `ok`, the errors, and on success the id and the agent
+   */
   setAgentBanned(id, banned, actor) {
     const { log, audit, stats } = this.deps;
     log.debug('Entering SpiffeRegistry.setAgentBanned(). id=' + id +
@@ -1124,6 +1374,13 @@ class SpiffeRegistry {
     return { ok: true, errors: [], id: id, agent: this.agentById(id) };
   }
 
+  /**
+   * Deletes an agent, and audits it.
+   *
+   * @param id - the agent's SPIFFE ID
+   * @param actor - who deleted it, for the audit row
+   * @returns `ok`, the errors, and the id
+   */
   deleteAgent(id, actor) {
     const { log, audit, stats } = this.deps;
     log.debug('Entering SpiffeRegistry.deleteAgent(). id=' + id);
@@ -1161,6 +1418,12 @@ class SpiffeRegistry {
   // have to escape, so the entry is named by a digest of it with the identifier
   // whole on the entry as `spiffeAgentId` — the arrangement `didPlan()` settled
   // on for a DID-named person, and for the same reason.
+  /**
+   * Returns an agent entry's RDN value: a digest of its SPIFFE ID.
+   *
+   * @param id - the agent's SPIFFE ID
+   * @returns `agent-<digest>`
+   */
   agentCnFor(id) {
     const { log, crypto } = this.deps;
     log.debug("Entering SpiffeRegistry.agentCnFor().");
@@ -1169,6 +1432,15 @@ class SpiffeRegistry {
       .digest('hex').slice(0, 12);
   }
 
+  /**
+   * Writes an audit row for a registry change.
+   *
+   * @param action - the audit action
+   * @param id - the entry's or agent's id
+   * @param record - the record changed, if any
+   * @param actor - who changed it
+   * @param summary - one sentence on what happened
+   */
   auditEntry(action, id, record, actor, summary) {
     const { log, audit } = this.deps;
     log.debug("Entering SpiffeRegistry.auditEntry().");
@@ -1221,6 +1493,13 @@ class SpiffeRegistry {
   // product registry holds what an operator or the SPIRE Server API put in it,
   // and nothing else.
   // ---------------------------------------------------------------------------
+  /**
+   * Seeds the development sample registration entries into an empty registry;
+   * product mode seeds nothing.
+   *
+   * @param trustDomain - the trust domain
+   * @returns how many entries were made
+   */
   seed(trustDomain) {
     const { log, mode, spiffeId } = this.deps;
     const self = this;
@@ -1307,6 +1586,10 @@ const slot = new InstanceSlot<SpiffeRegistry>(
 // are invented — this service's own names, in the way `x509subject`,
 // `didSubject` and every `app*` attribute already are.
 // ---------------------------------------------------------------------------
+/**
+ * The directory schema of registration entries and agents: the object classes
+ * and attributes, with where each is defined and what it holds.
+ */
 const SCHEMA = {
   objectClasses: [
     { name: 'top', where: 'RFC 4512', standard: true,
@@ -1484,6 +1767,10 @@ const SCHEMA = {
 // service's own behaviour, indistinguishably from the recording being broken.
 // `ldapmodify` still reaches everything: refusing it HERE is the difference
 // between offering an operation and merely not preventing it.
+/**
+ * The attributes of a registration entry a form may change, declared rather
+ * than derived.
+ */
 const EDITABLE = SCHEMA.attributes.filter(function (
     a) { return a.editable === true; })
   .map(function (a) { return a.name; });
@@ -1509,6 +1796,11 @@ let directory = null;
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Registration entries and attested agents, stored in the directory: a library
+ * that registers no route.
+ * @namespace
+ */
 export = {
   SpiffeRegistry: SpiffeRegistry,
   installInstance: (instance: SpiffeRegistry): void => slot.install(instance),

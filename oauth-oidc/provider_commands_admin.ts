@@ -35,7 +35,13 @@ import outbound = require('./outbound_delivery');
 type Json = any;
 
 const esc = admin.esc;
+/**
+ * The path of the OpenID Provider Commands page.
+ */
 const PAGE = '/admin/commands';
+/**
+ * The path of the outbound deliveries page.
+ */
 const DELIVERIES = '/admin/deliveries';
 
 interface ProviderCommandsAdminDeps {
@@ -49,15 +55,37 @@ interface ProviderCommandsAdminDeps {
   adminViews: () => Json;
 }
 
+/**
+ * The console pages `/admin/commands` (OpenID Provider Commands) and
+ * `/admin/deliveries` (every outbound delivery, with its dead letters).
+ */
 class ProviderCommandsAdmin {
+  /**
+   * The path of the OpenID Provider Commands page.
+   */
   static readonly PAGE = PAGE;
+  /**
+   * The path of the outbound deliveries page.
+   */
   static readonly DELIVERIES = DELIVERIES;
 
+  /**
+   * Builds the pages from their dependencies.
+   *
+   * @param deps - the logger, body parser, base URL reader, error codes,
+   *   console shell, command module, outbound queue and a lazy loader of the
+   *   gate state
+   */
   constructor(private readonly deps: ProviderCommandsAdminDeps) {
     deps.log.debug("Entering ProviderCommandsAdmin.constructor().");
     deps.log.debug("Leaving ProviderCommandsAdmin.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): ProviderCommandsAdminDeps {
     helpers.log.debug("Entering ProviderCommandsAdmin.defaultDeps().");
     helpers.log.debug("Leaving ProviderCommandsAdmin.defaultDeps().");
@@ -71,6 +99,12 @@ class ProviderCommandsAdmin {
     };
   }
 
+  /**
+   * Returns the signed-in console operator, for the audit row.
+   *
+   * @param req - the console request
+   * @returns the operator's username, or ''
+   */
   actorOf(req: Json): string {
     const { log, adminViews } = this.deps;
     log.debug("Entering ProviderCommandsAdmin.actorOf().");
@@ -87,6 +121,16 @@ class ProviderCommandsAdmin {
   }
 
   // One small form: hidden fields and a button.
+  /**
+   * Draws one small POST form: hidden fields and a button.
+   *
+   * @param page - the page the form posts to
+   * @param action - the action it names
+   * @param fields - the hidden fields, name to value
+   * @param label - the button's label
+   * @param danger - true to style the button as destructive
+   * @returns the HTML
+   */
   static form(page: string, action: string, fields: Json, label: string,
               danger?: boolean): string {
     helpers.log.debug("Entering ProviderCommandsAdmin.form(). " + action);
@@ -102,6 +146,14 @@ class ProviderCommandsAdmin {
   }
 
   // A row of the shared queue, for either page.
+  /**
+   * Draws one row of the shared outbound queue, with a Retry for a dead letter.
+   *
+   * @param page - the page a Retry posts to
+   * @param kind - the delivery kind
+   * @param row - the delivery row
+   * @returns the HTML table row
+   */
   static deliveryRow(page: string, kind: string, row: Json): string {
     helpers.log.debug("Entering ProviderCommandsAdmin.deliveryRow().");
     const what = row.command ? '<code>' + esc(row.command) + '</code>' +
@@ -128,6 +180,12 @@ class ProviderCommandsAdmin {
   }
 
   // /admin/commands' body, from `report()`.
+  /**
+   * Draws `/admin/commands`' body.
+   *
+   * @param json - `provider_commands.report()`'s answer
+   * @returns the HTML
+   */
   commandsBody(json: Json): string {
     const { log, admin } = this.deps;
     log.debug("Entering ProviderCommandsAdmin.commandsBody().");
@@ -233,6 +291,13 @@ class ProviderCommandsAdmin {
   }
 
   // /admin/deliveries' body, from `outbound.kindReport()`.
+  /**
+   * Draws `/admin/deliveries`' body.
+   *
+   * @param json - `outbound_delivery.kindReport()`'s answer
+   * @param state - the state filter in force
+   * @returns the HTML
+   */
   deliveriesBody(json: Json, state: string): string {
     const { log, admin } = this.deps;
     log.debug("Entering ProviderCommandsAdmin.deliveriesBody().");
@@ -268,6 +333,11 @@ class ProviderCommandsAdmin {
       '?format=json">JSON</a> · <code>GET /admin-api/deliveries</code></p>';
   }
 
+  /**
+   * Registers `GET` and `POST` for both pages.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: Json): void {
     const { log, parseBody, admin, commands, errorCodes, outbound,
             baseUrlOf } = this.deps;
@@ -335,11 +405,30 @@ const slot = new InstanceSlot<ProviderCommandsAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The console pages for OpenID Provider Commands and the outbound deliveries
+ * (#151).
+ *
+ * The composition root builds the instance and calls `registerRoutes()`.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   ProviderCommandsAdmin: ProviderCommandsAdmin,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: ProviderCommandsAdmin): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
   DELIVERIES: DELIVERIES

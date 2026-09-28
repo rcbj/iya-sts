@@ -123,6 +123,14 @@ if (logLevelProblem) {
 // already computing — which does not make it finish sooner and makes the pool's
 // idea of "least loaded" a fiction.
 // ---------------------------------------------------------------------------
+/**
+ * The job table: one synchronous function per unit of work the front process
+ * may hand to a worker, keyed by kind.
+ *
+ * Kinds are `pq.sign`, `pq.verify`, `pq.generate` and `scrypt.derive`. Each
+ * takes a job object and returns a result that must survive IPC's
+ * `serialization: 'advanced'`, which is why binary travels as a Buffer.
+ */
 const JOBS = {
 
   // A post-quantum or composite signature. `priv` is the private key AS
@@ -196,6 +204,10 @@ const JOBS = {
 
 // The kinds this table answers to, so the pool can refuse an unknown one
 // BEFORE forking anything and name what it does know.
+/**
+ * The kinds the job table answers to, so the pool can refuse an unknown one
+ * before forking anything.
+ */
 const JOB_KINDS = Object.keys(JOBS);
 
 // ---------------------------------------------------------------------------
@@ -206,6 +218,17 @@ const JOB_KINDS = Object.keys(JOBS);
 // rejected promise in one process, a message on the channel in the other — and
 // a catch here would have to invent a third to hand them both.
 // ---------------------------------------------------------------------------
+/**
+ * Runs one job from the table in the calling process.
+ *
+ * The pool calls it directly when `workers.count` is 0, and a forked worker
+ * calls it for each message. It does not catch: a failing job throws to the
+ * caller.
+ * @param kind - the job kind, one of JOB_KINDS
+ * @param job - the job's input object
+ * @returns the job's result object
+ * @throws Error when there is no job of that kind
+ */
 function runJob(kind, job) {
   log.debug('Entering runJob(). kind=' + kind);
   const fn = JOBS[kind];
@@ -305,6 +328,14 @@ if (require.main === module) {
   startWorker();
 }
 
+/**
+ * One child process of the worker pool, and the table of everything it does.
+ *
+ * `worker_pool.js` forks copies of this file and runs the same table in
+ * process when `workers.count` is 0, so a pooled result and an unpooled one
+ * are the same bytes by construction. A worker holds no state.
+ * @namespace
+ */
 module.exports = {
   JOBS: JOBS,
   JOB_KINDS: JOB_KINDS,

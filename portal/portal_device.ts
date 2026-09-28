@@ -333,12 +333,29 @@ class PortalDevicePage {
   }
 }
 
+/**
+ * The portal page at /portal/device: RFC 8628's verification URI, where a
+ * person signs in a device (#150).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalDevice {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalDeviceDeps) {
     deps.log.debug("Entering PortalDevice.constructor().");
     deps.log.debug("Leaving PortalDevice.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalDeviceDeps {
     helpers.log.debug("Entering PortalDevice.defaultDeps().");
     helpers.log.debug("Leaving PortalDevice.defaultDeps().");
@@ -349,6 +366,13 @@ class PortalDevice {
              } };
   }
 
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalDevice.register().");
     const page = new PortalDevicePage(this.deps, context);
@@ -368,6 +392,10 @@ const slot = new InstanceSlot<PortalDevice>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/device, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalDevice: PortalDevice,
   installInstance: (instance: PortalDevice): void => slot.install(instance),

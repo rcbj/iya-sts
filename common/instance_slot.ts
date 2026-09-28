@@ -59,12 +59,23 @@ interface SlotLog {
   debug(message: string): void;
 }
 
+/**
+ * The one place a converted module's instance lives, built by the composition
+ * root or, without one, by default.
+ *
+ * The root installs the instance it built; every facade reaches it through
+ * `get()`. A service in which any module built its own instance does not start.
+ */
 class InstanceSlot<T extends object> {
   private static deferred = false;
   private instance: T | null = null;
   private how: Origin = 'none';
 
   // The composition root calls this before it loads anything.
+  /**
+   * Records, process-wide, that a composition root is loading this process, so
+   * `buildNowUnlessDeferred()` builds nothing.
+   */
   static deferToRoot(): void {
     InstanceSlot.deferred = true;
   }
@@ -72,6 +83,16 @@ class InstanceSlot<T extends object> {
   // `name` is the module's path, for messages; `build` makes the default
   // instance; `wire` is the module's own work with an instance, run once for
   // whichever instance is installed.
+  /**
+   * Creates an empty slot for one module.
+   *
+   * @param name - the module's path, for messages
+   * @param build - makes the default instance from the module's default
+   * dependencies
+   * @param wire - the module's own work with an instance, run once for
+   * whichever instance is installed; `null` for none
+   * @param log - the logger to write to
+   */
   constructor(private readonly name: string,
               private readonly build: () => T,
               private readonly wire: ((instance: T) => void) | null,
@@ -80,6 +101,14 @@ class InstanceSlot<T extends object> {
     log.debug("Leaving InstanceSlot.constructor().");
   }
 
+  /**
+   * Installs the instance the composition root built, runs the module's wire
+   * step on it, and records the origin as `root`.
+   *
+   * @param instance - the instance the root built
+   * @throws Error when an instance is already installed or a default was
+   * already built
+   */
   install(instance: T): void {
     this.log.debug("Entering InstanceSlot.install(). " + this.name);
     if (this.instance) {
@@ -100,6 +129,12 @@ class InstanceSlot<T extends object> {
 
   // Called on every facade call, so no Entering/Leaving pair — the hot-path
   // exception the code style allows, stated here as it requires.
+  /**
+   * Returns the installed instance, building, wiring and recording a default
+   * one first when nothing is installed.
+   *
+   * @returns the module's instance
+   */
   get(): T {
     if (this.instance) {
       return this.instance;
@@ -113,6 +148,13 @@ class InstanceSlot<T extends object> {
     return built;
   }
 
+  /**
+   * Builds and wires the default instance now, unless a composition root has
+   * called `deferToRoot()`.
+   *
+   * The last statement of every module on this pattern, so loading a module
+   * without the root behaves as loading it did before R2.
+   */
   buildNowUnlessDeferred(): void {
     this.log.debug("Entering InstanceSlot.buildNowUnlessDeferred(). " +
                    this.name);
@@ -123,6 +165,12 @@ class InstanceSlot<T extends object> {
                    this.how);
   }
 
+  /**
+   * Reports how the instance came to be.
+   *
+   * @returns `root` when the root installed it, `default` when it was built by
+   * default, `none` when neither has happened
+   */
   origin(): Origin {
     this.log.debug("Entering InstanceSlot.origin(). " + this.name);
     this.log.debug("Leaving InstanceSlot.origin(). " + this.how);
@@ -131,6 +179,16 @@ class InstanceSlot<T extends object> {
 
   // A facade for one method: callable before anything is installed, and
   // resolving the instance at call time. Built once per export at load.
+  /**
+   * Makes a facade function for one method: the same call, on whichever
+   * instance `get()` answers at call time.
+   *
+   * The facade is named `bound <key>`, as the pre-R2 bound methods were, so the
+   * route list and stack traces read the same.
+   *
+   * @param key - the method's name
+   * @returns the facade function
+   */
   forward<K extends keyof T>(key: K): T[K] {
     this.log.debug("Entering InstanceSlot.forward(). " + this.name + '.' +
                    String(key));

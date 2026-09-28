@@ -75,6 +75,10 @@ const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age' });
 // A realm holding this many spent nonces refuses to remember more by dropping
 // the ones that have expired first; a nonce is only useful until it expires, so
 // what is dropped can never be presented again anyway.
+/**
+ * How many spent nonces a realm remembers; past it, expired ones are dropped
+ * first and a new spend is refused rather than forgotten.
+ */
 const MAX_USED_NONCES = 100000;
 
 // Described to `/admin/caches` (#74, rule 3ap). The value is the nonce's
@@ -127,7 +131,19 @@ interface AcmeStoreDeps {
   claims: typeof claims;
 }
 
+/**
+ * Everything ACME mints, per trust realm: accounts, orders, authorizations, the
+ * certificate index, the RFC 9773 renewal index and the spent nonces.
+ *
+ * Each store is per realm at its declaration and persisted, so a row is JSON
+ * and every change goes through a `save*()` here.
+ */
 class AcmeStore {
+  /**
+   * Creates the store.
+   *
+   * @param deps - node's crypto, the logger and the cluster claims
+   */
   constructor(private readonly deps: AcmeStoreDeps) {
     deps.log.debug("Entering AcmeStore.constructor().");
     deps.log.debug("Leaving AcmeStore.constructor().");
@@ -135,6 +151,11 @@ class AcmeStore {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AcmeStoreDeps {
     log.debug("Entering AcmeStore.defaultDeps().");
     log.debug("Leaving AcmeStore.defaultDeps().");
@@ -145,6 +166,12 @@ class AcmeStore {
     };
   }
 
+  /**
+   * Makes a random base64url identifier.
+   *
+   * @param bytes - how many random bytes; 15 when absent
+   * @returns the identifier
+   */
   newId(bytes) {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering AcmeStore.newId().");
@@ -152,6 +179,11 @@ class AcmeStore {
     return nodeCrypto.randomBytes(bytes || 15).toString('base64url');
   }
 
+  /**
+   * Returns the time now, in milliseconds.
+   *
+   * @returns the time
+   */
   nowMs() {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.nowMs().");
@@ -162,6 +194,12 @@ class AcmeStore {
   // ---------------------------------------------------------------------------
   // ACCOUNTS.
   // ---------------------------------------------------------------------------
+  /**
+   * Creates an account and binds its key's thumbprint to it.
+   *
+   * @param fields - the account's fields, `jwk` and `thumbprint` among them
+   * @returns the account
+   */
   createAccount(fields) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.createAccount().");
@@ -179,6 +217,12 @@ class AcmeStore {
     return account;
   }
 
+  /**
+   * Finds an account by id in the ambient realm.
+   *
+   * @param id - the account id
+   * @returns the account, or null
+   */
   getAccount(id) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.getAccount().");
@@ -188,6 +232,12 @@ class AcmeStore {
     return found;
   }
 
+  /**
+   * Finds the account a key is bound to.
+   *
+   * @param thumbprint - the key's JWK thumbprint
+   * @returns the account, or null
+   */
   accountByThumbprint(thumbprint) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.accountByThumbprint().");
@@ -197,6 +247,12 @@ class AcmeStore {
     return id ? this.getAccount(id) : null;
   }
 
+  /**
+   * Writes an account back after a change.
+   *
+   * @param account - the account
+   * @returns the account
+   */
   saveAccount(account) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.saveAccount().");
@@ -206,6 +262,15 @@ class AcmeStore {
   }
 
   // Section 7.3.5: the account's key is replaced, the old thumbprint freed.
+  /**
+   * Replaces an account's key (RFC 8555 section 7.3.5), freeing the old
+   * thumbprint.
+   *
+   * @param account - the account
+   * @param jwk - the new public key
+   * @param thumbprint - its thumbprint
+   * @returns the account
+   */
   rekeyAccount(account, jwk, thumbprint) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.rekeyAccount().");
@@ -222,6 +287,11 @@ class AcmeStore {
     return account;
   }
 
+  /**
+   * Lists the realm's accounts, newest first.
+   *
+   * @returns the accounts
+   */
   listAccounts() {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.listAccounts().");
@@ -238,6 +308,12 @@ class AcmeStore {
   // ---------------------------------------------------------------------------
   // ORDERS AND AUTHORIZATIONS.
   // ---------------------------------------------------------------------------
+  /**
+   * Creates an authorization.
+   *
+   * @param fields - its fields
+   * @returns the authorization
+   */
   createAuthorization(fields) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.createAuthorization().");
@@ -248,6 +324,12 @@ class AcmeStore {
     return authz;
   }
 
+  /**
+   * Finds an authorization by id.
+   *
+   * @param id - the authorization id
+   * @returns the authorization, or null
+   */
   getAuthorization(id) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.getAuthorization().");
@@ -257,6 +339,12 @@ class AcmeStore {
     return found;
   }
 
+  /**
+   * Writes an authorization back after a change.
+   *
+   * @param authz - the authorization
+   * @returns the authorization
+   */
   saveAuthorization(authz) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.saveAuthorization().");
@@ -265,6 +353,14 @@ class AcmeStore {
     return authz;
   }
 
+  /**
+   * Creates an order for an account, first pruning dead orders; the account
+   * keeps its most recent 1000.
+   *
+   * @param account - the account
+   * @param fields - the order's fields
+   * @returns the order
+   */
   createOrder(account, fields) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.createOrder().");
@@ -282,6 +378,12 @@ class AcmeStore {
     return order;
   }
 
+  /**
+   * Finds an order by id.
+   *
+   * @param id - the order id
+   * @returns the order, or null
+   */
   getOrder(id) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.getOrder().");
@@ -290,6 +392,12 @@ class AcmeStore {
     return found;
   }
 
+  /**
+   * Writes an order back after a change.
+   *
+   * @param order - the order
+   * @returns the order
+   */
   saveOrder(order) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.saveOrder().");
@@ -301,6 +409,10 @@ class AcmeStore {
   // An order that expired a day ago and never became valid is gone, with the
   // authorizations only it referred to. A VALID order is kept for as long as
   // the account lists it, because its certificate URL is still being fetched.
+  /**
+   * Removes every order that never became valid and expired more than a day
+   * ago, with its authorizations.
+   */
   pruneOrders() {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.pruneOrders().");
@@ -325,6 +437,13 @@ class AcmeStore {
   // ---------------------------------------------------------------------------
   // CERTIFICATES AND THE RENEWAL INDEX.
   // ---------------------------------------------------------------------------
+  /**
+   * Records a certificate issued at finalize, and its RFC 9773 certID in the
+   * renewal index. The PEM stays on the directory entry.
+   *
+   * @param fields - the certificate's serial, entry, `certId` and the rest
+   * @returns the record
+   */
   recordCertificate(fields) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.recordCertificate().");
@@ -340,6 +459,12 @@ class AcmeStore {
     return record;
   }
 
+  /**
+   * Finds a certificate record by id.
+   *
+   * @param id - the record id
+   * @returns the record, or null
+   */
   getCertificate(id) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.getCertificate().");
@@ -349,6 +474,12 @@ class AcmeStore {
     return found;
   }
 
+  /**
+   * Writes a certificate record back after a change.
+   *
+   * @param record - the record
+   * @returns the record
+   */
   saveCertificate(record) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.saveCertificate().");
@@ -357,6 +488,12 @@ class AcmeStore {
     return record;
   }
 
+  /**
+   * Finds a certificate record by its RFC 9773 certID.
+   *
+   * @param certId - the certID
+   * @returns the record, or null
+   */
   certificateByCertId(certId) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.certificateByCertId().");
@@ -366,6 +503,13 @@ class AcmeStore {
     return id ? this.getCertificate(id) : null;
   }
 
+  /**
+   * Finds a certificate record by serial number, ignoring case and leading
+   * zeros.
+   *
+   * @param serialHex - the serial in hex
+   * @returns the record, or null
+   */
   certificateBySerial(serialHex) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.certificateBySerial().");
@@ -388,6 +532,17 @@ class AcmeStore {
   // one synchronous step in this process, so two requests here cannot both
   // spend one.
   // ---------------------------------------------------------------------------
+  /**
+   * Spends a nonce in this process: false for one already spent, which is the
+   * replay.
+   *
+   * A realm full of live spends refuses the new one, answered badNonce so the
+   * client retries with a fresh nonce.
+   *
+   * @param id - the nonce's random part
+   * @param expiresS - when it expires, in seconds
+   * @returns true when spent now
+   */
   spendNonce(id, expiresS) {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.spendNonce().");
@@ -439,6 +594,15 @@ class AcmeStore {
   // Resolves `{ ok: true }`, `{ ok: false, reason: 'used' }` or
   // `{ ok: false, reason: 'store', why }`.
   // ---------------------------------------------------------------------------
+  /**
+   * Spends a nonce once across the cluster: the local check first, then a claim
+   * that lasts until the nonce expires plus a minute.
+   *
+   * @param id - the nonce's random part
+   * @param expiresS - when it expires, in seconds
+   * @returns a promise of `{ ok: true }`, `{ ok: false, reason: 'used' }` or `{
+   * ok: false, reason, why }`
+   */
   spendNonceOnce(id, expiresS): Record<string, any> {
     const { log, claims } = this.deps;
     log.debug("Entering AcmeStore.spendNonceOnce().");
@@ -479,6 +643,14 @@ const slot = new InstanceSlot<AcmeStore>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The ACME stores, per trust realm.
+ *
+ * Exports the class and facades forwarding to the instance the composition root
+ * built.
+ *
+ * @namespace
+ */
 export = {
   AcmeStore: AcmeStore,
   installInstance: (instance: AcmeStore): void => slot.install(instance),

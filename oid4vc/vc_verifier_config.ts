@@ -141,6 +141,10 @@ const MAX_REQUESTED = 40;
 // here rather than in vc_verifier.ts because the query is built here and the
 // two must be the same string: a response keyed by an id the request did not
 // use is one this Verifier cannot find the presentation in.
+/**
+ * The DCQL credential query's id, which is also the key the `vp_token` is a
+ * member of when the presentation comes back (OID4VP section 8.1).
+ */
 const DCQL_ID = 'identity_credential';
 
 // A claim name this service will put in a DCQL path. Deliberately narrow: a
@@ -153,10 +157,28 @@ const DCQL_ID = 'identity_credential';
 // carry.
 const CLAIM_NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
+/**
+ * What the Bar Door, this service's mock Verifier, asks a wallet for: the
+ * claims requested and the default credential format, per trust realm, and the
+ * DCQL query built from them.
+ *
+ * A library that registers no route; `/admin/vc-verifier-config` sets it.
+ */
 class VcVerifierConfig {
+  /**
+   * The default cap on how many claims may be requested.
+   */
   static readonly MAX_REQUESTED = MAX_REQUESTED;
+  /**
+   * The DCQL credential query's id.
+   */
   static readonly DCQL_ID = DCQL_ID;
 
+  /**
+   * Builds the configuration from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcVerifierConfigDeps) {
     deps.log.debug("Entering VcVerifierConfig.constructor().");
     deps.log.debug("Leaving VcVerifierConfig.constructor().");
@@ -164,6 +186,11 @@ class VcVerifierConfig {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcVerifierConfigDeps {
     helpers.log.debug("Entering VcVerifierConfig.defaultDeps().");
     helpers.log.debug("Leaving VcVerifierConfig.defaultDeps().");
@@ -176,6 +203,13 @@ class VcVerifierConfig {
   }
 
   // The claim name, titled, for a row several attributes make.
+  /**
+   * Titles a claim name, for a row several attributes make.
+   *
+   * @param claimName - the claim name
+   * @param log - the logger
+   * @returns the title
+   */
   static titleFor(claimName: unknown,
                   log: { debug(message: string): void }): string {
     log.debug("Entering VcVerifierConfig.titleFor().");
@@ -186,6 +220,12 @@ class VcVerifierConfig {
     }).join(' ');
   }
 
+  /**
+   * Returns how many claims may be requested (`oid4vp.maxRequestedClaims`), or
+   * the default.
+   *
+   * @returns the cap
+   */
   maxRequested() {
     const { log, config } = this.deps;
     log.debug("Entering VcVerifierConfig.maxRequested().");
@@ -206,6 +246,12 @@ class VcVerifierConfig {
   // the getter on the format row below, so the question and the judgement of
   // the answer cannot come apart.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the SD-JWT VC type this Verifier asks for and requires
+   * (`oid4vp.expectedVct`, this issuer's type by default).
+   *
+   * @returns the `vct`
+   */
   expectedVct() {
     const { log, config } = this.deps;
     log.debug("Entering VcVerifierConfig.expectedVct().");
@@ -213,6 +259,12 @@ class VcVerifierConfig {
     return String(config.value('oid4vp.expectedVct') || VCI_VCT);
   }
 
+  /**
+   * Returns the requestable row for a claim name.
+   *
+   * @param claimName - the claim name
+   * @returns the row, or null
+   */
   rowFor(claimName: unknown) {
     const { log } = this.deps;
     log.debug("Entering VcVerifierConfig.rowFor().");
@@ -226,6 +278,13 @@ class VcVerifierConfig {
   // and deciding nothing: "you are asking for a claim this issuer is not
   // currently minting" is a statement about two configurations, and both of
   // them live on this side.
+  /**
+   * Says which of the attributes behind a claim the issuer is currently
+   * configured to put in a credential.
+   *
+   * @param claimName - the claim name
+   * @returns `{ known, carried, missing }`
+   */
   carriedNow(claimName: unknown) {
     const { log, isSelected } = this.deps;
     log.debug("Entering VcVerifierConfig.carriedNow().");
@@ -259,6 +318,13 @@ class VcVerifierConfig {
   // the un-encoded spelling, because a QR code somebody saved, or a wallet that
   // built the link itself, is not something this service can go back and
   // correct.
+  /**
+   * Returns a format row by id, reading a space as a plus so an unencoded
+   * `dc+sd-jwt` is found.
+   *
+   * @param id - the format id
+   * @returns the row, or undefined
+   */
   formatById(id: unknown) {
     const { log } = this.deps;
     log.debug("Entering VcVerifierConfig.formatById().");
@@ -295,6 +361,12 @@ class VcVerifierConfig {
   // at require time would mean "back to what it configured when the process
   // started" — which stops being the same sentence the moment /admin/config is
   // used. It returns a fresh array each call, so no caller can mutate it.
+  /**
+   * Returns the claims requested when the process started, which Reset goes
+   * back to: `oid4vp.claims`, or the two this Verifier always asked for.
+   *
+   * @returns a fresh array of claim names
+   */
   defaultRequested() {
     const { log, config } = this.deps;
     log.debug("Entering VcVerifierConfig.defaultRequested().");
@@ -303,6 +375,11 @@ class VcVerifierConfig {
       .filter((name) => { return name !== ''; });
   }
 
+  /**
+   * Returns the claims requested in the ambient realm.
+   *
+   * @returns a copy of the claim names
+   */
   requestedClaims() {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.requestedClaims().");
@@ -313,6 +390,11 @@ class VcVerifierConfig {
   // The requested claims with what the page needs to describe each: the
   // catalogue row where there is one, and the fact that there is not where
   // there is not.
+  /**
+   * Returns the requested claims with what the page needs to describe each.
+   *
+   * @returns `{ claim, inCatalogue, label, ... }` rows
+   */
   requestedRows() {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.requestedRows().");
@@ -324,6 +406,12 @@ class VcVerifierConfig {
     });
   }
 
+  /**
+   * Says whether a claim is requested.
+   *
+   * @param claimName - the claim name
+   * @returns true when it is
+   */
   isRequested(claimName: unknown) {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.isRequested().");
@@ -340,6 +428,14 @@ class VcVerifierConfig {
   // query and therefore the wallet's consent screen, and a list that reordered
   // itself because somebody unticked and reticked a box would look like a
   // different request to anything diffing them.
+  /**
+   * Installs a whole selection of requested claims, in the catalogue's order;
+   * errors are returned, not thrown.
+   *
+   * @param names - the claim names
+   * @returns `{ ok: true, requested, added, removed }`, or `{ ok: false, errors
+   *   }`
+   */
   setRequested(names: any) {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.setRequested(). " +
@@ -402,6 +498,12 @@ class VcVerifierConfig {
              removed: removed };
   }
 
+  /**
+   * Adds one claim to the request.
+   *
+   * @param name - the claim name
+   * @returns `setRequested()`'s result
+   */
   addRequested(name: unknown) {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.addRequested(). name=" + name);
@@ -420,6 +522,12 @@ class VcVerifierConfig {
     return result;
   }
 
+  /**
+   * Removes one claim from the request.
+   *
+   * @param name - the claim name
+   * @returns `setRequested()`'s result
+   */
   removeRequested(name: unknown) {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.removeRequested(). name=" + name);
@@ -435,6 +543,11 @@ class VcVerifierConfig {
     return result;
   }
 
+  /**
+   * Resets the request to `defaultRequested()`.
+   *
+   * @returns `setRequested()`'s result
+   */
   resetRequested() {
     const { log } = this.deps;
     log.debug("Entering VcVerifierConfig.resetRequested().");
@@ -443,6 +556,11 @@ class VcVerifierConfig {
     return result;
   }
 
+  /**
+   * Returns the default credential format of the ambient realm.
+   *
+   * @returns the format id
+   */
   defaultFormatId() {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.defaultFormatId().");
@@ -450,6 +568,13 @@ class VcVerifierConfig {
     return state.format;
   }
 
+  /**
+   * Sets the default credential format of the ambient realm.
+   *
+   * @param id - the format id
+   * @returns `{ ok: true, format }`, or `{ ok: false, ... }` for an unknown
+   *   format
+   */
   setDefaultFormat(id: unknown) {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.setDefaultFormat(). id=" + id);
@@ -474,6 +599,13 @@ class VcVerifierConfig {
   // ternary chain this replaced, because "anything unrecognised falls back" was
   // written out in three places and the fallback is now configuration rather
   // than a constant.
+  /**
+   * Returns the format a request is for: the one asked for when it is one of
+   * the three, else the configured default.
+   *
+   * @param wanted - the format asked for
+   * @returns the format id
+   */
   formatOf(wanted: unknown) {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.formatOf().");
@@ -538,6 +670,13 @@ class VcVerifierConfig {
   // Verifier so that the console's preview and the request a wallet receives
   // cannot be two implementations that drift. vc_verifier.ts's vpDcqlQuery() is
   // now the caller that logs the artifact and nothing else.
+  /**
+   * Builds the whole DCQL query (OID4VP section 6), the one the console
+   * previews and a wallet receives.
+   *
+   * @param formatId - the credential format
+   * @returns `{ credentials: [ ... ] }`
+   */
   dcqlQuery(formatId?: unknown) {
     const { log } = this.deps;
     log.debug("Entering VcVerifierConfig.dcqlQuery(). format=" + formatId);
@@ -599,6 +738,13 @@ class VcVerifierConfig {
   // path" at all: a path is not a property of the claim, it is a property of
   // the claim AND the format, and a column that quietly picked one format would
   // be wrong two-thirds of the time.
+  /**
+   * Returns the DCQL paths one claim takes in one format.
+   *
+   * @param formatId - the credential format
+   * @param claimName - the claim name
+   * @returns the paths
+   */
   dcqlPathsFor(formatId: unknown, claimName: unknown) {
     const { log } = this.deps;
     log.debug("Entering VcVerifierConfig.dcqlPathsFor().");
@@ -607,6 +753,12 @@ class VcVerifierConfig {
     return this.pathsFor(format, String(claimName || ''));
   }
 
+  /**
+   * Returns the DCQL `claims` of the requested claims in one format.
+   *
+   * @param formatId - the credential format, or the default
+   * @returns the claim queries
+   */
   dcqlClaims(formatId: unknown) {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.dcqlClaims(). format=" + formatId);
@@ -627,6 +779,12 @@ class VcVerifierConfig {
   // with no term in the vendored context. Not the same as "unknown" — an
   // unknown claim is asked for as written (see pathsFor), because that is the
   // negative somebody configured on purpose.
+  /**
+   * Returns the requested claims an `ldp_vc` query cannot carry: in the
+   * catalogue with no term in the vendored context.
+   *
+   * @returns the claim names
+   */
   ldpOmitted() {
     const { log, state } = this.deps;
     log.debug("Entering VcVerifierConfig.ldpOmitted().");
@@ -659,6 +817,10 @@ class VcVerifierConfig {
 //   ldpTerms   the JSON-LD terms this claim becomes in an ldp_vc credential, which
 //              is where the three formats stop agreeing — see FORMATS below
 // ---------------------------------------------------------------------------
+/**
+ * The claims a Verifier may request, grouped from `vc_claims.ts`'s catalogue:
+ * each with its label, member rows, LDAP attributes and JSON-LD terms.
+ */
 const REQUESTABLE: RequestableRow[] = [];
 const BY_CLAIM = new Map<string, RequestableRow>();
 VC_ATTRIBUTES.forEach(function (attribute) {
@@ -719,6 +881,10 @@ REQUESTABLE.forEach(function (row) {
 // that the Verifier can be pointed at another issuer's credential; see
 // expectedVct() above. The two W3C type lists are still this issuer's.
 // ---------------------------------------------------------------------------
+/**
+ * The three credential formats a request may be for, each with where its claims
+ * sit and how the credential is identified.
+ */
 const FORMATS: FormatRow[] = [
   { id: 'dc+sd-jwt', label: 'SD-JWT VC', claimsAt: 'top',
     identifiedBy: 'meta.vct_values',
@@ -768,6 +934,9 @@ const FORMATS: FormatRow[] = [
           'for under a name that would fail canonicalization.' }
 ];
 
+/**
+ * The three credential format ids.
+ */
 const FORMAT_IDS = FORMATS.map(function (format) { return format.id; });
 
 // PER TRUST REALM, both of them. What a verifier asks a wallet to present, and
@@ -807,14 +976,35 @@ const slot = new InstanceSlot<VcVerifierConfig>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What the Bar Door, the mock Verifier, asks a wallet for, and the DCQL query
+ * built from it.
+ *
+ * @namespace
+ */
 export = {
   VcVerifierConfig: VcVerifierConfig,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcVerifierConfig): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   DCQL_ID: DCQL_ID,
   REQUESTABLE: REQUESTABLE,
   FORMATS: FORMATS,
   FORMAT_IDS: FORMAT_IDS,
+  /**
+   * How many claims may be requested now (`oid4vp.maxRequestedClaims`).
+   *
+   * @returns the cap
+   */
   get MAX_REQUESTED() {
     helpers.log.debug("Entering MAX_REQUESTED().");
     helpers.log.debug("Leaving MAX_REQUESTED().");

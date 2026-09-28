@@ -58,6 +58,10 @@ type Json = any;
 // plan uses later — nothing can be imported from it, and nothing needs
 // accepting yet.
 // ---------------------------------------------------------------------------
+/**
+ * The dataset providers, each with this build's statement of its terms, its
+ * licence and the pages a credit links to.
+ */
 const PROVIDERS: Record<string, Json> = {
   'dbip-lite': { title: 'DB-IP Lite', licence: 'CC-BY-4.0',
     licenceName: 'CC BY 4.0',
@@ -145,14 +149,31 @@ interface RiskTermsDeps {
   audit(): Json;
 }
 
+/**
+ * Whose data a risk dataset is, on what terms, and who accepted them.
+ *
+ * No provider's data is imported until somebody has accepted the digest of
+ * its current terms; a result is credited as its licence asks.
+ */
 class RiskTerms {
+  /** The dataset providers and their terms. */
   static readonly PROVIDERS = PROVIDERS;
 
+  /**
+   * Builds the terms register over the given dependencies.
+   *
+   * @param deps - the logger, the risk store, a clock and the audit log
+   */
   constructor(private readonly deps: RiskTermsDeps) {
     deps.log.debug("Entering RiskTerms.constructor().");
     deps.log.debug("Leaving RiskTerms.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): RiskTermsDeps {
     log.debug("Entering RiskTerms.defaultDeps().");
     log.debug("Leaving RiskTerms.defaultDeps().");
@@ -174,6 +195,13 @@ class RiskTerms {
   // text — licence, links, terms — so a change to any of it is a change of
   // terms.
   // -------------------------------------------------------------------------
+  /**
+   * Returns a provider's terms as this build states them, and their digest:
+   * the text an acceptance is of.
+   *
+   * @param providerId - the provider
+   * @returns `{ provider, text, digest }`, or null for an unknown provider
+   */
   static termsOf(providerId: string): Json | null {
     log.debug("Entering RiskTerms.termsOf(). " + providerId);
     const p = PROVIDERS[providerId];
@@ -191,6 +219,13 @@ class RiskTerms {
 
   // Whether a provider's data needs an acceptance before it is imported:
   // every supported provider but the operator's own list.
+  /**
+   * Says whether a provider's data needs an acceptance before it is
+   * imported: every supported provider but the operator's own list.
+   *
+   * @param providerId - the provider
+   * @returns true when an acceptance is needed
+   */
   static needsAcceptance(providerId: string): boolean {
     log.debug("Entering RiskTerms.needsAcceptance(). " + providerId);
     const p = PROVIDERS[providerId];
@@ -204,6 +239,14 @@ class RiskTerms {
   // that the data was modified (imported and reformatted here). null for a
   // provider with nothing to credit (the operator's own list).
   // -------------------------------------------------------------------------
+  /**
+   * Returns a result's credit, as CC BY 4.0 section 3(a) asks: the
+   * attribution and the licence, each linked, and that the data was
+   * modified.
+   *
+   * @param providerId - the provider
+   * @returns the credit, or null for a provider with nothing to credit
+   */
   static attributionOf(providerId: string): Json | null {
     log.debug("Entering RiskTerms.attributionOf(). " + providerId);
     const p = PROVIDERS[providerId];
@@ -220,6 +263,12 @@ class RiskTerms {
   }
 
   // The acceptance that covers a provider's CURRENT terms, or null.
+  /**
+   * Returns the acceptance that covers a provider's current terms.
+   *
+   * @param providerId - the provider
+   * @returns the acceptance, or null
+   */
   async currentFor(providerId: string): Promise<Json | null> {
     const { log, store } = this.deps;
     log.debug("Entering RiskTerms.currentFor(). " + providerId);
@@ -242,6 +291,14 @@ class RiskTerms {
   // deployment?, pageDigest? }`. Recorded in the store and on the audit log.
   // Answers { ok, acceptance } or a refusal.
   // -------------------------------------------------------------------------
+  /**
+   * Accepts a provider's current terms, recording it in the store and on the
+   * audit log.
+   *
+   * @param o - `provider`, `acceptedBy`, `via`, and optionally `deployment`
+   *   and `pageDigest`
+   * @returns `{ ok, acceptance }`, or a refusal
+   */
   async accept(o: Json): Promise<Json> {
     const { log, store, now, audit } = this.deps;
     log.debug("Entering RiskTerms.accept(). " + o.provider);
@@ -285,6 +342,13 @@ class RiskTerms {
   // acceptance of the current terms), `changed` (accepted once, but the
   // terms have changed since), or neither; with every acceptance recorded.
   // -------------------------------------------------------------------------
+  /**
+   * Returns every provider, its terms, and where acceptance stands:
+   * `accepted`, `changed` since an acceptance, or neither; with every
+   * acceptance recorded.
+   *
+   * @returns the status
+   */
   async status(): Promise<Json> {
     const { log, store } = this.deps;
     log.debug("Entering RiskTerms.status().");
@@ -318,9 +382,27 @@ const slot = new InstanceSlot<RiskTerms>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Whose data a risk dataset is, on what terms, and who accepted them.
+ *
+ * A library with no route; the functions forward to the instance the
+ * composition root installs.
+ * @namespace
+ */
 export = {
   RiskTerms: RiskTerms,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: RiskTerms): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   PROVIDERS: RiskTerms.PROVIDERS,
   termsOf: RiskTerms.termsOf,

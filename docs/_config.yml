@@ -15,9 +15,10 @@
 # preferring Jekyll over MkDocs was not adding a second toolchain.
 title: iya-sts
 description: >-
-  A permissive mock identity service that speaks sixteen protocol families.
-  It exists to exercise CLIENTS: it checks no password, validates no access
-  token and attests no workload.
+  An identity service in one Node process: OAuth 2.0 and OpenID Connect,
+  SAML, WS-Trust and WS-Federation, Kerberos, LDAP, SCIM, SPIFFE, OpenID4VC,
+  certificate enrollment and more. Development mode exercises clients; product
+  mode is deployable.
 theme: minima
 show_excerpts: false
 

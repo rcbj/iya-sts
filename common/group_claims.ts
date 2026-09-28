@@ -178,6 +178,13 @@ interface GroupClaimsDeps {
   };
 }
 
+/**
+ * Puts the directory's groups in every token and assertion this service issues,
+ * as one claim naming the groups a person is a member of.
+ *
+ * Per application, with the service-wide `groups.*` settings as the default. A
+ * group here grants nothing; the claim is only carried.
+ */
 class GroupClaims {
   // -------------------------------------------------------------------------
   // THE DIRECTORY SLOT. See the header for why the direction is this way
@@ -191,6 +198,12 @@ class GroupClaims {
   // -------------------------------------------------------------------------
   private directory: DirectoryHooks | null = null;
 
+  /**
+   * Creates the groups claim.
+   *
+   * @param deps - its dependencies: the logger, config, the application
+   * register, `admin_stats` and the error-code table
+   */
   constructor(private readonly deps: GroupClaimsDeps) {
     deps.log.debug("Entering GroupClaims.constructor().");
     deps.log.debug("Leaving GroupClaims.constructor().");
@@ -198,6 +211,11 @@ class GroupClaims {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): GroupClaimsDeps {
     log.debug("Entering GroupClaims.defaultDeps().");
     log.debug("Leaving GroupClaims.defaultDeps().");
@@ -212,6 +230,12 @@ class GroupClaims {
 
   // What loading this module did with its instance before R2, run once
   // for whichever instance is installed (#50, R2).
+  /**
+   * Installs an instance's resolver into `admin_stats`, the work loading this
+   * module did before R2.
+   *
+   * @param instance - the instance installed
+   */
   static wire(instance: GroupClaims): void {
     log.debug("Entering GroupClaims.wire().");
     instance.installResolver();
@@ -253,6 +277,13 @@ class GroupClaims {
   // before this existed — and is deliberately what the console's preview gets,
   // because a preview with no application in mind is asking what the DEFAULT
   // does. groupsOf() says so in its answer.
+  /**
+   * Tells whether the groups claim is on for an application (`groups.claim`).
+   *
+   * @param app - the application a token is issued to; empty for the
+   * service-wide value
+   * @returns true when the claim is carried
+   */
   enabled(app?: unknown): boolean {
     const { log, applications, config } = this.deps;
     log.debug("Entering GroupClaims.enabled().");
@@ -261,6 +292,12 @@ class GroupClaims {
                                      config);
   }
 
+  /**
+   * Returns the claim's name for an application (`groups.claimName`).
+   *
+   * @param app - the application; empty for the service-wide value
+   * @returns the claim name
+   */
   claimName(app?: unknown): string {
     const { log, applications, config } = this.deps;
     log.debug("Entering GroupClaims.claimName().");
@@ -270,6 +307,13 @@ class GroupClaims {
                                           config) || '').trim();
   }
 
+  /**
+   * Returns how each group is spelled in the claim for an application
+   * (`groups.claimValue`), `cn` by default.
+   *
+   * @param app - the application; empty for the service-wide value
+   * @returns the value form
+   */
   valueForm(app?: unknown): string {
     const { log, applications, config } = this.deps;
     log.debug("Entering GroupClaims.valueForm().");
@@ -279,6 +323,13 @@ class GroupClaims {
                                           config) || 'cn').trim();
   }
 
+  /**
+   * Tells whether a group named only by the person's own `memberOf` counts, for
+   * an application (`groups.claimFromMemberOf`).
+   *
+   * @param app - the application; empty for the service-wide value
+   * @returns true when `memberOf` counts
+   */
   memberOfCounts(app?: unknown): boolean {
     const { log, applications, config } = this.deps;
     log.debug("Entering GroupClaims.memberOfCounts().");
@@ -301,6 +352,13 @@ class GroupClaims {
     return String(ctx.client_id || ctx.audience || '');
   }
 
+  /**
+   * Fills the directory slot the groups are read through; `ldap/ldap_server.js`
+   * fills it.
+   *
+   * @param hooks - the directory's `groupsOfUser()` hook, or null to empty the
+   * slot
+   */
   setDirectory(hooks: DirectoryHooks | null | undefined): void {
     const { log } = this.deps;
     log.debug("Entering GroupClaims.setDirectory().");
@@ -430,6 +488,20 @@ class GroupClaims {
   // three readers of one answer rather than three walks that can disagree.
   // That is the same reason claim_attributes.ts's previewFor() is built on the
   // function the issuance path calls.
+  /**
+   * Answers everything about one person's groups claim for one application: the
+   * issuance path, the console's preview and the management API read this one
+   * answer.
+   *
+   * An unusable claim name (STS-REG-0046) or an unreadable directory
+   * (STS-REG-0045) is marked on the answer, and the token is issued without the
+   * claim.
+   *
+   * @param username - the person
+   * @param app - the application; empty for the service-wide defaults
+   * @returns the settings in force, the person's DN, groups and claim `values`,
+   * and a `reason` when there are none
+   */
   groupsOf(username: unknown, app?: unknown) {
     const { log, stats, errorCodes } = this.deps;
     log.debug("Entering GroupClaims.groupsOf(). user=" + username +
@@ -531,6 +603,15 @@ class GroupClaims {
   // and because a future per-set rule would go here rather than at five call
   // sites.
   // -------------------------------------------------------------------------
+  /**
+   * The resolver's JWT half: the groups claim for a token's context.
+   *
+   * @param setId - the claim set; accepted and unread, since every set carries
+   * the claim
+   * @param context - the issuance context: `username` or `subject`, and
+   * `client_id` or `audience`
+   * @returns `{ <claim>: [groups] }`, or `{}` when there are none
+   */
   jwtClaimsFor(setId: unknown,
                context: IssuanceContext | null | undefined) {
     const { log } = this.deps;
@@ -554,6 +635,13 @@ class GroupClaims {
   // which is the exact defect samlAttributes()'s dedup filter exists to
   // prevent: a relying party reads the first and silently sees one group where
   // the person is in four.
+  /**
+   * The resolver's SAML half: the groups as one multi-valued attribute.
+   *
+   * @param setId - the claim set; `saml11` adds the default SAML 1.1 namespace
+   * @param context - the issuance context
+   * @returns a one-element attribute list, or `[]` when there are none
+   */
   samlAttributesFor(setId: unknown,
                     context: IssuanceContext | null | undefined) {
     const { log, stats } = this.deps;
@@ -584,6 +672,13 @@ class GroupClaims {
   // claim-set pages' JSON replies (`admin-core/admin_views.ts`). Built here
   // rather than in admin.js because two surfaces answer it and neither of them
   // should be reading the four settings itself.
+  /**
+   * Reports the feature's state for the console and the claim-set pages' JSON
+   * replies.
+   *
+   * @returns the service-wide settings, whether a directory is loaded, any
+   * problem with the name, and what the claim does and does not grant
+   */
   state() {
     const { log, stats } = this.deps;
     log.debug("Entering GroupClaims.state().");
@@ -629,6 +724,10 @@ class GroupClaims {
   // loads this module simply has no groups claim, which is a smaller service
   // and not a broken one.
   // -------------------------------------------------------------------------
+  /**
+   * Fills `admin_stats.setGroupResolver()` with this instance's two resolver
+   * halves.
+   */
   installResolver(): void {
     const { log, stats } = this.deps;
     log.debug("Entering GroupClaims.installResolver().");
@@ -658,6 +757,15 @@ const slot = new InstanceSlot<GroupClaims>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The groups claim: the directory's groups in every access token, ID Token,
+ * UserInfo response and SAML assertion this service issues.
+ *
+ * Exports the class and facades forwarding to the instance the composition root
+ * built.
+ *
+ * @namespace
+ */
 export = {
   GroupClaims: GroupClaims,
   installInstance: (instance: GroupClaims): void => slot.install(instance),

@@ -68,18 +68,44 @@ interface TpmDevidDeps {
   tpm: typeof tpm;
 }
 
+/**
+ * The `tpm_devid` node attestor: a DevID certificate (IEEE 802.1AR) whose key a
+ * TPM with a manufacturer-certified endorsement key holds.
+ *
+ * It follows SPIRE's `tpmdevid`; residency is proved by the AK's certification
+ * of the DevID key, a DevID signature over a nonce and a credential activation,
+ * so nothing is taken on the agent's word.
+ */
 class TpmDevidAttestor {
+  /**
+   * The attestation type an agent names in `params.data.type`.
+   */
   readonly type = 'tpm_devid';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'A DevID certificate chaining to the realm\'s DevID ' +
     'anchors, whose key a TPM with a manufacturer-certified endorsement key ' +
     'holds — proved by a certification with the TPM\'s attestation key, a ' +
     'DevID signature and a credential activation.';
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, crypto, configuration, error codes, SPIFFE, gRPC,
+   *   PKI and TPM helpers
+   */
   constructor(private readonly deps: TpmDevidDeps) {
     deps.log.debug("Entering TpmDevidAttestor.constructor().");
     deps.log.debug("Leaving TpmDevidAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): TpmDevidDeps {
     helpers.log.debug("Entering TpmDevidAttestor.defaultDeps().");
     helpers.log.debug("Leaving TpmDevidAttestor.defaultDeps().");
@@ -88,6 +114,12 @@ class TpmDevidAttestor {
              pki: pki, stsCrypto: stsCrypto, tpm: tpm };
   }
 
+  /**
+   * Parses bytes as a JSON object.
+   *
+   * @param bytes - the bytes to parse
+   * @returns the object, or null when the bytes are not a JSON object
+   */
   json(bytes: Buffer): any {
     const { log } = this.deps;
     log.debug("Entering TpmDevidAttestor.json().");
@@ -103,6 +135,12 @@ class TpmDevidAttestor {
     }
   }
 
+  /**
+   * Decodes a base64 value from SPIRE's JSON.
+   *
+   * @param value - the JSON value
+   * @returns the bytes, empty when the value is not a string
+   */
   bytesOf(value: any): Buffer {
     const { log } = this.deps;
     log.debug("Entering TpmDevidAttestor.bytesOf().");
@@ -112,6 +150,12 @@ class TpmDevidAttestor {
   }
 
   // The CN of node's "K=V\n" name, or ''.
+  /**
+   * Returns the CN of a name as node renders it ("K=V\n").
+   *
+   * @param text - the rendered name
+   * @returns the common name, or ''
+   */
   commonName(text: string): string {
     const { log } = this.deps;
     log.debug("Entering TpmDevidAttestor.commonName().");
@@ -123,6 +167,15 @@ class TpmDevidAttestor {
   }
 
   // One refusal: mark the code, build the status.
+  /**
+   * Marks an error code on the call and returns the gRPC status error to throw.
+   *
+   * @param call - the gRPC call the refusal is for
+   * @param code - the `STS-SPIFFE-…` error code to record
+   * @param grpcCode - the gRPC status code
+   * @param message - the message the client is sent
+   * @returns the status error
+   */
   refuse(call: any, code: string, grpcCode: number, message: string): Error {
     const { log, errorCodes, rpc } = this.deps;
     log.debug("Entering TpmDevidAttestor.refuse(). " + code);
@@ -133,6 +186,17 @@ class TpmDevidAttestor {
     return rpc.statusError(grpcCode, message);
   }
 
+  /**
+   * Checks the DevID chain and the TPM residency proofs, runs the two-part
+   * challenge, and derives the agent's ID and selectors.
+   *
+   * @param context - the attestation context; the payload is SPIRE's
+   *   AttestationRequest
+   * @returns the agent `/tpm_devid/<SHA-1 of the DevID certificate>` with the
+   *   subject, issuer and CA fingerprint selectors; re-attestable
+   * @throws a gRPC status error when a certificate, proof or challenge answer
+   *   is refused
+   */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
     const { log, crypto, config, spiffeId, rpc, pki, stsCrypto,
@@ -351,6 +415,11 @@ class TpmDevidAttestor {
   }
 }
 
+/**
+ * The `tpm_devid` node attestor (#40): a TPM-resident DevID, verified as
+ * SPIRE's plugin verifies it.
+ * @namespace
+ */
 export = {
   TpmDevidAttestor: TpmDevidAttestor
 };

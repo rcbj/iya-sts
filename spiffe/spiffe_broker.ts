@@ -91,8 +91,14 @@ import ca = require('./spiffe_ca');
 import spiffeId = require('./spiffe_id');
 import peer = require('./spiffe_peer');
 
+/**
+ * The type URL of a WorkloadPIDReference.
+ */
 const PID_REFERENCE =
   'type.googleapis.com/spiffe.broker.WorkloadPIDReference';
+/**
+ * The type URL of a KubernetesObjectReference.
+ */
 const K8S_REFERENCE =
   'type.googleapis.com/spiffe.broker.KubernetesObjectReference';
 const ERROR_INFO = 'type.googleapis.com/google.rpc.ErrorInfo';
@@ -132,8 +138,20 @@ interface BrokerDeps {
 // THE PROTOBUF WIRE FORMAT, AS FAR AS THE REFERENCES AND google.rpc NEED IT —
 // a static utility class, the code style's shape for small helpers.
 // ---------------------------------------------------------------------------
+/**
+ * The protobuf wire format as far as the Broker API's references and
+ * `google.rpc` need it: a static utility class.
+ */
 class ProtoWire {
   // A varint at `at`: `{ value: bigint, next }`; throws on a truncated one.
+  /**
+   * Reads a varint.
+   *
+   * @param buf - the message
+   * @param at - the offset to read at
+   * @returns the value and the offset after it
+   * @throws an Error on a truncated varint
+   */
   static varint(buf: Buffer, at: number): { value: bigint; next: number } {
     helpers.log.debug("Entering ProtoWire.varint().");
     let value = BigInt(0);
@@ -152,6 +170,13 @@ class ProtoWire {
   }
 
   // Every field of a message: `[{ no, wire, int?, bytes? }]`; throws.
+  /**
+   * Reads every field of a message.
+   *
+   * @param buf - the message
+   * @returns the fields, each with its number, wire type and integer or bytes
+   * @throws an Error on a malformed message
+   */
   static fields(buf: Buffer): Array<{ no: number; wire: number;
                                       int?: bigint; bytes?: Buffer }> {
     helpers.log.debug("Entering ProtoWire.fields().");
@@ -195,6 +220,14 @@ class ProtoWire {
 
   // The last value of string field `no`, as proto3 reads a repeated scalar
   // it expected once; '' when absent.
+  /**
+   * Returns the last value of a string field, as proto3 reads a repeated scalar
+   * it expected once.
+   *
+   * @param fields - the message's fields
+   * @param no - the field number
+   * @returns the value, or '' when absent
+   */
   static text(fields: any[], no: number): string {
     helpers.log.debug("Entering ProtoWire.text(). " + no);
     const found = fields.filter(function (f) {
@@ -205,6 +238,13 @@ class ProtoWire {
   }
 
   // A sub-message field, or null.
+  /**
+   * Returns the last value of a sub-message field.
+   *
+   * @param fields - the message's fields
+   * @param no - the field number
+   * @returns the sub-message's bytes, or null
+   */
   static message(fields: any[], no: number): Buffer | null {
     helpers.log.debug("Entering ProtoWire.message(). " + no);
     const found = fields.filter(function (f) {
@@ -215,6 +255,12 @@ class ProtoWire {
   }
 
   // Encoders: a varint, a tagged varint, a tagged length-delimited field.
+  /**
+   * Encodes a varint.
+   *
+   * @param n - the value
+   * @returns the encoding
+   */
   static encodeVarint(n: number): Buffer {
     helpers.log.debug("Entering ProtoWire.encodeVarint().");
     const out = [];
@@ -229,6 +275,13 @@ class ProtoWire {
     return Buffer.from(out);
   }
 
+  /**
+   * Encodes a tagged varint field.
+   *
+   * @param no - the field number
+   * @param n - the value
+   * @returns the encoding
+   */
   static intField(no: number, n: number): Buffer {
     helpers.log.debug("Entering ProtoWire.intField().");
     helpers.log.debug("Leaving ProtoWire.intField().");
@@ -236,6 +289,13 @@ class ProtoWire {
                           ProtoWire.encodeVarint(n)]);
   }
 
+  /**
+   * Encodes a tagged length-delimited field.
+   *
+   * @param no - the field number
+   * @param bytes - the value, bytes or UTF-8 text
+   * @returns the encoding
+   */
   static bytesField(no: number, bytes: Buffer | string): Buffer {
     helpers.log.debug("Entering ProtoWire.bytesField().");
     const body = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes, 'utf8');
@@ -245,12 +305,31 @@ class ProtoWire {
   }
 }
 
+/**
+ * The SPIFFE Broker API (#170): an authorized broker asks for the SVIDs and
+ * bundles of a workload it references, which this service attests itself.
+ *
+ * A reference is a process id or a Kubernetes pod; a stream ends when its
+ * workload does, and every refusal carries a `google.rpc.ErrorInfo`.
+ */
 class SpiffeBroker {
+  /**
+   * Builds the API over its dependencies.
+   *
+   * @param deps - the logger, error codes, the gRPC, workload, CA, SPIFFE ID
+   *   and peer modules, and the workload attestation table
+   */
   constructor(private readonly deps: BrokerDeps) {
     deps.log.debug("Entering SpiffeBroker.constructor().");
     deps.log.debug("Leaving SpiffeBroker.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service builds the API with.
+   *
+   * @param attestation - returns the workload attestation table
+   * @returns the production dependency set
+   */
   static defaultDeps(attestation: () => any): BrokerDeps {
     helpers.log.debug("Entering SpiffeBroker.defaultDeps().");
     helpers.log.debug("Leaving SpiffeBroker.defaultDeps().");
@@ -261,6 +340,18 @@ class SpiffeBroker {
 
   // A status error carrying section 4.8's google.rpc.ErrorInfo. `call` is
   // marked with the code the audit row records.
+  /**
+   * Builds a status error carrying section 4.8's `google.rpc.ErrorInfo`, and
+   * marks the error code on the call.
+   *
+   * @param call - the gRPC call
+   * @param code - the `STS-SPIFFE-…` error code to record
+   * @param status - the gRPC status code
+   * @param message - the message the broker is sent
+   * @param reason - the ErrorInfo reason
+   * @param metadata - the ErrorInfo metadata, if any
+   * @returns the status error
+   */
   refusal(call: any, code: string, status: number, message: string,
           reason: string, metadata?: Record<string, string>): Error {
     const { log, errorCodes, rpc } = this.deps;
@@ -292,6 +383,14 @@ class SpiffeBroker {
 
   // STEPS 1 AND 3's parsing: the request's `reference` as a Reference, or a
   // thrown INVALID_ARGUMENT.
+  /**
+   * Parses the request's `reference` as a PID or Kubernetes object reference
+   * (steps 1 and 3).
+   *
+   * @param call - the gRPC call
+   * @returns the reference
+   * @throws an INVALID_ARGUMENT status error for a malformed reference
+   */
   decodeReference(call: any): Reference {
     const { log, rpc } = this.deps;
     const self = this;
@@ -391,6 +490,14 @@ class SpiffeBroker {
   }
 
   // STEP 2: may this broker use this kind of reference? Throws.
+  /**
+   * Checks that the broker may use this kind of reference (step 2).
+   *
+   * @param call - the gRPC call, carrying the authorized broker
+   * @param typeUrl - the reference's type URL
+   * @param type - the reference's kind, or ''
+   * @throws a PERMISSION_DENIED status error when it may not
+   */
   authorizeType(call: any, typeUrl: string, type: string): void {
     const { log, rpc } = this.deps;
     log.debug("Entering SpiffeBroker.authorizeType(). " + type);
@@ -408,6 +515,15 @@ class SpiffeBroker {
   }
 
   // STEP 3: the reference attested. Throws NOT_FOUND or UNAVAILABLE.
+  /**
+   * Attests the referenced workload (step 3).
+   *
+   * @param call - the gRPC call
+   * @param ref - the parsed reference
+   * @returns the attested workload, with its selectors and how to ask whether
+   *   it is still running
+   * @throws a NOT_FOUND or UNAVAILABLE status error
+   */
   async resolve(call: any, ref: Reference): Promise<Resolved> {
     const { log, rpc, peer, attestation } = this.deps;
     const self = this;
@@ -524,6 +640,14 @@ class SpiffeBroker {
   // read, as SPIRE's `authorizeReferenceType()` is: a broker allowed neither
   // kind is refused PERMISSION_DENIED for a malformed pid too, and a type
   // nobody knows is refused by the allow list unless the broker has `*`.
+  /**
+   * Runs steps 1 to 3 for one call, asking the allow list about the type URL
+   * before the reference's value is read.
+   *
+   * @param call - the gRPC call
+   * @returns the attested workload and the caller its entitlement is asked for
+   * @throws a status error for a refused or unresolvable reference
+   */
   async referenced(call: any): Promise<{ resolved: Resolved; caller: any }> {
     const { log, rpc } = this.deps;
     log.debug("Entering SpiffeBroker.referenced().");
@@ -549,6 +673,12 @@ class SpiffeBroker {
   }
 
   // SPIRE's hintsfilter: the first of each non-empty hint.
+  /**
+   * SPIRE's hintsfilter: keeps the first SVID with each non-empty hint.
+   *
+   * @param svids - the SVIDs
+   * @returns the SVIDs with later duplicate hints dropped
+   */
   uniqueHints(svids: any[]): any[] {
     const { log } = this.deps;
     log.debug("Entering SpiffeBroker.uniqueHints().");
@@ -564,6 +694,14 @@ class SpiffeBroker {
     return out;
   }
 
+  /**
+   * Returns the PERMISSION_DENIED refusal for a referenced workload no entry
+   * entitles to an SVID.
+   *
+   * @param call - the gRPC call
+   * @param resolved - the attested workload
+   * @returns the status error
+   */
   notEntitled(call: any, resolved: Resolved): Error {
     const { log, rpc } = this.deps;
     log.debug("Entering SpiffeBroker.notEntitled().");
@@ -576,6 +714,13 @@ class SpiffeBroker {
   }
 
   // A stream's end when the call closes, whichever way, once.
+  /**
+   * Releases the attested workload's facts once when the call closes, whichever
+   * way it closes.
+   *
+   * @param call - the gRPC call
+   * @param resolved - the attested workload
+   */
   releaseOnClose(call: any, resolved: Resolved): void {
     const { log } = this.deps;
     log.debug("Entering SpiffeBroker.releaseOnClose().");
@@ -594,6 +739,16 @@ class SpiffeBroker {
   // THE RE-SEND for a stream: `build()` unless the workload has stopped,
   // which ends the stream (section 4.9) and answers null so the rotation
   // timer stops.
+  /**
+   * Wraps a stream's re-send so that it first asks whether the workload is
+   * still running, and ends the stream (section 4.9) when it is not.
+   *
+   * @param call - the gRPC call
+   * @param resolved - the attested workload
+   * @param end - ends the stream with an error
+   * @param build - builds the next response
+   * @returns the re-send, which answers null once the stream has ended
+   */
   resend(call: any, resolved: Resolved, end: (err: Error) => void,
          build: () => Promise<any>): () => Promise<any> {
     const { log, rpc } = this.deps;
@@ -618,6 +773,12 @@ class SpiffeBroker {
   }
 
   // The four handlers, wrapped by `spiffe_grpc.ts` for the `broker` surface.
+  /**
+   * Returns the four Broker API handlers, for `spiffe_grpc.ts` to wrap on the
+   * `broker` surface.
+   *
+   * @returns the handlers by method name
+   */
   handlers(): Record<string, any> {
     const { log, rpc, workload, ca, spiffeId, errorCodes } = this.deps;
     const self = this;
@@ -732,6 +893,11 @@ class SpiffeBroker {
   }
 }
 
+/**
+ * The SPIFFE Broker API (#170), after the incubating Broker API and Broker
+ * Endpoint drafts.
+ * @namespace
+ */
 export = {
   SpiffeBroker: SpiffeBroker,
   ProtoWire: ProtoWire,

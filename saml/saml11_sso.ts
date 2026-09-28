@@ -285,15 +285,27 @@ const NS_SOAP = 'http://schemas.xmlsoap.org/soap/envelope/';
 // The two browser profiles, by the URIs metadata names them with. Both carry
 // `1.0` for the reason the namespaces do, and `artifact-01` is the real
 // spelling rather than a truncation of something.
+/**
+ * The SAML 1.1 Browser/POST profile's URI.
+ */
 const PROFILE_POST = 'urn:oasis:names:tc:SAML:1.0:profiles:browser-post';
 
+/**
+ * The SAML 1.1 Browser/Artifact profile's URI.
+ */
 const PROFILE_ARTIFACT = 'urn:oasis:names:tc:SAML:1.0:profiles:artifact-01';
 
 // The SOAP binding the responder speaks.
+/**
+ * The SAML 1.1 SOAP binding's URI, which the responder speaks.
+ */
 const BINDING_SOAP = 'urn:oasis:names:tc:SAML:1.0:bindings:SOAP-binding';
 
 // Shibboleth's request profile — decision 1. Advertised so that a service
 // provider building its endpoint list from the metadata offers it.
+/**
+ * Shibboleth's AuthnRequest profile's URI, advertised in the metadata.
+ */
 const PROFILE_SHIB_AUTHN_REQUEST =
     'urn:mace:shibboleth:1.0:profiles:AuthnRequest';
 
@@ -345,6 +357,9 @@ const TRANSFORM_ENVELOPED =
 // deployment used. As in 2.0, the list is what goes in the metadata and is NOT
 // a list of what will be accepted: the non-spec `format` parameter is answered
 // with whatever it says.
+/**
+ * The NameIdentifier formats this identity provider advertises in its metadata.
+ */
 const NAMEID_FORMATS = [
   saml11.NAMEID_FORMAT_UNSPECIFIED,
   'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
@@ -457,6 +472,9 @@ const assertionsCount = cacheRegistry.register({
 // split one application into two entries. `note` says which door it came
 // through.
 // ---------------------------------------------------------------------------
+/**
+ * The application kind a SAML 1.1 relying party is recorded as.
+ */
 const RP_KIND = 'saml11-relying-party';
 
 // --- what goes in the assertion --------------------------------------------
@@ -548,7 +566,18 @@ interface Saml11SsoDeps {
   mtls: typeof mtls;
 }
 
+/**
+ * The SAML 1.1 identity provider: the Browser/POST and Browser/Artifact
+ * profiles, the SOAP responder behind the second, the metadata, and a mock
+ * relying party.
+ */
 class Saml11Sso {
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the helpers, settings, the assertion builder, the sign-on
+   * session, the registers and the SAML libraries this profile reads
+   */
   constructor(private readonly deps: Saml11SsoDeps) {
     deps.log.debug("Entering Saml11Sso.constructor().");
     deps.log.debug("Leaving Saml11Sso.constructor().");
@@ -556,6 +585,11 @@ class Saml11Sso {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): Saml11SsoDeps {
     helpers.log.debug("Entering Saml11Sso.defaultDeps().");
     helpers.log.debug("Leaving Saml11Sso.defaultDeps().");
@@ -787,6 +821,15 @@ class Saml11Sso {
   // product mode (2026-09-12), for the reason saml2_sso.ts's idpEntityIdFor()
   // gives; `providerIdProblem()` is what the inter-site transfer service, the
   // responder and the metadata endpoint ask before issuing anything.
+  /**
+   * Answers this identity provider's own providerID for a relying party, from
+   * `saml11.providerId`.
+   *
+   * An empty setting falls back to `urn:sts:idp:saml11` in development and
+   * answers '' in product.
+   * @param rpId - the relying party's identifier
+   * @returns the providerID, or ''
+   */
   providerIdFor(rpId) {
     const { config, log, mode, slugOf } = this.deps;
     log.debug("Entering Saml11Sso.providerIdFor().");
@@ -824,6 +867,14 @@ class Saml11Sso {
   // failure that produces is a service provider configured from a document,
   // posting to a path nothing serves, and a 404 that looks like the identity
   // provider is down.
+  /**
+   * Answers where a relying party's endpoints live, for the metadata and the
+   * handlers alike.
+   *
+   * @param base - the realm's base URL
+   * @param rpId - the relying party's identifier
+   * @returns the `sso`, `responder` and `metadata` URLs
+   */
   endpointsFor(base, rpId) {
     const { log, slugOf } = this.deps;
     log.debug("Entering Saml11Sso.endpointsFor().");
@@ -2618,6 +2669,14 @@ class Saml11Sso {
   // it even though both are 'prepend'. They agree by coincidence rather than by
   // rule, and the rule is in each schema separately.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the SAML 2.0 metadata document describing this SAML 1.1 identity
+   * provider, signed with the signature first inside the EntityDescriptor.
+   *
+   * @param base - the realm's base URL
+   * @param rpId - the relying party's identifier
+   * @returns the metadata document
+   */
   metadataFor(base, rpId) {
     const { STS, documentSettings, errorCodes, genId, listenerKeys, log,
             logArtifact, xmlEscape } = this.deps;
@@ -2948,6 +3007,16 @@ class Saml11Sso {
   // own verdict. One boolean for the whole response would say "it failed" and
   // nothing anybody could act on — the same argument /wsfed/rp, /saml2/sp and
   // the OID4VP verifier all make.
+  /**
+   * Verifies a SAML 1.1 Response as a relying party would, each check with its
+   * own verdict; the mock relying party's reading.
+   *
+   * @param xml - the Response
+   * @param rpId - the relying party's identifier
+   * @param acsUrl - the assertion consumer service URL it was sent to
+   * @param profile - `post` or `artifact`
+   * @returns `ok`, every check, and what the assertion said
+   */
   verifyResponse(xml, rpId, acsUrl, profile) {
     const { CONFIRMATION_ARTIFACT, CONFIRMATION_BEARER, firstByLocal, log,
             textByLocal } = this.deps;
@@ -3368,6 +3437,12 @@ class Saml11Sso {
   // THE ROUTES, in the order this module registered them at load
   // (rule 1). Called once, by `common/protocol_stack.ts` through the
   // module's `registerRoutes(app)` (#50, R1).
+  /**
+   * Registers every route under `/saml11`: the inter-site transfer service, the
+   * responder, the metadata and the mock relying party.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: RouteApp): void {
     const { baseUrlOf, log, xmlEscape } = this.deps;
     log.debug("Entering Saml11Sso.registerRoutes().");
@@ -3494,6 +3569,11 @@ class Saml11Sso {
 
   // How many artifacts, cached assertions and interrupted sign-ins this realm
   // holds, for the console.
+  /**
+   * Answers how many artifacts the realm holds, for the console.
+   *
+   * @returns the count
+   */
   artifactCount(): number {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.artifactCount().");
@@ -3501,6 +3581,12 @@ class Saml11Sso {
     return artifacts.size;
   }
 
+  /**
+   * Answers how many assertions the realm holds for artifact resolution, for
+   * the console.
+   *
+   * @returns the count
+   */
   cachedAssertionCount(): number {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.cachedAssertionCount().");
@@ -3508,6 +3594,11 @@ class Saml11Sso {
     return assertionsById.size;
   }
 
+  /**
+   * Answers how many interrupted sign-ins the realm holds, for the console.
+   *
+   * @returns the count
+   */
   pendingFlowCount(): number {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.pendingFlowCount().");
@@ -3543,10 +3634,23 @@ slot.buildNowUnlessDeferred();
 // name the same endpoints and the same slug this file does — a console that
 // derived a URL of its own would be a console that tells somebody to configure
 // a path nothing serves.
+/**
+ * SAML 1.1: the Browser/POST and Browser/Artifact profiles and the SAML
+ * responder behind the second, with the functions the console reads.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   Saml11Sso: Saml11Sso,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: Saml11Sso): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PROFILE_POST: PROFILE_POST,
   PROFILE_ARTIFACT: PROFILE_ARTIFACT,

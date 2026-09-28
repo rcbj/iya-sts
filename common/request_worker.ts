@@ -257,11 +257,20 @@ const currentResponse = new asyncHooks.AsyncLocalStorage<http.ServerResponse>();
 
 // The header the front process acts on. Named here and in `request_pool.js`,
 // and those two spellings must agree — the pool's copy carries the argument.
+/**
+ * The response header on which a worker asks the front process to end a
+ * person's directory connections: percent-encoded keys, comma-separated.
+ */
 const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 
 // The header the front process TELLS a hosted-surface worker on, at module
 // scope rather than beside the three in start() so that it can be exported and
 // compared with the pool's spelling, as LDAP_DROP_HEADER is.
+/**
+ * The request header on which the front process tells a hosted-surface worker
+ * the pid of the protocol worker that holds this browser, for
+ * `common/oidc_rp.ts`'s back channel.
+ */
 const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
 
 // An operation handler: a value or a promise, both answered the same way.
@@ -535,8 +544,22 @@ class CommitAnnouncer {
   }
 }
 
+/**
+ * A request worker: a forked process that loads the whole protocol stack and
+ * answers HTTP proxied to it by the front process over a Unix socket, plus
+ * the non-HTTP operations its modules register.
+ *
+ * It binds no protocol port; every listener is the front process's.
+ */
 class RequestWorker {
+  /**
+   * The header a worker asks the front process to drop directory connections
+   * on.
+   */
   static readonly LDAP_DROP_HEADER = LDAP_DROP_HEADER;
+  /**
+   * The header naming the protocol worker that holds a browser.
+   */
   static readonly PROTOCOL_WORKER_HEADER = PROTOCOL_WORKER_HEADER;
 
   private server: http.Server | null = null;
@@ -576,14 +599,29 @@ class RequestWorker {
   //
   // A handler may return a value or a promise; both are answered the same way.
   // ---------------------------------------------------------------------------
+  /**
+   * The operation table: what this worker answers that is not an HTTP request,
+   * by kind, filled through `register()` by the module that owns each one.
+   */
   readonly operations = new Map<string, OperationHandler>();
 
+  /**
+   * Builds a worker over its dependencies; starts nothing.
+   *
+   * @param deps - the logger, settings, error codes and the service-state
+   *   loader
+   */
   constructor(private readonly deps: RequestWorkerDeps) {
     deps.log.debug("Entering RequestWorker.constructor().");
     deps.log.debug("Leaving RequestWorker.constructor().");
   }
 
   // What the bottom of this file passes, from the real modules.
+  /**
+   * Answers the dependencies built from the real modules.
+   *
+   * @returns the logger, settings, error codes and a lazy service-state loader
+   */
   static defaultDeps(): RequestWorkerDeps {
     log.debug("Entering RequestWorker.defaultDeps().");
     log.debug("Leaving RequestWorker.defaultDeps().");
@@ -606,6 +644,15 @@ class RequestWorker {
   // saying it did would be a lie). `ldap_server.js` argues both at the block
   // above its boundConnections().
   // ---------------------------------------------------------------------------
+  /**
+   * Installs this worker's view of the front process's directory connections,
+   * and a dropper that asks the front process (through `LDAP_DROP_HEADER` on
+   * the response in flight) to end a person's connections.
+   *
+   * Called once, after the protocol stack is loaded.
+   * @param seed - the connections the front process held when it forked this
+   *   worker; none when absent
+   */
   installDirectoryMirror(seed?: unknown[]): void {
     const { log } = this.deps;
     log.debug('Entering RequestWorker.installDirectoryMirror().');
@@ -653,6 +700,14 @@ class RequestWorker {
   // seeds a directory and generates a realm's keys — and the front process
   // waits for the `ready` message rather than assuming a duration.
   // ---------------------------------------------------------------------------
+  /**
+   * Loads the service and binds its HTTP server on the given Unix socket,
+   * removing a stale socket file first; reports `ready` to the front process
+   * once bound.
+   *
+   * @param path - the socket path the front process assigned
+   * @throws an Error when no socket path is given
+   */
   start(path?: string): void {
     const { log, config, loadServiceState, errorCodes } = this.deps;
     log.debug('Entering RequestWorker.start(). socket=' + path);
@@ -1029,6 +1084,12 @@ class RequestWorker {
   // One message to the front process. Wrapped because a worker whose channel
   // has gone cannot do anything about it and must not die reporting that it
   // cannot.
+  /**
+   * Sends one message to the front process, logging rather than throwing when
+   * the channel has gone.
+   *
+   * @param message - the message to send
+   */
   report(message: Record<string, unknown>): void {
     const { log, errorCodes } = this.deps;
     log.debug('Entering RequestWorker.report().');
@@ -1054,6 +1115,10 @@ class RequestWorker {
   // are kept — tidy on the way out, tolerant on the way in — because a worker
   // that was KILLED never runs this at all.
   // ---------------------------------------------------------------------------
+  /**
+   * Stops accepting, lets requests in flight finish, unlinks the socket and
+   * exits the process.
+   */
   stop(): void {
     const { log } = this.deps;
     log.debug('Entering RequestWorker.stop(). inFlight=' + this.inFlight);
@@ -1092,6 +1157,15 @@ class RequestWorker {
     log.debug("Leaving RequestWorker.cleanup().");
   }
 
+  /**
+   * Registers the handler for one kind of operation.
+   *
+   * A handler may return a value or a promise.
+   * @param kind - the operation's name
+   * @param fn - the handler
+   * @throws an Error when `fn` is not a function or the kind is already
+   *   registered
+   */
   register(kind: string, fn: OperationHandler): void {
     const { log } = this.deps;
     log.debug("Entering RequestWorker.register().");
@@ -1228,6 +1302,11 @@ class RequestWorker {
   // The three process-level listeners every loader of this module installs,
   // as it always did at load: the channel's stop / sync / operation messages,
   // the channel closing, and the status signal.
+  /**
+   * Installs the process listeners: the channel's stop, sync and operation
+   * messages, the channel closing (which stops the worker), and SIGUSR2, which
+   * reports the worker's status.
+   */
   listen(): void {
     const { log } = this.deps;
     log.debug("Entering RequestWorker.listen().");
@@ -1279,6 +1358,10 @@ class RequestWorker {
   // load time can be reached through without every module learning about the
   // pool.
   // ---------------------------------------------------------------------------
+  /**
+   * Waits for the front process's `begin` message, which carries the socket
+   * path and the server certificate, before loading anything.
+   */
   waitForBegin(): void {
     const { log } = this.deps;
     log.debug("Entering RequestWorker.waitForBegin().");
@@ -1474,6 +1557,14 @@ if (require.main === module) {
   worker.waitForBegin();
 }
 
+/**
+ * A request worker's entry point: the process that runs the whole service on
+ * a Unix socket behind the front process.
+ *
+ * Loading it builds this process's worker and installs its listeners; run as
+ * the main module it also waits for `begin`.
+ * @namespace
+ */
 export = {
   RequestWorker: RequestWorker,
   // THE HEADER THIS WORKER ASKS THE FRONT PROCESS ON, exported to be compared

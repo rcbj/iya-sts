@@ -153,15 +153,53 @@ const SIGNING_ALGS = applications.INTROSPECTION_SIGNING_ALGS;
 const ENCRYPTION_ALGS = applications.INTROSPECTION_ENCRYPTION_ALGS;
 const ENCRYPTION_ENCS = applications.INTROSPECTION_ENCRYPTION_ENCS;
 
+/**
+ * RFC 9701 JWT introspection responses: whether a request asked for one, what a
+ * client registered for its protection, which tokens it may learn about, and
+ * the signed and optionally encrypted response itself.
+ */
 class IntrospectionJwt {
+  /**
+   * The media type a resource server names in Accept, and the response's
+   * Content-Type (section 4).
+   */
   static readonly MEDIA_TYPE = MEDIA_TYPE;
+  /**
+   * The JWT `typ` header of the response: the media type without its
+   * `application/` prefix (section 5).
+   */
   static readonly TYP = TYP;
+  /**
+   * The signing algorithm used when a client registered none (section 6).
+   */
   static readonly DEFAULT_SIGNING_ALG = DEFAULT_SIGNING_ALG;
+  /**
+   * The content encryption used when a client registered an encryption
+   * algorithm and no `enc` (section 6).
+   */
   static readonly DEFAULT_ENC = DEFAULT_ENC;
+  /**
+   * The signing algorithms `introspection_signing_alg_values_supported`
+   * advertises.
+   */
   static readonly SIGNING_ALGS = SIGNING_ALGS;
+  /**
+   * The key-management algorithms
+   * `introspection_encryption_alg_values_supported` advertises.
+   */
   static readonly ENCRYPTION_ALGS = ENCRYPTION_ALGS;
+  /**
+   * The content encryptions `introspection_encryption_enc_values_supported`
+   * advertises.
+   */
   static readonly ENCRYPTION_ENCS = ENCRYPTION_ENCS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, signer, crypto module, application registry,
+   *   error codes and RFC 9068 module this class reads
+   */
   constructor(private readonly deps: IntrospectionJwtDeps) {
     deps.log.debug("Entering IntrospectionJwt.constructor().");
     deps.log.debug("Leaving IntrospectionJwt.constructor().");
@@ -169,6 +207,12 @@ class IntrospectionJwt {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports, which the
+   * composition root and the standalone default instance use.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): IntrospectionJwtDeps {
     helpers.log.debug("Entering IntrospectionJwt.defaultDeps().");
     helpers.log.debug("Leaving IntrospectionJwt.defaultDeps().");
@@ -252,6 +296,17 @@ class IntrospectionJwt {
     return best;
   }
 
+  /**
+   * Tells whether a request's Accept header asked for a JWT introspection
+   * response.
+   *
+   * Only an explicit, non-zero naming of the media type counts, at a quality at
+   * least that of `application/json`; no header, a wildcard Accept or
+   * `application/json` alone keeps the RFC 7662 JSON answer.
+   *
+   * @param acceptHeader - the request's Accept header
+   * @returns true when a JWT response is to be sent
+   */
   wantsJwt(acceptHeader: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering IntrospectionJwt.wantsJwt().");
@@ -294,6 +349,22 @@ class IntrospectionJwt {
   // failing (500): the registration is fine, and this authorization server
   // does not offer it — the token endpoint's rule about an authentication
   // method, made again for a response.
+  /**
+   * Works out how a client's response is to be signed and encrypted, from what
+   * it registered with section 6's defaults applied.
+   *
+   * A value this service cannot honour is refused rather than replaced; one the
+   * selected authorization server does not advertise is refused with
+   * `notAdvertised: true`, which the endpoint answers as the client's problem.
+   *
+   * @param client - the client's registration, as
+   *   `applications.clientConfigOf()` answers it
+   * @param advertised - what the selected authorization server publishes, as `{
+   *   signing, encryption, enc }` lists, or null members where it publishes
+   *   none
+   * @returns `{ ok: true, signAlg, encAlg, encEnc }`, or `{ ok: false,
+   *   description }` carrying an error code
+   */
   protectionFor(client: Json, advertised?: Json): Json {
     const { log, applications, errorCodes } = this.deps;
     log.debug("Entering IntrospectionJwt.protectionFor().");
@@ -389,6 +460,19 @@ class IntrospectionJwt {
   // `answer` is the RFC 7662 object; `base` the REQUEST's base URL (not the
   // authorization server's), which is what `isOwnResourceAudience()` compares.
   // -------------------------------------------------------------------------
+  /**
+   * Tells whether an active token was intended for the resource server asking
+   * about it.
+   *
+   * It is when it is the caller's own token, when an `aud` value is this
+   * service's default resource indicator, or when an `aud` value names the
+   * caller's entry. Otherwise the caller is answered as for an invalid token.
+   *
+   * @param answer - the RFC 7662 introspection object
+   * @param clientId - the authenticated caller's client_id
+   * @param base - the request's base URL
+   * @returns true when the caller may be told about the token
+   */
   intendedFor(answer: Json, clientId: unknown, base: string): boolean {
     const { log, applications, jwtAccessToken } = this.deps;
     log.debug("Entering IntrospectionJwt.intendedFor(). client=" + clientId);
@@ -451,6 +535,19 @@ class IntrospectionJwt {
   // it answers. `jwks` arrives as an object from a registration document and
   // as TEXT from the application registry (`oauthJwks`), so both are read.
   // -------------------------------------------------------------------------
+  /**
+   * Picks the key a response is encrypted to, out of the client's registered
+   * `jwks` or the cached key set its `jwks_uri` answered.
+   *
+   * Synchronous: an endpoint that encrypts prefetches a `jwks_uri` first.
+   *
+   * @param registered - the client's registration
+   * @param alg - the registered key-management algorithm
+   * @param member - the registration member being honoured, named in a refusal
+   * @returns the chosen public JWK
+   * @throws an Error naming the member when no usable encryption key is
+   *   registered
+   */
   recipientKey(registered: Json, alg: string, member: string): Json {
     const { log } = this.deps;
     log.debug("Entering IntrospectionJwt.recipientKey(). alg=" + alg);
@@ -520,6 +617,18 @@ class IntrospectionJwt {
   // by this service is the one place a member that leaked into that object
   // would become a statement nobody can take back.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the claims of the response JWT.
+   *
+   * A token that is not active is reduced to exactly `{ active: false }`,
+   * whatever the introspection object held.
+   *
+   * @param introspection - the RFC 7662 introspection object
+   * @param issuer - the authorization server's issuer
+   * @param audience - the resource server's client_id
+   * @param now - the issue time, in seconds
+   * @returns `{ iss, aud, iat, token_introspection }`
+   */
   claimsFor(introspection: Json, issuer: unknown, audience: unknown,
             now: number): Json {
     const { log } = this.deps;
@@ -553,6 +662,19 @@ class IntrospectionJwt {
   // `typ`, so a resource server that checks the header before it decrypts
   // sees the type it is required to check.
   // -------------------------------------------------------------------------
+  /**
+   * Signs, and where the client registered it encrypts, an introspection
+   * response for the authenticated resource server.
+   *
+   * A signature may be post-quantum and slow, so it goes through the worker
+   * pool, with the client_id as the routing hint.
+   *
+   * @param opts - `client` (the authenticated caller's registration),
+   *   `introspection`, `issuer`, `advertised` and an optional `now`
+   * @returns a promise of `{ contentType, body, alg, enc }`; it rejects with a
+   *   sentence fit for an `error_description` when the registration cannot be
+   *   honoured
+   */
   respond(opts: Json): Promise<IntrospectionResponse> {
     const { log, logArtifact, signJwtAsAsync, stsCrypto } = this.deps;
     const self = this;
@@ -626,9 +748,28 @@ const slot = new InstanceSlot<IntrospectionJwt>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9701 JWT responses from the token introspection endpoint.
+ *
+ * The composition root builds the instance; each function here forwards to
+ * it, for the callers that still `require()` this module.
+ *
+ * @namespace
+ */
 export = {
   IntrospectionJwt: IntrospectionJwt,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: IntrospectionJwt): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   MEDIA_TYPE: IntrospectionJwt.MEDIA_TYPE,
   TYP: IntrospectionJwt.TYP,

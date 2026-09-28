@@ -99,6 +99,10 @@ const { log } = helpers;
 // ---------------------------------------------------------------------------
 // THE VOCABULARY.
 // ---------------------------------------------------------------------------
+/**
+ * The OIDs SCEP's CMS messages use: content types, SCEP's signed attributes,
+ * algorithms and extensions.
+ */
 const OID = {
   data: '1.2.840.113549.1.7.1',
   signedData: '1.2.840.113549.1.7.2',
@@ -121,6 +125,9 @@ const OID = {
 };
 
 // The digests a request may be signed over, by OID. Anything else is badAlg.
+/**
+ * The digests a request may be signed over, by OID; anything else is badAlg.
+ */
 const DIGESTS = {
   '2.16.840.1.101.3.4.2.1': { id: 'sha256', label: 'SHA-256' },
   '2.16.840.1.101.3.4.2.2': { id: 'sha384', label: 'SHA-384' },
@@ -136,6 +143,10 @@ const REFUSED_DIGESTS = {
 // The signature algorithms, by OID, and the digest each implies. The bare
 // `rsaEncryption` OID is what most CMS signers put here and implies the digest
 // named in `digestAlgorithm`.
+/**
+ * The signature algorithms accepted, by OID, with the key type and digest each
+ * implies.
+ */
 const SIGNATURES = {
   '1.2.840.113549.1.1.1': { key: 'rsa', digest: null, label: 'RSA' },
   '1.2.840.113549.1.1.11': { key: 'rsa', digest: 'sha256',
@@ -153,6 +164,10 @@ const SIGNATURES = {
 };
 
 // The content ciphers, by OID.
+/**
+ * The content ciphers accepted, by OID: AES-128, AES-192 and AES-256 in CBC
+ * mode.
+ */
 const CIPHERS = {
   '2.16.840.1.101.3.4.1.2': { id: 'aes-128-cbc', keyBytes: 16,
                               label: 'AES-128-CBC' },
@@ -174,21 +189,36 @@ const OAEP_HASHES = {
   '2.16.840.1.101.3.4.2.3': 'sha512'
 };
 
+/**
+ * The RSA key transports an envelope may use.
+ */
 const KEY_TRANSPORTS = ['RSAES-PKCS1-v1_5 (rsaEncryption)',
                        'RSAES-OAEP (SHA-1, SHA-256, SHA-384, SHA-512)'];
 
 // RFC 8894 section 3.2.1.2 and 3.2.1.3.
+/**
+ * The SCEP messageType values (RFC 8894 sections 3.2.1.2 and 3.2.1.3).
+ */
 const MESSAGE_TYPES = {
   3: 'CertRep', 17: 'RenewalReq', 19: 'PKCSReq', 20: 'CertPoll',
   21: 'GetCert', 22: 'GetCRL'
 };
 
+/**
+ * The pkiStatus values: SUCCESS, FAILURE and PENDING.
+ */
 const PKI_STATUS = { SUCCESS: '0', FAILURE: '2', PENDING: '3' };
 
+/**
+ * The failInfo values a FAILURE carries.
+ */
 const FAIL_INFO = { badAlg: '0', badMessageCheck: '1', badRequest: '2',
                     badTime: '3', badCertId: '4' };
 
 // RFC 8894 section 3.2.1.5: sixteen octets.
+/**
+ * The length of a sender nonce: sixteen octets.
+ */
 const NONCE_BYTES = 16;
 
 // A transactionID is PrintableString and a client's own choice; a bound keeps
@@ -205,11 +235,27 @@ interface ScepCmsDeps {
   log: typeof log;
 }
 
+/**
+ * The CMS envelope SCEP speaks (RFC 8894 section 3, over RFC 5652), read and
+ * written.
+ *
+ * It decides nothing: who may have a certificate, what an operation means and
+ * which RA key opens an envelope are decided elsewhere.
+ */
 class ScepCms {
   // Set once the runtime has refused PKCS#1 v1.5 decryption (decision 3),
   // so the log says it once per process rather than per request.
+  /**
+   * Whether this process has already logged that its node runtime refuses
+   * PKCS#1 v1.5 decryption (STS-SCEP-0066), which is said once.
+   */
   static warnedNoImplicitRejection = false;
 
+  /**
+   * Builds the codec.
+   *
+   * @param deps - the logger, node's crypto, asn1js and pkijs
+   */
   constructor(private readonly deps: ScepCmsDeps) {
     deps.log.debug("Entering ScepCms.constructor().");
     deps.log.debug("Leaving ScepCms.constructor().");
@@ -217,6 +263,11 @@ class ScepCms {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time instance is built from
+   */
   static defaultDeps(): ScepCmsDeps {
     log.debug("Entering ScepCms.defaultDeps().");
     log.debug("Leaving ScepCms.defaultDeps().");
@@ -233,6 +284,17 @@ class ScepCms {
   // when too little was read to build a CertRep, 'certrep' when the reply can
   // be a signed FAILURE. `failInfo` is set for the second.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a refusal, saying whether the caller can still answer with a signed
+   * CertRep FAILURE.
+   *
+   * @param code - the STS error code
+   * @param why - the reason
+   * @param failInfo - the failInfo, for a CertRep refusal
+   * @param stage - `http` when too little was read to build a CertRep, else
+   *   `certrep`
+   * @returns `ok: false`, the code, the reason, the failInfo and the stage
+   */
   refusal(code, why, failInfo, stage?) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.refusal(). code=" + code);
@@ -244,6 +306,12 @@ class ScepCms {
   // ---------------------------------------------------------------------------
   // BYTES.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns bytes as an exactly sized ArrayBuffer.
+   *
+   * @param bytes - the bytes
+   * @returns the ArrayBuffer
+   */
   arrayBufferOf(bytes) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.arrayBufferOf().");
@@ -252,6 +320,12 @@ class ScepCms {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   }
 
+  /**
+   * Copies a view into a Buffer.
+   *
+   * @param view - the view
+   * @returns the Buffer
+   */
   bufferOf(view) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.bufferOf().");
@@ -262,6 +336,12 @@ class ScepCms {
   // One complete BER value and nothing after it. A trailing byte is refused
   // rather than ignored: bytes nobody signed riding along after a signed
   // message are bytes two readers will disagree about.
+  /**
+   * Reads exactly one BER value; trailing bytes are refused.
+   *
+   * @param bytes - the bytes
+   * @returns the parsed value, or null
+   */
   readOne(bytes) {
     const { log, asn1js } = this.deps;
     log.debug("Entering ScepCms.readOne().");
@@ -286,6 +366,12 @@ class ScepCms {
     return parsed.result;
   }
 
+  /**
+   * Returns a constructed ASN.1 node's children.
+   *
+   * @param node - the node
+   * @returns the children
+   */
   children(node) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.children().");
@@ -295,6 +381,13 @@ class ScepCms {
     return list;
   }
 
+  /**
+   * Says whether a node is a universal-class value with a tag number.
+   *
+   * @param node - the node
+   * @param tagNumber - the tag number
+   * @returns true when it is
+   */
   isUniversal(node, tagNumber) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.isUniversal().");
@@ -303,6 +396,13 @@ class ScepCms {
               node.idBlock.tagNumber === tagNumber);
   }
 
+  /**
+   * Says whether a node is a context-specific value with a tag number.
+   *
+   * @param node - the node
+   * @param tagNumber - the tag number
+   * @returns true when it is
+   */
   isContext(node, tagNumber) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.isContext().");
@@ -311,6 +411,12 @@ class ScepCms {
               node.idBlock.tagNumber === tagNumber);
   }
 
+  /**
+   * Returns an OBJECT IDENTIFIER node's dotted value.
+   *
+   * @param node - the node
+   * @returns the OID, or ''
+   */
   oidOf(node) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.oidOf().");
@@ -325,6 +431,13 @@ class ScepCms {
   // The octets of an OCTET STRING, primitive or BER-constructed, or of an
   // implicitly tagged one. OpenSSL streams a constructed, indefinite-length
   // OCTET STRING for encapsulated content, so both shapes are ordinary.
+  /**
+   * Returns the octets of an OCTET STRING, primitive, BER-constructed or
+   * implicitly tagged.
+   *
+   * @param node - the node
+   * @returns the octets, or null
+   */
   octetsOf(node) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.octetsOf().");
@@ -353,6 +466,12 @@ class ScepCms {
     return view ? this.bufferOf(view) : null;
   }
 
+  /**
+   * Returns a node's encoding as it was read.
+   *
+   * @param node - the node
+   * @returns the bytes
+   */
   rawOf(node) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.rawOf().");
@@ -360,6 +479,12 @@ class ScepCms {
     return this.bufferOf(node && node.valueBeforeDecodeView);
   }
 
+  /**
+   * Returns a string node's value.
+   *
+   * @param node - the node
+   * @returns the string, or ''
+   */
   stringOf(node) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.stringOf().");
@@ -372,6 +497,13 @@ class ScepCms {
     return typeof value === 'string' ? value : '';
   }
 
+  /**
+   * Wraps DER bytes as PEM.
+   *
+   * @param der - the bytes
+   * @param label - the PEM label
+   * @returns the PEM
+   */
   derToPem(der, label) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.derToPem().");
@@ -381,6 +513,12 @@ class ScepCms {
         .replace(/\n$/, '') + '\n-----END ' + label + '-----\n';
   }
 
+  /**
+   * Unwraps PEM into DER bytes.
+   *
+   * @param pem - the PEM
+   * @returns the bytes
+   */
   pemToDer(pem) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.pemToDer().");
@@ -389,6 +527,12 @@ class ScepCms {
       .replace(/\s+/g, ''), 'base64');
   }
 
+  /**
+   * Returns bytes as lower-case hex.
+   *
+   * @param buf - the bytes
+   * @returns the hex
+   */
   hexOf(buf) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.hexOf().");
@@ -404,6 +548,15 @@ class ScepCms {
   // own bytes, positionally, so the comparison is of bytes that were signed
   // rather than of two re-encodings that happen to agree.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the facts a CMS identifier is compared against out of a certificate's
+   * own bytes: the serial, issuer and subject encodings, the key identifier and
+   * the key.
+   *
+   * @param der - the certificate
+   * @returns the certificate's DER, PEM, node X509Certificate and those facts;
+   *   or null
+   */
   describeCertificate(der) {
     const { log, nodeCrypto, pkijs } = this.deps;
     const self = this;
@@ -471,6 +624,14 @@ class ScepCms {
 
   // Does an IssuerAndSerialNumber (or a [0] SubjectKeyIdentifier) name this
   // certificate?
+  /**
+   * Says whether a signer or recipient identifier (IssuerAndSerialNumber or
+   * SubjectKeyIdentifier) names a certificate.
+   *
+   * @param sid - the identifier node
+   * @param cert - a `describeCertificate()` answer
+   * @returns true when it names it
+   */
   identifies(sid, cert) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.identifies().");
@@ -502,6 +663,12 @@ class ScepCms {
   // those a CertRep cannot be built, and RFC 8894 has no reply for a message it
   // cannot name.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads a SET of CMS attributes into a map from OID to value.
+   *
+   * @param attrs - the attributes node
+   * @returns the map, or null when malformed
+   */
   attributeValues(attrs) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.attributeValues().");
@@ -531,6 +698,13 @@ class ScepCms {
     return out;
   }
 
+  /**
+   * Reads a pkiMessage: its SCEP attributes, content and signer. Never throws.
+   *
+   * @param bytes - the message
+   * @returns the facts `scep.ts` needs, or a refusal (stage `http` when not
+   *   even a transactionID and senderNonce could be read)
+   */
   parsePkiMessage(bytes): Record<string, any> {
     const { log } = this.deps;
     log.debug("Entering ScepCms.parsePkiMessage().");
@@ -551,6 +725,13 @@ class ScepCms {
     }
   }
 
+  /**
+   * Reads a pkiMessage, throwing on a shape nothing anticipated;
+   * `parsePkiMessage()` is the caller.
+   *
+   * @param bytes - the message
+   * @returns the facts, or a refusal
+   */
   readPkiMessage(bytes) {
     const { log } = this.deps;
     const self = this;
@@ -710,6 +891,13 @@ class ScepCms {
   // ---------------------------------------------------------------------------
   // VERIFY THE SIGNER. Every failure is a CertRep FAILURE with a failInfo.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies a pkiMessage's signer: the digest and signature algorithms, the
+   * signed attributes, the signature and the certificate's validity.
+   *
+   * @param message - a `parsePkiMessage()` answer
+   * @returns `ok` and the digest, or a CertRep refusal with a failInfo
+   */
   verifySigner(message): Record<string, any> {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering ScepCms.verifySigner().");
@@ -795,6 +983,16 @@ class ScepCms {
   // ---------------------------------------------------------------------------
   // OPEN THE pkcsPKIEnvelope with the RA's certificate and private key.
   // ---------------------------------------------------------------------------
+  /**
+   * Unwraps an envelope's content key with the RA's private key, by
+   * RSAES-PKCS1-v1_5 or RSAES-OAEP.
+   *
+   * @param algorithmNode - the key transport's AlgorithmIdentifier
+   * @param encryptedKey - the encrypted key
+   * @param raPrivateKeyPem - the RA's private key
+   * @param keyBytes - the content cipher's key length
+   * @returns `ok`, the key and the transport used
+   */
   unwrapKey(algorithmNode, encryptedKey, raPrivateKeyPem, keyBytes) {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering ScepCms.unwrapKey().");
@@ -868,6 +1066,16 @@ class ScepCms {
     return { ok: false, transport: algorithm };
   }
 
+  /**
+   * Opens a pkcsPKIEnvelope with the RA's certificate and private key. Never
+   * throws.
+   *
+   * @param bytes - the EnvelopedData
+   * @param raCertificatePem - the RA's certificate
+   * @param raPrivateKeyPem - the RA's private key
+   * @returns `ok`, the plaintext content, the cipher and the transport; or a
+   *   refusal
+   */
   openEnvelope(bytes, raCertificatePem, raPrivateKeyPem): Record<string, any> {
     const { log } = this.deps;
     log.debug("Entering ScepCms.openEnvelope().");
@@ -885,6 +1093,15 @@ class ScepCms {
     }
   }
 
+  /**
+   * Opens a pkcsPKIEnvelope, throwing on a shape nothing anticipated;
+   * `openEnvelope()` is the caller.
+   *
+   * @param bytes - the EnvelopedData
+   * @param raCertificatePem - the RA's certificate
+   * @param raPrivateKeyPem - the RA's private key
+   * @returns what `openEnvelope()` answers
+   */
   readEnvelope(bytes, raCertificatePem, raPrivateKeyPem) {
     const { log, nodeCrypto } = this.deps;
     const self = this;
@@ -1010,6 +1227,14 @@ class ScepCms {
   //   IssuerAndSerialNumber ::= SEQUENCE { issuer Name, serial INTEGER }
   //                             (GetCert, GetCRL)
   // ---------------------------------------------------------------------------
+  /**
+   * Reads a SEQUENCE of an issuer Name and one more value.
+   *
+   * @param bytes - the DER
+   * @param second - the universal tag of the second value: 2 for a serial
+   *   INTEGER, 16 for a subject Name
+   * @returns the issuer's encoding and the second value, or null
+   */
   readIssuerAndSomething(bytes, second) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.readIssuerAndSomething().");
@@ -1027,6 +1252,12 @@ class ScepCms {
                      this.rawOf(parts[1]) };
   }
 
+  /**
+   * Reads an IssuerAndSerialNumber, as GetCert and GetCRL carry.
+   *
+   * @param bytes - the DER
+   * @returns the issuer's encoding and the serial, or null
+   */
   readIssuerAndSerial(bytes) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.readIssuerAndSerial().");
@@ -1036,6 +1267,12 @@ class ScepCms {
                     serialHex: this.hexOf(read.second) } : null;
   }
 
+  /**
+   * Reads an IssuerAndSubject, as CertPoll carries.
+   *
+   * @param bytes - the DER
+   * @returns the issuer's and subject's encodings, or null
+   */
   readIssuerAndSubject(bytes) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.readIssuerAndSubject().");
@@ -1047,6 +1284,12 @@ class ScepCms {
   // ---------------------------------------------------------------------------
   // WRITE.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses DER into an asn1js node, for embedding in a structure being written.
+   *
+   * @param der - the bytes
+   * @returns the node
+   */
   node(der) {
     const { log } = this.deps;
     log.debug("Entering ScepCms.node().");
@@ -1059,6 +1302,13 @@ class ScepCms {
     return parsed;
   }
 
+  /**
+   * Builds an AlgorithmIdentifier.
+   *
+   * @param oid - the algorithm's OID
+   * @param withNull - whether to include NULL parameters
+   * @returns the node
+   */
   algorithmIdentifier(oid, withNull) {
     const { log, asn1js } = this.deps;
     log.debug("Entering ScepCms.algorithmIdentifier().");
@@ -1068,6 +1318,12 @@ class ScepCms {
       .concat(withNull ? [new asn1js.Null()] : []) });
   }
 
+  /**
+   * Builds an OCTET STRING.
+   *
+   * @param bytes - the content
+   * @returns the node
+   */
   octetString(bytes) {
     const { log, asn1js } = this.deps;
     log.debug("Entering ScepCms.octetString().");
@@ -1075,6 +1331,13 @@ class ScepCms {
     return new asn1js.OctetString({ valueHex: this.arrayBufferOf(bytes) });
   }
 
+  /**
+   * Wraps content in a CMS ContentInfo.
+   *
+   * @param typeOid - the content type
+   * @param inner - the content node
+   * @returns the DER
+   */
   contentInfo(typeOid, inner) {
     const { log, asn1js } = this.deps;
     log.debug("Entering ScepCms.contentInfo().");
@@ -1086,6 +1349,12 @@ class ScepCms {
     ] }).toBER(false));
   }
 
+  /**
+   * Builds a certificate's IssuerAndSerialNumber.
+   *
+   * @param cert - a `describeCertificate()` answer
+   * @returns the node
+   */
   issuerAndSerialOf(cert) {
     const { log, asn1js } = this.deps;
     log.debug("Entering ScepCms.issuerAndSerialOf().");
@@ -1098,6 +1367,14 @@ class ScepCms {
 
   // A degenerate, certificates-only SignedData (RFC 8894 section 3.4): what
   // GetCACert answers, and what a successful CertRep's envelope holds.
+  /**
+   * Builds a degenerate, certificates-only SignedData (RFC 8894 section 3.4):
+   * what GetCACert answers and a successful CertRep's envelope holds.
+   *
+   * @param certificatePems - the certificates
+   * @param crlDers - CRLs to include
+   * @returns the DER
+   */
   certsOnly(certificatePems, crlDers?) {
     const { log, asn1js } = this.deps;
     const self = this;
@@ -1131,6 +1408,15 @@ class ScepCms {
   // An EnvelopedData to one RSA recipient, RSAES-PKCS1-v1_5 key transport —
   // what every SCEP client decrypts, including forge and OpenSSL's PKCS7 — and
   // an AES-CBC content cipher named by OID.
+  /**
+   * Builds an EnvelopedData to one RSA recipient with RSAES-PKCS1-v1_5 key
+   * transport and an AES-CBC content cipher.
+   *
+   * @param content - the plaintext
+   * @param recipientCertificatePem - the recipient's certificate
+   * @param cipherOid - the content cipher's OID
+   * @returns the DER
+   */
   envelope(content, recipientCertificatePem, cipherOid) {
     const { log, nodeCrypto, asn1js } = this.deps;
     log.debug("Entering ScepCms.envelope().");
@@ -1171,6 +1457,12 @@ class ScepCms {
     return this.contentInfo(OID.envelopedData, ed);
   }
 
+  /**
+   * Builds a PrintableString.
+   *
+   * @param text - the text
+   * @returns the node
+   */
   printable(text) {
     const { log, asn1js } = this.deps;
     log.debug("Entering ScepCms.printable().");
@@ -1178,6 +1470,13 @@ class ScepCms {
     return new asn1js.PrintableString({ value: String(text) });
   }
 
+  /**
+   * Builds one CMS attribute.
+   *
+   * @param oid - the attribute's OID
+   * @param value - its value node
+   * @returns the DER
+   */
   attribute(oid, value) {
     const { log, asn1js } = this.deps;
     log.debug("Entering ScepCms.attribute().");
@@ -1196,6 +1495,14 @@ class ScepCms {
   //   spec.failInfo                                FAIL_INFO value, on FAILURE
   //   spec.content                                 the envelope's DER, SUCCESS
   //   spec.digest                                  'sha256' (default) | …
+  /**
+   * Builds a CertRep (RFC 8894 section 3.3.2), signed by the RA.
+   *
+   * @param spec - `raCertificatePem`, `raPrivateKeyPem`, `transactionID`,
+   *   `recipientNonce`, `pkiStatus`, `failInfo` (on FAILURE), `content` (the
+   *   envelope, on SUCCESS) and `digest`
+   * @returns the DER
+   */
   certRep(spec) {
     const { log, asn1js, nodeCrypto } = this.deps;
     log.debug("Entering ScepCms.certRep(). status=" + spec.pkiStatus);
@@ -1264,6 +1571,13 @@ class ScepCms {
   }
 
   // What the protocol pages and the crypto report print, read from the tables.
+  /**
+   * Lists the algorithms accepted and refused, for the protocol pages and the
+   * crypto report.
+   *
+   * @returns the digests, signatures, ciphers, key transports, and the refused
+   *   digests and ciphers
+   */
   algorithms() {
     const { log } = this.deps;
     log.debug("Entering ScepCms.algorithms().");
@@ -1312,9 +1626,23 @@ const slot = new InstanceSlot<ScepCms>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The CMS envelope SCEP speaks, read and written: a library that registers no
+ * route and decides nothing.
+ *
+ * The exports forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
   ScepCms: ScepCms,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: ScepCms): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   OID: OID,
   DIGESTS: DIGESTS,

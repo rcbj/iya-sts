@@ -56,9 +56,16 @@ type Req = any;
 type Res = any;
 type Json = any;
 
+/**
+ * The console path of Monitoring → Geolocation.
+ */
 const PAGE = '/admin/geolocation';
 
 // The windows, by the name the query carries; `live` is not a span.
+/**
+ * The windows by the name the query carries, each with its span in
+ * milliseconds; `live` (the realm's live sessions) is not a span.
+ */
 const WINDOWS: Record<string, number> = {
   'live': 0, '24h': 86400000, '7d': 7 * 86400000, '30d': 30 * 86400000 };
 const WINDOW_LABELS: Record<string, string> = {
@@ -85,15 +92,37 @@ interface GeolocationAdminDeps {
   geo: typeof geoMap;
 }
 
+/**
+ * Monitoring → Geolocation: where the realm's people signed in from, as a map
+ * of the world, a continent or a country and its cities, with the same numbers
+ * in tables under it.
+ */
 class GeolocationAdmin {
+  /**
+   * See the module's `PAGE`.
+   */
   static readonly PAGE = PAGE;
+  /**
+   * See the module's `WINDOWS`.
+   */
   static readonly WINDOWS = WINDOWS;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the console, settings, the risk datasets and engine, and the
+   * map
+   */
   constructor(private readonly deps: GeolocationAdminDeps) {
     deps.log.debug("Entering GeolocationAdmin.constructor().");
     deps.log.debug("Leaving GeolocationAdmin.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): GeolocationAdminDeps {
     helpers.log.debug("Entering GeolocationAdmin.defaultDeps().");
     helpers.log.debug("Leaving GeolocationAdmin.defaultDeps().");
@@ -111,6 +140,13 @@ class GeolocationAdmin {
 
   // One query parameter as a string: the console tolerates a repeated one
   // (`admin.ts`'s CONSOLE_QUERY), and the first is the one meant.
+  /**
+   * Reads one query parameter as a string; of a repeated one, the first.
+   *
+   * @param query - the query's values
+   * @param name - the parameter's name
+   * @returns the value, or ''
+   */
   static param(query: Json, name: string): string {
     helpers.log.debug("Entering GeolocationAdmin.param().");
     const raw = query ? query[name] : undefined;
@@ -120,6 +156,15 @@ class GeolocationAdmin {
 
   // The page's own address for a window and a place, the default window
   // left out. Root-relative: `app.js` puts it in the realm.
+  /**
+   * Answers the page's own root-relative address for a window and a place, the
+   * default window left out.
+   *
+   * @param window - the window's name
+   * @param continent - a continent's slug
+   * @param country - a country's ISO code
+   * @returns the address
+   */
   static hrefOf(window: string, continent?: string, country?: string): string {
     helpers.log.debug("Entering GeolocationAdmin.hrefOf().");
     const parts: string[] = [];
@@ -181,6 +226,15 @@ class GeolocationAdmin {
   // /admin-api/geolocation` both answer, suppression applied. A refusal is
   // `{ ok: false, errorCode, errors }`.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the view `GET /admin/geolocation?format=json` and `GET
+   * /admin-api/geolocation` both answer, with counts below
+   * `risk.geoMinimumCount` suppressed.
+   *
+   * @param query - `window`, `continent` and `country`
+   * @returns the level drawn, its total and every place counted, or `{ ok:
+   * false, errorCode, errors }`
+   */
   async geoView(query: Json): Promise<Json> {
     const { log, realms, config, datasets, engine, geo } = this.deps;
     log.debug("Entering GeolocationAdmin.geoView().");
@@ -322,6 +376,12 @@ class GeolocationAdmin {
   }
 
   // A time in UTC to the minute, or '' for none.
+  /**
+   * Says a time in UTC to the minute.
+   *
+   * @param ms - the time in milliseconds
+   * @returns the time as text, or '' for none
+   */
   static stamp(ms: number): string {
     helpers.log.debug("Entering GeolocationAdmin.stamp().");
     helpers.log.debug("Leaving GeolocationAdmin.stamp().");
@@ -331,6 +391,13 @@ class GeolocationAdmin {
 
   // The picture, from the view: which countries are filled how dark, what
   // each links to, the labels and the cities.
+  /**
+   * Builds the picture from the view: which countries are filled how dark, what
+   * each links to, the labels and the cities.
+   *
+   * @param v - `geoView()`'s answer
+   * @returns the picture (`geo_map.ts`'s drawing) and its legend
+   */
   drawing(v: Json): Json {
     const { log, geo } = this.deps;
     const self = this;
@@ -429,6 +496,12 @@ class GeolocationAdmin {
   }
 
   // The page's HTML.
+  /**
+   * Draws the page's HTML from the view.
+   *
+   * @param v - `geoView()`'s answer
+   * @returns the page body
+   */
   html(v: Json): string {
     const { log, admin, geo } = this.deps;
     const self = this;
@@ -573,6 +646,11 @@ class GeolocationAdmin {
       '(public domain).</small></p></div>';
   }
 
+  /**
+   * Registers `GET /admin/geolocation`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function }): void {
     const { log, admin, errorCodes } = this.deps;
     const self = this;
@@ -620,11 +698,25 @@ const slot = new InstanceSlot<GeolocationAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Monitoring → Geolocation, `/admin/geolocation`: where the realm's people
+ * signed in from, counted from what risk scoring recorded, drawn as a map and
+ * tabled under it.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   GeolocationAdmin: GeolocationAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: GeolocationAdmin): void =>
     slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
   WINDOWS: WINDOWS,

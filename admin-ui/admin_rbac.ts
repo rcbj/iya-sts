@@ -177,6 +177,10 @@ import InstanceSlot = require('../common/instance_slot');
 // `implies` is what makes WRITE IMPLY READ a property of the table rather than
 // an `if` somewhere: `rolesOf()` expands it, so a page asking "may this person
 // read" gets the same answer wherever it asks from.
+/**
+ * The two console roles, Admin Read and Admin Write, each with its setting,
+ * label and the roles it implies (write implies read).
+ */
 const ROLES = [
   { id: 'read', label: 'Admin Read', setting: 'admin.readGroup',
     implies: [],
@@ -191,6 +195,9 @@ const ROLES = [
           'console.' }
 ];
 
+/**
+ * The ids of the console roles, in the order of `ROLES`.
+ */
 const ROLE_IDS = ROLES.map(function (role) {
   return role.id;
 });
@@ -233,10 +240,27 @@ interface AdminRbacDeps {
   realms: typeof realms;
 }
 
+/**
+ * Who may use the admin console and what they may do on it: the two roles as
+ * ordinary groups in the embedded directory, the bootstrap administrator, and
+ * the grant and revoke acts.
+ */
 class AdminRbac {
+  /**
+   * The role table; see the module's `ROLES`.
+   */
   static readonly ROLES = ROLES;
+  /**
+   * The role ids; see the module's `ROLE_IDS`.
+   */
   static readonly ROLE_IDS = ROLE_IDS;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, settings, mode, audit, error-code and realm
+   * modules
+   */
   constructor(private readonly deps: AdminRbacDeps) {
     deps.log.debug("Entering AdminRbac.constructor().");
     deps.log.debug("Leaving AdminRbac.constructor().");
@@ -244,6 +268,11 @@ class AdminRbac {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): AdminRbacDeps {
     helpers.log.debug("Entering AdminRbac.defaultDeps().");
     helpers.log.debug("Leaving AdminRbac.defaultDeps().");
@@ -259,6 +288,12 @@ class AdminRbac {
 
   // The work loading this module did with its instance (#50, R2): the
   // realm-taking wrapper table the exports forward to.
+  /**
+   * Builds the realm-taking wrapper table the exports forward to, for the
+   * installed instance.
+   *
+   * @param instance - the instance being installed
+   */
   static wire(instance: AdminRbac): void {
     helpers.log.debug("Entering AdminRbac.wire().");
     wrap = instance.wrappers();
@@ -272,6 +307,12 @@ class AdminRbac {
     return errorCodes.mark(result, code);
   }
 
+  /**
+   * Finds a role by its id, case-insensitively.
+   *
+   * @param id - the role id (`read` or `write`)
+   * @returns the role's row from `ROLES`, or null when there is no such role
+   */
   roleFor(id) {
     const { log } = this.deps;
     log.debug("Entering AdminRbac.roleFor().");
@@ -292,6 +333,15 @@ class AdminRbac {
     return String(config.value(role.setting) || '').trim();
   }
 
+  /**
+   * Installs the directory functions the roles are read and written through
+   * (filled by `ldap/ldap_server.js`).
+   *
+   * An object missing any required member is refused whole and logged under
+   * `STS-ADMIN-0587`, rather than half-installed.
+   * @param fns - the directory's functions and DNs
+   * @returns true when installed, false when refused
+   */
   setDirectory(fns) {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -326,6 +376,12 @@ class AdminRbac {
     return true;
   }
 
+  /**
+   * Answers whether a directory has been installed, and so whether the roles
+   * can be read at all.
+   *
+   * @returns true when a directory is installed
+   */
   available() {
     const { log } = this.deps;
     log.debug("Entering AdminRbac.available().");
@@ -421,6 +477,13 @@ class AdminRbac {
   // and both count as empty. The distinction is kept because the screen says
   // which, and "the group is not there" sends a reader somewhere different from
   // "the group is there and you took the last person out of it".
+  /**
+   * Reads one role's group as it stands: whether the entry exists, and each
+   * member resolved to an entry or reported as dangling.
+   *
+   * @param roleId - the role id
+   * @returns the role's roster row, or null when there is no such role
+   */
   rosterFor(roleId) {
     const { log } = this.deps;
     const self = this;
@@ -580,6 +643,11 @@ class AdminRbac {
                          });
   }
 
+  /**
+   * Reads the roster of every console role, in the order of `ROLE_IDS`.
+   *
+   * @returns one `rosterFor()` row per role
+   */
   roster() {
     const { log } = this.deps;
     log.debug("Entering AdminRbac.roster().");
@@ -622,6 +690,12 @@ class AdminRbac {
     return String(config.value('admin.bootstrapUsername') || '').trim();
   }
 
+  /**
+   * Reads the bootstrap administrator's state from its own directory entry.
+   *
+   * @returns the configured username, whether it was seeded, when it claimed
+   * the console (empty while the window is open) and its DN
+   */
   bootstrapState() {
     const { log } = this.deps;
     const self = this;
@@ -674,6 +748,15 @@ class AdminRbac {
   // `pwdReset` is set only on an account this call CREATED — an existing entry
   // was somebody's before, and forcing a change on it is not this step's call.
   // ---------------------------------------------------------------------------
+  /**
+   * Creates the bootstrap administrator once, at startup, and grants it both
+   * console roles.
+   *
+   * It never undoes an operator: an account whose window has closed is left as
+   * it is, and a roster that already names somebody else closes the window at
+   * once. `pwdReset` is set only on an account this call created.
+   * @returns whether it ran, and why not or what it did
+   */
   seedBootstrapAdministrator() {
     const { log, audit, errorCodes } = this.deps;
     const self = this;
@@ -804,6 +887,14 @@ class AdminRbac {
   // A certificate (`swk`), a wallet (`pop`) and a passwordless security key
   // (`hwk`) carry no `pwd` and are refused on the first fact.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers whether a console session was made from a password this service
+   * verified: `amr` carries `pwd` and not `federated`, and the sign-in
+   * authority is `local`.
+   *
+   * @param session - the console's relying-party session
+   * @returns true for a local password sign-in
+   */
   passwordSignIn(session) {
     const { log } = this.deps;
     log.debug("Entering AdminRbac.passwordSignIn().");
@@ -831,6 +922,17 @@ class AdminRbac {
   // because there was no realm window to close. The password has already been
   // changed by then: `authn.js` asks for it before any session exists.
   // ---------------------------------------------------------------------------
+  /**
+   * Closes the bootstrap window of the realm a sign-in came from when the
+   * signed-in person is that realm's bootstrap administrator.
+   *
+   * Called by the console gate on every signed-in request; the common case is
+   * one flag read and no write. It never closes another realm's window.
+   * @param username - the signed-in person
+   * @param session - the console's relying-party session
+   * @param defaultRealmId - the id of the default realm
+   * @returns true when this call closed the window
+   */
   noteConsoleSignIn(username, session, defaultRealmId) {
     const { log, realms } = this.deps;
     const self = this;
@@ -904,6 +1006,11 @@ class AdminRbac {
   // four seconds of a stopped event loop on a question the group entry had
   // already answered. A listed member settles it; the walk is only needed when
   // no role group lists anybody, and then the answer is the same as before.
+  /**
+   * Answers whether no console role group lists anybody in the bound realm.
+   *
+   * @returns true when every role's roster is empty
+   */
   rosterEmpty() {
     const { log } = this.deps;
     const self = this;
@@ -940,6 +1047,15 @@ class AdminRbac {
   // naming the group. So somebody an LDAP client added by writing `memberOf` on
   // their entry holds the role, which is what an administrator of a real
   // directory would expect and is not what a scan of `member` would have said.
+  /**
+   * Answers every role a person holds, with Admin Write expanded to Admin Read.
+   *
+   * Membership is asked of the directory in both directions: the group listing
+   * the person, and the person's own `memberOf` naming the group.
+   * @param username - a local name, a certificate subject DN or a `did:`
+   * @returns the roles held, `read` and `write` flags, the groups, and whether
+   * the console is open to them because the roster is unclaimed
+   */
   rolesOf(username) {
     const { log, config } = this.deps;
     const self = this;
@@ -1145,6 +1261,17 @@ class AdminRbac {
     return '';
   }
 
+  /**
+   * Grants a console role by adding the person to the role's group, creating
+   * the group if it does not exist.
+   *
+   * The act is audited. A refusal (no directory, no such role, a name unusable
+   * in a DN, a failed write) carries its error code.
+   * @param username - the person to grant the role to
+   * @param roleId - the role id
+   * @param context - `via`, `actor` and, through the exported wrapper, `realm`
+   * @returns `ok`, whether anything `changed`, and a message or `errors`
+   */
   grant(username, roleId, context) {
     const { log, audit } = this.deps;
     const self = this;
@@ -1253,6 +1380,16 @@ class AdminRbac {
                                   'console.' : '') };
   }
 
+  /**
+   * Revokes a console role by removing the person's membership values from the
+   * role's group.
+   *
+   * The act is audited. A refusal carries its error code.
+   * @param username - the person to take the role from
+   * @param roleId - the role id
+   * @param context - `via`, `actor` and, through the exported wrapper, `realm`
+   * @returns `ok`, whether anything `changed`, and a message or `errors`
+   */
   revoke(username, roleId, context) {
     const { log, config, audit } = this.deps;
     const self = this;
@@ -1442,6 +1579,14 @@ class AdminRbac {
   // role BEFORE the person first signs in, then watch them arrive with it — is
   // exactly the one that is in neither.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the people who can be chosen on the role screen's search: the union
+   * of the directory's people and the people the console has seen authenticate.
+   *
+   * It is not a whitelist; a name in neither list can still be typed.
+   * @param seen - the names the console's user list holds
+   * @returns one row per name, sorted, marking which source holds it
+   */
   candidates(seen) {
     const { log } = this.deps;
     log.debug("Entering AdminRbac.candidates().");
@@ -1500,6 +1645,12 @@ class AdminRbac {
   // asks after its seed, and this logs it at error level under its code.
   // Answers whether it did.
   // ---------------------------------------------------------------------------
+  /**
+   * Logs, at error level under its code, a console nobody can reach in product
+   * mode: no bootstrap administrator was seeded and the roster names nobody.
+   *
+   * @returns true when it reported a closed console
+   */
   reportClosedConsole() {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -1534,6 +1685,13 @@ class AdminRbac {
   // same rule /admin/scim follows about describing SCIM in the module that
   // implements it.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the whole feature as one object, for `/admin/rbac`, its JSON view
+   * and `GET /admin-api/rbac`.
+   *
+   * @returns whether the roles are enforced, the roster, the grant count, the
+   * bootstrap state and whether the console is open to anyone
+   */
   describe() {
     const { log, config, mode, realms } = this.deps;
     const self = this;
@@ -1630,6 +1788,13 @@ class AdminRbac {
 
   // Whether a realm id names the SERVICE roster's realm — the default one,
   // which an empty or absent id also means here.
+  /**
+   * Answers whether a realm id names the service roster's realm, the default
+   * one; an empty or absent id means it too.
+   *
+   * @param realmId - a realm id
+   * @returns true for the default realm
+   */
   isServiceRealm(realmId) {
     const { log, realms } = this.deps;
     const self = this;
@@ -1641,6 +1806,11 @@ class AdminRbac {
 
   // The public functions, each wrapped to take its realm — the table
   // `module.exports` was while this file was JavaScript.
+  /**
+   * Builds the public functions, each wrapped to bind the realm it is given.
+   *
+   * @returns the wrapper table the module's exports forward to
+   */
   wrappers() {
     const { log } = this.deps;
     log.debug("Entering AdminRbac.wrappers().");
@@ -1704,11 +1874,27 @@ function wrapped<K extends keyof AdminRbacWrappers>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Who may use the admin console, and what they may do on it.
+ *
+ * Two roles, Admin Read and Admin Write (write implies read), held as ordinary
+ * groups in the embedded directory. The functions forward to the instance the
+ * composition root installs, and each takes the realm it answers about.
+ * @namespace
+ */
 export = {
   AdminRbac: AdminRbac,
   ROLES: AdminRbac.ROLES,
   ROLE_IDS: AdminRbac.ROLE_IDS,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: AdminRbac): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   roleFor: slot.forward('roleFor'),
   setDirectory: slot.forward('setDirectory'),

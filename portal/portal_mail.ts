@@ -520,12 +520,30 @@ class PortalMailPage {
   }
 }
 
+/**
+ * The portal pages at /portal/email, /portal/verify-email and
+ * /portal/forgot-password: the mail channel's three portal pages: a person's
+ * address, its verification, and self-service password reset (#63).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalMail {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalMailDeps) {
     deps.log.debug("Entering PortalMail.constructor().");
     deps.log.debug("Leaving PortalMail.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalMailDeps {
     helpers.log.debug("Entering PortalMail.defaultDeps().");
     helpers.log.debug("Leaving PortalMail.defaultDeps().");
@@ -533,6 +551,13 @@ class PortalMail {
              realms: realms };
   }
 
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the paths of the pages
+   */
   register(context: PortalContext): { paths: string[] } {
     context.log.debug("Entering PortalMail.register().");
     const page = new PortalMailPage(this.deps, context);
@@ -550,6 +575,11 @@ const slot = new InstanceSlot<PortalMail>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal pages at /portal/email, /portal/verify-email and
+ * /portal/forgot-password, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalMail: PortalMail,
   installInstance: (instance: PortalMail): void => slot.install(instance),

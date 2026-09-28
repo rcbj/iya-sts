@@ -62,6 +62,10 @@ const { log } = require('./helpers');
 // application entry, and what to call it in a sentence. `MEMBERS` is read by the
 // registry (the schema rows, the registration door, the console) and by the
 // verifier, so a sixth expectation is one row here.
+/**
+ * The five RFC 8705 `tls_client_auth` registration members, each with the
+ * application attribute it is kept in, its kind and its label.
+ */
 const MEMBERS = {
   tls_client_auth_subject_dn: { attribute: 'oauthTlsClientAuthSubjectDn',
                                 kind: 'dn', label: 'subject DN' },
@@ -78,6 +82,9 @@ const MEMBERS = {
                                label: 'rfc822Name subjectAltName' }
 };
 
+/**
+ * The five registration member names.
+ */
 const MEMBER_NAMES = Object.keys(MEMBERS);
 
 // The longest value a registration may hold for any of the five. A DN or a URI
@@ -122,6 +129,14 @@ const TYPE_ALIASES = {
 // are UTF-8. A value beginning `#` is the hex of its BER encoding. Answers the
 // RDNs leaf first as written, each an array of `{ type, value }`, or null.
 // ---------------------------------------------------------------------------
+/**
+ * Parses an RFC 4514 distinguished name, with escapes, hex pairs, `#` BER
+ * values and multi-valued RDNs.
+ *
+ * @param text - the DN string
+ * @returns the RDNs leaf first, each an array of `{ type, value }`, or null
+ *   when the text is not a DN
+ */
 function parseDn(text) {
   log.debug("Entering parseDn().");
   const source = String(text === undefined || text === null ? '' : text);
@@ -257,6 +272,15 @@ function normalValue(value) {
 
 // A DN's comparison key, or null where the text is not a DN. Two DNs are the
 // same name when their keys are equal.
+/**
+ * Returns a DN's comparison key: types folded to one name, values compared as
+ * caseIgnoreMatch, the AVAs of a multi-valued RDN in a fixed order.
+ *
+ * Two DNs are the same name when their keys are equal.
+ *
+ * @param text - the DN string
+ * @returns the key, or null when the text is not a DN
+ */
 function normalDn(text) {
   log.debug("Entering normalDn().");
   const rdns = parseDn(text);
@@ -297,6 +321,12 @@ function escapeValue(value) {
 // registered DN goes through, so the two sides of the comparison cannot
 // disagree about an escape.
 // ---------------------------------------------------------------------------
+/**
+ * Reads a certificate's subject as RFC 4514 writes it, leaf first.
+ *
+ * @param x509 - node's `X509Certificate`
+ * @returns the subject's text and its RDNs
+ */
 function subjectOf(x509) {
   log.debug("Entering subjectOf().");
   const lines = String((x509 && x509.subject) || '').split('\n')
@@ -329,6 +359,12 @@ function subjectOf(x509) {
 // string. So a split on ", " must skip quoted text, and a quoted value is read
 // with JSON.parse. Answers `{ dns, uri, ip, email }`, each a list.
 // ---------------------------------------------------------------------------
+/**
+ * Reads a certificate's subject alternative names.
+ *
+ * @param x509 - node's `X509Certificate`
+ * @returns `dns`, `uri`, `ip` and `email`, each a list
+ */
 function subjectAltNamesOf(x509) {
   log.debug("Entering subjectAltNamesOf().");
   const text = String((x509 && x509.subjectAltName) || '');
@@ -381,6 +417,14 @@ function subjectAltNamesOf(x509) {
 // An IP address as the bytes it stands for, in hex — 8 digits for v4, 32 for
 // v6 — so that `2001:db8::1` and `2001:DB8:0:0:0:0:0:1` are one address. '' for
 // text that is not one.
+/**
+ * Returns an IP address as the hex of the bytes it stands for, so two spellings
+ * of one address compare equal.
+ *
+ * @param text - an IPv4 or IPv6 address
+ * @returns 8 hex digits for v4, 32 for v6, or '' when the text is not an
+ *   address
+ */
 function ipKey(text) {
   log.debug("Entering ipKey().");
   const value = String(text || '').trim();
@@ -452,6 +496,13 @@ function emailKey(text) {
 // MAY THIS VALUE BE REGISTERED FOR THIS MEMBER. A sentence naming what is wrong,
 // or ''.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether a value may be registered for one of the five members.
+ *
+ * @param member - the member name
+ * @param value - the value to register
+ * @returns a sentence naming what is wrong, or ''
+ */
 function valueProblem(member, value) {
   log.debug("Entering valueProblem(). member=" + member);
   const row = MEMBERS[member];
@@ -517,6 +568,14 @@ function valueProblem(member, value) {
 // `{ members: [names that carry a value], member, value }` — `member` only when
 // there is exactly one.
 // ---------------------------------------------------------------------------
+/**
+ * Finds which of the five members a client registered.
+ *
+ * @param values - an object keyed by member name (a registration document, or
+ *   `clientConfigOf()`)
+ * @returns the members that carry a value, and `member` and `value` when there
+ *   is exactly one
+ */
 function registeredOf(values) {
   log.debug("Entering registeredOf().");
   const source = values || {};
@@ -537,6 +596,18 @@ function registeredOf(values) {
 // `getPeerCertificate().raw` is. Answers `{ ok, presented }`, where `presented`
 // is what the certificate carries of that kind, for the refusal to quote.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether a certificate carries what the client registered.
+ *
+ * A DN is compared as a name, a dNSName case-insensitively, an IP address by
+ * its bytes, an rfc822Name with its host case-folded, and a URI exactly.
+ *
+ * @param member - the registered member name
+ * @param registered - the registered value
+ * @param raw - the certificate's DER
+ * @returns `ok`, and `presented`: what the certificate carries of that kind,
+ *   for a refusal to quote
+ */
 function matches(member, registered, raw) {
   log.debug("Entering matches(). member=" + member);
   const row = MEMBERS[member];
@@ -572,6 +643,15 @@ function matches(member, registered, raw) {
   return { ok: ok, presented: names };
 }
 
+/**
+ * What a certificate says its subject is, and whether that is what an RFC 8705
+ * `tls_client_auth` client registered.
+ *
+ * One reading for the registration door (`applications.js`) and the verifier
+ * (`client_auth.js`). A leaf.
+ *
+ * @namespace
+ */
 module.exports = {
   MEMBERS: MEMBERS,
   MEMBER_NAMES: MEMBER_NAMES,

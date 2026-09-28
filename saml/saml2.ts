@@ -65,7 +65,13 @@ import stats = require('../common/admin_stats');
 // cycle with this file. See each one's header.
 import documentSettings = require('./document_settings');
 import authnContext = require('./authn_context');
+/**
+ * The XML Encryption content ciphers, `common/crypto.js`'s table.
+ */
 const BLOCK_CIPHERS = stsCrypto.BLOCK_CIPHERS;
+/**
+ * The XML Encryption key transports, `common/crypto.js`'s table.
+ */
 const KEY_TRANSPORTS = stsCrypto.KEY_TRANSPORTS;
 
 // The options buildSamlAssertion() takes; see the note above that method.
@@ -106,7 +112,17 @@ interface Saml2AssertionsDeps {
   authnContext: typeof authnContext;
 }
 
+/**
+ * SAML 2.0 assertions: building one, signing it and encrypting it, for
+ * WS-Trust, WS-Federation and the Web Browser SSO profile.
+ */
 class Saml2Assertions {
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the helpers, settings, crypto, the document settings, the
+   * authentication context and the statistics
+   */
   constructor(private readonly deps: Saml2AssertionsDeps) {
     deps.helpers.log.debug("Entering Saml2Assertions.constructor().");
     deps.helpers.log.debug("Leaving Saml2Assertions.constructor().");
@@ -114,6 +130,11 @@ class Saml2Assertions {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): Saml2AssertionsDeps {
     helpers.log.debug("Entering Saml2Assertions.defaultDeps().");
     helpers.log.debug("Leaving Saml2Assertions.defaultDeps().");
@@ -130,6 +151,13 @@ class Saml2Assertions {
 
   // Sign a SAML assertion enveloped (signature after Issuer), like the parent
   // project's api/server.js.
+  /**
+   * Signs a SAML assertion with an enveloped XML Signature placed after its
+   * `<Issuer>`, with the realm's configured algorithms.
+   *
+   * @param xml - the assertion
+   * @returns the signed assertion
+   */
   signAssertion(xml: string): string {
     const { documentSettings, stsCrypto } = this.deps;
     const { STS, log, logArtifact } = this.deps.helpers;
@@ -269,6 +297,20 @@ class Saml2Assertions {
   //                         out. The RECORD says `signed: false` either way, so
   //                         the console reports what actually went out rather
   //                         than what was intended.
+  /**
+   * Builds a SAML 2.0 assertion about a subject and, unless told not to, signs
+   * it.
+   *
+   * The validity window is widened at both ends by `saml.clockSkewS`; the
+   * authentication context class defaults to `unspecified`.
+   * @param subject - the subject's name
+   * @param audience - the audience restriction; none when absent
+   * @param lifetimeMin - the lifetime in minutes; 60 when absent
+   * @param opts - `authnContextClassRef`, `attributes`, `nameIdFormat`,
+   * `nameIdValue`, `subjectConfirmation`, `sessionIndex`, `authnInstant`,
+   * `issuer`, `nameQualifier`, `spNameQualifier`, `attributeQuery` and `sign`
+   * @returns the assertion's XML
+   */
   buildSamlAssertion(subject: string, audience?: string | null,
                      lifetimeMin?: number, opts?: BuildOptions): string {
     const { authnContext, config, errorCodes, stats } = this.deps;
@@ -465,6 +507,16 @@ class Saml2Assertions {
   // the three call sites had to learn about a new parameter. `common/crypto.js`
   // cannot reach `logArtifact()` itself — helpers.js requires that file, so
   // requiring it back would close a cycle.
+  /**
+   * Encrypts an XML element with XML Encryption to a certificate's key, through
+   * `common/crypto.js`, with the artifact log injected.
+   *
+   * @param xml - the element
+   * @param certPem - the recipient's certificate
+   * @param opts - the cipher and key transport, and the options `crypto.js`
+   * takes
+   * @returns what `crypto.js`'s `encryptElement()` answers
+   */
   encryptElement(xml: string, certPem: string, opts?: object) {
     const { stsCrypto } = this.deps;
     const { log, logArtifact } = this.deps.helpers;
@@ -474,6 +526,16 @@ class Saml2Assertions {
       Object.assign({}, opts, { logArtifact: logArtifact }));
   }
 
+  /**
+   * Encrypts an assertion into an `<EncryptedAssertion>`, through
+   * `common/crypto.js`, with the artifact log injected.
+   *
+   * @param assertionXml - the assertion
+   * @param certPem - the recipient's certificate
+   * @param opts - the cipher and key transport, and the options `crypto.js`
+   * takes
+   * @returns what `crypto.js`'s `encryptAssertion()` answers
+   */
   encryptAssertion(assertionXml: string, certPem: string,
                    opts?: object) {
     const { stsCrypto } = this.deps;
@@ -484,6 +546,16 @@ class Saml2Assertions {
       Object.assign({}, opts, { logArtifact: logArtifact }));
   }
 
+  /**
+   * Decrypts an XML Encryption element with a private key, through
+   * `common/crypto.js`, with the artifact log injected.
+   *
+   * It answers rather than throws; see `crypto.js`.
+   * @param xml - the document holding the encrypted element
+   * @param privateKeyPem - the private key
+   * @param opts - the options `crypto.js` takes
+   * @returns what `crypto.js`'s `decryptElement()` answers
+   */
   decryptElement(xml: string, privateKeyPem: string, opts?: object) {
     const { stsCrypto } = this.deps;
     const { log, logArtifact } = this.deps.helpers;
@@ -512,9 +584,22 @@ const slot = new InstanceSlot<Saml2Assertions>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * SAML 2.0 assertions: building one, signing it, and encrypting it. The cipher
+ * itself is `common/crypto.js`'s.
+ * @namespace
+ */
 export = {
   Saml2Assertions: Saml2Assertions,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: Saml2Assertions): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   signAssertion: slot.forward('signAssertion'),
   buildSamlAssertion: slot.forward('buildSamlAssertion'),

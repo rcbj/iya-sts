@@ -111,9 +111,16 @@ const log = {
 // `STS-` so a code can never be mistaken for a specification's own error name
 // in a log line, a subsystem of two to ten capitals and digits, and four digits
 // so no subsystem runs out.
+/**
+ * The shape of a whole error code: `STS-<SUBSYSTEM>-<NNNN>`.
+ */
 const CODE_PATTERN = /^STS-[A-Z][A-Z0-9]{1,9}-[0-9]{4}$/;
 
 // Anywhere in a string — what the test scans source files with.
+/**
+ * An error code anywhere in a string, global: what the test scans source files
+ * with.
+ */
 const CODE_IN_TEXT = /STS-[A-Z][A-Z0-9]{1,9}-[0-9]{4}/g;
 
 // ---------------------------------------------------------------------------
@@ -126,6 +133,10 @@ const CODE_IN_TEXT = /STS-[A-Z][A-Z0-9]{1,9}-[0-9]{4}/g;
 // for a person rather than a rule the test enforces: a code is raised where the
 // condition is detected, and one module occasionally detects another family's.
 // ---------------------------------------------------------------------------
+/**
+ * The subsystems codes are grouped by, in documentation order: each one's `id`,
+ * `label`, the files it is raised from (`where`) and what it covers (`what`).
+ */
 const SUBSYSTEMS = [
   { id: 'HTTP', label: 'HTTP front door',
     where: 'common/app.js, common/cors.js, common/validation.js, ' +
@@ -377,6 +388,11 @@ const SUBSYSTEMS = [
 // ascending. The test checks both, so a merge that interleaves two branches'
 // additions is noticed rather than published out of order.
 // ---------------------------------------------------------------------------
+/**
+ * The one table of error codes: each row's `code`, the operator's `summary`,
+ * what the client is told in its protocol's own vocabulary (`spec`), and
+ * `retired` on a condition that no longer exists.
+ */
 const CODES = [
   // ===== HTTP ==============================================================
   { code: 'STS-HTTP-0001',
@@ -14856,6 +14872,20 @@ const CODES = [
       'nudge verifies the PEP\'s certificate whatever it says. Logged once ' +
       'per process (#171).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-XACML-0075',
+    summary: 'A write put a person or a group on ADMIN_READ or ADMIN_WRITE; ' +
+      'their people are the console roster\'s, granted on /admin/rbac, and ' +
+      'only an application is added on the role (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0076',
+    summary: 'A delete named ADMIN_READ or ADMIN_WRITE, which every realm ' +
+      'keeps (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0077',
+    summary: 'ADMIN_READ or ADMIN_WRITE could not be seeded in a realm; ' +
+      'no machine client can be issued that admin scope there until it ' +
+      'exists (#303).',
+    spec: 'none — a warning in the log' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -15841,6 +15871,47 @@ const CODES = [
     summary: 'A console form POST held a value outside the closed set the ' +
       'mirroring /admin-api operation\'s enum declares (#86).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-ADMIN-0821',
+    summary: 'A permission gated by role — admin:read, admin:write, or an ' +
+      'application permission its resource lists in ' +
+      'oauthRoleGatedPermission — was asked for on behalf of a person or ' +
+      'an application no held role authorizes it for (for a person\'s ' +
+      'console roles: no Admin Read or Admin Write, not signed in, or the ' +
+      'bootstrap administrator before its claim), and was left off the ' +
+      'tokens (#302, #303).',
+    spec: 'none — the token is issued without that scope (RFC 6749 ' +
+      'section 3.3)' },
+  { code: 'STS-ADMIN-0822',
+    summary: 'Every scope a request asked for was a permission gated by ' +
+      'role that the subject\'s roles do not authorize, so nothing was ' +
+      'left to issue (#302, #303).',
+    spec: 'invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2)' },
+  { code: 'STS-ADMIN-0823',
+    summary: 'add-permission or remove-permission named ADMIN_READ or ' +
+      'ADMIN_WRITE, whose permission is fixed (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0824',
+    summary: 'add-permission or remove-permission named no permission ' +
+      '(#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0825',
+    summary: 'add-permission named a native permission (admin:read, ' +
+      'admin:write), which only the two console roles authorize ' +
+      '(#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0826',
+    summary: 'add-permission named a permission no application in the realm ' +
+      'defines; a permission must be defined before a role can ' +
+      'authorize it (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0827',
+    summary: 'add-permission named a permission the role already authorizes ' +
+      '(#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0828',
+    summary: 'remove-permission named a permission the role does not ' +
+      'authorize (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -16189,6 +16260,12 @@ const CODES = [
     summary: 'A management API query parameter held a value outside the ' +
       'closed set its operation\'s enum declares (#86).',
     spec: 'HTTP 400 { ok: false, errors }' },
+  { code: 'STS-API-0125',
+    summary: 'A management API access token carried the admin scope an ' +
+      'operation needs, and its subject — a person, or the application on ' +
+      'a client_credentials token — no longer holds a role authorizing it ' +
+      'in the realm that issued it (#302, #303).',
+    spec: 'HTTP 403 forbidden' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -16861,6 +16938,11 @@ const CODES = [
       'oauthResourceMetadata (not a JSON object with a `resource`) or ' +
       'oauthResourceMetadataUrl (not an http or https URL).',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0090',
+    summary: 'oauthRoleGatedPermission named a permission the application ' +
+      'does not define in oauthPermission; only its own permissions can be ' +
+      'gated by role (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-REG-0100',
     summary: 'An RFC 7591 registration or RFC 7592 update named ' +
       'request_uris, request_object_signing_alg, ' +
@@ -17291,6 +17373,12 @@ CODES.forEach(function (row) {
   BY_CODE[row.code] = row;
 });
 
+/**
+ * Returns the subsystem part of a code.
+ *
+ * @param code - the code
+ * @returns the subsystem id, or '' for a code not in three parts
+ */
 function subsystemOf(code) {
   log.debug("Entering subsystemOf().");
   const parts = String(code || '').split('-');
@@ -17298,18 +17386,36 @@ function subsystemOf(code) {
   return parts.length === 3 ? parts[1] : '';
 }
 
+/**
+ * Tells whether a string has the shape of an error code.
+ *
+ * @param code - the string
+ * @returns true when it matches `CODE_PATTERN`
+ */
 function isWellFormed(code) {
   log.debug("Entering isWellFormed().");
   log.debug("Leaving isWellFormed().");
   return CODE_PATTERN.test(String(code || ''));
 }
 
+/**
+ * Tells whether a code is registered in the table.
+ *
+ * @param code - the code
+ * @returns true when it has a row
+ */
 function isKnown(code) {
   log.debug("Entering isKnown().");
   log.debug("Leaving isKnown().");
   return Object.prototype.hasOwnProperty.call(BY_CODE, String(code || ''));
 }
 
+/**
+ * Looks a code's row up in the table.
+ *
+ * @param code - the code
+ * @returns the row, or null
+ */
 function describe(code) {
   log.debug("Entering describe().");
   log.debug("Leaving describe().");
@@ -17346,6 +17452,17 @@ function describe(code) {
 // ---------------------------------------------------------------------------
 const MARK = Symbol.for('mock-sts.errorCode');
 
+/**
+ * Records on a response which condition it is about to report, for the call log
+ * to put on the audit row. Nothing sent changes.
+ *
+ * Stored under a non-enumerable Symbol; the last mark wins. Never throws; an
+ * unregistered code is still recorded and warned about.
+ *
+ * @param res - the response, or any object a refusal is returned as
+ * @param code - the error code
+ * @returns `res`, so it can be written inline
+ */
 function mark(res, code) {
   log.debug("Entering mark().");
   if (!res || (typeof res !== 'object' && typeof res !== 'function')) {
@@ -17369,6 +17486,12 @@ function mark(res, code) {
   return res;
 }
 
+/**
+ * Reads back the code marked on a response.
+ *
+ * @param res - the response or object
+ * @returns the code, or ''
+ */
 function codeOf(res) {
   log.debug("Entering codeOf().");
   if (!res || (typeof res !== 'object' && typeof res !== 'function')) {
@@ -17389,6 +17512,14 @@ function codeOf(res) {
 // one. A status below 400 on an unmarked response is not a failure and gets
 // nothing.
 // ---------------------------------------------------------------------------
+/**
+ * Chooses the generic code for a failed HTTP response nothing marked.
+ *
+ * @param status - the HTTP status
+ * @param matched - whether a route matched the request
+ * @returns STS-HTTP-0001 for an unrouted 404, -0004 for a 413, -0003 for a 5xx,
+ * -0002 for another 4xx, and '' below 400
+ */
 function fallbackFor(status, matched) {
   log.debug("Entering fallbackFor().");
   const code = parseInt(status, 10) || 0;
@@ -17423,6 +17554,12 @@ function fallbackFor(status, matched) {
 // request exists. Brackets and a trailing space, so the code leads the message
 // and a grep for `[STS-` finds every tagged line.
 // ---------------------------------------------------------------------------
+/**
+ * Formats a code for the front of a log line that has no audit row to carry it.
+ *
+ * @param code - the code
+ * @returns `[code] `
+ */
 function tag(code) {
   log.debug("Entering tag().");
   log.debug("Leaving tag().");
@@ -17446,6 +17583,11 @@ function escapeCell(text) {
   return String(text || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
+/**
+ * Generates `docs/error-codes.md` from the table.
+ *
+ * @returns the page's Markdown
+ */
 function markdown() {
   log.debug("Entering markdown().");
   const lines = [];
@@ -17574,6 +17716,11 @@ function markdown() {
   return lines.join('\n');
 }
 
+/**
+ * Returns the path of the generated documentation page, `docs/error-codes.md`.
+ *
+ * @returns the absolute path
+ */
 function docsPath() {
   log.debug("Entering docsPath().");
   const path = require('path');
@@ -17581,6 +17728,16 @@ function docsPath() {
   return path.join(__dirname, '..', 'docs', 'error-codes.md');
 }
 
+/**
+ * The error codes: one name, `STS-<SUBSYSTEM>-<NNNN>`, for every way this
+ * service can fail or refuse, in one table.
+ *
+ * A code is recorded on the audit row and in the log line, and never sent to a
+ * client. Run with `--docs` to regenerate the documentation page, `--check` to
+ * check it.
+ *
+ * @namespace
+ */
 module.exports = {
   CODE_PATTERN: CODE_PATTERN,
   CODE_IN_TEXT: CODE_IN_TEXT,

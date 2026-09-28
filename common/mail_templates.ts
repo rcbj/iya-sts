@@ -323,13 +323,41 @@ const FORBIDDEN_HTML: Array<[RegExp, string]> = [
 // #64: the id of the layout every message is wrapped in.
 const LAYOUT_ID = 'layout';
 
+/**
+ * The mail channel's messages: the built-in template of every message this
+ * service sends, the rules a realm's own template must keep, and the renderer.
+ *
+ * Values are escaped by the renderer, a link is always a placeholder for this
+ * service's own address, and the HTML part may load and run nothing. A library
+ * that stores nothing.
+ */
 class MailTemplates {
+  /**
+   * The id of the layout every message is wrapped in: `layout`.
+   */
   static readonly LAYOUT_ID = LAYOUT_ID;
+  /**
+   * The message categories (`security`, `account`, `notification`), with
+   * whether a person may decline each.
+   */
   static readonly CATEGORIES = CATEGORIES;
+  /**
+   * The built-in template of every message, in English: its id, category,
+   * title, placeholders, links and three parts.
+   */
   static readonly BUILT_IN = BUILT_IN;
+  /**
+   * The placeholders every message offers: `realm` and `service`.
+   */
   static readonly COMMON = COMMON;
 
   // The built-in template with this id, or null.
+  /**
+   * Finds the built-in template with an id.
+   *
+   * @param id - the message's id
+   * @returns the template, or null
+   */
   static builtIn(id: string): TemplateSpec | null {
     helpers.log.debug("Entering MailTemplates.builtIn(). " + id);
     const found = BUILT_IN.filter(function (one) {
@@ -339,6 +367,12 @@ class MailTemplates {
     return found;
   }
 
+  /**
+   * Finds a category by id.
+   *
+   * @param id - the category's id
+   * @returns the category, or null
+   */
   static category(id: string): Json {
     helpers.log.debug("Entering MailTemplates.category(). " + id);
     helpers.log.debug("Leaving MailTemplates.category().");
@@ -348,6 +382,12 @@ class MailTemplates {
   }
 
   // Every `{{name}}` in a piece of text.
+  /**
+   * Lists every `{{name}}` placeholder in a piece of text, once each.
+   *
+   * @param text - the text
+   * @returns the placeholder names
+   */
   static placeholders(text: string): string[] {
     helpers.log.debug("Entering MailTemplates.placeholders().");
     const out: string[] = [];
@@ -367,6 +407,15 @@ class MailTemplates {
   // when it is SAVED, so a template that breaks the rules never exists to be
   // rendered. `spec` is the built-in it rewords.
   // -------------------------------------------------------------------------
+  /**
+   * Checks a realm's template against the rules, when it is saved: all three
+   * parts, sizes, placeholders the message offers, no address of its own, every
+   * link in the text part, and no HTML that loads or runs anything.
+   *
+   * @param spec - the built-in template it rewords
+   * @param parts - `{ subject, text, html }`
+   * @returns one sentence saying what is wrong, or '' when nothing is
+   */
   static problem(spec: TemplateSpec, parts: Json): string {
     helpers.log.debug("Entering MailTemplates.problem(). " +
                       (spec && spec.id));
@@ -470,6 +519,13 @@ class MailTemplates {
 
   // A value as it goes into a subject or a text part: no control character,
   // CR and LF above all.
+  /**
+   * Prepares a value for a subject or a text part: every control character, CR
+   * and LF above all, becomes a space.
+   *
+   * @param value - the value
+   * @returns the text
+   */
   static plain(value: unknown): string {
     helpers.log.debug("Entering MailTemplates.plain().");
     helpers.log.debug("Leaving MailTemplates.plain().");
@@ -484,6 +540,15 @@ class MailTemplates {
   // `common/mail.ts`. A placeholder with no value renders empty. The text
   // part keeps its line breaks; a VALUE in it loses any of its own.
   // -------------------------------------------------------------------------
+  /**
+   * Renders a template: each placeholder filled with its value, escaped for
+   * HTML in the HTML part and stripped of control characters elsewhere. A
+   * placeholder with no value renders empty.
+   *
+   * @param parts - the template's `{ subject, text, html }`
+   * @param values - every placeholder's raw value, links already absolute
+   * @returns `{ subject, text, html }`
+   */
   static render(parts: Json, values: Json): Json {
     helpers.log.debug("Entering MailTemplates.render().");
     const v = values || {};
@@ -517,6 +582,16 @@ class MailTemplates {
   // placeholder is filled as `render()` fills one. The layout was checked by
   // `problem()` when it was saved, so it cannot add a link or load anything.
   // -------------------------------------------------------------------------
+  /**
+   * Wraps a rendered message in the layout: its body as `{{content}}`,
+   * unescaped since it was escaped when rendered, and its subject as
+   * `{{subject}}`.
+   *
+   * @param layoutParts - the layout's `{ subject, text, html }`
+   * @param rendered - `render()`'s answer for the message
+   * @param values - the other placeholders' values
+   * @returns `{ subject, text, html }`
+   */
   static wrap(layoutParts: Json, rendered: Json, values: Json): Json {
     helpers.log.debug("Entering MailTemplates.wrap().");
     const v = Object.assign({}, values || {});
@@ -553,6 +628,14 @@ class MailTemplates {
 
   // The HTML part wrapped in the one document every message is — no head
   // that loads anything, and a language tag.
+  /**
+   * Wraps an HTML part in the one document every message is: a language tag and
+   * a head that loads nothing.
+   *
+   * @param body - the HTML part
+   * @param lang - the language tag; `en` when absent
+   * @returns the document
+   */
   static htmlDocument(body: string, lang: string): string {
     helpers.log.debug("Entering MailTemplates.htmlDocument().");
     helpers.log.debug("Leaving MailTemplates.htmlDocument().");
@@ -567,6 +650,15 @@ class MailTemplates {
   // tag and then its primary subtag, by q, then the realm's default, then
   // `en`, which every built-in template has.
   // -------------------------------------------------------------------------
+  /**
+   * Orders the languages to try for a message, best first: each tag of an
+   * Accept-Language value and its primary subtag by q, then the realm's
+   * default, then `en`.
+   *
+   * @param preferred - the entry's `preferredLanguage`
+   * @param fallback - the realm's default language
+   * @returns the language tags
+   */
   static languageOrder(preferred: string, fallback: string): string[] {
     helpers.log.debug("Entering MailTemplates.languageOrder().");
     const ranked = String(preferred || '').split(',').map(function (part,

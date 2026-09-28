@@ -101,17 +101,35 @@ interface Cursor {
   at: number;
 }
 
+/**
+ * A writer and a reader of the MIT keytab file format, version 0x502, in which
+ * a service principal's random key is handed to a real acceptor.
+ */
 class Krb5Keytab {
+  /**
+   * The keytab format version written and read.
+   */
   static readonly KEYTAB_VERSION = 0x0502;
 
   // KRB5_NT_PRINCIPAL. `ktadd` writes it for a service principal as well as a
   // user, so it is what an MIT-reading acceptor expects to find; a reader
   // matches on the name components and the realm, not on this number.
+  /**
+   * KRB5_NT_PRINCIPAL, the name type written when an entry names none.
+   */
   static readonly NAME_TYPE_PRINCIPAL = 1;
 
   // The largest counted string the format can carry.
+  /**
+   * The largest counted string the format can carry, in bytes.
+   */
   static readonly MAX_DATA = 0xffff;
 
+  /**
+   * Builds the codec over the given dependencies.
+   *
+   * @param deps - the logger
+   */
   constructor(private readonly deps: Krb5KeytabDeps) {
     deps.log.debug("Entering Krb5Keytab.constructor().");
     deps.log.debug("Leaving Krb5Keytab.constructor().");
@@ -119,6 +137,12 @@ class Krb5Keytab {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): Krb5KeytabDeps {
     helpers.log.debug("Entering Krb5Keytab.defaultDeps().");
     helpers.log.debug("Leaving Krb5Keytab.defaultDeps().");
@@ -162,6 +186,16 @@ class Krb5Keytab {
   // reads perfectly and then refuses exactly the tickets that were issued
   // under it.
   // -------------------------------------------------------------------------
+  /**
+   * Writes a keytab file holding the given entries, each with its 32-bit kvno
+   * as well as the 8-bit one.
+   *
+   * @param entries - `{ realm, components, nameType, timestamp, kvno, etype,
+   *   key }` each; `timestamp` a Date or seconds, `key` bytes or a UTF-8 string
+   * @returns the whole file
+   * @throws Error when an entry names no principal, carries no key, has a kvno
+   *   out of range or a field too long to encode
+   */
   writeKeytab(entries: KeytabEntry[] | null | undefined): Buffer {
     const self = this;
     const { log } = this.deps;
@@ -259,6 +293,16 @@ class Krb5Keytab {
   // a service that holds some of its keys, which fails later and names a
   // ticket.
   // -------------------------------------------------------------------------
+  /**
+   * Reads a keytab file, skipping holes; a 32-bit kvno, where present, wins
+   * over the 8-bit one.
+   *
+   * @param bytes - the file
+   * @returns the entries: `realm`, `components`, `nameType`, `timestamp`,
+   *   `kvno`, `etype` and `key`
+   * @throws Error when the file is not a version 0x502 keytab or is truncated
+   *   or malformed anywhere
+   */
   readKeytab(bytes: Uint8Array | string): ReadEntry[] {
     const { log } = this.deps;
     log.debug('Entering Krb5Keytab.readKeytab().');
@@ -330,12 +374,36 @@ const slot = new InstanceSlot<Krb5Keytab>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The MIT keytab file format, version 0x502: a writer and a reader.
+ *
+ * A library: it registers no route and holds no state.
+ *
+ * @namespace
+ */
 export = {
   Krb5Keytab: Krb5Keytab,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: Krb5Keytab): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   KEYTAB_VERSION: Krb5Keytab.KEYTAB_VERSION,
   NAME_TYPE_PRINCIPAL: Krb5Keytab.NAME_TYPE_PRINCIPAL,
+  /**
+   * Forwards to `Krb5Keytab.writeKeytab()` on the installed instance.
+   */
   writeKeytab: slot.forward('writeKeytab'),
+  /**
+   * Forwards to `Krb5Keytab.readKeytab()` on the installed instance.
+   */
   readKeytab: slot.forward('readKeytab')
 };

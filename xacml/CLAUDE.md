@@ -24,6 +24,7 @@ and the nudge.
 | File | What it is |
 |---|---|
 | `xacml_model.js` | The vocabulary: the identifiers the specification fixes, the shape of a policy tree, and the seven decision values. **No I/O.** |
+| `xacml_request.js` | **The one request builder (#306, part E of #88).** #88 section 7's AuthorizationRequest — principal and its type, roles, client, target, audience, requested action and scopes, protocol, grant type, intermediary — spelt from ONE vocabulary and grouped into XACML's categories. Every PEP builds through it: the issuance, access, risk and signal PEPs, the demonstration PEP at `/xacml/protected`, `/admin/xacml/decide`, and the remote PEP, which copies it beside the engine. It decides nothing; the shared identifiers (`ROLE`, `SUBJECT_KIND`) live here because a remote PEP cannot load `xacml_templates.ts`. `tests/xacml_request.js` fails on a module that goes back to building its own. **No I/O.** |
 | `xacml_datatypes.js` | The seventeen datatypes — parse, write, equality, ordering. The table every function is generated over. **No I/O.** |
 | `xacml_functions.js` | The standard function library: 275 identifiers, about thirty implementations. **No I/O.** |
 | `xacml_validate.js` | Static type checking. What a policy is REFUSED for at load, before any request. **No I/O.** |
@@ -987,6 +988,33 @@ asserting NOTHING, and a Permit that can only have come from her entry under
 `ou=users` in this service's embedded directory — beside a name the directory
 has never heard of, refused at both ends. **That section used to assert the
 opposite**, in both directions, and the inversion is recorded where it happens.
+
+### It answers ROLES as well as directory attributes (#303, 2026-09-27)
+
+A designator for `urn:sts:xacml:role` — the issuance PEP's own attribute —
+is answered with the subject's CONFIGURED roles in the realm, through
+`common/role_permissions.ts`'s `configuredRolesOf()`: held directly, through a
+group or as an application, and ADMIN_READ / ADMIN_WRITE for a person from the
+console roster. **The same answer token issuance gets**, which is the point:
+a subject that arrived with no scopes — a person named in a SAML assertion, a
+Kerberos principal, a `client_id` — is decided on the roles this service
+would issue for, and the remote PEP (which asks `POST /xacml/pip`) decides on
+the same roles as the embedded one. rcbj asked for it on #303: "a SAML
+assertion won't have scopes".
+
+* **A role is not a directory attribute**, so it is a designator of its own
+  rather than an `urn:sts:xacml:attribute:` name: membership lives on the
+  role entry, and group-held and console roles are resolved at decision time.
+* **`urn:sts:xacml:subject-kind` says person or application** (`user`, the
+  default, or `application`): a name alone cannot, and the two hold roles
+  through different relations. The issuance PEP sends it; the remote PEP
+  asserts it from `subjectKind` and `pip.js` forwards it in the query.
+* **The built-in roles are not answered.** They describe the REQUEST — who
+  authenticated, over what — which a PIP naming a subject cannot know; the PEP
+  asserts them where it can. The subject is taken as authenticated: a PEP
+  asking about a named subject is deciding for somebody it already accepted.
+* An empty answer's `<Unresolved>` reason says the subject holds no configured
+  role, as a person or an application.
 
 ### What it does not do yet
 

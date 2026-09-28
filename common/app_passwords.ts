@@ -78,10 +78,20 @@ import InstanceSlot = require('./instance_slot');
 // `backup_codes.ts` for the reason that file declares its own apart from
 // `totp.ts`: the same set by coincidence of good properties, and a change to
 // one must not silently move the other.
+/**
+ * The thirty-two characters an app password is drawn from, with no confusable
+ * pair.
+ */
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 // The public id, and the whole password, in characters.
+/**
+ * The length of an app password's public id, its first characters.
+ */
 const ID_LENGTH = 4;
+/**
+ * The length of a whole app password, in characters.
+ */
 const LENGTH = 24;
 const GROUP = 4;
 
@@ -89,6 +99,10 @@ const GROUP = 4;
 // taken with no way to ask for more; the ids are what a door passes to
 // `credentials.verify()` as `door`, what `authn.passwordAloneDoors` lists and
 // what a record's scope names.
+/**
+ * The five password-only doors an app password may be scoped to: LDAP bind,
+ * WS-Trust, SCIM, Shared Signals and EST.
+ */
 const DOORS = [
   { id: 'ldap', label: 'LDAP bind',
     what: 'an LDAP simple bind on 389 or 636 (RFC 4513)' },
@@ -102,8 +116,14 @@ const DOORS = [
     what: 'HTTP Basic at /.well-known/est (RFC 7030 section 3.2.3)' }
 ];
 
+/**
+ * The ids of the five doors, in the table's order.
+ */
 const DOOR_IDS = DOORS.map(function (one) { return one.id; });
 
+/**
+ * The longest name a person may give an app password.
+ */
 const MAX_NAME = 64;
 
 interface AppPasswordSettings {
@@ -124,19 +144,54 @@ interface AppPasswordsDeps {
   randomInt(min: number, max: number): number;
 }
 
+/**
+ * App passwords: generated, hashed, scoped secrets a person with a second
+ * factor uses at a door that can take only a password.
+ *
+ * Never accepted at a browser sign-in.
+ */
 class AppPasswords {
+  /**
+   * The alphabet app passwords are drawn from.
+   */
   static readonly ALPHABET = ALPHABET;
+  /**
+   * The five doors an app password may be scoped to.
+   */
   static readonly DOORS = DOORS;
+  /**
+   * The ids of the five doors.
+   */
   static readonly DOOR_IDS = DOOR_IDS;
+  /**
+   * The length of an app password.
+   */
   static readonly LENGTH = LENGTH;
+  /**
+   * The length of an app password's public id.
+   */
   static readonly ID_LENGTH = ID_LENGTH;
+  /**
+   * The longest name an app password may be given.
+   */
   static readonly MAX_NAME = MAX_NAME;
 
+  /**
+   * Builds the app-password service.
+   *
+   * @param deps - the logger, settings, the secret-hashing functions and a
+   *   random integer source
+   */
   constructor(private readonly deps: AppPasswordsDeps) {
     deps.log.debug("Entering AppPasswords.constructor().");
     deps.log.debug("Leaving AppPasswords.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the service logger, settings, `crypto.js` and node's `randomInt`
+   */
   static defaultDeps(): AppPasswordsDeps {
     helpers.log.debug("Entering AppPasswords.defaultDeps().");
     helpers.log.debug("Leaving AppPasswords.defaultDeps().");
@@ -153,6 +208,12 @@ class AppPasswords {
   // The settings, read live and per realm through `config.value()`. The
   // maximum is read directly and bounded, never through `|| n`, for the code
   // style's reason.
+  /**
+   * Reads the app-password settings for the current realm.
+   *
+   * @returns whether app passwords are enabled, and the most a person may hold
+   *   (1 to 50, 10 when unset)
+   */
   settings(): AppPasswordSettings {
     const { log, config } = this.deps;
     log.debug("Entering AppPasswords.settings().");
@@ -168,6 +229,12 @@ class AppPasswords {
   // Is a door one of the five? Asked by `credentials.ts` before it looks at
   // an app password at all, so a caller that passes no door — the sign-in
   // screen — never has one accepted.
+  /**
+   * Says whether a door id is one of the five an app password may be used at.
+   *
+   * @param door - the door id a caller passed to `credentials.verify()`
+   * @returns true for one of the five
+   */
   isDoor(door: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering AppPasswords.isDoor().");
@@ -177,6 +244,12 @@ class AppPasswords {
 
   // The doors `authn.passwordAloneDoors` lists, as ids. An unknown name is
   // dropped rather than honoured: a typo there must not widen anything.
+  /**
+   * Returns the door ids `authn.passwordAloneDoors` lists, dropping any unknown
+   * name.
+   *
+   * @returns the listed door ids
+   */
   passwordAloneDoors(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering AppPasswords.passwordAloneDoors().");
@@ -199,6 +272,14 @@ class AppPasswords {
   // silently lost a door would be a password that did not work where its
   // owner was told it would.
   // -------------------------------------------------------------------------
+  /**
+   * Turns what a caller sent as a scope into a list of doors.
+   *
+   * Any unknown entry makes the whole scope refused rather than trimmed.
+   *
+   * @param asked - a list or a comma-separated string of door ids
+   * @returns `ok`, the doors in table order, and the unknown entries in `bad`
+   */
   scopeOf(asked: unknown): { ok: boolean; doors: string[]; bad: string[] } {
     const { log } = this.deps;
     log.debug("Entering AppPasswords.scopeOf().");
@@ -230,6 +311,13 @@ class AppPasswords {
   // A name a person gives one, so a list of several says which client each
   // is in. Printable text, trimmed, at most sixty-four characters; '' where
   // it is none of those.
+  /**
+   * Validates the name a person gives an app password.
+   *
+   * @param asked - the name as sent
+   * @returns the trimmed name, or '' when it is empty, too long or holds a
+   *   control character
+   */
   nameOf(asked: unknown): string {
     const { log } = this.deps;
     log.debug("Entering AppPasswords.nameOf().");
@@ -248,6 +336,13 @@ class AppPasswords {
   // already holds: the id must be unique on the entry, since it is how the
   // record is found, and a clash is drawn again rather than tolerated.
   // -------------------------------------------------------------------------
+  /**
+   * Generates one new app password whose id is not among those the person
+   * holds.
+   *
+   * @param taken - the ids the person already holds
+   * @returns the id, the password and its printed form
+   */
   generate(taken?: string[]): { id: string; password: string;
                                 printed: string } {
     const { log, randomInt } = this.deps;
@@ -272,6 +367,12 @@ class AppPasswords {
 
   // The printed form: six groups of four with a dash between them, which is
   // what `normalise()` is written to accept back.
+  /**
+   * Returns the printed form of a password: groups of four joined by dashes.
+   *
+   * @param password - the password
+   * @returns the printed form
+   */
   printed(password: unknown): string {
     const { log } = this.deps;
     log.debug("Entering AppPasswords.printed().");
@@ -287,6 +388,13 @@ class AppPasswords {
   // What a client sent, as it is hashed and compared: upper-cased, and the
   // spaces and dashes this service prints dropped. Nothing else is forgiven,
   // for `backup_codes.ts`'s reason.
+  /**
+   * Normalises a presented password: upper-cased, with spaces and dashes
+   * removed.
+   *
+   * @param text - what the client sent
+   * @returns the normalised text
+   */
   normalise(text: unknown): string {
     const { log } = this.deps;
     log.debug("Entering AppPasswords.normalise().");
@@ -297,6 +405,13 @@ class AppPasswords {
 
   // Is a presented password even the SHAPE of an app password? Asked before
   // any record is looked at, so an ordinary password costs nothing extra.
+  /**
+   * Says whether a presented password has the shape of an app password.
+   *
+   * @param text - what the client sent
+   * @returns true when it is the right length and every character is in the
+   *   alphabet
+   */
   wellFormed(text: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering AppPasswords.wellFormed().");
@@ -316,6 +431,12 @@ class AppPasswords {
   }
 
   // The public id of a presented password; '' where it is not the shape.
+  /**
+   * Returns the public id of a presented app password.
+   *
+   * @param text - what the client sent
+   * @returns the id, or '' when the text is not the shape of an app password
+   */
   idOf(text: unknown): string {
     const { log } = this.deps;
     log.debug("Entering AppPasswords.idOf().");
@@ -326,6 +447,12 @@ class AppPasswords {
 
   // rule 3r: `crypto.hashSecret()`, the one place a verify-only secret is
   // hashed — scrypt, and the stored form `userPassword` has.
+  /**
+   * Hashes an app password for storage, through `crypto.hashSecret()` (scrypt).
+   *
+   * @param password - the password
+   * @returns the stored form
+   */
   hash(password: unknown): string {
     const { log, crypto } = this.deps;
     log.debug("Entering AppPasswords.hash().");
@@ -333,6 +460,13 @@ class AppPasswords {
     return crypto.hashSecret(this.normalise(password));
   }
 
+  /**
+   * Checks a presented app password against a stored hash.
+   *
+   * @param presented - what the client sent
+   * @param stored - the stored hash
+   * @returns true when it matches
+   */
   matchesHash(presented: unknown, stored: unknown): boolean {
     const { log, crypto } = this.deps;
     log.debug("Entering AppPasswords.matchesHash().");
@@ -340,6 +474,14 @@ class AppPasswords {
     return crypto.verifySecret(this.normalise(presented), stored);
   }
 
+  /**
+   * Checks a presented app password against a stored hash without blocking the
+   * event loop.
+   *
+   * @param presented - what the client sent
+   * @param stored - the stored hash
+   * @returns a promise of true when it matches
+   */
   matchesHashAsync(presented: unknown, stored: unknown): Promise<boolean> {
     const { log, crypto } = this.deps;
     log.debug("Entering AppPasswords.matchesHashAsync().");
@@ -348,6 +490,12 @@ class AppPasswords {
   }
 
   // The label a door is drawn with.
+  /**
+   * Returns the label a door is drawn with.
+   *
+   * @param id - the door id
+   * @returns the label, or the id itself when it is not a door
+   */
   doorLabel(id: unknown): string {
     const { log } = this.deps;
     log.debug("Entering AppPasswords.doorLabel().");
@@ -370,9 +518,25 @@ const slot = new InstanceSlot<AppPasswords>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * App passwords: what a person with a second factor types into a client that
+ * can only send a password.
+ *
+ * A library (rule 3ax) that registers no route; `common/credentials.ts` asks it
+ * at the five password-only doors. The exports forward to the instance the
+ * composition root installs.
+ *
+ * @namespace
+ */
 export = {
   AppPasswords: AppPasswords,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: AppPasswords): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   ALPHABET: AppPasswords.ALPHABET,
   DOORS: AppPasswords.DOORS,

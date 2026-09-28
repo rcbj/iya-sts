@@ -240,11 +240,18 @@ draws it with a description of every field.
 
 ## Roles: `ou=roles`
 
-`objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description` and the three kinds of
-holder: `roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`. A role saved by an earlier version was written with
+`objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description`, the three kinds of
+holder (`roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`), and `rolePermission`: the permissions a
+holder may be issued (#303), named as a client asks for them. A role saved by an earlier version was written with
 no object class and gains one on its next save.
 `common/roles.js` keeps apart who **holds** a role and what **requires** one
-(`appRequiredRole` on an application). It also computes ten built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS, ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIONS, ADMIN_READ, ADMIN_WRITE, REMOTE_PEPS and XACML_USER.
+(`appRequiredRole` on an application). Which of an application's permissions need a role at all is
+`oauthRoleGatedPermission` on the resource application. Every realm is seeded with two roles, `ADMIN_READ` and
+`ADMIN_WRITE`, which authorize `admin:read` and `admin:write`. Their groups come from `admin.readGroup` and
+`admin.writeGroup` and are not stored on the entry; `sts-management-api` is a member of both. The service also
+computes nine built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS,
+ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIONS, REMOTE_PEPS, XACML_USER and
+DEVICE_COMPLIANCE.
 
 ## XACML: `ou=policies` and `ou=peps`
 

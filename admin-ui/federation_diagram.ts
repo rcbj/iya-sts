@@ -179,13 +179,30 @@ const LABEL_PAD_Y = 3;
 
 // The palette as the key beside the picture reads it — see the export at the
 // bottom.
+/**
+ * The picture's palette, by name, which the key beside the picture draws its
+ * swatches from; the delegation picture's colours.
+ */
 const COLOURS = { ink: INK, indigo: INDIGO, green: GREEN, amber: AMBER,
                   red: RED, quiet: QUIET, line: LINE, panel: PANEL,
                   paper: PAPER, wash: WASH };
 
+/**
+ * The federation picture: `federation/federation_graph.ts`'s graph laid out
+ * with dagre and drawn as SVG. A library that registers no route.
+ */
 class FederationDiagram {
+  /**
+   * See the module's `COLOURS`.
+   */
   static readonly COLOURS = COLOURS;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the XML escaper, the error-code table, dagre and
+   * the delegation picture's text functions
+   */
   constructor(private readonly deps: FederationDiagramDeps) {
     deps.log.debug("Entering FederationDiagram.constructor().");
     deps.log.debug("Leaving FederationDiagram.constructor().");
@@ -193,6 +210,11 @@ class FederationDiagram {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): FederationDiagramDeps {
     helpers.log.debug("Entering FederationDiagram.defaultDeps().");
     helpers.log.debug("Leaving FederationDiagram.defaultDeps().");
@@ -639,6 +661,17 @@ class FederationDiagram {
   // picture above them, and a stack trace where the diagram should be is worth
   // less than a sentence.
   // ---------------------------------------------------------------------------
+  /**
+   * Lays out and draws a federation graph as SVG.
+   *
+   * It cannot throw: a failure comes back as a picture saying it could not be
+   * drawn.
+   * @param graph - `federation_graph.ts`'s `graph()`
+   * @param options - `resolve(node)` (which may add an `href` and override a
+   * label), `links`, `id` (a prefix for every generated id) and `label` (the
+   * document's accessible title)
+   * @returns the SVG, its width and height, and the laid-out nodes and edges
+   */
   render(graph: any, options?: any): Drawing {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -900,10 +933,24 @@ const slot = new InstanceSlot<FederationDiagram>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The federation picture: `federation/federation_graph.ts`'s graph, drawn as
+ * SVG for `/admin/federation/map`, with the delegation picture's palette and
+ * hexagon.
+ * @namespace
+ */
 export = {
   FederationDiagram: FederationDiagram,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: FederationDiagram): void =>
     slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   render: slot.forward('render'),
   // Exported for the legend on the page, so that the swatch beside "a foreign

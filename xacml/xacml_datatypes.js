@@ -132,6 +132,14 @@ function timezoneMinutes(text) {
   return sign * (hours * 60 + minutes);
 }
 
+/**
+ * Writes a timezone offset in minutes back as its lexical form.
+ *
+ * An absent offset gives the empty string and zero gives `Z`; anything else
+ * is `+HH:MM` or `-HH:MM`.
+ * @param minutes - the offset from UTC in minutes, or null for none
+ * @returns the lexical timezone suffix
+ */
 function timezoneText(minutes) {
   log.debug("Entering timezoneText().");
   if (minutes === null || minutes === undefined) {
@@ -158,6 +166,16 @@ function pad2(value) {
 // taken from `Date`, because `Date` cannot represent years outside roughly
 // ±275760 and silently clamps, and because it applies a local timezone this
 // code has taken care to keep out.
+/**
+ * Counts the days from 1970-01-01 to a proleptic Gregorian date.
+ *
+ * Computed rather than taken from `Date`, which clamps far years and applies
+ * a local timezone.
+ * @param year - the year, which may be negative
+ * @param month - the month, 1 to 12
+ * @param day - the day of the month
+ * @returns the number of days since the epoch, negative before it
+ */
 function daysFromCivil(year, month, day) {
   log.debug("Entering daysFromCivil().");
   const y = year - (month <= 2 ? 1 : 0);
@@ -224,6 +242,14 @@ function parseDateTimeish(lexical, shape) {
 // Seconds from an epoch, in the value's own timezone offset applied. For a
 // `time` the date part is fixed, which is correct: xs:time compares two times
 // of day and has no date to disagree about.
+/**
+ * Converts a parsed date, time or dateTime to seconds from the epoch in UTC.
+ *
+ * A `time` has no date part and is counted from the start of the day.
+ * @param value - a parsed temporal value (shape, fields and `tz`)
+ * @param assumedTz - the offset in minutes to use when the value has none
+ * @returns the instant in seconds
+ */
 function instantSeconds(value, assumedTz) {
   log.debug("Entering instantSeconds().");
   const tz = value.tz === null ? assumedTz : value.tz;
@@ -251,6 +277,17 @@ function instantSeconds(value, assumedTz) {
 // claim about the world. Null propagates to Indeterminate, which is the
 // truthful answer.
 // ---------------------------------------------------------------------------
+/**
+ * Orders two temporal values as XML Schema defines, or says they are
+ * incomparable.
+ *
+ * When only one carries a timezone the comparison must hold across the whole
+ * [-14:00, +14:00] range; where it does not the answer is null, which the
+ * caller turns into Indeterminate rather than a false.
+ * @param left - the first parsed temporal value
+ * @param right - the second parsed temporal value
+ * @returns -1, 0 or 1, or null when the two are incomparable
+ */
 function compareTemporal(left, right) {
   log.debug('Entering compareTemporal().');
   const bothKnown = left.tz !== null && right.tz !== null;
@@ -538,6 +575,12 @@ function portsEqual(left, right) {
 // with no `compare` has no ordering functions in the library, which is how
 // `boolean-greater-than` fails to exist rather than existing and being wrong.
 // ---------------------------------------------------------------------------
+/**
+ * The datatype table, keyed by datatype URI.
+ *
+ * Each row holds the type's `name` and `uri` and its `parse`, `write`,
+ * `equal` and, for ordered types, `compare` functions.
+ */
 const TYPES = {};
 
 function define(uri, row) {
@@ -1064,6 +1107,12 @@ define(TYPE.XPATH_EXPRESSION, {
 // ---------------------------------------------------------------------------
 // LOOKUP, WITH THE TWO LEGACY DURATION SPELLINGS ALREADY HANDLED.
 // ---------------------------------------------------------------------------
+/**
+ * Looks up a datatype's row, accepting the two legacy duration spellings.
+ *
+ * @param uri - the datatype URI
+ * @returns the table row, or null for an unknown datatype
+ */
 function typeOf(uri) {
   log.debug('Entering typeOf(). uri=' + uri);
   const row = TYPES[model.canonicalType(uri)];
@@ -1083,6 +1132,15 @@ function typeOf(uri) {
 // type is also a syntax error but names the value. Collapsing them into one
 // message makes a typo in a URI look like a typo in a date.
 // ---------------------------------------------------------------------------
+/**
+ * Parses a lexical form at a named datatype.
+ *
+ * @param typeUri - the datatype URI
+ * @param lexical - the lexical form
+ * @returns the parsed value
+ * @throws a syntax-error status when the datatype is unknown or the lexical
+ * form is not valid for it
+ */
 function parseValue(typeUri, lexical) {
   log.debug('Entering parseValue(). type=' + typeUri);
   const row = typeOf(typeUri);
@@ -1096,6 +1154,14 @@ function parseValue(typeUri, lexical) {
   return value;
 }
 
+/**
+ * Writes a value back as its datatype's lexical form.
+ *
+ * @param typeUri - the datatype URI
+ * @param value - a value parsed at that datatype
+ * @returns the lexical form
+ * @throws a syntax-error status when the datatype is unknown
+ */
 function writeValue(typeUri, value) {
   log.debug("Entering writeValue().");
   const row = typeOf(typeUri);
@@ -1107,6 +1173,17 @@ function writeValue(typeUri, value) {
   return row.write(value);
 }
 
+/**
+ * Tests two values of one datatype for equality by that type's own rule.
+ *
+ * Not string equality: integers are BigInt, `NaN` equals `NaN` for doubles,
+ * and several types compare canonically.
+ * @param typeUri - the datatype URI
+ * @param left - the first parsed value
+ * @param right - the second parsed value
+ * @returns true when the values are equal
+ * @throws a syntax-error status when the datatype is unknown
+ */
 function equalValues(typeUri, left, right) {
   log.debug("Entering equalValues().");
   const row = typeOf(typeUri);
@@ -1118,6 +1195,13 @@ function equalValues(typeUri, left, right) {
   return row.equal(left, right);
 }
 
+/**
+ * The seventeen XACML 3.0 datatypes: parsing, writing, equality and order.
+ *
+ * A row of `TYPES` is the whole of what a type is; `xacml_functions.js` is
+ * generated over this table.
+ * @namespace
+ */
 module.exports = {
   TYPES: TYPES,
   typeOf: typeOf,

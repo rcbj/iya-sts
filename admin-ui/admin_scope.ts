@@ -95,6 +95,10 @@ interface AdminScopeDeps {
 
 // Pages whose whole subject is the process. A prefix ends at a segment
 // boundary, so `/admin/tls` covers `/admin/tls/trust` and not `/admin/tlsx`.
+/**
+ * Console pages whose whole subject is the process, refused to a realm
+ * administrator whatever the method. A prefix ends at a segment boundary.
+ */
 const SERVICE_PAGES = [
   '/admin/persistence',
   '/admin/cluster',
@@ -132,11 +136,19 @@ const SERVICE_PAGES = [
 // all (`perProcess`, the two `realms.*` rows) is refused by
 // `settingIsServiceOnly()` without being listed; these are the prefixes and
 // keys a realm CAN carry that still name the whole service.
+/**
+ * Setting-key prefixes a realm can carry that still name the whole service, and
+ * which a realm administrator may not write.
+ */
 const SERVICE_SETTING_PREFIXES = [
   'admin.', 'adminApi.', 'realms.', 'workers.', 'persistence.', 'debugger.',
   'tls.', 'keys.', 'security.passwordHash', 'risk.'
 ];
 
+/**
+ * Setting keys a realm can carry that still name the whole service, and which a
+ * realm administrator may not write.
+ */
 const SERVICE_SETTING_KEYS = [
   'global.logLevel', 'global.mode', 'global.trustProxy', 'global.publicBaseUrl',
   'pki.revocationCrlIssuersFile', 'pki.revocationLdapCaFile',
@@ -160,9 +172,23 @@ const SERVICE_SETTING_KEYS = [
   'krb5.trustPassword', 'krb5.trustedDomainSid', 'krb5.trustedKrbtgtPassword'
 ];
 
+/**
+ * Draws the line a realm administrator may not cross: service pages, actions
+ * that reach past the realm, and service-wide settings, for the console and the
+ * management API alike.
+ */
 class AdminScope {
+  /**
+   * See the module's `SERVICE_PAGES`.
+   */
   static readonly SERVICE_PAGES = SERVICE_PAGES;
+  /**
+   * See the module's `SERVICE_SETTING_PREFIXES`.
+   */
   static readonly SERVICE_SETTING_PREFIXES = SERVICE_SETTING_PREFIXES;
+  /**
+   * See the module's `SERVICE_SETTING_KEYS`.
+   */
   static readonly SERVICE_SETTING_KEYS = SERVICE_SETTING_KEYS;
 
   // The realm-scoped pages whose ACTIONS can reach past the realm, and what
@@ -176,6 +202,12 @@ class AdminScope {
   // realm's row, its settings and its overrides.
   private readonly realmReads: Record<string, ReadRule>;
 
+  /**
+   * Builds an instance and its tables of service-wide actions and realm-naming
+   * queries.
+   *
+   * @param deps - the logger, the setting table and the per-process test
+   */
   constructor(private readonly deps: AdminScopeDeps) {
     deps.log.debug("Entering AdminScope.constructor().");
     const log = deps.log;
@@ -321,6 +353,11 @@ class AdminScope {
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50). The setting table is read when
   // it is asked, as `config.SETTINGS` was.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): AdminScopeDeps {
     helpers.log.debug("Entering AdminScope.defaultDeps().");
     helpers.log.debug("Leaving AdminScope.defaultDeps().");
@@ -354,6 +391,12 @@ class AdminScope {
     return p === prefix || p.indexOf(prefix + '/') === 0;
   }
 
+  /**
+   * Answers whether a console path is a service page, or under one.
+   *
+   * @param path - the console path, realm prefix stripped
+   * @returns true for a page whose subject is the whole process
+   */
   pageIsService(path: string): boolean {
     const { log } = this.deps;
     const self = this;
@@ -375,6 +418,13 @@ class AdminScope {
     return hit;
   }
 
+  /**
+   * Answers whether a realm administrator may not write a setting: a
+   * per-process row, or one of the listed service keys or prefixes.
+   *
+   * @param key - the setting's key
+   * @returns true when only a service administrator may write it
+   */
   settingIsServiceOnly(key: string): boolean {
     const { log, isPerProcess } = this.deps;
     log.debug("Entering AdminScope.settingIsServiceOnly(). " + key);
@@ -391,6 +441,13 @@ class AdminScope {
   // Every setting a body names that a realm administrator may not write: the
   // `key` of a `set` or `reset`, and every field of a `set-many` that is a
   // setting's key.
+  /**
+   * Lists every setting a request body names that a realm administrator may not
+   * write: the `key` of a `set` or `reset`, and every field of a `set-many`.
+   *
+   * @param body - the parsed body of a console or API write
+   * @returns the service-only keys it names
+   */
   serviceSettingsIn(body: any): string[] {
     const { log } = this.deps;
     const self = this;
@@ -413,6 +470,12 @@ class AdminScope {
   }
 
   // The action rule for a page, or null.
+  /**
+   * Answers the rule that refuses a page's service-wide actions.
+   *
+   * @param path - the console path
+   * @returns the page's action rule, or null when it has none
+   */
   actionRuleFor(path: string): ActionRule | null {
     const { log } = this.deps;
     log.debug("Entering AdminScope.actionRuleFor().");
@@ -430,6 +493,16 @@ class AdminScope {
   // reaches everything, in every realm, exactly as before #32. Nor is an
   // unauthenticated request: the gate has already sent that one to sign in.
   // -------------------------------------------------------------------------
+  /**
+   * Decides whether a request is refused to a realm administrator.
+   *
+   * A service authority and an unauthenticated request are never refused here.
+   * @param state - `gateStateFor()`'s answer for the request
+   * @param path - the console path, realm prefix stripped
+   * @param body - the parsed body of a write, or null for a read
+   * @param query - the query string
+   * @returns null when nothing refuses, or `{ code, reason, detail }`
+   */
   refusalFor(state: ScopeState | null | undefined, path: string, body?: any,
              query?: any): ScopeRefusal | null {
     const { log } = this.deps;
@@ -478,6 +551,14 @@ class AdminScope {
 
   // Whether a navigation row is drawn for this state. Only service pages are
   // hidden, and only from a realm authority.
+  /**
+   * Answers whether a navigation row is drawn: only service pages are hidden,
+   * and only from a realm authority.
+   *
+   * @param state - `gateStateFor()`'s answer for the request
+   * @param path - the page's console path
+   * @returns true when the row is drawn
+   */
   pageVisible(state: ScopeState | null | undefined, path: string): boolean {
     const { log } = this.deps;
     log.debug("Entering AdminScope.pageVisible().");
@@ -505,9 +586,23 @@ const slot = new InstanceSlot<AdminScope>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What a realm administrator may not reach: the one place the line between a
+ * realm's administration and the whole service's is drawn, for the console and
+ * `/admin-api` alike.
+ * @namespace
+ */
 export = {
   AdminScope: AdminScope,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: AdminScope): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   SERVICE_PAGES: AdminScope.SERVICE_PAGES,
   SERVICE_SETTING_PREFIXES: AdminScope.SERVICE_SETTING_PREFIXES,

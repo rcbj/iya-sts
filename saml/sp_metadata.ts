@@ -211,11 +211,22 @@ interface Freshness {
   why: string;
 }
 
+/**
+ * A service provider's own SAML metadata: parsing it, fetching it (from its URL
+ * or a Metadata Query responder), verifying it and consuming its
+ * SPSSODescriptor onto the application entry.
+ */
 class SpMetadata {
   // True only while a background consumption runs — `consume()` is
   // synchronous, so nothing else can observe it set.
   private quiet = false;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the helpers, settings, crypto, the application register, the
+   * federation outbound policy and the HTTP modules
+   */
   constructor(private readonly deps: SpMetadataDeps) {
     deps.helpers.log.debug("Entering SpMetadata.constructor().");
     deps.helpers.log.debug("Leaving SpMetadata.constructor().");
@@ -223,6 +234,11 @@ class SpMetadata {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): SpMetadataDeps {
     helpers.log.debug("Entering SpMetadata.defaultDeps().");
     helpers.log.debug("Leaving SpMetadata.defaultDeps().");
@@ -296,6 +312,17 @@ class SpMetadata {
   // signed with in this role. A document with no SAML 2.0 SPSSODescriptor is
   // not this kind of metadata and is refused.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses a metadata document's SPSSODescriptor. Answers rather than throws.
+   *
+   * An aggregate is read only for the one entity named in `wanted`; a document
+   * with no SAML 2.0 SPSSODescriptor is refused.
+   * @param xml - the metadata document
+   * @param wanted - the entityIDs to look for in an aggregate
+   * @returns `ok` with the entityID, endpoints, signing and encryption
+   * certificates, NameID formats, the two signing flags, validUntil,
+   * cacheDuration and whether it is signed; or `ok: false` and why
+   */
   parse(xml: string, wanted?: string[]): ParsedMetadata {
     const { log } = this.deps.helpers;
     const { DOMParser } = this.deps.xmldom;
@@ -524,6 +551,12 @@ class SpMetadata {
   // A year is 365 days and a month 30: metadata durations are hours and days
   // in practice, and the approximation only matters for a document that asks
   // to be cached for months.
+  /**
+   * Converts an xs:duration to milliseconds; a year is 365 days and a month 30.
+   *
+   * @param value - the duration
+   * @returns the milliseconds, or -1 when absent or unreadable
+   */
   durationMs(value) {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.durationMs().");
@@ -608,6 +641,12 @@ class SpMetadata {
   // want. It ACCEPTS a PEM too, so an operator who pasted one into
   // `samlEncryptionCertificate` is not told their certificate is invalid
   // because of its punctuation.
+  /**
+   * Converts a base64 DER certificate to a PEM; a PEM is accepted as it is.
+   *
+   * @param value - the certificate
+   * @returns the PEM, or '' when empty
+   */
   toPem(value) {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.toPem().");
@@ -634,6 +673,13 @@ class SpMetadata {
   // Is this actually a certificate? Called before anything is stored, so a
   // paste-o is refused at the door rather than at the next sign-in — where the
   // only symptom would be an assertion quietly going out in clear.
+  /**
+   * Answers what is wrong with a certificate XML Encryption would encrypt to,
+   * before anything is stored.
+   *
+   * @param value - the certificate, base64 DER or PEM
+   * @returns the problem as a sentence, or '' when there is none
+   */
   certificateProblem(value) {
     const { forge } = this.deps;
     const { log } = this.deps.helpers;
@@ -674,6 +720,13 @@ class SpMetadata {
   // Whether this URL may be dialled, as a sentence. The empty case is this
   // file's own words; everything else is federation_http.ts's rule, so the two
   // outbound requesters cannot disagree about what "in the clear" means.
+  /**
+   * Answers whether a metadata URL may be dialled, by the federation outbound
+   * policy.
+   *
+   * @param raw - the URL
+   * @returns the problem as a sentence, or '' when it may be dialled
+   */
   urlProblem(raw) {
     const { fedHttp } = this.deps;
     const { log } = this.deps.helpers;
@@ -692,6 +745,13 @@ class SpMetadata {
   // NEVER rejects, for federation_http.ts's reason: a rejected promise would
   // have to be caught at every call site, and the one added later would not be.
   // ---------------------------------------------------------------------------
+  /**
+   * Fetches one metadata document under the federation outbound policy, capped
+   * at `saml2.spMetadataMaxBytes`. Never rejects.
+   *
+   * @param url - the document's address
+   * @returns a promise of `{ ok, xml, why, status }`
+   */
   fetchMetadata(url: string): Promise<FetchAnswer> {
     const { fedHttp, http, https } = this.deps;
     const { log } = this.deps.helpers;
@@ -909,6 +969,15 @@ class SpMetadata {
   // the last good registration in place. An application that was working does
   // not stop working because a metadata server was down.
   // ---------------------------------------------------------------------------
+  /**
+   * Fetches the document an application's entry names and consumes it: the
+   * console button and `POST /admin-api/applications/refresh-metadata`.
+   *
+   * A failure writes nothing, so the last good registration stays in place.
+   * @param identifier - the application's identifier
+   * @param options - `quiet` to leave a failure unaudited
+   * @returns a promise of the consumption's result, or of a refusal
+   */
   refresh(identifier, options?) {
     const { applications } = this.deps;
     const { log } = this.deps.helpers;
@@ -975,6 +1044,14 @@ class SpMetadata {
   // (see `consume()`), and the way to register a service provider whose
   // metadata this service cannot reach.
   // ---------------------------------------------------------------------------
+  /**
+   * Consumes a metadata document an operator uploaded, as a refresh would.
+   *
+   * @param identifier - the application's identifier
+   * @param xml - the document
+   * @param actor - who uploaded it
+   * @returns the consumption's result, or a refusal
+   */
   upload(identifier, xml, actor?) {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.upload(). identifier=" + identifier);
@@ -1038,6 +1115,20 @@ class SpMetadata {
   // service provider's requests are refused, and past cacheDuration the
   // background refresher fetches the document again.
   // ---------------------------------------------------------------------------
+  /**
+   * Consumes a metadata document onto an application's entry: its endpoints
+   * become registered return addresses, its signing certificates what its
+   * requests are verified against, and its flags and formats are written.
+   *
+   * A signed document is verified where there is an anchor; a document for
+   * another entityID, an expired one, or one whose encryption certificate
+   * cannot be used is refused.
+   * @param identifier - the application's identifier
+   * @param xml - the document
+   * @param how - how it arrived, for the record
+   * @param actor - who asked
+   * @returns `ok` with what was written, or a refusal carrying its error code
+   */
   consume(identifier, xml, how, actor?): Record<string, any> {
     const { applications, stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
@@ -1276,6 +1367,14 @@ class SpMetadata {
   // that is not a certificate this service verifies with is left out here and
   // named by `anchorProblems()` on the page.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers the trust anchors for a metadata document: the entry's own
+   * certificate, then the realm's `saml2.metadataTrustAnchors`, base64 DER and
+   * deduplicated.
+   *
+   * @param fields - the application entry's fields
+   * @returns the anchors, leaving out any this service cannot verify with
+   */
   trustAnchorsFor(fields?) {
     const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
@@ -1298,6 +1397,11 @@ class SpMetadata {
   }
 
   // The realm's configured anchors as written, and what is wrong with each.
+  /**
+   * Answers the realm's configured trust anchors as written.
+   *
+   * @returns the configured values
+   */
   realmAnchorValues(): string[] {
     const { config } = this.deps;
     const { log } = this.deps.helpers;
@@ -1313,6 +1417,12 @@ class SpMetadata {
     return list;
   }
 
+  /**
+   * Answers what is wrong with each of the realm's configured trust anchors,
+   * for the console.
+   *
+   * @returns one sentence per unusable anchor
+   */
   anchorProblems(): string[] {
     const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
@@ -1367,6 +1477,13 @@ class SpMetadata {
   // and the entityID is the only part a request can influence, encoded so it
   // is one path segment of that operator's server. '' when unconfigured.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers the Metadata Query URL for an entityID: `saml2.mdqBaseUrl` with the
+   * entityID percent-encoded as one path segment.
+   *
+   * @param entityId - the entityID
+   * @returns the URL, or '' when unconfigured
+   */
   mdqUrlFor(entityId) {
     const { config } = this.deps;
     const { log } = this.deps.helpers;
@@ -1411,6 +1528,17 @@ class SpMetadata {
   // unsigned answer to a lookup an unauthenticated request started is
   // exactly what neither asks anybody to trust. An entry that ALREADY EXISTS
   // is refreshed from MDQ as before, in both modes: somebody registered it.
+  /**
+   * Imports one service provider from the Metadata Query responder by entityID,
+   * creating the entry only once the answer parses for that entity.
+   *
+   * Who started it decides what the answer may do: a request-started lookup in
+   * product never registers an entity nobody vouched for.
+   * @param entityId - the entityID
+   * @param options - `origin`: `operator` or `request` (the default)
+   * @returns a promise of the import's result, or of a refusal carrying its
+   * error code
+   */
   mdqImport(entityId, options?) {
     const { applications, config, mode } = this.deps;
     const { log } = this.deps.helpers;
@@ -1547,6 +1675,14 @@ class SpMetadata {
   // In PRODUCT with no realm trust anchor an unknown entityID is not queued
   // at all (#112, `STS-SAML-0080`, see mdqImport()): it is recorded as
   // refused and nothing is fetched.
+  /**
+   * Starts the asynchronous Metadata Query lookup an SSO request for an unknown
+   * service provider triggers, without waiting on it; one per entityID at a
+   * time, and a failed name not again until the refresh interval.
+   *
+   * @param entityId - the entityID
+   * @returns true when a lookup was queued
+   */
   queueMdqLookup(entityId) {
     const { applications, mode, realms } = this.deps;
     const { log } = this.deps.helpers;
@@ -1663,6 +1799,11 @@ class SpMetadata {
   }
 
   // The refused entityIDs of the ambient realm, newest first.
+  /**
+   * Lists the ambient realm's refused Metadata Query entityIDs, newest first.
+   *
+   * @returns the refusals
+   */
   mdqRefusalList(): Array<Record<string, any>> {
     const { realms } = this.deps;
     const { log } = this.deps.helpers;
@@ -1701,6 +1842,15 @@ class SpMetadata {
   // consumption and its validUntil, so it is fetched again before it
   // expires; with neither, it never goes stale. Nothing here dials anything.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers how current the consumed metadata is: `none`, `fresh`, `stale`
+   * (fetched again where it can be) or `expired` (the service provider's
+   * requests refused).
+   *
+   * @param fields - the application entry's fields
+   * @param now - the time to judge by; now when absent
+   * @returns the state, its times, whether it is refreshable, and why
+   */
   freshness(fields?, now?): Freshness {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.freshness().");
@@ -1778,6 +1928,11 @@ class SpMetadata {
   //   * `saml2.spMetadataRefresh` off stops it at the next tick.
   //   * The timer is unreferenced: it is never why a process stays up.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers the refresher's interval, `saml2.spMetadataRefreshIntervalS`.
+   *
+   * @returns the interval in milliseconds
+   */
   refreshIntervalMs() {
     const { config } = this.deps;
     const { log } = this.deps.helpers;
@@ -1792,6 +1947,12 @@ class SpMetadata {
   // it so that one node did; the job runs once for the cluster, and the claim
   // stays as the guard for a refresh asked for by hand at the same moment.
   // `server.js` still calls this, where the timer was started.
+  /**
+   * Registers the `saml2.sp-metadata-refresh` scheduler job, a cluster job that
+   * refreshes stale documents on the leader.
+   *
+   * @returns true when it registered the job, false when it already was
+   */
   startRefresher() {
     const { log } = this.deps.helpers;
     const self = this;
@@ -1825,6 +1986,9 @@ class SpMetadata {
 
   // Nothing to stop: the scheduler owns the job, and `scheduler.stop()` in
   // the shutdown stops every job at once. Kept for its callers.
+  /**
+   * Does nothing: the scheduler owns the job. Kept for its callers.
+   */
   stopRefresher() {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.stopRefresher().");
@@ -1833,6 +1997,12 @@ class SpMetadata {
 
   // ONE PASS over every realm. Resolves to `{ due, refreshed, failed,
   // skipped }` and never rejects.
+  /**
+   * Refreshes every stale service provider document in every realm, once. Never
+   * rejects.
+   *
+   * @returns a promise of `{ due, refreshed, failed, skipped }`
+   */
   sweepOnce(): Promise<Record<string, number>> {
     const { config, realms } = this.deps;
     const { log } = this.deps.helpers;
@@ -1973,6 +2143,12 @@ class SpMetadata {
 
   // What the refresher last found for one entity in the ambient realm, or
   // null when it has not tried.
+  /**
+   * Answers what the refresher last found for one entity in the ambient realm.
+   *
+   * @param identifier - the application's identifier
+   * @returns a copy of the state, or null when it has not tried
+   */
   refreshStatus(identifier) {
     const { realms } = this.deps;
     const { log } = this.deps.helpers;
@@ -1983,6 +2159,11 @@ class SpMetadata {
     return state ? Object.assign({}, state) : null;
   }
 
+  /**
+   * Answers whether the refresher job is registered and not switched off.
+   *
+   * @returns true when it runs
+   */
   refresherRunning(): boolean {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.refresherRunning().");
@@ -2059,9 +2240,22 @@ const slot = new InstanceSlot<SpMetadata>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * A service provider's own SAML metadata: parsing it, fetching it, and
+ * consuming it onto the application entry, and the background refresher.
+ * @namespace
+ */
 export = {
   SpMetadata: SpMetadata,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: SpMetadata): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   parse: slot.forward('parse'),
   toPem: slot.forward('toPem'),

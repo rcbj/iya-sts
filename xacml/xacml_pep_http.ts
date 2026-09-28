@@ -168,10 +168,18 @@ interface PepNotifierDeps {
 // A PEP that answers a nudge with more than this is not answering a nudge. The
 // expected reply is 204 with nothing in it; 16 KiB is generous for the error
 // object a broken one might send and is still a bound.
+/**
+ * The most of a PEP's reply to a nudge that is read: 16 KiB.
+ */
 const MAX_BODY_BYTES = 16 * 1024;
 
 // THE OUTBOUND TRANSPORT POLICY, as `common/outbound_tls.ts` takes it (#171).
 // No plain http in product: nothing about a nudge names loopback.
+/**
+ * The outbound transport policy for a nudge, as `common/outbound_tls.ts`
+ * takes it: the three `xacml.pepNotify*` transport settings and the codes
+ * for plain http refused and verification skipping ignored.
+ */
 const NOTIFY_TRANSPORT = {
   what: 'an XACML PEP nudge',
   allowHttpKey: 'xacml.pepNotifyAllowHttp',
@@ -182,15 +190,36 @@ const NOTIFY_TRANSPORT = {
   skipIgnoredCode: 'STS-XACML-0074'
 };
 
+/**
+ * Sends the "the repository changed, pull now" nudge to a remote PEP's
+ * notify URL, within four bounds: a switch, a host allowlist, https with the
+ * certificate verified, and no redirects with a capped body and a timeout.
+ *
+ * The nudge is never the mechanism: a PEP pulls on its own interval, so a
+ * failed nudge costs one polling interval and is recorded, never retried.
+ */
 class PepNotifier {
+  /**
+   * The most of a PEP's reply to a nudge that is read: 16 KiB.
+   */
   static readonly MAX_BODY_BYTES = MAX_BODY_BYTES;
 
+  /**
+   * Builds the notifier over the given dependencies.
+   * @param deps - the settings, logger, audit log, node's two transports and
+   * the User-Agent string
+   */
   constructor(private readonly deps: PepNotifierDeps) {
     deps.log.debug('Entering PepNotifier.constructor().');
     deps.log.debug('Leaving PepNotifier.constructor().');
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, for the default
+   * instance.
+   * @returns the notifier's dependencies
+   */
   static defaultDeps(): PepNotifierDeps {
     helpers.log.debug("Entering PepNotifier.defaultDeps().");
     helpers.log.debug("Leaving PepNotifier.defaultDeps().");
@@ -204,6 +233,10 @@ class PepNotifier {
     };
   }
 
+  /**
+   * Tells whether nudges are sent at all (`xacml.pepNotify`).
+   * @returns true when `xacml.pepNotify` is on
+   */
   notifyAllowed(): boolean {
     const { log, config } = this.deps;
     log.debug('Entering PepNotifier.notifyAllowed().');
@@ -213,6 +246,11 @@ class PepNotifier {
   }
 
   // The three transport settings as they are IN FORCE in this realm (#171).
+  /**
+   * Describes the three transport settings as they are in force in this
+   * realm (#171).
+   * @returns `common/outbound_tls.ts`'s description of the nudge's policy
+   */
   transportSettings(): ReturnType<typeof OutboundTls.describe> {
     const { log } = this.deps;
     log.debug('Entering PepNotifier.transportSettings().');
@@ -220,6 +258,10 @@ class PepNotifier {
     return OutboundTls.describe(NOTIFY_TRANSPORT);
   }
 
+  /**
+   * Returns the nudge's timeout (`xacml.pepNotifyTimeoutMs`).
+   * @returns the timeout in milliseconds
+   */
   timeoutMs(): number {
     const { log, config } = this.deps;
     log.debug('Entering PepNotifier.timeoutMs().');
@@ -230,6 +272,11 @@ class PepNotifier {
 
   // The allowlist as lower-case host names. Empty means ANY, which is the
   // default and the one deliberate looseness here — see bound 2.
+  /**
+   * Returns the host allowlist (`xacml.pepNotifyAllowedHosts`) as lower-case
+   * host names; empty means any host.
+   * @returns the allowed host names
+   */
   allowedHosts(): string[] {
     const { log, config } = this.deps;
     log.debug('Entering PepNotifier.allowedHosts().');
@@ -249,6 +296,11 @@ class PepNotifier {
   // so that the console and `/admin-api` can show the refusal a PEP's notify
   // URL WOULD get without anything being dialled to find out.
   // -------------------------------------------------------------------------
+  /**
+   * Says why a notify URL would be refused, without dialling anything.
+   * @param raw - the notify URL
+   * @returns the reason, or null when the URL is fine
+   */
   urlProblem(raw: unknown): string | null {
     const { log } = this.deps;
     log.debug('Entering PepNotifier.urlProblem().');
@@ -258,6 +310,15 @@ class PepNotifier {
 
   // The same answer with `STS-XACML-0073` when the refusal is plain http in
   // product mode, and '' for every other (whose code is STS-XACML-0066).
+  /**
+   * Says why a notify URL would be refused, with the error code when the
+   * refusal is plain http in product mode.
+   *
+   * An absent URL is refused with a note that it is not a fault.
+   * @param raw - the notify URL
+   * @returns `{ why, errorCode }`: `why` '' when fine, `errorCode`
+   * `STS-XACML-0073` for plain http refused and '' otherwise
+   */
   urlVerdict(raw: unknown): { why: string; errorCode: string } {
     const { log } = this.deps;
     log.debug('Entering PepNotifier.urlVerdict(). raw=' + raw);
@@ -335,6 +396,17 @@ class PepNotifier {
     log.debug("Leaving PepNotifier.recordUndelivered().");
   }
 
+  /**
+   * Posts the three-member nudge (event, time and the PDP's issuer) to one
+   * notify URL.
+   *
+   * It resolves and never rejects; a nudge refused before dialling is
+   * recorded on the audit log.
+   * @param url - the PEP's notify URL
+   * @param issuer - the PDP's identifier, carried as `pdp` in the body
+   * @param options - reserved, unused
+   * @returns a promise of `{ ok, status, why }`
+   */
   nudge(url: unknown, issuer?: unknown,
         options?: object): Promise<NudgeResult> {
     const self = this;
@@ -502,6 +574,13 @@ class PepNotifier {
   // console form that saved a policy has finished its work whether or not four
   // PEPs answered. The result of each is recorded on that PEP's row.
   // -------------------------------------------------------------------------
+  /**
+   * Nudges every given PEP registration, concurrently.
+   * @param rows - the PEP registrations, each with a `name` and `notifyUrl`
+   * @param issuer - the PDP's identifier, carried in each body
+   * @param record - called with each PEP's name and the result's `why`
+   * @returns a promise of `{ name, ok, status, why }` per PEP
+   */
   nudgeAll(rows: PepRow[] | null | undefined, issuer?: unknown,
            record?: (name: string, why: string) => void):
       Promise<NudgeOutcome[]> {
@@ -541,6 +620,14 @@ const slot = new InstanceSlot<PepNotifier>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The nudge a remote XACML PEP is sent when the policy repository changes:
+ * the third outbound request in this repository, and the weakest case.
+ *
+ * A library: it registers no route. The functions forward to the instance
+ * the composition root installs.
+ * @namespace
+ */
 export = {
   PepNotifier: PepNotifier,
   installInstance: (instance: PepNotifier): void => slot.install(instance),

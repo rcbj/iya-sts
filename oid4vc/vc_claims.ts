@@ -500,15 +500,43 @@ const LOCALES = ['en-US', 'en-GB', 'sv-SE', 'ja-JP', 'pt-BR', 'nl-NL'];
 // RFC 2606, so an invented address cannot be somebody's real mailbox.
 const MAIL_DOMAINS = ['example.com', 'example.org', 'example.net'];
 
+/**
+ * What an issued credential says about a person, and where each fact comes
+ * from: the catalogue of attributes, the per-realm selection `/admin/vc` sets,
+ * and the claims, metadata and claims paths built from it.
+ *
+ * A library that registers no route and cannot join a cycle.
+ */
 class VcClaims {
+  /**
+   * The catalogue: one row per attribute a credential may carry, with its
+   * claim, LDAP attribute, schema and how a value is found or invented.
+   */
   static readonly VC_ATTRIBUTES = VC_ATTRIBUTES;
+  /**
+   * The canonical spelling of each catalogue attribute, by its lower-cased
+   * name, which the directory merges into its own table.
+   */
   static readonly CANONICAL_NAMES = CANONICAL_NAMES;
+  /**
+   * The attributes a credential carries until `/admin/vc` changes them,
+   * canonically spelled.
+   */
   static readonly DEFAULT_SELECTION = DEFAULT_SELECTION;
+  /**
+   * The catalogue read as what a person here has: every row but `uid`, which
+   * `/admin/users/new` draws and `createUser()` checks against.
+   */
   static readonly PERSON_FIELDS = PERSON_FIELDS;
 
   // The directory's hooks, or null — see setDirectory().
   private directory: DirectoryHooks | null = null;
 
+  /**
+   * Builds the claim catalogue from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcClaimsDeps) {
     deps.log.debug("Entering VcClaims.constructor().");
     deps.log.debug("Leaving VcClaims.constructor().");
@@ -516,6 +544,11 @@ class VcClaims {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcClaimsDeps {
     helpers.log.debug("Entering VcClaims.defaultDeps().");
     helpers.log.debug("Leaving VcClaims.defaultDeps().");
@@ -532,6 +565,11 @@ class VcClaims {
   // COPY of the array — the rows themselves are shared, because they are
   // read-only everywhere — so that a caller sorting or splicing the list cannot
   // reorder the catalogue for everybody else.
+  /**
+   * Returns a copy of `PERSON_FIELDS`, in catalogue order.
+   *
+   * @returns the rows
+   */
   personFields() {
     const { log } = this.deps;
     log.debug("Entering VcClaims.personFields().");
@@ -545,6 +583,13 @@ class VcClaims {
   // caller sending `userPassword` or `oauthClientSecret` on a create form is
   // refused because those are not on it rather than because somebody remembered
   // to name them.
+  /**
+   * Returns the row for one attribute name, in any case: the whole of the "may
+   * a create write this?" decision.
+   *
+   * @param name - the attribute name
+   * @returns the row, or null
+   */
   personField(name: unknown) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.personField().");
@@ -585,6 +630,11 @@ class VcClaims {
   // Disclosures and of the metadata's claims array), and a claims list that
   // reordered itself because somebody unticked and reticked a box would look
   // like a different credential to anything diffing them.
+  /**
+   * Returns the selected rows, in catalogue order.
+   *
+   * @returns the rows
+   */
   selectedRows() {
     const { log, state } = this.deps;
     log.debug("Entering VcClaims.selectedRows().");
@@ -594,6 +644,12 @@ class VcClaims {
     });
   }
 
+  /**
+   * Says whether an attribute is selected.
+   *
+   * @param ldapName - the attribute name, in any case
+   * @returns true when it is
+   */
   isSelected(ldapName: unknown) {
     const { log, state } = this.deps;
     log.debug("Entering VcClaims.isSelected().");
@@ -601,6 +657,11 @@ class VcClaims {
     return state.selection.indexOf(String(ldapName || '').toLowerCase()) >= 0;
   }
 
+  /**
+   * Returns the selected attributes' names, in catalogue order.
+   *
+   * @returns the names
+   */
   selectedNames() {
     const { log } = this.deps;
     log.debug("Entering VcClaims.selectedNames().");
@@ -616,6 +677,14 @@ class VcClaims {
   // a fixed list, so an unknown name means either a hand-written request (which
   // deserves an answer) or a rename here that left a caller behind. Both are
   // worth a message.
+  /**
+   * Installs a whole selection at once; an unknown attribute is an error.
+   * Errors are returned, not thrown.
+   *
+   * @param names - the attribute names
+   * @returns `{ ok: true, selected, added, removed }`, or `{ ok: false, errors
+   *   }`
+   */
   setSelection(names: unknown[]) {
     const { log, state } = this.deps;
     log.debug("Entering VcClaims.setSelection(). " + (names || []).length +
@@ -660,6 +729,11 @@ class VcClaims {
              removed: removed };
   }
 
+  /**
+   * Resets the selection to `DEFAULT_SELECTION`.
+   *
+   * @returns `setSelection()`'s result
+   */
   resetSelection() {
     const { log } = this.deps;
     log.debug("Entering VcClaims.resetSelection().");
@@ -745,6 +819,13 @@ class VcClaims {
   // An invented `uid` would disagree with the DN the entry sits at
   // (`uid=<name>`, which autoCreateUser() builds from the same string), and two
   // names for one object is the one kind of garbage this file must not produce.
+  /**
+   * Invents one consistent person from a stream seeded by the username; the
+   * username itself is not invented.
+   *
+   * @param name - the name the person authenticated as
+   * @returns the persona
+   */
   personaFor(name: unknown) {
     const { log, stats } = this.deps;
     log.debug("Entering VcClaims.personaFor(). name=" + name);
@@ -833,6 +914,14 @@ class VcClaims {
   // `valueFor()` below would have left that door open one step earlier.
   // `mode.inventsClaimValues()` is the question, and the sweep then reports
   // that it had nothing to fill rather than filling it.
+  /**
+   * Returns the values the selected attributes would take for a person, keyed
+   * by lower-cased attribute name. Nothing in product mode, since what this
+   * returns is written onto directory entries.
+   *
+   * @param name - the username
+   * @returns the values
+   */
   generatedFor(name: unknown) {
     const { log, mode } = this.deps;
     log.debug("Entering VcClaims.generatedFor(). name=" + name);
@@ -883,6 +972,12 @@ class VcClaims {
   // wallet a credential, and a store it consults is not allowed to prevent
   // that.
   // ---------------------------------------------------------------------------
+  /**
+   * Fills the directory slot: `attributesFor(key)` and `populate()`, filled by
+   * `ldap_server.js` at its require time.
+   *
+   * @param hooks - the two functions, or null to empty the slot
+   */
   setDirectory(hooks: DirectoryHooks | null) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.setDirectory().");
@@ -923,6 +1018,12 @@ class VcClaims {
   // it has to be able to say what happened: "nothing to do" and "the directory
   // is not loaded" look identical from the outside and are entirely different
   // answers.
+  /**
+   * Fills in what the current selection needs on every person already in the
+   * directory, and says what happened.
+   *
+   * @returns `{ ok, loaded, examined, changed, values, ... }`
+   */
   populateDirectory() {
     const { log, errorCodes } = this.deps;
     log.debug("Entering VcClaims.populateDirectory().");
@@ -1106,6 +1207,13 @@ class VcClaims {
   // value somebody typed. Seconds since the epoch, or null when there is no
   // entry or no stamp. The conformance suite's oidcc-scope-profile reported
   // it missing.
+  /**
+   * Returns OIDC Core's `updated_at` for a person: when their entry last
+   * changed, from its `modifyTimestamp`.
+   *
+   * @param name - the username
+   * @returns seconds since the epoch, or null
+   */
   updatedAtOf(name: unknown): number | null {
     const { log } = this.deps;
     log.debug("Entering VcClaims.updatedAtOf().");
@@ -1125,6 +1233,15 @@ class VcClaims {
     return Math.floor(at / 1000);
   }
 
+  /**
+   * Builds the subject claims for one person as the credential builders want
+   * them — nested, with no `sub` — and a flat report of where each came from.
+   *
+   * @param name - the username
+   * @param tokenClaims - the access token's claims
+   * @param rows - the selected rows to build, or all of them
+   * @returns `{ claims, report, entryFound }`
+   */
   subjectClaimsFor(name: unknown, tokenClaims?: any, rows?: CatalogueRow[]) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.subjectClaimsFor(). name=" + name +
@@ -1172,6 +1289,14 @@ class VcClaims {
   // whose claims are at the top level of the payload, and ['credentialSubject']
   // for the two W3C formats.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the issuer metadata's `claims` from the selection the credential is
+   * built from.
+   *
+   * @param prefix - where the claims sit in the format (`credentialSubject` for
+   *   the W3C formats)
+   * @returns the claims description objects
+   */
   metadataClaims(prefix?: string[]) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.metadataClaims(). prefix=" +
@@ -1189,6 +1314,12 @@ class VcClaims {
   // defines, and FLAT — the context defines `streetAddress` and `locality` as
   // terms of their own, not as members of an `address` object, so that is where
   // they go.
+  /**
+   * Builds the `ldp_vc` metadata's `claims`: only rows whose term the vendored
+   * context defines, flat.
+   *
+   * @returns the claims description objects
+   */
   ldpMetadataClaims() {
     const { log } = this.deps;
     log.debug("Entering VcClaims.ldpMetadataClaims().");
@@ -1221,6 +1352,13 @@ class VcClaims {
   // formats keep them under credentialSubject, and ldp_vc is additionally FLAT
   // and limited to the terms the vendored context defines.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the claims this issuer advertises for a format, the vocabulary a
+   * wallet requests a subset in.
+   *
+   * @param format - the credential format
+   * @returns the claims description objects
+   */
   advertisedClaims(format: string) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.advertisedClaims(). format=" + format);
@@ -1238,6 +1376,13 @@ class VcClaims {
   // no term for it). The mirror image of advertisedClaims(), and the two must
   // agree: a row whose path here is absent from the metadata would be
   // requestable and never issued.
+  /**
+   * Returns where one row's claim sits in a credential of a format.
+   *
+   * @param row - the catalogue row
+   * @param format - the credential format
+   * @returns the claims path, or null when the format cannot carry it
+   */
   pathOfRow(row: CatalogueRow, format: string) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.pathOfRow(). " + row.ldap);
@@ -1254,6 +1399,12 @@ class VcClaims {
   // A claims path pointer as one comparable string. JSON rather than a join,
   // because a pointer may hold nulls and integers as well as strings (Appendix
   // B) and "a.0.b" would not tell those apart from the strings "0" and "b".
+  /**
+   * Returns a claims path pointer as one comparable string, its JSON.
+   *
+   * @param path - the claims path pointer
+   * @returns the key
+   */
   pathKey(path: unknown) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.pathKey().");
@@ -1265,6 +1416,14 @@ class VcClaims {
   // than request order: the order claims appear in a credential is this
   // issuer's, and section A.3 makes request order a display concern of the
   // wallet's.
+  /**
+   * Returns the selected rows a set of requested paths names, in catalogue
+   * order.
+   *
+   * @param paths - the requested claims paths
+   * @param format - the credential format
+   * @returns the rows
+   */
   rowsForPaths(paths: unknown[], format: string) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.rowsForPaths(). " + (paths || []).length +
@@ -1283,6 +1442,14 @@ class VcClaims {
   // Which of the requested paths this issuer does not advertise for this
   // format. Returned rather than thrown: the caller is the authorization
   // endpoint, which has to name all of them in one error_description.
+  /**
+   * Returns the requested paths this issuer does not advertise for a format, so
+   * the authorization endpoint can name them all.
+   *
+   * @param paths - the requested claims paths
+   * @param format - the credential format
+   * @returns the unknown paths
+   */
   unknownPaths(paths: unknown[], format: string) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.unknownPaths(). format=" + format);
@@ -1301,6 +1468,13 @@ class VcClaims {
   // any term its loaded context turns out not to define — see the LDP note
   // above; the list here is derived from that file by hand and the caller
   // checks it against the file itself.
+  /**
+   * Reads the `ldp_vc` `credentialSubject` members out of the claims
+   * `subjectClaimsFor()` built.
+   *
+   * @param claims - the subject claims
+   * @returns term to value
+   */
   ldpSubjectFrom(claims: any) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.ldpSubjectFrom().");
@@ -1328,6 +1502,11 @@ class VcClaims {
   // states them; so does this function's one caller in the metadata, because a
   // wallet author comparing the three configurations will notice the difference
   // and should not have to guess whether it is deliberate.
+  /**
+   * Returns the selected attributes an `ldp_vc` credential cannot carry.
+   *
+   * @returns the attribute names
+   */
   ldpOmitted() {
     const { log } = this.deps;
     log.debug("Entering VcClaims.ldpOmitted().");
@@ -1355,9 +1534,25 @@ const slot = new InstanceSlot<VcClaims>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What an issued credential says about a person, and where each fact comes
+ * from.
+ *
+ * @namespace
+ */
 export = {
   VcClaims: VcClaims,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcClaims): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   VC_ATTRIBUTES: VcClaims.VC_ATTRIBUTES,
   CANONICAL_NAMES: VcClaims.CANONICAL_NAMES,

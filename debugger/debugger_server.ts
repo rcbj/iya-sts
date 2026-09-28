@@ -133,6 +133,10 @@ const API_PREFIX = '/api';
 // The literal the debugger's embedded build puts where this service's own
 // base URL goes (`client/src/env/embedded.js` over there), replaced when a
 // page or a bundle is served.
+/**
+ * The literal the debugger's embedded build carries where this service's
+ * base URL goes, replaced in served HTML and JavaScript.
+ */
 const STS_URL_PLACEHOLDER = '__STS_EMBED_STS_URL__';
 
 // ---------------------------------------------------------------------------
@@ -206,7 +210,21 @@ interface DebuggerServerDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The embedded identity protocol debugger's listener, sign-in and gate.
+ *
+ * It serves the debugger's static UI and forwards `/api` to the api child
+ * process on an express app and port of its own. Every request but the
+ * landing paths needs an access token carrying the debugger permission,
+ * which only a console administrator is issued.
+ */
 class DebuggerServer {
+  /**
+   * Builds the server over the given modules.
+   *
+   * @param deps - the node and express modules and the service modules the
+   *   listener reads
+   */
   constructor(private readonly deps: DebuggerServerDeps) {
     deps.log.debug("Entering DebuggerServer.constructor().");
     deps.log.debug("Leaving DebuggerServer.constructor().");
@@ -214,6 +232,11 @@ class DebuggerServer {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the load-time default instance is built from.
+   *
+   * @returns the real modules
+   */
   static defaultDeps(): DebuggerServerDeps {
     helpers.log.debug("Entering DebuggerServer.defaultDeps().");
     helpers.log.debug("Leaving DebuggerServer.defaultDeps().");
@@ -248,12 +271,23 @@ class DebuggerServer {
   // What loading this module did with its instance before #50's R2, now
   // done by the slot for whichever instance is installed: the listener's
   // own app (below) gets its routes.
+  /**
+   * Registers the installed instance's routes on the listener's own app.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: DebuggerServer): void {
     helpers.log.debug("Entering DebuggerServer.wire().");
     instance.registerRoutes(app);
     helpers.log.debug("Leaving DebuggerServer.wire().");
   }
 
+  /**
+   * Escapes text for HTML.
+   *
+   * @param text - the text; null and undefined become empty
+   * @returns the escaped text
+   */
   esc(text) {
     const { log } = this.deps;
     log.debug("Entering DebuggerServer.esc().");
@@ -263,6 +297,12 @@ class DebuggerServer {
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  /**
+   * Returns the directory of the debugger's static UI,
+   * `debugger.uiDirectory`, resolved against the package root.
+   *
+   * @returns the absolute path
+   */
   uiDirectory() {
     const { log, config, path } = this.deps;
     log.debug("Entering DebuggerServer.uiDirectory().");
@@ -271,6 +311,11 @@ class DebuggerServer {
     return path.isAbsolute(raw) ? raw : path.join(PACKAGE_ROOT, raw);
   }
 
+  /**
+   * Returns the listener's scheme, https when `global.https` is set.
+   *
+   * @returns `https` or `http`
+   */
   scheme() {
     const { log, config } = this.deps;
     log.debug("Entering DebuggerServer.scheme().");
@@ -280,6 +325,13 @@ class DebuggerServer {
 
   // The Host a request arrived with, refused when it is not a plain authority —
   // it goes into a redirect and into a page, so it may not carry anything else.
+  /**
+   * Returns the request's Host header when it is a plain authority, and
+   * `localhost:<debugger.port>` otherwise.
+   *
+   * @param req - the express request
+   * @returns the host and optional port
+   */
   hostHeaderOf(req) {
     const { log, config } = this.deps;
     log.debug("Entering DebuggerServer.hostHeaderOf().");
@@ -294,6 +346,13 @@ class DebuggerServer {
   }
 
   // The debugger's own origin as the browser reached it, or the pinned one.
+  /**
+   * Returns the debugger's own origin: `debugger.publicBaseUrl` when set,
+   * otherwise as the browser reached it.
+   *
+   * @param req - the express request
+   * @returns the base URL, with no trailing slash
+   */
   debuggerBaseOf(req) {
     const { log, config } = this.deps;
     log.debug("Entering DebuggerServer.debuggerBaseOf().");
@@ -308,6 +367,13 @@ class DebuggerServer {
   // on the main port — which is what makes the sign-on session cookie the
   // browser gets there one this listener is also sent (a cookie is scoped to a
   // host and not to a port).
+  /**
+   * Returns the authorization server's base for a request to the debugger:
+   * the pinned public base URL, or the same host on the main port.
+   *
+   * @param req - the express request
+   * @returns the base URL
+   */
   authorizationBaseOf(req) {
     const { log, helpers, PORT } = this.deps;
     log.debug("Entering DebuggerServer.authorizationBaseOf().");
@@ -321,6 +387,13 @@ class DebuggerServer {
     return this.scheme() + '://' + host + ':' + PORT;
   }
 
+  /**
+   * Says whether a refusal should be answered in JSON: always under `/api`,
+   * and otherwise when the client accepts JSON and not HTML.
+   *
+   * @param req - the express request
+   * @returns true for JSON
+   */
   wantsJson(req) {
     const { log } = this.deps;
     log.debug("Entering DebuggerServer.wantsJson().");
@@ -335,6 +408,14 @@ class DebuggerServer {
 
   // A page of this surface's own — the account page, a refusal — in plain
   // markup with no script, on the debugger's origin.
+  /**
+   * Sends one of this surface's own script-free pages, `no-store`.
+   *
+   * @param res - the express response
+   * @param status - the HTTP status
+   * @param title - the page title, escaped here
+   * @param inner - the body, as HTML
+   */
   sendPage(res, status, title, inner) {
     const { log } = this.deps;
     log.debug("Entering DebuggerServer.sendPage().");
@@ -355,6 +436,17 @@ class DebuggerServer {
     log.debug("Leaving DebuggerServer.sendPage().");
   }
 
+  /**
+   * Answers a refusal, marked with its error code, as JSON or as a page.
+   *
+   * @param req - the express request
+   * @param res - the express response
+   * @param status - the HTTP status
+   * @param code - the STS error code to record
+   * @param error - the OAuth-style error value
+   * @param why - the sentence for the caller
+   * @param challenge - optional; a WWW-Authenticate value
+   */
   // error-code: none — the definition of this helper, not a call to it
   refuse(req, res, status, code, error, why, challenge?) {
     const { log, errorCodes } = this.deps;
@@ -390,6 +482,19 @@ class DebuggerServer {
   // on a request it was not part of, and requiring it to would turn the two new
   // settings into "the debugger's sign-in stops working", which is not what
   // either of them says. `opts.scheme` is how a presented one was sent.
+  /**
+   * Verifies an access token for the debugger in RFC 9068 section 4's order,
+   * then its sender constraints, the permission and the subject.
+   *
+   * The signature is checked against the default realm's keys, and the
+   * subject must still be a console administrator.
+   * @param token - the access token
+   * @param req - the express request
+   * @param opts - optional; `presented` is true when the token came on this
+   *   request's Authorization header, and `scheme` says how it was sent
+   * @returns `{ ok: true, claims, username }` or `{ ok: false, status, code,
+   *   error, why }`
+   */
   verifyAccessToken(token, req, opts?) {
     const { log, realms, helpers, stsCrypto, jwtAccessToken, access, mtls, dpop,
             senderConstraints } = this.deps;
@@ -556,6 +661,12 @@ class DebuggerServer {
   // DPoP-bound token sent the way RFC 9449 says to send it counted as no token
   // at all here, and the client doing the stricter thing got the least helpful
   // answer.
+  /**
+   * Returns the access token on a request's Authorization header.
+   *
+   * @param req - the express request
+   * @returns the token, or an empty string
+   */
   bearerOf(req) {
     const { log } = this.deps;
     log.debug("Entering DebuggerServer.bearerOf().");
@@ -563,6 +674,12 @@ class DebuggerServer {
     return this.presentedTokenOf(req).token;
   }
 
+  /**
+   * Reads a Bearer or DPoP access token from the Authorization header.
+   *
+   * @param req - the express request
+   * @returns `{ token, scheme }`, both empty when none is presented
+   */
   presentedTokenOf(req) {
     const { log } = this.deps;
     log.debug("Entering DebuggerServer.presentedTokenOf().");
@@ -577,6 +694,13 @@ class DebuggerServer {
     return { token: match[2], scheme: match[1].toLowerCase() };
   }
 
+  /**
+   * Says whether a request is to one of the landing paths a flow the
+   * debugger started returns to, which the gate lets through.
+   *
+   * @param req - the express request
+   * @returns true for a landing path and method
+   */
   isLanding(req) {
     const { log } = this.deps;
     log.debug("Entering DebuggerServer.isLanding().");
@@ -603,6 +727,13 @@ class DebuggerServer {
   // 4.1.1 and 4.10), so it cannot be an open redirector. 303 for both methods.
   // A form_post response is handed on in the FRAGMENT, as the original does.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns where the OAuth 2.0 landing sends the browser, built from this
+   * listener's own base and nothing read from the request.
+   *
+   * @param req - the express request
+   * @returns the URL of the debugger's OAuth page
+   */
   landingTarget(req) {
     const { log } = this.deps;
     log.debug("Entering DebuggerServer.landingTarget().");
@@ -613,6 +744,12 @@ class DebuggerServer {
   // ---------------------------------------------------------------------------
   // THIS SURFACE'S OWN ACCOUNT PAGE AND SIGN-OUT.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the sign-out form, with its CSRF field.
+   *
+   * @param session - the relying-party session, or null
+   * @returns the HTML form
+   */
   signOutForm(session) {
     const { log, websecurity } = this.deps;
     log.debug("Entering DebuggerServer.signOutForm().");
@@ -626,6 +763,12 @@ class DebuggerServer {
   // the one it was started with — see `debugger_api_process.ts`'s
   // updateAnchor(). A replacement answers this call with the not-ready 502
   // below rather than forwarding it to a child that is exiting.
+  /**
+   * Hands the api child the trust anchor this service presents now, if it
+   * changed, at most once every few seconds.
+   *
+   * @returns true when the child is being replaced
+   */
   checkAnchor() {
     const { log, config, tlsServer, apiProcess } = this.deps;
     log.debug("Entering DebuggerServer.checkAnchor().");
@@ -649,6 +792,15 @@ class DebuggerServer {
     return apiProcess.updateAnchor(pem);
   }
 
+  /**
+   * Forwards an `/api` request to the api child over its unix socket.
+   *
+   * Hop-by-hop headers, cookies and Authorization are not forwarded; the
+   * body is bounded by `debugger.maxRequestBytes` and the call by
+   * `debugger.proxyTimeoutS`. A child that is not ready is answered 502.
+   * @param req - the express request
+   * @param res - the express response
+   */
   forward(req, res) {
     const { log, apiProcess, config, http, errorCodes } = this.deps;
     const self = this;
@@ -753,6 +905,15 @@ class DebuggerServer {
     log.debug("Leaving DebuggerServer.forward().");
   }
 
+  /**
+   * Returns a static HTML or JavaScript file with the placeholder replaced
+   * by this service's URL, cached by file, modification time and URL.
+   *
+   * @param file - the file path
+   * @param stat - the file's stat
+   * @param stsUrl - the value for the placeholder
+   * @returns the text
+   */
   servedText(file, stat, stsUrl) {
     const { log, fs } = this.deps;
     log.debug("Entering DebuggerServer.servedText().");
@@ -778,6 +939,16 @@ class DebuggerServer {
   // binding a port can fail and a require that throws takes the service down.
   // A failure is RECORDED and shown on /admin/debugger.
   // ===========================================================================
+  /**
+   * Binds the debugger's listener and then starts the api child; called from
+   * server.js's listen(), never at require time.
+   *
+   * When the debugger is not embedded or not installed nothing is bound and
+   * the reason is recorded. A failure to bind is recorded and rejects
+   * `whenReady`.
+   * @returns `{ whenReady, server? }`, where whenReady resolves to the bound
+   *   port
+   */
   listen() {
     const { log, mode, config, fs, path, apiProcess, errorCodes, https,
             tlsServer, http, proxyProtocol, helpers } = this.deps;
@@ -865,6 +1036,11 @@ class DebuggerServer {
     return { whenReady: whenReady, server: server };
   }
 
+  /**
+   * Stops the api child and closes the listener.
+   *
+   * @returns a promise settled when both have gone
+   */
   close() {
     const { log, apiProcess } = this.deps;
     log.debug("Entering DebuggerServer.close().");
@@ -889,6 +1065,12 @@ class DebuggerServer {
   }
 
   // What `/admin/debugger` and `GET /admin-api/debugger` draw.
+  /**
+   * Reports what the listener and the api process are doing, for
+   * `/admin/debugger` and `GET /admin-api/debugger`.
+   *
+   * @returns the status
+   */
   status(): Record<string, any> {
     const { log, mode, config, access, apiProcess } = this.deps;
     log.debug("Entering DebuggerServer.status().");
@@ -918,6 +1100,13 @@ class DebuggerServer {
   // the listener's own app when the instance is installed (standalone, at
   // load, at the point the first of them used to be registered), so the
   // route order is unchanged (rule 1).
+  /**
+   * Registers the listener's middleware and routes: the default realm, the
+   * DPoP reservation, the gate, the sign-in and sign-out, the `/api` forward
+   * and the static UI.
+   *
+   * @param app - the listener's own express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, realms, dpop, authn, oidcRp, errorCodes, express, access,
             apiProcess, websecurity, config, tlsServer, path, fs } = this.deps;
@@ -1337,6 +1526,9 @@ const slot = new InstanceSlot<DebuggerServer>(
 // ===========================================================================
 // THE APP.
 // ===========================================================================
+/**
+ * The debugger listener's own express app, not the shared one.
+ */
 const app = express();
 
 // The routes go on it in `DebuggerServer.wire()`, when the instance is
@@ -1411,9 +1603,19 @@ const substitutedCount = cacheRegistry.register({
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The embedded identity protocol debugger: its listener, its sign-in and its
+ * gate.
+ *
+ * The functions forward to the DebuggerServer instance the composition root
+ * installs.
+ * @namespace
+ */
 export = {
   DebuggerServer: DebuggerServer,
+  /** Installs the instance the composition root built. */
   installInstance: (instance: DebuggerServer): void => slot.install(instance),
+  /** Says where the installed instance came from. */
   instanceOrigin: (): string => slot.origin(),
   listen: slot.forward('listen'),
   close: slot.forward('close'),

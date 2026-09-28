@@ -21,10 +21,12 @@
 #             measures as a child process in there, because V8 writes coverage
 #             from inside the process being measured and a service container
 #             next door can never be under the report.
-#   conformance  STS_TEST_CONFORMANCE_MODES=memory ./run-tests.sh
-#             --modes=memory --only=conformance — the OpenID Foundation
+#   openid-conformance  STS_TEST_CONFORMANCE_MODES=memory ./run-tests.sh
+#             --modes=memory --conformance-only — the OpenID Foundation
 #             conformance suite's plans (#176, #187), which the `tests` job
-#             leaves out because they take over two hours.
+#             leaves out because they take over two hours. Only those: every
+#             other third-party suite (the SAML peers, Samba, Heimdal,
+#             tlsfuzzer, the W3C and SCIM suites) runs in `tests`.
 #   cluster   ./run-tests.sh --modes=cluster — the third mode of
 #             tests/tools/modes.sh, which the `tests` job does not name: two
 #             production nodes (product mode, request workers) active-active
@@ -79,17 +81,54 @@ on:
 
 permissions:
   contents: read
-  # The private test corpora image on ghcr.io (#253).
-  packages: read
+  # The private test corpora image (#253) and the private image mirror
+  # (2026-09-27) are READ from ghcr.io, and the images a run built are pushed
+  # there, so `write`. On a pull request from a fork or Dependabot the token
+  # is simply downgraded, which is why the mirror is a job here and not a
+  # call to mirror-images.yml (see the `mirror` job).
+  packages: write
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # THE IMAGE MIRROR, BEFORE ANY STACK IS BUILT (2026-09-27, the parent
+  # project's b71e078 arrangement). Everything the jobs below pull or build
+  # FROM comes from private copies under ghcr.io/rcbj/iya-sts/mirror
+  # (.github/image-mirror.txt), so that a reset connection to Docker Hub
+  # cannot take the suite down. `missing` copies only an image the mirror
+  # does not have yet — one added to the list in this commit, say — so a
+  # complete mirror costs one manifest request per image and no request to an
+  # upstream registry at all.
+  #
+  # A job here rather than a call to mirror-images.yml, deliberately: a called
+  # workflow that declares packages: write fails OUTRIGHT when the caller's
+  # token is read-only, which it is on a Dependabot or a fork pull request.
+  # Inline, the token is simply downgraded, and with a complete mirror this
+  # job only reads.
+  # ---------------------------------------------------------------------------
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Copy any image the mirror does not have yet
+        run: .github/scripts/mirror-images.sh missing
+
   # ---------------------------------------------------------------------------
   # THE PLAIN SUITE. Every job, service and runner both in
   # containers, nothing instrumented. This is the one whose status means "the
   # tree is green".
   # ---------------------------------------------------------------------------
   tests:
+    needs: mirror
     runs-on: ubuntu-latest
+    env:
+      # The tag every image this job builds is named with (run-tests.sh), and
+      # pushed under: the commit, and the branch by the push step below.
+      IMAGE_TAG: ${{ github.sha }}
     # THE OUTER BOUND, AND IT IS DELIBERATELY NOT THE ONE THAT SHOULD FIRE.
     #
     # A hung browser job is caught by run-report.js's own per-job watchdog, and
@@ -109,12 +148,16 @@ jobs:
     # Not larger, for the reason it exists at all: without a number here a
     # stuck job holds a runner for six hours.
     #
+    # 150 SINCE 2026-09-27: a runner with no layer cache spends about nineteen
+    # minutes building the images before any mode starts, which no mode bound
+    # covers; tests/teardown_bounds.js adds thirty for it.
+    #
     # 120 SINCE 2026-09-14. The suite is 225 jobs now and `dispatch` alone
     # outgrew the launcher's 25-minute mode bound, which went to 50; this has
     # to sit above one wedged mode plus every teardown (tests/teardown_bounds.js)
     # and above three healthy modes, measured at about 70 minutes on a
     # developer machine. 120 is that test's own ceiling.
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       # submodules: recursive is LOAD-BEARING, and `true` is not enough. The
       # embedded directory's library is `"ldapjs": "file:node-ldapjs"` — a git
@@ -136,11 +179,13 @@ jobs:
       # installed here. This is where the parent project's workflow installs
       # docker-compose, and the difference is that its launcher supports the v1
       # standalone binary as well; tests/tools/compose.sh finds either.
-      # THE TEST CORPORA ARE A PRIVATE IMAGE ON GHCR.IO (#253): tests/Dockerfile
-      # copies them out of ghcr.io/rcbj/iya-sts-test-corpora by digest, and a
-      # private package is pulled only by a logged-in client. GITHUB_TOKEN
-      # carries packages: read (the workflow's permissions) and the package
-      # grants this repository access.
+      # THE TEST CORPORA (#253) AND THE IMAGE MIRROR (2026-09-27) ARE PRIVATE
+      # PACKAGES ON GHCR.IO: tests/Dockerfile copies the corpora out of
+      # ghcr.io/rcbj/iya-sts-test-corpora by digest, and every third-party
+      # image and base image comes from ghcr.io/rcbj/iya-sts/mirror. A private
+      # package is pulled only by a logged-in client; GITHUB_TOKEN carries
+      # packages access (the workflow's permissions) and the packages grant
+      # this repository access.
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -159,12 +204,20 @@ jobs:
       #
       # STS_TEST_CONFORMANCE_MODES EMPTY (#187): the OpenID conformance
       # suite's jobs take about two hours and a quarter on their own, which
-      # is the `conformance` job's below; here they are reported SKIPPED
+      # is the `openid-conformance` job's below; here they are reported SKIPPED
       # with the reason, as they are in every mode that does not run them.
       - name: Run the containerized test suite
         env:
           STS_TEST_CONFORMANCE_MODES: ""
         run: ./run-tests.sh --modes=memory,single-node
+
+      # What this run built, to ghcr.io: under the commit and under the branch
+      # name. Not from a pull request, whose GITHUB_TOKEN may not write
+      # packages and whose images are nobody's to keep. Only this job pushes:
+      # the others build the same commit and would race it for the tags.
+      - name: Push built images
+        if: (success() || failure()) && github.event_name != 'pull_request'
+        run: .github/scripts/push-stack-images.sh "${{ github.ref_name }}"
 
       # The tests container writes tests/report as root through a bind mount;
       # hand it back to the runner user before the upload step reads it.
@@ -218,12 +271,16 @@ jobs:
   # each other's containers even when they land on one machine.
   # ---------------------------------------------------------------------------
   coverage:
+    needs: mirror
     runs-on: ubuntu-latest
     # The instrumented pass is a suite plus a render on top of the image build.
     # 90 since 2026-09-15: the suite alone took 2,807s of a 49-minute job on
     # develop (244 jobs), and the post-quantum jobs that used to fail at the
     # service's 120s worker bound now wait out their signatures instead.
-    timeout-minutes: 90
+    # 150 since 2026-09-27: on a runner with no layer cache the build took
+    # nineteen minutes, and the instrumented suite had reached 386 of its jobs
+    # when 90 cancelled it.
+    timeout-minutes: 150
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
@@ -231,11 +288,13 @@ jobs:
         with:
           submodules: recursive
 
-      # THE TEST CORPORA ARE A PRIVATE IMAGE ON GHCR.IO (#253): tests/Dockerfile
-      # copies them out of ghcr.io/rcbj/iya-sts-test-corpora by digest, and a
-      # private package is pulled only by a logged-in client. GITHUB_TOKEN
-      # carries packages: read (the workflow's permissions) and the package
-      # grants this repository access.
+      # THE TEST CORPORA (#253) AND THE IMAGE MIRROR (2026-09-27) ARE PRIVATE
+      # PACKAGES ON GHCR.IO: tests/Dockerfile copies the corpora out of
+      # ghcr.io/rcbj/iya-sts-test-corpora by digest, and every third-party
+      # image and base image comes from ghcr.io/rcbj/iya-sts/mirror. A private
+      # package is pulled only by a logged-in client; GITHUB_TOKEN carries
+      # packages access (the workflow's permissions) and the packages grant
+      # this repository access.
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -299,25 +358,37 @@ jobs:
   # OpenID Federation, OpenID4VCI and OpenID4VP — against the suite's own
   # three containers under the `conformance` compose profile, in the
   # `memory` mode (the launcher's STS_TEST_CONFORMANCE_MODES default, argued
-  # in its header). `--only=conformance` names them by substring.
+  # in its header). `--conformance-only` names them by that FLAG
+  # (2026-09-27): `--only=conformance` was a substring and also ran
+  # sts_ssf_conformance and sts_scim_conformance, which the `tests` job
+  # already runs in both its modes. The job was called `conformance` until
+  # the same day; it runs the OpenID Foundation's suite and nothing else.
   #
   # A JOB OF ITS OWN because of the time: the plans took about two hours and
   # a quarter on 2026-09-24, so the launcher grows such a mode's bound by
   # STS_CONFORMANCE_TIMEOUT (180m) and no ceiling the `tests` job may have
   # fits it. The same argument as that job's number: above the mode's bound
-  # (50m + 180m) and two teardowns (5m each), so the launcher's bound is the
+  # (50m + 180m) and two teardowns (5m each) — and, since 2026-09-27, thirty
+  # minutes for the image build before any mode starts — so the launcher's
+  # bound is the
   # one that fires, and under GitHub's own six hours
   # (tests/teardown_bounds.js asserts both).
   # ---------------------------------------------------------------------------
-  conformance:
+  openid-conformance:
+    needs: mirror
     runs-on: ubuntu-latest
-    timeout-minutes: 270
+    timeout-minutes: 280
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      # See the tests job: the corpora and the image mirror are private.
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Show docker and compose versions
         run: |
@@ -327,11 +398,11 @@ jobs:
       - name: Run the OpenID conformance suite's plans
         # The SAML interoperability peers (#189-#192) are the tests job's;
         # the launcher would start them in `memory` by default, for jobs
-        # `--only=conformance` does not run.
+        # `--conformance-only` does not run.
         env:
           STS_TEST_CONFORMANCE_MODES: memory
           STS_TEST_SAML_PEERS_MODES: ""
-        run: ./run-tests.sh --modes=memory --only=conformance --no-browser
+        run: ./run-tests.sh --modes=memory --conformance-only --no-browser
 
       # See the tests job: the runner writes tests/report as root.
       - name: Normalize report permissions
@@ -377,6 +448,7 @@ jobs:
   # slowest job rather than the sum.
   # ---------------------------------------------------------------------------
   cluster:
+    needs: mirror
     runs-on: ubuntu-latest
     # The `tests` job's argument, for ONE mode: above the cluster mode's own
     # bound (STS_CLUSTER_MODE_TIMEOUT, 100m — tests/tools/modes.sh) plus its
@@ -384,8 +456,11 @@ jobs:
     # one that can explain itself — tests/teardown_bounds.js asserts it. The
     # mode took 24.7 minutes on 2026-09-15 in development mode with one process
     # per node; as two production nodes (2026-09-21) its bulk loads alone
-    # outran the shared 50-minute bound.
-    timeout-minutes: 115
+    # outran the shared 50-minute bound. 150 since 2026-09-27: 115 did not
+    # count the image build (nineteen minutes on a cold runner), so a run was
+    # cancelled at 527 jobs before the mode's own bound could fire; the test
+    # now adds thirty minutes for it.
+    timeout-minutes: 150
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
@@ -393,11 +468,13 @@ jobs:
         with:
           submodules: recursive
 
-      # THE TEST CORPORA ARE A PRIVATE IMAGE ON GHCR.IO (#253): tests/Dockerfile
-      # copies them out of ghcr.io/rcbj/iya-sts-test-corpora by digest, and a
-      # private package is pulled only by a logged-in client. GITHUB_TOKEN
-      # carries packages: read (the workflow's permissions) and the package
-      # grants this repository access.
+      # THE TEST CORPORA (#253) AND THE IMAGE MIRROR (2026-09-27) ARE PRIVATE
+      # PACKAGES ON GHCR.IO: tests/Dockerfile copies the corpora out of
+      # ghcr.io/rcbj/iya-sts-test-corpora by digest, and every third-party
+      # image and base image comes from ghcr.io/rcbj/iya-sts/mirror. A private
+      # package is pulled only by a logged-in client; GITHUB_TOKEN carries
+      # packages access (the workflow's permissions) and the packages grant
+      # this repository access.
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin

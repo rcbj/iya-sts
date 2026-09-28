@@ -51,8 +51,19 @@ type Json = any;
 // otp-pin, and every element of an AD-AUTHENTICATION-INDICATOR.
 const UTF8_STRING = 0x0c;
 
+/**
+ * The wire format of Kerberos FAST (RFC 6113), OTP pre-authentication (RFC
+ * 6560) and authentication indicators (RFC 7751, RFC 8129): structures to DER
+ * and back, built on the vendored codec's primitives.
+ *
+ * It knows no key and no policy; a structure that does not decode throws. A
+ * static utility class.
+ */
 class Krb5FastCodec {
   // RFC 6113 section 6.4 and RFC 6560 section 5: the padata types.
+  /**
+   * The padata types of RFC 6113 section 6.4 and RFC 6560 section 5.
+   */
   static readonly PA = {
     FX_COOKIE: 133,
     AUTHENTICATION_SET: 134,
@@ -70,6 +81,10 @@ class Krb5FastCodec {
   // its PA-FX-COOKIE under (`KRB5_KEYUSAGE_PA_FX_COOKIE`), and a cookie's
   // content is "a local matter of the KDC" (RFC 6113 section 5.2). Reusing
   // MIT's number costs nothing and names no registered purpose.
+  /**
+   * The key usages: RFC 6560's, RFC 6113's, RFC 7751's, and MIT's private usage
+   * for the PA-FX-COOKIE.
+   */
   static readonly KEY_USAGE = {
     OTP_REQUEST: 45,
     FAST_REQ_CHKSUM: 50,
@@ -84,6 +99,10 @@ class Krb5FastCodec {
 
   // Authorization data types: RFC 4120's AD-IF-RELEVANT, RFC 6113's two FAST
   // markers, RFC 7751's container and RFC 8129's indicator.
+  /**
+   * The authorization data types: AD-IF-RELEVANT, RFC 6113's two FAST markers,
+   * AD-CAMMAC and AD-AUTHENTICATION-INDICATOR.
+   */
   static readonly AD = {
     IF_RELEVANT: 1,
     FX_FAST_ARMOR: 71,
@@ -93,9 +112,15 @@ class Krb5FastCodec {
   };
 
   // RFC 6113 section 5.4.1: the one armor type defined.
+  /**
+   * The one FAST armor type defined, an AP-REQ (RFC 6113 section 5.4.1).
+   */
   static readonly ARMOR_AP_REQUEST = 1;
 
   // FastOptions bits (RFC 6113 section 5.4.2). Bits 0 to 15 are CRITICAL.
+  /**
+   * The FastOptions bits (RFC 6113 section 5.4.2); bits 0 to 15 are critical.
+   */
   static readonly FAST_OPTION = {
     RESERVED: 0,
     HIDE_CLIENT_NAMES: 1,
@@ -104,6 +129,10 @@ class Krb5FastCodec {
 
   // OTPFlags (RFC 6560 section 4.1), numbered from the most significant bit
   // as every KerberosFlags value is.
+  /**
+   * The OTPFlags bits (RFC 6560 section 4.1), numbered from the most
+   * significant bit.
+   */
   static readonly OTP_FLAG = {
     NEXT_OTP: 1,
     COMBINE: 2,
@@ -114,6 +143,9 @@ class Krb5FastCodec {
     CHECK_DIGIT: 7
   };
 
+  /**
+   * The otp-format values (RFC 6560).
+   */
   static readonly OTP_FORMAT = {
     DECIMAL: 0,
     HEXADECIMAL: 1,
@@ -123,6 +155,9 @@ class Krb5FastCodec {
   };
 
   // RFC 6113 section 6.1 and RFC 6560 section 2.3: the error codes.
+  /**
+   * The error codes of RFC 6113 section 6.1 and RFC 6560 section 2.3.
+   */
   static readonly ERROR = {
     PREAUTH_EXPIRED: 90,
     MORE_PREAUTH_DATA_REQUIRED: 91,
@@ -137,6 +172,12 @@ class Krb5FastCodec {
   // -------------------------------------------------------------------------
   // PRIMITIVES the vendored codec lacks.
   // -------------------------------------------------------------------------
+  /**
+   * Encodes a UTF8String.
+   *
+   * @param text - the text
+   * @returns the DER
+   */
   static encUtf8(text: string): Uint8Array {
     log.debug('Entering Krb5FastCodec.encUtf8().');
     log.debug('Leaving Krb5FastCodec.encUtf8().');
@@ -144,6 +185,13 @@ class Krb5FastCodec {
                                                             'utf8')));
   }
 
+  /**
+   * Decodes a UTF8String.
+   *
+   * @param t - the decoded TLV
+   * @returns the text
+   * @throws Error when the TLV is not a UTF8String
+   */
   static decUtf8(t: Json): string {
     log.debug('Entering Krb5FastCodec.decUtf8().');
     if (!t || t.tag !== UTF8_STRING) {
@@ -159,6 +207,15 @@ class Krb5FastCodec {
   // The one element inside an explicit context tag, which is how a CHOICE
   // alternative `[0] X` arrives. Throws unless it is exactly `[n]` round one
   // element.
+  /**
+   * Returns the one element inside an explicit context tag `[n]`, which is how
+   * a CHOICE alternative arrives.
+   *
+   * @param bytes - the DER
+   * @param n - the context tag number
+   * @returns the inner TLV
+   * @throws Error unless it is exactly `[n]` round one element
+   */
   static explicit(bytes: Uint8Array, n: number): Json {
     log.debug('Entering Krb5FastCodec.explicit(). [' + n + ']');
     const outer = asn1.readTlv(bytes, 0);
@@ -180,6 +237,14 @@ class Krb5FastCodec {
   }
 
   // A SEQUENCE's context-tagged fields, from the SEQUENCE's own TLV.
+  /**
+   * Returns a SEQUENCE's context-tagged fields, by tag number.
+   *
+   * @param t - the SEQUENCE's TLV
+   * @param what - the structure's name, for the error
+   * @returns the fields
+   * @throws Error when it is not a SEQUENCE
+   */
   static fieldsOf(t: Json, what: string): Json {
     log.debug('Entering Krb5FastCodec.fieldsOf(). ' + what);
     if (!t || t.tag !== asn1.TAG.SEQUENCE) {
@@ -191,6 +256,15 @@ class Krb5FastCodec {
     return asn1.readTaggedSequence(t.value);
   }
 
+  /**
+   * Returns a required field of a decoded SEQUENCE.
+   *
+   * @param f - the fields, by tag number
+   * @param n - the tag number
+   * @param what - the structure's name, for the error
+   * @returns the field
+   * @throws Error when the field is absent
+   */
   static required(f: Json, n: number, what: string): Json {
     log.debug('Entering Krb5FastCodec.required(). ' + what);
     if (!f[n]) {
@@ -202,12 +276,24 @@ class Krb5FastCodec {
     return f[n];
   }
 
+  /**
+   * Decodes a SEQUENCE OF PA-DATA.
+   *
+   * @param t - the SEQUENCE's TLV
+   * @returns the PA-DATA
+   */
   static padataList(t: Json): Json[] {
     log.debug('Entering Krb5FastCodec.padataList().');
     log.debug('Leaving Krb5FastCodec.padataList().');
     return asn1.decSequenceOf(t).map(msgs.readPaData);
   }
 
+  /**
+   * Encodes a SEQUENCE OF PA-DATA.
+   *
+   * @param list - the PA-DATA
+   * @returns the DER
+   */
   static encPadataList(list: Json[]): Uint8Array {
     log.debug('Entering Krb5FastCodec.encPadataList().');
     log.debug('Leaving Krb5FastCodec.encPadataList().');
@@ -218,6 +304,12 @@ class Krb5FastCodec {
   // RFC 6113 section 5.4.1: KrbFastArmor ::= SEQUENCE { armor-type [0] Int32,
   // armor-value [1] OCTET STRING }.
   // -------------------------------------------------------------------------
+  /**
+   * Encodes a KrbFastArmor.
+   *
+   * @param armor - `{ type, value }`
+   * @returns the DER
+   */
   static encArmor(armor: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encArmor().');
     log.debug('Leaving Krb5FastCodec.encArmor().');
@@ -227,6 +319,13 @@ class Krb5FastCodec {
     ]);
   }
 
+  /**
+   * Decodes a KrbFastArmor.
+   *
+   * @param t - the SEQUENCE's TLV
+   * @returns `{ type, value }`
+   * @throws Error when it does not decode
+   */
   static readArmor(t: Json): Json {
     log.debug('Entering Krb5FastCodec.readArmor().');
     const f = Krb5FastCodec.fieldsOf(t, 'KrbFastArmor');
@@ -244,6 +343,12 @@ class Krb5FastCodec {
   // KrbFastArmor OPTIONAL, req-checksum [1] Checksum, enc-fast-req [2]
   // EncryptedData }.
   // -------------------------------------------------------------------------
+  /**
+   * Encodes a PA-FX-FAST-REQUEST, a KrbFastArmoredReq in its `[0]` alternative.
+   *
+   * @param req - `{ armor, reqChecksum, encFastReq }`, `armor` optional
+   * @returns the DER
+   */
   static encFastRequest(req: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encFastRequest().');
     log.debug('Leaving Krb5FastCodec.encFastRequest().');
@@ -254,6 +359,13 @@ class Krb5FastCodec {
     ]));
   }
 
+  /**
+   * Decodes a PA-FX-FAST-REQUEST.
+   *
+   * @param bytes - the DER
+   * @returns `{ armor, reqChecksum, encFastReq }`
+   * @throws Error when it does not decode
+   */
   static readFastRequest(bytes: Uint8Array): Json {
     log.debug('Entering Krb5FastCodec.readFastRequest().');
     const f = Krb5FastCodec.fieldsOf(Krb5FastCodec.explicit(bytes, 0),
@@ -271,6 +383,13 @@ class Krb5FastCodec {
   // KrbFastReq ::= SEQUENCE { fast-options [0] FastOptions, padata [1]
   // SEQUENCE OF PA-DATA, req-body [2] KDC-REQ-BODY }. `reqBody` is the
   // vendored reader's, with `raw` kept.
+  /**
+   * Encodes a KrbFastReq; a `reqBody` carrying its `raw` bytes is placed as
+   * they are.
+   *
+   * @param req - `{ fastOptions, padata, reqBody }`
+   * @returns the DER
+   */
   static encFastReq(req: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encFastReq().');
     log.debug('Leaving Krb5FastCodec.encFastReq().');
@@ -282,6 +401,13 @@ class Krb5FastCodec {
     ]);
   }
 
+  /**
+   * Decodes a KrbFastReq, the req-body with the vendored KDC-REQ-BODY reader.
+   *
+   * @param bytes - the DER
+   * @returns `{ fastOptions, padata, reqBody }`
+   * @throws Error when it does not decode
+   */
   static readFastReq(bytes: Uint8Array): Json {
     log.debug('Entering Krb5FastCodec.readFastReq().');
     const f = Krb5FastCodec.fieldsOf(asn1.readTlv(bytes, 0), 'KrbFastReq');
@@ -301,6 +427,12 @@ class Krb5FastCodec {
   // KrbFastArmoredRep }, KrbFastArmoredRep ::= SEQUENCE { enc-fast-rep [0]
   // EncryptedData }.
   // -------------------------------------------------------------------------
+  /**
+   * Encodes a PA-FX-FAST-REPLY around the encrypted KrbFastResponse.
+   *
+   * @param encFastRep - the EncryptedData
+   * @returns the DER
+   */
   static encFastReply(encFastRep: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encFastReply().');
     log.debug('Leaving Krb5FastCodec.encFastReply().');
@@ -309,6 +441,13 @@ class Krb5FastCodec {
     ]));
   }
 
+  /**
+   * Decodes a PA-FX-FAST-REPLY.
+   *
+   * @param bytes - the DER
+   * @returns the EncryptedData
+   * @throws Error when it does not decode
+   */
   static readFastReply(bytes: Uint8Array): Json {
     log.debug('Entering Krb5FastCodec.readFastReply().');
     const f = Krb5FastCodec.fieldsOf(Krb5FastCodec.explicit(bytes, 0),
@@ -321,6 +460,13 @@ class Krb5FastCodec {
   // KrbFastResponse ::= SEQUENCE { padata [0] SEQUENCE OF PA-DATA,
   // strengthen-key [1] EncryptionKey OPTIONAL, finished [2] KrbFastFinished
   // OPTIONAL, nonce [3] UInt32 }.
+  /**
+   * Encodes a KrbFastResponse.
+   *
+   * @param rep - `{ padata, strengthenKey, finished, nonce }`, the middle two
+   *   optional
+   * @returns the DER
+   */
   static encFastResponse(rep: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encFastResponse().');
     log.debug('Leaving Krb5FastCodec.encFastResponse().');
@@ -334,6 +480,13 @@ class Krb5FastCodec {
     ]);
   }
 
+  /**
+   * Decodes a KrbFastResponse.
+   *
+   * @param bytes - the DER
+   * @returns `{ padata, strengthenKey, finished, nonce }`
+   * @throws Error when it does not decode
+   */
   static readFastResponse(bytes: Uint8Array): Json {
     log.debug('Entering Krb5FastCodec.readFastResponse().');
     const f = Krb5FastCodec.fieldsOf(asn1.readTlv(bytes, 0),
@@ -351,6 +504,12 @@ class Krb5FastCodec {
   // KrbFastFinished ::= SEQUENCE { timestamp [0] KerberosTime, usec [1]
   // Microseconds, crealm [2] Realm, cname [3] PrincipalName, ticket-checksum
   // [4] Checksum }.
+  /**
+   * Encodes a KrbFastFinished.
+   *
+   * @param fin - `{ timestamp, usec, crealm, cname, ticketChecksum }`
+   * @returns the DER
+   */
   static encFastFinished(fin: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encFastFinished().');
     log.debug('Leaving Krb5FastCodec.encFastFinished().');
@@ -363,6 +522,13 @@ class Krb5FastCodec {
     ]);
   }
 
+  /**
+   * Decodes a KrbFastFinished.
+   *
+   * @param t - the SEQUENCE's TLV
+   * @returns `{ timestamp, usec, crealm, cname, ticketChecksum }`
+   * @throws Error when it does not decode
+   */
   static readFastFinished(t: Json): Json {
     log.debug('Entering Krb5FastCodec.readFastFinished().');
     const f = Krb5FastCodec.fieldsOf(t, 'KrbFastFinished');
@@ -392,6 +558,14 @@ class Krb5FastCodec {
   // universal TLV into its context-tagged form (the constructed bit kept, the
   // length unchanged), and `asUniversal()` the reverse for the readers.
   // -------------------------------------------------------------------------
+  /**
+   * Turns an encoded universal TLV into its implicitly context-tagged form
+   * `[n]`, the constructed bit kept.
+   *
+   * @param n - the context tag number
+   * @param encoded - the universal TLV
+   * @returns the retagged TLV, or null for null
+   */
   static implicit(n: number, encoded: Uint8Array | null): Uint8Array | null {
     log.debug('Entering Krb5FastCodec.implicit(). [' + n + ']');
     if (!encoded) {
@@ -404,6 +578,13 @@ class Krb5FastCodec {
     return new Uint8Array(out);
   }
 
+  /**
+   * Reads an implicitly tagged TLV back as the universal type it replaces.
+   *
+   * @param t - the context-tagged TLV
+   * @param tag - the universal tag to read it as
+   * @returns the TLV
+   */
   static asUniversal(t: Json, tag: number): Json {
     log.debug('Entering Krb5FastCodec.asUniversal().');
     const raw = Buffer.from(t.raw);
@@ -413,6 +594,14 @@ class Krb5FastCodec {
   }
 
   // The fields of an IMPLICITLY tagged SEQUENCE, by context tag number.
+  /**
+   * Returns the fields of an implicitly tagged SEQUENCE, by context tag number.
+   *
+   * @param t - the SEQUENCE's TLV
+   * @param what - the structure's name, for the error
+   * @returns the fields
+   * @throws Error when it is not a SEQUENCE or a field is not context-tagged
+   */
   static implicitFields(t: Json, what: string): Json {
     log.debug('Entering Krb5FastCodec.implicitFields(). ' + what);
     if (!t || t.tag !== asn1.TAG.SEQUENCE) {
@@ -435,6 +624,13 @@ class Krb5FastCodec {
 
   // The implicit-tag builders the OTP structures share: each takes the
   // field's value and answers its context-tagged TLV, or null when absent.
+  /**
+   * Encodes an implicitly tagged OCTET STRING field.
+   *
+   * @param n - the context tag number
+   * @param value - the bytes
+   * @returns the TLV, or null when absent
+   */
   static iOctets(n: number, value: Uint8Array | null): Uint8Array | null {
     log.debug('Entering Krb5FastCodec.iOctets().');
     log.debug('Leaving Krb5FastCodec.iOctets().');
@@ -442,6 +638,13 @@ class Krb5FastCodec {
                  : null;
   }
 
+  /**
+   * Encodes an implicitly tagged UTF8String field.
+   *
+   * @param n - the context tag number
+   * @param value - the text
+   * @returns the TLV, or null when absent
+   */
   static iUtf8(n: number, value: string | null): Uint8Array | null {
     log.debug('Entering Krb5FastCodec.iUtf8().');
     log.debug('Leaving Krb5FastCodec.iUtf8().');
@@ -449,6 +652,13 @@ class Krb5FastCodec {
       : Krb5FastCodec.implicit(n, Krb5FastCodec.encUtf8(value));
   }
 
+  /**
+   * Encodes an implicitly tagged INTEGER field.
+   *
+   * @param n - the context tag number
+   * @param value - the integer
+   * @returns the TLV, or null when absent
+   */
   static iInt(n: number, value: number | null): Uint8Array | null {
     log.debug('Entering Krb5FastCodec.iInt().');
     log.debug('Leaving Krb5FastCodec.iInt().');
@@ -456,6 +666,12 @@ class Krb5FastCodec {
       : Krb5FastCodec.implicit(n, asn1.encInteger(value));
   }
 
+  /**
+   * Encodes a SEQUENCE of the fields that are present.
+   *
+   * @param fields - the encoded fields, null for absent
+   * @returns the DER
+   */
   static implicitSequence(fields: Array<Uint8Array | null>): Uint8Array {
     log.debug('Entering Krb5FastCodec.implicitSequence().');
     log.debug('Leaving Krb5FastCodec.implicitSequence().');
@@ -468,6 +684,12 @@ class Krb5FastCodec {
   // (SIZE(1..MAX)) OF OTP-TOKENINFO, salt [3] KerberosString OPTIONAL,
   // s2kparams [4] OCTET STRING OPTIONAL }, every tag IMPLICIT.
   // -------------------------------------------------------------------------
+  /**
+   * Encodes a PA-OTP-CHALLENGE, every tag implicit.
+   *
+   * @param chl - `{ nonce, service, tokenInfo, salt, s2kparams }`
+   * @returns the DER
+   */
   static encOtpChallenge(chl: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encOtpChallenge().');
     log.debug('Leaving Krb5FastCodec.encOtpChallenge().');
@@ -482,6 +704,13 @@ class Krb5FastCodec {
     ]);
   }
 
+  /**
+   * Decodes a PA-OTP-CHALLENGE.
+   *
+   * @param bytes - the DER
+   * @returns `{ nonce, service, tokenInfo, salt, s2kparams }`
+   * @throws Error when it does not decode
+   */
   static readOtpChallenge(bytes: Uint8Array): Json {
     log.debug('Entering Krb5FastCodec.readOtpChallenge().');
     const f = Krb5FastCodec.implicitFields(asn1.readTlv(bytes, 0),
@@ -505,6 +734,12 @@ class Krb5FastCodec {
   // OCTET STRING OPTIONAL, otp-algID [6] AnyURI OPTIONAL, supportedHashAlg
   // [7] ..., iterationCount [8] Int32 OPTIONAL }. The two hashing fields are
   // never written: this KDC does not ask for hashed OTP values.
+  /**
+   * Encodes an OTP-TOKENINFO; the two hashing fields are never written.
+   *
+   * @param ti - `{ flags, vendor, challenge, length, format, tokenId, algId }`
+   * @returns the DER
+   */
   static encTokenInfo(ti: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encTokenInfo().');
     log.debug('Leaving Krb5FastCodec.encTokenInfo().');
@@ -519,6 +754,14 @@ class Krb5FastCodec {
     ]);
   }
 
+  /**
+   * Decodes an OTP-TOKENINFO.
+   *
+   * @param t - the SEQUENCE's TLV
+   * @returns `{ flags, vendor, challenge, length, format, tokenId, algId,
+   *   hashing }`
+   * @throws Error when it does not decode
+   */
   static readTokenInfo(t: Json): Json {
     log.debug('Entering Krb5FastCodec.readTokenInfo().');
     const f = Krb5FastCodec.implicitFields(t, 'OTP-TOKENINFO');
@@ -549,6 +792,12 @@ class Krb5FastCodec {
   // otp-vendor [13] UTF8String OPTIONAL }, every tag IMPLICIT — so encData is
   // EncryptedData's own fields under `a2`.
   // -------------------------------------------------------------------------
+  /**
+   * Encodes a PA-OTP-REQUEST, every tag implicit.
+   *
+   * @param req - `{ flags, nonce, encData, value, pin, time, vendor }`
+   * @returns the DER
+   */
   static encOtpRequest(req: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encOtpRequest().');
     log.debug('Leaving Krb5FastCodec.encOtpRequest().');
@@ -566,6 +815,14 @@ class Krb5FastCodec {
     ]);
   }
 
+  /**
+   * Decodes a PA-OTP-REQUEST; `hashing` is true for a hashAlg or an
+   * iterationCount above zero.
+   *
+   * @param bytes - the DER
+   * @returns `{ flags, nonce, encData, hashing, value, pin, time, vendor }`
+   * @throws Error when it does not decode
+   */
   static readOtpRequest(bytes: Uint8Array): Json {
     log.debug('Entering Krb5FastCodec.readOtpRequest().');
     const f = Krb5FastCodec.implicitFields(asn1.readTlv(bytes, 0),
@@ -595,6 +852,12 @@ class Krb5FastCodec {
   }
 
   // PA-OTP-ENC-REQUEST ::= SEQUENCE { nonce [0] OCTET STRING }, implicit.
+  /**
+   * Encodes a PA-OTP-ENC-REQUEST.
+   *
+   * @param nonce - the nonce
+   * @returns the DER
+   */
   static encOtpEncRequest(nonce: Uint8Array): Uint8Array {
     log.debug('Entering Krb5FastCodec.encOtpEncRequest().');
     log.debug('Leaving Krb5FastCodec.encOtpEncRequest().');
@@ -606,6 +869,14 @@ class Krb5FastCodec {
   // in field [0]'s TAG — RFC 6560's implicit `80` against RFC 4120's
   // explicit `a0` round a GeneralizedTime — which is how a KDC tells them
   // apart (RFC 6560 section 3.4).
+  /**
+   * Decodes what an OTP request's encData opened to: a PA-OTP-ENC-REQUEST
+   * (four-pass) or a PA-ENC-TS-ENC (two-pass), told apart by field 0's tag.
+   *
+   * @param bytes - the DER
+   * @returns `{ nonce }` or `{ timestamp }`
+   * @throws Error when it is neither
+   */
   static readOtpEncData(bytes: Uint8Array): Json {
     log.debug('Entering Krb5FastCodec.readOtpEncData().');
     const t = asn1.readTlv(bytes, 0);
@@ -637,6 +908,12 @@ class Krb5FastCodec {
   // Verifier-MAC ::= SEQUENCE { identifier [0] PrincipalName OPTIONAL, kvno
   // [1] UInt32 OPTIONAL, enctype [2] Int32 OPTIONAL, mac [3] Checksum }.
   // -------------------------------------------------------------------------
+  /**
+   * Encodes a Verifier-MAC.
+   *
+   * @param v - `{ identifier, kvno, enctype, mac }`, all but `mac` optional
+   * @returns the DER
+   */
   static encVerifierMac(v: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encVerifierMac().');
     log.debug('Leaving Krb5FastCodec.encVerifierMac().');
@@ -651,6 +928,13 @@ class Krb5FastCodec {
     ]);
   }
 
+  /**
+   * Decodes a Verifier-MAC.
+   *
+   * @param t - the SEQUENCE's TLV
+   * @returns `{ identifier, kvno, enctype, mac }`
+   * @throws Error when it does not decode
+   */
   static readVerifierMac(t: Json): Json {
     log.debug('Entering Krb5FastCodec.readVerifierMac().');
     const f = Krb5FastCodec.fieldsOf(t, 'Verifier-MAC');
@@ -666,6 +950,13 @@ class Krb5FastCodec {
   // `elementsBytes` is the DER of the AuthorizationData, which is what every
   // verifier's MAC covers — so it is encoded once and those bytes both
   // checksummed and placed.
+  /**
+   * Encodes an AD-CAMMAC around the already-encoded AuthorizationData its
+   * verifiers' MACs cover.
+   *
+   * @param c - `{ elementsBytes, kdcVerifier, svcVerifier }`
+   * @returns the DER
+   */
   static encCammac(c: Json): Uint8Array {
     log.debug('Entering Krb5FastCodec.encCammac().');
     log.debug('Leaving Krb5FastCodec.encCammac().');
@@ -678,6 +969,13 @@ class Krb5FastCodec {
     ]);
   }
 
+  /**
+   * Decodes an AD-CAMMAC, keeping the elements' bytes for checking the MACs.
+   *
+   * @param bytes - the DER
+   * @returns `{ elementsBytes, elements, kdcVerifier, svcVerifier }`
+   * @throws Error when it does not decode
+   */
   static readCammac(bytes: Uint8Array): Json {
     log.debug('Entering Krb5FastCodec.readCammac().');
     const f = Krb5FastCodec.fieldsOf(asn1.readTlv(bytes, 0), 'AD-CAMMAC');
@@ -693,12 +991,25 @@ class Krb5FastCodec {
 
   // RFC 8129 section 3: AD-AUTHENTICATION-INDICATOR ::= SEQUENCE OF
   // UTF8String.
+  /**
+   * Encodes an AD-AUTHENTICATION-INDICATOR.
+   *
+   * @param list - the indicators
+   * @returns the DER
+   */
   static encIndicators(list: string[]): Uint8Array {
     log.debug('Entering Krb5FastCodec.encIndicators().');
     log.debug('Leaving Krb5FastCodec.encIndicators().');
     return asn1.encSequenceOf((list || []).map(Krb5FastCodec.encUtf8));
   }
 
+  /**
+   * Decodes an AD-AUTHENTICATION-INDICATOR.
+   *
+   * @param bytes - the DER
+   * @returns the indicators
+   * @throws Error when it does not decode
+   */
   static readIndicators(bytes: Uint8Array): string[] {
     log.debug('Entering Krb5FastCodec.readIndicators().');
     log.debug('Leaving Krb5FastCodec.readIndicators().');
@@ -707,6 +1018,13 @@ class Krb5FastCodec {
   }
 
   // The PA-DATA of a type in a list, or null.
+  /**
+   * Returns the PA-DATA of a type in a list.
+   *
+   * @param list - the PA-DATA
+   * @param type - the padata type
+   * @returns the PA-DATA, or null
+   */
   static find(list: Json[], type: number): Json {
     log.debug('Entering Krb5FastCodec.find(). type=' + type);
     log.debug('Leaving Krb5FastCodec.find().');

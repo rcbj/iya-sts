@@ -114,8 +114,20 @@ interface Signer {
   kid: string;
 }
 
+/**
+ * The six typed JWTs of OpenID Federation 1.1, made and read: the `typ` exact,
+ * the algorithm asymmetric, the `kid` naming a key in the JWK Set it is checked
+ * against, and the signature `common/crypto.js`'s. Which JWK Set to trust is
+ * always the caller's decision. A library of static methods.
+ */
 class EntityStatement {
+  /**
+   * The `typ` of each federation JWT this service makes or reads, by name.
+   */
   static readonly TYP = TYP;
+  /**
+   * The claims section 3.1 defines, which a `crit` may not name.
+   */
   static readonly DEFINED_CLAIMS = DEFINED_CLAIMS;
 
   private static refuse(code: string, why: string): Read {
@@ -130,6 +142,12 @@ class EntityStatement {
   // a statement verified against a key its reader also holds proves nothing
   // about who made it — and never `none` (3.2).
   // -------------------------------------------------------------------------
+  /**
+   * Lists the algorithms a federation signature may use: every asymmetric one
+   * `crypto.js` implements, never an HMAC and never `none`.
+   *
+   * @returns the algorithm names
+   */
   static acceptedAlgorithms(): string[] {
     log.debug("Entering EntityStatement.acceptedAlgorithms().");
     const out = Object.keys(stsCrypto.JWS_ALGS).filter(function (alg) {
@@ -144,6 +162,13 @@ class EntityStatement {
   // and a path, and NO query and NO fragment. Compared everywhere else as a
   // string, code point for code point (16) — nothing here normalises one.
   // -------------------------------------------------------------------------
+  /**
+   * Answers whether a value is an Entity Identifier (1.2): an https URL with a
+   * host and no query, fragment or user information.
+   *
+   * @param value - the value
+   * @returns true for an Entity Identifier
+   */
   static isEntityId(value: Json): boolean {
     log.debug("Entering EntityStatement.isEntityId().");
     if (typeof value !== 'string' || !value) {
@@ -168,6 +193,13 @@ class EntityStatement {
 
   // An https URL with no fragment: what every federation endpoint in
   // `federation_entity` metadata must be (5.1.1). A query is allowed there.
+  /**
+   * Answers whether a value is a federation endpoint URL (5.1.1): https, with
+   * no fragment.
+   *
+   * @param value - the value
+   * @returns true for an endpoint URL
+   */
   static isEndpointUrl(value: Json): boolean {
     log.debug("Entering EntityStatement.isEndpointUrl().");
     let ok = false;
@@ -186,6 +218,13 @@ class EntityStatement {
 
   // The configuration endpoint of an Entity Identifier (9): a trailing "/"
   // removed, then `/.well-known/openid-federation` appended.
+  /**
+   * Answers an Entity Identifier's configuration endpoint (9): a trailing "/"
+   * removed, then `/.well-known/openid-federation` appended.
+   *
+   * @param entityId - the Entity Identifier
+   * @returns the URL
+   */
   static configurationUrlOf(entityId: string): string {
     log.debug("Entering EntityStatement.configurationUrlOf().");
     const out = String(entityId).replace(/\/$/, '') +
@@ -200,6 +239,12 @@ class EntityStatement {
   // of what a chain needs to learn WHICH key to verify a statement against
   // (its `iss`) before it can verify it.
   // -------------------------------------------------------------------------
+  /**
+   * Reads a compact JWS without verifying it.
+   *
+   * @param jwt - the JWT
+   * @returns `{ ok, header, claims }`, or `{ ok: false, code, why }`
+   */
   static decode(jwt: Json): Read {
     log.debug("Entering EntityStatement.decode().");
     const parts = typeof jwt === 'string' ? jwt.split('.') : [];
@@ -233,6 +278,12 @@ class EntityStatement {
   }
 
   // Is this a JWK Set with a unique, non-empty `kid` on every key (3.1.1)?
+  /**
+   * Checks that a JWK Set has a unique, non-empty `kid` on every key (3.1.1).
+   *
+   * @param jwks - the JWK Set
+   * @returns the problem, or '' when there is none
+   */
   static jwksProblem(jwks: Json): string {
     log.debug("Entering EntityStatement.jwksProblem().");
     let problem = '';
@@ -268,6 +319,15 @@ class EntityStatement {
   // statement name no key and still verify), and the signature
   // `crypto.js`'s. Answers `{ ok, header, claims, key }`.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies a typed JWT against a JWK Set: the `typ` exact, the algorithm
+   * asymmetric, the `kid` naming exactly one key of the set, and the signature.
+   *
+   * @param jwt - the JWT
+   * @param jwks - the JWK Set the caller trusts for it
+   * @param typ - the `typ` it must carry
+   * @returns `{ ok, header, claims, key }`, or `{ ok: false, code, why }`
+   */
   static verify(jwt: Json, jwks: Json, typ: string): Read {
     log.debug("Entering EntityStatement.verify(). typ=" + typ);
     const read = EntityStatement.decode(jwt);
@@ -323,6 +383,16 @@ class EntityStatement {
   // The times of a claim set: `iat` not in the future and `exp` not in the
   // past, each with `skewSec` of leeway (3.2). `exp` optional where
   // `expOptional` (a Trust Mark, 7.1). '' when both hold.
+  /**
+   * Checks a claim set's times (3.2): `iat` not in the future and `exp` not in
+   * the past, each with leeway.
+   *
+   * @param claims - the claims
+   * @param nowSec - the time now, in seconds
+   * @param skewSec - the leeway, in seconds
+   * @param expOptional - whether `exp` may be absent, as for a Trust Mark
+   * @returns the problem, or '' when both hold
+   */
   static timeProblem(claims: Json, nowSec: number, skewSec: number,
                      expOptional?: boolean): string {
     log.debug("Entering EntityStatement.timeProblem().");
@@ -346,6 +416,14 @@ class EntityStatement {
   // by entity type, whose top-level members are never `null`, with no JWK
   // Set parameter under `federation_entity` and every federation endpoint
   // there an https URL without a fragment. '' when it is well formed.
+  /**
+   * Checks the syntax of a `metadata` claim (5, 3.2): objects keyed by entity
+   * type, no `null` member, no JWK Set parameter under `federation_entity`, and
+   * every federation endpoint there an https URL without a fragment.
+   *
+   * @param metadata - the claim
+   * @returns the problem, or '' when it is well formed
+   */
   static metadataProblem(metadata: Json): string {
     log.debug("Entering EntityStatement.metadataProblem().");
     let problem = '';
@@ -393,6 +471,14 @@ class EntityStatement {
   // The syntax of `trust_marks` (3.1.2, 3.2): objects whose
   // `trust_mark_type` equals the `trust_mark_type` claim of the Trust Mark
   // JWT they carry. Whether the mark is TRUSTED is 7.3's, and separate.
+  /**
+   * Checks the syntax of `trust_marks` (3.1.2, 3.2): each object's
+   * `trust_mark_type` equals that of the Trust Mark JWT it carries. Whether a
+   * mark is trusted is decided elsewhere.
+   *
+   * @param marks - the claim
+   * @returns the problem, or '' when it is well formed
+   */
   static trustMarksProblem(marks: Json): string {
     log.debug("Entering EntityStatement.trustMarksProblem().");
     let problem = '';
@@ -435,6 +521,15 @@ class EntityStatement {
   // Configuration, anything else a Subordinate Statement. Answers
   // `{ ok, claims }` or the first problem found.
   // -------------------------------------------------------------------------
+  /**
+   * Validates an Entity Statement's claims on their own (3.1, 3.2); the kind
+   * follows from the claims (`iss == sub` is an Entity Configuration).
+   *
+   * @param claims - the claims
+   * @param options - `nowSec`, `skewSec`, `understood` (claim names a `crit`
+   * may name) and `audience` (only for an explicit registration request)
+   * @returns `{ ok, claims }`, or the first problem found with its code
+   */
   static validateClaims(claims: Json, options: Json): Read {
     log.debug("Entering EntityStatement.validateClaims().");
     const o = options || {};
@@ -619,6 +714,16 @@ class EntityStatement {
   // and 8.7.2 each require. A federation JWT never carries `x5c` or `x5t`:
   // its key is trusted through the chain of statements above it.
   // -------------------------------------------------------------------------
+  /**
+   * Signs a typed federation JWT with a Federation Entity Key; the header is
+   * `typ`, the signer's algorithm and its `kid`, never `x5c` or `x5t`.
+   *
+   * @param payload - the claims, signed as given (the caller sets `iat` and
+   * `exp`)
+   * @param typ - the JWT's `typ`
+   * @param signer - the private key, its algorithm and its `kid`
+   * @returns the compact JWS
+   */
   static sign(payload: Json, typ: string, signer: Signer): string {
     log.debug("Entering EntityStatement.sign(). typ=" + typ + ", alg=" +
               signer.alg);

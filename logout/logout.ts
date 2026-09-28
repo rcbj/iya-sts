@@ -191,6 +191,9 @@ import krb5Principals = require('../kerberos/krb5_principals');
 import ldapServer = require('../ldap/ldap_server');
 import InstanceSlot = require('../common/instance_slot');
 
+/**
+ * The path of the protocol-independent sign-out.
+ */
 const LOGOUT_PATH = '/logout';
 const LOGOUT_FORM = validation.z.looseObject({
   scope: validation.types.opt(validation.types.oneOf(['global', 'selected'])),
@@ -232,15 +235,36 @@ interface LogoutDeps {
   ldapServer: typeof ldapServer;
 }
 
+/**
+ * The protocol-independent sign-out at `GET|POST /logout`: one list of
+ * everything this service still holds for an identity, across every protocol
+ * family, and the act that ends all or part of it. It holds no state of its
+ * own; it reads and ends the stores of the modules it is given.
+ */
 class Logout {
   // The families, in the order a person should read them — see
   // buildFamilies(), which is the table as it was written.
+  /**
+   * The families, in the order a person should read them.
+   */
   readonly families: Loose[];
   // family id -> family.
+  /**
+   * The families by id.
+   */
   readonly familyById: Record<string, Loose>;
   // The four expiry rules — see buildExpiryRules().
+  /**
+   * The expiry rule of each kind of live session, in words.
+   */
   readonly sessionExpiryRules: Loose;
 
+  /**
+   * Builds the families and the expiry rules from the modules given.
+   *
+   * @param deps - the helpers, settings, registers and the protocol modules
+   *   whose stores are read and ended
+   */
   constructor(private readonly deps: LogoutDeps) {
     deps.log.debug("Entering Logout.constructor().");
     this.families = this.buildFamilies();
@@ -253,6 +277,11 @@ class Logout {
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root builds the instance from.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): LogoutDeps {
     helpers.log.debug("Entering Logout.defaultDeps().");
     helpers.log.debug("Leaving Logout.defaultDeps().");
@@ -286,6 +315,12 @@ class Logout {
 
   // THE LOAD-TIME WORK, run once for the installed instance (#50, R2): the
   // console's slot below, filled exactly as loading this module filled it.
+  /**
+   * Fills the console's `setLogoutReader()` slot with an instance, once, for
+   * the installed instance.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: Logout): void {
     helpers.log.debug("Entering Logout.wire().");
     if (typeof adminConsole.setLogoutReader === 'function') {
@@ -1682,6 +1717,13 @@ class Logout {
     };
   }
 
+  /**
+   * Lists every live session in the service, newest first, for
+   * `/admin/sessions` and `GET /admin-api/sessions`. Expired sessions and
+   * arrival sessions nobody has signed in to are left out.
+   *
+   * @returns the live sessions
+   */
   liveSessions() {
     const { log, authn, config, krb5Principals, ldapServer, stats } = this.deps;
     log.debug("Entering Logout.liveSessions().");
@@ -1997,6 +2039,16 @@ class Logout {
   // which is more useful than a stack trace and far more useful than a family
   // silently missing from a list whose whole value is completeness.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists everything live for one identity, across every family. A family that
+   * cannot be read is reported in its own entry rather than thrown.
+   *
+   * @param key - the identity key, `stats.identityKeyOf()` of what was
+   *   presented
+   * @param issuer - the issuer a front-channel notification names
+   * @returns the key, the families with their rows, and the counts listed and
+   *   not listed under the row cap
+   */
   inventoryFor(key?, issuer?) {
     const { log, audit, errorCodes } = this.deps;
     log.debug("Entering Logout.inventoryFor(). key=" + key);
@@ -2070,6 +2122,13 @@ class Logout {
   // end the session the issuance policy has just decided on the same risk.
   // Ids only — never the rows, whose `secret` stays in this module.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the ids of everything an identity holds now, so a later
+   * terminate() can end those and nothing issued after.
+   *
+   * @param key - the identity key
+   * @returns the row ids
+   */
   heldIds(key?) {
     const { log } = this.deps;
     log.debug("Entering Logout.heldIds(). key=" + key);
@@ -2136,6 +2195,20 @@ class Logout {
   // sessions, which is the safe default for anything that does not depend on
   // them and the wrong one for anything that does — so state it.
   // ---------------------------------------------------------------------------
+  /**
+   * Ends what an identity holds: every row for a global sign-out, or the rows
+   * selected. Rows are collected again rather than taken from a drawn page,
+   * and ended in each family's `endOrder`, the session last.
+   *
+   * @param key - the identity key
+   * @param selection - row ids to end; empty or absent for global
+   * @param opts - `issuer`, `by`, `actor`, `initiatingEntity`, `channel`,
+   *   `base` and `browser`, and `providerCommand: false` to send no OpenID
+   *   Provider Command
+   * @returns what was ended, skipped and unknown, and the notifications,
+   *   cleanups, LogoutRequests, partner sign-outs and back-channel deliveries
+   *   that follow
+   */
   terminate(key?, selection?, opts?) {
     const { log, audit, config, errorCodes, ldapServer,
             backchannel } = this.deps;
@@ -2601,6 +2674,14 @@ class Logout {
   // `app.framedContentSecurityPolicy()`, which re-add `frame-ancestors` and
   // `base-uri` whatever is asked for.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws what a browser still has to do after one or more terminations, and
+   * the relaxations of the page's policy that let it load.
+   *
+   * @param results - one terminate() result or several
+   * @returns `html`, and `policy`, the Content-Security-Policy overrides for
+   *   `app.contentSecurityPolicy()`
+   */
   fanOutOf(results?) {
     const { log, frontchannel, backchannel, xmlEscape } = this.deps;
     log.debug("Entering Logout.fanOutOf().");
@@ -2688,6 +2769,15 @@ class Logout {
   // sessions: a partner's sign-out ends only the session it names (rcbj's
   // decision 4 on #167).
   // ---------------------------------------------------------------------------
+  /**
+   * Ends the one session a federation partner's sign-out named, with the
+   * relying parties riding on it, through terminate(); not the partner's own
+   * row and not the person's other sessions.
+   *
+   * @param session - the session the partner named
+   * @param opts - `issuer`, `by`, `initiatingEntity` and `channel`
+   * @returns the terminate() result
+   */
   endPartnerSession(session?, opts?) {
     const { log, stats } = this.deps;
     log.debug("Entering Logout.endPartnerSession(). " +
@@ -2742,6 +2832,16 @@ class Logout {
   // Keeping both is what makes `alice@STS.MOCK` and `alice` one inventory while
   // the page still says which spelling was asked about.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides who a /logout request is about: a named username where naming
+   * somebody else is open (or it is the caller's own), else the session.
+   *
+   * @param req - the request
+   * @param body - the parsed form, or null
+   * @returns `{ username, key, session }`, `{ refused: true, asked }` for a
+   *   name that may not be used, or an empty object when nobody is signed
+   *   in
+   */
   subjectOf(req?, body?) {
     const { log, authn, mode, stats } = this.deps;
     log.debug("Entering Logout.subjectOf().");
@@ -2858,6 +2958,12 @@ class Logout {
   // THE TWO ROUTES, in the order they always were (rule 1). Called by
   // `common/protocol_stack.ts` through the module's `registerRoutes(app)`.
   // ---------------------------------------------------------------------------
+  /**
+   * Registers `GET /logout` (the inventory) and `POST /logout` (the
+   * sign-out). Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app?) {
     const { log, authn, baseUrlOf, errorCodes, mode, parseBody, validation,
       xmlEscape } = this.deps;
@@ -3078,6 +3184,12 @@ class Logout {
   // prose, and whether a row can be ended — `collect` and `terminate` stay in
   // here. What the module exported as `FAMILIES`, and what it hands
   // `setLogoutReader()`.
+  /**
+   * Describes the families for the console and the API: the prose, and whether
+   * a row can be ended.
+   *
+   * @returns the families' descriptions
+   */
   describedFamilies(): Loose[] {
     const { log } = this.deps;
     log.debug("Entering Logout.describedFamilies().");
@@ -3135,10 +3247,24 @@ const slot = new InstanceSlot<Logout>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The protocol-independent sign-out, `GET|POST /logout`, and the one model of
+ * what is live per identity that `/admin/logout` and `/admin/sessions` read.
+ *
+ * The exports other than `Logout` forward to the instance the composition
+ * root installs.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   Logout: Logout,
+  /**
+   * Installs the instance the composition root built.
+   */
   installInstance: (instance: Logout): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   LOGOUT_PATH: LOGOUT_PATH,
   // The list of families, for /admin/logout and the management API's OpenAPI

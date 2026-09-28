@@ -101,7 +101,7 @@ services:
     environment:
       # Read by haproxy.cfg's `.if`: `v2` adds send-proxy-v2 to every server.
       - STS_LB_PROXY_PROTOCOL=${STS_PROXY_PROTOCOL:-off}
-    image: haproxy:3.2.23-alpine
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/haproxy:3.2.23-alpine
     volumes:
       - ./tests/cluster/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     depends_on:

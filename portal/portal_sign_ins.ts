@@ -301,12 +301,29 @@ class PortalSignInsPage {
   }
 }
 
+/**
+ * The portal page at /portal/sign-ins: where a person sees their recent
+ * sign-ins as the risk engine saw them, and says whether each was them (#62).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalSignIns {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalSignInsDeps) {
     deps.log.debug("Entering PortalSignIns.constructor().");
     deps.log.debug("Leaving PortalSignIns.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalSignInsDeps {
     helpers.log.debug("Entering PortalSignIns.defaultDeps().");
     helpers.log.debug("Leaving PortalSignIns.defaultDeps().");
@@ -325,6 +342,13 @@ class PortalSignIns {
     };
   }
 
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalSignIns.register().");
     const page = new PortalSignInsPage(this.deps, context);
@@ -342,6 +366,10 @@ const slot = new InstanceSlot<PortalSignIns>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/sign-ins, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalSignIns: PortalSignIns,
   installInstance: (instance: PortalSignIns): void => slot.install(instance),

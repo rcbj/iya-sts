@@ -196,6 +196,10 @@ interface Protocol {
 // means the shape is right and the enforcement is deliberately absent, which is
 // what a test double is for.
 // ---------------------------------------------------------------------------
+/**
+ * The specifications this service implements, each with its coverage (`full`,
+ * `partial` or `mock`) and what is missing.
+ */
 const SPECS: Spec[] = [
   // The one specification on this page that is not a protocol this service
   // speaks: it is the shape of the DOCUMENT that describes the management API.
@@ -3128,6 +3132,10 @@ const SPECS: Spec[] = [
 // `group` orders the page. `specs` are ids from SPECS above; a typo there is
 // reported on the page rather than silently dropping the link.
 // ---------------------------------------------------------------------------
+/**
+ * What each HTTP endpoint is, keyed by its Express path: its group, a
+ * description and the specifications it implements.
+ */
 const ENDPOINTS: EndpointEntry[] = [
   // --- Kerberos ---
   //
@@ -11279,6 +11287,11 @@ SPECS.forEach(function (s) {
 // `sockets` is the sentence the table cannot say for itself: where the protocol
 // actually lives when it does not live on the router.
 // ---------------------------------------------------------------------------
+/**
+ * The protocol families this service advertises, each a card naming its
+ * endpoint groups, specifications and, where it has one, the socket it lives
+ * on.
+ */
 const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
@@ -11716,11 +11729,24 @@ interface StsMetadataDeps {
   version: typeof version;
 }
 
+/**
+ * The `/admin/sts-metadata` page: what this service is, protocol by protocol,
+ * endpoint by endpoint and specification by specification.
+ *
+ * The endpoint list is read from the running router, and drift between it and
+ * the descriptions is reported in both directions.
+ */
 class StsMetadata {
   // THE BUILD THIS PAGE REPORTS, read once when the instance is built — at
   // load, for a process without the root, which is when it was read before.
   private readonly appVersion: ReturnType<typeof version.load>;
 
+  /**
+   * Builds the page, reading the build's version once.
+   *
+   * @param deps - the app, logger, helpers, settings, the console shell, the
+   *   authorization servers, the crypto page and the version module
+   */
   constructor(private readonly deps: StsMetadataDeps) {
     deps.log.debug("Entering StsMetadata.constructor().");
     this.appVersion = deps.version.load();
@@ -11729,6 +11755,11 @@ class StsMetadata {
 
   // What the composition root passes: the real modules, as the load-time
   // code used before R2 (#50).
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time code used before #50's R2
+   */
   static defaultDeps(): StsMetadataDeps {
     helpers.log.debug("Entering StsMetadata.defaultDeps().");
     helpers.log.debug("Leaving StsMetadata.defaultDeps().");
@@ -11765,6 +11796,12 @@ class StsMetadata {
   // this file used to run it, or when a process without the root loads this
   // module. The table it hands over is still the one just above.
   // -------------------------------------------------------------------------
+  /**
+   * Hands the protocol list to the crypto metadata page, so its family list is
+   * checked against this one.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: StsMetadata): void {
     helpers.log.debug("Entering StsMetadata.wire().");
     instance.deps.cryptoMetadata.setProtocolFamilies(PROTOCOLS);
@@ -11846,6 +11883,11 @@ class StsMetadata {
   // future Express moves it, the tests fail loudly (the page reports every
   // described path as stale) rather than quietly reporting nothing.
   // -------------------------------------------------------------------------
+  /**
+   * Lists what the router has registered, one row per path with its methods.
+   *
+   * @returns the registered routes
+   */
   registeredRoutes(): RegisteredRoute[] {
     const { log } = this.deps;
     log.debug("Entering StsMetadata.registeredRoutes().");
@@ -11883,6 +11925,14 @@ class StsMetadata {
 
   // Join the router's paths to their descriptions, and report both kinds of
   // drift.
+  /**
+   * Joins the router's paths to their descriptions and reports both kinds of
+   * drift.
+   *
+   * @returns the described rows, the paths registered and undescribed, the
+   *   descriptions naming no registered path, unknown specification ids, and
+   *   the protocol cards' own drift
+   */
   describeEndpoints() {
     const { log } = this.deps;
     log.debug("Entering StsMetadata.describeEndpoints().");
@@ -12443,6 +12493,12 @@ class StsMetadata {
     };
   }
 
+  /**
+   * Registers `GET /admin/sts-metadata`, last of all the routes, drawn in the
+   * console's shell.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: { get: Function }): void {
     const { log, baseUrlOf, admin } = this.deps;
     const self = this;
@@ -12504,11 +12560,29 @@ const slot = new InstanceSlot<StsMetadata>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The `/admin/sts-metadata` page and its three tables: the specifications, the
+ * protocol families and the endpoints.
+ *
+ * Required and registered last, because it reads the router to list what
+ * everything else registered.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Registers `GET /admin/sts-metadata` on the installed instance.
+   */
   registerRoutes: slot.forward('registerRoutes'),
   StsMetadata: StsMetadata,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: StsMetadata): void =>
     slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   // The three tables are data, not instance state: the same arrays they
   // always were.

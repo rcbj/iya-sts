@@ -384,14 +384,47 @@ interface PkiAuthoringDeps {
   nodeCrypto: typeof nodeCrypto;
 }
 
+/**
+ * The Certificate & Key Configuration pane as a model: an arbitrary
+ * certificate, with every field and extension exposed, issued from any
+ * authority whose private key is here.
+ *
+ * The form is the state: every method takes and answers a draft of the
+ * pane's fields.
+ */
 class PkiAuthoring {
+  /**
+   * Every field on the pane, with how a posted value is read and its default.
+   */
   static readonly FIELDS = FIELDS;
+  /**
+   * The names of every field on the pane.
+   */
   static readonly FIELD_NAMES = FIELD_NAMES;
+  /**
+   * The subject DN's named boxes, in the order they are encoded.
+   */
   static readonly DN_FIELDS = DN_FIELDS;
+  /**
+   * The five cryptographic approaches: any, classical, pure post-quantum,
+   * composite and hybrid, each with the families it allows.
+   */
   static readonly PQ_MODES = PQ_MODES;
+  /**
+   * The ids of the five cryptographic approaches.
+   */
   static readonly PQ_MODE_IDS = PQ_MODE_IDS;
+  /**
+   * The key families whose generation takes seconds rather than milliseconds.
+   */
   static readonly SLOW_FAMILIES = SLOW_FAMILIES;
 
+  /**
+   * Builds an instance over its dependencies.
+   *
+   * @param deps - the logger, settings, the certificate authority, error
+   *   codes, the X.509 encoder, the key-material module and node's crypto
+   */
   constructor(private readonly deps: PkiAuthoringDeps) {
     deps.log.debug("Entering PkiAuthoring.constructor().");
     deps.log.debug("Leaving PkiAuthoring.constructor().");
@@ -399,6 +432,11 @@ class PkiAuthoring {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Answers the dependencies built from the real modules.
+   *
+   * @returns the dependencies the composition root passes
+   */
   static defaultDeps(): PkiAuthoringDeps {
     log.debug("Entering PkiAuthoring.defaultDeps().");
     log.debug("Leaving PkiAuthoring.defaultDeps().");
@@ -421,6 +459,14 @@ class PkiAuthoring {
   // sent. An unticked checkbox posts NOTHING, so a flag is present-or-absent
   // and never a value — which is also why `defaultDraft()` below cannot simply
   // be this function over an empty object.
+  /**
+   * Reads a posted body into a draft that has every field in it.
+   *
+   * A flag is true when present, unless it is a JSON `false` or the string
+   * '0' or 'false'; an absent field takes its default.
+   * @param body - the posted form or JSON body
+   * @returns the draft
+   */
   draftFrom(body: Record<string, unknown> | null | undefined): Draft {
     const { log } = this.deps;
     log.debug('Entering PkiAuthoring.draftFrom().');
@@ -484,6 +530,13 @@ class PkiAuthoring {
   // A textarea as a list of lines, with blanks and comments dropped. Every line
   // grammar below starts here, so `#` is a comment everywhere on this pane
   // rather than in some of the boxes.
+  /**
+   * Reads a textarea field as trimmed lines, blank and `#` lines dropped.
+   *
+   * @param draft - the draft
+   * @param name - the field's name
+   * @returns the lines
+   */
   linesOf(draft: Draft | null | undefined, name: string): string[] {
     const { log } = this.deps;
     log.debug("Entering PkiAuthoring.linesOf().");
@@ -504,6 +557,15 @@ class PkiAuthoring {
   // available here, because it verifies.
   // ---------------------------------------------------------------------------
 
+  /**
+   * Parses general-name lines: `dns:`, `ip:`, `email:`, `uri:`, `upn:`,
+   * `krb5:`, `rid:`, `dirname:` or `othername:<oid>:<base64 DER>`.
+   *
+   * @param lines - the lines
+   * @returns the names, in the encoder's shape
+   * @throws an Error (STS-PKI-0078) naming the grammar for a line it cannot
+   *   read
+   */
   parseAltNames(lines: string[]) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering PkiAuthoring.parseAltNames().');
@@ -546,6 +608,14 @@ class PkiAuthoring {
   }
 
   // ocsp:http://… | caissuers:http://… | <oid>:http://…
+  /**
+   * Parses access-description lines: `ocsp:<url>`, `caissuers:<url>` or
+   * `<oid>:<url>`.
+   *
+   * @param lines - the lines
+   * @returns `{ method, url }` rows
+   * @throws an Error (STS-PKI-0079) for a line with no method
+   */
   parseAccessDescriptions(lines: string[]) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering PkiAuthoring.parseAccessDescriptions().');
@@ -573,6 +643,12 @@ class PkiAuthoring {
   }
 
   // <policy oid>[|cps=<uri>][|notice=<text>]
+  /**
+   * Parses certificate policy lines: `<oid>[|cps=<uri>][|notice=<text>]`.
+   *
+   * @param lines - the lines
+   * @returns `{ oid, cps, notice }` rows
+   */
   parsePolicies(lines: string[]) {
     const { log } = this.deps;
     log.debug('Entering PkiAuthoring.parsePolicies().');
@@ -604,6 +680,13 @@ class PkiAuthoring {
   }
 
   // <issuer policy oid>=<subject policy oid>
+  /**
+   * Parses policy mapping lines: `<issuer oid>=<subject oid>`.
+   *
+   * @param lines - the lines
+   * @returns `{ issuer, subject }` rows
+   * @throws an Error (STS-PKI-0080) for a line with no `=`
+   */
   parsePolicyMappings(lines: string[]) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering PkiAuthoring.parsePolicyMappings().');
@@ -628,6 +711,15 @@ class PkiAuthoring {
   // The IP form takes a PREFIX: a name constraint's iPAddress is the address
   // FOLLOWED BY ITS MASK — eight bytes for v4, not four — which is the one
   // place a general name is not simply an address, and the encoder handles it.
+  /**
+   * Parses name constraint lines: `permit <name>` or `exclude <name>`, the name
+   * in `parseAltNames()`'s grammar (an IP as a prefix).
+   *
+   * @param lines - the lines
+   * @returns `{ permitted, excluded }`
+   * @throws an Error (STS-PKI-0081, or 0078 for the name) for a line it cannot
+   *   read
+   */
   parseNameConstraints(lines: string[]) {
     const self = this;
     const { log, errorCodes } = this.deps;
@@ -659,6 +751,13 @@ class PkiAuthoring {
   }
 
   // <oid>|<critical or ->|<base64 DER of the extension value>
+  /**
+   * Parses custom extension lines: `<oid>|<critical or ->|<base64 DER>`.
+   *
+   * @param lines - the lines
+   * @returns `{ oid, critical, value }` rows
+   * @throws an Error (STS-PKI-0082) for a line with fewer than three parts
+   */
   parseCustomExtensions(lines: string[]) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering PkiAuthoring.parseCustomExtensions().');
@@ -688,6 +787,14 @@ class PkiAuthoring {
   // and `OID=value` where it does not, which is what lets a DN carry an
   // attribute this page has never heard of.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the subject DN from the draft: the named boxes in encoding order,
+   * then the extra `NAME=value` or `OID=value` lines.
+   *
+   * @param draft - the draft
+   * @returns the subject's attributes, in the encoder's shape
+   * @throws an Error (STS-PKI-0083) for an extra line with no `=`
+   */
   subjectFrom(draft: Draft) {
     const self = this;
     const { log, errorCodes, x509 } = this.deps;
@@ -725,6 +832,14 @@ class PkiAuthoring {
   // which is the parent page's reason for `collectExtensions()` and holds here
   // for the same reason.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the whole extension set from the draft, in the shape
+   * `x509.issueCertificate()` takes.
+   *
+   * @param draft - the draft
+   * @returns the extensions, by name
+   * @throws an Error from any of the line parsers
+   */
   extensionsFrom(draft: Draft) {
     const self = this;
     const { log, x509 } = this.deps;
@@ -864,6 +979,12 @@ class PkiAuthoring {
   // ---------------------------------------------------------------------------
   // THE PROFILES, AND WHAT PICKING ONE DOES.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the certificate profiles, each with its label, whether it is a CA or
+   * self-signed, its validity, its usages and its note.
+   *
+   * @returns one row per profile
+   */
   profiles() {
     const { log, x509 } = this.deps;
     log.debug("Entering PkiAuthoring.profiles().");
@@ -879,6 +1000,12 @@ class PkiAuthoring {
     });
   }
 
+  /**
+   * Finds a certificate profile by id.
+   *
+   * @param profileId - the profile's id
+   * @returns the profile, or null
+   */
   profileFor(profileId: unknown) {
     const { log, x509 } = this.deps;
     log.debug("Entering PkiAuthoring.profileFor().");
@@ -886,6 +1013,11 @@ class PkiAuthoring {
     return x509.profile(String(profileId || '')) || null;
   }
 
+  /**
+   * Answers the id of the first profile, which the pane starts on.
+   *
+   * @returns the profile id
+   */
   defaultProfileId() {
     const { log, x509 } = this.deps;
     log.debug("Entering PkiAuthoring.defaultProfileId().");
@@ -902,6 +1034,16 @@ class PkiAuthoring {
   // that matters: a CN somebody TYPED is never overwritten, because this runs
   // on every profile change and a name typed a minute ago would otherwise be
   // replaced by a page that had merely been redrawn.
+  /**
+   * Rewrites the draft's extension boxes and validity to a profile's, and
+   * fills the subject where it is empty or still a default.
+   *
+   * A CN or subjectAltName somebody typed is never overwritten. An unknown
+   * profile is the default one.
+   * @param draft - the draft
+   * @param profileId - the profile to apply
+   * @returns a new draft
+   */
   applyProfile(draft: Draft, profileId: unknown): Draft {
     const self = this;
     const { log, x509 } = this.deps;
@@ -1013,6 +1155,14 @@ class PkiAuthoring {
   // the console and `/admin-api` alike, and it runs before any pane action.
   // Empty is the field's default, as it always was.
   // ---------------------------------------------------------------------------
+  /**
+   * Refuses a draft whose profile, approach, key algorithm, alternative key
+   * algorithm or keystore format is outside its fixed set (#86).
+   *
+   * @param draft - the draft
+   * @returns `{ ok: false, draft, errors }` marked STS-PKI-0203, or null when
+   *   every closed field is empty or in its set
+   */
   closedFieldProblem(draft: Draft): Outcome | null {
     const self = this;
     const { log, x509, keyMaterial, errorCodes } = this.deps;
@@ -1042,6 +1192,11 @@ class PkiAuthoring {
     return null;
   }
 
+  /**
+   * Lists the five cryptographic approaches.
+   *
+   * @returns a copy of each approach
+   */
   pqModes() {
     const { log } = this.deps;
     log.debug("Entering PkiAuthoring.pqModes().");
@@ -1051,6 +1206,12 @@ class PkiAuthoring {
     });
   }
 
+  /**
+   * Finds a cryptographic approach by id.
+   *
+   * @param id - the approach's id
+   * @returns the approach, or the first (`any`) when none matches
+   */
   pqModeFor(id: unknown) {
     const { log } = this.deps;
     log.debug("Entering PkiAuthoring.pqModeFor().");
@@ -1064,6 +1225,13 @@ class PkiAuthoring {
   // the family it is grouped under. Forty-one flat options is a scroll bar with
   // no landmarks in it, and the families are the only grouping the standards
   // themselves have.
+  /**
+   * Lists the key algorithms an approach allows, each with its family, whether
+   * it signs, and whether its generation is slow.
+   *
+   * @param pqModeId - the approach's id
+   * @returns one row per algorithm, in the registry's order
+   */
   keyAlgorithms(pqModeId: unknown) {
     const self = this;
     const { log, keyMaterial } = this.deps;
@@ -1095,6 +1263,12 @@ class PkiAuthoring {
   // The alternative key's menu: the post-quantum SIGNATURE algorithms, because
   // a hybrid certificate whose second key is also RSA is a certificate signed
   // twice by the same century.
+  /**
+   * Lists the post-quantum signature algorithms offered as a hybrid
+   * certificate's alternative key.
+   *
+   * @returns one row per algorithm
+   */
   alternativeKeyAlgorithms() {
     const self = this;
     const { log } = this.deps;
@@ -1110,6 +1284,14 @@ class PkiAuthoring {
   // the wrong way round produces a certificate whose declared algorithm and
   // actual signature disagree, which `openssl verify` reports as a bad
   // signature naming neither.
+  /**
+   * Answers the key descriptor of whatever will sign: the subject's own key
+   * for a self-signed profile, otherwise the chosen issuer's.
+   *
+   * @param realmId - the realm
+   * @param draft - the draft
+   * @returns the descriptor, or null
+   */
   signerDescriptorFor(realmId: string, draft: Draft) {
     const self = this;
     const { log, pki, keyMaterial } = this.deps;
@@ -1134,6 +1316,12 @@ class PkiAuthoring {
   // The signature algorithms that signing key can produce. An RSA key cannot
   // make an ECDSA signature, and offering it produces a Web Crypto error that
   // names neither.
+  /**
+   * Lists the signature algorithms a signing key can produce.
+   *
+   * @param signerDesc - the signer's key descriptor
+   * @returns `{ id, label, weak, kind }` rows
+   */
   signatureAlgorithms(signerDesc: any) {
     const { log, x509 } = this.deps;
     log.debug('Entering PkiAuthoring.signatureAlgorithms().');
@@ -1155,6 +1343,15 @@ class PkiAuthoring {
   // and then issuing four certificates from it is the difference between a page
   // somebody can use and one they cannot.
   // ---------------------------------------------------------------------------
+  /**
+   * Generates a key pair into the draft's key boxes without issuing anything.
+   *
+   * @param draft - the draft
+   * @param which - 'alt' for the hybrid alternative pair; the subject pair
+   *   otherwise
+   * @returns `{ ok: true, draft, algorithm, why }`, or `{ ok: false, errors }`
+   *   for an unknown algorithm or a failed generation
+   */
   async generateKeys(draft: Draft, which?: string): Promise<Outcome> {
     const self = this;
     const { log, config, pki, errorCodes, keyMaterial } = this.deps;
@@ -1242,6 +1439,17 @@ class PkiAuthoring {
   // reused), the issuer, the serial, the validity, the subject, the twenty-two
   // extensions, the hybrid half, and the certification request.
   // ---------------------------------------------------------------------------
+  /**
+   * Issues a certificate from the draft: the key pair (generated or reused),
+   * the issuer, serial, validity, subject, extensions, the hybrid half and a
+   * certification request, and stores it in the realm's store.
+   *
+   * The draft comes back with a fresh serial and the certified key pair.
+   * @param realmId - the realm
+   * @param draft - the draft
+   * @returns `{ ok: true, object, draft, dropped, why }`, or `{ ok: false,
+   *   errors }` marked with its code
+   */
   async issue(realmId: string, draft: Draft): Promise<Outcome> {
     const self = this;
     const { log, config, pki, errorCodes, x509, keyMaterial } = this.deps;
@@ -1697,6 +1905,16 @@ class PkiAuthoring {
   // pair loaded into the boxes and then silently replaced by a fresh one at the
   // next issue is the single most confusing thing this pane could do.
   // ---------------------------------------------------------------------------
+  /**
+   * Loads a stored object's key pair back into the draft and ticks the reuse
+   * box, so the next issue certifies that key.
+   *
+   * @param realmId - the realm
+   * @param draft - the draft
+   * @param objectId - the stored object's id
+   * @returns `{ ok: true, draft, why }`, or `{ ok: false, errors }` when the
+   *   object is missing or has no private key here
+   */
   async useStoredKey(realmId: string, draft: Draft,
                      objectId: string): Promise<Outcome> {
     const self = this;
@@ -1749,6 +1967,14 @@ class PkiAuthoring {
   // an operator can edit through `/admin-api`, and an object naming itself — or
   // two naming each other — would otherwise walk for ever inside a request.
   // ---------------------------------------------------------------------------
+  /**
+   * Walks the chain above a stored object, leaf first, through the store and
+   * then the hierarchy's tiers; capped at sixteen hops and stopped at a loop.
+   *
+   * @param realmId - the realm
+   * @param object - the stored object
+   * @returns the PEM certificates above it
+   */
   chainFor(realmId: string, object: any): string[] {
     const self = this;
     const { log, pki, errorCodes } = this.deps;
@@ -1823,6 +2049,16 @@ class PkiAuthoring {
   // two files and only the private one is sent, with the reply saying the
   // public half comes out of it with one openssl command.
   // ---------------------------------------------------------------------------
+  /**
+   * Exports a key pair as PEM, DER, a JWK set or a password-protected
+   * PKCS#12: the selected object's, or the one in the draft's key boxes.
+   *
+   * @param realmId - the realm
+   * @param draft - the draft, carrying the format, password and chain choice
+   * @param objectId - the stored object's id; the draft's pair when absent
+   * @returns `{ ok: true, files, status, truncated }`, or `{ ok: false,
+   *   errors }`
+   */
   async exportKeys(realmId: string, draft: Draft,
                    objectId?: string): Promise<Outcome> {
     const self = this;
@@ -1925,6 +2161,14 @@ class PkiAuthoring {
   // key material comes out only through the export, which is a POST behind
   // Admin Write for the reason `/admin/keys/export` is.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds everything the page and `GET /admin-api/pki` need to draw the pane.
+   * No private key is in it.
+   *
+   * @param realmId - the realm
+   * @param draft - the draft; the default draft when absent
+   * @returns the view model
+   */
   view(realmId: string, draft?: Draft | null) {
     const self = this;
     const { log, pki, x509, keyMaterial } = this.deps;
@@ -1973,6 +2217,13 @@ class PkiAuthoring {
   // One stored object as it is REPORTED — no private key, and the certificate
   // in full because a certificate is the half of a key pair meant to be handed
   // around.
+  /**
+   * Describes one stored object as it is reported: no private key, and the
+   * certificate in full.
+   *
+   * @param one - the stored object
+   * @returns the description
+   */
   describeObject(one: any) {
     const { log } = this.deps;
     log.debug("Entering PkiAuthoring.describeObject().");
@@ -2013,6 +2264,14 @@ class PkiAuthoring {
   // **THE SERIAL IS FILLED RATHER THAN LEFT EMPTY** so that the value about to
   // be signed is visible — and editable — before the certificate exists,
   // instead of appearing for the first time in the store's Serial column.
+  /**
+   * Builds the form as first drawn: every field at its default, the configured
+   * key algorithm and organisation, the first profile applied, a fresh serial
+   * and the realm's Issuing CA preselected.
+   *
+   * @param realmId - the realm
+   * @returns the draft
+   */
   defaultDraft(realmId: string): Draft {
     const self = this;
     const { log, config, pki, x509 } = this.deps;
@@ -2062,9 +2321,18 @@ const slot = new InstanceSlot<PkiAuthoring>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Certificate & Key Configuration pane's model, behind `/admin/pki` and
+ * `/admin-api`.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   PkiAuthoring: PkiAuthoring,
+  /** Installs the instance the composition root built. */
   installInstance: (instance: PkiAuthoring): void => slot.install(instance),
+  /** Answers where the installed instance came from (`root` or `default`). */
   instanceOrigin: (): string => slot.origin(),
   FIELDS: PkiAuthoring.FIELDS,
   FIELD_NAMES: PkiAuthoring.FIELD_NAMES,

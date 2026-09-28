@@ -87,6 +87,9 @@ import errorCodes = require('../common/error_codes');
 import roles = require('../common/roles');
 import applications = require('../common/applications');
 import templates = require('./xacml_templates');
+// THE ONE REQUEST BUILDER (#306).
+import xacmlRequest = require('./xacml_request');
+const { AuthorizationRequest } = xacmlRequest;
 import model = require('./xacml_model');
 import pdp = require('./xacml_pdp');
 import pip = require('./xacml_pip');
@@ -146,13 +149,33 @@ interface XacmlAccessPepDeps {
 
 const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
 
+/**
+ * The embedded policy enforcement point for this service's own access
+ * control: who may reach the console, the management API, the portal, SCIM,
+ * the SPIRE Server API, the debugger and `/xacml`.
+ *
+ * The subject is the session's person; the requirement comes from the
+ * caller or the application register.
+ */
 class XacmlAccessPep {
+  /**
+   * Builds the PEP over the dependencies given.
+   *
+   * @param deps - the settings, audit log, registers, policy store, engine,
+   * PIP, templates and monitor
+   */
   constructor(private readonly deps: XacmlAccessPepDeps) {
     deps.log.debug("Entering XacmlAccessPep.constructor().");
     deps.log.debug("Leaving XacmlAccessPep.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, as the composition
+   * root passes them.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): XacmlAccessPepDeps {
     helpers.log.debug("Entering XacmlAccessPep.defaultDeps().");
     helpers.log.debug("Leaving XacmlAccessPep.defaultDeps().");
@@ -177,6 +200,12 @@ class XacmlAccessPep {
   // realm, and a policy seeded once in the default realm leaves every realm
   // created later unable to decide anything. A repository entry named by
   // `xacml.accessPolicy` overrides it.
+  /**
+   * Returns the name of the repository entry that overrides the built-in
+   * access policy (`xacml.accessPolicy`, default `access-control`).
+   *
+   * @returns the policy name
+   */
   accessPolicyName(): string {
     const { log, config } = this.deps;
     log.debug("Entering XacmlAccessPep.accessPolicyName().");
@@ -240,6 +269,15 @@ class XacmlAccessPep {
   // as it did before the policy existed, and it is logged at error level
   // rather than passing quietly.
   // -------------------------------------------------------------------------
+  /**
+   * Loads the policy this PEP evaluates: the repository entry if one exists,
+   * otherwise the built-in document.
+   *
+   * A disabled or unparseable entry does not fall back to the built-in one;
+   * it answers with no policy, a reason and an error code.
+   * @returns the parsed policy with its name and origin, or a reason none
+   * loaded
+   */
   accessPolicy(): LoadedPolicy {
     const { log, store } = this.deps;
     log.debug('Entering XacmlAccessPep.accessPolicy().');
@@ -283,22 +321,6 @@ class XacmlAccessPep {
   // `includeInResult` are part of the shape too. This is `xacml_role_pep.ts`'s
   // helper, and the duplication is deliberate — the two PEPs build different
   // requests and a shared helper would be one module knowing about both.
-  private attribute(attributeId: string, values: unknown[] | null | undefined,
-                    type?: string): any {
-    const { log, model } = this.deps;
-    log.debug("Entering XacmlAccessPep.attribute().");
-    log.debug("Leaving XacmlAccessPep.attribute().");
-    return {
-      attributeId: attributeId,
-      issuer: null,
-      includeInResult: true,
-      values: (values || []).filter(function (v) {
-        return v !== undefined && v !== null && String(v) !== '';
-      }).map(function (v) {
-        return { type: type || model.TYPE.STRING, lexical: String(v) };
-      })
-    };
-  }
 
   // -------------------------------------------------------------------------
   // THE REQUEST. Three categories, and what goes in each is the division this
@@ -311,68 +333,39 @@ class XacmlAccessPep {
   //                    requires.
   //   ACTION           what is being done to it.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the XACML request for one access question.
+   *
+   * Access-subject carries the session's person, the roles held and whether
+   * they authenticated; resource carries what is reached, its owner and the
+   * roles it requires; action carries what is done.
+   * @param asked - the question the gated surface asked
+   * @param held - the roles the subject holds
+   * @param required - the roles the resource requires
+   * @returns a request object in the engine's shape
+   */
   buildRequest(asked: AccessQuestion, held: string[],
                required: string[]): any {
     const { log, model } = this.deps;
     log.debug("Entering XacmlAccessPep.buildRequest().");
     const subject = asked.subject || {};
+    // THROUGH THE ONE BUILDER (#306). An empty value is left out of its bag
+    // here, as it always was on this PEP: an ownerless surface sends no
+    // owner rather than an owner called ''.
+    const req = new AuthorizationRequest({ includeInResult: true,
+                                           dropEmpty: true })
+      .principal(subject.name || '')
+      .roles(held)
+      .subject(ATTRIBUTE.AUTHENTICATED,
+               [subject.authenticated === false ? 'false' : 'true'],
+               model.TYPE.BOOLEAN)
+      .target(asked.resource)
+      .resource(ATTRIBUTE.REQUIRED_ROLE, required)
+      .resource(ATTRIBUTE.OWNER, [asked.owner || ''])
+      .requestedAction(asked.action);
+    req.category(model.CATEGORY.ENVIRONMENT);
     log.debug("Leaving XacmlAccessPep.buildRequest().");
-    return {
-      // `returnPolicyIdList` so a refusal can name the policy that produced it
-      // — which is most of what makes an access denial actionable rather than
-      // mysterious.
-      returnPolicyIdList: true,
-      combinedDecision: false,
-      // **EVERY CATEGORY CARRIES `id` AND `content`, AND THE ENVIRONMENT
-      // CATEGORY IS PRESENT EVEN THOUGH IT IS EMPTY.** Both are required by
-      // the engine and neither is obvious: a request built without them
-      // evaluates to Indeterminate with `Cannot read properties of undefined
-      // (reading 'forEach')`, which under deny-unless-permit is a Deny — so
-      // every surface refused everybody and the reason named the policy rather
-      // than the request. `xacml_role_pep.ts` builds the same four; this is
-      // the second caller and the shape is the contract.
-      // **`categories` AND NOT `attributes`.** The engine's request has a
-      // `categories` array whose entries each carry an `attributes` array, and
-      // the two names one level apart are exactly the trap: a request built
-      // with `attributes` at the top is not malformed enough to be rejected —
-      // it evaluates to Indeterminate with `Cannot read properties of
-      // undefined (reading 'forEach')`, which under deny-unless-permit is a
-      // Deny. So every surface refused everybody, and the reason named the
-      // POLICY rather than the request that never reached it.
-      categories: [
-        { category: model.CATEGORY.ACCESS_SUBJECT, id: null, content: null,
-          attributes: [
-            this.attribute(model.ATTRIBUTE.SUBJECT_ID, [subject.name || '']),
-            this.attribute(ATTRIBUTE.ROLE, held),
-            // A BOOLEAN and not a string, so a policy compares it with
-            // `boolean-equal` rather than against the text "true" — which is
-            // the kind of thing that works until somebody writes "True".
-            this.attribute(ATTRIBUTE.AUTHENTICATED,
-                           [subject.authenticated === false ? 'false'
-                                                            : 'true'],
-                           model.TYPE.BOOLEAN)
-          ] },
-        { category: model.CATEGORY.RESOURCE, id: null, content: null,
-          attributes: [
-            this.attribute(model.ATTRIBUTE.RESOURCE_ID, [asked.resource]),
-            this.attribute(ATTRIBUTE.REQUIRED_ROLE, required),
-            // WHOSE IT IS. Only the portal sets this today, and the EMPTY BAG
-            // is load-bearing rather than a default: the policy's ownership
-            // conjunct reads `string-bag-size(owner) == 0` as "this resource
-            // names nobody", which is what makes one document serve the four
-            // ownerless surfaces and the portal at once. `attribute()` drops
-            // an empty string, so `asked.owner || ''` produces that empty bag
-            // rather than a bag holding one value nothing can ever equal.
-            this.attribute(ATTRIBUTE.OWNER, [asked.owner || ''])
-          ] },
-        { category: model.CATEGORY.ACTION, id: null, content: null,
-          attributes: [
-            this.attribute(model.ATTRIBUTE.ACTION_ID, [asked.action])
-          ] },
-        { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-          attributes: [] }
-      ]
-    };
+    return req.build();
   }
 
   // -------------------------------------------------------------------------
@@ -407,6 +400,17 @@ class XacmlAccessPep {
   // -------------------------------------------------------------------------
   // THE DECISION.
   // -------------------------------------------------------------------------
+  /**
+   * Decides whether the subject may perform the action on the resource.
+   *
+   * Allows everything when `xacml.enabled` is off or when no policy loads
+   * (logged at error level), so a broken policy cannot lock operators out of
+   * the console. A Deny, Indeterminate or NotApplicable is refused and
+   * audited with its error code.
+   * @param asked - the resource, action, owner, subject and optional
+   * required roles
+   * @returns whether it is allowed, the decision, the reason and the policy
+   */
   decide(asked: AccessQuestion): AccessAnswer {
     const { log, config, audit, errorCodes, roles, applications, model,
             pdp, pip, store } = this.deps;
@@ -568,6 +572,14 @@ class XacmlAccessPep {
   // different answers to "what does not deciding mean here", from one answer
   // to "is it deciding".
   // -------------------------------------------------------------------------
+  /**
+   * Reports what is deciding, for the console.
+   *
+   * Keeps apart whether an override entry exists, whether it is enabled and
+   * whether the built-in document is the one deciding.
+   * @returns the policy name, whether one loaded, whether it is built in, the
+   * entry's state and a sentence on the effect
+   */
   accessPolicyState(): Record<string, any> {
     const { log, store } = this.deps;
     log.debug('Entering XacmlAccessPep.accessPolicyState().');
@@ -616,6 +628,12 @@ class XacmlAccessPep {
   // run by `common/instance_slot.ts` once for whichever instance is
   // installed: the banner that says the gate is armed, which names the
   // instance's policy. The arming itself is a facade and stays at load.
+  /**
+   * Logs the banner saying the access PEP is armed, naming the installed
+   * instance's policy.
+   *
+   * @param instance - the installed PEP
+   */
   static wire(instance: XacmlAccessPep): void {
     helpers.log.debug("Entering XacmlAccessPep.wire().");
     helpers.log.info('xacml: the embedded access PEP is armed. Every access ' +
@@ -659,6 +677,14 @@ gate.setDecider(decide);
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The embedded XACML PEP that decides access to this service's own gated
+ * surfaces.
+ *
+ * Loading it arms `common/access_gate.ts`. Exports the class for the
+ * composition root and facades that forward to the installed instance.
+ * @namespace
+ */
 export = {
   XacmlAccessPep: XacmlAccessPep,
   installInstance: (instance: XacmlAccessPep): void => slot.install(instance),

@@ -361,11 +361,33 @@ const SEED_DOCUMENT = [
   '</Policy>'
 ].join('\n');
 
+/**
+ * The XACML policy repository, kept as entries under the realm's
+ * `ou=policies` through the directory slot; there is no store of its own.
+ *
+ * Every document is parsed and statically validated before it is written.
+ */
 class XacmlStore {
+  /**
+   * The `ou=policies` schema, the object class and attributes a policy entry
+   * carries, published on `/admin/ldap/*`.
+   */
   static readonly SCHEMA = SCHEMA;
+  /**
+   * The entry name of the seeded policy, `seeded-rbac`.
+   */
   static readonly SEED_NAME = SEED_NAME;
+  /**
+   * The seeded role-based policy document, `deny-unless-permit` over the
+   * subject's `employeeType`.
+   */
   static readonly SEED_DOCUMENT = SEED_DOCUMENT;
 
+  /**
+   * Builds the store over the given dependencies.
+   * @param deps - the logger, error codes, the XML reader and a SHA-256
+   * function keying the parse cache
+   */
   constructor(private readonly deps: XacmlStoreDeps) {
     deps.log.debug("Entering XacmlStore.constructor().");
     deps.log.debug("Leaving XacmlStore.constructor().");
@@ -373,6 +395,11 @@ class XacmlStore {
 
   // The deps the composition root builds this class from: the real modules,
   // and the SHA-256 this module has always keyed its parse cache by.
+  /**
+   * Returns the dependencies built from the real modules, for the default
+   * instance.
+   * @returns the store's dependencies
+   */
   static defaultDeps(): XacmlStoreDeps {
     helpers.log.debug("Entering XacmlStore.defaultDeps().");
     const deps: XacmlStoreDeps = {
@@ -387,6 +414,12 @@ class XacmlStore {
     return deps;
   }
 
+  /**
+   * Installs the function called after every successful write or removal,
+   * which nudges the remote PEPs; a failure in it is logged, never thrown.
+   * @param fn - the observer, given a sentence saying what changed; anything
+   * not a function clears it
+   */
   setChangeObserver(fn: unknown): void {
     const { log } = this.deps;
     log.debug('Entering XacmlStore.setChangeObserver().');
@@ -425,6 +458,11 @@ class XacmlStore {
   }
 
   // Static: see the header — it is called before any instance exists.
+  /**
+   * Installs the directory functions the repository reads and writes
+   * through; filled by `ldap/ldap_server.js` when it loads.
+   * @param fns - the directory functions, or null to remove them
+   */
   static setDirectory(fns: PolicyDirectory | null | undefined): void {
     const log = helpers.log;
     log.debug('Entering XacmlStore.setDirectory().');
@@ -441,6 +479,11 @@ class XacmlStore {
   // which is a fact about the file list rather than about the test. Nothing in
   // the service calls this, exactly as nothing calls
   // `applications.directoryInstalled()`.
+  /**
+   * Returns the directory functions currently installed, so that a test can
+   * put back what was there.
+   * @returns the installed directory functions, or null
+   */
   directoryInstalled(): PolicyDirectory | null {
     const { log } = this.deps;
     log.debug("Entering XacmlStore.directoryInstalled().");
@@ -478,6 +521,14 @@ class XacmlStore {
   // a usable policy — it is reported at write time and, if it got in some
   // other way, at read time.
   // -------------------------------------------------------------------------
+  /**
+   * Parses and statically validates a policy document, cached by its
+   * SHA-256 digest with a least-recently-used bound of 1024.
+   * @param document - the XACML XML document
+   * @returns the Policy or PolicySet model
+   * @throws the IndeterminateError `xacml_xml.js` raises for a document that
+   * does not parse or typecheck
+   */
   parseDocument(document: string): any {
     const { log, xml, sha256Hex } = this.deps;
     log.debug('Entering XacmlStore.parseDocument().');
@@ -507,6 +558,12 @@ class XacmlStore {
   // moment they are written — they can still drift afterwards through an
   // `ldapmodify`, which is why the document is the truth and these are only an
   // index.
+  /**
+   * Returns the attributes a policy entry indexes its document by.
+   * @param document - the XACML XML document
+   * @returns `{ id, kind, version, combiningAlgId }`
+   * @throws as `parseDocument()` does
+   */
   describe(document: string): { id: string; kind: string; version: string;
                                 combiningAlgId: string } {
     const { log } = this.deps;
@@ -522,6 +579,12 @@ class XacmlStore {
   // -------------------------------------------------------------------------
   // READING.
   // -------------------------------------------------------------------------
+  /**
+   * Lists every policy entry in the current realm.
+   * @returns the rows, each with its name, DN, PolicyId, kind, version,
+   * combining algorithm, description, enabled and root flags and document;
+   * empty when there is no directory
+   */
   all(): PolicyRow[] {
     const self = this;
     const { log } = this.deps;
@@ -591,6 +654,11 @@ class XacmlStore {
     return value === undefined || value === null ? null : String(value);
   }
 
+  /**
+   * Returns one policy entry by name.
+   * @param name - the entry name
+   * @returns the row, or null when there is none
+   */
   read(name: string): PolicyRow | null {
     const { log } = this.deps;
     log.debug('Entering XacmlStore.read(). name=' + name);
@@ -612,6 +680,11 @@ class XacmlStore {
   // their answer when somebody adds a second policy and neither of which
   // anybody can see.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the repository's root: the one enabled policy flagged root, or
+   * the only enabled policy when none is flagged.
+   * @returns the root row, or null when there is none or more than one
+   */
   root(): PolicyRow | null {
     const { log } = this.deps;
     log.debug('Entering XacmlStore.root().');
@@ -648,6 +721,12 @@ class XacmlStore {
   // resolves a `PolicyIdReference` against. Built per decision rather than
   // held, because the directory is the store and a cached map is a second copy
   // of it.
+  /**
+   * Builds the map a `PolicyIdReference` is resolved against: every enabled
+   * policy that parses, keyed by its PolicyId. A policy that does not parse
+   * is left out and logged.
+   * @returns PolicyId to parsed policy model
+   */
   repository(): Record<string, any> {
     const self = this;
     const { log, errorCodes } = this.deps;
@@ -686,6 +765,17 @@ class XacmlStore {
   // Indeterminate for a reason nobody will connect to the save that caused it
   // — so the refusal happens at the moment somebody can still fix it.
   // -------------------------------------------------------------------------
+  /**
+   * Validates a policy document and writes it as a directory entry, then
+   * tells the change observer.
+   * @param name - the entry name, 1 to 128 letters, digits, dots, dashes or
+   * underscores
+   * @param document - the XACML XML document
+   * @param options - `enabled` (default true), `isRoot` and `description`
+   * @returns `{ ok: true, id, kind }`, or `{ ok: false, why }` carrying its
+   * error code for no directory, a bad name, a document that does not
+   * validate (with its `problems`), a second root or a refused entry
+   */
   write(name: string, document: string,
         options?: WriteOptions | null): WriteResult {
     const { log, errorCodes } = this.deps;
@@ -762,6 +852,11 @@ class XacmlStore {
                                      'STS-XACML-0027');
   }
 
+  /**
+   * Deletes a policy entry, then tells the change observer.
+   * @param name - the entry name
+   * @returns true when an entry was removed
+   */
   remove(name: string): boolean {
     const { log } = this.deps;
     log.debug('Entering XacmlStore.remove(). name=' + name);
@@ -784,6 +879,11 @@ class XacmlStore {
   // STATICALLY VALIDATED like any other, and a seed that stopped typechecking
   // would be refused at startup and say so rather than becoming the one policy
   // in the repository nobody had checked.
+  /**
+   * Writes the seeded policy as the repository's enabled root, through the
+   * ordinary `write()`; called when `ou=policies` is first created.
+   * @returns true when it was written
+   */
   seed(): boolean {
     const { log, errorCodes } = this.deps;
     log.debug('Entering XacmlStore.seed().');
@@ -805,6 +905,11 @@ class XacmlStore {
 // A `seed()` asked for before any instance existed — see the header.
 let seedRequested = false;
 
+/**
+ * Seeds the repository through the installed instance, or holds the
+ * request until an instance is installed.
+ * @returns true when seeded or held, false when the seed was refused
+ */
 function seedFacade(): boolean {
   helpers.log.debug('Entering seedFacade().');
   if (slot.origin() === 'none') {
@@ -835,6 +940,12 @@ const slot = new InstanceSlot<XacmlStore>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The XACML policy repository: `ou=policies` in the realm's directory.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   XacmlStore: XacmlStore,
   installInstance: (instance: XacmlStore): void => slot.install(instance),

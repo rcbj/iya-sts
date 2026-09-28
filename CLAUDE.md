@@ -529,6 +529,8 @@ in every file, including the ones in the source comments. This is the index.
 | 4c | `consent_screen.js` after `authn.js` and before `oauth2.js`, and why the screen holds the records while the register holds none | `oauth-oidc/CLAUDE.md` |
 | 3u | `roles.js`, the two relations it keeps apart (who HOLDS a role against what REQUIRES one), the six computed built-ins, and why it is a plain require rather than a fifth inverted hook | `common/CLAUDE.md` |
 | 3v | `issuance_gate.js`, why an empty decider means ISSUE, and why the one case that must fail CLOSED lives in the PEP rather than here | `common/CLAUDE.md` |
+| 3br | `xacml/xacml_request.js` (#306, #88 E): the one AuthorizationRequest builder — #88 section 7's fields in one vocabulary — every embedded PEP and the remote PEP build through; engine-side so the remote container copies it | `xacml/CLAUDE.md`, `xacml-pep/CLAUDE.md` |
+| 3bq | `role_permissions.ts` (#302, #303 — #88 A and B): a scope is a request and a role authorizes it — `rolePermission` on the role, `oauthRoleGatedPermission` on the resource, ADMIN_READ / ADMIN_WRITE as configured console roles held by people through the roster and by applications as members, narrowed at issuance, held ∩ carried at `/admin-api`, and the PIP's role designator | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3w | `pki.js`, why the hierarchy is three tiers or none, why it keeps no store of its own, and what a path check must refuse | `common/CLAUDE.md` |
 | 3aa | `pki_authoring.js`, the Certificate & Key Configuration pane as a model: why it is not `pki.js` and not the renderer, why the FORM is the state, why the field table is a table, and why the slow key generation deliberately does not use the worker pool | `common/CLAUDE.md` |
 | 3x | `assertion_grant.js`, why RFC 7521 and RFC 7523 are one file, why `client_auth.js` requires it and never the reverse, and why the issuer must be declared | `oauth-oidc/CLAUDE.md` |
@@ -958,6 +960,7 @@ Those are two claims and keeping them apart is the whole of this section.
 ./run-tests.sh --target=aws:testidp     # the protocol half against an AWS environment
 ./run-tests.sh --target=aws-ephemeral   # apply `ci`, run the suite against it from here, destroy it
 ./run-coverage.sh                       # coverage, collected by a run of its own
+./run-jsdoc.sh                          # the API reference (TypeDoc) into ./apidocs
 ```
 
 **`./run-tests.sh` IS THE ONE LAUNCHER FOR THE WHOLE SUITE, WHEREVER THE SERVICE
@@ -972,6 +975,11 @@ because single-node and multi-node differ in too much to read one failure;
 `--modes=memory,single-node` and `--modes=cluster` as two jobs. Every local
 mode runs every job, both halves; an AWS target runs the protocol half only,
 because the in-process files cannot be pointed at a URL.
+
+**Every image the test stack pulls or builds FROM is a private copy on ghcr.io
+(2026-09-27)**: `.github/image-mirror.txt`, and `tests/CLAUDE.md`, *EVERY
+IMAGE THE STACK PULLS OR BUILDS FROM*. `docker login ghcr.io` is needed, as
+for the corpora image.
 
 **`npm test` refuses on a checkout since #50** (the TypeScript is compiled
 only inside an image), so `./docker-npm-test.sh` builds the tests image and

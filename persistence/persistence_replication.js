@@ -254,6 +254,11 @@ function intervalMs() {
 // and cannot have them — a change log needs a transaction and a sequence, and
 // that driver's unit of writing is a whole file.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether a persistence driver can coordinate through a change log.
+ * @param theDriver - the driver to test
+ * @returns true when it has `changesSince()` and `latestChangeSeq()`
+ */
 function supports(theDriver) {
   log.debug("Entering supports().");
   log.debug("Leaving supports().");
@@ -267,6 +272,19 @@ function supports(theDriver) {
 // including the minted rows, which need the keystore — because the high-water
 // mark is only meaningful once this process is up to date.
 // ---------------------------------------------------------------------------
+/**
+ * Starts following the change log from its current head.
+ *
+ * Called after the whole store has been restored. Registers the per-process
+ * pull job and the change-log trim job, and listens for the driver's nudge.
+ * A change log that cannot be read is not fatal: the process runs
+ * uncoordinated and keeps trying.
+ * @param theDriver - the persistence driver
+ * @param theAppliers - the appliers, by row kind, that take another process's
+ * rows into this process's memory
+ * @returns a promise of `{ coordinating, from }`, or `{ coordinating: false }`
+ * with an `error` when coordination is off or failed
+ */
 function start(theDriver, theAppliers) {
   log.debug('Entering start().');
   driver = supports(theDriver) ? theDriver : null;
@@ -382,6 +400,12 @@ function schedule() {
 // A nudge arrived. Pull NOW rather than at the next tick — and if one is
 // already running, remember to go round again, because the row that woke us
 // may have been committed after the running pull took its page.
+/**
+ * Pulls the change log now, in answer to a nudge.
+ *
+ * If a pull is already running, another is run when it finishes, since the
+ * row that woke this one may have committed after that pull took its page.
+ */
 function wake() {
   log.debug("Entering wake().");
   if (!enabled()) {
@@ -444,6 +468,14 @@ function wake() {
 // gives everywhere else — this process is correct about its own copy and alone
 // with it. `caughtUp` says which, so the caller can decide.
 // ---------------------------------------------------------------------------
+/**
+ * Waits until everything committed before the call has been applied here.
+ *
+ * A read barrier for read-your-write across processes, unlike `pull()`, which
+ * returns at once when a pull is already running. Resolves rather than
+ * rejects when the log cannot be read.
+ * @returns a promise of `{ caughtUp, applied, coordinating }`
+ */
 function syncNow() {
   log.debug('Entering syncNow(). applied=' + applied);
   if (!enabled()) {
@@ -552,6 +584,14 @@ function syncNow() {
   });
 }
 
+/**
+ * Applies, page by page in `seq` order, every change another process has
+ * committed since this one last looked.
+ *
+ * Returns at once when coordination is off or a pull is running. A failure is
+ * logged and counted, not thrown, and the next pull retries the same rows.
+ * @returns a promise of `{ applied }`, with `error` when the pull failed
+ */
 function pull() {
   log.debug("Entering pull().");
   if (!enabled() || running) {
@@ -847,6 +887,14 @@ function applyRows(rows) {
 // empty string as their key, which is what their own accessors already do.
 const contributions = new Map();
 
+/**
+ * Records what another process contributed to a `merge: 'own'` store.
+ * @param handle - the store's handle
+ * @param realmId - the realm the row belongs to
+ * @param key - the key within the store ('' for an object or array store)
+ * @param origin - the process that wrote the row
+ * @param value - the row's value; null or undefined removes it
+ */
 function contribute(handle, realmId, key, origin, value) {
   log.debug("Entering contribute().");
   let byRealm = contributions.get(handle);
@@ -884,6 +932,17 @@ function contribute(handle, realmId, key, origin, value) {
 // `realmId` undefined means THE AMBIENT REALM, which is what every caller
 // wants: these are all read from inside a request or a console page, where the
 // realm is already established.
+/**
+ * Returns what every other process contributed under a handle, realm and
+ * key.
+ *
+ * The caller merges the values (a sum for a counter, a concatenation for a
+ * ring), because only it knows what they mean.
+ * @param handle - the store's handle
+ * @param realmId - the realm; undefined means the ambient realm
+ * @param key - the key within the store
+ * @returns an array of the values, one per other process
+ */
 function remoteRows(handle, realmId, key) {
   log.debug("Entering remoteRows().");
   const byRealm = contributions.get(handle);
@@ -919,6 +978,16 @@ function remoteRows(handle, realmId, key) {
 // one segment more than that process holds — `audit.js` keeps the newest
 // `audit.maxEvents` of each.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a segmented array store's rows as every other process holds them.
+ *
+ * Each process's segments are put back together in position order. The
+ * caller trims, since the result can carry one segment more than that process
+ * holds.
+ * @param handle - the store's handle
+ * @param realmId - the realm; undefined means the ambient realm
+ * @returns one array of elements per other process
+ */
 function remoteSegmentedRows(handle, realmId) {
   log.debug("Entering remoteSegmentedRows().");
   const byRealm = contributions.get(handle);
@@ -964,6 +1033,13 @@ function remoteSegmentedRows(handle, realmId) {
 // Every key another process has contributed under this handle in this realm.
 // What a MAP-shaped counter store needs before it can ask for each: another
 // process may be counting a path this one has never served.
+/**
+ * Returns every key another process has contributed under a handle in a
+ * realm.
+ * @param handle - the store's handle
+ * @param realmId - the realm; undefined means the ambient realm
+ * @returns the keys
+ */
 function remoteKeys(handle, realmId) {
   log.debug("Entering remoteKeys().");
   const byRealm = contributions.get(handle);
@@ -980,6 +1056,10 @@ function remoteKeys(handle, realmId) {
 // Is anything in another process's hands at all? The console asks, so that a
 // single-process deployment can be told it is one rather than being shown an
 // empty fan-in it has to interpret.
+/**
+ * Returns every other process that has contributed a row.
+ * @returns the origins, as an array of strings
+ */
 function origins() {
   log.debug("Entering origins().");
   const all = new Set();
@@ -1107,6 +1187,15 @@ function nodeIdOf() {
 
 // Says where this process has got to. `force` skips the interval — the report
 // at start. Never rejects; returns the promise so a test can wait for it.
+/**
+ * Records in the store where this process has got to in the change log.
+ *
+ * The position is what the trim is bounded by. Never rejects; a report that
+ * finds its row was removed means the process was declared gone and should be
+ * restarted (`STS-STORE-0057`).
+ * @param force - true to report even if the interval has not passed
+ * @returns a promise of the driver's answer, or null when nothing was reported
+ */
 function reportPosition(force) {
   log.debug("Entering reportPosition().");
   if (!driver || stopped || typeof driver.reportChangeReader !== 'function' ||
@@ -1155,6 +1244,12 @@ function reportPosition(force) {
 
 // One trim. Resolves the driver's answer, or null when there was nothing to
 // do. Never rejects.
+/**
+ * Trims the change log once, below the lowest position every live reader
+ * reported and older than the retention.
+ * @returns a promise of the driver's answer, or null when there was nothing to
+ * do or it failed; never rejects
+ */
 function purgeOnce() {
   log.debug("Entering purgeOnce().");
   if (!driver || stopped || purging ||
@@ -1252,6 +1347,10 @@ function startRetention() {
   log.debug("Leaving startRetention(). On the scheduler.");
 }
 
+/**
+ * Stops coordinating and removes this process from the change log's readers.
+ * @returns a promise that resolves when done; never rejects
+ */
 function stop() {
   log.debug('Entering stop().');
   stopped = true;
@@ -1272,6 +1371,11 @@ function stop() {
   });
 }
 
+/**
+ * Describes this process's coordination for the console.
+ * @returns the counters, positions, retention state and a note on what
+ * coordination does not share
+ */
 function status() {
   log.debug("Entering status().");
   log.debug("Leaving status().");
@@ -1315,6 +1419,9 @@ function status() {
 }
 
 // For the tests, and for the reason `keystore.reset()` is exported.
+/**
+ * Clears every piece of state in this module, for the tests.
+ */
 function reset() {
   log.debug("Entering reset().");
   driver = null;
@@ -1359,6 +1466,14 @@ capabilities.provide('replication.late-commits');
 // And the log is trimmed below what every reader has applied — RETENTION above.
 capabilities.provide('ops.change-log-retention');
 
+/**
+ * Coordination of several processes through one store's change log.
+ *
+ * Each process applies what others committed to `sts_changes`, with
+ * LISTEN/NOTIFY only making that prompt, and fans in the rows of
+ * `merge: 'own'` stores. It shares state, not sockets.
+ * @namespace
+ */
 module.exports = {
   start: start,
   stop: stop,

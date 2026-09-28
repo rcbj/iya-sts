@@ -180,7 +180,19 @@ interface GnapProofDeps {
   revocationStatus: { codeOf(verdict: any): string };
 }
 
+/**
+ * Answers whether a request proved possession of a key — the question every
+ * GNAP endpoint asks — for all four proofing methods of RFC 9635 section 7.3:
+ * `httpsig`, `mtls`, `jwsd` and `jws`.
+ *
+ * Not permissive in any mode.
+ */
 class GnapProof {
+  /**
+   * Builds the verifier from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapProofDeps) {
     deps.log.debug("Entering GnapProof.constructor().");
     deps.log.debug("Leaving GnapProof.constructor().");
@@ -220,6 +232,13 @@ class GnapProof {
 
   // The access token hash of sections 7.3.3/7.3.4: base64url SHA-256 of the
   // ASCII token value — the same computation as DPoP's `ath` (RFC 9449).
+  /**
+   * Returns the access token hash of sections 7.3.3 and 7.3.4: base64url
+   * SHA-256 of the token value, as DPoP's `ath`.
+   *
+   * @param token - the access token value
+   * @returns the hash
+   */
   athOf(token) {
     const { log } = this.deps;
     log.debug("Entering GnapProof.athOf().");
@@ -232,6 +251,13 @@ class GnapProof {
   // A signature over any other spelling of the URI fails, which is correct: the
   // client signed the URI the AS gave it, and section 3.1 says to use it
   // exactly.
+  /**
+   * Returns the absolute URI the client addressed, with the realm prefix the
+   * front middleware stripped put back.
+   *
+   * @param req - the request
+   * @returns the URI
+   */
   targetUriOf(req) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering GnapProof.targetUriOf().");
@@ -240,6 +266,12 @@ class GnapProof {
   }
 
   // The GNAP token in `Authorization`, when the request carries one.
+  /**
+   * Returns the GNAP token in the `Authorization` header.
+   *
+   * @param req - the request
+   * @returns the token value, or null when there is none
+   */
   presentedToken(req) {
     const { log } = this.deps;
     log.debug("Entering GnapProof.presentedToken().");
@@ -258,6 +290,15 @@ class GnapProof {
   // for one reason, and `verifyRequest()` keeps it true: nothing read here is
   // acted on until the proof over it has verified against the key it names.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the request content once, before anything is verified: raw bytes, and
+   * the JSON or the JWS it carries.
+   *
+   * Nothing read here is acted on until the proof over it has verified.
+   *
+   * @param req - the request
+   * @returns `{ ok: true, hadContent, raw, json, jose }`, or a refusal
+   */
   readBody(req) {
     const { log } = this.deps;
     log.debug("Entering GnapProof.readBody().");
@@ -335,6 +376,16 @@ class GnapProof {
   // families only, which is every algorithm a GNAP key can carry
   // (`gnap_keys.ts` refuses the rest), and with node's own primitives.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies a JWS signature over an arbitrary signing input, for a detached
+   * JWS whose payload is a digest; classical algorithms only.
+   *
+   * @param alg - the JWS algorithm
+   * @param descriptor - the key's descriptor
+   * @param signingInput - the signing input
+   * @param signature - the signature
+   * @returns true when it verifies
+   */
   verifyJwsBytes(alg, descriptor, signingInput, signature) {
     const { nodeCrypto, log, stsCrypto } = this.deps;
     log.debug("Entering GnapProof.verifyJwsBytes(). alg=" + alg);
@@ -765,6 +816,14 @@ class GnapProof {
   // `applications.get()` view, or null for a key no entry holds. Answers
   // `{ ok, mapping }` — `issued` or `subject` — or a refusal.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether this connection's client certificate is bound to an
+   * application entry (#107), once `verifyRequest()` has proved the key.
+   *
+   * @param req - the request
+   * @param app - the application entry's view, or null
+   * @returns `{ ok: true, mapping }` — `issued` or `subject` — or a refusal
+   */
   certificateBinding(req, app) {
     const { log, mtls, certificateSubject } = this.deps;
     log.debug("Entering GnapProof.certificateBinding().");
@@ -869,6 +928,19 @@ class GnapProof {
   // `options.mtlsTrust` — `pki` or `pinned`, the model in force for the
   // caller's application entry (#107); the realm's own when absent.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies a request's proof of possession of a key, synchronously.
+   *
+   * The replay cache is consulted in this process; the keys it remembered are
+   * returned for `spendProof()`.
+   *
+   * @param req - the request
+   * @param body - what `readBody()` read
+   * @param descriptor - the key's descriptor
+   * @param options - `accessToken` the request is bound to, `rotation` (the new
+   *   key's descriptor, both keys proved) and `mtlsTrust` (`pki` or `pinned`)
+   * @returns the outcome with its `method`, or a refusal
+   */
   verifyRequest(req, body, descriptor, options) {
     const { log, mtls, httpsig } = this.deps;
     log.debug("Entering GnapProof.verifyRequest(). method=" +
@@ -976,6 +1048,13 @@ class GnapProof {
     log.debug("Leaving GnapProof.noteReplayKey().");
   }
 
+  /**
+   * Spends a verified proof's replay keys across the cluster, so a proof
+   * another node already accepted is refused as a replay.
+   *
+   * @param verified - `verifyRequest()`'s outcome
+   * @returns `{ ok: true }`, or a refusal
+   */
   async spendProof(verified) {
     const { log, store } = this.deps;
     log.debug("Entering GnapProof.spendProof().");
@@ -1003,6 +1082,16 @@ class GnapProof {
     return { ok: true };
   }
 
+  /**
+   * Verifies a request's proof and then spends it across the cluster: what
+   * every caller that acts on a verified request calls.
+   *
+   * @param req - the request
+   * @param body - what `readBody()` read
+   * @param descriptor - the key's descriptor
+   * @param options - as `verifyRequest()` takes them
+   * @returns the verified outcome, or a refusal
+   */
   async verifyRequestOnce(req, body, descriptor, options) {
     const { log } = this.deps;
     log.debug("Entering GnapProof.verifyRequestOnce().");
@@ -1189,6 +1278,12 @@ class GnapProof {
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before. `helpers` supplies the logger
   // and the base-URL and clock readers, as it did for this module before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapProofDeps {
     helpers.log.debug("Entering GnapProof.defaultDeps().");
     helpers.log.debug("Leaving GnapProof.defaultDeps().");
@@ -1227,9 +1322,25 @@ const slot = new InstanceSlot<GnapProof>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Did this request prove possession of this key: the one question every GNAP
+ * endpoint asks, for all four proofing methods.
+ *
+ * @namespace
+ */
 export = {
   GnapProof: GnapProof,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapProof): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   readBody: slot.forward('readBody'),
   verifyRequest: slot.forward('verifyRequest'),

@@ -395,16 +395,37 @@ const CANONICAL_TYPES: Record<string, string[]> = {
 // ---------------------------------------------------------------------------
 const HOBA_REGISTER_PATH = '/.well-known/hoba/register';
 
+/**
+ * SCIM 2.0 (RFC 7642, 7643, 7644) at `/scim/v2`, on scimmy, provisioning into
+ * the embedded LDAP directory with no store of its own.
+ */
 class Scim {
+  /**
+   * The base path, `/scim/v2`. Not a setting: it is baked into every
+   * `meta.location` a client stores.
+   */
   static readonly BASE = BASE;
+  /**
+   * The one user name SCIM refuses, `invalid`, beside the one refused password.
+   */
   static readonly REFUSED_USERNAME = REFUSED_USERNAME;
 
+  /**
+   * Builds the SCIM surface from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: ScimDeps) {
     deps.log.debug("Entering Scim.constructor().");
     deps.log.debug("Leaving Scim.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): ScimDeps {
     helpers.log.debug("Entering Scim.defaultDeps().");
     helpers.log.debug("Leaving Scim.defaultDeps().");
@@ -429,6 +450,11 @@ class Scim {
     };
   }
 
+  /**
+   * Says whether SCIM is on (`scim.enabled`).
+   *
+   * @returns true unless it is turned off
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering Scim.enabled().");
@@ -490,6 +516,15 @@ class Scim {
   // would be two doors to one set of capabilities, which is the mistake rule 5
   // exists for in miniature.
   // ---------------------------------------------------------------------------
+  /**
+   * States this server's capabilities to scimmy, which builds the
+   * ServiceProviderConfig document from them.
+   *
+   * Applied at load and again on every ServiceProviderConfig request, so a
+   * change to a runtime setting reaches the published document.
+   *
+   * @param base - the base URL the document's locations are built on
+   */
   applyCapabilities(base?: string): void {
     const { log, scimAuth, SCIMMY } = this.deps;
     log.debug("Entering Scim.applyCapabilities(). base=" + (base || '(none ' +
@@ -1654,6 +1689,10 @@ class Scim {
   // The two scimmy resources, User and Group, declared with the handlers
   // that make the directory their store. Called once, at load (see the
   // transitional code at the bottom).
+  /**
+   * Declares the two scimmy resources, User and Group, with the handlers that
+   * make the directory their store. Called once, when the instance is wired.
+   */
   declareResources(): void {
     const { log, directory, scimMap, errorCodes, SCIMMY } = this.deps;
     const { coded } = this;
@@ -2513,6 +2552,13 @@ class Scim {
   // What this surface is, as data. Shared by the page and by ?format=json so
   // the two cannot disagree — the same reason /admin/sts-metadata reads the
   // router.
+  /**
+   * Describes this surface as data, shared by its console page and by
+   * `?format=json` so the two cannot disagree.
+   *
+   * @param req - the request
+   * @returns the description
+   */
   description(req: ScimRequest): any {
     const { log, baseUrlOf, stats, directory, scimAuth, scimMap } = this.deps;
     log.debug("Entering Scim.description().");
@@ -2742,6 +2788,15 @@ class Scim {
   }
 
   // Every route this module registers, in the order they always were.
+  /**
+   * Registers every route under `/scim/v2` and the HOBA registration page,
+   * in the order they always were.
+   *
+   * Called by `common/protocol_stack.ts`; requiring this module registers
+   * nothing.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: any): void {
     const { log, xmlEscape, baseUrlOf, audit, directory, scimAuth, errorCodes,
             SCIMMY } = this.deps;
@@ -3334,6 +3389,10 @@ class Scim {
   // Guarded, exactly as those two are: a copy of admin.js without the slot
   // costs a warning rather than a TypeError at require time, which would take
   // the whole service down over one page.
+  /**
+   * Fills the console's SCIM reader slot, the inverted hook of rule 3e; a
+   * console without the slot costs a warning.
+   */
   fillConsoleSlot(): void {
     const { log, adminConsole } = this.deps;
     log.debug("Entering Scim.fillConsoleSlot().");
@@ -3348,6 +3407,10 @@ class Scim {
   }
 
   // The start-up line.
+  /**
+   * Logs the start-up line: where SCIM is, and whether a credential is required
+   * and verified.
+   */
   announce(): void {
     const { log, scimAuth } = this.deps;
     log.debug("Entering Scim.announce().");
@@ -3368,6 +3431,13 @@ class Scim {
   // installed, in the order the statements used to run: capabilities, User,
   // Group, the console's slot, the log line. The routes are not here — the
   // composition root registers them, after it has installed the instance.
+  /**
+   * Does what loading this module used to do with its instance, once, for
+   * whichever instance is installed: capabilities, User, Group, the console's
+   * slot and the start-up line.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: Scim): void {
     helpers.log.debug("Entering Scim.wire().");
     instance.applyCapabilities();
@@ -3401,10 +3471,30 @@ const slot = new InstanceSlot<Scim>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * SCIM 2.0 at `/scim/v2`, provisioning into the embedded directory.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Registers every SCIM route on the installed instance.
+   *
+   * @param target - the shared express application
+   */
   registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   Scim: Scim,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: Scim): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   BASE: Scim.BASE,
   REFUSED_USERNAME: Scim.REFUSED_USERNAME,

@@ -230,6 +230,7 @@ const bunyan = require('bunyan');
 // kind — every value the operator meant to set is missing, and continuing would
 // mean starting a service configured as nobody asked for.
 // ---------------------------------------------------------------------------
+/** The default appconfig file, which the operator's file is unioned on. */
 const DEFAULTS_FILE = path.join(configFile.ROOT, 'env', 'defaults.js');
 const defaults = require(DEFAULTS_FILE);
 
@@ -744,6 +745,11 @@ function withEventTypeUris(prefix, names) {
   }));
 }
 
+/**
+ * Every setting this service has, one row each: its key, type, where it may
+ * come from, what it means and whether changing it at runtime does
+ * anything.
+ */
 const SETTINGS = [
   // --- Global --------------------------------------------------------------
   { key: 'global.host', group: 'Global', label: 'HTTP bind address',
@@ -15133,6 +15139,10 @@ SETTINGS.forEach(function (setting) {
 // unknown key is (STS-CORE-0008), with the replacement named, and left in
 // the store.
 // ---------------------------------------------------------------------------
+/**
+ * The settings that were replaced, and what replaced them; one still named
+ * anywhere stops the service starting.
+ */
 const REPLACED_SETTINGS = [
   { key: 'gnap.pushAllowInsecure', env: 'STS_GNAP_PUSH_ALLOW_INSECURE',
     now: ['gnap.pushAllowHttp', 'gnap.pushSkipTlsVerification',
@@ -15280,6 +15290,15 @@ function pinnedSignerWriteProblem(key, parsed) {
     'or POST /admin-api/pki/unpin-key — and then turn it off.';
 }
 
+/**
+ * Says whether a value is refused by the mode rule: a development-only
+ * value in product mode, or a write that would turn a live pinned signer
+ * off.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @returns the problem as a sentence, or null
+ */
 function modeWriteProblem(key, raw) {
   log.debug("Entering modeWriteProblem(). key=" + key);
   const setting = byKey[key];
@@ -15331,6 +15350,15 @@ function modeWriteProblem(key, raw) {
 
 // checkOverride() and then the mode rule above, for the doors that WRITE a
 // value somebody asked for — the console's and the API's.
+/**
+ * Runs `checkOverride()` and then the mode rule, for the doors that write
+ * a value somebody asked for.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - as for `checkOverride()`
+ * @returns the problem as a sentence, or null
+ */
 function checkWrite(key, raw, forRealm) {
   log.debug("Entering checkWrite(). key=" + key);
   const problem = checkOverride(key, raw, forRealm) ||
@@ -15339,6 +15367,14 @@ function checkWrite(key, raw, forRealm) {
   return problem;
 }
 
+/**
+ * Returns the error code `checkWrite()` refused for.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - as for `checkOverride()`
+ * @returns the code, or empty
+ */
 function checkWriteCode(key, raw, forRealm) {
   log.debug("Entering checkWriteCode(). key=" + key);
   const code = checkOverrideCode(key, raw, forRealm) ||
@@ -15349,6 +15385,13 @@ function checkWriteCode(key, raw, forRealm) {
 
 // WHICH CODE `modeWriteProblem()` REFUSED FOR, or '' — the half of
 // `checkWriteCode()` the realm doors (`realms.js`) need on its own.
+/**
+ * Returns the error code `modeWriteProblem()` refused for.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @returns the code, or empty
+ */
 function modeWriteCode(key, raw) {
   log.debug("Entering modeWriteCode(). key=" + key);
   if (!modeWriteProblem(key, raw)) {
@@ -15413,6 +15456,12 @@ const overrides = {};
 // ---------------------------------------------------------------------------
 let overrideStore = null;
 
+/**
+ * Fills the override-store slot: the function told after every successful
+ * write, which persists it.
+ *
+ * @param fn - the persistence layer's writer
+ */
 function setOverrideStore(fn) {
   log.debug("Entering setOverrideStore().");
   overrideStore = fn;
@@ -15480,6 +15529,11 @@ let realmContext = null;
 // for what it is for and why a plain boolean is the right primitive.
 let suppressRealmLayer = false;
 
+/**
+ * Fills the realm slot: the function that says which realm is ambient.
+ *
+ * @param fn - `realms.js`'s reader of the ambient realm
+ */
 function setRealmContext(fn) {
   log.debug("Entering setRealmContext().");
   realmContext = fn;
@@ -15524,6 +15578,12 @@ function realmFor(key) {
 // Whether a realm may carry this setting at all. Exported, because the WRITING
 // end of the rule is in realms.js — see checkRealmOverride() there — and two
 // copies of a predicate is how the two ends come to disagree.
+/**
+ * Says whether a setting belongs to the process, so no realm may carry it.
+ *
+ * @param key - the setting's key
+ * @returns true when it is per process
+ */
 function isPerProcess(key) {
   log.debug("Entering isPerProcess().");
   const setting = byKey[key];
@@ -15655,6 +15715,14 @@ function resolve(key) {
 // THE function every module calls. Coerced to the setting's type, so a caller
 // never has to know whether the value arrived from a string environment or a
 // typed file.
+/**
+ * Returns a setting's value, coerced to its type, from the highest layer
+ * that has one: a runtime override (the ambient realm's first), the
+ * environment, the appconfig file, the defaults.
+ *
+ * @param key - the setting's key
+ * @returns the value
+ */
 function value(key) {
   log.debug("Entering value().");
   const setting = settingFor(key);
@@ -15719,6 +15787,12 @@ function processValue(key) {
 // standard port is left off, which is what `baseUrlOf()` gives a request that
 // carried a Host header without one.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the management API's base URL as the process knows it without a
+ * request; a wildcard bind is drawn as `localhost`.
+ *
+ * @returns the URL
+ */
 function managementApiBaseUrl() {
   log.debug("Entering managementApiBaseUrl().");
   const pinned = String(processValue('global.publicBaseUrl') || '').trim()
@@ -15743,6 +15817,13 @@ function managementApiBaseUrl() {
     (port === standard ? '' : ':' + port) + '/admin-api';
 }
 
+/**
+ * Says which layer a setting's value comes from.
+ *
+ * @param key - the setting's key
+ * @returns `realm`, `override`, `env`, `env-legacy`, `appconfig`,
+ *   `defaults` or `default`
+ */
 function sourceOf(key) {
   log.debug("Entering sourceOf().");
   log.debug("Leaving sourceOf().");
@@ -15751,6 +15832,13 @@ function sourceOf(key) {
 
 // The value as a single line: what the console's input shows, and what the
 // equivalent environment variable would carry.
+/**
+ * Returns a setting's value as a single line, as the console's input shows
+ * it and the environment variable would carry it.
+ *
+ * @param key - the setting's key
+ * @returns the text
+ */
 function text(key) {
   log.debug("Entering text().");
   const setting = settingFor(key);
@@ -15791,6 +15879,11 @@ function text(key) {
 // ---------------------------------------------------------------------------
 const loggers = [];
 
+/**
+ * Registers a bunyan logger so a change of `global.logLevel` reaches it.
+ *
+ * @param logger - the logger
+ */
 function registerLogger(logger) {
   log.debug("Entering registerLogger().");
   loggers.push(logger);
@@ -15823,6 +15916,16 @@ function applyLogLevel() {
 // restart-only rule rather than a hole in it: a realm binds no socket, so the
 // reason those rows are restart-only is not a reason a REALM cannot carry them.
 // The process-wide form is unchanged and still refuses.
+/**
+ * Says whether a value would be accepted as an override, without accepting
+ * it.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - true to validate for a realm, which admits the
+ *   `realmRuntime` rows; wherever the write would land when omitted
+ * @returns the problem as a sentence, or null when it would be accepted
+ */
 function checkOverride(key, raw, forRealm) {
   log.debug("Entering checkOverride().");
   // `forRealm` OMITTED MEANS "WHEREVER THIS WRITE WOULD LAND", which is what
@@ -15870,6 +15973,14 @@ function checkOverride(key, raw, forRealm) {
 // STRING that six callers render, and changing its shape to carry a code would
 // change what each of them sees. The order of the tests is checkOverride()'s
 // own, so the two cannot name different conditions for one refusal.
+/**
+ * Returns the error code of the condition `checkOverride()` refused for.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - as for `checkOverride()`
+ * @returns the code, or empty where it accepts
+ */
 function checkOverrideCode(key, raw, forRealm) {
   log.debug("Entering checkOverrideCode().");
   const inRealm = forRealm === undefined ? !!realmFor(key) : !!forRealm;
@@ -15948,6 +16059,15 @@ function announceClaimShape(key, before) {
   log.debug("Leaving announceClaimShape().");
 }
 
+/**
+ * Sets a runtime override, in the ambient realm where one is and the
+ * setting may be carried by a realm, and in the process otherwise.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @returns `{ ok: true, errors: [], key, realm }`, or `{ ok: false, errors }`
+ *   carrying its code
+ */
 function setOverride(key, raw) {
   log.debug("Entering setOverride(). key=" + key);
   // WHICH REALM THIS WRITE LANDS IN IS DECIDED FIRST, BECAUSE THE CHECK
@@ -16020,6 +16140,14 @@ function setOverride(key, raw) {
 
 // Drop one override, so the setting falls back to the environment, the file or
 // the default — whichever it would have used had nothing ever been set.
+/**
+ * Drops one override made here, so the setting falls back to what it would
+ * otherwise be.
+ *
+ * @param key - the setting's key
+ * @returns `{ ok: true, errors: [], key, realm }`, or `{ ok: false, errors }`
+ *   carrying its code
+ */
 function clearOverride(key) {
   log.debug("Entering clearOverride(). key=" + key);
   const setting = byKey[key];
@@ -16065,6 +16193,12 @@ function clearOverride(key) {
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }
 
+/**
+ * Drops every override made here: in a realm, the realm's only.
+ *
+ * Refused whole when one clear would turn a live pinned signer off.
+ * @returns `{ ok: true, errors: [], cleared, … }`, or a refusal
+ */
 function clearAllOverrides() {
   log.debug("Entering clearAllOverrides().");
   // In a realm this clears the REALM's settings and leaves the process-wide
@@ -16114,6 +16248,12 @@ function clearAllOverrides() {
 // create the one thing the realm layer exists to prevent: a realm's value in a
 // process-wide place.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the process-wide overrides, to be written down; a realm's are
+ * written with the realm registry.
+ *
+ * @returns the overrides by key
+ */
 function persistableOverrides() {
   log.debug("Entering persistableOverrides().");
   const out = {};
@@ -16149,6 +16289,14 @@ function persistableOverrides() {
 // and a saved value that is no longer valid must be reported and skipped rather
 // than smuggled past the validation every other caller goes through.
 // ---------------------------------------------------------------------------
+/**
+ * Puts stored process-wide overrides back, at startup or when another
+ * process changed the configuration: each validated as any write is, the
+ * invalid reported and skipped, and those no longer stored cleared.
+ *
+ * @param saved - the stored overrides by key
+ * @returns how many were applied
+ */
 function applyPersistedOverrides(saved) {
   log.debug("Entering applyPersistedOverrides().");
   const applied = [];
@@ -16213,6 +16361,13 @@ function applyPersistedOverrides(saved) {
 // OpenAPI document's example. A second shape for any of them is how a console
 // and an API start disagreeing about what the service is configured with.
 // ---------------------------------------------------------------------------
+/**
+ * Describes one setting in the one shape the console, the management API
+ * and the OpenAPI example all use.
+ *
+ * @param setting - the setting's row
+ * @returns the description
+ */
 function describe(setting) {
   log.debug("Entering describe().");
   const state = resolve(setting.key);
@@ -16277,6 +16432,12 @@ function describe(setting) {
 // Order matters here in a way it does not for most lists: the console renders
 // one section per group and a reader looking for the Kerberos realm should find
 // it where the Kerberos endpoints are described everywhere else.
+/**
+ * Returns every group, in the order the table declares them, with their
+ * settings in it.
+ *
+ * @returns `{ group, settings }` per group
+ */
 function groups() {
   log.debug("Entering groups().");
   const order = [];
@@ -16295,6 +16456,13 @@ function groups() {
   return out;
 }
 
+/**
+ * Returns what this service is configured with: the realm the snapshot is
+ * of and what it sets, the appconfig files, the counts, what is overridden,
+ * and every group of settings described.
+ *
+ * @returns the snapshot
+ */
 function snapshot() {
   log.debug("Entering snapshot().");
   // WHICH REALM THIS SNAPSHOT IS OF, and what it sets. Reported rather than
@@ -16346,6 +16514,11 @@ function snapshot() {
 // would answer "nothing is missing" every time and the warning would be dead
 // code that looked alive.
 // ---------------------------------------------------------------------------
+/**
+ * Compares the operator's appconfig file with this table.
+ *
+ * @returns `{ missing, unknown }` keys
+ */
 function auditAppconfig() {
   log.debug("Entering auditAppconfig().");
   // `derived` settings are left OUT of every appconfig file on purpose,
@@ -16662,6 +16835,15 @@ if (audit.unknown.length && distinctiveMissing !== DISTINCTIVE.length) {
 // identity provider that stopped issuing because somebody typed "yes" would be
 // a mock that stopped answering — which `applications.js`'s own header argues
 // at length about this directory being a vocabulary rather than a constraint.
+/**
+ * Parses a value that came from none of the five layers — a directory
+ * attribute, say — with the same checks the console and API run.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @returns `{ ok: true, value }`, or `{ ok: false, problem }` carrying its
+ *   code; never thrown
+ */
 function parseAs(key, raw) {
   log.debug("Entering parseAs(). key=" + key);
   const setting = byKey[key];
@@ -16690,6 +16872,15 @@ function parseAs(key, raw) {
   return { ok: true, value: parsed };
 }
 
+/**
+ * Every setting this service has, in one table, and the one place a value
+ * is read.
+ *
+ * Five layers, highest wins — a runtime override, the environment variable,
+ * its legacy variable, the appconfig file, `env/defaults.js` — and no
+ * sixth: a setting with no value stops the service starting.
+ * @namespace
+ */
 module.exports = {
   SETTINGS: SETTINGS,
   parseAs: parseAs,

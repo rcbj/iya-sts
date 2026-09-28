@@ -149,12 +149,24 @@ const POOL_FLOOR = 4;
 // A PURE FUNCTION of the node's request-worker count, so the scheduler's cap
 // (cluster/scheduler.ts, maxConcurrentRuns()) and the pool agree. No log
 // line: this module's logger arrives with create().
+/**
+ * Returns how many connections each process's pool holds.
+ *
+ * Twice the node's request-worker count, and never fewer than four, so the
+ * scheduler's cap and the pool agree.
+ * @param workers - the node's request workers (`workers.requestCount` plus
+ * `workers.surfaceCount`)
+ * @returns the pool size
+ */
 function poolMax(workers) {
   const n = Math.max(0, Number(workers) || 0);
   return Math.max(POOL_FLOOR, 2 * n);
 }
 
 // A CHANNEL NAME AND A SCHEMA VERSION, both spelt once here.
+/**
+ * The LISTEN/NOTIFY channel a committed change is announced on.
+ */
 const CHANNEL = 'sts_ldap_change';
 // How many change-log rows go in one INSERT. Four bind parameters a row, and
 // the protocol's limit is 65,535, so 5,000 leaves room and still makes a large
@@ -176,6 +188,9 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 2026-09-26, for `sts_realms.retiring_at` (#262): the mark
 // `realms.retire()` sets before it ends anything, which every process reads
 // to refuse new sign-ins in a realm being removed.
+/**
+ * The version of the schema this driver creates, recorded in `sts_schema`.
+ */
 const SCHEMA_VERSION = 10;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
@@ -252,6 +267,13 @@ const DEAD_NODE_RETENTION_MS = 24 * 60 * 60 * 1000;
 // `postgres/schema.sql` holds the same statements for the owner to run, and
 // `tests/postgres_schema.js` fails if the two lists disagree.
 // ---------------------------------------------------------------------------
+/**
+ * Every table and index of the schema, each `{ name, statement }`.
+ *
+ * Each is probed by name before its CREATE is issued, so a role that may not
+ * change the schema is not refused on every start; `postgres/schema.sql`
+ * holds the same statements for an owner to run.
+ */
 const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries', statement:
   'CREATE TABLE IF NOT EXISTS sts_ldap_entries (' +
@@ -832,6 +854,11 @@ const SCHEMA_OBJECTS = [
 // table, and added where it is missing. The least-privileged role cannot
 // ALTER, and is refused with STS-STORE-0029's sentence naming
 // `postgres/schema.sql`, which carries the same `ADD COLUMN IF NOT EXISTS`.
+/**
+ * The columns added to tables that may already exist, each `{ table, column,
+ * statement }`, probed in `information_schema.columns` and added where
+ * missing.
+ */
 const SCHEMA_COLUMNS = [
   { table: 'sts_realms', column: 'domain', statement:
   'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text' },
@@ -851,6 +878,9 @@ const SCHEMA_COLUMNS = [
 // above existed and what `tests/postgres_schema.js` compares against
 // `postgres/schema.sql`. Derived rather than written twice, so the two cannot
 // come apart.
+/**
+ * The schema's CREATE statements alone, derived from `SCHEMA_OBJECTS`.
+ */
 const SCHEMA =
     SCHEMA_OBJECTS.map(function (object) { return object.statement; });
 
@@ -908,6 +938,13 @@ const SCHEMA =
 // the page can draw them differently from a probe that failed for a reason
 // somebody should look at.
 // ===========================================================================
+/**
+ * The catalog-view probes `/admin/database` draws, each `{ id, group, shape,
+ * what, sql }`.
+ *
+ * Every one is a SELECT against a catalog view, declared here and never
+ * composed from a request, and each is run and caught on its own.
+ */
 const METRIC_PROBES = [
   // -------------------------------------------------------------------------
   // WHAT THIS SERVER IS.
@@ -1172,6 +1209,17 @@ const METRIC_PROBES = [
 // The claim scope a stable origin is held under (`adoptOrigin()`).
 const ORIGIN_SCOPE = 'persistence.origin';
 
+/**
+ * Creates the postgres persistence driver.
+ *
+ * A connection pool, a transaction per flush, the change log that several
+ * processes coordinate through, and the minted, key, cluster and risk tables.
+ * TLS is used when the connection string's `sslmode` asks for it.
+ * @param options - `url`, the connection string; `log`, the logger;
+ * `verifyTls`, whether the server certificate is verified; and `poolMax`, the
+ * pool size
+ * @returns the driver object, with the methods the persistence contract names
+ */
 function create(options) {
   const url = options.url;
   const log = options.log;
@@ -5228,6 +5276,14 @@ function create(options) {
 capabilities.provide('store.no-foreign-deletes');
 capabilities.provide('directory.concurrent-writes');
 
+/**
+ * The postgres persistence driver: the shared store, and the change log that
+ * several processes coordinate through.
+ *
+ * Selected by `persistence.mode=postgres`. The schema tables and the metric
+ * probes are exported for the tests.
+ * @namespace
+ */
 module.exports = {
   create: create,
   // For `tests/database_metrics.js`, which checks that every probe is

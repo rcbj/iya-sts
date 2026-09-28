@@ -217,6 +217,9 @@ import accountState = require('../common/account_state');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
+/**
+ * The path of the sign-in screen a caller sends the browser to.
+ */
 const LOGIN_PATH = '/authn/login';
 // WHERE A PERSON PICKS BETWEEN AN APPLICATION'S FEDERATION PARTNERS. A page of
 // its own rather than the screen above with its form suppressed — see
@@ -238,6 +241,10 @@ const WEBAUTHN_PATH = '/authn/webauthn';
 // way OUT of one of the other two screens, never as the factor the sign-in
 // asks for first. `credentials.mechanismsFor()` deliberately leaves the
 // recovery codes off `secondFactor` for exactly that reason.
+/**
+ * The path of the recovery-code screen, reached only as a way out of another
+ * second-factor screen.
+ */
 const BACKUP_CODE_PATH = '/authn/backup-code';
 // THE FORCED PASSWORD CHANGE (2026-09-13): drawn after a password is accepted
 // for an entry carrying `pwdReset: TRUE`, before any session exists.
@@ -245,6 +252,10 @@ const PASSWORD_CHANGE_PATH = '/authn/password-change';
 // A SECOND FACTOR ENROLLED BECAUSE ONE IS REQUIRED (2026-09-13) — see the
 // block above `MFA_SETUP_FORM` for why a sign-in may now enrol an authenticator
 // app where it never used to.
+/**
+ * The path where a sign-in enrols a second factor that is required and not yet
+ * held.
+ */
 const MFA_SETUP_PATH = '/authn/mfa-setup';
 // ---------------------------------------------------------------------------
 // WHERE A PERSON SIGNS IN WITH A KERBEROS TICKET, and the reason the constant
@@ -270,6 +281,10 @@ const MFA_SETUP_PATH = '/authn/mfa-setup';
 // would close a cycle or move a route; here nothing has to point anywhere at
 // all.
 // ---------------------------------------------------------------------------
+/**
+ * The path of the Kerberos (SPNEGO) sign-in door, whose endpoint is registered
+ * by `kerberos/spnego_authn.ts`.
+ */
 const SPNEGO_PATH = '/authn/spnego';
 // ---------------------------------------------------------------------------
 // WHERE A PERSON SIGNS IN WITH A WALLET (2026-09-17, #38), and the same
@@ -281,11 +296,24 @@ const SPNEGO_PATH = '/authn/spnego';
 // SPNEGO's reason: two files read two constants and one setting
 // (`oid4vp.signIn`), and nothing has to point anywhere.
 // ---------------------------------------------------------------------------
+/**
+ * The path of the wallet sign-in, whose endpoint is registered by
+ * `oid4vc/vc_signin.ts`.
+ */
 const WALLET_PATH = '/authn/wallet';
+/**
+ * The path of the wallet sign-in's waiting page.
+ */
 const WALLET_WAIT_PATH = '/authn/wallet/wait';
 // And, since #38's follow-ups, the Digital Credentials API answer the wait
 // page's script posts, and that script. Declared here for the same reason.
+/**
+ * The path the wait page's script posts a Digital Credentials API answer to.
+ */
 const WALLET_DCAPI_PATH = '/authn/wallet/dc-api';
+/**
+ * The path of the wallet sign-in's Digital Credentials API script.
+ */
 const WALLET_SCRIPT_PATH = '/authn/wallet.js';
 
 // ---------------------------------------------------------------------------
@@ -297,6 +325,10 @@ const WALLET_SCRIPT_PATH = '/authn/wallet.js';
 // reached only with a pending second-factor step whose FIRST factor was not a
 // password. No script.
 // ---------------------------------------------------------------------------
+/**
+ * The path of the screen that asks for a password as the second factor after a
+ * wallet or emailed first factor.
+ */
 const PASSWORD_FACTOR_PATH = '/authn/password-factor';
 
 // ---------------------------------------------------------------------------
@@ -315,10 +347,24 @@ const PASSWORD_FACTOR_PATH = '/authn/password-factor';
 //                         links), POST spends it — in the browser that
 //                         started the sign-in only (D3).
 // ---------------------------------------------------------------------------
+/**
+ * The path of the emailed-code screen, registered by `authn/email_factor.ts`.
+ */
 const EMAIL_CODE_PATH = '/authn/email-code';
+/**
+ * The path of the emailed sign-in link's waiting screen, registered by
+ * `authn/email_factor.ts`.
+ */
 const EMAIL_LINK_PATH = '/authn/email-link';
+/**
+ * The path a mailed sign-in link lands on; a GET spends nothing and a POST
+ * spends the link.
+ */
 const EMAIL_LINK_OPEN_PATH = '/authn/email-link/open';
 
+/**
+ * The name of the sign-on session cookie, whose value is `<sid>.<handle>`.
+ */
 const SESSION_COOKIE = 'sts_session';
 
 // ---------------------------------------------------------------------------
@@ -360,6 +406,9 @@ const SESSION_TTL_MS = 60 * 60 * 1000;
 // ask for this principal by name — and a second spelling of it somewhere else
 // would be a second anonymous person that held none of the first one's roles.
 // ---------------------------------------------------------------------------
+/**
+ * The one username every unauthenticated (anonymous) session carries.
+ */
 const ANONYMOUS_USERNAME = 'anonymous';
 
 // How long an interrupted request waits at the screen before it has to be
@@ -384,6 +433,12 @@ const AUTHN_TTL_MS = 10 * 60 * 1000;
 // write. `tombstone` makes an ended session stay ended in the store, and
 // `mergeSessionRows()` below is what two copies of one live session become.
 // `persistence/persistence_minted.js` carries the mechanism.
+/**
+ * The sign-on session store, per trust realm: session id to session row.
+ *
+ * Persisted, tombstoned and merged across nodes with `mergeSessionRows()`.
+ * Handed out rather than copied because the console reports on the live store.
+ */
 const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
                               // Late-bound to the instance in the slot at
                               // the bottom: a merge happens only once the
@@ -748,6 +803,10 @@ const INITIATING_ENTITIES = ['admin', 'user', 'policy', 'system'];
 // that grew without bound. The FIRST event is always kept — it is how the
 // session began — and the most recent ones after it; `eventsDropped` says how
 // many went, so a reader never mistakes a trimmed list for a whole one.
+/**
+ * How many authentication events a session keeps: the first, and the most
+ * recent after it.
+ */
 const MAX_SESSION_EVENTS = 20;
 
 // The screen itself. Unchanged from the one that used to be rendered inside the
@@ -771,6 +830,10 @@ const MAX_SESSION_EVENTS = 20;
 // runs a line of script. The WebAuthn step is the exception this service
 // already argues at length, and it is not one of these two.
 // ---------------------------------------------------------------------------
+/**
+ * The stylesheet of the sign-in screen and the federation chooser, shared with
+ * the consent screen.
+ */
 const CARD_CSS =
   'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;' +
   'background:#f4f4f7;margin:0;display:flex;align-items:center;' +
@@ -915,6 +978,10 @@ const MFA_SETUP_FORM = vz.object({
 // `/portal/keys` is the third since it runs a registration of its own against
 // the SAME script, and a path written out three times is two chances to move
 // one of them.
+/**
+ * The path of the one WebAuthn ceremony script this service serves, also used
+ * by `/portal/keys`.
+ */
 const WEBAUTHN_SCRIPT_PATH = '/authn/webauthn.js';
 // THE BROWSER FINGERPRINT'S SCRIPT (#62 P6): FingerprintJS (MIT, v5 — it
 // runs in the browser and sends nothing anywhere; `monitoring: false` turns
@@ -1124,7 +1191,21 @@ interface AuthnDeps {
   totp: typeof totp;
 }
 
+/**
+ * The authentication service: the sign-in screen, the second-factor steps, and
+ * the sign-on session every protocol reads.
+ *
+ * It owns the session cookie and is the only place the session store is
+ * written. A protocol module calls `beginAuthentication()`, redirects to the
+ * path it returns, and finds the session with `sessionOf()` when the browser
+ * comes back.
+ */
 class Authn {
+  /**
+   * Builds the service over its dependencies.
+   *
+   * @param deps - the modules and helpers it uses
+   */
   constructor(private readonly deps: AuthnDeps) {
     deps.log.debug("Entering Authn.constructor().");
     deps.log.debug("Leaving Authn.constructor().");
@@ -1132,6 +1213,12 @@ class Authn {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules, as the composition
+   * root passes them.
+   *
+   * @returns the dependency object
+   */
   static defaultDeps(): AuthnDeps {
     helpers.log.debug("Entering Authn.defaultDeps().");
     helpers.log.debug("Leaving Authn.defaultDeps().");
@@ -1181,6 +1268,12 @@ class Authn {
   // What loading this module did with its instance before #50's R2, now
   // done by the slot for whichever instance is installed: the audit log's
   // actor resolver.
+  /**
+   * Installs an instance's audit-log actor resolver, as loading this module did
+   * before the composition root.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: Authn): void {
     helpers.log.debug("Entering Authn.wire().");
     audit.setActorResolver(instance.auditActorOf.bind(instance));
@@ -1195,6 +1288,12 @@ class Authn {
     return (isFinite(n) && n > 0 ? Math.floor(n) * 1000 : fallbackMs);
   }
 
+  /**
+   * Returns the absolute session lifetime, `authn.sessionLifetimeS`, in
+   * milliseconds.
+   *
+   * @returns the lifetime in milliseconds, one hour when the setting is unset
+   */
   sessionLifetimeMs() {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionLifetimeMs().");
@@ -1204,6 +1303,12 @@ class Authn {
 
   // ZERO IS THE DEFAULT AND MEANS NONE, so this is NOT `secondsSetting()`,
   // whose fallback would turn a deliberate zero into an hour.
+  /**
+   * Returns the session idle timeout, `authn.sessionIdleTimeoutS`, in
+   * milliseconds.
+   *
+   * @returns the idle timeout in milliseconds, or 0 for none (the default)
+   */
   sessionIdleTimeoutMs() {
     const { log, config } = this.deps;
     log.debug("Entering Authn.sessionIdleTimeoutMs().");
@@ -1223,6 +1328,17 @@ class Authn {
   // short idle timeout applied to it would end a person's flow while they read
   // the screen.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a session is over: the one answer for every reader, the sweep
+   * and `/logout`'s list.
+   *
+   * An arrival session is exempt from the idle rule.
+   *
+   * @param session - the session row
+   * @param nowMs - the instant to judge at, in milliseconds; now by default
+   * @returns '' when live, 'expired' when the absolute expiry passed (or there
+   *   is no session), 'idle' when unused past the idle timeout
+   */
   sessionEnded(session, nowMs?) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionEnded().");
@@ -1292,6 +1408,18 @@ class Authn {
   // two are merged with `mergeSessionRows()`, the rule the flush applies to two
   // nodes' copies, so neither this edit nor the newer row is lost.
   // ---------------------------------------------------------------------------
+  /**
+   * Writes a session changed in place back to the store so every node sees the
+   * change.
+   *
+   * It never brings back a session another request ended; where the store holds
+   * a different object for the id, the two are merged with
+   * `mergeSessionRows()`.
+   *
+   * @param session - the changed session row
+   * @returns true when the row was re-set, false when there is no session or it
+   *   is gone
+   */
   noteSessionChanged(session) {
     const { log } = this.deps;
     log.debug("Entering Authn.noteSessionChanged().");
@@ -1311,6 +1439,12 @@ class Authn {
     return true;
   }
 
+  /**
+   * Returns how long an interrupted request waits at the sign-in screen,
+   * `authn.pendingTtlS`, in milliseconds.
+   *
+   * @returns the lifetime of a pending record in milliseconds
+   */
   pendingTtlMs() {
     const { log } = this.deps;
     log.debug("Entering Authn.pendingTtlMs().");
@@ -1341,6 +1475,16 @@ class Authn {
   //     missing from the list is a client whose logout iframe is never drawn —
   //     and `relyingParties` and `events` keep every entry either copy holds.
   // ---------------------------------------------------------------------------
+  /**
+   * Merges two nodes' copies of one session row.
+   *
+   * The copy further along wins the scalar fields, the clocks take the latest,
+   * and the relying-party lists and events are unions.
+   *
+   * @param mine - this process's copy
+   * @param theirs - the stored copy
+   * @returns the merged row, or whichever copy exists when one is missing
+   */
   mergeSessionRows(mine, theirs) {
     const { log } = this.deps;
     log.debug("Entering Authn.mergeSessionRows().");
@@ -1418,6 +1562,12 @@ class Authn {
     return out;
   }
 
+  /**
+   * Returns how long a pending second-factor step lives, `authn.mfaStepTtlS`,
+   * in milliseconds.
+   *
+   * @returns the step lifetime in milliseconds
+   */
   mfaStepTtlMs() {
     const { log } = this.deps;
     log.debug("Entering Authn.mfaStepTtlMs().");
@@ -1429,6 +1579,12 @@ class Authn {
   // The cookie, and the three things done with it. This is the store every
   // protocol module reads to answer "is this person already signed in?", and
   // the only place in the service that writes it.
+  /**
+   * Parses a request's Cookie header.
+   *
+   * @param req - the request
+   * @returns a map of cookie name to decoded value
+   */
   cookiesOf(req) {
     const { log } = this.deps;
     log.debug("Entering Authn.cookiesOf().");
@@ -1526,6 +1682,17 @@ class Authn {
   // (`sessionOf()`, `relyingPartySessionOf()`, `consoleSession()`) still do,
   // and an observer that ended sessions while reporting on them would be
   // changing the thing it describes.
+  /**
+   * Finds the session a request's cookie names, if the cookie also carries that
+   * session's current handle.
+   *
+   * It expires nothing; the callers that sweep what they find still do.
+   *
+   * @param req - the request
+   * @param cookieName - the cookie to read; the sign-on cookie by default
+   * @param store - a realm's partition to look in; the ambient one by default
+   * @returns `{ id, session }`, or null
+   */
   cookieSession(req, cookieName, store?) {
     const { stsCrypto, log } = this.deps;
     log.debug("Entering Authn.cookieSession(). cookie=" + cookieName);
@@ -1557,6 +1724,17 @@ class Authn {
     return { id: id, session: session };
   }
 
+  /**
+   * Returns the signed-in session a request's sign-on cookie names, in the
+   * ambient realm.
+   *
+   * An expired or idle session is ended and swept on the way past, as is one
+   * whose account is disabled or deleted; an unauthenticated (arrival) session
+   * is never returned.
+   *
+   * @param req - the request
+   * @returns the session row, or null
+   */
   sessionOf(req) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionOf().");
@@ -1652,6 +1830,15 @@ class Authn {
 
   // Whether a signed-in session's person is disabled. The anonymous principal
   // and an unauthenticated session are nobody's account.
+  /**
+   * Says whether a signed-in session's person is disabled.
+   *
+   * The anonymous principal and an unauthenticated session are nobody's
+   * account.
+   *
+   * @param session - the session row
+   * @returns true when the account is disabled
+   */
   sessionAccountDisabled(session) {
     const { log, accountState } = this.deps;
     log.debug("Entering Authn.sessionAccountDisabled().");
@@ -1672,6 +1859,16 @@ class Authn {
   // new subject, and the old session is still the deleted one's. A session
   // with no such subject — the anonymous principal before it is chosen, a
   // keyed API caller, a process with no directory to ask — is never "gone".
+  /**
+   * Says whether a signed-in session's person no longer has a directory entry,
+   * asked by subject.
+   *
+   * A session with no `urn:uuid:` subject, or a process with no directory to
+   * ask, is never gone.
+   *
+   * @param session - the session row
+   * @returns true when the entry is gone
+   */
   sessionAccountGone(session) {
     const { log, helpers } = this.deps;
     log.debug("Entering Authn.sessionAccountGone().");
@@ -1720,6 +1917,18 @@ class Authn {
   // it for a party. The only things that see it are the ones that ask for it by
   // name.
   // ---------------------------------------------------------------------------
+  /**
+   * Gives a browser that arrives with no session cookie an arrival session that
+   * holds no principal.
+   *
+   * `startSession()` later upgrades the same row in place, so the cookie goes
+   * on naming the person's session.
+   *
+   * @param req - the request
+   * @param res - the response the cookie is set on
+   * @param via - the door that started it, for the log and the row
+   * @returns the new session, or null when the browser already has one
+   */
   startArrivalSession(req, res, via) {
     const { log, nowSec, randomId, userFor } = this.deps;
     log.debug("Entering Authn.startArrivalSession().");
@@ -1937,6 +2146,16 @@ class Authn {
   // partitions with the same `derivedFrom` would be ended by a sign-out it has
   // nothing to do with. An absent `derivedFromRealm` means "my own partition",
   // which is what every session made before this field existed meant.
+  /**
+   * Lists the relying-party sessions derived from one sign-on session.
+   *
+   * It looks in the given partition and in the default realm's, and a child
+   * found in the other partition must name this parent's realm.
+   *
+   * @param parentId - the sign-on session id
+   * @param store - the partition to look in; the ambient one by default
+   * @returns the derived sessions found
+   */
   derivedFrom(parentId, store?) {
     const { realms, log } = this.deps;
     log.debug("Entering Authn.derivedFrom(). parentId=" + parentId);
@@ -1976,6 +2195,18 @@ class Authn {
   // on the strength of its own unexpired cookie, because "the person signed
   // out" is exactly the case that matters. So the parent is looked up on every
   // read. That is a Map lookup on a request that already does several.
+  /**
+   * Returns the session one hosted surface (the console or the portal) holds
+   * for a request.
+   *
+   * The parent sign-on session is checked as well as the clock: a derived
+   * session whose parent is gone is not honoured.
+   *
+   * @param req - the request
+   * @param cookie - the surface's own cookie name
+   * @param realmId - the realm partition to read; the ambient one by default
+   * @returns the session row, or null
+   */
   relyingPartySessionOf(req, cookie, realmId) {
     const { realms, log } = this.deps;
     const self = this;
@@ -2082,6 +2313,17 @@ class Authn {
   // and a password: what it is turning into a session is a statement this
   // service made about somebody, and every field below comes off that statement
   // rather than out of a form.
+  /**
+   * Creates a hosted surface's relying-party session from a verified ID Token's
+   * claims.
+   *
+   * Called only from `common/oidc_rp.ts`; it records no authentication, since
+   * the authorization endpoint already counted it.
+   *
+   * @param spec - the surface, the claims, the tokens and the parent sign-on
+   *   session
+   * @returns the new session
+   */
   startRelyingPartySession(spec) {
     const { realms, log, nowSec, randomId, userFor, audit } = this.deps;
     log.debug("Entering Authn.startRelyingPartySession(). surface=" +
@@ -2243,6 +2485,14 @@ class Authn {
   // The kind of authority that vouched for a sign-on session's most recent
   // authentication (see authenticationEvent()), or '' for no session or a row
   // older than events, which nothing may read as this service's own check.
+  /**
+   * Returns the kind of authority that vouched for a session's most recent
+   * authentication event.
+   *
+   * @param session - the sign-on session
+   * @returns the authority kind, or '' for no session or a row older than
+   *   events
+   */
   latestAuthorityOf(session) {
     const { log } = this.deps;
     log.debug("Entering Authn.latestAuthorityOf().");
@@ -2258,6 +2508,13 @@ class Authn {
   // When a relying party's tokens stop saying anything: the EARLIER of the
   // access token's expiry and the ID Token's, in milliseconds. 0 for a session
   // holding none, which every reader treats as "nothing to renew".
+  /**
+   * Returns when a relying party's tokens stop saying anything: the earlier of
+   * the access and ID Token expiries.
+   *
+   * @param tokens - the relying party's stored tokens
+   * @returns the instant in milliseconds, or 0 when it holds none
+   */
   tokensExpireAt(tokens) {
     const { log } = this.deps;
     log.debug("Entering Authn.tokensExpireAt().");
@@ -2291,6 +2548,15 @@ class Authn {
   //
   // Answers the session as it now is, or null where it is gone.
   // ---------------------------------------------------------------------------
+  /**
+   * Records a hosted surface's token renewal on its relying-party session.
+   *
+   * Nothing is recorded as an authentication; `expires` moves only as far as
+   * the new tokens need and never past the original window.
+   *
+   * @param spec - the session id, its realm and the new tokens
+   * @returns the session as it now is, or null when it is gone
+   */
   renewRelyingPartySession(spec) {
     const { realms, log, audit } = this.deps;
     log.debug("Entering Authn.renewRelyingPartySession(). id=" + spec.id);
@@ -2414,6 +2680,16 @@ class Authn {
   // different one — which is now the ordinary case for every page under a realm
   // prefix, and is what the console's banner says out loud.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the console's session for a request, read from the default realm's
+   * partition whichever realm is being viewed.
+   *
+   * An expired session is swept as `sessionOf()` does.
+   *
+   * @param req - the request
+   * @returns `{ session, realm, foreign }` where `foreign` says the realm being
+   *   read is not the session's, or null
+   */
   consoleSession(req) {
     const { realms, log } = this.deps;
     const self = this;
@@ -2552,6 +2828,14 @@ class Authn {
     return 'sign-in screen (password)';
   }
 
+  /**
+   * Installs the one observer told when a session is established, presented or
+   * ended (the inverted hook `ssf/ssf.ts` fills).
+   *
+   * Something that is not a function is logged and ignored.
+   *
+   * @param fn - the observer
+   */
   setSessionObserver(fn) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.setSessionObserver().");
@@ -2639,6 +2923,12 @@ class Authn {
   // How many session ends are waiting on the cluster claim that decides who
   // reports them (#232): a realm being removed waits for none to be left
   // before its stores are purged.
+  /**
+   * Returns how many session ends in this process are waiting on the cluster
+   * claim that decides who reports them.
+   *
+   * @returns the count
+   */
   pendingEndReports() {
     const { log } = this.deps;
     log.debug("Entering Authn.pendingEndReports().");
@@ -2905,6 +3195,12 @@ class Authn {
     log.debug("Leaving Authn.reportExpiry().");
   }
 
+  /**
+   * Ends every expired or idle session in every realm; the body of the
+   * session-expiry scheduler job.
+   *
+   * @returns how many sessions were ended
+   */
   sweepExpiredSessions() {
     const { realms, log } = this.deps;
     const self = this;
@@ -2976,6 +3272,18 @@ class Authn {
   // flag is set by startSession() and spent here, so it is exact rather than a
   // time window: a session created by this service is presented once for free.
   // ---------------------------------------------------------------------------
+  /**
+   * Reports a session presented again for single sign-on (CAEP
+   * `session-presented`).
+   *
+   * The first presentation of a brand-new session is the sign-in itself and is
+   * not reported.
+   *
+   * @param session - the session
+   * @param via - the protocol it was presented to
+   * @param req - the request
+   * @returns true when it was reported
+   */
   notePresented(session, via, req) {
     const { log } = this.deps;
     log.debug("Entering Authn.notePresented().");
@@ -3211,6 +3519,13 @@ class Authn {
 
   // The registered device the session's LATEST authentication event
   // recognised, or null (#164 phase 2). What a later phase reads.
+  /**
+   * Returns the registered device the session's latest authentication event
+   * recognised.
+   *
+   * @param session - the session
+   * @returns the device, or null
+   */
   registeredDeviceOf(session) {
     const { log } = this.deps;
     log.debug("Entering Authn.registeredDeviceOf().");
@@ -3292,6 +3607,13 @@ class Authn {
   // drew it as "signed in" would show a session an hour old as a minute old.
   // A row with no events (older than them, or not a sign-on at all) falls back
   // to `authTime`, which for such a row still is the only authentication.
+  /**
+   * Returns when a session began: its first authentication event, else its
+   * `authTime`.
+   *
+   * @param session - the session
+   * @returns the instant in milliseconds, or 0
+   */
   sessionStartedAt(session) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionStartedAt().");
@@ -3313,6 +3635,13 @@ class Authn {
   // code flow. This answers from the sign-on session while it is live, and from
   // the session itself otherwise (a sign-on session, a parent that ran out, a
   // process where the parent is in no store this one can read).
+  /**
+   * Describes how a person is signed in, read from the sign-on session behind a
+   * relying-party session while it is live.
+   *
+   * @param session - a relying-party or sign-on session
+   * @returns `{ startedAt, authTime, amr, acr, authentications, fromParent }`
+   */
   signOnFactsFor(session) {
     const { realms, log } = this.deps;
     log.debug("Entering Authn.signOnFactsFor().");
@@ -3728,6 +4057,14 @@ class Authn {
   // through the store so every process sees it. A session that has ended
   // since is left ended.
   // -------------------------------------------------------------------------
+  /**
+   * Replaces a live session's risk assessment in the ambient realm, through the
+   * store.
+   *
+   * @param id - the session id
+   * @param risk - the new assessment
+   * @returns true when adopted, false when there is no live session
+   */
   adoptSessionRisk(id: string, risk: any): boolean {
     const { log } = this.deps;
     log.debug("Entering Authn.adoptSessionRisk(). " + id);
@@ -3745,6 +4082,12 @@ class Authn {
   // Every live, person-held session that carries a risk, in every realm —
   // what the `risk.rescore` job re-checks (#62 P4). `realm` is the realm
   // object `realms.run()` takes.
+  /**
+   * Lists every live, person-held session that carries a risk, in every realm,
+   * for the `risk.rescore` job.
+   *
+   * @returns `{ realm, id, session }` for each
+   */
   sessionsForRisk(): any[] {
     const { log, realms } = this.deps;
     const self = this;
@@ -3778,6 +4121,20 @@ class Authn {
   // names. Each ends through dropSession(), so it is audited and announced as
   // any sign-out is. Answers how many ended.
   // ---------------------------------------------------------------------------
+  /**
+   * Ends a hosted surface's relying-party sessions for one person, in response
+   * to a received signal.
+   *
+   * Each ends through the ordinary sign-out path, so it is audited and
+   * announced.
+   *
+   * @param surfaceId - `admin` or `portal`
+   * @param fromRealm - the realm the event arrived in
+   * @param about - says whether a session's user is the one the event names
+   * @param via - what ended them, for the audit row
+   * @param initiatingEntity - CAEP's initiating entity
+   * @returns how many sessions ended
+   */
   endRelyingPartySessions(surfaceId: string, fromRealm: string,
                           about: (user: any, session?: any) => boolean,
                           via: string, initiatingEntity: string): number {
@@ -3828,6 +4185,19 @@ class Authn {
   // failed sign-in (STS-RISK-0013). Null means "no facts", and the policy
   // decides on roles.
   // ---------------------------------------------------------------------------
+  /**
+   * Scores a sign-in's risk before `startSession()`, for the issuance policy to
+   * decide on.
+   *
+   * Never a refusal itself: a failure in the engine answers null.
+   *
+   * @param req - the request
+   * @param username - who is signing in
+   * @param via - the door
+   * @param detail - what the door would hand `startSession()`
+   * @returns the assessment, or null when there is no person to assess or no
+   *   facts
+   */
   async assessSignIn(req: any, username: string, via: string,
                      detail?: any): Promise<any> {
     const { log, userFor, realms } = this.deps;
@@ -3918,6 +4288,22 @@ class Authn {
     return code;
   }
 
+  /**
+   * Starts (or upgrades) the sign-on session for a person who has
+   * authenticated, and sets its cookie.
+   *
+   * The one place every session is created. A refusal (a disabled account, the
+   * authentication or issuance policy, a device, a realm being removed) answers
+   * null and writes `refusedWith` and `refusedWhy` on `detail`.
+   *
+   * @param res - the response the cookie is set on
+   * @param username - the person
+   * @param amr - the authentication methods
+   * @param acr - the authentication context class
+   * @param via - the door, for the audit row and the event
+   * @param detail - the request, credential, application and risk
+   * @returns the session, or null when refused
+   */
   startSession(res, username, amr, acr, via, detail) {
     const { log, randomId, userFor, helpers, stats, gate, audit,
       errorCodes } = this.deps;
@@ -4907,6 +5293,14 @@ class Authn {
   // normalisation is applied by the CALLER where it wants `alice` and
   // `alice@REALM` to be one person, so that this function cannot quietly fold
   // two names together for a caller that meant one.
+  /**
+   * Lists every session held for one username, newest first.
+   *
+   * The comparison is on the username exactly as typed.
+   *
+   * @param username - the username
+   * @returns the sessions
+   */
   sessionsOf(username) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionsOf(). username=" + username);
@@ -4927,6 +5321,13 @@ class Authn {
   // or an emailAddress NameID is not the username, so the question is which
   // live session gave that service provider that NameID, and nothing but the
   // session holds the answer.
+  /**
+   * Lists the ambient realm's sessions a predicate accepts, without the cookie
+   * and without expiring them.
+   *
+   * @param test - the predicate
+   * @returns the matching sessions
+   */
   sessionsMatching(test) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionsMatching().");
@@ -4944,6 +5345,12 @@ class Authn {
   // One session by its id, without the cookie and without expiring it. Used by
   // /logout to draw a row for a session that is not the caller's; `sessionOf()`
   // stays the function that reads the cookie and sweeps what it finds expired.
+  /**
+   * Returns one session by its id, without the cookie and without expiring it.
+   *
+   * @param id - the session id
+   * @returns the session, or null
+   */
   sessionById(id) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionById().");
@@ -4956,6 +5363,14 @@ class Authn {
   // ended is usually not the one the caller is holding, and clearing the cookie
   // of a browser that is signed in as somebody else would sign the operator out
   // instead of the person they asked about.
+  /**
+   * Ends one session named by its id, leaving the caller's cookie alone.
+   *
+   * @param id - the session id
+   * @param via - what ended it, for the audit row
+   * @param initiatingEntity - CAEP's initiating entity
+   * @returns the ended session, or null when there was none
+   */
   endSessionById(id, via, initiatingEntity?) {
     const { log } = this.deps;
     log.debug("Entering Authn.endSessionById(). id=" + id);
@@ -4972,6 +5387,14 @@ class Authn {
   // CAEP session-revoked and the back-channel Logout Tokens of its relying
   // parties. Collected first and ended afterwards, for the sweep's reason.
   // Answers who was signed out, so the caller can tell RISC about accounts.
+  /**
+   * Ends every session of one realm, each through the ordinary sign-out path.
+   *
+   * @param realmId - the realm; the default realm when unknown
+   * @param via - what ended them
+   * @param initiatingEntity - CAEP's initiating entity
+   * @returns who was signed out
+   */
   endEverySessionIn(realmId, via, initiatingEntity?) {
     const { log, realms } = this.deps;
     const self = this;
@@ -5016,6 +5439,13 @@ class Authn {
   // partition was dropped whole and nobody was told. `realms.retire()` calls
   // this in the realm, in its announce phase.
   // ---------------------------------------------------------------------------
+  /**
+   * Ends a trust realm's sessions as the announce phase of the realm's removal.
+   *
+   * @param realmId - the realm being removed
+   * @param ctx - the removal's context: `via` and `initiatingEntity`
+   * @returns how many sessions were ended
+   */
   retireRealmSessions(realmId, ctx) {
     const { log } = this.deps;
     log.debug("Entering Authn.retireRealmSessions(). realm=" + realmId);
@@ -5034,6 +5464,15 @@ class Authn {
   // realm's outbound deliveries — the Logout Tokens above, and anything else
   // queued in `oauth-oidc/outbound_delivery.ts`'s kinds — to leave `pending`.
   // What is still pending is reported on `ctx.undelivered`. Never rejects.
+  /**
+   * Waits, until `ctx.deadline`, for a removed realm's session ends and
+   * outbound deliveries to settle.
+   *
+   * What is still pending is reported on `ctx.undelivered`. Never rejects.
+   *
+   * @param realmId - the realm being removed
+   * @param ctx - the removal's context
+   */
   async settleRealmEnds(realmId, ctx) {
     const { log } = this.deps;
     log.debug("Entering Authn.settleRealmEnds(). realm=" + realmId);
@@ -5099,6 +5538,13 @@ class Authn {
   // deliberately: a SET is one cookie per response and making it append would
   // mean a rotated session id going out beside the one it replaced, with the
   // browser free to keep either.
+  /**
+   * Clears a session cookie on a response, appending rather than replacing any
+   * Set-Cookie already there.
+   *
+   * @param res - the response
+   * @param cookieName - the cookie; the sign-on cookie by default
+   */
   clearSessionCookie(res, cookieName?) {
     const { log, config } = this.deps;
     log.debug("Entering Authn.clearSessionCookie().");
@@ -5129,6 +5575,15 @@ class Authn {
   // what it was, not merely that it is gone: WS-Federation's sign-out has to
   // send a cleanup request to each relying party the session signed into, and
   // that list lives on the session object it is about to discard.
+  /**
+   * Ends the session the request's cookie names and clears the cookie.
+   *
+   * Only a cookie carrying the current handle ends anything.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns the ended session, or null
+   */
   endSession(req, res) {
     const { log } = this.deps;
     log.debug("Entering Authn.endSession().");
@@ -5630,6 +6085,19 @@ class Authn {
   // partners being chosen between rather than every relationship in the
   // register.
   // ---------------------------------------------------------------------------
+  /**
+   * Starts authentication for a protocol module and returns the path to
+   * redirect the browser to.
+   *
+   * The path is the sign-in screen, the federation chooser, a federated flow's
+   * entry point or the Kerberos door; the caller cannot tell which. The options
+   * are `returnTo`, `details`, `hint`, `forceMfa`, `forceKey`, `protocol` and
+   * `application`.
+   *
+   * @param opts - the options, described above
+   * @returns a path on this service
+   * @throws an Error when `returnTo` is not a path on this service
+   */
   beginAuthentication(opts) {
     const { log, randomId, federation } = this.deps;
     log.debug("Entering Authn.beginAuthentication(). protocol=" +
@@ -6174,6 +6642,13 @@ class Authn {
   // A pending second-factor step, read-only, for the wallet door: a wallet
   // may BE the second factor after a password (`vc_signin.ts`). An expired
   // step is dropped on the way past, as pendingFor() drops a record.
+  /**
+   * Returns a pending second-factor step, read-only; an expired step is dropped
+   * on the way past.
+   *
+   * @param id - the step id
+   * @returns the step, or null
+   */
   mfaStepFor(id: unknown): any {
     const { log } = this.deps;
     log.debug("Entering Authn.mfaStepFor().");
@@ -6204,6 +6679,16 @@ class Authn {
   // **NOT A WALLET TWICE.** A step whose first factor was a wallet is not
   // finished by another presentation: one key proved twice is one factor.
   // ---------------------------------------------------------------------------
+  /**
+   * Finishes a second-factor step with a verified wallet presentation for the
+   * same person.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param mfaId - the step id
+   * @param outcome - `vc_verifier.ts`'s `signInOutcome()`
+   * @returns the session, or `{ refused, why }`
+   */
   finishWithWallet(req: any, res: any, mfaId: string, outcome: any): any {
     const { log, userFor } = this.deps;
     log.debug("Entering Authn.finishWithWallet().");
@@ -6284,6 +6769,22 @@ class Authn {
   // factor after itself — one mailbox proved twice is one factor — and the
   // password fallback is offered only where the authentication policy
   // accepts a password as a second factor.
+  /**
+   * Asks for a second factor after a wallet or emailed first factor, where one
+   * is needed.
+   *
+   * Where none is needed it answers `{ handled: false }` and the door starts
+   * the session itself.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param record - the pending sign-in record
+   * @param username - the person
+   * @param outcome - the first factor's outcome
+   * @param assessment - the sign-in's risk assessment
+   * @param opts - `first: 'email'` after an emailed first factor
+   * @returns whether it took over the response
+   */
   beginSecondFactorAfterWallet(req: any, res: any, record: any,
                                username: string, outcome: any,
                                assessment?: any,
@@ -6520,6 +7021,13 @@ class Authn {
     return out;
   }
 
+  /**
+   * Spends a pending record and redirects (303) back to whatever was
+   * interrupted.
+   *
+   * @param res - the response
+   * @param record - the pending record
+   */
   completeAuthentication(res, record) {
     const { log } = this.deps;
     log.debug("Entering Authn.completeAuthentication(). id=" + record.id);
@@ -6539,6 +7047,11 @@ class Authn {
   // ===========================================================================
 
   // The door, loaded when first used: it is required after this module.
+  /**
+   * Returns `authn/email_factor.ts`, loaded when first used.
+   *
+   * @returns the email door module
+   */
   emailDoor(): any {
     const { log } = this.deps;
     log.debug("Entering Authn.emailDoor().");
@@ -6547,6 +7060,12 @@ class Authn {
   }
 
   // A new step, stored; answers its id.
+  /**
+   * Stores a new second-factor step.
+   *
+   * @param step - the step
+   * @returns its id
+   */
   mintMfaStep(step: any): string {
     const { log, randomId } = this.deps;
     log.debug("Entering Authn.mintMfaStep().");
@@ -6557,6 +7076,12 @@ class Authn {
   }
 
   // A step written back after it changed (a code sent, an attempt counted).
+  /**
+   * Writes a second-factor step back after it changed.
+   *
+   * @param id - the step id
+   * @param step - the step
+   */
   saveMfaStep(id: string, step: any): void {
     const { log } = this.deps;
     log.debug("Entering Authn.saveMfaStep().");
@@ -6564,6 +7089,11 @@ class Authn {
     log.debug("Leaving Authn.saveMfaStep().");
   }
 
+  /**
+   * Deletes a second-factor step.
+   *
+   * @param id - the step id
+   */
   dropMfaStep(id: string): void {
     const { log } = this.deps;
     log.debug("Entering Authn.dropMfaStep().");
@@ -6573,6 +7103,11 @@ class Authn {
 
   // The pending sign-in record a first factor is minted from, spent: the
   // step carries it from here on, as a password step's does.
+  /**
+   * Spends the pending sign-in record a first factor's step is minted from.
+   *
+   * @param record - the pending record
+   */
   takePending(record: any): void {
     const { log } = this.deps;
     log.debug("Entering Authn.takePending().");
@@ -6580,6 +7115,12 @@ class Authn {
     log.debug("Leaving Authn.takePending().");
   }
 
+  /**
+   * Returns the `amr` of a step's first factor.
+   *
+   * @param step - the step
+   * @returns the methods; `['pwd']` by default
+   */
   firstAmrFor(step: any): string[] {
     const { log } = this.deps;
     log.debug("Entering Authn.firstAmrFor().");
@@ -6589,6 +7130,15 @@ class Authn {
 
   // The sign-in screen again, with a sentence on it, for the email door's
   // refusals of a first factor — the same page every refusal there draws.
+  /**
+   * Draws the sign-in screen again with an error sentence on it.
+   *
+   * @param res - the response
+   * @param base - the base URL
+   * @param record - the pending record
+   * @param error - the sentence
+   * @returns what sending the page returns
+   */
   sendLoginPageFor(res: any, base: string, record: any, error: string): any {
     const { log } = this.deps;
     log.debug("Entering Authn.sendLoginPageFor().");
@@ -6600,6 +7150,17 @@ class Authn {
   // (D2 — RFC 8176 registers nothing for email, and a single-use secret sent
   // to the person is what `otp` names), `acr` `mfa` (D1), and the credential
   // kind saying which it was. Answers whether a session was started.
+  /**
+   * Finishes a sign-in whose emailed second factor verified: the first factor's
+   * `amr` plus `otp`, `acr` `mfa`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param mfaId - the step id
+   * @param step - the step
+   * @param kind - `code` or `link`
+   * @returns whether a session was started
+   */
   finishEmailSecondFactor(req: any, res: any, mfaId: string, step: any,
                           kind: string): boolean {
     const { log, baseUrlOf } = this.deps;
@@ -6627,6 +7188,17 @@ class Authn {
   // again), and otherwise a session of one factor, `amr ["otp"]`, `acr "1"`.
   // Answers `{ handled: true }` when it wrote the response, or `{ refused,
   // why, errorCode }` for the door to draw.
+  /**
+   * Finishes a sign-in whose emailed first factor verified, asking for a second
+   * factor where one is needed.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param step - the step
+   * @param kind - `code` or `link`
+   * @returns `{ handled: true }` when it wrote the response, or `{ refused,
+   *   why, errorCode }` for the door to draw
+   */
   async finishEmailFirstFactor(req: any, res: any, step: any,
                                kind: string): Promise<any> {
     const { log } = this.deps;
@@ -6666,6 +7238,13 @@ class Authn {
 
   // The record a request names, or null — expired ones are dropped on the way
   // past, which is the only cleanup this store needs beyond the sweep above.
+  /**
+   * Returns the pending sign-in record a request names; an expired one is
+   * dropped on the way past.
+   *
+   * @param id - the record id
+   * @returns the record, or null
+   */
   pendingFor(id) {
     const { log } = this.deps;
     log.debug("Entering Authn.pendingFor(). id=" + (id || '(none)'));
@@ -8209,6 +8788,16 @@ class Authn {
   // screen, and a key that is not one of theirs is an assertion from an
   // authenticator this person never enrolled.
   // ---------------------------------------------------------------------------
+  /**
+   * Picks the enrolled security key a WebAuthn assertion is checked against:
+   * the one it names.
+   *
+   * @param username - the person
+   * @param role - the key's role, primary or second factor
+   * @param presentedId - the credential id the assertion names
+   * @returns `{ key, usable }`, or `{ key: null, usable, why }` marked with the
+   *   error code of the refusal
+   */
   keyForAssertion(username, role, presentedId) {
     const { log, credentials, errorCodes } = this.deps;
     log.debug("Entering Authn.keyForAssertion(). role=" + role);
@@ -8500,6 +9089,13 @@ class Authn {
   // mistake waiting to be made twice: one is the origin, one is its host, and
   // neither is the base URL.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the origin of a base URL, which in a realm is not the base URL
+   * itself.
+   *
+   * @param base - the base URL
+   * @returns the origin
+   */
   originOf(base) {
     const { log } = this.deps;
     log.debug("Entering Authn.originOf(). base=" + base);
@@ -8564,6 +9160,13 @@ class Authn {
   // keeps answering, because a page that says what it would have sent is worth
   // more than a page that throws.
   // ---------------------------------------------------------------------------
+  /**
+   * Says why a configured `webauthn.rpId` cannot be used for this address,
+   * where the mode refuses unregistered addresses.
+   *
+   * @param base - the base URL
+   * @returns the problem, or '' when there is none
+   */
   rpIdProblem(base) {
     const { log, mode, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.rpIdProblem().");
@@ -8622,6 +9225,17 @@ class Authn {
       .map(function (one) { return self.originOf(one); });
   }
 
+  /**
+   * Returns the origin a WebAuthn ceremony's client data is verified against.
+   *
+   * With `webauthn.allowedOrigins` empty it is the base's origin; otherwise the
+   * browser's claimed origin when on the list, else the list's first entry, so
+   * the verifier refuses.
+   *
+   * @param base - the base URL
+   * @param credential - the browser's credential
+   * @returns the expected origin
+   */
   expectedOriginFor(base, credential) {
     const { log } = this.deps;
     log.debug("Entering Authn.expectedOriginFor().");
@@ -8655,6 +9269,13 @@ class Authn {
     return list[0];
   }
 
+  /**
+   * Returns the WebAuthn RP ID for a base URL: `webauthn.rpId` when it is a
+   * registrable suffix of the host, else the host.
+   *
+   * @param base - the base URL
+   * @returns the RP ID
+   */
   rpIdOf(base) {
     const { log, mode, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.rpIdOf(). base=" + base);
@@ -9252,6 +9873,13 @@ class Authn {
   //     log. (cookiesOf() writes its own pair, which is one parser rather than
   //     two.)
   // ---------------------------------------------------------------------------
+  /**
+   * Names the person a request's sign-on cookie belongs to, for the audit log,
+   * even when the session has expired.
+   *
+   * @param req - the request
+   * @returns the username, or ''
+   */
   auditActorOf(req) {
     const { log } = this.deps;
     log.debug("Entering Authn.auditActorOf().");
@@ -9267,6 +9895,11 @@ class Authn {
 
   // The routes, in the order they were always registered (rule 1). Called by
   // `common/protocol_stack.ts` through the module's `registerRoutes(app)`.
+  /**
+   * Registers the `/authn/*` routes on the shared app, in their order.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: AppModule) {
     const { log, baseUrlOf, randomId, parseBody, oauthError, stats, config,
       gate, credentials, websecurity, mode, validation, audit, errorCodes,
@@ -11215,10 +11848,26 @@ realms.onRetire({
 // four lines repeated per call site for the reason written above them.
 // ---------------------------------------------------------------------------
 
+/**
+ * The authentication service: the sign-in screen, the second factors and the
+ * sign-on session every protocol reads.
+ *
+ * The functions forward to the instance the composition root installs.
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   Authn: Authn,
+  /**
+   * Installs the instance the composition root built.
+   *
+   * @param instance - the instance
+   */
   installInstance: (instance: Authn): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   *
+   * @returns the slot's origin
+   */
   instanceOrigin: (): string => slot.origin(),
   // What two nodes' copies of one session become, for
   // `tests/cluster_lww_stores.js` — the merge is declared on the store and

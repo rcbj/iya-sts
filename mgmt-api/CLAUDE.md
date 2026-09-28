@@ -513,6 +513,35 @@ the action needs — so what this surface demands is stated where every other
 access decision in this service is stated, and `admin_api.ts` decides the
 QUESTION rather than the outcome.
 
+**WHO MAY BE ISSUED THOSE SCOPES IS ASKED AT ISSUANCE AND ON EVERY CALL,
+SINCE 2026-09-27 (#302 and #303, parts A and B of #88).** Until then the only
+question was the CLIENT's — does it declare them (#110) — so a client
+registered with `admin:write` on the code flow handed Admin Write to anybody
+who signed in through it, and any client an administrator declared the scope
+on was Admin Write on `client_credentials`: the scope was the authorization.
+Now **ADMIN_READ and ADMIN_WRITE are configured roles that AUTHORIZE the two
+scopes** (`common/roles.js`, seeded in every realm), and
+`common/role_permissions.ts` issues a scope only to a subject holding the role:
+
+* **A PERSON holds them through the console roster** — Admin Read or Admin
+  Write in the realm issuing the token — so the open console is honoured
+  (the API is its machine door, rule 7) and the bootstrap administrator
+  before its claim is not (#103).
+* **AN APPLICATION holds them by being a member** — `sts-management-api` is
+  seeded in both, in every realm; any other client needs `add-member` on
+  `/admin/roles`. Declaring the scope is still required (the gate re-checks
+  it, #110) and is no longer enough.
+
+Asked at the authorization endpoint and in `oauth2.ts`'s `tokenSet()`, the
+backstop every grant mints through: narrowed and audited (`STS-ADMIN-0821`),
+`invalid_scope` only when nothing else was asked for (`STS-ADMIN-0822`). **AND
+ON EVERY CALL — held ∩ carried (rcbj's decision 4 on #303):** the gate hands
+the access-control policy the roles the token's subject — person or client —
+holds NOW in the realm that issued the token, less any whose permission the
+token does not carry. A role revoked after a token was minted stops working at
+once (403, `STS-API-0125`), and an `admin:read` token is not Admin Write
+because its subject also holds that. The XACML document is unchanged.
+
 **THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
 ACCEPTS TWO AT THAT DEFAULT.** `adminApi.audience` was `''`, meaning
 *`/admin-api` under the host the request arrived on* — correct, and a blank box

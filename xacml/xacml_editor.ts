@@ -130,6 +130,10 @@ const TYPE = model.TYPE;
 const COMMON_TYPES = [TYPE.STRING, TYPE.BOOLEAN, TYPE.INTEGER, TYPE.DOUBLE,
                       TYPE.ANYURI, TYPE.DATE, TYPE.DATETIME, TYPE.TIME];
 
+/**
+ * The attribute categories the editor offers, each with its short label,
+ * the four common ones first.
+ */
 const CATEGORY_MENU = [
   { uri: model.CATEGORY.ACCESS_SUBJECT, label: 'access-subject' },
   { uri: model.CATEGORY.RESOURCE, label: 'resource' },
@@ -141,6 +145,10 @@ const CATEGORY_MENU = [
   { uri: model.CATEGORY.REQUESTING_MACHINE, label: 'requesting-machine' }
 ];
 
+/**
+ * The rule-combining algorithms the editor offers, each with a label and a
+ * sentence on what it does.
+ */
 const RULE_ALG_MENU = [
   { uri: model.RULE_ALG.DENY_UNLESS_PERMIT, label: 'deny-unless-permit',
     what: 'Anything not permitted is denied. Cannot return NotApplicable or ' +
@@ -178,6 +186,10 @@ const RULE_ALG_MENU = [
 // counterpart at all, because it is about POLICIES being applicable — it is
 // Indeterminate when two of them are, which is how a deployment says "these
 // are meant to be disjoint and I want to hear about it when they are not".
+/**
+ * The policy-combining algorithms the editor offers, each with a label and
+ * a sentence on what it does.
+ */
 const POLICY_ALG_MENU = [
   { uri: model.POLICY_ALG.DENY_UNLESS_PERMIT, label: 'deny-unless-permit',
     what: 'Anything not permitted is denied. Cannot return NotApplicable or ' +
@@ -214,6 +226,11 @@ const POLICY_ALG_MENU = [
 // table that `applyEdit()` does not handle is reported rather than silently
 // doing nothing.
 // ---------------------------------------------------------------------------
+/**
+ * The guided editor's grammar: for each kind of node, the `Add` options
+ * that may be taken there. `applyEdit()` is the only thing that acts on
+ * them.
+ */
 const ADDITIONS = {
   policy: [
     { action: 'add-rule', label: 'Rule',
@@ -332,18 +349,47 @@ const ADDITIONS = {
 // four.
 ADDITIONS.variable = ADDITIONS.expression.slice();
 
+/**
+ * The guided policy editor's grammar: what nodes a policy model holds, what
+ * may legally be added at each, and how one edit is applied.
+ *
+ * It has no DOM and emits no HTML; `xacml_admin.ts` draws its answers. A
+ * node is named by a dotted path, valid only against the document it was
+ * computed from.
+ */
 class XacmlEditor {
+  /**
+   * The attribute categories the editor offers, with their short labels.
+   */
   static readonly CATEGORY_MENU: MenuRow[] = CATEGORY_MENU;
+  /**
+   * The rule-combining algorithms the editor offers.
+   */
   static readonly RULE_ALG_MENU: MenuRow[] = RULE_ALG_MENU;
+  /**
+   * The policy-combining algorithms the editor offers.
+   */
   static readonly POLICY_ALG_MENU: MenuRow[] = POLICY_ALG_MENU;
+  /**
+   * The `Add` options per kind of node: the editor's grammar.
+   */
   static readonly ADDITIONS: Record<string, Addition[]> = ADDITIONS;
 
+  /**
+   * Builds the editor over the given dependencies.
+   * @param deps - the logger and the model, datatype and function modules
+   */
   constructor(private readonly deps: XacmlEditorDeps) {
     deps.log.debug("Entering XacmlEditor.constructor().");
     deps.log.debug("Leaving XacmlEditor.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, for the default
+   * instance.
+   * @returns the editor's dependencies
+   */
   static defaultDeps(): XacmlEditorDeps {
     helpers.log.debug("Entering XacmlEditor.defaultDeps().");
     helpers.log.debug("Leaving XacmlEditor.defaultDeps().");
@@ -370,6 +416,13 @@ class XacmlEditor {
 
   // Resolve a path to `{ node, parent, key }`, or null. `parent` and `key` are
   // what a REMOVE needs — you cannot delete a node from itself.
+  /**
+   * Resolves a path in a policy model.
+   * @param policy - the policy model
+   * @param path - the dotted path, '' for the root
+   * @returns `{ node, parent, key, path }`, or null when the path does not
+   * resolve
+   */
   nodeAt(policy: ModelNode, path: string): ModelNode | null {
     const self = this;
     const { log } = this.deps;
@@ -413,6 +466,16 @@ class XacmlEditor {
   // not, the path-derived answer is returned and it is the Policy one, which is
   // what every caller of the one-argument form meant before policy sets were
   // editable.
+  /**
+   * Names the kind of node at a path, such as 'rule', 'target', 'match' or
+   * 'expression', derived from the path.
+   *
+   * Without the node, a document root or a policy set's child is answered as
+   * 'policy'; passing the node makes 'policySet' and 'reference' exact.
+   * @param path - the dotted path
+   * @param node - the node at the path, where the caller has it
+   * @returns the kind, 'unknown' when the path names nothing the editor knows
+   */
   kindAt(path: string, node?: ModelNode): string {
     const self = this;
     const { log } = this.deps;
@@ -500,6 +563,13 @@ class XacmlEditor {
   // editor that offered every variable in the document would offer references
   // the validator then refuses, which is the one thing this file exists not to
   // do.
+  /**
+   * Returns the nearest Policy or PolicySet enclosing a path: the scope a
+   * VariableReference there resolves in.
+   * @param policy - the policy model
+   * @param path - the dotted path
+   * @returns the enclosing Policy or PolicySet, the root when there is none
+   */
   enclosingPolicy(policy: ModelNode, path: string): ModelNode {
     const self = this;
     const { log } = this.deps;
@@ -522,6 +592,11 @@ class XacmlEditor {
     return holder;
   }
 
+  /**
+   * Tells whether a node is a PolicySet.
+   * @param node - a model node
+   * @returns true for a PolicySet
+   */
   isPolicySet(node: ModelNode): boolean {
     const { log } = this.deps;
     log.debug("Entering XacmlEditor.isPolicySet().");
@@ -542,6 +617,12 @@ class XacmlEditor {
   //                     `and` is not, because its parameters are variadic.
   //   applyFunctions()  everything, grouped, for the general expression editor.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the functions a `<Match>` may use: those taking two primitives and
+   * returning a boolean, computed from the function library.
+   * @returns `{ uri, label, type }` per function, `type` the datatype both
+   * arguments must have
+   */
   matchFunctions(): Array<{ uri: string; label: string; type: string }> {
     const self = this;
     const { log, model, functions } = this.deps;
@@ -571,6 +652,11 @@ class XacmlEditor {
     return out;
   }
 
+  /**
+   * Lists every function in the library, for the general expression editor.
+   * @returns `{ uri, label, arity, returns }` per function, `arity` 'any' for
+   * a variadic one
+   */
   applyFunctions(): Array<{ uri: string; label: string;
                             arity: number | string; returns: string }> {
     const self = this;
@@ -589,6 +675,11 @@ class XacmlEditor {
     return out;
   }
 
+  /**
+   * Strips the XACML function prefix from a function URI.
+   * @param uri - a function URI
+   * @returns the bare function name
+   */
   shortName(uri: string): string {
     const { log } = this.deps;
     log.debug("Entering XacmlEditor.shortName().");
@@ -597,6 +688,11 @@ class XacmlEditor {
       .replace(/^urn:oasis:names:tc:xacml:[0-9.]+:function:/, '');
   }
 
+  /**
+   * Returns a datatype's short name.
+   * @param uri - a datatype URI
+   * @returns the short name, the URI when unknown, 'any' when absent
+   */
   shortType(uri: string | null | undefined): string {
     const { log, datatypes } = this.deps;
     log.debug("Entering XacmlEditor.shortType().");
@@ -609,6 +705,12 @@ class XacmlEditor {
   // throws and never returns '': a node the reader produced that this function
   // has no case for is named by its kind, because a blank row in a tree is a
   // node somebody cannot select.
+  /**
+   * Reads an expression as one line for a menu or a detail line; never ''
+   * and never throws.
+   * @param expression - a model expression node
+   * @returns the one-line reading, 'nothing' for no expression
+   */
   describeExpression(expression: ModelNode): string {
     const self = this;
     const { log } = this.deps;
@@ -648,6 +750,11 @@ class XacmlEditor {
     return String(expression.kind);
   }
 
+  /**
+   * Lists the datatypes a dropdown offers, the common ones first and the rest
+   * sorted.
+   * @returns `{ uri, label }` per datatype
+   */
   typeMenu(): MenuRow[] {
     const self = this;
     const { log, datatypes } = this.deps;
@@ -663,6 +770,12 @@ class XacmlEditor {
 
   // Which menu a node's combining algorithm comes from. One function, so that
   // the page, the edit and the refusal cannot disagree about it.
+  /**
+   * Returns the combining-algorithm menu for a node: the policy-combining one
+   * for a PolicySet, the rule-combining one otherwise.
+   * @param node - a Policy or PolicySet
+   * @returns the menu rows
+   */
   algorithmMenuFor(node: ModelNode): MenuRow[] {
     const self = this;
     const { log } = this.deps;
@@ -674,6 +787,13 @@ class XacmlEditor {
   // The variables a VariableReference at this path may legally name: the ones
   // declared on the nearest enclosing Policy, sorted, as `{ id, detail }` so
   // the menu can say what each one IS rather than offering five bare names.
+  /**
+   * Lists the variables a VariableReference at a path may name: those the
+   * nearest enclosing policy defines.
+   * @param policy - the policy model
+   * @param path - the dotted path
+   * @returns `{ id, detail }` per variable, sorted by id
+   */
   variablesInScope(policy: ModelNode,
                    path: string): Array<{ id: string; detail: string }> {
     const self = this;
@@ -689,6 +809,14 @@ class XacmlEditor {
     return out;
   }
 
+  /**
+   * Says what may be done at a path: the node's kind, the `Add` options legal
+   * there and whether the node may be removed.
+   * @param policy - the policy model
+   * @param path - the dotted path
+   * @returns `{ kind, additions, removable }`; kind 'unknown' with nothing
+   * offered when the path does not resolve
+   */
   optionsAt(policy: ModelNode, path: string): { kind: string;
     additions: Addition[]; removable: boolean } {
     const self = this;
@@ -761,6 +889,18 @@ class XacmlEditor {
   // document which cannot be saved until several more edits are made — the
   // second kind cannot show you what you have, because it cannot evaluate it.
   // ---------------------------------------------------------------------------
+  /**
+   * Applies one edit to a policy model, in place.
+   *
+   * Every node it adds is complete and valid on its own. An Effect that is
+   * neither Permit nor Deny is refused.
+   * @param policy - the policy model, mutated
+   * @param path - the dotted path the edit applies at
+   * @param action - the edit, one of the grammar's actions
+   * @param params - the edit's form fields
+   * @returns `{ ok: true, what }`, or `{ ok: false, why }` when the path no
+   * longer resolves or the edit is refused
+   */
   applyEdit(policy: ModelNode, path: string, action: string,
             params?: EditParams): EditResult {
     const self = this;
@@ -1623,6 +1763,13 @@ class XacmlEditor {
   // is what that needs — nesting it here would mean the renderer had to walk it
   // again to flatten it.
   // ---------------------------------------------------------------------------
+  /**
+   * Flattens a policy model into the rows the editor page draws as an
+   * indented list.
+   * @param policy - the policy model
+   * @returns `{ path, depth, kind, label, detail }` per node, in document
+   * order
+   */
   tree(policy: ModelNode): TreeRow[] {
     const self = this;
     const { log } = this.deps;
@@ -1900,6 +2047,13 @@ class XacmlEditor {
   // "somewhere in this document" would send somebody looking through five of
   // them.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the policies that use XPath (an AttributeSelector or an
+   * xpathExpression value) and declare no XPathVersion, which section 5.14
+   * requires; reported, not refused.
+   * @param policy - the policy model
+   * @returns the ids of the policies missing one
+   */
   xpathVersionGaps(policy: ModelNode): string[] {
     const self = this;
     const { log, model } = this.deps;
@@ -2002,6 +2156,11 @@ class XacmlEditor {
   // prefix and leaves an algorithm URI whole, which is why this is separate
   // rather than one regular expression asked to do both — the two families of
   // URI differ in more than their last segment.
+  /**
+   * Returns the bare name of a combining algorithm.
+   * @param uri - a combining algorithm URI
+   * @returns the name after `combining-algorithm:`, '?' when empty
+   */
   shortAlgorithm(uri: string | null | undefined): string {
     const { log } = this.deps;
     log.debug("Entering XacmlEditor.shortAlgorithm().");
@@ -2009,6 +2168,11 @@ class XacmlEditor {
     return String(uri || '').replace(/^.*combining-algorithm:/, '') || '?';
   }
 
+  /**
+   * Returns a category's short label from the category menu.
+   * @param uri - a category URI
+   * @returns the label, the URI when it is not on the menu
+   */
   categoryLabel(uri: string): string {
     const { log } = this.deps;
     log.debug("Entering XacmlEditor.categoryLabel().");
@@ -2038,6 +2202,13 @@ const slot = new InstanceSlot<XacmlEditor>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The XACML guided editor's grammar: the tree, the options at each node and
+ * the edits, for `/admin/xacml`'s policy editor.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   XacmlEditor: XacmlEditor,
   installInstance: (instance: XacmlEditor): void => slot.install(instance),

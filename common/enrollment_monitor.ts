@@ -102,10 +102,12 @@ interface EnrollmentMonitorDeps {
   startedAt: string;
 }
 
+/** The three enrollment families counted: ACME, EST and SCEP. */
 const FAMILIES = ['acme', 'est', 'scep'];
 
 // The number of recent rows each family keeps per realm. Enough for a person
 // watching a client try something; a history is the audit log's job.
+/** The number of recent rows each family keeps per realm. */
 const RECENT = 50;
 
 // The largest number of distinct principals, profiles or codes one table
@@ -121,11 +123,29 @@ FAMILIES.forEach(function (family) {
 
 const startedAt = new Date().toISOString();
 
+/**
+ * The counters behind the ACME, EST and SCEP monitoring pages and their
+ * `/admin-api` operations.
+ *
+ * Per realm, and merged across processes when read.
+ */
 class EnrollmentMonitor {
+  /** The three enrollment families counted. */
   static readonly FAMILIES = FAMILIES;
+  /** The number of recent rows each family keeps per realm. */
   static readonly RECENT = RECENT;
+  /**
+   * The largest number of distinct keys one table keeps before it folds the
+   * rest into "(other)".
+   */
   static readonly MAX_KEYS = MAX_KEYS;
 
+  /**
+   * Builds a monitor over the given dependencies.
+   *
+   * @param deps - the logger, the error-code table, the three family stores,
+   *   the replication reader and the realm reader
+   */
   constructor(private readonly deps: EnrollmentMonitorDeps) {
     deps.log.debug("Entering EnrollmentMonitor.constructor().");
     deps.log.debug("Leaving EnrollmentMonitor.constructor().");
@@ -133,6 +153,12 @@ class EnrollmentMonitor {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the composition root passes: this module's
+   * stores and the service's own logger, replication and realm readers.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): EnrollmentMonitorDeps {
     helpers.log.debug("Entering EnrollmentMonitor.defaultDeps().");
     helpers.log.debug("Leaving EnrollmentMonitor.defaultDeps().");
@@ -195,6 +221,17 @@ class EnrollmentMonitor {
   //                      because a SCEP refusal is an HTTP 200 whose status
   //                      says nothing
   // -------------------------------------------------------------------------
+  /**
+   * Counts one request to an enrollment protocol in the ambient realm.
+   *
+   * Never throws into the request it counts: a failure is logged under
+   * `STS-ENROLL-0090` and ignored. No secret is ever passed or recorded.
+   * @param family - `acme`, `est` or `scep`
+   * @param detail - what happened: `operation`, `outcome` (`issued`,
+   *   `refused`, `revoked`, `credential`, `redeemed` or `answered`),
+   *   `status`, `profile`, `principal`, `target`, `errorCode`, `serialHex`
+   *   and, for SCEP, `failInfo`
+   */
   record(family: string, detail?: RecordDetail | null): void {
     const { log, errorCodes, stores } = this.deps;
     log.debug("Entering EnrollmentMonitor.record(). family=" + family);
@@ -276,6 +313,14 @@ class EnrollmentMonitor {
 
   // The family's counters in the ambient realm, this process's and every
   // other process's added together.
+  /**
+   * Returns the family's counters in the ambient realm, this process's and
+   * every other process's added together.
+   *
+   * @param family - `acme`, `est` or `scep`
+   * @returns the merged counters, with `startedAt`, `realm`, `family` and
+   *   `processes`, or null for an unknown family
+   */
   snapshot(family: string): any {
     const { log, stores, remoteRows, currentRealmId } = this.deps;
     log.debug("Entering EnrollmentMonitor.snapshot(). family=" + family);
@@ -330,6 +375,11 @@ class EnrollmentMonitor {
   }
 
   // Tests only: forget this realm's counts for one family.
+  /**
+   * Forgets this realm's counts for one family. Tests only.
+   *
+   * @param family - `acme`, `est` or `scep`
+   */
   resetForTests(family: string): void {
     const { log, stores } = this.deps;
     log.debug("Entering EnrollmentMonitor.resetForTests().");
@@ -358,10 +408,28 @@ const slot = new InstanceSlot<EnrollmentMonitor>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What the three enrollment protocols have done: the counters behind the
+ * ACME, EST and SCEP monitoring pages.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   EnrollmentMonitor: EnrollmentMonitor,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: EnrollmentMonitor): void =>
     slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   FAMILIES: FAMILIES,
   RECENT: RECENT,

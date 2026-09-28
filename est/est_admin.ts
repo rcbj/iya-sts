@@ -82,7 +82,21 @@ interface EstAdminDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The two EST console pages, Protocols → EST (`/admin/est`) and Monitoring →
+ * EST enrollments (`/admin/est/monitor`), drawn in the console's shell from one
+ * call to `est_console.ts` each.
+ *
+ * Issuing with a server-generated key answers with a one-time page carrying the
+ * private key rather than a redirect.
+ */
 class EstAdmin {
+  /**
+   * Builds the pages from their dependencies.
+   *
+   * @param deps - the modules they read, from `EstAdmin.defaultDeps()` or the
+   * composition root
+   */
   constructor(private readonly deps: EstAdminDeps) {
     deps.log.debug("Entering EstAdmin.constructor().");
     deps.log.debug("Leaving EstAdmin.constructor().");
@@ -90,6 +104,12 @@ class EstAdmin {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the real modules the pages depend on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): EstAdminDeps {
     helpers.log.debug("Entering EstAdmin.defaultDeps().");
     helpers.log.debug("Leaving EstAdmin.defaultDeps().");
@@ -104,6 +124,13 @@ class EstAdmin {
     };
   }
 
+  /**
+   * Validates a page's query, answering 400 when it is malformed.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns true when the query was refused and answered
+   */
   queryRefused(req, res) {
     const { log, validation, errorCodes } = this.deps;
     log.debug("Entering EstAdmin.queryRefused().");
@@ -121,6 +148,12 @@ class EstAdmin {
     return false;
   }
 
+  /**
+   * Draws the console's pending messages for a request.
+   *
+   * @param req - the request
+   * @returns the HTML
+   */
   messages(req) {
     const { log, admin } = this.deps;
     log.debug("Entering EstAdmin.messages().");
@@ -128,6 +161,13 @@ class EstAdmin {
     return typeof admin.messagesOf === 'function' ? admin.messagesOf(req) : '';
   }
 
+  /**
+   * Draws the `<option>` elements of a select.
+   *
+   * @param values - the values
+   * @param selected - the value selected
+   * @returns the HTML
+   */
   options(values, selected) {
     const { log, esc } = this.deps;
     log.debug("Entering EstAdmin.options().");
@@ -139,6 +179,12 @@ class EstAdmin {
     }).join('');
   }
 
+  /**
+   * Draws a flag as `yes` or a muted `no`.
+   *
+   * @param flag - the flag
+   * @returns the HTML
+   */
   yesNo(flag) {
     const { log } = this.deps;
     log.debug("Entering EstAdmin.yesNo().");
@@ -146,6 +192,13 @@ class EstAdmin {
     return flag ? 'yes' : '<span class="sub">no</span>';
   }
 
+  /**
+   * Draws a hidden form field.
+   *
+   * @param name - the field's name
+   * @param value - its value
+   * @returns the HTML
+   */
   hidden(name, value) {
     const { log, esc } = this.deps;
     log.debug("Entering EstAdmin.hidden().");
@@ -154,6 +207,12 @@ class EstAdmin {
            esc(value) + '">';
   }
 
+  /**
+   * Draws a link to a person's or an application's console page.
+   *
+   * @param entry - `{ kind, id }`, or nothing
+   * @returns the HTML
+   */
   entryLink(entry) {
     const { log, esc } = this.deps;
     log.debug("Entering EstAdmin.entryLink().");
@@ -172,6 +231,13 @@ class EstAdmin {
   // ---------------------------------------------------------------------------
   // The body of /admin/est, from the view.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the body of `/admin/est` from the view.
+   *
+   * @param req - the request
+   * @param json - `est_console.ts`'s `estView()`
+   * @returns the HTML
+   */
   estPageBody(req, json) {
     const { log, esc, admin } = this.deps;
     const self = this;
@@ -341,6 +407,13 @@ class EstAdmin {
   }
 
   // The one-time page for a server-generated key.
+  /**
+   * Draws the one-time page for a certificate issued with a server-generated
+   * key: the private key, the certificate and its chain.
+   *
+   * @param result - the issue action's result
+   * @returns the HTML
+   */
   issuedKeyPage(result) {
     const { log, admin, esc } = this.deps;
     log.debug("Entering EstAdmin.issuedKeyPage().");
@@ -364,6 +437,13 @@ class EstAdmin {
   // ---------------------------------------------------------------------------
   // GET /admin/est/monitor
   // ---------------------------------------------------------------------------
+  /**
+   * Draws a titled table of counts.
+   *
+   * @param title - the heading
+   * @param rows - `{ name, count }` rows
+   * @returns the HTML
+   */
   countTable(title, rows) {
     const { log, esc } = this.deps;
     log.debug("Entering EstAdmin.countTable().");
@@ -380,6 +460,12 @@ class EstAdmin {
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order
   // is unchanged (rule 1). Nothing calls it at load.
+  /**
+   * Registers `GET` and `POST /admin/est` and `GET /admin/est/monitor` on the
+   * app. Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, consoleModel, admin, parseBody, errorCodes, esc } = this.deps;
     const self = this;
@@ -512,9 +598,23 @@ const slot = new InstanceSlot<EstAdmin>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The two EST console pages.
+ *
+ * Exports `registerRoutes`, the `EstAdmin` class, and the instance slot's
+ * facades.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   EstAdmin: EstAdmin,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: EstAdmin): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin()
 };

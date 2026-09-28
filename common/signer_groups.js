@@ -48,8 +48,17 @@ const log = bunyan.createLogger({
 
 // The two models `keys.signerModel` names. `per-algorithm` is what every
 // realm had before #68 and is the default.
+/**
+ * The two signer models `keys.signerModel` names.
+ */
 const MODELS = ['per-algorithm', 'hybrid-groups'];
+/**
+ * The default signer model, one key per JWS algorithm shared by every use.
+ */
 const DEFAULT_MODEL = 'per-algorithm';
+/**
+ * The signer model of #68: a separate set of keys per group of uses.
+ */
 const HYBRID_MODEL = 'hybrid-groups';
 
 // ---------------------------------------------------------------------------
@@ -60,6 +69,10 @@ const HYBRID_MODEL = 'hybrid-groups';
 // certificates come from: JOSE groups under the JOSE Signing CA, the XML
 // group under the XML Signing CA, as the per-algorithm keys are.
 // ---------------------------------------------------------------------------
+/**
+ * The signer groups: `id`, `label`, the Issuing CA its certificates come
+ * from (`pkiUseCase`) and the JOSE certificate-header use cases it signs.
+ */
 const GROUPS = [
   { id: 'tokens', label: 'OAuth 2.0 and OpenID Connect tokens',
     pkiUseCase: 'jose',
@@ -82,6 +95,9 @@ const GROUPS = [
     pkiUseCase: 'xml', useCases: [] }
 ];
 
+/**
+ * The ids of `GROUPS`, in order.
+ */
 const GROUP_IDS = GROUPS.map(function (one) { return one.id; });
 
 // ---------------------------------------------------------------------------
@@ -99,6 +115,11 @@ const GROUP_IDS = GROUPS.map(function (one) { return one.id; });
 // key's slot (`RS256`, `ES256:P-256`, `ML-DSA-65`), because none of those
 // contains a slash.
 // ---------------------------------------------------------------------------
+/**
+ * The members of every group, one certificate each: a classical key with its
+ * ML-DSA partner certified beside it (a hybrid certificate), or SLH-DSA
+ * alone; `slot`, `keyAlg`, `kind`, `jwsAlgs` and `pq`.
+ */
 const PAIRS = [
   { slot: 'RS256', keyAlg: 'rsa-3072', kind: 'rsa',
     jwsAlgs: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512'],
@@ -115,6 +136,11 @@ const PAIRS = [
 ];
 
 // Every JWS algorithm a group signs, classical and post-quantum.
+/**
+ * Lists every JWS algorithm a group signs, classical and post-quantum.
+ *
+ * @returns the algorithm names
+ */
 function groupAlgs() {
   log.debug("Entering groupAlgs().");
   const out = [];
@@ -128,6 +154,12 @@ function groupAlgs() {
   return out;
 }
 
+/**
+ * Returns a group by id.
+ *
+ * @param id - a group id
+ * @returns the `GROUPS` row, or null
+ */
 function group(id) {
   log.debug("Entering group().");
   log.debug("Leaving group().");
@@ -137,6 +169,12 @@ function group(id) {
 }
 
 // The group a JOSE certificate-header use case belongs to, or null.
+/**
+ * Returns the group a JOSE certificate-header use case belongs to.
+ *
+ * @param useCaseId - a use-case id from `jose_certificate_header.js`
+ * @returns the `GROUPS` row, or null when no group signs it
+ */
 function groupForUseCase(useCaseId) {
   log.debug("Entering groupForUseCase(). use=" + useCaseId);
   const found = GROUPS.filter(function (one) {
@@ -147,6 +185,13 @@ function groupForUseCase(useCaseId) {
 }
 
 // The certificate slot of a member: `<group>/<slot>`.
+/**
+ * Builds a group member's certificate slot, `<group>/<slot>`.
+ *
+ * @param groupId - the group id
+ * @param slot - the member's slot in `PAIRS`
+ * @returns the slot name
+ */
 function slotOf(groupId, slot) {
   log.debug("Entering slotOf().");
   log.debug("Leaving slotOf().");
@@ -154,6 +199,13 @@ function slotOf(groupId, slot) {
 }
 
 // Is a certificate slot a group member's? The slash is the whole test.
+/**
+ * Tells whether a certificate slot is a group member's (it contains a
+ * slash, which no per-algorithm slot does).
+ *
+ * @param slot - a certificate slot name
+ * @returns true for a group member's slot
+ */
 function isGroupSlot(slot) {
   log.debug("Entering isGroupSlot().");
   log.debug("Leaving isGroupSlot().");
@@ -170,6 +222,10 @@ function isGroupSlot(slot) {
 // Anything but the RSA family needs a `hybrid-groups` realm: the
 // per-algorithm model has an RSA key for XML and nothing else.
 // ---------------------------------------------------------------------------
+/**
+ * Each `saml.signatureAlgorithm` value and the XML group member slot that
+ * signs it.
+ */
 const XML_SIGNATURE_SLOTS = {
   'rsa-sha256': 'RS256', 'rsa-sha384': 'RS256', 'rsa-sha512': 'RS256',
   'rsa-sha1': 'RS256',
@@ -179,6 +235,13 @@ const XML_SIGNATURE_SLOTS = {
 };
 
 // The XML group slot that signs a `saml.signatureAlgorithm` value.
+/**
+ * Returns the XML group slot that signs a `saml.signatureAlgorithm` value,
+ * the RSA member for an unknown one.
+ *
+ * @param name - a `saml.signatureAlgorithm` value
+ * @returns the slot, `xml/<member>`
+ */
 function xmlSlotFor(name) {
   log.debug("Entering xmlSlotFor(). " + name);
   log.debug("Leaving xmlSlotFor().");
@@ -187,6 +250,13 @@ function xmlSlotFor(name) {
 
 // Is a `saml.signatureAlgorithm` value the RSA family's, which the
 // per-algorithm XML key can sign?
+/**
+ * Tells whether a `saml.signatureAlgorithm` value is in the RSA family, which
+ * the per-algorithm XML key can sign.
+ *
+ * @param name - a `saml.signatureAlgorithm` value
+ * @returns true for an `rsa-*` value
+ */
 function isRsaXmlAlgorithm(name) {
   log.debug("Entering isRsaXmlAlgorithm().");
   log.debug("Leaving isRsaXmlAlgorithm().");
@@ -195,6 +265,12 @@ function isRsaXmlAlgorithm(name) {
 
 // The realm's model, read in the AMBIENT realm (`keys.signerModel` is
 // `runtime: true`, so the realm's override answers first).
+/**
+ * Returns the ambient realm's signer model, the default for an unknown
+ * value.
+ *
+ * @returns `per-algorithm` or `hybrid-groups`
+ */
 function model() {
   log.debug("Entering model().");
   const value = String(config.value('keys.signerModel') || DEFAULT_MODEL);
@@ -202,12 +278,25 @@ function model() {
   return MODELS.indexOf(value) >= 0 ? value : DEFAULT_MODEL;
 }
 
+/**
+ * Tells whether the ambient realm uses the hybrid-groups signer model.
+ *
+ * @returns true under `hybrid-groups`
+ */
 function hybridGroupsOn() {
   log.debug("Entering hybridGroupsOn().");
   log.debug("Leaving hybridGroupsOn().");
   return model() === HYBRID_MODEL;
 }
 
+/**
+ * Signer groups: the keys a realm signs with, collapsed by algorithm and
+ * separated by use (#68).
+ *
+ * A leaf table shared by the modules that make, seal, certify and publish the
+ * keys, so that they cannot disagree.
+ * @namespace
+ */
 module.exports = {
   MODELS: MODELS,
   DEFAULT_MODEL: DEFAULT_MODEL,

@@ -75,7 +75,14 @@ const XMLDSIG_MORE = 'http://www.w3.org/2001/04/xmldsig-more#';
 // of them is ever the default.
 const XMLDSIG_MORE_2026 = 'http://www.w3.org/2026/08/xmldsig-more#';
 
+/**
+ * Answers the two things every signed SAML-shaped document asks the
+ * configuration: which algorithms sign it, and its `<md:Organization>`.
+ */
 class DocumentSettings {
+  /**
+   * The signature algorithm URIs, by the name a setting carries.
+   */
   static readonly SIGNATURE_ALGORITHMS: Record<string, string> = {
     'rsa-sha256': stsCrypto.SIG_RSA_SHA256,
     'rsa-sha384': XMLDSIG_MORE + 'rsa-sha384',
@@ -95,11 +102,20 @@ class DocumentSettings {
   // EXCLUSIVE ONLY, and `saml.canonicalizationAlgorithm`'s description says
   // why: an assertion is signed standalone and then embedded under ancestors
   // that declare prefixes of their own.
+  /**
+   * The canonicalization URIs, by the name a setting carries; exclusive only.
+   */
   static readonly CANONICALIZATIONS: Record<string, string> = {
     'exclusive': stsCrypto.C14N_EXCLUSIVE,
     'exclusive-with-comments': stsCrypto.C14N_EXCLUSIVE + 'WithComments'
   };
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, settings, the mode, the XML escaper and the XML
+   * signature choice
+   */
   constructor(private readonly deps: DocumentSettingsDeps) {
     deps.log.debug("Entering DocumentSettings.constructor().");
     deps.log.debug("Leaving DocumentSettings.constructor().");
@@ -107,6 +123,11 @@ class DocumentSettings {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): DocumentSettingsDeps {
     helpers.log.debug("Entering DocumentSettings.defaultDeps().");
     helpers.log.debug("Leaving DocumentSettings.defaultDeps().");
@@ -128,6 +149,14 @@ class DocumentSettings {
   // THE ALGORITHM IS READ AS IN FORCE (#181): `rsa-sha1` is development's, so
   // a product realm with it still stored signs with the default RSA-SHA256
   // and says so once (`mode.valueInForce()`, STS-CORE-0106).
+  /**
+   * Answers the signature and canonicalization algorithms `signXml()` is called
+   * with, read as in force in the ambient realm.
+   *
+   * `rsa-sha1` stored in a product realm signs with the default RSA-SHA256 and
+   * says so once.
+   * @returns `sigAlg`, `c14nAlg` and their names
+   */
   signatureOptions(): SignatureOptions {
     const { log, config, xmlSignatureChoice } = this.deps;
     const SIGNATURE_ALGORITHMS = DocumentSettings.SIGNATURE_ALGORITHMS;
@@ -173,6 +202,13 @@ class DocumentSettings {
   // default is the name this service always published, product mode
   // included, and README says to set or empty it.
   // -------------------------------------------------------------------------
+  /**
+   * Draws a metadata document's `<md:Organization>` from the
+   * `saml.organization*` settings.
+   *
+   * @param base - the base URL, the organisation URL when none is set
+   * @returns the element, or '' when the name or display name is empty
+   */
   organizationElement(base?: unknown): string {
     const { log, config, xmlEscape } = this.deps;
     log.debug("Entering DocumentSettings.organizationElement().");
@@ -215,9 +251,23 @@ const slot = new InstanceSlot<DocumentSettings>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The signature options and the `<md:Organization>` every signed SAML,
+ * WS-Federation and federation document asks the configuration for, answered in
+ * one place.
+ * @namespace
+ */
 export = {
   DocumentSettings: DocumentSettings,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: DocumentSettings): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   SIGNATURE_ALGORITHMS: DocumentSettings.SIGNATURE_ALGORITHMS,
   CANONICALIZATIONS: DocumentSettings.CANONICALIZATIONS,

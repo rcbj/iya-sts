@@ -365,14 +365,47 @@ const PARTNER_KIND = 'federation-identity-provider';
 // FINISHING A FLOW: the one path that receives all five protocols.
 // ===========================================================================
 
+/**
+ * This service as a service provider: starting a sign-in at a federation
+ * partner and consuming what the partner sends back, in five protocols, on one
+ * assertion consumer service path per relationship.
+ *
+ * Nothing is accepted unless it verifies against what the relationship was
+ * configured with, in every mode.
+ */
 class FederationSp {
+  /**
+   * The path of the federation index page, `/federation`.
+   */
   static readonly BASE_PATH = BASE_PATH;
+  /**
+   * The path that starts a sign-in at a partner (`/{id}` appended).
+   */
   static readonly LOGIN_PATH = LOGIN_PATH;
+  /**
+   * The assertion consumer service path, which receives all five protocols
+   * (`/{id}` appended).
+   */
   static readonly ACS_PATH = ACS_PATH;
+  /**
+   * The path of this service's SAML metadata for a partner (`/{id}` appended).
+   */
   static readonly METADATA_PATH = METADATA_PATH;
+  /**
+   * The path link-at-first-sign-in's local sign-in returns to (`/{handle}`
+   * appended).
+   */
   static readonly LINK_PATH = LINK_PATH;
+  /**
+   * The `via` of the local sign-in link-at-first-sign-in asks for.
+   */
   static readonly LINK_VIA = LINK_VIA;
 
+  /**
+   * Builds the service provider over the given dependencies.
+   *
+   * @param deps - the modules it uses, with `oidfedRp` reached lazily
+   */
   constructor(private readonly deps: FederationSpDeps) {
     deps.log.debug("Entering FederationSp.constructor().");
     deps.log.debug("Leaving FederationSp.constructor().");
@@ -380,6 +413,12 @@ class FederationSp {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): FederationSpDeps {
     helpers.log.debug("Entering FederationSp.defaultDeps().");
     helpers.log.debug("Leaving FederationSp.defaultDeps().");
@@ -423,6 +462,12 @@ class FederationSp {
   // -------------------------------------------------------------------------
   // THE ROUTES, in the order this module has always registered them.
   // -------------------------------------------------------------------------
+  /**
+   * Registers the login, assertion consumer service, link, metadata, JWKS and
+   * index routes.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteRegistrar): void {
     const { log } = this.deps;
     log.debug("Entering FederationSp.registerRoutes().");
@@ -489,6 +534,13 @@ class FederationSp {
     return config.value('federation.requestTtlMin') * 60 * 1000;
   }
 
+  /**
+   * Stores the context of a flow in flight and returns a handle for it; the
+   * oldest context is dropped once `federation.maxContexts` are held.
+   *
+   * @param record - what the flow needs back when the response arrives
+   * @returns the handle, `fed-` and a random value
+   */
   putContext(record) {
     const { log, randomId } = this.deps;
     log.debug("Entering FederationSp.putContext().");
@@ -563,6 +615,12 @@ class FederationSp {
   // window has not closed. The SAML 1.1 case is the one that has no context at
   // all — see `fedAllowUnsolicited` — and it is handled by the caller rather
   // than by pretending there was one.
+  /**
+   * Reads and spends a flow's context: a context is good for one response.
+   *
+   * @param handle - the handle `putContext()` returned
+   * @returns the context, or null when there is none or it has expired
+   */
   takeContext(handle) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.takeContext(). handle=" +
@@ -663,6 +721,14 @@ class FederationSp {
   //
   // The ACS URL below stays derived: it is an ADDRESS a browser posts to, and
   // it must follow the base it can actually reach.
+  /**
+   * Returns the name this service goes by with a partner: the relationship's
+   * `fedLocalEntityId` when pinned, its ACS URL otherwise.
+   *
+   * @param base - the service's base URL
+   * @param record - the federation relationship
+   * @returns the entity ID
+   */
   ourEntityId(base, record) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.ourEntityId().");
@@ -675,6 +741,13 @@ class FederationSp {
     return base + ACS_PATH + '/' + encodeURIComponent(record.fedId);
   }
 
+  /**
+   * Returns the relationship's assertion consumer service URL.
+   *
+   * @param base - the service's base URL
+   * @param record - the federation relationship
+   * @returns the URL
+   */
   acsUrl(base, record) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.acsUrl().");
@@ -685,6 +758,14 @@ class FederationSp {
   // Where a partner's browser-borne sign-out arrives (#167): the SAML
   // SingleLogoutService, the WS-Federation cleanup URL and the OpenID Connect
   // post_logout_redirect_uri, one path for the ACS's reason (decision 2).
+  /**
+   * Returns the address a partner's browser-borne sign-out arrives at for the
+   * relationship.
+   *
+   * @param base - the service's base URL
+   * @param record - the federation relationship
+   * @returns the URL
+   */
   sloUrl(base, record) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.sloUrl().");
@@ -702,6 +783,12 @@ class FederationSp {
   // doing it inline is two chances to wrap at 63 characters instead of 64,
   // which produces a key that parses and verifies nothing.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the relationship's `fedSigningCertificate` (base64 DER) as a PEM.
+   *
+   * @param record - the federation relationship
+   * @returns the PEM, or the empty string when none is configured
+   */
   certPemOf(record) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.certPemOf().");
@@ -745,6 +832,22 @@ class FederationSp {
   // its `x5c`, where it has one, is checked the same way, and a key with none
   // is a bare key with nothing to look up — reported as such on the log line
   // rather than called good.
+  /**
+   * Checks the configured signing certificate, or the partner key that verified
+   * a token, for revocation once it has verified a response, and continues the
+   * sign-in only if it is still accepted.
+   *
+   * A refused certificate is answered 401 (`STS-PKI-0129`); a throw while
+   * continuing is answered 500 (`STS-FED-0042`).
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param record - the federation relationship
+   * @param proceed - what completes the sign-in
+   * @param jwk - the partner key that verified a JWT, if that is what is
+   *   checked
+   * @returns a promise of what `proceed` or the refusal returns
+   */
   signerStillAccepted(req, res, record, proceed, jwk?) {
     const { errorCodes, revocationStatus, log } = this.deps;
     log.debug("Entering FederationSp.signerStillAccepted(). id=" +
@@ -1018,6 +1121,17 @@ class FederationSp {
   // profiles make it optional and whose deployed identity providers routinely
   // omit it.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks an assertion's audience restrictions: every restriction must name
+   * this service (`ourEntityId()` or `fedClientId`), in every mode.
+   *
+   * @param assertion - the assertion element
+   * @param base - the service's base URL
+   * @param record - the federation relationship
+   * @param required - whether an assertion with no audience restriction is
+   *   refused (SAML 2.0) rather than accepted with a warning
+   * @returns `{ ok, why }`, with `errorCode` on a refusal
+   */
   audienceCheck(assertion, base, record, required) {
     const { log, firstByLocal } = this.deps;
     log.debug("Entering FederationSp.audienceCheck(). required=" + required);
@@ -1097,6 +1211,13 @@ class FederationSp {
   // THIS service did (it verified a partner's signature), and it is what
   // `saml/authn_context.ts` keys on to read everything after it as the
   // PARTNER's statement rather than this service's own sign-in.
+  /**
+   * Returns the `amr` of a federated sign-in: `federated` first, then the
+   * partner's own values.
+   *
+   * @param partner - the partner's `amr`
+   * @returns the values
+   */
   federatedAmr(partner) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.federatedAmr().");
@@ -1204,6 +1325,18 @@ class FederationSp {
   // ANSWER, a link included: a link says the subject is this person, and the
   // rules say whether this partner may sign this person in at all.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides which local person a partner's verified subject may become: the
+   * person already linked to it, one to confirm and link, a new entry, or a
+   * name match (development only), under the relationship's subject policy and
+   * rules.
+   *
+   * @param record - the federation relationship
+   * @param result - the verified sign-in
+   * @param mapped - the mapped attributes and username
+   * @returns `{ ok: true, username, link, create, how, confirm }`, or a refusal
+   *   `{ ok: false, code, status, what, why, rule }`
+   */
   subjectDecision(record, result, mapped): any {
     const { federation, links, mode, log } = this.deps;
     log.debug("Entering FederationSp.subjectDecision(). id=" + record.fedId);
@@ -2016,6 +2149,13 @@ class FederationSp {
   // `email_verified: false` from the partner (#64), in the claim bag of an
   // OpenID Connect partner — a boolean there, a string where a SAML or
   // WS-Federation partner happens to send the same name.
+  /**
+   * Says whether the partner said `email_verified: false`, as a boolean or a
+   * string.
+   *
+   * @param bag - the partner's claims or attributes
+   * @returns whether it did
+   */
   partnerDisownsMail(bag) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.partnerDisownsMail().");
@@ -2025,6 +2165,17 @@ class FederationSp {
     return value === false || String(value).toLowerCase() === 'false';
   }
 
+  /**
+   * Returns what this service keeps about the partner's session, which a
+   * partner's sign-out is matched against and this service's own sign-out to
+   * the partner is built from.
+   *
+   * @param record - the federation relationship
+   * @param result - the verified sign-in
+   * @returns the partner session: relationship, protocol, issuer and time, with
+   *   the SAML NameID and session index or the OpenID Connect `sub`, `sid` and
+   *   ID Token
+   */
   partnerSessionOf(record, result) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.partnerSessionOf().");
@@ -3108,6 +3259,15 @@ class FederationSp {
   // before it starts is not one to start. A value that does not parse is
   // refused too — a bound nobody can read is not a bound to ignore.
   // ---------------------------------------------------------------------------
+  /**
+   * Turns a SAML assertion's `SessionNotOnOrAfter` into the instant the session
+   * here must end by, with the clock-skew allowance.
+   *
+   * An instant already passed, or one that does not parse, is refused.
+   *
+   * @param contents - the assertion's contents
+   * @returns `{ at, refused, why }`, `at` in epoch milliseconds or 0 for none
+   */
   sessionBoundOf(contents) {
     const { config, log } = this.deps;
     log.debug("Entering FederationSp.sessionBoundOf().");
@@ -3323,6 +3483,14 @@ class FederationSp {
   // and trying them all turns a rotation into a silent success against a key
   // the partner has retired.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the partner's keys: `fedJwks` when pasted, otherwise fetched from
+   * `fedJwksUri`.
+   *
+   * @param record - the federation relationship
+   * @returns a promise of `{ ok, keys, from }`, or `{ ok: false, keys: [],
+   *   errorCode, why }`
+   */
   keysFor(record) {
     const { fedHttp, log } = this.deps;
     log.debug("Entering FederationSp.keysFor(). id=" + record.fedId);
@@ -3370,6 +3538,13 @@ class FederationSp {
   // The algorithms a partner key of this type may verify, as the family the key
   // admits intersected with `federation.jwtAlgorithms`. See the note at the
   // call.
+  /**
+   * Returns the algorithms a partner key of a type may verify: the key's family
+   * intersected with `federation.jwtAlgorithms`.
+   *
+   * @param kty - the JWK key type
+   * @returns the algorithm names
+   */
   familyAlgorithms(kty) {
     const { config, log } = this.deps;
     log.debug("Entering FederationSp.familyAlgorithms().");
@@ -3384,6 +3559,18 @@ class FederationSp {
     return family.filter((alg) => { return wanted.indexOf(alg) >= 0; });
   }
 
+  /**
+   * Verifies a JWT a partner signed, an ID Token or a Logout Token, against the
+   * partner's keys: the `kid` selects, and the key decides the algorithm
+   * family.
+   *
+   * @param token - the compact JWS
+   * @param record - the federation relationship
+   * @param keys - the partner's JWKs
+   * @param options - further verification options, such as issuer and audience
+   * @returns `{ ok: true, payload, kid, jwk }`, or `{ ok: false, errorCode, why
+   *   }`
+   */
   verifyForeignJwt(token, record, keys, options) {
     const { config, stsCrypto, log, jsonFromB64u } = this.deps;
     log.debug("Entering FederationSp.verifyForeignJwt().");
@@ -4479,13 +4666,43 @@ const slot = new InstanceSlot<FederationSp>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * This service as a federation service provider: signing a person in through a
+ * configured partner, in SAML 2.0, SAML 1.1, WS-Federation, OpenID Connect or
+ * OAuth 2.0, and this service's metadata for that partner.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Forwards to `FederationSp.registerRoutes()` on the installed instance.
+   */
   registerRoutes: slot.forward('registerRoutes'),
   FederationSp: FederationSp,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: FederationSp): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
+  /**
+   * Forwards to `FederationSp.audienceCheck()`.
+   */
   audienceCheck: slot.forward('audienceCheck'),
+  /**
+   * Forwards to `FederationSp.federatedAmr()`.
+   */
   federatedAmr: slot.forward('federatedAmr'),
+  /**
+   * Forwards to `FederationSp.familyAlgorithms()`.
+   */
   familyAlgorithms: slot.forward('familyAlgorithms'),
   BASE_PATH: FederationSp.BASE_PATH,
   LOGIN_PATH: FederationSp.LOGIN_PATH,
@@ -4495,26 +4712,59 @@ export = {
   LINK_VIA: FederationSp.LINK_VIA,
   // For tests/federation_subject_policy.js: which local person a verified
   // subject may become (#109), asked without a partner.
+  /**
+   * Forwards to `FederationSp.subjectDecision()`.
+   */
   subjectDecision: slot.forward('subjectDecision'),
+  /**
+   * Forwards to `FederationSp.ourEntityId()`.
+   */
   ourEntityId: slot.forward('ourEntityId'),
+  /**
+   * Forwards to `FederationSp.acsUrl()`.
+   */
   acsUrl: slot.forward('acsUrl'),
+  /**
+   * Forwards to `FederationSp.certPemOf()`.
+   */
   certPemOf: slot.forward('certPemOf'),
   // For `federation_slo.ts` (#167): the one request-context store (decision
   // 3) — a LogoutRequest this service sent, an end_session round trip and a
   // WS-Federation cleanup confirmation are in-flight flows exactly as a
   // sign-in is — and the SLO address; and, for tests/federation_signout.js,
   // how a partner's SessionNotOnOrAfter becomes the session's bound.
+  /**
+   * Forwards to `FederationSp.putContext()`.
+   */
   putContext: slot.forward('putContext'),
+  /**
+   * Forwards to `FederationSp.takeContext()`.
+   */
   takeContext: slot.forward('takeContext'),
+  /**
+   * Forwards to `FederationSp.sessionBoundOf()`.
+   */
   sessionBoundOf: slot.forward('sessionBoundOf'),
+  /**
+   * Forwards to `FederationSp.sloUrl()`.
+   */
   sloUrl: slot.forward('sloUrl'),
   // THE ONE PLACE A JWT FROM SOMEBODY ELSE IS VERIFIED, now for a Logout
   // Token as well as an ID Token (#167): the same keys, the same
   // key-decides-the-family rule, the same refusals.
+  /**
+   * Forwards to `FederationSp.keysFor()`.
+   */
   keysFor: slot.forward('keysFor'),
+  /**
+   * Forwards to `FederationSp.verifyForeignJwt()`.
+   */
   verifyForeignJwt: slot.forward('verifyForeignJwt'),
   SLO_PATH: SLO_PATH,
   // For tests/revocation_status.js: the check a configured signing certificate
   // or partner key gets once it has verified a response.
+  /**
+   * Forwards to `FederationSp.signerStillAccepted()`.
+   */
   signerStillAccepted: slot.forward('signerStillAccepted')
 };

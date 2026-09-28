@@ -122,6 +122,11 @@
 //   node tests/tools/run-report.js [options]
 //
 //   --only=<substr>[,...]  only these test files / job names
+//   --conformance-only     only the protocol jobs MANIFEST.js marks
+//                          `conformance: true` (the OpenID conformance
+//                          suite's) and no in-process file. By the FLAG and
+//                          not by name: `--only=conformance` is a substring,
+//                          and also picked up sts_scim_conformance.
 //   --list                 name the jobs that would run; run none
 //   --protocol[=on|off|only]
 //                          also (or only) run the protocol jobs under
@@ -245,6 +250,7 @@ const RUN_ID = new Date().toISOString().replace(/:/g, '-').replace(/\..+$/, '');
 function parseArgs(argv) {
   log.debug('Entering parseArgs().');
   const opts = { only: [], list: false, protocol: 'on', parent: '',
+                 conformanceOnly: false,
                  reportDir: path.join(TESTS_DIR, 'report'),
                  timeoutMs: 300000, quiet: false, help: false,
                  browser: true, serial: false,
@@ -259,6 +265,8 @@ function parseArgs(argv) {
   argv.forEach(function (a) {
     if (a === '--list') {
       opts.list = true;
+    } else if (a === '--conformance-only') {
+      opts.conformanceOnly = true;
     } else if (a === '--help' || a === '-h') {
       opts.help = true;
     } else if (a === '--quiet') {
@@ -1615,7 +1623,7 @@ async function main() {
     process.stdout.write(USAGE + '\n');
     process.exit(opts.unknown.length ? 2 : 0);
   }
-  const wantUnit = opts.protocol !== 'only';
+  const wantUnit = opts.protocol !== 'only' && !opts.conformanceOnly;
   const wantProtocol = opts.protocol === 'on' || opts.protocol === 'only';
 
   // ---- the jobs ---------------------------------------------------------
@@ -1638,6 +1646,11 @@ async function main() {
     if (opts.only.length) {
       theirs = theirs.filter(function (j) {
         return opts.only.some(function (p) { return j.file.indexOf(p) >= 0; });
+      });
+    }
+    if (opts.conformanceOnly) {
+      theirs = theirs.filter(function (j) {
+        return j.conformance;
       });
     }
     jobs.push.apply(jobs, theirs);

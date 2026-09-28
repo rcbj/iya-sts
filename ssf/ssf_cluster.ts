@@ -135,9 +135,24 @@ interface SsfClusterDeps {
   loadGnapProof(): { spendProof(presented: unknown): unknown };
 }
 
+/**
+ * What Shared Signals needs to agree on across the nodes of a cluster: a
+ * stream's health transition reported once, one process probing dead streams,
+ * and a GNAP key proof spent once across the cluster.
+ */
 class SsfCluster {
+  /**
+   * The lease whose holder probes dead push streams for the cluster,
+   * `ssf.dead-stream-probes`.
+   */
   static readonly PROBE_LEASE = PROBE_LEASE;
 
+  /**
+   * Builds the coordinator from its dependencies.
+   *
+   * @param deps - the modules it reads, from `SsfCluster.defaultDeps()` or the
+   * composition root
+   */
   constructor(private readonly deps: SsfClusterDeps) {
     deps.log.debug("Entering SsfCluster.constructor().");
     deps.log.debug("Leaving SsfCluster.constructor().");
@@ -158,6 +173,12 @@ class SsfCluster {
     return on;
   }
 
+  /**
+   * Returns the cluster's shared claim store, or null when there is none (one
+   * process, or a store that could not be reached).
+   *
+   * @returns the store, or null
+   */
   sharedStore(): unknown {
     const { log, loadPersistence } = this.deps;
     log.debug("Entering SsfCluster.sharedStore().");
@@ -191,6 +212,18 @@ class SsfCluster {
   // a session's end: this is a notice that must not be lost, not a value that
   // must not be accepted twice.
   // -------------------------------------------------------------------------
+  /**
+   * Lets a stream's `dead` or `revived` transition be reported by one process
+   * of the cluster, through a claim on the realm, stream and transition that
+   * lives half the dead-stream timeout.
+   *
+   * With no shared store, or one that cannot be asked, `emit` runs here.
+   *
+   * @param kind - `dead` or `revived`
+   * @param streamId - the stream's id
+   * @param emit - reports the transition
+   * @returns a promise of whether `emit` ran in this process
+   */
   transitionOnce(kind: string, streamId: unknown,
                  emit: () => void): Promise<boolean> {
     const { log, config, errorCodes, claims } = this.deps;
@@ -231,6 +264,13 @@ class SsfCluster {
   // -------------------------------------------------------------------------
   // WHO PROBES.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether this process probes dead push streams: always outside an
+   * active-active cluster; otherwise only the front process of the node holding
+   * `PROBE_LEASE`, never a request worker.
+   *
+   * @returns true when this process probes
+   */
   leadsProbes(): boolean {
     const { log, cluster } = this.deps;
     log.debug("Entering SsfCluster.leadsProbes().");
@@ -265,6 +305,18 @@ class SsfCluster {
   // written. A presentation that fails is left too — the gate reports it —
   // and nothing is spent for it.
   // -------------------------------------------------------------------------
+  /**
+   * Route middleware that, for a request under the GNAP scheme, checks the
+   * presentation and spends its key proof across the cluster before the handler
+   * runs, leaving both on the request for `gnapSpentOf()`.
+   *
+   * It never answers: a refusal is left for `ssf_auth.ts` to report. Any other
+   * request passes straight through.
+   *
+   * @param req - the incoming request
+   * @param res - the response, unused
+   * @param next - continues to the handler
+   */
   spendGnapProof(req: ClusterRequest, res: unknown,
                  next: () => void): void {
     const { log, loadGnapRs, loadGnapProof } = this.deps;
@@ -326,6 +378,13 @@ class SsfCluster {
   }
 
   // What the middleware left, or null when it did not run for this request.
+  /**
+   * Returns what `spendGnapProof()` left on a request: the presentation and the
+   * spend.
+   *
+   * @param req - the request
+   * @returns `{ presented, spent }`, or null when the middleware did not run
+   */
   gnapSpentOf(req?: ClusterRequest | null): GnapSpent | null {
     const { log } = this.deps;
     log.debug("Entering SsfCluster.gnapSpentOf().");
@@ -333,6 +392,12 @@ class SsfCluster {
     return ((req && req[GNAP_SPENT]) as GnapSpent) || null;
   }
 
+  /**
+   * Reports whether the cluster is active-active, the probe lease, whether this
+   * process leads probes, and this process's counters.
+   *
+   * @returns the report
+   */
   report(): Record<string, unknown> {
     const { log } = this.deps;
     log.debug("Entering SsfCluster.report().");
@@ -346,6 +411,10 @@ class SsfCluster {
   // heartbeat of a front process; see cluster.js's lead(). A process that
   // never joins a cluster is told it holds the role at once, and holds()
   // answers true there.
+  /**
+   * Asks the cluster for `PROBE_LEASE`, logging when this node gains or loses
+   * it.
+   */
   campaign(): void {
     const { log, cluster } = this.deps;
     log.debug("Entering SsfCluster.campaign().");
@@ -371,6 +440,12 @@ class SsfCluster {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules this coordinator depends on, as the composition
+   * root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): SsfClusterDeps {
     log.debug("Entering SsfCluster.defaultDeps().");
     log.debug("Leaving SsfCluster.defaultDeps().");
@@ -395,6 +470,12 @@ class SsfCluster {
   // What loading this module did with its instance before R2 (#50): ask for
   // the probe lease, as the module always did. Run once, for whichever
   // instance is installed.
+  /**
+   * Runs the installed instance's load-time step: campaigning for the probe
+   * lease.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: SsfCluster): void {
     log.debug("Entering SsfCluster.wire().");
     instance.campaign();
@@ -419,9 +500,24 @@ const slot = new InstanceSlot<SsfCluster>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Shared Signals across the nodes of a cluster: transitions reported once, the
+ * dead-stream probe lease, and GNAP proofs spent once.
+ *
+ * Exports the `SsfCluster` class and facades that forward to the installed
+ * instance.
+ *
+ * @namespace
+ */
 export = {
   SsfCluster: SsfCluster,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SsfCluster): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   PROBE_LEASE: SsfCluster.PROBE_LEASE,
   transitionOnce: slot.forward('transitionOnce'),
