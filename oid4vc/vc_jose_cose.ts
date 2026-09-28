@@ -73,9 +73,16 @@ interface VcJoseCoseDeps {
 }
 
 // The asymmetric algorithms a signature here may be made with.
+/**
+ * The asymmetric algorithms a signature here may be made with.
+ */
 const ALGORITHMS = ['ES256', 'ES384', 'ES512', 'EdDSA', 'PS256', 'PS384',
                     'PS512', 'RS256', 'RS384', 'RS512'];
 
+/**
+ * The media types and envelope names for a credential (`vc`) and a presentation
+ * (`vp`) in each form: JWT, SD-JWT and COSE.
+ */
 const MEDIA = {
   vc: { jwt: 'vc+jwt', sdjwt: 'vc+sd-jwt', cose: 'application/vc+cose',
         content: 'application/vc', cty: 'vc',
@@ -99,15 +106,39 @@ const DATA_TYPES: Record<string, { form: string; kind: string }> = {
 
 const V2 = 'https://www.w3.org/ns/credentials/v2';
 
+/**
+ * Securing Verifiable Credentials using JOSE and COSE (#198): the W3C
+ * enveloping mechanisms for VC Data Model 2.0 credentials and presentations —
+ * `vc+jwt`, `vc+sd-jwt` and `vc+cose`, and their presentation forms.
+ *
+ * Separate from `jwt_vc_json`, the older model, which it neither replaces nor
+ * reads.
+ */
 class VcJoseCose {
+  /**
+   * The asymmetric algorithms a signature here may be made with.
+   */
   static readonly ALGORITHMS = ALGORITHMS;
+  /**
+   * The media types and envelope names for each kind and form.
+   */
   static readonly MEDIA = MEDIA;
 
+  /**
+   * Builds the securing mechanisms from the modules they read.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcJoseCoseDeps) {
     deps.log.debug("Entering VcJoseCose.constructor().");
     deps.log.debug("Leaving VcJoseCose.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcJoseCoseDeps {
     helpers.log.debug("Entering VcJoseCose.defaultDeps().");
     helpers.log.debug("Leaving VcJoseCose.defaultDeps().");
@@ -136,6 +167,12 @@ class VcJoseCose {
   }
 
   // The JWS algorithm a key signs with.
+  /**
+   * Returns the JWS algorithm a key signs with.
+   *
+   * @param jwk - the public key
+   * @returns the algorithm
+   */
   algFor(jwk: any): string {
     const { log } = this.deps;
     log.debug("Entering VcJoseCose.algFor().");
@@ -151,6 +188,15 @@ class VcJoseCose {
   // SECURING. `signer`: { privateKey, publicJwk, kid } — the kid a
   // verification method URL.
   // ---------------------------------------------------------------------------
+  /**
+   * Secures a document as a JWS whose payload is the document (section 3.1).
+   *
+   * @param document - the credential or presentation
+   * @param kind - `vc` or `vp`
+   * @param signer - `{ privateKey, publicJwk, kid }`, the kid a verification
+   *   method URL
+   * @returns the compact JWS
+   */
   async secureJwt(document: any, kind: 'vc' | 'vp', signer: any):
     Promise<string> {
     const { log, stsCrypto } = this.deps;
@@ -166,6 +212,14 @@ class VcJoseCose {
     return token;
   }
 
+  /**
+   * Secures a document as a COSE_Sign1 (section 3.3, RFC 9052).
+   *
+   * @param document - the credential or presentation
+   * @param kind - `vc` or `vp`
+   * @param signer - `{ privateKey, publicJwk, kid }`
+   * @returns the COSE_Sign1 bytes
+   */
   async secureCose(document: any, kind: 'vc' | 'vp', signer: any):
     Promise<Buffer> {
     const { log, codec } = this.deps;
@@ -183,6 +237,13 @@ class VcJoseCose {
   }
 
   // A disclosure path, `a.b[2].c`, as segments.
+  /**
+   * Parses a disclosure path such as `a.b[2].c` into its segments.
+   *
+   * @param path - the path
+   * @returns the segments
+   * @throws Error when it is not a disclosure path
+   */
   parsePath(path: unknown): (string | number)[] {
     const { log } = this.deps;
     log.debug("Entering VcJoseCose.parsePath().");
@@ -215,6 +276,18 @@ class VcJoseCose {
   // parent's `_sd`, an array element an `{"...": digest}`. Deeper paths
   // first, so a member of a disclosed object is itself disclosable.
   // ---------------------------------------------------------------------------
+  /**
+   * Secures a document as an SD-JWT (RFC 9901 section 4), each given path made
+   * selectively disclosable, deeper paths first.
+   *
+   * @param document - the credential or presentation
+   * @param kind - `vc` or `vp`
+   * @param signer - `{ privateKey, publicJwk, kid }`
+   * @param paths - the disclosure paths
+   * @returns the SD-JWT
+   * @throws Error for a path that names nothing or a member that must be
+   *   disclosed
+   */
   async secureSdJwt(document: any, kind: 'vc' | 'vp', signer: any,
                     paths: string[]): Promise<string> {
     const { log, stsCrypto } = this.deps;
@@ -277,6 +350,15 @@ class VcJoseCose {
   }
 
   // The enveloped form (VCDM 2.0 section 4.13) of a secured value.
+  /**
+   * Wraps a secured value in its enveloped form (VCDM 2.0 section 4.13): a
+   * `data:` URL in an Enveloped credential or presentation.
+   *
+   * @param form - `jwt`, `sdjwt` or `cose`
+   * @param kind - `vc` or `vp`
+   * @param secured - the secured value
+   * @returns the envelope object
+   */
   envelope(form: string, kind: 'vc' | 'vp', secured: string | Buffer): any {
     const { log } = this.deps;
     log.debug("Entering VcJoseCose.envelope(). " + form + " " + kind);
@@ -353,6 +435,14 @@ class VcJoseCose {
   // ---------------------------------------------------------------------------
   // RFC 9901 SECTION 7.1: the Disclosures processed into the payload.
   // ---------------------------------------------------------------------------
+  /**
+   * Processes an SD-JWT's Disclosures into its payload (RFC 9901 section 7.1).
+   *
+   * @param payload - the issuer-signed payload
+   * @param disclosures - the Disclosures presented
+   * @returns the processed payload
+   * @throws Error for a Disclosure that is malformed, repeated or unused
+   */
   processDisclosures(payload: any, disclosures: string[]): any {
     const { log } = this.deps;
     log.debug("Entering VcJoseCose.processDisclosures(). " +
@@ -477,6 +567,15 @@ class VcJoseCose {
   // { verificationMethod }. Answers `{ ok, kind, document, errors,
   // warnings }`; throws for nothing.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies one secured value. Never throws.
+   *
+   * @param form - `jwt`, `sdjwt` or `cose`
+   * @param secured - the secured value
+   * @param kind - `vc` or `vp` expected, or '' for either
+   * @param opts - `{ verificationMethod }`
+   * @returns `{ ok, kind, document, errors, warnings }`
+   */
   async verify(form: string, secured: string | Buffer, kind: string,
                opts: any): Promise<any> {
     const { log, stsCrypto, codec } = this.deps;
@@ -618,6 +717,15 @@ class VcJoseCose {
   // AN ENVELOPE (VCDM 2.0 section 4.13): the data: URL read — its media
   // type, and base64 or not — and the value inside verified.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads an envelope's `data:` URL — its media type, base64 or not — and
+   * verifies the value inside.
+   *
+   * @param envelope - the Enveloped credential or presentation
+   * @param kind - `vc` or `vp`
+   * @param opts - as `verify()` takes them
+   * @returns `{ ok, kind, document, errors, warnings }`
+   */
   async verifyEnvelope(envelope: any, kind: 'vc' | 'vp', opts: any):
     Promise<any> {
     const { log } = this.deps;
@@ -662,9 +770,25 @@ const slot = new InstanceSlot<VcJoseCose>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Securing Verifiable Credentials using JOSE and COSE: `vc+jwt`, `vc+sd-jwt`,
+ * `vc+cose` and their presentation forms.
+ *
+ * @namespace
+ */
 export = {
   VcJoseCose: VcJoseCose,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcJoseCose): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   ALGORITHMS: ALGORITHMS,
   MEDIA: MEDIA,

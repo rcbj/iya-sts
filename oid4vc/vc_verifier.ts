@@ -459,10 +459,29 @@ const OID4VC_QUERY = validation.z.looseObject({
     SIGNED_CLIENT_ID_PREFIXES))
 });
 
+/**
+ * The OpenID4VP Verifier — the Bar Door, this service's mock relying party —
+ * and the verification half of the wallet sign-in: request objects and Client
+ * Identifier prefixes, the DCQL query, the response endpoint, and the check of
+ * every presentation format.
+ */
 class VcVerifier {
+  /**
+   * The default lifetime of a presentation request, in milliseconds
+   * (`oid4vp.presentationRequestTtlS`).
+   */
   static readonly VP_TTL_MS = VP_TTL_MS;
+  /**
+   * The Client Identifier prefixes a signed request may carry (OpenID4VP
+   * section 5.9).
+   */
   static readonly SIGNED_CLIENT_ID_PREFIXES = SIGNED_CLIENT_ID_PREFIXES;
 
+  /**
+   * Builds the Verifier from the modules and stores it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcVerifierDeps) {
     deps.log.debug("Entering VcVerifier.constructor().");
     deps.log.debug("Leaving VcVerifier.constructor().");
@@ -470,6 +489,11 @@ class VcVerifier {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcVerifierDeps {
     helpers.log.debug("Entering VcVerifier.defaultDeps().");
     helpers.log.debug("Leaving VcVerifier.defaultDeps().");
@@ -716,6 +740,14 @@ class VcVerifier {
   // has nothing to check. It adds a check row either way and turns `ok` off on
   // a refusal; `revocationRefused` is what lets the endpoint name the code.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks the configured trusted issuer certificate that verified a credential
+   * for revocation, adding a check row and turning `ok` off on a refusal. A
+   * credential this service signed has nothing to check.
+   *
+   * @param verified - the verification result, naming the certificate used
+   * @returns the result, with the revocation check added
+   */
   async issuerCertificateRevocation(verified: any) {
     const { log, revocationStatus } = this.deps;
     log.debug("Entering VcVerifier.issuerCertificateRevocation().");
@@ -749,6 +781,14 @@ class VcVerifier {
   // else is an open redirect carrying a presentation request, and is refused by
   // name.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns where the holder is sent: the configured wallet URL, or the
+   * `wallet` query parameter — which, where only registered addresses are
+   * accepted, must name the configured wallet or an allowed one.
+   *
+   * @param req - the request
+   * @returns `{ url }`, or `{ error }` naming the refused wallet
+   */
   vpWalletFor(req: any) {
     const { log, config, mode } = this.deps;
     log.debug("Entering VcVerifier.vpWalletFor().");
@@ -842,6 +882,13 @@ class VcVerifier {
   // the claim's own name). Getting the second wrong does not fail loudly — it
   // asks for a claim that is not there, and the presentation looks as though it
   // withheld something.
+  /**
+   * Returns the DCQL query (OpenID4VP section 6) for a format, built by
+   * `vc_verifier_config.ts` and logged here.
+   *
+   * @param format - the credential format
+   * @returns the query
+   */
   vpDcqlQuery(format?: unknown) {
     const { log, logArtifact, vpConfig } = this.deps;
     log.debug("Entering VcVerifier.vpDcqlQuery(). format=" +
@@ -915,6 +962,16 @@ class VcVerifier {
   // an x509 prefix has no certificate to name — a request a wallet must
   // refuse is worse than none.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the Client Identifier, and the request object header, for the
+   * prefix a signed request carries.
+   *
+   * @param req - the request
+   * @param asked - the prefix one request named, else the realm's setting
+   * @returns `{ clientId, header, kidDid, algorithm }`
+   * @throws Error, with `code`, when the prefix's attestation or certificate
+   *   cannot be used
+   */
   signedClientId(req: any, asked?: string): { clientId: string; header: any;
                                               kidDid: string;
                                               algorithm?: string } {
@@ -954,6 +1011,13 @@ class VcVerifier {
 
   // The prefix a signed request carries: the one a request named when it is
   // one a signed request may carry, the realm's setting otherwise.
+  /**
+   * Returns the prefix a signed request carries: the one asked for when a
+   * signed request may carry it, the realm's setting otherwise.
+   *
+   * @param asked - the prefix one request named
+   * @returns the prefix
+   */
   clientIdPrefixFor(asked?: string): string {
     const { log, config } = this.deps;
     log.debug("Entering VcVerifier.clientIdPrefixFor().");
@@ -997,6 +1061,14 @@ class VcVerifier {
   // a Request Object this realm signed, under a certificate wallets trust,
   // sending presentations wherever the header said.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the DNS name an x509 request's certificate names:
+   * `oid4vp.x509DnsName`, a pinned public base URL's host, or — in development
+   * only — the request's host.
+   *
+   * @param req - the request
+   * @returns `{ name, code, problem }`, `code` and `problem` set on a refusal
+   */
   x509DnsNameFor(req: any): { name: string; code: string;
                               problem: string } {
     const { log, config, baseUrlOf } = this.deps;
@@ -1113,6 +1185,14 @@ class VcVerifier {
   // MAKE SURE the Verifier's certificate is in place for this request, before
   // the synchronous build reads it. Nothing to do for another prefix.
   // Rejects, with `code`, exactly where buildVpRequest() would throw.
+  /**
+   * Makes sure the Verifier's certificate is in place for an x509 request
+   * before the synchronous build reads it.
+   *
+   * @param req - the request
+   * @param asked - the prefix one request named
+   * @throws Error, with `code`, where `buildVpRequest()` would throw
+   */
   async prepareSignedClientId(req: any, asked?: string): Promise<void> {
     const { log, errorCodes } = this.deps;
     log.debug("Entering VcVerifier.prepareSignedClientId().");
@@ -1145,6 +1225,15 @@ class VcVerifier {
   // The certificate, its `x5c` and the Client Identifier of an x509 request,
   // read synchronously. Throws STS-VC-0112 where the certificate is not in
   // place over the key the request will be signed with.
+  /**
+   * Returns the certificate, its `x5c` (stopping below the Root) and the Client
+   * Identifier of an x509 request.
+   *
+   * @param req - the request
+   * @param prefix - `x509_san_dns` or `x509_hash`
+   * @returns `{ clientId, x5c, algorithm, certificate, ... }`
+   * @throws Error (STS-VC-0112) when the certificate is not in place
+   */
   x509Material(req: any, prefix: string): { clientId: string; x5c: string[];
                                             algorithm: string;
                                             certificate: any;
@@ -1200,6 +1289,13 @@ class VcVerifier {
   // the Entity Configuration #129 served from here). `jwks` is the key the
   // request objects are signed with — a PROTOCOL key, published under the
   // protocol's entity type, never the Federation Entity Key.
+  /**
+   * Returns this realm's `openid_credential_verifier` metadata for its OpenID
+   * Federation Entity Configuration (OpenID4VP section 11.2).
+   *
+   * @param req - the request
+   * @returns the metadata
+   */
   federationVerifierMetadata(req: any): Record<string, any> {
     const { log, baseUrlOf, siop } = this.deps;
     log.debug("Entering VcVerifier.federationVerifierMetadata().");
@@ -1217,6 +1313,15 @@ class VcVerifier {
   }
 
   // THE VERIFIER ATTESTATION (OpenID4VP section 12): `{ jwt, sub }`.
+  /**
+   * Returns the Verifier Attestation (OpenID4VP section 12): configured, or
+   * self-attested by this realm.
+   *
+   * @param req - the request
+   * @returns `{ jwt, sub }`
+   * @throws Error, with its code, when the configured attestation cannot be
+   *   used
+   */
   verifierAttestation(req: any): { jwt: string; sub: string } {
     const { log, config, signJwt, nowSec, baseUrlOf, stsCrypto,
             errorCodes } = this.deps;
@@ -1279,6 +1384,15 @@ class VcVerifier {
     return { jwt: jwt, sub: sub };
   }
 
+  /**
+   * Builds a presentation request and records its transaction, the claims asked
+   * for frozen onto it.
+   *
+   * @param req - the request
+   * @param opts - `byReference`, `format`, `signIn`, `responseType`,
+   *   `responseMode` and `clientIdPrefix`
+   * @returns the transaction record
+   */
   buildVpRequest(req: any, opts: { byReference?: boolean; format?: string;
                                    signIn?: any; responseType?: string;
                                    responseMode?: string;
@@ -1500,6 +1614,13 @@ class VcVerifier {
   // The formats a sign-in asks in: `oid4vp.signInFormats`, in the order given
   // (the order is the preference a wallet that answers only the first query
   // it understands will follow), filtered to the ones a sign-in can verify.
+  /**
+   * Returns the formats a sign-in asks in (`oid4vp.signInFormats`), in order,
+   * filtered to those a sign-in can verify.
+   *
+   * @param asked - the formats one request named
+   * @returns the formats
+   */
   signInFormats(asked?: unknown): string[] {
     const { log, config } = this.deps;
     log.debug("Entering VcVerifier.signInFormats().");
@@ -1614,6 +1735,13 @@ class VcVerifier {
 
   // What the page hands `navigator.credentials.get()`: one request, in the
   // protocol this door signs.
+  /**
+   * Returns what the page hands `navigator.credentials.get()` for a
+   * transaction.
+   *
+   * @param record - the transaction
+   * @returns `{ protocol, data: { request } }`, or null
+   */
   dcApiRequestFor(record: any): any {
     const { log } = this.deps;
     log.debug("Entering VcVerifier.dcApiRequestFor().");
@@ -1643,6 +1771,14 @@ class VcVerifier {
   //
   // Holder binding is left at its default, REQUIRED, for all three.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the DCQL query a sign-in asks with: per format, only what a sign-in
+   * needs, holder binding required.
+   *
+   * @param formats - the formats, in preference order
+   * @param base - the realm's base URL
+   * @returns the query
+   */
   signInDcqlQuery(formats?: string[], base?: string) {
     const { log, logArtifact } = this.deps;
     log.debug("Entering VcVerifier.signInDcqlQuery().");
@@ -1685,6 +1821,14 @@ class VcVerifier {
 
   // The query the wallet is handed: by value it carries the whole request, by
   // reference only client_id and request_uri (OID4VP section 5.2).
+  /**
+   * Returns the query the wallet is handed: the whole request by value, or
+   * `client_id` and `request_uri` by reference (OpenID4VP section 5.2).
+   *
+   * @param req - the request
+   * @param record - the transaction
+   * @returns the query string
+   */
   vpRequestQuery(req: any, record: any) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcVerifier.vpRequestQuery().");
@@ -2378,6 +2522,15 @@ class VcVerifier {
   // the Digital Credentials API), and `ctx.requested` the claims this query
   // asked for. Asynchronous since #38's follow-ups, for verifyVpJwt()'s
   // reason: a post-quantum issuer or holder key is checked in the pool.
+  /**
+   * Verifies one presentation in its format against a transaction.
+   *
+   * @param presentation - the presentation
+   * @param record - the transaction
+   * @param ctx - `aud`, the audience the answer must name, and `requested`, the
+   *   claims asked for
+   * @returns `{ ok, checks, claims, disclosed, ... }`
+   */
   async verifyPresentation(presentation: any, record: any, ctx?: any) {
     const { log, logArtifact, b64u, b64uDecode, jsonFromB64u, nowSec,
             errorCodes, vpConfig, stsCrypto } = this.deps;
@@ -2762,6 +2915,15 @@ class VcVerifier {
   // never claimed, which is also why the mechanism is withheld from a request
   // that demanded two (`authn.ts`, `walletOptionHtml()`).
   // ---------------------------------------------------------------------------
+  /**
+   * Returns whom a verified presentation signs in: the entry a credential this
+   * realm issued was issued for, from the issued register, with the assurance
+   * the issuance recorded.
+   *
+   * @param verified - the verification result
+   * @param answer - the answer it came in
+   * @returns `{ ok, errorCode, reason, username, ... }`
+   */
   signInOutcome(verified: any, answer?: any) {
     const { log, vcIssued, nameForSubject, subjectForName,
             stsCrypto } = this.deps;
@@ -2955,6 +3117,17 @@ class VcVerifier {
   // complete answer, and two would be two people's worth of evidence for one
   // session.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies one answer: the `vp_token` read for its query, the presentation
+   * checked in its format, the issuer certificate's revocation and the
+   * credential's status.
+   *
+   * @param record - the transaction
+   * @param rawVpToken - the `vp_token`
+   * @param ctx - `aud`, the audience the answer must name
+   * @returns `{ shapeOk: true, verified, presentation, format, id }`, or a
+   *   shape refusal
+   */
   async verifyAnswer(record: any, rawVpToken: unknown,
                      ctx: any): Promise<any> {
     const { log, errorCodes } = this.deps;
@@ -3167,6 +3340,16 @@ class VcVerifier {
   // outcome onto the transaction exactly as the direct_post endpoint does,
   // answered once.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles a Digital Credentials API answer: decrypts, verifies with
+   * `origin:<origin>` as the audience, and writes the verdict and sign-in
+   * outcome onto the transaction, once.
+   *
+   * @param record - the transaction
+   * @param response - the DigitalCredential, as JSON
+   * @param origin - this service's origin
+   * @returns `{ ok, status, errorCode, why }`
+   */
   async answerDcApi(record: any, response: unknown, origin: string) {
     const { log, stsCrypto, keystore, vpTransactions } = this.deps;
     log.debug("Entering VcVerifier.answerDcApi().");
@@ -3509,6 +3692,13 @@ class VcVerifier {
   // way past. For `vc_signin.ts`, which must not read the store directly: a
   // second reader of a persisted store is a second place to forget the
   // expiry.
+  /**
+   * Returns the transaction a state names; an expired one is removed on the way
+   * past.
+   *
+   * @param state - the state
+   * @returns the transaction, or null
+   */
   transactionFor(state: unknown) {
     const { log, vpTransactions, vpRequests } = this.deps;
     log.debug("Entering VcVerifier.transactionFor().");
@@ -3543,6 +3733,12 @@ class VcVerifier {
   // ends one, and the wait page then says a sign-out ended it
   // (STS-VC-0070).
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the sign-ins a wallet has answered and no browser has collected
+   * yet, for `logout`.
+   *
+   * @returns `{ state, username, subject, expires, decidedAt }` rows
+   */
   signInsAwaitingCollection() {
     const { log, vpTransactions } = this.deps;
     log.debug("Entering VcVerifier.signInsAwaitingCollection().");
@@ -3563,6 +3759,14 @@ class VcVerifier {
     return out;
   }
 
+  /**
+   * Withdraws an uncollected sign-in, so the wait page says a sign-out ended
+   * it.
+   *
+   * @param state - the transaction's state
+   * @param why - the reason
+   * @returns true when there was one to withdraw
+   */
   withdrawSignIn(state: unknown, why: string) {
     const { log, vpTransactions } = this.deps;
     log.debug("Entering VcVerifier.withdrawSignIn().");
@@ -3583,6 +3787,11 @@ class VcVerifier {
 
   // Writes a transaction back THROUGH THE STORE, for the reason the response
   // endpoint gives: the journal sees `set()`, not a field on an object.
+  /**
+   * Writes a transaction back through the store.
+   *
+   * @param record - the transaction
+   */
   saveTransaction(record: any) {
     const { log, vpTransactions } = this.deps;
     log.debug("Entering VcVerifier.saveTransaction().");
@@ -3592,6 +3801,14 @@ class VcVerifier {
 
   // The six endpoints, in the order they were registered at load before
   // #50's R1. Called by `common/protocol_stack.ts`.
+  /**
+   * Registers the Verifier's routes under `/oid4vp`, in the order they were
+   * always registered.
+   *
+   * Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: any) {
     const { log, logArtifact, baseUrlOf, xmlEscape, parseBody, oauthError,
             errorCodes, stats, vpConfig, vpTransactions,
@@ -4233,10 +4450,25 @@ const slot = new InstanceSlot<VcVerifier>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OpenID4VP Verifier and the verification half of the wallet sign-in.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   VcVerifier: VcVerifier,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcVerifier): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   verifyPresentation: slot.forward('verifyPresentation'),
   // For tests/revocation_status.js, which asks it about a revoked certificate.

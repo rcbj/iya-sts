@@ -211,6 +211,10 @@ interface VcIssuerDeps {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
+/**
+ * The `c_nonce` values this issuer has handed out and not yet seen used, per
+ * trust realm; each is single-use.
+ */
 const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age' });
 
 // `oid4vci.cNonceTtlS` since 2026-09-12; the constant is its default and keeps
@@ -367,14 +371,48 @@ const lastCredentialRequestStore = realms.map({
 const NOTIFICATION_EVENTS = ['credential_accepted', 'credential_failure',
                              'credential_deleted'];
 
+/**
+ * The OpenID4VCI credential issuer: its metadata, the nonce, credential,
+ * deferred and notification endpoints, proof and key attestation checks,
+ * request and response encryption, and the three credential formats
+ * (`dc+sd-jwt`, `jwt_vc_json` and `ldp_vc`).
+ */
 class VcIssuer {
+  /**
+   * The default lifetime of a `c_nonce`, in milliseconds
+   * (`oid4vci.cNonceTtlS`).
+   */
   static readonly VCI_NONCE_TTL_MS = VCI_NONCE_TTL_MS;
+  /**
+   * The content encryption algorithms implemented for request and response
+   * encryption: `A128GCM` and `A256GCM`.
+   */
   static readonly IMPLEMENTED_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
+  /**
+   * The key management algorithm a response is encrypted to an RSA key with,
+   * `RSA-OAEP-256`.
+   */
   static readonly VCI_ENC_ALG = VCI_ENC_ALG;
+  /**
+   * The implemented response `enc` values; what is advertised is the setting
+   * narrowed to these.
+   */
   static readonly VCI_ENC_VALUES = VCI_ENC_VALUES;
+  /**
+   * The implemented request `enc` values; what is advertised is the setting
+   * narrowed to these.
+   */
   static readonly VCI_REQUEST_ENC_VALUES = VCI_REQUEST_ENC_VALUES;
+  /**
+   * The events the Notification Endpoint accepts (OpenID4VCI section 11).
+   */
   static readonly NOTIFICATION_EVENTS = NOTIFICATION_EVENTS;
 
+  /**
+   * Builds the issuer from the modules and stores it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcIssuerDeps) {
     deps.log.debug("Entering VcIssuer.constructor().");
     deps.log.debug("Leaving VcIssuer.constructor().");
@@ -382,6 +420,11 @@ class VcIssuer {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcIssuerDeps {
     helpers.log.debug("Entering VcIssuer.defaultDeps().");
     helpers.log.debug("Leaving VcIssuer.defaultDeps().");
@@ -448,6 +491,12 @@ class VcIssuer {
   // is called: it requires this module's siblings for their stores, and a
   // top-level require back would be a cycle (rule 2). The default the
   // composition root passes (`defaultDeps()`).
+  /**
+   * Requires `oauth2` lazily, when its published-document signer is called,
+   * since a top-level require would close a cycle (rule 2).
+   *
+   * @returns the `oauth2` module
+   */
   static loadOauth2() {
     helpers.log.debug("Entering VcIssuer.loadOauth2().");
     helpers.log.debug("Leaving VcIssuer.loadOauth2().");
@@ -547,6 +596,13 @@ class VcIssuer {
     return usable;
   }
 
+  /**
+   * Builds the Credential Issuer Metadata for the realm the request arrived on,
+   * from the configurations and the claims selection.
+   *
+   * @param req - the request
+   * @returns the metadata
+   */
   vciMetadata(req) {
     const { log, baseUrlOf, stsCrypto, config, bbs2023, errorCodes,
             vciAuthorizationServer, vciBatchSize, VCI_CONFIGS,
@@ -824,6 +880,14 @@ class VcIssuer {
   // valid before it was issued nor for less than its lifetime. The OpenID
   // conformance suite's batch-issuance module failed the precise values.
   // -------------------------------------------------------------------------
+  /**
+   * Returns a credential's `nbf` rounded down and `exp` rounded up to the hour,
+   * so the credentials of one batch cannot be correlated by their instants (RFC
+   * 9901 section 10.1).
+   *
+   * @param nowSec - the issuance time, in seconds
+   * @returns `{ nbf, exp }`
+   */
   unlinkableTimes(nowSec: number): { nbf: number; exp: number } {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.unlinkableTimes().");
@@ -837,6 +901,13 @@ class VcIssuer {
 
   // An Error the credential endpoint answers with `invalid_nonce` rather
   // than `invalid_proof` (OpenID4VCI 1.0 section 8.3.1.2, #187).
+  /**
+   * Returns an Error the credential endpoint answers with `invalid_nonce`
+   * rather than `invalid_proof` (OpenID4VCI section 8.3.1.2).
+   *
+   * @param message - the error's message
+   * @returns the Error
+   */
   static nonceError(message: string): Error {
     helpers.log.debug("Entering VcIssuer.nonceError().");
     const e: any = new Error(message);
@@ -963,6 +1034,15 @@ class VcIssuer {
   // the reason. `opts.proofJwk` — the key a `jwt` proof was signed with, which
   // must be one of the attested keys (Appendix D.1); `opts.expRequired` —
   // true for that proof type, where `exp` is required.
+  /**
+   * Verifies one key attestation and answers what it attests.
+   *
+   * @param token - the key attestation JWT
+   * @param opts - `proofJwk`, the key a `jwt` proof was signed with, which must
+   *   be attested; `expRequired`, for that proof type
+   * @returns what it attests
+   * @throws Error, with the reason, when it does not verify
+   */
   verifyKeyAttestation(token: string, opts: { proofJwk?: any;
                                                expRequired?: boolean }): any {
     const { log, jsonFromB64u, stsCrypto, vciNonces } = this.deps;
@@ -1674,6 +1754,20 @@ class VcIssuer {
   // `person` is the subject a VERIFIED, undisowned access token named (see
   // signInSubjectOf()), or ''. It files the credential under that person on
   // the issued register, which an ldp_vc's own subject — a did:jwk — cannot.
+  /**
+   * Builds one credential in a configuration's format, with a status index
+   * allocated for it.
+   *
+   * @param configId - the configuration's id
+   * @param subjectClaims - the subject claims
+   * @param holderJwk - the holder's key
+   * @param credentialIssuer - the credential issuer's URL
+   * @param issuerDid - the issuer's DID, or '' for its URL
+   * @param holderName - the holder's username
+   * @param person - the subject a verified, undisowned access token named, or
+   *   ''
+   * @returns `{ credential, disclosures, payload, ... }`
+   */
   async buildCredentialFor(configId, subjectClaims, holderJwk,
                            credentialIssuer, issuerDid,
                            holderName, person?: string) {
@@ -1911,6 +2005,14 @@ class VcIssuer {
   //     before. The name is what everything downstream is keyed on: it selects
   //     the directory entry and seeds the persona, so `alice` gets the same
   //     invented person here that ldap_server.js wrote onto uid=alice,ou=users.
+  /**
+   * Returns the subject claims a credential carries for the person an access
+   * token names, with the `sub` its format uses.
+   *
+   * @param accessToken - the access token
+   * @param configId - the configuration's id
+   * @returns the claims
+   */
   subjectClaimsFrom(accessToken, configId) {
     const { log, jsonFromB64u, crypto, stats, vciFormatOf, vcClaims
             } = this.deps;
@@ -2081,6 +2183,13 @@ class VcIssuer {
   // let another node that still holds it accept the replay.
   //
   // Resolves to `{ ok: true }` or `{ ok: false, errorCode, description }`.
+  /**
+   * Spends the `c_nonce` of every proof across the cluster, so a replay on
+   * another node is refused. Fails closed when the store cannot be asked.
+   *
+   * @param proofJwts - the proofs
+   * @returns `{ ok: true }`, or `{ ok: false, errorCode, description }`
+   */
   async spendProofNonces(proofJwts) {
     const { log, jsonFromB64u, errorCodes, clusterClaims, vciNonces
             } = this.deps;
@@ -2247,6 +2356,12 @@ class VcIssuer {
     return requestEncryptionKeyFor();
   }
 
+  /**
+   * Returns the `credential_request_encryption` metadata: the realm's request
+   * encryption key, the `enc` values and whether encryption is required.
+   *
+   * @returns the metadata
+   */
   credentialRequestEncryptionMetadata() {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.credentialRequestEncryptionMetadata().");
@@ -2268,6 +2383,15 @@ class VcIssuer {
   //
   // Throws with a reason a caller can hand back to the wallet; every failure
   // here is the wallet's request being unusable, not an issuer fault.
+  /**
+   * Decrypts an encrypted credential request: RSA-OAEP-256 unwrap of the
+   * content key, then AES-GCM.
+   *
+   * @param compact - the compact JWE
+   * @returns the plaintext request
+   * @throws Error, with a reason the wallet can be told, for an unusable
+   *   request
+   */
   decryptJweRequest(compact) {
     const { log, logArtifact, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.decryptJweRequest().");
@@ -2326,6 +2450,13 @@ class VcIssuer {
   // go through it so the credential and deferred paths cannot drift — section
   // 10 applies identically to each, and the deferred one is the easy one to
   // forget.
+  /**
+   * Reads the credential or deferred endpoint's request body, decrypting it
+   * when it is encrypted (section 10).
+   *
+   * @param req - the request
+   * @returns `{ body }`, or `{ error }` for the caller to answer
+   */
   readPossiblyEncryptedRequest(req) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering VcIssuer.readPossiblyEncryptedRequest().");
@@ -2407,6 +2538,12 @@ class VcIssuer {
     }
   }
 
+  /**
+   * Says why a requested `credential_response_encryption` cannot be used.
+   *
+   * @param encryption - the requested encryption
+   * @returns the reason, or '' when it can be used
+   */
   encryptionProblem(encryption) {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.encryptionProblem().");
@@ -2456,6 +2593,14 @@ class VcIssuer {
   // DEF before it when the wallet asked (#187). Written out by hand rather
   // than with a JOSE library, because having the steps visible is the point
   // of a mock.
+  /**
+   * Encrypts a response as a compact JWE: RSA-OAEP-256 or ECDH-ES for the
+   * content key, AES-GCM for the content, DEF first when asked.
+   *
+   * @param plaintext - the response
+   * @param encryption - the wallet's key, `enc` and `zip`
+   * @returns the compact JWE
+   */
   encryptToJwe(plaintext, encryption) {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.encryptToJwe(). enc=" + encryption.enc);
@@ -2500,6 +2645,14 @@ class VcIssuer {
 
   // THE ROUTES, in the order this module always registered them (rule 1).
   // Called by `common/protocol_stack.ts` through `registerRoutes(app)`.
+  /**
+   * Registers the issuer's routes — the metadata documents and the OpenID4VCI
+   * endpoints — in the order they were always registered.
+   *
+   * Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteApp): void {
     const { log, logArtifact, baseUrlOf, b64u, randomId, bbsKeyPair, vciError,
             crypto, config, bbs2023, dpop, errorCodes, vciBatchSize,
@@ -3159,6 +3312,11 @@ class VcIssuer {
   }
 
   // The record `GET /oid4vci/last_request` answers with, for the tests.
+  /**
+   * Returns the record `GET /oid4vci/last_request` answers with.
+   *
+   * @returns the record
+   */
   lastCredentialRequest() {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.lastCredentialRequest().");
@@ -3201,10 +3359,25 @@ capabilities.provide('oid4vc.once');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OpenID4VCI credential issuer.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   VcIssuer: VcIssuer,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcIssuer): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   vciMetadata: slot.forward('vciMetadata'),
   // For tests/cluster_single_use_protocols.js: the c_nonce's spend, driven

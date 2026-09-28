@@ -93,22 +93,57 @@ type RouteApp = typeof app;
 // (131,072 bits, section 6.1 of that specification, so a list says nothing
 // about how many credentials there are) and a Token Status List of the same
 // length, so one index is one position in both.
+/**
+ * The number of indexes in a list: the Bitstring Status List's minimum, and a
+ * Token Status List of the same length.
+ */
 const LIST_SIZE = 131072;
 // Two bits: VALID, INVALID and SUSPENDED all fit (draft section 7.1).
 const TSL_BITS = 2;
+/**
+ * The VALID status value.
+ */
 const VALID = 0;
+/**
+ * The INVALID status value, which is final.
+ */
 const INVALID = 1;
+/**
+ * The SUSPENDED status value.
+ */
 const SUSPENDED = 2;
+/**
+ * Each status value's name.
+ */
 const STATUS_NAMES = { 0: 'VALID', 1: 'INVALID', 2: 'SUSPENDED' };
 
 // The paths, under a realm's prefix.
+/**
+ * The path of the realm's Token Status List.
+ */
 const TSL_PATH = '/oid4vci/status-lists/1';
+/**
+ * The path of the Status List Aggregation.
+ */
 const AGGREGATION_PATH = '/oid4vci/status-lists';
+/**
+ * The path under which each purpose's Bitstring Status List credential is
+ * served.
+ */
 const BITSTRING_PATH = '/oid4vci/status-lists/bitstring';
 const PURPOSES = ['revocation', 'suspension'];
 
+/**
+ * The media type of a Status List Token in JWT form.
+ */
 const JWT_TYPE = 'application/statuslist+jwt';
+/**
+ * The media type of a Status List Token in CWT form.
+ */
 const CWT_TYPE = 'application/statuslist+cwt';
+/**
+ * The media type of a Bitstring Status List credential as a JWT.
+ */
 const VC_JWT_TYPE = 'application/vc+jwt';
 
 // A claim outlives the credential by the skew the other single-use values
@@ -270,21 +305,61 @@ interface VcStatusDeps {
   signDocument: (document: any, options: any) => Promise<any>;
 }
 
+/**
+ * The status of every credential this issuer mints: an index per credential in
+ * a Token Status List (for the JOSE formats) and in two Bitstring Status Lists
+ * (for the W3C formats), served per realm, and the Verifier's check of a
+ * presented credential's status.
+ */
 class VcStatus {
+  /**
+   * The number of indexes in a list.
+   */
   static readonly LIST_SIZE = LIST_SIZE;
+  /**
+   * The path of the realm's Token Status List.
+   */
   static readonly TSL_PATH = TSL_PATH;
+  /**
+   * The path of the Status List Aggregation.
+   */
   static readonly AGGREGATION_PATH = AGGREGATION_PATH;
+  /**
+   * The path under which each Bitstring Status List credential is served.
+   */
   static readonly BITSTRING_PATH = BITSTRING_PATH;
+  /**
+   * The VALID status value.
+   */
   static readonly VALID = VALID;
+  /**
+   * The INVALID status value.
+   */
   static readonly INVALID = INVALID;
+  /**
+   * The SUSPENDED status value.
+   */
   static readonly SUSPENDED = SUSPENDED;
+  /**
+   * Each status value's name.
+   */
   static readonly STATUS_NAMES = STATUS_NAMES;
 
+  /**
+   * Builds the status module from the modules and stores it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcStatusDeps) {
     deps.log.debug("Entering VcStatus.constructor().");
     deps.log.debug("Leaving VcStatus.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcStatusDeps {
     helpers.log.debug("Entering VcStatus.defaultDeps().");
     helpers.log.debug("Leaving VcStatus.defaultDeps().");
@@ -346,6 +421,12 @@ class VcStatus {
 
   // The URIs a credential issued under `base` (the credential issuer, realm
   // prefix included) names.
+  /**
+   * Returns the Token Status List URI a credential issued under a base names.
+   *
+   * @param base - the credential issuer's URL, realm prefix included
+   * @returns the URI
+   */
   tslUri(base: string): string {
     const { log } = this.deps;
     log.debug("Entering VcStatus.tslUri().");
@@ -353,6 +434,13 @@ class VcStatus {
     return String(base).replace(/\/+$/, '') + TSL_PATH;
   }
 
+  /**
+   * Returns the Bitstring Status List credential URI for one purpose.
+   *
+   * @param base - the credential issuer's URL, realm prefix included
+   * @param purpose - `revocation` or `suspension`
+   * @returns the URI
+   */
   bitstringUri(base: string, purpose: string): string {
     const { log } = this.deps;
     log.debug("Entering VcStatus.bitstringUri().");
@@ -367,6 +455,12 @@ class VcStatus {
   // a verifier resolve two keys for one issuer (draft section 11.3).
   // `vc_issuer.ts` asks this too, so there is one answer.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the key and algorithm the lists are signed with: the same a
+   * credential is signed with (`oid4vci.credentialSigningAlgorithm`).
+   *
+   * @returns `{ alg, key, kid, headerKid }`
+   */
   async signerAsync(): Promise<{ alg: string; key: any; kid: string;
                                  headerKid: string }> {
     const { log, config, STS, signingKeyForAsync, publishedKidFor } =
@@ -392,6 +486,14 @@ class VcStatus {
   // ALLOCATE AN INDEX for a credential about to be built, and answer what the
   // credential carries. `base` is the credential issuer's URL.
   // ---------------------------------------------------------------------------
+  /**
+   * Allocates an index for a credential about to be built, claimed across the
+   * cluster, and returns what the credential carries.
+   *
+   * @param opts - `{ base, format, configId, expiresAt }`
+   * @returns `{ key, status, credentialStatus, ... }`: the Token Status List
+   *   reference for a JOSE format, the Bitstring entries for a W3C one
+   */
   async allocate(opts: { base: string; format: string; configId: string;
                          expiresAt: number }): Promise<any> {
     const { log, entries, clusterClaims, errorCodes, now } = this.deps;
@@ -449,6 +551,13 @@ class VcStatus {
 
   // Records which issued-register row an entry is for, once the artifact
   // exists.
+  /**
+   * Records which issued-register row an entry is for, once the credential
+   * exists.
+   *
+   * @param key - the entry's key
+   * @param artifactKey - the issued-register row's key
+   */
   attach(key: string, artifactKey: string): void {
     const { log, entries } = this.deps;
     log.debug("Entering VcStatus.attach().");
@@ -463,6 +572,12 @@ class VcStatus {
   // THE EFFECTIVE STATUS OF ONE ENTRY: see the header. An unknown index is
   // INVALID — this realm never issued a credential there, or the credential
   // has expired and its index been forgotten.
+  /**
+   * Returns an entry's effective status; an unknown index is INVALID.
+   *
+   * @param key - the entry's key
+   * @returns the status value
+   */
   statusOf(key: unknown): number {
     const { log, entries, artifactRevokedByKey, now } = this.deps;
     log.debug("Entering VcStatus.statusOf().");
@@ -491,6 +606,15 @@ class VcStatus {
 
   // Sets an entry's explicit status. INVALID is final (the draft's "revoked,
   // annulled"); VALID and SUSPENDED move freely between each other.
+  /**
+   * Sets an entry's explicit status. INVALID is final; VALID and SUSPENDED move
+   * freely between each other.
+   *
+   * @param key - the entry's key
+   * @param value - the status value
+   * @param via - who set it
+   * @returns true when it changed
+   */
   setStatus(key: unknown, value: number, via: string): boolean {
     const { log, entries, now } = this.deps;
     log.debug("Entering VcStatus.setStatus(). " + key + " -> " + value);
@@ -519,6 +643,11 @@ class VcStatus {
   }
 
   // Every live entry of the ambient realm, for the console and the API.
+  /**
+   * Returns every live entry of the ambient realm.
+   *
+   * @returns the entries
+   */
   rows(): any[] {
     const { log, entries, now } = this.deps;
     log.debug("Entering VcStatus.rows().");
@@ -544,6 +673,13 @@ class VcStatus {
   }
 
   // What the console and the API draw: the lists, their sizes and counts.
+  /**
+   * Returns what the console and the API draw: the lists, their sizes and
+   * counts.
+   *
+   * @param req - the request, for the lists' URLs
+   * @returns the summary
+   */
   summary(req: any): any {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcStatus.summary().");
@@ -630,6 +766,12 @@ class VcStatus {
   }
 
   // The Status List Token, JWT form (section 5.1).
+  /**
+   * Builds the Status List Token in JWT form (section 5.1).
+   *
+   * @param req - the request
+   * @returns the signed JWT
+   */
   async tslJwt(req: any): Promise<string> {
     const { log, stsCrypto, certificateHeaderFor, now } = this.deps;
     log.debug("Entering VcStatus.tslJwt().");
@@ -659,6 +801,12 @@ class VcStatus {
   }
 
   // The Status List Token, CWT form (section 5.2).
+  /**
+   * Builds the Status List Token in CWT form (section 5.2).
+   *
+   * @param req - the request
+   * @returns the CWT bytes
+   */
   async tslCwt(req: any): Promise<Buffer> {
     const { log, now } = this.deps;
     log.debug("Entering VcStatus.tslCwt().");
@@ -683,6 +831,14 @@ class VcStatus {
 
   // The BitstringStatusListCredential for one purpose, as a VC-JOSE-COSE
   // JWT whose payload is the credential itself.
+  /**
+   * Builds the Bitstring Status List credential for one purpose, as a
+   * VC-JOSE-COSE JWT whose payload is the credential.
+   *
+   * @param req - the request
+   * @param purpose - `revocation` or `suspension`
+   * @returns the signed JWT
+   */
   async bitstringJwt(req: any, purpose: string): Promise<string> {
     const { log, stsCrypto, certificateHeaderFor, baseUrlOf, now } =
       this.deps;
@@ -739,6 +895,15 @@ class VcStatus {
   // the list it just fetched. The subject is the same `bitstringBytes()` the
   // JWT carries, so the two forms cannot say different things.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the Bitstring Status List credential for one purpose with an
+   * embedded eddsa-rdfc-2022 proof by the realm's Ed25519 key, for a client
+   * asking for JSON-LD.
+   *
+   * @param req - the request
+   * @param purpose - `revocation` or `suspension`
+   * @returns the secured credential
+   */
   async bitstringLdp(req: any, purpose: string): Promise<any> {
     const { log, baseUrlOf, now, realmKeyFor, signDocument } = this.deps;
     log.debug("Entering VcStatus.bitstringLdp(). " + purpose);
@@ -805,6 +970,15 @@ class VcStatus {
   // is in development with the rule `off`, because every credential this
   // issuer mints carries a reference and its absence means it was removed.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a presented credential's status: this realm's own from its store, a
+   * foreign issuer's by fetching its list, signed by the same key. A missing
+   * reference is decided by policy. Never rejects.
+   *
+   * @param opts - `own`, `format`, `claims`, `credentialStatus`, `key`, `algs`,
+   *   `policy` (`all`, `own-only` or `off`) and `exempt`
+   * @returns `{ checked, ok, status, detail, errorCode }`
+   */
   async checkPresented(opts: { own: boolean; format: string; claims?: any;
                                credentialStatus?: any[]; key?: any;
                                algs?: string[]; policy?: string;
@@ -1105,6 +1279,11 @@ class VcStatus {
   }
 
   // Forgets the fetched lists, for the console's cache page and the tests.
+  /**
+   * Forgets the fetched foreign lists.
+   *
+   * @returns how many were forgotten
+   */
   forgetFetched(): number {
     const { log } = this.deps;
     log.debug("Entering VcStatus.forgetFetched().");
@@ -1154,6 +1333,13 @@ class VcStatus {
   // name the JWT first. `application/vc` (VCDM 2.0 section 6.3) is answered
   // as itself; `application/ld+json` and `application/json` as
   // `application/ld+json`.
+  /**
+   * Says which form of a Bitstring Status List credential an `Accept` asks for:
+   * `jwt` unless it names a JSON form first.
+   *
+   * @param accept - the `Accept` header
+   * @returns `jwt`, or the JSON-LD media type to answer with
+   */
   bitstringFormFor(accept: unknown): string {
     const { log } = this.deps;
     log.debug("Entering VcStatus.bitstringFormFor().");
@@ -1176,6 +1362,14 @@ class VcStatus {
     return form;
   }
 
+  /**
+   * Registers the status list routes: the Token Status List, the aggregation
+   * and the Bitstring Status List credentials.
+   *
+   * Called by `common/protocol_stack.ts`, ahead of the issuer.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteApp): void {
     const { log } = this.deps;
     const self = this;
@@ -1251,9 +1445,25 @@ const slot = new InstanceSlot<VcStatus>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The status of every credential this issuer mints: Token Status Lists and
+ * Bitstring Status Lists, and the Verifier's check.
+ *
+ * @namespace
+ */
 export = {
   VcStatus: VcStatus,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcStatus): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   bitstringLdp: slot.forward('bitstringLdp'),

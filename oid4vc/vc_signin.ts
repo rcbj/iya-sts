@@ -267,17 +267,42 @@ interface VcSigninDeps {
   qrSvg: (text: string) => Promise<string>;
 }
 
+/**
+ * OpenID4VP as a way of signing in (#38): `/authn/wallet`, where a wallet's
+ * presentation — through the Digital Credentials API, the same-device link or,
+ * when offered, a QR code — produces the session every protocol family reads.
+ */
 class VcSignin {
+  /**
+   * What the console and the audit log call a sign-in that came through here.
+   */
   static readonly VIA = VIA;
+  /**
+   * The cookie that ties a sign-in to the browser that started it.
+   */
   static readonly BINDING_COOKIE = BINDING_COOKIE;
+  /**
+   * The script served at `/authn/wallet.js`, which makes the Digital
+   * Credentials API call the wait page's button asks for.
+   */
   static readonly WALLET_SCRIPT = WALLET_SCRIPT;
 
+  /**
+   * Builds the wallet sign-in from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcSigninDeps) {
     deps.log.debug("Entering VcSignin.constructor().");
     deps.log.debug("Leaving VcSignin.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcSigninDeps {
     helpers.log.debug("Entering VcSignin.defaultDeps().");
     helpers.log.debug("Leaving VcSignin.defaultDeps().");
@@ -311,6 +336,11 @@ class VcSignin {
   }
 
   // Is this door open? A function, because the setting is live.
+  /**
+   * Says whether the wallet sign-in is open (`oid4vp.signIn`).
+   *
+   * @returns true when it is
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering VcSignin.enabled().");
@@ -320,6 +350,12 @@ class VcSignin {
 
   // SIOPv2 (#129): is a self-issued ID Token a way in here? It is its own
   // switch, OFF by default — a way in is something a realm turns on.
+  /**
+   * Says whether a self-issued ID Token (SIOPv2) is a way in here, off by
+   * default.
+   *
+   * @returns true when it is
+   */
   selfIssuedEnabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering VcSignin.selfIssuedEnabled().");
@@ -329,6 +365,13 @@ class VcSignin {
 
   // Who holds the sign-on session this browser carries, or '' — for an
   // enrolment, which is only ever for the person already signed in.
+  /**
+   * Returns who holds the sign-on session this browser carries, for an
+   * enrolment.
+   *
+   * @param req - the request
+   * @returns the username, or ''
+   */
   personOf(req: any): string {
     const { log, authn } = this.deps;
     log.debug("Entering VcSignin.personOf().");
@@ -343,6 +386,12 @@ class VcSignin {
   // IS THE PLAIN QR CODE OFFERED? `oid4vp.signInCrossDevice`, OFF by default
   // in every mode (#38's follow-ups): it is the relayable path, and the
   // Digital Credentials API reaches a wallet on another device without it.
+  /**
+   * Says whether the plain QR code is offered (`oid4vp.signInCrossDevice`, off
+   * by default in every mode).
+   *
+   * @returns true when it is
+   */
   qrOffered(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering VcSignin.qrOffered().");
@@ -367,6 +416,12 @@ class VcSignin {
     return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 3;
   }
 
+  /**
+   * Returns the SHA-256 of a value, base64url-encoded.
+   *
+   * @param value - the value
+   * @returns the hash
+   */
   hashOf(value: unknown): string {
     const { log } = this.deps;
     log.debug("Entering VcSignin.hashOf().");
@@ -378,6 +433,13 @@ class VcSignin {
   // This service's origin — what `expected_origins` names and what the
   // answer's audience must carry. The realm prefix is a path, and an origin
   // has none.
+  /**
+   * Returns this service's origin, which `expected_origins` names and the
+   * answer's audience must carry; the realm prefix is not part of it.
+   *
+   * @param req - the request
+   * @returns the origin
+   */
   originOf(req: any): string {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcSignin.originOf().");
@@ -535,6 +597,13 @@ class VcSignin {
   // ---------------------------------------------------------------------------
   // GET /authn/wallet — start a sign-in.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles `GET /authn/wallet`: starts a sign-in bound to the pending
+   * authentication or second-factor step, and redirects to the wait page.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   handleStart(req: any, res: any): void {
     const { log, authn, verifier, errorCodes, xmlEscape, randomId,
             stsDid } = this.deps;
@@ -855,6 +924,13 @@ class VcSignin {
   // ---------------------------------------------------------------------------
   // GET /authn/wallet/wait — wait, and finish.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles `GET /authn/wallet/wait`: the page the browser waits on, and the
+   * sign-in once the wallet has answered.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   async handleWait(req: any, res: any): Promise<void> {
     const { log, errorCodes, stsCrypto } = this.deps;
     log.debug("Entering VcSignin.handleWait().");
@@ -914,6 +990,14 @@ class VcSignin {
   //     `origin:<origin>` as the audience, and writes the verdict; and the
   //     sign-in is finished HERE, in this request — it is the browser's own.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles `POST /authn/wallet/dc-api`: the Digital Credentials API's answer,
+   * admitted as the wait page is, verified with `origin:<origin>` as the
+   * audience, and the sign-in finished in this request.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   async handleDcApi(req: any, res: any): Promise<void> {
     const { log, errorCodes, xmlEscape, verifier } = this.deps;
     log.debug("Entering VcSignin.handleDcApi().");
@@ -1191,6 +1275,13 @@ class VcSignin {
   }
 
   // THE ROUTES, registered by the composition root after `vc_verifier`.
+  /**
+   * Registers the wallet sign-in routes, after `vc_verifier`'s.
+   *
+   * Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteApp): void {
     const { log, authn, contentSecurityPolicy } = this.deps;
     const self = this;
@@ -1256,10 +1347,25 @@ const slot = new InstanceSlot<VcSignin>(
 // Standalone, build the default now, as loading any module on the pattern does.
 slot.buildNowUnlessDeferred();
 
+/**
+ * OpenID4VP as a way of signing in: `/authn/wallet` and its pages.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   VcSignin: VcSignin,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcSignin): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   VIA: VcSignin.VIA,
   BINDING_COOKIE: VcSignin.BINDING_COOKIE,

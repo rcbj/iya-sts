@@ -126,22 +126,82 @@ VCI_CONFIGS[VCI_LDP_DID_CONFIG_ID] =
   { format: 'ldp_vc', scope: VCI_LDP_DID_SCOPE, issuerDid: true,
     basedOn: VCI_LDP_CONFIG_ID };
 
+/**
+ * Every credential this issuer offers, by `credential_configuration_id`: the
+ * one list the credential endpoint, `authorization_details`, the offer builder,
+ * the DID decision and the metadata all read.
+ *
+ * The bottom of the dependency graph (rule 2): it names the credentials without
+ * knowing how any is built.
+ */
 class VcConfigs {
+  /**
+   * The SD-JWT VC (`dc+sd-jwt`) configuration's id, `IdentityCredential`.
+   */
   static readonly VCI_CONFIG_ID = VCI_CONFIG_ID;
+  /**
+   * The `vct` of the SD-JWT VC this issuer offers.
+   */
   static readonly VCI_VCT = VCI_VCT;
+  /**
+   * The scope that requests the SD-JWT VC.
+   */
   static readonly VCI_SCOPE = VCI_SCOPE;
+  /**
+   * The `jwt_vc_json` configuration's id: the same facts as a W3C credential
+   * secured as a JWT, with no selective disclosure.
+   */
   static readonly VCI_JWT_CONFIG_ID = VCI_JWT_CONFIG_ID;
+  /**
+   * The scope that requests the `jwt_vc_json` credential.
+   */
   static readonly VCI_JWT_SCOPE = VCI_JWT_SCOPE;
+  /**
+   * The `type` of the `jwt_vc_json` credential.
+   */
   static readonly VCI_JWT_TYPES = VCI_JWT_TYPES;
+  /**
+   * The `ldp_vc` configuration's id: a W3C credential with an embedded Data
+   * Integrity proof (bbs-2023).
+   */
   static readonly VCI_LDP_CONFIG_ID = VCI_LDP_CONFIG_ID;
+  /**
+   * The scope that requests the `ldp_vc` credential.
+   */
   static readonly VCI_LDP_SCOPE = VCI_LDP_SCOPE;
+  /**
+   * The id of the SD-JWT VC configuration whose issuer names itself by
+   * `did:web`.
+   */
   static readonly VCI_DID_CONFIG_ID = VCI_DID_CONFIG_ID;
+  /**
+   * The scope that requests the `did:web` SD-JWT VC.
+   */
   static readonly VCI_DID_SCOPE = VCI_DID_SCOPE;
+  /**
+   * The id of the `ldp_vc` configuration whose issuer names itself by
+   * `did:web`.
+   */
   static readonly VCI_LDP_DID_CONFIG_ID = VCI_LDP_DID_CONFIG_ID;
+  /**
+   * The scope that requests the `did:web` `ldp_vc` credential.
+   */
   static readonly VCI_LDP_DID_SCOPE = VCI_LDP_DID_SCOPE;
+  /**
+   * The W3C Verifiable Credentials v1 `@context`.
+   */
   static readonly VC_CONTEXT = VC_CONTEXT;
+  /**
+   * Every configuration, by id: its format, scope, whether the issuer is named
+   * by DID, and the configuration it is based on.
+   */
   static readonly VCI_CONFIGS = VCI_CONFIGS;
 
+  /**
+   * Builds the configuration reader from the logger and the settings.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcConfigsDeps) {
     deps.log.debug("Entering VcConfigs.constructor().");
     deps.log.debug("Leaving VcConfigs.constructor().");
@@ -149,6 +209,11 @@ class VcConfigs {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcConfigsDeps {
     helpers.log.debug("Entering VcConfigs.defaultDeps().");
     helpers.log.debug("Leaving VcConfigs.defaultDeps().");
@@ -159,6 +224,13 @@ class VcConfigs {
   // change it and the next metadata document says so. Same for every
   // runtime-settable value in this service; the ones that are still constants
   // are the ones config.js marks restart-only.
+  /**
+   * Returns the authorization server the issuer metadata names
+   * (`oid4vci.authorizationServer`), read each time so a change reaches the
+   * next document.
+   *
+   * @returns the setting's value
+   */
   vciAuthorizationServer(): any {
     const { log, config } = this.deps;
     log.debug("Entering VcConfigs.vciAuthorizationServer().");
@@ -168,6 +240,12 @@ class VcConfigs {
 
   // The most proofs this issuer will take in one Credential Request, and so
   // the most credentials it will return (OID4VCI section 14.6).
+  /**
+   * Returns the most proofs, and so credentials, one Credential Request may
+   * carry (OID4VCI section 14.6).
+   *
+   * @returns the setting's value
+   */
   vciBatchSize(): any {
     const { log, config } = this.deps;
     log.debug("Entering VcConfigs.vciBatchSize().");
@@ -175,6 +253,11 @@ class VcConfigs {
     return config.value('oid4vci.batchSize');
   }
 
+  /**
+   * Returns every configuration id this issuer offers.
+   *
+   * @returns the ids
+   */
   vciConfigIds(): string[] {
     const { log } = this.deps;
     log.debug("Entering VcConfigs.vciConfigIds().");
@@ -182,6 +265,12 @@ class VcConfigs {
     return Object.keys(VCI_CONFIGS);
   }
 
+  /**
+   * Returns a configuration's credential format.
+   *
+   * @param configId - the configuration's id
+   * @returns the format, or '' for an unknown id
+   */
   vciFormatOf(configId: string): string {
     const { log } = this.deps;
     log.debug("Entering VcConfigs.vciFormatOf().");
@@ -195,6 +284,13 @@ class VcConfigs {
   // same answer the credential will carry — an issuer whose metadata and
   // credentials disagree about who issued them is the bug this keeps in one
   // place.
+  /**
+   * Says whether credentials from a configuration name the issuer by DID — the
+   * answer the credential builders and the metadata share.
+   *
+   * @param configId - the configuration's id
+   * @returns true when the issuer is named by DID
+   */
   vciUsesIssuerDid(configId: string): boolean {
     const { log } = this.deps;
     log.debug("Entering VcConfigs.vciUsesIssuerDid().");
@@ -206,6 +302,13 @@ class VcConfigs {
   // A credential_identifier is minted as "<configId>:<hash>", so the
   // configuration it belongs to is the part before the colon. Used to route a
   // section 8.2 identifier request to the right format.
+  /**
+   * Returns the configuration a `credential_identifier` belongs to: the part
+   * before its first colon.
+   *
+   * @param identifier - the credential identifier
+   * @returns the configuration's id, or '' when it names none
+   */
   configIdOfIdentifier(identifier: unknown): string {
     const { log } = this.deps;
     log.debug("Entering VcConfigs.configIdOfIdentifier().");
@@ -233,9 +336,25 @@ const slot = new InstanceSlot<VcConfigs>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Every credential this OpenID4VCI issuer offers, by
+ * `credential_configuration_id`.
+ *
+ * @namespace
+ */
 export = {
   VcConfigs: VcConfigs,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcConfigs): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   vciAuthorizationServer: slot.forward('vciAuthorizationServer'),
   VCI_CONFIG_ID: VcConfigs.VCI_CONFIG_ID,
