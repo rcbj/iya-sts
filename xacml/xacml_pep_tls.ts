@@ -131,15 +131,38 @@ interface PepTlsDeps {
   subjectAltNameOf(pem: string): string;
 }
 
+/**
+ * Issues and reports the HTTPS listener certificate of a registered
+ * remote XACML PEP, from the `pep-tls` Issuing CA of the realm it
+ * registered to.
+ *
+ * The private key is returned once and never stored here.
+ */
 class PepTls {
+  /**
+   * The certificate authority use case the listener certificates are issued
+   * under.
+   */
   static readonly USE_CASE = 'pep-tls';
 
+  /**
+   * Builds the issuer over its dependencies.
+   *
+   * @param deps - the logger, audit log, error codes, certificate authority,
+   *   PEP register and node's address and certificate parsers
+   */
   constructor(private readonly deps: PepTlsDeps) {
     deps.log.debug("Entering PepTls.constructor().");
     deps.log.debug("Leaving PepTls.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): PepTlsDeps {
     helpers.log.debug("Entering PepTls.defaultDeps().");
     helpers.log.debug("Leaving PepTls.defaultDeps().");
@@ -160,6 +183,13 @@ class PepTls {
   // `/admin-api`, or one textarea from the console with one item per line
   // (commas accepted too, because an address list is the kind of thing
   // people type on one line).
+  /**
+   * Reads a list from a JSON array or from text with one item per line
+   * (commas and spaces also separate).
+   *
+   * @param value - an array, a string, or nothing
+   * @returns the trimmed, non-empty items
+   */
   listFrom(value: unknown): string[] {
     const { log } = this.deps;
     log.debug("Entering PepTls.listFrom().");
@@ -188,6 +218,14 @@ class PepTls {
 
   // The names a certificate for this row carries by default — see the
   // header.
+  /**
+   * Returns the names a certificate for a registered PEP carries by default:
+   * its name when that is a DNS name, and the host of its notify URL.
+   *
+   * A notify URL that does not parse contributes nothing.
+   * @param row - the PEP's register row
+   * @returns the DNS names and IP addresses
+   */
   derivedNames(row: PepRowNames | null | undefined): CertificateNames {
     const { log, isIP } = this.deps;
     log.debug("Entering PepTls.derivedNames().");
@@ -248,6 +286,14 @@ class PepTls {
   // The listener certificate this realm has issued to a PEP, as the console
   // and `GET /admin-api/xacml/peps` draw it — PUBLIC, and never a key: the
   // register keeps none. Null when none has been issued.
+  /**
+   * Describes the listener certificate this realm has issued to a PEP.
+   *
+   * Public material only; no key is ever held.
+   * @param name - the PEP's registered name
+   * @returns the certificate's subject, serial, validity, names and PEMs, or
+   *   null when none has been issued or there is no certificate authority
+   */
   certificateOf(name: unknown): object | null {
     const { log, pki } = this.deps;
     log.debug("Entering PepTls.certificateOf().");
@@ -293,6 +339,18 @@ class PepTls {
   // certificate are both asynchronous; `xacml_admin.ts`'s `pepAction()`
   // returns it as it is.
   // -------------------------------------------------------------------------
+  /**
+   * Issues an HTTPS listener certificate and key pair to a registered PEP.
+   *
+   * The derived names are always included and names the caller sends are
+   * added. A refusal is `{ ok: false, why }` carrying its error code. The
+   * reply is the only place the private key ever appears, and the issuance
+   * is audited.
+   * @param body - `name` (a PEP registered in this realm), and optionally
+   *   `dnsNames`, `ipAddresses`, `keyAlg` and `days`
+   * @returns a promise of the result: on success the certificate, its chain,
+   *   `fullChainPem`, the anchor and `privateKeyPem`
+   */
   async issue(body?: any): Promise<IssueResult> {
     const { log, audit, errorCodes, pki, peps } = this.deps;
     log.debug('Entering PepTls.issue(). name=' + (body || {}).name);
@@ -413,6 +471,13 @@ const slot = new InstanceSlot<PepTls>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The HTTPS listener certificate of a remote XACML PEP.
+ *
+ * A library that registers no route; the functions forward to the
+ * `PepTls` instance the composition root installs.
+ * @namespace
+ */
 export = {
   PepTls: PepTls,
   installInstance: (instance: PepTls): void => slot.install(instance),

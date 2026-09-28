@@ -277,15 +277,37 @@ let warnedAboutMissingPolicy = false;
 // ---------------------------------------------------------------------------
 let dryRun = false;
 
+/**
+ * The embedded policy enforcement point for this service's own issuance:
+ * turns each issuance `common/issuance_gate.js` asks about into an XACML
+ * request and refuses what the issuance policy does not permit.
+ */
 class XacmlRolePep {
+  /**
+   * The attribute identifiers of the issuance request (roles held, roles
+   * from a token, required roles, subject kind).
+   */
   static readonly ATTRIBUTE = ATTRIBUTE;
 
+  /**
+   * Builds the enforcement point over its dependencies.
+   *
+   * @param deps - the logger, configuration, audit log, error codes,
+   *   application and role registers, the gate, the engine, the policy
+   *   store, the monitor, the PIP, the templates and `heldFactors()`
+   */
   constructor(private readonly deps: XacmlRolePepDeps) {
     deps.log.debug("Entering XacmlRolePep.constructor().");
     deps.log.debug("Leaving XacmlRolePep.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): XacmlRolePepDeps {
     helpers.log.debug("Entering XacmlRolePep.defaultDeps().");
     helpers.log.debug("Leaving XacmlRolePep.defaultDeps().");
@@ -328,6 +350,12 @@ class XacmlRolePep {
     };
   }
 
+  /**
+   * Returns the name of the issuance policy, from `xacml.issuancePolicy`
+   * (`role-issuance` when unset).
+   *
+   * @returns the policy name
+   */
   issuancePolicyName(): string {
     const { log, config } = this.deps;
     log.debug("Entering XacmlRolePep.issuancePolicyName().");
@@ -383,6 +411,12 @@ class XacmlRolePep {
   // that "there is no policy" is a state with its own sentence rather than an
   // Indeterminate somebody has to interpret.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the built-in issuance policy from the `role-issuance` template.
+   *
+   * @returns `{ policy, name, builtIn: true }`, or `{ why }` when the
+   *   template will not build, which is a defect rather than a state
+   */
   builtInPolicy(): LoadedPolicy {
     const { log, templates } = this.deps;
     log.debug('Entering XacmlRolePep.builtInPolicy().');
@@ -404,6 +438,14 @@ class XacmlRolePep {
              builtIn: true };
   }
 
+  /**
+   * Loads the issuance policy that decides in this realm.
+   *
+   * A repository entry of that name overrides the built-in document; with
+   * no entry the built-in one answers. A DISABLED entry does not fall back.
+   * @returns `{ policy, name }` (with `builtIn` for the built-in one), or
+   *   `{ why }` when the entry is disabled or does not load
+   */
   issuancePolicy(): LoadedPolicy {
     const { log, store } = this.deps;
     log.debug('Entering XacmlRolePep.issuancePolicy().');
@@ -464,6 +506,19 @@ class XacmlRolePep {
     };
   }
 
+  /**
+   * Builds the XACML request for one issuance question.
+   *
+   * The subject's name, held roles, token roles and kind; the application
+   * as a string resource-id with its required roles; the issuance kind as
+   * the action; and the risk, authentication and device facts as
+   * environment attributes, each only when present.
+   * @param asked - the issuance question
+   * @param held - the roles the subject holds
+   * @param fromToken - the roles read from a token the subject presented
+   * @param required - the roles the application requires
+   * @returns the request, in the shapes of `xacml_model.js`
+   */
   buildRequest(asked: IssuanceQuestion, held: string[], fromToken: string[],
                required: string[]): any {
     const { log, model } = this.deps;
@@ -708,6 +763,18 @@ class XacmlRolePep {
   // -------------------------------------------------------------------------
   // THE DECISION.
   // -------------------------------------------------------------------------
+  /**
+   * Decides whether an issuance is permitted; the decider installed in
+   * `common/issuance_gate.js`.
+   *
+   * Synchronous throughout. With `xacml.enabled` off everything is allowed.
+   * With no loadable policy an application that is not narrowed is allowed
+   * and a narrowed one is refused. A question with `preview` set is a dry
+   * run: nothing is audited or counted.
+   * @param asked - the issuance question
+   * @returns the answer: `allowed`, `decision`, `why`, the roles held and
+   *   required, the policy name and, on a refusal, the status
+   */
   decide(asked: IssuanceQuestion): IssuanceAnswer {
     const { log } = this.deps;
     log.debug("Entering XacmlRolePep.decide().");
@@ -1132,6 +1199,14 @@ class XacmlRolePep {
   // somebody wrote, and an override somebody disabled, which is the only one
   // of the three where a narrowed application is refused.
   // -------------------------------------------------------------------------
+  /**
+   * Describes which of its three states the issuance policy is in, for the
+   * console: built in, overridden by an entry, or not evaluated.
+   *
+   * @returns the name, whether it loads, whether it is built in, whether an
+   *   entry exists and is enabled, whether it reads the risk level, and a
+   *   sentence on its effect
+   */
   issuancePolicyState(): Record<string, any> {
     const { log, store } = this.deps;
     log.debug('Entering XacmlRolePep.issuancePolicyState().');
@@ -1187,6 +1262,14 @@ class XacmlRolePep {
   // reimplementing it — a preview that agreed with the enforcement only by
   // coincidence is worse than no preview.
   // -------------------------------------------------------------------------
+  /**
+   * Asks the issuance decision as a dry run, for `/admin/roles`.
+   *
+   * Goes through `decide()`; nothing is issued, audited or counted.
+   * @param question - the application, kind (an access token by default),
+   *   subject (an anonymous person by default) and claims
+   * @returns the answer `decide()` gives
+   */
   preview(question?: IssuanceQuestion | null): IssuanceAnswer {
     const { log, gate } = this.deps;
     log.debug('Entering XacmlRolePep.preview().');
@@ -1281,6 +1364,14 @@ if (typeof gate.setDecider === 'function') {
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The embedded PEP for this service's own issuance.
+ *
+ * Loading it installs `decide` in `common/issuance_gate.js` and the
+ * console's role previewer. The functions forward to the `XacmlRolePep`
+ * instance the composition root installs.
+ * @namespace
+ */
 export = {
   XacmlRolePep: XacmlRolePep,
   installInstance: (instance: XacmlRolePep): void => slot.install(instance),

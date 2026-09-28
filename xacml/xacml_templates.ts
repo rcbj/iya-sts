@@ -146,6 +146,12 @@ const TYPE = model.TYPE;
 // and quietly answer with whatever it found there instead of with what the PEP
 // asserted. A colon in the name is what keeps these out of that path.
 // ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers of an issuance decision: the one spelling the
+ * PEP that asserts them and the policies that read them share.
+ *
+ * URI-shaped so the PIP never takes one for a directory attribute name.
+ */
 const ISSUANCE_ATTRIBUTE = {
   // On the SUBJECT: the roles the party being authenticated holds, from the
   // register and from the six built-in ones.
@@ -206,6 +212,10 @@ const ISSUANCE_ATTRIBUTE = {
 // Sent at the session's start; an issuance later in the session's life sends
 // none, because the session was decided on them already.
 // ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers describing the authentication a session stands
+ * on (#64), sent as environment attributes at the session's start.
+ */
 const AUTHN_ATTRIBUTE = {
   // A BAG: RFC 8176 `amr` values of every factor the session was started
   // with — `pwd`, `otp`, `hwk`, `pop`...
@@ -234,6 +244,10 @@ const AUTHN_ATTRIBUTE = {
 // (false), so a rule can ask for a device and a rule about one is
 // inapplicable.
 // ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers describing the registered device an issuance
+ * came from (#164), sent as environment attributes.
+ */
 const DEVICE_ATTRIBUTE = {
   // A BOOLEAN: a registered device was recognised by one of its keys.
   RECOGNIZED: 'urn:sts:xacml:device-recognized',
@@ -271,6 +285,12 @@ const DEVICE_ATTRIBUTE = {
   REFUSAL: 'urn:sts:xacml:device-refusal'
 };
 
+/**
+ * The attribute identifiers describing a sign-in's risk assessment (#62).
+ *
+ * An absent level makes every risk rule inapplicable, so unknown never
+ * denies.
+ */
 const RISK_ATTRIBUTE = {
   // LOW, MEDIUM, HIGH or UNSCORED — CAEP's own words, plus the one for a
   // first sign-in with nothing to compare it to.
@@ -321,6 +341,10 @@ const RISK_ATTRIBUTE = {
 // fail. One question per reaction also reads in the policy as what it is: a
 // rule per thing that happens.
 // ---------------------------------------------------------------------------
+/**
+ * The action-ids the `risk-response` policy is asked about, one question
+ * per reaction to a change of risk; a Permit means do it.
+ */
 const RISK_RESPONSE = {
   // CAEP risk-level-change, to every stream that takes it — this service's
   // own console and portal among them (their signal inboxes).
@@ -340,6 +364,10 @@ const RISK_RESPONSE = {
 // the `signal-response` policy is asked about when this service's own console
 // or portal RECEIVES a Security Event Token on its stream and it verified.
 // ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers describing a received, verified Security Event
+ * Token to the `signal-response` policy.
+ */
 const SIGNAL_ATTRIBUTE = {
   // The event's short name — `session-revoked`, `account-disabled`,
   // `risk-level-change` — which is how CAEP and RISC name them after their
@@ -358,6 +386,10 @@ const SIGNAL_ATTRIBUTE = {
 
 // What a received signal can lead to, one question per reaction as
 // RISK_RESPONSE's header argues.
+/**
+ * The action-ids the `signal-response` policy is asked about, one question
+ * per reaction to a received signal.
+ */
 const SIGNAL_RESPONSE = {
   // End the receiving surface's OWN sessions for the person the event names:
   // the console's or the portal's relying-party sessions. Never the
@@ -383,13 +415,34 @@ const SIGNAL_RESPONSE = {
 // the point of building the model is that a template author does not have to
 // know the element names — that is the writer's problem.
 // ---------------------------------------------------------------------------
+/**
+ * Small builders of the policy model the templates are written in.
+ *
+ * Each takes only its arguments and returns a model node for
+ * `xacml_xml.js`'s writer.
+ */
 class PolicyBuilders {
+  /**
+   * Builds an attribute value node.
+   *
+   * @param type - the datatype URI
+   * @param lexical - the value, turned to a string
+   * @returns the value node
+   */
   static value(type: string, lexical: unknown): any {
     log.debug("Entering PolicyBuilders.value().");
     log.debug("Leaving PolicyBuilders.value().");
     return { kind: 'value', type: type, lexical: String(lexical) };
   }
 
+  /**
+   * Builds an attribute designator node that need not be present.
+   *
+   * @param category - the category URI
+   * @param attributeId - the attribute identifier
+   * @param type - the datatype URI
+   * @returns the designator node
+   */
   static designator(category: string, attributeId: string,
                     type: string): any {
     log.debug("Entering PolicyBuilders.designator().");
@@ -399,6 +452,14 @@ class PolicyBuilders {
              mustBePresent: false };
   }
 
+  /**
+   * Builds a Match node.
+   *
+   * @param matchId - the match function identifier
+   * @param literal - the value node matched against
+   * @param reference - the designator or selector node
+   * @returns the match node
+   */
   static match(matchId: string, literal: any, reference: any): any {
     log.debug("Entering PolicyBuilders.match().");
     log.debug("Leaving PolicyBuilders.match().");
@@ -408,6 +469,13 @@ class PolicyBuilders {
   // A Target that is satisfied when ALL of the given match-groups are — one
   // `AnyOf` per group, since a Target ANDs its AnyOf children. Each group is a
   // list of alternatives, ORed, since an AnyOf ORs its AllOf children.
+  /**
+   * Builds a Target satisfied when all the groups are, each group a list of
+   * alternatives.
+   *
+   * @param groups - lists of match nodes; each list becomes one AnyOf
+   * @returns the target node, or null when every group is empty
+   */
   static targetOf(groups: any[][]): any {
     log.debug("Entering PolicyBuilders.targetOf().");
     const anyOf = groups.filter(function (group) {
@@ -421,6 +489,13 @@ class PolicyBuilders {
     return anyOf.length ? { anyOf: anyOf } : null;
   }
 
+  /**
+   * Builds an Apply node.
+   *
+   * @param functionId - the function identifier
+   * @param args - the argument expression nodes
+   * @returns the apply node
+   */
   static apply(functionId: string, args: any[]): any {
     log.debug("Entering PolicyBuilders.apply().");
     log.debug("Leaving PolicyBuilders.apply().");
@@ -430,6 +505,12 @@ class PolicyBuilders {
   // A list typed into a form: commas or newlines, blanks dropped. One reader
   // for every template parameter of list type, so that "a, b" and "a\nb"
   // cannot mean different things on two different templates.
+  /**
+   * Splits a list typed into a form on commas or newlines, dropping blanks.
+   *
+   * @param raw - the text as typed
+   * @returns the trimmed, non-empty items
+   */
   static listOf(raw: unknown): string[] {
     log.debug("Entering PolicyBuilders.listOf().");
     log.debug("Leaving PolicyBuilders.listOf().");
@@ -446,6 +527,13 @@ class PolicyBuilders {
   // yes is a policy that permits slightly more than intended — while
   // misreading one as a no builds the issuance policy without an arm and
   // refuses people.
+  /**
+   * Reads a yes/no template parameter; anything not plainly a no is a yes.
+   *
+   * @param answer - the text as typed
+   * @param dflt - the answer for an empty field; yes unless false
+   * @returns the answer
+   */
   static yes(answer: unknown, dflt?: boolean): boolean {
     log.debug("Entering PolicyBuilders.yes().");
     const text = String(answer === undefined || answer === null ? '' : answer)
@@ -459,6 +547,12 @@ class PolicyBuilders {
              text === '0' || text === 'n');
   }
 
+  /**
+   * Turns text into a lower-case, hyphen-separated identifier fragment.
+   *
+   * @param text - the text to turn
+   * @returns the slug, or `x` when nothing is left
+   */
   static slug(text: unknown): string {
     log.debug("Entering PolicyBuilders.slug().");
     log.debug("Leaving PolicyBuilders.slug().");
@@ -477,6 +571,11 @@ const B = PolicyBuilders;
 // person reads and its `dflt` is what they get if they say nothing. `build`
 // receives the answers already coerced and returns a MODEL.
 // ---------------------------------------------------------------------------
+/**
+ * The template table. A row is the whole of a template: its id, label,
+ * description, parameters (which drive the form) and a `build()` that
+ * returns a policy model.
+ */
 const TEMPLATES: TemplateRow[] = [
   {
     // -----------------------------------------------------------------------
@@ -1953,22 +2052,62 @@ const TEMPLATES: TemplateRow[] = [
   }
 ];
 
+/**
+ * The catalogue of policy templates and the builder that fills one in.
+ *
+ * Adding a template is a row in `TEMPLATES` and nothing else; the console
+ * and the management API list what is there.
+ */
 class XacmlTemplates {
+  /**
+   * The issuance attribute identifiers.
+   */
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
+  /**
+   * The risk attribute identifiers.
+   */
   static readonly RISK_ATTRIBUTE = RISK_ATTRIBUTE;
+  /**
+   * The authentication attribute identifiers.
+   */
   static readonly AUTHN_ATTRIBUTE = AUTHN_ATTRIBUTE;
+  /**
+   * The device attribute identifiers.
+   */
   static readonly DEVICE_ATTRIBUTE = DEVICE_ATTRIBUTE;
+  /**
+   * The risk-response action-ids.
+   */
   static readonly RISK_RESPONSE = RISK_RESPONSE;
+  /**
+   * The received-signal attribute identifiers.
+   */
   static readonly SIGNAL_ATTRIBUTE = SIGNAL_ATTRIBUTE;
+  /**
+   * The signal-response action-ids.
+   */
   static readonly SIGNAL_RESPONSE = SIGNAL_RESPONSE;
+  /**
+   * The template table.
+   */
   static readonly TEMPLATES = TEMPLATES;
 
+  /**
+   * Builds the catalogue over the dependencies given.
+   *
+   * @param deps - the logger and the template table
+   */
   constructor(private readonly deps: XacmlTemplatesDeps) {
     deps.log.debug("Entering XacmlTemplates.constructor().");
     deps.log.debug("Leaving XacmlTemplates.constructor().");
   }
 
   // What the composition root passes: the real table and logger.
+  /**
+   * Returns the real table and logger, as the composition root passes them.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): XacmlTemplatesDeps {
     helpers.log.debug("Entering XacmlTemplates.defaultDeps().");
     helpers.log.debug("Leaving XacmlTemplates.defaultDeps().");
@@ -1978,6 +2117,12 @@ class XacmlTemplates {
     };
   }
 
+  /**
+   * Finds a template by its id.
+   *
+   * @param id - the template id
+   * @returns the template row, or null when there is none
+   */
   lookup(id: string): TemplateRow | null {
     const { log, templates } = this.deps;
     log.debug("Entering XacmlTemplates.lookup().");
@@ -1996,6 +2141,18 @@ class XacmlTemplates {
   // "create from template" with an empty body should produce something,
   // because the first thing anybody does with an API is call it with nothing.
   // -------------------------------------------------------------------------
+  /**
+   * Builds a policy model from a template and the answers given.
+   *
+   * A missing or blank answer takes the parameter's default, so a caller
+   * that sends nothing gets the documented example.
+   * @param id - the template id
+   * @param answers - the parameter answers by name
+   * @param options - an optional `name` for the policy and `idBase` for its
+   * identifiers
+   * @returns `{ ok: true, policy, answers, template }`, or `{ ok: false, why }`
+   * for an unknown template
+   */
   build(id: string, answers?: Record<string, unknown> | null,
         options?: { name?: string; idBase?: string } | null): BuildResult {
     const { log, templates } = this.deps;
@@ -2033,6 +2190,12 @@ class XacmlTemplates {
 
   // What the console and the management API list. Derived, so a template
   // added to the table above appears in both with no second edit.
+  /**
+   * Lists every template with its parameters, for the console and the
+   * management API.
+   *
+   * @returns one summary object per template
+   */
   catalogue(): object[] {
     const { log, templates } = this.deps;
     log.debug("Entering XacmlTemplates.catalogue().");
@@ -2066,6 +2229,14 @@ const slot = new InstanceSlot<XacmlTemplates>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Policy templates: working XACML policies to start editing from, built as
+ * the policy model rather than as XML text.
+ *
+ * Exports both classes, the attribute vocabularies the PEPs and policies
+ * share, and facades that forward to the installed instance.
+ * @namespace
+ */
 export = {
   XacmlTemplates: XacmlTemplates,
   installInstance: (instance: XacmlTemplates): void => slot.install(instance),

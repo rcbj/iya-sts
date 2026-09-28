@@ -200,6 +200,10 @@ interface PepRegistryDeps {
 // because this directory is schemaless and a container of entries carrying
 // invented attributes needs to say what they mean somewhere.
 // ---------------------------------------------------------------------------
+/**
+ * The `ou=peps` schema, the object class and attributes a registration
+ * entry carries, published on `/admin/ldap/*`.
+ */
 const SCHEMA = {
   objectClasses: [
     { name: 'xacmlPep',
@@ -301,15 +305,36 @@ const SCHEMA = {
 let directory: PepDirectory | null = null;
 let warnedAboutNoDirectory = false;
 
+/**
+ * The register of remote Policy Enforcement Points, kept as entries under
+ * the realm's `ou=peps` through the directory slot.
+ *
+ * A row is a record, not a permission: pulling policy needs `REMOTE_PEPS`,
+ * not a registration. One client certificate is one entry.
+ */
 class PepRegistry {
+  /**
+   * The `ou=peps` schema, the object class and attributes a registration
+   * entry carries.
+   */
   static readonly SCHEMA = SCHEMA;
 
+  /**
+   * Builds the register over the given dependencies.
+   * @param deps - the logger, settings, error codes, realms, the policy
+   * repository and a SHA-256 function
+   */
   constructor(private readonly deps: PepRegistryDeps) {
     deps.log.debug("Entering PepRegistry.constructor().");
     deps.log.debug("Leaving PepRegistry.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, for the default
+   * instance.
+   * @returns the register's dependencies
+   */
   static defaultDeps(): PepRegistryDeps {
     helpers.log.debug("Entering PepRegistry.defaultDeps().");
     helpers.log.debug("Leaving PepRegistry.defaultDeps().");
@@ -331,6 +356,11 @@ class PepRegistry {
   // `common/protocol_stack.ts` reaches this module's build line; a facade
   // there would build a default instance and the root's install would be
   // refused. What it installs is module-level, so it needs no instance.
+  /**
+   * Installs the directory functions the register reads and writes through;
+   * filled by `ldap/ldap_server.js` when it loads.
+   * @param fns - the directory functions, or null to remove them
+   */
   static setDirectory(fns?: PepDirectory | null): void {
     const { log } = helpers;
     log.debug('Entering PepRegistry.setDirectory().');
@@ -347,6 +377,11 @@ class PepRegistry {
   // which is a fact about the file list rather than about the test. Nothing
   // in the service calls this, exactly as nothing calls
   // `applications.directoryInstalled()`.
+  /**
+   * Returns the directory functions currently installed, so that a test can
+   * put back what was there.
+   * @returns the installed directory functions, or null
+   */
   static directoryInstalled(): PepDirectory | null {
     const { log } = helpers;
     log.debug("Entering PepRegistry.directoryInstalled().");
@@ -387,6 +422,13 @@ class PepRegistry {
   // The SUBJECT is added here rather than crossing the slot, because it is on
   // the certificate the caller already holds and does not need looking up.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves a client certificate to the identity this service names it
+   * with, through the directory slot.
+   * @param certificate - the peer certificate, as node returns it
+   * @returns `{ dn, commonName, subject }`, each '' when there is no
+   * directory
+   */
   certificateIdentity(certificate: any):
       { dn: string; commonName: string; subject: string } {
     const { log } = this.deps;
@@ -416,6 +458,11 @@ class PepRegistry {
              subject: named.subject || '' };
   }
 
+  /**
+   * Returns how long a PEP may go unseen before its row is stale
+   * (`xacml.pepStaleAfterS`); 300 when unset or not positive.
+   * @returns the interval in seconds
+   */
   staleAfterS(): number {
     const { log, config } = this.deps;
     log.debug("Entering PepRegistry.staleAfterS().");
@@ -427,6 +474,11 @@ class PepRegistry {
   // -------------------------------------------------------------------------
   // THE SYNC TOKEN. See the header — a digest of what would be SENT.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the digest of what a PEP pulling now would be sent: the enabled
+   * policies by name and the root's name, sorted so order does not matter.
+   * @returns the token, base64url without padding
+   */
   syncToken(): string {
     const { log, store, sha256Base64 } = this.deps;
     log.debug('Entering PepRegistry.syncToken().');
@@ -524,6 +576,11 @@ class PepRegistry {
   // when the page is drawn rather than kept, for `/admin/metrics`'s reason:
   // what is registered is a function of what has been written since.
   // -------------------------------------------------------------------------
+  /**
+   * Lists the other trust realms that hold a registration, so that an empty
+   * register here can be told from an empty register everywhere.
+   * @returns `{ id, name, count }` per other realm with at least one row
+   */
   elsewhere(): Array<{ id: string; name: string; count: number }> {
     const self = this;
     const { log, realms, errorCodes } = this.deps;
@@ -560,6 +617,11 @@ class PepRegistry {
     return found;
   }
 
+  /**
+   * Lists every registered PEP in the current realm, each with the derived
+   * `current` (its sync token matches) and `stale` flags.
+   * @returns the rows; empty when there is no directory
+   */
   all(): PepRow[] {
     const self = this;
     const { log } = this.deps;
@@ -611,6 +673,11 @@ class PepRegistry {
     return rows;
   }
 
+  /**
+   * Returns one registered PEP by name.
+   * @param name - the PEP's entry name
+   * @returns the row, or null when not registered
+   */
   read(name: string): PepRow | null {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.read(). name=' + name);
@@ -629,6 +696,12 @@ class PepRegistry {
   // subject with a comma or an equals sign in it has them replaced, because
   // those are DN syntax and a name carrying them would have to be escaped by
   // every reader separately.
+  /**
+   * Folds a certificate common name or a given name into an entry name:
+   * letters, digits, dot, dash and underscore, at most 128 characters.
+   * @param raw - the name to fold
+   * @returns the folded name, '' when nothing usable is left
+   */
   nameFrom(raw: unknown): string {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.nameFrom(). raw=' + raw);
@@ -647,6 +720,18 @@ class PepRegistry {
   // socket and no `certificatePlan()`, and it is a library for exactly that
   // reason.
   // -------------------------------------------------------------------------
+  /**
+   * Registers a remote PEP, or updates its row when it re-registers.
+   *
+   * A re-registration keeps the registration date, the counters, the sync
+   * token and a disabled state.
+   * @param record - the registration: name, identity, certificate subject,
+   * thumbprint, authenticated, notify URL, bias, resource, version and
+   * description
+   * @returns `{ ok: true, name, created }`, or `{ ok: false, why }` carrying
+   * its error code when there is no directory, no usable name or the
+   * directory refuses the entry
+   */
   register(record?: any): PepResult {
     const { log, config, errorCodes } = this.deps;
     log.debug('Entering PepRegistry.register().');
@@ -741,6 +826,15 @@ class PepRegistry {
   // which is honest: what is shown is what that process has done since it
   // started, which is the only thing it can truthfully report.
   // -------------------------------------------------------------------------
+  /**
+   * Records a PEP's heartbeat: last seen, its sync token and its cumulative
+   * counters, which are set rather than added to.
+   * @param name - the PEP's entry name
+   * @param report - what the PEP reports; an absent member keeps the value
+   * @returns `{ ok: true, name, current }` with the current sync token, or
+   * `{ ok: false, why }` when there is no directory, no such PEP or the
+   * directory refuses the entry
+   */
   heartbeat(name: string, report?: any): PepResult {
     const { log, errorCodes } = this.deps;
     log.debug('Entering PepRegistry.heartbeat(). name=' + name);
@@ -800,6 +894,13 @@ class PepRegistry {
   // the PEP reporting — and because it must not move `lastSeen`: a nudge that
   // failed is evidence that the PEP is NOT reachable, and letting it stamp
   // the liveness field would make an unreachable PEP look freshly seen.
+  /**
+   * Writes what happened to the last nudge onto a PEP's row, without moving
+   * its last-seen time.
+   * @param name - the PEP's entry name
+   * @param sentence - the nudge's outcome, stamped with the time
+   * @returns true when written
+   */
   recordNotify(name: string, sentence: unknown): boolean {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.recordNotify(). name=' + name);
@@ -820,6 +921,12 @@ class PepRegistry {
     return written;
   }
 
+  /**
+   * Enables or disables a registered PEP.
+   * @param name - the PEP's entry name
+   * @param on - true to enable, false to disable
+   * @returns true when written
+   */
   setEnabled(name: string, on: unknown): boolean {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.setEnabled(). name=' + name + ' on=' + on);
@@ -881,6 +988,11 @@ class PepRegistry {
     return Object.assign(attributes, overrides || {});
   }
 
+  /**
+   * Deletes a PEP's registration.
+   * @param name - the PEP's entry name
+   * @returns true when an entry was removed
+   */
   remove(name: string): boolean {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.remove(). name=' + name);
@@ -898,6 +1010,11 @@ class PepRegistry {
   // nudge. NOT filtered on `stale`, deliberately — a PEP that has not been
   // seen for an hour is exactly the one a nudge might wake up, and refusing
   // to try would turn a latency problem into a permanent one.
+  /**
+   * Lists the PEPs a nudge should go to: enabled and holding a notify URL,
+   * stale or not.
+   * @returns the rows
+   */
   notifiable(): PepRow[] {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.notifiable().');
@@ -928,6 +1045,13 @@ const slot = new InstanceSlot<PepRegistry>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The register of remote XACML Policy Enforcement Points, `ou=peps` in the
+ * realm's directory.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   PepRegistry: PepRegistry,
   installInstance: (instance: PepRegistry): void => slot.install(instance),

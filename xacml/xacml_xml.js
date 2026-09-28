@@ -63,6 +63,11 @@ const validate = require('./xacml_validate');
 // SMALL DOM HELPERS. All of them match on LOCAL NAME — see the header.
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns a node's local name, its namespace prefix removed.
+ * @param node - a DOM node
+ * @returns the local name, or '' for no node
+ */
 function localName(node) {
   log.debug("Entering localName().");
   if (!node) {
@@ -79,6 +84,11 @@ function localName(node) {
   return colon < 0 ? name : name.slice(colon + 1);
 }
 
+/**
+ * Returns a node's element children, skipping text and comments.
+ * @param node - a DOM node
+ * @returns the child elements, in document order
+ */
 function elementChildren(node) {
   log.debug("Entering elementChildren().");
   const result = [];
@@ -96,6 +106,12 @@ function elementChildren(node) {
   return result;
 }
 
+/**
+ * Returns a node's element children with a given local name.
+ * @param node - a DOM node
+ * @param name - the local name to match
+ * @returns the matching child elements, in document order
+ */
 function childrenNamed(node, name) {
   log.debug("Entering childrenNamed().");
   log.debug("Leaving childrenNamed().");
@@ -104,6 +120,12 @@ function childrenNamed(node, name) {
   });
 }
 
+/**
+ * Returns a node's first element child with a given local name.
+ * @param node - a DOM node
+ * @param name - the local name to match
+ * @returns the first matching child element, or null
+ */
 function firstNamed(node, name) {
   log.debug("Entering firstNamed().");
   const found = childrenNamed(node, name);
@@ -137,6 +159,11 @@ function requiredAttribute(node, name) {
 // The text of an element, children and all. `AttributeValue` may hold markup
 // for a structured datatype, so this concatenates text nodes rather than
 // insisting on a single one.
+/**
+ * Returns the concatenated text of an element and all its descendants.
+ * @param node - a DOM element
+ * @returns the text, '' for no node
+ */
 function textOf(node) {
   log.debug("Entering textOf().");
   let text = '';
@@ -175,6 +202,13 @@ function booleanAttribute(node, name, fallback) {
 // out of the document there is nothing left to resolve it against. Collecting
 // them at parse time is the only moment this information exists.
 // ---------------------------------------------------------------------------
+/**
+ * Collects the namespace bindings in scope at an element by walking up the
+ * tree, an inner declaration winning over an outer one.
+ * @param node - a DOM element
+ * @returns an object mapping each prefix ('' for the default namespace) to
+ * its namespace URI
+ */
 function namespacesInScope(node) {
   log.debug('Entering namespacesInScope().');
   const bindings = {};
@@ -223,6 +257,15 @@ function descriptionOf(node) {
   return found ? textOf(found).trim() : '';
 }
 
+/**
+ * Reads an element in XACML's Expression substitution group into a model
+ * expression node.
+ * @param node - an AttributeValue, Apply, Function, VariableReference,
+ * AttributeDesignator or AttributeSelector element
+ * @returns the model expression node
+ * @throws an IndeterminateError with the syntax-error status for any other
+ * element or a malformed one
+ */
 function readExpression(node) {
   log.debug('Entering readExpression(). element=' + localName(node));
   const name = localName(node);
@@ -315,6 +358,14 @@ function readExpression(node) {
 // of its `AnyOf` children are. An absent or empty Target matches EVERYTHING,
 // which is why `null` is a meaningful value here rather than an omission.
 // ---------------------------------------------------------------------------
+/**
+ * Reads a `<Target>` into the model's AnyOf/AllOf/Match nesting.
+ * @param node - the Target element, or nothing
+ * @returns `{ anyOf }`, or null for an absent or empty Target, which
+ * matches everything
+ * @throws an IndeterminateError with the syntax-error status for an empty
+ * AnyOf or AllOf
+ */
 function readTarget(node) {
   log.debug('Entering readTarget().');
   if (!node) {
@@ -642,6 +693,14 @@ function readPolicySet(node) {
 // ---------------------------------------------------------------------------
 // THE ENTRY POINTS.
 // ---------------------------------------------------------------------------
+/**
+ * Parses XML text into a DOM document, refusing a malformed one rather than
+ * returning a partial tree.
+ * @param xml - the document text
+ * @returns the parsed DOM document
+ * @throws an IndeterminateError with the syntax-error status when the text
+ * is not well-formed or has no root element
+ */
 function parseDocument(xml) {
   log.debug('Entering parseDocument().');
   // `@xmldom/xmldom` reports a malformed document by CALLING A HANDLER rather
@@ -687,6 +746,14 @@ function parseDocument(xml) {
   return document;
 }
 
+/**
+ * Reads a XACML 3.0 Policy or PolicySet document into the model and
+ * validates it statically.
+ * @param xml - the policy document text
+ * @returns the Policy or PolicySet model
+ * @throws an IndeterminateError with the syntax-error status when the
+ * document is malformed, has another root or does not typecheck
+ */
 function parsePolicy(xml) {
   log.debug('Entering parsePolicy().');
   const root = parseDocument(xml).documentElement;
@@ -720,6 +787,14 @@ function parsePolicy(xml) {
 // how the Multiple Decision Profile's scheme 2.3 works), and a map keyed by
 // category would silently lose one of them.
 // ---------------------------------------------------------------------------
+/**
+ * Reads a XACML 3.0 `<Request>` document into the model's flat request
+ * shape.
+ * @param xml - the request document text
+ * @returns `{ returnPolicyIdList, combinedDecision, categories }`
+ * @throws an IndeterminateError with the syntax-error status when the
+ * document is malformed or its root is not a Request
+ */
 function parseRequest(xml) {
   log.debug('Entering parseRequest().');
   const root = parseDocument(xml).documentElement;
@@ -750,6 +825,12 @@ function parseRequest(xml) {
 // request would also be two chances to disagree about what a request IS, which
 // is the thing this file exists to prevent.
 // ---------------------------------------------------------------------------
+/**
+ * Reads a `<Request>` element already in a DOM, for a request nested inside
+ * another envelope (`POST /xacml/pip`).
+ * @param root - the Request element
+ * @returns `{ returnPolicyIdList, combinedDecision, categories }`
+ */
 function readRequest(root) {
   log.debug('Entering readRequest().');
   const categories = childrenNamed(root, 'Attributes').map(function (node) {
@@ -797,6 +878,14 @@ function readRequest(root) {
 // comparing responses must read them the same way this implementation writes
 // them, and two readings would be the very thing this directory refuses.
 // ---------------------------------------------------------------------------
+/**
+ * Reads a XACML 3.0 `<Response>` document back, for the conformance runner.
+ * @param xml - the response document text
+ * @returns `{ results }`, each result with its decision, status,
+ * obligations and advice
+ * @throws an IndeterminateError with the syntax-error status when the
+ * document is malformed or its root is not a Response
+ */
 function parseResponse(xml) {
   log.debug('Entering parseResponse().');
   const root = parseDocument(xml).documentElement;
@@ -1255,6 +1344,12 @@ function writePolicySetBody(policySet, depth, withNamespace) {
     body + '\n' + pad + '</PolicySet>';
 }
 
+/**
+ * Writes a Policy or PolicySet model out as a XACML 3.0 XML document, in the
+ * schema's element order.
+ * @param policy - a Policy or PolicySet from the model
+ * @returns the document text, with an XML declaration
+ */
 function writePolicy(policy) {
   log.debug('Entering writePolicy(). id=' + policy.id);
   const body = policy.kind === 'PolicySet'
@@ -1264,6 +1359,14 @@ function writePolicy(policy) {
   return '<?xml version="1.0" encoding="UTF-8"?>\n' + body + '\n';
 }
 
+/**
+ * XACML 3.0 core XML: reads policies, requests and responses into the model
+ * and writes policies back out.
+ *
+ * A strict reader, walked by element name with `@xmldom/xmldom`; a policy
+ * is validated statically as part of loading.
+ * @namespace
+ */
 module.exports = {
   parsePolicy: parsePolicy,
   writePolicy: writePolicy,

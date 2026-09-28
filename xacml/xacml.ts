@@ -354,13 +354,35 @@ const PIP_NS = 'urn:sts:xacml:pip:1.0';
 // one.
 const PIP_MAX_DESIGNATORS = 50;
 
+/**
+ * The XACML protocol surface: the decision endpoint, the policy
+ * repository as the PDP sees it, the embedded PEP at `/xacml/protected`,
+ * the remote PEP endpoints and `POST /xacml/pip`.
+ *
+ * No decision logic lives here; it reads a request, hands it to
+ * `xacml_pdp.js` and writes what comes back.
+ */
 class XacmlSurface {
+  /**
+   * Builds the surface over its dependencies.
+   *
+   * @param deps - the logger, helpers, configuration, audit log, error
+   *   codes, the engine modules, the store, the PIP, the PEP register and
+   *   its HTTP client, the monitor, the role register, the access gate, and
+   *   lazy loaders for the cluster barrier and persistence
+   */
   constructor(private readonly deps: XacmlSurfaceDeps) {
     deps.log.debug("Entering XacmlSurface.constructor().");
     deps.log.debug("Leaving XacmlSurface.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): XacmlSurfaceDeps {
     helpers.log.debug("Entering XacmlSurface.defaultDeps().");
     helpers.log.debug("Leaving XacmlSurface.defaultDeps().");
@@ -397,6 +419,11 @@ class XacmlSurface {
     };
   }
 
+  /**
+   * Reports whether the XACML family is on (`xacml.enabled` is not false).
+   *
+   * @returns true unless switched off
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering XacmlSurface.enabled().");
@@ -552,6 +579,16 @@ class XacmlSurface {
   // a PEP and a PDP disagree in a real deployment and is the hardest kind to
   // find.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides a parsed request against the realm's root policy, with the
+   * repository and the PIP; the one place the engine, store and PIP are put
+   * together.
+   *
+   * With no root policy the answer is NotApplicable with a note; a root
+   * policy that does not load is an Indeterminate marked STS-XACML-0012.
+   * @param request - the request, in the shapes of `xacml_model.js`
+   * @returns the PDP's response
+   */
   decide(request: any): any {
     const { log, config, errorCodes, model, pdp, store, pip } = this.deps;
     log.debug('Entering XacmlSurface.decide().');
@@ -622,6 +659,17 @@ class XacmlSurface {
   //      reported success. This PEP can discharge exactly one obligation — the
   //      one it knows about, below — and refuses on any other, loudly.
   // ---------------------------------------------------------------------------
+  /**
+   * Applies this service's PEP bias and obligation rule to a decision
+   * (section 7.2).
+   *
+   * `xacml.pepBias` chooses deny-biased (the default) or permit-biased. An
+   * obligation this PEP cannot discharge turns an allowed access into a
+   * refusal; only `urn:sts:xacml:obligation:log` is dischargeable.
+   * @param answer - the PDP's response
+   * @returns whether access is allowed, the bias, why, and the obligations
+   *   discharged and not dischargeable
+   */
   enforce(answer: any): Enforcement {
     const { log, config, model } = this.deps;
     log.debug('Entering XacmlSurface.enforce(). decision=' + answer.decision);
@@ -1084,6 +1132,12 @@ class XacmlSurface {
   // is exactly what an audit log is for.
   // ===========================================================================
 
+  /**
+   * Returns the most designators one `POST /xacml/pip` query may carry,
+   * from `xacml.pipMaxDesignators` (50 when unset or not positive).
+   *
+   * @returns the cap
+   */
   pipMaxDesignators(): number {
     const { log, config } = this.deps;
     log.debug("Entering XacmlSurface.pipMaxDesignators().");
@@ -1367,6 +1421,14 @@ class XacmlSurface {
     log.debug("Leaving XacmlSurface.afterCommit(). Deferred until the commit.");
   }
 
+  /**
+   * Tells every registered remote PEP with a notify URL that the repository
+   * changed, once the change has committed.
+   *
+   * Does nothing when notification or remote PEPs are switched off. The
+   * nudge is an optimisation; a PEP converges on its next poll without it.
+   * @param what - a description of the change, for the log
+   */
   nudgeRegisteredPeps(what: string): void {
     const self = this;
     const { log, pepHttp } = this.deps;
@@ -1415,6 +1477,9 @@ class XacmlSurface {
   }
 
   // Installs `nudgeRegisteredPeps()` as the repository's change observer.
+  /**
+   * Installs `nudgeRegisteredPeps()` as the policy store's change observer.
+   */
   installChangeObserver(): void {
     const { log, store } = this.deps;
     log.debug("Entering XacmlSurface.installChangeObserver().");
@@ -1425,6 +1490,14 @@ class XacmlSurface {
   // ---------------------------------------------------------------------------
   // GET /xacml — what this surface is.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes this surface for `GET /xacml`: whether it is on, the
+   * specification, the PDP endpoint, the repository and what is not
+   * supported.
+   *
+   * @param req - the request, for the base URL
+   * @returns the description
+   */
   description(req: Req): any {
     const self = this;
     const { log, baseUrlOf, config, store, pip, peps, pepHttp } = this.deps;
@@ -1534,6 +1607,13 @@ class XacmlSurface {
   // Every route, in the order this file has always registered them — with
   // the change observer installed where it always was, between the PIP
   // and `GET /xacml`.
+  /**
+   * Registers the surface's routes on the shared app, in their fixed order,
+   * and installs the repository change observer between the PIP and
+   * `GET /xacml`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteTable): void {
     const self = this;
     const { log, xmlEscape, baseUrlOf, parseBody, validation, websecurity,
@@ -2639,6 +2719,13 @@ const slot = new InstanceSlot<XacmlSurface>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The XACML protocol surface, registered by `common/protocol_stack.ts`.
+ *
+ * The functions forward to the `XacmlSurface` instance the composition
+ * root installs; requiring the module registers no route.
+ * @namespace
+ */
 export = {
   registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   XacmlSurface: XacmlSurface,

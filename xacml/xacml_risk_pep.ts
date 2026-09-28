@@ -79,14 +79,32 @@ interface XacmlRiskPepDeps {
 const RISK = templates.RISK_ATTRIBUTE;
 const RESPONSE = templates.RISK_RESPONSE;
 
+/**
+ * The embedded PEP that decides what a change of a person's risk level leads
+ * to: one XACML question per reaction, a Permit meaning take it.
+ */
 class XacmlRiskPep {
+  /**
+   * The reactions asked about, each an action-id of the risk-response policy
+   * (`xacml_templates.ts`'s `RISK_RESPONSE`).
+   */
   static readonly RESPONSE = RESPONSE;
 
+  /**
+   * Builds the PEP over the given dependencies.
+   * @param deps - the logger, settings, error codes, model, policy store,
+   * PDP, PIP and templates
+   */
   constructor(private readonly deps: XacmlRiskPepDeps) {
     deps.log.debug("Entering XacmlRiskPep.constructor().");
     deps.log.debug("Leaving XacmlRiskPep.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules, for the default
+   * instance.
+   * @returns the PEP's dependencies
+   */
   static defaultDeps(): XacmlRiskPepDeps {
     helpers.log.debug("Entering XacmlRiskPep.defaultDeps().");
     helpers.log.debug("Leaving XacmlRiskPep.defaultDeps().");
@@ -95,6 +113,11 @@ class XacmlRiskPep {
              templates: templates };
   }
 
+  /**
+   * Returns the name of the policy that decides, from
+   * `xacml.riskResponsePolicy`; `risk-response` when unset.
+   * @returns the policy name
+   */
   policyName(): string {
     const { log, config } = this.deps;
     log.debug("Entering XacmlRiskPep.policyName().");
@@ -105,6 +128,14 @@ class XacmlRiskPep {
 
   // The document that decides: the realm's own entry, or the built-in one;
   // `why` when neither can.
+  /**
+   * Loads the deciding policy: the realm's own entry in `ou=policies`, or the
+   * built-in template when there is none.
+   *
+   * A disabled entry does not fall back to the built-in one.
+   * @returns `{ policy, name, builtIn }`, or `{ why }` when no policy can
+   * decide
+   */
   responsePolicy(): LoadedPolicy {
     const { log, store, templates } = this.deps;
     log.debug("Entering XacmlRiskPep.responsePolicy().");
@@ -149,6 +180,13 @@ class XacmlRiskPep {
   }
 
   // The question: the person, the reaction, and the change.
+  /**
+   * Builds the decision request for one reaction: the person as the subject,
+   * the reaction as the action-id, the change as environment attributes.
+   * @param change - the change of risk, as the risk engine states it
+   * @param action - the reaction asked about, a `RESPONSE` value
+   * @returns the request, in the model's request shape
+   */
   buildRequest(change: RiskChange, action: string): Json {
     const { log, model } = this.deps;
     log.debug("Entering XacmlRiskPep.buildRequest(). " + action);
@@ -182,6 +220,15 @@ class XacmlRiskPep {
   // Answers `{ reactions, policy, why }` — `reactions` the RESPONSE values
   // that were permitted, in RESPONSE's order.
   // -------------------------------------------------------------------------
+  /**
+   * Asks the policy about every reaction and returns those permitted.
+   *
+   * It never throws: with no policy nothing is permitted and the reason is
+   * logged, and an evaluation that throws permits nothing.
+   * @param change - the change of risk, as the risk engine states it
+   * @returns `{ reactions, policy, builtIn, why }`, `reactions` the permitted
+   * `RESPONSE` values in `RESPONSE`'s order
+   */
   decide(change: RiskChange): Json {
     const { log, pdp, pip, store, model, errorCodes } = this.deps;
     log.debug("Entering XacmlRiskPep.decide().");
@@ -233,6 +280,13 @@ const slot = new InstanceSlot<XacmlRiskPep>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The embedded XACML PEP for what a change of risk leads to (#62 P4).
+ *
+ * A library: it registers no route, and the risk engine reaches it lazily.
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   XacmlRiskPep: XacmlRiskPep,
   installInstance: (instance: XacmlRiskPep): void => slot.install(instance),
