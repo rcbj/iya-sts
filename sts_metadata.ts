@@ -8597,7 +8597,7 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'NON-SPEC (#98). GET /admin/cells over JSON: the cell map, the ' +
           'store\'s tiers, the channel and the sessions held across cells.' },
-  { path: '/admin-api/cells/rehome', group: 'Management API',
+  { path: '/admin-api/cells/:action', group: 'Management API',
     name: 'Re-home a person',
     specs: ['openapi'],
     what: 'NON-SPEC (#98 §8.8). Moves a person homed in this cell to ' +
