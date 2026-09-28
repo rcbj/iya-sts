@@ -577,7 +577,10 @@ async function test() {
   if (!MAILPIT) {
     skip("sections 1-3", "MAILPIT_API_URL is not set, so there is no mail " +
          "catcher to deliver to (an AWS target or the coverage run)");
-    assert.ok(checks >= 7, "only " + checks + " checks ran");
+    // Section 0 is six checks. The floor said seven, and nothing ran this
+    // path until run-coverage.sh emptied MAILPIT_API_URL (d9bd78bc); CI run
+    // 36394938951 was its first time.
+    assert.ok(checks >= 6, "only " + checks + " checks ran");
     log.info("Test completed successfully.");
     log.debug("Leaving test().");
     return;

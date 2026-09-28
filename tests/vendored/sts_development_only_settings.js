@@ -344,11 +344,24 @@ async function verificationSet(realm) {
                  { stream_id: id, state: "devonly-" + Date.now() }, auth);
   assert.ok(r.status === 204 || r.status === 200,
             "verify: " + r.status + " " + r.text.slice(0, 300));
-  r = await call("POST", realmBase(realm) + "/ssf/poll",
-                 { stream_id: id, returnImmediately: true, maxEvents: 10 },
-                 auth);
-  assert.strictEqual(r.status, 200, "poll: " + r.text.slice(0, 300));
-  const sets = Object.values(r.json.sets || {});
+  // POLLED UNTIL IT ARRIVES (CI run 36394938951): the 204 does not say the
+  // event is queued — SSF 1.0 section 8.1.4.2 has a receiver that "MUST NOT
+  // depend on the Verification Event being transmitted synchronously", and
+  // the transmitter queues it after answering — so one immediate poll
+  // reaching the other cluster node found nothing.
+  let sets = [];
+  const until = Date.now() + 10000;
+  for (;;) {
+    r = await call("POST", realmBase(realm) + "/ssf/poll",
+                   { stream_id: id, returnImmediately: true, maxEvents: 10 },
+                   auth);
+    assert.strictEqual(r.status, 200, "poll: " + r.text.slice(0, 300));
+    sets = Object.values(r.json.sets || {});
+    if (sets.length || Date.now() > until) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 250); });
+  }
   assert.ok(sets.length >= 1, "the verification event was not queued: " +
             r.text.slice(0, 300));
   log.debug("Leaving verificationSet().");

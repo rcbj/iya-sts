@@ -2287,8 +2287,12 @@ async function main() {
     log.info('[' + n + '/' + jobs.length + '] ' + job.suite + ' — ' + job.name);
     const result = await runJob(job, opts);
     // The name is on the result line because, with jobs running side by
-    // side, the line above it is often another job's.
-    log.info('    ' + (result.status === 'passed' ? 'passed' : 'FAILED') +
+    // side, the line above it is often another job's. A job that declined
+    // to run is SKIPPED here as in the report: this line said FAILED for
+    // one, which read as a failure the summary did not count (CI run
+    // 36394938951, sts_kerberos_samba under coverage).
+    log.info('    ' + (result.status === 'passed' ? 'passed'
+      : (result.status === 'skipped' ? 'SKIPPED' : 'FAILED')) +
              ' in ' + result.ms + 'ms' +
              (result.assertions.length ? ', ' + result.assertions.length +
               ' assertion(s)' : '') + ' — ' + job.name);
