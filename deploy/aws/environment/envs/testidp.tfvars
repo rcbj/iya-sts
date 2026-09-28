@@ -76,3 +76,9 @@ tags = {
   Stack     = "mock-sts-environment"
   Lifecycle = "long-lived"
 }
+
+# MAIL (#311): SES as test-idp.iyasec.io, so that password reset, address
+# verification and the emailed sign-in factor can be exercised on a deployed
+# product node. The account's SES sandbox still limits recipients to verified
+# addresses (deploy/aws/CLAUDE.md, *Mail*).
+mail_ses_domain = "test-idp.iyasec.io"

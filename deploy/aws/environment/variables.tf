@@ -186,6 +186,26 @@ variable "extra_environment" {
   default     = {}
 }
 
+variable "mail_ses_domain" {
+  description = <<-EOT
+    A domain to send mail as through Amazon SES (#311). EMPTY (the default)
+    leaves `mail.transport` at the mode's default, which in product mode sends
+    nothing. SET, it must be `public_hostname` or a name under it: the
+    environment creates the SES identity with Easy DKIM and its three CNAMEs
+    (mail.tf), lets the task role send as it, and sets `mail.transport=ses`.
+    The image must be built with `@aws-sdk/client-sesv2` in STS_CLOUD_SDKS, or
+    a product node refuses to start (STS-MAIL-0002).
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "mail_from" {
+  description = "The From address when mail_ses_domain is set. Empty means `no-reply@<mail_ses_domain>`."
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags beside Project = STS and Environment, which are always added."
   type        = map(string)

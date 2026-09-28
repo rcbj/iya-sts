@@ -332,6 +332,37 @@ re-applied); and **every node replaced on the first apply**, which is expected
 unconditional: the upload job runs against every environment the suite is
 pointed at.
 
+## Mail: an SES identity per environment that asks for one (#311, 2026-09-28)
+
+**`mail_ses_domain` turns it on, and only `testidp` sets it** (to its public
+name). `environment/mail.tf` creates the SES v2 domain identity with Easy
+DKIM and writes its three `._domainkey` CNAMEs; the task role may
+`ses:SendEmail` as that one identity; the nodes get `STS_MAIL_TRANSPORT=ses`,
+`STS_MAIL_FROM` (`no-reply@<domain>` unless `mail_from` says otherwise) and
+the region. Credentials are the task role's — `mail.sesRegion`'s description
+says the transport never reads one from a setting. `dev` and `ci` set nothing
+and plan no change.
+
+* **The domain is the public host name, not the zone.** The DKIM names then
+  fall under `*.test-idp.iyasec.io`, which the deployer could already write,
+  and the zone's own mail records are out of reach. DMARC aligns on the DKIM
+  `d=`, so SES's own envelope sender does not matter.
+* **The foundation owes two statements**, so an administrator re-applies it
+  first: `ses:SendEmail`/`SendRawEmail` in the WORKLOAD BOUNDARY, and the
+  identity actions for the deployer — both scoped to identities named in
+  `public_dns` (`local.ses_identity_arns`), never a wildcard.
+* **The image needs `@aws-sdk/client-sesv2` in `STS_CLOUD_SDKS`**, or a
+  product node refuses to start (`STS-MAIL-0002`). `testidp-deploy.yml` and
+  *Running it by hand* build it that way.
+* **The account's SES sandbox is not Terraform's.** While the account is in
+  it, SES sends only to VERIFIED recipient addresses (`aws sesv2
+  create-email-identity --email-identity <address>`, then click the link);
+  leaving it is a support request a person makes. A refused recipient is a
+  dead letter on Monitoring → Mail outbox, not a silent loss.
+* **The identity is destroyed with the environment**, like the certificate,
+  and re-verified from the CNAMEs on the next build. Mail queued before it
+  verifies waits in the outbox and is retried by `mail.deliver`.
+
 ## A deployment beside the tests: `testidp` (2026-09-16)
 
 **The test environments are the standard and do not change.** Every variable
@@ -618,7 +649,7 @@ terraform -chdir=deploy/aws/foundation init -backend-config=bucket=mock-sts-terr
 terraform -chdir=deploy/aws/foundation apply          # once, administrator
 
 # as the deployer role, from here on
-docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
+docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-sesv2" \
   --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem .
 docker build -t <repo>:schema-<tag> -f deploy/aws/schema-init/Dockerfile .
 docker build -t <repo>:cert-<tag> -f deploy/aws/cert-init/Dockerfile .   # only with a public name

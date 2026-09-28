@@ -164,6 +164,15 @@ data "aws_iam_policy_document" "workload_boundary" {
     actions   = ["acm:ExportCertificate"]
     resources = [local.arn.acm]
   }
+  # MAIL THROUGH SES (#311): send as an identity under a public name an
+  # environment may use (environment/mail.tf), and nothing else in SES — no
+  # identity management, no account settings. The environment's task role
+  # names its one identity; this is the ceiling over every environment.
+  statement {
+    sid       = "SendMailAsAnEnvironmentIdentity"
+    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = local.ses_identity_arns
+  }
 }
 
 resource "aws_iam_policy" "workload_boundary" {
@@ -468,6 +477,24 @@ data "aws_iam_policy_document" "deploy_network" {
       variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
       values   = distinct(flatten(values(var.public_dns)))
     }
+  }
+
+  # AN SES IDENTITY FOR MAIL (#311, environment/mail.tf): the public names
+  # only, so an environment can verify the name it serves and no other domain
+  # in the account. Its DKIM CNAMEs fall under the names already allowed
+  # above (`*.<name>`).
+  statement {
+    sid = "SesIdentityOnlyForTheListedNames"
+    actions = [
+      "ses:CreateEmailIdentity", "ses:GetEmailIdentity",
+      "ses:DeleteEmailIdentity", "ses:PutEmailIdentityDkimAttributes",
+      "ses:PutEmailIdentityDkimSigningAttributes",
+      "ses:PutEmailIdentityMailFromAttributes",
+      "ses:PutEmailIdentityFeedbackAttributes",
+      "ses:PutEmailIdentityConfigurationSetAttributes",
+      "ses:TagResource", "ses:UntagResource", "ses:ListTagsForResource",
+    ]
+    resources = local.ses_identity_arns
   }
 
   statement {

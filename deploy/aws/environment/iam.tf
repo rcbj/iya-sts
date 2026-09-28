@@ -85,6 +85,19 @@ data "aws_iam_policy_document" "task" {
       resources = [aws_acm_certificate.public[0].arn]
     }
   }
+
+  # The mail channel's SES transport (#311, mail.tf), and only as the one
+  # identity this environment verified. SES v2's SendEmail authorizes against
+  # the identity of the From address (and a configuration set, which this
+  # environment does not use).
+  dynamic "statement" {
+    for_each = local.mail_ses ? [1] : []
+    content {
+      sid       = "SendMailAsTheEnvironmentsOwnIdentity"
+      actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+      resources = [aws_sesv2_email_identity.mail[0].arn]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "task" {
