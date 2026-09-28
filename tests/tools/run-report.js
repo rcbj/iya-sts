@@ -2288,7 +2288,10 @@ async function main() {
     const result = await runJob(job, opts);
     // The name is on the result line because, with jobs running side by
     // side, the line above it is often another job's.
-    log.info('    ' + (result.status === 'passed' ? 'passed' : 'FAILED') +
+    // A declined job is `skipped`, and says so: it read FAILED here, which
+    // a reader tallying this log counted as a failure (#311).
+    log.info('    ' + (result.status === 'passed' ? 'passed'
+                       : result.status === 'skipped' ? 'skipped' : 'FAILED') +
              ' in ' + result.ms + 'ms' +
              (result.assertions.length ? ', ' + result.assertions.length +
               ' assertion(s)' : '') + ' — ' + job.name);
