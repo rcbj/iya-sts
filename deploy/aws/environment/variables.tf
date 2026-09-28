@@ -200,6 +200,18 @@ variable "mail_ses_domain" {
   default     = ""
 }
 
+variable "spiffe_workload_port" {
+  description = "The default realm's SPIFFE Workload API port, the same on the load balancer and the node (spiffe.workloadPort; spiffe_default.tf)."
+  type        = number
+  default     = 8092
+}
+
+variable "spiffe_server_port" {
+  description = "The default realm's SPIRE Server API port, the same on the load balancer and the node (spiffe.serverPort; spiffe_default.tf)."
+  type        = number
+  default     = 8181
+}
+
 variable "mail_allowed_recipients" {
   description = <<-EOT
     Where set, the only recipient addresses the task role may send to through

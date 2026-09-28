@@ -142,15 +142,19 @@ NODES="$(node -e 'process.stdout.write(String(Object.keys(JSON.parse(process.arg
 # WHAT THIS ENVIRONMENT DOES NOT PUBLISH (2026-09-21), for the jobs that
 # dial a port of their own rather than the main one. Kerberos TCP 88 is a
 # row of `load_balancer_ports` only where `publish_kerberos` is on (testidp);
-# SPIFFE's ports come from the separate spiffe-realm stack, which this
-# environment's outputs cannot see, so they count as unpublished unless the
-# caller names a socket (STS_SPIFFE_WORKLOAD_URL). Without this both jobs
+# SPIFFE's are the default realm's two ports, which every environment
+# publishes since #311 (`spiffe_default_ports`, environment/spiffe_default.tf);
+# an environment built before that has no such output and counts SPIFFE as
+# unpublished unless the caller names a socket (STS_SPIFFE_WORKLOAD_URL).
+# Without this both jobs
 # dialled the load balancer on a port nobody listens on and failed on a
 # timeout, as though the service were broken; now each declines and says why.
 UNPUBLISHED="$(node -e 'const p = JSON.parse(process.argv[1]); const u = [];
   if (!p.kerberos) { u.push("kerberos"); }
-  if (!process.env.STS_SPIFFE_WORKLOAD_URL) { u.push("spiffe"); }
-  process.stdout.write(u.join(","));' "$(out load_balancer_ports)")"
+  if (!process.env.STS_SPIFFE_WORKLOAD_URL && !process.argv[2]) {
+    u.push("spiffe");
+  }
+  process.stdout.write(u.join(","));' "$(out load_balancer_ports)" "$(out spiffe_default_ports)")"
 [ -n "${URL}" ] || die "${ENVIRONMENT} has no service_url output; is it applied?"
 say "${ENVIRONMENT} at ${URL}, ${NODES} node(s), run ${RUN_ID}"
 

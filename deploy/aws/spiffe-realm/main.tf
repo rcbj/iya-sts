@@ -198,6 +198,14 @@ resource "aws_lb_target_group" "spiffe" {
       condition     = local.port_problem == ""
       error_message = local.port_problem
     }
+    # THE DEFAULT REALM'S PORTS ARE THE ENVIRONMENT'S (#311, rcbj
+    # 2026-09-28): environment/spiffe_default.tf publishes 8092 and 8181 for
+    # it on every build. This stack is for ADDITIONAL realms. A precondition
+    # on a resource, so an old REALM=default state can still be destroyed.
+    precondition {
+      condition     = !local.is_default
+      error_message = "The default realm's SPIFFE ports are part of environment/ (spiffe_default.tf) and always published; this stack is for additional realms only."
+    }
     precondition {
       condition     = length(local.node_ips) > 0
       error_message = "No running node was found (no in-use interface carries ${local.prefix}-nodes). Apply the environment first, and wait for its services to reach steady state."

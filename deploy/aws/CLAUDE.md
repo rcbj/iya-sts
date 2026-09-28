@@ -517,17 +517,24 @@ shares a volume with — the mail catcher (`sts_mail`), the outbound test CA
 unless its realm stack is applied and named (`STS_SPIFFE_WORKLOAD_URL`). Each
 reads its variable as empty and reports itself skipped with the reason.
 
-## A realm's SPIFFE ports: `spiffe-realm/` (2026-09-18)
+## A realm's SPIFFE ports: the default realm's in `environment/`, any other realm's in `spiffe-realm/`
 
-**Nothing published SPIFFE until this stack.** `published_ports` has no
-SPIFFE row, so even the default realm's 8092 and 8181 were reachable only
-inside the VPC. `spiffe-realm/` publishes ONE realm's two gRPC ports, the
-same number outside and inside, and is applied once per realm, after the
-realm exists and after `environment/`:
+**THE DEFAULT REALM'S TWO PORTS ARE PART OF EVERY ENVIRONMENT (#311,
+2026-09-28, rcbj): not optional and not a separate stack.**
+`environment/spiffe_default.tf` publishes 8092 (Workload API) and 8181 (SPIRE
+Server API) — `spiffe_workload_port` / `spiffe_server_port` — with the same
+address registration, rules and caveats as below, and outputs
+`spiffe_default_ports`, which `run-suite.sh` reads to count SPIFFE as
+published. Until that date it was `spiffe-realm/` with `REALM=default`, and a
+build nobody applied it to skipped both SPIFFE jobs. **`spiffe-realm/` is for
+ADDITIONAL realms only and refuses `default`** (a resource precondition, so an
+old `REALM=default` state still destroys).
+
+`spiffe-realm/` publishes ONE additional realm's two gRPC ports, the same
+number outside and inside, and is applied once per realm, after the realm
+exists and after `environment/`:
 
 ```bash
-TF_STACK=spiffe-realm REALM=default WORKLOAD_PORT=8092 SERVER_PORT=8181 \
-  deploy/aws/terraform-local.sh testidp apply
 TF_STACK=spiffe-realm REALM=acme WORKLOAD_PORT=9092 SERVER_PORT=9181 \
   deploy/aws/terraform-local.sh testidp apply
 TF_STACK=spiffe-realm REALM=acme deploy/aws/terraform-local.sh testidp destroy
