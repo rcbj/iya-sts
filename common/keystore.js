@@ -2859,6 +2859,25 @@ function adoptPki(realmId, chain) {
       log.debug("Leaving adoptPki(). Refused a stale copy.");
       return false;
     }
+    // WHERE THE STORE MERGES THIS ROW, A BROADCAST IS A NUDGE AND NOT A COPY
+    // (2026-09-28). A process publishes its row when it saves it, built from
+    // what it held before; another process may by then hold a NEWER row the
+    // store merged (another save's change in it), and replacing that with the
+    // publisher's copy lost the change here until the next save — the xml
+    // pin in `sts_pinned_signer` (single-node and CI's cluster job): pinned
+    // and merged into the stored row by one worker, then wiped from every
+    // process by a post-quantum certification another worker published a
+    // moment later. The stored row is the merge of both, so it is read
+    // instead; the change row and the read barrier bring the publisher's own
+    // save once it commits. Nothing held yet (a worker's fork-time seed)
+    // still takes the copy.
+    if (pkiHeld.has(id) && mergesPkiRows()) {
+      applyStoredChange(PKI_ROW_PREFIX + id).then(null, function (e) {
+        log.debug("Caught in adoptPki(): " + ((e && e.message) || e));
+      });
+      log.debug("Leaving adoptPki(). Read the stored row instead.");
+      return true;
+    }
     pkiHeld.set(id, chain);
   } else {
     pkiHeld.delete(id);

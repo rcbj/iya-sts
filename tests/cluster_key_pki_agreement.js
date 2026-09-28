@@ -984,6 +984,57 @@ async function applyWaitsSection(t, kek) {
   log.debug("Leaving applyWaitsSection().");
 }
 
+// A BROADCAST COPY DOES NOT REPLACE A NEWER STORED ROW (2026-09-28). In one
+// container a process publishes its certificate-authority row over IPC when
+// it saves it, and `adoptPki()` replaced what every other process held with
+// that copy — built before a change another process had since merged into the
+// stored row. So the change vanished from memory everywhere: the xml pin in
+// `sts_pinned_signer` (single-node, 01991121's run; CI's cluster job), wiped
+// by a post-quantum certification another worker published 30 ms later.
+// Where the store merges the row, the broadcast is a nudge to read it.
+async function broadcastNudgeSection(t, kek) {
+  log.debug("Entering broadcastNudgeSection().");
+  t.log.info('=== 15. a broadcast copy does not replace a newer stored ' +
+             'row ===');
+  const store = sharedStore(5);
+  const seed = {
+    version: 2, scope: 'nudge',
+    intermediate: { serialHex: '01', certificatePem: 'I1' },
+    issuing: { xml: { serialHex: '02', certificatePem: 'X1' } },
+    revoked: { xml: [] },
+    crlNumbers: { xml: 1 },
+    issuedKeyPairs: []
+  };
+  store.rows.set('pki:nudge', crypto.encryptWithKek(
+    kek, JSON.stringify(seed), 'pki-hierarchy'));
+  const a = await startNode(store, { adopted: [], published: [] });
+  const b = await startNode(store, { adopted: [], published: [] });
+  // A's change commits and B adopts the stored row carrying it.
+  const rowA = JSON.parse(JSON.stringify(a.pkiFor('nudge')));
+  rowA.revoked.xml.push({ serialHex: 'd1', reason: 'keyCompromise',
+                          revokedAt: '2026-09-28T13:06:22.000Z' });
+  a.attachPki('nudge', rowA);
+  await a.settleAll();
+  await b.applyStoredChange('pki:nudge');
+  t.check(b.pkiFor('nudge').revoked.xml.some(function (one) {
+    return one.serialHex === 'd1';
+  }), 'node B holds node A\'s change from the stored row');
+  // Then a third process's copy, made before that change, is broadcast.
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const older = JSON.parse(JSON.stringify(seed));
+  older.issuedKeyPairs.push({ serialHex: 'c1', useCase: 'xml',
+                              notAfter: future });
+  const answer = b.adoptPki('nudge', older);
+  await sleep(50);
+  t.check(answer === true && b.pkiFor('nudge').revoked.xml.some(
+    function (one) {
+      return one.serialHex === 'd1';
+    }), 'A BROADCAST COPY MADE BEFORE A MERGED CHANGE DOES NOT WIPE IT: ' +
+        'where the store merges the row, the broadcast is read as a nudge ' +
+        'to read the stored row', b.pkiFor('nudge').revoked);
+  log.debug("Leaving broadcastNudgeSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-cluster-keys-'));
@@ -1014,6 +1065,7 @@ async function run(t) {
     await unadoptedMergeSection(t, kek);
     await orphanedSlotSection(t, kek);
     await applyWaitsSection(t, kek);
+    await broadcastNudgeSection(t, kek);
     await buildSection(t);
     await crlSection(t);
     await spiffeSection(t);
