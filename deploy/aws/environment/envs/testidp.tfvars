@@ -82,3 +82,8 @@ tags = {
 # product node. The account's SES sandbox still limits recipients to verified
 # addresses (deploy/aws/CLAUDE.md, *Mail*).
 mail_ses_domain = "test-idp.iyasec.io"
+
+# ONLY iyasec.io RECIPIENTS: the suite's people have invented addresses
+# (`@suite.example.test` and the like), and each is sent security notices.
+# IAM refuses those before SES counts or delivers them.
+mail_allowed_recipients = ["*@iyasec.io"]

@@ -106,6 +106,22 @@ data "aws_iam_policy_document" "task" {
         variable = "ses:FromAddress"
         values   = [local.mail_from]
       }
+      # AND ONLY TO THESE RECIPIENTS, where the environment names any
+      # (`mail_allowed_recipients`, 2026-09-28). The suite creates people
+      # with addresses like `x@suite.example.test`, and every one of them is
+      # sent a security notice: in the SES sandbox SES rejects those, and out
+      # of it SES would try to deliver them and each would hard-bounce against
+      # the account's reputation. Refused here, IAM answers AccessDenied before
+      # SES sees the message — no quota, no bounce — and the service
+      # dead-letters it (STS-MAIL-0008) with that reason on Monitoring → Mail.
+      dynamic "condition" {
+        for_each = length(var.mail_allowed_recipients) > 0 ? [1] : []
+        content {
+          test     = "ForAllValues:StringLike"
+          variable = "ses:Recipients"
+          values   = var.mail_allowed_recipients
+        }
+      }
     }
   }
 }

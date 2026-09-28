@@ -363,6 +363,11 @@ and plan no change.
   create-email-identity --email-identity <address>`, then click the link);
   leaving it is a support request a person makes. A refused recipient is a
   dead letter on Monitoring → Mail outbox, not a silent loss.
+* **`mail_allowed_recipients` limits whom it may mail** (testidp:
+  `*@iyasec.io`), as an IAM `ses:Recipients` condition. The suite's people
+  have invented addresses and every one is sent security notices; refused by
+  IAM they cost no quota and cannot bounce against the account's reputation,
+  and they dead-letter in the outbox with the AccessDenied as the reason.
 * **The identity is destroyed with the environment**, like the certificate,
   and re-verified from the CNAMEs on the next build. Mail queued before it
   verifies waits in the outbox and is retried by `mail.deliver`.

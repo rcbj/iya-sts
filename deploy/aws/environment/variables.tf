@@ -200,6 +200,19 @@ variable "mail_ses_domain" {
   default     = ""
 }
 
+variable "mail_allowed_recipients" {
+  description = <<-EOT
+    Where set, the only recipient addresses the task role may send to through
+    SES (IAM `ses:Recipients`, StringLike patterns such as `*@iyasec.io`).
+    Empty (the default) restricts nothing. Mail to anybody else is refused by
+    IAM before SES counts or delivers it, and dead-letters in the service's
+    outbox — which is what keeps a test suite's invented addresses from using
+    the SES quota or bouncing (#311).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "mail_from" {
   description = "The From address when mail_ses_domain is set. Empty means `no-reply@<mail_ses_domain>`."
   type        = string
