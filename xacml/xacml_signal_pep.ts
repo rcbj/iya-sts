@@ -48,6 +48,9 @@ import store = require('./xacml_store');
 import pdp = require('./xacml_pdp');
 import pip = require('./xacml_pip');
 import templates = require('./xacml_templates');
+// THE ONE REQUEST BUILDER (#306).
+import xacmlRequest = require('./xacml_request');
+const { AuthorizationRequest } = xacmlRequest;
 
 type Json = any;
 
@@ -170,16 +173,6 @@ class XacmlSignalPep {
     }
   }
 
-  private attribute(attributeId: string, values: unknown[]): Json {
-    const { log, model } = this.deps;
-    log.debug("Entering XacmlSignalPep.attribute().");
-    log.debug("Leaving XacmlSignalPep.attribute().");
-    return { attributeId: attributeId, issuer: null, includeInResult: false,
-             values: values.map(function (one) {
-               return { type: model.TYPE.STRING, lexical: String(one) };
-             }) };
-  }
-
   // The question: the reaction, and what arrived. An absent value is an
   // empty bag, so a rule about a level never matches an event without one.
   /**
@@ -191,28 +184,26 @@ class XacmlSignalPep {
    * @returns the request, in the model's request shape
    */
   buildRequest(signal: ReceivedSignal, action: string): Json {
-    const { log, model } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering XacmlSignalPep.buildRequest(). " + action);
     const present = function (value: string): string[] {
       log.debug("Entering present().");
       log.debug("Leaving present().");
       return value ? [value] : [];
     };
+    // THROUGH THE ONE BUILDER (#306). No subject: a received signal is about
+    // an event, not a principal the policy decides for.
+    const req = new AuthorizationRequest({ includeInResult: false,
+                                           returnPolicyIdList: false })
+      .requestedAction(action)
+      .environment(SIGNAL.EVENT, present(signal.event))
+      .environment(SIGNAL.FAMILY, present(signal.family))
+      .environment(SIGNAL.SURFACE, present(signal.surface))
+      .environment(SIGNAL.LEVEL, present(signal.level));
     log.debug("Leaving XacmlSignalPep.buildRequest().");
-    return {
-      returnPolicyIdList: false, combinedDecision: false,
-      categories: [
-        { category: model.CATEGORY.ACTION, id: null, content: null,
-          attributes: [this.attribute(model.ATTRIBUTE.ACTION_ID, [action])] },
-        { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-          attributes: [
-            this.attribute(SIGNAL.EVENT, present(signal.event)),
-            this.attribute(SIGNAL.FAMILY, present(signal.family)),
-            this.attribute(SIGNAL.SURFACE, present(signal.surface)),
-            this.attribute(SIGNAL.LEVEL, present(signal.level))] }
-      ]
-    };
+    return req.build();
   }
+
 
   // -------------------------------------------------------------------------
   // THE DECISION: which reactions the policy permits for this event.

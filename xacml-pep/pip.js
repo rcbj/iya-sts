@@ -295,7 +295,7 @@ function escape(text) {
 // vocabulary's subject-kind attribute, which `pep.js` asserts from
 // `subjectKind`. Forwarded so the PDP resolves the ROLE designator for the
 // right kind of subject; absent, the subject is a person, as it always was.
-const SUBJECT_KIND = 'urn:sts:xacml:subject-kind';
+const SUBJECT_KIND = engine.request.VOCABULARY.SUBJECT_KIND;
 
 function subjectKindOf(request) {
   log.debug("Entering subjectKindOf().");

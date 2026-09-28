@@ -82,6 +82,10 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import model = require('./xacml_model');
+// THE SHARED VOCABULARY (#306): the identifiers a remote PEP must spell the
+// same way live with the one request builder, which that container copies;
+// the ones below that it needs are taken from there.
+import xacmlRequest = require('./xacml_request');
 
 const { log } = helpers;
 
@@ -155,14 +159,14 @@ const TYPE = model.TYPE;
 const ISSUANCE_ATTRIBUTE = {
   // On the SUBJECT: the roles the party being authenticated holds, from the
   // register and from the six built-in ones.
-  ROLE: 'urn:sts:xacml:role',
+  ROLE: xacmlRequest.VOCABULARY.ROLE,
   // On the SUBJECT: whether it is a PERSON (`user`) or an APPLICATION acting
   // as itself (`application`) — #303. A name alone cannot say: `payroll-
   // worker` could be either, and the two hold roles through different
   // relations. Sent by the issuance PEP, and read by the PIP when it
   // resolves ROLE for a request that did not carry it (a remote PEP's); a
   // request without it is about a person.
-  SUBJECT_KIND: 'urn:sts:xacml:subject-kind',
+  SUBJECT_KIND: xacmlRequest.VOCABULARY.SUBJECT_KIND,
   // On the SUBJECT: the roles found in a token the caller PRESENTED, read out
   // of the claim `roles.claimName` names. Separate from the above rather than
   // unioned into it, and that separation is the whole reason it is visible in

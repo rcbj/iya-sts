@@ -142,6 +142,9 @@ import json = require('./xacml_json');
 import pdp = require('./xacml_pdp');
 import store = require('./xacml_store');
 import pip = require('./xacml_pip');
+// THE ONE REQUEST BUILDER (#306).
+import xacmlRequest = require('./xacml_request');
+const { AuthorizationRequest } = xacmlRequest;
 // The datatype table, for `POST /xacml/pip` alone: a resolver answers with
 // PARSED values and a caller's engine wants the LEXICAL form its own parser
 // reads. A LEAF (rule 3) that registers nothing and requires nothing that
@@ -1786,29 +1789,20 @@ class XacmlSurface {
       const resource = String(req.query.resource ||
                               baseUrlOf(req) + '/xacml/protected');
       const action = String(req.query.action || 'GET');
-      const request = {
-        returnPolicyIdList: true,
-        combinedDecision: false,
-        categories: [
-          { category: model.CATEGORY.ACCESS_SUBJECT, id: null, content: null,
-            attributes: subject ? [{ attributeId: model.ATTRIBUTE.SUBJECT_ID,
-                                     issuer: null, includeInResult: true,
-                                     values: [{ type: model.TYPE.STRING,
-                                                lexical: subject }] }] : [] },
-          { category: model.CATEGORY.RESOURCE, id: null, content: null,
-            attributes: [{ attributeId: model.ATTRIBUTE.RESOURCE_ID,
-                           issuer: null, includeInResult: true,
-                           values: [{ type: model.TYPE.ANYURI,
-                                      lexical: resource }] }] },
-          { category: model.CATEGORY.ACTION, id: null, content: null,
-            attributes: [{ attributeId: model.ATTRIBUTE.ACTION_ID,
-                           issuer: null, includeInResult: true,
-                           values: [{ type: model.TYPE.STRING,
-                                      lexical: action }] }] },
-          { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-            attributes: [] }
-        ]
-      };
+      // THROUGH THE ONE BUILDER (#306), in the four categories and the
+      // order this demonstration always sent — an empty subject category
+      // when `?subject=` names nobody.
+      const built = new AuthorizationRequest({ includeInResult: true });
+      [model.CATEGORY.ACCESS_SUBJECT, model.CATEGORY.RESOURCE,
+       model.CATEGORY.ACTION, model.CATEGORY.ENVIRONMENT]
+        .forEach(function (id) {
+          built.category(id);
+        });
+      if (subject) {
+        built.subject(model.ATTRIBUTE.SUBJECT_ID, [subject]);
+      }
+      const request = built.target(resource, model.TYPE.ANYURI)
+        .requestedAction(action).build();
       const answer = self.decide(request);
       const enforcement = self.enforce(answer);
       // ---------------------------------------------------------------------

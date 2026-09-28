@@ -56,8 +56,9 @@ WORKDIR /usr/src/pep
 COPY xacml-pep/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund
 
-# THE ENGINE. Seven modules, in dependency order, matching engine.js's MODULES
-# exactly — see the header for what enforces that.
+# THE ENGINE. Seven modules, in dependency order, and the one request builder
+# (#306) after them, matching engine.js's MODULES exactly — see the header
+# for what enforces that.
 COPY xacml/xacml_model.js ./xacml/
 COPY xacml/xacml_datatypes.js ./xacml/
 COPY xacml/xacml_functions.js ./xacml/
@@ -65,6 +66,7 @@ COPY xacml/xacml_validate.js ./xacml/
 COPY xacml/xacml_xml.js ./xacml/
 COPY xacml/xacml_pdp.js ./xacml/
 COPY xacml/xacml_json.js ./xacml/
+COPY xacml/xacml_request.js ./xacml/
 
 # THE SHIM. `xacml-pep/common/helpers.js` is what `../common/helpers` resolves
 # to from `/usr/src/pep/xacml/`, and it exports `log` and `xmlEscape` and

@@ -112,6 +112,9 @@ import templates = require('./xacml_templates');
 import validate = require('./xacml_validate');
 import alfa = require('./xacml_alfa');
 import pip = require('./xacml_pip');
+// THE ONE REQUEST BUILDER (#306).
+import xacmlRequest = require('./xacml_request');
+const { AuthorizationRequest } = xacmlRequest;
 import peps = require('./xacml_pep_registry');
 import pepHttp = require('./xacml_pep_http');
 // A remote PEP's HTTPS listener certificate (2026-09-13). A LIBRARY over
@@ -1839,31 +1842,21 @@ class XacmlAdmin {
     // would be a cycle, and node answers a cycle with a half-initialised module
     // whose exports are undefined rather than with an error.
     const xacml = loadXacml();
-    const categories = [
-      { category: model.CATEGORY.ACCESS_SUBJECT, id: null, content: null,
-        attributes: subject
-          ? [{ attributeId: model.ATTRIBUTE.SUBJECT_ID, issuer: null,
-               includeInResult: true,
-               values: [{ type: model.TYPE.STRING, lexical: subject }] }]
-          : [] },
-      { category: model.CATEGORY.ACTION, id: null, content: null,
-        attributes: [{ attributeId: model.ATTRIBUTE.ACTION_ID, issuer: null,
-                       includeInResult: true,
-                       values: [{ type: model.TYPE.STRING,
-                                  lexical: action }] }] },
-      { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-        attributes: [] }
-    ];
-    if (resource) {
-      categories.push({ category: model.CATEGORY.RESOURCE, id: null,
-                        content: null,
-                        attributes: [{ attributeId: model.ATTRIBUTE.RESOURCE_ID,
-                                       issuer: null, includeInResult: true,
-                                       values: [{ type: model.TYPE.ANYURI,
-                                                  lexical: resource }] }] });
+    // THROUGH THE ONE BUILDER (#306), in this page's order: subject,
+    // action, environment, and the resource only when one was named.
+    const built = new AuthorizationRequest({ includeInResult: true });
+    [model.CATEGORY.ACCESS_SUBJECT, model.CATEGORY.ACTION,
+     model.CATEGORY.ENVIRONMENT].forEach(function (id) {
+      built.category(id);
+    });
+    if (subject) {
+      built.subject(model.ATTRIBUTE.SUBJECT_ID, [subject]);
     }
-    const request = { returnPolicyIdList: true, combinedDecision: false,
-                      categories: categories };
+    built.requestedAction(action);
+    if (resource) {
+      built.target(resource, model.TYPE.ANYURI);
+    }
+    const request = built.build();
     const answer = xacml.decide(request);
     const enforcement = xacml.enforce(answer);
     log.debug('Leaving XacmlAdmin.decideJson(). ' + answer.decision);

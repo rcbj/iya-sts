@@ -45,6 +45,9 @@ import store = require('./xacml_store');
 import pdp = require('./xacml_pdp');
 import pip = require('./xacml_pip');
 import templates = require('./xacml_templates');
+// THE ONE REQUEST BUILDER (#306).
+import xacmlRequest = require('./xacml_request');
+const { AuthorizationRequest } = xacmlRequest;
 
 type Json = any;
 
@@ -168,17 +171,6 @@ class XacmlRiskPep {
     }
   }
 
-  private attribute(attributeId: string, values: unknown[],
-                    type?: string): Json {
-    const { log, model } = this.deps;
-    log.debug("Entering XacmlRiskPep.attribute().");
-    log.debug("Leaving XacmlRiskPep.attribute().");
-    return { attributeId: attributeId, issuer: null, includeInResult: false,
-             values: values.map(function (one) {
-               return { type: type || model.TYPE.STRING, lexical: String(one) };
-             }) };
-  }
-
   // The question: the person, the reaction, and the change.
   /**
    * Builds the decision request for one reaction: the person as the subject,
@@ -190,30 +182,23 @@ class XacmlRiskPep {
   buildRequest(change: RiskChange, action: string): Json {
     const { log, model } = this.deps;
     log.debug("Entering XacmlRiskPep.buildRequest(). " + action);
-    const environment = [
-      this.attribute(RISK.LEVEL, change.level ? [change.level] : []),
-      this.attribute(RISK.PREVIOUS_LEVEL,
-                     change.previousLevel ? [change.previousLevel] : []),
-      this.attribute(RISK.SIGNAL, change.signals || [])
-    ];
+    // THROUGH THE ONE BUILDER (#306): nothing asked back in the result, and
+    // no policy-id list, as this reaction PEP always sent.
+    const req = new AuthorizationRequest({ includeInResult: false,
+                                           returnPolicyIdList: false })
+      .principal(change.username || '')
+      .requestedAction(action)
+      .environment(RISK.LEVEL, change.level ? [change.level] : [])
+      .environment(RISK.PREVIOUS_LEVEL,
+                   change.previousLevel ? [change.previousLevel] : [])
+      .environment(RISK.SIGNAL, change.signals || []);
     if (typeof change.score === 'number' && isFinite(change.score)) {
-      environment.push(this.attribute(RISK.SCORE, [change.score],
-                                      model.TYPE.DOUBLE));
+      req.environment(RISK.SCORE, [change.score], model.TYPE.DOUBLE);
     }
     log.debug("Leaving XacmlRiskPep.buildRequest().");
-    return {
-      returnPolicyIdList: false, combinedDecision: false,
-      categories: [
-        { category: model.CATEGORY.ACCESS_SUBJECT, id: null, content: null,
-          attributes: [this.attribute(model.ATTRIBUTE.SUBJECT_ID,
-                                      [change.username || ''])] },
-        { category: model.CATEGORY.ACTION, id: null, content: null,
-          attributes: [this.attribute(model.ATTRIBUTE.ACTION_ID, [action])] },
-        { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-          attributes: environment }
-      ]
-    };
+    return req.build();
   }
+
 
   // -------------------------------------------------------------------------
   // THE DECISION: which reactions the policy permits for this change.
