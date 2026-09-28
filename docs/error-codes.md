@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3746** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3748** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
-* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
+* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 53
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
@@ -755,6 +755,8 @@ Raised from: common/cert_enrollment.ts, common/enrollment_monitor.ts.
 | `STS-ENROLL-0085` | A SCEP challenge password was presented after it expired. | SCEP CertRep FAILURE badRequest |
 | `STS-ENROLL-0090` | An enrollment monitor counter could not be recorded (the request it counted is unaffected). | none (log only) |
 | `STS-ENROLL-0091` | An ACME External Account Binding key or a SCEP challenge password could not be proved unspent because the cluster store could not be asked, so it was refused. | ACME unauthorized / SCEP CertRep FAILURE badRequest |
+| `STS-ENROLL-0092` | A renewal named a certificate that is not recorded as issued to the entry in this realm, so it could not be superseded and nothing was issued. | EST 400 / SCEP CertRep FAILURE badRequest |
+| `STS-ENROLL-0093` | A renewal was issued but the certificate it renews could not be revoked as superseded, so the renewal was revoked and the request refused. | EST 503 / SCEP CertRep FAILURE badRequest |
 
 ## STS-ACME
 

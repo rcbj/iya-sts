@@ -210,6 +210,37 @@ async function offSection(t, kek) {
             'path and not something that was always true');
     t.equal(opened(kek, store.rows.get('probe')).certB64, setB.certB64,
             'and the later upsert owns the row, as it always did');
+    // BUT A CERTIFICATE AUTHORITY ROW IS MERGED HERE TOO (2026-09-28): the
+    // processes of one container are its writers exactly as nodes are, and
+    // an upsert lost an enrolled certificate's issued record in single-node
+    // (`sts_scep_sscep`), so its renewal superseded nothing.
+    t.check(a.mergesPkiRows() && b.mergesPkiRows(),
+            'with the cluster off a certificate authority row is still merged');
+    const future = new Date(Date.now() + 86400000).toISOString();
+    const seed = { version: 2, scope: 'solo',
+                   intermediate: { serialHex: '01', certificatePem: 'I1' },
+                   issuing: { scep: { serialHex: '02', certificatePem: 'S1' } },
+                   revoked: {}, crlNumbers: {}, issuedKeyPairs: [] };
+    store.rows.set('pki:solo', crypto.encryptWithKek(kek,
+      JSON.stringify(seed), 'pki-hierarchy'));
+    const c = await startNode(store, { adopted: [], published: [] });
+    const d = await startNode(store, { adopted: [], published: [] });
+    const rowC = JSON.parse(JSON.stringify(c.pkiFor('solo')));
+    rowC.issuedKeyPairs.push({ serialHex: '7d', useCase: 'scep',
+                               notAfter: future });
+    const rowD = JSON.parse(JSON.stringify(d.pkiFor('solo')));
+    rowD.issuedKeyPairs.push({ serialHex: 'e1', useCase: 'jose',
+                               notAfter: future });
+    c.attachPki('solo', rowC);
+    d.attachPki('solo', rowD);
+    await Promise.all([c.settleAll(), d.settleAll()]);
+    const solo = opened(kek, store.rows.get('pki:solo'));
+    t.check(['7d', 'e1'].every(function (serial) {
+      return solo.issuedKeyPairs.some(function (one) {
+        return one.serialHex === serial;
+      });
+    }), 'two processes of one container saving one CA row keep BOTH issued ' +
+        'records', solo.issuedKeyPairs);
   } finally {
     process.env.STS_CLUSTER_MODE = 'active-active';
   }

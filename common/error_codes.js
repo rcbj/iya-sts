@@ -3087,6 +3087,16 @@ const CODES = [
       'password could not be proved unspent because the cluster store ' +
       'could not be asked, so it was refused.',
     spec: 'ACME unauthorized / SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-ENROLL-0092',
+    summary: 'A renewal named a certificate that is not recorded as issued ' +
+      'to the entry in this realm, so it could not be superseded and ' +
+      'nothing was issued.',
+    spec: 'EST 400 / SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-ENROLL-0093',
+    summary: 'A renewal was issued but the certificate it renews could not ' +
+      'be revoked as superseded, so the renewal was revoked and the ' +
+      'request refused.',
+    spec: 'EST 503 / SCEP CertRep FAILURE badRequest' },
   // ===== ACME ==============================================================
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',

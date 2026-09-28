@@ -5368,6 +5368,21 @@ when their starts overlap), where `active-active` publishes one of each.
 `tests/cluster_key_pki_agreement.js` holds every rule to a stub store and two
 fresh module instances.
 
+**EXCEPT THE CERTIFICATE AUTHORITY ROW, WHICH IS MERGED IN ONE CONTAINER TOO
+(2026-09-28): `mergesPkiRows()`**, the same capabilities without the
+`cluster.mode` test, gates `writePki()` and the applier for `pki:` rows. The
+request pool hands a hierarchy over whole and `adoptPki()` replaces what is
+held, so in single-node a worker recorded an enrolled certificate, adopted
+the front process's copy made a moment before, and wrote the row without it —
+the renewal then found nothing to supersede and the old certificate stayed off
+the CRL (`sts_scep_sscep`). Every process of a container writes this row as
+every node does, so it takes the same three-way merge. Key sets keep
+`arbitrates()`: the pool arbitrates those first-generator-wins. And
+`cert_enrollment.ts`'s `issue()` now refuses a renewal whose old certificate
+is not recorded for the entry (`STS-ENROLL-0092`) before issuing, and takes a
+renewal back when the supersede still fails (`STS-ENROLL-0093`), where it
+ignored the failure.
+
 ### A REALM'S KEY SET, MADE OFF THE EVENT LOOP (2026-09-14, #46 follow-up)
 
 `stsKeysFor` is a factory behind a property read, so a realm this process holds

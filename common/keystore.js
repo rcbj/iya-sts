@@ -2994,6 +2994,39 @@ function arbitrates() {
 }
 
 // ---------------------------------------------------------------------------
+// **A CERTIFICATE AUTHORITY ROW IS MERGED WHEREVER THE STORE CAN MERGE, IN
+// ONE CONTAINER AS WELL AS A CLUSTER (2026-09-28).** `arbitrates()`' argument
+// for keeping the upsert with `cluster.mode=off` — one container already
+// agrees over the request pool's channels — is true of a KEY SET, which those
+// channels arbitrate first-generator-wins, and false of this row: the channel
+// hands a hierarchy over WHOLE and `adoptPki()` REPLACES what is held, so two
+// processes writing at once lost whichever record the other had not seen.
+// Measured in single-node (`sts_scep_sscep`): a worker recorded an enrolled
+// certificate, the front process certified the realm's post-quantum keys from
+// a copy made just before, the worker adopted that copy, and the renewal
+// found nothing to supersede — the old certificate never reached the CRL.
+// Every process in a container is a writer of the row exactly as every node
+// is, so the row takes the cluster's three-way merge (`pki_merge.js`: issued
+// serials and revocations are unions) wherever the store holds it. Key sets
+// keep `arbitrates()`.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether a certificate authority row is merged under the row's lock
+ * rather than upserted: persisting, a merging store and a key-encryption key,
+ * whatever `cluster.mode` says.
+ *
+ * @returns true when a hierarchy write is a merge
+ */
+function mergesPkiRows() {
+  log.debug("Entering mergesPkiRows().");
+  const answer = persists() && !!store && !!kek &&
+                 typeof store.mergeKeys === 'function' &&
+                 typeof store.loadKey === 'function';
+  log.debug("Leaving mergesPkiRows(). " + answer);
+  return answer;
+}
+
+// ---------------------------------------------------------------------------
 // ONE WRITE OF A ROW AT A TIME, AND A WRITE NOT YET STARTED TAKES THE LATEST
 // PAYLOAD. A realm's branch build saves its row a dozen times in one turn; a
 // merge per save would be a dozen locked round trips, and two in flight at
@@ -3340,7 +3373,7 @@ function writePki(rowKey, payload) {
   }
   const text = JSON.stringify(chain);
   const cipher = crypto.encryptWithKek(kek, text, 'pki-hierarchy');
-  if (!arbitrates()) {
+  if (!mergesPkiRows()) {
     log.debug("Leaving writePki(). An upsert.");
     return Promise.resolve().then(function () {
       return store.saveKeys(rowKey, cipher);
@@ -3498,7 +3531,10 @@ function applyStoredChange(rowKey) {
   // two processes each adopting the other's set in the same moment and ending
   // as split as they started — which is the argument `applyKeysChange()` used
   // to make for doing nothing, and it still holds there.
-  if (!arbitrates()) {
+  // A CERTIFICATE AUTHORITY ROW IS ADOPTED WHEREVER IT IS MERGED
+  // (mergesPkiRows()): a merged row is the store's answer, and a process
+  // that holds less than it must take it.
+  if (isPki ? !mergesPkiRows() : !arbitrates()) {
     log.debug("Leaving applyStoredChange(). The store does not arbitrate.");
     return Promise.resolve({ kind: kind, realm: id, adopted: false });
   }
@@ -3723,6 +3759,7 @@ module.exports = {
   // THE STORE AS THE ARBITER BETWEEN NODES (#46). See the block above
   // `arbitrates()`.
   arbitrates: arbitrates,
+  mergesPkiRows: mergesPkiRows,
   applyStoredChange: applyStoredChange,
   refreshPki: refreshPki,
   pendingWrites: pendingWrites,
