@@ -354,7 +354,7 @@ function checkTheJobTimeoutIsAboveOurs(t) {
     (/STS_SAML_PEERS_TIMEOUT="\$\{STS_SAML_PEERS_TIMEOUT:-(\d+)\}"/
       .exec(launcher) || [])[1]) || 0;
   // Unless the `tests` job empties STS_TEST_CONFORMANCE_MODES (#187): the
-  // plans are the `conformance` job's then, whose arithmetic is below.
+  // plans are the `openid-conformance` job's then, whose arithmetic is below.
   const testsJob = workflow.slice(workflow.indexOf('\n  tests:'),
                                   workflow.indexOf('\n  coverage:'));
   const testsRunConformance =
@@ -403,16 +403,18 @@ function checkTheJobTimeoutIsAboveOurs(t) {
           'without a number here a stuck job holds a runner for six hours, ' +
           'which is what the workflow header says this setting is for');
 
-  // THE `conformance` JOB (#187) runs the same launcher for ONE mode with
+  // THE `openid-conformance` JOB (#187; `conformance` until 2026-09-27) runs
+  // the same launcher for ONE mode with
   // the suite's plans in it: its number sits above that mode's bound plus
   // a teardown for the mode and one for the stack before it, and under the
   // six hours GitHub gives any job. Its absence is a failure only while the
   // `tests` job leaves the plans out, since then nothing else runs them.
-  const conformanceAt = workflow.indexOf('\n  conformance:');
+  const conformanceAt = workflow.indexOf('\n  openid-conformance:');
   t.check(testsRunConformance || conformanceAt !== -1,
           'the conformance plans run in some job',
           'the `tests` job empties STS_TEST_CONFORMANCE_MODES, so without a ' +
-          '`conformance` job CI would run none of the OpenID Foundation plans');
+          '`openid-conformance` job CI would run none of the OpenID ' +
+          'Foundation plans');
   if (conformanceAt !== -1) {
     const conformanceJob = workflow.slice(
       conformanceAt, workflow.indexOf('\n  cluster:', conformanceAt));
@@ -424,13 +426,14 @@ function checkTheJobTimeoutIsAboveOurs(t) {
     const conformanceWorst = sharedBound + conformanceBound +
       conformancePeers + teardownBound * 2;
     t.check(/--modes=memory\b/.test(conformanceJob) &&
-            /--only=conformance\b/.test(conformanceJob),
-            'the `conformance` job runs the memory mode\'s conformance jobs',
+            /--conformance-only\b/.test(conformanceJob),
+            'the `openid-conformance` job runs the memory mode\'s ' +
+            'conformance jobs, by the manifest flag',
             'the launcher runs the suite only in the modes ' +
             'STS_TEST_CONFORMANCE_MODES names, `memory` by default');
     t.check(conformanceMinutes * 60 > conformanceWorst &&
             conformanceMinutes <= 360,
-            'the `conformance` job timeout (' + conformanceMinutes +
+            'the `openid-conformance` job timeout (' + conformanceMinutes +
               'm) is above its mode\'s bound plus two teardowns (' +
               Math.ceil(conformanceWorst / 60) + 'm) and within six hours',
             'the launcher\'s bound must be the one that fires, and GitHub ' +

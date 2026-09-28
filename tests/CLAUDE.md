@@ -1767,7 +1767,9 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
   job SKIPPED with the reason (`run-report.js`, the `conformance` flag — a
   deliberate exclusion, as `docker: true` is). **In CI the plans are a job
   of their own** (#187): `tests.yml`'s `tests` job empties the variable and
-  its `conformance` job runs `--modes=memory --only=conformance` under a
+  its `openid-conformance` job runs `--modes=memory --conformance-only`
+  (the `conformance: true` jobs, by that flag — `--only=conformance` is a
+  substring and also matched the SSF and SCIM suites) under a
   270-minute timeout, because no number the `tests` job may have fits two
   hours of plans (`tests/teardown_bounds.js` holds both jobs' arithmetic).
   `memory` because FAPI-CIBA

@@ -21,10 +21,12 @@
 #             measures as a child process in there, because V8 writes coverage
 #             from inside the process being measured and a service container
 #             next door can never be under the report.
-#   conformance  STS_TEST_CONFORMANCE_MODES=memory ./run-tests.sh
-#             --modes=memory --only=conformance — the OpenID Foundation
+#   openid-conformance  STS_TEST_CONFORMANCE_MODES=memory ./run-tests.sh
+#             --modes=memory --conformance-only — the OpenID Foundation
 #             conformance suite's plans (#176, #187), which the `tests` job
-#             leaves out because they take over two hours.
+#             leaves out because they take over two hours. Only those: every
+#             other third-party suite (the SAML peers, Samba, Heimdal,
+#             tlsfuzzer, the W3C and SCIM suites) runs in `tests`.
 #   cluster   ./run-tests.sh --modes=cluster — the third mode of
 #             tests/tools/modes.sh, which the `tests` job does not name: two
 #             production nodes (product mode, request workers) active-active
@@ -198,7 +200,7 @@ jobs:
       #
       # STS_TEST_CONFORMANCE_MODES EMPTY (#187): the OpenID conformance
       # suite's jobs take about two hours and a quarter on their own, which
-      # is the `conformance` job's below; here they are reported SKIPPED
+      # is the `openid-conformance` job's below; here they are reported SKIPPED
       # with the reason, as they are in every mode that does not run them.
       - name: Run the containerized test suite
         env:
@@ -349,7 +351,11 @@ jobs:
   # OpenID Federation, OpenID4VCI and OpenID4VP — against the suite's own
   # three containers under the `conformance` compose profile, in the
   # `memory` mode (the launcher's STS_TEST_CONFORMANCE_MODES default, argued
-  # in its header). `--only=conformance` names them by substring.
+  # in its header). `--conformance-only` names them by that FLAG
+  # (2026-09-27): `--only=conformance` was a substring and also ran
+  # sts_ssf_conformance and sts_scim_conformance, which the `tests` job
+  # already runs in both its modes. The job was called `conformance` until
+  # the same day; it runs the OpenID Foundation's suite and nothing else.
   #
   # A JOB OF ITS OWN because of the time: the plans took about two hours and
   # a quarter on 2026-09-24, so the launcher grows such a mode's bound by
@@ -359,7 +365,7 @@ jobs:
   # one that fires, and under GitHub's own six hours
   # (tests/teardown_bounds.js asserts both).
   # ---------------------------------------------------------------------------
-  conformance:
+  openid-conformance:
     needs: mirror
     runs-on: ubuntu-latest
     timeout-minutes: 270
@@ -383,11 +389,11 @@ jobs:
       - name: Run the OpenID conformance suite's plans
         # The SAML interoperability peers (#189-#192) are the tests job's;
         # the launcher would start them in `memory` by default, for jobs
-        # `--only=conformance` does not run.
+        # `--conformance-only` does not run.
         env:
           STS_TEST_CONFORMANCE_MODES: memory
           STS_TEST_SAML_PEERS_MODES: ""
-        run: ./run-tests.sh --modes=memory --only=conformance --no-browser
+        run: ./run-tests.sh --modes=memory --conformance-only --no-browser
 
       # See the tests job: the runner writes tests/report as root.
       - name: Normalize report permissions
