@@ -2496,8 +2496,12 @@ class AdminApi {
           description: 'A page of people, or a refusal.' },
         handler: function (req, res) {
           log.debug("Entering the management API cell people endpoint.");
+          // The cell that relayed this call here, when it did (`?cell=`
+          // naming this one, D11): this cell then answers its own residents.
           cellsAdmin.peopleOf(String((req.query && req.query.cell) || ''),
-                              String((req.query && req.query.after) || ''))
+                              String((req.query && req.query.after) || ''),
+                              String((req.stsCellRelay &&
+                                      req.stsCellRelay.from) || ''))
             .then(function (view) {
               self.sendJson(res, 200, view);
               log.debug("Leaving the management API cell people endpoint.");
@@ -5100,7 +5104,27 @@ class AdminApi {
                                         'it cannot be mailed the link is ' +
                                         'returned as with `show` (the ' +
                                         'default), with `mailError` saying ' +
-                                        'why.' }
+                                        'why.' },
+                // THE HOME CELL (#98 D1), which `cell_placement.ts`'s
+                // creation claim reads before this operation runs: a cell
+                // other than the serving one is relayed there whole. It was
+                // read there and refused HERE — not a member of this schema —
+                // at the cell it was relayed to, so no creation naming
+                // another cell could succeed until the `cells` mode's first
+                // run (2026-09-28, tests/vendored/sts_cells_routing.js).
+                homeCell: { type: 'string', maxLength: 16,
+                            description: 'Only when this service is ' +
+                                         'deployed as cells (#98): the id ' +
+                                         'of the cell the person is homed ' +
+                                         'in. Empty means the realm\'s ' +
+                                         '`cells.homeCell`, or the cell ' +
+                                         'that answers. Another cell\'s ' +
+                                         'id makes the creation THERE; a ' +
+                                         'cell the service does not have, ' +
+                                         'or one in a jurisdiction the ' +
+                                         'realm does not allow, is ' +
+                                         'refused 400. Ignored in ' +
+                                         'single-cell mode.' }
               },
               required: ['username'],
               examples: [{ username: 'rcbj' },

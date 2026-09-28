@@ -175,12 +175,38 @@ class CellsAdmin {
    * @param cellId - the cell
    * @param after - the page cursor (the last login name of the previous
    *   page), or ''
+   * @param relayedFrom - the cell that relayed this call here, or '' when
+   *   it was made here
    * @returns a promise of `{ cell, people: [{ name, uuid, displayName }],
    *   next }`, or `{ cell, refused }`
    */
-  async peopleOf(cellId: string, after: string): Promise<Json> {
+  async peopleOf(cellId: string, after: string,
+                 relayedFrom?: string): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering CellsAdmin.peopleOf().");
+    // A CALL ANOTHER CELL RELAYED HERE BY ITS `?cell=` (D11) names THIS
+    // cell, because the edge relays `/admin-api?cell=<id>` to the cell it
+    // names (common/cell_placement.ts, the `selector` row) — and the edge
+    // here has already asked the release policy for the cell it came from.
+    // It is answered with this cell's residents. Until the `cells` mode's
+    // first run (2026-09-28, tests/vendored/sts_cells_release.js) it was
+    // refused as "not another cell", so another cell's residents could not
+    // be listed from anywhere, whatever the policy said.
+    const from = String(relayedFrom || '');
+    if (cellId && cellId === cells.id() && from && from !== cells.id() &&
+        cells.get(from)) {
+      try {
+        const answer = this.answerPeople({ realm: realms.currentId(),
+                                           after: String(after || ''),
+                                           limit: PEOPLE_PAGE },
+                                         { peer: from });
+        log.debug("Leaving CellsAdmin.peopleOf(). Relayed here.");
+        return Object.assign({ cell: cellId }, answer);
+      } catch (err) {
+        log.debug("Leaving CellsAdmin.peopleOf(). Refused here.");
+        return { cell: cellId, refused: String((err && err.message) || err) };
+      }
+    }
     if (!cells.get(cellId) || cellId === cells.id()) {
       log.debug("Leaving CellsAdmin.peopleOf(). Not another cell.");
       return { cell: cellId, refused: 'not another cell of this service' };

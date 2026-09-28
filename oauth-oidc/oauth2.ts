@@ -11442,9 +11442,15 @@ class OAuth2Server {
    * @returns a promise of true when the request was relayed
    */
   async placeBackChannel(req: Req, res: Res): Promise<boolean> {
-    const { log, refreshTokenCrypto } = this.deps;
+    const { log, refreshTokenCrypto, parseBody } = this.deps;
     log.debug("Entering OAuth2Server.placeBackChannel().");
-    const body = req.body || {};
+    // THE BODY IS PARSED HERE, as every handler behind this parses it:
+    // `app.js` leaves `req.body` the raw TEXT (common/helpers.js,
+    // `parseBody()`), so `req.body.grant_type` was undefined and nothing was
+    // ever placed — the second of the two reasons no code reached the cell
+    // that minted it (2026-09-28, the `cells` mode's first run).
+    const body = req.body && typeof req.body === 'object' &&
+      !Buffer.isBuffer(req.body) ? req.body : (parseBody(req) || {});
     const jtiOf = function (token: string): string {
       let text = String(token || '');
       try {
@@ -11465,7 +11471,15 @@ class OAuth2Server {
         return '';
       }
     };
-    const path = String(req.path || '');
+    // THE MOUNT PATH IS PUT BACK. This runs under `app.use([...paths])`, and
+    // express takes the mount off `req.path` — `/oauth2/token` arrives as
+    // `/` with the path in `req.baseUrl` — so reading `req.path` alone
+    // matched none of the branches below, and no code, refresh token or
+    // CIBA id presented at another cell was ever relayed to the cell that
+    // minted it (found by the `cells` mode's first run, 2026-09-28,
+    // tests/vendored/sts_cells_traveller.js).
+    const path = (String(req.baseUrl || '') + String(req.path || ''))
+      .replace(/\/+$/, '');
     let artifact = '';
     let reason = '';
     if (/\/token$/.test(path)) {
