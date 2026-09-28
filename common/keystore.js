@@ -1165,7 +1165,17 @@ async function start() {
   // Fail here rather than at the first decrypt, so the message names the KEK
   // rather than a record.
   crypto.kekBytes(kek);
-  await readCellKey();
+  // ONLY WHERE A CELL KEY IS CONFIGURED (#98). An `await` here, even one that
+  // answers "none" at once, yields to the event loop in the middle of every
+  // start — and a key write another caller left pending then landed in the
+  // store this start had just been handed (tests/key_residency.js after
+  // tests/key_generations.js, 2026-09-28). A single-cell service starts
+  // exactly as it did before cells.
+  if (secrets.configuredFor(secrets.CELL_KEK)) {
+    await readCellKey();
+  } else {
+    cellKek = null;
+  }
   let rows = [];
   try {
     rows = (await store.loadKeys()) || [];

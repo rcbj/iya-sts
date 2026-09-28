@@ -459,6 +459,13 @@ async function run(t) {
     await checkCertificates(t, core, x509, keys, placed);
   } finally {
     restore();
+    // THE MONITOR'S COUNTERS ARE THE PROCESS'S, and the in-process suite is
+    // one process: the ACME requests driven above were still counted when
+    // `cert_enrollment.js` ran next and asserted ACME's counters empty.
+    const monitor = require(path.join(ROOT, 'common', 'enrollment_monitor'));
+    ['acme', 'est', 'scep'].forEach(function (family) {
+      monitor.resetForTests(family);
+    });
   }
   log.debug("Leaving run().");
 }
