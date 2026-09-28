@@ -27,14 +27,18 @@ variable "image_tag" {
   type        = string
 }
 
+# SIZED FOR THE WHOLE SUITE (#311, 2026-09-28): with STS_SUITE_IN_AWS=1 this
+# task runs every job, Chrome and the 5000-person bulk loads among them, which
+# 1 vCPU / 4 GiB does not hold. The task lives for one run, so the larger size
+# costs cents even when it runs only the two callback jobs.
 variable "task_cpu" {
   description = "Fargate CPU units for the callback task."
   type        = number
-  default     = 1024
+  default     = 4096
 }
 
 variable "task_memory" {
   description = "Fargate memory (MiB) for the callback task."
   type        = number
-  default     = 4096
+  default     = 16384
 }

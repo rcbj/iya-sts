@@ -8,7 +8,8 @@
 # THE PROTOCOL SUITE, INSIDE AN AWS ENVIRONMENT (issue #51).
 #
 # The `suite` container of environment/runner.tf's task; started by
-# deploy/aws/run-suite-in-aws.sh, never by hand. What deploy/aws/run-suite.sh
+# deploy/aws/run-suite.sh (the two callback jobs, or every job with
+# STS_SUITE_IN_AWS=1), never by hand. What deploy/aws/run-suite.sh
 # does from outside, with three differences that are why it exists:
 #
 #   * NO JOB IS EXCLUDED. The nodes can reach this task, so sts_gnap_core's
@@ -24,7 +25,7 @@
 #     as report.tar.gz and summary.json, because nothing outside the task can
 #     see its file system.
 #   * THE EXIT CODE IS run-report.js's, and ECS records it on the container,
-#     which is what run-suite-in-aws.sh reports.
+#     which is what run-suite.sh reports.
 #
 # Environment (the task definition sets all but the overrides):
 #   STS_SUITE_SERVICE_URL, STS_SUITE_ENVIRONMENT, STS_REPORTS_BUCKET,

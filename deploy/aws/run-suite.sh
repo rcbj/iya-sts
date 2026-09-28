@@ -54,6 +54,19 @@
 # and the first run against AWS lost eight jobs to the 300-second default
 # rather than to any assertion. STS_SUITE_JOB_TIMEOUT_MS overrides it.
 #
+# THE WHOLE SUITE IN THE TASK: STS_SUITE_IN_AWS=1 (#311, 2026-09-28).
+# rcbj's call, reversing the 2026-09-18 split for a long run: from this
+# machine every request crosses the internet on a fresh TLS connection and a
+# full run takes most of a day, so with it set NOTHING runs here — the
+# callback task runs every job (MANIFEST.js, less STS_SUITE_EXCLUDE, or
+# STS_SUITE_ONLY), resets the previous run's realms itself, and its report is
+# the run's report, downloaded into tests/report/aws-<env>/. The task is sized
+# for Chrome and the bulk loads (suite-callbacks/ `task_cpu`/`task_memory`)
+# and may run STS_SUITE_TASK_TIMEOUT_SECS (default 8 hours in this mode).
+# This machine still reaches the load balancer for the health probe at the
+# start; the jobs reach it from the task's NAT address, which
+# suite-callbacks/ admits.
+#
 # Other knobs: STS_SUITE_EXCLUDE (comma-separated job files to leave out),
 # STS_SUITE_ONLY (the local job list, replacing the computed one — for
 # re-running what failed), STS_SUITE_REPORT_DIR, STS_SUITE_TASK_TIMEOUT_SECS
@@ -69,6 +82,11 @@ REPORT_DIR="${STS_SUITE_REPORT_DIR:-${ROOT}/tests/report/aws-${ENVIRONMENT}}"
 RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%S)"
 CALLBACK_JOBS="sts_xacml_remote_pep.js,sts_gnap_core.js"
 WITH_CALLBACKS="${STS_SUITE_CALLBACKS:-1}"
+IN_AWS="${STS_SUITE_IN_AWS:-0}"
+if [ "${IN_AWS}" = "1" ];
+then
+  WITH_CALLBACKS=1
+fi
 export AWS_REGION="${AWS_REGION:-us-west-2}"
 
 say() { echo "run-suite: $*" >&2; }
@@ -247,10 +265,29 @@ if [ -n "${STS_SUITE_ONLY:-}" ];
 then
   ONLY="${STS_SUITE_ONLY}"
 fi
-say "$(echo "${ONLY}" | tr ',' '\n' | wc -l) job(s) here; ${CALLBACK_JOBS} in the callback task."
-
 mkdir -p "${REPORT_DIR}"
 chmod 0777 "${REPORT_DIR}"
+TASK_JOBS="${CALLBACK_JOBS}"
+TASK_KEEP_REALMS=1
+if [ "${IN_AWS}" = "1" ];
+then
+  # Every job in the task, and the task resets the previous run's realms,
+  # because nothing ran here first.
+  TASK_JOBS="$(EXCLUDE="${STS_SUITE_EXCLUDE:-}" node -e '
+    const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
+    process.stdout.write(require("./tests/vendored/MANIFEST.js").JOBS
+      .map(function (j) { return j.file; })
+      .filter(function (f) { return !skip.has(f); }).join(","));')"
+  if [ -n "${STS_SUITE_ONLY:-}" ];
+  then
+    TASK_JOBS="${STS_SUITE_ONLY}"
+  fi
+  TASK_KEEP_REALMS="${STS_SUITE_KEEP_REALMS:-}"
+  say "$(echo "${TASK_JOBS}" | tr ',' '\n' | wc -l) job(s), all in the task in the VPC; none here."
+  LOCAL_RC=0
+  LOCAL_RUN=""
+else
+say "$(echo "${ONLY}" | tr ',' '\n' | wc -l) job(s) here; ${CALLBACK_JOBS} in the callback task."
 set +e
 docker run --rm --network host \
   -v "${REPORT_DIR}:/report" \
@@ -286,6 +323,7 @@ LOCAL_RC=$?
 set -e
 LOCAL_RUN="$(readlink -f "${REPORT_DIR}/latest" || true)"
 say "the local half exited ${LOCAL_RC}; report ${LOCAL_RUN}/report.html"
+fi
 
 # --- 5. the callback half ---------------------------------------------------------
 CALLBACK_RC=0
@@ -311,7 +349,8 @@ then
     BUCKET="$(cb reports_bucket)"
     LOG_GROUP="$(cb log_group)"
     PEP_REALM="pep-$(date -u +%m%d%H%M%S)"
-    OVERRIDES="$(RUN_ID="${RUN_ID}" PEP_REALM="${PEP_REALM}" ONLY="${CALLBACK_JOBS}" \
+    OVERRIDES="$(RUN_ID="${RUN_ID}" PEP_REALM="${PEP_REALM}" ONLY="${TASK_JOBS}" \
+      KEEP="${TASK_KEEP_REALMS}" UNPUB="${UNPUBLISHED}" \
       JT="${STS_SUITE_JOB_TIMEOUT_MS:-}" node -e '
       const env = function (pairs) {
         return Object.keys(pairs).filter(function (k) { return pairs[k]; })
@@ -322,7 +361,8 @@ then
             STS_SUITE_RUN_ID: process.env.RUN_ID,
             XACML_PEP_REALM: process.env.PEP_REALM,
             STS_SUITE_ONLY: process.env.ONLY,
-            STS_SUITE_KEEP_REALMS: "1",
+            STS_SUITE_KEEP_REALMS: process.env.KEEP || "",
+            STS_TEST_UNPUBLISHED: process.env.UNPUB || "",
             STS_SUITE_JOB_TIMEOUT_MS: process.env.JT || "" }) },
         { name: "xacml-pep", environment: env({
             XACML_PEP_REALM: process.env.PEP_REALM }) }
@@ -336,7 +376,12 @@ then
     [ -n "${TASK_ARN}" ] && [ "${TASK_ARN}" != "None" ] || die "ecs run-task started nothing."
     TASK_ID="${TASK_ARN##*/}"
     say "callback task ${TASK_ID}; logs: aws logs tail ${LOG_GROUP} --log-stream-names ${ENVIRONMENT}-callbacks/suite/${TASK_ID} --follow"
-    tdeadline=$(( $(date +%s) + ${STS_SUITE_TASK_TIMEOUT_SECS:-3600} ))
+    tdefault=3600
+    if [ "${IN_AWS}" = "1" ];
+    then
+      tdefault=28800
+    fi
+    tdeadline=$(( $(date +%s) + ${STS_SUITE_TASK_TIMEOUT_SECS:-${tdefault}} ))
     while :;
     do
       status="$(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
@@ -363,7 +408,12 @@ then
       tar -C "${CB_DIR}" -xzf "${CB_DIR}/report.tar.gz"
       rm -f "${CB_DIR}/report.tar.gz"
       chmod -R a+rwX "${CB_DIR}"
-      if [ -n "${LOCAL_RUN}" ] && [ -d "${LOCAL_RUN}" ];
+      if [ "${IN_AWS}" = "1" ];
+      then
+        # The task's report IS the run's: `latest` points at it.
+        LOCAL_RUN="$(readlink -f "${CB_DIR}/latest" || true)"
+        ln -sfn "${LOCAL_RUN}" "${REPORT_DIR}/latest"
+      elif [ -n "${LOCAL_RUN}" ] && [ -d "${LOCAL_RUN}" ];
       then
         docker run --rm -v "${REPORT_DIR}:/report" "${TESTS_IMAGE}" \
           node tests/tools/merge-report.js \

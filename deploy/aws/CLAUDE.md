@@ -492,6 +492,26 @@ It is the one suite for every environment since 2026-09-21: `run-suite-in-aws.sh
 and `environment/runner.tf`, which `aws-cluster.yml` used for `dev` and `ci`,
 were deleted that day.
 
+**OR THE WHOLE SUITE IN THE TASK: `STS_SUITE_IN_AWS=1` (#311, 2026-09-28).**
+rcbj's call, the reverse of the design above for a long run: from a machine
+on the internet a full run takes most of a day, one fresh TLS connection per
+request. With it set nothing runs locally; the callback task (sized 4 vCPU /
+16 GiB for Chrome and the bulk loads) runs every job, resets the previous
+run's realms itself, and its report is the run's
+(`tests/report/aws-<env>/latest`). The task may run eight hours
+(`STS_SUITE_TASK_TIMEOUT_SECS`).
+
+```bash
+STS_SUITE_IN_AWS=1 ./run-tests.sh --target=aws:testidp
+```
+
+**What still cannot run there, and says so rather than failing:** the jobs
+whose peer is a container the local stack brings up beside the service and
+shares a volume with — the mail catcher (`sts_mail`), the outbound test CA
+(#171), the OpenID conformance suite and the four SAML peers — and SPIFFE
+unless its realm stack is applied and named (`STS_SPIFFE_WORKLOAD_URL`). Each
+reads its variable as empty and reports itself skipped with the reason.
+
 ## A realm's SPIFFE ports: `spiffe-realm/` (2026-09-18)
 
 **Nothing published SPIFFE until this stack.** `published_ports` has no

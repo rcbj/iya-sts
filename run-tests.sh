@@ -415,6 +415,9 @@ STS_TEST_ARGS="${STS_TEST_ARGS# }"
 #                           service to call back in an ephemeral task in the
 #                           VPC, one merged report in tests/report/aws-<env>.
 #                           Never destroys the environment.
+#                           STS_SUITE_IN_AWS=1 runs EVERY job in that
+#                           task instead, and nothing from here (#311): the
+#                           way to run a long suite against a deployment.
 #   --target=aws-ephemeral[:<env>]
 #                           build and push this tree's images, APPLY <env>
 #                           (default `ci`), run deploy/aws/run-suite.sh against
