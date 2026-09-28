@@ -92,6 +92,11 @@ const PAGE = '/admin/caches';
 // here so their absence is a decision a reader can see. (The four
 // single-value memos that were on this list until 2026-09-18 are registered
 // caches now.)
+/**
+ * What is deliberately not registered: things this page or `docs/caches.md`
+ * could be read as naming that the process does not hold between requests, each
+ * with the reason.
+ */
 const NOT_LISTED = [
   { what: 'SAML service provider metadata',
     where: 'saml/sp_metadata.ts',
@@ -150,14 +155,32 @@ interface CachesAdminDeps {
   now: () => number;
 }
 
+/**
+ * Monitoring → Caches: every cache and replay store the registry knows, its
+ * size against its bound, how much of it is still valid, and its hit ratio.
+ */
 class CachesAdmin {
+  /**
+   * See the module's `NOT_LISTED`.
+   */
   static readonly NOT_LISTED = NOT_LISTED;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the console shell, the cache registry and the
+   * cluster
+   */
   constructor(private readonly deps: CachesAdminDeps) {
     deps.log.debug("Entering CachesAdmin.constructor().");
     deps.log.debug("Leaving CachesAdmin.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): CachesAdminDeps {
     helpers.log.debug("Entering CachesAdmin.defaultDeps().");
     helpers.log.debug("Leaving CachesAdmin.defaultDeps().");
@@ -184,6 +207,12 @@ class CachesAdmin {
   }
 
   // "4 min 10 s", "2 h 5 min", "3 d 4 h" — two units at most.
+  /**
+   * Says a duration in at most two units: "4 min 10 s", "2 h 5 min".
+   *
+   * @param ms - the duration in milliseconds
+   * @returns the duration as text
+   */
   span(ms: number): string {
     const { log } = this.deps;
     log.debug("Entering CachesAdmin.span().");
@@ -205,6 +234,13 @@ class CachesAdmin {
   }
 
   // How long one row is still good, as a sentence.
+  /**
+   * Says how long one cache entry is still good, or how long ago it expired.
+   *
+   * @param row - one entry row from the registry
+   * @param at - the current time in milliseconds
+   * @returns the remaining time as a sentence
+   */
   remainingText(row: Json, at: number): string {
     const { log } = this.deps;
     log.debug("Entering CachesAdmin.remainingText().");
@@ -248,6 +284,14 @@ class CachesAdmin {
 
   // THE VIEW MODEL: the list, or one cache when `cache` is named. One
   // function for the page's `?format=json` and for `GET /admin-api/caches`.
+  /**
+   * Builds the view model: the list of caches, or one cache's entries when the
+   * query names `cache`.
+   *
+   * One function for the page's `?format=json` and `GET /admin-api/caches`.
+   * @param query - the request's query (`cache`, and paging)
+   * @returns the caches or the one cache's page of entries
+   */
   cachesJson(query?: Json): Json {
     const { log, cacheRegistry, adminViews, now } = this.deps;
     const self = this;
@@ -305,6 +349,15 @@ class CachesAdmin {
   // Read from `cluster.snapshot()`, which is at most a heartbeat old, and the
   // snapshot itself is at most thirty seconds older; each says when it was
   // taken. Empty without a cluster.
+  /**
+   * Reads every other process's cache snapshot from the live cluster
+   * membership: the other nodes, and the front process when a request worker
+   * draws the page.
+   *
+   * Each snapshot says when it was taken; empty without a cluster.
+   * @param at - the current time in milliseconds
+   * @returns one row per other process
+   */
   otherProcesses(at: number): Json[] {
     const { log, cluster, cacheRegistry } = this.deps;
     log.debug("Entering CachesAdmin.otherProcesses().");
@@ -368,6 +421,13 @@ class CachesAdmin {
   }
 
   // For `mgmt-api/admin_api.ts`.
+  /**
+   * Answers the page's JSON for `mgmt-api/admin_api.ts` (rule 7), the same
+   * shape `?format=json` answers.
+   *
+   * @param query - the request's query
+   * @returns the public JSON view
+   */
   cachesView(query?: Json): Json {
     const { log } = this.deps;
     log.debug("Entering CachesAdmin.cachesView().");
@@ -694,6 +754,11 @@ class CachesAdmin {
     log.debug("Leaving CachesAdmin.renderCaches(). One cache.");
   }
 
+  /**
+   * Registers `GET /admin/caches`, the page and its `?format=json`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function }): void {
     const { log } = this.deps;
     const self = this;
@@ -767,10 +832,26 @@ const slot = new InstanceSlot<CachesAdmin>(
 // Standalone, build the default now, as every console module does.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Monitoring → Caches: every cache this service holds, how full it is, how much
+ * of it is still good and how often it was worth having.
+ *
+ * The registry is the knowledge and this file is only the drawing; it also
+ * registers the per-process job that ejects expired entries.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   CachesAdmin: CachesAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: CachesAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts` (rule 7): the page's own JSON.
   cachesView: slot.forward('cachesView'),

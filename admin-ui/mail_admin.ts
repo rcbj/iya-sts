@@ -44,13 +44,27 @@ type Req = import('express').Request;
 type Res = import('express').Response;
 type Json = any;
 
+/**
+ * Server configuration → Mail: the realm's transport, a test message, the
+ * realm's wording of each message and the `Mail` settings.
+ */
 const PAGE = '/admin/mail';
+/**
+ * Monitoring → Mail: the outbox, what became of each message, and the dead
+ * letters with a Retry.
+ */
 const OUTBOX = '/admin/mail/outbox';
 
 // The actions each page takes, for the sentence an unknown one is answered
 // with (the parity jobs read the list back out of it).
+/**
+ * The actions the settings page takes.
+ */
 const SETTINGS_ACTIONS = ['test', 'verify', 'save-template',
                           'reset-template'];
+/**
+ * The actions the outbox page takes.
+ */
 const OUTBOX_ACTIONS = ['retry'];
 
 interface MailAdminDeps {
@@ -63,15 +77,35 @@ interface MailAdminDeps {
   parseBody: typeof helpers.parseBody;
 }
 
+/**
+ * The mail channel's two console pages, and the views and actions the
+ * management API mirrors of them (rule 7).
+ */
 class MailAdmin {
+  /**
+   * See the module's `PAGE`.
+   */
   static readonly PAGE = PAGE;
+  /**
+   * See the module's `OUTBOX`.
+   */
   static readonly OUTBOX = OUTBOX;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the console and the mail channel
+   */
   constructor(private readonly deps: MailAdminDeps) {
     deps.log.debug("Entering MailAdmin.constructor().");
     deps.log.debug("Leaving MailAdmin.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): MailAdminDeps {
     helpers.log.debug("Entering MailAdmin.defaultDeps().");
     helpers.log.debug("Leaving MailAdmin.defaultDeps().");
@@ -113,6 +147,15 @@ class MailAdmin {
   // /admin/mail — the JSON both surfaces answer. `?template=<id>&lang=<tag>`
   // is the one message's drill-down.
   // -------------------------------------------------------------------------
+  /**
+   * Builds `/admin/mail`'s view: the channel's status, the message templates
+   * and the settings, or one template when the query names `template` and
+   * `lang`.
+   *
+   * @param req - the request
+   * @param query - the query's values
+   * @returns the view
+   */
   settingsView(req: Req, query?: Json): Json {
     const { log, admin, mail } = this.deps;
     log.debug("Entering MailAdmin.settingsView().");
@@ -134,6 +177,17 @@ class MailAdmin {
   // `actor` is who pressed it (the console's person, or '' for an API
   // token), `via` which surface.
   // -------------------------------------------------------------------------
+  /**
+   * Takes one of the settings page's actions: `test`, `verify`, `save-template`
+   * or `reset-template`.
+   *
+   * A test message goes to a person in the realm's directory, at their own
+   * address; it is never sent to an address the request supplies.
+   * @param body - the action and its fields
+   * @param actor - who pressed it; '' for an API token
+   * @param via - which surface asked
+   * @returns `ok` with a message, or a refusal carrying its error code
+   */
   settingsAction(body: Json, actor: string, via: string): Json {
     const { log, mail } = this.deps;
     log.debug("Entering MailAdmin.settingsAction().");
@@ -213,6 +267,15 @@ class MailAdmin {
   // filter; `message=<id>` is one message's drill-down, with its body only
   // when it was CAPTURED (development).
   // -------------------------------------------------------------------------
+  /**
+   * Builds `/admin/mail/outbox`'s view, filtered by `state` and `q`, or one
+   * message when the query names `message`; its body only when it was captured
+   * (development).
+   *
+   * @param req - the request
+   * @param query - the query's values
+   * @returns the view
+   */
   outboxView(req: Req, query?: Json): Json {
     const { log, adminViews, mail } = this.deps;
     log.debug("Entering MailAdmin.outboxView().");
@@ -239,6 +302,13 @@ class MailAdmin {
     return out;
   }
 
+  /**
+   * Takes the outbox page's one action, `retry`, on a dead letter.
+   *
+   * @param body - `action` and the `message` to retry
+   * @param actor - who pressed it; '' for an API token
+   * @returns the channel's answer to the retry, or a refusal
+   */
   outboxAction(body: Json, actor: string): Json {
     const { log, mail } = this.deps;
     log.debug("Entering MailAdmin.outboxAction().");
@@ -485,6 +555,11 @@ class MailAdmin {
                    'and a pending or dead one\'s is not drawn here.'));
   }
 
+  /**
+   * Registers the two pages and their actions.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
@@ -573,10 +648,23 @@ const slot = new InstanceSlot<MailAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The mail channel's two console pages, `/admin/mail` and `/admin/mail/outbox`,
+ * and what the management API mirrors of them (rule 7).
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   MailAdmin: MailAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: MailAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
   OUTBOX: OUTBOX,

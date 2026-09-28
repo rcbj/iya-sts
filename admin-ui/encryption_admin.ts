@@ -132,6 +132,11 @@ interface EncryptionAdminDeps {
 // interesting question about a page like this is almost always *is X
 // encrypted* and a table that lists only the yeses answers it by silence.
 // ---------------------------------------------------------------------------
+/**
+ * Every class of data the store holds, sealed or not: what it is, where it
+ * lives, whether it is sealed, the label its encryptions are tallied under, and
+ * why.
+ */
 const DATA_CLASSES = [
   {
     label: 'signing-keys',
@@ -335,9 +340,21 @@ const DATA_CLASSES = [
   }
 ];
 
+/**
+ * Monitoring → Encryption: what is encrypted in the store, with which key,
+ * under which algorithm, and how much of it has happened.
+ */
 class EncryptionAdmin {
+  /**
+   * See the module's `DATA_CLASSES`.
+   */
   static readonly DATA_CLASSES = DATA_CLASSES;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the console, settings, crypto, the keystore and the mode
+   */
   constructor(private readonly deps: EncryptionAdminDeps) {
     deps.log.debug("Entering EncryptionAdmin.constructor().");
     deps.log.debug("Leaving EncryptionAdmin.constructor().");
@@ -345,6 +362,11 @@ class EncryptionAdmin {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): EncryptionAdminDeps {
     helpers.log.debug("Entering EncryptionAdmin.defaultDeps().");
     helpers.log.debug("Leaving EncryptionAdmin.defaultDeps().");
@@ -366,6 +388,13 @@ class EncryptionAdmin {
   // is `respond()`'s contract and the reason `/admin-api/encryption` cannot
   // disagree with the page (rule 7).
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the page's model, the one object behind the page, its `?format=json`
+   * and `/admin-api/encryption` (rule 7).
+   *
+   * @returns the key-encryption key, the data classes and the encryption and
+   * decryption counts of this process
+   */
   encryptionJson(): Json {
     const { log, crypto, keystore, mode } = this.deps;
     const self = this;
@@ -824,6 +853,12 @@ class EncryptionAdmin {
   // labels the call sites actually pass. Exported for `pki_authoring.js`'s
   // reason: a class described here and never sealed, or sealed and never
   // described, is an error nothing else in this service can see.
+  /**
+   * Answers the data-class table, for the test that checks it against the
+   * labels the call sites pass.
+   *
+   * @returns the data classes
+   */
   dataClasses(): typeof DATA_CLASSES {
     const { log } = this.deps;
     log.debug("Entering EncryptionAdmin.dataClasses().");
@@ -831,6 +866,11 @@ class EncryptionAdmin {
     return DATA_CLASSES.slice();
   }
 
+  /**
+   * Registers `GET /admin/encryption`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function }): void {
     const { log } = this.deps;
     const self = this;
@@ -871,10 +911,24 @@ helpers.log.info('The encryption report is at /admin/encryption: what this ' +
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Monitoring → Encryption, `/admin/encryption`: what this service seals at
+ * rest, with which key and under which algorithm, and how many encryptions and
+ * decryptions have happened in this process.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   EncryptionAdmin: EncryptionAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: EncryptionAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts`. Rule 7 — the page and the operation read one
   // function, so the API cannot report a different number from the console.

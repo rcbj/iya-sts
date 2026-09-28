@@ -319,6 +319,11 @@ import InstanceSlot = require('../common/instance_slot');
 // `<wsse:Security>` signature — `signSoapMessage()` is in it, and the debugger
 // uses it — and nothing here calls it.
 // ---------------------------------------------------------------------------
+/**
+ * The cryptographic standards the page describes (JWS, JWE, XMLDSIG, XML
+ * Encryption, WS-Security, COSE, X.509 and the rest), each with what this
+ * service does and does not do with it.
+ */
 const STANDARDS = [
   { key: 'jws', name: 'JWS — JSON Web Signature',
     specs: ['RFC 7515', 'RFC 7518 (JWA)', 'RFC 8037 (EdDSA)',
@@ -716,13 +721,30 @@ interface CryptoMetadataDeps {
 // ---------------------------------------------------------------------------
 let advertisedFamilies = null;
 
+/**
+ * `/admin/crypto-metadata` and `/admin/keys`: what this service does with
+ * cryptography for every identity service it advertises, with every algorithm
+ * table read from the module that performs the algorithm.
+ */
 class CryptoMetadata {
+  /**
+   * See the module's `STANDARDS`.
+   */
   static readonly STANDARDS = STANDARDS;
 
   // THE IDENTITY SERVICES, built once when the instance is — at load, for the
   // transitional instance, which is when the table was built before.
+  /**
+   * The identity services and each one's cryptographic profile, built once with
+   * the instance.
+   */
   readonly families: Family[];
 
+  /**
+   * Builds an instance and its table of identity services.
+   *
+   * @param deps - the modules whose algorithm tables and keys the page reads
+   */
   constructor(private readonly deps: CryptoMetadataDeps) {
     deps.log.debug("Entering CryptoMetadata.constructor().");
     this.families = this.buildFamilies();
@@ -731,6 +753,11 @@ class CryptoMetadata {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): CryptoMetadataDeps {
     helpers.log.debug("Entering CryptoMetadata.defaultDeps().");
     helpers.log.debug("Leaving CryptoMetadata.defaultDeps().");
@@ -825,6 +852,12 @@ class CryptoMetadata {
   // It was load-time work with this module's own instance until #50's R2; the
   // slot runs it now, once, for whichever instance is installed.
   // -------------------------------------------------------------------------
+  /**
+   * Fills the console's crypto reporter slot with the installed instance's
+   * report, key list and export, so `/admin-api` can mirror the page.
+   *
+   * @param instance - the instance being installed
+   */
   static wire(instance: CryptoMetadata): void {
     helpers.log.debug("Entering CryptoMetadata.wire().");
     if (typeof admin.setCryptoReporter === 'function') {
@@ -2426,6 +2459,13 @@ class CryptoMetadata {
     ];
   }
 
+  /**
+   * Receives the protocol families `sts_metadata.ts` advertises, for the drift
+   * check between the two metadata pages.
+   *
+   * Anything but an array is ignored and logged under `STS-ADMIN-0595`.
+   * @param protocols - the `PROTOCOLS` cards of `sts_metadata.ts`
+   */
   setProtocolFamilies(protocols) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering CryptoMetadata.setProtocolFamilies().");
@@ -2458,6 +2498,13 @@ class CryptoMetadata {
   // directions of endpoint drift. `checked: false` means the slot was never
   // filled — which the page says out loud rather than rendering two empty lists
   // that look like a clean bill of health.
+  /**
+   * Reports drift in both directions: an advertised family with no crypto
+   * profile here, and a profile naming a family nobody advertises.
+   *
+   * @returns `checked` (false when the slot was never filled), the undescribed
+   * and stale families, and the envelopes no standard row names
+   */
   driftReport() {
     const { log } = this.deps;
     const self = this;
@@ -2577,6 +2624,14 @@ class CryptoMetadata {
   // report one on every version this runs on, and a guess would be the
   // literal again.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the TLS listener certificate in one line, read off the
+   * certificate: the key's type and size, the issuer or "self-signed", and when
+   * it expires.
+   *
+   * @param cert - the certificate PEM, its chain and its expiry
+   * @returns the one-line summary
+   */
   listenerCertificateSummary(cert: { certPem?: string; chainPem?: string[];
                                      notAfter?: string }): string {
     const { log, nodeCrypto } = this.deps;
@@ -2624,6 +2679,13 @@ class CryptoMetadata {
     return key + ', ' + issuer + validTo;
   }
 
+  /**
+   * Describes the key material the ambient realm holds: the signing key, the
+   * post-quantum keys, the TLS listener certificate, the SPIFFE authority and
+   * the rest.
+   *
+   * @returns the key material section of the report
+   */
   keyMaterial() {
     const { log, stsKeysFor, config, realms, pqJose, bbs2023, spiffeCa,
             tlsServer } = this.deps;
@@ -2776,6 +2838,12 @@ class CryptoMetadata {
   // of lives; a number outside it simply produces no row, which is the honest
   // answer for an etype nothing here can name.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the Kerberos encryption types, 1 to 26, the codec can name, split
+   * into those it performs and those it only decodes.
+   *
+   * @returns `performed`, `decodeOnly` and the default etype preference
+   */
   kerberosEtypes() {
     const { log, krb5crypto } = this.deps;
     log.debug("Entering CryptoMetadata.kerberosEtypes().");
@@ -2816,6 +2884,12 @@ class CryptoMetadata {
   // the unsafe one does — which is this service's whole argument, made once
   // here rather than four times below.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the digests this service uses and accepts on each surface, weak ones
+   * included where deployed clients still send them.
+   *
+   * @returns the hashing section of the report
+   */
   hashing() {
     const { log, stsCrypto, xmldsig, scimAuth } = this.deps;
     log.debug("Entering CryptoMetadata.hashing().");
@@ -2917,6 +2991,12 @@ class CryptoMetadata {
   // is what the section further down is built on. Both are computed from the
   // shared table rather than listed, so neither can fall behind it.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the signature algorithms each surface offers and accepts, computed
+   * from the shared tables, with the asymmetric-only and post-quantum splits.
+   *
+   * @returns the signatures section of the report
+   */
   signatures() {
     const { log, stsCrypto, pqJose, bbs2023, webauthn, dpop, xmldsig,
             scimAuth } = this.deps;
@@ -3003,6 +3083,12 @@ class CryptoMetadata {
   // what is possible would not answer "what will the next assertion actually
   // use".
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the ciphers and key transports each surface offers, the configured
+   * XML choice beside the offered list.
+   *
+   * @returns the encryption section of the report
+   */
   encryption() {
     const { log, config, stsCrypto } = this.deps;
     const self = this;
@@ -3114,6 +3200,12 @@ class CryptoMetadata {
   //   `symmetric`  no public-key cryptography is involved; Grover applies and
   //                the margin is what the key length says
   // ---------------------------------------------------------------------------
+  /**
+   * Classifies each surface as `pq`, `classical` or `symmetric`: whether a
+   * post-quantum algorithm can be selected on it today.
+   *
+   * @returns the post-quantum section of the report
+   */
   postQuantum() {
     const { log, stsCrypto, pqJose } = this.deps;
     log.debug("Entering CryptoMetadata.postQuantum().");
@@ -3248,6 +3340,13 @@ class CryptoMetadata {
   // answer, which is rule 7 and is why the parity check is a property of the
   // code rather than a promise in a comment.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the whole report once, for the page and `GET /admin-api/crypto`
+   * (rule 7).
+   *
+   * @param base - the realm's issuer base URL
+   * @returns the report
+   */
   cryptoJson(base) {
     const { log, realms } = this.deps;
     const self = this;
@@ -3986,6 +4085,12 @@ class CryptoMetadata {
     return html;
   }
 
+  /**
+   * Registers `/admin/crypto-metadata`, `/admin/keys`, the signing-key history
+   * and its certificate download, and the rotate and export actions.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, baseUrlOf, parseBody, errorCodes, admin, certificateDialog,
             certificateViews, esc } = this.deps;
@@ -4305,6 +4410,12 @@ class CryptoMetadata {
     }
   }
 
+  /**
+   * Lists every key the ambient realm holds, each with its algorithm, kid,
+   * scope, certifying authority, export formats and what it is used for.
+   *
+   * @returns one row per key
+   */
   keyInventory() {
     const { log, stsKeysFor, realms, pqJose, tlsServer,
             pqcSupport } = this.deps;
@@ -4521,6 +4632,18 @@ class CryptoMetadata {
   // a key that has not been generated yet — and an exception would reach the
   // browser as a 500 with none of that in it.
   // ---------------------------------------------------------------------------
+  /**
+   * Exports one key from the inventory in a format it offers.
+   *
+   * Answers rather than throws: a refusal carries its error code and a sentence
+   * a person can act on. A post-quantum key is exported as its public half
+   * only.
+   * @param id - the key's inventory id
+   * @param format - `pem`, `der`, `jwk` or `pkcs12`, as the key offers
+   * @param password - the PKCS#12 password
+   * @returns `ok` with the files and a status line, or `ok: false` with
+   * `errors`
+   */
   async exportKey(id, format, password) {
     const { log, stsKeysFor, realms, keystore, stsPki } = this.deps;
     const self = this;
@@ -4681,6 +4804,15 @@ class CryptoMetadata {
   // row only where one is missing or has changed, so in the steady state this
   // GET writes nothing at all.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/keys/history`'s view: the index of signing units, or one
+   * unit's generations, newest first and paged.
+   *
+   * It observes the key set before it reads, so this GET may write the history
+   * rows it lacks.
+   * @param req - the console request
+   * @returns the history view
+   */
   historyJson(req) {
     const { log, adminViews } = this.deps;
     log.debug("Entering CryptoMetadata.historyJson().");
@@ -4693,6 +4825,12 @@ class CryptoMetadata {
     return view;
   }
 
+  /**
+   * Reads the signing-key rotation state of a realm.
+   *
+   * @param realmId - the realm id
+   * @returns the rotation view, or null when no rotation module is loaded
+   */
   rotationViewOf(realmId) {
     const { log } = this.deps;
     log.debug("Entering CryptoMetadata.rotationViewOf().");
@@ -4716,6 +4854,16 @@ class CryptoMetadata {
   // queues a run of `signing.rotate-now` on the scheduler and answers its id:
   // the rotation happens on the leader, once, wherever it was asked.
   // ---------------------------------------------------------------------------
+  /**
+   * Queues a rotation, or an emergency rotation, of the realm's signing keys on
+   * the scheduler; the one action both the console and `POST
+   * /admin-api/keys/rotate|emergency` call.
+   *
+   * @param req - the request, for the actor
+   * @param body - `action` (`rotate` or `emergency`), the units and `confirm`
+   * @param via - how the action was asked for, for the audit record
+   * @returns `ok` with the run's id and a link to it, or a refusal
+   */
   keysAction(req, body, via) {
     const { log, realms } = this.deps;
     log.debug("Entering CryptoMetadata.keysAction().");
@@ -4772,6 +4920,14 @@ class CryptoMetadata {
   // makes every other column unreadable, and the whole point of keeping one
   // is that somebody takes it away to check a signature with.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the history sub-page: a table per unit, newest first, each
+   * certificate offered as a download.
+   *
+   * @param view - `historyJson()`'s answer
+   * @param req - the console request
+   * @returns the markup
+   */
   renderHistory(view, req) {
     const { log, esc, admin, adminViews } = this.deps;
     log.debug("Entering CryptoMetadata.renderHistory().");
@@ -4849,6 +5005,15 @@ class CryptoMetadata {
   // the JWKS and the metadata documents published while the key was live — so
   // unlike `/admin/keys/export` this needs only Admin Read, which the console
   // gate has already asked for by the time a handler runs.
+  /**
+   * Answers one generation's certificate, observing the key set first so a link
+   * the console just drew never answers 404.
+   *
+   * @param realmId - the realm id
+   * @param unit - the signing unit
+   * @param kid - the generation's key id
+   * @returns the certificate PEM, or null
+   */
   historyCertificate(realmId, unit, kid) {
     const { log } = this.deps;
     log.debug("Entering CryptoMetadata.historyCertificate().");
@@ -4879,6 +5044,14 @@ class CryptoMetadata {
     return row && row.certificate ? row.certificate : null;
   }
 
+  /**
+   * Draws the rotation section above the key list: each unit's generations and
+   * the Rotate and Emergency forms.
+   *
+   * @param view - `rotationViewOf()`'s answer
+   * @param canWrite - whether the reader holds Admin Write
+   * @returns the markup, or an empty string without a view
+   */
   renderRotation(view, canWrite) {
     const { log, esc } = this.deps;
     log.debug("Entering CryptoMetadata.renderRotation().");
@@ -4957,6 +5130,12 @@ class CryptoMetadata {
     return out;
   }
 
+  /**
+   * Builds `/admin/keys`' view: the key inventory and what the keystore holds.
+   *
+   * @param base - the realm's issuer base URL
+   * @returns the keys view
+   */
   keysJson(base) {
     const { log, realms, keystore, stsKeystore } = this.deps;
     const self = this;
@@ -5246,11 +5425,27 @@ const log = helpers.log;
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * `/admin/crypto-metadata`: what this service does with cryptography, for every
+ * identity service it advertises, and with which algorithms; and the signing
+ * keys at `/admin/keys`.
+ *
+ * Every table is read from the module that performs the algorithm.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   CryptoMetadata: CryptoMetadata,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: CryptoMetadata): void =>
     slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   // The instance's table, read when asked (#50, R2): the same array the
   // installed instance holds.

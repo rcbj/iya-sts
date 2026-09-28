@@ -88,6 +88,11 @@ interface PqcBadgeDeps {
   };
 }
 
+/**
+ * The word drawn beside the icon for each kind: `PQC`, `PQC+` for a composite,
+ * `PQC KEM` and `PQC alt` for a classical key with an alternative post-quantum
+ * key.
+ */
 const WORDS: Record<PqcKind, string> = {
   pq: 'PQC', composite: 'PQC+', kem: 'PQC KEM', hybrid: 'PQC alt'
 };
@@ -117,9 +122,22 @@ const KIND_STYLE: Record<PqcKind, string> = {
   hybrid: 'background:#ffffff;color:#5b3a82;border:1px dashed #b194d6;'
 };
 
+/**
+ * The post-quantum icon, a lattice drawn as inline SVG with its word, one way
+ * on every page that marks a key pair.
+ */
 class PqcBadge {
+  /**
+   * See the module's `WORDS`.
+   */
   static readonly WORDS = WORDS;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the console's escaper and note, and
+   * `common/pqc_support.ts`
+   */
   constructor(private readonly deps: PqcBadgeDeps) {
     deps.log.debug("Entering PqcBadge.constructor().");
     deps.log.debug("Leaving PqcBadge.constructor().");
@@ -127,6 +145,11 @@ class PqcBadge {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): PqcBadgeDeps {
     log.debug("Entering PqcBadge.defaultDeps().");
     log.debug("Leaving PqcBadge.defaultDeps().");
@@ -140,6 +163,12 @@ class PqcBadge {
 
   // The icon for a classification, or '' where there is none — so a caller
   // can concatenate it after every row's algorithm without asking first.
+  /**
+   * Draws the icon for a classification.
+   *
+   * @param info - `pqcSupport`'s classification of a key
+   * @returns the badge's markup, or '' where there is none
+   */
   badge(info: PqcInfo | null | undefined): string {
     const { log, esc, pqcSupport } = this.deps;
     log.debug("Entering PqcBadge.badge().");
@@ -158,6 +187,13 @@ class PqcBadge {
 
   // The icon for a key given in any of its spellings — `pqcSupport.of()`'s
   // arguments — which is what a row usually has to hand.
+  /**
+   * Draws the icon for a key given in any of the spellings `pqcSupport.of()`
+   * takes.
+   *
+   * @param options - the key's algorithm, in any of its spellings
+   * @returns the badge's markup, or '' where there is none
+   */
   badgeFor(options: any): string {
     const { log, pqcSupport } = this.deps;
     log.debug("Entering PqcBadge.badgeFor().");
@@ -168,6 +204,12 @@ class PqcBadge {
   // The key a page draws once, above its tables: what each of the four marks
   // means, drawn with the marks themselves so the legend cannot drift from
   // them.
+  /**
+   * Draws the key a page shows once above its tables: what each of the four
+   * marks means, drawn with the marks themselves.
+   *
+   * @returns the legend's markup
+   */
   legend(): string {
     const { log, note } = this.deps;
     const self = this;
@@ -219,9 +261,22 @@ const slot = new InstanceSlot<PqcBadge>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The post-quantum icon, drawn one way on every page: `/admin/pki`,
+ * `/admin/keys` and the certificate details dialog.
+ * @namespace
+ */
 export = {
   PqcBadge: PqcBadge,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: PqcBadge): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   WORDS: WORDS,
   badge: slot.forward('badge'),

@@ -61,6 +61,9 @@ type Req = any;
 type Res = any;
 type Json = any;
 
+/**
+ * The console path of Monitoring → Scheduler.
+ */
 const PAGE = '/admin/scheduler';
 
 // What each state is called on the page.
@@ -78,14 +81,31 @@ interface SchedulerAdminDeps {
   parseBody: typeof helpers.parseBody;
 }
 
+/**
+ * Monitoring → Scheduler: which process leads the scheduler, every registered
+ * job with its last and next run, and the recent runs, all read from the store.
+ */
 class SchedulerAdmin {
+  /**
+   * See the module's `PAGE`.
+   */
   static readonly PAGE = PAGE;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the console and the scheduler
+   */
   constructor(private readonly deps: SchedulerAdminDeps) {
     deps.log.debug("Entering SchedulerAdmin.constructor().");
     deps.log.debug("Leaving SchedulerAdmin.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): SchedulerAdminDeps {
     helpers.log.debug("Entering SchedulerAdmin.defaultDeps().");
     helpers.log.debug("Leaving SchedulerAdmin.defaultDeps().");
@@ -112,6 +132,13 @@ class SchedulerAdmin {
   // The realm a request is confined to: a realm administrator's own, or ''
   // for a service administrator (and for a caller with no console session,
   // which the gate has already let through, as a management API token is).
+  /**
+   * Answers the realm a request is confined to.
+   *
+   * @param req - the request
+   * @returns a realm administrator's own realm, or '' for a service
+   * administrator or a caller with no console session
+   */
   confinedRealm(req: Req): string {
     const { log, adminViews } = this.deps;
     log.debug("Entering SchedulerAdmin.confinedRealm().");
@@ -154,6 +181,15 @@ class SchedulerAdmin {
   // THE VIEW MODEL: the report, or one run when `run` is named. One function
   // for the page's `?format=json` and for `GET /admin-api/scheduler`.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the view model for the page's `?format=json` and `GET
+   * /admin-api/scheduler`: the scheduler's report, or one run when the query
+   * names `run`.
+   *
+   * @param req - the request, for the realm it is confined to
+   * @param query - the query's values: `run`, and the job and outcome filters
+   * @returns the report or the one run
+   */
   async schedulerView(req: Req, query?: Json): Promise<Json> {
     const { log, scheduler, adminViews } = this.deps;
     log.debug("Entering SchedulerAdmin.schedulerView().");
@@ -215,6 +251,18 @@ class SchedulerAdmin {
   // gate refuses it first through `admin_scope.ts`, and this says it again
   // for a caller that did not come through that gate.
   // -------------------------------------------------------------------------
+  /**
+   * Takes one of the page's two actions: `run` a job now, or `step-down` the
+   * leader.
+   *
+   * A realm administrator is refused a service job, a job in another realm and
+   * the step-down (`STS-SCHED-0007`).
+   * @param req - the request
+   * @param body - `{ action: 'run', job, realm?, params? }` or `{ action:
+   * 'step-down' }`
+   * @param via - which surface asked
+   * @returns `{ ok, ... }`, or `{ ok: false, errorCode, errors }`
+   */
   schedulerAction(req: Req, body: Json, via: string): Json {
     const { log, scheduler } = this.deps;
     log.debug("Entering SchedulerAdmin.schedulerAction().");
@@ -689,6 +737,11 @@ class SchedulerAdmin {
     log.debug("Leaving SchedulerAdmin.renderScheduler(). One run.");
   }
 
+  /**
+   * Registers `GET /admin/scheduler` and its actions.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
@@ -732,10 +785,24 @@ const slot = new InstanceSlot<SchedulerAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Monitoring → Scheduler, `/admin/scheduler`: is the background work happening?
+ * Every job the scheduler knows, with its runs, read from the store so every
+ * process draws the same page.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   SchedulerAdmin: SchedulerAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: SchedulerAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
   // For `mgmt-api/admin_api.ts` (rule 7): the page's own JSON and action.

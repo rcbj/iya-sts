@@ -51,6 +51,9 @@ type Req = any;
 type Res = any;
 type Json = any;
 
+/**
+ * The console path of Server configuration → Mode.
+ */
 const PAGE = '/admin/mode';
 
 interface ModeAdminDeps {
@@ -59,14 +62,31 @@ interface ModeAdminDeps {
   mode: typeof mode;
 }
 
+/**
+ * Server configuration → Mode: what `global.mode` changes and what is in force
+ * in the ambient realm now, drawn from `mode.report()` and changing nothing.
+ */
 class ModeAdmin {
+  /**
+   * See the module's `PAGE`.
+   */
   static readonly PAGE = PAGE;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the console and `common/mode.js`
+   */
   constructor(private readonly deps: ModeAdminDeps) {
     deps.log.debug("Entering ModeAdmin.constructor().");
     deps.log.debug("Leaving ModeAdmin.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): ModeAdminDeps {
     helpers.log.debug("Entering ModeAdmin.defaultDeps().");
     helpers.log.debug("Leaving ModeAdmin.defaultDeps().");
@@ -75,6 +95,12 @@ class ModeAdmin {
 
   // The page's JSON, and the management API's answer: `mode.report()` for
   // the ambient realm, whole.
+  /**
+   * Answers the page's JSON and `GET /admin-api/mode`: `mode.report()` for the
+   * ambient realm, whole.
+   *
+   * @returns the mode report
+   */
   modeView(): Json {
     const { log, mode } = this.deps;
     log.debug("Entering ModeAdmin.modeView().");
@@ -179,6 +205,11 @@ class ModeAdmin {
     return tiles + about + warning + requirements + settings + notYet;
   }
 
+  /**
+   * Registers `GET /admin/mode`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function }): void {
     const { log, admin } = this.deps;
     const self = this;
@@ -202,10 +233,24 @@ const slot = new InstanceSlot<ModeAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Server configuration → Mode, `/admin/mode`: what `global.mode` changes, and
+ * what is in force in this realm now. A realm's page with no control and no
+ * POST.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   ModeAdmin: ModeAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: ModeAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
   // For `mgmt-api/admin_api.ts` (rule 7).

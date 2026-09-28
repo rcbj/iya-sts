@@ -63,12 +63,24 @@ type Req = import('express').Request;
 type Res = import('express').Response;
 type Json = any;
 
+/**
+ * Directory → Devices: the realm's device list, and one device by `?device=`.
+ */
 const LIST = '/admin/devices';
+/**
+ * Protocols → Device registration: how a device arrives and is recognised.
+ */
 const REGISTRATION = '/admin/device-registration';
+/**
+ * Monitoring → Devices: the register counted, and its events over time.
+ */
 const MONITOR = '/admin/devices/monitor';
 
 // The actions the list page takes, for the sentence an unknown one is
 // answered with (the parity jobs read the list back out of it).
+/**
+ * The actions the device list page takes.
+ */
 const ACTIONS = ['create', 'update', 'remove', 'add-key', 'remove-key',
                  'set-compliance', 'set-status'];
 
@@ -76,6 +88,10 @@ const ACTIONS = ['create', 'update', 'remove', 'add-key', 'remove-key',
 // path, not under /admin, that sets a device's compliance with no credential
 // at all — what a client under test drives to see its session and tokens
 // react — refused in product by `mode.opensTestControls()`.
+/**
+ * Development's compliance test control: a public path that sets a device's
+ * compliance with no credential, refused in product mode.
+ */
 const TEST_CONTROL = '/devices/test/compliance';
 
 // The compliance states a DOOR may set. `unknown` is what a device starts
@@ -152,17 +168,43 @@ interface DevicesAdminDeps {
   parseBody: typeof helpers.parseBody;
 }
 
+/**
+ * The device register's three console pages, and the views and actions the
+ * management API mirrors of them (rule 7).
+ */
 class DevicesAdmin {
+  /**
+   * See the module's `LIST`.
+   */
   static readonly LIST = LIST;
+  /**
+   * See the module's `REGISTRATION`.
+   */
   static readonly REGISTRATION = REGISTRATION;
+  /**
+   * See the module's `MONITOR`.
+   */
   static readonly MONITOR = MONITOR;
+  /**
+   * See the module's `ACTIONS`.
+   */
   static readonly ACTIONS = ACTIONS;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the console, the device register and the modules it reads
+   */
   constructor(private readonly deps: DevicesAdminDeps) {
     deps.log.debug("Entering DevicesAdmin.constructor().");
     deps.log.debug("Leaving DevicesAdmin.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): DevicesAdminDeps {
     helpers.log.debug("Entering DevicesAdmin.defaultDeps().");
     helpers.log.debug("Leaving DevicesAdmin.defaultDeps().");
@@ -178,6 +220,13 @@ class DevicesAdmin {
   }
 
   // Who is acting: the console session's person, or '' for an API caller.
+  /**
+   * Answers who is acting: the console session's person, or an empty string for
+   * an API caller.
+   *
+   * @param req - the request
+   * @returns the actor's name, or ''
+   */
   actorOf(req: Req): string {
     const { log, adminViews } = this.deps;
     log.debug("Entering DevicesAdmin.actorOf().");
@@ -218,6 +267,13 @@ class DevicesAdmin {
 
   // A device as both surfaces show it: the register's view, with its
   // owner's and applications' names read back out of the directory.
+  /**
+   * Describes a device as both surfaces show it: the register's view with its
+   * owner's and applications' names read back out of the directory.
+   *
+   * @param device - a device from the register
+   * @returns the device's row
+   */
   row(device: Json): Json {
     const { log, devices } = this.deps;
     log.debug("Entering DevicesAdmin.row().");
@@ -253,6 +309,15 @@ class DevicesAdmin {
   // device's drill-down, with `found: false` rather than a 404 for an id the
   // realm does not hold (an answer, not a routing problem).
   // -------------------------------------------------------------------------
+  /**
+   * Builds `/admin/devices`' view: the realm's devices, filtered and paged, or
+   * one device's drill-down when the query names `device`.
+   *
+   * An id the realm does not hold answers `found: false` rather than a 404.
+   * @param req - the request
+   * @param query - the query's values
+   * @returns the list or the one device
+   */
   listView(req: Req, query?: Json): Json {
     const { log, adminViews, devices } = this.deps;
     log.debug("Entering DevicesAdmin.listView().");
@@ -311,6 +376,19 @@ class DevicesAdmin {
   // nine hundred. The change is recorded `source: mdm` with the CLIENT as
   // the actor, so Monitoring → Devices and CAEP's reason say which feed.
   // -------------------------------------------------------------------------
+  /**
+   * Applies an MDM or posture feed's compliance reports, each on its own and in
+   * order: `POST /admin-api/device-compliance`, and the test control.
+   *
+   * Each report names its device by `id`, a key `thumbprint` or a
+   * `certificate`, and sets compliance only. A report that names no device or
+   * no status is refused without stopping the rest; a batch outside
+   * `devices.complianceFeedMaxReports` is refused whole.
+   * @param body - one report, or `{ reports: [...] }`
+   * @param clientId - the feed's client, recorded as the actor
+   * @param source - `test-control` for the test control; otherwise `mdm`
+   * @returns how many were applied and refused, and each report's result
+   */
   mdmFeed(body: Json, clientId: string, source?: string): Json {
     const { log } = this.deps;
     log.debug("Entering DevicesAdmin.mdmFeed().");
@@ -420,6 +498,15 @@ class DevicesAdmin {
   // `actor` is who pressed it (the console's person, or '' for an API
   // token), `via` which surface.
   // -------------------------------------------------------------------------
+  /**
+   * Takes one of the list page's actions: create, update, remove, add-key or
+   * remove-key.
+   *
+   * @param body - the action and its fields
+   * @param actor - who pressed it; '' for an API token
+   * @param via - which surface asked
+   * @returns `ok` with a message, or a refusal
+   */
   action(body: Json, actor: string, via: string): Json {
     const { log, devices } = this.deps;
     log.debug("Entering DevicesAdmin.action().");
@@ -504,6 +591,12 @@ class DevicesAdmin {
   // The attestation trust anchors, per statement kind: where they come
   // from in this realm and, for the shipped ones, their subjects and pins.
   // Never a certificate's text.
+  /**
+   * Describes the attestation trust anchors per statement kind: where they come
+   * from in this realm and, for the shipped ones, their subjects and pins.
+   *
+   * @returns the trust anchors; never a certificate's text
+   */
   trustAnchors(): Json {
     const { log } = this.deps;
     log.debug("Entering DevicesAdmin.trustAnchors().");
@@ -532,6 +625,14 @@ class DevicesAdmin {
     ];
   }
 
+  /**
+   * Builds `/admin/device-registration`'s view: the enrolment methods and
+   * whether each is built, the kinds of key, what attestation means here, and
+   * the settings.
+   *
+   * @param req - the request
+   * @returns the view
+   */
   registrationView(req: Req): Json {
     const { log, admin, devices } = this.deps;
     log.debug("Entering DevicesAdmin.registrationView().");
@@ -635,6 +736,14 @@ class DevicesAdmin {
   // /admin/devices/monitor — the JSON both surfaces answer. `days` is how
   // many UTC days the timeline covers (30 by default, 366 at most).
   // -------------------------------------------------------------------------
+  /**
+   * Builds `/admin/devices/monitor`'s view: the register counted and its events
+   * over the last `days` UTC days (30 by default, 366 at most).
+   *
+   * @param req - the request
+   * @param query - the query's values
+   * @returns the view
+   */
   monitorView(req: Req, query?: Json): Json {
     const { log, devices } = this.deps;
     log.debug("Entering DevicesAdmin.monitorView().");
@@ -1167,6 +1276,12 @@ class DevicesAdmin {
       ? LIST + '?device=' + encodeURIComponent(id) : LIST;
   }
 
+  /**
+   * Registers the three pages, the list page's actions and the compliance test
+   * control.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
@@ -1260,10 +1375,24 @@ const slot = new InstanceSlot<DevicesAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The device register's three console pages (Directory → Devices, Protocols →
+ * Device registration, Monitoring → Devices) and what the management API
+ * mirrors of them (rule 7).
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   DevicesAdmin: DevicesAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: DevicesAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   LIST: LIST,
   REGISTRATION: REGISTRATION,

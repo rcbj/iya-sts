@@ -94,7 +94,15 @@ interface CertificateDialogDeps {
 }
 
 // The query parameters this dialog owns, named once.
+/**
+ * The query parameter that opens the dialog: a certificate's SHA-256
+ * fingerprint.
+ */
 const PARAM = 'certificate';
+/**
+ * The query parameter naming the section the opening link sits in, so closing
+ * returns to it.
+ */
 const FROM = 'from';
 
 // ---------------------------------------------------------------------------
@@ -151,10 +159,25 @@ const CHAIN_STATUS = {
   'too-deep': 'The path did not end.'
 };
 
+/**
+ * The certificate details dialog, drawn by the server over the page it was
+ * opened on with no script, and the link that opens it.
+ */
 class CertificateDialog {
+  /**
+   * See the module's `PARAM`.
+   */
   static readonly PARAM = PARAM;
+  /**
+   * See the module's `FROM`.
+   */
   static readonly FROM = FROM;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the HTML escaper and the post-quantum badge
+   */
   constructor(private readonly deps: CertificateDialogDeps) {
     deps.log.debug("Entering CertificateDialog.constructor().");
     deps.log.debug("Leaving CertificateDialog.constructor().");
@@ -162,6 +185,11 @@ class CertificateDialog {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): CertificateDialogDeps {
     log.debug("Entering CertificateDialog.defaultDeps().");
     log.debug("Leaving CertificateDialog.defaultDeps().");
@@ -181,6 +209,12 @@ class CertificateDialog {
   }
 
   // Is a dialog being asked for on this request?
+  /**
+   * Answers whether a dialog is asked for on this request.
+   *
+   * @param req - the request
+   * @returns true when the query carries the certificate parameter
+   */
   requested(req: Json): boolean {
     const { log } = this.deps;
     log.debug("Entering CertificateDialog.requested().");
@@ -194,6 +228,15 @@ class CertificateDialog {
   // dialog opens over that page; `from` is the id of the section the link
   // sits in.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the link that opens a certificate's dialog over the page it is on.
+   *
+   * @param pagePath - the page the link is drawn on
+   * @param fingerprint - the certificate's SHA-256 fingerprint
+   * @param from - the id of the section the link sits in
+   * @param text - the link's text; "View details" when absent
+   * @returns the link's HTML, or an empty string without a usable fingerprint
+   */
   link(pagePath: string, fingerprint: Json, from?: Json,
        text?: string): string {
     const { log, esc } = this.deps;
@@ -309,6 +352,14 @@ class CertificateDialog {
   // its chain, so a chain member is never described with fewer fields than a
   // leaf.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws every field of a described certificate in the order RFC 5280 section
+   * 4.1 writes them; used for the opened certificate and each member of its
+   * chain.
+   *
+   * @param described - `common/certificate_details.ts`'s model of a certificate
+   * @returns the fields as HTML
+   */
   fieldsHtml(described: Json): string {
     const { log, esc } = this.deps;
     const self = this;
@@ -467,6 +518,16 @@ class CertificateDialog {
   // refusal included: an open that cannot be answered still opens, and says
   // why, because a link that did nothing would read as a broken control.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the dialog over a page, with its style: the certificate's fields and
+   * its chain, or, for a refusal, why it cannot be opened.
+   *
+   * @param pagePath - the page the dialog is drawn over, which the close
+   * controls return to
+   * @param view - `certificate_views.detailsView()`'s answer
+   * @param from - the id of the section to return to
+   * @returns the dialog's HTML
+   */
   dialog(pagePath: string, view: Json, from?: Json): string {
     const { log, esc, pqcBadge } = this.deps;
     const self = this;
@@ -544,10 +605,24 @@ const slot = new InstanceSlot<CertificateDialog>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The certificate details dialog both `/admin/pki` and `/admin/crypto-metadata`
+ * draw, and the one renderer of a certificate's fields, drawn by the server
+ * with no script.
+ * @namespace
+ */
 export = {
   CertificateDialog: CertificateDialog,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: CertificateDialog): void =>
     slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PARAM: PARAM,
   FROM: FROM,
