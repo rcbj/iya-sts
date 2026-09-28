@@ -148,12 +148,16 @@ jobs:
     # Not larger, for the reason it exists at all: without a number here a
     # stuck job holds a runner for six hours.
     #
+    # 150 SINCE 2026-09-27: a runner with no layer cache spends about nineteen
+    # minutes building the images before any mode starts, which no mode bound
+    # covers; tests/teardown_bounds.js adds thirty for it.
+    #
     # 120 SINCE 2026-09-14. The suite is 225 jobs now and `dispatch` alone
     # outgrew the launcher's 25-minute mode bound, which went to 50; this has
     # to sit above one wedged mode plus every teardown (tests/teardown_bounds.js)
     # and above three healthy modes, measured at about 70 minutes on a
     # developer machine. 120 is that test's own ceiling.
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       # submodules: recursive is LOAD-BEARING, and `true` is not enough. The
       # embedded directory's library is `"ldapjs": "file:node-ldapjs"` — a git
@@ -273,7 +277,10 @@ jobs:
     # 90 since 2026-09-15: the suite alone took 2,807s of a 49-minute job on
     # develop (244 jobs), and the post-quantum jobs that used to fail at the
     # service's 120s worker bound now wait out their signatures instead.
-    timeout-minutes: 90
+    # 150 since 2026-09-27: on a runner with no layer cache the build took
+    # nineteen minutes, and the instrumented suite had reached 386 of its jobs
+    # when 90 cancelled it.
+    timeout-minutes: 150
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
@@ -361,14 +368,16 @@ jobs:
   # a quarter on 2026-09-24, so the launcher grows such a mode's bound by
   # STS_CONFORMANCE_TIMEOUT (180m) and no ceiling the `tests` job may have
   # fits it. The same argument as that job's number: above the mode's bound
-  # (50m + 180m) and two teardowns (5m each), so the launcher's bound is the
+  # (50m + 180m) and two teardowns (5m each) — and, since 2026-09-27, thirty
+  # minutes for the image build before any mode starts — so the launcher's
+  # bound is the
   # one that fires, and under GitHub's own six hours
   # (tests/teardown_bounds.js asserts both).
   # ---------------------------------------------------------------------------
   openid-conformance:
     needs: mirror
     runs-on: ubuntu-latest
-    timeout-minutes: 270
+    timeout-minutes: 280
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
@@ -447,8 +456,11 @@ jobs:
     # one that can explain itself — tests/teardown_bounds.js asserts it. The
     # mode took 24.7 minutes on 2026-09-15 in development mode with one process
     # per node; as two production nodes (2026-09-21) its bulk loads alone
-    # outran the shared 50-minute bound.
-    timeout-minutes: 115
+    # outran the shared 50-minute bound. 150 since 2026-09-27: 115 did not
+    # count the image build (nineteen minutes on a cold runner), so a run was
+    # cancelled at 527 jobs before the mode's own bound could fire; the test
+    # now adds thirty minutes for it.
+    timeout-minutes: 150
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out

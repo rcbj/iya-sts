@@ -345,6 +345,10 @@ DOCKER_SUDO=""
 COMPOSE_CMD=""
 COMPOSE_ENV=()
 STACK_UP=0
+# Whether the mode that is up has had its container logs taken (2026-09-27):
+# teardown() takes them if it has not, which is what an interrupted mode
+# needs — a cancelled CI job used to lose every service log with the stack.
+LOGS_TAKEN=0
 
 # The header of this file IS the usage, printed by reading it back rather than
 # by keeping a second copy of it in a here-document — which is the only way the
@@ -1233,6 +1237,17 @@ teardown()
     echo "  stop it: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${files} down -v"
     return 0
   fi
+  # A MODE INTERRUPTED BEFORE ITS LOGS WERE TAKEN (2026-09-27): a cancelled
+  # CI job, a Ctrl-C. The stack is about to go, and the service's log with
+  # it — the only record of why a job in that mode failed — so it is taken
+  # first, into the mode's report as usual. Bounded like everything here.
+  if [ "${STACK_UP}" = "1" ] && [ "${LOGS_TAKEN}" = "0" ] &&
+     [ -n "${MODE:-}" ];
+  then
+    echo "Interrupted in the ${MODE} mode: taking its container logs first."
+    captureContainerLogs "${MODE}" || true
+    LOGS_TAKEN=1
+  fi
   # BOUNDED. This is the EXIT trap, so an unbounded call here can hold a run
   # open after everything it was asked to do is finished and reported — which
   # is the shape of the 2026-09-10 incident, one function along.
@@ -1241,6 +1256,11 @@ teardown()
     > /dev/null 2>&1 || true
 }
 trap teardown EXIT
+# A SIGNAL GOES THROUGH THE EXIT TRAP (2026-09-27). bash runs an EXIT trap on
+# `exit`, not when a signal kills it, and GitHub cancels a job with SIGINT and
+# then SIGTERM: without these the stack and its logs were simply abandoned.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # A stack left behind by an interrupted run holds the container names this one
 # is about to ask for. Removing it is safe BECAUSE of the project name: this
@@ -1799,6 +1819,7 @@ do
   )
 
   STACK_UP=1
+  LOGS_TAKEN=0
   MODE_RC=0
   # This mode's start, which modeWroteReport() compares a report against, so a
   # report from an earlier mode or run is never taken for this one's.
@@ -1972,6 +1993,7 @@ do
   fi
 
   captureContainerLogs "${MODE}"
+  LOGS_TAKEN=1
 
   # KEPT: the last mode under --keep-stack stays up for the teardown trap to
   # describe, and is the one stack this launcher leaves behind.
