@@ -6548,6 +6548,26 @@ const SETTINGS = [
   // rcbj's decision: on, it sets a cookie script can read and a cross-site
   // iframe is sent (the OP browser state), which no deployment should acquire
   // without asking. `oauth-oidc/session_management.js` argues the rest.
+  { key: 'oauth2.keyBinding', group: 'OAuth 2.0 / OIDC',
+    label: 'OpenID Connect Key Binding',
+    env: 'STS_OAUTH2_KEY_BINDING', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Perform OpenID Connect Key Binding 1.0 (#150). With it on: ' +
+                 'the discovery document lists the `bound_key` scope, a ' +
+                 'client that declares no scopes may ask for it, and a ' +
+                 'request for it must name `dpop_jkt` and use the code flow ' +
+                 '(refused otherwise, STS-OAUTH-0704 and 0705); the ID Token ' +
+                 'then names the DPoP key (`cnf.jwk`, `typ: dpop+id_token`), ' +
+                 'the token request must prove it with `c_s256`, and every ' +
+                 'refresh must come from the same key. **Off, it does not ' +
+                 'exist, and the service is OpenID Connect Core alone**: ' +
+                 '`bound_key` is not advertised, a request carrying it is ' +
+                 'not refused — the scope is ignored and not granted, as ' +
+                 'Core treats a scope an OP does not act on — and no ID ' +
+                 'Token is bound. Turn it off where relying parties request ' +
+                 'every advertised scope and know nothing of Key Binding ' +
+                 '(#315). A grant already bound before it was turned off ' +
+                 'keeps its key check on refresh.' },
   { key: 'oauth2.sessionManagement', group: 'OAuth 2.0 / OIDC',
     label: 'OpenID Connect Session Management',
     env: 'STS_OAUTH2_SESSION_MANAGEMENT', type: 'bool', dflt: false,

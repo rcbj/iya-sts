@@ -27,6 +27,7 @@ const stsCrypto = require('../common/crypto');
 const device = require('../oauth-oidc/device_authorization');
 const dpop = require('../oauth-oidc/dpop');
 const oauth2 = require('../oauth-oidc/oauth2');
+const scopePolicy = require('../common/scope_policy');
 
 const log = require('bunyan').createLogger({ name: 'device_key_binding',
   level: process.env.LOG_LEVEL || 'info' });
@@ -194,12 +195,30 @@ async function body(t) {
           server.boundIdTokenRefusal(bound, 'another').code ===
             'STS-OAUTH-0707',
           '3b. a bound ID Token needs a proof from the key it names');
+
+  t.log.info('=== 4. Key Binding turned off (#315) ===');
+  t.check(server.keyBindingOn() === true &&
+          scopePolicy.defaultScopes().indexOf('bound_key') >= 0,
+          '4a. on by default, and bound_key is in the default scope set');
+  config.setOverride('oauth2.keyBinding', false);
+  try {
+    t.check(server.keyBindingOn() === false &&
+            scopePolicy.defaultScopes().indexOf('bound_key') < 0 &&
+            scopePolicy.defaultScopes().indexOf('openid') >= 0,
+            '4b. off: bound_key leaves the default scope set, openid stays');
+    t.check(refusal('openid bound_key', null) === null &&
+            refusal('openid bound_key', wrongHash) === null,
+            '4c. off: a grant naming bound_key needs no c_s256');
+  } finally {
+    config.clearOverride('oauth2.keyBinding');
+  }
   log.debug("Leaving body().");
 }
 
 module.exports = {
   name: 'device_key_binding',
   describe: 'RFC 8628 device codes and OpenID Connect Key Binding (#150): ' +
-            'the codes\' life, ML-DSA DPoP keys, c_s256 and section 7',
+            'the codes\' life, ML-DSA DPoP keys, c_s256 and section 7, ' +
+            'and oauth2.keyBinding off (#315)',
   run: run
 };
