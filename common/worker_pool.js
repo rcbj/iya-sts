@@ -165,6 +165,13 @@ let stopped = false;
 // realms.js. A pool is a property of the PROCESS, and a realm that could resize
 // it would be resizing every other realm's too.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the configured pool size, `workers.count`, read live.
+ *
+ * A module loaded with no configuration at all gets 0, meaning compute in
+ * this process; a value that is not a number at or above 0 also reads as 0.
+ * @returns the number of workers wanted
+ */
 function size() {
   log.debug('Entering size().');
   let wanted = 0;
@@ -470,6 +477,19 @@ function workerFor(session) {
 // here, because a caller that had to know which would be a caller that has to
 // know what `workers.count` is set to.
 // ---------------------------------------------------------------------------
+/**
+ * Runs one job, on a worker if the pool has any and in this process if not.
+ *
+ * It always returns a promise. A job on a worker is bounded by
+ * `workers.jobTimeoutS`; one that does not come back in time, or whose worker
+ * dies, rejects with a sentence saying the request can be made again.
+ * @param kind - the job kind, one of worker.js's JOB_KINDS
+ * @param job - the job's input, which must survive IPC serialization
+ * @param opts - optional; `session` names an authenticated session for
+ *   worker affinity
+ * @returns a promise of the job's result; rejected for an unknown kind or a
+ *   failed job
+ */
 function run(kind, job, opts) {
   log.debug('Entering run(). kind=' + kind);
   const options = opts || {};
@@ -593,6 +613,14 @@ function run(kind, job, opts) {
 // exit, and a rejection there would replace the sentence that says what was
 // flushed with a stack trace.
 // ---------------------------------------------------------------------------
+/**
+ * Drains the pool for shutdown: every worker is disconnected, and one still
+ * holding a job past the limit is killed.
+ *
+ * It resolves rather than rejects when a worker had to be killed.
+ * @param timeoutMs - how long to wait before killing; 5000 when omitted
+ * @returns a promise of `{ stopped, killed }`
+ */
 function stop(timeoutMs) {
   log.debug('Entering stop().');
   stopped = true;
@@ -659,6 +687,13 @@ function stop(timeoutMs) {
 
 // What the pool is doing, for the tests and for anything that wants to report
 // it. A copy, so a reader cannot reach into the live entries.
+/**
+ * Reports what the pool is doing: configured size, running workers, whether
+ * it computes in process or has given up on children, the affinity count,
+ * and each worker's pid, jobs in flight and jobs done.
+ *
+ * @returns a copy of the pool's state
+ */
 function stats() {
   log.debug('Entering stats().');
   const out = {
@@ -679,6 +714,11 @@ function stats() {
 // Forget that the pool gave up, and let a drained pool be used again. It exists
 // for the tests, which have to drive the give-up path and then keep going, and
 // for nothing else — the service itself gives up once and says so.
+/**
+ * Forgets that the pool gave up or was stopped, so it may be used again.
+ *
+ * For the tests only; the service itself gives up once.
+ */
 function reset() {
   log.debug('Entering reset().');
   givenUpOnChildren = false;
@@ -687,6 +727,14 @@ function reset() {
   log.debug('Leaving reset().');
 }
 
+/**
+ * The front process's end of the worker pool: fork, route, restart, drain.
+ *
+ * Nothing is forked until the first job, and `workers.count` is re-read on
+ * every call. Routing keeps a named session on one worker and otherwise picks
+ * the least loaded. Requiring this module arms pq_jose.js's asynchronous half.
+ * @namespace
+ */
 module.exports = {
   size: size,
   run: run,

@@ -80,6 +80,10 @@ const errorCodes = require('./error_codes');
 // written against — adding one is adding a word a policy author can match on,
 // and renaming one silently stops every policy that named the old word from
 // matching, which is a policy that permits nothing rather than an error.
+/**
+ * The kinds of issuance a caller may ask about, each the XACML `action-id`
+ * policies are written against.
+ */
 const ISSUANCE = {
   SESSION: 'start-session',
   ACCESS_TOKEN: 'issue-access-token',
@@ -92,12 +96,22 @@ const ISSUANCE = {
   KERBEROS_TICKET: 'issue-kerberos-ticket'
 };
 
+/**
+ * Every value of `ISSUANCE`.
+ */
 const KINDS = Object.keys(ISSUANCE).map(function (key) {
   return ISSUANCE[key];
 });
 
 let decider = null;
 
+/**
+ * Installs the function that decides issuance: the embedded PEP,
+ * `xacml/xacml_role_pep.ts`.
+ *
+ * @param fn - the decider; anything but a function empties the slot, and
+ * issuance is then ungated
+ */
 function setDecider(fn) {
   log.debug('Entering setDecider().');
   decider = typeof fn === 'function' ? fn : null;
@@ -108,6 +122,11 @@ function setDecider(fn) {
 // What is installed, for a test that stubs it — `xacml_store.js` argues why
 // this is not pedantry, and it is the same one-process, one-reference
 // situation here.
+/**
+ * Returns the decider now installed, for a test that stubs it.
+ *
+ * @returns the decider, or null
+ */
 function deciderInstalled() {
   log.debug("Entering deciderInstalled().");
   log.debug("Leaving deciderInstalled().");
@@ -165,6 +184,22 @@ function deciderInstalled() {
 // token endpoint asynchronous would be a change to eight protocol
 // implementations rather than to one file.
 // ---------------------------------------------------------------------------
+/**
+ * Asks whether something may be issued: a session, a token, an assertion, a
+ * ticket.
+ *
+ * Refuses first for a realm being removed (STS-CORE-0121) and a disabled
+ * account (STS-AUTHN-0201). With no decider installed every other call is
+ * allowed; otherwise the embedded PEP decides on roles, risk and the registered
+ * device. Never throws and never returns a promise; a decider that throws is
+ * logged (STS-XACML-0052) and the issuance allowed.
+ *
+ * @param request - the question: `application`, `kind` (one of `ISSUANCE`),
+ * `subject`, `claims`, `realm`, and optionally `risk`, `session`, `device` and
+ * `deviceDeferred`
+ * @returns `{ allowed, decision, why, roles, required, policy }`, where
+ * `allowed` is what the caller branches on
+ */
 function check(request) {
   log.debug('Entering check(). kind=' + (request || {}).kind);
   const asked = request || {};
@@ -321,8 +356,23 @@ function check(request) {
 //
 // `delegation`: { intermediary, subject, target, mode, protocol }.
 // ---------------------------------------------------------------------------
+/**
+ * The `action-id` of the delegation question: `delegate`. Not a member of
+ * `ISSUANCE`.
+ */
 const DELEGATE = 'delegate';
 
+/**
+ * Puts a delegation the attribute rule already allowed to the embedded PEP,
+ * which may only deny it.
+ *
+ * Only an explicit Deny refuses; a Permit, NotApplicable, Indeterminate, no
+ * decider or a decider that throws all leave the attribute rule's answer
+ * standing.
+ *
+ * @param delegation - `{ intermediary, subject, target, mode, protocol }`
+ * @returns the same shape as `check()`
+ */
 function checkDelegation(delegation) {
   log.debug('Entering checkDelegation().');
   const asked = delegation || {};
@@ -396,6 +446,15 @@ function riskFactsOf(asked) {
 // reason; a process without the register has no device facts, which a
 // device rule reads as "none".
 // ---------------------------------------------------------------------------
+/**
+ * Finds the registered device an issuance came from, brought up to date against
+ * the device register.
+ *
+ * @param asked - the issuance request: its own `device` where named (null
+ * meaning none), otherwise the device the session's latest authentication event
+ * recognised
+ * @returns the device fact, or null
+ */
 function deviceFactsOf(asked) {
   log.debug("Entering deviceFactsOf().");
   let fact = null;
@@ -431,6 +490,13 @@ function deviceFactsOf(asked) {
 // `devices.compliantDeviceAttested` is. The settings SWITCH the rules and
 // the policy states them — `xacml/xacml_templates.ts` argues it.
 // ---------------------------------------------------------------------------
+/**
+ * Lists what the ambient realm requires of a device, as the bag the issuance
+ * policy reads.
+ *
+ * @returns some of `not-compromised`, `compliant` and `attested`, as the
+ * `devices.*` settings say
+ */
 function deviceRequirementOf() {
   log.debug("Entering deviceRequirementOf().");
   const out = [];
@@ -483,6 +549,14 @@ function allow(why) {
            roles: [], required: [], policy: null };
 }
 
+/**
+ * The one place this service asks "may I issue this?", answered by whichever
+ * policy enforcement point filled its slot.
+ *
+ * A leaf; an empty slot means issue. The embedded XACML PEP fills it.
+ *
+ * @namespace
+ */
 module.exports = {
   ISSUANCE: ISSUANCE,
   KINDS: KINDS,

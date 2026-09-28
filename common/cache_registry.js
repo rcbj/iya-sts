@@ -96,7 +96,14 @@ const errorCodes = require('./error_codes');
 const log = bunyan.createLogger({ name: 'sts-cache-registry' });
 config.registerLogger(log);
 
+/**
+ * The scopes a cache may declare: `process` or `realm`.
+ */
 const SCOPES = ['process', 'realm'];
+/**
+ * The kinds a store may declare: `cache` (rebuildable) or `replay` (a
+ * one-time-value history).
+ */
 const KINDS = ['cache', 'replay'];
 
 /** @type {Map<string, any>} */
@@ -120,6 +127,16 @@ function countsFor(name) {
 // A descriptor is checked WHOLE when it is registered, for the reason rule 3e
 // gives for a slot: one registered with half its members draws a row that
 // looks right and fails when its drill-down is opened.
+/**
+ * Registers a cache or replay store's descriptor, replacing any earlier one of
+ * the same name.
+ *
+ * @param descriptor - the store's `name`, `title`, `description`, `owner`,
+ *   `scope`, `kind`, `maxEntries()`, `lifetime()`, `entries()`, and optionally
+ *   `eject()`, `bound`, `settings`, `hitMeaning`, `persisted` and `counted`
+ * @returns the store's counter, as `counter()` answers
+ * @throws an Error tagged STS-CORE-0094 when a required member is missing
+ */
 function register(descriptor) {
   log.debug("Entering register().");
   const d = descriptor || {};
@@ -157,6 +174,12 @@ function register(descriptor) {
 // Hot path: called on every lookup of every registered cache, so no
 // Entering/Leaving pair here — it would drown the log with two lines per
 // cached read.
+/**
+ * Returns the counter an owner calls at its one lookup and when its bound acts.
+ *
+ * @param name - the store's name
+ * @returns `hit()`, `miss()`, `evicted(n)` and `refused()`
+ */
 function counter(name) {
   const c = countsFor(name);
   return {
@@ -205,6 +228,19 @@ const lastRefusalLog = new Map();
 
 // Hot path: called before every insert into a bounded store, so no
 // Entering/Leaving pair — it would add two log lines per cached write.
+/**
+ * Makes room in a bounded store before a new key is inserted.
+ *
+ * Drops expired entries when `options.expired` is given; at the bound, either
+ * evicts the oldest inserted entries (the default) or, with `policy: 'refuse'`,
+ * drops nothing and logs the refusal at most once a minute.
+ *
+ * @param store - a Map or a `realms.map()` store
+ * @param max - the bound
+ * @param options - `expired(value, key)`, `policy`, `counter`, `name` and
+ *   `setting`
+ * @returns `ok` (false only when refused) and the number evicted
+ */
 function makeRoom(store, max, options) {
   const o = options || {};
   const limit = Number(max);
@@ -253,12 +289,23 @@ function makeRoom(store, max, options) {
   return { ok: true, evicted: evicted };
 }
 
+/**
+ * Lists the registered stores' names, sorted.
+ *
+ * @returns the names
+ */
 function names() {
   log.debug("Entering names().");
   log.debug("Leaving names().");
   return Array.from(descriptors.keys()).sort();
 }
 
+/**
+ * Says whether a store of that name is registered.
+ *
+ * @param name - the store's name
+ * @returns true when registered
+ */
 function has(name) {
   log.debug("Entering has().");
   log.debug("Leaving has().");
@@ -398,6 +445,14 @@ function summaryOf(d, held) {
 }
 
 // Every cache, summarised. `now` is a parameter so a test can hold the clock.
+/**
+ * Summarises every registered store: size, validity, bound, lifetime and
+ * counters.
+ *
+ * @param now - the time to judge expiry against, in milliseconds; now when
+ *   omitted
+ * @returns one summary per store, in name order
+ */
 function report(now) {
   log.debug("Entering report().");
   const at = typeof now === 'number' ? now : Date.now();
@@ -416,6 +471,13 @@ function report(now) {
 // counters — about sixty bytes a store and nothing that grows with the store.
 // Titles, descriptions and rows stay here; the page takes those from its own
 // registry, which lists the same stores on every node of one build.
+/**
+ * Returns the compact form of `report()` another cluster node reads: per store
+ * the name, sizes, bound and counters, never a row.
+ *
+ * @param now - the time in milliseconds; now when omitted
+ * @returns the time, this process's pid and one array per store
+ */
 function snapshot(now) {
   log.debug("Entering snapshot().");
   const at = typeof now === 'number' ? now : Date.now();
@@ -428,6 +490,12 @@ function snapshot(now) {
 }
 
 // The reverse of `snapshot()`'s rows, for the page.
+/**
+ * Turns one of `snapshot()`'s arrays back into named members.
+ *
+ * @param row - the array
+ * @returns the name, sizes, bound and counters
+ */
 function unpackSnapshotRow(row) {
   log.debug("Entering unpackSnapshotRow().");
   const r = Array.isArray(row) ? row : [];
@@ -443,6 +511,16 @@ function unpackSnapshotRow(row) {
 
 // One cache: its summary and every row it holds now, oldest deadline first
 // (rows with no deadline last), so the rows about to go are on page one.
+/**
+ * Returns one store's summary and every row it holds now, soonest deadline
+ * first.
+ *
+ * Rows carry a key and its validity, never a value.
+ *
+ * @param name - the store's name
+ * @param now - the time in milliseconds; now when omitted
+ * @returns the summary and rows, or null when no such store is registered
+ */
 function detail(name, now) {
   log.debug("Entering detail().");
   const at = typeof now === 'number' ? now : Date.now();
@@ -466,6 +544,12 @@ function detail(name, now) {
 }
 
 // For tests only: drop one cache's descriptor and counts.
+/**
+ * Drops one store's descriptor and counts; for tests only.
+ *
+ * @param name - the store's name
+ * @returns true when a descriptor was removed
+ */
 function forget(name) {
   log.debug("Entering forget().");
   const gone = descriptors.delete(String(name));
@@ -475,6 +559,9 @@ function forget(name) {
 }
 
 // For tests only: zero the counters, keep the descriptors.
+/**
+ * Zeroes every store's counters and keeps the descriptors; for tests only.
+ */
 function resetCounts() {
   log.debug("Entering resetCounts().");
   counts.forEach(function (c) {
@@ -488,6 +575,13 @@ function resetCounts() {
 
 // A key clipped for display. A cache key can be a whole claims document or a
 // URL with a long query; the page shows the front and the length.
+/**
+ * Clips a key for display, keeping its front and stating its length.
+ *
+ * @param text - the key
+ * @param max - the most characters shown; 160 when omitted
+ * @returns the key, clipped
+ */
 function clipKey(text, max) {
   log.debug("Entering clipKey().");
   const s = String(text);
@@ -502,6 +596,14 @@ function clipKey(text, max) {
 // `ids` is the realm ids to walk and `mapOf(id)` one realm's Map — passed in,
 // because this file requires `realms.js` no more than anything else here.
 // `rowOf(value, key)` answers one row's other members.
+/**
+ * Lists the rows of a per-realm store across every realm given.
+ *
+ * @param ids - the realm ids to walk
+ * @param mapOf - returns one realm's Map
+ * @param rowOf - returns a row's other members from a value and key
+ * @returns the rows, each with its `realm`
+ */
 function realmRows(ids, mapOf, rowOf) {
   log.debug("Entering realmRows().");
   const out = [];
@@ -522,6 +624,13 @@ function realmRows(ids, mapOf, rowOf) {
 // authorization code — shown as the part before its first colon (a kind, where
 // the owner uses one) and the first twelve hex characters of its SHA-256, so
 // two rows can be told apart and neither can be used.
+/**
+ * Shows a key that is itself a credential as its kind prefix and the first
+ * twelve hex characters of its SHA-256.
+ *
+ * @param text - the key
+ * @returns the digested key
+ */
 function digestKey(text) {
   log.debug("Entering digestKey().");
   const s = String(text);
@@ -535,6 +644,15 @@ function digestKey(text) {
 // The same for a `realms.map()` store, walked over every realm the owner's
 // `realms` module lists. The owner passes its module in, for `realmRows()`'s
 // reason.
+/**
+ * Lists the rows of a `realms.map()` store across every realm the realms module
+ * lists.
+ *
+ * @param realmsModule - the owner's `realms` module
+ * @param store - the `realms.map()` store
+ * @param rowOf - returns a row's other members from a value and key
+ * @returns the rows, each with its `realm`
+ */
 function realmMapRows(realmsModule, store, rowOf) {
   log.debug("Entering realmMapRows().");
   const ids = realmsModule.list().map(function (r) {
@@ -561,6 +679,14 @@ function realmMapRows(realmsModule, store, rowOf) {
 // boundary is left to the reader. The two helpers below take the owner's own
 // expiry test, the same one its reader applies.
 // ---------------------------------------------------------------------------
+/**
+ * Calls every registered store's `eject()`, deleting what has expired; run by
+ * the `caches.eject-expired` scheduler job in every process.
+ *
+ * @param now - the time in milliseconds; now when omitted
+ * @returns the total ejected, the count per store, and the stores whose ejector
+ *   threw
+ */
 function ejectExpired(now) {
   log.debug("Entering ejectExpired().");
   const at = Number(now) || Date.now();
@@ -590,6 +716,11 @@ function ejectExpired(now) {
 }
 
 // The names of the stores that eject, for the page and the test.
+/**
+ * Lists the stores that carry an ejector, sorted.
+ *
+ * @returns the names
+ */
 function ejecting() {
   log.debug("Entering ejecting().");
   const out = [];
@@ -605,6 +736,14 @@ function ejecting() {
 // An `eject` for a plain Map: deletes each entry for which
 // `expired(value, key, now)` is true. Collected first and deleted after, so
 // the walk never sees a map it is changing.
+/**
+ * Builds an `eject` for a plain Map that deletes each entry the owner's expiry
+ * test marks.
+ *
+ * @param map - the Map
+ * @param expired - `(value, key, now)` answering true for an expired entry
+ * @returns the ejector, answering how many it deleted
+ */
 function mapEjector(map, expired) {
   log.debug("Entering mapEjector().");
   log.debug("Leaving mapEjector().");
@@ -626,6 +765,15 @@ function mapEjector(map, expired) {
 // through the store's own map so a persisted store records the deletion, and
 // each ASKED INSIDE ITS REALM (`realms.run()`), because an owner's lifetime is
 // usually a setting and a setting is the realm's.
+/**
+ * Builds an `eject` for a `realms.map()` store, asking the expiry test inside
+ * each realm.
+ *
+ * @param realmsModule - the owner's `realms` module
+ * @param store - the `realms.map()` store
+ * @param expired - `(value, key, now)` answering true for an expired entry
+ * @returns the ejector, answering how many it deleted
+ */
 function realmMapEjector(realmsModule, store, expired) {
   log.debug("Entering realmMapEjector().");
   log.debug("Leaving realmMapEjector().");
@@ -643,6 +791,15 @@ function realmMapEjector(realmsModule, store, expired) {
   };
 }
 
+/**
+ * The cache registry: one place where every cache and replay store says what it
+ * is, how big it is and how often it was useful (rule 3ap).
+ *
+ * A JavaScript leaf that `/admin/caches` and the cluster snapshot read. A row
+ * never carries a value.
+ *
+ * @namespace
+ */
 module.exports = {
   register: register,
   makeRoom: makeRoom,

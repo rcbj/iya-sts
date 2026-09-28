@@ -138,6 +138,10 @@ function protocolCallsRecorded() {
 // over OIDC are both `authentication`, because what an auditor asks is "who got
 // in", not "through which endpoint" (that is on the row).
 // ---------------------------------------------------------------------------
+/**
+ * The layers an audit event can belong to, each with its label and a sentence
+ * on what it covers; the console's and the API's filters are built from it.
+ */
 const CATEGORIES = [
   { category: 'authentication', label: 'Authentication',
     what: 'A credential was ACCEPTED, in any of the sixteen protocol ' +
@@ -257,6 +261,10 @@ const CATEGORIES = [
           'A row names the recipient and the category, never the body.' }
 ];
 
+/**
+ * Every audit action, each with its category and label; the console's and the
+ * API's filters are built from it.
+ */
 const ACTIONS = [
   { action: 'authentication', category: 'authentication',
     label: 'A credential was accepted' },
@@ -1120,6 +1128,10 @@ ACTIONS.forEach(function (entry) {
 // correctly and saying no, a 500 is this service failing. Collapsing them into
 // !ok would make the one row worth paging somebody about look like the fifty
 // rows that are a client getting its parameters wrong.
+/**
+ * The three outcomes an event can have: `success`, `refused` (this service
+ * saying no) and `error` (this service failing).
+ */
 const OUTCOMES = ['success', 'refused', 'error'];
 
 // ---------------------------------------------------------------------------
@@ -1227,6 +1239,15 @@ const sources = new AsyncLocalStorage();
 
 // Run `fn` with `source` ambient: `{ req }` for an HTTP request, or
 // `{ address }` for a raw socket. Returns what `fn` returns.
+/**
+ * Runs a function with a source ambient, so every row written inside it carries
+ * that source's address.
+ *
+ * @param source - `{ req }` for an HTTP request, or `{ address }` for a raw
+ *   socket
+ * @param fn - the work to run
+ * @returns what `fn` returns
+ */
 function withSource(source, fn) {
   log.debug("Entering withSource().");
   log.debug("Leaving withSource().");
@@ -1250,6 +1271,12 @@ function addressText(raw) {
 // where a sign-in came from.
 // Resolved once per source and kept on it, so a request that writes three
 // rows asks `client_address.js` once.
+/**
+ * Returns the client address of the ambient source, resolved once per source;
+ * exported as `currentAddress`.
+ *
+ * @returns the address, or '' outside any source
+ */
 function ambientAddress() {
   log.debug("Entering ambientAddress().");
   const source = sources.getStore();
@@ -1276,6 +1303,12 @@ function ambientAddress() {
 // (#62 P0, 2026-09-22): for `authn/`'s authentication event, which has to say
 // which browser and which TLS stack a sign-in came from at every door —
 // including the ones that do not hand `startSession()` their request.
+/**
+ * Returns the express request of the ambient source; exported as
+ * `currentRequest`.
+ *
+ * @returns the request, or null
+ */
 function ambientRequest() {
   log.debug("Entering ambientRequest().");
   const source = sources.getStore();
@@ -1283,6 +1316,12 @@ function ambientRequest() {
   return (source && source.req) || null;
 }
 
+/**
+ * Installs the function that names the signed-in user of an HTTP request, for
+ * `recordHttp()`.
+ *
+ * @param fn - a function from a request to the actor's name
+ */
 function setActorResolver(fn) {
   log.debug("Entering setActorResolver().");
   actorResolver = fn;
@@ -1498,6 +1537,14 @@ function logFailure(row) {
 // a caller whose failure belongs to no request passes `service.failure`. It
 // cannot throw, because it is audit().
 // ---------------------------------------------------------------------------
+/**
+ * Records a row whose whole point is its error code: a failure that no HTTP
+ * response records.
+ *
+ * @param code - the error code
+ * @param event - the rest of the event; `action` defaults to `protocol.failure`
+ * @returns the row written, or null
+ */
 function failure(code, event) {
   log.debug("Entering failure().");
   const info = Object.assign({}, event || {});
@@ -1512,6 +1559,19 @@ function failure(code, event) {
 // The public entry point. Wrapped so that a caller cannot be broken by a defect
 // in here — see the header. Every recording site in this service calls THIS and
 // not record() above.
+/**
+ * Records one event; the entry point every recording site calls (also exported
+ * as `record`). Never throws.
+ *
+ * A row carrying an error code defaults to `refused` and writes one log line.
+ * No credential is ever recorded.
+ *
+ * @param event - `action`, `outcome`, `errorCode`, `actor`, `actorForm`,
+ *   `target`, `protocol`, `channel`, `address`, `summary`, `detail`, and
+ *   `summarised` to suppress the log line
+ * @returns the row written, or null when it could not be recorded (logged under
+ *   STS-REG-0048)
+ */
 function audit(event) {
   log.debug("Entering audit().");
   try {
@@ -1652,6 +1712,17 @@ function isQuietProbe(req, res, path) {
 // response that bypassed it, on `finish`). `req` is still live at that point,
 // which is what lets the actor be resolved here rather than being threaded
 // through.
+/**
+ * Records one answered HTTP request; called by `app.js`'s call log.
+ *
+ * Every failed response gets an error code, and is recorded even with
+ * `audit.protocolCalls` off. A healthcheck answered 200 is not recorded.
+ *
+ * @param req - the request
+ * @param res - the response
+ * @param detail - `route`, `matched` and `durationMs`
+ * @returns the row written, or null when nothing was recorded
+ */
 function recordHttp(req, res, detail) {
   log.debug("Entering recordHttp(). " + req.method + " " + req.originalUrl);
   const info = detail || {};
@@ -1752,6 +1823,13 @@ function queryText(query) {
 // about the base DN and must not, since a realm's base is derived from its
 // domain and the caller already has it resolved.
 // ---------------------------------------------------------------------------
+/**
+ * Classifies a directory entry by where it sits.
+ *
+ * @param dn - the entry's DN
+ * @param containers - the realm's `users` and `groups` container DNs
+ * @returns `user`, `group` or `entry`
+ */
 function objectKindOf(dn, containers) {
   log.debug("Entering objectKindOf().");
   const lower = String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
@@ -1776,12 +1854,29 @@ function objectKindOf(dn, containers) {
 // operation is 'create' | 'delete' | 'update' | 'rename'. A search or a compare
 // does not come through here — those have one action each, since "a search of a
 // group" is not a thing anybody filters for.
+/**
+ * Returns the audit action for a directory operation on an entry, such as
+ * `user.delete`.
+ *
+ * @param operation - `create`, `delete`, `update` or `rename`
+ * @param dn - the entry's DN
+ * @param containers - the realm's `users` and `groups` container DNs
+ * @returns the action
+ */
 function directoryActionFor(operation, dn, containers) {
   log.debug("Entering directoryActionFor().");
   log.debug("Leaving directoryActionFor().");
   return objectKindOf(dn, containers) + '.' + operation;
 }
 
+/**
+ * Records one directory operation; called once per LDAP operation by the
+ * directory.
+ *
+ * @param event - the event, with the protocol defaulting to LDAP and the
+ *   channel to `ldap`
+ * @returns the row written, or null
+ */
 function recordDirectory(event) {
   log.debug("Entering recordDirectory().");
   const info = event || {};
@@ -1810,6 +1905,11 @@ function recordDirectory(event) {
 // it while an endpoint records cannot have the ground move — the row objects
 // themselves are shared and are never mutated after they are pushed.
 // ---------------------------------------------------------------------------
+/**
+ * Lists every process's events, newest first.
+ *
+ * @returns a copy of the merged list
+ */
 function list() {
   log.debug("Entering list(). " + events.length + " event(s) held.");
   const out = merged().reverse();
@@ -1885,6 +1985,12 @@ function merged() {
 
 // The counts the page's tiles and the API's summary need, taken in one pass
 // rather than by filtering the list six times.
+/**
+ * Counts the events of every process by category, action and outcome, with what
+ * is held, recorded and dropped.
+ *
+ * @returns the counts, the cap and the oldest and newest times and sequences
+ */
 function summary() {
   log.debug("Entering summary().");
   const byCategory = {};
@@ -1946,6 +2052,15 @@ log.info('The audit log is running: every authentication, session, directory ' +
          'GET /admin-api/audit, holds at most ' + maxEvents() + ' events in ' +
          'memory, and carries no credential of any kind.');
 
+/**
+ * The audit log: what happened here, in the order it happened, as discrete
+ * events.
+ *
+ * A library with no routes. No credential is ever recorded, and recording never
+ * fails an operation.
+ *
+ * @namespace
+ */
 module.exports = {
   CATEGORIES: CATEGORIES,
   ACTIONS: ACTIONS,

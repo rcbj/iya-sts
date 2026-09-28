@@ -95,12 +95,30 @@ interface AccountAct {
   errors?: string[];
 }
 
+/**
+ * Disables and enables accounts, and answers whether one is disabled.
+ *
+ * A disabled account is `pwdAccountLockedTime` on the person's entry; disabling
+ * it also ends everything the person holds, through the global logout.
+ */
 class AccountState {
+  /**
+   * Builds the account-state service.
+   *
+   * @param deps - the logger, credentials, audit, statistics, error codes,
+   *   realms, the logout finder and a deferral function
+   */
   constructor(private readonly deps: AccountStateDeps) {
     deps.log.debug("Entering AccountState.constructor().");
     deps.log.debug("Leaving AccountState.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the service's own modules, the loaded-logout finder, and
+   *   `setImmediate` as the deferral
+   */
   static defaultDeps(): AccountStateDeps {
     helpers.log.debug("Entering AccountState.defaultDeps().");
     helpers.log.debug("Leaving AccountState.defaultDeps().");
@@ -120,6 +138,13 @@ class AccountState {
 
   // `logout/logout.ts` as it is loaded in THIS process, or null. Never a
   // require — see the header.
+  /**
+   * Returns `logout/logout.ts` as loaded in this process, or null.
+   *
+   * It looks in `require.cache` and never requires the module.
+   *
+   * @returns the logout module's exports, or null when it is not loaded
+   */
   static loadedLogout(): LogoutFamily | null {
     const { log } = helpers;
     log.debug('Entering AccountState.loadedLogout().');
@@ -167,6 +192,15 @@ class AccountState {
   // application is refused by the issuance policy, and nobody is the
   // anonymous principal.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether an account is disabled; the question every door asks.
+   *
+   * Never throws. The anonymous principal and an empty name are never disabled.
+   *
+   * @param who - the name a door has in hand: a username, a token `sub` or a
+   *   Kerberos principal
+   * @returns true when the person's entry carries the lock
+   */
   isDisabled(who: unknown): boolean {
     const { log, credentials } = this.deps;
     log.debug("Entering AccountState.isDisabled().");
@@ -198,6 +232,13 @@ class AccountState {
   // later that must end only these — or null where no sign-out module is
   // loaded in this process, which the caller reads as "cannot say".
   // -------------------------------------------------------------------------
+  /**
+   * Lists the ids of what a person holds now, for a later `endEverything()`
+   * that must end only those.
+   *
+   * @param who - the person's name
+   * @returns the ids, or null when no sign-out module is loaded in this process
+   */
   heldBy(who: string): string[] | null {
     const { log, findLogout } = this.deps;
     log.debug("Entering AccountState.heldBy(). who=" + who);
@@ -213,6 +254,19 @@ class AccountState {
 
   // `opts.selection`, when given, is the ids to end (`heldBy()`), and
   // nothing else; absent, EVERYTHING — a global logout.
+  /**
+   * Ends every session, token, code and connection a person holds, through
+   * `logout.terminate()`.
+   *
+   * Front-channel notifications are not sent from here. A failure is logged
+   * under STS-AUTHN-0203 and reported in the answer rather than thrown.
+   *
+   * @param who - the person's name
+   * @param opts - `selection` (the ids to end, else everything), `actor`,
+   *   `channel`, `by` and `initiatingEntity`
+   * @returns whether anything was ended, the counts, the back-channel
+   *   deliveries queued and a message
+   */
   endEverything(who: string, opts?: Json): Json {
     const { log, findLogout, errorCodes } = this.deps;
     log.debug("Entering AccountState.endEverything(). who=" + who);
@@ -278,6 +332,21 @@ class AccountState {
   // `POST /admin-api/users/{disable|enable}`. `opts`: `actor`, `via`
   // (`console` or `api`, for the sentence and the channel), `reason`.
   // -------------------------------------------------------------------------
+  /**
+   * Disables or enables an account: the administrator's act from the console or
+   * the management API.
+   *
+   * Disabling writes the lock, ends everything the person holds, writes one
+   * audit row and mails the person a security notice. Enabling clears the lock
+   * and ends nothing.
+   *
+   * @param who - the person's name
+   * @param disabled - true to disable, false to enable
+   * @param opts - `actor`, `via` (`console` or `api`), `door`, `reason`,
+   *   `riscReason`, `by` and `initiatingEntity`
+   * @returns the outcome, with `changed` false when the account was already in
+   *   that state; a refusal carries `ok: false` and `errors`
+   */
   setDisabled(who: string, disabled: boolean, opts?: Json): AccountAct {
     const { log, credentials, audit, errorCodes } = this.deps;
     log.debug("Entering AccountState.setDisabled(). disabled=" + !!disabled);
@@ -384,6 +453,15 @@ class AccountState {
   // AFTER the write has been answered, in the realm the entry is in. Enabling
   // ends nothing, so only a disable is scheduled; both are audited.
   // -------------------------------------------------------------------------
+  /**
+   * Handles a lock the directory saw move without `setDisabled()` (SCIM, an
+   * LDAP modify, a console create).
+   *
+   * After the write has been answered it ends what the person holds (for a
+   * disable) and writes the audit row.
+   *
+   * @param change - `username`, `realm`, `disabled` and `kind` of the write
+   */
   directoryChanged(change: Json): void {
     const { log, later, realms, audit } = this.deps;
     const self = this;
@@ -446,6 +524,14 @@ class AccountState {
   // does. `authn.sessionOf()` is the catch-up for a session this could not
   // reach: a delete made on another node.
   // -------------------------------------------------------------------------
+  /**
+   * Ends what a deleted person held at the moment of the delete.
+   *
+   * The held ids are read now and ended after the write has been answered, so a
+   * person re-created under the same name keeps what they hold.
+   *
+   * @param change - `username`, `realm` and `door` of the delete
+   */
   directoryDeleted(change: Json): void {
     const { log, later, realms } = this.deps;
     const self = this;
@@ -499,9 +585,25 @@ const slot = new InstanceSlot<AccountState>(
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The disabled-account state: the one place an account is disabled, enabled and
+ * asked about.
+ *
+ * A library the doors ask (`credentials.verify()`, `authn`, the issuance gate,
+ * the KDC, the management API). The exports forward to the instance the
+ * composition root installs.
+ *
+ * @namespace
+ */
 export = {
   AccountState: AccountState,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: AccountState): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   isDisabled: slot.forward('isDisabled'),
   endEverything: slot.forward('endEverything'),

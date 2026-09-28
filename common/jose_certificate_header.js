@@ -156,8 +156,15 @@ const log = bunyan.createLogger({
 
 // The four answers a use case's setting may give. `common/config.js` writes the
 // same list into each row's `enumValues`, and the test holds the two together.
+/**
+ * The four values a use case's setting may take: `none`, `x5c`, `x5u` and
+ * `both`.
+ */
 const MODES = ['none', 'x5c', 'x5u', 'both'];
 
+/**
+ * The mode used when a use case's setting is unset or unreadable: `x5u`.
+ */
 const DEFAULT_MODE = 'x5u';
 
 // ---------------------------------------------------------------------------
@@ -167,6 +174,11 @@ const DEFAULT_MODE = 'x5u';
 // `common/config.js`, and `certificateHeader: '<id>'` at the call —
 // `tests/jose_certificate_header.js` fails on a signing call that names none.
 // ---------------------------------------------------------------------------
+/**
+ * One row per kind of token this service signs with a key the realm holds: its
+ * `id`, its `setting`, a `label`, `where` the signing call is, and
+ * `withoutAnchor` where the service Root is left off the `x5c`.
+ */
 const USE_CASES = [
   { id: 'access-token', setting: 'oauth2.accessTokenCertificateHeader',
     label: 'OAuth 2.0 access tokens',
@@ -223,8 +235,17 @@ const USE_CASES = [
            'remembered browser carries in its cookie' }
 ];
 
+/**
+ * The `id` of every row of `USE_CASES`.
+ */
 const USE_CASE_IDS = USE_CASES.map(function (one) { return one.id; });
 
+/**
+ * Finds a use case by its id.
+ *
+ * @param id - the use case's id
+ * @returns its `USE_CASES` row, or null
+ */
 function useCase(id) {
   log.debug("Entering useCase().");
   log.debug("Leaving useCase().");
@@ -236,6 +257,13 @@ function useCase(id) {
 // What a use case's setting says in the ambient realm. An unreadable value is
 // the default rather than `none`: a setting that cannot be read has not been
 // switched off by anybody.
+/**
+ * Reads a use case's setting in the ambient realm.
+ *
+ * @param id - the use case's id
+ * @returns one of `MODES`: `none` for an unknown use case, the default for an
+ * unreadable value
+ */
 function modeFor(id) {
   log.debug("Entering modeFor().");
   const uc = useCase(id);
@@ -254,12 +282,25 @@ function modeFor(id) {
 // ---------------------------------------------------------------------------
 const requests = new AsyncLocalStorage();
 
+/**
+ * Runs the rest of a request with it as the ambient request, the one `x5u`
+ * addresses are built from when no base URL is pinned.
+ *
+ * @param req - the request
+ * @param next - the continuation to run inside it
+ * @returns what `next` returns
+ */
 function enterRequest(req, next) {
   log.debug("Entering enterRequest().");
   log.debug("Leaving enterRequest().");
   return requests.run(req, next);
 }
 
+/**
+ * Returns the ambient request entered by `enterRequest()`.
+ *
+ * @returns the request, or null outside one
+ */
 function currentRequest() {
   log.debug("Entering currentRequest().");
   log.debug("Leaving currentRequest().");
@@ -486,6 +527,20 @@ function chainUrlFor(realmId, thumbprint) {
 // whose certificate could not be described is still a token, and a signer that
 // failed to issue one over a header would be the tail wagging the dog.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the `x5c` and `x5u` header members for one signature, as the use
+ * case's setting asks.
+ *
+ * Never throws: a use case switched off, a key with no certificate, a
+ * certificate over another key (STS-PKI-0163) or a failure (STS-PKI-0164) all
+ * answer `{}`, and the token is signed without them.
+ *
+ * @param useCaseId - the use case the signature belongs to
+ * @param signer - what `helpers.certificateHeaderFor()` resolved: the realm,
+ * the certificate slot, the key's `kid` and a function answering its
+ * SubjectPublicKeyInfo
+ * @returns the header members to add, possibly none
+ */
 function headerFor(useCaseId, signer) {
   log.debug("Entering headerFor(). use=" + useCaseId);
   if (!useCase(useCaseId)) {
@@ -559,6 +614,15 @@ function headerFor(useCaseId, signer) {
 // one an `x5u` this module wrote can name — and the thumbprint is matched
 // exactly against the register, never parsed into anything.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the PEM chain an `x5u` names: the JOSE certificate with this SHA-256
+ * thumbprint, in this scope, with its issuers.
+ *
+ * @param scopeId - the realm the certificate belongs to
+ * @param thumbprint - the certificate's SHA-256 thumbprint in hex
+ * @returns the chain as concatenated PEM, or null when there is no such
+ * certificate
+ */
 function chainPemFor(scopeId, thumbprint) {
   log.debug("Entering chainPemFor().");
   const wanted = String(thumbprint || '').toLowerCase();
@@ -586,6 +650,11 @@ function chainPemFor(scopeId, thumbprint) {
 
 // What every use case is set to in the ambient realm — for a reader that wants
 // the whole picture rather than one row of it.
+/**
+ * Reports what every use case is set to in the ambient realm.
+ *
+ * @returns one entry per use case: id, setting, label, where and mode
+ */
 function report() {
   log.debug("Entering report().");
   log.debug("Leaving report().");
@@ -595,6 +664,14 @@ function report() {
   });
 }
 
+/**
+ * The certificate chain a signed token points at: the RFC 7515 `x5c` and `x5u`
+ * header members, chosen per use case and per trust realm.
+ *
+ * `x5u` by default; the chain document it names is served at `/pki/chain/`.
+ *
+ * @namespace
+ */
 module.exports = {
   MODES: MODES,
   DEFAULT_MODE: DEFAULT_MODE,

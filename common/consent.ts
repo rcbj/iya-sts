@@ -173,7 +173,12 @@ import fapi = require('../oauth-oidc/fapi');
 // and the two writers below cannot come to disagree about the capitalisation —
 // which is a real failure mode in a directory that lower-cases its keys and
 // shows them back canonically.
+/** The attribute on a person's entry that holds their consents. */
 const USER_ATTRIBUTE = 'oauthConsent';
+/**
+ * The attribute on an application's entry that consents a scope for
+ * everybody.
+ */
 const GLOBAL_ATTRIBUTE = 'oauthGlobalConsent';
 
 // The directory slot: seven functions, validated whole. The last three are
@@ -226,19 +231,40 @@ const WITHDRAWN_STAMP = /^\d{14}\.\d{3}Z$/;
 
 // The attribute a withdrawal is written into, on the person's entry and on
 // the application's.
+/** The attribute on a person's entry that records their withdrawals. */
 const WITHDRAWN_ATTRIBUTE = 'oauthConsentWithdrawn';
+/**
+ * The attribute on an application's entry that records withdrawals of its
+ * global consent.
+ */
 const GLOBAL_WITHDRAWN_ATTRIBUTE = 'oauthGlobalConsentWithdrawn';
 
 // The token kinds a withdrawal revokes: what a grant under consent issued
 // and a client can present again. An ID Token is presented to nobody here.
 const GRANT_TOKEN_KINDS = ['access_token', 'refresh_token'];
 
+/**
+ * Consent: what a person has agreed an application may ask for on their
+ * behalf, one directory value per (person, application, scope).
+ *
+ * Also the global override on an application's entry, and withdrawal: a
+ * withdrawn consent revokes what was issued under it and refuses the
+ * refresh grant from then on.
+ */
 class Consent {
+  /** The attribute on a person's entry that holds their consents. */
   static readonly USER_ATTRIBUTE = USER_ATTRIBUTE;
+  /** The attribute on an application's entry that holds global consents. */
   static readonly GLOBAL_ATTRIBUTE = GLOBAL_ATTRIBUTE;
 
   private directory: ConsentDirectory | null = null;
 
+  /**
+   * Builds the consent register over the given dependencies.
+   *
+   * @param deps - the logger, settings, application register, error codes,
+   *   the issued-token register, the FAPI profile and the grant bookkeeping
+   */
   constructor(private readonly deps: ConsentDeps) {
     deps.log.debug("Entering Consent.constructor().");
     deps.log.debug("Leaving Consent.constructor().");
@@ -246,6 +272,11 @@ class Consent {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): ConsentDeps {
     log.debug("Entering Consent.defaultDeps().");
     log.debug("Leaving Consent.defaultDeps().");
@@ -271,6 +302,12 @@ class Consent {
 
   // What loading this module did with its instance before R2, run once
   // for whichever instance is installed (#50, R2).
+  /**
+   * Runs, once for whichever instance is installed, what loading this module
+   * did before the composition root: it logs the register's state.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: Consent): void {
     log.debug("Entering Consent.wire().");
     log.info('The consent register is loaded. The authorization endpoint ' +
@@ -295,6 +332,15 @@ class Consent {
   // WITHDRAWAL hooks (#172) could take a consent away without saying when, so
   // a re-consent would revive every refresh token granted before it.
   // ---------------------------------------------------------------------------
+  /**
+   * Fills the directory slot with the seven functions that read and write
+   * consents and withdrawals.
+   *
+   * The hooks are validated whole: a set missing any one is refused and the
+   * slot keeps what it had.
+   * @param hooks - the directory's consent and withdrawal functions
+   * @returns true when installed, false when refused
+   */
   setDirectory(hooks: ConsentDirectory | null | undefined): boolean {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Consent.setDirectory().");
@@ -333,6 +379,12 @@ class Consent {
   //
   // Nothing in the SERVICE calls it: the slot is filled once, at the
   // directory's require time, and no code path replaces it.
+  /**
+   * Returns what is in the directory slot, so a test that stubs it can put
+   * back what was there.
+   *
+   * @returns the installed hooks, or null
+   */
   directoryInstalled(): ConsentDirectory | null {
     const { log } = this.deps;
     log.debug("Entering Consent.directoryInstalled().");
@@ -343,6 +395,11 @@ class Consent {
   // Is the store reachable at all? Read by the console and by the screen, which
   // both say so rather than letting a person press a button whose effect will
   // not survive the redirect.
+  /**
+   * Says whether the consent store is reachable at all.
+   *
+   * @returns true when the directory slot is filled
+   */
   storable() {
     const { log } = this.deps;
     log.debug("Entering Consent.storable().");
@@ -369,6 +426,12 @@ class Consent {
   // A FAPI PROFILE (#138) REQUIRES IT whatever the setting says: section
   // 5.2.2 item 12, "shall require explicit approval by the user to authorize
   // the requested scope if it has not been previously authorized".
+  /**
+   * Says whether consent is asked for: `oauth2.consentRequired` (on by
+   * default), or a FAPI profile, which requires it whatever the setting says.
+   *
+   * @returns true when the authorization endpoint must ask
+   */
   required() {
     const { log, config, fapi } = this.deps;
     log.debug("Entering Consent.required().");
@@ -384,6 +447,13 @@ class Consent {
 
   // A GeneralizedTime, the same spelling ldap_server.js writes, produced here
   // so that this module does not have to reach into the directory for a clock.
+  /**
+   * Formats an instant as a GeneralizedTime, the spelling `ldap_server.js`
+   * writes.
+   *
+   * @param when - the instant; now when omitted
+   * @returns fourteen digits and a `Z`
+   */
   generalizedTime(when) {
     const { log } = this.deps;
     log.debug("Entering Consent.generalizedTime().");
@@ -399,6 +469,15 @@ class Consent {
       pad(d.getUTCSeconds()) + 'Z';
   }
 
+  /**
+   * Builds one consent value: `<GeneralizedTime> <scope> <client_id>`, the
+   * client_id last because it is the one field with no rule.
+   *
+   * @param scope - one scope
+   * @param clientId - the application's client_id
+   * @param when - when it was agreed
+   * @returns the attribute value
+   */
   consentValueOf(scope, clientId, when) {
     const { log } = this.deps;
     log.debug("Entering Consent.consentValueOf().");
@@ -421,6 +500,14 @@ class Consent {
   // `generalizedTime()`'s output exactly, so anything else comes back with an
   // empty `scope`, which every reader below treats as "not a consent" rather
   // than as a consent to nothing. (`CONSENT_STAMP`, at the top of the file.)
+  /**
+   * Parses a consent value; the inverse of `consentValueOf()`.
+   *
+   * A value whose first field is not a GeneralizedTime comes back with an
+   * empty `scope`, which every reader treats as not a consent.
+   * @param value - the attribute value
+   * @returns `{ at, scope, client, raw }`
+   */
   parseConsentValue(value) {
     const { log } = this.deps;
     log.debug("Entering Consent.parseConsentValue().");
@@ -459,6 +546,13 @@ class Consent {
   // `consent_screen.js` has to compare the session against the record it is
   // answering, and a second normalisation over there would be a second opinion
   // about who is at the keyboard.
+  /**
+   * Returns who somebody is, in the one spelling consent answers are filed
+   * under (`admin_stats.js`'s normalisation).
+   *
+   * @param value - a username, principal or `urn:uuid:` subject
+   * @returns the normalised identity key
+   */
   identityOf(value) {
     const { log, stats } = this.deps;
     log.debug("Entering Consent.identityOf().");
@@ -470,6 +564,13 @@ class Consent {
   // asked for. RFC 6749 section 3.3 makes the value space-delimited and says
   // nothing about order or repetition, so `openid openid profile` is two scopes
   // and the consent screen must not list `openid` twice.
+  /**
+   * Splits a `scope` parameter into its scopes, deduplicated, in the order
+   * they were asked for.
+   *
+   * @param scope - the space-delimited scope string
+   * @returns the scopes
+   */
   scopesOf(scope) {
     const { log } = this.deps;
     log.debug("Entering Consent.scopesOf().");
@@ -491,6 +592,12 @@ class Consent {
   // attribute holds them. An application with no entry has none, which is not
   // an error: an identifier this registry has never seen is the ordinary case
   // at this endpoint.
+  /**
+   * Returns every scope an application has been globally consented.
+   *
+   * @param clientId - the application's identifier
+   * @returns the scopes, empty for an application with no entry
+   */
   globalConsentsOf(clientId) {
     const { log, applications } = this.deps;
     log.debug("Entering Consent.globalConsentsOf(). clientId=" +
@@ -521,6 +628,16 @@ class Consent {
   // API's generic `update` operation and this action all pass through, so the
   // rules about what may be written live in one place and the
   // `application.update` audit row is written once.
+  /**
+   * Consents a scope for everybody on an application, through
+   * `applications.updateApplication()`.
+   *
+   * @param clientId - the application's identifier
+   * @param scope - one RFC 6749 scope-token
+   * @param actor - who did it, for the audit row
+   * @returns the update's result with a `message`, or a refusal
+   *   `{ ok: false, errors }`
+   */
   grantGlobal(clientId, scope, actor?) {
     const { log, applications, errorCodes } = this.deps;
     log.debug("Entering Consent.grantGlobal(). clientId=" + clientId);
@@ -579,6 +696,19 @@ class Consent {
   // ended at its next renewal (`oidc_rp.ts`), and the next page runs the code
   // flow — which, the override gone, asks the person. Nobody is locked out.
   // The reply names the surface so an operator is not surprised by it.
+  /**
+   * Withdraws an application's global consent to a scope: the one door that
+   * takes `oauthGlobalConsent` off an entry.
+   *
+   * Every token of the application carrying the scope is revoked, except for
+   * people who agreed to it themselves, and the withdrawal instant is
+   * recorded so re-adding the override revives no old grant. This service's
+   * own surfaces are not exempt.
+   * @param clientId - the application's identifier
+   * @param scope - the scope
+   * @param actor - who did it, for the audit row
+   * @returns the update's result with a `message`, or a refusal
+   */
   revokeGlobal(clientId, scope, actor?) {
     const { log, applications, errorCodes } = this.deps;
     const self = this;
@@ -642,6 +772,13 @@ class Consent {
   // `oauthGlobalConsent` may be — see the block above `scopeTokenProblem()`
   // there. This is a one-line delegation rather than a re-export so that the
   // name this module's callers use says what it is about.
+  /**
+   * Checks a value against RFC 6749 section 3.3's `scope-token`, by the rule
+   * in `applications.js`.
+   *
+   * @param scope - the value
+   * @returns the problem as a sentence, or empty when it is a scope-token
+   */
   scopeProblem(scope) {
     const { log, applications } = this.deps;
     log.debug("Entering Consent.scopeProblem().");
@@ -659,6 +796,12 @@ class Consent {
   // and `urn:uuid:<entryUUID>` are one person to the directory and have to be
   // one person here, or somebody would be asked again for every spelling of
   // their own name.
+  /**
+   * Returns everything one person has agreed to, parsed.
+   *
+   * @param username - any spelling of the person's identity
+   * @returns `{ at, scope, client, raw }` per consent
+   */
   consentsOf(username) {
     const { log, stats } = this.deps;
     const self = this;
@@ -704,6 +847,17 @@ class Consent {
   // converted, reads `names` off a union of this answer and its own fallback
   // literal, which a declared shape would make a type error in that file.
   // Declare the shape when that caller is converted.
+  /**
+   * Answers the authorization endpoint's question: which requested scopes
+   * this person has not agreed to for this client.
+   *
+   * Under a FAPI profile a global consent does not count. `all: true` is
+   * `prompt=consent`, which makes every requested scope outstanding without
+   * deleting anything already agreed.
+   * @param request - `username`, `clientId`, `scope` and `all`
+   * @returns `{ clientId, scopes, outstanding, names }`, `names` being the
+   *   outstanding scopes
+   */
   outstanding(request): any {
     const { log, applications } = this.deps;
     const self = this;
@@ -760,6 +914,18 @@ class Consent {
   // issue because it could not file the paperwork would be a mock that stopped
   // answering. The log says so, and the person is asked again next time, which
   // is the honest consequence.
+  /**
+   * Records a person's agreement to scopes for a client, one value per scope
+   * in one directory write.
+   *
+   * With no entry to write to it answers `stored: false` rather than
+   * failing, and the person is asked again next time.
+   * @param username - the person
+   * @param clientId - the application's client_id
+   * @param scopes - the scopes agreed to
+   * @param actor - who did it, for the audit row
+   * @returns `{ ok, stored, dn, scopes, reason }`
+   */
   record(username, clientId, scopes, actor?) {
     const { log, errorCodes, stats } = this.deps;
     const self = this;
@@ -813,6 +979,18 @@ class Consent {
   // outside this module should have to know that — a form that posted the whole
   // raw value back would break the first time somebody edited the attribute by
   // hand.
+  /**
+   * Withdraws one person's consent to one scope for one client.
+   *
+   * The value is rebuilt from the entry, the withdrawal is recorded and what
+   * was issued under it is revoked.
+   * @param username - the person
+   * @param clientId - the application's client_id
+   * @param scope - the scope
+   * @param actor - who did it, for the audit row
+   * @returns `{ ok: true, removed, dn, … }`, or a refusal `{ ok: false,
+   *   errors }`
+   */
   revoke(username, clientId, scope, actor?) {
     const { log, applications, errorCodes, stats } = this.deps;
     const self = this;
@@ -866,6 +1044,13 @@ class Consent {
   // loop over the one above, because the one thing somebody wants after testing
   // a consent screen is to be asked again — and doing that a row at a time on a
   // person with thirty consents is not a control, it is a chore.
+  /**
+   * Withdraws everything one person agreed to, for every application.
+   *
+   * @param username - the person
+   * @param actor - who did it, for the audit row
+   * @returns `{ ok: true, removed, dn, … }`, or a refusal
+   */
   forget(username, actor?) {
     const { log, errorCodes, stats } = this.deps;
     const self = this;
@@ -956,6 +1141,12 @@ class Consent {
   // ---------------------------------------------------------------------------
 
   // A withdrawal instant, in `WITHDRAWN_STAMP`'s spelling.
+  /**
+   * Formats a withdrawal instant: a GeneralizedTime to the millisecond.
+   *
+   * @param when - the instant; now when omitted
+   * @returns the stamp
+   */
   withdrawnStamp(when?: number | Date): string {
     const { log } = this.deps;
     log.debug("Entering Consent.withdrawnStamp().");
@@ -968,6 +1159,13 @@ class Consent {
 
   // Either stamp as a millisecond epoch, or NaN for anything else. A
   // consent's stamp has no fraction and reads as the start of its second.
+  /**
+   * Reads a consent or withdrawal stamp as a millisecond epoch. A consent's
+   * stamp has no fraction and reads as the start of its second.
+   *
+   * @param stamp - the stamp
+   * @returns the epoch milliseconds, or NaN for anything else
+   */
   stampMs(stamp: unknown): number {
     const { log } = this.deps;
     log.debug("Entering Consent.stampMs().");
@@ -988,6 +1186,15 @@ class Consent {
   // stamp in front: `<stamp> <scope> <client_id>` on a person's entry and
   // `<stamp> <scope>` on an application's (`global`), the client_id last for
   // `parseConsentValue()`'s reason. Anything else has an empty `scope`.
+  /**
+   * Parses a withdrawal value: `<stamp> <scope> <client_id>` on a person's
+   * entry, `<stamp> <scope>` on an application's.
+   *
+   * @param value - the attribute value
+   * @param global - true for an application's value
+   * @returns `{ at, atMs, scope, client, raw }`, with an empty `scope` for
+   *   anything unreadable
+   */
   parseWithdrawalValue(value: unknown, global?: boolean) {
     const { log } = this.deps;
     log.debug("Entering Consent.parseWithdrawalValue().");
@@ -1016,6 +1223,12 @@ class Consent {
   }
 
   // Every withdrawal recorded on one person's entry, parsed.
+  /**
+   * Returns every withdrawal recorded on one person's entry, parsed.
+   *
+   * @param username - the person
+   * @returns the withdrawals
+   */
   withdrawalsOf(username: unknown) {
     const { log, stats } = this.deps;
     const self = this;
@@ -1037,6 +1250,12 @@ class Consent {
   }
 
   // Every withdrawal of an application's global consent, parsed.
+  /**
+   * Returns every withdrawal of an application's global consent, parsed.
+   *
+   * @param clientId - the application's identifier
+   * @returns the withdrawals
+   */
   globalWithdrawalsOf(clientId: unknown) {
     const { log, applications } = this.deps;
     const self = this;
@@ -1057,6 +1276,15 @@ class Consent {
   // instant. A value already there for a pair is REPLACED: only the latest
   // withdrawal can refuse anything, and an attribute that grew by one value
   // per click would be a list nobody could read.
+  /**
+   * Records that one person withdrew these (application, scope) pairs at one
+   * instant, replacing any earlier value for a pair.
+   *
+   * @param username - the person
+   * @param pairs - `{ client, scope }` per pair
+   * @param when - the instant; now when omitted
+   * @returns `{ ok, stored, at }`
+   */
   noteWithdrawn(username: unknown,
                 pairs: Array<{ client: string; scope: string }>,
                 when?: number) {
@@ -1121,6 +1349,19 @@ class Consent {
   // `at <= grantAt` for a personal consent, because a consent stamp is to the
   // second and was written before the code was minted; a withdrawal in the
   // SAME millisecond as the grant refuses it (`>=`), the safe side of a tie.
+  /**
+   * Decides whether a grant still stands, for the refresh grant, in every
+   * mode.
+   *
+   * Refused when the person or the application's global consent withdrew a
+   * carried scope at or after the grant (`STS-OAUTH-0615`), or, for a grant
+   * made at the authorization endpoint while consent and
+   * `oauth2.refreshRequiresConsent` are on, when nothing covers a scope
+   * (`STS-OAUTH-0616`).
+   * @param asked - `username`, `clientId`, `scope`, `grantAt` (the refresh
+   *   token's `grant_at`) and `grantType`
+   * @returns the refusal with its code, or null when the grant stands
+   */
   refreshRefusal(asked: { username?: string; clientId?: string;
                           scope?: string; grantAt?: unknown;
                           grantType?: string }) {
@@ -1206,6 +1447,17 @@ class Consent {
   // count newly revoked. Synchronous in what it revokes; the family marks,
   // which reach a member minted on another node this instant, are claimed
   // behind it and logged if the claim store cannot be asked.
+  /**
+   * Revokes every access and refresh token of a client whose scope names one
+   * of the given scopes, for one person or for everybody less those `spare`
+   * answers true for.
+   *
+   * A refresh token takes its whole grant with it.
+   * @param asked - `username` (optional), `clientId`, `scopes` and `spare`
+   * @param via - what caused it, for the revocation record
+   * @param how - `initiatingEntity`, for the audit row
+   * @returns the number of tokens newly revoked
+   */
   revokeIssuedUnder(asked: { username?: string; clientId: string;
                              scopes: string[];
                              spare?: (holder: string) => boolean },
@@ -1304,6 +1556,15 @@ class Consent {
   // `revoke-application-consent`. `revoke()` per scope would be one
   // withdrawal instant per scope and one walk per scope for what the person
   // did in one press.
+  /**
+   * Withdraws every scope one person agreed to for one application, as one
+   * act with one withdrawal instant.
+   *
+   * @param username - the person
+   * @param clientId - the application's client_id
+   * @param actor - who did it, for the audit row
+   * @returns `{ ok: true, removed, dn, … }`, or a refusal
+   */
   revokeApplication(username: unknown, clientId: unknown, actor?: string) {
     const { log, errorCodes, stats } = this.deps;
     const self = this;
@@ -1383,6 +1644,12 @@ class Consent {
   }
 
   // What a withdrawal did to what was already issued, in one sentence.
+  /**
+   * Says in one sentence what a withdrawal did to what was already issued.
+   *
+   * @param count - the number of tokens revoked
+   * @returns the sentence
+   */
   revokedSentence(count: number): string {
     const { log } = this.deps;
     log.debug("Entering Consent.revokedSentence().");
@@ -1401,6 +1668,14 @@ class Consent {
   // reason: the console page, `?format=json` and `GET /admin-api/consent` all
   // read this, so they cannot come to disagree about what is in it.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the register, both halves — global consents on applications and
+   * every person's consents, newest first — for the console page and
+   * `GET /admin-api/consent`.
+   *
+   * @returns `{ required, storable, attribute, globalAttribute, globals,
+   *   users, counts }`
+   */
   register() {
     const { log, applications } = this.deps;
     const self = this;
@@ -1486,6 +1761,13 @@ class Consent {
   // What this feature is doing right now, for the console's own summary and for
   // `/admin-api/consent`. Separate from register() because a caller that wants
   // the state does not want a walk of two containers.
+  /**
+   * Returns what the feature is doing right now, without walking either
+   * container.
+   *
+   * @returns whether consent is required and storable, the attribute names
+   *   and the settings
+   */
   state() {
     const { log } = this.deps;
     log.debug("Entering Consent.state().");
@@ -1525,9 +1807,27 @@ const slot = new InstanceSlot<Consent>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Consent: what a person has agreed an application may ask for on their
+ * behalf, and the withdrawal of it.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   Consent: Consent,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: Consent): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   USER_ATTRIBUTE: USER_ATTRIBUTE,
   GLOBAL_ATTRIBUTE: GLOBAL_ATTRIBUTE,

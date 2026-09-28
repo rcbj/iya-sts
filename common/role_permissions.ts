@@ -87,8 +87,19 @@ import applications = require('./applications');
 import audit = require('./audit');
 import adminRbac = require('../admin-ui/admin_rbac');
 
+/**
+ * The error code audited when a gated permission is taken off a grant.
+ */
 const NARROWED_CODE = 'STS-ADMIN-0821';
+/**
+ * The error code of a grant refused `invalid_scope` because narrowing left
+ * nothing.
+ */
 const EMPTIED_CODE = 'STS-ADMIN-0822';
+/**
+ * The error code of a token whose gated permission no held role authorizes
+ * any longer, at the management API.
+ */
 const WITHDRAWN_CODE = 'STS-API-0125';
 
 interface RolePermissionsDeps {
@@ -130,13 +141,32 @@ interface Narrowed {
   why: string;
 }
 
+/**
+ * Decides which gated permissions a subject's roles authorize: at issuance,
+ * where a scope is narrowed, and again where a token is used.
+ *
+ * A scope is a request; a role is what authorizes it (#88, #303). Native
+ * permissions (`admin:read`, `admin:write`) are always gated; an application
+ * permission only where its resource lists it in `oauthRoleGatedPermission`.
+ */
 class RolePermissions {
+  /**
+   * Builds the instance over its dependencies.
+   *
+   * @param deps - the logger, `realms`, `roles`, `applications`, `audit` and
+   *   the console roster (`admin_rbac`)
+   */
   constructor(private readonly deps: RolePermissionsDeps) {
     deps.log.debug("Entering RolePermissions.constructor().");
     deps.log.debug("Leaving RolePermissions.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root builds the instance with.
+   *
+   * @returns the real modules
+   */
   static defaultDeps(): RolePermissionsDeps {
     helpers.log.debug("Entering RolePermissions.defaultDeps().");
     helpers.log.debug("Leaving RolePermissions.defaultDeps().");
@@ -145,6 +175,12 @@ class RolePermissions {
   }
 
   // The values of a space-delimited scope.
+  /**
+   * Splits a space-delimited scope into its values.
+   *
+   * @param scope - the scope string (anything else is stringified)
+   * @returns the non-empty values
+   */
   static split(scope: unknown): string[] {
     helpers.log.debug("Entering RolePermissions.split().");
     helpers.log.debug("Leaving RolePermissions.split().");
@@ -167,6 +203,13 @@ class RolePermissions {
   // application permission its resource listed in `oauthRoleGatedPermission`.
   // Asked in the ambient realm, whose registry defines the permission.
   // ---------------------------------------------------------------------------
+  /**
+   * Tells whether a scope value is a permission that needs a role, in the
+   * ambient realm; a registry that cannot be read gates nothing new.
+   *
+   * @param value - one scope value
+   * @returns true for a native permission or a gated application permission
+   */
   isGated(value: string): boolean {
     const { log, roles, applications } = this.deps;
     log.debug("Entering RolePermissions.isGated().");
@@ -195,6 +238,13 @@ class RolePermissions {
 
   // Whether any value of a scope is gated — the cheap test every grant takes
   // before anything is looked up.
+  /**
+   * Tells whether any value of a scope is gated: the cheap test every grant
+   * takes before anything is looked up.
+   *
+   * @param scope - a space-delimited scope
+   * @returns true when at least one value is gated
+   */
   asksForGated(scope: unknown): boolean {
     const { log } = this.deps;
     const self = this;
@@ -211,6 +261,19 @@ class RolePermissions {
   // named realm (the ambient one by default). See the header for the console
   // roles and a person.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the roles a subject holds now, in the named realm or the ambient
+   * one.
+   *
+   * For a person the console roles come from the console roster rather than
+   * the groups, and a roster that cannot be read grants none; an
+   * unauthenticated or unnamed subject holds no configured role.
+   * @param subject - `{ kind, name, authenticated }`
+   * @param realmId - optional realm id; the ambient realm when absent or
+   *   unknown
+   * @returns `{ all, configured, why }`: every role held, the configured ones,
+   *   and why a console role is not held ('' otherwise)
+   */
   heldRoles(subject: Subject, realmId?: string): Held {
     const { log, roles, adminRbac, realms } = this.deps;
     log.debug("Entering RolePermissions.heldRoles().");
@@ -285,6 +348,15 @@ class RolePermissions {
   // built-in ones are left out: they are facts about the REQUEST (who
   // authenticated, over what) that a PIP naming a subject cannot know, and
   // the PEP asserts them where it can.
+  /**
+   * Returns only the configured roles a subject holds, for the XACML PIP's
+   * role designator; the built-in roles are facts about a request it cannot
+   * know.
+   *
+   * @param subject - `{ kind, name, authenticated }`
+   * @param realmId - optional realm id
+   * @returns the configured role names
+   */
   configuredRolesOf(subject: Subject, realmId?: string): string[] {
     const { log } = this.deps;
     log.debug("Entering RolePermissions.configuredRolesOf().");
@@ -320,6 +392,18 @@ class RolePermissions {
   // `context` is `{ clientId, grant }`, for the row. A scope naming nothing
   // gated comes back unchanged.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the scope to grant, with every gated permission the subject's roles
+   * do not authorize taken off.
+   *
+   * What is taken off is recorded in one audit row (STS-ADMIN-0821); the
+   * caller refuses `invalid_scope` when `emptied` is true. A scope naming
+   * nothing gated comes back unchanged.
+   * @param scope - the requested scope
+   * @param subject - `{ kind, name, authenticated }`
+   * @param context - optional `{ clientId, grant }` for the audit row
+   * @returns `{ scope, removed, emptied, why }`
+   */
   narrowScope(scope: unknown, subject: Subject, context?: any): Narrowed {
     const { log, audit } = this.deps;
     const self = this;
@@ -385,6 +469,13 @@ class RolePermissions {
   // Whether an access token's claims are a CLIENT's own (client_credentials):
   // the two spellings of its subject that `oauth2.ts` mints — the bare
   // client_id, and `urn:sts:client:<id>` in RFC 9700 mode.
+  /**
+   * Tells whether an access token's claims are a client's own
+   * (client_credentials): `sub` is the client_id or `urn:sts:client:<id>`.
+   *
+   * @param claims - the token's verified claims
+   * @returns true for a client's own token
+   */
   isClientToken(claims: any): boolean {
     const { log } = this.deps;
     log.debug("Entering RolePermissions.isClientToken().");
@@ -409,6 +500,18 @@ class RolePermissions {
   // every gated permission the token carries that no held role authorizes
   // any longer.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the roles a policy should decide on for a verified access token:
+   * the roles its subject holds now in the issuing realm, less any role whose
+   * permissions the token does not carry (held ∩ carried).
+   *
+   * A role revoked after the token was minted stops working at once.
+   * @param claims - the token's verified claims
+   * @param carried - the scope values the token carries
+   * @param tokenRealm - the id of the realm that issued the token
+   * @returns `{ roles, withdrawn, why, subject }`: `withdrawn` is every gated
+   *   permission carried that no held role authorizes any longer
+   */
   effectiveRoles(claims: any, carried: string[], tokenRealm: string):
       { roles: string[]; withdrawn: string[]; why: string;
         subject: Subject } {
@@ -467,9 +570,23 @@ const slot = new InstanceSlot<RolePermissions>(
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Role-gated permissions: a scope is a request, and a role is what authorizes
+ * it.
+ *
+ * A library (rule 3). The method names below forward to the instance the
+ * composition root installs.
+ * @namespace
+ */
 export = {
   RolePermissions: RolePermissions,
+  /**
+   * Installs the instance the composition root built.
+   */
   installInstance: (instance: RolePermissions): void => slot.install(instance),
+  /**
+   * Names where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   NARROWED_CODE: NARROWED_CODE,
   EMPTIED_CODE: EMPTIED_CODE,

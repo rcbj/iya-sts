@@ -133,9 +133,26 @@ const STANDARDS: Record<string, string> = {
 // extension.
 const ALT_KEY_OID = '2.5.29.72';
 
+/**
+ * Answers whether a key pair uses a post-quantum algorithm, whatever
+ * vocabulary names it: a JOSE `alg`, a key-material id, an OID or a
+ * certificate's SubjectPublicKeyInfo.
+ *
+ * The one answer `/admin/pki` and `/admin/keys` both ask, so that the icon
+ * cannot differ between them for the same key.
+ */
 class PqcSupport {
+  /**
+   * The four kinds of answer: `pq`, `composite`, `kem` and `hybrid`.
+   */
   static readonly KINDS: PqcKind[] = ['pq', 'composite', 'kem', 'hybrid'];
 
+  /**
+   * Builds the instance over its dependencies.
+   *
+   * @param deps - the logger, the JOSE composite table and the vendored PQC
+   *   registry
+   */
   constructor(private readonly deps: PqcSupportDeps) {
     deps.log.debug("Entering PqcSupport.constructor().");
     deps.log.debug("Leaving PqcSupport.constructor().");
@@ -143,6 +160,12 @@ class PqcSupport {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the composition root builds the instance with.
+   *
+   * @returns this module's logger, `pq_jose.COMPOSITES` and the vendored
+   *   registry
+   */
   static defaultDeps(): PqcSupportDeps {
     log.debug("Entering PqcSupport.defaultDeps().");
     log.debug("Leaving PqcSupport.defaultDeps().");
@@ -191,6 +214,14 @@ class PqcSupport {
   // (`ml-dsa-65`) or an OID. Anything else — every classical spelling — is
   // null.
   // -------------------------------------------------------------------------
+  /**
+   * Describes an algorithm named as a JOSE `alg`, a key-material id, a node key
+   * type or an OID.
+   *
+   * @param name - the algorithm's name in any of those spellings
+   * @returns its kind, algorithm, label, family and standard, or null for a
+   *   classical algorithm or nothing named
+   */
   ofAlgorithm(name: unknown): PqcInfo | null {
     const { log, joseComposites, registry } = this.deps;
     log.debug("Entering PqcSupport.ofAlgorithm(). name=" + name);
@@ -220,6 +251,14 @@ class PqcSupport {
   // post-quantum key. A certificate that will not parse is null: the icon
   // marks what is known.
   // -------------------------------------------------------------------------
+  /**
+   * Describes a certificate's key: its SubjectPublicKeyInfo algorithm, or for a
+   * classical key an alternative post-quantum key it carries (a hybrid).
+   *
+   * @param pem - a PEM certificate
+   * @returns the answer, or null for a classical key or a certificate that
+   *   does not parse
+   */
   ofCertificate(pem: unknown): PqcInfo | null {
     const { log } = this.deps;
     log.debug("Entering PqcSupport.ofCertificate().");
@@ -284,6 +323,13 @@ class PqcSupport {
   // first, because it is the most specific (it is the only one that can see a
   // hybrid), then each name in the order given.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the first answer among several spellings of one key: the
+   * certificate first, then each algorithm name in the order given.
+   *
+   * @param options - `certificatePem`, and `algorithms` as one name or a list
+   * @returns the first post-quantum answer, or null
+   */
   of(options?: OfOptions | null): PqcInfo | null {
     const { log } = this.deps;
     log.debug("Entering PqcSupport.of().");
@@ -307,6 +353,12 @@ class PqcSupport {
   }
 
   // The sentence the icon's tooltip and accessible name carry.
+  /**
+   * Returns the sentence the icon's tooltip and accessible name carry.
+   *
+   * @param info - an answer from `of()` or its siblings
+   * @returns the sentence, or '' for no answer
+   */
   sentence(info: PqcInfo | null | undefined): string {
     const { log } = this.deps;
     log.debug("Entering PqcSupport.sentence().");
@@ -347,9 +399,22 @@ const slot = new InstanceSlot<PqcSupport>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Whether a key pair uses a post-quantum algorithm: one answer for every
+ * page that marks such keys.
+ *
+ * The names below forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   PqcSupport: PqcSupport,
+  /**
+   * Installs the instance the composition root built.
+   */
   installInstance: (instance: PqcSupport): void => slot.install(instance),
+  /**
+   * Names where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   KINDS: PqcSupport.KINDS,
   ofAlgorithm: slot.forward('ofAlgorithm'),

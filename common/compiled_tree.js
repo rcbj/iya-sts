@@ -39,6 +39,10 @@ const ROOT = path.join(__dirname, '..');
 
 // Top-level directories that are not the service's own sources — the
 // exclusions `build-typescript.sh` and `tsconfig.build.json` use.
+/**
+ * The top-level directories that are not the service's own sources, as the
+ * TypeScript build excludes them.
+ */
 const NOT_SOURCES = ['node_modules', 'tests', 'node-ldapjs', 'xacml-pep',
                      'docs', 'deploy', 'types', '.git', '.claude',
                      '.github'];
@@ -59,6 +63,14 @@ function twinless(names, prefix, out) {
 
 // Every `x.ts` at the root of `root` and every `dir/x.ts` under it with no
 // `.js` beside it, as paths relative to `root`.
+/**
+ * Lists every `.ts` source with no compiled `.js` beside it, at the root and
+ * one directory down.
+ *
+ * @param root - the package root; this tree's when omitted
+ * @returns the sources found, as relative paths, and a problem when the root
+ *   could not be read
+ */
 function uncompiledSources(root) {
   const base = root || ROOT;
   const out = [];
@@ -96,6 +108,14 @@ function uncompiledSources(root) {
 
 // Exits the process, with the reason, when the tree is not compiled. `what`
 // names the caller for the message: 'node server.js', 'npm test'.
+/**
+ * Exits the process with STS-CORE-0093 and the reason when the tree holds
+ * uncompiled TypeScript.
+ *
+ * Called first by `server.js` and `tests/run.js`.
+ *
+ * @param what - the caller, for the message (`node server.js`, `npm test`)
+ */
 function refuseUncompiledTree(what) {
   const answer = uncompiledSources(ROOT);
   if (!answer.found.length) {
@@ -114,6 +134,14 @@ function refuseUncompiledTree(what) {
   process.exit(1);
 }
 
+/**
+ * Is this tree compiled: the check that refuses to run a checkout whose
+ * TypeScript has no compiled `.js` (#50).
+ *
+ * It requires nothing of this service and has no logger.
+ *
+ * @namespace
+ */
 module.exports = {
   NOT_SOURCES: NOT_SOURCES,
   uncompiledSources: uncompiledSources,

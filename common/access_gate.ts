@@ -140,6 +140,11 @@ import InstanceSlot = require('./instance_slot');
 // somebody locked out of the console gets back in through. A policy layer must
 // not remove the recovery path.
 // ---------------------------------------------------------------------------
+/**
+ * The resources an access decision can be about: the console, the management
+ * API, the portal, SCIM, the SPIRE Server API, the remote PEP's endpoints, the
+ * XACML surface and the embedded debugger.
+ */
 const RESOURCE = {
   CONSOLE: 'admin-console',
   MANAGEMENT_API: 'management-api',
@@ -185,6 +190,10 @@ const RESOURCE = {
 // because it means something different: not "may change things" but "may change
 // THEIR OWN things", which is the distinction a helpdesk policy would later be
 // written against.
+/**
+ * The actions an access decision can be about: `read`, `write`, and the
+ * portal's `manage-own`.
+ */
 const ACTION = {
   READ: 'read',
   WRITE: 'write',
@@ -237,12 +246,24 @@ interface AccessGateDeps {
   errorCodes: { tag(code: string): string };
 }
 
+/**
+ * The gate every access-control decision is asked through.
+ *
+ * It forwards the question to a decider the XACML family installs; with no
+ * decider installed, or with `xacml.enforceAccess` off, every request is
+ * allowed.
+ */
 class AccessGate {
   static readonly RESOURCE = RESOURCE;
   static readonly ACTION = ACTION;
 
   private decider: AccessDecider | null = null;
 
+  /**
+   * Builds a gate with no decider installed.
+   *
+   * @param deps - the logger, settings and error-code table it uses
+   */
   constructor(private readonly deps: AccessGateDeps) {
     deps.log.debug("Entering AccessGate.constructor().");
     deps.log.debug("Leaving AccessGate.constructor().");
@@ -250,6 +271,11 @@ class AccessGate {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the service logger, the settings module and the error-code table
+   */
   static defaultDeps(): AccessGateDeps {
     helpers.log.debug("Entering AccessGate.defaultDeps().");
     helpers.log.debug("Leaving AccessGate.defaultDeps().");
@@ -260,6 +286,16 @@ class AccessGate {
     };
   }
 
+  /**
+   * Installs, replaces or clears the function that decides every access
+   * request.
+   *
+   * A value that is neither a function nor null is refused and logged, which
+   * leaves every decision allowed.
+   *
+   * @param fn - the decider, or null to clear it
+   * @returns true when installed or cleared, false when refused
+   */
   setDecider(fn: AccessDecider | null): boolean {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AccessGate.setDecider().");
@@ -278,6 +314,11 @@ class AccessGate {
     return true;
   }
 
+  /**
+   * Says whether a decider is installed.
+   *
+   * @returns true when a decider is installed
+   */
   deciderInstalled(): boolean {
     const { log } = this.deps;
     log.debug("Entering AccessGate.deciderInstalled().");
@@ -320,6 +361,19 @@ class AccessGate {
   // The answer is `{ allowed, decision, why, policy }` — `allowed` is what a
   // caller branches on and the rest is what it logs or shows.
   // ---------------------------------------------------------------------------
+  /**
+   * Asks whether a subject may perform an action on a resource.
+   *
+   * Allowed without asking when no decider is installed, when
+   * `xacml.enforceAccess` is off, or when the request names no resource or
+   * action. A decider that throws is a defect: the request is allowed and the
+   * fault logged under STS-XACML-0051.
+   *
+   * @param request - the resource, action, subject (from the security context,
+   *   never the request), owner, required roles and context
+   * @returns the answer; `allowed` is what a caller branches on, and
+   *   `decision`, `why` and `policy` are for the log
+   */
   check(request?: AccessRequest | null): AccessAnswer {
     const { log, config, errorCodes } = this.deps;
     log.debug("Entering AccessGate.check().");
@@ -388,9 +442,25 @@ const slot = new InstanceSlot<AccessGate>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The access gate: every access-control decision in this service, asked in one
+ * place.
+ *
+ * The subject comes from the security context and never from the request; the
+ * embedded PEP decides. The exports forward to the instance the composition
+ * root installs.
+ *
+ * @namespace
+ */
 export = {
   AccessGate: AccessGate,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: AccessGate): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   RESOURCE: RESOURCE,
   ACTION: ACTION,

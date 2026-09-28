@@ -18,6 +18,11 @@
 // root to build.
 // ---------------------------------------------------------------------------
 
+/**
+ * Escapes text for HTML: the shared escaping helper of the converted modules.
+ *
+ * A static utility class; it holds no state and takes no dependencies.
+ */
 export = class Html {
   // The five characters that change meaning in element content and in a
   // quoted attribute value. `null` and `undefined` escape to the empty string,
@@ -25,6 +30,16 @@ export = class Html {
   //
   // Called once per value while a page is drawn, so no Entering/Leaving pair —
   // the hot-path exception the code style allows, stated here as it requires.
+  /**
+   * Escapes the five characters that change meaning in element content and in a
+   * quoted attribute value.
+   *
+   * `null` and `undefined` escape to the empty string.
+   *
+   * @param value - the value to draw; anything else is converted with
+   * `String()`
+   * @returns the escaped text
+   */
   static esc(value: unknown): string {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

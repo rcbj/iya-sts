@@ -133,7 +133,16 @@ interface Decision {
   targets: Array<{ asked: string; application: string }>;
 }
 
+/**
+ * Who may act for whom at WS-Trust `OnBehalfOf` / `ActAs` and the RFC 8693
+ * token exchange (rule 3az).
+ *
+ * Kerberos's constrained-delegation model on application entries, the
+ * person's two flags, `may_act`, and a deny-only XACML layer. Enforced in
+ * product mode; recorded in development.
+ */
 class DelegationPolicy {
+  /** The four application-entry attributes the policy reads, by role. */
   static readonly ATTRIBUTES = Object.freeze({
     DELEGATE_TO: 'appAllowedToDelegateTo',
     ACT_ON_BEHALF_OF: 'appAllowedToActOnBehalfOf',
@@ -141,11 +150,22 @@ class DelegationPolicy {
     IMPERSONATE: 'appTrustedToImpersonate'
   });
 
+  /**
+   * Builds a policy over the given dependencies.
+   *
+   * @param deps - the logger, settings, mode, application register,
+   *   credentials and issuance gate
+   */
   constructor(private readonly deps: DelegationPolicyDeps) {
     deps.log.debug("Entering DelegationPolicy.constructor().");
     deps.log.debug("Leaving DelegationPolicy.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): DelegationPolicyDeps {
     helpers.log.debug("Entering DelegationPolicy.defaultDeps().");
     helpers.log.debug("Leaving DelegationPolicy.defaultDeps().");
@@ -160,6 +180,14 @@ class DelegationPolicy {
   }
 
   // Every value of one attribute on an application view, as strings.
+  /**
+   * Returns every value of one attribute on an application view, as trimmed
+   * non-empty strings.
+   *
+   * @param row - an application view with `fields`
+   * @param attribute - the attribute name
+   * @returns the values, empty when there are none
+   */
   static valuesOf(row: Json, attribute: string): string[] {
     helpers.log.debug("Entering DelegationPolicy.valuesOf().");
     const raw = row && row.fields ? row.fields[attribute] : undefined;
@@ -172,6 +200,13 @@ class DelegationPolicy {
   }
 
   // A DN compared the way `ldap_server.js`'s `normalizeDn()` compares one.
+  /**
+   * Normalises a DN the way `ldap_server.js`'s `normalizeDn()` compares one:
+   * each RDN trimmed and lower-cased.
+   *
+   * @param value - the DN
+   * @returns the normalised DN
+   */
   static normalizeDn(value: unknown): string {
     helpers.log.debug("Entering DelegationPolicy.normalizeDn().");
     helpers.log.debug("Leaving DelegationPolicy.normalizeDn().");
@@ -180,6 +215,12 @@ class DelegationPolicy {
   }
 
   // The application an identifier, client_id or name belongs to, or null.
+  /**
+   * Finds the application an identifier or client_id belongs to.
+   *
+   * @param name - an application identifier or client_id
+   * @returns the application view, or null
+   */
   applicationFor(name: string): Json {
     const { log, applications } = this.deps;
     log.debug("Entering DelegationPolicy.applicationFor(). name=" + name);
@@ -197,6 +238,13 @@ class DelegationPolicy {
 
   // A target string resolved to the application that registered it — the
   // lookup `oauth2.ts` and `wstrust.ts` already make to file the act.
+  /**
+   * Resolves a target string to the application that registered it.
+   *
+   * @param asked - an audience, resource or AppliesTo
+   * @param kind - `audience` or `appliesTo`, which lookup to try first
+   * @returns the application's identifier, or empty when none registered it
+   */
   resolveTarget(asked: string, kind: TargetKind): string {
     const { log, applications } = this.deps;
     log.debug("Entering DelegationPolicy.resolveTarget().");
@@ -215,6 +263,12 @@ class DelegationPolicy {
   }
 
   // The console roster's two groups, as the settings name them.
+  /**
+   * Returns the console roster's two groups as `admin.readGroup` and
+   * `admin.writeGroup` name them.
+   *
+   * @returns the group names that are set
+   */
   rosterGroups(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering DelegationPolicy.rosterGroups().");
@@ -235,6 +289,15 @@ class DelegationPolicy {
 
   // Is this subject PROTECTED — never delegated whatever any application
   // says? Answers the sentence that says why, or ''.
+  /**
+   * Says whether a subject is protected — never delegated whatever any
+   * application says — by `stsNotDelegated` or by membership of a console
+   * administrator roster.
+   *
+   * @param facts - the person's delegation facts from `credentials`
+   * @param subject - the subject's name, for the sentence
+   * @returns the sentence that says why, or empty when not protected
+   */
   protectedBecause(facts: Json, subject: string): string {
     const { log } = this.deps;
     log.debug("Entering DelegationPolicy.protectedBecause().");
@@ -267,6 +330,21 @@ class DelegationPolicy {
   // -------------------------------------------------------------------------
   // THE DECISION. Mode-free: `enforced` says whether a refusal refuses.
   // -------------------------------------------------------------------------
+  /**
+   * Decides whether an intermediary may act for a subject at the named
+   * targets.
+   *
+   * Asks, in order: the subject's protection, the intermediary's entry,
+   * impersonation, the subject groups, every target, then the XACML layer. The
+   * answer is the same in both modes; `enforced` says whether a refusal
+   * refuses.
+   * @param question - the protocol, the act (`impersonation` or
+   *   `delegation`), the intermediary, the subject, the targets and their
+   *   kind, and whether `may_act` was honoured or the subject is the
+   *   intermediary itself
+   * @returns the decision, whose `refusal` names the kind of refusal so each
+   *   door can speak its own protocol's error
+   */
   decide(question: DecideQuestion): Decision {
     const { log, credentials, gate } = this.deps;
     const self = this;
@@ -436,6 +514,13 @@ class DelegationPolicy {
   // The sentence the act's row carries in `authorizedBy` for either answer —
   // so the page says what allowed an act, what refused it, and in
   // development what WOULD have refused it.
+  /**
+   * Returns the sentence the act's delegation row carries in `authorizedBy`.
+   *
+   * @param decision - what `decide()` answered
+   * @returns what allowed the act, what refused it, or in development what
+   *   would have refused it
+   */
   rowText(decision: Decision): string {
     const { log } = this.deps;
     log.debug("Entering DelegationPolicy.rowText().");
@@ -461,6 +546,14 @@ class DelegationPolicy {
   // where it has none), which is what the token endpoint compares against a
   // client exchanging with no actor_token.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the RFC 8693 `may_act` claim for an access token about a person,
+   * from their own `stsMayAct` and nothing else.
+   *
+   * @param username - the person's username
+   * @returns `{ sub }` naming the delegate (a person's `urn:uuid:` subject or
+   *   an application's client_id), or null
+   */
   mayActClaimFor(username: string): Json {
     const { log, credentials } = this.deps;
     log.debug("Entering DelegationPolicy.mayActClaimFor().");
@@ -507,6 +600,14 @@ class DelegationPolicy {
   // Does a `may_act` claim name this actor? `actor` carries `sub` (and `iss`
   // where the actor_token had one); section 4.4 lets the pair be needed to
   // identify a party, so an `iss` in the claim must match too.
+  /**
+   * Says whether a `may_act` claim names this actor; an `iss` in the claim
+   * must match too.
+   *
+   * @param mayAct - the verified subject token's `may_act` claim
+   * @param actor - `sub`, and `iss` and `aliases` where known
+   * @returns true when the claim names the actor
+   */
   static mayActNames(mayAct: Json, actor: { sub: string; iss?: string;
                                             aliases?: string[] }): boolean {
     helpers.log.debug("Entering DelegationPolicy.mayActNames().");
@@ -529,6 +630,13 @@ class DelegationPolicy {
   // `intermediaries` carrying a flag or a subject group, and `people` carrying
   // stsNotDelegated or stsMayAct. Whole lists; the view model pages them.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the policy as a register, for `/admin/delegation` and
+   * `GET /admin-api/delegation/policy`.
+   *
+   * @returns `{ pairs, intermediaries, people, protectedGroups, enforced,
+   *   attributes }`, whole lists
+   */
   list(): Json {
     const { log, applications, credentials } = this.deps;
     const self = this;
@@ -612,9 +720,27 @@ const slot = new InstanceSlot<DelegationPolicy>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Who may act for whom at WS-Trust and the RFC 8693 token exchange.
+ *
+ * A library with no route and no store of its own; the functions forward
+ * to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   DelegationPolicy: DelegationPolicy,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: DelegationPolicy): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   ATTRIBUTES: DelegationPolicy.ATTRIBUTES,
   mayActNames: DelegationPolicy.mayActNames,

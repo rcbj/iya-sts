@@ -118,6 +118,10 @@ import InstanceSlot = require('./instance_slot');
 // service that has been exchanging tokens in a loop all afternoon. Reaching it
 // is reported rather than silently truncating the line, because a lineage that
 // stops early and does not say so reads as an origin that is not one.
+/**
+ * How many generations the walk follows before it stops and reports that
+ * it was truncated.
+ */
 const MAX_GENERATIONS = 50;
 
 // What the lineage needs from the rest of the service: the logger, the two
@@ -133,9 +137,23 @@ interface CredentialGraphDeps {
     'holderOf' | 'audienceParties' | 'permissionsAddressedTo'>;
 }
 
+/**
+ * One credential, and every generation behind it: who it was issued to, in
+ * whose name, and the credential handed in to get it, back to the issuance
+ * that started the line.
+ *
+ * The model behind `/admin/tokens/credential`; it holds none of the HTML.
+ */
 class CredentialGraph {
+  /** How many generations the walk follows. */
   static readonly MAX_GENERATIONS = MAX_GENERATIONS;
 
+  /**
+   * Builds a lineage reader over the given dependencies.
+   *
+   * @param deps - the logger, the issued register, the delegation register
+   *   and the person's graph
+   */
   constructor(private readonly deps: CredentialGraphDeps) {
     deps.log.debug("Entering CredentialGraph.constructor().");
     deps.log.debug("Leaving CredentialGraph.constructor().");
@@ -143,6 +161,11 @@ class CredentialGraph {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): CredentialGraphDeps {
     helpers.log.debug("Entering CredentialGraph.defaultDeps().");
     helpers.log.debug("Leaving CredentialGraph.defaultDeps().");
@@ -246,6 +269,15 @@ class CredentialGraph {
   // for an identifier somebody clicked would be indistinguishable from a broken
   // link, and these stores are capped and drop the oldest.
   // ---------------------------------------------------------------------------
+  /**
+   * Walks from one credential back through every token exchange that
+   * produced it, newest first.
+   *
+   * The first generation is always the credential asked about, whether or not
+   * either register still holds it.
+   * @param identifier - the credential's identifier
+   * @returns `{ generations, acts, origins, walls, truncated }`
+   */
   trailOf(identifier) {
     const { log, stats, delegation } = this.deps;
     log.debug("Entering CredentialGraph.trailOf(). identifier=" + identifier);
@@ -619,6 +651,15 @@ class CredentialGraph {
   // is the ordinary outcome rather than a mistake — /admin/logout's rule, which
   // the delegation drill-downs already follow.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns everything one page needs about one credential, in one call.
+   *
+   * An identifier neither register holds is a lineage of one generation that
+   * says so, not an error.
+   * @param identifier - the credential's identifier
+   * @returns the lineage with its generations, acts, origins, issuances,
+   *   walls, graph and counts, or null when nothing was asked for
+   */
   lineageOf(identifier) {
     const { log } = this.deps;
     log.debug("Entering CredentialGraph.lineageOf(). identifier=" + identifier);
@@ -684,9 +725,28 @@ const slot = new InstanceSlot<CredentialGraph>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * One credential and every generation behind it, for
+ * `/admin/tokens/credential`.
+ *
+ * A library that registers no route; the functions forward to the instance
+ * the composition root installs.
+ * @namespace
+ */
 export = {
   CredentialGraph: CredentialGraph,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: CredentialGraph): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   MAX_GENERATIONS: MAX_GENERATIONS,
   // Exported for the console's prose and for a test that wants the walk

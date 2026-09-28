@@ -89,15 +89,25 @@ import authnPolicy = require('./authn_policy');
 
 type Json = any;
 
+/**
+ * The `typ` of the signed token inside a remembered browser's cookie.
+ */
 const TOKEN_TYPE = 'browser-device+jwt';
 const JWE_ALG = 'ECDH-ES+A256KW';
 const JWE_ENC = 'A256GCM';
 // A cookie's name, value and attributes together may be 4096 bytes in every
 // browser (RFC 6265bis section 5.6); the attributes take about 120.
+/**
+ * The largest token a cookie may carry; a larger one is not issued.
+ */
 const MAX_TOKEN_BYTES = 3900;
 // The clients whose sign-ins are never answered by a remembered browser
 // without a second factor (rcbj: "never valid for admin or user portal"),
 // and the debugger, which only administrators reach.
+/**
+ * The clients whose sign-ins never skip the second factor on a remembered
+ * browser: the admin console, the user portal and the debugger.
+ */
 const NEVER_SKIP_CLIENTS = ['sts-admin-console', 'sts-user-portal',
                             'sts-debugger-ui'];
 const SECOND_FACTOR_AMR = ['otp', 'hwk', 'swk', 'mfa', 'sms', 'face', 'fpt',
@@ -119,16 +129,43 @@ interface BrowserDevicesDeps {
   now: () => number;
 }
 
+/**
+ * Remembered browsers: a device known by an HttpOnly cookie holding a signed
+ * and encrypted token.
+ *
+ * A bearer credential. A copied cookie is caught by its generation and marks
+ * the device compromised; the device is never compliant.
+ */
 class BrowserDevices {
+  /**
+   * The `typ` of the signed token inside the cookie.
+   */
   static readonly TOKEN_TYPE = TOKEN_TYPE;
+  /**
+   * The largest token a cookie may carry.
+   */
   static readonly MAX_TOKEN_BYTES = MAX_TOKEN_BYTES;
+  /**
+   * The clients whose sign-ins never skip the second factor.
+   */
   static readonly NEVER_SKIP_CLIENTS = NEVER_SKIP_CLIENTS;
 
+  /**
+   * Builds the remembered-browser service.
+   *
+   * @param deps - the service modules it uses, the browser device key
+   *   accessors, a console-role lookup, the realm id and a clock
+   */
   constructor(private readonly deps: BrowserDevicesDeps) {
     deps.log.debug("Entering BrowserDevices.constructor().");
     deps.log.debug("Leaving BrowserDevices.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the service's own modules and the key accessors from `helpers`
+   */
   static defaultDeps(): BrowserDevicesDeps {
     helpers.log.debug("Entering BrowserDevices.defaultDeps().");
     helpers.log.debug("Leaving BrowserDevices.defaultDeps().");
@@ -179,6 +216,12 @@ class BrowserDevices {
     };
   }
 
+  /**
+   * Says whether remembered browsers are on in this realm
+   * (`devices.browserDevices`).
+   *
+   * @returns true unless the setting is false
+   */
   enabled(): boolean {
     this.deps.log.debug("Entering BrowserDevices.enabled().");
     this.deps.log.debug("Leaving BrowserDevices.enabled().");
@@ -195,6 +238,12 @@ class BrowserDevices {
     return !!this.deps.config.value('global.https');
   }
 
+  /**
+   * Returns the cookie's name in this realm: `__Host-` prefixed over TLS, and
+   * suffixed by the realm id outside the default realm.
+   *
+   * @returns the cookie name
+   */
   cookieName(): string {
     const { log } = this.deps;
     log.debug("Entering BrowserDevices.cookieName().");
@@ -229,6 +278,11 @@ class BrowserDevices {
     log.debug("Leaving BrowserDevices.setCookie().");
   }
 
+  /**
+   * Clears the cookie on a response.
+   *
+   * @param res - the response
+   */
   clear(res: Json): void {
     const { log } = this.deps;
     log.debug("Entering BrowserDevices.clear().");
@@ -236,6 +290,12 @@ class BrowserDevices {
     log.debug("Leaving BrowserDevices.clear().");
   }
 
+  /**
+   * Returns the cookie value a request carries.
+   *
+   * @param req - the request
+   * @returns the value, or '' when absent or not the shape of a token
+   */
   presented(req: Json): string {
     const { log } = this.deps;
     log.debug("Entering BrowserDevices.presented().");
@@ -260,6 +320,13 @@ class BrowserDevices {
   // with every browser update, and a binding that broke monthly would teach
   // everybody to ignore `browser-context-changed`.
   // -------------------------------------------------------------------------
+  /**
+   * Names a browser by family and operating system from a User-Agent, such as
+   * "Firefox on Linux".
+   *
+   * @param userAgent - the User-Agent header
+   * @returns the family and system
+   */
   static browserOf(userAgent: unknown): string {
     helpers.log.debug("Entering BrowserDevices.browserOf().");
     const ua = String(userAgent || '');
@@ -278,6 +345,13 @@ class BrowserDevices {
     return family + ' on ' + os;
   }
 
+  /**
+   * Returns the device platform id for a `browserOf()` answer.
+   *
+   * @param browser - a `browserOf()` answer
+   * @returns `ios`, `android`, `windows`, `macos`, `chromeos`, `linux` or
+   *   `other`
+   */
   static platformOf(browser: string): string {
     const os = String(browser || '').split(' on ')[1] || '';
     return ({ iOS: 'ios', Android: 'android', Windows: 'windows',
@@ -294,6 +368,16 @@ class BrowserDevices {
   // encryption key. Null (and STS-DEVICE-0043 logged) for a token too large
   // for a cookie.
   // -------------------------------------------------------------------------
+  /**
+   * Mints a token: an ES256 JWS signed with the browser device key, encrypted
+   * as a JWE to the browser device encryption key.
+   *
+   * @param deviceId - the device id
+   * @param owner - the owner's username
+   * @param gen - the token's generation
+   * @returns the compact JWE, or null (logged under STS-DEVICE-0043) when it
+   *   would not fit in a cookie
+   */
   mint(deviceId: string, owner: string, gen: number): string | null {
     const { log, errorCodes } = this.deps;
     log.debug("Entering BrowserDevices.mint(). gen=" + gen);
@@ -333,6 +417,12 @@ class BrowserDevices {
   // signed it (the dedicated key, or the group's), check the claims. Answers
   // the claims or null with the reason logged (STS-DEVICE-0040).
   // -------------------------------------------------------------------------
+  /**
+   * Decrypts and verifies a cookie's token and checks its claims.
+   *
+   * @param value - the cookie value
+   * @returns the claims, or null with the reason logged under STS-DEVICE-0040
+   */
   read(value: string): Json {
     const { log, errorCodes } = this.deps;
     log.debug("Entering BrowserDevices.read().");
@@ -383,6 +473,19 @@ class BrowserDevices {
   // generation marks the device compromised HERE, once per request (the
   // caller memoises), because that is the moment the copy is known.
   // -------------------------------------------------------------------------
+  /**
+   * Recognises the remembered browser a request carries, and flags what is odd
+   * about its token.
+   *
+   * A replayed generation marks the device compromised here.
+   *
+   * @param req - the request
+   * @param subject - the person signing in, to flag a token naming somebody
+   *   else's device
+   * @returns null with no cookie or the feature off; `{ device: null,
+   *   unreadable: true }` for an unreadable one; otherwise the device, the
+   *   claims and the `replayed`, `stale`, `foreign` and `contextChanged` flags
+   */
   recognize(req: Json, subject?: unknown): Json {
     const { log, devices, errorCodes } = this.deps;
     log.debug("Entering BrowserDevices.recognize().");
@@ -452,6 +555,19 @@ class BrowserDevices {
   // readable or names a compromised device is CLEARED, so the next sign-in is
   // not refused on it again.
   // -------------------------------------------------------------------------
+  /**
+   * Runs after a session starts in a browser: reissues a recognised browser's
+   * token with the next generation, or remembers a new one when asked.
+   *
+   * A copied, unreadable or compromised cookie is cleared.
+   *
+   * @param req - the request
+   * @param res - the response the cookie is set on
+   * @param spec - `username`, `recognized` (the device fact), `secondFactor`
+   *   and `remember`
+   * @returns `ok` and what was done: `none`, `cleared`, `reissued`, `kept`,
+   *   `remembered` or `already`
+   */
   afterSignIn(req: Json, res: Json, spec: Json): Json {
     const { log, devices, errorCodes, audit } = this.deps;
     log.debug("Entering BrowserDevices.afterSignIn().");
@@ -510,6 +626,20 @@ class BrowserDevices {
   // (STS-DEVICE-0044) when the feature is off; a browser already remembered
   // for this person is simply issued its token again.
   // -------------------------------------------------------------------------
+  /**
+   * Registers this browser as a device of a signed-in person and sets its
+   * cookie.
+   *
+   * A browser already remembered for the person is issued its token again.
+   *
+   * @param req - the request
+   * @param res - the response the cookie is set on
+   * @param username - the person
+   * @param secondFactor - whether the sign-in included a second factor, which
+   *   starts the skip period
+   * @returns `ok`, what was done and the device id; a refusal (STS-DEVICE-0044
+   *   or 0043) carries `ok: false` and `error`
+   */
   remember(req: Json, res: Json, username: string,
            secondFactor: boolean): Json {
     const { log, devices, errorCodes, audit } = this.deps;
@@ -574,6 +704,18 @@ class BrowserDevices {
   // condition in the header; the realm's two policy fields are the only part
   // an administrator can move.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether a sign-in may skip the second factor on a remembered browser.
+   *
+   * Only when the realm's policy allows it, the browser is the person's own and
+   * trusted, the client is not the console, portal or debugger, the person is
+   * not an administrator, the risk is below medium, and the second factor was
+   * given on this browser within the policy's days.
+   *
+   * @param spec - `fact` (the recognised device), `clientId`, `username` and
+   *   `riskLevel`
+   * @returns `skip` and `why`
+   */
   skipsSecondFactor(spec: Json): Json {
     const { log, authnPolicy } = this.deps;
     log.debug("Entering BrowserDevices.skipsSecondFactor().");
@@ -626,6 +768,13 @@ class BrowserDevices {
   // Did an authentication include a SECOND factor? `mfa` says so outright;
   // otherwise it is two methods of which one is a second-factor method —
   // `["pwd","otp"]` yes, a passwordless `["hwk"]` alone no (one factor).
+  /**
+   * Says whether an authentication's `amr` includes a second factor.
+   *
+   * @param amr - the authentication methods
+   * @returns true for `mfa`, or for two or more methods of which one is a
+   *   second-factor method
+   */
   static hasSecondFactor(amr: unknown): boolean {
     helpers.log.debug("Entering BrowserDevices.hasSecondFactor().");
     const list = (Array.isArray(amr) ? amr : []).map(String);
@@ -650,10 +799,24 @@ const slot = new InstanceSlot<BrowserDevices>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Remembered browsers: a device known by a signed and encrypted cookie (#265).
+ *
+ * A library `authn/authn.ts` and `portal/portal_devices.ts` call. The exports
+ * forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
   BrowserDevices: BrowserDevices,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: BrowserDevices): void =>
     slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   TOKEN_TYPE: TOKEN_TYPE,
   MAX_TOKEN_BYTES: MAX_TOKEN_BYTES,

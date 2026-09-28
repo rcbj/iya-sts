@@ -210,6 +210,11 @@ const certificateSubject = require('./certificate_subject');
 // becomes a new kind is how a page comes to list `wsfed-rp` and
 // `wsfed-relying-party` as two things.
 // ---------------------------------------------------------------------------
+/**
+ * The closed list of ways an application can present itself here (OAuth client,
+ * relying party, SAML audience, wtrealm, AppliesTo, and so on), each with a
+ * sentence on what it is.
+ */
 const KINDS = [
   { kind: 'oauth2-client', label: 'OAuth 2.0 client',
     what: 'A client_id presented at the authorization or token endpoint.' },
@@ -258,6 +263,9 @@ const KINDS = [
           'registration, or a downstream token derivation.' }
 ];
 
+/**
+ * The ids of the application kinds.
+ */
 const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 
 // ---------------------------------------------------------------------------
@@ -379,6 +387,13 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // this registry had nowhere to put. Nothing will ever write those attributes on
 // its own, so they read as declaration and only ever as declaration.
 // ---------------------------------------------------------------------------
+/**
+ * The declared protocol vocabulary: each family an application may be declared
+ * for, with its identifier, redirect, logout and secret attributes.
+ *
+ * Declaring one grants nothing; the console, the API and the create all read
+ * this one table.
+ */
 const PROTOCOLS = [
   { id: 'oauth2', label: 'OAuth 2.0', kind: 'oauth2-client',
     kinds: ['oauth2-client', 'oidc-relying-party'],
@@ -522,18 +537,28 @@ const PROTOCOLS = [
           'registered a resource set, the macaroon root key it verifies with.' }
 ];
 
+/**
+ * The ids of the declared protocol families.
+ */
 const PROTOCOL_IDS = PROTOCOLS.map(function (one) { return one.id; });
 
 // Every attribute a family names as its `redirectAttribute`, deduplicated —
 // the return addresses product mode checks a request against, and so the ones
 // `seen()` refuses to write from a sighting there. Derived from the table so a
 // family added tomorrow is covered the day it is added.
+/**
+ * Every attribute a protocol family names as its return address; product mode
+ * checks requests against these.
+ */
 const RETURN_ADDRESS_ATTRIBUTES = PROTOCOLS
   .map(function (row) { return row.redirectAttribute; })
   .filter(function (name, i, all) { return name && all.indexOf(name) === i; });
 
 // Where the PROVENANCE of those addresses is kept — see its schema row and
 // returnAddressesOf() below, which is the one place the mark is read.
+/**
+ * The attribute that marks a return address as observed rather than registered.
+ */
 const OBSERVED_ADDRESS_ATTRIBUTE = 'appReturnAddressObserved';
 
 // THE SAML SIGNING-CERTIFICATE PAIR (2026-09-17, #37): what is registered and
@@ -550,6 +575,10 @@ const SAML_CERTIFICATE_ATTRIBUTES = ['samlSigningCertificate',
 // attributes replaceSamlMetadataFields() will touch. A closed list, because
 // that function writes DERIVED attributes no door may edit, and a function
 // that wrote whatever it was handed would be a door around the EDITABLE table.
+/**
+ * The attributes consuming a service provider's metadata may write, and the
+ * only ones `replaceSamlMetadataFields()` touches.
+ */
 const SAML_METADATA_FIELDS = [
   'samlSpMetadata', 'samlEncryptionCertificate', 'samlSigningCertificate',
   'samlAssertionConsumerService', 'samlAcsEndpoint',
@@ -577,6 +606,12 @@ PROTOCOLS.forEach(function (row) {
   });
 });
 
+/**
+ * Returns one declared protocol family's row.
+ *
+ * @param id - the family id
+ * @returns the row, or null
+ */
 function protocolRow(id) {
   log.debug("Entering protocolRow().");
   log.debug("Leaving protocolRow().");
@@ -606,6 +641,13 @@ function declaredKindsOf(fields) {
   return out;
 }
 
+/**
+ * Translates observed application kinds into the declared protocol families
+ * they belong to.
+ *
+ * @param kinds - the observed kinds
+ * @returns the family ids, in table order
+ */
 function protocolIdsForKinds(kinds) {
   log.debug("Entering protocolIdsForKinds().");
   const out = [];
@@ -630,6 +672,14 @@ function protocolIdsForKinds(kinds) {
 // different things by whatever comes to read this attribute later. Duplicates
 // and blanks are dropped rather than refused — a form that posts one box twice
 // is a browser doing something odd, not a caller asking for something wrong.
+/**
+ * Turns a submitted list of protocol families into a validated list of ids.
+ *
+ * Duplicates and blanks are dropped; an unknown family refuses the whole list.
+ *
+ * @param value - a list or a comma- or space-separated string of family ids
+ * @returns `ok` and the ids in table order, or `ok: false` with `errors`
+ */
 function normaliseProtocols(value) {
   log.debug("Entering normaliseProtocols().");
   const asked = (Array.isArray(value) ? value : [value])
@@ -692,6 +742,11 @@ function normaliseProtocols(value) {
 // second rule about: an entry that accumulated one `appAuthentications` per
 // sign-in would be the visible symptom of a bug nobody could locate.
 // ---------------------------------------------------------------------------
+/**
+ * The published schema of an `ou=applications` entry: its object classes, and
+ * every attribute with its kind (single or multi), whether it is editable, the
+ * families it applies to and a sentence on what it holds.
+ */
 const SCHEMA = {
   objectClasses: [
     { name: 'top', where: 'RFC 4512', standard: true,
@@ -3578,6 +3633,13 @@ SCHEMA.attributes.forEach(function (row) {
   ATTRIBUTE_BY_NAME[row.name] = row;
 });
 
+/**
+ * Returns the schema rows that may be edited, optionally only those editable in
+ * one mode.
+ *
+ * @param mode - the editing mode to match; any editable row when omitted
+ * @returns the rows
+ */
 function editableAttributes(mode) {
   log.debug("Entering editableAttributes().");
   log.debug("Leaving editableAttributes().");
@@ -3615,6 +3677,13 @@ function editableAttributes(mode) {
 // this. Testing the derived attribute would refuse every write until after the
 // first token request, which is the wrong way round.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the protocol families an application was declared for
+ * (`appAllowedProtocol`), lower-cased.
+ *
+ * @param record - the application record or view
+ * @returns the family ids
+ */
 function declaredFamiliesOf(record) {
   log.debug("Entering declaredFamiliesOf().");
   log.debug("Leaving declaredFamiliesOf().");
@@ -3627,6 +3696,16 @@ function declaredFamiliesOf(record) {
 // `declared` is a list of family ids — from the entry for an update, and from
 // what the create is about to write for a create, which is why it is a
 // parameter rather than being read in here.
+/**
+ * Says whether a write of an attribute is refused because the application is
+ * declared for none of the families the attribute belongs to.
+ *
+ * @param attributeName - the attribute being written
+ * @param declared - the family ids the entry is (or is about to be) declared
+ *   for
+ * @param identifier - the application's identifier, for the sentence
+ * @returns the refusal sentence, or ''
+ */
 function familyRefusal(attributeName, declared, identifier) {
   log.debug("Entering familyRefusal(). attribute=" + attributeName);
   const row = ATTRIBUTE_BY_NAME[attributeName];
@@ -3687,6 +3766,12 @@ function familyRefusal(attributeName, declared, identifier) {
 // identifier ahead of its redirect URI, so the fields read in the order the
 // checkboxes above them do.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the identifier and redirect-URI attributes the create form is built
+ * from, one per attribute, each with the families it serves.
+ *
+ * @returns the rows, in the order the PROTOCOLS table first names them
+ */
 function declarationAttributes() {
   log.debug("Entering declarationAttributes().");
   const rows = [];
@@ -3792,6 +3877,9 @@ function declarationAttributes() {
   return rows;
 }
 
+/**
+ * The names of the attributes `declarationAttributes()` returns.
+ */
 const DECLARATION_ATTRIBUTE_NAMES = declarationAttributes().map(function (row) {
   return row.attribute;
 });
@@ -3832,6 +3920,13 @@ const IDENTIFIER_ATTRIBUTES = declarationAttributes().filter(function (row) {
 // three shapes a caller has in hand and making them convert first would put
 // this module's own layout in the caller.
 // ---------------------------------------------------------------------------
+/**
+ * Returns what an application answers to in each family, with the protocol's
+ * own word for it.
+ *
+ * @param source - a `view()`, a record, or a bare fields object
+ * @returns one row per identifier: the attribute, its name and its values
+ */
 function identifiersOf(source) {
   log.debug("Entering identifiersOf().");
   const holder = source || {};
@@ -3897,6 +3992,13 @@ function identifiersOf(source) {
 // exists to turn into a message. `ssf/ssf_events.js` is required lazily: it is
 // a library, and this module is loaded long before any SSF code is.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether an `ssfAllowedEvents` value is refused: it must be `caep`,
+ * `risc` or an event type this transmitter knows.
+ *
+ * @param value - the value
+ * @returns the refusal sentence, or ''
+ */
 function ssfAllowedEventProblem(value) {
   log.debug("Entering ssfAllowedEventProblem().");
   const word = String(value == null ? '' : value).trim();
@@ -3991,6 +4093,13 @@ function resourceMetadataUrlProblem(value) {
          'fetched from.';
 }
 
+/**
+ * Says whether a home page value is refused: it must be an absolute http or
+ * https URL.
+ *
+ * @param value - the value
+ * @returns the refusal sentence, or '' (also for an empty value)
+ */
 function homePageProblem(value) {
   log.debug("Entering homePageProblem().");
   const text = String(value == null ? '' : value).trim();
@@ -4034,6 +4143,12 @@ function homePageProblem(value) {
 //
 // It takes a `view()`, a record, or a bare fields object, the three shapes
 // identifiersOf() takes and for its reason.
+/**
+ * Returns an application's home page.
+ *
+ * @param source - a `view()`, a record, or a bare fields object
+ * @returns the URL, or ''
+ */
 function homePageOf(source) {
   log.debug("Entering homePageOf().");
   const holder = source || {};
@@ -4056,6 +4171,12 @@ function homePageOf(source) {
 // when it was written, and it is held to that again here because
 // `ldapmodify` reaches the attribute unchecked. '' where there is none.
 // ---------------------------------------------------------------------------
+/**
+ * Returns an application's OpenID Connect `initiate_login_uri`, held to https.
+ *
+ * @param source - a `view()`, a record, or a bare fields object
+ * @returns the URI, or '' when there is none or it is not https
+ */
 function initiateLoginUriOf(source) {
   log.debug("Entering initiateLoginUriOf().");
   const holder = source || {};
@@ -4128,6 +4249,12 @@ function readableOrigins(values) {
 }
 
 // The origins one application lists, from a view(), a record or its fields.
+/**
+ * Returns the CORS origins one application lists.
+ *
+ * @param source - a `view()`, a record, or a bare fields object
+ * @returns the origins
+ */
 function corsOriginsOf(source) {
   log.debug("Entering corsOriginsOf().");
   const holder = source || {};
@@ -4147,6 +4274,15 @@ function corsOriginsOf(source) {
 // which the caller reads as a request naming a client this realm does not
 // have. Two entries claiming one name are forClientId()'s configuration
 // mistake; the first is taken, as it is there.
+/**
+ * Returns the CORS origins of the application a request named, matched exactly
+ * on the given identifier attributes.
+ *
+ * @param name - the name the request presented
+ * @param attributes - the identifier attributes to look for it in
+ * @returns `known`, the entry's identifier and its origins; `known: false` when
+ *   no entry carries the name
+ */
 function corsOriginsForClient(name, attributes) {
   log.debug("Entering corsOriginsForClient(). name=" + name);
   const wanted = String(name == null ? '' : name).trim();
@@ -4249,6 +4385,14 @@ const ssfAllowedCount = cacheRegistry.register({
   }
 });
 
+/**
+ * Returns which Shared Signals events a stream's owner may receive, without
+ * building a view; the answer is cached until `ou=applications` changes.
+ *
+ * @param principal - the stream owner's name
+ * @returns the owning application's identifier, receiver ids and allowed
+ *   events, or null when no application owns it
+ */
 function ssfAllowedEventsFor(principal) {
   log.debug("Entering ssfAllowedEventsFor().");
   const wanted = String(principal == null ? '' : principal);
@@ -4312,6 +4456,11 @@ function findSsfOwner(backing, wanted) {
 
 // Every origin any application in the ambient realm lists — what a request
 // that names no client is judged against.
+/**
+ * Returns every CORS origin any application in the ambient realm lists.
+ *
+ * @returns the origins
+ */
 function corsOriginsOfRealm() {
   log.debug("Entering corsOriginsOfRealm().");
   const backing = store();
@@ -4339,6 +4488,12 @@ function corsOriginsOfRealm() {
 // built and no sealed key opened. A private-use scheme has no web origin and
 // cannot frame anything, so it is left out, as is anything that does not
 // parse.
+/**
+ * Returns the origin of every http or https redirect URI any application in the
+ * ambient realm registered: the relying parties the OP iframe may be framed by.
+ *
+ * @returns the origins
+ */
 function redirectOriginsOfRealm() {
   log.debug("Entering redirectOriginsOfRealm().");
   const backing = store();
@@ -4440,6 +4595,10 @@ function redirectOriginsOfRealm() {
 // One member. It is a LIST rather than an `if` because the question "is this
 // attribute private key material" is one somebody adding a row to SCHEMA has
 // to answer, and a list is where they will look for it.
+/**
+ * The application attributes held sealed (encrypted) at rest: private key
+ * material.
+ */
 const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        'oauthSamlAssertionPrivateKey',
                        // GNAP's two credentials (2026-09-12): a client's shared
@@ -4480,6 +4639,10 @@ function sealLabelOf(name) {
 // back. The ENTRY still holds it; that is what the KDC reads, through the
 // directory and not through here.
 // ---------------------------------------------------------------------------
+/**
+ * The application attributes never shown in any form, not even as ciphertext:
+ * Kerberos service keys.
+ */
 const WITHHELD_FIELDS = ['krb5ServiceKeys',
                          // Certificate enrollment (2026-09-13): a private key
                          // this service generated, and two working credentials.
@@ -4494,6 +4657,10 @@ const WITHHELD_FIELDS = ['krb5ServiceKeys',
 // too, and a value this table does not hold would be a page drawing a
 // provenance nothing in this service produces.
 // ---------------------------------------------------------------------------
+/**
+ * Where a managed key pair came from: issued here, or uploaded under the
+ * realm's CA or an external one.
+ */
 const KEY_SOURCES = ['issued', 'uploaded-realm-ca', 'uploaded-external-ca'];
 
 // ---------------------------------------------------------------------------
@@ -4505,6 +4672,10 @@ const KEY_SOURCES = ['issued', 'uploaded-realm-ca', 'uploaded-external-ca'];
 // the answer; a second copy in any of the three is the one that would go
 // stale when an attribute is added.
 // ---------------------------------------------------------------------------
+/**
+ * Which attribute holds which half of a managed key pair, for the RFC 7523
+ * (`jwt`) and RFC 7522 (`saml`) profiles.
+ */
 const KEY_PAIR_ATTRIBUTES = {
   jwt: { issuer: 'oauthAssertionIssuer',
          certificate: 'oauthAssertionCertificate',
@@ -4527,6 +4698,9 @@ const KEY_PAIR_ATTRIBUTES = {
           registered: 'oauthSamlAssertionSigningCertificate' }
 };
 // Derived rather than written out, from the table above.
+/**
+ * The attributes that record a managed key pair's source, one per profile.
+ */
 const KEY_SOURCE_ATTRIBUTES = Object.keys(KEY_PAIR_ATTRIBUTES).map(
     function (id) {
   return KEY_PAIR_ATTRIBUTES[id].source;
@@ -4540,6 +4714,13 @@ function withheldSentence(value) {
          ' characters, never shown)';
 }
 
+/**
+ * Replaces every withheld attribute's value with a sentence saying how many
+ * characters were kept back.
+ *
+ * @param fields - the fields
+ * @returns the fields, copied when anything was replaced
+ */
 function withholdFields(fields) {
   log.debug("Entering withholdFields().");
   let out = fields;
@@ -4557,6 +4738,12 @@ function withholdFields(fields) {
   return out;
 }
 
+/**
+ * Says whether a stored value is sealed ciphertext.
+ *
+ * @param value - the stored value
+ * @returns true for a `$aesgcm$` value
+ */
 function isSealed(value) {
   log.debug("Entering isSealed().");
   log.debug("Leaving isSealed().");
@@ -4720,6 +4907,16 @@ function addressProblem(attribute, value) {
 // value (`frontchannel_logout.ts`, STS-OAUTH-0572), because `ldapmodify`
 // passes neither of the first two. Returns the sentence, or null.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether a front-channel logout URI is refused because it is not on the
+ * origin of one of the client's redirect URIs.
+ *
+ * Asked at every door and when a sign-out reads the stored value.
+ *
+ * @param uri - the `frontchannel_logout_uri`
+ * @param redirectUris - the client's redirect URIs
+ * @returns the refusal sentence, or null
+ */
 function frontchannelOriginProblem(uri, redirectUris) {
   log.debug("Entering frontchannelOriginProblem().");
   let origin = '';
@@ -4776,6 +4973,15 @@ function frontchannelOriginProblem(uri, redirectUris) {
 // `publicClient` is the caller's reading of the client's type: an explicit
 // `none` at registration, and a create or an entry declaring none.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether a back-channel logout URI is refused for its scheme: http for a
+ * confidential client, or an address the outbound policy would never deliver
+ * to.
+ *
+ * @param uri - the `backchannel_logout_uri`
+ * @param publicClient - whether the client is public
+ * @returns the error code, OAuth error and description, or null
+ */
 function backchannelSchemeProblem(uri, publicClient) {
   log.debug("Entering backchannelSchemeProblem().");
   if (!/^http:/i.test(String(uri || ''))) {
@@ -4807,6 +5013,13 @@ function backchannelSchemeProblem(uri, publicClient) {
 // Answers null or `{ errorCode, error, description }` in RFC 7591 section
 // 3.2.2's vocabulary — `invalid_redirect_uri` for a redirect URI, and
 // `invalid_client_metadata` for the other two.
+/**
+ * Checks the addresses in an RFC 7591 document (redirect, logout and similar
+ * URIs) before any of it is written.
+ *
+ * @param metadata - the registration document
+ * @returns null, or the error code, the RFC 7591 error and a description
+ */
 function registrationUriProblem(metadata) {
   log.debug("Entering registrationUriProblem().");
   const meta = metadata || {};
@@ -4879,17 +5092,38 @@ function registrationUriProblem(metadata) {
 // 3.2.2's vocabulary. `values` holds any of the three members by their
 // REGISTRATION names; an absent or empty member is "not registered".
 // ---------------------------------------------------------------------------
+/**
+ * The algorithm a JWT introspection response is signed with when the client
+ * registered none.
+ */
 const INTROSPECTION_DEFAULT_SIGNING_ALG = 'RS256';
 
+/**
+ * The content encryption a JWT introspection response uses when the client
+ * names an algorithm and no `enc`.
+ */
 const INTROSPECTION_DEFAULT_ENC = 'A128CBC-HS256';
 
+/**
+ * The algorithms a JWT introspection response may be signed with.
+ */
 const INTROSPECTION_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS.slice(0);
 
+/**
+ * The key-management algorithms a JWT introspection response may be encrypted
+ * with: the asymmetric families.
+ */
 const INTROSPECTION_ENCRYPTION_ALGS = stsCrypto.JWE_ASYMMETRIC_ALGS.slice(0);
 
+/**
+ * The content encryptions a JWT introspection response may be encrypted with.
+ */
 const INTROSPECTION_ENCRYPTION_ENCS = Object.keys(stsCrypto.JWE_ENCS);
 
 // The attribute each member is stored in, in section 6's order.
+/**
+ * The attribute each RFC 9701 registration member is stored in.
+ */
 const INTROSPECTION_ATTRIBUTES = {
   introspection_signed_response_alg: 'oauthIntrospectionSignedResponseAlg',
   introspection_encrypted_response_alg:
@@ -4898,6 +5132,13 @@ const INTROSPECTION_ATTRIBUTES = {
     'oauthIntrospectionEncryptedResponseEnc'
 };
 
+/**
+ * Checks a client's RFC 9701 introspection response members: the signing
+ * algorithm, and the encryption algorithm and content encryption.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
 function introspectionResponseProblem(values) {
   log.debug("Entering introspectionResponseProblem().");
   const asked = values || {};
@@ -5008,12 +5249,29 @@ function introspectionAttributeProblem(attribute, value, fields) {
 // id_token_encrypted_response_enc is included,
 // id_token_encrypted_response_alg MUST also be provided").
 // ---------------------------------------------------------------------------
+/**
+ * The content encryption an encrypted ID Token uses when a client names an
+ * algorithm and no `enc`.
+ */
 const ID_TOKEN_DEFAULT_ENC = 'A128CBC-HS256';
 
+/**
+ * The key-management algorithms an ID Token may be encrypted with: the
+ * asymmetric families.
+ */
 const ID_TOKEN_ENCRYPTION_ALGS = stsCrypto.JWE_ASYMMETRIC_ALGS.slice(0);
 
+/**
+ * The content encryptions an ID Token may be encrypted with.
+ */
 const ID_TOKEN_ENCRYPTION_ENCS = Object.keys(stsCrypto.JWE_ENCS);
 
+/**
+ * Checks a client's ID Token encryption members (OIDC Registration section 2).
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
 function idTokenEncryptionMetadataProblem(values) {
   log.debug("Entering idTokenEncryptionMetadataProblem().");
   const asked = values || {};
@@ -5078,6 +5336,13 @@ function idTokenEncryptionMetadataProblem(values) {
 // is; the encryption list is the asymmetric one, as for every response this
 // service encrypts to a client.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a client's JARM members: `none` is refused and the encryption list is
+ * the asymmetric one.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
 function jarmMetadataProblem(values) {
   log.debug("Entering jarmMetadataProblem().");
   const asked = values || {};
@@ -5150,14 +5415,31 @@ function jarmMetadataProblem(values) {
 //   request_object_encryption_enc  a content encryption; not without an alg
 //   require_signed_request_object  a boolean
 // ---------------------------------------------------------------------------
+/**
+ * The content encryption a request object is expected in when a client names an
+ * algorithm and no `enc`.
+ */
 const REQUEST_OBJECT_DEFAULT_ENC = 'A128CBC-HS256';
 
+/**
+ * The algorithms a request object may be signed with.
+ */
 const REQUEST_OBJECT_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS.slice(0);
 
+/**
+ * The key-management algorithms a request object may be encrypted with: the
+ * ones this service decrypts.
+ */
 const REQUEST_OBJECT_ENCRYPTION_ALGS = stsCrypto.JWE_DECRYPT_ALGS.slice(0);
 
+/**
+ * The content encryptions a request object may be encrypted with.
+ */
 const REQUEST_OBJECT_ENCRYPTION_ENCS = Object.keys(stsCrypto.JWE_ENCS);
 
+/**
+ * The attribute each RFC 9101 registration member is stored in.
+ */
 const REQUEST_OBJECT_ATTRIBUTES = {
   request_uris: 'oauthRequestUri',
   request_object_signing_alg: 'oauthRequestObjectSigningAlg',
@@ -5167,6 +5449,13 @@ const REQUEST_OBJECT_ATTRIBUTES = {
 };
 
 // One registered request_uri, as a sentence naming what is wrong, or ''.
+/**
+ * Checks one registered RFC 9101 `request_uri`: an absolute https URL of
+ * bounded length with no credentials in it.
+ *
+ * @param value - the URI
+ * @returns the refusal sentence, or ''
+ */
 function requestUriProblem(value) {
   log.debug("Entering requestUriProblem().");
   const text = String(value === undefined || value === null ? '' : value)
@@ -5209,6 +5498,13 @@ function requestUriProblem(value) {
            ? ' — plain http is accepted in development mode only' : '');
 }
 
+/**
+ * Checks a client's RFC 9101 request object members: `request_uris` and the
+ * signing and encryption algorithms.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
 function requestObjectMetadataProblem(values) {
   log.debug("Entering requestObjectMetadataProblem().");
   const asked = values || {};
@@ -5390,6 +5686,14 @@ const ACR_VALUE_SHAPE = /^[\x21\x23-\x5B\x5D-\x7E]{1,256}$/;
 // response_types would otherwise be refused as inconsistent (section 2.1)
 // for a member it never sent, and every back-channel client does exactly
 // that. It gets no response type, which is what it can use.
+/**
+ * Returns a registration's grant and response types with RFC 7591 section 2's
+ * defaults applied; `code` is the default response type only where a grant
+ * redirects.
+ *
+ * @param values - the registration document
+ * @returns the grant types and response types
+ */
 function grantsAndResponseTypesOf(values) {
   log.debug("Entering grantsAndResponseTypesOf().");
   const asked = values || {};
@@ -5406,6 +5710,14 @@ function grantsAndResponseTypesOf(values) {
   return { grant_types: grants, response_types: types };
 }
 
+/**
+ * Checks an OpenID Connect registration's cross-member rules: the application
+ * type against the redirect URIs, and the grant and response types being
+ * consistent.
+ *
+ * @param values - the registration document
+ * @returns null, or the error code, error, member and description
+ */
 function oidcRegistrationProblem(values) {
   log.debug("Entering oidcRegistrationProblem().");
   const asked = values || {};
@@ -5588,6 +5900,14 @@ const CIBA_ATTRIBUTES = {
     'oauthBackchannelAuthenticationRequestSigningAlg'
 };
 
+/**
+ * Checks a client's CIBA members: a delivery mode of poll, ping or push, an
+ * https notification endpoint for ping and push, an asymmetric signing
+ * algorithm and a boolean user code.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
 function cibaMetadataProblem(values) {
   log.debug("Entering cibaMetadataProblem().");
   const asked = values || {};
@@ -5635,6 +5955,12 @@ function cibaMetadataProblem(values) {
 
 // What a client registered for CIBA: `{ mode, endpoint, signingAlg,
 // userCode }`, with mode '' for a client that registered none.
+/**
+ * Returns what a client registered for CIBA.
+ *
+ * @param clientId - the client id
+ * @returns `mode` ('' when none), `endpoint`, `signingAlg` and `userCode`
+ */
 function cibaOf(clientId) {
   log.debug("Entering cibaOf().");
   const who = String(clientId == null ? '' : clientId).trim();
@@ -5658,6 +5984,13 @@ function cibaOf(clientId) {
 // OPENID PROVIDER COMMANDS 1.0 (#151): `command_endpoint`, "MUST use the
 // https scheme; MUST NOT include a fragment". STS-REG-0199.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a client's OpenID Provider Commands `command_endpoint`: https, with no
+ * fragment.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
 function commandMetadataProblem(values) {
   log.debug("Entering commandMetadataProblem().");
   const endpoint = (values || {}).command_endpoint;
@@ -5674,6 +6007,12 @@ function commandMetadataProblem(values) {
 }
 
 // The `command_endpoint` a client registered, or ''.
+/**
+ * Returns the command endpoint a client registered.
+ *
+ * @param clientId - the client id
+ * @returns the endpoint, or ''
+ */
 function commandEndpointOf(clientId) {
   log.debug("Entering commandEndpointOf().");
   const who = String(clientId == null ? '' : clientId).trim();
@@ -5685,6 +6024,11 @@ function commandEndpointOf(clientId) {
 
 // Every client in the ambient realm that registered a command endpoint:
 // `[{ clientId, name, endpoint }]`.
+/**
+ * Lists every client in the ambient realm that registered a command endpoint.
+ *
+ * @returns each client's id, name and endpoint
+ */
 function commandClients() {
   log.debug("Entering commandClients().");
   const out = [];
@@ -5704,12 +6048,23 @@ function commandClients() {
   return out;
 }
 
+/**
+ * The attribute each OpenID Connect subject registration member is stored in.
+ */
 const OIDC_SUBJECT_ATTRIBUTES = {
   subject_type: 'oauthSubjectType',
   sector_identifier_uri: 'oauthSectorIdentifierUri',
   token_endpoint_auth_signing_alg: 'oauthTokenEndpointAuthSigningAlg'
 };
 
+/**
+ * Checks a client's subject members: `subject_type`, `sector_identifier_uri`,
+ * and that a pairwise client without a sector URI has every redirect URI on one
+ * host.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
 function oidcSubjectMetadataProblem(values) {
   log.debug("Entering oidcSubjectMetadataProblem().");
   const asked = values || {};
@@ -5845,6 +6200,13 @@ function oidcSubjectAttributeProblem(attribute, value, fields) {
 // console or `/admin-api` write, by `pushedAuthorizationAttributeProblem()`
 // (`STS-REG-0121`).
 // ---------------------------------------------------------------------------
+/**
+ * Checks a registration's `require_pushed_authorization_requests`: it must be a
+ * boolean.
+ *
+ * @param values - the registration document
+ * @returns null, or the error code, error, member and description
+ */
 function pushedAuthorizationMetadataProblem(values) {
   log.debug("Entering pushedAuthorizationMetadataProblem().");
   const asked = values || {};
@@ -5864,6 +6226,14 @@ function pushedAuthorizationMetadataProblem(values) {
 // The same question about the attribute, written through the console or
 // `/admin-api`: TRUE or FALSE, the directory's spelling. A CLEAR is never
 // refused.
+/**
+ * Checks the PAR requirement attribute written through the console or the API:
+ * TRUE or FALSE. A clear is never refused.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the refusal sentence, or ''
+ */
 function pushedAuthorizationAttributeProblem(attribute, value) {
   log.debug("Entering pushedAuthorizationAttributeProblem().");
   const text = String(value === undefined || value === null ? '' : value)
@@ -5886,6 +6256,15 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
 // audience or an AppliesTo nobody registered is an ordinary target — so they
 // are not checked here. STS-REG-0194. A CLEAR is never refused.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a delegation policy attribute written through the console or the API:
+ * the flag is TRUE or FALSE and a subject group is a DN. A clear is never
+ * refused.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the refusal sentence, or ''
+ */
 function delegationAttributeProblem(attribute, value) {
   log.debug("Entering delegationAttributeProblem(). attribute=" + attribute);
   const text = String(value === undefined || value === null ? '' : value)
@@ -5936,13 +6315,28 @@ function delegationAttributeProblem(attribute, value) {
 // endpoint's — a client asking for bound tokens from a service whose main port
 // is not TLS — and is decided in `oauth-oidc/oauth2.ts`, which knows the port.
 // ---------------------------------------------------------------------------
+/**
+ * The attributes the five RFC 8705 subject parameters are stored in, in member
+ * order.
+ */
 const TLS_SUBJECT_ATTRIBUTES = certificateSubject.MEMBER_NAMES.map(
   function (member) {
     return certificateSubject.MEMBERS[member].attribute;
   });
+/**
+ * The attribute RFC 8705 section 3.4's
+ * `tls_client_certificate_bound_access_tokens` is stored in.
+ */
 const TLS_BOUND_TOKENS_ATTRIBUTE =
   'oauthTlsClientCertificateBoundAccessTokens';
 
+/**
+ * Checks a registration's RFC 8705 members: at most one of the five subject
+ * parameters, each in its member's grammar, and a boolean bound-tokens flag.
+ *
+ * @param values - the registration document
+ * @returns null, or the error code, error, member and description
+ */
 function mtlsMetadataProblem(values) {
   log.debug("Entering mtlsMetadataProblem().");
   const asked = values || {};
@@ -5985,6 +6379,16 @@ function mtlsMetadataProblem(values) {
 // refused, and a SET of the parameter already held replaces it — only a
 // DIFFERENT second parameter is refused, with the one to take off named.
 // Answers `{ code, message }` or null.
+/**
+ * Checks an RFC 8705 attribute written through the console or the API against
+ * what the entry already holds; only a different second subject parameter is
+ * refused. A clear is never refused.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @param fields - the entry's current fields
+ * @returns the error code and message, or null
+ */
 function mtlsAttributeProblem(attribute, value, fields) {
   log.debug("Entering mtlsAttributeProblem(). attribute=" + attribute);
   const text = String(value === undefined || value === null ? '' : value)
@@ -6064,6 +6468,13 @@ function gnapRealmMtlsTrust() {
 // `fields` is an entry's fields (or null for a caller with no entry yet).
 // Answers `{ trust, realm, entry }`, `entry` being what the entry asked for
 // ('' for nothing, or a value that is not honoured).
+/**
+ * Returns how a GNAP client's mutual-TLS key is trusted: `pki` when the realm
+ * or the entry says so, else `pinned`.
+ *
+ * @param fields - the entry's fields, or null for a caller with no entry yet
+ * @returns the trust model, the realm's setting and what the entry asked for
+ */
 function gnapMtlsTrustFor(fields) {
   log.debug("Entering gnapMtlsTrustFor().");
   const realm = gnapRealmMtlsTrust();
@@ -6076,6 +6487,15 @@ function gnapMtlsTrustFor(fields) {
 
 // The write door's question about `gnapMtlsTrust`. A clear is never refused.
 // Answers `{ code, message }` or null.
+/**
+ * Checks `gnapMtlsTrust` written through the console or the API: `pki` or
+ * `pinned`, and never `pinned` in a realm whose setting is `pki`. A clear is
+ * never refused.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the error code and message, or null
+ */
 function gnapMtlsTrustProblem(attribute, value) {
   log.debug("Entering gnapMtlsTrustProblem(). attribute=" + attribute);
   const text = String(value === undefined || value === null ? '' : value)
@@ -6122,6 +6542,9 @@ function gnapMtlsTrustProblem(attribute, value) {
 //   authorization_details_types    a client's registration member: an array of
 //                                  type names
 // ---------------------------------------------------------------------------
+/**
+ * The RFC 9396 authorization details types this service defines itself.
+ */
 const AUTHORIZATION_DETAILS_BUILT_IN = ['openid_credential'];
 
 const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS = ['type', 'description',
@@ -6151,6 +6574,12 @@ function authorizationDetailsSchemaCompiler() {
 }
 
 // A type NAME, as a sentence naming what is wrong, or ''.
+/**
+ * Checks one RFC 9396 type name.
+ *
+ * @param value - the type name
+ * @returns the refusal sentence, or ''
+ */
 function authorizationDetailsTypeNameProblem(value) {
   log.debug("Entering authorizationDetailsTypeNameProblem().");
   const text = typeof value === 'string' ? value : '';
@@ -6171,6 +6600,15 @@ function authorizationDetailsTypeNameProblem(value) {
 // `{ type, description, locations, schema, validate, problem }`. `problem` is ''
 // for a usable one; `validate` is the compiled schema, or null where there is
 // none. NEVER throws.
+/**
+ * Reads one `oauthAuthorizationDetailsType` value as a definition: a bare type
+ * name, or a JSON object of `type`, `description`, `locations` and a JSON
+ * Schema that compiles. Never throws.
+ *
+ * @param value - the attribute value
+ * @returns the type, description, locations, schema, the compiled validator (or
+ *   null) and `problem` ('' when usable)
+ */
 function authorizationDetailsTypeOf(value) {
   log.debug("Entering authorizationDetailsTypeOf().");
   const text = String(value === undefined || value === null ? '' : value)
@@ -6281,6 +6719,12 @@ function authorizationDetailsTypeOf(value) {
 
 // One location, as RFC 9396 section 2.2 describes one: an absolute URI with no
 // fragment. As a sentence, or ''.
+/**
+ * Checks one RFC 9396 location: an absolute URI with no fragment.
+ *
+ * @param value - the location
+ * @returns the refusal sentence, or ''
+ */
 function authorizationDetailsLocationProblem(value) {
   log.debug("Entering authorizationDetailsLocationProblem().");
   if (typeof value !== 'string' || !value) {
@@ -6306,6 +6750,13 @@ function authorizationDetailsLocationProblem(value) {
 
 // A registration's `authorization_details_types`, as an RFC 7591 refusal or
 // null (`STS-REG-0110`).
+/**
+ * Checks a registration's `authorization_details_types`: an array of type
+ * names.
+ *
+ * @param values - the registration document
+ * @returns null, or the error code, error, member and description
+ */
 function authorizationDetailsMetadataProblem(values) {
   log.debug("Entering authorizationDetailsMetadataProblem().");
   const asked = values || {};
@@ -6340,6 +6791,15 @@ function authorizationDetailsMetadataProblem(values) {
 // `/admin-api`: a type name for a client's list (`STS-REG-0111`), a definition
 // for a resource's (`STS-REG-0112`). As `{ code, message }`, or null. A CLEAR
 // is never refused.
+/**
+ * Checks an authorization details attribute written through the console or the
+ * API: a type name for a client's list, a definition for a resource's. A clear
+ * is never refused.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the error code and message, or null
+ */
 function authorizationDetailsAttributeProblem(attribute, value) {
   log.debug("Entering authorizationDetailsAttributeProblem(). attribute=" +
             attribute);
@@ -6382,6 +6842,15 @@ const STEP_UP_MAX_AGE_LIMIT = 315360000;
 
 // One attribute value written through the console or `/admin-api`, as
 // `{ code, message }` or null. A CLEAR is never refused.
+/**
+ * Checks an RFC 9470 step-up attribute written through the console or the API:
+ * well-formed acr values, or a bounded max age in seconds. A clear is never
+ * refused.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the error code and message, or null
+ */
 function stepUpAttributeProblem(attribute, value) {
   log.debug("Entering stepUpAttributeProblem(). attribute=" + attribute);
   const text = String(value === undefined || value === null ? '' : value)
@@ -6421,6 +6890,15 @@ function stepUpAttributeProblem(attribute, value) {
 // left that the grammar refuses is dropped with a warning rather than
 // enforced: a requirement no token could meet would lock the resource with
 // nothing on its page to say why.
+/**
+ * Returns what an application requires of a token's authentication (RFC 9470),
+ * in `step_up.js`'s shape; a stored value the grammar refuses is dropped with a
+ * warning.
+ *
+ * @param entry - the application's view
+ * @returns the acr values, the max age (or null) and whether anything is
+ *   required
+ */
 function stepUpRequirementOf(entry) {
   log.debug("Entering stepUpRequirementOf().");
   const fields = (entry && entry.fields) || {};
@@ -6464,6 +6942,14 @@ function stepUpRequirementOf(entry) {
 // URI normalised on both sides — the four spellings `accessTokenPlan()`
 // addresses a token to an application by, and the ones RFC 9701's
 // "intended for" check in `introspection_jwt.js` reads.
+/**
+ * Says whether an access token's `aud` names an application as a resource: its
+ * identifier, a client id, an audience, or its permission base URI.
+ *
+ * @param entry - the application's view
+ * @param aud - the token's `aud`, a string or a list
+ * @returns true when one of them matches
+ */
 function audienceNamesEntry(entry, aud) {
   log.debug("Entering audienceNamesEntry().");
   if (!entry) {
@@ -6488,6 +6974,15 @@ function audienceNamesEntry(entry, aud) {
   return named;
 }
 
+/**
+ * Validates the fields a create was given against the published schema.
+ *
+ * An empty value is skipped. An unknown, derived, or repeated single-valued
+ * attribute is refused, as is a value its attribute's own check refuses.
+ *
+ * @param value - the fields, by attribute name
+ * @returns `ok` and the normalised fields, or `ok: false` with `errors`
+ */
 function normaliseFields(value) {
   log.debug("Entering normaliseFields().");
   const asked = (value && typeof value === 'object') ? value : {};
@@ -6841,6 +7336,12 @@ function normaliseFields(value) {
 let directory = null;
 let warnedAboutNoDirectory = false;
 
+/**
+ * Installs the directory functions the registry reads and writes
+ * `ou=applications` through; filled by `ldap_server.js`.
+ *
+ * @param fns - the directory's functions, or null to remove them
+ */
 function setDirectory(fns) {
   log.debug("Entering setDirectory().");
   directory = fns || null;
@@ -6863,6 +7364,12 @@ function setDirectory(fns) {
 //
 // Nothing in the SERVICE calls this: `ldap_server.js` fills the slot once at
 // its require time and no code path replaces it.
+/**
+ * Returns the installed directory functions, so a test that stubs the slot can
+ * put back what was there.
+ *
+ * @returns the functions, or null
+ */
 function directoryInstalled() {
   log.debug("Entering directoryInstalled().");
   log.debug("Leaving directoryInstalled().");
@@ -6913,6 +7420,13 @@ function generalizedTime(when) {
 // about what an issued key pair is. `record` is `pki.issueSigningKeyPair()`'s
 // `issued`.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the seven attribute writes that put an issued RFC 7523 key pair onto
+ * its application's entry, in the order `/admin/pki` writes them.
+ *
+ * @param record - `pki.issueSigningKeyPair()`'s `issued`
+ * @returns the attribute and value pairs
+ */
 function issuedJwtKeyPairValues(record) {
   log.debug("Entering issuedJwtKeyPairValues().");
   log.debug("Leaving issuedJwtKeyPairValues().");
@@ -6931,6 +7445,16 @@ function issuedJwtKeyPairValues(record) {
 
 // Writes them, all or a report of which failed. A failure loses the private
 // key — common/pki.js keeps no copy — so the caller must issue again.
+/**
+ * Writes an issued RFC 7523 key pair onto an application's entry.
+ *
+ * A failure loses the private key, which `pki.js` keeps no copy of; the caller
+ * must issue again.
+ *
+ * @param identifier - the application's identifier
+ * @param record - `pki.issueSigningKeyPair()`'s `issued`
+ * @returns `ok`, or the attribute that failed and its errors
+ */
 function storeIssuedJwtKeyPair(identifier, record) {
   log.debug("Entering storeIssuedJwtKeyPair(). " + identifier);
   const writes = issuedJwtKeyPairValues(record);
@@ -6973,6 +7497,13 @@ function shortName(identifier) {
 
 const MAX_RDN_LENGTH = 64;
 
+/**
+ * Returns the `cn` for an identifier: itself, or a short stable name when it is
+ * too long to be a readable RDN.
+ *
+ * @param identifier - the application's identifier
+ * @returns the label
+ */
 function labelFor(identifier) {
   log.debug("Entering labelFor().");
   const text = String(identifier);
@@ -7002,6 +7533,13 @@ function valuesOf(value) {
     .filter(function (one) { return one !== ''; });
 }
 
+/**
+ * Converts a record into the attributes stored on its `ou=applications` entry,
+ * by walking the schema.
+ *
+ * @param record - the application record
+ * @returns the attributes
+ */
 function attributesFor(record) {
   log.debug("Entering attributesFor(). identifier=" + record.identifier);
   const attributes = {
@@ -7082,6 +7620,13 @@ function allValues(attributes, name) {
   return (values || []).map(function (one) { return String(one); });
 }
 
+/**
+ * Converts an entry's attributes into a record, reading attribute names
+ * case-insensitively.
+ *
+ * @param attributes - the entry's attributes
+ * @returns the record
+ */
 function recordFromAttributes(attributes) {
   log.debug("Entering recordFromAttributes().");
   const attrs = byLowerName(attributes);
@@ -7317,6 +7862,13 @@ function fieldsOfSource(source) {
 // ON the attribute. A mark whose address is gone (an `ldapmodify` removed the
 // value and left the mark) is `held: false`: it decides nothing, because there
 // is no address for it to withhold, and it is listed so that it can be tidied.
+/**
+ * Lists every observed-address mark on an entry, with whether the address it
+ * marks is still on the attribute.
+ *
+ * @param source - a `view()`, a record, or a bare fields object
+ * @returns the marks
+ */
 function observedReturnAddresses(source) {
   log.debug("Entering observedReturnAddresses().");
   const fields = fieldsOfSource(source);
@@ -7334,6 +7886,17 @@ function observedReturnAddresses(source) {
   return rows;
 }
 
+/**
+ * Splits the return addresses an attribute holds into those registered and
+ * those only observed.
+ *
+ * In development every address counts; in product an observed one is withheld
+ * until confirmed.
+ *
+ * @param source - a `view()`, a record, or a bare fields object
+ * @param attribute - the return-address attribute
+ * @returns the attribute, the registered addresses and the unconfirmed ones
+ */
 function returnAddressesOf(source, attribute) {
   log.debug("Entering returnAddressesOf(). attribute=" + attribute);
   const fields = fieldsOfSource(source);
@@ -7451,6 +8014,14 @@ function acceptsSightedAddresses() {
 // list of session ids in a directory entry, and it is why the schema calls
 // these counts rather than lists.
 // ---------------------------------------------------------------------------
+/**
+ * Records a sighting of an application at a protocol endpoint, creating its
+ * entry on first sight and accumulating what it did.
+ *
+ * @param detail - `identifier`, `kind`, `protocol` and what the endpoint
+ *   observed (redirect URIs, scopes, the session)
+ * @returns the record, or null for an empty identifier
+ */
 function seen(detail) {
   log.debug("Entering seen().");
   const info = detail || {};
@@ -7874,6 +8445,18 @@ function applyRegistrationFields(record, registration, statement) {
 
 // `options.softwareStatement` is `software_statement.resolve()`'s account of a
 // statement the registration carried — see applyRegistrationFields().
+/**
+ * Records an RFC 7591 dynamic client registration onto the client's entry,
+ * creating it if needed.
+ *
+ * A document a metadata check refuses is not written.
+ *
+ * @param clientId - the client id
+ * @param registration - the registration document
+ * @param options - `softwareStatement` (`software_statement.resolve()`'s
+ *   account of it) and `federation` (an OpenID Federation registration)
+ * @returns the record, or null when refused
+ */
 function register(clientId, registration, options) {
   log.debug("Entering register(). client_id=" + clientId);
   // THE BACKSTOP. The registration endpoint asks registrationUriProblem() and
@@ -7950,6 +8533,15 @@ function register(clientId, registration, options) {
   return record;
 }
 
+/**
+ * Replaces a registered client's registration (RFC 7592).
+ *
+ * @param clientId - the client id
+ * @param registration - the new registration document
+ * @param options - as for `register()`
+ * @returns the record, or null when the client is unknown or the document is
+ *   refused
+ */
 function updateRegistration(clientId, registration, options) {
   log.debug("Entering updateRegistration(). client_id=" + clientId);
   // The same backstop as register().
@@ -7995,6 +8587,15 @@ function updateRegistration(clientId, registration, options) {
 // left on the entry: they are credentials for a registration that no longer
 // exists, and an entry that kept them would let the deleted client go on
 // authenticating in RFC 9700 mode.
+/**
+ * Deletes a client's registration (RFC 7592), removing its secret and
+ * registration access token with it.
+ *
+ * The redirect URIs the registration wrote stay on the entry.
+ *
+ * @param clientId - the client id
+ * @returns true when a registration was forgotten
+ */
 function forgetRegistration(clientId) {
   log.debug("Entering forgetRegistration(). client_id=" + clientId);
   const loaded = load(clientId);
@@ -8039,6 +8640,13 @@ function softwareStatementFactNames() {
 // must carry a statement from the same issuer where the endpoint is closed
 // (`software_statement.updateProblem()`), and the application's page draws it.
 // ---------------------------------------------------------------------------
+/**
+ * Returns how a registered client got in as far as a software statement goes:
+ * the statement's issuer and what it said.
+ *
+ * @param clientId - the client id
+ * @returns the facts, or null when it presented none
+ */
 function softwareStatementFactsOf(clientId) {
   log.debug("Entering softwareStatementFactsOf().");
   const loaded = load(clientId);
@@ -8062,6 +8670,14 @@ function softwareStatementFactsOf(clientId) {
 
 // Has a federation registration ended (#134, 12.3)? Its expiry is checked
 // at the read, whenever the job that removes it last ran.
+/**
+ * Says whether an OpenID Federation registration has ended, checked at the
+ * read.
+ *
+ * @param fields - the entry's fields
+ * @returns true when the entry was registered through a federation and its
+ *   expiry has passed
+ */
 function federationExpired(fields) {
   log.debug("Entering federationExpired().");
   const at = Number((fields || {}).appFederationExpiresAt);
@@ -8074,6 +8690,13 @@ function federationExpired(fields) {
 // 'explicit' — or '' for any other client or one whose registration ended
 // (#187: a request object from an automatically registered relying party is
 // held to OpenID Federation 1.1 section 12.1.1.1 on every request).
+/**
+ * Returns how a client was registered through an OpenID Federation.
+ *
+ * @param clientId - the client id
+ * @returns `automatic` or `explicit`, or '' for any other client or one whose
+ *   registration ended
+ */
 function federationRegistrationTypeOf(clientId) {
   log.debug("Entering federationRegistrationTypeOf().");
   const loaded = load(clientId);
@@ -8086,6 +8709,12 @@ function federationRegistrationTypeOf(clientId) {
 
 // Every application registered through an OpenID Federation, for the job
 // that removes the ones past their expiry and for the console.
+/**
+ * Lists every application registered through an OpenID Federation, for the
+ * expiry job and the console.
+ *
+ * @returns each one's identifier, registration type, expiry and Trust Anchor
+ */
 function federatedRegistrations() {
   log.debug("Entering federatedRegistrations().");
   const backing = store();
@@ -8120,6 +8749,13 @@ function federatedRegistrations() {
 // only thing that can carry a member with no attribute of its own — and then
 // every member that has one is overwritten from it. That is what makes an
 // `ldapmodify` of `oauthRedirectUri` a configuration change rather than a note.
+/**
+ * Returns the registration document a client holds, with every member that has
+ * an attribute read from that attribute.
+ *
+ * @param clientId - the client id
+ * @returns the document, or null for an application that merely turned up
+ */
 function registrationOf(clientId) {
   log.debug("Entering registrationOf().");
   const loaded = load(clientId);
@@ -8320,6 +8956,15 @@ function declaredClient(record, fields, redirectCount) {
   return declared;
 }
 
+/**
+ * Returns what a client is allowed to do, as the security checks read it:
+ * redirect URIs (confirmed ones only in product), authentication method, logout
+ * URIs, subject type and the rest, from the attributes.
+ *
+ * @param identifier - the client id
+ * @returns the configuration; `known: false` for a client never seen or whose
+ *   federation registration ended
+ */
 function clientConfigOf(identifier) {
   log.debug("Entering clientConfigOf(). identifier=" + identifier);
   const loaded = load(identifier);
@@ -8521,6 +9166,14 @@ function clientConfigOf(identifier) {
 // every protocol that passes a client_id along. The protocols whose application
 // identifier never reaches that funnel call `seen()` directly — see its header.
 // ---------------------------------------------------------------------------
+/**
+ * Records the application half of an accepted credential that names a client;
+ * called by `admin_stats.recordAuthentication()`.
+ *
+ * @param info - the authentication's detail, with `client_id` and optionally
+ *   `applicationKind`
+ * @returns the record, or null when no client is named
+ */
 function recordAuthentication(info) {
   log.debug("Entering recordAuthentication().");
   const detail = info || {};
@@ -8601,6 +9254,17 @@ function identifierProblem(identifier) {
   return null;
 }
 
+/**
+ * Creates an application entry by hand, the console's and the API's create.
+ *
+ * Counts no authentication. Refused for an unusable identifier, one already
+ * registered, no directory, or fields the schema refuses.
+ *
+ * @param detail - `identifier`, `name`, `kind`, `protocols`, `fields` and
+ *   `actor`
+ * @returns `ok` and the application as the directory now holds it, or `ok:
+ *   false` with `errors`
+ */
 function createApplication(detail) {
   log.debug("Entering createApplication().");
   const info = detail || {};
@@ -8902,6 +9566,20 @@ function overrideModeProblem(attribute, value) {
     mode.writeRefusalReason(setting ? setting.onlyWhile : '');
 }
 
+/**
+ * Changes one attribute of an application, in the mode its schema row allows:
+ * the door every console and API edit, and the delegated-permission actions, go
+ * through.
+ *
+ * Each attribute's own grammar, family and mode checks apply; the change is
+ * audited.
+ *
+ * @param identifier - the application's identifier
+ * @param change - `attribute`, `mode` (`set`, `add`, `remove` or `clear`),
+ *   `value`, `actor` and `consentRegister`
+ * @returns `ok`, `changed`, the application and a message, or `ok: false` with
+ *   `errors`
+ */
 function updateApplication(identifier, change) {
   log.debug("Entering updateApplication().");
   const asked = change || {};
@@ -9708,6 +10386,11 @@ function clientSecretBytes() {
   return Number(config.value('oauth2.registeredSecretBytes')) || 24;
 }
 
+/**
+ * Mints a random client secret of the configured length.
+ *
+ * @returns the secret
+ */
 function mintClientSecret() {
   log.debug("Entering mintClientSecret().");
   log.debug("Leaving mintClientSecret().");
@@ -9742,6 +10425,12 @@ function mintClientSecret() {
 // for never (#49 P5): its own attribute, or — for a client registered before
 // the attribute existed — the client_secret_expires_at its registration
 // document published.
+/**
+ * Returns when an entry's current client secret expires.
+ *
+ * @param fields - the entry's fields
+ * @returns seconds since the epoch, or 0 for never
+ */
 function secretExpiryOf(fields) {
   log.debug("Entering secretExpiryOf().");
   const own = Number(valuesOf(fields.oauthClientSecretExpiresAt)[0]);
@@ -9771,6 +10460,14 @@ function secretExpiryOf(fields) {
 // oauth2.clientSecretExpiryWarningDays, one for every secret that has
 // expired, and the previous secret of every rotation whose overlap has
 // passed CLEARED from its entry. Answers the three lists of identifiers.
+/**
+ * Runs the daily client-secret sweep in the ambient realm: warns of secrets
+ * expiring soon and expired ones, and clears previous secrets whose overlap has
+ * passed.
+ *
+ * @param nowMs - the time in milliseconds; now when omitted
+ * @returns the identifiers expiring, expired and cleared
+ */
 function sweepClientSecrets(nowMs) {
   log.debug("Entering sweepClientSecrets().");
   const now = Number(nowMs) || Date.now();
@@ -9839,6 +10536,14 @@ function sweepClientSecrets(nowMs) {
 // ROTATE — a new secret, with the old one still accepted for
 // oauth2.clientSecretOverlapS (#49 P5, rcbj's answer). The Admin Write act
 // the console and `POST /admin-api/applications/rotate-secret` share.
+/**
+ * Rotates a client secret: a new one, with the old one still accepted for
+ * `oauth2.clientSecretOverlapS`.
+ *
+ * @param identifier - the application's identifier
+ * @param options - `actor`
+ * @returns what `regenerateClientSecret()` answers
+ */
 function rotateClientSecret(identifier, options) {
   log.debug("Entering rotateClientSecret(). identifier=" + identifier);
   const out = regenerateClientSecret(identifier,
@@ -9847,6 +10552,15 @@ function rotateClientSecret(identifier, options) {
   return out;
 }
 
+/**
+ * Mints a new client secret for an application, optionally keeping the old one
+ * accepted for `oauth2.clientSecretOverlapS`.
+ *
+ * @param identifier - the application's identifier
+ * @param options - `actor`, and `keepPrevious` for a rotation
+ * @returns `ok`, the new secret (shown once), the application, when the overlap
+ *   ends and a message; or `ok: false` with `errors`
+ */
 function regenerateClientSecret(identifier, options) {
   log.debug("Entering regenerateClientSecret(). identifier=" + identifier);
   const opts = options || {};
@@ -10075,6 +10789,16 @@ function saveObservedAddressChange(identifier, found, record, verb, what,
            message: what + '.' };
 }
 
+/**
+ * Confirms an observed return address: takes the mark off and keeps the
+ * address, so product believes it.
+ *
+ * Refused for an address that is not marked.
+ *
+ * @param identifier - the application's identifier
+ * @param change - `attribute`, `value` and `actor`
+ * @returns `ok`, the application and a message, or `ok: false` with `errors`
+ */
 function confirmReturnAddress(identifier, change) {
   log.debug("Entering confirmReturnAddress(). identifier=" + identifier);
   const found = observedAddressRequest(identifier, change, 'confirm');
@@ -10098,6 +10822,15 @@ function confirmReturnAddress(identifier, change) {
   return answer;
 }
 
+/**
+ * Discards an observed return address: takes both the address and its mark off.
+ *
+ * Refused for an address that is not marked.
+ *
+ * @param identifier - the application's identifier
+ * @param change - `attribute`, `value` and `actor`
+ * @returns `ok`, the application and a message, or `ok: false` with `errors`
+ */
 function discardReturnAddress(identifier, change) {
   log.debug("Entering discardReturnAddress(). identifier=" + identifier);
   const found = observedAddressRequest(identifier, change, 'discard');
@@ -10139,6 +10872,13 @@ function discardReturnAddress(identifier, change) {
 // PEM is accepted and its armour taken off; anything else is left for the
 // check to refuse.
 // ---------------------------------------------------------------------------
+/**
+ * Brings a SAML signing certificate to base64 DER with no whitespace, taking a
+ * PEM's armour off.
+ *
+ * @param value - the certificate, PEM or base64
+ * @returns the base64
+ */
 function samlCertificateBase64(value) {
   log.debug("Entering samlCertificateBase64().");
   log.debug("Leaving samlCertificateBase64().");
@@ -10152,6 +10892,14 @@ function samlCertificateBase64(value) {
 // only, because nothing verified anything else; `common/crypto.js` section 1a
 // now verifies EC, EdDSA, DSA and the post-quantum families too, and asking
 // it keeps the door and the verifier from disagreeing.
+/**
+ * Says whether a value is refused as a SAML signing certificate: it must be
+ * base64 of an X.509 certificate whose key makes an XML signature this service
+ * verifies.
+ *
+ * @param value - the certificate, PEM or base64
+ * @returns the refusal sentence, or ''
+ */
 function samlCertificateProblem(value) {
   log.debug("Entering samlCertificateProblem().");
   const der = samlCertificateBase64(value);
@@ -10196,6 +10944,17 @@ function samlCertificateProblem(value) {
 // caller, and the attributes it writes are derived from a document the
 // operator chose.
 // ---------------------------------------------------------------------------
+/**
+ * Replaces the attributes a consumed SAML metadata document wrote with those of
+ * a new one; called by `saml/sp_metadata.ts` alone.
+ *
+ * Only `SAML_METADATA_FIELDS` may be written.
+ *
+ * @param identifier - the application's identifier
+ * @param replacements - the new values, by attribute
+ * @param options - `actor`
+ * @returns `ok` and the application, or `ok: false` with `errors`
+ */
 function replaceSamlMetadataFields(identifier, replacements, options) {
   log.debug("Entering replaceSamlMetadataFields(). identifier=" + identifier);
   const opts = options || {};
@@ -10335,6 +11094,17 @@ function saveObservedCertificateChange(identifier, record, verb, what, actor) {
            message: what + '.' };
 }
 
+/**
+ * Confirms the observed SAML signing certificate, moving it onto
+ * `samlSigningCertificate` in one save.
+ *
+ * Refused for a certificate whose key this service cannot verify an XML
+ * signature with.
+ *
+ * @param identifier - the application's identifier
+ * @param options - `actor`
+ * @returns `ok`, the application and a message, or `ok: false` with `errors`
+ */
 function confirmSigningCertificate(identifier, options) {
   log.debug("Entering confirmSigningCertificate(). identifier=" + identifier);
   const found = observedCertificateRequest(identifier, 'confirm');
@@ -10365,6 +11135,13 @@ function confirmSigningCertificate(identifier, options) {
   return answer;
 }
 
+/**
+ * Discards the observed SAML signing certificate.
+ *
+ * @param identifier - the application's identifier
+ * @param options - `actor`
+ * @returns `ok`, the application and a message, or `ok: false` with `errors`
+ */
 function discardSigningCertificate(identifier, options) {
   log.debug("Entering discardSigningCertificate(). identifier=" + identifier);
   const found = observedCertificateRequest(identifier, 'discard');
@@ -10387,6 +11164,13 @@ function discardSigningCertificate(identifier, options) {
 // not be in the registry at all — a client_id somebody typed wrong, a realm
 // from a test that is over. It is the one operation here that LOSES a fact, so
 // it says so in the message rather than reporting a tidy success.
+/**
+ * Deletes an application's entry entirely; audited.
+ *
+ * @param identifier - the application's identifier
+ * @param options - `actor`
+ * @returns `ok` and a message, or `ok: false` with `errors`
+ */
 function deleteApplication(identifier, options) {
   log.debug("Entering deleteApplication().");
   const opts = options || {};
@@ -10568,6 +11352,14 @@ function view(record, entry) {
 // RFC 7591's defaults), answers null and is held to nothing, as a client_id
 // nobody registered is.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the grant and response types a client's registration document
+ * declares, which the endpoints hold it to in every mode.
+ *
+ * @param clientId - the client id
+ * @returns the two lists, or null when the client has no document or it names
+ *   neither
+ */
 function registeredFlowsOf(clientId) {
   log.debug("Entering registeredFlowsOf().");
   const loaded = load(String(clientId || ''));
@@ -10604,6 +11396,14 @@ function registeredFlowsOf(clientId) {
 // OTHER client's, being tried where it does not belong. This finds the client
 // holding it (compared in constant time) and takes the token off its entry.
 // Answers the client_id it was revoked from, or ''.
+/**
+ * Takes a registration access token off the entry of the client holding it, as
+ * RFC 7592 section 2 asks for a token presented for a client that does not
+ * exist.
+ *
+ * @param token - the presented token, compared in constant time
+ * @returns the client id it was revoked from, or ''
+ */
 function revokeRegistrationAccessToken(token) {
   log.debug("Entering revokeRegistrationAccessToken().");
   const presented = String(token || '');
@@ -10629,6 +11429,11 @@ function revokeRegistrationAccessToken(token) {
   return holder.identifier;
 }
 
+/**
+ * Lists every application in the ambient realm, most recently seen first.
+ *
+ * @returns the views
+ */
 function list() {
   log.debug("Entering list().");
   const backing = store();
@@ -10684,6 +11489,14 @@ function list() {
 // entries, or the setting's own value when no entry overrides it higher —
 // for a question about EVERY client at once, such as how long the longest
 // token a key signed can live (`common/signing_rotation.ts`, #42).
+/**
+ * Returns the largest value a per-application setting takes across the realm's
+ * entries, or the setting's own when no entry overrides it higher.
+ *
+ * @param settingKey - the setting's key
+ * @param config - the settings module
+ * @returns the largest value
+ */
 function largestSetting(settingKey, config) {
   log.debug("Entering largestSetting(). setting=" + settingKey);
   let most = Number(config.value(settingKey)) || 0;
@@ -10710,6 +11523,17 @@ function largestSetting(settingKey, config) {
 // because every per-application read comes through this function; a check at
 // each caller would be the one a new caller forgets. `updateApplication()`
 // refuses to write such a value (STS-REG-0193).
+/**
+ * Returns a setting's value for one application: the entry's override where it
+ * holds one, else the setting's own.
+ *
+ * A development-only value is not in force in product, wherever it came from.
+ *
+ * @param identifier - the application's identifier
+ * @param settingKey - the setting's key
+ * @param config - the settings module
+ * @returns the value in force
+ */
 function settingFor(identifier, settingKey, config) {
   log.debug("Entering settingFor(). identifier=" + (identifier || '(none)') +
             ", setting=" + settingKey);
@@ -10769,6 +11593,12 @@ SCHEMA.attributes.forEach(function (attribute) {
 
 // The reverse, for a page that has an application and wants to know which of
 // its settings it is answering for. Both directions come off the one table.
+/**
+ * Lists the settings an application entry may override, each with the attribute
+ * that holds the override.
+ *
+ * @returns the setting and attribute pairs
+ */
 function overridableSettings() {
   log.debug("Entering overridableSettings().");
   log.debug("Leaving overridableSettings().");
@@ -10784,6 +11614,15 @@ function overridableSettings() {
 // module knows nothing about its grammar beyond "a value per scope, the scope
 // after the first space". Returns whether it was written.
 // ---------------------------------------------------------------------------
+/**
+ * Records the instant a global consent for a scope was withdrawn; written by
+ * `consent.ts`'s `revokeGlobal()` alone.
+ *
+ * @param identifier - the application's identifier
+ * @param scope - the scope
+ * @param stamp - the consent register's value for it
+ * @returns whether it was written
+ */
 function noteGlobalConsentWithdrawn(identifier, scope, stamp) {
   log.debug("Entering noteGlobalConsentWithdrawn(). identifier=" +
             identifier);
@@ -10806,6 +11645,12 @@ function noteGlobalConsentWithdrawn(identifier, scope, stamp) {
   return saved;
 }
 
+/**
+ * Returns one application by its registry identifier.
+ *
+ * @param identifier - the identifier
+ * @returns the view, or null
+ */
 function get(identifier) {
   log.debug("Entering get().");
   const loaded = load(identifier);
@@ -10851,6 +11696,13 @@ function get(identifier) {
 // produce `https://example.com/write` rather than one word — see the
 // attribute's own row, which says that an ldapmodify is not normalised and
 // therefore means exactly what it says.
+/**
+ * Normalises a permission base URI: a `/` is added unless it ends in a
+ * separator.
+ *
+ * @param value - the base URI
+ * @returns the base, or ''
+ */
 function permissionBaseOf(value) {
   log.debug("Entering permissionBaseOf().");
   const text = String(value == null ? '' : value).trim();
@@ -10862,6 +11714,13 @@ function permissionBaseOf(value) {
   return /[/#:]$/.test(text) ? text : text + '/';
 }
 
+/**
+ * Composes a permission's identifier from its base URI and name.
+ *
+ * @param base - the base URI
+ * @param name - the permission name
+ * @returns the identifier, or '' when either is empty
+ */
 function permissionIdOf(base, name) {
   log.debug("Entering permissionIdOf().");
   const prefix = permissionBaseOf(base);
@@ -10875,6 +11734,13 @@ function permissionIdOf(base, name) {
 // is an indexOf and not a split — a split would silently drop the tail of a
 // description that contained the character, and the value would still look
 // right on the entry.
+/**
+ * Reads one `oauthPermission` value: the name, and a description after the
+ * first `|`.
+ *
+ * @param value - the value
+ * @returns the name and description
+ */
 function parsePermissionValue(value) {
   log.debug("Entering parsePermissionValue().");
   const text = String(value == null ? '' : value);
@@ -10885,6 +11751,13 @@ function parsePermissionValue(value) {
   return { name: name, description: description };
 }
 
+/**
+ * Composes an `oauthPermission` value from a name and a description.
+ *
+ * @param name - the permission name
+ * @param description - its description
+ * @returns the value
+ */
 function permissionValueOf(name, description) {
   log.debug("Entering permissionValueOf().");
   const leaf = String(name == null ? '' : name).trim();
@@ -10901,6 +11774,13 @@ function permissionValueOf(name, description) {
 //
 // `|` is refused BEYOND the RFC, because it is this schema's own delimiter and
 // a name carrying one could never be read back as the name that was written.
+/**
+ * Checks a permission name: an RFC 6749 scope token, with no surrounding
+ * whitespace and no `|`.
+ *
+ * @param name - the name
+ * @returns the refusal sentence, or ''
+ */
 function permissionNameProblem(name) {
   log.debug("Entering permissionNameProblem().");
   const text = String(name == null ? '' : name);
@@ -10950,6 +11830,12 @@ function permissionNameProblem(name) {
 // grammar over there would be the thing that eventually disagreed. That module
 // calls this one; the dependency already runs in that direction.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a value against RFC 6749 section 3.3's scope-token grammar.
+ *
+ * @param value - the scope
+ * @returns the refusal sentence, or ''
+ */
 function scopeTokenProblem(value) {
   log.debug("Entering scopeTokenProblem().");
   const text = String(value == null ? '' : value);
@@ -10985,6 +11871,12 @@ function scopeTokenProblem(value) {
 // rather than an oversight — this is not a resource indicator, it is a name
 // this service concatenates onto, and `https://example.com/api#` is a perfectly
 // readable base whose permissions are `https://example.com/api#read`.
+/**
+ * Checks a permission base URI: it must be absolute.
+ *
+ * @param value - the base URI
+ * @returns the refusal sentence, or '' (also for an empty value)
+ */
 function permissionBaseProblem(value) {
   log.debug("Entering permissionBaseProblem().");
   const text = String(value == null ? '' : value).trim();
@@ -11020,6 +11912,14 @@ function permissionBaseProblem(value) {
 // return) — both carry `fields`, which is the whole of what this reads, so one
 // function serves the pages and the token endpoint rather than two that could
 // come to disagree about what a permission is.
+/**
+ * Returns the permissions one entry defines, in the order the attribute holds
+ * them.
+ *
+ * @param source - a record or a view
+ * @returns each permission's name, description, identifier ('' without a base)
+ *   and raw value
+ */
 function permissionsOf(source) {
   log.debug("Entering permissionsOf().");
   const fields = (source && source.fields) || {};
@@ -11074,6 +11974,13 @@ function roleGatedProblem(value) {
 // client asks for (base + name). Answers the defining application's lookup
 // with `gated`, or null where no application defines the identifier — which
 // is an ordinary scope and nothing this relation decides.
+/**
+ * Says whether a permission is gated by role (#303).
+ *
+ * @param id - the permission's full identifier (base and name)
+ * @returns the defining application's lookup with `gated`, or null when no
+ *   application defines it
+ */
 function roleGatingFor(id) {
   log.debug("Entering roleGatingFor().");
   const found = forPermission(id);
@@ -11087,6 +11994,14 @@ function roleGatingFor(id) {
   return Object.assign({ gated: gated }, found);
 }
 
+/**
+ * Returns the application that defines a permission, matched exactly on its
+ * full identifier.
+ *
+ * @param id - the permission's identifier
+ * @returns the application, its identifier, base URI and the permission's name,
+ *   description and identifier; or null
+ */
 function forPermission(id) {
   log.debug("Entering forPermission(). id=" + id);
   const wanted = String(id == null ? '' : id).trim();
@@ -11152,6 +12067,13 @@ function forPermission(id) {
 // AN ENTRY WITH NO BASE IS NEVER MATCHED, because `permissionBaseOf('')` is the
 // empty string and an empty base would otherwise match every entry that has
 // none. That is the state `permissionsOf()`'s `id` comment describes.
+/**
+ * Returns the application whose permission base URI is a given base, both sides
+ * normalised; an entry with no base never matches.
+ *
+ * @param base - the base URI
+ * @returns the view, or null
+ */
 function forPermissionBase(base) {
   log.debug("Entering forPermissionBase(). base=" + base);
   const wanted = permissionBaseOf(base);
@@ -11201,6 +12123,13 @@ function forPermissionBase(base) {
 // its answer; oauth2.ts's permissionRefusal() turns a false into a refusal —
 // always in product mode, and in development when
 // `oauth2.delegatedPermissionsEnforced` is on (#110).
+/**
+ * Says whether a client has been granted a permission; a question, not a gate.
+ *
+ * @param clientId - the client id, or the registry identifier
+ * @param id - the permission's identifier
+ * @returns true when granted
+ */
 function holdsPermission(clientId, id) {
   log.debug("Entering holdsPermission().");
   const wanted = String(id == null ? '' : id).trim();
@@ -11235,6 +12164,13 @@ function holdsPermission(clientId, id) {
 //
 // A QUESTION AND NOT A GATE, like its neighbour: nothing here refuses.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the scopes a client declared (`oauthAllowedScope`); a question, not a
+ * gate.
+ *
+ * @param clientId - the client id, or the registry identifier
+ * @returns the scopes, or null when the client declared none or is unknown
+ */
 function allowedScopesOf(clientId) {
   log.debug("Entering allowedScopesOf().");
   const who = String(clientId == null ? '' : clientId).trim();
@@ -11285,6 +12221,12 @@ function allowedScopesOf(clientId) {
 // index would be a second copy of the attribute, and this module's whole
 // argument is that the directory is the one store.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the application whose `oauthAudience` lists a value, matched exactly.
+ *
+ * @param audience - the audience
+ * @returns the view, or null
+ */
 function forAudience(audience) {
   log.debug("Entering forAudience(). audience=" + audience);
   const wanted = String(audience == null ? '' : audience).trim();
@@ -11348,6 +12290,12 @@ function forAudience(audience) {
 // ---------------------------------------------------------------------------
 const NATIVE_SSO_GROUP = /^[A-Za-z0-9._:-]{1,64}$/;
 
+/**
+ * Says whether a client may take part in Native SSO, and in which group.
+ *
+ * @param clientId - the client id
+ * @returns `enabled` (the flag is TRUE and the group well formed) and the group
+ */
 function nativeSsoOf(clientId) {
   log.debug("Entering nativeSsoOf().");
   const who = String(clientId == null ? '' : clientId).trim();
@@ -11361,6 +12309,12 @@ function nativeSsoOf(clientId) {
   return { enabled: enabled, group: enabled ? group : '' };
 }
 
+/**
+ * Returns the application whose `oauthClientId` lists a value, matched exactly.
+ *
+ * @param clientId - the client id
+ * @returns the view, or null
+ */
 function forClientId(clientId) {
   log.debug("Entering forClientId(). clientId=" + clientId);
   const wanted = String(clientId == null ? '' : clientId).trim();
@@ -11425,6 +12379,13 @@ function forClientId(clientId) {
 // character is a different service), and not a fallback to the IDENTIFIER,
 // which `get()` already answers.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the application a WS-Trust or SAML AppliesTo names, by
+ * `wstrustAppliesTo` and then `samlEntityId`, matched exactly.
+ *
+ * @param appliesTo - the AppliesTo
+ * @returns the view with the attribute that matched, or null
+ */
 function forAppliesTo(appliesTo) {
   log.debug("Entering forAppliesTo(). appliesTo=" + appliesTo);
   const wanted = String(appliesTo == null ? '' : appliesTo).trim();
@@ -11491,6 +12452,16 @@ function forAppliesTo(appliesTo) {
 // arrives before its entry exists; refusing it would make this service refuse
 // every client once, which is precisely the permissiveness it is for.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the roles an application requires of a person before anything is
+ * issued to them.
+ *
+ * An application that requires nothing, or is unknown, requires the default
+ * role (everybody).
+ *
+ * @param identifier - the application's identifier
+ * @returns the role names, never empty
+ */
 function requiredRolesOf(identifier) {
   log.debug("Entering requiredRolesOf(). identifier=" + identifier);
   const loaded = load(identifier);
@@ -11513,6 +12484,13 @@ function requiredRolesOf(identifier) {
 // missing: an application that requires only EVERYBODY loses nothing by the
 // policy being absent, and one that requires `staff` loses the whole point of
 // having said so. See `xacml/xacml_role_pep.ts`, which argues that split.
+/**
+ * Says whether an application requires anything beyond the permissive default
+ * role.
+ *
+ * @param identifier - the application's identifier
+ * @returns true when narrowed
+ */
 function requiresNarrowedRoles(identifier) {
   log.debug("Entering requiresNarrowedRoles().");
   const required = requiredRolesOf(identifier);
@@ -11521,6 +12499,11 @@ function requiresNarrowedRoles(identifier) {
            required[0] === roles.DEFAULT_REQUIRED_ROLE);
 }
 
+/**
+ * Returns how many applications the ambient realm's container holds.
+ *
+ * @returns the count, or 0 with no directory
+ */
 function count() {
   log.debug("Entering count().");
   const backing = store();
@@ -11534,6 +12517,11 @@ function count() {
 // — this module does not know where the container is, which is the division the
 // header describes — so they are absent when no directory is attached, and the
 // callers render that as null rather than as a guess.
+/**
+ * Returns the DN of the ambient realm's `ou=applications` container.
+ *
+ * @returns the DN, or null with no directory
+ */
 function containerDn() {
   log.debug("Entering containerDn().");
   const backing = store();
@@ -11541,6 +12529,11 @@ function containerDn() {
   return (backing && backing.containerDn && backing.containerDn()) || null;
 }
 
+/**
+ * Returns how many entries the container will hold.
+ *
+ * @returns the maximum, or null with no directory
+ */
 function maxApplications() {
   log.debug("Entering maxApplications().");
   const backing = store();
@@ -11773,6 +12766,10 @@ function debuggerApplications() {
 // different, and `authn.ts` reads this list to revoke these clients' refresh
 // tokens with the session anyway: the relying-party session holding each one
 // ends in the same cascade, so the token is nobody's any more.
+/**
+ * The client ids this service's own hosted surfaces (the console, the portal
+ * and the debugger) sign in as.
+ */
 const HOSTED_SURFACE_CLIENT_IDS = Object.freeze(['sts-admin-console',
   'sts-user-portal', 'sts-debugger-ui']);
 
@@ -11994,6 +12991,14 @@ function seedInternalApplication(spec) {
 // Called by `ldap_server.js` the moment it has filled setDirectory() — which is
 // the earliest point at which there is a container to write into, and the
 // latest at which the entries are there before anything can ask for them.
+/**
+ * Seeds the applications this service's own surfaces sign in as; called by
+ * `ldap_server.js` once it has filled the directory slot.
+ *
+ * @param options - `scope`: `default` seeds every row, anything else only the
+ *   rows for every realm
+ * @returns how many entries were made
+ */
 function seedInternalApplications(options) {
   log.debug("Entering seedInternalApplications(). scope=" +
             String((options || {}).scope || 'default'));
@@ -12034,6 +13039,15 @@ function seedInternalApplications(options) {
   return made;
 }
 
+/**
+ * Every application this service has ever been asked about, in one place: the
+ * registry of `ou=applications`.
+ *
+ * The schema, the doors that write an entry (sightings, registration, the
+ * console and the API), and the lookups and checks every protocol reads.
+ *
+ * @namespace
+ */
 module.exports = {
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,

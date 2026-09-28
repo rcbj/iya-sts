@@ -53,7 +53,15 @@ config.registerLogger(log);
 // How long a client that is still sending is read and discarded after its
 // answer: at most this in all, and at most LINGER_IDLE_MS without a byte.
 // nginx's defaults (lingering_time 30s, lingering_timeout 5s).
+/**
+ * The longest, in milliseconds, a client still sending is read and discarded
+ * after its answer (nginx's `lingering_time`).
+ */
 const LINGER_TOTAL_MS = 30000;
+/**
+ * The longest, in milliseconds, a lingering close waits without a byte from the
+ * client (nginx's `lingering_timeout`).
+ */
 const LINGER_IDLE_MS = 5000;
 
 // The sockets already armed, so a second `arm()` on one does not wrap its
@@ -116,6 +124,19 @@ function lingerOn(socket) {
 
 // Call before answering a request that may still be arriving: the answer
 // closes the connection, and the close lingers if the body is unfinished.
+/**
+ * Arms a lingering close on a request that may still be arriving: call it
+ * before answering, in place of setting `Connection: close`.
+ *
+ * Sets `Connection: close`, and when the body has not all arrived replaces the
+ * socket's `destroySoon()` so the answer is followed by a FIN and the rest of
+ * the body is read and discarded, rather than the close becoming a TCP reset
+ * that discards the answer. A request whose body is complete is closed the
+ * ordinary way.
+ *
+ * @param req - the request being answered
+ * @param res - its response, node's or express's
+ */
 function arm(req, res) {
   log.debug("Entering arm().");
   // `set()` where there is no `setHeader()`: an in-process test drives a
@@ -137,6 +158,14 @@ function arm(req, res) {
   log.debug("Leaving arm().");
 }
 
+/**
+ * Lingering close: an answer sent before the request body has all arrived,
+ * closed without a TCP reset.
+ *
+ * Used by routes that refuse an upload early, such as the dataset upload.
+ *
+ * @namespace
+ */
 module.exports = {
   arm: arm,
   LINGER_TOTAL_MS: LINGER_TOTAL_MS,

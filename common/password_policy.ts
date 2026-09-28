@@ -186,10 +186,18 @@ const DEFAULT_PROFILE = 'default';
 
 // The two characters the generator leaves out of its symbol pool. See the
 // header.
+/**
+ * The two characters the password generator leaves out of its symbol pool: a
+ * double quote and a backtick.
+ */
 const GENERATOR_EXCLUDES = '"`';
 
 // The four pools, with `generate-password`'s symbol set so a generated
 // password reads as it always did. `GENERATOR_EXCLUDES` comes out of it.
+/**
+ * The generator's four character pools: lowercase, uppercase, numbers and
+ * symbols.
+ */
 const GENERATOR_POOLS: Record<string, string> = {
   lowercase: 'abcdefghijklmnopqrstuvwxyz',
   uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
@@ -202,7 +210,20 @@ const GENERATOR_POOLS: Record<string, string> = {
 // that misses a pool answers '' — which fails every profile — rather than
 // drawing again here, so the caller's MAX_DRAWS bounds it. Called once per
 // generated password, so it logs like any other function.
+/**
+ * The password draw, as a static utility.
+ */
 class PasswordGenerator {
+  /**
+   * Draws a random password from the pools the options ask for.
+   *
+   * A strict draw that misses a pool answers '', which fails every profile,
+   * rather than drawing again.
+   *
+   * @param options - `length`, a boolean per pool (`lowercase`, `uppercase`,
+   * `numbers`, `symbols`), `strict`, and `exclude`, characters to leave out
+   * @returns the password, or '' for a strict draw that missed a pool
+   */
   static generate(options: Record<string, unknown>): string {
     log.debug('Entering PasswordGenerator.generate().');
     const exclude = String(options.exclude || '');
@@ -352,12 +373,39 @@ const SCHEMA = {
 // String, RFC 4517 section 3.3.25.
 const OCTET_STRING_OID = '1.3.6.1.4.1.1466.115.121.1.40';
 
+/**
+ * The password policy: what a password here must look like, which of a person's
+ * old ones it may not be, and how one is generated.
+ *
+ * One profile, `default`, kept as an entry under `ou=passwordPolicies` with
+ * built-in defaults for anything absent. Enforced in product mode.
+ */
 class PasswordPolicy {
+  /**
+   * The one profile's name: `default`.
+   */
   static readonly DEFAULT_PROFILE = DEFAULT_PROFILE;
+  /**
+   * The built-in value of every field, keyed by field.
+   */
   static readonly DEFAULTS = DEFAULTS;
+  /**
+   * The policy's fields: key, directory attribute, type, default, bounds, label
+   * and description. Every other table here is read from it.
+   */
   static readonly FIELDS = FIELDS;
+  /**
+   * The fields, keyed by `key`.
+   */
   static readonly FIELD_BY_KEY = FIELD_BY_KEY;
+  /**
+   * The schema `/admin/policies` publishes for the container: its object
+   * classes, its attributes and the two a person's entry carries.
+   */
   static readonly SCHEMA = SCHEMA;
+  /**
+   * The syntax OID `pwdHistory`'s data half is named by: Octet String.
+   */
   static readonly OCTET_STRING_OID = OCTET_STRING_OID;
 
   // -------------------------------------------------------------------------
@@ -366,6 +414,12 @@ class PasswordPolicy {
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
 
+  /**
+   * Creates the password policy.
+   *
+   * @param deps - its dependencies: the logger, mode, the generator and the
+   * error-code table
+   */
   constructor(private readonly deps: PasswordPolicyDeps) {
     deps.log.debug("Entering PasswordPolicy.constructor().");
     deps.log.debug("Leaving PasswordPolicy.constructor().");
@@ -373,6 +427,11 @@ class PasswordPolicy {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): PasswordPolicyDeps {
     log.debug("Entering PasswordPolicy.defaultDeps().");
     log.debug("Leaving PasswordPolicy.defaultDeps().");
@@ -384,6 +443,12 @@ class PasswordPolicy {
     };
   }
 
+  /**
+   * Fills the directory slot the profile is read and written through; the
+   * directory fills it.
+   *
+   * @param hooks - the directory's hooks, or null to empty the slot
+   */
   setDirectory(hooks: DirectoryHooks | null | undefined): void {
     const { log } = this.deps;
     log.debug('Entering PasswordPolicy.setDirectory().');
@@ -393,6 +458,11 @@ class PasswordPolicy {
               (this.directory ? 'has its container.' : 'has none.'));
   }
 
+  /**
+   * Returns the directory hooks now installed.
+   *
+   * @returns the hooks, or null
+   */
   directoryInstalled(): DirectoryHooks | null {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.directoryInstalled().");
@@ -523,6 +593,14 @@ class PasswordPolicy {
   // which is the direction that matters: somebody who `ldapmodify`s
   // `pwdMinLength: twelve` has broken one attribute, and the answer to that
   // must not be a policy with no minimum length.
+  /**
+   * Reads the profile in force: the stored entry field by field, with the
+   * built-in default for any value absent or unreadable.
+   *
+   * @param name - the profile; `default` when absent
+   * @returns the profile's values, where each came from, and a `problems` list
+   * naming each unreadable value
+   */
   read(name?: string): PasswordProfile {
     const { log, mode } = this.deps;
     log.debug('Entering PasswordPolicy.read(). name=' + name);
@@ -574,6 +652,13 @@ class PasswordPolicy {
   // The profile that applies to a password being set. ONE today, and the
   // function exists so that assigning profiles later changes this body and no
   // caller — the username is accepted now for exactly that reason.
+  /**
+   * Returns the profile that applies to a person's password: today always the
+   * default one.
+   *
+   * @param username - the person; accepted for when profiles are assigned
+   * @returns the profile
+   */
   profileFor(username?: unknown): PasswordProfile {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.profileFor().");
@@ -584,6 +669,11 @@ class PasswordPolicy {
 
   // Every profile. One today; paged by the caller like every list this
   // console draws.
+  /**
+   * Lists every profile: today the default one.
+   *
+   * @returns the profiles
+   */
   list(): PasswordProfile[] {
     const { log } = this.deps;
     log.debug('Entering PasswordPolicy.list().');
@@ -621,6 +711,15 @@ class PasswordPolicy {
   // default, because the entry is REPLACED and a save that silently reset the
   // three fields a caller did not mention would be the one mistake here that
   // is invisible and loosens the policy.
+  /**
+   * Checks a save's body: every field is required, since a save replaces the
+   * whole profile.
+   *
+   * On the console's own form an absent boolean means false.
+   *
+   * @param given - the posted fields
+   * @returns `{ values, problems }`
+   */
   validate(given?: Record<string, any> | null) {
     const { log } = this.deps;
     log.debug('Entering PasswordPolicy.validate().');
@@ -662,6 +761,14 @@ class PasswordPolicy {
     return { values: values, problems: problems };
   }
 
+  /**
+   * Replaces the default profile's entry with the values given.
+   *
+   * @param name - the profile; only `default` is accepted (STS-AUTHN-0107)
+   * @param given - every field, and optionally `description`
+   * @returns `{ ok, profile }`, or `{ ok: false, errors }` marked with its
+   * error code
+   */
   save(name: unknown, given?: Record<string, any> | null): PolicyResult {
     const { log, errorCodes } = this.deps;
     log.debug('Entering PasswordPolicy.save(). name=' + name);
@@ -715,6 +822,12 @@ class PasswordPolicy {
   // Deleting the entry, which puts the BUILT-IN defaults back in force. It is
   // the one way to say "whatever this release thinks is reasonable" rather
   // than writing today's numbers down and keeping them forever.
+  /**
+   * Deletes the stored profile, putting the built-in defaults back in force.
+   *
+   * @param name - the profile; only `default` is accepted
+   * @returns `{ ok, removed, profile }`, or `{ ok: false, errors }`
+   */
   reset(name: unknown): PolicyResult {
     const { log, errorCodes } = this.deps;
     log.debug('Entering PasswordPolicy.reset(). name=' + name);
@@ -756,6 +869,16 @@ class PasswordPolicy {
   // The character classes are Unicode's rather than ASCII's. A person whose
   // password is in Greek has uppercase letters, and a rule that only saw A to
   // Z would refuse them for not having what they plainly have.
+  /**
+   * Lists every rule a password breaks under a profile, whatever the mode; the
+   * history rule is the caller's.
+   *
+   * Character classes are Unicode's rather than ASCII's.
+   *
+   * @param password - the password
+   * @param profile - the profile; the default one when absent
+   * @returns a phrase per broken rule, empty when it passes
+   */
   problemsWith(password: unknown, profile?: PasswordProfile | null): string[] {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.problemsWith().");
@@ -787,6 +910,13 @@ class PasswordPolicy {
   }
 
   // The rules as a person reads them, for the forms that ask for a password.
+  /**
+   * Describes a profile's rules as a person reads them, for the forms that ask
+   * for a password.
+   *
+   * @param profile - the profile; the default one when absent
+   * @returns a phrase per rule
+   */
   describe(profile?: PasswordProfile | null): string[] {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.describe().");
@@ -816,6 +946,12 @@ class PasswordPolicy {
   // module that gives the draft's format its meaning; `ldap_server.js` stores
   // strings and `credentials.ts` decides what goes in them.
   // -------------------------------------------------------------------------
+  /**
+   * Spells a time as GeneralizedTime, without fractional seconds.
+   *
+   * @param when - the time; now when absent
+   * @returns the timestamp
+   */
   generalizedTime(when?: Date | number | string | null): string {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.generalizedTime().");
@@ -824,6 +960,14 @@ class PasswordPolicy {
     return d.toISOString().replace(/[-:T]/g, '').replace(/\.\d{3}Z$/, 'Z');
   }
 
+  /**
+   * Builds one `pwdHistory` value in the draft's form,
+   * `time#syntaxOID#length#data`, the data being the password's stored hash.
+   *
+   * @param hash - the scrypt hash the password was stored under
+   * @param when - when it was set; now when absent
+   * @returns the value
+   */
   historyValue(hash: unknown, when?: Date | number | string | null): string {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.historyValue().");
@@ -835,6 +979,12 @@ class PasswordPolicy {
 
   // The hash out of one stored value, or '' for one that is not in the form.
   // The DATA may itself contain `#`, so it is everything after the THIRD one.
+  /**
+   * Extracts the hash from one stored `pwdHistory` value.
+   *
+   * @param value - the stored value
+   * @returns the hash, or '' for a value not in the form
+   */
   hashOfHistoryValue(value: unknown): string {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.hashOfHistoryValue().");
@@ -851,6 +1001,14 @@ class PasswordPolicy {
   // -------------------------------------------------------------------------
   // MAKING ONE UP.
   // -------------------------------------------------------------------------
+  /**
+   * Makes up a password that satisfies a profile, drawing until one does.
+   *
+   * @param profile - the profile; the default one when absent
+   * @returns the password
+   * @throws Error (STS-AUTHN-0111) when 1000 draws produce none, which only a
+   * hand-edited profile can cause
+   */
   generate(profile?: PasswordProfile | null): string {
     const { log, generator, errorCodes } = this.deps;
     log.debug('Entering PasswordPolicy.generate().');
@@ -891,6 +1049,12 @@ class PasswordPolicy {
   }
 
   // Whether the profile is ENFORCED in this process — `mode.js`'s answer.
+  /**
+   * Tells whether the profile is enforced in this process:
+   * `mode.verifiesCredentials()`.
+   *
+   * @returns true in product mode
+   */
   enforced(): boolean {
     const { log, mode } = this.deps;
     log.debug("Entering PasswordPolicy.enforced().");
@@ -917,6 +1081,15 @@ const slot = new InstanceSlot<PasswordPolicy>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The password policy: composition rules, the history of previous passwords,
+ * and the generator.
+ *
+ * Exports the classes, the constants and facades forwarding to the instance the
+ * composition root built.
+ *
+ * @namespace
+ */
 export = {
   PasswordPolicy: PasswordPolicy,
   // The draw itself, for `tests/random_values.js`'s distribution check.

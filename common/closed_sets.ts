@@ -101,6 +101,14 @@ interface QueryParameter {
 // can hold legally and which would otherwise recurse for ever.
 const MAX_DEPTH = 12;
 
+/**
+ * The closed sets an administrator's input is held to: the enums the OpenAPI
+ * document declares, enforced at the console, the management API's query
+ * strings and its bodies.
+ *
+ * A leaf holding the console's register of enums per page and action, and the
+ * one refusal sentence all three doors give.
+ */
 class ClosedSets {
   // console page ('/admin/users') + '\u0000' + action → the enums its form
   // is held to. Process-wide, like the cache register: it describes the code,
@@ -108,6 +116,15 @@ class ClosedSets {
   private static consoleFields: Map<string, ClosedField[]> = new Map();
 
   // The refusal sentence, shared by the three doors.
+  /**
+   * Returns the refusal sentence: the field, the value, and every value the set
+   * accepts.
+   *
+   * @param field - the field's name
+   * @param value - the value given
+   * @param values - the values the set accepts
+   * @returns the sentence
+   */
   static sentence(field: string, value: unknown, values: unknown[]): string {
     log.debug("Entering ClosedSets.sentence(). field=" + field);
     const shown = values.map(function (v) {
@@ -121,6 +138,16 @@ class ClosedSets {
   }
 
   // Every enum a schema declares outside an alternative, with its path.
+  /**
+   * Collects every enum a request schema declares outside `anyOf`, `oneOf` and
+   * `not`, following `$ref` into the components.
+   *
+   * An enum marked `x-refused-by-handler` is left out.
+   *
+   * @param schema - the request schema
+   * @param components - the document's component schemas
+   * @returns each enum's path (`*` for an array's items) and values
+   */
   static collect(schema: any, components?: any): ClosedField[] {
     log.debug("Entering ClosedSets.collect().");
     const out: ClosedField[] = [];
@@ -200,6 +227,15 @@ class ClosedSets {
   // ('/admin/users'); `action` the hidden `action` value it posts. Only a
   // TOP-LEVEL enum — a flat form field, or a flat field repeated — is kept,
   // because a form has no nested members to hold to anything deeper.
+  /**
+   * Registers the top-level enums a console form posting `action` to `page` is
+   * held to.
+   *
+   * @param page - the console path the form posts to
+   * @param action - the form's `action` value
+   * @param fields - the enums, as `collect()` answers them; only flat fields
+   *   are kept
+   */
   static registerConsole(page: string, action: string,
                          fields: ClosedField[]): void {
     log.debug("Entering ClosedSets.registerConsole(). " + page + " " +
@@ -228,6 +264,13 @@ class ClosedSets {
   }
 
   // Whether any control on `page` is registered under an action of its own.
+  /**
+   * Says whether any control on a console page is registered under an action of
+   * its own.
+   *
+   * @param page - the console path
+   * @returns true when one is
+   */
   static hasActions(page: string): boolean {
     log.debug("Entering ClosedSets.hasActions(). " + page);
     let found = false;
@@ -243,6 +286,13 @@ class ClosedSets {
 
   // What a console POST to `page` with `action` is held to (for the tests and
   // the gate).
+  /**
+   * Returns the enums a console POST to a page with an action is held to.
+   *
+   * @param page - the console path
+   * @param action - the form's `action` value
+   * @returns the fields
+   */
   static forConsole(page: string, action: string): ClosedField[] {
     log.debug("Entering ClosedSets.forConsole(). " + page + " " + action);
     const held = ClosedSets.consoleFields.get(page + '\u0000' +
@@ -254,6 +304,11 @@ class ClosedSets {
 
   // Every registered console control, for the tests: [{ page, action,
   // fields }].
+  /**
+   * Lists every registered console control; for the tests.
+   *
+   * @returns the page, action and fields of each
+   */
   static consoleRegister(): Array<{ page: string; action: string;
                                     fields: ClosedField[] }> {
     log.debug("Entering ClosedSets.consoleRegister().");
@@ -272,6 +327,15 @@ class ClosedSets {
   // `helpers.parseBody()` cannot give (it keeps the last): a checkbox column
   // ticked three times is three values, and each is held to the set. A body
   // that is not form-encoded is the parsed one the caller passes.
+  /**
+   * Returns a form body with every value of a repeated field, which the
+   * ordinary body parser does not keep.
+   *
+   * @param req - the request
+   * @param parsed - the parsed body, returned as is when the body is not
+   *   form-encoded
+   * @returns the fields, a repeated one as an array
+   */
   static formValues(req: any, parsed: any): any {
     log.debug("Entering ClosedSets.formValues().");
     const type = String((req && req.headers &&
@@ -294,6 +358,16 @@ class ClosedSets {
   // A console form body against what its control is held to. A control with
   // no `action` of its own (a route the API spells without one) is held by
   // the page's `''` row.
+  /**
+   * Checks a console form body against what its control is held to.
+   *
+   * An empty value is absent; case is exact.
+   *
+   * @param page - the console path
+   * @param action - the form's `action` value
+   * @param body - the form body
+   * @returns `ok`, or the field, value, accepted values and refusal sentence
+   */
   static checkForm(page: string, action: string, body: any): ClosedCheck {
     log.debug("Entering ClosedSets.checkForm(). " + page + " " + action);
     let fields = ClosedSets.forConsole(page, action);
@@ -320,6 +394,14 @@ class ClosedSets {
   }
 
   // An operation's query string against the enums its parameters declare.
+  /**
+   * Checks a query string against the enums an operation's query parameters
+   * declare.
+   *
+   * @param parameters - the operation's OpenAPI parameters
+   * @param query - the parsed query string
+   * @returns `ok`, or the field, value, accepted values and refusal sentence
+   */
   static checkQuery(parameters: QueryParameter[] | undefined,
                     query: any): ClosedCheck {
     log.debug("Entering ClosedSets.checkQuery().");
@@ -360,4 +442,7 @@ class ClosedSets {
   }
 }
 
+/**
+ * The closed sets an administrator's input is held to (#86).
+ */
 export = ClosedSets;

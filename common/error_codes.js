@@ -111,9 +111,16 @@ const log = {
 // `STS-` so a code can never be mistaken for a specification's own error name
 // in a log line, a subsystem of two to ten capitals and digits, and four digits
 // so no subsystem runs out.
+/**
+ * The shape of a whole error code: `STS-<SUBSYSTEM>-<NNNN>`.
+ */
 const CODE_PATTERN = /^STS-[A-Z][A-Z0-9]{1,9}-[0-9]{4}$/;
 
 // Anywhere in a string — what the test scans source files with.
+/**
+ * An error code anywhere in a string, global: what the test scans source files
+ * with.
+ */
 const CODE_IN_TEXT = /STS-[A-Z][A-Z0-9]{1,9}-[0-9]{4}/g;
 
 // ---------------------------------------------------------------------------
@@ -126,6 +133,10 @@ const CODE_IN_TEXT = /STS-[A-Z][A-Z0-9]{1,9}-[0-9]{4}/g;
 // for a person rather than a rule the test enforces: a code is raised where the
 // condition is detected, and one module occasionally detects another family's.
 // ---------------------------------------------------------------------------
+/**
+ * The subsystems codes are grouped by, in documentation order: each one's `id`,
+ * `label`, the files it is raised from (`where`) and what it covers (`what`).
+ */
 const SUBSYSTEMS = [
   { id: 'HTTP', label: 'HTTP front door',
     where: 'common/app.js, common/cors.js, common/validation.js, ' +
@@ -377,6 +388,11 @@ const SUBSYSTEMS = [
 // ascending. The test checks both, so a merge that interleaves two branches'
 // additions is noticed rather than published out of order.
 // ---------------------------------------------------------------------------
+/**
+ * The one table of error codes: each row's `code`, the operator's `summary`,
+ * what the client is told in its protocol's own vocabulary (`spec`), and
+ * `retired` on a condition that no longer exists.
+ */
 const CODES = [
   // ===== HTTP ==============================================================
   { code: 'STS-HTTP-0001',
@@ -17357,6 +17373,12 @@ CODES.forEach(function (row) {
   BY_CODE[row.code] = row;
 });
 
+/**
+ * Returns the subsystem part of a code.
+ *
+ * @param code - the code
+ * @returns the subsystem id, or '' for a code not in three parts
+ */
 function subsystemOf(code) {
   log.debug("Entering subsystemOf().");
   const parts = String(code || '').split('-');
@@ -17364,18 +17386,36 @@ function subsystemOf(code) {
   return parts.length === 3 ? parts[1] : '';
 }
 
+/**
+ * Tells whether a string has the shape of an error code.
+ *
+ * @param code - the string
+ * @returns true when it matches `CODE_PATTERN`
+ */
 function isWellFormed(code) {
   log.debug("Entering isWellFormed().");
   log.debug("Leaving isWellFormed().");
   return CODE_PATTERN.test(String(code || ''));
 }
 
+/**
+ * Tells whether a code is registered in the table.
+ *
+ * @param code - the code
+ * @returns true when it has a row
+ */
 function isKnown(code) {
   log.debug("Entering isKnown().");
   log.debug("Leaving isKnown().");
   return Object.prototype.hasOwnProperty.call(BY_CODE, String(code || ''));
 }
 
+/**
+ * Looks a code's row up in the table.
+ *
+ * @param code - the code
+ * @returns the row, or null
+ */
 function describe(code) {
   log.debug("Entering describe().");
   log.debug("Leaving describe().");
@@ -17412,6 +17452,17 @@ function describe(code) {
 // ---------------------------------------------------------------------------
 const MARK = Symbol.for('mock-sts.errorCode');
 
+/**
+ * Records on a response which condition it is about to report, for the call log
+ * to put on the audit row. Nothing sent changes.
+ *
+ * Stored under a non-enumerable Symbol; the last mark wins. Never throws; an
+ * unregistered code is still recorded and warned about.
+ *
+ * @param res - the response, or any object a refusal is returned as
+ * @param code - the error code
+ * @returns `res`, so it can be written inline
+ */
 function mark(res, code) {
   log.debug("Entering mark().");
   if (!res || (typeof res !== 'object' && typeof res !== 'function')) {
@@ -17435,6 +17486,12 @@ function mark(res, code) {
   return res;
 }
 
+/**
+ * Reads back the code marked on a response.
+ *
+ * @param res - the response or object
+ * @returns the code, or ''
+ */
 function codeOf(res) {
   log.debug("Entering codeOf().");
   if (!res || (typeof res !== 'object' && typeof res !== 'function')) {
@@ -17455,6 +17512,14 @@ function codeOf(res) {
 // one. A status below 400 on an unmarked response is not a failure and gets
 // nothing.
 // ---------------------------------------------------------------------------
+/**
+ * Chooses the generic code for a failed HTTP response nothing marked.
+ *
+ * @param status - the HTTP status
+ * @param matched - whether a route matched the request
+ * @returns STS-HTTP-0001 for an unrouted 404, -0004 for a 413, -0003 for a 5xx,
+ * -0002 for another 4xx, and '' below 400
+ */
 function fallbackFor(status, matched) {
   log.debug("Entering fallbackFor().");
   const code = parseInt(status, 10) || 0;
@@ -17489,6 +17554,12 @@ function fallbackFor(status, matched) {
 // request exists. Brackets and a trailing space, so the code leads the message
 // and a grep for `[STS-` finds every tagged line.
 // ---------------------------------------------------------------------------
+/**
+ * Formats a code for the front of a log line that has no audit row to carry it.
+ *
+ * @param code - the code
+ * @returns `[code] `
+ */
 function tag(code) {
   log.debug("Entering tag().");
   log.debug("Leaving tag().");
@@ -17512,6 +17583,11 @@ function escapeCell(text) {
   return String(text || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
+/**
+ * Generates `docs/error-codes.md` from the table.
+ *
+ * @returns the page's Markdown
+ */
 function markdown() {
   log.debug("Entering markdown().");
   const lines = [];
@@ -17640,6 +17716,11 @@ function markdown() {
   return lines.join('\n');
 }
 
+/**
+ * Returns the path of the generated documentation page, `docs/error-codes.md`.
+ *
+ * @returns the absolute path
+ */
 function docsPath() {
   log.debug("Entering docsPath().");
   const path = require('path');
@@ -17647,6 +17728,16 @@ function docsPath() {
   return path.join(__dirname, '..', 'docs', 'error-codes.md');
 }
 
+/**
+ * The error codes: one name, `STS-<SUBSYSTEM>-<NNNN>`, for every way this
+ * service can fail or refuse, in one table.
+ *
+ * A code is recorded on the audit row and in the log line, and never sent to a
+ * client. Run with `--docs` to regenerate the documentation page, `--check` to
+ * check it.
+ *
+ * @namespace
+ */
 module.exports = {
   CODE_PATTERN: CODE_PATTERN,
   CODE_IN_TEXT: CODE_IN_TEXT,

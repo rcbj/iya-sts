@@ -84,12 +84,31 @@ interface SigningHistoryDeps {
   now: () => number;
 }
 
+/**
+ * Records every signing key a realm has ever held: metadata and the
+ * certificate that vouched for it, never the private key.
+ *
+ * The history is append-only and derived from the key set rather than from
+ * events, so a missed observation costs only promptness.
+ */
 class SigningHistory {
+  /**
+   * Builds the history over its dependencies.
+   *
+   * @param deps - the logger, `error_codes`, lazy readers of `helpers` and
+   *   `pki`, and a clock
+   */
   constructor(private readonly deps: SigningHistoryDeps) {
     deps.log.debug("Entering SigningHistory.constructor().");
     deps.log.debug("Leaving SigningHistory.constructor().");
   }
 
+  /**
+   * Returns the dependencies the module's own instance is built with.
+   *
+   * @returns a logger, the real `error_codes`, lazy requires of `helpers` and
+   *   `pki`, and `Date.now`
+   */
   static defaultDeps(): SigningHistoryDeps {
     const log = require('bunyan').createLogger({
       name: 'signing_history',
@@ -145,6 +164,18 @@ class SigningHistory {
   // rotated by the time they reach it, and from the pages that draw the
   // history. A failure here must not fail either.
   // ---------------------------------------------------------------------------
+  /**
+   * Records the realm's key set as this process holds it: a row per current,
+   * `next` and retired key, and every row whose key the set no longer holds
+   * marked dropped.
+   *
+   * Idempotent, and it never throws. A process holding no key set for the
+   * realm marks nothing dropped.
+   * @param realmId - the realm id ('' for the default realm)
+   * @param options - optional; `reason` is written onto rows whose role moved
+   *   in this call
+   * @returns `{ recorded, updated, dropped }`
+   */
   observe(realmId: string, options?: Json): Json {
     const { log, errorCodes: codes } = this.deps;
     log.debug("Entering SigningHistory.observe(). realm=" + realmId);
@@ -385,6 +416,13 @@ class SigningHistory {
   // Every unit this realm has a history for, with its counts. A unit the set
   // holds today and has never rotated has one row, which is the answer the
   // page wants: *one generation, this one*.
+  /**
+   * Lists every unit the realm has a history for, with its counts.
+   *
+   * @param realmId - the realm id
+   * @returns per unit: `unit`, `useCase`, `slot`, `alg`, `generations`, `live`,
+   *   `dropped`, `withCertificate` and `newestAt`, sorted by unit
+   */
   unitsOf(realmId: string): Json[] {
     const { log } = this.deps;
     log.debug("Entering SigningHistory.unitsOf(). realm=" + realmId);
@@ -420,6 +458,14 @@ class SigningHistory {
   // rows answers an EMPTY list rather than a refusal: a realm whose keys have
   // never been observed has a history of nothing, which is a true answer and
   // not an error.
+  /**
+   * Returns one unit's history, newest first; an empty list for a unit with no
+   * rows.
+   *
+   * @param realmId - the realm id
+   * @param unit - the unit, as `unitsOf()` names it
+   * @returns the stored rows
+   */
   rowsOf(realmId: string, unit: string): Json[] {
     const { log } = this.deps;
     log.debug("Entering SigningHistory.rowsOf(). unit=" + unit);
@@ -437,6 +483,17 @@ class SigningHistory {
   // can find one. The CERTIFICATE PEM is carried only for a single unit's
   // rows: a summary listing every certificate of every unit would be a page
   // of PEM nobody asked for.
+  /**
+   * Builds the view model the console's sub-page and
+   * `GET /admin-api/keys/history` answer with: the unit summary, and one
+   * unit's rows (with their certificates, timestamps as ISO strings) when one
+   * is named.
+   *
+   * @param realmId - the realm id
+   * @param options - optional; `unit` names the unit whose rows to include
+   * @returns `{ realm, unit, units, rows, total }`, with `found` when a unit
+   *   was named
+   */
   historyView(realmId: string, options?: Json): Json {
     const { log } = this.deps;
     log.debug("Entering SigningHistory.historyView(). realm=" + realmId);
@@ -484,6 +541,12 @@ class SigningHistory {
   // writes, so a test can assert what was recorded rather than what a view
   // reported about it. `helpers.resetStsKeys()`'s note applies — nothing in
   // the service calls it, and nothing should.
+  /**
+   * Clears a realm's history; for tests only, and nothing in the service
+   * calls it.
+   *
+   * @param realmId - the realm id
+   */
   forgetForTests(realmId: string): void {
     const { log } = this.deps;
     log.debug("Entering SigningHistory.forgetForTests().");
@@ -499,6 +562,13 @@ class SigningHistory {
 // once, at load.
 const instance = new SigningHistory(SigningHistory.defaultDeps());
 
+/**
+ * Every signing key a realm has ever held (#42's follow-up): metadata and
+ * certificate only, kept for good.
+ *
+ * A library (rule 3); the functions are bound to an instance built at load.
+ * @namespace
+ */
 export = {
   SigningHistory: SigningHistory,
   observe: instance.observe.bind(instance),

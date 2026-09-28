@@ -124,12 +124,24 @@ if (logLevelProblem) {
             logLevelProblem.message);
 }
 
+/**
+ * The value of `global.mode` for development mode: `development`.
+ */
 const DEVELOPMENT = 'development';
+/**
+ * The value of `global.mode` for product mode: `product`.
+ */
 const PRODUCT = 'product';
 
 // The mode of the realm this request is in. Read through `config.value()` and
 // never cached, because it is runtime-settable and per realm — a cached answer
 // would be the mode of whichever realm happened to ask first.
+/**
+ * Reads the ambient realm's mode, never cached, since it is runtime-settable
+ * and per realm.
+ *
+ * @returns `product` or `development`; anything else reads as `development`
+ */
 function current() {
   log.debug("Entering current().");
   const value = String(config.value('global.mode') || DEVELOPMENT);
@@ -137,12 +149,23 @@ function current() {
   return value === PRODUCT ? PRODUCT : DEVELOPMENT;
 }
 
+/**
+ * Tells whether the ambient realm is in product mode. A call site asks a named
+ * predicate instead.
+ *
+ * @returns true in product mode
+ */
 function isProduct() {
   log.debug("Entering isProduct().");
   log.debug("Leaving isProduct().");
   return current() === PRODUCT;
 }
 
+/**
+ * Tells whether the ambient realm is in development mode.
+ *
+ * @returns true in development mode
+ */
 function isDevelopment() {
   log.debug("Entering isDevelopment().");
   log.debug("Leaving isDevelopment().");
@@ -164,6 +187,12 @@ function isDevelopment() {
 // protocol — the one exception being Kerberos, which cannot be permissive that
 // way because the password IS the key, and whose permissiveness therefore lives
 // in the KDC's account policy instead. See kerberos/CLAUDE.md.
+/**
+ * Tells whether a presented password is actually checked, in any protocol.
+ * Kerberos checks the key in both modes.
+ *
+ * @returns true in product mode
+ */
 function verifiesCredentials() {
   log.debug("Entering verifiesCredentials().");
   log.debug("Leaving verifiesCredentials().");
@@ -177,6 +206,12 @@ function verifiesCredentials() {
 // real attestor. Product says no whatever the setting says — a selector the
 // caller wrote is a claim nothing checked, and a registration entry written
 // for `unix:uid:0` must not be had by typing it into a header.
+/**
+ * Tells whether a SPIFFE Workload API caller's own asserted selectors may be
+ * matched (`spiffe.acceptAssertedSelectors`).
+ *
+ * @returns true in development mode
+ */
 function believesAssertedSelectors() {
   log.debug("Entering believesAssertedSelectors().");
   log.debug("Leaving believesAssertedSelectors().");
@@ -188,6 +223,12 @@ function believesAssertedSelectors() {
 // caller's credentials, every process that can reach the socket would get
 // whatever the transport selectors match, so the socket is not served.
 // Development serves it and says, on GET /spiffe, that nothing is attested.
+/**
+ * Tells whether the SPIFFE Workload API's Unix socket must be attested to be
+ * served at all.
+ *
+ * @returns true in product mode
+ */
 function requiresWorkloadAttestation() {
   log.debug("Entering requiresWorkloadAttestation().");
   log.debug("Leaving requiresWorkloadAttestation().");
@@ -207,6 +248,14 @@ function requiresWorkloadAttestation() {
 // condition with `spiffe.workloadTcpSourceAuthenticated`, and then only on a
 // named address, never the wildcard (STS-SPIFFE-0121).
 // `spiffe/spiffe_auth.ts`'s `workloadTcpPosture()` asks it.
+/**
+ * Tells whether the SPIFFE Workload API may be served over TCP to callers
+ * nothing attests; product binds it only where
+ * `spiffe.workloadTcpSourceAuthenticated` declares the network authenticates
+ * source addresses.
+ *
+ * @returns true in development mode
+ */
 function servesUnattestedWorkloadTcp() {
   log.debug("Entering servesUnattestedWorkloadTcp().");
   log.debug("Leaving servesUnattestedWorkloadTcp().");
@@ -224,6 +273,12 @@ function servesUnattestedWorkloadTcp() {
 // empty selector list — and one already in the registry (written while the
 // realm was in development) answers nobody (STS-SPIFFE-0123).
 // `spiffe/spiffe_registry.ts` asks it.
+/**
+ * Tells whether a SPIFFE registration entry may select its workload on nothing
+ * that identifies one: no selector, or only `transport:` and `endpoint:`.
+ *
+ * @returns true in development mode
+ */
 function registersUnidentifyingEntries() {
   log.debug("Entering registersUnidentifyingEntries().");
   log.debug("Leaving registersUnidentifyingEntries().");
@@ -237,6 +292,12 @@ function registersUnidentifyingEntries() {
 // says no whatever the setting says — every caller would be handed every
 // registration entry, which makes #40's attestation meaningless — so the
 // Workload API narrows on selectors there always.
+/**
+ * Tells whether `spiffe.attestWorkloads` off may answer a Workload API caller
+ * with entries its selectors do not match.
+ *
+ * @returns true in development mode
+ */
 function servesUnattestedEntries() {
   log.debug("Entering servesUnattestedEntries().");
   log.debug("Leaving servesUnattestedEntries().");
@@ -254,6 +315,12 @@ function servesUnattestedEntries() {
 // and refuses to write it (the `onlyWhile` marker, STS-CORE-0103).
 // `own-only`, which relaxes the rule for FOREIGN credentials alone, is allowed
 // in both modes, with the warning its description carries.
+/**
+ * Tells whether the OpenID4VP Verifier may accept a credential of this realm
+ * that carries no status reference (`oid4vp.requireStatusReference` off).
+ *
+ * @returns true in development mode
+ */
 function acceptsCredentialsWithoutStatus() {
   log.debug("Entering acceptsCredentialsWithoutStatus().");
   log.debug("Leaving acceptsCredentialsWithoutStatus().");
@@ -270,6 +337,13 @@ function acceptsCredentialsWithoutStatus() {
 // (SO_PEERCRED, `spiffe/spiffe_peer.ts`) must be this service's own. A caller
 // failing either is not `local`, and needs an administrator's X509-SVID on
 // the TCP port like anybody else. `spiffe/spiffe_auth.ts` asks it.
+/**
+ * Tells whether a caller on the SPIRE Server API's Unix socket is the `local`
+ * entity with nothing verified but the socket's existence; product verifies the
+ * socket's permissions and the peer's uid.
+ *
+ * @returns true in development mode
+ */
 function trustsUnverifiedLocalSocket() {
   log.debug("Entering trustsUnverifiedLocalSocket().");
   log.debug("Leaving trustsUnverifiedLocalSocket().");
@@ -292,6 +366,12 @@ function trustsUnverifiedLocalSocket() {
 // `subject_type` member RISC 1.0 section 3.1 says new services MUST NOT use,
 // and `krb5.clockOffset`, which moves the KDC's clock so that a skew failure
 // can be produced on purpose. A product KDC's clock is the machine's.
+/**
+ * Tells whether a setting that spoils a response on purpose (a wrong nonce, a
+ * broken SET signature, a discouraged claim, a moved KDC clock) is honoured.
+ *
+ * @returns true in development mode
+ */
 function spoilsOnPurpose() {
   log.debug("Entering spoilsOnPurpose().");
   log.debug("Leaving spoilsOnPurpose().");
@@ -345,6 +425,13 @@ function spoilsOnPurpose() {
 //     a product KDC reads the list without it, derives and stores no RC4 key,
 //     opens nothing sealed under one, and answers a request that offers
 //     nothing else KDC_ERR_ETYPE_NOSUPP (`kerberos/krb5_principals.js`).
+/**
+ * Tells whether a broken algorithm may be used where a setting asks: SHA-1
+ * signatures, RSA PKCS#1 v1.5 key transport, MD5 in HTTP Digest, rc4-hmac, and
+ * undersized JOSE keys and weak XML ECDSA curves.
+ *
+ * @returns true in development mode
+ */
 function usesBrokenAlgorithms() {
   log.debug("Entering usesBrokenAlgorithms().");
   log.debug("Leaving usesBrokenAlgorithms().");
@@ -374,6 +461,12 @@ function usesBrokenAlgorithms() {
 //     the assertions in it MAY be. So `saml11.signResponse` off is a
 //     non-conforming Browser/POST response and is development's; and the
 //     assertion is signed too, for the reason the 2.0 one is.
+/**
+ * Tells whether a SAML assertion or a SAML 1.1 Response may go out unsigned
+ * where a setting or an application turns signing off.
+ *
+ * @returns true in development mode
+ */
 function issuesUnsignedAssertions() {
   log.debug("Entering issuesUnsignedAssertions().");
   log.debug("Leaving issuesUnsignedAssertions().");
@@ -386,6 +479,13 @@ function issuesUnsignedAssertions() {
 // refuse one. Development honours `spiffe.requireSecurityHeader` off, which
 // is how something other than the header is tested with a client that does
 // not send it; product always refuses.
+/**
+ * Tells whether the SPIFFE Workload API may serve a call without the
+ * `workload.spiffe.io: true` metadata header (`spiffe.requireSecurityHeader`
+ * off).
+ *
+ * @returns true in development mode
+ */
 function servesWithoutSecurityHeader() {
   log.debug("Entering servesWithoutSecurityHeader().");
   log.debug("Leaving servesWithoutSecurityHeader().");
@@ -396,6 +496,12 @@ function servesWithoutSecurityHeader() {
 // because something NAMED it? Development says yes and that is most of what
 // makes it a mock: a client can point at this service with any client_id and
 // get a working exchange.
+/**
+ * Tells whether a user, application, service principal or authorization server
+ * may be created because something named it.
+ *
+ * @returns true in development mode
+ */
 function autoCreates() {
   log.debug("Entering autoCreates().");
   log.debug("Leaving autoCreates().");
@@ -421,6 +527,13 @@ function autoCreates() {
 // where a registration omitted it — must present that credential and it must
 // verify. `oauth-oidc/oauth2_bcp.js`'s `isConfidential()` is the one test for
 // which kind a client is, and its header says why it must stay one function.
+/**
+ * Tells whether an OAuth 2.0 client that declared a confidential authentication
+ * method must present that credential and have it verify. A public client is
+ * allowed in both modes.
+ *
+ * @returns true in product mode
+ */
 function requiresConfidentialClientAuthentication() {
   log.debug("Entering requiresConfidentialClientAuthentication().");
   log.debug("Leaving requiresConfidentialClientAuthentication().");
@@ -450,6 +563,12 @@ function requiresConfidentialClientAuthentication() {
 // module). `tests/public_clients_product.js` sections 0a and 0d assert both
 // answer yes in product mode, which is what catches this predicate reaching
 // one of them and not the other.
+/**
+ * Tells whether the OAuth 2.0 Security BCP (RFC 9700) is enforced whatever
+ * `oauth2.rfc9700` says. A floor under every realm; a realm cannot turn it off.
+ *
+ * @returns true in product mode
+ */
 function enforcesOauthSecurityBcp() {
   log.debug("Entering enforcesOauthSecurityBcp().");
   log.debug("Leaving enforcesOauthSecurityBcp().");
@@ -472,6 +591,12 @@ function enforcesOauthSecurityBcp() {
 // attributes generated onto every person. A product deployment starts empty
 // apart from what it was configured with, because a fixture account with a
 // password printed in this repository is an account anybody can use.
+/**
+ * Tells whether a service is created with demonstration data: the directory's
+ * people and groups, the Kerberos fixture accounts, the SPIFFE sample entries.
+ *
+ * @returns true in development mode
+ */
 function seedsDemoData() {
   log.debug("Entering seedsDemoData().");
   log.debug("Leaving seedsDemoData().");
@@ -485,6 +610,11 @@ function seedsDemoData() {
 // and kept verifying through its grace after. Development makes its keys anew
 // at every start and has nothing to rotate — a rotation there would only
 // churn the documents a client is being pointed at.
+/**
+ * Tells whether the signing keys are rotated on a schedule.
+ *
+ * @returns true in product mode
+ */
 function rotatesSigningKeys() {
   log.debug("Entering rotatesSigningKeys().");
   log.debug("Leaving rotatesSigningKeys().");
@@ -500,6 +630,12 @@ function rotatesSigningKeys() {
 // published `krb5.krbtgtPassword` so a reader can open a TGT, and a scheduled
 // rotation there would take that away behind their back — a rotation BY HAND
 // (`/admin/kerberos/principals`) is allowed in both modes.
+/**
+ * Tells whether each trust realm's krbtgt key is rotated on a schedule. A
+ * rotation by hand is allowed in both modes.
+ *
+ * @returns true in product mode
+ */
 function rotatesKerberosKeys() {
   log.debug("Entering rotatesKerberosKeys().");
   log.debug("Leaving rotatesKerberosKeys().");
@@ -515,6 +651,12 @@ function rotatesKerberosKeys() {
 // Directory has never let an operator choose it either. The setting carries
 // the `onlyWhile` marker on this predicate, so a value set in product is
 // ignored where it is read.
+/**
+ * Tells whether a realm's krbtgt key is derived from `krb5.krbtgtPassword`;
+ * product makes it random.
+ *
+ * @returns true in development mode
+ */
 function derivesKrbtgtFromPassword() {
   log.debug("Entering derivesKrbtgtFromPassword().");
   log.debug("Leaving derivesKrbtgtFromPassword().");
@@ -526,6 +668,11 @@ function derivesKrbtgtFromPassword() {
 // it and says so, because a test fixture registered with a short
 // oauth2.registeredSecretLifetimeS must not stop working half-way through a
 // run nobody meant to be about secrets.
+/**
+ * Tells whether an expired client secret is refused at the token endpoint.
+ *
+ * @returns true in product mode
+ */
 function refusesExpiredClientSecrets() {
   log.debug("Entering refusesExpiredClientSecrets().");
   log.debug("Leaving refusesExpiredClientSecrets().");
@@ -539,6 +686,12 @@ function refusesExpiredClientSecrets() {
 // exercising the service wants; product asks for the realm's id in a text box,
 // because a list drawn to anybody who can reach the page publishes every
 // tenant this deployment serves.
+/**
+ * Tells whether the realm chooser in front of `/admin` and `/portal` lists the
+ * realms; product asks for the realm's id instead.
+ *
+ * @returns true in development mode
+ */
 function listsRealmsBeforeSignIn() {
   log.debug("Entering listsRealmsBeforeSignIn().");
   log.debug("Leaving listsRealmsBeforeSignIn().");
@@ -551,6 +704,12 @@ function listsRealmsBeforeSignIn() {
 // event sent to a real receiver. Development invents them so a client has
 // something to parse; product OMITS what it does not know, because an invented
 // fact a relying party believes is worse than an absent one it can handle.
+/**
+ * Tells whether a claim value may be invented where the store holds none;
+ * product omits what it does not know.
+ *
+ * @returns true in development mode
+ */
 function inventsClaimValues() {
   log.debug("Entering inventsClaimValues().");
   log.debug("Leaving inventsClaimValues().");
@@ -564,6 +723,12 @@ function inventsClaimValues() {
 // this service without registering first. Product delivers only to an address
 // on the application's own entry, which is the difference between an identity
 // provider and a signed-assertion forwarding service.
+/**
+ * Tells whether a response may be delivered to an address the request named and
+ * no registration did.
+ *
+ * @returns true in development mode
+ */
 function acceptsUnregisteredAddresses() {
   log.debug("Entering acceptsUnregisteredAddresses().");
   log.debug("Leaving acceptsUnregisteredAddresses().");
@@ -577,6 +742,13 @@ function acceptsUnregisteredAddresses() {
 // SAML 1.1 attribute authority about any named person. Each exists so a test
 // can drive a state; in product each is either refused or behind the credential
 // the equivalent administrative operation already requires.
+/**
+ * Tells whether the test controls (adding a trust anchor, reading fixture
+ * passwords, signing somebody else out and the like) are open to anybody who
+ * can reach the port.
+ *
+ * @returns true in development mode
+ */
 function opensTestControls() {
   log.debug("Entering opensTestControls().");
   log.debug("Leaving opensTestControls().");
@@ -598,6 +770,12 @@ function opensTestControls() {
 // realm with nobody on its roster is closed, reachable again through
 // `POST /admin-api/rbac/grant`. Read in the realm whose window it is, which
 // `admin-ui/admin_rbac.ts` binds. See `admin-ui/CLAUDE.md` 8a.
+/**
+ * Tells whether the console's bootstrap window grants both console roles to
+ * every signed-in person while `admin.openWhenEmpty` is on.
+ *
+ * @returns true in development mode
+ */
 function opensConsoleToAnyone() {
   log.debug("Entering opensConsoleToAnyone().");
   log.debug("Leaving opensConsoleToAnyone().");
@@ -612,6 +790,12 @@ function opensConsoleToAnyone() {
 // proves nothing and a check keyed on it would refuse the suite while
 // protecting nothing. `ldap/ldap_server.js`'s `directoryWriteRefusal()` argues
 // the rule.
+/**
+ * Tells whether a write over the directory's own socket is authorized against
+ * the identity that bound.
+ *
+ * @returns true in product mode
+ */
 function authorizesDirectoryWrites() {
   log.debug("Entering authorizesDirectoryWrites().");
   log.debug("Leaving authorizesDirectoryWrites().");
@@ -630,6 +814,12 @@ function authorizesDirectoryWrites() {
 // password, so the bound DN proves nothing and a check keyed on it would hide
 // the directory from the suite while protecting nothing — the write half's
 // reason. `ldap/directory_read_policy.ts` is the rule table.
+/**
+ * Tells whether a read over the directory's own socket is authorized against
+ * the identity that bound.
+ *
+ * @returns true in product mode
+ */
 function authorizesDirectoryReads() {
   log.debug("Entering authorizesDirectoryReads().");
   log.debug("Leaving authorizesDirectoryReads().");
@@ -655,6 +845,12 @@ function authorizesDirectoryReads() {
 // both permit a server to), and a search or compare on a connection that never
 // bound is refused — the root DSE excepted, because a client reads it to find
 // out where to bind.
+/**
+ * Tells whether a connection to the directory must bind as somebody before it
+ * may read (the root DSE excepted).
+ *
+ * @returns true in product mode
+ */
 function requiresDirectoryBind() {
   log.debug("Entering requiresDirectoryBind().");
   log.debug("Leaving requiresDirectoryBind().");
@@ -668,6 +864,12 @@ function requiresDirectoryBind() {
 // and a compare against one is refused. An administrator is not excepted: the
 // console and the management API read them through this module's functions,
 // and nothing needs them on the wire.
+/**
+ * Tells whether credential attributes are withheld from every reader of the
+ * directory's socket, in searches, filters and compares.
+ *
+ * @returns true in product mode
+ */
 function withholdsDirectorySecrets() {
   log.debug("Entering withholdsDirectorySecrets().");
   log.debug("Leaving withholdsDirectorySecrets().");
@@ -678,6 +880,12 @@ function withholdsDirectorySecrets() {
 // createTimestamp, modifyTimestamp, entryDN? Product: no, not even an
 // administrator, because a timestamp anybody can set is not evidence of when
 // anything happened.
+/**
+ * Tells whether the attributes the directory maintains itself (createTimestamp,
+ * modifyTimestamp, entryDN) are refused to every writer.
+ *
+ * @returns true in product mode
+ */
 function protectsOperationalAttributes() {
   log.debug("Entering protectsOperationalAttributes().");
   log.debug("Leaving protectsOperationalAttributes().");
@@ -687,6 +895,11 @@ function protectsOperationalAttributes() {
 // Must a bind that carries a password arrive over TLS? Product: a simple bind
 // on the plain listener is answered confidentialityRequired before the password
 // is looked at, since by then it has already crossed the network in the clear.
+/**
+ * Tells whether a directory bind that carries a password must arrive over TLS.
+ *
+ * @returns true in product mode
+ */
 function requiresConfidentialDirectoryBinds() {
   log.debug("Entering requiresConfidentialDirectoryBinds().");
   log.debug("Leaving requiresConfidentialDirectoryBinds().");
@@ -698,6 +911,12 @@ function requiresConfidentialDirectoryBinds() {
 // limit is refused before its password is checked — so a correct guess during a
 // lockout is refused like a wrong one and teaches nothing. A SUCCESSFUL bind is
 // never counted, because a connection pool binds on every connection it opens.
+/**
+ * Tells whether failed directory binds are rate limited per bind DN and per
+ * address.
+ *
+ * @returns true in product mode
+ */
 function limitsDirectoryBindFailures() {
   log.debug("Entering limitsDirectoryBindFailures().");
   log.debug("Leaving limitsDirectoryBindFailures().");
@@ -713,6 +932,12 @@ function limitsDirectoryBindFailures() {
 // leak, however loudly it is logged. Not `opensTestControls()`, which the first
 // version used for want of this: that one is about who may DRIVE a switch, and
 // this one is about what a response is allowed to lose on the way out.
+/**
+ * Tells whether a response may go out weaker than asked for, such as an
+ * assertion that was to be encrypted sent in the clear.
+ *
+ * @returns true in development mode
+ */
 function sendsWeakerThanAsked() {
   log.debug("Entering sendsWeakerThanAsked().");
   log.debug("Leaving sendsWeakerThanAsked().");
@@ -731,6 +956,13 @@ function sendsWeakerThanAsked() {
 // both modes consult this service's own register, which has no network in it
 // and cannot make a good certificate fail. `common/revocation_status.js`
 // argues all of it.
+/**
+ * Tells whether a presented certificate whose revocation status cannot be
+ * established is refused: what `pki.revocationCheck=auto` resolves to
+ * (hard-fail in product).
+ *
+ * @returns true in product mode
+ */
 function refusesUnknownRevocationStatus() {
   log.debug("Entering refusesUnknownRevocationStatus().");
   log.debug("Leaving refusesUnknownRevocationStatus().");
@@ -754,6 +986,13 @@ function refusesUnknownRevocationStatus() {
 // `off`, whose description carries the warning. Development accepts it because
 // what a client author points a stack here to watch is their own flow, and a
 // test CA with no list is the usual first thing they build.
+/**
+ * Tells whether a certificate nobody can revoke (no CRL distribution point, no
+ * OCSP responder, no noRevAvail) is refused: what
+ * `pki.revocationRequireDistributionPoint=auto` resolves to.
+ *
+ * @returns true in product mode
+ */
 function refusesUnrevocableCertificates() {
   log.debug("Entering refusesUnrevocableCertificates().");
   log.debug("Leaving refusesUnrevocableCertificates().");
@@ -778,6 +1017,13 @@ function refusesUnrevocableCertificates() {
 // client under test brings the self-signed certificate it generated a minute
 // ago. REVOCATION IS CONSULTED IN BOTH, whatever this answers:
 // `gnap/gnap_proof.ts` argues it.
+/**
+ * Tells whether a GNAP key proved by mutual TLS needs a certificate a trusted
+ * authority issued: what `gnap.mtlsTrust=auto` resolves to (`pki` in product,
+ * `pinned` in development).
+ *
+ * @returns true in product mode
+ */
 function requiresPkiForGnapMtls() {
   log.debug("Entering requiresPkiForGnapMtls().");
   log.debug("Leaving requiresPkiForGnapMtls().");
@@ -791,6 +1037,11 @@ function requiresPkiForGnapMtls() {
 // client under test reaches a service started with STS_HTTPS=false. SCEP is
 // not asked: its messages are signed and encrypted CMS and RFC 8894 section
 // 2.1 runs it over plain HTTP on purpose.
+/**
+ * Tells whether an ACME or EST request must arrive over TLS.
+ *
+ * @returns true in product mode
+ */
 function requiresEnrollmentTls() {
   log.debug("Entering requiresEnrollmentTls().");
   log.debug("Leaving requiresEnrollmentTls().");
@@ -809,6 +1060,13 @@ function requiresEnrollmentTls() {
 // response names the resource server that asked in its `aud`, so it needs an
 // authenticated caller in every mode, and section 5 says to refuse one that is
 // not. `oauth-oidc/oauth2.ts`'s `introspectEndpoint()` makes both decisions.
+/**
+ * Tells whether a caller that does not authenticate may introspect a token for
+ * an RFC 7662 JSON answer. An RFC 9701 JWT answer needs an authenticated caller
+ * in every mode.
+ *
+ * @returns true in development mode
+ */
 function opensIntrospection() {
   log.debug("Entering opensIntrospection().");
   log.debug("Leaving opensIntrospection().");
@@ -831,6 +1089,12 @@ function opensIntrospection() {
 // the revocation endpoint should meet section 2.1's refusals, the wrong-secret
 // 401 and another client's token, rather than a quiet 200.
 // `oauth-oidc/oauth2.ts`'s `revokeRequest()` makes both decisions.
+/**
+ * Tells whether a caller that does not authenticate may revoke a token. A
+ * credential that is presented is verified in both modes.
+ *
+ * @returns true in development mode
+ */
 function opensRevocation() {
   log.debug("Entering opensRevocation().");
   log.debug("Leaving opensRevocation().");
@@ -846,6 +1110,12 @@ function opensRevocation() {
 // realm revoked: a credential is a signed statement about somebody, and
 // signing one for whoever can reach the port — with nothing verified about who
 // asked — is issuing to strangers.
+/**
+ * Tells whether the OpenID4VCI endpoints accept an access token this realm
+ * cannot verify.
+ *
+ * @returns true in development mode
+ */
 function acceptsUnverifiedIssuerTokens() {
   log.debug("Entering acceptsUnverifiedIssuerTokens().");
   log.debug("Leaving acceptsUnverifiedIssuerTokens().");
@@ -862,6 +1132,12 @@ function acceptsUnverifiedIssuerTokens() {
 // did not sign at all. Until this predicate existed product exchanged exactly
 // that, and the page saying every door verifies its tokens was wrong about
 // this one. `oauth-oidc/oauth2.ts`'s token-exchange branch asks it.
+/**
+ * Tells whether the RFC 8693 token exchange accepts a `subject_token` or
+ * `actor_token` this realm cannot verify.
+ *
+ * @returns true in development mode
+ */
 function exchangesUnverifiedTokens() {
   log.debug("Entering exchangesUnverifiedTokens().");
   log.debug("Leaving exchangesUnverifiedTokens().");
@@ -881,6 +1157,13 @@ function exchangesUnverifiedTokens() {
 // somebody else's name — asked about the scope rather than the party.
 // `may_act` is NOT behind it: a subject_token naming its authorized actor is
 // honoured in every mode, because the token itself asks for it.
+/**
+ * Tells whether the delegation policy's refusal is enforced at WS-Trust
+ * `OnBehalfOf` / `ActAs` and RFC 8693 token exchange; development asks and
+ * records it.
+ *
+ * @returns true in product mode
+ */
 function authorizesDelegation() {
   log.debug("Entering authorizesDelegation().");
   log.debug("Leaving authorizesDelegation().");
@@ -900,6 +1183,13 @@ function authorizesDelegation() {
 // **This service's own protected scopes are NOT behind this predicate**:
 // `admin:*`, the SCIM and Shared Signals scopes and the debugger permission
 // are held to the declaration in both modes (`common/scope_policy.ts`).
+/**
+ * Tells whether the authorization server issues a scope the client never
+ * declared. This service's own protected scopes are held to the declaration in
+ * both modes.
+ *
+ * @returns true in development mode
+ */
 function grantsUndeclaredScopes() {
   log.debug("Entering grantsUndeclaredScopes().");
   log.debug("Leaving grantsUndeclaredScopes().");
@@ -913,6 +1203,13 @@ function grantsUndeclaredScopes() {
 // a statement that one application may act on another's API, and issuing it to
 // a client nobody granted it makes the grant decorative. The setting now only
 // turns enforcement ON in development.
+/**
+ * Tells whether a delegated permission the client has not been granted is
+ * honoured; in development `oauth2.delegatedPermissionsEnforced` turns
+ * enforcement on.
+ *
+ * @returns true in development mode
+ */
 function honoursUngrantedPermissions() {
   log.debug("Entering honoursUngrantedPermissions().");
   log.debug("Leaving honoursUngrantedPermissions().");
@@ -929,6 +1226,12 @@ function honoursUngrantedPermissions() {
 // and be signed in as them, for good. In product a primary key is added only
 // where the person has already proved who they are — `/portal/keys` behind a
 // session, an activation link, or an operator. `authn/authn.ts` asks it.
+/**
+ * Tells whether the sign-in screen enrols a security key for a passwordless
+ * sign-in naming somebody who holds none.
+ *
+ * @returns true in development mode
+ */
 function enrolsKeysOnFirstUse() {
   log.debug("Entering enrolsKeysOnFirstUse().");
   log.debug("Leaving enrolsKeysOnFirstUse().");
@@ -945,6 +1248,12 @@ function enrolsKeysOnFirstUse() {
 // and only development honours it: product reads it as `by-mode`
 // (`valueInForce()`, STS-CORE-0106) and refuses to write it (the `onlyWhile`
 // marker, STS-CORE-0103). `authn/webauthn_attestation.ts` asks it.
+/**
+ * Tells whether a WebAuthn attestation statement may go unverified, as
+ * `webauthn.attestationPolicy` `by-mode` or `off` asks.
+ *
+ * @returns true in development mode
+ */
 function acceptsUnverifiedAttestation() {
   log.debug("Entering acceptsUnverifiedAttestation().");
   log.debug("Leaving acceptsUnverifiedAttestation().");
@@ -964,6 +1273,13 @@ function acceptsUnverifiedAttestation() {
 // asked** — that is an administrator's act, recorded `proof: admin` and
 // self-asserted in both modes, as SIOPv2's by-value enrolment is (#129).
 // `common/device_enrolment.ts` and `common/cert_enrollment.ts` ask it.
+/**
+ * Tells whether a device key presented without a verifying attestation may be
+ * registered, recorded as self-asserted. An administrator's entry by value is
+ * not asked.
+ *
+ * @returns true in development mode
+ */
 function acceptsUnattestedDeviceKeys() {
   log.debug("Entering acceptsUnattestedDeviceKeys().");
   log.debug("Leaving acceptsUnattestedDeviceKeys().");
@@ -982,6 +1298,13 @@ function acceptsUnattestedDeviceKeys() {
 // password at those doors — answered exactly as a wrong one — and accepts an
 // APP PASSWORD scoped to the door instead (`common/app_passwords.ts`).
 // `common/credentials.ts` asks it, in `secondFactorRefusal()`.
+/**
+ * Tells whether a password alone opens a password-only door (LDAP bind,
+ * UsernameToken, SCIM, SSF and EST Basic) for a person who holds, or must hold,
+ * a second factor; product accepts an app password there instead.
+ *
+ * @returns true in development mode
+ */
 function acceptsPasswordAloneFromSecondFactorAccounts() {
   log.debug("Entering acceptsPasswordAloneFromSecondFactorAccounts().");
   log.debug("Leaving acceptsPasswordAloneFromSecondFactorAccounts().");
@@ -999,6 +1322,12 @@ function acceptsPasswordAloneFromSecondFactorAccounts() {
 // password verified, so a wrong one is still KDC_ERR_PREAUTH_FAILED and the
 // refusal tells nobody without the password anything. `kerberos/krb5_kdc.js`
 // asks it, through the key source (`kerberos/krb5_person_keys.ts`).
+/**
+ * Tells whether the KDC issues a ticket-granting ticket on a password alone to
+ * a person who holds, or must hold, a second factor.
+ *
+ * @returns true in development mode
+ */
 function issuesTicketsOnPasswordAlone() {
   log.debug("Entering issuesTicketsOnPasswordAlone().");
   log.debug("Leaving issuesTicketsOnPasswordAlone().");
@@ -1016,6 +1345,12 @@ function issuesTicketsOnPasswordAlone() {
 // included. `federation/federation_sp.ts` refuses such a sign-in
 // (STS-FED-0094) and `federation/federation.js` refuses setting the value
 // (STS-FED-0095).
+/**
+ * Tells whether a federation partner's asserted name may be matched onto an
+ * existing local person (`fedSubjectPolicy: any-existing`).
+ *
+ * @returns true in development mode
+ */
 function matchesFederatedNames() {
   log.debug("Entering matchesFederatedNames().");
   log.debug("Leaving matchesFederatedNames().");
@@ -1031,6 +1366,13 @@ function matchesFederatedNames() {
 // point at this service. Product refuses the unsigned message whatever the
 // relationship says — an unsigned LogoutRequest is anybody signing anybody
 // out — and refuses the setting too (STS-FED-0132).
+/**
+ * Tells whether a federation partner's SAML logout message may arrive unsigned
+ * on a relationship whose `fedRequireSignedLogout` is off. A present signature
+ * is verified in every mode.
+ *
+ * @returns true in development mode
+ */
 function acceptsUnsignedFederatedLogout() {
   log.debug("Entering acceptsUnsignedFederatedLogout().");
   log.debug("Leaving acceptsUnsignedFederatedLogout().");
@@ -1047,6 +1389,12 @@ function acceptsUnsignedFederatedLogout() {
 // unless the relationship says `fedAllowUnencrypted`, whose documentation
 // carries the warning. An ID Token redeemed over the back channel never
 // crosses the browser and is not asked about.
+/**
+ * Tells whether a federation partner may send an assertion or ID Token in clear
+ * through the browser; product requires `fedAllowUnencrypted` for that.
+ *
+ * @returns true in development mode
+ */
 function acceptsUnencryptedFederatedAssertions() {
   log.debug("Entering acceptsUnencryptedFederatedAssertions().");
   log.debug("Leaving acceptsUnencryptedFederatedAssertions().");
@@ -1062,6 +1410,12 @@ function acceptsUnencryptedFederatedAssertions() {
 // sent the Host header would be handed a Request Object this realm signed,
 // under a certificate a wallet trusts, sending presentations to a host of
 // their choosing.
+/**
+ * Tells whether the OpenID4VP Verifier may certify the host a request arrived
+ * at as its `x509_san_dns` name when no setting names one.
+ *
+ * @returns true in development mode
+ */
 function certifiesRequestHost() {
   log.debug("Entering certifiesRequestHost().");
   log.debug("Leaving certifiesRequestHost().");
@@ -1078,6 +1432,12 @@ function certifiesRequestHost() {
 // because a client under test that has only met a strict server has never run
 // the code it is trying to debug. Product refuses it: an unsigned request
 // object is query parameters with extra steps, and anybody can write one.
+/**
+ * Tells whether an unsigned (`alg: none`) request object is accepted at the
+ * authorization endpoint, where nothing else requires a signed one.
+ *
+ * @returns true in development mode
+ */
 function acceptsUnsignedRequestObjects() {
   log.debug("Entering acceptsUnsignedRequestObjects().");
   log.debug("Leaving acceptsUnsignedRequestObjects().");
@@ -1092,6 +1452,12 @@ function acceptsUnsignedRequestObjects() {
 // listener with no certificate; product refuses both. What is fetched is ONLY
 // ever a URI the client REGISTERED — `oauth-oidc/request_object.ts` argues that
 // half, and no mode changes it.
+/**
+ * Tells whether a registered `request_uri` may be fetched over plain HTTP or
+ * answer with another media type.
+ *
+ * @returns true in development mode
+ */
 function acceptsLooseRequestUris() {
   log.debug("Entering acceptsLooseRequestUris().");
   log.debug("Leaving acceptsLooseRequestUris().");
@@ -1108,6 +1474,13 @@ function acceptsLooseRequestUris() {
 // be authenticated. A signature that is PRESENT is verified against the
 // service provider's registered certificate in BOTH modes, whatever this
 // answers; `saml/request_signature.ts` argues why that half is not a mode.
+/**
+ * Tells whether a SAML 2.0 AuthnRequest or LogoutRequest may arrive unsigned:
+ * what `saml2.requireSignedAuthnRequests` `auto` resolves to. A present
+ * signature is verified in both modes.
+ *
+ * @returns true in development mode
+ */
 function acceptsUnsignedSamlRequests() {
   log.debug("Entering acceptsUnsignedSamlRequests().");
   log.debug("Leaving acceptsUnsignedSamlRequests().");
@@ -1122,6 +1495,12 @@ function acceptsUnsignedSamlRequests() {
 // SAML 2.0 encryption has had since 2026-08-27. Product does not: the key in a
 // request anybody can send is a key anybody can hold, and encrypting an
 // assertion to it hands the assertion to whoever sent the request.
+/**
+ * Tells whether an assertion may be encrypted to a certificate only observed on
+ * a signed AuthnRequest, when the entry holds no other.
+ *
+ * @returns true in development mode
+ */
 function encryptsToObservedCertificates() {
   log.debug("Entering encryptsToObservedCertificates().");
   log.debug("Leaving encryptsToObservedCertificates().");
@@ -1143,6 +1522,12 @@ function encryptsToObservedCertificates() {
 // against a key it already holds). An OPERATOR's import is refused too with no
 // anchor, unless `saml2.mdqImportWithoutAnchors` says otherwise. An entry that
 // already exists is refreshed from MDQ as before in both modes.
+/**
+ * Tells whether a Metadata Query lookup may register a SAML 2.0 service
+ * provider nobody registered, on an answer no trust anchor verified.
+ *
+ * @returns true in development mode
+ */
 function registersFromMetadataQuery() {
   log.debug("Entering registersFromMetadataQuery().");
   log.debug("Leaving registersFromMetadataQuery().");
@@ -1162,6 +1547,12 @@ function registersFromMetadataQuery() {
 // `/saml11/metadata` are unchanged. A per-SP document is this service's own
 // extension (SAML Metadata 2.0 section 4.1 defines one document per entity),
 // so the 404 breaks no specification.
+/**
+ * Tells whether the per-provider SAML metadata and endpoints answer for a
+ * service provider or relying party nobody registered.
+ *
+ * @returns true in development mode
+ */
 function publishesMetadataForUnregisteredProviders() {
   log.debug("Entering publishesMetadataForUnregisteredProviders().");
   log.debug("Leaving publishesMetadataForUnregisteredProviders().");
@@ -1175,6 +1566,13 @@ function publishesMetadataForUnregisteredProviders() {
 // operator should turn on a network relay deliberately rather than find one.
 // Read against the DEFAULT realm's mode, because the listener and the child
 // process belong to the process and not to a realm. See debugger/CLAUDE.md.
+/**
+ * Tells whether this process embeds the identity protocol debugger:
+ * `debugger.enabled` where it says `on` or `off`, and under `auto` yes in
+ * development.
+ *
+ * @returns true when the debugger is embedded
+ */
 function embedsProtocolDebugger() {
   log.debug("Entering embedsProtocolDebugger().");
   const asked = String(config.value('debugger.enabled') || 'auto');
@@ -1193,6 +1591,12 @@ function embedsProtocolDebugger() {
 // handed an ALLOW-LIST of this service's own addresses plus
 // `debugger.allowedDestinations`, because a relay that dials a caller's URL
 // from inside an identity provider's network is the thing to not ship.
+/**
+ * Tells whether the embedded debugger's api is limited to an allow-list of this
+ * service's own addresses and `debugger.allowedDestinations`.
+ *
+ * @returns true in product mode
+ */
 function limitsDebuggerDestinations() {
   log.debug("Entering limitsDebuggerDestinations().");
   log.debug("Leaving limitsDebuggerDestinations().");
@@ -1207,6 +1611,12 @@ function limitsDebuggerDestinations() {
 // address is checked against loopback, the private ranges, link-local and the
 // reserved blocks, and the connection is pinned to the address that was
 // checked. `oauth-oidc/protected_resource_metadata.ts` argues it.
+/**
+ * Tells whether a URL an administrator names (the RFC 9728 import) may reach an
+ * address inside this service's own network.
+ *
+ * @returns true in development mode
+ */
 function dialsInternalAddresses() {
   log.debug("Entering dialsInternalAddresses().");
   log.debug("Leaving dialsInternalAddresses().");
@@ -1228,6 +1638,12 @@ function dialsInternalAddresses() {
 // verification on. SPIRE's `skip_kubelet_verification`
 // (`spiffe.k8sSkipKubeletVerification`) asks this too. `common/outbound_tls.ts`
 // is the one place it is asked.
+/**
+ * Tells whether a family's `…SkipTlsVerification` setting is honoured, so an
+ * outbound request goes out without verifying the peer's certificate.
+ *
+ * @returns true in development mode
+ */
 function skipsOutboundTlsVerification() {
   log.debug("Entering skipsOutboundTlsVerification().");
   log.debug("Leaving skipsOutboundTlsVerification().");
@@ -1242,6 +1658,13 @@ function skipsOutboundTlsVerification() {
 // 8252 for native clients) names loopback as a legitimate place for a client
 // instance to listen — `STS-GNAP-0103`'s rule, unchanged. SSF, federation and
 // XACML have no such text and refuse plain http outright in product.
+/**
+ * Tells whether an outbound request may go out over plain HTTP where the
+ * family's `…AllowHttp` setting is on. A family may still allow loopback in
+ * product.
+ *
+ * @returns true in development mode
+ */
 function dialsPlainHttpOutbound() {
   log.debug("Entering dialsPlainHttpOutbound().");
   log.debug("Leaving dialsPlainHttpOutbound().");
@@ -1255,6 +1678,12 @@ function dialsPlainHttpOutbound() {
 // start (STS-MAIL-0003), because a captured message keeps its body and a
 // password reset link on Monitoring → Mail is a credential shown to whoever
 // may read that page.
+/**
+ * Tells whether a message the mail channel sends may be kept and shown on the
+ * console instead of sent.
+ *
+ * @returns true in development mode
+ */
 function capturesMail() {
   log.debug("Entering capturesMail().");
   log.debug("Leaving capturesMail().");
@@ -1268,6 +1697,12 @@ function capturesMail() {
 // answers yes and builds https://<global.host or localhost>:<global.port>;
 // product answers no and refuses to mail a link at all until the operator
 // pins the public base URL (STS-MAIL-0015).
+/**
+ * Tells whether a mailed link may be built on the listener's configured address
+ * when `global.publicBaseUrl` is empty; never on the request's.
+ *
+ * @returns true in development mode
+ */
 function mailsLinksFromListenerAddress() {
   log.debug("Entering mailsLinksFromListenerAddress().");
   log.debug("Leaving mailsLinksFromListenerAddress().");
@@ -1280,6 +1715,13 @@ function mailsLinksFromListenerAddress() {
 // and section 2's https scheme for a resource identifier. Development warns
 // and imports; product refuses. A document that is MALFORMED — the wrong JSON
 // types, no `resource` — is refused in both, because shape is not a mode.
+/**
+ * Tells whether an RFC 9728 protected resource metadata document that fails a
+ * MUST a client applies is imported with a warning. A malformed one is refused
+ * in both modes.
+ *
+ * @returns true in development mode
+ */
 function acceptsNonconformingResourceMetadata() {
   log.debug("Entering acceptsNonconformingResourceMetadata().");
   log.debug("Leaving acceptsNonconformingResourceMetadata().");
@@ -1292,6 +1734,12 @@ function acceptsNonconformingResourceMetadata() {
 // first, and `mgmt-api/admin_api.ts` asks this only below it. See the note
 // above on why it is open in development. **THIS IS THE ONLY GATE THE MODE
 // TURNS ON**, because it is the only one that was ever off.
+/**
+ * Tells whether the management API is gated by the console's session and roles
+ * when `adminApi.authRequired` is off.
+ *
+ * @returns true in product mode
+ */
 function gatesManagementApi() {
   log.debug("Entering gatesManagementApi().");
   log.debug("Leaving gatesManagementApi().");
@@ -1322,6 +1770,12 @@ function gatesManagementApi() {
 
 // Is a sign-on session and a role required at the console? Was
 // `admin.authRequired`, which defaulted to on.
+/**
+ * Tells whether a sign-on session and a role are required at the console:
+ * always.
+ *
+ * @returns true in both modes
+ */
 function gatesConsole() {
   log.debug("Entering gatesConsole().");
   log.debug("Leaving gatesConsole().");
@@ -1330,6 +1784,11 @@ function gatesConsole() {
 
 // Is a credential required at /scim/v2? Was `scim.authRequired`, on by default,
 // because those endpoints create and DELETE accounts.
+/**
+ * Tells whether a credential is required at `/scim/v2`: always.
+ *
+ * @returns true in both modes
+ */
 function gatesScim() {
   log.debug("Entering gatesScim().");
   log.debug("Leaving gatesScim().");
@@ -1340,6 +1799,12 @@ function gatesScim() {
 // `ssf.authRequired`, on by default. A stream is an agreement to be SENT
 // security events about people, so an ungated one is a subscription anybody can
 // take out.
+/**
+ * Tells whether a credential is required at the Shared Signals endpoints:
+ * always.
+ *
+ * @returns true in both modes
+ */
 function gatesSharedSignals() {
   log.debug("Entering gatesSharedSignals().");
   log.debug("Leaving gatesSharedSignals().");
@@ -1354,6 +1819,12 @@ function gatesSharedSignals() {
 // specification says it MUST NOT authenticate a caller, because a workload has
 // no root of trust until that call gives it one. What it lacks there is
 // ATTESTATION, not authentication, and no mode changes that.
+/**
+ * Tells whether an X509-SVID over mutual TLS is required at the SPIRE Server
+ * API: always. The Workload API is deliberately not gated.
+ *
+ * @returns true in both modes
+ */
 function gatesSpireServerApi() {
   log.debug("Entering gatesSpireServerApi().");
   log.debug("Leaving gatesSpireServerApi().");
@@ -1368,6 +1839,12 @@ function gatesSpireServerApi() {
 // factor it has never heard of. Product says no: a Deny the policy's risk
 // obligation carries is kept. The RULES are policy (`ou=policies`); this is
 // only whether their risk Deny is kept. `risk/risk_engine.ts` asks it.
+/**
+ * Tells whether a risk decision only observes: the policy's risk Deny is
+ * recorded, and the roles alone decide the issuance.
+ *
+ * @returns true in development mode
+ */
 function observesRiskOnly() {
   log.debug("Entering observesRiskOnly().");
   log.debug("Leaving observesRiskOnly().");
@@ -1383,6 +1860,12 @@ function observesRiskOnly() {
 // debugger's posture — accept it and say why it did not verify, which is the
 // question a person testing a transmitter is asking — unless the setting
 // turns the refusal on. `/ssf/receive` and `ssf/ssf_receivers.ts` ask it.
+/**
+ * Tells whether a receiver here refuses a Security Event Token whose signature
+ * does not verify.
+ *
+ * @returns true in product mode, or where `ssf.receiveRequireSignature` is on
+ */
 function refusesUnverifiedSignals() {
   log.debug("Entering refusesUnverifiedSignals().");
   log.debug("Leaving refusesUnverifiedSignals().");
@@ -1397,6 +1880,13 @@ function refusesUnverifiedSignals() {
 // `ssf.actOnSignalsInDevelopment` is on — a suite driving the console emits
 // events about the very people it is signed in as. Product takes them.
 // `ssf/ssf_receivers.ts` asks it.
+/**
+ * Tells whether a surface's reaction to a received signal only observes, ending
+ * no session.
+ *
+ * @returns true in development mode unless `ssf.actOnSignalsInDevelopment` is
+ * on
+ */
 function observesSignalsOnly() {
   log.debug("Entering observesSignalsOnly().");
   log.debug("Leaving observesSignalsOnly().");
@@ -1409,6 +1899,11 @@ function observesSignalsOnly() {
 // GET /admin-api/mode and this file cannot come to disagree about what product
 // mode does. The page renders this; nothing writes the list twice.
 // ---------------------------------------------------------------------------
+/**
+ * What the mode changes, as data: one row per requirement with its `id`,
+ * `what`, the `development` and `product` behaviour and `where` it is enforced.
+ * `/admin/mode` and the management API render it.
+ */
 const REQUIREMENTS = [
   { id: 'credentials',
     what: 'A presented password is verified',
@@ -2529,6 +3024,9 @@ const REQUIREMENTS = [
 //     product mode does not give the existing ones distinct long-term keys".
 //     Product mode now seeds no fixture principals at all; what is left is
 //     the `kerberos-keys` row in NOT_YET below.
+/**
+ * What product mode does not yet do, as data, reported beside `REQUIREMENTS`.
+ */
 const NOT_YET = [
   // **THIS ROW NARROWED ON 2026-09-11 AND DID NOT GO AWAY.** It read *there
   // is no OCSP responder and no CRL fetch*; the first half stopped being true
@@ -2690,6 +3188,17 @@ function rowOf(key) {
 
 // Does the mode allow `key` to hold `value`? True for a row with no marker,
 // for the row's default, and wherever the marker's predicate answers true.
+/**
+ * Tells whether the mode allows a setting to hold a value: true for a row with
+ * no `onlyWhile` marker, for the row's default, and wherever the marker's
+ * predicate answers true.
+ *
+ * A list is judged element by element against `onlyWhileValues`.
+ *
+ * @param key - the setting
+ * @param value - the value
+ * @returns true when allowed
+ */
 function allowsValue(key, value) {
   log.debug("Entering allowsValue(). key=" + key);
   const row = rowOf(key);
@@ -2735,6 +3244,15 @@ function allowsValue(key, value) {
 
 // The value of `key` as the ambient realm's mode lets it be: the setting's own
 // value, or its default where the mode refuses a development-only value.
+/**
+ * Reads a setting as the ambient realm's mode lets it be: its own value, or
+ * what product reads a development-only value as.
+ *
+ * An ignored value is logged once per process (STS-CORE-0106).
+ *
+ * @param key - the setting
+ * @returns the value in force
+ */
 function valueInForce(key) {
   log.debug("Entering valueInForce(). key=" + key);
   log.debug("Leaving valueInForce().");
@@ -2748,6 +3266,18 @@ function valueInForce(key) {
 // said once, so the setting and each overriding attribute are each said once
 // per process: still a set bounded by the table's rows and the schema's
 // attributes, never by how many entries carry one.
+/**
+ * Returns a value from anywhere, such as an application's override of a
+ * setting, as the mode lets it be.
+ *
+ * A refused value is read as the default (a list as itself without the marked
+ * elements) and logged once per process and source (STS-CORE-0106).
+ *
+ * @param key - the setting the value is governed by
+ * @param value - the value
+ * @param source - where it came from, for the warning
+ * @returns the value in force
+ */
 function inForce(key, value, source) {
   log.debug("Entering inForce(). key=" + key);
   if (allowsValue(key, value)) {
@@ -2861,6 +3391,14 @@ const WRITE_REFUSALS = {
     'on the directory, so no password is read for it.'
 };
 
+/**
+ * Explains why a development-only value is not allowed in product, by the
+ * predicate its row names.
+ *
+ * @param predicate - the name of the row's `onlyWhile` predicate
+ * @returns the sentence the write refusal and the ignored-value warning end
+ * with
+ */
 function writeRefusalReason(predicate) {
   log.debug("Entering writeRefusalReason(). " + predicate);
   log.debug("Leaving writeRefusalReason().");
@@ -2894,6 +3432,13 @@ function developmentOnlySettings() {
 // The whole answer, for the console page (`GET /admin/mode`), the management
 // API (`GET /admin-api/mode`) and the metadata report. One function so the
 // three cannot disagree; `admin-ui/mode_admin.ts` draws it and adds nothing.
+/**
+ * Reports the mode for the console page, the management API and the metadata
+ * report.
+ *
+ * @returns the mode, each requirement with what is in force, every
+ * development-only setting with its stored and in-force values, and `NOT_YET`
+ */
 function report() {
   log.debug("Entering report().");
   const product = isProduct();
@@ -2911,6 +3456,15 @@ function report() {
   };
 }
 
+/**
+ * The one place development and product mode are told apart: a predicate per
+ * policy question, named for the question.
+ *
+ * Every predicate reads the ambient realm's `global.mode`. Also the settings a
+ * mode forbids a value of, and the report `/admin/mode` draws.
+ *
+ * @namespace
+ */
 module.exports = {
   DEVELOPMENT: DEVELOPMENT,
   PRODUCT: PRODUCT,

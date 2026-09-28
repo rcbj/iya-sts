@@ -64,6 +64,9 @@ const path = require('path');
 const fs = require('fs');
 
 // The package root: this file is common/config_file.js, so one level up.
+/**
+ * The package root: the absolute path of the directory above common/.
+ */
 const ROOT = path.join(__dirname, '..');
 
 // Resolve CONFIG_FILE to an absolute path, in place, and return it.
@@ -74,6 +77,16 @@ const ROOT = path.join(__dirname, '..');
 // test is `startsWith('.')` rather than `!path.isAbsolute()`: a bare specifier
 // is somebody's installed module and rewriting it into a filesystem path would
 // break a resolution that works.
+/**
+ * Resolves CONFIG_FILE to an absolute path, in place, and returns it.
+ *
+ * A relative path is tried against the package root and then the working
+ * directory; the first that exists is written back to process.env. An unset
+ * variable, an absolute path or a package name is left alone. It never
+ * throws, and it is idempotent.
+ * @returns the resolved path, the value as given when nothing matched, or
+ *   null when CONFIG_FILE is unset
+ */
 function resolveConfigFile() {
   const given = process.env.CONFIG_FILE;
   if (!given) {
@@ -105,4 +118,12 @@ function resolveConfigFile() {
   return given;
 }
 
+/**
+ * The one place that decides what CONFIG_FILE means.
+ *
+ * Makes the variable absolute before anything reads it, so every later
+ * `require(process.env.CONFIG_FILE)` in any directory resolves to the same
+ * file. A leaf that requires nothing and has no logger.
+ * @namespace
+ */
 module.exports = { resolveConfigFile, ROOT };

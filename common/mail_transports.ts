@@ -96,6 +96,15 @@ interface TransportDeps {
 }
 
 // A failure with its code and whether it is worth another attempt.
+/**
+ * Makes a send failure carrying its error code and whether another attempt is
+ * worth making.
+ *
+ * @param message - the failure
+ * @param code - its STS error code
+ * @param retry - true when another attempt may succeed
+ * @returns the Error, with `retry` set
+ */
 function sendError(message: string, code: string, retry: boolean): Error {
   helpers.log.debug("Entering sendError(). " + code);
   const e: Json = errorCodes.mark(new Error(message), code);
@@ -107,6 +116,13 @@ function sendError(message: string, code: string, retry: boolean): Error {
 // An address a message may carry: one mailbox, no display name, no
 // whitespace, no angle brackets or commas that would make it two. RFC 5321's
 // limits (64 octets local, 254 total).
+/**
+ * Checks that an address is one plain mailbox: no display name, no whitespace
+ * or separators, within RFC 5321's limits.
+ *
+ * @param address - the address
+ * @returns what is wrong with it, or '' when nothing is
+ */
 function addressProblem(address: string): string {
   helpers.log.debug("Entering addressProblem().");
   const a = String(address || '');
@@ -148,12 +164,31 @@ function withTimeout<T>(work: Promise<T>, ms: number, what: string):
   });
 }
 
+/**
+ * The five ways a message leaves: capture, an SMTP relay, Amazon SES v2, Azure
+ * Communication Services Email and the Gmail API, each behind one
+ * `send(message)`.
+ *
+ * Only `common/mail.ts` uses this. The message is composed once and fetches
+ * nothing; SMTP is never sent in the clear.
+ */
 class MailTransports {
+  /**
+   * Creates the transport builder.
+   *
+   * @param deps - its dependencies: the logger, the error-code table, a module
+   * loader, the secret reader, a file reader and the DKIM signer
+   */
   constructor(private readonly deps: TransportDeps) {
     deps.log.debug("Entering MailTransports.constructor().");
     deps.log.debug("Leaving MailTransports.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): TransportDeps {
     helpers.log.debug("Entering MailTransports.defaultDeps().");
     helpers.log.debug("Leaving MailTransports.defaultDeps().");
@@ -196,6 +231,13 @@ class MailTransports {
   // THE RAW MESSAGE (header point 1). `Auto-Submitted: auto-generated` (RFC
   // 3834) tells a vacation responder not to answer it.
   // -------------------------------------------------------------------------
+  /**
+   * Composes the raw RFC 5322 message, with file and URL access disabled and
+   * `Auto-Submitted: auto-generated`.
+   *
+   * @param message - the message
+   * @returns the raw bytes
+   */
   async compose(message: OutMessage): Promise<Buffer> {
     const { log, load } = this.deps;
     log.debug("Entering MailTransports.compose().");
@@ -226,6 +268,15 @@ class MailTransports {
   // of the realm's settings. Secrets are read here, once per build. Throws
   // with a code when it cannot be built; the caller caches what it returns.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the transport the realm's mail settings describe, reading its
+   * secrets once.
+   *
+   * @param cfg - `common/mail.ts`'s reading of the realm's settings
+   * @returns the transport
+   * @throws Error with its code when it cannot be built, STS-MAIL-0001 when
+   * none is configured
+   */
   async build(cfg: Json): Promise<MailTransport> {
     const { log } = this.deps;
     log.debug("Entering MailTransports.build(). " + cfg.transport);
@@ -257,6 +308,12 @@ class MailTransports {
 
   // THE CAPTURE TRANSPORT: sends nothing. The outbox keeps the message with
   // its body in state `captured`; this only says it was accepted.
+  /**
+   * Builds the capture transport, which sends nothing: the outbox keeps the
+   * message.
+   *
+   * @returns the transport
+   */
   capture(): MailTransport {
     const { log } = this.deps;
     log.debug("Entering MailTransports.capture().");
@@ -276,6 +333,13 @@ class MailTransports {
   // -------------------------------------------------------------------------
   // SMTP (header points 2 and 3).
   // -------------------------------------------------------------------------
+  /**
+   * Builds the SMTP transport: STARTTLS required or implicit TLS, the relay's
+   * certificate verified, and DKIM where configured.
+   *
+   * @param cfg - the realm's mail settings
+   * @returns the transport
+   */
   async smtp(cfg: Json): Promise<MailTransport> {
     const { log, load, readSecret, secrets, readFile, dkimSign } = this.deps;
     const self = this;
@@ -429,6 +493,13 @@ class MailTransports {
   }
 
   // What an SMTP failure means (header point 5).
+  /**
+   * Classifies an SMTP failure: a refused login, a TLS failure or a 5xx is
+   * final, a 4xx or anything else is worth repeating.
+   *
+   * @param e - the failure
+   * @returns a coded send failure
+   */
   classifySmtp(e: Json): Error {
     const { log, errorCodes } = this.deps;
     log.debug("Entering MailTransports.classifySmtp(). code=" +
@@ -466,6 +537,13 @@ class MailTransports {
   // on ECS Fargate), never a setting. The raw message, so the headers and the
   // parts are exactly the SMTP transport's.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the Amazon SES v2 transport, with credentials from the default
+   * provider chain and the raw message.
+   *
+   * @param cfg - the realm's mail settings
+   * @returns the transport
+   */
   ses(cfg: Json): MailTransport {
     const { log } = this.deps;
     const self = this;
@@ -509,6 +587,14 @@ class MailTransports {
 
   // What a cloud SDK's failure means: its own retryable flag, throttling, a
   // 5xx or 429 is worth repeating; anything else is final.
+  /**
+   * Classifies a cloud SDK's failure: its retryable flag, throttling, a 5xx or
+   * a 429 is worth repeating; anything else is final.
+   *
+   * @param e - the failure
+   * @param who - the provider, for the message
+   * @returns a coded send failure
+   */
   classifyCloud(e: Json, who: string): Error {
     const { log, errorCodes } = this.deps;
     log.debug("Entering MailTransports.classifyCloud(). " + who);
@@ -534,6 +620,13 @@ class MailTransports {
   // `beginSend()` answers a poller, polled to a terminal status inside the
   // attempt's timeout — `Succeeded` is sent, `Failed` or `Canceled` final.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the Azure Communication Services Email transport, polling each send
+   * to a terminal status within the attempt's timeout.
+   *
+   * @param cfg - the realm's mail settings
+   * @returns the transport
+   */
   async acs(cfg: Json): Promise<MailTransport> {
     const { log, readSecret, secrets } = this.deps;
     const self = this;
@@ -601,6 +694,13 @@ class MailTransports {
   // domain-wide delegation of the gmail.send scope impersonates
   // `mail.gmailSender`, and `users.messages.send` takes the raw message.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the Gmail API transport: a service account with domain-wide
+   * delegation impersonating `mail.gmailSender`.
+   *
+   * @param cfg - the realm's mail settings
+   * @returns the transport
+   */
   async gmail(cfg: Json): Promise<MailTransport> {
     const { log, readSecret, secrets } = this.deps;
     const self = this;
@@ -656,6 +756,14 @@ class MailTransports {
   }
 }
 
+/**
+ * The mail channel's transports: the classes that carry a composed message to a
+ * relay or a provider.
+ *
+ * Required by `common/mail.ts` and nothing else.
+ *
+ * @namespace
+ */
 export = {
   MailTransports: MailTransports,
   addressProblem: addressProblem,

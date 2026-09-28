@@ -71,6 +71,13 @@ PAIRS.forEach(function (pair) {
 const ICAO_EXCEPTIONS = new Map([['DE', 'D']]);
 
 // ISO 3166-1 alpha-3 for an alpha-2 code; anything else unchanged.
+/**
+ * Returns the ISO 3166-1 alpha-3 code for an alpha-2 code.
+ *
+ * @param value - a country code as the directory holds it
+ * @returns the alpha-3 code, or the trimmed value unchanged when it is not
+ *   a known alpha-2 code
+ */
 function alpha3(value) {
   log.debug("Entering alpha3().");
   const text = String(value == null ? '' : value).trim();
@@ -81,6 +88,14 @@ function alpha3(value) {
 
 // The ICAO Doc 9303 nationality code for an alpha-2 code; anything else
 // unchanged.
+/**
+ * Returns the ICAO Doc 9303 nationality code for an alpha-2 code.
+ *
+ * The same as the alpha-3 code except for Germany, which ICAO writes `D`.
+ * @param value - a country code as the directory holds it
+ * @returns the ICAO code, or the trimmed value unchanged when it is not a
+ *   known alpha-2 code
+ */
 function icaoNationality(value) {
   log.debug("Entering icaoNationality().");
   const text = String(value == null ? '' : value).trim();
@@ -89,10 +104,20 @@ function icaoNationality(value) {
   return exception || alpha3(text);
 }
 
+/**
+ * ISO 3166-1 alpha-2 to alpha-3, and the ICAO Doc 9303 nationality code.
+ *
+ * Converts the two-letter country codes the directory holds into the
+ * three-letter forms OpenID Connect for Identity Assurance asks for. A value
+ * that is not a known alpha-2 code comes back unchanged.
+ * @namespace
+ */
 module.exports = {
+  /** The number of countries the alpha-2 to alpha-3 table holds. */
   COUNTRY_COUNT: ALPHA3.size,
   // Every alpha-2 code the table holds, sorted: the closed set a C= in a
   // certificate authority's name is held to on /admin-api (#86).
+  /** Every alpha-2 code the table holds, sorted. */
   ALPHA2: Array.from(ALPHA3.keys()).sort(),
   alpha3: alpha3,
   icaoNationality: icaoNationality

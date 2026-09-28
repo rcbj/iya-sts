@@ -99,11 +99,18 @@ import accountSignals = require('../ssf/account_signals');
 type Json = any;
 
 // Section 5.1's four evidence types, all four answered (rcbj, #127).
+/**
+ * The four evidence types of Identity Assurance section 5.1, all answered.
+ */
 const EVIDENCE_TYPES = Object.freeze(['document', 'electronic_record', 'vouch',
   'electronic_signature']);
 
 // The framework development's invented verification is recorded under. A URN
 // in this service's own namespace so that nothing mistakes it for a real one.
+/**
+ * The trust framework development mode's invented verification is recorded
+ * under: `urn:sts:demo`.
+ */
 const DEMO_FRAMEWORK = 'urn:sts:demo';
 
 // The Identity Assurance schema's predefined document types (OpenID Identity
@@ -111,33 +118,59 @@ const DEMO_FRAMEWORK = 'urn:sts:demo';
 // identity is established by. What this service records it advertises in
 // `documents_supported`, so a type outside the list is refused rather than
 // recorded and left unadvertised.
+/**
+ * The predefined document types a verification may record, advertised as
+ * `documents_supported`.
+ */
 const DOCUMENT_TYPES = Object.freeze(['idcard', 'passport', 'driving_permit',
   'residence_permit', 'visa', 'birth_certificate', 'bank_statement',
   'utility_statement']);
 
 // The schema's check methods (`check_details[].check_method`).
+/**
+ * The schema's check methods, advertised as
+ * `documents_check_methods_supported`.
+ */
 const CHECK_METHODS = Object.freeze(['vpip', 'vpiruv', 'vri', 'vdig',
   'vcrypt', 'data', 'auth', 'token', 'kbv', 'pvp', 'pvr', 'bvp', 'bvr']);
 
 // The schema's electronic record types, and this service's own for a wallet
 // presentation of a credential it issued — the schema's list has no entry for
 // a verifiable credential, and it says a trust framework may define more.
+/**
+ * The electronic record type a wallet presentation of a credential this realm
+ * issued is recorded as.
+ */
 const WALLET_RECORD_TYPE = 'urn:sts:verifiable-credential';
+/**
+ * The electronic record types a verification may record, the wallet's own among
+ * them.
+ */
 const ELECTRONIC_RECORD_TYPES = Object.freeze(['bank_account',
   'utility_account', 'mortgage_account', 'loan_account', 'tax',
   'social_security', 'prison_record', WALLET_RECORD_TYPE]);
 
 // A vouch's two attestation types.
+/**
+ * A vouch's two attestation types.
+ */
 const ATTESTATION_TYPES = Object.freeze(['written_attestation',
   'digital_attestation']);
 
 // What a client certificate sign-in records as its `signature_type`.
+/**
+ * The `signature_type` a client certificate sign-in records.
+ */
 const CERTIFICATE_SIGNATURE_TYPE = 'urn:sts:x509-client-certificate';
 
 // The claims a verification may cover: the identity claims of OIDC Core
 // section 5.1 and the Identity Assurance Claims Registration's section 4.1
 // (#128). Not `picture` or `website`: nobody verifies a web page against a
 // passport. Published as `claims_in_verified_claims_supported`.
+/**
+ * The claims a verification may cover, advertised as
+ * `claims_in_verified_claims_supported`.
+ */
 const VERIFIABLE_CLAIMS = Object.freeze(['name', 'given_name', 'family_name',
   'middle_name', 'birthdate', 'gender', 'address', 'email', 'phone_number',
   'place_of_birth', 'nationalities', 'birth_family_name', 'birth_given_name',
@@ -152,6 +185,9 @@ const LEAF_KEYS = Object.freeze(['essential', 'purpose', 'value', 'values',
 // How many verifications one entry keeps, and how large one may be. The
 // record lives in one attribute value, and the whole value is rewritten on
 // every change.
+/**
+ * How many verifications one entry keeps; the oldest go first.
+ */
 const MAX_RECORDS = 16;
 const MAX_RECORD_BYTES = 8192;
 
@@ -168,6 +204,10 @@ const MAX_REQUEST_NODES = 256;
 // namespace agreed between the two parties. Two values are this namespace's
 // own: `verified`, a verification recorded under a trust framework that
 // states no level, and `none`, nothing recorded.
+/**
+ * This service's own namespace for a person's identity assurance level in a
+ * CAEP assurance-level-change: `urn:sts:ial`.
+ */
 const IAL_NAMESPACE = 'urn:sts:ial';
 
 // `NIST-IAL` ONLY WHERE THE VERIFICATION SAYS IT IS NIST's: the trust
@@ -194,17 +234,45 @@ interface IdentityAssuranceDeps {
   now: () => number;
 }
 
+/**
+ * OpenID Connect for Identity Assurance 1.0: a person's identity verifications
+ * kept on their directory entry, and the `verified_claims` a claims request
+ * asks for them by.
+ *
+ * Only values the directory holds are verified, and a verified claim is
+ * released only while the entry still holds the value that was verified.
+ */
 class IdentityAssurance {
+  /**
+   * The evidence types, as the module-level `EVIDENCE_TYPES`.
+   */
   static readonly EVIDENCE_TYPES = EVIDENCE_TYPES;
+  /**
+   * The development framework, as the module-level `DEMO_FRAMEWORK`.
+   */
   static readonly DEMO_FRAMEWORK = DEMO_FRAMEWORK;
+  /**
+   * The verifiable claims, as the module-level `VERIFIABLE_CLAIMS`.
+   */
   static readonly VERIFIABLE_CLAIMS = VERIFIABLE_CLAIMS;
 
+  /**
+   * Creates the identity assurance register.
+   *
+   * @param deps - its dependencies: the logger, Shared Signals, config, mode,
+   * credentials, the claim catalogue, the error-code table and a clock
+   */
   constructor(private readonly deps: IdentityAssuranceDeps) {
     deps.log.debug("Entering IdentityAssurance.constructor().");
     deps.log.debug("Leaving IdentityAssurance.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): IdentityAssuranceDeps {
     helpers.log.debug("Entering IdentityAssurance.defaultDeps().");
     helpers.log.debug("Leaving IdentityAssurance.defaultDeps().");
@@ -224,6 +292,12 @@ class IdentityAssurance {
   // SMALL PREDICATES, static because they read nothing but their argument.
   // -------------------------------------------------------------------------
 
+  /**
+   * Tells whether a value is a plain JSON object (not null, not an array).
+   *
+   * @param value - the value
+   * @returns true for an object
+   */
   static isObject(value: Json): boolean {
     helpers.log.debug("Entering IdentityAssurance.isObject().");
     helpers.log.debug("Leaving IdentityAssurance.isObject().");
@@ -232,6 +306,14 @@ class IdentityAssurance {
 
   // A request node that constrains a value rather than naming members: null,
   // or an object holding only section 5.5.1's and section 6's own members.
+  /**
+   * Tells whether a request node constrains a value rather than naming members:
+   * null, or an object holding only `essential`, `purpose`, `value`, `values`
+   * and `max_age`.
+   *
+   * @param node - the request node
+   * @returns true for a leaf
+   */
   static isLeafSpec(node: Json): boolean {
     helpers.log.debug("Entering IdentityAssurance.isLeafSpec().");
     if (node === null || node === undefined) {
@@ -251,6 +333,12 @@ class IdentityAssurance {
   }
 
   // The members of a request node that name members of the answer.
+  /**
+   * Lists the members of a request node that name members of the answer.
+   *
+   * @param node - the request node
+   * @returns its keys other than the leaf keys
+   */
   static memberKeys(node: Json): string[] {
     helpers.log.debug("Entering IdentityAssurance.memberKeys().");
     helpers.log.debug("Leaving IdentityAssurance.memberKeys().");
@@ -260,6 +348,13 @@ class IdentityAssurance {
   }
 
   // ISO 8601 as the specification writes `time`: a date-time with a zone.
+  /**
+   * Tells whether a value is an ISO 8601 date-time with a zone, as `time` is
+   * written.
+   *
+   * @param value - the value
+   * @returns true when it is
+   */
   static isDateTime(value: Json): boolean {
     helpers.log.debug("Entering IdentityAssurance.isDateTime().");
     const ok = typeof value === 'string' &&
@@ -271,6 +366,13 @@ class IdentityAssurance {
   }
 
   // A full-date, as `date_of_issuance` and `date_of_expiry` are written.
+  /**
+   * Tells whether a value is a full-date, as `date_of_issuance` and
+   * `date_of_expiry` are written.
+   *
+   * @param value - the value
+   * @returns true when it is
+   */
   static isDate(value: Json): boolean {
     helpers.log.debug("Entering IdentityAssurance.isDate().");
     const ok = typeof value === 'string' &&
@@ -282,6 +384,13 @@ class IdentityAssurance {
 
   // One JSON serialisation with its object keys sorted, so that two values
   // read from different places compare by what they say.
+  /**
+   * Serialises a value as JSON with its object keys sorted, so that two values
+   * compare by what they say.
+   *
+   * @param value - the value
+   * @returns the canonical JSON
+   */
   static canonical(value: Json): string {
     helpers.log.debug("Entering IdentityAssurance.canonical().");
     const sort = function (v: Json): Json {
@@ -306,6 +415,12 @@ class IdentityAssurance {
   // -------------------------------------------------------------------------
 
   // The frameworks an administrator may record under, and discovery lists.
+  /**
+   * Lists the trust frameworks an administrator may record under
+   * (`oauth2.idaTrustFrameworks`), never the development framework.
+   *
+   * @returns the frameworks, de-duplicated
+   */
   trustFrameworks(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering IdentityAssurance.trustFrameworks().");
@@ -322,6 +437,12 @@ class IdentityAssurance {
     return list;
   }
 
+  /**
+   * Tells whether wallet and certificate sign-ins record verifications of their
+   * own (`oauth2.idaAutomaticVerifications`).
+   *
+   * @returns true when on
+   */
   automaticEnabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering IdentityAssurance.automaticEnabled().");
@@ -334,6 +455,13 @@ class IdentityAssurance {
   // WHAT DISCOVERY SAYS (section 7). Read per request, so the frameworks
   // setting and the mode are current.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the discovery members of Identity Assurance section 7, read per
+   * request.
+   *
+   * @returns `verified_claims_supported` and the supported frameworks,
+   * evidence, documents, check methods, records and claims
+   */
   discoveryMetadata(): Json {
     const { log, mode } = this.deps;
     log.debug("Entering IdentityAssurance.discoveryMetadata().");
@@ -364,6 +492,14 @@ class IdentityAssurance {
   // not parse is logged and read as none rather than thrown: a claims request
   // must not fail because an entry holds something damaged, and the console
   // shows the empty list, which is where somebody will notice.
+  /**
+   * Lists every verification recorded for a person, newest first.
+   *
+   * A damaged value is logged (STS-OAUTH-0623) and read as none.
+   *
+   * @param username - the person
+   * @returns the records
+   */
   list(username: Json): Json[] {
     const { log, credentials, errorCodes } = this.deps;
     log.debug("Entering IdentityAssurance.list(). user=" + username);
@@ -478,6 +614,16 @@ class IdentityAssurance {
   // `verified` < a stated level in IAL_NAMESPACE; two stated levels there
   // share a rank, because this service does not know an arbitrary
   // framework's order.
+  /**
+   * Derives a person's identity assurance level from their verifications: the
+   * newest that states an `assurance_level` decides it.
+   *
+   * `NIST-IAL` only for an SP 800-63A framework and one of its three levels;
+   * otherwise `urn:sts:ial` with the level as recorded, `verified`, or `none`.
+   *
+   * @param records - the verifications, newest first
+   * @returns `{ namespace, level, rank }`
+   */
   static assuranceOf(records: Json[]):
       { namespace: string; level: string; rank: number } {
     helpers.log.debug("Entering IdentityAssurance.assuranceOf().");
@@ -511,6 +657,14 @@ class IdentityAssurance {
   // claims change needs to say. `null` when nothing is releasable, which is
   // how CAEP says the claim is gone. (Development's invented demo
   // verification is not a record and is not reported.)
+  /**
+   * Lists what a token could carry as `verified_claims` now: each recorded
+   * verification's framework and level with the claims the entry still holds.
+   * Never evidence.
+   *
+   * @param username - the person
+   * @returns the releasable elements, or null when there are none
+   */
   releasable(username: string): Json {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.releasable().");
@@ -553,6 +707,17 @@ class IdentityAssurance {
   // — unless `invented` — only one whose every value came from the DIRECTORY:
   // development fills an empty attribute with a persona value, and nobody
   // verified that. Only development's own demo verification takes those.
+  /**
+   * Reads what the entry holds now for each claim, through the claim catalogue.
+   *
+   * Only a value that came from the directory is present, unless `invented`
+   * also admits development's persona values.
+   *
+   * @param username - the person
+   * @param names - the claims
+   * @param invented - true to admit invented values
+   * @returns `{ values, entryFound }`
+   */
   currentValues(username: string, names: string[], invented?: boolean)
     : Json {
     const { log, claimAttributes } = this.deps;
@@ -584,6 +749,15 @@ class IdentityAssurance {
   // record can only ever say what discovery says this service supports.
   // Returns { verification } or { error }.
   // -------------------------------------------------------------------------
+  /**
+   * Checks a `verification` element an administrator records, member by member;
+   * an unknown member is dropped.
+   *
+   * @param raw - the element
+   * @param opts - `frameworks` to check against in place of the configured
+   * ones, or null
+   * @returns `{ verification }` as checked, or `{ error }`
+   */
   checkVerification(raw: Json, opts: Json): Json {
     const { log } = this.deps;
     const self = this;
@@ -664,6 +838,13 @@ class IdentityAssurance {
   // One evidence element, by its type (section 5.1.1). What each type
   // REQUIRES is the specification's; the vocabularies are the ones discovery
   // advertises.
+  /**
+   * Checks one evidence element against what its type requires.
+   *
+   * @param raw - the element
+   * @param index - its position, for the message
+   * @returns `{ evidence }` as checked, or `{ error }`
+   */
   checkEvidence(raw: Json, index: number): Json {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.checkEvidence().");
@@ -780,6 +961,18 @@ class IdentityAssurance {
   // released and would only look like one on the console.
   // Returns { ok, record } or { ok: false, error }.
   // -------------------------------------------------------------------------
+  /**
+   * Records a verification an administrator made: the element checked, and each
+   * named claim's value taken from the entry as it is now.
+   *
+   * Refused when a claim is not verifiable, the entry is absent, or it holds no
+   * value for a claim.
+   *
+   * @param username - the person
+   * @param input - `{ verification, claims }`
+   * @param by - who recorded it
+   * @returns `{ ok, record }` or `{ ok: false, error }`
+   */
   record(username: Json, input: Json, by: Json): Json {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.record(). user=" + username);
@@ -847,6 +1040,13 @@ class IdentityAssurance {
   // this is the one place those fields become the same element — so the two
   // doors record through one check.
   // -------------------------------------------------------------------------
+  /**
+   * Turns the console's flat form fields into the management API's `{
+   * verification, claims }` input, so both doors record through one check.
+   *
+   * @param body - the posted form
+   * @returns the input for `record()`
+   */
   static fromForm(body: Json): Json {
     helpers.log.debug("Entering IdentityAssurance.fromForm().");
     const b = body || {};
@@ -974,6 +1174,13 @@ class IdentityAssurance {
   }
 
   // Returns { ok, removed }.
+  /**
+   * Removes one recorded verification.
+   *
+   * @param username - the person
+   * @param id - the record's id
+   * @returns `{ ok, removed }` or `{ ok: false, error }`
+   */
   remove(username: Json, id: Json): Json {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.remove(). user=" + username);
@@ -1006,6 +1213,20 @@ class IdentityAssurance {
   // the credential format — or 'certificate' — `claims` read off the
   // certificate's subject, `issuer`, `serial` and `notBefore`.
   // -------------------------------------------------------------------------
+  /**
+   * Records a verification of this service's own after a wallet or client
+   * certificate sign-in, covering the claims the entry agrees with.
+   *
+   * Only while `oauth2.idaAutomaticVerifications` is on and a framework is
+   * configured. Never throws; a failure is logged (STS-OAUTH-0623) and the
+   * sign-in stands.
+   *
+   * @param username - the person signed in
+   * @param kind - `wallet` or `certificate`
+   * @param facts - what the sign-in verified: `claims`, and `format` for a
+   * wallet or `issuer`, `serial` and `notBefore` for a certificate
+   * @returns `{ ok, record }`, or `{ ok: false, skipped }`
+   */
   recordAutomatic(username: Json, kind: string, facts: Json): Json {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.recordAutomatic(). kind=" + kind);
@@ -1094,6 +1315,14 @@ class IdentityAssurance {
   // parsed again at the UserInfo endpoint.
   // Returns { elements, count } or { error }.
   // -------------------------------------------------------------------------
+  /**
+   * Parses the value of `verified_claims` in one member of a claims request, as
+   * Identity Assurance section 6 reads it, bounded in depth and size.
+   *
+   * @param raw - an object, or a non-empty array of them
+   * @param where - `userinfo` or `id_token`, for the message
+   * @returns `{ elements, count }` or `{ error }`
+   */
   parseRequest(raw: Json, where: string): Json {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.parseRequest().");
@@ -1198,6 +1427,14 @@ class IdentityAssurance {
   // satisfied whether or not it is present — it is released where it is.
   // `project()` then keeps only what the request named.
   // -------------------------------------------------------------------------
+  /**
+   * Tells whether an actual value satisfies a request node: `value`, `values`,
+   * `max_age`, array elements and named members.
+   *
+   * @param request - the request node
+   * @param actual - the value
+   * @returns true when satisfied
+   */
   matches(request: Json, actual: Json): boolean {
     const { log } = this.deps;
     const self = this;
@@ -1254,6 +1491,13 @@ class IdentityAssurance {
     return true;
   }
 
+  /**
+   * Keeps only what a request node named of an actual value.
+   *
+   * @param request - the request node
+   * @param actual - the value
+   * @returns the projection, or undefined when nothing remains
+   */
   project(request: Json, actual: Json): Json {
     const { log } = this.deps;
     const self = this;
@@ -1303,6 +1547,14 @@ class IdentityAssurance {
   // The invented verification development answers with (see the header). It
   // covers what was asked for, at this moment, through a check that names
   // itself for what it is.
+  /**
+   * Builds development mode's invented verification of the claims asked for,
+   * under `urn:sts:demo`.
+   *
+   * @param username - the person
+   * @param names - the claims asked for
+   * @returns the record
+   */
   demoRecord(username: string, names: string[]): Json {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.demoRecord().");
@@ -1330,6 +1582,19 @@ class IdentityAssurance {
   // asked for as an object, an array otherwise — or undefined when nothing
   // satisfies the request, and `report` a line per element for the log.
   // -------------------------------------------------------------------------
+  /**
+   * Answers a parsed `verified_claims` request from the person's recorded
+   * verifications.
+   *
+   * A claim changed on the entry since it was verified is not released. In
+   * development, a person with no record is answered with the invented one.
+   *
+   * @param username - the person
+   * @param elements - what `parseRequest()` returned
+   * @param asArray - true when the request was an array
+   * @returns `{ value, report }`: the `verified_claims` to release (undefined
+   * for none) and a log line per element
+   */
   respond(username: Json, elements: Json[], asArray: boolean): Json {
     const { log, mode } = this.deps;
     const self = this;
@@ -1447,6 +1712,15 @@ const slot = new InstanceSlot<IdentityAssurance>(
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * OpenID Connect for Identity Assurance 1.0: a person's identity verifications
+ * and the `verified_claims` released from them.
+ *
+ * Exports the class, its constants and facades forwarding to the instance the
+ * composition root built.
+ *
+ * @namespace
+ */
 export = {
   IdentityAssurance: IdentityAssurance,
   installInstance: (instance: IdentityAssurance): void =>

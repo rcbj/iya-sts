@@ -166,6 +166,7 @@ if (!global.DOMParser) {
 if (!global.XMLSerializer) {
   global.XMLSerializer = /** @type {any} */ (xmldom.XMLSerializer);
 }
+/** The vendored XML Signature engine. */
 const xmldsig = require('./vendored/xmldsig.js');
 
 // The namespace URIs this file names. They are also exported by xmldsig.js and
@@ -198,6 +199,10 @@ const NS_SAML = 'urn:oasis:names:tc:SAML:2.0:assertion';
 //                 in 1.1 the issuer is an ATTRIBUTE, so "after the issuer" is
 //                 not a position that exists.
 // ---------------------------------------------------------------------------
+/**
+ * Where an enveloped `<ds:Signature>` goes: after the issuer, first, or
+ * last, as each document's schema requires.
+ */
 const PLACEMENT = {
   AFTER_ISSUER: 'after-issuer',
   FIRST: 'first',
@@ -214,6 +219,12 @@ const ID_ATTRIBUTES = ['ID', 'AssertionID', 'ResponseID', 'RequestID', 'Id',
 // The id an element carries, whatever it is called. Returns '' when there is
 // none, which is a legal signature reference (URI="" means the whole document)
 // rather than an error.
+/**
+ * Returns the id an element carries, whatever its attribute is called.
+ *
+ * @param element - the DOM element
+ * @returns the id, or empty when there is none
+ */
 function idOf(element) {
   log.debug("Entering idOf().");
   for (let i = 0; i < ID_ATTRIBUTES.length; i++) {
@@ -275,6 +286,14 @@ function directChildByLocal(parent, localName, namespaceUri) {
 // renders only visibly-utilized prefixes and is therefore stable under
 // embedding. It is the default below and no caller overrides it.
 // ---------------------------------------------------------------------------
+/**
+ * Signs one XML document with an enveloped signature, exclusive c14n.
+ *
+ * @param xml - the document
+ * @param opts - `privateKeyPem` or `privateKey`, `certPem`, `refUri`,
+ *   `placement`, `sigAlg`, `includeKeyInfo` and `what`
+ * @returns the signed document
+ */
 function signXml(xml, opts) {
   log.debug("Entering signXml().");
   const options = opts || {};
@@ -650,6 +669,12 @@ Object.keys(XML_DIGEST_METHODS).forEach(function (uri) {
 // FORCE since #181: `saml.allowSha1Signatures` on is development's, so a
 // product realm refuses SHA-1 whatever is stored and says so once
 // (`mode.valueInForce()`, STS-CORE-0106).
+/**
+ * Says whether SHA-1 XML signatures are accepted, as in force now; a
+ * product realm refuses them whatever is stored.
+ *
+ * @returns true when accepted
+ */
 function sha1Allowed() {
   log.debug("Entering sha1Allowed().");
   const on = mode.valueInForce('saml.allowSha1Signatures') === true;
@@ -660,6 +685,15 @@ function sha1Allowed() {
 // What a SignatureMethod and a set of DigestMethods amount to, before any
 // cryptography: `{ problem, code, weak, sha1 }`. `problem` is '' when the
 // algorithms are ones this file verifies and policy allows.
+/**
+ * Says what a SignatureMethod and DigestMethods amount to, before any
+ * cryptography.
+ *
+ * @param signatureMethod - the SignatureMethod URI
+ * @param digestMethods - the DigestMethod URIs
+ * @returns `{ problem, code, weak, sha1 }`, `problem` empty when they are
+ *   verified here and policy allows them
+ */
 function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
   log.debug("Entering xmlAlgorithmVerdict(). " + signatureMethod);
   const sig = XML_SIGNATURE_METHODS[String(signatureMethod || '')];
@@ -739,6 +773,12 @@ function verificationKeyFrom(certPem, publicKeyPem) {
 
 // Whether a key TYPE (node's `asymmetricKeyType`) makes an XML signature
 // this file verifies.
+/**
+ * Says whether a key type makes an XML signature this file verifies.
+ *
+ * @param type - node's `asymmetricKeyType`
+ * @returns true when it does
+ */
 function xmlSignatureKeyTypeUsable(type) {
   log.debug("Entering xmlSignatureKeyTypeUsable(). " + type);
   const usable = Object.keys(XML_SIGNATURE_METHODS).some(function (uri) {
@@ -750,6 +790,13 @@ function xmlSignatureKeyTypeUsable(type) {
 
 // Whether a certificate's key can make an XML signature this file verifies —
 // the question a registration asks before trusting one. '' when it can.
+/**
+ * Says whether a certificate's key can make an XML signature this file
+ * verifies.
+ *
+ * @param certificate - the certificate
+ * @returns the problem, or empty when it can
+ */
 function xmlSignatureKeyProblem(certificate) {
   log.debug("Entering xmlSignatureKeyProblem().");
   const found = verificationKeyFrom(certificate, null);
@@ -863,6 +910,17 @@ function xmlEcdsaCurveProblem(key) {
 // `signatureMethod` with `key`? A key of the wrong type for the method is
 // `false` — another registered certificate may be the right one — and never a
 // throw. `pss` is pssParameters()'s answer for `rsa-pss`.
+/**
+ * Says whether a signature verifies over octets under a SignatureMethod
+ * with a key; a key of the wrong type is false, never a throw.
+ *
+ * @param signatureMethod - the SignatureMethod URI
+ * @param key - the public key
+ * @param octets - the canonical SignedInfo
+ * @param signature - the signature value
+ * @param pss - the PSS parameters for `rsa-pss`
+ * @returns true when it verifies
+ */
 function verifyXmlSignatureValue(signatureMethod, key, octets, signature, pss) {
   log.debug("Entering verifyXmlSignatureValue(). " + signatureMethod);
   const row = XML_SIGNATURE_METHODS[String(signatureMethod || '')];
@@ -924,6 +982,12 @@ function verifyXmlSignatureValue(signatureMethod, key, octets, signature, pss) {
 }
 
 // A description of every method, for the crypto metadata page and the tests.
+/**
+ * Describes every XML signature method, for the crypto metadata page and
+ * the tests.
+ *
+ * @returns the descriptions
+ */
 function xmlSignatureAlgorithms() {
   log.debug("Entering xmlSignatureAlgorithms().");
   log.debug("Leaving xmlSignatureAlgorithms().");
@@ -1003,6 +1067,15 @@ function withoutCertificateText(signatureXml) {
 // verified since 2026-09-17** — see the SignedInfo note further down, where
 // the in-scope namespace declarations are put back before the engine reads it.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies the signature on one named element and on no other, against the
+ * certificates the caller trusts. It answers rather than throws.
+ *
+ * @param xml - the document
+ * @param opts - `element` (which one), and `certPem` or `publicKeyPem`
+ * @returns the verdict `{ ok, present, why, signatureValid,
+ *   referencesValid, signatureMethod, … }`, a refusal carrying its code
+ */
 function verifyXmlSignature(xml, opts) {
   log.debug("Entering verifyXmlSignature().");
   const options = opts || {};
@@ -1292,6 +1365,17 @@ function verifyXmlSignature(xml, opts) {
 // with — for which the vendored signer, RSA through forge, has no path. The
 // ECDSA signature is the raw r||s XML Signature 1.1 specifies, which is what
 // the binding's SigAlg names; RSA takes the vendored path as it always has.
+/**
+ * Signs a query string for the SAML HTTP Redirect binding's detached
+ * signature.
+ *
+ * @param queryString - the query string to sign
+ * @param privateKeyPem - the RSA private key
+ * @param sigAlg - the signature algorithm URI
+ * @param privateKey - for an ECDSA or post-quantum `sigAlg`, the signer
+ *   group's key
+ * @returns the base64 signature
+ */
 function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
   log.debug('Entering signQueryString().');
   const pqMethod = xmldsig.SIG_METHODS[sigAlg] &&
@@ -1348,6 +1432,16 @@ function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
 // separate from `usable`: "this signature is wrong" and "this could not be
 // checked at all" are refused under different codes.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies a service provider's HTTP Redirect binding signature. It answers
+ * rather than throws.
+ *
+ * @param queryString - the query string as received
+ * @param opts - `signature`, `sigAlg` and `certPem` (the registered
+ *   certificates)
+ * @returns `{ ok, usable, … }`: `ok` separate from `usable`, whether it
+ *   could be checked at all
+ */
 function verifyQueryString(queryString, opts) {
   log.debug('Entering verifyQueryString().');
   const options = opts || {};
@@ -1477,6 +1571,7 @@ function verifyQueryString(queryString, opts) {
 // it; `ivBytes` and `tagBytes` are the layout above. A URI that is not here is
 // refused BY NAME on the way in and cannot be chosen on the way out, because
 // the setting is an enum over exactly these keys.
+/** Every XML Encryption block cipher this service speaks, by name. */
 const BLOCK_CIPHERS = {
   'aes256-gcm': { uri: XENC11_NS + 'aes256-gcm', keyBytes: 32, mode: 'AES-GCM',
                   ivBytes: 12, tagBytes: 16 },
@@ -1509,6 +1604,7 @@ const BLOCK_CIPHERS = {
 // own identity provider has to be able to encrypt to it. Node performs it
 // (`oaepHash` names the digest of the OAEP padding AND of MGF1), forge does
 // not, which is why its two directions below go through node's OpenSSL.
+/** The three XML Encryption key transports, by name. */
 const KEY_TRANSPORTS = {
   'rsa-oaep': { uri: XENC11_NS + 'rsa-oaep', scheme: 'RSA-OAEP',
                 hash: 'sha256', node: true },
@@ -1522,12 +1618,14 @@ const KEY_TRANSPORTS = {
 // MGF1 digest from the OAEP digest, so a document naming two DIFFERENT ones
 // is refused by name rather than read under the wrong one — which would fail
 // exactly as a wrong key fails, and send somebody to the wrong place.
+/** The digests an `rsa-oaep` EncryptionMethod may name, by URI. */
 const OAEP_DIGESTS = {
   sha1: DS_NS + 'sha1',
   sha256: XENC_NS + 'sha256',
   sha384: 'http://www.w3.org/2001/04/xmldsig-more#sha384',
   sha512: XENC_NS + 'sha512'
 };
+/** The MGF1 URIs of XML Encryption 1.1 section 5.5.2. */
 const MGF1_URIS = {
   sha1: XENC11_NS + 'mgf1sha1',
   sha256: XENC11_NS + 'mgf1sha256',
@@ -1558,10 +1656,12 @@ const MGF1_URIS = {
 // ML-KEM method for XML Encryption, so confidentiality here stays classical
 // against a harvest-now-decrypt-later adversary; see federation/CLAUDE.md.
 // ---------------------------------------------------------------------------
+/** XML Encryption 1.1's ECDH-ES key agreement. */
 const KEY_AGREEMENTS = {
   'ecdh-es': { uri: XENC11_NS + 'ECDH-ES' }
 };
 const CONCAT_KDF_URI = XENC11_NS + 'ConcatKDF';
+/** The AES key wraps an agreed key encrypts the content key with. */
 const KEY_WRAPS = {
   'kw-aes128': { uri: XENC_NS + 'kw-aes128', bytes: 16 },
   'kw-aes192': { uri: XENC_NS + 'kw-aes192', bytes: 24 },
@@ -1645,6 +1745,12 @@ function hexBits(bytes) {
   return '00' + Buffer.from(bytes).toString('hex').toUpperCase();
 }
 
+/**
+ * Returns the block cipher an algorithm URI names.
+ *
+ * @param uri - the EncryptionMethod URI
+ * @returns the cipher with its `name`, or null
+ */
 function cipherByUri(uri) {
   log.debug("Entering cipherByUri().");
   const name = Object.keys(BLOCK_CIPHERS).filter(function (key) {
@@ -1654,6 +1760,12 @@ function cipherByUri(uri) {
   return name ? Object.assign({ name: name }, BLOCK_CIPHERS[name]) : null;
 }
 
+/**
+ * Returns the key transport an algorithm URI names.
+ *
+ * @param uri - the EncryptionMethod URI
+ * @returns the transport with its `name`, or null
+ */
 function transportByUri(uri) {
   log.debug("Entering transportByUri().");
   const name = Object.keys(KEY_TRANSPORTS).filter(function (key) {
@@ -1713,6 +1825,16 @@ function artifact(opts, what, stage, value) {
   log.debug("Leaving artifact().");
 }
 
+/**
+ * Encrypts one XML element to a recipient's certificate, wrapped in the
+ * element the caller names.
+ *
+ * @param xml - the element to encrypt
+ * @param certPem - the recipient's certificate
+ * @param opts - `wrapper` (`saml:EncryptedAssertion` by default),
+ *   `algorithm`, `keyTransport`, `keyWrap` and `logArtifact`
+ * @returns the wrapper element's XML
+ */
 function encryptElement(xml, certPem, opts) {
   log.debug("Entering encryptElement().");
   opts = opts || {};
@@ -1867,6 +1989,15 @@ function encryptElement(xml, certPem, opts) {
 
 // The original name, kept because WS-Trust calls it and its signature is part
 // of that module's contract. It is now one line over encryptElement().
+/**
+ * Encrypts an assertion as `encryptElement()` does; the name WS-Trust
+ * calls.
+ *
+ * @param assertionXml - the assertion
+ * @param certPem - the recipient's certificate
+ * @param opts - as for `encryptElement()`
+ * @returns the encrypted element's XML
+ */
 function encryptAssertion(assertionXml, certPem, opts) {
   log.debug("Entering encryptAssertion().");
   log.debug("Leaving encryptAssertion().");
@@ -2165,6 +2296,14 @@ function cbcPlaintextUsable(opened) {
 // GCM's IV and tag are the fixed 12 and 16 octets the layout defines, and
 // node refuses a tag that does not verify.
 // ---------------------------------------------------------------------------
+/**
+ * Opens the content of an XML EncryptedData on node's OpenSSL.
+ *
+ * @param cipher - the block cipher's row
+ * @param key - the content key
+ * @param raw - the CipherValue: IV, ciphertext and, for GCM, the tag
+ * @returns `{ plain, padOk }`, or null when it cannot be opened
+ */
 function openXmlContent(cipher, key, raw) {
   log.debug("Entering openXmlContent(). " + cipher.name);
   const bits = key.length * 8;
@@ -2212,6 +2351,15 @@ function openXmlContent(cipher, key, raw) {
   }
 }
 
+/**
+ * Decrypts one encrypted XML element. It answers rather than throws.
+ *
+ * @param xml - the encrypted element's XML
+ * @param privateKeyPem - the private key it was encrypted to
+ * @param opts - `allowedCiphers`, `allowedKeyManagement`,
+ *   `allowedOaepDigests` and `logArtifact`
+ * @returns `{ ok, xml, why, algorithm, keyTransport }`
+ */
 function decryptElement(xml, privateKeyPem, opts) {
   log.debug("Entering decryptElement().");
   const options = opts || {};
@@ -2593,6 +2741,10 @@ const SIGN_OPTIONS = ['keyid', 'header', 'expiresIn', 'notBefore',
 // something the runtime already does, so it is gone. Anything that needs the
 // raw form passes that option.
 // ---------------------------------------------------------------------------
+/**
+ * The one JWS algorithm table: every algorithm this service signs or
+ * verifies, with its family, hash and key type.
+ */
 const JWS_ALGS = {
   HS256: { family: 'hmac', hash: 'sha256' },
   HS384: { family: 'hmac', hash: 'sha384' },
@@ -2647,7 +2799,9 @@ pqJose.PQ_ALGS.forEach(function (alg) {
 // several specifications say "an asymmetric algorithm, never a MAC and never
 // none": DPoP proofs (RFC 9449 section 4.2), OID4VCI proofs of possession, and
 // request objects are all in that class.
+/** Every JWS signing algorithm this service speaks. */
 const JWS_SIGNING_ALGS = Object.keys(JWS_ALGS);
+/** The asymmetric JWS algorithms: never a MAC, never `none`. */
 const JWS_ASYMMETRIC_ALGS = JWS_SIGNING_ALGS.filter(function (alg) {
   return JWS_ALGS[alg].family !== 'hmac';
 });
@@ -2688,6 +2842,13 @@ const PQ_ID_TOKEN_HASH = {
   'ML-DSA-65-Ed25519': 'sha512', 'ML-DSA-87-Ed448': 'shake256-114'
 };
 
+/**
+ * Returns the hash an ID Token's `at_hash`, `c_hash` and `s_hash` use for
+ * a signing algorithm.
+ *
+ * @param alg - the JWS algorithm
+ * @returns `{ name }`, with `outputLength` for SHAKE256
+ */
 function idTokenHashFor(alg) {
   log.debug('Entering idTokenHashFor(). alg=' + alg);
   const name = String(alg || '');
@@ -2704,6 +2865,14 @@ function idTokenHashFor(alg) {
 
 // The base64url of the left-most half of that hash of the ASCII octets of
 // `value` — at_hash, c_hash and s_hash alike.
+/**
+ * Returns the base64url of the left-most half of the algorithm's hash of
+ * `value`: `at_hash`, `c_hash` and `s_hash` alike.
+ *
+ * @param value - the token or code, as ASCII
+ * @param alg - the ID Token's JWS algorithm
+ * @returns the half hash
+ */
 function idTokenHalfHash(value, alg) {
   log.debug('Entering idTokenHalfHash(). alg=' + alg);
   const hash = idTokenHashFor(alg);
@@ -2715,6 +2884,13 @@ function idTokenHalfHash(value, alg) {
   return digest.subarray(0, digest.length / 2).toString('base64url');
 }
 
+/**
+ * Returns the table row for a JWS algorithm.
+ *
+ * @param alg - the algorithm
+ * @returns the row
+ * @throws Error for an algorithm this service does not speak
+ */
 function jwsSpec(alg) {
   log.debug('Entering jwsSpec(). alg=' + alg);
   const spec = JWS_ALGS[alg];
@@ -2768,6 +2944,14 @@ function nodeParamsFor(spec, key) {
 // them: the algorithm is what was actually used, and the kid names the key
 // that was actually used. Everything else in `options.header` is merged.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the protected header the hand-rolled signers use: `alg` and `kid`
+ * set here, everything else in `options.header` merged.
+ *
+ * @param algorithm - the algorithm actually used
+ * @param options - `header` and `keyid`
+ * @returns the header
+ */
 function protectedHeaderFor(algorithm, options) {
   log.debug('Entering protectedHeaderFor(). alg=' + algorithm);
   const asked = (options && options.header && typeof options.header ===
@@ -2802,6 +2986,17 @@ function pqSigningInput(payload, algorithm, options) {
   return input;
 }
 
+/**
+ * Signs a JWT payload as a compact JWS: the one place this service signs a
+ * JWT.
+ *
+ * @param payload - the claims
+ * @param key - the signing key
+ * @param opts - `algorithm` (RS256 by default), `header`, `keyid` and the
+ *   claim conveniences `jsonwebtoken` takes
+ * @returns the compact JWS
+ * @throws Error when no key is given or the algorithm is not supported
+ */
 function signJws(payload, key, opts) {
   log.debug("Entering signJws().");
   const options = opts || {};
@@ -2876,6 +3071,15 @@ function signJws(payload, key, opts) {
 // It is a preference and never a correctness requirement, so a caller with no
 // session to name simply omits it.
 // ---------------------------------------------------------------------------
+/**
+ * Signs as `signJws()` does, with a post-quantum signature computed on the
+ * worker pool; every other algorithm is signed here.
+ *
+ * @param payload - the claims
+ * @param key - the signing key
+ * @param opts - as for `signJws()`, and `session`, the pool's routing hint
+ * @returns a promise of the compact JWS
+ */
 function signJwsAsync(payload, key, opts) {
   log.debug("Entering signJwsAsync().");
   const options = opts || {};
@@ -2930,6 +3134,12 @@ function signJwsAsync(payload, key, opts) {
 // the console and a constant taken at require time would be the one value
 // nothing could change.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the clock allowance applied when reading back a token this
+ * service signed, read per call.
+ *
+ * @returns the allowance in seconds
+ */
 function tokenClockSkew() {
   log.debug("Entering tokenClockSkew().");
   log.debug("Leaving tokenClockSkew().");
@@ -3237,6 +3447,16 @@ function checkPreparedSignature(prepared, key) {
   return !!ok;
 }
 
+/**
+ * Says whether a JWS signature verifies over a signing input, for external
+ * test vectors.
+ *
+ * @param alg - the algorithm
+ * @param key - the verification key
+ * @param signingInput - the octets signed
+ * @param signature - the signature
+ * @returns true when it verifies
+ */
 function jwsSignatureValid(alg, key, signingInput, signature) {
   log.debug('Entering jwsSignatureValid(). alg=' + alg);
   const spec = jwsSpec(alg);
@@ -3268,6 +3488,16 @@ function jwsSignatureValid(alg, key, signingInput, signature) {
 // DETERMINISTIC variant instead of the hedged one every other caller gets.
 // It exists for `tests/acvp_pqc.js`, which compares with NIST's
 // deterministic vectors, and is not a setting: signJws() never passes it.
+/**
+ * Signs octets as a JWS signature, for the algorithms this file signs
+ * itself: EdDSA, ES256K and the post-quantum ones.
+ *
+ * @param alg - the algorithm
+ * @param key - the signing key
+ * @param signingInput - the octets to sign
+ * @param internal - `deterministic`, for the NIST test vectors only
+ * @returns the signature
+ */
 function jwsSignatureOver(alg, key, signingInput, internal) {
   log.debug('Entering jwsSignatureOver(). alg=' + alg);
   const spec = jwsSpec(alg);
@@ -3370,6 +3600,15 @@ function finishVerification(prepared, ok) {
   return { header: prepared.header, claims: claims };
 }
 
+/**
+ * Verifies a compact JWS's signature, without the claim checks.
+ *
+ * @param token - the compact JWS
+ * @param key - the verification key
+ * @param opts - `algorithms`, and `emptyPayload` for a detached payload
+ * @returns `{ header, claims }`
+ * @throws Error when it does not verify or the payload is not JSON
+ */
 function verifyCompactJws(token, key, opts) {
   log.debug("Entering verifyCompactJws().");
   const options = opts || {};
@@ -3386,6 +3625,15 @@ function verifyCompactJws(token, key, opts) {
 // other algorithm resolves with what verifyCompactJws() computed, for the
 // reason signJwsAsync() gives: an RS256 check is microseconds, and an IPC round
 // trip to save that would be a cost with no saving.
+/**
+ * Verifies as `verifyCompactJws()` does, with a post-quantum signature
+ * checked on the worker pool.
+ *
+ * @param token - the compact JWS
+ * @param key - the verification key
+ * @param opts - as for `verifyCompactJws()`
+ * @returns a promise of `{ header, claims }`
+ */
 function verifyCompactJwsAsync(token, key, opts) {
   log.debug("Entering verifyCompactJwsAsync().");
   const options = opts || {};
@@ -3420,6 +3668,15 @@ function verifyCompactJwsAsync(token, key, opts) {
 // verify. Written once, here, so that an EdDSA or ES256K token is held to
 // exactly the same rules as an RS256 one — a token that skipped `exp` because
 // of the curve it was signed on would be the worst kind of inconsistency.
+/**
+ * Checks a JWT's claims as `jsonwebtoken` does: expiry, not-before, issuer
+ * and audience, with the clock allowance.
+ *
+ * @param claims - the claims
+ * @param options - `issuer`, `audience` and the clock options
+ * @returns the claims
+ * @throws Error naming the check that failed
+ */
 function checkJwtClaims(claims, options) {
   log.debug('Entering checkJwtClaims().');
   const now = Math.floor(Date.now() / 1000);
@@ -3463,6 +3720,17 @@ function checkJwtClaims(claims, options) {
   return claims;
 }
 
+/**
+ * Verifies a compact JWS and checks its claims: the one entry point for
+ * "verify a JWT", for every algorithm this service speaks.
+ *
+ * @param token - the compact JWS
+ * @param key - the verification key
+ * @param opts - `algorithms` (the token's own when omitted), and
+ *   `issuer`, `audience` and the clock checks
+ * @returns the claims
+ * @throws Error when the signature or a claim check fails
+ */
 function verifyJws(token, key, opts) {
   log.debug("Entering verifyJws().");
   const options = opts || {};
@@ -3535,6 +3803,15 @@ function verifyJws(token, key, opts) {
 // the worst kind of inconsistency, and it is the reason this is a wrapper of
 // the same three steps rather than a second reading of them.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies as `verifyJws()` does, with a post-quantum signature checked on
+ * the worker pool, and the same claim checks.
+ *
+ * @param token - the compact JWS
+ * @param key - the verification key
+ * @param opts - as for `verifyJws()`
+ * @returns a promise of the claims
+ */
 function verifyJwsAsync(token, key, opts) {
   log.debug("Entering verifyJwsAsync().");
   const options = opts || {};
@@ -3606,6 +3883,7 @@ function verifyJwsAsync(token, key, opts) {
 // A128CBC-HS256 for you. A service that spoke only AES-GCM would refuse the
 // commonest encrypted response there is, and would look to the client like it
 // had refused the request.
+/** The JWE content encryption algorithms, AES-GCM and AES-CBC-HMAC. */
 const JWE_ENCS = {
   A128GCM: { bits: 128, cipher: 'aes-128-gcm', cekBytes: 16, mode: 'gcm' },
   A192GCM: { bits: 192, cipher: 'aes-192-gcm', cekBytes: 24, mode: 'gcm' },
@@ -3627,6 +3905,7 @@ const JWE_ENCS = {
 // stack predates the -256 variant registers, and this is a service for testing
 // other people's clients. ECDH-ES and its three key-wrapping variants are here
 // because a recipient with an EC key has no RSA one to offer.
+/** The default JWE key management algorithm: RSA-OAEP-256. */
 const JWE_ALG = 'RSA-OAEP-256';
 // ---------------------------------------------------------------------------
 // **THE SYMMETRIC FAMILIES JOINED THIS LIST ON 2026-09-10 AND THE DECRYPT LIST
@@ -3656,13 +3935,16 @@ const JWE_ALG = 'RSA-OAEP-256';
 // mock and it will not carry that path. A caller that sends one is told the
 // name and the reason, which is more useful than a list it has to diff.
 // ---------------------------------------------------------------------------
+/** The RSA-OAEP key management algorithms. */
 const JWE_RSA_ALGS = ['RSA-OAEP-256', 'RSA-OAEP'];
+/** The ECDH-ES key management algorithms. */
 const JWE_ECDH_ALGS = ['ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A192KW',
                        'ECDH-ES+A256KW'];
 const JWE_AESKW_ALGS = ['A128KW', 'A192KW', 'A256KW'];
 const JWE_AESGCMKW_ALGS = ['A128GCMKW', 'A192GCMKW', 'A256GCMKW'];
 const JWE_PBES2_ALGS = ['PBES2-HS256+A128KW', 'PBES2-HS384+A192KW',
                         'PBES2-HS512+A256KW'];
+/** The symmetric JWE key management algorithms, `dir` among them. */
 const JWE_SYMMETRIC_ALGS = JWE_AESKW_ALGS.concat(JWE_AESGCMKW_ALGS,
                                                  JWE_PBES2_ALGS, ['dir']);
 // The families that encrypt to a RECIPIENT'S PUBLIC KEY. Kept as a name of
@@ -3672,7 +3954,9 @@ const JWE_SYMMETRIC_ALGS = JWE_AESKW_ALGS.concat(JWE_AESGCMKW_ALGS,
 // JWKS and no shared secret. Advertising the symmetric families there would be
 // a metadata member a client could register and this service would then try to
 // satisfy by deriving a key from the JSON of a public key.
+/** The key management algorithms that encrypt to a recipient's public key. */
 const JWE_ASYMMETRIC_ALGS = JWE_RSA_ALGS.concat(JWE_ECDH_ALGS);
+/** Every JWE key management algorithm this service speaks. */
 const JWE_ALGS = JWE_ASYMMETRIC_ALGS.concat(JWE_SYMMETRIC_ALGS);
 // **THE SAME LIST, AND THAT IS THE CHANGE.** It was `['RSA-OAEP-256']` on the
 // argument that what arrives here is encrypted to the RSA key this service
@@ -3681,6 +3965,7 @@ const JWE_ALGS = JWE_ASYMMETRIC_ALGS.concat(JWE_SYMMETRIC_ALGS);
 // to a key of its own choosing. A caller now picks by what it HOLDS rather
 // than by what this table permits, and `decryptJweCompact()` refuses by name
 // when it was handed no key of the right kind.
+/** The JWE key management algorithms this service decrypts: all of them. */
 const JWE_DECRYPT_ALGS = JWE_ALGS.slice();
 const ECDH_KW_BYTES = { 'ECDH-ES+A128KW': 16, 'ECDH-ES+A192KW': 24,
                         'ECDH-ES+A256KW': 32 };
@@ -3703,6 +3988,12 @@ const PBES2_DEFAULT_ITERATIONS = 8192;
 const EC_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
                     'P-521': 'secp521r1' };
 
+/**
+ * Encodes bytes as base64url.
+ *
+ * @param buf - the bytes
+ * @returns the base64url text
+ */
 function b64u(buf) {
   log.debug("Entering b64u().");
   log.debug("Leaving b64u().");
@@ -3827,6 +4118,16 @@ function jweContentSpec(enc) {
   return spec;
 }
 
+/**
+ * Encrypts JWE content under a named `enc`.
+ *
+ * @param enc - the content encryption algorithm
+ * @param cek - the content encryption key
+ * @param iv - the initialization vector
+ * @param aad - the additional authenticated data
+ * @param plaintext - the plaintext
+ * @returns `{ ciphertext, tag }`
+ */
 function sealJweContent(enc, cek, iv, aad, plaintext) {
   log.debug('Entering sealJweContent(). enc=' + enc);
   const out = sealContent(jweContentSpec(enc), Buffer.from(cek),
@@ -3836,6 +4137,17 @@ function sealJweContent(enc, cek, iv, aad, plaintext) {
   return out;
 }
 
+/**
+ * Decrypts JWE content under a named `enc`.
+ *
+ * @param enc - the content encryption algorithm
+ * @param cek - the content encryption key
+ * @param iv - the initialization vector
+ * @param aad - the additional authenticated data
+ * @param ciphertext - the ciphertext
+ * @param tag - the authentication tag
+ * @returns the plaintext
+ */
 function openJweContent(enc, cek, iv, aad, ciphertext, tag) {
   log.debug('Entering openJweContent(). enc=' + enc);
   const out = openContent(jweContentSpec(enc), Buffer.from(cek),
@@ -3901,6 +4213,13 @@ const AES_KW_IV = Buffer.from('A6A6A6A6A6A6A6A6', 'hex');
 // `id-aes*-wrap` unwrapped an EMPTY value to an empty key until Wycheproof's
 // InvalidWrappingSize vectors (#202, 2026-09-24); both directions refuse a
 // size the RFC does not define before the cipher is asked.
+/**
+ * Wraps a key with AES Key Wrap (RFC 3394).
+ *
+ * @param kek - the key-encryption key
+ * @param plaintextKey - the key to wrap, at least two 64-bit semiblocks
+ * @returns the wrapped key
+ */
 function aesKeyWrap(kek, plaintextKey) {
   log.debug('Entering aesKeyWrap().');
   if (plaintextKey.length < 16 || plaintextKey.length % 8) {
@@ -3916,6 +4235,13 @@ function aesKeyWrap(kek, plaintextKey) {
   return out;
 }
 
+/**
+ * Unwraps a key wrapped with AES Key Wrap (RFC 3394).
+ *
+ * @param kek - the key-encryption key
+ * @param wrapped - the wrapped key, at least 24 octets
+ * @returns the key
+ */
 function aesKeyUnwrap(kek, wrapped) {
   log.debug('Entering aesKeyUnwrap().');
   if (wrapped.length < 24 || wrapped.length % 8) {
@@ -3963,6 +4289,16 @@ function secretBytes(secret) {
 // RFC 7518 section 4.8.1.1: the salt input is `alg || 0x00 || p2s`, and
 // leaving the algorithm name out of it is the classic mistake — it makes one
 // password produce the same key for three different key sizes.
+/**
+ * Derives a PBES2 key (RFC 7518 section 4.8.1.1), the algorithm name in the
+ * salt input.
+ *
+ * @param alg - the PBES2 algorithm
+ * @param password - the password
+ * @param saltInput - the `p2s` salt input
+ * @param iterations - the `p2c` count
+ * @returns the key
+ */
 function pbes2Key(alg, password, saltInput, iterations) {
   log.debug('Entering pbes2Key(). alg=' + alg);
   const salt = Buffer.concat([Buffer.from(alg, 'utf8'), Buffer.alloc(1),
@@ -4114,6 +4450,15 @@ function wrapCek(alg, recipientJwk, cek, header) {
   return { cek: cek, encryptedKey: aesKeyWrap(kek, cek) };
 }
 
+/**
+ * Encrypts a plaintext as a compact JWE.
+ *
+ * @param plaintext - the plaintext
+ * @param opts - `alg` (`JWE_ALG` by default), `enc`, `jwk` (the recipient's
+ *   key) or `secret`, `typ`, `cty` and `zip`
+ * @returns the compact JWE
+ * @throws Error for an unsupported `alg`, `enc` or key
+ */
 function encryptJweCompact(plaintext, opts) {
   log.debug("Entering encryptJweCompact().");
   const options = opts || {};
@@ -4320,6 +4665,15 @@ function unwrapCek(header, encryptedKey, options, spec) {
 // failure here is the far end's document being wrong and the OID4VCI error
 // responses quote the message directly.
 // ---------------------------------------------------------------------------
+/**
+ * Decrypts a compact JWE.
+ *
+ * @param compact - the compact JWE
+ * @param opts - `privateKey` or `secret`, `allowedAlg`, `allowedEnc` and
+ *   `expectedKid`
+ * @returns `{ header, plaintext }`
+ * @throws Error with a sentence a caller can hand to a client
+ */
 function decryptJweCompact(compact, opts) {
   log.debug("Entering decryptJweCompact().");
   const options = opts || {};
@@ -4454,6 +4808,13 @@ function decryptJweCompact(compact, opts) {
 // which would hand every receiver a string nobody asked it to hold. '' for no
 // header, which leaves the member out.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a User-Agent's fingerprint for CAEP's `fp_ua`: the base64url
+ * SHA-256 of the header as it arrived.
+ *
+ * @param userAgent - the header's value
+ * @returns the fingerprint, or empty for no header
+ */
 function userAgentFingerprint(userAgent) {
   log.debug('Entering userAgentFingerprint().');
   const text = String(userAgent || '');
@@ -4475,6 +4836,13 @@ function userAgentFingerprint(userAgent) {
 // be the same one, and it has no business holding the identifier itself —
 // a session row is copied into logs, pages and the change log. '' for none.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a credential's fingerprint for the authentication event: the
+ * base64url SHA-256 of its identifier.
+ *
+ * @param identifier - a WebAuthn credential id or certificate thumbprint
+ * @returns the fingerprint, or empty for none
+ */
 function credentialFingerprint(identifier) {
   log.debug('Entering credentialFingerprint().');
   const text = String(identifier || '');
@@ -4502,6 +4870,13 @@ function credentialFingerprint(identifier) {
 // (`common/breached_passwords.ts`, k-anonymity). Here because every digest of
 // a secret this service computes is computed in this file.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the SHA-1 digest of a password the Have I Been Pwned corpus is
+ * indexed by; only its first five characters ever leave this process.
+ *
+ * @param password - the password
+ * @returns the upper-case hex digest
+ */
 function pwnedPasswordDigest(password) {
   log.debug('Entering pwnedPasswordDigest().');
   log.debug('Leaving pwnedPasswordDigest().');
@@ -4509,6 +4884,13 @@ function pwnedPasswordDigest(password) {
     .digest('hex').toUpperCase();
 }
 
+/**
+ * Returns the first `chars` hex characters of a SHA-256, as JA4 uses.
+ *
+ * @param text - the text hashed, as UTF-8
+ * @param chars - how many characters, at most 64
+ * @returns the truncated digest
+ */
 function truncatedSha256Hex(text, chars) {
   log.debug('Entering truncatedSha256Hex().');
   const hex = nodeCrypto.createHash('sha256')
@@ -4533,6 +4915,14 @@ function truncatedSha256Hex(text, chars) {
 // a certificate; it never throws, because every caller is reporting a change
 // that has already happened.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the issuer, serial and subject a receiver matches a certificate
+ * on. Never throws.
+ *
+ * @param pem - the certificate
+ * @returns `{ issuer, serial, subject }`, empty strings for anything that is
+ *   not a certificate
+ */
 function certificateIdentifiers(pem) {
   log.debug('Entering certificateIdentifiers().');
   let cert = null;
@@ -4598,6 +4988,13 @@ function certificateIdentifiers(pem) {
 // for all three, which keeps the DER INTEGER positive without the leading zero
 // byte some parsers then report as a seventeen-byte serial.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a random certificate serial number, its first byte the caller's
+ * prefix, kept positive.
+ *
+ * @param prefixHex - the leading byte(s), as hex; none when omitted
+ * @returns the serial, as hex
+ */
 function certificateSerial(prefixHex) {
   log.debug('Entering certificateSerial(). prefix=' + (prefixHex || '(none)'));
   let prefix = String(prefixHex === undefined || prefixHex === null
@@ -4654,6 +5051,15 @@ function rsaPairFromPem(pem) {
            publicKey: forge.pki.setRsaPublicKey(privateKey.n, privateKey.e) };
 }
 
+/**
+ * Makes a self-signed RSA certificate, and its key pair.
+ *
+ * @param opts - `commonName`, `organizationName`, `bits`, `years`,
+ *   `extensions`, `serialNumber` or `serialPrefix`, and `rsaPrivateKeyPem`
+ *   to certify an existing key
+ * @returns `{ privateKeyPem, publicKeyPem, certPem, certB64, notBefore,
+ *   notAfter }`
+ */
 function selfSignedRsaCertificate(opts) {
   log.debug("Entering selfSignedRsaCertificate().");
   const options = opts || {};
@@ -4739,6 +5145,7 @@ function selfSignedRsaCertificate(opts) {
 // a key it cannot represent — which is the same capability gap
 // `spiffe/spiffe_ca.ts` records for EC keys, one algorithm generation later.
 // ---------------------------------------------------------------------------
+/** The ML-DSA parameter sets' object identifiers. */
 const ML_DSA_OIDS = {
   'ml-dsa-44': '2.16.840.1.101.3.4.3.17',
   'ml-dsa-65': '2.16.840.1.101.3.4.3.18',
@@ -4769,6 +5176,12 @@ const ML_DSA_OIDS = {
 // ---------------------------------------------------------------------------
 let mlDsaProbe = null;
 
+/**
+ * Says whether this runtime can generate ML-DSA keys; the reason it cannot
+ * is logged once.
+ *
+ * @returns true when it can
+ */
 function mlDsaAvailable() {
   log.debug('Entering mlDsaAvailable().');
   if (mlDsaProbe === null) {
@@ -4818,6 +5231,15 @@ const DN_TYPES = {
   countryName: { oid: '2.5.4.6', printable: true }
 };
 
+/**
+ * Makes an ML-DSA key pair and a self-signed certificate over it (FIPS 204,
+ * RFC 9881). Needs a runtime that can generate ML-DSA keys.
+ *
+ * @param opts - `algorithm`, `commonName`, `organizationName`, `dnsNames`,
+ *   `ipAddresses`, `years`, and `serialNumber` or `serialPrefix`
+ * @returns `{ algorithm, privateKeyPem, publicKeyPem, certPem, certB64,
+ *   notBefore, notAfter }`
+ */
 function selfSignedMlDsaCertificate(opts) {
   log.debug("Entering selfSignedMlDsaCertificate().");
   const options = opts || {};
@@ -5017,6 +5439,13 @@ function selfSignedMlDsaCertificate(opts) {
 
 // PEM armour off, whitespace out. What goes inside a <ds:X509Certificate>, and
 // what a DER digest is taken over.
+/**
+ * Takes the PEM armour and whitespace off: what goes inside a
+ * `<ds:X509Certificate>`.
+ *
+ * @param pem - the PEM
+ * @returns the base64 body
+ */
 function stripPem(pem) {
   log.debug("Entering stripPem().");
   log.debug("Leaving stripPem().");
@@ -5065,6 +5494,13 @@ const THUMBPRINT_MEMBERS = {
 // ordered, no whitespace. Built by hand rather than with JSON.stringify over an
 // object, so the order is a property of this list and not of how somebody
 // happened to type an object literal.
+/**
+ * Returns the canonical JSON RFC 7638 hashes: the required members, in
+ * order, no whitespace.
+ *
+ * @param jwk - the key
+ * @returns the canonical JSON
+ */
 function canonicalJwk(jwk) {
   log.debug('Entering canonicalJwk().');
   if (!jwk || !jwk.kty) {
@@ -5092,6 +5528,13 @@ function canonicalJwk(jwk) {
 // within a JWKS, and a shorter one is readable in a log. DPoP's `jkt` must
 // never be truncated: it is compared byte for byte against a value the client
 // computed, so it takes the default.
+/**
+ * Returns a JWK's RFC 7638 thumbprint, SHA-256, base64url.
+ *
+ * @param jwk - the key
+ * @param opts - `truncate`, for a `kid`; never for DPoP's `jkt`
+ * @returns the thumbprint
+ */
 function jwkThumbprint(jwk, opts) {
   log.debug("Entering jwkThumbprint().");
   const options = opts || {};
@@ -5104,9 +5547,16 @@ function jwkThumbprint(jwk, opts) {
 // RFC 9278 section 3: the JWK Thumbprint URI. Always SHA-256 and never
 // truncated — the URI is compared as a whole string, and a shortened digest
 // under a `sha-256` label would name a hash nobody can reproduce.
+/** The RFC 9278 JWK Thumbprint URI prefix, SHA-256. */
 const JWK_THUMBPRINT_URI_PREFIX =
   'urn:ietf:params:oauth:jwk-thumbprint:sha-256:';
 
+/**
+ * Returns a JWK's RFC 9278 thumbprint URI, never truncated.
+ *
+ * @param jwk - the key
+ * @returns the URI
+ */
 function jwkThumbprintUri(jwk) {
   log.debug("Entering jwkThumbprintUri().");
   const uri = JWK_THUMBPRINT_URI_PREFIX + jwkThumbprint(jwk);
@@ -5146,6 +5596,14 @@ function jwkThumbprintUri(jwk) {
 // The first certificate is the leaf, which is what those sockets present and
 // what every consumer of a chain reads; the rest are the path to it.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a certificate's SHA-256 thumbprint over its DER, in the spelling
+ * the specification asking for it uses.
+ *
+ * @param certificate - the certificate, or a chain whose first is the leaf
+ * @param opts - `format` and `truncate`
+ * @returns the thumbprint
+ */
 function certificateThumbprint(certificate, opts) {
   log.debug("Entering certificateThumbprint().");
   const options = opts || {};
@@ -5201,6 +5659,14 @@ function certificateThumbprint(certificate, opts) {
 // Throws for anything that is not a certificate; the one caller refuses the
 // key with its own code and sentence.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the SHA-256 of a certificate's SubjectPublicKeyInfo DER,
+ * base64url: its key, not the certificate.
+ *
+ * @param certificate - the certificate
+ * @returns the thumbprint
+ * @throws Error for anything that is not a certificate
+ */
 function certificateSpkiThumbprint(certificate) {
   log.debug("Entering certificateSpkiThumbprint().");
   const text = String(certificate == null ? '' : certificate);
@@ -5242,6 +5708,14 @@ function certificateSpkiThumbprint(certificate) {
 // client secret is not the secret, and there is no constant-time comparison of
 // two strings of different lengths to be had.
 // ---------------------------------------------------------------------------
+/**
+ * Compares two secrets in constant time; only a length difference is
+ * found in variable time.
+ *
+ * @param a - one value
+ * @param b - the other
+ * @returns true when they are equal
+ */
 function constantTimeEquals(a, b) {
   log.debug("Entering constantTimeEquals().");
   const left = Buffer.from(String(a == null ? '' : a), 'utf8');
@@ -5306,6 +5780,7 @@ function constantTimeEquals(a, b) {
 // The other two are offered because the specification defines them and a
 // client author may be testing exactly that, and `/admin/totp` says the above
 // beside the setting rather than leaving somebody to discover it.
+/** The digests an authenticator app may be asked for; SHA-1 is the default. */
 const HOTP_ALGS = {
   SHA1: { hash: 'sha1', bytes: 20,
           note: 'RFC 6238 section 1.2\'s default, and what every ' +
@@ -5320,6 +5795,13 @@ const HOTP_ALGS = {
             note: 'RFC 6238 section 1.2, same caveat as SHA-256.' }
 };
 
+/**
+ * Returns the HOTP digest an algorithm name names.
+ *
+ * @param algorithm - `SHA1` (the default), `SHA256` or `SHA512`
+ * @returns `{ name, hash }`
+ * @throws Error for any other name
+ */
 function hotpSpec(algorithm) {
   log.debug("Entering hotpSpec().");
   const name = String(algorithm || 'SHA1').toUpperCase();
@@ -5335,6 +5817,14 @@ function hotpSpec(algorithm) {
 // RFC 4226 section 5.3. `key` is the shared secret as BYTES — the base32 an
 // authenticator app is given is an encoding of it and is `totp.js`'s business,
 // not this function's.
+/**
+ * Computes an HOTP code (RFC 4226 section 5.3).
+ *
+ * @param key - the shared secret, as bytes
+ * @param counter - the counter
+ * @param opts - `digits` and `algorithm`
+ * @returns the code
+ */
 function hotpCode(key, counter, opts) {
   log.debug('Entering hotpCode(). counter=' + String(counter));
   const options = opts || {};
@@ -5455,6 +5945,11 @@ function clampInt(value, low, high, fallback) {
   return Math.max(low, Math.min(high, Math.floor(n)));
 }
 
+/**
+ * Returns the scrypt cost the settings name now, clamped.
+ *
+ * @returns `{ N, r, p, keylen, maxmem }`
+ */
 function scryptParameters() {
   log.debug("Entering scryptParameters().");
   const logN = clampInt(config.value('security.passwordHashLogN'),
@@ -5538,6 +6033,13 @@ const KEK_KEY_BYTES = 32;     // AES-256.
 // Stretching a short secret would let a four-character password protect every
 // signing key this service holds while the log said AES-256, which is exactly
 // the kind of comfortable lie this repository refuses everywhere else.
+/**
+ * Returns the key-encryption key as bytes, from raw bytes, hex or base64.
+ *
+ * @param value - the key as a provider handed it back
+ * @returns the bytes
+ * @throws Error for a key shorter than 32 bytes
+ */
 function kekBytes(value) {
   log.debug('Entering kekBytes().');
   if (Buffer.isBuffer(value)) {
@@ -5668,6 +6170,12 @@ function countKek(label, what, plainBytes, cipherBytes) {
 // much of it. A DEEP COPY, because a caller that could mutate the tally could
 // make this service under-report its own cryptography — and the one caller is
 // a console page, which has no business holding a reference to a counter.
+/**
+ * Returns what has been encrypted and decrypted under the key-encryption
+ * key, and how much: a deep copy.
+ *
+ * @returns the tally by label
+ */
 function kekAccounting() {
   log.debug("Entering kekAccounting().");
   const labels = Object.keys(kekTally.byLabel).map(function (id) {
@@ -5700,6 +6208,7 @@ function kekAccounting() {
 // on the page. `/admin/crypto-metadata`'s rule one layer along: an algorithm
 // this service performs must be in a table here, so that a page describing it
 // cannot go on looking complete while being wrong.
+/** The parameters of the key-encryption key's encryption, for the pages. */
 const KEK_PARAMETERS = {
   envelope: '$aesgcm$1$salt$iv$tag$ciphertext, each field base64',
   version: '1',
@@ -5713,6 +6222,15 @@ const KEK_PARAMETERS = {
   perRecordSubkey: true
 };
 
+/**
+ * Encrypts a value under the key-encryption key: AES-256-GCM under an
+ * HKDF-SHA-256 subkey, as `$aesgcm$1$salt$iv$tag$body`, and counted.
+ *
+ * @param kek - the key-encryption key
+ * @param plaintext - the value
+ * @param label - what it is, for the accounting
+ * @returns the stored form
+ */
 function encryptWithKek(kek, plaintext, label) {
   log.debug('Entering encryptWithKek().');
   const master = kekBytes(kek);
@@ -5737,12 +6255,28 @@ function encryptWithKek(kek, plaintext, label) {
   return out;
 }
 
+/**
+ * Says whether a stored value is one `encryptWithKek()` wrote.
+ *
+ * @param stored - the value
+ * @returns true when it is
+ */
 function isEncryptedWithKek(stored) {
   log.debug("Entering isEncryptedWithKek().");
   log.debug("Leaving isEncryptedWithKek().");
   return /^\$aesgcm\$/.test(String(stored || ''));
 }
 
+/**
+ * Decrypts a value `encryptWithKek()` wrote, and counts it.
+ *
+ * @param kek - the key-encryption key
+ * @param stored - the stored form
+ * @param label - what it is, for the accounting
+ * @returns the plaintext
+ * @throws Error for a value this service did not write, an unknown version,
+ *   or the wrong key
+ */
 function decryptWithKek(kek, stored, label) {
   log.debug('Entering decryptWithKek().');
   const parts = String(stored || '').split('$');
@@ -5847,6 +6381,17 @@ function decryptWithKek(kek, stored, label) {
 // ---------------------------------------------------------------------------
 // `...parts` rather than `arguments` (#50): the same inputs, in the same
 // order, and a signature the type checker can read.
+/**
+ * Derives a credential several processes of this service must arrive at
+ * independently: an HMAC-SHA-256 of the label and parts under a shared
+ * secret.
+ *
+ * @param secret - the shared secret
+ * @param label - what the credential is for, so one purpose's credential is
+ *   never another's
+ * @param parts - further inputs, each separated by a NUL
+ * @returns the credential, base64url
+ */
 function deriveSharedCredential(secret, label, ...parts) {
   log.debug('Entering deriveSharedCredential(). label=' + label);
   const mac = nodeCrypto.createHmac('sha256', Buffer.from(String(secret || ''),
@@ -5915,6 +6460,13 @@ function decodeStoredSecret(stored) {
            keylen: expected.length, maxmem: 128 * n * r * 2 };
 }
 
+/**
+ * Hashes a password or client secret with scrypt, in the self-describing
+ * `$scrypt$N$r$p$salt$hash` form, at the cost the settings name now.
+ *
+ * @param plaintext - the secret
+ * @returns the stored form
+ */
 function hashSecret(plaintext) {
   log.debug('Entering hashSecret().');
   const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
@@ -5949,6 +6501,14 @@ function deriveAsync(plaintext, spec, opts) {
   });
 }
 
+/**
+ * Hashes a secret as `hashSecret()` does, on the worker pool; computed here
+ * if the pool fails.
+ *
+ * @param plaintext - the secret
+ * @param opts - the pool's routing hint
+ * @returns a promise of the stored form
+ */
 function hashSecretAsync(plaintext, opts) {
   log.debug('Entering hashSecretAsync().');
   const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
@@ -5977,12 +6537,26 @@ function hashSecretAsync(plaintext, opts) {
 // may hold a `userPassword` in any of the forms RFC 4519 permits — including
 // plaintext — and a verification that treated one of those as a scrypt string
 // would refuse a correct password rather than saying it cannot read the value.
+/**
+ * Says whether a stored value is one of this service's scrypt forms.
+ *
+ * @param stored - the value
+ * @returns true when it is
+ */
 function isHashedSecret(stored) {
   log.debug("Entering isHashedSecret().");
   log.debug("Leaving isHashedSecret().");
   return /^\$scrypt\$/.test(String(stored || ''));
 }
 
+/**
+ * Verifies a secret against a stored scrypt form, in constant time.
+ *
+ * @param plaintext - the presented secret
+ * @param stored - the stored form
+ * @returns true when it matches; false for no match or a value it cannot
+ *   read
+ */
 function verifySecret(plaintext, stored) {
   log.debug('Entering verifySecret().');
   const spec = decodeStoredSecret(stored);
@@ -6016,6 +6590,14 @@ function verifySecret(plaintext, stored) {
 // value that does not match and for one it cannot read, and rejects for
 // nothing — the sync twin returns false in both cases, and a door that threw
 // where the other returned would be two answers to one question.
+/**
+ * Verifies as `verifySecret()` does, on the worker pool. Never rejects.
+ *
+ * @param plaintext - the presented secret
+ * @param stored - the stored form
+ * @param opts - the pool's routing hint
+ * @returns a promise of true or false
+ */
 function verifySecretAsync(plaintext, stored, opts) {
   log.debug('Entering verifySecretAsync().');
   const spec = decodeStoredSecret(stored);
@@ -6086,6 +6668,7 @@ function verifySecretAsync(plaintext, stored, opts) {
 const pqcX509 = require('./vendored/pqc_x509');
 
 // The families `verifyRawSignature()` understands.
+/** The families `verifyRawSignature()` understands. */
 const RAW_SIGNATURE_FAMILIES = ['rsa-pkcs1', 'rsa-pss', 'ecdsa', 'eddsa',
                                 'pq'];
 
@@ -6097,6 +6680,14 @@ const ECDSA_BYTES = { 'prime256v1': 32, 'secp384r1': 48, 'secp521r1': 66 };
 // KeyObject where node can read one, `curve` for EC, and `pqAlgorithm` (the
 // vendored engine's name, 'ML-DSA-65') for a post-quantum key. `kind` is ''
 // for anything else. Never throws.
+/**
+ * Reads a SubjectPublicKeyInfo as a caller choosing a scheme needs it.
+ * Never throws.
+ *
+ * @param spkiDer - the DER
+ * @returns `{ kind, key, curve, pqAlgorithm }`, `kind` empty for anything
+ *   unknown
+ */
 function publicKeyFromSpki(spkiDer) {
   log.debug("Entering publicKeyFromSpki().");
   const der = Buffer.from(spkiDer || []);
@@ -6140,6 +6731,17 @@ function publicKeyFromSpki(spkiDer) {
 // `key` is a node KeyObject, anything `createPublicKey()` takes, or — for the
 // pq family, and for any family — a `publicKeyFromSpki()` answer. Resolves
 // true or false; a malformed signature or a key of the wrong kind is false.
+/**
+ * Verifies a signature over raw bytes: the one primitive for it.
+ *
+ * @param scheme - `family`, `hash`, `encoding` (ECDSA) and `saltLength`
+ *   (RSA-PSS)
+ * @param key - a KeyObject, anything `createPublicKey()` takes, or a
+ *   `publicKeyFromSpki()` answer
+ * @param data - the bytes signed
+ * @param signature - the signature
+ * @returns a promise of true or false
+ */
 async function verifyRawSignature(scheme, key, data, signature) {
   const s = scheme || {};
   log.debug("Entering verifyRawSignature(). " + s.family + "/" +
@@ -6210,6 +6812,16 @@ async function verifyRawSignature(scheme, key, data, signature) {
 // with RSA, and a post-quantum signature goes through `pq_jose`'s pool);
 // `privateKey` is a node KeyObject or a private JWK. Throws for a key of the
 // wrong kind, because a signer handed the wrong key is a bug, not an input.
+/**
+ * Signs raw bytes with ECDSA or EdDSA, for the Data Integrity
+ * cryptosuites.
+ *
+ * @param scheme - as for `verifyRawSignature()`
+ * @param privateKey - a KeyObject or a private JWK
+ * @param data - the bytes to sign
+ * @returns the signature
+ * @throws Error for a key of the wrong kind
+ */
 function signRawSignature(scheme, privateKey, data) {
   const s = scheme || {};
   log.debug("Entering signRawSignature(). " + s.family + "/" +
@@ -6237,6 +6849,13 @@ function signRawSignature(scheme, privateKey, data) {
 
 // HMAC-SHA-256 of `data` under `key` — ecdsa-sd-2023's blank node labels
 // (vc-di-ecdsa section 3.4.4, createHmacIdLabelMapFunction).
+/**
+ * Returns HMAC-SHA-256 of data under a key.
+ *
+ * @param key - the key
+ * @param data - the data
+ * @returns the MAC
+ */
 function hmacSha256(key, data) {
   log.debug("Entering hmacSha256().");
   const out = nodeCrypto.createHmac('sha256', Buffer.from(key || []))
@@ -6248,6 +6867,13 @@ function hmacSha256(key, data) {
 // A fresh key pair of a kind `generateKeyPairSync()` names ('ec' with a
 // namedCurve, 'ed25519') — ecdsa-sd-2023's proof-scoped key, made and thrown
 // away inside one signature.
+/**
+ * Makes a fresh key pair of a kind `generateKeyPairSync()` names.
+ *
+ * @param kind - `ec` or `ed25519`
+ * @param curve - the named curve, for `ec`
+ * @returns the key pair
+ */
 function ephemeralKeyPair(kind, curve) {
   log.debug("Entering ephemeralKeyPair(). " + kind + " " + (curve || ''));
   const pair = nodeCrypto.generateKeyPairSync(kind,
@@ -6260,6 +6886,14 @@ function ephemeralKeyPair(kind, curve) {
 // big.Int.Bytes(), an SSH mpint), as the r||s the primitive above takes.
 // `curve` is node's name ('prime256v1'). null when either integer is longer
 // than the curve allows.
+/**
+ * Turns an ECDSA signature held as its two integers into r||s.
+ *
+ * @param curve - node's curve name
+ * @param r - r, big-endian and unpadded
+ * @param s - s, big-endian and unpadded
+ * @returns the r||s bytes, or null when either is too long for the curve
+ */
 function ecdsaIntegersToP1363(curve, r, s) {
   log.debug("Entering ecdsaIntegersToP1363(). curve=" + curve);
   const size = ECDSA_BYTES[String(curve || '')];
@@ -6278,6 +6912,17 @@ function ecdsaIntegersToP1363(curve, r, s) {
 
 // TPM 2.0 KDFa (Library Part 1, section 11.4.10.2), as go-tpm computes it:
 // counter-mode HMAC over label ‖ 0x00 ‖ contextU ‖ contextV ‖ bits.
+/**
+ * Computes TPM 2.0 KDFa: counter-mode HMAC over label, contexts and bits.
+ *
+ * @param hash - the hash
+ * @param key - the key
+ * @param label - the label
+ * @param contextU - the first context
+ * @param contextV - the second context
+ * @param bits - the output size in bits
+ * @returns the derived bytes
+ */
 function tpmKdfa(hash, key, label, contextU, contextV, bits) {
   log.debug("Entering tpmKdfa(). label=" + label);
   const bytes = Math.ceil(bits / 8);
@@ -6310,6 +6955,17 @@ function tpmKdfa(hash, key, label, contextU, contextV, bits) {
 // Returns the contents of TPM2B_ID_OBJECT (`credential`) and
 // TPM2B_ENCRYPTED_SECRET (`secret`). Only a TPM holding the EK's private key,
 // activating FOR that AK, recovers `secret`.
+/**
+ * Performs TPM2_MakeCredential in software, for an RSA endorsement key.
+ *
+ * @param akName - the attestation key's Name
+ * @param ekPublicKey - the endorsement key
+ * @param seedBytes - the endorsement key's symmetric key size in bytes
+ * @param secret - what the TPM must give back
+ * @param hash - the Name's hash
+ * @returns `{ credential, secret }`, the TPM2B_ID_OBJECT and
+ *   TPM2B_ENCRYPTED_SECRET contents
+ */
 function tpmMakeCredential(akName, ekPublicKey, seedBytes, secret, hash) {
   log.debug("Entering tpmMakeCredential().");
   const seed = nodeCrypto.randomBytes(seedBytes);
@@ -6349,6 +7005,15 @@ function tpmMakeCredential(akName, ekPublicKey, seedBytes, secret, hash) {
 // Resolves `{ ok, content, signerDer, embeddedDers, why }`. Never rejects.
 // It checks the signature and nothing about the certificate: whether the
 // signer is one to believe is the caller's question (`pki.js`).
+/**
+ * Verifies a PKCS#7 / CMS SignedData with its content attached: the one
+ * SignerInfo's signature under the signer's certificate. Never rejects.
+ *
+ * @param der - the SignedData
+ * @param options - `certificates`, the signer's certificates (DER), where
+ *   the SignedData carries none
+ * @returns a promise of `{ ok, content, signerDer, embeddedDers, why }`
+ */
 async function verifyPkcs7SignedData(der, options) {
   log.debug("Entering verifyPkcs7SignedData().");
   const opts = options || {};
@@ -6425,6 +7090,11 @@ async function verifyPkcs7SignedData(der, options) {
 // on its way to disk rather than read a second time afterwards — a file of
 // several hundred megabytes read twice is the cost this saves. `update()` is
 // a hot path (one call per chunk of the upload), so it logs nothing.
+/**
+ * Returns a SHA-256 fed as bytes arrive.
+ *
+ * @returns `{ update(chunk), hex() }`
+ */
 function sha256Digester() {
   log.debug("Entering sha256Digester().");
   const hash = nodeCrypto.createHash('sha256');
@@ -6449,6 +7119,13 @@ function sha256Digester() {
 // `limit` bytes when `limit` is above 0 (SPIRE's `util.GetSHA256Digest()`,
 // which the unix workload attestor hashes an executable with, #40). Rejects
 // with a sentence.
+/**
+ * Returns the SHA-256 of a file, streamed, lower-case hex.
+ *
+ * @param file - the file's path
+ * @param limit - the largest size accepted, when above 0
+ * @returns a promise of the digest; rejects with a sentence
+ */
 async function sha256OfFile(file, limit) {
   log.debug("Entering sha256OfFile().");
   const fs = require('fs');
@@ -6504,6 +7181,7 @@ async function sha256OfFile(file, limit) {
 
 // The enctypes the PRF is defined for here, with their key size and PRF output
 // size in bytes. Anything else is refused by name.
+/** The Kerberos enctypes the PRF is defined for, with their sizes. */
 const KRB5_PRF_ETYPES = {
   17: { keyBytes: 16, prfBytes: 16, family: 'aes-sha1', aes: 'aes-128-cbc' },
   18: { keyBytes: 32, prfBytes: 16, family: 'aes-sha1', aes: 'aes-256-cbc' },
@@ -6528,6 +7206,13 @@ function krb5PrfProfile(etype) {
 // RFC 3961 section 5.1's n-fold, in bytes: MIT's krb5int_nfold(), which
 // rotates the input 13 bits per copy and adds the copies with end-around
 // carry. The RFC's own section A.1 vectors hold it.
+/**
+ * Computes RFC 3961 section 5.1's n-fold, in bytes.
+ *
+ * @param input - the input
+ * @param outBytes - the output size
+ * @returns the folded bytes
+ */
 function krb5Nfold(input, outBytes) {
   log.debug("Entering krb5Nfold(). in=" + input.length + " out=" + outBytes);
   const inBytes = Buffer.from(input);
@@ -6596,6 +7281,14 @@ function aesSha1DerivedKey(profile, key, constant) {
 
 // RFC 3961 pseudo-random(key, octets) for `etype`. Answers a Buffer of that
 // enctype's PRF length.
+/**
+ * Computes RFC 3961's pseudo-random function for an enctype.
+ *
+ * @param etype - the enctype
+ * @param key - the key
+ * @param octets - the input
+ * @returns the enctype's PRF output
+ */
 function krb5Prf(etype, key, octets) {
   log.debug("Entering krb5Prf(). etype=" + etype);
   const profile = krb5PrfProfile(etype);
@@ -6631,6 +7324,15 @@ function krb5Prf(etype, key, octets) {
 
 // RFC 6113 section 5.1's PRF+: pseudo-random(key, 1 || info) ||
 // pseudo-random(key, 2 || info) || ..., the counter one octet, truncated.
+/**
+ * Computes RFC 6113 section 5.1's PRF+.
+ *
+ * @param etype - the enctype
+ * @param key - the key
+ * @param info - the input
+ * @param outBytes - the output size
+ * @returns the bytes
+ */
 function krb5PrfPlus(etype, key, info, outBytes) {
   log.debug("Entering krb5PrfPlus().");
   const parts = [];
@@ -6656,6 +7358,15 @@ function krb5PrfPlus(etype, key, info, outBytes) {
 // and key size. The keys are `{ etype, key }`, the peppers strings or bytes;
 // the answer is `{ etype, key }` (random-to-key is the identity for every
 // enctype above).
+/**
+ * Computes RFC 6113 section 5.1's KRB-FX-CF2.
+ *
+ * @param key1 - `{ etype, key }`
+ * @param key2 - `{ etype, key }`
+ * @param pepper1 - the first pepper
+ * @param pepper2 - the second pepper
+ * @returns `{ etype, key }`
+ */
 function krbFxCf2(key1, key2, pepper1, pepper2) {
   log.debug("Entering krbFxCf2(). etypes " + key1.etype + "/" + key2.etype);
   const size = krb5PrfProfile(key1.etype).keyBytes;
@@ -6678,6 +7389,16 @@ function krbFxCf2(key1, key2, pepper1, pepper2) {
 // on every octet: UTF-8, single spaces, no padding. A fresh salt when none is
 // given, which is every authorization response.
 // ---------------------------------------------------------------------------
+/**
+ * Computes OpenID Connect Session Management's `session_state`: SHA-256 over
+ * `client_id origin browser_state salt`, base64url, then "." and the salt.
+ *
+ * @param clientId - the client
+ * @param origin - the relying party's origin
+ * @param browserState - the OP browser state
+ * @param salt - the salt; a fresh one when omitted
+ * @returns the `session_state` value
+ */
 function sessionStateHash(clientId, origin, browserState, salt) {
   log.debug('Entering sessionStateHash().');
   const chosen = salt || nodeCrypto.randomBytes(16).toString('base64url');
@@ -6729,6 +7450,7 @@ function sessionStateHash(clientId, origin, browserState, salt) {
 // above.
 // ===========================================================================
 
+/** The COSE signature algorithms WebAuthn verifies, by identifier. */
 const COSE_SIGNATURE_ALGS = {
   '-7': { name: 'ES256', family: 'ecdsa', hash: 'sha256', kty: 'EC' },
   '-35': { name: 'ES384', family: 'ecdsa', hash: 'sha384', kty: 'EC' },
@@ -6749,6 +7471,12 @@ const COSE_SIGNATURE_ALGS = {
 };
 
 // The COSE entry for an identifier, or null.
+/**
+ * Returns the COSE entry for an algorithm identifier.
+ *
+ * @param coseAlg - the identifier
+ * @returns the entry, or null
+ */
 function coseSignatureAlg(coseAlg) {
   log.debug("Entering coseSignatureAlg(). alg=" + coseAlg);
   log.debug("Leaving coseSignatureAlg().");
@@ -6794,6 +7522,16 @@ function nodePublicKeyOf(key) {
 // or the raw public key bytes. A key of the wrong kind for the algorithm is
 // false, never a throw: an RSA key under ES256 is a signature that does not
 // verify, and the caller says so.
+/**
+ * Says whether a signature verifies under a COSE algorithm, synchronously;
+ * a key of the wrong kind is false, never a throw.
+ *
+ * @param coseAlg - the COSE algorithm identifier
+ * @param key - the public key, or for ML-DSA an AKP JWK or the raw bytes
+ * @param data - the bytes signed
+ * @param signature - the signature
+ * @returns true when it verifies
+ */
 function verifyCoseSignature(coseAlg, key, data, signature) {
   log.debug("Entering verifyCoseSignature(). alg=" + coseAlg);
   const spec = coseSignatureAlg(coseAlg);
@@ -6869,6 +7607,7 @@ function verifyCoseSignature(coseAlg, key, data, signature) {
 // ----- TPM 2.0 (Library Part 2) --------------------------------------------
 
 // TPM_ALG_ID (Part 2, table 9) — the values the structures below name.
+/** TPM_ALG_ID values the TPM structures name. */
 const TPM_ALG = {
   RSA: 0x0001, SHA1: 0x0004, HMAC: 0x0005, AES: 0x0006, KEYEDHASH: 0x0008,
   SHA256: 0x000b, SHA384: 0x000c, SHA512: 0x000d, NULL: 0x0010,
@@ -6883,7 +7622,9 @@ const TPM_CURVES = { 0x0003: { crv: 'P-256', bytes: 32 },
                      0x0004: { crv: 'P-384', bytes: 48 },
                      0x0005: { crv: 'P-521', bytes: 66 } };
 // TPM_GENERATED_VALUE and TPM_ST_ATTEST_CERTIFY (Part 2, tables 7 and 19).
+/** TPM_GENERATED_VALUE, the magic of a TPMS_ATTEST. */
 const TPM_GENERATED_VALUE = 0xff544347;
+/** TPM_ST_ATTEST_CERTIFY, the type of a certify attestation. */
 const TPM_ST_ATTEST_CERTIFY = 0x8017;
 
 // A reader over a TPM structure. Every read throws on a short buffer, and the
@@ -6929,6 +7670,13 @@ function tpmReader(bytes) {
 }
 
 // The node digest name of a TPM hash algorithm; throws for one not here.
+/**
+ * Returns node's digest name for a TPM hash algorithm.
+ *
+ * @param algId - the TPM_ALG_ID
+ * @returns the digest name
+ * @throws Error for one not known here
+ */
 function tpmHashName(algId) {
   log.debug("Entering tpmHashName(). alg=" + algId);
   const name = TPM_HASHES[Number(algId)];
@@ -6948,6 +7696,13 @@ function tpmHashName(algId) {
 // kdf, modulus, x, y, raw, jwk }`, `raw` being the bytes a Name hashes and
 // `jwk` the public key. A TPM2B_PUBLIC's size prefix is NOT accepted:
 // section 8.3 says the two bytes must be removed. Throws a sentence.
+/**
+ * Parses a TPMT_PUBLIC for an RSA or ECC object.
+ *
+ * @param bytes - the structure, without a TPM2B size prefix
+ * @returns its fields, `raw` (the bytes a Name hashes) and `jwk`
+ * @throws Error with a sentence
+ */
 function tpmParsePublic(bytes) {
   log.debug("Entering tpmParsePublic().");
   const raw = Buffer.from(bytes || []);
@@ -7034,6 +7789,13 @@ function tpmParsePublic(bytes) {
 // resetCount, restartCount, safe, firmwareVersion, name, qualifiedName }`;
 // `name` and `qualifiedName` only for TPM_ST_ATTEST_CERTIFY. Throws a
 // sentence; the caller checks the values.
+/**
+ * Parses a TPMS_ATTEST.
+ *
+ * @param bytes - the structure
+ * @returns its fields, with `name` and `qualifiedName` for a certify
+ * @throws Error with a sentence
+ */
 function tpmParseAttest(bytes) {
   log.debug("Entering tpmParseAttest().");
   const r = tpmReader(bytes);
@@ -7061,6 +7823,13 @@ function tpmParseAttest(bytes) {
 // signature as DER. null when `bytes` is not exactly one such structure,
 // which is how the verifier tells it from a bare signature (see
 // `webauthn_attestation.ts`).
+/**
+ * Parses a TPMT_SIGNATURE.
+ *
+ * @param bytes - the structure
+ * @returns `{ sigAlg, hash, signature }`, or null when it is not exactly
+ *   one such structure
+ */
 function tpmParseSignature(bytes) {
   log.debug("Entering tpmParseSignature().");
   try {
@@ -7098,6 +7867,13 @@ function tpmParseSignature(bytes) {
 
 // TPM2B_NAME's contents for an object (Part 1, section 16): nameAlg ‖
 // H_nameAlg(TPMT_PUBLIC).
+/**
+ * Returns an object's TPM2B_NAME contents: nameAlg and the hash of its
+ * TPMT_PUBLIC.
+ *
+ * @param parsedPublic - `tpmParsePublic()`'s answer
+ * @returns the Name
+ */
 function tpmName(parsedPublic) {
   log.debug("Entering tpmName().");
   const alg = Buffer.alloc(2);
@@ -7122,6 +7898,12 @@ function berOf(bytes) {
 // id-fido-gen-ce-aaguid (1.3.6.1.4.1.45724.1.1.4, section 8.2.1): the
 // extension's value is an OCTET STRING of the 16-byte AAGUID. Answers the
 // AAGUID or null.
+/**
+ * Reads the id-fido-gen-ce-aaguid extension's AAGUID.
+ *
+ * @param extnValue - the extension's value
+ * @returns the AAGUID, or null
+ */
 function fidoAaguidExtension(extnValue) {
   log.debug("Entering fidoAaguidExtension().");
   const read = berOf(extnValue);
@@ -7136,6 +7918,12 @@ function fidoAaguidExtension(extnValue) {
 
 // Apple's anonymous attestation nonce (1.2.840.113635.100.8.2, section
 // 8.8): SEQUENCE { [1] EXPLICIT OCTET STRING }. Answers the nonce or null.
+/**
+ * Reads Apple's anonymous attestation nonce extension.
+ *
+ * @param extnValue - the extension's value
+ * @returns the nonce, or null
+ */
 function appleAttestationNonce(extnValue) {
   log.debug("Entering appleAttestationNonce().");
   const read = berOf(extnValue);
@@ -7169,6 +7957,14 @@ function appleAttestationNonce(extnValue) {
 // attestationSecurityLevel, attestationChallenge, softwareEnforced,
 // teeEnforced }` with each list as `{ purpose: [], allApplications,
 // origin }`, or throws a sentence.
+/**
+ * Reads Android's KeyDescription extension.
+ *
+ * @param extnValue - the extension's value
+ * @returns `{ attestationVersion, attestationSecurityLevel,
+ *   attestationChallenge, softwareEnforced, teeEnforced }`
+ * @throws Error with a sentence
+ */
 function androidKeyDescription(extnValue) {
   log.debug("Entering androidKeyDescription().");
   const read = berOf(extnValue);
@@ -7249,13 +8045,22 @@ function androidKeyDescription(extnValue) {
 //     tpmTPublic OCTET STRING OPTIONAL }
 //
 // These answer the structures; `common/device_attestation.ts` verifies them.
+/** The id-aa-attestation attribute's OID. */
 const ID_AA_ATTESTATION = '1.2.840.113549.1.9.16.2.59';
+/** The tcg-attest-tpm-certify statement type's OID. */
 const TCG_ATTEST_TPM_CERTIFY = '2.23.133.20.1';
 
 // An AttestationBundle's DER as `{ attestations: [{ type, stmt }], certs:
 // [der], otherCerts }` — `stmt` the DER of the statement's value, `certs`
 // the X.509 certificates, `otherCerts` how many `other` formats were carried
 // (none is read). Throws a sentence on anything else.
+/**
+ * Reads a certificate request's AttestationBundle.
+ *
+ * @param der - the attribute value's DER
+ * @returns `{ attestations: [{ type, stmt }], certs, otherCerts }`
+ * @throws Error with a sentence
+ */
 function csrAttestationBundle(der) {
   log.debug("Entering csrAttestationBundle().");
   const read = berOf(der);
@@ -7315,6 +8120,13 @@ function csrAttestationBundle(der) {
 // the attester sends "TPM2B_ATTEST in binary format" and "TPM2B_PUBLIC"
 // while the signature and the Name are over the contents, so both spellings
 // are read, as WebAuthn's tpm format reads `sig` both ways.
+/**
+ * Returns a TPM2B's contents when the bytes are exactly one TPM2B, else the
+ * bytes unchanged.
+ *
+ * @param bytes - the bytes
+ * @returns the contents
+ */
 function tpm2bContents(bytes) {
   log.debug("Entering tpm2bContents().");
   const buf = Buffer.from(bytes || []);
@@ -7326,6 +8138,13 @@ function tpm2bContents(bytes) {
 // Tcg-csr-tpm-certify's DER as `{ tpmSAttest, signature, tpmTPublic }`,
 // each a Buffer (tpmTPublic null when absent), with TPM2B size prefixes
 // taken off. Throws a sentence.
+/**
+ * Reads a Tcg-csr-tpm-certify statement, TPM2B size prefixes taken off.
+ *
+ * @param der - the statement's DER
+ * @returns `{ tpmSAttest, signature, tpmTPublic }`
+ * @throws Error with a sentence
+ */
 function tcgTpmCertifyStatement(der) {
   log.debug("Entering tcgTpmCertifyStatement().");
   const read = berOf(der);
@@ -7385,6 +8204,14 @@ function tcgTpmCertifyStatement(der) {
 // A HOT PATH: it recurses once per value in a metadata document, so no
 // Entering/Leaving pair — one would drown the log in thousands of lines per
 // refresh.
+/**
+ * Serializes a value as securesystemslib's canonical JSON: what a TUF
+ * signature covers.
+ *
+ * @param value - the value
+ * @returns the canonical JSON
+ * @throws Error for a value with no canonical form
+ */
 function olpcCanonicalJson(value) {
   if (value === null) {
     return 'null';
@@ -7418,6 +8245,12 @@ function olpcCanonicalJson(value) {
 // UTF-16 code units — which is JavaScript's own string comparison. A HOT
 // PATH for the same reason as the function above: no Entering/Leaving pair
 // in a function that recurses per value would drown the log.
+/**
+ * Serializes a value as RFC 8785 (JCS) canonical JSON.
+ *
+ * @param value - the value
+ * @returns the canonical JSON
+ */
 function jcsCanonicalJson(value) {
   if (value === null || typeof value === 'boolean' ||
       typeof value === 'string') {
@@ -7447,6 +8280,12 @@ function jcsCanonicalJson(value) {
 // The DER SubjectPublicKeyInfo of a PEM `PUBLIC KEY` (or a bare base64
 // body), or null. Read as bytes rather than through node, so a post-quantum
 // key node cannot parse is still one.
+/**
+ * Returns the DER SubjectPublicKeyInfo of a PEM public key, read as bytes.
+ *
+ * @param pem - a `PUBLIC KEY` PEM, or a bare base64 body
+ * @returns the DER, or null
+ */
 function spkiFromPublicKeyPem(pem) {
   log.debug("Entering spkiFromPublicKeyPem().");
   const text = String(pem || '');
@@ -7465,6 +8304,12 @@ function spkiFromPublicKeyPem(pem) {
 
 // The PEM of a DER SubjectPublicKeyInfo, as cosign writes one
 // (`cryptoutils.MarshalPublicKeyToPEM`).
+/**
+ * Returns the PEM of a DER SubjectPublicKeyInfo, as cosign writes one.
+ *
+ * @param spkiDer - the DER
+ * @returns the PEM
+ */
 function publicKeyPemOfSpki(spkiDer) {
   log.debug("Entering publicKeyPemOfSpki().");
   const b64 = Buffer.from(spkiDer || []).toString('base64');
@@ -7477,6 +8322,16 @@ function publicKeyPemOfSpki(spkiDer) {
 // ONE SIGNATURE UNDER A KEY HELD AS AN SPKI, with the scheme cosign uses for
 // that kind of key (see the section head). `ecdsaEncoding` is 'der' (cosign,
 // Rekor, TUF, CT) unless a caller says 'p1363'.
+/**
+ * Verifies one signature under a key held as an SPKI, with the scheme
+ * cosign uses for that kind of key.
+ *
+ * @param spkiDer - the key's SPKI
+ * @param data - the bytes signed
+ * @param signature - the signature
+ * @param ecdsaEncoding - `der` (the default) or `p1363`
+ * @returns a promise of true or false
+ */
 async function verifyWithPublicKey(spkiDer, data, signature, ecdsaEncoding) {
   log.debug("Entering verifyWithPublicKey().");
   const described = publicKeyFromSpki(spkiDer);
@@ -7503,6 +8358,12 @@ async function verifyWithPublicKey(spkiDer, data, signature, ecdsaEncoding) {
 // A TUF key (`{ keytype, scheme, keyval: { public } }`) as an SPKI, or null.
 // ecdsa and rsa keys carry a PEM; an ed25519 key carries the 32 raw bytes as
 // hex, which is wrapped in the fixed Ed25519 SPKI prefix (RFC 8410).
+/**
+ * Returns a TUF key as an SPKI.
+ *
+ * @param key - `{ keytype, scheme, keyval: { public } }`
+ * @returns the DER, or null
+ */
 function tufKeySpki(key) {
   log.debug("Entering tufKeySpki().");
   const type = String((key && key.keytype) || '');
@@ -7525,6 +8386,15 @@ function tufKeySpki(key) {
 // `{ keyids, threshold }` and `keys` the root's key table. Resolves
 // `{ ok, valid, threshold }`; `ok` only when at least `threshold` distinct
 // keyids of the role verified.
+/**
+ * Applies TUF's threshold rule over one role's signatures.
+ *
+ * @param signed - the signed metadata
+ * @param signatures - the signatures
+ * @param keys - the root's key table
+ * @param role - `{ keyids, threshold }`
+ * @returns a promise of `{ ok, valid, threshold }`
+ */
 async function verifyThresholdSignatures(signed, signatures, keys, role) {
   log.debug("Entering verifyThresholdSignatures().");
   const threshold = Number((role && role.threshold) || 0);
@@ -7564,6 +8434,14 @@ async function verifyThresholdSignatures(signed, signatures, keys, role) {
 // logIndex, logID }`, `set` the signed entry timestamp's bytes, `logs` the
 // trusted Rekor logs `[{ logIdHex, spki }]`. Resolves '' when it verifies,
 // otherwise why not.
+/**
+ * Verifies a Rekor signed entry timestamp: cosign's VerifySET().
+ *
+ * @param payload - `{ body, integratedTime, logIndex, logID }`
+ * @param set - the signed entry timestamp's bytes
+ * @param logs - the trusted Rekor logs `[{ logIdHex, spki }]`
+ * @returns a promise of empty when it verifies, otherwise why not
+ */
 async function verifyRekorSet(payload, set, logs) {
   log.debug("Entering verifyRekorSet().");
   const p = payload || {};
@@ -7594,6 +8472,13 @@ async function verifyRekorSet(payload, set, logs) {
 
 // DSSE v1 pre-authentication encoding: "DSSEv1" SP LEN(type) SP type SP
 // LEN(body) SP body, the lengths in ASCII decimal bytes.
+/**
+ * Returns the DSSE v1 pre-authentication encoding.
+ *
+ * @param payloadType - the payload type
+ * @param payload - the payload
+ * @returns the encoded bytes
+ */
 function dssePae(payloadType, payload) {
   log.debug("Entering dssePae().");
   const type = Buffer.from(String(payloadType || ''), 'utf8');
@@ -7608,11 +8493,23 @@ function dssePae(payloadType, payload) {
 // metadata and Rekor entries name. HOT PATHS: called per blob and per
 // metadata file, one line each, so no Entering/Leaving pair — it would
 // drown the log.
+/**
+ * Returns the lower-case hex SHA-256 of bytes.
+ *
+ * @param bytes - the bytes
+ * @returns the digest
+ */
 function sha256Hex(bytes) {
   return nodeCrypto.createHash('sha256').update(Buffer.from(bytes || []))
     .digest('hex');
 }
 
+/**
+ * Returns the lower-case hex SHA-512 of bytes.
+ *
+ * @param bytes - the bytes
+ * @returns the digest
+ */
 function sha512Hex(bytes) {
   return nodeCrypto.createHash('sha512').update(Buffer.from(bytes || []))
     .digest('hex');
@@ -7643,6 +8540,7 @@ function sha512Hex(bytes) {
 // SHA-256 of the canonicalized header data, NOT over the data itself). DKIM
 // has no post-quantum algorithm registered; when one is, it is a row below.
 // ===========================================================================
+/** The DKIM algorithms this service signs with. */
 const DKIM_ALGORITHMS = ['rsa-sha256', 'ed25519-sha256'];
 
 // The headers signed when present, in this order (section 5.4.1's list, less
@@ -7656,6 +8554,13 @@ const DKIM_SIGNED_HEADERS = ['from', 'reply-to', 'subject', 'date', 'to',
 // Section 3.4.4: WSP runs to one SP, trailing WSP off every line, every
 // trailing empty line off the body, and a non-empty body ends in CRLF. An
 // empty body canonicalizes to the empty string.
+/**
+ * Canonicalizes a message body with DKIM's relaxed algorithm (RFC 6376
+ * section 3.4.4).
+ *
+ * @param body - the body
+ * @returns the canonical body; empty for an empty body
+ */
 function dkimRelaxedBody(body) {
   log.debug('Entering dkimRelaxedBody().');
   const text = Buffer.isBuffer(body) ? body.toString('binary')
@@ -7673,6 +8578,14 @@ function dkimRelaxedBody(body) {
 
 // Section 3.4.2: the name lower-cased, the value unfolded, WSP runs to one
 // SP, WSP off both ends of the value, no WSP around the colon.
+/**
+ * Canonicalizes one header field with DKIM's relaxed algorithm (RFC 6376
+ * section 3.4.2).
+ *
+ * @param name - the field name
+ * @param value - the field value
+ * @returns the canonical `name:value`
+ */
 function dkimRelaxedHeader(name, value) {
   log.debug('Entering dkimRelaxedHeader().');
   const unfolded = String(value == null ? '' : value)
@@ -7712,6 +8625,15 @@ function dkimSplitMessage(raw) {
 // Where a header occurs more than once, section 5.4.2 signs the LAST
 // instance for each name listed once — and the list here names each once.
 // ---------------------------------------------------------------------------
+/**
+ * Signs a message with DKIM (RFC 6376, RFC 8463).
+ *
+ * @param raw - the whole message as it will be sent
+ * @param opts - `privateKeyPem`, `selector`, `domain`, `algorithm` and
+ *   `timestamp`
+ * @returns the complete `DKIM-Signature:` field, without a trailing CRLF
+ * @throws Error on a key or an option that cannot make a valid signature
+ */
 function dkimSign(raw, opts) {
   log.debug('Entering dkimSign().');
   const o = opts || {};
@@ -7789,6 +8711,14 @@ function dkimSign(raw, opts) {
 // because this service receives no mail. `publicKeyPem` is the selector's key
 // (the p= of its DNS record, as a PEM). Answers `{ ok, why }`.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies a DKIM signature on a message, for this service's own tests and
+ * the console's key check; never for mail somebody else sent.
+ *
+ * @param raw - the whole signed message
+ * @param publicKeyPem - the selector's public key
+ * @returns `{ ok, why }`
+ */
 function dkimVerify(raw, publicKeyPem) {
   log.debug('Entering dkimVerify().');
   const message = dkimSplitMessage(raw);
@@ -7901,6 +8831,7 @@ function dkimVerify(raw, publicKeyPem) {
 // The fewest bits `randomToken()` will make. NIST SP 800-63B-4 asks 64 of a
 // look-up secret and RFC 6749 section 10.10 128 of a token an attacker could
 // guess at; this section takes the larger for everything it makes.
+/** The fewest bits `randomToken()` will make: 128. */
 const RANDOM_TOKEN_MIN_BITS = 128;
 
 // forge's `random` context, answering from node's generator in forge's
@@ -7909,6 +8840,12 @@ const RANDOM_TOKEN_MIN_BITS = 128;
 // this module is loading, BEFORE the logger below exists, so it has no
 // Entering/Leaving pair — `common/config_file.js`'s situation — and it
 // cannot fail: every member it sets is a plain function.
+/**
+ * Makes forge's `random` context answer from node's CSPRNG.
+ *
+ * Runs while this module loads, before the logger exists, and cannot fail.
+ * @param forgeModule - the node-forge module
+ */
 function installForgeRandom(forgeModule) {
   const ctx = forgeModule.random;
   const draw = function (count) {
@@ -7942,21 +8879,47 @@ function installForgeRandom(forgeModule) {
 
 // `n` bytes from node's CSPRNG. The one spelling, so the source test has one
 // thing to allow.
+/**
+ * Returns `n` bytes from node's CSPRNG: the one spelling of it.
+ *
+ * @param n - how many bytes
+ * @returns the bytes
+ */
 function randomBytes(n) {
   return nodeCrypto.randomBytes(n);
 }
 
 // An integer in [min, max), uniform — node's `randomInt`, rejection-sampled.
+/**
+ * Returns a uniform integer in [min, max), from node's `randomInt`.
+ *
+ * @param min - the lowest value, inclusive
+ * @param max - the bound, exclusive
+ * @returns the integer
+ */
 function randomInt(min, max) {
   return nodeCrypto.randomInt(min, max);
 }
 
 // A random v4 UUID (RFC 9562 section 5.4).
+/**
+ * Returns a random v4 UUID (RFC 9562 section 5.4).
+ *
+ * @returns the UUID
+ */
 function randomUuid() {
   return nodeCrypto.randomUUID();
 }
 
 // At least `bits` of randomness (rounded up to whole bytes), base64url.
+/**
+ * Returns at least `bits` of randomness, rounded up to whole bytes, as
+ * base64url.
+ *
+ * @param bits - how many bits; 256 when omitted
+ * @returns the token
+ * @throws Error when fewer than `RANDOM_TOKEN_MIN_BITS` are asked for
+ */
 function randomToken(bits) {
   const want = bits === undefined ? 256 : Number(bits);
   if (!Number.isInteger(want) || want < RANDOM_TOKEN_MIN_BITS) {
@@ -7971,6 +8934,15 @@ function randomToken(bits) {
 // An alphabet with a repeated character is refused, because a repeat is a
 // bias of its own that no sampling can undo — the character is simply twice
 // as likely.
+/**
+ * Returns `length` characters, each drawn uniformly from `alphabet`.
+ *
+ * @param alphabet - the characters to draw from, each once
+ * @param length - how many to draw
+ * @returns the string
+ * @throws Error for an alphabet of fewer than two distinct characters, a
+ *   repeated character, or a length that is not a whole number
+ */
 function randomString(alphabet, length) {
   const chars = Array.from(String(alphabet || ''));
   const n = Number(length);
@@ -7989,6 +8961,15 @@ function randomString(alphabet, length) {
   return out;
 }
 
+/**
+ * The one place this service signs, verifies, encrypts and decrypts.
+ *
+ * XML Signature and Encryption, JWS and JWE, keys and certificates, password
+ * hashing, the key-encryption key, raw signatures, TPM and attestation
+ * structures, the Kerberos PRF, DKIM and random values. A leaf library that
+ * may never require `helpers` back.
+ * @namespace
+ */
 module.exports = {
   // --- section 13: random values (#65) ---
   RANDOM_TOKEN_MIN_BITS: RANDOM_TOKEN_MIN_BITS,
@@ -8186,12 +9167,19 @@ module.exports = {
   tcgTpmCertifyStatement: tcgTpmCertifyStatement,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
+  /** The XML Signature namespace. */
   DS_NS: xmldsig.DS_NS,
+  /** The XML Encryption namespace. */
   XENC_NS: xmldsig.XENC_NS,
+  /** The XML Encryption 1.1 namespace. */
   XENC11_NS: xmldsig.XENC11_NS,
+  /** The exclusive canonicalization algorithm URI. */
   C14N_EXCLUSIVE: xmldsig.C14N_EXCLUSIVE,
+  /** The enveloped-signature transform URI. */
   TRANSFORM_ENVELOPED: xmldsig.TRANSFORM_ENVELOPED,
+  /** The RSA-SHA256 signature method URI. */
   SIG_RSA_SHA256: xmldsig.SIG_ALG_RSA_SHA256,
+  /** The SHA-256 digest method URI. */
   DIGEST_SHA256: xmldsig.XENC_NS + 'sha256',
   // The vendored engine itself, for the two pages that expose a general XML
   // signature tool and need its algorithm tables. Everything else here should

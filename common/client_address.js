@@ -107,6 +107,13 @@ const rangesCount = cacheRegistry.register({
 
 // `::ffff:10.0.0.1` is an IPv4 client on a dual-stack socket, and a range
 // written `10.0.0.0/8` must match it.
+/**
+ * Normalises an address, turning an IPv4-mapped IPv6 address
+ * (`::ffff:10.0.0.1`) into its IPv4 form.
+ *
+ * @param address - the address
+ * @returns the address, trimmed
+ */
 function normalise(address) {
   log.debug("Entering normalise().");
   const text = String(address || '').trim();
@@ -212,6 +219,16 @@ function fromFrontProcess(req) {
 // Is the connection's own peer one of the proxies this deployment runs?
 // Always true when no range is configured — the pre-2026-09-14 rule, in which
 // `global.trustProxy` alone decided.
+/**
+ * Says whether the connection's own peer is one of the proxies in
+ * `global.trustedProxies`.
+ *
+ * Always true when no range is configured, the rule in which
+ * `global.trustProxy` alone decides.
+ *
+ * @param req - the request
+ * @returns true when the peer is trusted
+ */
 function peerIsTrustedProxy(req) {
   log.debug("Entering peerIsTrustedProxy().");
   const theRanges = ranges();
@@ -231,6 +248,12 @@ function peerIsTrustedProxy(req) {
 // rule that list keeps for forwarded headers would let any caller name any
 // address, which is why that file refuses to start with none.
 // ---------------------------------------------------------------------------
+/**
+ * Returns how many trusted proxy ranges are configured and how many of them
+ * parsed.
+ *
+ * @returns `count` (parsed) and `configured`
+ */
 function trustedProxyRanges() {
   log.debug("Entering trustedProxyRanges().");
   const theRanges = ranges();
@@ -238,6 +261,15 @@ function trustedProxyRanges() {
   return { count: theRanges.count, configured: theRanges.configured };
 }
 
+/**
+ * Says whether an address is in the trusted proxy ranges; asked by
+ * `proxy_protocol.ts`.
+ *
+ * Unlike `peerIsTrustedProxy()`, an empty list trusts nobody.
+ *
+ * @param address - the address
+ * @returns true when it is in a configured range
+ */
 function isTrustedProxy(address) {
   log.debug("Entering isTrustedProxy().");
   const theRanges = ranges();
@@ -250,6 +282,13 @@ function isTrustedProxy(address) {
 }
 
 // May this request's X-Forwarded-* headers be believed at all?
+/**
+ * Says whether a request's `X-Forwarded-*` headers may be believed.
+ *
+ * @param req - the request
+ * @returns true in a request worker, or when `global.trustProxy` is on and the
+ *   peer is a trusted proxy
+ */
 function forwardedBelieved(req) {
   log.debug("Entering forwardedBelieved().");
   if (fromFrontProcess(req)) {
@@ -278,6 +317,17 @@ function forwardedBelieved(req) {
 //     entry that is not a trusted proxy. Everything to its left was written
 //     by the client or by a hop nobody vouches for.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the address a request came from.
+ *
+ * In a request worker, what the front process wrote; with `global.trustProxy`
+ * off, the socket's peer; with no ranges, the left-most forwarded entry; with
+ * ranges, the right-most forwarded entry that is not a trusted proxy, and the
+ * peer itself when the peer is not one.
+ *
+ * @param req - the request
+ * @returns the address, or `unknown`
+ */
 function clientAddressOf(req) {
   log.debug("Entering clientAddressOf().");
   if (!req) {
@@ -315,6 +365,9 @@ function clientAddressOf(req) {
 }
 
 // For tests: forget the parsed ranges.
+/**
+ * Forgets the parsed ranges; for tests.
+ */
 function reset() {
   log.debug("Entering reset().");
   cachedText = null;
@@ -322,6 +375,14 @@ function reset() {
   log.debug("Leaving reset().");
 }
 
+/**
+ * Who a request came from, and which hops may say so: `global.trustProxy`
+ * bounded by `global.trustedProxies`.
+ *
+ * A leaf the rate limiter, the request pool and `baseUrlOf()` ask.
+ *
+ * @namespace
+ */
 module.exports = {
   clientAddressOf: clientAddressOf,
   forwardedBelieved: forwardedBelieved,
