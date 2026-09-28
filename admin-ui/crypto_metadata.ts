@@ -3248,12 +3248,19 @@ class CryptoMetadata {
     const surfaces = [
       { surface: 'JWE this service encrypts TO a client — ID Token, Logout ' +
                  'Token, UserInfo, JARM, JWT introspection, OID4VCI ' +
-                 'Credential Response', state: 'pq',
-        how: 'A client registers an ML-KEM or HPKE-8 to HPKE-16 `alg` ' +
-             '(`id_token_encrypted_response_alg` and its siblings) and ' +
-             'publishes a matching AKP key — HPKE-10-KE is X-Wing — and ' +
-             'every one of these is encrypted with it. The advertised lists ' +
-             'are the shared JWE table, so nothing to enable here.' },
+                 'Credential Response',
+        state: config.value('keys.offerKemEncryption') === true
+          ? 'pq' : 'optional',
+        how: config.value('keys.offerKemEncryption') === true
+          ? 'A client registers an ML-KEM or HPKE-8 to HPKE-16 `alg` ' +
+            '(`id_token_encrypted_response_alg` and its siblings) and ' +
+            'publishes a matching AKP key — HPKE-10-KE is X-Wing — and ' +
+            'every one of these is encrypted with it ' +
+            '(`keys.offerKemEncryption` is on).'
+          : 'OFF by default: `keys.offerKemEncryption` is off, so no ML-KEM ' +
+            'or HPKE alg is advertised or accepted at registration. The ' +
+            'OpenID conformance suite and some client libraries reject a ' +
+            'discovery list naming algorithms they do not know.' },
       { surface: 'JWE sent TO this realm — encrypted request objects, RFC ' +
                  '7523 / 7522 assertions, OID4VCI Credential Requests',
         state: heldPq.length ? 'pq' : 'optional',

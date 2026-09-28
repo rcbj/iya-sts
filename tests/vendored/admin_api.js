@@ -1612,9 +1612,18 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
   assert.strictEqual(ke.state, "pq",
     "key establishment reports a post-quantum answer (#82); got " +
     JSON.stringify(ke.state));
-  assert.strictEqual(surface("JWE this service encrypts TO").state, "pq",
-    "JWE outward is post-quantum-capable: a client registers ML-KEM or a " +
-    "hybrid");
+  // Outward post-quantum JWE is offered only while keys.offerKemEncryption
+  // is on (off by default, 2026-09-28): the row says which, and discovery
+  // must agree with it either way.
+  const pqOutward = oidc.body.userinfo_encryption_alg_values_supported
+    .filter(function (alg) {
+      return ke.postQuantum.indexOf(alg) >= 0;
+    });
+  assert.strictEqual(surface("JWE this service encrypts TO").state,
+    pqOutward.length ? "pq" : "optional",
+    "JWE outward is post-quantum exactly when discovery offers an ML-KEM " +
+    "or HPKE alg for encryption (keys.offerKemEncryption, off by default); " +
+    "offered: " + JSON.stringify(pqOutward));
   const pqInbound = as.body.request_object_encryption_alg_values_supported
     .filter(function (alg) {
       return ke.postQuantum.indexOf(alg) >= 0;
@@ -1632,13 +1641,14 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
             ke.hybrid.indexOf("ML-KEM-768") < 0,
     "the post-quantum list names ML-KEM, and the hybrid list X-Wing " +
     "(HPKE-10-KE) and not pure ML-KEM; got " + JSON.stringify(ke.hybrid));
-  ke.postQuantum.forEach(function (alg) {
-    assert.ok(oidc.body.userinfo_encryption_alg_values_supported
-                .indexOf(alg) >= 0,
-      "every post-quantum JWE alg the page names is one this service will " +
-      "really encrypt to; `" + alg + "` is not in " +
-      "userinfo_encryption_alg_values_supported");
-  });
+  if (pqOutward.length) {
+    ke.postQuantum.forEach(function (alg) {
+      assert.ok(pqOutward.indexOf(alg) >= 0,
+        "while outward post-quantum JWE is offered, every post-quantum alg " +
+        "the page names is one this service will really encrypt to; `" +
+        alg + "` is not in userinfo_encryption_alg_values_supported");
+    });
+  }
 
   log.info("[crypto] OK — " + report.families.length +
            " identity services profiled with no drift, " +
