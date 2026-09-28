@@ -7019,6 +7019,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'exactly wrong for the one endpoint whose purpose is to land you ' +
           'in a different one. 303, so the reload after it is a GET.' },
 
+  { path: '/admin/cells', group: 'Admin', name: 'Cells',
+    specs: [],
+    what: 'NON-SPEC (#98). One service deployed as several cells: this ' +
+          'cell and its jurisdiction, every other cell and whether it ' +
+          'answers (never where it is), the global tier\'s replica lag, how ' +
+          'many people each cell holds, the sessions held away from home, ' +
+          'the inter-cell channel, the Cells settings, and — with ?people= — ' +
+          'another cell\'s residents where its release policy permits. Add ' +
+          '?format=json.' },
   { path: '/admin/mode', group: 'Admin', name: 'Mode',
     specs: [],
     what: 'NON-SPEC (#181). What global.mode changes and what is in force ' +
@@ -8563,6 +8572,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'existing — and the default realm cannot be removed at all, since ' +
           'every URL this service published before realms existed is a URL ' +
           'in it.' },
+  { path: '/admin-api/cells', group: 'Management API', name: 'Cells',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98). GET /admin/cells over JSON: the cell map, the ' +
+          'store\'s tiers, the channel and the sessions held across cells.' },
+  { path: '/admin-api/cells/people', group: 'Management API',
+    name: 'Cell residents',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
+          'answered by that cell only where its release policy permits.' },
   { path: '/admin-api/mode', group: 'Management API', name: 'Mode',
     specs: ['openapi'],
     what: 'NON-SPEC (#181). GET /admin/mode over JSON: the realm\'s mode, ' +

@@ -218,6 +218,8 @@ import cachesAdmin = require('../admin-ui/caches_admin');
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // Server configuration → Mode (#181): its one view, rule 7.
 import modeAdmin = require('../admin-ui/mode_admin');
+// Server configuration → Cells (#98): `cellsView()` and `peopleOf()`.
+import cellsAdmin = require('../admin-ui/cells_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The mail channel's two pages (#63), mirrored below (rule 7).
@@ -2427,6 +2429,79 @@ class AdminApi {
           log.debug("Entering the management API encryption report endpoint.");
           self.sendJson(res, 200, encryptionAdmin.encryptionView());
           log.debug("Leaving the management API encryption report endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // CELLS (#98). `cellsAdmin.cellsView()` — the function `/admin/cells`
+      // draws — and `peopleOf()`, another cell's residents under its release
+      // policy. Neither changes anything; the Cells settings are written
+      // through `POST /admin-api/config/set`. A call naming `?cell=` on any
+      // operation is relayed to that cell whole (common/cell_placement.ts).
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/cells', tag: 'Service',
+        operationId: 'getCells',
+        summary: 'The cells of this service, the store\'s tiers and the ' +
+                 'channel between cells',
+        description: 'What this cell knows about the deployment (#98): ' +
+                     '`multi` (false in single-cell mode), `cell`, ' +
+                     '`jurisdiction`, `peers` (each `id`, `jurisdiction`, ' +
+                     '`reachable` and `answeredMs` or `error` — never an ' +
+                     'address), `store` (`tiered`, `globalReplicaLagMs`, ' +
+                     'the global change-log follower, the routing index\'s ' +
+                     'counters and `peoplePerCell`), `channel` (the ' +
+                     'listener, this process\'s certificate, the operations ' +
+                     'and the counters), `placement` (requests relayed and ' +
+                     'served here), `sessions` (projections held here and ' +
+                     'exports made from here) and `settings`.',
+        mirrors: 'GET /admin/cells',
+        responseDescription: 'The cell map.',
+        responseSchema: { type: 'object',
+          description: 'As described above.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API cells endpoint.");
+          cellsAdmin.cellsView().then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API cells endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API cells endpoint: " +
+                      ((e && e.message) || e));
+            self.sendJson(res, 500, { error: 'server_error',
+                                      error_description: String(
+                                        (e && e.message) || e) });
+          });
+        } },
+      { method: 'GET', path: BASE + '/cells/people', tag: 'Service',
+        operationId: 'getCellPeople',
+        summary: 'A page of another cell\'s residents, where its release ' +
+                 'policy permits',
+        description: 'Asks cell `cell` for a page of the people homed ' +
+                     'there in the realm of the call (#98 D11), after the ' +
+                     'login name `after`. The answering cell releases them ' +
+                     'only when its release policy permits its people to be ' +
+                     'listed from this cell\'s jurisdiction; otherwise ' +
+                     '`refused` says why. Each person is `name`, `uuid` ' +
+                     'and `displayName` and nothing else.',
+        mirrors: 'GET /admin/cells?people=',
+        parameters: [
+          { name: 'cell', in: 'query', required: true,
+            schema: { type: 'string', minLength: 1, maxLength: 16 },
+            description: 'The other cell\'s id.' },
+          { name: 'after', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'The last login name of the previous page.' }
+        ],
+        responseDescription: '`{ cell, people, next }` or `{ cell, ' +
+                             'refused }`.',
+        responseSchema: { type: 'object',
+          description: 'A page of people, or a refusal.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API cell people endpoint.");
+          cellsAdmin.peopleOf(String((req.query && req.query.cell) || ''),
+                              String((req.query && req.query.after) || ''))
+            .then(function (view) {
+              self.sendJson(res, 200, view);
+              log.debug("Leaving the management API cell people endpoint.");
+            });
         } },
 
       // ---------------------------------------------------------------------

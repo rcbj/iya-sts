@@ -1125,6 +1125,17 @@ class ProtocolStack {
                'ModeAdmin');
     this.register(app, require('../admin-ui/mode_admin'),
                   'admin-ui/mode_admin');
+    // 18k-ii. CELLS (#98, 2026-09-28). `/admin/cells` — the cell map, the
+    // store's tiers, the channel, the Cells settings and another cell's
+    // residents. 18a's placement and 18a's reason: the console's shell and
+    // the cell libraries (loaded by `app.js` and persistence far above) are
+    // here, and `mgmt-api/admin_api` requires it in the ordinary direction.
+    // Its registerRoutes() also registers its two inter-cell operations.
+    require('../admin-ui/cells_admin');
+    this.build('admin-ui/cells_admin', require('../admin-ui/cells_admin'),
+               'CellsAdmin');
+    this.register(app, require('../admin-ui/cells_admin'),
+                  'admin-ui/cells_admin');
     // 18l. MAIL (#63, 2026-09-22): Server configuration → Mail and
     // Monitoring → Mail outbox, one module for both. 18a's placement and 18a's
     // reason: the console's shell and the channel (built with the portal,
