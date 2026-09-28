@@ -317,6 +317,13 @@ case " ${ARGS[*]-} ${STS_COVERAGE_EXTRA_ARGS-} " in
   *--timeout=*) ;;
   *) ARGS+=("--timeout=${STS_COVERAGE_JOB_TIMEOUT_MS:-900000}") ;;
 esac
+# AND A JOB'S OWN LONGER LEASH, TRIPLED (2026-09-27): acvp_pqc (600s) and
+# sts_pki_distribution_points (900s) were both killed at 900s in CI's
+# coverage job, the flat watchdog above being no longer than their own.
+case " ${ARGS[*]-} ${STS_COVERAGE_EXTRA_ARGS-} " in
+  *--timeout-scale=*) ;;
+  *) ARGS+=("--timeout-scale=${STS_COVERAGE_JOB_TIMEOUT_SCALE:-3}") ;;
+esac
 
 # The check is against "off" and not against an empty string, because the
 # default is "on" now: an unset PROTOCOL is no longer how somebody says they
@@ -351,8 +358,22 @@ else
   # would otherwise be spliced in front of them by the image's entrypoint —
   # which this run does not use anyway, but the variable is substituted before
   # anything decides that.
+  # THE NETWORK'S SUBNET, CHOSEN FREE (2026-09-27), as ./run-tests.sh
+  # chooses its own: the compose file's default is 172.30.0.0/24, and another
+  # stack on this machine holding it made `docker compose run` fail with
+  # "Pool overlaps" before the runner started. freeSubnet() is
+  # tests/tools/compose.sh's; the runner pins no address, so the subnet is all
+  # that is named.
+  subnet="${STS_NETWORK_SUBNET:-$(freeSubnet 172.30)}"
+  if [ -z "${subnet}" ];
+  then
+    echo "No free /24 in 172.30.0.0/16 for the coverage run's network;" >&2
+    echo "STS_NETWORK_SUBNET names one explicitly." >&2
+    exit 1
+  fi
   COMPOSE_ENV=(
     "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
+    "STS_NETWORK_SUBNET=${subnet}"
     "STS_TESTS_CONTAINER_NAME=mock-sts-coverage-runner"
     "STS_CONTAINER_NAME=sts-coverage-unused"
     "CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
@@ -464,6 +485,13 @@ else
     # certificate there and names the same path in a `…CaFile` setting.
     -e OUTBOUND_TEST_CA_DIR=/tmp/sts-test-ca
     -e OUTBOUND_TEST_CA_FILE=/tmp/sts-test-ca/outbound-test-ca.crt
+    # THE MEMORY MODE'S KEYS (2026-09-27): the throwaway service is a
+    # development process with no key-encryption key, and `keys.source` left
+    # at `auto` follows the AMBIENT realm's mode — so in a product-mode realm a
+    # job creates, keystore.persists() said yes and the seal found no key:
+    # sts_credential_signals' EAB key was refused "could not be sealed". The
+    # `memory` mode sets this for the same service (tests/tools/modes.sh).
+    -e STS_KEYS_SOURCE=generated
     -e "STS_TEST_CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     -e "LOG_LEVEL=${LOG_LEVEL:-info}"
   )

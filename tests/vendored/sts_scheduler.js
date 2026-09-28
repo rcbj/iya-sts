@@ -290,7 +290,17 @@ async function thePageAndTheApiAgree(cookie) {
             }
             const delta = Math.abs(Date.parse(j.nextRunAt) -
                                    Date.parse(other.nextRunAt));
-            assert.ok(delta < 1000, j.id + ": " + j.nextRunAt + " and " +
+            // ONE SLOT APART IS AGREEMENT (2026-09-27): the two reads are
+            // made one after the other, and for a job whose interval is a
+            // few seconds (persistence.change-log-pull, 5 s) a slot boundary
+            // can fall between them — the cluster run in CI saw 5 s exactly.
+            // Both then name the right next run for the instant they were
+            // asked; a disagreement is anything else.
+            const every = Number(j.schedule && j.schedule.everyMs) || 0;
+            const oneSlot = every > 0 && every <= 60000 &&
+              Math.abs(delta - every) < 1000;
+            assert.ok(delta < 1000 || oneSlot,
+                      j.id + ": " + j.nextRunAt + " and " +
                       other.nextRunAt);
           });
         });

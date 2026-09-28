@@ -2,6 +2,12 @@
 
 # iya-sts
 
+> [!WARNING]
+> **Not ready for production deployments.** This is a relatively new project.
+> No formal penetration testing has been done, and it has not been formally
+> evaluated by any standards body. Do not use it to protect real users,
+> credentials or data yet.
+
 An **identity provider and security token service** that speaks the protocol
 families below from one process, with a certificate authority of its own.
 

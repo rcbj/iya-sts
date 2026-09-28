@@ -4785,7 +4785,13 @@ is written down.
 * **Narrowed, not refused, until nothing is left (decision 2)**:
   `STS-ADMIN-0821` for what was taken off, `invalid_scope` (`STS-ADMIN-0822`)
   when nothing else was asked for.
-* **The question is `role_permissions.ts`'s, not this file's** — `roles.js`
+* **The DECISION is the issuance policy's since #304 (part C of #88).**
+  `role_permissions.ts` gathers the facts — which scopes are gated, which
+  roles authorize each, which the subject holds — and asks one `issue-scope`
+  question per scope through `issuance_gate.checkScopes()`; the policy's
+  scope obligation says keep, drop or refuse (`xacml/CLAUDE.md`). Where no
+  verdict comes, the built-in policy decides.
+* **The facts are `role_permissions.ts`'s, not this file's** — `roles.js`
   stays the leaf. It is asked at the authorization endpoint and in
   `tokenSet()` (every grant, `client_credentials` included), at
   `/admin-api`'s gate on every call (held ∩ carried), and by the XACML PIP's
