@@ -4783,10 +4783,43 @@ function sealFieldValue(name, value) {
   return out;
 }
 
-// And open on the way out, for `view()`. Takes the whole fields object and
-// returns it unchanged where there is nothing sealed in it, so that the
-// ordinary entry — which carries none of these attributes at all — pays a
-// property lookup and not a copy.
+// And open on the way out, for `view()`.
+//
+// **OPENED WHEN READ, NOT WHEN LISTED (#352, 2026-09-29).** `view()` used to
+// open every sealed value as it built the view, so `list()` — which builds one
+// per application — ran a `keystore.open` for every key pair in the realm to
+// draw a page of twenty-five rows, and every `forClientId()` at the token
+// endpoint did the same because it was a filter over `list()`. Now each sealed
+// member of `fields` is an accessor that opens the value when something READS
+// it: a caller that wants the PEM (the application page, `/admin/pki`, the
+// GNAP resource server) gets it exactly as before, and `JSON.stringify` reads
+// it, so a reply carries the opened value for the rows it actually carries —
+// the page, not the population. **Nothing opened is kept**: a second read
+// opens again, for `key-material-residency`'s reason — a decrypted private key
+// lives for the statement that needed it, not for as long as a cache does.
+// A write to the member replaces the accessor with the value written, which is
+// what an ordinary object would have done.
+function openSealedValue(name, value, identifier) {
+  log.debug("Entering openSealedValue().");
+  const opened = keystore.open(String(value), sealLabelOf(name));
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-REG-0023') +
+             'applications: the private key on "' + identifier + '" is ' +
+             'sealed and will not open under this process\'s ' +
+             'key-encryption key — it was written under a different one. ' +
+             'It is reported as it is stored rather than as absent, ' +
+             'because absent would read as no key pair having been issued. ' +
+             'Issue again on /admin/pki.');
+    log.debug("Leaving openSealedValue(). It will not open.");
+    return String(value);
+  }
+  log.debug("Leaving openSealedValue().");
+  return opened;
+}
+
+// Takes the whole fields object and returns it unchanged where there is
+// nothing sealed in it, so that the ordinary entry — which carries none of
+// these attributes at all — pays a property lookup and not a copy.
 function openSealedFields(fields, identifier) {
   log.debug("Entering openSealedFields().");
   let out = fields;
@@ -4795,21 +4828,21 @@ function openSealedFields(fields, identifier) {
     if (!value || !isSealed(value)) {
       return;
     }
-    const opened = keystore.open(String(value), sealLabelOf(name));
-    if (!opened) {
-      log.warn(errorCodes.tag('STS-REG-0023') +
-               'applications: the private key on "' + identifier + '" is ' +
-               'sealed and will not open under this process\'s ' +
-               'key-encryption key — it was written under a different one. ' +
-               'It is reported as it is stored rather than as absent, ' +
-               'because absent would read as no key pair having been issued. ' +
-               'Issue again on /admin/pki.');
-      return;
-    }
     if (out === fields) {
       out = Object.assign({}, fields);
     }
-    out[name] = opened;
+    Object.defineProperty(out, name, {
+      configurable: true,
+      enumerable: true,
+      get: function () {
+        return openSealedValue(name, value, identifier);
+      },
+      set: function (next) {
+        Object.defineProperty(this, name, { configurable: true,
+                                            enumerable: true, writable: true,
+                                            value: next });
+      }
+    });
   });
   log.debug("Leaving openSealedFields().");
   return out;
@@ -11352,7 +11385,9 @@ function view(record, entry) {
     // about the application and `attributes` above is what the ENTRY carries,
     // so a caller that came through this module gets the PEM and a dump of the
     // store gets the ciphertext the store holds.
-    fields: withholdFields(openSealedFields(record.fields, record.identifier))
+    // Withheld FIRST: `withholdFields()` copies with Object.assign, which
+    // would read — and so open — every accessor the other order put there.
+    fields: openSealedFields(withholdFields(record.fields), record.identifier)
   };
 }
 
@@ -11444,20 +11479,150 @@ function revokeRegistrationAccessToken(token) {
   return holder.identifier;
 }
 
-/**
- * Lists every application in the ambient realm, most recently seen first.
- *
- * @returns the views
- */
-function list() {
-  log.debug("Entering list().");
-  const backing = store();
-  if (!backing) {
-    log.debug("Leaving list().");
-    return [];
+// ---------------------------------------------------------------------------
+// THE LISTING, KEPT UNTIL ou=applications CHANGES (#352, 2026-09-29).
+//
+// `list()` read every entry, rebuilt a record from each (a pass over the whole
+// SCHEMA per entry), built a view of each and opened every sealed key — and
+// FIVE lookups here were a filter over it: `forClientId()`, `forAudience()`,
+// `forAppliesTo()` (twice), `forPermission()` and `forPermissionBase()`. So a
+// page that asked one of them per row was quadratic in the registry, with a
+// `keystore.open` per application inside the square: `/admin/consent` asked
+// `forPermission()` per scope and `holdsPermission()` per grant,
+// `/admin/roles` per permission, the delegation policy per target.
+//
+// **WHAT IS KEPT IS THE PARSE, NOT THE VIEW.** Per realm, the entries and the
+// records rebuilt from them, in `list()`'s order, and a Map per lookup from
+// the value asked for to the applications carrying it — keyed on the store's
+// `applicationsVersion()`, the subtree clock every write under the container
+// moves: `writeApplication()`, a delete, an LDAP modify (which moves every
+// container), and a write REPLICATED from another process, whose applier runs
+// in the row's realm and calls `touchDirectory()` with the DN (ldap_server.js
+// `applyEntry()`). So it is correct across request workers and nodes by the
+// rule the root CLAUDE.md states: it is keyed on something that replicates.
+// A store with no such hook (a test's stub) is read every time.
+//
+// **EVERY CALLER STILL GETS OBJECTS OF ITS OWN.** A view is built per call
+// from a COPY of the kept record and entry — the kept ones are frozen and
+// never handed out — because two hundred call sites read these views and
+// "nothing mutates what list() returned" is not a property anybody checked.
+// The copy is of values already parsed, which is the cheap part; the schema
+// pass and the unsealing were the expensive one, and the second is gone from
+// every view (see `openSealedFields()`).
+//
+// **THE MODE IS NOT IN THE KEY**, because nothing kept depends on it: the one
+// mode-dependent member of a view, `returnAddressesObserved[].trusted`, is
+// computed when the view is built.
+//
+// `get()` does not use it: one entry by its DN is cheaper than a rebuild after
+// a sighting moved the clock, which every authentication does.
+// ---------------------------------------------------------------------------
+const listingMemo = realms.keyed(function () {
+  return { version: null, listing: null };
+});
+
+// Described to `/admin/caches` (#74, rule 3ap). One listing per realm.
+const listingCount = cacheRegistry.register({
+  name: 'applications.listing',
+  title: 'Application registry listing',
+  description: 'Every application entry in a realm, parsed, with a lookup ' +
+    'per client_id, audience, AppliesTo and permission — so a page or a ' +
+    'token request does not parse the whole registry per question.',
+  owner: 'common/applications.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return 1;
+  },
+  bound: 'One listing per realm, the size of ou=applications (itself ' +
+    'capped by applications.max).',
+  lifetime: function () {
+    return 'Until anything under the realm\'s ou=applications changes; ' +
+      'the next read then parses it again.';
+  },
+  entries: function () {
+    const out = [];
+    listingMemo.existing().forEach(function (held, id) {
+      if (!held.listing) {
+        return;
+      }
+      let current = false;
+      try {
+        current = realms.run(realms.get(id), function () {
+          const backing = store();
+          return !!backing &&
+            typeof backing.applicationsVersion === 'function' &&
+            backing.applicationsVersion() === held.version;
+        });
+      } catch (e) {
+        log.debug("Caught in the applications.listing entries(): " +
+                  ((e && e.message) || e));
+        current = false;
+      }
+      out.push({ realm: id, key: held.listing.items.length +
+                   ' application(s)',
+                 validUntil: null, valid: current,
+                 basis: 'ou=applications version' });
+    });
+    return out;
   }
-  const rows = backing.allApplications().map(function (entry) {
-    return view(recordFromAttributes(entry.attributes), entry);
+});
+
+function deepFreeze(value) {
+  log.debug("Entering deepFreeze().");
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    Object.keys(value).forEach(function (key) {
+      deepFreeze(value[key]);
+    });
+  }
+  log.debug("Leaving deepFreeze().");
+  return value;
+}
+
+// A copy of a map of attribute values, each list copied too.
+function copyValues(map) {
+  log.debug("Entering copyValues().");
+  const out = {};
+  Object.keys(map || {}).forEach(function (name) {
+    const value = map[name];
+    out[name] = Array.isArray(value) ? value.slice(0) : value;
+  });
+  log.debug("Leaving copyValues().");
+  return out;
+}
+
+// A view of a kept item that shares nothing with it. `view()` copies the
+// record's lists itself; `fields` and the entry's attributes are what it
+// hands on as they are, so those are the two copied here.
+function viewOfItem(item) {
+  log.debug("Entering viewOfItem().");
+  const record = Object.assign({}, item.record,
+                               { fields: copyValues(item.record.fields) });
+  const entry = Object.assign({}, item.entry,
+                              { attributes: copyValues(item.entry.attributes) });
+  log.debug("Leaving viewOfItem().");
+  return view(record, entry);
+}
+
+function indexInto(map, key, item) {
+  log.debug("Entering indexInto().");
+  if (!map.has(key)) {
+    map.set(key, []);
+  }
+  const held = map.get(key);
+  if (held.indexOf(item) < 0) {
+    held.push(item);
+  }
+  log.debug("Leaving indexInto().");
+}
+
+function buildListing(backing) {
+  log.debug("Entering buildListing().");
+  const items = backing.allApplications().map(function (entry) {
+    const record = recordFromAttributes(entry.attributes);
+    return { entry: entry, record: record,
+             lastSeen: record.lastAt ? new Date(record.lastAt).toISOString()
+                                     : '' };
   });
   // Newest activity first. `lastSeen` comes off the entry as GeneralizedTime,
   // which has ONE-SECOND resolution, so applications touched in the same second
@@ -11465,11 +11630,104 @@ function list() {
   // in. That is stable and it is why a burst of client_ids registered together
   // reads in the order they arrived rather than jumbled; it is not the sort
   // failing to work.
-  rows.sort(function (a, b) {
+  items.sort(function (a, b) {
     return String(b.lastSeen).localeCompare(String(a.lastSeen));
   });
+  const listing = {
+    items: items,
+    byClientId: new Map(),
+    byAudience: new Map(),
+    byAppliesTo: { wstrustAppliesTo: new Map(), samlEntityId: new Map() },
+    byPermission: new Map(),
+    byPermissionBase: new Map()
+  };
+  // Each Map holds the applications in `list()`'s order, so the first is the
+  // one the filter over `list()` found first, and the length is the count
+  // its duplicate warning reported.
+  items.forEach(function (item) {
+    const fields = item.record.fields;
+    valuesOf(fields.oauthClientId).forEach(function (value) {
+      indexInto(listing.byClientId, String(value), item);
+    });
+    valuesOf(fields.oauthAudience).forEach(function (value) {
+      indexInto(listing.byAudience, String(value), item);
+    });
+    Object.keys(listing.byAppliesTo).forEach(function (attribute) {
+      valuesOf(fields[attribute]).forEach(function (value) {
+        indexInto(listing.byAppliesTo[attribute], String(value), item);
+      });
+    });
+    permissionsOf(item.record).forEach(function (one) {
+      if (one.id && !listing.byPermission.has(one.id)) {
+        listing.byPermission.set(one.id, { item: item, permission: one });
+      }
+    });
+    const base = permissionBaseOf(fields.oauthPermissionBaseUri);
+    if (base) {
+      indexInto(listing.byPermissionBase, base, item);
+    }
+  });
+  items.forEach(deepFreeze);
+  log.debug("Leaving buildListing(). " + items.length + " application(s).");
+  return listing;
+}
+
+// The ambient realm's listing: kept, or parsed now. Null with no store.
+function listing() {
+  log.debug("Entering listing().");
+  const backing = store();
+  if (!backing) {
+    log.debug("Leaving listing(). No store.");
+    return null;
+  }
+  if (typeof backing.applicationsVersion !== 'function') {
+    log.debug("Leaving listing(). A store with no version; parsed now.");
+    return buildListing(backing);
+  }
+  const version = backing.applicationsVersion();
+  const held = listingMemo();
+  if (held.listing && held.version === version) {
+    listingCount.hit();
+    log.debug("Leaving listing(). Kept.");
+    return held.listing;
+  }
+  listingCount.miss();
+  held.listing = buildListing(backing);
+  held.version = version;
+  log.debug("Leaving listing(). Parsed.");
+  return held.listing;
+}
+
+/**
+ * Lists every application in the ambient realm, most recently seen first.
+ *
+ * @returns the views
+ */
+function list() {
+  log.debug("Entering list().");
+  const kept = listing();
+  if (!kept) {
+    log.debug("Leaving list().");
+    return [];
+  }
+  const rows = kept.items.map(viewOfItem);
   log.debug("Leaving list().");
   return rows;
+}
+
+// The applications carrying one value, as views, in `list()`'s order — what
+// the lookups below used to get by filtering the whole of `list()`.
+function lookedUp(mapName, wanted, attribute) {
+  log.debug("Entering lookedUp(). " + mapName);
+  const kept = listing();
+  if (!kept) {
+    log.debug("Leaving lookedUp(). No store.");
+    return [];
+  }
+  const map = attribute ? kept[mapName][attribute] : kept[mapName];
+  const found = (map.get(wanted) || []).map(viewOfItem);
+  log.debug("Leaving lookedUp(). " + found.length + ".");
+  return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -12024,24 +12282,22 @@ function forPermission(id) {
     log.debug("Leaving forPermission(). Nothing was asked for.");
     return null;
   }
+  // The first application in `list()`'s order defining it — the Map was built
+  // in that order and keeps the first (#352).
+  const kept = listing();
+  const hit = kept ? kept.byPermission.get(wanted) : null;
   let answer = null;
-  list().some(function (row) {
-    const found = permissionsOf(row).filter(function (one) {
-      return one.id && one.id === wanted;
-    })[0];
-    if (!found) {
-      return false;
-    }
+  if (hit) {
+    const row = viewOfItem(hit.item);
     answer = {
       identifier: row.identifier,
       application: row,
       baseUri: permissionBaseOf(row.fields.oauthPermissionBaseUri),
-      name: found.name,
-      description: found.description,
-      id: found.id
+      name: hit.permission.name,
+      description: hit.permission.description,
+      id: hit.permission.id
     };
-    return true;
-  });
+  }
   if (!answer) {
     log.debug("Leaving forPermission(). No application defines it.");
     return null;
@@ -12096,10 +12352,7 @@ function forPermissionBase(base) {
     log.debug("Leaving forPermissionBase(). Nothing was asked for.");
     return null;
   }
-  const found = list().filter(function (row) {
-    return permissionBaseOf((row.fields ||
-                             {}).oauthPermissionBaseUri) === wanted;
-  });
+  const found = lookedUp('byPermissionBase', wanted);
   if (!found.length) {
     log.debug("Leaving forPermissionBase(). No application exposes it.");
     return null;
@@ -12231,10 +12484,12 @@ function allowedScopesOf(clientId) {
 // tried both would make `audience=esb1` and `audience=https://esb1.example.com`
 // indistinguishable in the one place the difference is the point.
 //
-// It walks the container, which is a linear read per exchange. That is honest
-// for a registry capped by `applications.max` and holding tens of entries; an
-// index would be a second copy of the attribute, and this module's whole
-// argument is that the directory is the one store.
+// It walked the container, a linear read per exchange, until #352: the
+// consoles asked it (and its four neighbours) once per ROW, which made a page
+// quadratic in the registry. It now reads the Map `listing()` keeps beside the
+// parsed entries — built from the directory and thrown away the moment
+// anything under ou=applications changes, so it is not a second store, only
+// the directory read once per version instead of once per question.
 // ---------------------------------------------------------------------------
 /**
  * Returns the application whose `oauthAudience` lists a value, matched exactly.
@@ -12249,9 +12504,7 @@ function forAudience(audience) {
     log.debug("Leaving forAudience(). Nothing was asked for.");
     return null;
   }
-  const found = list().filter(function (row) {
-    return valuesOf(row.fields.oauthAudience).indexOf(wanted) >= 0;
-  });
+  const found = lookedUp('byAudience', wanted);
   if (!found.length) {
     log.debug("Leaving forAudience(). No application has registered it.");
     return null;
@@ -12337,9 +12590,7 @@ function forClientId(clientId) {
     log.debug("Leaving forClientId(). Nothing was asked for.");
     return null;
   }
-  const found = list().filter(function (row) {
-    return valuesOf(row.fields.oauthClientId).indexOf(wanted) >= 0;
-  });
+  const found = lookedUp('byClientId', wanted);
   if (!found.length) {
     log.debug("Leaving forClientId(). No application has registered it.");
     return null;
@@ -12411,7 +12662,8 @@ function forAppliesTo(appliesTo) {
   const attributes = ['wstrustAppliesTo', 'samlEntityId'];
   for (let i = 0; i < attributes.length; i++) {
     const attribute = attributes[i];
-    const found = list().filter(function (row) {
+    const found = lookedUp('byAppliesTo', wanted, attribute)
+        .filter(function (row) {
       // THE ENTRY NAMED BY THE ADDRESS ITSELF IS SKIPPED, and this is the one
       // way this lookup differs from forAudience() in behaviour rather than in
       // wording. Nothing creates an entry named after an OAuth `audience`, but
@@ -12425,8 +12677,7 @@ function forAppliesTo(appliesTo) {
       // is there an application, known here by ANOTHER name, that has declared
       // this address? Verified the hard way — without this, a two-hop chain
       // still drew as two halves and the log carried only a duplicate warning.
-      return row.identifier !== wanted &&
-             valuesOf(row.fields[attribute]).indexOf(wanted) >= 0;
+      return row.identifier !== wanted;
     });
     if (!found.length) {
       continue;

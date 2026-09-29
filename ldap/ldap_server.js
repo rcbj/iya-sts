@@ -3888,7 +3888,17 @@ persistence.setDirectory({
     // in this realm invalid and makes the next flush diff the whole directory;
     // this applier knows exactly which entry moved, and the entry it is being
     // told about is the one thing it can always name.
-    touchDirectory(stored.dn);
+    //
+    // **IN THE ROW'S REALM** (#352): the subtree clocks are per realm and
+    // AMBIENT, and a flush's outcomes (`applyDirectoryOutcomes()`) are applied
+    // outside any realm — so a merged or conflicting row of another realm
+    // moved the default realm's clock and left its own where it was, and a
+    // listing kept on that clock (`entriesUnder()`, the applications
+    // registry's) could not see it. The change-log applier already runs in
+    // the row's realm, where this is the same call.
+    realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
+      touchDirectory(stored.dn);
+    });
     noteUsernameIndexRefresh(stored, usernameWasCurrent);
     noteGroupIndexPut(stored, groupWasCurrent);
     noteUuidIndexPut(stored, uuidWasCurrent && !replaced);
@@ -3950,8 +3960,11 @@ persistence.setDirectory({
       // BY ITS DN, AND THE INDEXES KEPT (#351): this is every OTHER process
       // applying a delete made elsewhere — a SCIM Bulk of a thousand deletes
       // is a thousand of these in each of them — and a DN-less touch dropped
-      // every cached listing and every index there, once per entry.
-      touchDirectory(was.dn);
+      // every cached listing and every index there, once per entry. And in
+      // the row's realm, for applyEntry()'s reason (#352).
+      realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
+        touchDirectory(was.dn);
+      });
       noteIndexesDelete(was, current);
     }
     if (gone && isTrustAnchorKey(realmId, key)) {
