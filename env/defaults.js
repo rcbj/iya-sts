@@ -850,6 +850,7 @@ var config = {
     tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
     autocreateUsers: true,                                                                                                                      // Auto-create users
     maxEntries: 2000,                                                                                                                           // Maximum entries
+    workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
     sizeLimit: 500,                                                                                                                             // Search size limit
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
     selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3870** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3873** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 137
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 87
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 90
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
@@ -2630,6 +2630,9 @@ Raised from: ldap/.
 | `STS-LDAP-0111` | An LDAP add or modify named a credential attribute (a security key, an authenticator app, recovery codes, an app password, a signing key pair, a HOBA key, a self-issued subject, the emailed factor, Kerberos keys, a CIBA user code, an enrolment credential or a device secret). Credentials are written only through the doors that check them and send CAEP credential-change (#237), in every mode and for every bind, administrator included; the refusal names the door. | RFC 4511 section 4.1.9 unwillingToPerform (53) |
 | `STS-LDAP-0112` | The node-ldapjs in use does not support the encodeErrorMessage server option, so every LDAP result is sent with an empty diagnosticMessage and a client never sees the text of a refusal (#261). | none — logged at startup |
 | `STS-LDAP-0120` | A person was deleted from the directory (#241) and handing the delete to account_state.ts failed, so what they held may not have been ended at once. authn.sessionOf() still ends a session whose person has no entry the next time it is presented. | none — logged; the delete stands |
+| `STS-LDAP-0130` | A request or surface worker holding the directory as a window (ldap.workerDirectory=postgres-lru, #349) asked the store for an entry it did not hold and no answer came within ldap.workerDirectoryTimeoutMs — the database is down, unreachable or too slow. The request is refused rather than answered out of a window that cannot say what it is missing. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
+| `STS-LDAP-0131` | A windowed worker's question to the store (#349) was refused by the database: the connection failed or the statement errored. The request is refused as for STS-LDAP-0130. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
+| `STS-LDAP-0132` | The directory bridge's worker thread (#349) failed. The question it was answering timed out (STS-LDAP-0130); the next question starts a new thread. | none — logged |
 
 ## STS-ATTR
 

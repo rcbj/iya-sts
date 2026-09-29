@@ -10384,6 +10384,21 @@ const SETTINGS = [
                  'target: entries appear for anybody who authenticates ' +
                  'through any protocol here.' },
 
+  // THE BOUND ON ONE SYNCHRONOUS QUESTION TO THE STORE (#349), which is how
+  // long a windowed worker's whole event loop may wait for an entry it does
+  // not hold. Read per question, so a change applies at the next one; the
+  // bridge's thread takes it as the statement timeout when it starts.
+  { key: 'ldap.workerDirectoryTimeoutMs', group: 'LDAP',
+    label: 'Worker directory read timeout (ms)',
+    env: 'LDAP_WORKER_DIRECTORY_TIMEOUT_MS', type: 'int', dflt: 2000,
+    min: 10, max: 60000, runtime: true,
+    description: 'With ldap.workerDirectory=postgres-lru, how long a request ' +
+                 'worker waits for the database when it needs a directory ' +
+                 'entry it does not hold. The worker does nothing else while ' +
+                 'it waits, so this is also the longest a database outage ' +
+                 'can hold one of its requests; past it the request is ' +
+                 'refused (503, STS-LDAP-0130).' },
+
   { key: 'ldap.sizeLimit', group: 'LDAP', label: 'Search size limit',
     env: 'LDAP_SIZE_LIMIT', type: 'int', dflt: 500, runtime: true,
     description: 'The server-side size limit for a search, which is what ' +

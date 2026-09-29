@@ -10959,6 +10959,26 @@ const CODES = [
       'have been ended at once. authn.sessionOf() still ends a session ' +
       'whose person has no entry the next time it is presented.',
     spec: 'none — logged; the delete stands' },
+  { code: 'STS-LDAP-0130',
+    summary: 'A request or surface worker holding the directory as a window ' +
+      '(ldap.workerDirectory=postgres-lru, #349) asked the store for an ' +
+      'entry it did not hold and no answer came within ' +
+      'ldap.workerDirectoryTimeoutMs — the database is down, unreachable or ' +
+      'too slow. The request is refused rather than answered out of a ' +
+      'window that cannot say what it is missing.',
+    spec: 'HTTP 503 with Retry-After; an LDAP operation answers ' +
+      'unavailable (52)' },
+  { code: 'STS-LDAP-0131',
+    summary: 'A windowed worker\'s question to the store (#349) was refused ' +
+      'by the database: the connection failed or the statement errored. The ' +
+      'request is refused as for STS-LDAP-0130.',
+    spec: 'HTTP 503 with Retry-After; an LDAP operation answers ' +
+      'unavailable (52)' },
+  { code: 'STS-LDAP-0132',
+    summary: 'The directory bridge\'s worker thread (#349) failed. The ' +
+      'question it was answering timed out (STS-LDAP-0130); the next ' +
+      'question starts a new thread.',
+    spec: 'none — logged' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +

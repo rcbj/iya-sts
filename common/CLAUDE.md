@@ -9953,6 +9953,29 @@ is #349's next phase, behind its own setting — so it has no row in
 `docs/caches.md` until something does. `tests/bounded_lru.js`.
 
 
+### `sync_query.ts` and `sync_query_thread.ts`: A SYNCHRONOUS QUESTION TO THE STORE (#349 phase 3, 2026-09-29)
+
+**rcbj's decision on #349: the directory API stays synchronous.** It is
+synchronous at about a thousand call sites, the parent project's locked
+Kerberos files among them, so a windowed worker's miss cannot become an
+`await`. Instead it crosses a thread boundary and WAITS: a `worker_thread`
+holds a `pg` client of its own (the driver's `bridgeConnection()`, the read
+side's options) and runs the named statement from
+`persistence/directory_queries.js`; this side posts the question and blocks
+on `Atomics.wait()` over a shared COUNTER the thread bumps after posting its
+answer (a flag loses a wake to a late answer), then takes the answer with
+`receiveMessageOnPort()` — the `synckit` pattern. **The price is the whole
+event loop for one round trip**, which is why only a miss pays it, and it is
+bounded by `ldap.workerDirectoryTimeoutMs` (also the thread's statement
+timeout): past it `STS-LDAP-0130`, a database error `STS-LDAP-0131`, and the
+request is refused rather than answered out of a window that cannot say what
+it is missing. A thread that dies is seen as a timeout, because its `exit`
+event is delivered by the loop the question holds; the next question starts a
+new one (`STS-LDAP-0132` is logged when the event arrives). The thread has no
+logger and so no Entering/Leaving pairs — the style's child-process exemption,
+stated in its header. `tests/sync_query.js`.
+
+
 ## 3ba. The mail channel: `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts` (#63, 2026-09-22)
 
 Until #63 this service had no way to tell a person anything. A reset link and
