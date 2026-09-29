@@ -104,8 +104,19 @@ const lookupCount = cacheRegistry.register({
     return (CACHE_MS / 1000) + ' s after the lookup; a change to the source ' +
       'drops its rows.';
   },
-  entries: function (): number {
-    return lookups.size;
+  // ROWS AND NOT A COUNT (#352). This answered `lookups.size`, which
+  // `cacheRegistry.report()` maps over, so /admin/caches threw from the
+  // moment this module loaded and `tests/cache_registry.js` failed with it.
+  // The key is the source and the person's key — the definition's digest at
+  // the end of the map key says nothing to an operator — and never the row.
+  entries: function (): unknown[] {
+    const rows: unknown[] = [];
+    lookups.forEach(function (held, cacheKey) {
+      const parts = cacheKey.split('\n');
+      rows.push({ realm: parts[0], key: parts[1] + ' ' + parts[2],
+                  validUntil: held.at + CACHE_MS });
+    });
+    return rows;
   },
   eject: function (now: number): number {
     let gone = 0;
