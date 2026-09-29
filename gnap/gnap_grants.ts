@@ -2401,7 +2401,7 @@ class GnapGrants {
         store.dropManagement(record);
         store.saveToken(record);
         if (/^jwt/.test(record.format)) {
-          stats.revoke(record.jti, 'GNAP: ' + why);
+          stats.revoke(record.jti, 'GNAP: ' + why, undefined, record.exp);
         }
       }
     });
@@ -2547,7 +2547,8 @@ class GnapGrants {
       store.dropManagement(record);
       store.saveToken(record);
       if (/^jwt/.test(record.format)) {
-        stats.revoke(record.jti, 'GNAP token management');
+        stats.revoke(record.jti, 'GNAP token management', undefined,
+                     record.exp);
       }
       monitor.record(record.instanceId, 'token.revoked', {});
       audit.audit({ action: 'gnap.token.revoke', category: 'protocol',
@@ -2666,7 +2667,7 @@ class GnapGrants {
     store.moveManagement(record, next);
     store.saveToken(record);
     if (/^jwt/.test(record.format)) {
-      stats.revoke(record.jti, 'GNAP rotation');
+      stats.revoke(record.jti, 'GNAP rotation', undefined, record.exp);
     }
     const manageValue = store.issueManagement(next);
     store.saveToken(next);

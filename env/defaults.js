@@ -161,6 +161,7 @@ var config = {
     sessionSweepS: 30,              // How often expired sessions are ended (seconds)
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
+    maxSessions: 100000,            // Most sign-on sessions per realm
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
     passwordAloneDoors: "",         // Password-only doors that accept a password alone
@@ -392,6 +393,7 @@ var config = {
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
     expiredTokenRetentionS: 86400,               // Keep an expired token on /admin/tokens for (seconds)
+    maxRevokedJtis: 100000,                      // Most revoked token ids kept per realm
     clockSkewS: 30,                              // Token clock skew (s)
     redirectUris: "",                            // Registered redirect URIs
     loopbackPortWildcard: true,                  // Loopback port wildcard

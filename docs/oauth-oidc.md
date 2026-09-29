@@ -1860,6 +1860,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.authorizationCodeTtlS` | `STS_OAUTH2_AUTHORIZATION_CODE_TTL_S` | `300` | yes | How long an authorization code may wait to be redeemed; RFC 9700 mode's transaction memory is measured from it. |
 | `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered so an identical repeat gets the same tokens and a different one is refused by name. |
 | `oauth2.expiredTokenRetentionS` | `STS_OAUTH2_EXPIRED_TOKEN_RETENTION_S` | `86400` | yes | How long an expired token stays in the `/admin/tokens` register before the hourly purge job deletes its record. |
+| `oauth2.maxRevokedJtis` | `STS_OAUTH2_MAX_REVOKED_JTIS` | `100000` | yes | The most revoked token ids a realm keeps. A revocation is dropped anyway once its token expires; at the cap the one whose token expires soonest is forgotten (`STS-OAUTH-0787`), and that token is accepted again until it expires. |
 
 ### Certificate chain headers
 

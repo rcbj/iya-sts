@@ -13322,7 +13322,8 @@ class OAuth2Server {
         // SUPERSEDED for CAEP (#239): a revoked grant was reported when it
         // was revoked, and a merged or replaced one did not end.
         stats.revoke(String(claims.jti || ''), 'its grant is ' +
-                     'revoked or superseded', { superseded: true });
+                     'revoked or superseded', { superseded: true },
+                     claims.exp);
         log.debug("Leaving the token endpoint. Grant Management refused the " +
                   "refresh.");
         errorCodes.mark(res, grantProblem.code);
@@ -13706,7 +13707,7 @@ class OAuth2Server {
         bcp.noteRefreshRotated(claims.jti);
         // Superseded, not ended: its successor carries the grant on (#239).
         stats.revoke(claims.jti, 'RFC 9700 section 2.2.2: rotated on use',
-                     { superseded: true });
+                     { superseded: true }, claims.exp);
       }
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return respond(refreshed);
@@ -17285,7 +17286,9 @@ class OAuth2Server {
     // uninstalled it, and no administrator or policy was involved.
     const how = { initiatingEntity: 'user' };
     const revoked: string[] = [];
-    if (claims.jti && stats.revoke(claims.jti, via, how)) {
+    // The token's own `exp` goes with it (#345): the revocation is kept
+    // until then and no longer.
+    if (claims.jti && stats.revoke(claims.jti, via, how, claims.exp)) {
       revoked.push(String(claims.jti));
     }
     if (kind === 'refresh') {
