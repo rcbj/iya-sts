@@ -2892,20 +2892,44 @@ class AdminViews {
     return view;
   }
 
+  // ---------------------------------------------------------------------------
+  // PAGE, THEN DECORATE (#352, 2026-09-29).
+  //
+  // Every list here was built WHOLE and then sliced, and where a row's cells
+  // cost something — a directory read, an unseal, a certificate parse — the
+  // whole population paid for one page of it: `/admin/users` asked the
+  // credential store about everybody in the realm to draw fifty rows.
+  // `options.decorate(row)` is the other order: the list is filtered and
+  // sorted on what is cheap, paged, and only the rows SHOWN are handed to the
+  // decorator, whose answer replaces the row in `shown`. A caller that
+  // passes none gets exactly the slice it always got.
+  //
+  // The rule it serves: a filter that needs the decoration (the users page's
+  // `?factor=`) cannot be applied after it, so such a filter is the caller's
+  // to answer from a one-pass census before paging — never by decorating
+  // everybody.
+  // ---------------------------------------------------------------------------
   /**
-   * Pages a list of rows.
+   * Pages a list of rows, decorating only the rows shown.
    *
    * @param query - the query
    * @param rows - the rows
-   * @param options - as `pagingOf()` takes them
+   * @param options - as `pagingOf()` takes them, and `decorate(row)`, applied
+   *   to each shown row and returning the row to show
    * @returns the paging and the rows shown
    */
   pagedRows(query, rows, options?) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pagedRows().");
     const pg = this.pagingOf(query, rows.length, options);
+    const slice = rows.slice(pg.offset, pg.offset + pg.perPage);
+    const decorate = options && typeof options.decorate === 'function'
+      ? options.decorate : null;
+    const shown = decorate
+      ? slice.map(function (row) { return decorate(row); })
+      : slice;
     log.debug("Leaving AdminViews.pagedRows().");
-    return { paging: pg, shown: rows.slice(pg.offset, pg.offset + pg.perPage) };
+    return { paging: pg, shown: shown };
   }
 
   // The filtered, paged token list and the reply built from it. The WHOLE view
@@ -5400,8 +5424,11 @@ class AdminViews {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.knownUserKeys().");
     const known: Record<string, any> = {};
-    stats.userRows().forEach(function (row) {
-      known[row.key] = true;
+    // THE KEYS AND NOT THE ROWS (#352): `stats.userKeys()` answers the key of
+    // every row `userRows()` would build, without building one — nine pages
+    // ask this and every one of them threw the rows away.
+    stats.userKeys().forEach(function (key) {
+      known[key] = true;
     });
     log.debug("Leaving AdminViews.knownUserKeys().");
     return known;
@@ -7347,6 +7374,7 @@ class AdminViews {
     // thousand people it happens to remember.
     const population = this.peopleRows();
     const all = population.rows;
+    const self = this;
     // The second-factor filter, which arrived with the roster on 2026-09-10. It
     // is `factor` rather than `mfa` because that is the name `/admin/mfa` used
     // and a link somebody bookmarked should keep working against the page that
@@ -7363,6 +7391,22 @@ class AdminViews {
         protocolsSeen[family.protocol] = true;
       });
     });
+    // -----------------------------------------------------------------------
+    // WHAT EVERYBODY HOLDS, COUNTED ONCE (#352, 2026-09-29).
+    //
+    // The tiles below and the `?factor=` filter are the two things on this
+    // page that need every row's factors, and they used to get them by
+    // decorating every row — `mechanismsFor()` per person, which is what made
+    // this page ten seconds long on a realm of thirty thousand. They get them
+    // from `peopleCensus()` now: seven facts per person from ONE pass over
+    // the directory, each sealed TOTP secret opened at most once per process.
+    // The census gives the same facts `mechanismsFor()` would, folded across
+    // spellings by the same `mergeFactors()`, so the numbers do not move.
+    // -----------------------------------------------------------------------
+    const census = this.peopleCensus(population, all);
+    const factorsOf = function (row) {
+      return census.get(row.key) || null;
+    };
     const filtered = all.filter(function (row) {
       if (wantedText &&
           row.key.toLowerCase()
@@ -7377,7 +7421,7 @@ class AdminViews {
       // matches NO factor filter rather than matching `none`, because "this
       // service cannot tell" and "this person holds none" are different answers
       // and the second one is the dangerous one to guess.
-      const factors = row.factors;
+      const factors = factorsOf(row);
       if (wantedFactor === 'totp' && !(factors && factors.totp)) return false;
       if (wantedFactor === 'key' &&
           !(factors && factors.mfaKeys > 0)) return false;
@@ -7389,40 +7433,47 @@ class AdminViews {
           !(factors && factors.totp && !factors.totpUsable)) return false;
       return true;
     });
-    const paging = this.pagingOf(req.query, filtered.length);
-    const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
+    // PAGE, THEN DECORATE: the full factor row — keys, the authenticator's
+    // detail, the recovery codes, what the columns draw — is built for the
+    // rows on this page and for nobody else (`pagedRows()`).
+    const page = this.pagedRows(req.query, filtered, {
+      decorate: function (row) {
+        return self.decoratePerson(population, row);
+      }
+    });
+    const paging = page.paging;
+    const shown = page.shown;
     const filterParams = { q: wantedText, protocol: wantedProtocol,
                            factor: wantedFactor,
                            per: req.query.per ? paging.perPage : '' };
     const authenticatedHere = all.filter(function (
         row) { return row.authenticated; }).length;
+    // Over everybody, from the census — never from `shown`, whose rows are
+    // the only ones decorated. A row the census has nothing for (no
+    // credential store answered) counts in no tile, as it always did.
+    const counted = function (test) {
+      return all.filter(function (r) {
+        const f = factorsOf(r);
+        return !!f && test(f, r);
+      }).length;
+    };
     const factorCounts = {
-      withSecond: all.filter(function (r) {
-        return r.factors && r.factors.mfaRequired;
-      }).length,
-      withTotp: all.filter(function (r) {
-        return r.factors && r.factors.totp;
-      }).length,
-      withKeys: all.filter(function (r) {
-        return r.factors && r.factors.mfaKeys > 0;
-      }).length,
-      primaryKeys: all.filter(function (r) {
-        return r.factors && r.factors.primaryKeys > 0;
-      }).length,
-      passwordOnly: all.filter(function (r) {
-        return r.factors && r.factors.password && !r.factors.mfaRequired;
-      }).length,
-      unreadable: all.filter(function (r) {
-        return r.factors && r.factors.totp && !r.factors.totpUsable;
-      }).length,
+      withSecond: counted(function (f) { return f.mfaRequired; }),
+      withTotp: counted(function (f) { return f.totp; }),
+      withKeys: counted(function (f) { return f.mfaKeys > 0; }),
+      primaryKeys: counted(function (f) { return f.primaryKeys > 0; }),
+      passwordOnly: counted(function (f) {
+        return f.password && !f.mfaRequired;
+      }),
+      unreadable: counted(function (f) { return f.totp && !f.totpUsable; }),
       // NOBODY CAN SIGN IN AS THEM. A person with an entry and no password and
       // no primary key — the ordinary state of somebody provisioned and not yet
       // activated, and the state an activation link exists to end. It is
       // counted beside the second-factor tiles because it is the OTHER question
       // an operator brings to a roster of people.
-      noCredential: all.filter(function (r) {
-        return r.factors && !r.factors.usable && !r.isClient;
-      }).length
+      noCredential: counted(function (f, r) {
+        return !f.usable && !r.isClient;
+      })
     };
     log.debug("Leaving AdminViews.usersListJson().");
     return {
@@ -7503,11 +7554,34 @@ class AdminViews {
   // UNIONED rather than one of them winning: holding a key under one spelling
   // and an app under another is holding both.
   // ===========================================================================
+  //
+  // ---------------------------------------------------------------------------
+  // AND IT READS NOTHING PER PERSON (#352, 2026-09-29).
+  //
+  // This function used to unite the FACTORS as it folded — every spelling
+  // asked `mechanismsFor()` through `credentials.secondFactorHolders()` — so
+  // building the population cost a credential lookup per person, and every
+  // request to `/admin/users`, `/admin-api/users` and `/admin-api/mfa` paid it
+  // for the whole realm to show one page. The fold is the same and the rows
+  // are the same; what a row no longer carries is its factors (`factors` is
+  // null on every row this returns). What it carries instead, beside the
+  // rows, is `spellings` — which population names folded into which row, in
+  // the order the fold met them — so that:
+  //
+  //   * `decoratePerson()` unites the full factor rows of ONE row's spellings,
+  //     for the rows a page shows, in the order this used to; and
+  //   * `peopleCensus()` unites the census facts of every row's spellings, for
+  //     the tiles and the `?factor=` filter, in one pass.
+  //
+  // `isApplication` is the directory's one-listing answer to the third test
+  // of `isApplicationRow()` (see there).
+  // ---------------------------------------------------------------------------
   /**
-   * Lists the people, one row per person, folding their spellings and uniting
-   * their factors.
+   * Lists the people, one row per person, folding their spellings; the
+   * factors are united later, for the rows shown (`decoratePerson()`) and in
+   * one pass for the counts (`peopleCensus()`).
    *
-   * @returns the rows
+   * @returns the rows, the population's reporting, and `spellings`
    */
   peopleRows() {
     const { log, credentials, stats } = this.deps;
@@ -7526,9 +7600,14 @@ class AdminViews {
       byKey.set(row.key, row);
     });
 
-    const holders = credentials.secondFactorHolders(seen.map(function (row) {
-      return row.key;
-    }));
+    const holders = credentials.secondFactorPopulation(
+      seen.map(function (row) {
+        return row.key;
+      }));
+    // Row key -> the population rows (spellings) folded into it, in the order
+    // the fold meets them, which is the order `mergeFactors()` used to be
+    // applied in — so decorating later unites them exactly as this did.
+    const spellings = new Map();
 
     holders.rows.forEach(function (holder) {
       const key = stats.identityKeyOf(holder.username);
@@ -7557,11 +7636,15 @@ class AdminViews {
         byKey.set(key, row);
       }
       row.inDirectory = row.inDirectory || !!holder.inDirectory;
-      row.factors = self.mergeFactors(row.factors, holder);
+      if (!spellings.has(key)) {
+        spellings.set(key, []);
+      }
+      spellings.get(key).push(holder);
     });
 
+    const isApplication = holders.isApplication;
     const rows = Array.from(byKey.values()).filter(function (row) {
-      return !self.isApplicationRow(row);
+      return !self.isApplicationRow(row, isApplication);
     });
     rows.sort(function (a, b) {
       return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 :
@@ -7572,7 +7655,80 @@ class AdminViews {
               holders.scanned + " scanned in the directory.");
     return { rows: rows, store: holders.store, scanned: holders.scanned,
              capped: holders.capped, limit: holders.limit,
-             registryCap: stats.MAX_USERS };
+             registryCap: stats.MAX_USERS, spellings: spellings };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE SHOWN ROW'S FACTORS (#352): what `peopleRows()` used to compute for
+  // everybody, for one row — each spelling's full roster row from
+  // `credentials.factorHolderRow()`, united by `mergeFactors()` in the fold's
+  // order. A row nothing folded into keeps `factors: null`, which is what it
+  // had when no credential store answered for it.
+  // ---------------------------------------------------------------------------
+  /**
+   * Fills in one people row's factors, for a row a page shows.
+   *
+   * @param population - what `peopleRows()` returned
+   * @param row - one of its rows
+   * @returns the row, with `factors`
+   */
+  decoratePerson(population, row) {
+    const { log, credentials } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.decoratePerson(). key=" + row.key);
+    let factors = null;
+    ((population.spellings && population.spellings.get(row.key)) || [])
+      .forEach(function (holder) {
+        factors = self.mergeFactors(factors,
+                                    credentials.factorHolderRow(holder));
+      });
+    row.factors = factors;
+    log.debug("Leaving AdminViews.decoratePerson().");
+    return row;
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERY ROW'S FACTORS, IN ONE PASS, FOR WHAT COUNTS OR FILTERS (#352).
+  //
+  // `credentials.factorCensus()` answers the seven facts the tiles and the
+  // `?factor=` filter read, for every spelling, from one call into the
+  // directory; this unites them per row with the same `mergeFactors()` the
+  // shown rows are united with, so a count and a row cannot disagree. Only
+  // the rows passed in are asked about — the population after the
+  // application filter, which is what the tiles have always counted.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers each people row's census facts, united across its spellings.
+   *
+   * @param population - what `peopleRows()` returned
+   * @param rows - the rows to answer for
+   * @returns a Map from row key to its facts, or to null where nothing folded
+   *   into it
+   */
+  peopleCensus(population, rows) {
+    const { log, credentials } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.peopleCensus(). " + rows.length +
+              " row(s).");
+    const spellings = population.spellings || new Map();
+    const names = [];
+    rows.forEach(function (row) {
+      (spellings.get(row.key) || []).forEach(function (holder) {
+        names.push(holder.username);
+      });
+    });
+    const facts = credentials.factorCensus(names);
+    const out = new Map();
+    rows.forEach(function (row) {
+      let merged = null;
+      (spellings.get(row.key) || []).forEach(function (holder) {
+        merged = self.mergeFactors(merged,
+          facts.get(String(holder.username).trim()) || {});
+      });
+      out.set(row.key, merged);
+    });
+    log.debug("Leaving AdminViews.peopleCensus().");
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -7601,14 +7757,25 @@ class AdminViews {
   // an application stays listed: the person entry is the stronger claim.
   // The rows are still on `stats.userRows()` for every page that is about
   // IDENTITIES rather than people — the delegation map, the token holders.
+  //
+  // **THE THIRD TEST WAS A REGISTRY READ PER ROW (#352)**: `applications.get()`
+  // for every register row with no person entry — a directory lookup and, on
+  // a miss, a walk of `ou=applications`, thousands of times on a cluster that
+  // has seen many clients and whose directory is past the scan cap.
+  // `isApplication` is the same question answered from ONE listing of that
+  // container (`ldap_server.js`'s `applicationMatcher()`, handed over with
+  // the population); where no directory offered one, the registry is asked
+  // per row as before.
   // ---------------------------------------------------------------------------
   /**
    * Asks whether a user-registry row is an application rather than a person.
    *
    * @param row - the row
+   * @param isApplication - the directory's one-listing matcher, when there
+   *   is one; `applications.get()` is asked otherwise
    * @returns whether it is
    */
-  isApplicationRow(row) {
+  isApplicationRow(row, isApplication?) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.isApplicationRow().");
     if (row.isClient) {
@@ -7622,7 +7789,9 @@ class AdminViews {
       log.debug("Leaving AdminViews.isApplicationRow(). A client subject.");
       return true;
     }
-    if (!row.inDirectory && applications.get(row.key)) {
+    if (!row.inDirectory &&
+        (typeof isApplication === 'function' ? isApplication(row.key)
+                                             : applications.get(row.key))) {
       log.debug("Leaving AdminViews.isApplicationRow(). A registered " +
                 "application.");
       return true;

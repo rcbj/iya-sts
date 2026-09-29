@@ -2787,6 +2787,41 @@ function open(ciphertext, label) {
 }
 
 // ---------------------------------------------------------------------------
+// WHICH KEYS `open()` WOULD TRY, AS A NUMBER (#352, 2026-09-29).
+//
+// Whether a given ciphertext opens is a pure function of the ciphertext and
+// of the two keys above, so a caller that only needs the VERDICT — does this
+// sealed TOTP secret open here, yes or no — may remember it, and
+// `common/credentials.ts` does, so that `/admin/users` stops unsealing every
+// enrolled person's secret on every request to report a count. What such a
+// memo must be keyed on is the key set, and the key set is the one thing this
+// file never hands out.
+//
+// So it hands out a COUNTER instead: it moves whenever `kek` or `cellKek` is
+// not the value it was when last asked — `start()`, an ephemeral key installed
+// or dropped by a test, `reset()` — and a verdict remembered under an older
+// number is a verdict about keys this process no longer holds. The values are
+// compared by identity inside this file and nothing derived from them leaves:
+// no digest, no fingerprint, only how many times they have changed.
+// ---------------------------------------------------------------------------
+let epochSeen = { kek: null, cellKek: null, epoch: 0 };
+
+/**
+ * Returns a number that changes whenever the keys `open()` tries change, for
+ * a caller that remembers whether a ciphertext opens.
+ *
+ * @returns the epoch
+ */
+function kekEpoch() {
+  log.debug("Entering kekEpoch().");
+  if (epochSeen.kek !== kek || epochSeen.cellKek !== cellKek) {
+    epochSeen = { kek: kek, cellKek: cellKek, epoch: epochSeen.epoch + 1 };
+  }
+  log.debug("Leaving kekEpoch().");
+  return epochSeen.epoch;
+}
+
+// ---------------------------------------------------------------------------
 // THE CERTIFICATE AUTHORITY MATERIAL (2026-09-10), AND WHY IT IS IN THIS FILE.
 //
 // `common/pki.js` builds a Root, an Intermediate and an Issuing CA per trust
@@ -3988,6 +4023,7 @@ module.exports = {
   keyedDigest: keyedDigest,
   seal: seal,
   open: open,
+  kekEpoch: kekEpoch,
   start: start,
   storedFor: storedFor,
   privateMaterialFor: privateMaterialFor,

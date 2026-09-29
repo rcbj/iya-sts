@@ -178,6 +178,78 @@ import claims = require('../cluster/cluster_claims');
 import counters = require('../cluster/cluster_counters');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
+// THE CACHE REGISTRY (#74, rule 3ap), for the one cache this file keeps — the
+// TOTP verdicts below (#352). A LEAF in JavaScript that requires `config` and
+// `error_codes`, so it can close no cycle from here.
+import cacheRegistry = require('./cache_registry');
+
+// ===========================================================================
+// WHETHER A SEALED AUTHENTICATOR SECRET OPENS HERE, REMEMBERED (#352,
+// 2026-09-29).
+//
+// **`/admin/users` UNSEALED EVERY ENROLLED PERSON'S TOTP SECRET ON EVERY
+// REQUEST**, to report a tile. `mechanismsFor()` asked `totpOf()`, which
+// opens the secret, and the page asked `mechanismsFor()` of everybody in the
+// realm to count who holds an authenticator and whose enrolment cannot be
+// read — one `keystore.open()` per enrolled person, per page view, whatever
+// the page number. Nothing on that page, and nothing `mechanismsFor()`
+// reports, needs the secret: it needs the VERDICT, *does it open under this
+// process's key-encryption key*, which is what `totpUsable` and the
+// *unreadable* tile are.
+//
+// **A VERDICT IS A PURE FUNCTION OF THE CIPHERTEXT AND THE KEYS**, so it may
+// be remembered, keyed by the ciphertext and stamped with
+// `keystore.kekEpoch()`, which moves whenever the keys `open()` would try
+// change. A new enrolment is a new ciphertext (a fresh IV), so it is a miss;
+// a verdict about keys this process no longer holds carries a stale stamp,
+// so it is a miss. Nothing else can make one wrong, so there is no lifetime
+// and no sweep (root CLAUDE.md, *Anything periodic is a scheduler job*): an
+// entry goes only to make room.
+//
+// **IT HOLDS NO SECRET.** The key is the SEALED text, which every directory
+// dump already carries; the value is a boolean. The one reader that needs the
+// secret itself — `verifyTotp()`, through `totpOf()` — still opens it every
+// time and never consults this.
+//
+// **PER PROCESS, AND THAT IS CORRECT RATHER THAN MERELY ACCEPTABLE**: the
+// verdict is about THIS process's keys, so another process's answer would be
+// the wrong one to share, and no write anywhere can change it.
+// ===========================================================================
+const TOTP_VERDICTS_MAX = 20000;
+const totpVerdicts = new Map<string, { epoch: number; opens: boolean }>();
+const totpVerdictCount = cacheRegistry.register({
+  name: 'credentials.totp-verdicts',
+  title: 'Authenticator secret verdicts',
+  description: 'Whether each sealed authenticator (TOTP) secret this process ' +
+    'has been asked about opens under its key-encryption key (#352), so the ' +
+    'users list and the second-factor roster can report an enrolment as ' +
+    'readable or not without unsealing it on every request. Keyed by the ' +
+    'sealed text; the value is yes or no, never the secret.',
+  owner: 'common/credentials.ts',
+  scope: 'process', kind: 'cache', persisted: false,
+  hitMeaning: 'a sealed secret whose verdict was already known, so it was ' +
+    'not opened',
+  settings: [],
+  maxEntries: function (): number {
+    return TOTP_VERDICTS_MAX;
+  },
+  bound: 'Enforced: ' + TOTP_VERDICTS_MAX + ' verdicts; full, the oldest is ' +
+    'dropped and that secret is opened again when next asked about.',
+  lifetime: function (): string {
+    return 'Until the key-encryption keys change, or it is dropped to make ' +
+      'room. A new enrolment is a new sealed text and is asked afresh.';
+  },
+  entries: function (): unknown[] {
+    const epoch = keystore.kekEpoch();
+    const out: Array<Record<string, unknown>> = [];
+    totpVerdicts.forEach(function (row, key): void {
+      out.push({ key: cacheRegistry.digestKey(key), validUntil: null,
+                 valid: row.epoch === epoch,
+                 basis: row.opens ? 'opens' : 'will not open' });
+    });
+    return out;
+  }
+});
 
 // What `Credentials` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -580,6 +652,57 @@ class Credentials {
     log.debug('Leaving Credentials.setDirectory(). Credentials are backed ' +
               'by the directory.');
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE POPULATION HOOKS (#352, 2026-09-29): two more functions of the SAME
+  // directory, offered after `setDirectory()` rather than inside it.
+  //
+  //   * `credentialCensus(names)` — for each name, the RAW values of the
+  //     credential attributes this file reads, off the entry it names; see
+  //     `factorCensus()` for what it replaced and why it is raw.
+  //   * `applicationMatcher()` — a function that says whether a key names an
+  //     application registered in this realm, built from one listing, for the
+  //     people list's *an application is not a person* rule.
+  //
+  // **THEY ARE REMEMBERED AGAINST THE DIRECTORY THEY CAME WITH.** A test that
+  // installs a stub directory with `setDirectory()` and no census must not be
+  // answered by the real directory's census about people the stub holds — so
+  // the hooks are used only while `this.directory` is the object they were
+  // offered beside, and otherwise the old one-name-at-a-time path answers.
+  // Checked where they are used, like every other optional hook here.
+  // ---------------------------------------------------------------------------
+  private directoryExtras = null;
+
+  /**
+   * Adds the population hooks to the directory slot already filled.
+   *
+   * @param hooks - `credentialCensus` and `applicationMatcher`
+   * @returns true when added, false when no directory is installed
+   */
+  addDirectoryHooks(hooks) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.addDirectoryHooks().');
+    if (!this.directory || !hooks) {
+      log.debug('Leaving Credentials.addDirectoryHooks(). No directory.');
+      return false;
+    }
+    this.directoryExtras = { forDirectory: this.directory, hooks: hooks };
+    log.debug('Leaving Credentials.addDirectoryHooks().');
+    return true;
+  }
+
+  // The population hook named, or null where it is absent or was offered
+  // beside a different directory than the one installed now.
+  private directoryHook(name) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.directoryHook(). ' + name);
+    const extras = this.directoryExtras;
+    const hook = extras && extras.forDirectory === this.directory &&
+                 typeof extras.hooks[name] === 'function'
+      ? extras.hooks[name] : null;
+    log.debug('Leaving Credentials.directoryHook(). ' + !!hook);
+    return hook;
   }
 
   // Is there a store at all? Read by the console and by the mode report, which
@@ -2043,7 +2166,6 @@ class Credentials {
    */
   keysOf(username) {
     const { log, errorCodes } = this.deps;
-    const { WEBAUTHN_ATTRIBUTE } = Credentials;
     const directory = this.directory;
     log.debug('Entering Credentials.keysOf(). username=' + username);
     if (!directory || typeof directory.readWebauthn !== 'function') {
@@ -2060,8 +2182,20 @@ class Credentials {
       log.debug("Leaving Credentials.keysOf().");
       return [];
     }
+    const out = this.keysFromValues(raw, username);
+    log.debug('Leaving Credentials.keysOf(). ' + out.length + ' key(s).');
+    return out;
+  }
+
+  // WHAT A STORED VALUE IS AS A KEY, in one place (#352): `keysOf()` reads
+  // the values for one person and `factorCensus()` is handed them for many,
+  // and both must agree about which values are keys at all.
+  private keysFromValues(raw, username) {
+    const { log } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.keysFromValues().');
     const out = [];
-    raw.forEach((value) => {
+    (raw || []).forEach((value) => {
       try {
         const parsed = JSON.parse(value);
         if (parsed && parsed.credentialId && parsed.publicKeyJwk) {
@@ -2075,7 +2209,7 @@ class Credentials {
                  'ignored: ' + e.message);
       }
     });
-    log.debug('Leaving Credentials.keysOf(). ' + out.length + ' key(s).');
+    log.debug('Leaving Credentials.keysFromValues(). ' + out.length + '.');
     return out;
   }
 
@@ -2929,6 +3063,121 @@ class Credentials {
     return parsed;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ENROLMENT WITHOUT ITS SECRET (#352, 2026-09-29): what every REPORT
+  // asks — enrolled, when, how, and whether this process could check a code —
+  // answered without unsealing anything whose verdict is already known. See
+  // `totpVerdicts` at the top of this file.
+  //
+  // **THE SAME THREE ANSWERS `totpOf()` GIVES AND FOR THE SAME REASONS**: null
+  // for none, `{ unusable, why }` for a value that is not JSON or a secret
+  // that will not open — never "absent", because absent would sign somebody in
+  // on one factor — and otherwise the record. The record comes back WITHOUT a
+  // secret where it was sealed; `verifyTotp()` never reads this, so nothing
+  // that needs the secret can be handed a record without one.
+  // ---------------------------------------------------------------------------
+  private totpStatusFromValue(raw, name) {
+    const { log } = this.deps;
+    const { TOTP_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.totpStatusFromValue().');
+    if (!raw) {
+      log.debug('Leaving Credentials.totpStatusFromValue(). None enrolled.');
+      return null;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      log.warn('credentials: the ' + TOTP_ATTRIBUTE + ' value on ' + name +
+               ' is not JSON this service wrote and is being reported as an ' +
+               'unusable enrolment rather than ignored: ' + e.message);
+      log.debug('Leaving Credentials.totpStatusFromValue(). Not JSON.');
+      return { unusable: true, why: 'the stored value is not readable' };
+    }
+    if (parsed && parsed.sealed) {
+      const verdict = this.sealedSecretVerdict(parsed.secret);
+      if (!verdict.opens) {
+        // SAID ONCE PER SECRET AND KEY SET, when it is found — not on every
+        // page view that counts it, which is the flood `totpOf()`'s own
+        // warning would be if this path repeated it (a state, logged when it
+        // is learned; the *unreadable* tile is where it stays visible).
+        if (!verdict.remembered) {
+          log.warn('credentials: the authenticator secret for ' + name +
+                   ' is sealed and will not open under this process\'s ' +
+                   'key-encryption key. It is reported as UNUSABLE rather ' +
+                   'than as absent, because absent would sign them in with ' +
+                   'one factor.');
+        }
+        log.debug('Leaving Credentials.totpStatusFromValue(). Unusable.');
+        return { unusable: true,
+                 why: 'the stored secret is sealed under a different ' +
+                      'key-encryption key' };
+      }
+      const withoutSecret = Object.assign({}, parsed);
+      delete withoutSecret.secret;
+      log.debug('Leaving Credentials.totpStatusFromValue(). Sealed, opens.');
+      return withoutSecret;
+    }
+    log.debug('Leaving Credentials.totpStatusFromValue(). Enrolled.');
+    return parsed;
+  }
+
+  // One person's, read off the directory: `totpOf()`'s read, and
+  // `totpStatusFromValue()`'s answer.
+  private totpStatusOf(username) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const name = String(username || '').trim();
+    log.debug('Entering Credentials.totpStatusOf(). username=' + name);
+    if (!directory || typeof directory.readTotp !== 'function') {
+      log.debug('Leaving Credentials.totpStatusOf(). No store.');
+      return null;
+    }
+    let raw = '';
+    try {
+      raw = directory.readTotp(name) || '';
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0071') +
+                'credentials: reading the authenticator enrolment for ' + name +
+                ' threw: ' + e.message);
+      log.debug('Leaving Credentials.totpStatusOf(). It threw.');
+      return null;
+    }
+    const out = this.totpStatusFromValue(raw, name);
+    log.debug('Leaving Credentials.totpStatusOf().');
+    return out;
+  }
+
+  // Does this sealed secret open here? `keystore.open()` at most once per
+  // sealed text and key set — see `totpVerdicts`. A keystore without
+  // `kekEpoch()` (a test's stub) is asked every time, which is the old cost
+  // and never a wrong answer. `remembered` says whether the verdict was
+  // already known, so a caller reports a finding once.
+  private sealedSecretVerdict(ciphertext) {
+    const { log, keystore } = this.deps;
+    log.debug('Entering Credentials.sealedSecretVerdict().');
+    const epoch = typeof keystore.kekEpoch === 'function'
+      ? keystore.kekEpoch() : -1;
+    const key = String(ciphertext);
+    const held = epoch >= 0 ? totpVerdicts.get(key) : undefined;
+    if (held && held.epoch === epoch) {
+      totpVerdictCount.hit();
+      log.debug('Leaving Credentials.sealedSecretVerdict(). Remembered.');
+      return { opens: held.opens, remembered: true };
+    }
+    totpVerdictCount.miss();
+    const opens = !!keystore.open(ciphertext, 'totp-secret');
+    if (epoch >= 0) {
+      if (!held) {
+        cacheRegistry.makeRoom(totpVerdicts, TOTP_VERDICTS_MAX,
+                               { counter: totpVerdictCount });
+      }
+      totpVerdicts.set(key, { epoch: epoch, opens: opens });
+    }
+    log.debug('Leaving Credentials.sealedSecretVerdict(). ' + opens);
+    return { opens: opens, remembered: false };
+  }
+
   /**
    * Says whether a person has an authenticator app enrolled.
    *
@@ -3457,9 +3706,62 @@ class Credentials {
    * @returns `{ rows, scanned, capped, limit, … }`
    */
   secondFactorHolders(alsoKnown, opts?) {
-    const { log, totp, backupCodes, errorCodes } = this.deps;
-    const directory = this.directory;
+    const { log } = this.deps;
     log.debug('Entering Credentials.secondFactorHolders().');
+    const population = this.secondFactorPopulation(alsoKnown, opts);
+    const rows = population.rows.map((row) => {
+      return this.factorHolderRow(row);
+    });
+    log.debug('Leaving Credentials.secondFactorHolders(). ' + rows.length +
+              ' person/people.');
+    return { rows: rows, scanned: population.scanned,
+             capped: population.capped, limit: population.limit,
+             store: population.store };
+  }
+
+  // ===========================================================================
+  // THE SAME POPULATION, WITHOUT ASKING ANYBODY ANYTHING YET (#352,
+  // 2026-09-29).
+  //
+  // **`secondFactorHolders()` ASKED `mechanismsFor()` OF EVERY NAME IT
+  // LISTED, AND `/admin/users` SHOWS FIFTY.** That is about nine directory
+  // reads, a copy of the entry for the mail factor and an unseal of the TOTP
+  // secret per person, for five thousand people (the cap) plus everybody the
+  // register has seen — on testidp ten seconds a request, whatever the page,
+  // on the one thread a request worker has. The list needed three things per
+  // name to exist at all: the name, whether it came from the directory, and
+  // whether the register knows it. Everything else is DECORATION of the rows
+  // somebody is looking at.
+  //
+  // So the roster is three functions now, and the page calls them in the
+  // order *list, filter, page, decorate*:
+  //
+  //   * `secondFactorPopulation()` — this one: the union, deduplicated and
+  //     sorted exactly as before, capped exactly as before, and nothing read
+  //     per name. Its `isApplication` is the directory's answer to *is this
+  //     key a registered application*, built once (see `peopleRows()`).
+  //   * `factorHolderRow(row)` — the full row `secondFactorHolders()` always
+  //     returned, for ONE name: what the shown slice is decorated with.
+  //   * `factorCensus(names)` — the handful of facts the tiles and the
+  //     `?factor=` filter need, for every name, in one pass. See below.
+  //
+  // `secondFactorHolders()` is the first two composed, unchanged in what it
+  // answers, for any caller that really does want everybody decorated.
+  // ===========================================================================
+  /**
+   * Lists the population the second-factor roster is drawn from — the
+   * directory's people (capped) and the names the caller knows — without
+   * reading anything per name.
+   *
+   * @param alsoKnown - names the caller has seen
+   * @param opts - `limit`; `credentials.factorScanLimit` when omitted
+   * @returns `{ rows: [{ username, inDirectory, known }], scanned, capped,
+   *   limit, store, isApplication }`
+   */
+  secondFactorPopulation(alsoKnown, opts?) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.secondFactorPopulation().');
     const options = opts || {};
     const limit = Math.max(1, Number(options.limit || this.factorScanLimit()));
     const seen = new Map();
@@ -3497,41 +3799,228 @@ class Credentials {
     }
     (alsoKnown || []).forEach((name) => { add(name, 'known'); });
 
-    const rows = [];
-    seen.forEach((row) => {
-      const mechanisms = this.mechanismsFor(row.username);
-      rows.push({
-        username: row.username,
-        inDirectory: row.inDirectory,
-        known: row.known,
-        password: mechanisms.password,
-        primaryKeys: mechanisms.primaryKeys,
-        mfaKeys: mechanisms.mfaKeys,
-        totp: mechanisms.totp,
-        totpUsable: mechanisms.totpUsable,
-        totpDetail: mechanisms.totpDetail,
-        // THE RECOVERY CODES AS A COUNT AND NEVER AS CODES. This roster is the
-        // operator's view and is drawn on `/admin/users`, which must never show
-        // a working second factor — `backupCodeStatus()` is what the whole row
-        // is built from and it carries none.
-        backupCodes: mechanisms.backupCodes,
-        // Whether this person should be told to generate a set — the flag that
-        // replaced the automatic issue on 2026-09-11, on the roster so that an
-        // operator can see the population it is true of rather than one row at
-        // a time.
-        recoveryAdvised: mechanisms.recoveryAdvised,
-        mfaRequired: mechanisms.mfaRequired,
-        secondFactor: mechanisms.secondFactor,
-        usable: mechanisms.usable
-      });
-    });
+    const rows = Array.from(seen.values());
+    // The order `secondFactorHolders()` always sorted its rows into, and
+    // `peopleRows()` folds spellings in this order — so it is kept exactly,
+    // comparator and all.
     rows.sort((a, b) => {
       return a.username.toLowerCase() < b.username.toLowerCase() ? -1 : 1;
     });
-    log.debug('Leaving Credentials.secondFactorHolders(). ' + rows.length +
-              ' person/people.');
+    // WHICH KEYS ARE APPLICATIONS, asked once of the directory rather than
+    // once per row of the register (`peopleRows()` argues it). Null where the
+    // directory offers no such hook, and the caller then asks the registry
+    // per row as it always did.
+    let isApplication = null;
+    const matcherHook = this.directoryHook('applicationMatcher');
+    if (matcherHook) {
+      try {
+        isApplication = matcherHook();
+      } catch (e) {
+        log.debug('Caught in Credentials.secondFactorPopulation(): ' +
+                  ((e && e.message) || e));
+        // Asked per row instead, which is slower and never different.
+        isApplication = null;
+      }
+    }
+    log.debug('Leaving Credentials.secondFactorPopulation(). ' + rows.length +
+              ' name(s).');
     return { rows: rows, scanned: scanned, capped: capped, limit: limit,
-             store: !!directory };
+             store: !!directory,
+             isApplication: typeof isApplication === 'function'
+               ? isApplication : null };
+  }
+
+  /**
+   * Builds one row of the second-factor roster: what one name can sign in
+   * with, from `mechanismsFor()`.
+   *
+   * @param row - a population row, `{ username, inDirectory, known }`
+   * @returns the roster row
+   */
+  factorHolderRow(row) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factorHolderRow().');
+    const mechanisms = this.mechanismsFor(row.username);
+    log.debug('Leaving Credentials.factorHolderRow().');
+    return {
+      username: row.username,
+      inDirectory: row.inDirectory,
+      known: row.known,
+      password: mechanisms.password,
+      primaryKeys: mechanisms.primaryKeys,
+      mfaKeys: mechanisms.mfaKeys,
+      totp: mechanisms.totp,
+      totpUsable: mechanisms.totpUsable,
+      totpDetail: mechanisms.totpDetail,
+      // THE RECOVERY CODES AS A COUNT AND NEVER AS CODES. This roster is the
+      // operator's view and is drawn on `/admin/users`, which must never show
+      // a working second factor — `backupCodeStatus()` is what the whole row
+      // is built from and it carries none.
+      backupCodes: mechanisms.backupCodes,
+      // Whether this person should be told to generate a set — the flag that
+      // replaced the automatic issue on 2026-09-11, on the roster so that an
+      // operator can see the population it is true of rather than one row at
+      // a time.
+      recoveryAdvised: mechanisms.recoveryAdvised,
+      mfaRequired: mechanisms.mfaRequired,
+      secondFactor: mechanisms.secondFactor,
+      usable: mechanisms.usable
+    };
+  }
+
+  // ===========================================================================
+  // THE CENSUS: WHAT EVERYBODY HOLDS, IN ONE PASS (#352, 2026-09-29).
+  //
+  // The seven tiles on `/admin/users` — hold a second factor, an authenticator
+  // app, a security key, a passwordless key, password only, an enrolment this
+  // process cannot read, no way in yet — are counts over the WHOLE population,
+  // and so is the `?factor=` filter, which has to know every row's factors to
+  // say which ones match. Those were the reason the page asked
+  // `mechanismsFor()` of everybody. They need seven facts per person, not
+  // `mechanismsFor()`'s twenty, and none of the seven needs a secret.
+  //
+  // **THE DIRECTORY HANDS OVER RAW VALUES AND THIS FILE INTERPRETS THEM**,
+  // which is the rule at the head of `secondFactorHolders()` kept rather than
+  // bent: *what an enrolment is* — which `stsWebauthnCredential` values are
+  // keys and in which role, what a sealed TOTP record is, when an emailed
+  // factor is held — is decided here and in `common/mail_factor.ts`, and
+  // `ldap_server.js`'s `credentialCensus()` only reads attributes off entries.
+  // A second implementation of the rule in the directory would agree with
+  // this one until the day it did not, and the tile would be the thing that
+  // was wrong.
+  //
+  // **THE SAME ANSWERS `mechanismsFor()` GIVES, BY CONSTRUCTION**: the keys go
+  // through `keysFromValues()`, the authenticator through
+  // `totpStatusFromValue()` and the emailed factor through
+  // `mailFactor.heldOfAttributes()` — the functions the one-name path uses.
+  // The TOTP verdict is `sealedSecretVerdict()`, so each sealed secret is
+  // opened at most once per process and key set, and not at all on a repeat
+  // request.
+  // `tests/users_page_before_decoration.js` computes both and compares them.
+  //
+  // **WHERE THE DIRECTORY OFFERS NO CENSUS** — a test's stub, an older
+  // `ldap_server.js` — every name is answered by `mechanismsFor()`, which is
+  // the old cost and the same answer.
+  //
+  // What it does NOT carry, deliberately: the recovery codes, `totpDetail`,
+  // the requirement flag and the reset link. No tile and no filter reads
+  // them, and they are on the rows somebody is looking at, where
+  // `factorHolderRow()` supplies them whole.
+  // ===========================================================================
+  /**
+   * Answers, for each name, the facts the users list counts and filters by:
+   * `password`, `primaryKeys`, `mfaKeys`, `totp`, `totpUsable`,
+   * `mfaRequired`, `secondFactor` and `usable` — in one pass over the
+   * directory, unsealing each TOTP secret at most once per process.
+   *
+   * @param names - the names, as the population lists them
+   * @returns a Map from each name (trimmed) to its facts
+   */
+  factorCensus(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.factorCensus().');
+    const list = (names || []).map((name) => {
+      return String(name == null ? '' : name).trim();
+    });
+    const out = new Map();
+    const census = this.directoryHook('credentialCensus');
+    let raws = null;
+    if (census) {
+      try {
+        raws = census(list);
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0292') +
+                  'credentials: the directory\'s credential census threw, so ' +
+                  'each person is asked on their own: ' + e.message);
+        raws = null;
+      }
+    }
+    if (!Array.isArray(raws) || raws.length !== list.length) {
+      list.forEach((name) => {
+        out.set(name, this.factsOf(this.mechanismsFor(name)));
+      });
+      log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+                ' name(s), one at a time.');
+      return out;
+    }
+    let mailFactor = null;
+    try {
+      mailFactor = require('./mail_factor');
+    } catch (e) {
+      log.debug('Caught in Credentials.factorCensus(): ' +
+                ((e && e.message) || e));
+      // Not held, for `mailFactorOf()`'s reason.
+      mailFactor = null;
+    }
+    list.forEach((name, index) => {
+      out.set(name, this.factsFromValues(raws[index], name, mailFactor));
+    });
+    log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+              ' name(s), in one pass.');
+    return out;
+  }
+
+  // `mechanismsFor()`'s answer cut down to the census's members, for the
+  // one-name fallback — so both paths hand back one shape.
+  private factsOf(mechanisms) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factsOf().');
+    log.debug('Leaving Credentials.factsOf().');
+    return {
+      password: !!mechanisms.password,
+      primaryKeys: mechanisms.primaryKeys || 0,
+      mfaKeys: mechanisms.mfaKeys || 0,
+      totp: !!mechanisms.totp,
+      totpUsable: !!mechanisms.totpUsable,
+      mfaRequired: !!mechanisms.mfaRequired,
+      secondFactor: mechanisms.secondFactor || '',
+      usable: !!mechanisms.usable
+    };
+  }
+
+  // One person's census facts from the raw values the directory handed over.
+  // `raw` is null for a name that finds no entry, which answers what
+  // `mechanismsFor()` answers for one: nothing held.
+  private factsFromValues(raw, name, mailFactor) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factsFromValues().');
+    const values = raw || {};
+    const keys = this.keysFromValues(values.webauthn || [], name);
+    const primaryKeys = keys.filter((one) => {
+      return one.role === 'primary';
+    }).length;
+    const mfaKeys = keys.filter((one) => {
+      return one.role === 'mfa';
+    }).length;
+    const authenticator = this.totpStatusFromValue(values.totp || '', name);
+    const totpEnrolled = !!authenticator;
+    let mailHeld = '';
+    if (mailFactor && values.mail &&
+        typeof mailFactor.heldOfAttributes === 'function') {
+      try {
+        mailHeld = mailFactor.heldOfAttributes(values.mail) || '';
+      } catch (e) {
+        log.debug('Caught in Credentials.factsFromValues(): ' +
+                  ((e && e.message) || e));
+        // Not held, for `mailFactorOf()`'s reason.
+        mailHeld = '';
+      }
+    }
+    const password = !!values.password;
+    log.debug('Leaving Credentials.factsFromValues().');
+    return {
+      password: password,
+      primaryKeys: primaryKeys,
+      mfaKeys: mfaKeys,
+      totp: totpEnrolled,
+      totpUsable: totpEnrolled && !authenticator.unusable,
+      // `mechanismsFor()`'s two lines, read against the same three facts.
+      mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
+      secondFactor: mfaKeys > 0 ? 'webauthn' :
+                    (totpEnrolled ? 'totp' :
+                     (mailHeld ? 'email-' + mailHeld : '')),
+      usable: password || primaryKeys > 0
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -5628,7 +6117,11 @@ class Credentials {
     const primaryKeys =
         keys.filter((one) => { return one.role === 'primary'; });
     const mfaKeys = keys.filter((one) => { return one.role === 'mfa'; });
-    const authenticator = this.totpOf(name);
+    // THE ENROLMENT WITHOUT ITS SECRET (#352): nothing below reads the
+    // secret, only whether it opens, and `totpStatusOf()` remembers that per
+    // sealed text rather than unsealing on every call — this is asked for
+    // every row a users page shows.
+    const authenticator = this.totpStatusOf(name);
     // An enrolment this process cannot READ is not an enrolment it can ignore:
     // it still means this person configured two factors, and reporting it as
     // absent would sign them in with one. `verifyTotp()` refuses it by name.
@@ -7438,6 +7931,11 @@ export = {
   verifyTotp: slot.forward('verifyTotp'),
   removeTotp: slot.forward('removeTotp'),
   secondFactorHolders: slot.forward('secondFactorHolders'),
+  // THE USERS LIST'S THREE STEPS (#352): list, then decorate the shown rows,
+  // and count everybody in one pass — see `secondFactorPopulation()`.
+  secondFactorPopulation: slot.forward('secondFactorPopulation'),
+  factorHolderRow: slot.forward('factorHolderRow'),
+  factorCensus: slot.forward('factorCensus'),
   issueActivation: slot.forward('issueActivation'),
   checkActivation: slot.forward('checkActivation'),
   consumeActivation: slot.forward('consumeActivation'),
@@ -7466,6 +7964,7 @@ export = {
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,
   setDirectory: slot.forward('setDirectory'),
+  addDirectoryHooks: slot.forward('addDirectoryHooks'),
   // The plaintext-password observer (2026-09-12) — see the block above it.
   setPasswordObserver: slot.forward('setPasswordObserver'),
   storable: slot.forward('storable'),
