@@ -122,6 +122,9 @@ const nodeCrypto = require('crypto');
 // A LEAF with no requires: the three-way merge a directory upsert is written
 // through when another node has changed the row (#46 section 3).
 const directoryMerge = require('./directory_merge');
+// The directory's lookups as SQL (#349): one builder for this driver and the
+// bridge's thread. A leaf.
+const directoryQueries = require('./directory_queries');
 // The table of what active-active mode depends on (#46). A LEAF but for bunyan
 // and config, and it reads no setting at require time. The two rows this
 // driver provides are provided at the foot of this file.
@@ -204,10 +207,14 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // `realms.retire()` sets before it ends anything, which every process reads
 // to refuse new sign-ins in a realm being removed. 11 SINCE 2026-09-28, for
 // `sts_cell_routing` (#98): where each person is homed, in the global tier.
+// 13 SINCE 2026-09-29, for the five generated lookup columns of
+// `sts_ldap_entries` and their indexes (#349): what a request worker holding
+// the directory as a window asks the store instead of an index in memory.
+// 12 IS #333's (`sts_minted.expires_at`), and this must merge after it.
 /**
  * The version of the schema this driver creates, recorded in `sts_schema`.
  */
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 13;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -243,6 +250,37 @@ const TOMBSTONE = '$tombstone$1';
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
 // node that went away. A join purges older ones.
 const DEAD_NODE_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// THE DIRECTORY'S GENERATED LOOKUP COLUMNS (#349, schema version 13), each a
+// column definition spelt ONCE, for the CREATE TABLE and the ADD COLUMN that
+// brings an older table level. Every expression is IMMUTABLE — the database
+// refuses a generated column otherwise — and mirrors a rule of
+// `ldap/ldap_server.js`, which `persistence/directory_queries.js`'s header
+// states one by one:
+//
+//   * `parent_key`: `parentDn()` of the key, everything after the first comma
+//     (`normalizeDn()` splits on every comma, so this does too);
+//   * `rdn_value`: the first RDN's value — lower-cased, because the key is;
+//   * `name_keys`, `mail_keys`: the `uid` and `mail` values lower-cased, as a
+//     JSON array: `lower()` over the array's own JSON text, then read back as
+//     JSON, since a set-returning function is not allowed here;
+//   * `uuid_keys`: `entryUUID` and `stsEntryUuidAlias` the same way.
+// ---------------------------------------------------------------------------
+const LDAP_GENERATED = {
+  parent_key: 'parent_key text GENERATED ALWAYS AS (CASE WHEN ' +
+    'strpos(dn_key, \',\') > 0 THEN substr(dn_key, strpos(dn_key, \',\') ' +
+    '+ 1) ELSE \'\' END) STORED',
+  rdn_value: 'rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ' +
+    '\',\', 1), strpos(split_part(dn_key, \',\', 1), \'=\') + 1)) STORED',
+  name_keys: 'name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
+    'attrs->\'uid\', \'[]\'::jsonb)::text)::jsonb) STORED',
+  mail_keys: 'mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
+    'attrs->\'mail\', \'[]\'::jsonb)::text)::jsonb) STORED',
+  uuid_keys: 'uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(' +
+    'attrs->\'entryuuid\', \'[]\'::jsonb) || COALESCE(' +
+    'attrs->\'stsentryuuidalias\', \'[]\'::jsonb))::text)::jsonb) STORED'
+};
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
 // than a migration table, and that is a decision rather than laziness: this is
@@ -300,12 +338,49 @@ const SCHEMA_OBJECTS = [
   '  origin      text,' +
   '  created_at  text,' +
   '  modified_at text,' +
+  '  ' + LDAP_GENERATED.parent_key + ',' +
+  '  ' + LDAP_GENERATED.rdn_value + ',' +
+  '  ' + LDAP_GENERATED.name_keys + ',' +
+  '  ' + LDAP_GENERATED.mail_keys + ',' +
+  '  ' + LDAP_GENERATED.uuid_keys + ',' +
   '  PRIMARY KEY (realm, dn_key))' },
   // The one index worth having beyond the primary key: every enumerator in
   // this service walks one realm.
   { name: 'sts_ldap_entries_realm', statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries ' +
   '(realm)' },
+  // -------------------------------------------------------------------------
+  // THE DIRECTORY'S LOOKUP INDEXES (#349, schema version 13): what a request
+  // worker holding the people and devices as a bounded window asks instead
+  // of an index in memory — `persistence/directory_queries.js` builds every
+  // statement that reads them. Each is over a GENERATED column (above), so no
+  // writer maintains it and a row that existed before the column gets it when
+  // the column is added. `afterColumns`: on an older table the columns come
+  // from SCHEMA_COLUMNS, so these can only be built after that step.
+  //   * the children of a container, in key order (listings, paging, the
+  //     `ou=users` a login name is looked for under) and the RDN value there;
+  //   * the lower-cased `uid`, `mail` and entryUUID values, GIN over a JSON
+  //     array (`@>`), and every attribute value as written, GIN over `attrs`
+  //     (a DID, a SPIFFE ID, a federation link).
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_entries_parent', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries ' +
+  '(realm, parent_key, dn_key)' },
+  { name: 'sts_ldap_entries_rdn', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries ' +
+  '(realm, parent_key, rdn_value)' },
+  { name: 'sts_ldap_entries_names', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
+  'USING gin (name_keys jsonb_path_ops)' },
+  { name: 'sts_ldap_entries_mails', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries ' +
+  'USING gin (mail_keys jsonb_path_ops)' },
+  { name: 'sts_ldap_entries_uuids', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries ' +
+  'USING gin (uuid_keys jsonb_path_ops)' },
+  { name: 'sts_ldap_entries_attrs', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attrs ON sts_ldap_entries ' +
+  'USING gin (attrs jsonb_path_ops)' },
   { name: 'sts_realms', statement:
   'CREATE TABLE IF NOT EXISTS sts_realms (' +
   '  id          text PRIMARY KEY,' +
@@ -909,7 +984,25 @@ const SCHEMA_COLUMNS = [
   'NOT NULL DEFAULT \'\'' },
   { table: 'sts_risk_assessments', column: 'feedback_at', statement:
   'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback_at ' +
-  'bigint NOT NULL DEFAULT 0' }
+  'bigint NOT NULL DEFAULT 0' },
+  // The directory's five generated lookup columns (#349, schema version 13).
+  // Adding a STORED generated column rewrites the table once and fills every
+  // existing row, which is the whole of the migration.
+  { table: 'sts_ldap_entries', column: 'parent_key', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.parent_key },
+  { table: 'sts_ldap_entries', column: 'rdn_value', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.rdn_value },
+  { table: 'sts_ldap_entries', column: 'name_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.name_keys },
+  { table: 'sts_ldap_entries', column: 'mail_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.mail_keys },
+  { table: 'sts_ldap_entries', column: 'uuid_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.uuid_keys }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -1573,11 +1666,19 @@ function create(options) {
   // reads where it writes, exactly as before.
   // -------------------------------------------------------------------------
   const readUrl = String(options.readUrl || '').trim();
+  // The read pool's connection options when it is a pool of its own, for
+  // the bridge's thread (#349) — `readClientOptions()` below.
+  let readOptions = null;
   const readPool = (function () {
     if (!readUrl || readUrl === url) {
       return pool;
     }
     const readDial = dialOptions(readUrl, verify);
+    readOptions = {
+      connectionString: readDial.connectionString,
+      ssl: readDial.ssl,
+      connectionTimeoutMillis: 5000
+    };
     const made = new Pool({
       connectionString: readDial.connectionString,
       ssl: readDial.ssl,
@@ -1596,6 +1697,14 @@ function create(options) {
              'writes go to its writer.');
     return made;
   })();
+
+  // The options a client of the READ side dials with: the replica's when
+  // there is one, the writer's otherwise (#349's bridge thread).
+  function readClientOptions() {
+    log.debug("Entering readClientOptions().");
+    log.debug("Leaving readClientOptions().");
+    return readOptions ? Object.assign({}, readOptions) : clientOptions();
+  }
 
   pool.on('error', function (err) {
     // A pooled client that died while idle. Logged rather than thrown — an
@@ -2107,6 +2216,7 @@ function create(options) {
     open: function () {
       log.debug('Entering the postgres driver open().');
       const created = [];
+      let late = [];
       log.debug("Leaving open().");
       return withTransaction(function (client) {
         // -------------------------------------------------------------
@@ -2130,6 +2240,11 @@ function create(options) {
           const missing = SCHEMA_OBJECTS.filter(function (object, index) {
             return !row['o' + index];
           });
+          // AN OBJECT BUILT ON A COLUMN THAT SCHEMA_COLUMNS MAY STILL HAVE TO
+          // ADD (#333, #349) waits for the column step below.
+          late = missing.filter(function (object) {
+            return object.afterColumns === true;
+          });
           if (!missing.length) {
             log.debug('open(): every object in the schema is present; no ' +
                       'CREATE is issued.');
@@ -2141,7 +2256,9 @@ function create(options) {
                    ') and this process is creating them. A store built by ' +
                    'postgres/schema.sql needs none of this.');
           let chain = Promise.resolve();
-          missing.forEach(function (object) {
+          missing.filter(function (object) {
+            return object.afterColumns !== true;
+          }).forEach(function (object) {
             chain = chain.then(function () {
               return client.query(object.statement).then(function () {
                 created.push(object.name);
@@ -2178,6 +2295,16 @@ function create(options) {
             });
             return chain;
           });
+        }).then(function () {
+          let chain = Promise.resolve();
+          late.forEach(function (object) {
+            chain = chain.then(function () {
+              return client.query(object.statement).then(function () {
+                created.push(object.name);
+              });
+            });
+          });
+          return chain;
         }).then(function () {
           // DML, and the one statement here that runs on every open. The
           // script writes this row too; `ON CONFLICT DO NOTHING` is what
@@ -3524,6 +3651,44 @@ function create(options) {
           dn: row.dn, attributes: row.attrs || {}, origin: row.origin,
           createdAt: row.created_at, modifiedAt: row.modified_at } };
       });
+    },
+
+    // -----------------------------------------------------------------------
+    // THE DIRECTORY'S LOOKUPS (#349 phase 2). `name` is one of
+    // `persistence/directory_queries.js`'s queries and `args` its arguments;
+    // the answer is its rows in the directory's own shape, `{ realm, key,
+    // entry }`, or for `count` the number and for `hasChild` a boolean. On
+    // the read pool, like `readEntry()`: every one only reads. A request
+    // worker's synchronous path runs the same statements through the bridge
+    // (`common/sync_query.ts`) on a connection of its own; this is the async
+    // door, and what the in-process tests drive.
+    // -----------------------------------------------------------------------
+    directoryQuery: function (name, args) {
+      log.debug("Entering directoryQuery(). " + name);
+      let statement;
+      try {
+        statement = directoryQueries.build(name, args);
+      } catch (e) {
+        log.debug("Caught in directoryQuery(): " + ((e && e.message) || e));
+        log.debug("Leaving directoryQuery(). Unknown query.");
+        return Promise.reject(e);
+      }
+      log.debug("Leaving directoryQuery().");
+      return readPool.query(statement.text, statement.values)
+        .then(function (r) {
+          return directoryQueries.answerOf(name, r.rows || []);
+        });
+    },
+
+    // WHAT THE BRIDGE'S THREAD DIALS (#349 phase 3): the read pool's own
+    // connection options — the same database, the same TLS decision — so
+    // the thread is one more client of this store and never a second,
+    // differently configured way into it. It holds the password when the
+    // URL does; it is handed to a thread of this process and nowhere else.
+    bridgeConnection: function () {
+      log.debug("Entering bridgeConnection().");
+      log.debug("Leaving bridgeConnection().");
+      return readClientOptions();
     },
 
     // One minted row, same reason.
