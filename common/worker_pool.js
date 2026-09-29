@@ -164,9 +164,38 @@ let stopped = false;
 // one — see the flag in config.js's table and checkRealmOverride() in
 // realms.js. A pool is a property of the PROCESS, and a realm that could resize
 // it would be resizing every other realm's too.
+//
+// **INSIDE A REQUEST OR SURFACE WORKER IT IS A DIFFERENT SETTING (#347,
+// 2026-09-29)**: `workers.countInRequestWorkers`, 0 by default — compute in
+// place. Such a process loads the whole stack, `crypto.js` and so this module
+// with it, and read `workers.count` like the front process did, so a node with
+// three request workers and one surface worker could fork 5 + 4 × 5 = 25
+// crypto children, each a full node footprint (#339). What the pool is FOR —
+// keeping an SLH-DSA sign off the thread that holds every listener — does not
+// hold there: a request worker holds no listener, a sign blocks only the
+// requests that worker is answering, and the front process sends the next
+// request to another worker. `STS_REQUEST_WORKER` is how the process knows,
+// the variable `request_pool.js` puts in every worker's environment, both
+// pools' — `client_address.js` and `request_pool.js` read it the same way.
 // ---------------------------------------------------------------------------
 /**
- * Returns the configured pool size, `workers.count`, read live.
+ * Names the setting that sizes this process's pool.
+ *
+ * @returns `workers.countInRequestWorkers` in a request or surface worker,
+ * `workers.count` everywhere else
+ */
+function sizeSetting() {
+  log.debug('Entering sizeSetting().');
+  const key = process.env.STS_REQUEST_WORKER
+    ? 'workers.countInRequestWorkers'
+    : 'workers.count';
+  log.debug('Leaving sizeSetting(). ' + key + '.');
+  return key;
+}
+
+/**
+ * Returns the configured pool size, read live: `workers.count`, or
+ * `workers.countInRequestWorkers` in a request or surface worker.
  *
  * A module loaded with no configuration at all gets 0, meaning compute in
  * this process; a value that is not a number at or above 0 also reads as 0.
@@ -176,7 +205,7 @@ function size() {
   log.debug('Entering size().');
   let wanted = 0;
   try {
-    wanted = parseInt(config.value('workers.count'), 10);
+    wanted = parseInt(config.value(sizeSetting()), 10);
   } catch (e) {
     log.debug("Caught in size(): " + ((e && e.message) || e));
     // A module loaded with no configuration at all — which is how the parent
@@ -698,6 +727,8 @@ function stats() {
   log.debug('Entering stats().');
   const out = {
     configured: size(),
+    // Which setting `configured` is (#347): a request worker's is its own.
+    setting: sizeSetting(),
     running: workers.length,
     inProcess: workers.length === 0,
     gaveUp: givenUpOnChildren,

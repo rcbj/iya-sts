@@ -1354,6 +1354,7 @@ are refused at both ends.
 | `workers.batchConcurrency` | `STS_WORKERS_BATCH_CONCURRENCY` | `8` | yes (per process) | Batch requests in flight per lane worker, per pool; the rest wait in the front process in order. `0` keeps the lane and removes the cap. |
 | `workers.batchQueueLimit` | `STS_WORKERS_BATCH_QUEUE_LIMIT` | `5000` | yes (per process) | How many batch requests may wait; past it they are answered 503 with Retry-After. |
 | `workers.batchQueueTimeoutS` | `STS_WORKERS_BATCH_QUEUE_TIMEOUT_S` | `60` | yes (per process) | A batch request that waited this long is answered 503 with Retry-After. |
+| `workers.countInRequestWorkers` | `STS_WORKERS_COUNT_IN_REQUEST_WORKERS` | `0` | yes — as `workers.count` | `workers.count` for each request or surface worker (`workers.requestCount`, `workers.surfaceCount`). `0` computes in the worker itself: it holds no listener, so a slow signature there delays only the requests that worker is answering, and the front process sends the next one to another worker. Every request worker forks its own pool, and each child is a whole node process, so a value here is multiplied by the number of workers — at 5 with four workers, twenty children beside the front process's own. **A realm may not carry this.** |
 
 ### GNAP
 

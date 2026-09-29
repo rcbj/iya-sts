@@ -347,7 +347,7 @@ of worker — `common/CLAUDE.md` argues both:
 |---|---|---|
 | A worker runs | a JOB TABLE — four leaf computations | THE SERVICE — the whole protocol stack |
 | Forked | lazily, on the first post-quantum job | eagerly, before the listener binds |
-| Setting | `workers.count` | `workers.requestCount` (0 — off by default), and `workers.surfaceCount` (0) for a second pool that runs only `/admin` and `/portal` |
+| Setting | `workers.count` (`workers.countInRequestWorkers`, 0, inside a request worker — #347) | `workers.requestCount` (0 — off by default), and `workers.surfaceCount` (0) for a second pool that runs only `/admin` and `/portal` |
 
 **The cross-cutting rule is one sentence: a store is shared by coordination, and
 anything that is NOT a row in a store — a socket, a timer, a listener, a
