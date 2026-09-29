@@ -2480,3 +2480,14 @@ belongs to the pages that show every node.
 | Setting | Environment | Default | Change while running | What it does |
 |---|---|---|---|---|
 | `cluster.nodeSnapshotRetentionHours` | `STS_CLUSTER_NODE_SNAPSHOT_RETENTION_HOURS` | `24` | yes | How long Monitoring → Worker Pools and → Node Health keep showing a node that is no longer a live cluster member, from its last snapshot; the hourly `cluster.node-snapshot-purge` job then deletes it. A live member's row is never deleted, and nothing is deleted while membership cannot be read. |
+
+### Scheduler
+
+Every periodic job in the service runs on the one scheduler
+(`cluster/scheduler.ts`), and Monitoring → **Scheduler** (`/admin/scheduler`)
+lists every job and its recent runs. These two bound how many runs it keeps.
+
+| Setting | Environment | Default | Change while running | What it does |
+|---|---|---|---|---|
+| `scheduler.runHistoryCount` | `STS_SCHEDULER_RUN_HISTORY_COUNT` | `100` | yes (per process) | How many of each job's most recent finished runs are kept, in each trust realm it runs in, whatever their age. A run is kept if it is one of these OR it ended within `scheduler.runHistoryHours` — whichever keeps more — and the latest run of every job is always kept. The `scheduler.history` job deletes the rest in batches every ten minutes, and a start does not read back a run past the bound (#338). |
+| `scheduler.runHistoryHours` | `STS_SCHEDULER_RUN_HISTORY_HOURS` | `24` | yes (per process) | Every run that ended within this many hours is kept, a failed one included, beside each job's last `scheduler.runHistoryCount` runs. A job that runs every minute therefore keeps a day of runs in each realm it runs in. 0 keeps the count alone. |

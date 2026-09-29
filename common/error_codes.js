@@ -1573,6 +1573,17 @@ const CODES = [
   { code: 'STS-SCHED-0016',
     summary: 'A run was asked for that does not exist (an unknown run id).',
     spec: '' },
+  { code: 'STS-SCHED-0017',
+    summary: 'Purging the scheduler\'s run history past its bound ' +
+      '(scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the ' +
+      'rows stay until the next run of scheduler.history, and a start still ' +
+      'skips the ones past their expiry.',
+    spec: '' },
+  { code: 'STS-SCHED-0018',
+    summary: 'A run of a realm job was not started, or its outcome not ' +
+      'written, because its trust realm was removed; nothing is run for a ' +
+      'removed realm, and nothing is written back into it.',
+    spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +

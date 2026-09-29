@@ -69,8 +69,8 @@ function world(options) {
     settings: Object.assign({
       'scheduler.enabled': true,
       'scheduler.tickS': 5,
-      'scheduler.historyDays': 30,
-      'scheduler.maxRuns': 5000,
+      'scheduler.runHistoryCount': 100,
+      'scheduler.runHistoryHours': 24,
       'scheduler.disabledJobs': '',
       'scheduler.runTimeoutS': 600,
       // Unbounded unless a section says otherwise: the sections before M
@@ -80,7 +80,10 @@ function world(options) {
     // The store's pool, for the cap (0: no pool, as the memory store).
     storeConnections: Number(o.storeConnections) || 0,
     realmIds: o.realmIds || ['default', 'acme'],
-    claimsDown: false
+    claimsDown: false,
+    // How many times a scheduler waited for its writes to be written down
+    // (the history purge does, between batches — #338).
+    settles: 0
   };
 
   const store = {
@@ -231,6 +234,10 @@ function world(options) {
       cronPrev: Scheduler.cronPrev,
       cronNext: Scheduler.cronNext,
       storeConnections: function () { return w.storeConnections; },
+      settle: function () {
+        w.settles += 1;
+        return Promise.resolve(null);
+      },
       host: 'host-' + name,
       pid: node.pid,
       isRequestWorker: function () { return !!no.worker; }
@@ -336,6 +343,18 @@ function world(options) {
       }
     });
     return out;
+  };
+
+  // A REALM REMOVED, as `realms.remove()` does it for the scheduler (#338):
+  // gone from the list, its partition of the store purged, and every
+  // node's scheduler told — the `realms.onRemove()` hook the real module
+  // registers.
+  w.removeRealm = function (id) {
+    w.realmIds = w.realmIds.filter(function (one) { return one !== id; });
+    w.stores.delete(String(id));
+    w.nodes.forEach(function (node) {
+      node.scheduler.forgetRealm(id);
+    });
   };
 
   w.leaderOf = function () {

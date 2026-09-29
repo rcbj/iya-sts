@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3758** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3760** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 44
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 65
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 16
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 53
@@ -402,6 +402,8 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0014` | The scheduler's leader could not stand down; its lease expires on its own. | — |
 | `STS-SCHED-0015` | A per-process job's run in this process threw or rejected; its row for this process says so, and it runs again at its next slot. | — |
 | `STS-SCHED-0016` | A run was asked for that does not exist (an unknown run id). | — |
+| `STS-SCHED-0017` | Purging the scheduler's run history past its bound (scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the rows stay until the next run of scheduler.history, and a start still skips the ones past their expiry. | — |
+| `STS-SCHED-0018` | A run of a realm job was not started, or its outcome not written, because its trust realm was removed; nothing is run for a removed realm, and nothing is written back into it. | — |
 
 ## STS-KEYS
 

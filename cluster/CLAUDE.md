@@ -579,6 +579,75 @@ remembers a failure as a success.
   latest per-process run, and the command rows. A manual run or a step-down
   asked of any node is a row the leader obeys at its next tick.
 
+**THE RUN HISTORY'S BOUND IS PER JOB (2026-09-29, #338).** Measured on
+testidp: 126,160 run rows, growing by about a thousand every few minutes, and
+every process restored all of them at every start. The only bound had been
+thirty days and 5000 runs PER REALM, and `oauth2.claim-sources-refresh` —
+every minute, in every realm — is 1440 runs a day in each of 135 realms. Now
+a finished run is KEPT while it is one of its job's last
+`scheduler.runHistoryCount` (100) runs in its realm, or it ended within
+`scheduler.runHistoryHours` (24), whichever keeps more; the latest run of
+every job is always kept (a job that runs every ninety days still shows when
+it last ran), so is every run inside the window, failed ones included, and a
+queued or running row is never touched. A run of a job this build does not
+register keeps the time rule only. A command row goes once finished and past
+the window; a per-process row once it has not been written for the window or
+three of its intervals (a stopped process leaves its pid-keyed row); the
+leader's row never. `scheduler.historyDays` and `scheduler.maxRuns` are gone.
+
+* **`scheduler.history` does the deleting**, a CLUSTER job every ten minutes
+  (`purgeHistory()`): the deletes are journalled like any other write, so
+  every process drops the rows as it applies them, in batches of 2000 with
+  the job waiting for each to be written down (`deps.settle`, a
+  `flushThrough()`) before the next, at most 25 a run and asking
+  `ctx.stillOwner()` between them. What a run leaves is the next run's. One
+  summary line per run that did anything; `STS-SCHED-0017` when it fails.
+* **A start reads less than the table holds**: the run store declares #333's
+  `expiresAt`, answered by `Scheduler.expiryOf()` — for a finished run, its
+  end plus the longer of the window and `(count + 1)` of its job's
+  intervals, plus two hours of slack; for a command, its end plus the window
+  and the slack; for a per-process row, the longer of the window and three
+  intervals, plus the slack; nothing for the leader's row, a queued or
+  running run, a run of an on-demand job or of a job not registered here.
+  That is never earlier than the purge would first be free to delete the
+  row — as long as the job runs on its slots. **A job that stopped running**
+  (switched off, its setting at 0) has no newer runs to push its old ones out
+  of the count, and a bound RAISED after a row was written moves the purge's
+  line past the row's expiry; so the purge PINS every kept row whose expiry
+  is within an hour — rewrites it with `keepUntil` a day ahead, which the
+  hook takes the later of. A regularly running job never has a pinned row:
+  the slack is what keeps its rows out of the pin window.
+* **Rows written before #338 carry no expiry** and are all restored until the
+  purge has been through them: on testidp, with its backlog, that is a few
+  runs of the job after the deploy.
+
+**A REMOVED REALM'S JOBS GO WITH IT (#338).** A realm job is registered ONCE
+and runs in every realm `realms.list()` names (`realmIdsFor()`), so there is
+no per-realm registration to undo: a realm that leaves the list — in the
+process that removed it, and in every other through `persistence.js`'s
+replicated removal, which calls `realms.remove()` there too — has no
+scheduled run, no row on the report and no Run now (`STS-SCHED-0012`) from
+that moment. Its run history is its own partition of `scheduler.runs`, purged
+in memory by the removal and deleted from `sts_minted` in the same
+transaction as the registry row (#333's orphan clause collects a flush that
+was in flight). What #338 added is the rest: `realms.onRemove()` calls
+`forgetRealm()` in every process, which forgets its per-process slots and
+fences out a run of that realm still going there, so its outcome is not
+written — `writeRow()` refuses any row for a realm that is not defined,
+because `realmMap()` of a removed id makes a new partition that nothing would
+ever delete; a run whose realm went between the tick and the claim is not
+started at all (it used to run in the DEFAULT realm, `realms.get()` answering
+null) — both `STS-SCHED-0018`. And the history purge deletes, whatever their
+age, the rows in a defined realm's partition that name a realm that is gone.
+
+**What testidp showed, read against that** (2026-09-29): the 2,458 job rows
+were `realms.list()` of the process that answered — 135 realms × the realm
+jobs, plus the service jobs — so that process held 135 realms. A realm
+removed from `sts_realms` is not in any process's list after a restart, so
+after the deploy only realms still in the registry have job rows; if 135
+remain, the suite run after the removal left them (it leaves its realms
+standing), and they are live realms whose jobs ought to run.
+
 **The step-down** (`POST /admin-api/scheduler/step-down`, D10) is
 `cluster.stepDown('ops.scheduler')`: the lease is expired at the token held,
 `onLose()` fires, and this node does not campaign for the role again for three
@@ -591,7 +660,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 |---|---|---|
 | `authn.session-expiry` | cluster, service | `authn/authn.ts`, `authn/CLAUDE.md` |
 | `pki.crl-directory-refresh` | cluster, service | `common/pki_revocation.js` |
-| `scheduler.history` | cluster, service | `cluster/scheduler.ts` |
+| `scheduler.history` | cluster, service; every ten minutes — the run history past its bound (per job, `scheduler.runHistoryCount` runs or `scheduler.runHistoryHours`, whichever keeps more, the latest always) and every row naming a removed realm, in batches of 2000, at most 25 a run, each written down before the next; pins a kept row whose expiry is near (#338) | `cluster/scheduler.ts`, *The run history's bound*, above |
 | `signing.rotate` | cluster, realm; hourly, deciding per unit from the NEXT key's age | `common/signing_rotation.ts` (#42) |
 | `signing.retire` | cluster, realm; hourly | `common/signing_rotation.ts` (#42) |
 | `signing.rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/keys` and `POST /admin-api/keys/rotate` queue | `common/signing_rotation.ts` (#48) |
@@ -599,7 +668,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `krb5.krbtgt-rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/kerberos/principals` and `POST /admin-api/kerberos/principals/{rotate-krbtgt,rotate-krbtgt-invalidate}` queue; `params.invalidate` keeps nothing | `kerberos/krb5_krbtgt_rotation.ts` (#169) |
 | `oauth2.backchannel-logout-sweep` | cluster, service; `oauth2.backchannelLogoutSweepS` | `oauth-oidc/backchannel_logout.ts` (P5) |
 | `oauth2.ephemeral-subjects-purge` | cluster, realm; hourly — removes each ephemeral subject mapping past the longest token or session of its authentication (#149) | `oauth-oidc/pairwise_subjects.ts` |
-| `oauth2.claim-sources-refresh` | cluster, realm; every minute — refreshes each person's Claims Provider token five minutes before it expires and drops link requests older than ten minutes (#147) | `oauth-oidc/claims_providers.ts` |
+| `oauth2.claim-sources-refresh` | cluster, realm; every minute — refreshes each person's Claims Provider token five minutes before it expires and drops link requests older than ten minutes (#147); off in a realm with no Claims Provider registered and no link request pending (#338) | `oauth-oidc/claims_providers.ts` |
 | `oauth2.grant-management-purge` | cluster, realm; hourly — removes each Grant Management grant past its last token's exp, and each token row past its own (#142) | `oauth-oidc/grant_management.ts` |
 | `oauth2.ciba-sweep` | cluster, service; `oauth2.cibaSweepS` | `oauth-oidc/ciba.ts` (#131): CIBA pings and pushes due, requests nobody answered expired |
 | `oauth2.device-code-sweep` | cluster, per realm, every 300 s | `oauth-oidc/device_authorization.ts` (#150): expired and answered RFC 8628 device codes removed |

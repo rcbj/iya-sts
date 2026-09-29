@@ -14700,25 +14700,33 @@ const SETTINGS = [
                  'is late by, and the most a Run now waits before it starts. ' +
                  'Read at every tick.' },
 
-  { key: 'scheduler.historyDays', group: 'Scheduler',
-    label: 'How long a finished run is kept (days)',
-    env: 'STS_SCHEDULER_HISTORY_DAYS', type: 'int', dflt: 30, min: 1,
-    max: 3650, runtime: true, perProcess: true,
-    description: 'A run that succeeded, failed or was abandoned is kept this ' +
-                 'long and then removed by the scheduler\'s own history job. ' +
-                 'The last run of every job is kept whatever its age, so a ' +
-                 'job that runs every 90 days still shows when it last ran. ' +
-                 'Queued and running rows are never removed by age.' },
+  // THE RUN HISTORY'S BOUND IS PER JOB (#338). It was thirty days and 5000
+  // runs PER REALM, and testidp held 126,160 run rows — a per-minute job in
+  // each of 135 realms is 194,000 runs a day — which every process restored
+  // at every start. `cluster/scheduler.ts`'s `purgeHistory()` argues the rule.
+  { key: 'scheduler.runHistoryCount', group: 'Scheduler',
+    label: 'Runs kept per job',
+    env: 'STS_SCHEDULER_RUN_HISTORY_COUNT', type: 'int', dflt: 100, min: 1,
+    max: 100000, runtime: true, perProcess: true,
+    description: 'How many of each job\'s most recent finished runs are ' +
+                 'kept, in each trust realm it runs in, whatever their age. ' +
+                 'A run is kept if it is one of these OR it ended within ' +
+                 'scheduler.runHistoryHours, so whichever of the two keeps ' +
+                 'more applies; the latest run of every job is always kept, ' +
+                 'and a queued or running one is never removed. The ' +
+                 'scheduler.history job deletes the rest, in batches, every ' +
+                 'ten minutes, and a start does not read back a run past ' +
+                 'the bound.' },
 
-  { key: 'scheduler.maxRuns', group: 'Scheduler',
-    label: 'Most runs kept per realm',
-    env: 'STS_SCHEDULER_MAX_RUNS', type: 'int', dflt: 5000, min: 100,
-    max: 1000000, runtime: true, perProcess: true,
-    description: 'The bound on the run history of one trust realm (the ' +
-                 'service-wide jobs\' runs are the default realm\'s). Past ' +
-                 'it the oldest FINISHED run goes first; a queued or running ' +
-                 'one, and the last run of each job, are never dropped to ' +
-                 'make room.' },
+  { key: 'scheduler.runHistoryHours', group: 'Scheduler',
+    label: 'Runs kept for (hours)',
+    env: 'STS_SCHEDULER_RUN_HISTORY_HOURS', type: 'int', dflt: 24, min: 0,
+    max: 8760, runtime: true, perProcess: true,
+    description: 'Every run that ended within this many hours is kept — a ' +
+                 'failed one included — beside each job\'s last ' +
+                 'scheduler.runHistoryCount runs, whichever keeps more. A ' +
+                 'job that runs every minute therefore keeps a day of runs ' +
+                 'in each realm it runs in. 0 keeps the count alone.' },
 
   { key: 'scheduler.disabledJobs', group: 'Scheduler',
     label: 'Jobs switched off',

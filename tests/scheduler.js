@@ -37,10 +37,20 @@
 //      overdue, with nextRunAt/nextRunInMs from the database clock;
 //   I. a per-process job runs in every process that starts, a request worker
 //      included, and writes its own row;
-//   J. history: finished runs past scheduler.historyDays go, the latest run
-//      of each job stays;
-//   K. the real module: its own history job and the two P1 jobs are
-//      registered by their owners, and the singleton leads nothing at load.
+//   J. the run history, bounded PER JOB (#338): its last
+//      scheduler.runHistoryCount runs or its last scheduler.runHistoryHours,
+//      whichever keeps more — J1 the time bound, J2 the count, J3 the latest
+//      run whatever its age, J4 failed runs inside the window, J5 command,
+//      per-process and unregistered jobs' rows, J6 bounded batches each
+//      written down before the next, J7 the expiry a start reads by, J8 the
+//      pinning of a stopped job's kept runs;
+//   N. a removed realm (#338): a run still going there writes nothing back,
+//      nothing runs there again, the report and Run now forget it, and the
+//      sweep deletes the rows naming it;
+//   K. the real module: its own history job (a cluster job every ten
+//      minutes, whose rows carry the #333 expiry) and the two P1 jobs are
+//      registered by their owners, the realm-removal hook is wired, and the
+//      singleton leads nothing at load.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -534,43 +544,273 @@ async function run(t) {
   }
 
   // -------------------------------------------------------------------------
-  t.log.info('=== J. history ===');
+  t.log.info('=== J. the run history, bounded per job (#338) ===');
   {
+    // J1. THE TIME BOUND KEEPS MORE: a job every minute for six hours, with
+    // two hours and five runs kept, keeps the two hours.
     const w = kit.world({ clustered: false,
-                          settings: { 'scheduler.historyDays': 1,
+                          settings: { 'scheduler.runHistoryCount': 5,
+                                      'scheduler.runHistoryHours': 2,
                                       'scheduler.tickS': 600 } });
     const node = w.node('solo');
-    node.scheduler.register(baseJob({ id: 'test.hourly',
-      everyMs: function () { return HOUR; } }));
+    node.scheduler.register(baseJob({ id: 'test.minutely' }));
     node.scheduler.start('front');
-    await w.advance(3 * 24 * HOUR);
+    await w.advance(6 * HOUR);
     const before = w.runRows().length;
-    const removed = node.scheduler.prune();
+    const r1 = await node.scheduler.purgeHistory();
     const after = w.runRows();
-    t.check(before >= 70 && removed > 40 && after.length >= 23 &&
-            after.length <= 26,
-            'three days of an hourly job with one day of history keeps about ' +
-            'a day', JSON.stringify({ before: before, removed: removed,
-                                      after: after.length }));
-    // Started a day into a 90-day slot, so the thirty days below are all in
-    // the one slot and the job runs once.
-    const NINETY = 90 * 24 * HOUR;
+    const oldest = Math.min.apply(null, after.map(function (row) {
+      return row.endedAt;
+    }));
+    t.check(before >= 355 && after.length >= 118 && after.length <= 122 &&
+            r1.removed === before - after.length && w.db - oldest <= 2 * HOUR,
+            'J1. a job every minute for six hours, keeping 5 runs or 2 hours, ' +
+            'keeps the two hours: whichever keeps more',
+            JSON.stringify({ before: before, after: after.length,
+                             removed: r1.removed }));
+
+    // J2. THE COUNT KEEPS MORE: an hourly job for three days, keeping fifty
+    // runs or one hour, keeps fifty.
     const w2 = kit.world({ clustered: false,
-                           settings: { 'scheduler.historyDays': 1,
+                           settings: { 'scheduler.runHistoryCount': 50,
+                                       'scheduler.runHistoryHours': 1,
+                                       'scheduler.tickS': 600 } });
+    const n2 = w2.node('solo');
+    n2.scheduler.register(baseJob({ id: 'test.hourly',
+      everyMs: function () { return HOUR; } }));
+    n2.scheduler.start('front');
+    await w2.advance(3 * 24 * HOUR);
+    const had = w2.runRows().length;
+    await n2.scheduler.purgeHistory();
+    t.check(had >= 70 && w2.runRows().length === 50,
+            'J2. an hourly job for three days, keeping 50 runs or 1 hour, ' +
+            'keeps its last fifty runs',
+            JSON.stringify({ had: had, kept: w2.runRows().length }));
+
+    // J3. THE LATEST RUN IS KEPT WHATEVER ITS AGE. Started a day into a
+    // 90-day slot, so the thirty days below are all in the one slot and the
+    // job runs once.
+    const NINETY = 90 * 24 * HOUR;
+    const w3 = kit.world({ clustered: false,
+                           settings: { 'scheduler.runHistoryCount': 1,
+                                       'scheduler.runHistoryHours': 0,
                                        'scheduler.tickS': 3600 },
                            startAt: Math.floor(Date.UTC(2026, 8, 22) / NINETY) *
                                     NINETY + 24 * HOUR });
-    const n2 = w2.node('solo');
-    n2.scheduler.register(baseJob({ id: 'test.rare',
+    const n3 = w3.node('solo');
+    n3.scheduler.register(baseJob({ id: 'test.rare',
       everyMs: function () { return 90 * 24 * HOUR; } }));
-    n2.scheduler.start('front');
-    await w2.advance(60000);
-    await w2.advance(30 * 24 * HOUR);
-    n2.scheduler.prune();
-    t.check(w2.runRows().length === 1,
-            'the LATEST run of a job is kept whatever its age: a 90-day job ' +
-            'still shows when it last ran a month later',
-            String(w2.runRows().length));
+    n3.scheduler.start('front');
+    await w3.advance(60000);
+    await w3.advance(30 * 24 * HOUR);
+    await n3.scheduler.purgeHistory();
+    t.check(w3.runRows().length === 1,
+            'J3. the LATEST run of a job is kept whatever its age: a 90-day ' +
+            'job still shows when it last ran a month later',
+            String(w3.runRows().length));
+
+    // J4. A FAILED RUN INSIDE THE WINDOW IS KEPT: one run kept by count, an
+    // hour by time, a job that fails every minute for three hours.
+    const w4 = kit.world({ clustered: false,
+                           settings: { 'scheduler.runHistoryCount': 1,
+                                       'scheduler.runHistoryHours': 1,
+                                       'scheduler.tickS': 600 } });
+    const n4 = w4.node('solo');
+    n4.scheduler.register(baseJob({ id: 'test.failing',
+      run: function () { throw new Error('it fails'); } }));
+    n4.scheduler.start('front');
+    await w4.advance(3 * HOUR);
+    await n4.scheduler.purgeHistory();
+    const failed = w4.runRows();
+    t.check(failed.length >= 58 && failed.length <= 62 &&
+            failed.every(function (row) {
+              return row.state === 'failed' && w4.db - row.endedAt <= HOUR;
+            }),
+            'J4. every failed run of the last hour is kept, and none older',
+            JSON.stringify({ kept: failed.length }));
+
+    // J5. A ROW OF A JOB NOBODY REGISTERS keeps the time rule only; command
+    // rows go once finished and past the window; a per-process row that has
+    // not been written for the window goes (a process that stopped), and a
+    // fresh one stays; the leader's row always stays.
+    const map = w4.stores.get('default');
+    map.set('s-gone', { runId: 's-gone', kind: 'run', jobId: 'gone.job',
+                        realm: 'default', state: 'succeeded',
+                        endedAt: w4.db - 2 * HOUR });
+    map.set('command|old', { runId: 'command|old', kind: 'command',
+                             command: 'step-down', state: 'succeeded',
+                             queuedAt: w4.db - 3 * HOUR,
+                             endedAt: w4.db - 3 * HOUR });
+    map.set('command|queued', { runId: 'command|queued', kind: 'command',
+                                command: 'step-down', state: 'queued',
+                                queuedAt: w4.db - 3 * HOUR });
+    map.set('process|test.failing|default|n|1', { runId: 'process|x|1',
+      kind: 'process', jobId: 'test.failing', realm: 'default',
+      state: 'succeeded', endedAt: w4.db - 3 * HOUR });
+    map.set('process|test.failing|default|n|2', { runId: 'process|x|2',
+      kind: 'process', jobId: 'test.failing', realm: 'default',
+      state: 'succeeded', endedAt: w4.db - 60000 });
+    await n4.scheduler.purgeHistory();
+    t.check(!map.has('s-gone') && !map.has('command|old') &&
+            map.has('command|queued') &&
+            !map.has('process|test.failing|default|n|1') &&
+            map.has('process|test.failing|default|n|2') && map.has('leader'),
+            'J5. an unregistered job\'s old run, a finished old command and a ' +
+            'stopped process\'s row go; a queued command, a live process\'s ' +
+            'row and the leader\'s row stay',
+            JSON.stringify(Array.from(map.keys()).filter(function (k) {
+              return !/^s-/.test(k);
+            })));
+
+    // J6. BOUNDED BATCHES, each written down before the next; what a run
+    // leaves is the next run's.
+    const w6 = kit.world({ clustered: false,
+                           settings: { 'scheduler.runHistoryCount': 1,
+                                       'scheduler.runHistoryHours': 0,
+                                       'scheduler.tickS': 600 } });
+    const n6 = w6.node('solo');
+    n6.scheduler.register(baseJob({ id: 'test.minutely' }));
+    n6.scheduler.start('front');
+    await w6.advance(2 * HOUR);
+    const pile = w6.runRows().length;
+    const settlesBefore = w6.settles;
+    const r6 = await n6.scheduler.purgeHistory({ batch: 10, maxBatches: 3 });
+    t.check(r6.removed === 30 && r6.batches === 3 && r6.more === true &&
+            w6.settles - settlesBefore === 3 &&
+            w6.runRows().length === pile - 30,
+            'J6. at most maxBatches batches of batch rows a run, each ' +
+            'written down before the next, and the rest left for the next run',
+            JSON.stringify({ r6: r6, settles: w6.settles - settlesBefore }));
+    let stop = 0;
+    const r6b = await n6.scheduler.purgeHistory({ batch: 10, maxBatches: 100,
+      stillOwner: function () { stop += 1; return stop <= 2; } });
+    t.check(r6b.removed === 20 && r6b.more === true,
+            'J6. and a run that stops owning its run stops between batches',
+            JSON.stringify(r6b));
+    const r6c = await n6.scheduler.purgeHistory();
+    t.check(w6.runRows().length === 1 && r6c.more === false,
+            'J6. the next run finishes it: one run, the latest, is left',
+            JSON.stringify({ left: w6.runRows().length, r6c: r6c }));
+
+    // J7. THE START READS LESS THAN THE STORE HOLDS: a row's expiry is past
+    // the instant the purge could first drop it, and never before.
+    const w7 = kit.world({ clustered: false,
+                           settings: { 'scheduler.runHistoryCount': 5,
+                                       'scheduler.runHistoryHours': 1,
+                                       'scheduler.tickS': 600 } });
+    const n7 = w7.node('solo');
+    n7.scheduler.register(baseJob({ id: 'test.hourly',
+      everyMs: function () { return HOUR; } }));
+    n7.scheduler.register(baseJob({ id: 'test.manual', everyMs: undefined,
+                                    manualOnly: true }));
+    n7.scheduler.start('front');
+    await w7.advance(3 * 24 * HOUR);
+    const all = w7.runRows();
+    const read = all.filter(function (row) {
+      const at = n7.scheduler.expiryOf(row);
+      return at === null || at > w7.db;
+    });
+    t.check(all.length >= 70 && read.length >= 5 && read.length <= 10,
+            'J7. of three days of an hourly job, keeping 5 runs or 1 hour, a ' +
+            'start reads back only the rows near the bound',
+            JSON.stringify({ all: all.length, read: read.length }));
+    await n7.scheduler.purgeHistory();
+    t.check(w7.runRows().every(function (row) {
+      return n7.scheduler.expiryOf(row) > w7.db + HOUR;
+    }),
+            'J7. and every row the purge keeps is read back by a start');
+    const leaderRow = w7.stores.get('default').get('leader');
+    t.check(n7.scheduler.expiryOf(leaderRow) === null &&
+            n7.scheduler.expiryOf({ kind: 'run', jobId: 'test.hourly',
+                                    state: 'running', startedAt: 1 }) ===
+              null &&
+            n7.scheduler.expiryOf({ kind: 'run', jobId: 'test.manual',
+                                    state: 'succeeded', endedAt: 1 }) ===
+              null &&
+            n7.scheduler.expiryOf({ kind: 'run', jobId: 'nobody.knows',
+                                    state: 'succeeded', endedAt: 1 }) === null,
+            'J7. no expiry for the leader\'s row, a running run, an on-demand ' +
+            'job\'s run or an unregistered job\'s: the purge decides those');
+
+    // J8. A JOB THAT STOPPED RUNNING: its last runs age by time with no newer
+    // run to push them out of the count, so the purge PINS each kept row
+    // before a start would skip it.
+    w7.settings['scheduler.disabledJobs'] = 'test.hourly';
+    for (let i = 0; i < 48; i++) {
+      await w7.advance(10 * 60000);
+      await n7.scheduler.purgeHistory();
+    }
+    const stopped = w7.runRows().filter(function (row) {
+      return row.jobId === 'test.hourly';
+    });
+    t.check(stopped.length === 5 && stopped.every(function (row) {
+      return n7.scheduler.expiryOf(row) > w7.db + HOUR &&
+             Number(row.keepUntil) > w7.db;
+    }),
+            'J8. eight hours after the job was switched off its last five ' +
+            'runs are still kept, and pinned so a start still reads them',
+            JSON.stringify(stopped.map(function (row) {
+              return [row.endedAt, row.keepUntil];
+            })));
+  }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== N. a removed realm\'s jobs and runs go with it (#338) ===');
+  {
+    const w = kit.world({ clustered: false,
+                          realmIds: ['default', 'acme', 'gone'],
+                          settings: { 'scheduler.tickS': 600 } });
+    const node = w.node('solo');
+    let release = null;
+    const ranIn = [];
+    node.scheduler.register(baseJob({ id: 'test.per-realm', scope: 'realm',
+      run: function (ctx) {
+        ranIn.push(ctx.realm);
+        if (ctx.realm === 'gone' && !release) {
+          return new Promise(function (resolve) { release = resolve; });
+        }
+        return { ok: true };
+      } }));
+    node.scheduler.start('front');
+    await w.advance(5 * 60000);
+    t.check(w.runRows('gone').length >= 1 && release,
+            'N. precondition: the realm job ran in "gone", and a run there ' +
+            'is still going', String(w.runRows('gone').length));
+    w.stores.get('default').set('process|x|gone|n|1', { runId: 'process|x',
+      kind: 'process', jobId: 'test.per-realm', realm: 'gone',
+      state: 'succeeded', endedAt: w.db });
+    w.removeRealm('gone');
+    release({ ok: true });
+    await w.advance(10 * 60000);
+    t.equal(w.runRows('gone').length, 0,
+            'N1. the run still going when its realm was removed writes ' +
+            'nothing back into it, and no new run is made there');
+    const st = await node.scheduler.status();
+    t.check(st.jobs.filter(function (j) {
+      return j.realm === 'gone';
+    }).length === 0 && st.jobs.filter(function (j) {
+      return j.id === 'test.per-realm';
+    }).length === 2,
+            'N2. the report lists the job in the realms that exist and not ' +
+            'in the removed one', JSON.stringify(st.jobs.map(function (j) {
+              return j.id + '@' + j.realm;
+            })));
+    const before = ranIn.filter(function (r) { return r === 'gone'; }).length;
+    await w.advance(30 * 60000);
+    t.equal(ranIn.filter(function (r) { return r === 'gone'; }).length, before,
+            'N3. and it never runs there again');
+    t.equal(node.scheduler.requestRun('test.per-realm',
+                                      { realm: 'gone' }).errorCode,
+            'STS-SCHED-0012', 'N4. a Run now in the removed realm is refused');
+    t.check(w.logs.some(function (l) {
+      return /STS-SCHED-0018/.test(l.m);
+    }), 'N5. the outcome that was not written is logged with STS-SCHED-0018');
+    const swept = await node.scheduler.purgeHistory();
+    t.check(!w.stores.get('default').has('process|x|gone|n|1') &&
+            swept.orphaned >= 1,
+            'N6. the sweep deletes a row in the default realm\'s partition ' +
+            'that names the removed realm, whatever its age',
+            JSON.stringify(swept));
   }
 
   // -------------------------------------------------------------------------
@@ -720,6 +960,36 @@ async function run(t) {
             'starts it');
     t.check(mod.jobIds().indexOf('scheduler.history') >= 0,
             'its own history job is registered', mod.jobIds().join(','));
+    const history = mod.job('scheduler.history');
+    t.check(history.kind === 'cluster' && history.scope === 'service' &&
+            history.everyMs() === 10 * 60000,
+            'as a CLUSTER job every ten minutes (#338)',
+            JSON.stringify({ kind: history.kind, every: history.everyMs() }));
+    const realmsModule = require(ROOT + '/common/realms');
+    const handle = realmsModule.handleFor('scheduler.runs');
+    t.check(handle && typeof handle.expiresAt === 'function' &&
+            handle.expiresAt({ kind: 'leader', runId: 'leader' }) === null &&
+            handle.expiresAt({ kind: 'run', jobId: 'scheduler.history',
+                               state: 'succeeded', endedAt: 1000 }) >
+              1000 + 24 * HOUR,
+            'the run store declares the #333 expiry, answered by the ' +
+            'scheduler: none for the leader\'s row, past the bound for a run');
+    const forgotten = [];
+    const realForget = mod.scheduler.forgetRealm;
+    mod.scheduler.forgetRealm = function (id) {
+      forgotten.push(id);
+      return realForget.call(mod.scheduler, id);
+    };
+    const tmp = 's338-' + Date.now().toString(36);
+    try {
+      realmsModule.create({ id: tmp, name: 'Scheduler #338' });
+      realmsModule.remove(tmp);
+    } finally {
+      mod.scheduler.forgetRealm = realForget;
+    }
+    t.check(forgotten.indexOf(tmp) >= 0,
+            'realms.remove() tells the process\'s scheduler, in every ' +
+            'process that applies a removal', JSON.stringify(forgotten));
     require(ROOT + '/authn/authn');
     t.check(mod.jobIds().indexOf('authn.session-expiry') >= 0,
             'authn/authn registers authn.session-expiry at load',
@@ -744,6 +1014,7 @@ module.exports = {
   name: 'scheduler',
   describe: 'the scheduler in one process: registration, where it runs, ' +
             'once per slot by the database clock, cron, the run lifecycle, ' +
-            'off states, manual runs, the report, per-process jobs, history',
+            'off states, manual runs, the report, per-process jobs, the ' +
+            'bounded run history, removed realms',
   run: run
 };

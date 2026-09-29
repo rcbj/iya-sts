@@ -1122,6 +1122,19 @@ the write-age rule once; there is no other migration. The index is partial
 because the rows with no expiry are never looked up by it, and every INSERT
 into this, the busiest table, pays for an index.
 
+**`scheduler.runs` has a hook too, and it is not a record's own expiry
+(#338).** A run row has no lifetime of its own; what ends it is the history's
+BOUND — per job, its last `scheduler.runHistoryCount` runs or its last
+`scheduler.runHistoryHours`, whichever keeps more — and `scheduler.history`,
+not the expiry purge, deletes it, through the store (tombstoned, so every
+process drops it). The hook answers an instant past the first moment that
+purge could delete the row, so a start skips most of what it has not got to
+yet, and the purge PINS (`keepUntil`) a kept row whose instant is near — a job
+that stopped running, a bound raised later — so the hook's rule, never
+earlier than the store would drop the row, holds. `cluster/CLAUDE.md`, *The
+scheduler*, argues it. Rows written before #338 carry NULL and are read until
+the purge has deleted them.
+
 **What is still read whole, and why.** The `merge: 'own'` accumulators —
 `audit.events` above all — carry no expiry: a row is a process's share of a
 ring or a counter, not a record with a lifetime. `audit.events` is one row per
