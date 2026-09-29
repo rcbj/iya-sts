@@ -873,6 +873,26 @@ class Devices {
     return out;
   }
 
+  // How many devices the realm holds, counted by the store without a copy of
+  // any (#352) — `all().length` where the store offers no count.
+  /**
+   * Returns how many devices the realm holds, without reading them.
+   *
+   * @returns the count
+   */
+  count(): number {
+    const { log } = this.deps;
+    log.debug("Entering Devices.count().");
+    if (this.store('hasHook', 'countDeviceEntries')) {
+      const n = Number(this.store('countDeviceEntries')) || 0;
+      log.debug("Leaving Devices.count(). " + n + ", counted.");
+      return n;
+    }
+    const n = this.all().length;
+    log.debug("Leaving Devices.count(). " + n + ", read.");
+    return n;
+  }
+
   /**
    * Says whether two DNs are the same, ignoring case and the spaces around
    * commas.
@@ -3042,6 +3062,7 @@ export = {
   DEVICE_SECRET_CREDENTIAL_TYPE: DEVICE_SECRET_CREDENTIAL_TYPE,
   credentialOf: Devices.credentialOf,
   all: slot.forward('all'),
+  count: slot.forward('count'),
   list: slot.forward('list'),
   page: slot.forward('page'),
   listFor: slot.forward('listFor'),
