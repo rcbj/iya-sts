@@ -5049,6 +5049,55 @@ async function promoteGenerations(realmId, options) {
  * @param nowMs - the time now; `Date.now()` when absent
  * @returns `{ ok, dropped, generation }`
  */
+// A REALM'S KEY SET IF IT HAS ONE, NEVER A NEW ONE (2026-09-29). The
+// scheduled rotation jobs (`signing.rotate`, `signing.retire`) run in every
+// realm every minute, and asked `stsKeysFor.of()`, which GENERATES a set for a
+// realm that has none — four RSA pairs and a self-signed certificate on this
+// thread, hundreds of milliseconds each. A realm makes its keys on first use,
+// so every realm created since the last run had its keys made by the job:
+// measured with 400 realms, the event loop stalled 16 to 36 seconds every
+// minute, and in the suite's memory mode up to 20 seconds, which is what
+// failed `sts_attribute_sources`' 2-second connection and every "fetch failed"
+// whose socket the server's late keep-alive timer closed. There is nothing to
+// rotate or retire in a set that does not exist. A set that DOES exist — held
+// here, sealed in the store, or held by a sibling process — is restored as
+// `.of()` restores it; only generation is refused. `.existing()` is the
+// held-check that reads the cache, the certificate authority's realm
+// watcher's lesson (`common/CLAUDE.md`, *THE REALM WATCHER ASKS AND DOES NOT
+// TAKE*).
+/**
+ * Returns a realm's signing key set when one exists anywhere — held by this
+ * process, in the store, or shared by a sibling — and null otherwise; never
+ * generates one.
+ *
+ * @param {string} realmId - the realm, '' for the default realm
+ * @returns {any} the key set, or null when none is made or kept
+ */
+function keySetIfMade(realmId) {
+  log.debug("Entering keySetIfMade(). realm=" + realmId);
+  const id = String(realmId || '');
+  const canonical = id || realms.DEFAULT_ID;
+  const held = stsKeysFor.existing();
+  if (held.has(id) || held.has(canonical)) {
+    log.debug("Leaving keySetIfMade(). Held.");
+    return held.has(id) ? held.get(id) : held.get(canonical);
+  }
+  let elsewhere = false;
+  try {
+    elsewhere = !!(keystore.storedFor(canonical) ||
+                   keystore.sharedFor(canonical));
+  } catch (e) {
+    log.debug("Caught in keySetIfMade(): " + ((e && e.message) || e));
+    elsewhere = false;
+  }
+  if (!elsewhere) {
+    log.debug("Leaving keySetIfMade(). None made yet.");
+    return null;
+  }
+  log.debug("Leaving keySetIfMade(). Restored.");
+  return stsKeysFor.of(id);
+}
+
 function retireExpiredGenerations(realmId, nowMs) {
   log.debug("Entering retireExpiredGenerations(). realm=" + realmId);
   const id = String(realmId || '');
@@ -7532,6 +7581,7 @@ module.exports = {
   ensureNextGenerations: ensureNextGenerations,
   promoteGenerations: promoteGenerations,
   retireExpiredGenerations: retireExpiredGenerations,
+  keySetIfMade: keySetIfMade,
   signingKeyFor: signingKeyFor,
   signingKeyForAsync: signingKeyForAsync,
   allSigningKeys: allSigningKeys,

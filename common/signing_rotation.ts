@@ -507,7 +507,13 @@ class SigningRotation {
   async rotateDue(realmId: string, ctx?: Json): Promise<Json> {
     const { log, helpers } = this.deps;
     log.debug("Entering SigningRotation.rotateDue(). realm=" + realmId);
-    const keys = helpers.stsKeysFor.of(realmId);
+    // A REALM THAT HAS NOT MADE ITS KEYS YET HAS NOTHING TO ROTATE, and
+    // `.of()` would make them here, on the thread (`keySetIfMade()`).
+    const keys = helpers.keySetIfMade(realmId);
+    if (!keys) {
+      log.debug("Leaving SigningRotation.rotateDue(). No key set yet.");
+      return { minted: [], rotated: [], generation: null };
+    }
     const now = ctx && ctx.nowMs ? ctx.nowMs() : this.deps.now();
     const lacking: string[] = [];
     const due: string[] = [];
@@ -929,7 +935,14 @@ class SigningRotation {
     const { log, helpers, pki, revocation, audit } = this.deps;
     log.debug("Entering SigningRotation.retireDue(). realm=" + realmId);
     const now = ctx && ctx.nowMs ? ctx.nowMs() : this.deps.now();
-    const keys = helpers.stsKeysFor.of(realmId);
+    // Nothing is retired from a key set that does not exist yet
+    // (`keySetIfMade()`, and `rotateDue()` above).
+    const keys = helpers.keySetIfMade(realmId);
+    if (!keys) {
+      log.debug("Leaving SigningRotation.retireDue(). No key set yet.");
+      return { dropped: [], superseded: 0, generation: null,
+               pinnedDropped: 0, pinnedWarned: 0 };
+    }
     const scope = String(keys.realm || realmId);
     const done = helpers.retireExpiredGenerations(realmId, now);
     let superseded = 0;
