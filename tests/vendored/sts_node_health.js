@@ -118,9 +118,10 @@ async function theApiAnswers() {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
   });
   const body = r.body;
-  check("scoped to the node, naming the process and host", function () {
+  check("scoped to the node, naming the process and the node", function () {
     assert.strictEqual(body.scope, "node");
-    assert.ok(Number(body.pid) > 0 && body.host && body.scopeText,
+    assert.ok(Number(body.pid) > 0 && body.node && !("host" in body) &&
+              body.scopeText,
               JSON.stringify(body).slice(0, 300));
   });
   check("the CPU is read or said to be unavailable (" +
@@ -328,6 +329,81 @@ async function aRealmTokenIsRefused() {
   log.debug("Leaving aRealmTokenIsRefused().");
 }
 
+// ---------------------------------------------------------------------------
+// EVERY NODE, BY NAME (#332): in memory mode one section and a sentence
+// saying there is no cluster; in the cluster mode a section per node, each
+// live once its snapshot has been written (within 15 s of its start, so this
+// waits up to a minute), and ?node= answering each one. Never an address.
+// ---------------------------------------------------------------------------
+const IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+
+async function everyNodeByName() {
+  log.debug("Entering everyNodeByName().");
+  log.info("=== 5. every node, by name (#332) ===");
+  let r = await api("GET", "/admin-api/node-health");
+  const until = Date.now() + 60000;
+  while (EXPECTED_NODES > 1 && Date.now() < until &&
+         (r.body.nodes || []).filter(function (n) {
+           return n.state === "live" && n.view;
+         }).length < EXPECTED_NODES) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 3000);
+    });
+    r = await api("GET", "/admin-api/node-health");
+  }
+  const body = r.body;
+  const nodes = body.nodes || [];
+  check("the answer names its nodes and carries no address (" +
+        nodes.map(function (n) {
+          return n.name + ":" + n.state;
+        }).join(", ") + ")", function () {
+    assert.ok(nodes.length >= 1 && nodes[0].self && nodes[0].state === "live",
+              JSON.stringify(nodes).slice(0, 300));
+    assert.ok(!IPV4.test(r.text) && !/"host"/.test(r.text),
+              "an address or a host in the answer");
+    assert.ok(body.answeredBy && body.answeredBy.node === body.node,
+              JSON.stringify(body.answeredBy));
+    assert.ok(body.totals && body.cluster, JSON.stringify(body.cluster));
+  });
+  if (EXPECTED_NODES < 2) {
+    check("one node, and the page says there is no cluster", function () {
+      assert.strictEqual(nodes.length, 1);
+      assert.strictEqual(body.cluster.clustered, false);
+      assert.ok(/no cluster/.test(body.cluster.text), body.cluster.text);
+    });
+  } else {
+    check("every one of the " + EXPECTED_NODES + " nodes is live, with its " +
+          "own view", function () {
+      assert.strictEqual(body.cluster.clustered, true,
+                         JSON.stringify(body.cluster));
+      assert.ok(nodes.filter(function (n) {
+        return n.state === "live" && n.view;
+      }).length >= EXPECTED_NODES, JSON.stringify(nodes.map(function (n) {
+        return [n.name, n.state, n.ageSeconds];
+      })));
+      assert.strictEqual(body.totals.nodesCounted, nodes.filter(function (n) {
+        return n.state !== "gone" && n.view;
+      }).length);
+    });
+  }
+  for (const n of nodes) {
+    const one = await api("GET", "/admin-api/node-health?node=" +
+                                        encodeURIComponent(n.name));
+    check("?node=" + n.name + " answers that node alone", function () {
+      assert.strictEqual(one.status, 200, one.text.slice(0, 200));
+      assert.strictEqual(one.body.node, n.name);
+      assert.strictEqual(one.body.nodes.length, 1);
+    });
+  }
+  const none = await api("GET", "/admin-api/node-health?node=no-such-node-" +
+                         STAMP);
+  check("an unknown node is 404, with the names there are", function () {
+    assert.strictEqual(none.status, 404, none.text.slice(0, 200));
+    assert.ok(Array.isArray(none.body.nodes), none.text.slice(0, 200));
+  });
+  log.debug("Leaving everyNodeByName().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "health-admin-" + STAMP;
@@ -336,6 +412,7 @@ async function main() {
   const body = await theApiAnswers();
   await everyWorkerIsListed(body);
   await thePageAgrees(cookie || "", body);
+  await everyNodeByName();
   await aRealmTokenIsRefused();
   log.info("sts_node_health: " + checks + " check(s) passed.");
   log.debug("Leaving main().");

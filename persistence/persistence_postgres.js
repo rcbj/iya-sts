@@ -187,11 +187,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // which dataset provider's terms (the second licence review on #62). 10 SINCE
 // 2026-09-26, for `sts_realms.retiring_at` (#262): the mark
 // `realms.retire()` sets before it ends anything, which every process reads
-// to refuse new sign-ins in a realm being removed.
+// to refuse new sign-ins in a realm being removed. 11 SINCE 2026-09-28, for
+// `sts_node_snapshots` (#332): each cluster node's latest snapshot of
+// Monitoring → Worker Pools and → Node Health, one row per node NAME.
 /**
  * The version of the schema this driver creates, recorded in `sts_schema`.
  */
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -545,6 +547,25 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_cluster_windows_expiry', statement:
   'CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON ' +
   'sts_cluster_windows (window_ends_at)' },
+  // `sts_node_snapshots` — WHAT EACH NODE LAST SAID ABOUT ITSELF (#332,
+  // schema version 11, 2026-09-28): the node's own Monitoring → Worker Pools
+  // and → Node Health views, written by its front process's per-process
+  // scheduler job `cluster.node-snapshot` every fifteen seconds and read by
+  // whichever node draws those pages, so every node is on the page with no
+  // request crossing between nodes (rcbj: no node's address is published).
+  // ONE ROW PER NODE NAME, OVERWRITTEN — keyed by `cluster.nodeName`, which
+  // survives a restart where the membership row's UUID does not — so the
+  // table is as long as the list of names the cluster has ever had and never
+  // grows with time. NOT `sts_cluster_nodes.info`: that rides the heartbeat a
+  // node's life depends on and is read with every retained row on each beat,
+  // and a snapshot is kilobytes. `taken_at` is the database's clock.
+  // `cluster/node_snapshots.ts` argues it.
+  { name: 'sts_node_snapshots', statement:
+  'CREATE TABLE IF NOT EXISTS sts_node_snapshots (' +
+  '  name     text   PRIMARY KEY,' +
+  '  node_id  text   NOT NULL DEFAULT \'\',' +
+  '  taken_at bigint NOT NULL,' +
+  '  body     jsonb  NOT NULL DEFAULT \'{}\'::jsonb)' },
   // `sts_change_readers` — WHERE EVERY PROCESS READING `sts_changes` HAS GOT
   // TO (2026-09-14, #46 section 8). One row per process that coordinates —
   // a front process, and each of its request workers, which are origins of
@@ -3677,6 +3698,70 @@ function create(options) {
                      token: Number(row.token),
                      acquiredAt: Number(row.acquired_at),
                      expiresAt: Number(row.expires_at) };
+          })
+        };
+      });
+    },
+
+    // THIS NODE'S SNAPSHOT (#332): one upsert of the row for its name, at
+    // the database's clock. Not fenced: it is a report about the node, not
+    // state the service acts on, and a node that lost its membership exits
+    // on its next heartbeat anyway; a stale write is shown with its age.
+    putNodeSnapshot: function (name, nodeId, body) {
+      log.debug("Entering putNodeSnapshot(). name=" + name);
+      log.debug("Leaving putNodeSnapshot().");
+      return pool.query(
+        'INSERT INTO sts_node_snapshots (name, node_id, taken_at, body) ' +
+        'VALUES ($1, $2, ' + DB_NOW + ', $3::jsonb) ON CONFLICT (name) DO ' +
+        'UPDATE SET node_id = EXCLUDED.node_id, taken_at = ' +
+        'EXCLUDED.taken_at, body = EXCLUDED.body',
+        [String(name), String(nodeId || ''), JSON.stringify(body || {})]
+      ).then(function () {
+        return { written: true };
+      });
+    },
+
+    // A GONE NODE'S SNAPSHOT, EXPIRED (#332): every row older than
+    // `olderThanMs` by the database's clock whose name is not in
+    // `keepNames` — the live members, which the caller read — deleted, and
+    // the names answered for the log. An empty `keepNames` is refused: the
+    // caller keeps at least its own name, and a list that came back empty
+    // is a membership read that failed, not a cluster with no members.
+    purgeNodeSnapshots: function (olderThanMs, keepNames) {
+      log.debug("Entering purgeNodeSnapshots().");
+      const keep = (keepNames || []).map(String);
+      if (!keep.length || !(Number(olderThanMs) > 0)) {
+        log.debug("Leaving purgeNodeSnapshots(). Refused.");
+        return Promise.reject(new Error('purgeNodeSnapshots needs the live ' +
+          'names and an age'));
+      }
+      log.debug("Leaving purgeNodeSnapshots().");
+      return pool.query(
+        'DELETE FROM sts_node_snapshots WHERE taken_at < ' + DB_NOW +
+        ' - $1 AND NOT (name = ANY($2::text[])) RETURNING name, taken_at',
+        [Number(olderThanMs), keep]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { name: row.name, takenAt: Number(row.taken_at) };
+        });
+      });
+    },
+
+    // EVERY NODE'S LATEST SNAPSHOT (#332), with the database clock to read
+    // their ages against. Bounded twice: a row per name, and at most 64.
+    nodeSnapshots: function () {
+      log.debug("Entering nodeSnapshots().");
+      log.debug("Leaving nodeSnapshots().");
+      return Promise.all([
+        pool.query('SELECT name, node_id, taken_at, body FROM ' +
+                   'sts_node_snapshots ORDER BY name LIMIT 64'),
+        pool.query('SELECT ' + DB_NOW + ' AS now')
+      ]).then(function (answers) {
+        return {
+          now: Number((answers[1].rows[0] || {}).now) || 0,
+          rows: answers[0].rows.map(function (row) {
+            return { name: row.name, nodeId: row.node_id,
+                     takenAt: Number(row.taken_at), body: row.body || {} };
           })
         };
       });

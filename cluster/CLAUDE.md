@@ -20,6 +20,7 @@ the barrier that makes one node see what another committed.
 | `cluster_secrets.ts` | The secrets every node must agree on (the CSRF key, the ACME nonce key, the SSF receiver secret, and the BBS key pair), sealed in the store, first writer wins. |
 | `cluster_barrier.js` | The middleware that makes a request wait for other nodes' commits, and holds a writing response until its own commit lands. Active-active only. |
 | `scheduler.ts` | **The one scheduler every periodic job runs on** (#49, 2026-09-22): a leader on the `ops.scheduler` lease, a claim and a fence per run, slots by the database clock, manual runs and a step-down as command rows in the store, cluster and per-process jobs. `/admin/scheduler` draws it. See *The scheduler*, below. |
+| `node_snapshots.ts` | **Every node on Monitoring → Worker Pools and → Node Health** (#332, 2026-09-28): the per-process job `cluster.node-snapshot` that writes this node's own views to `sts_node_snapshots` every 15 s, one row per node name, and the read every page does — this node live, every other from its row, marked `stale` past 45 s, `gone` when membership has no live row by the name, `no-snapshot` when it has written none; never dropped. Names, never addresses: a name that is an address is drawn as a digest, and IPv4 literals are scrubbed from what is written and answered. See *Every node on two pages*, below. |
 
 The SQL is `persistence/persistence_postgres.js`'s — the driver owns every
 statement, as it does for `/admin/database` — and the six tables
@@ -621,6 +622,8 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |
 | `persistence.tombstone-purge` | cluster, service; ten minutes, registered at the first flush | `persistence/persistence_minted.js` (P5) |
 | `cluster.cache-report` | per-process, quiet; front processes that joined | `cluster/cluster.js` (P5) |
+| `cluster.node-snapshot` | per-process, quiet; every 15 s, joined front processes of a cluster whose store is shared — writes the node's Worker Pools and Node Health views to `sts_node_snapshots` (#332) | `cluster/node_snapshots.ts` |
+| `cluster.node-snapshot-purge` | cluster, service; hourly, off with no cluster store — deletes the row of a node that is not a live member once its snapshot is older than `cluster.nodeSnapshotRetentionHours` (24); never a live member's, nothing while membership cannot be read (#332) | `cluster/node_snapshots.ts` |
 | `cluster.claims-purge` | cluster, service; a minute, registered at the first claim against a database | `cluster/cluster_claims.js` (P5) |
 | `cluster.rate-window-purge` | cluster, service; a minute, registered at the first shared count | `cluster/cluster_counters.js` (P5) |
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
@@ -655,6 +658,48 @@ stands on, and one-shot timeouts and debounces.
 **A job registered at first use** (the four purges) requires the scheduler
 LAZILY, at that use: `scheduler.ts` requires `cluster_claims.js`, and
 `used_assertions.js` is in the parent project's Kerberos COPY closure.
+
+## Every node on two pages (#332, 2026-09-28)
+
+Monitoring → Worker Pools (#327) and → Node Health (#329) describe the node
+that draws them, and rcbj asked for every node on both, named and never
+addressed. **No request crosses between nodes** — there is no channel but the
+store, and no node's address is published — so each node's FRONT process
+writes its own views every fifteen seconds (`cluster.node-snapshot`, a quiet
+per-process job, off in a request worker and with no cluster) and whichever
+node draws a page reads every row.
+
+* **ONE ROW PER NODE NAME, IN A TABLE OF ITS OWN** (`sts_node_snapshots`,
+  schema version 11), not on the membership row: `info` is rewritten on every
+  heartbeat and read with every retained row on every beat, and a snapshot is
+  kilobytes; `persistence/CLAUDE.md` has the driver half. The name is
+  `cluster.nodeName` (`STS_CLUSTER_NODE_NAME`), which survives a restart
+  where the membership UUID does not, so the table is as long as the list of
+  names and never grows with time.
+* **MARKED, NEVER SILENTLY DROPPED.** Every age is the database's clock
+  (`taken_at` against the query's `now`). `stale` past three intervals,
+  `gone` when membership has no live row by the name (its last snapshot kept
+  and drawn, saying when it will be removed), `no-snapshot` for a live member
+  that has written none; when membership cannot be read, nobody is called
+  gone.
+* **A GONE NODE EXPIRES AFTER A DAY** (rcbj's answer on #332):
+  `cluster.node-snapshot-purge`, a CLUSTER job run hourly on the scheduler's
+  leader, deletes every row older than `cluster.nodeSnapshotRetentionHours`
+  (24, at least 1) by the database's clock whose name is not a live member's.
+  The names to keep are read FRESH (`cluster.state()`), with this node's own
+  added; a read that fails, or a state with no membership, deletes nothing
+  and says so in the run's summary. The driver refuses an empty keep list for
+  the same reason. Each deletion is logged once at info, by name; a delete
+  that fails is `STS-CORE-0128`, logged when it starts failing, and thrown so
+  the scheduler records the run as failed.
+* **THE ANSWERING NODE IS LIVE.** Its own section is its live view; its own
+  row is never drawn. The totals are over the nodes not gone.
+* **NAMES, NEVER ADDRESSES.** Neither page carries a host name any more — it
+  carries `node`. A name that is itself an address (the host name a node
+  falls back to, `ip-10-…` on Fargate) is drawn as `node-` and a digest, and
+  every IPv4 literal in what is written or answered is replaced.
+* **With no cluster nothing changes**: one section, and a sentence saying
+  there is no cluster (or no store every node shares).
 
 ## What is done and what is not (2026-09-14)
 

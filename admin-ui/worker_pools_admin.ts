@@ -37,9 +37,16 @@
 // of zeros would read as a pool that is broken rather than one that is not
 // there, so each pool carries a `state` and a sentence.
 //
-// **THE NUMBERS ARE THIS NODE'S.** Each node — each container of a cluster —
-// has pools of its own, held by its front process, and the page says which
-// node and which pid drew it. **AND IT IS ALWAYS THE FRONT PROCESS THAT DRAWS
+// **EVERY NODE, BY NAME (#332, 2026-09-28).** In a cluster the page draws a
+// section per node — this node's live, every other's from the snapshot its
+// front process writes every fifteen seconds (`cluster/node_snapshots.ts`),
+// stamped with its age and marked stale or gone rather than dropped — and the
+// cluster's totals per pool above them. A node is named (`cluster.nodeName`),
+// never addressed. `?node=<name>` narrows the page and the API to one node.
+//
+// **THE LIVE NUMBERS ARE THIS NODE'S.** Each node — each container of a
+// cluster — has pools of its own, held by its front process, and the page
+// says which node and which pid drew it. **AND IT IS ALWAYS THE FRONT PROCESS THAT DRAWS
 // IT**: both paths are in `request_pool.js`'s `NEVER_DISPATCHED`, the
 // debugger's arrangement, because a request worker's copy of that module
 // forked nothing and would report every pool off on a service running eight
@@ -62,11 +69,11 @@
 // `common/protocol_stack.ts` (18r), facades for the JavaScript callers.
 // ===========================================================================
 
-import os = require('os');
 import admin = require('./admin');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
+import nodeSnapshots = require('../cluster/node_snapshots');
 
 type Req = any;
 type Res = any;
@@ -94,7 +101,10 @@ interface WorkerPoolsAdminDeps {
   workerPool: () => any;
   now: () => number;
   pid: number;
-  host: string;
+  // This node's NAME, never its host or address (#332).
+  nodeName: () => string;
+  // Every other node's snapshot, and the job that writes this one's (#332).
+  snapshots: () => typeof nodeSnapshots;
 }
 
 /**
@@ -142,7 +152,16 @@ class WorkerPoolsAdmin {
       },
       now: Date.now,
       pid: process.pid,
-      host: os.hostname()
+      nodeName: function nodeName(): string {
+        helpers.log.debug("Entering nodeName().");
+        helpers.log.debug("Leaving nodeName().");
+        return nodeSnapshots.selfName();
+      },
+      snapshots: function snapshots(): typeof nodeSnapshots {
+        helpers.log.debug("Entering snapshots().");
+        helpers.log.debug("Leaving snapshots().");
+        return nodeSnapshots;
+      }
     };
   }
 
@@ -455,17 +474,18 @@ class WorkerPoolsAdmin {
     return view;
   }
 
-  // The page's JSON, and the management API's answer.
+  // This node's own view: what the page drew before #332, and what its
+  // snapshot carries to the other nodes.
   /**
-   * Answers the page's JSON and `GET /admin-api/worker-pools`: the three
-   * pools of this node, asked of the pools when called.
+   * Answers this node's three pools, asked of the pools when called.
    *
    * @returns a promise of the view
    */
-  workerPoolsView(): Promise<Json> {
-    const { log, requestPool, workerPool, now, pid, host } = this.deps;
+  localView(): Promise<Json> {
+    const { log, requestPool, workerPool, now, pid, nodeName } = this.deps;
     const self = this;
-    log.debug("Entering WorkerPoolsAdmin.workerPoolsView().");
+    log.debug("Entering WorkerPoolsAdmin.localView().");
+    const node = nodeName();
     const pool = requestPool();
     const stats = pool.stats();
     const asked = (stats.workers || []).filter(function (one: Json):
@@ -476,17 +496,17 @@ class WorkerPoolsAdmin {
     });
     const ask = asked.length ? pool.askWorkerPoolStatus(ASK_WORKERS_MS)
                              : Promise.resolve({});
-    log.debug("Leaving WorkerPoolsAdmin.workerPoolsView(). Asked " +
+    log.debug("Leaving WorkerPoolsAdmin.localView(). Asked " +
               asked.length + " worker(s).");
     return ask.then(function (answers: Json): Json {
       const at = now();
       return {
         generatedAt: new Date(at).toISOString(),
-        host: host,
+        node: node,
         pid: pid,
         scope: 'node',
-        scopeText: 'These are the pools of this node — the container ' +
-          host + ' — held by its front process, pid ' + pid + '. Every ' +
+        scopeText: 'These are the pools of the node ' + node + ', held ' +
+          'by its front process, pid ' + pid + '. Every ' +
           'node of a cluster has pools of its own, and a request worker ' +
           'has a post-quantum pool of its own too, which is why that ' +
           'section has a row per process.',
@@ -497,6 +517,169 @@ class WorkerPoolsAdmin {
         ]
       };
     });
+  }
+
+  /**
+   * The cluster's totals per pool, over the nodes that are not gone and
+   * have a view: current, busy and free workers, forks, crashes and failed
+   * starts.
+   *
+   * @param nodes - the node sections
+   * @returns the totals
+   */
+  static totalsOf(nodes: Json[]): Json {
+    helpers.log.debug("Entering WorkerPoolsAdmin.totalsOf().");
+    const counted = nodes.filter(function (n: Json): boolean {
+      return n.state !== 'gone' && !!n.view && Array.isArray(n.view.pools);
+    });
+    const pools: Json = {};
+    counted.forEach(function (n: Json): void {
+      n.view.pools.forEach(function (p: Json): void {
+        const t = pools[p.id] || (pools[p.id] = {
+          id: p.id, title: p.title, currentWorkers: 0, busyWorkers: 0,
+          freeWorkers: 0, forked: 0, crashed: 0, failedStarts: 0,
+          nodesOn: 0 });
+        const r = p.restarts || {};
+        t.currentWorkers += Number(p.currentWorkers) || 0;
+        t.busyWorkers += Number(p.busyWorkers) || 0;
+        t.freeWorkers += Number(p.freeWorkers) || 0;
+        t.forked += Number(r.forked) || 0;
+        t.crashed += Number(r.crashed) || 0;
+        t.failedStarts += Number(r.failedStarts) || 0;
+        if (p.state !== 'off') {
+          t.nodesOn++;
+        }
+      });
+    });
+    helpers.log.debug("Leaving WorkerPoolsAdmin.totalsOf().");
+    return {
+      nodes: nodes.length,
+      nodesCounted: counted.length,
+      pools: Object.keys(pools).map(function (id: string): Json {
+        return pools[id];
+      }),
+      text: 'Over the ' + counted.length + ' node(s) that are not gone ' +
+        'and have a snapshot, stale ones included and marked.'
+    };
+  }
+
+  // The page's JSON, and the management API's answer.
+  /**
+   * Answers the page's JSON and `GET /admin-api/worker-pools`: this node's
+   * live pools at the top, and a section per cluster node with the
+   * cluster's totals (#332). With `node`, the answer is about that node.
+   *
+   * @param opts - `{ node }` to narrow to one node by name
+   * @returns a promise of the view, or `{ notFound }` for an unknown name
+   */
+  async workerPoolsView(opts?: { node?: string }): Promise<Json> {
+    const { log, now, pid, snapshots } = this.deps;
+    log.debug("Entering WorkerPoolsAdmin.workerPoolsView().");
+    const local = await this.localView();
+    const read = await snapshots().read('workerPools', local);
+    const want = opts && opts.node ? String(opts.node) : '';
+    let nodes = read.nodes;
+    let subject: Json = local;
+    if (want) {
+      const hit = nodes.filter(function (n: Json): boolean {
+        return n.name === want;
+      })[0];
+      if (!hit) {
+        log.debug("Leaving WorkerPoolsAdmin.workerPoolsView(). No such " +
+                  "node.");
+        return { notFound: want, nodeNames: nodes.map(function (n: Json):
+          string {
+          return n.name;
+        }) };
+      }
+      nodes = [hit];
+      subject = hit.view || { node: hit.name, pools: [] };
+    }
+    const answer = Object.assign({}, subject, {
+      generatedAt: new Date(now()).toISOString(),
+      answeredBy: { node: local.node, pid: pid },
+      state: nodes.length === 1 && want ? nodes[0].state : 'live',
+      cluster: read.cluster,
+      nodes: nodes,
+      totals: WorkerPoolsAdmin.totalsOf(nodes)
+    });
+    log.debug("Leaving WorkerPoolsAdmin.workerPoolsView(). " + nodes.length +
+              " node(s).");
+    return snapshots().scrub(answer);
+  }
+
+  // The page for every node: the cluster's totals and a section per node.
+  private clusterHtml(json: Json): string {
+    const { log, admin } = this.deps;
+    const self = this;
+    log.debug("Entering WorkerPoolsAdmin.clusterHtml().");
+    const c = json.cluster || {};
+    const nodes: Json[] = json.nodes || [];
+    const own = nodes.filter(function (n: Json): boolean {
+      return n.self;
+    })[0];
+    if (!c.clustered || nodes.length < 2) {
+      const first = own || nodes[0];
+      const html = admin.note(admin.esc(c.text || ''), 'Cluster') +
+        (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
+        (first && first.view && first.view.pools ? this.html(first.view)
+                                                 : '');
+      log.debug("Leaving WorkerPoolsAdmin.clusterHtml(). One node.");
+      return html;
+    }
+    const t = json.totals;
+    const html = '<h2 id="cluster">Cluster</h2><p>' + admin.esc(c.text) +
+      '</p>' + (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
+      '<table class="grid"><thead><tr><th>Pool</th><th>Workers</th>' +
+      '<th>Busy</th><th>Free</th><th>Forked</th><th>Crashed</th>' +
+      '<th>Nodes on</th></tr></thead><tbody>' +
+      t.pools.map(function (p: Json): string {
+        return '<tr><td>' + admin.esc(p.title) + '</td><td>' +
+          admin.esc(p.currentWorkers) + '</td><td>' +
+          admin.esc(p.busyWorkers) + '</td><td>' +
+          admin.esc(p.freeWorkers) + '</td><td>' + admin.esc(p.forked) +
+          '</td><td>' + admin.esc(p.crashed) +
+          (p.failedStarts ? ' (' + admin.esc(p.failedStarts) + ' never ' +
+                            'started)' : '') + '</td><td>' +
+          admin.esc(p.nodesOn) + '</td></tr>';
+      }).join('') + '</tbody></table><p><small>' + admin.esc(t.text) +
+      '</small></p>' +
+      '<table class="grid"><thead><tr><th>Node</th><th>State</th>' +
+      '<th>Age</th></tr></thead><tbody>' +
+      nodes.map(function (n: Json): string {
+        return '<tr><td><a href="#node-' + admin.esc(n.name) + '">' +
+          admin.esc(n.name) + '</a>' + (n.self ? ' (this node)' : '') +
+          '</td><td>' + admin.esc(n.state) + '</td><td>' +
+          (n.ageSeconds === null ? '—' : admin.esc(n.ageSeconds) + ' s') +
+          '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      nodes.map(function (n: Json): string {
+        const head = '<h2 id="node-' + admin.esc(n.name) + '">Node ' +
+          admin.esc(n.name) + (n.self ? ' (this node)' : '') + '</h2><p>' +
+          '<strong>' + admin.esc(n.state) + '</strong>: ' +
+          admin.esc(n.stateText) + '</p>';
+        if (!n.view || !Array.isArray(n.view.pools)) {
+          return head;
+        }
+        let body = '';
+        try {
+          body = self.html(n.view);
+        } catch (e) {
+          log.debug("Caught in WorkerPoolsAdmin.clusterHtml(): " +
+                    ((e && e.message) || e));
+          // A snapshot from another version of this page may lack a figure
+          // this one draws; the node is still listed, and says so.
+          return head + admin.warn('This node\'s snapshot could not be ' +
+                                   'drawn: ' + admin.esc((e && e.message) ||
+                                                         e) + '.');
+        }
+        // Another node's sections carry its name in their anchors, so the
+        // page's own `id="pool-request"` and the rest stay this node's.
+        return head + (n.self ? body
+          : body.replace(/ id="/g, ' id="' + admin.esc(n.name) + '-'));
+      }).join('');
+    log.debug("Leaving WorkerPoolsAdmin.clusterHtml().");
+    return html;
   }
 
   // A figure, or a dash for one that does not exist yet.
@@ -638,12 +821,25 @@ class WorkerPoolsAdmin {
     const { log, admin, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering WorkerPoolsAdmin.registerRoutes().");
+    // THIS NODE'S VIEW FOR THE OTHER NODES (#332): the job that writes it
+    // is registered by the hand-over, in every process that loads the page.
+    this.deps.snapshots().provide('workerPools', function (): Promise<Json> {
+      return self.localView();
+    });
     app.get(PAGE, function (req: Req, res: Res): void {
       log.debug('Entering GET ' + PAGE + '.');
-      self.workerPoolsView().then(function (json: Json): void {
-        admin.respond(req, res, json, 'Worker pools', PAGE,
-                      admin.messagesOf(req) + self.html(json));
-      }).catch(function (e: any): void {
+      self.workerPoolsView({ node: req.query && req.query.node
+                                     ? String(req.query.node) : '' })
+        .then(function (json: Json): void {
+          if (json.notFound) {
+            errorCodes.mark(res, 'STS-CORE-0126');
+            res.status(404).type('text/plain')
+              .send('There is no node named ' + json.notFound + '.');
+            return;
+          }
+          admin.respond(req, res, json, 'Worker pools', PAGE,
+                        admin.messagesOf(req) + self.clusterHtml(json));
+        }).catch(function (e: any): void {
         log.debug("Caught in GET " + PAGE + ": " + ((e && e.message) || e));
         log.error(errorCodes.tag('STS-WORKER-0044') + 'The worker pools ' +
                   'report could not be built: ' + ((e && e.message) || e));

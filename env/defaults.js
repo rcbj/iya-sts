@@ -1198,11 +1198,12 @@ var config = {
 
   // --- Cluster ---------------------------------------------------------
   cluster: {
-    mode: "auto",                  // Cluster mode; restart to apply
-    nodeName: "",                  // Node name; restart to apply
-    heartbeatMs: 2000,             // Heartbeat interval (ms); restart to apply
-    nodeTtlMs: 30000,              // Node lifetime (ms); restart to apply
-    acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
+    mode: "auto",                   // Cluster mode; restart to apply
+    nodeName: "",                   // Node name; restart to apply
+    nodeSnapshotRetentionHours: 24, // Keep a gone node's snapshot (hours)
+    heartbeatMs: 2000,              // Heartbeat interval (ms); restart to apply
+    nodeTtlMs: 30000,               // Node lifetime (ms); restart to apply
+    acceptMissingCapabilities: ""   // Capabilities accepted as missing; restart to apply
   },
 
   // --- Signing keys ----------------------------------------------------

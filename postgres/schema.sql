@@ -359,6 +359,17 @@ CREATE TABLE IF NOT EXISTS sts_cluster_windows (
 
 CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON sts_cluster_windows (window_ends_at);
 
+-- WHAT EACH NODE LAST SAID ABOUT ITSELF (#332, schema version 11): its own
+-- Monitoring → Worker Pools and → Node Health views, written every fifteen
+-- seconds by its front process and read by whichever node draws those pages.
+-- One row per node NAME, overwritten, so it never grows with time.
+-- `cluster/node_snapshots.ts` argues it.
+CREATE TABLE IF NOT EXISTS sts_node_snapshots (
+  name     text   PRIMARY KEY,
+  node_id  text   NOT NULL DEFAULT '',
+  taken_at bigint NOT NULL,
+  body     jsonb  NOT NULL DEFAULT '{}'::jsonb);
+
 -- WHERE EVERY PROCESS READING THE CHANGE LOG HAS GOT TO (#46 section 8): the
 -- low-water mark each coordinating process reports, which `sts_changes` is
 -- trimmed below. `persistence/persistence_replication.js` argues the bound.
@@ -632,7 +643,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (10) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (11) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

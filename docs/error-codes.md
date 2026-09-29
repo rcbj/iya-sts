@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3754** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3757** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 68
+* [Service core (`STS-CORE`)](#sts-core) — 71
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 44
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -138,7 +138,7 @@ Raised from: common/proxy_protocol.ts, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -210,6 +210,9 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0123` | A trust realm is stuck half removed (#294): it carries the retiring mark (#262) from longer ago than a removal can take, so the process that was removing it stopped before it finished. Every new sign-in and issuance in it is refused (STS-CORE-0121) until an administrator removes it again, from another realm. Logged when such a realm is restored at start, and when the removal is finished. | none — logged; /admin/realms and GET /admin-api/realms show it |
 | `STS-CORE-0124` | The /admin/node-health page or GET /admin-api/node-health could not build its report of the node's container and processes (#329). | HTTP 500 page or JSON |
 | `STS-CORE-0125` | ECS_CONTAINER_METADATA_URI_V4 is set, but the ECS task metadata endpoint did not answer Monitoring → Node Health within its bound, or answered with an error (#329). Logged when it starts failing, not on every page; the page says so in a sentence and draws the cgroup figures without the cross-check. | none — the page and GET /admin-api/node-health still answer 200 |
+| `STS-CORE-0126` | Monitoring → Worker Pools or → Node Health, or their management API operations, were asked about a node (?node=) that is neither this node nor any node with a snapshot or a membership row (#332). | HTTP 404, with the names there are |
+| `STS-CORE-0127` | A cluster node's snapshot of Monitoring → Worker Pools and → Node Health could not be written to the shared store, or the other nodes' snapshots could not be read from it (#332). Logged when it starts failing, not on every run or page; the page draws this node alone and says why. | none — the pages and their API still answer 200 |
+| `STS-CORE-0128` | The hourly cluster.node-snapshot-purge job could not delete the snapshots of nodes that are no longer live cluster members (#332). Logged when it starts failing, not on every run; the rows stay, and the pages go on drawing those nodes as gone. | none — the scheduler records the failed run |
 
 ## STS-WORKER
 

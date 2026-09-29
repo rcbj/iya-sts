@@ -14548,6 +14548,18 @@ const SETTINGS = [
                  'identifies nothing: membership is a UUID made at every ' +
                  'start, so two nodes given one name are still two nodes.' },
 
+  { key: 'cluster.nodeSnapshotRetentionHours', group: 'Cluster',
+    label: 'Keep a gone node\'s snapshot (hours)',
+    env: 'STS_CLUSTER_NODE_SNAPSHOT_RETENTION_HOURS', type: 'int', dflt: 24,
+    min: 1, max: 8760, runtime: true, perProcess: true,
+    description: 'How long Monitoring → Worker Pools and → Node Health keep ' +
+                 'showing a node that is no longer a live cluster member, ' +
+                 'from its last snapshot (#332). The hourly ' +
+                 'cluster.node-snapshot-purge job deletes its row once the ' +
+                 'snapshot is older than this; a live member\'s row is ' +
+                 'never deleted, however old, and nothing is deleted while ' +
+                 'membership cannot be read. rcbj chose a day.' },
+
   { key: 'cluster.heartbeatMs', group: 'Cluster',
     label: 'Heartbeat interval (ms)',
     env: 'STS_CLUSTER_HEARTBEAT_MS', type: 'int', dflt: 2000, min: 250,

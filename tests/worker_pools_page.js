@@ -452,8 +452,9 @@ async function checkOffIsSaid(t) {
               p ? p.state + ': ' + p.stateText : 'missing');
     });
     t.equal(json.scope, 'node', 'the figures are said to be the node\'s');
-    t.check(json.pid === process.pid && !!json.host,
-            'naming the process and host that drew them', '');
+    t.check(json.pid === process.pid && !!json.node && !('host' in json),
+            'naming the process and node that drew them, by name and not ' +
+            'by host (#332)', '');
     const page = await draw({});
     t.check(!!page && /Off: workers\.requestCount is 0/.test(page.body) &&
             /Off: workers\.surfaceCount is 0/.test(page.body) &&

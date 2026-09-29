@@ -160,7 +160,8 @@ const SUBSYSTEMS = [
     where: 'server.js, common/protocol_stack.ts, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
            'common/mode.js, common/version.js, sts_metadata.ts, home/, ' +
-           'admin-ui/node_health_admin.ts',
+           'admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts ' +
+           '(STS-CORE-0126), cluster/node_snapshots.ts',
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
@@ -875,6 +876,25 @@ const CODES = [
       'failing, not on every page; the page says so in a sentence and ' +
       'draws the cgroup figures without the cross-check.',
     spec: 'none — the page and GET /admin-api/node-health still answer 200' },
+  { code: 'STS-CORE-0126',
+    summary: 'Monitoring → Worker Pools or → Node Health, or their ' +
+      'management API operations, were asked about a node (?node=) that ' +
+      'is neither this node nor any node with a snapshot or a membership ' +
+      'row (#332).',
+    spec: 'HTTP 404, with the names there are' },
+  { code: 'STS-CORE-0127',
+    summary: 'A cluster node\'s snapshot of Monitoring → Worker Pools and → ' +
+      'Node Health could not be written to the shared store, or the other ' +
+      'nodes\' snapshots could not be read from it (#332). Logged when it ' +
+      'starts failing, not on every run or page; the page draws this node ' +
+      'alone and says why.',
+    spec: 'none — the pages and their API still answer 200' },
+  { code: 'STS-CORE-0128',
+    summary: 'The hourly cluster.node-snapshot-purge job could not delete ' +
+      'the snapshots of nodes that are no longer live cluster members ' +
+      '(#332). Logged when it starts failing, not on every run; the rows ' +
+      'stay, and the pages go on drawing those nodes as gone.',
+    spec: 'none — the scheduler records the failed run' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

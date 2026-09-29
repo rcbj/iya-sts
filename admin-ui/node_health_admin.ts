@@ -60,8 +60,16 @@
 // `SAMPLE_MS` apart, while the workers and the ECS endpoint are being asked,
 // so the page is bounded by the slowest of the three and by a second.
 //
-// **THE NUMBERS ARE THIS NODE'S.** Each node of a cluster is a container of
-// its own; the page names the host and the front process that drew it, and
+// **EVERY NODE, BY NAME (#332, 2026-09-28).** In a cluster the page draws a
+// section per node — this node's from its live view, every other's from the
+// snapshot its front process writes every fifteen seconds
+// (`cluster/node_snapshots.ts`), stamped with its age and marked stale or
+// gone rather than dropped — and the cluster's totals above them. A node is
+// named (`cluster.nodeName`) and never addressed: no host name or address is
+// in the view. `?node=<name>` narrows the page and the API to one node.
+//
+// **THE LIVE FIGURES ARE THIS NODE'S.** Each node of a cluster is a container
+// of its own; the page names the node and the front process that drew it, and
 // it is ALWAYS the front process: both paths are in `request_pool.js`'s
 // `NEVER_DISPATCHED` beside Worker Pools', because only the front process
 // knows the workers and can ask them. A request worker asks its OWN
@@ -97,6 +105,7 @@ import admin = require('./admin');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
+import nodeSnapshots = require('../cluster/node_snapshots');
 
 type Req = any;
 type Res = any;
@@ -144,7 +153,10 @@ interface NodeHealthAdminDeps {
   clockUs: () => number;
   now: () => number;
   pid: number;
-  host: string;
+  // This node's NAME, never its host or address (#332).
+  nodeName: () => string;
+  // Every other node's snapshot, and the job that writes this one's (#332).
+  snapshots: () => typeof nodeSnapshots;
   platform: string;
   memoryUsage: () => Json;
   cpuUsage: () => Json;
@@ -249,7 +261,16 @@ class NodeHealthAdmin {
       },
       now: Date.now,
       pid: process.pid,
-      host: os.hostname(),
+      nodeName: function nodeName(): string {
+        log.debug("Entering nodeName().");
+        log.debug("Leaving nodeName().");
+        return nodeSnapshots.selfName();
+      },
+      snapshots: function snapshots(): typeof nodeSnapshots {
+        log.debug("Entering snapshots().");
+        log.debug("Leaving snapshots().");
+        return nodeSnapshots;
+      },
       platform: process.platform,
       memoryUsage: function memoryUsage(): Json {
         log.debug("Entering memoryUsage().");
@@ -937,9 +958,10 @@ class NodeHealthAdmin {
    *
    * @returns a promise of the view
    */
-  async nodeHealthView(): Promise<Json> {
-    const { log, requestPool, now, pid, host, machine } = this.deps;
-    log.debug("Entering NodeHealthAdmin.nodeHealthView().");
+  async localView(): Promise<Json> {
+    const { log, requestPool, now, pid, nodeName, machine } = this.deps;
+    log.debug("Entering NodeHealthAdmin.localView().");
+    const node = nodeName();
     const pool = requestPool();
     const stats = pool.stats();
     const asking = (stats.workers || []).some(function (one: Json): boolean {
@@ -960,12 +982,12 @@ class NodeHealthAdmin {
                                                got[4] || {}, got[5]);
     const view = {
       generatedAt: new Date(now()).toISOString(),
-      host: host,
+      node: node,
       pid: pid,
       scope: 'node',
-      scopeText: 'These are the figures of this node — the container ' +
-        host + ' — drawn by its front process, pid ' + pid + '. Every node ' +
-        'of a cluster is a container of its own, with its own figures.',
+      scopeText: 'These are the figures of the node ' + node + ' — its ' +
+        'container — drawn by its front process, pid ' + pid + '. Every ' +
+        'node of a cluster is a container of its own, with its own figures.',
       cgroup: where.dir,
       cpu: got[0],
       memory: got[1],
@@ -978,8 +1000,113 @@ class NodeHealthAdmin {
           'container\'s limit.'
       }, machine())
     };
-    log.debug("Leaving NodeHealthAdmin.nodeHealthView().");
+    log.debug("Leaving NodeHealthAdmin.localView().");
     return view;
+  }
+
+  /**
+   * The cluster's totals over the nodes that are not gone and have a view:
+   * container memory used and its limit, CPU used against the CPUs each
+   * node measures against, and the processes and their memory.
+   *
+   * @param nodes - the node sections
+   * @returns the totals
+   */
+  static totalsOf(nodes: Json[]): Json {
+    helpers.log.debug("Entering NodeHealthAdmin.totalsOf().");
+    const counted = nodes.filter(function (n: Json): boolean {
+      return n.state !== 'gone' && !!n.view;
+    });
+    let memUsed = 0;
+    let memLimit: number | null = 0;
+    let memNodes = 0;
+    let cores = 0;
+    let cpus = 0;
+    let cpuNodes = 0;
+    let processes = 0;
+    let rss = 0;
+    let heap = 0;
+    counted.forEach(function (n: Json): void {
+      const v = n.view;
+      if (v.memory && v.memory.available) {
+        memNodes++;
+        memUsed += Number(v.memory.currentBytes) || 0;
+        memLimit = memLimit !== null && typeof v.memory.limitBytes === 'number'
+          ? memLimit + v.memory.limitBytes : null;
+      }
+      if (v.cpu && v.cpu.available) {
+        cpuNodes++;
+        cores += Number(v.cpu.coresUsed) || 0;
+        cpus += Number(v.cpu.percentOfVcpus) || 0;
+      }
+      const t = (v.processes && v.processes.totals) || {};
+      processes += Number(t.processes) || 0;
+      rss += Number(t.rssBytes) || 0;
+      heap += Number(t.heapUsedBytes) || 0;
+    });
+    const limit = memNodes ? memLimit : null;
+    helpers.log.debug("Leaving NodeHealthAdmin.totalsOf().");
+    return {
+      nodes: nodes.length,
+      nodesCounted: counted.length,
+      memoryNodes: memNodes,
+      memoryUsedBytes: memNodes ? memUsed : null,
+      memoryLimitBytes: limit,
+      memoryPercent: limit ? Math.round(1000 * memUsed / limit) / 10 : null,
+      cpuNodes: cpuNodes,
+      cpuCoresUsed: cpuNodes ? Math.round(cores * 1000) / 1000 : null,
+      cpuOf: cpuNodes ? cpus : null,
+      cpuPercent: cpus ? Math.round(1000 * cores / cpus) / 10 : null,
+      processes: processes,
+      rssBytes: rss,
+      heapUsedBytes: heap,
+      text: 'Over the ' + counted.length + ' node(s) that are not gone ' +
+        'and have a snapshot, stale ones included and marked. The limits ' +
+        'are summed only when every node has one.'
+    };
+  }
+
+  /**
+   * Answers the page's JSON and `GET /admin-api/node-health`: this node's
+   * live view at the top, and a section per cluster node with the cluster's
+   * totals (#332). With `node`, the answer is about that node alone.
+   *
+   * @param opts - `{ node }` to narrow to one node by name
+   * @returns a promise of the view, or `{ notFound }` for an unknown name
+   */
+  async nodeHealthView(opts?: { node?: string }): Promise<Json> {
+    const { log, now, pid, snapshots } = this.deps;
+    log.debug("Entering NodeHealthAdmin.nodeHealthView().");
+    const local = await this.localView();
+    const read = await snapshots().read('nodeHealth', local);
+    const want = opts && opts.node ? String(opts.node) : '';
+    let nodes = read.nodes;
+    let subject: Json = local;
+    if (want) {
+      const hit = nodes.filter(function (n: Json): boolean {
+        return n.name === want;
+      })[0];
+      if (!hit) {
+        log.debug("Leaving NodeHealthAdmin.nodeHealthView(). No such node.");
+        return { notFound: want, nodeNames: nodes.map(function (n: Json):
+          string {
+          return n.name;
+        }) };
+      }
+      nodes = [hit];
+      subject = hit.view || { node: hit.name };
+    }
+    const answer = Object.assign({}, subject, {
+      generatedAt: new Date(now()).toISOString(),
+      answeredBy: { node: local.node, pid: pid },
+      state: nodes.length === 1 && want ? nodes[0].state : 'live',
+      cluster: read.cluster,
+      nodes: nodes,
+      totals: NodeHealthAdmin.totalsOf(nodes)
+    });
+    log.debug("Leaving NodeHealthAdmin.nodeHealthView(). " + nodes.length +
+              " node(s).");
+    return snapshots().scrub(answer);
   }
 
   // Bytes as MiB, or a dash for a figure that is not there.
@@ -1197,6 +1324,81 @@ class NodeHealthAdmin {
     return html;
   }
 
+  // The page for every node: the cluster's totals and a section per node,
+  // this node's from its live view and every other's from its snapshot.
+  private clusterHtml(json: Json): string {
+    const { log, admin } = this.deps;
+    const self = this;
+    log.debug("Entering NodeHealthAdmin.clusterHtml().");
+    const c = json.cluster || {};
+    const nodes: Json[] = json.nodes || [];
+    const own = nodes.filter(function (n: Json): boolean {
+      return n.self;
+    })[0];
+    if (!c.clustered || nodes.length < 2) {
+      const html = admin.note(admin.esc(c.text || ''), 'Cluster') +
+        (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
+        (own && own.view ? this.html(own.view)
+                         : nodes[0] && nodes[0].view
+                           ? this.html(nodes[0].view) : '');
+      log.debug("Leaving NodeHealthAdmin.clusterHtml(). One node.");
+      return html;
+    }
+    const t = json.totals;
+    const html = '<h2 id="cluster">Cluster</h2><p>' + admin.esc(c.text) +
+      '</p>' + (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
+      this.rows([
+        ['Container memory', admin.esc(this.mib(t.memoryUsedBytes)),
+         t.memoryLimitBytes === null ? 'no total limit to measure against'
+           : admin.esc(this.pct(t.memoryPercent)) + ' of ' +
+             admin.esc(this.mib(t.memoryLimitBytes))],
+        ['CPU', t.cpuCoresUsed === null ? '—'
+           : admin.esc(t.cpuCoresUsed) + ' CPU(s)',
+         t.cpuPercent === null ? 'not measured'
+           : admin.esc(this.pct(t.cpuPercent)) + ' of ' +
+             admin.esc(t.cpuOf) + ' CPU(s)'],
+        ['Processes', admin.esc(t.processes),
+         admin.esc(this.mib(t.rssBytes)) + ' resident, ' +
+         admin.esc(this.mib(t.heapUsedBytes)) + ' of heap used']
+      ]) + '<p><small>' + admin.esc(t.text) + '</small></p>' +
+      '<table class="grid"><thead><tr><th>Node</th><th>State</th>' +
+      '<th>Age</th></tr></thead><tbody>' +
+      nodes.map(function (n: Json): string {
+        return '<tr><td><a href="#node-' + admin.esc(n.name) + '">' +
+          admin.esc(n.name) + '</a>' + (n.self ? ' (this node)' : '') +
+          '</td><td>' + admin.esc(n.state) + '</td><td>' +
+          (n.ageSeconds === null ? '—' : admin.esc(n.ageSeconds) + ' s') +
+          '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      nodes.map(function (n: Json): string {
+        const head = '<h2 id="node-' + admin.esc(n.name) + '">Node ' +
+          admin.esc(n.name) + (n.self ? ' (this node)' : '') + '</h2><p>' +
+          '<strong>' + admin.esc(n.state) + '</strong>: ' +
+          admin.esc(n.stateText) + '</p>';
+        if (!n.view) {
+          return head;
+        }
+        let body = '';
+        try {
+          body = self.html(n.view);
+        } catch (e) {
+          log.debug("Caught in NodeHealthAdmin.clusterHtml(): " +
+                    ((e && e.message) || e));
+          // A snapshot from another version of this page may lack a figure
+          // this one draws; the node is still listed, and says so.
+          return head + admin.warn('This node\'s snapshot could not be ' +
+                                   'drawn: ' + admin.esc((e && e.message) ||
+                                                         e) + '.');
+        }
+        // Another node's sections carry its name in their anchors, so the
+        // page's own `id="cpu"` and the rest stay this node's.
+        return head + (n.self ? body
+          : body.replace(/ id="/g, ' id="' + admin.esc(n.name) + '-'));
+      }).join('');
+    log.debug("Leaving NodeHealthAdmin.clusterHtml().");
+    return html;
+  }
+
   /**
    * Registers `GET /admin/node-health`.
    *
@@ -1206,12 +1408,25 @@ class NodeHealthAdmin {
     const { log, admin, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering NodeHealthAdmin.registerRoutes().");
+    // THIS NODE'S VIEW FOR THE OTHER NODES (#332): the job that writes it
+    // is registered by the hand-over, in every process that loads the page.
+    this.deps.snapshots().provide('nodeHealth', function (): Promise<Json> {
+      return self.localView();
+    });
     app.get(PAGE, function (req: Req, res: Res): void {
       log.debug('Entering GET ' + PAGE + '.');
-      self.nodeHealthView().then(function (json: Json): void {
-        admin.respond(req, res, json, 'Node health', PAGE,
-                      admin.messagesOf(req) + self.html(json));
-      }).catch(function (e: any): void {
+      self.nodeHealthView({ node: req.query && req.query.node
+                                    ? String(req.query.node) : '' })
+        .then(function (json: Json): void {
+          if (json.notFound) {
+            errorCodes.mark(res, 'STS-CORE-0126');
+            res.status(404).type('text/plain')
+              .send('There is no node named ' + json.notFound + '.');
+            return;
+          }
+          admin.respond(req, res, json, 'Node health', PAGE,
+                        admin.messagesOf(req) + self.clusterHtml(json));
+        }).catch(function (e: any): void {
         log.debug("Caught in GET " + PAGE + ": " + ((e && e.message) || e));
         log.error(errorCodes.tag('STS-CORE-0124') + 'The node health ' +
                   'report could not be built: ' + ((e && e.message) || e));
