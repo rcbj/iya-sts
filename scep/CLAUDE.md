@@ -287,6 +287,14 @@ transaction store may not hold it (FAILURE `STS-SCEP-0038`, badCertId). Harmless
 here: nothing is ever answered PENDING, so a client following RFC 8894
 section 3.3.3 never polls.
 
+## The monitor counts (#352, 2026-09-29)
+
+`/admin/scep/monitor`'s *issued certificates* built the whole SCEP list to
+read its length; it is `certificateCountsInRealm('scep').held`. `/admin/scep`
+slices before `certificateRow()` and its listing reads holders in one walk,
+never parsing an ACME or EST record (`common/CLAUDE.md`, 3ag).
+`tests/certificate_listing_bounds.js` holds both.
+
 ## Documented exceptions
 
 | Not implemented | Why |

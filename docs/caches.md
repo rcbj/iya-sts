@@ -110,6 +110,7 @@ answer.
 | Failed fetches | an address that did not answer, so it is not asked again at once | per process | the setting; 0 means a failure is not remembered | `pki.revocationFailureRetryS` (60) |
 | Certificate files | trust anchors read from a file named in a setting | per process | until the file's path or modification time changes; one entry per setting that names a file (two) | — |
 | Client certificate chains | the chain a verified client certificate built on a full TLS handshake, handed back when that session is resumed (a resumed session carries the leaf alone) | per process | no expiry; 1024 leaves, the oldest dropped first | — |
+| Parsed certificate facts | the subject, issuer and expiry a certificate list shows, and whether a certificate carries a post-quantum key, for `/admin/pki` and `GET /admin-api/certificates` | per process | no expiry, because it is keyed by the certificate's own content; 4,096 certificates, the oldest dropped first | — |
 
 The first three share one size limit, `pki.revocationCrlCacheEntries` (256);
 the oldest entry is dropped first.

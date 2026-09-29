@@ -272,6 +272,20 @@ EAB key are spent where they are checked. Single-cell mode does none of it.
   That is RFC 8555 section 6.5's own recovery, and every client implements
   it; a client that stays on one cell never pays it.
 
+## The console pages before it decorates (#352, 2026-09-29)
+
+`/admin/acme` sorted and counted its three lists whole — which is what the
+paging needs — and then turned EVERY row into what the page shows: an account
+lookup (`store.accountByThumbprint()`) per EAB key and a certificate lookup
+(`store.certificateBySerial()`, for the account that ordered it) per
+certificate, to draw twenty-five of each. `paged()` takes the decoration as an
+argument and applies it to the rows of the page asked for and no others; the
+paging and the rows are what they were. `/admin/acme/monitor`'s
+*certificates held* tile is `certificateCountsInRealm()`, which counts without
+building the list. The listing underneath reads holders in one walk and skips
+another family's records before the parse (`common/CLAUDE.md`, 3ag).
+`tests/certificate_listing_bounds.js` counts the lookups.
+
 ## Error codes
 
 `STS-ACME-NNNN` in `common/error_codes.js`, between `// ===== ACME ====` and

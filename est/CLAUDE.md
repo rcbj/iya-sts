@@ -189,6 +189,16 @@ TARGET's. One relay cannot reach both, so it is refused **403
 `STS-ENROLL-0012`'s "no such person", which would be false). The person
 enrolls as themselves, or an administrator homed in their region does it.
 
+## The monitor counts; the console decorates its page (#352, 2026-09-29)
+
+`/admin/est/monitor`'s four certificate tiles (held, valid, revoked, expired)
+built the whole list and filtered it four times; they are
+`certificateCountsInRealm()` now, the same records and `publicRecord()`'s same
+state rule, and no rows. `/admin/est` already sliced before `certificateRow()`.
+The listing underneath reads holders in one walk and never parses another
+family's records (`common/CLAUDE.md`, 3ag); `tests/certificate_listing_bounds.js`
+holds the counts equal to the list's.
+
 ## Error codes
 
 `STS-EST-0001`–`0022` for the protocol surface, `0030`–`0033` for the console

@@ -1195,6 +1195,49 @@ slowing from 11/s to 5/s as the directory filled. Both use the cached listing
 now. Measured in process with ~2,000 people: 200 `applications.list()` calls in
 51 ms against 518 ms for the walk.
 
+### AND AN EIGHTH: THE CONSOLE'S LISTS PAGE BEFORE THEY COPY (#352, 2026-09-29)
+
+On testidp (29,267 people) every console list that started from the directory
+built and decorated the whole realm to draw one page. The rule since is
+**population from keys, filter and sort on the keys, page, then read**, and
+each piece below is shaped so that #349's postgres window can answer it with
+one statement; the function's own comment names the statement.
+
+* **`personRows()`**: the realm's people as `{ key, name, dn, uid }`, each DN
+  normalised ONCE, sorted exactly as `allPersons()` sorted, kept on the
+  `ou=users` subtree clock (`ldap.person-keys` on `/admin/caches`).
+  `allPersons()` reads it and copies each entry; `personNames()` and
+  `personDns()` copy nothing, and are what the two `persons()` slots and the
+  roster's candidates read now. The sort used to normalise both DNs in every
+  comparison — about 900,000 calls at testidp's size.
+* **`residentsPage(after, limit)`**: the cells page's keyset, a binary search
+  over the same rows sorted by lower-cased first `uid`, reading `limit`
+  entries. It was `allPersons()`, a filter, a sort and a slice, so the cursor
+  bought nothing.
+* **`memberOfClaims()`**: who claims each group through their own `memberOf`,
+  one walk for every group, kept on `directoryVersion` (a `memberOf` can be on
+  any entry, the base included, which no container clock covers).
+  `claimedMembersOf()` was a walk of the realm per group, and `/admin/groups`
+  and the roster asked it once per group and per role. The list's member
+  counts are a Map lookup per value (`memberPresenceOf()`), not a resolution.
+* **`/admin/ldap/directory`** sorts `{ dn, origin }` with one collator and
+  copies the attributes of the shown rows only (`directoryRowOf()`); a `q`
+  that the DN does not decide is the one thing that still looks inside an
+  entry, because it searches values.
+* **`countDeviceEntries()`**, and `personKeyInfos()` / `delegationFlaggedPersons()`
+  testing their attribute before `isPersonEntry()` normalises anything.
+
+**A replicated write now moves its own realm's clocks.** `applyEntry()` and
+`removeEntry()` call `touchDirectory()` inside the row's realm. The change-log
+applier already ran there; a flush's outcomes (`applyDirectoryOutcomes()`)
+did not, so a merged or conflicting row of another realm moved the DEFAULT
+realm's subtree clock and left its own where it was — which every listing kept
+on a subtree clock (`entriesUnder()`, the application registry's, the person
+keys) would have missed.
+
+`tests/admin_paging_directory.js` counts each of these over a realm of three
+thousand people.
+
 ### The mutation record, and two mutants that were equivalent rather than missed
 
 Caught: the group-index stamp applied to group writes as well (6 assertions

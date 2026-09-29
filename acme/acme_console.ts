@@ -330,16 +330,19 @@ class AcmeConsole {
    * @param rows - every row
    * @param name - the paging parameter's name
    * @param noun - what the rows are, for the pager
+   * @param decorate - turns a row into what the page shows, called for the
+   *   rows of the page asked for and no others
    * @returns `{ paging, rows }` for the page asked for
    */
-  paged(query, rows, name, noun) {
+  paged(query, rows, name, noun, decorate?) {
     const { log, adminViews } = this.deps;
     log.debug("Entering AcmeConsole.paged(). name=" + name);
     const paging = adminViews.pagingOf(query, rows.length,
                                        { name: name, noun: noun });
+    const shown = rows.slice(paging.offset, paging.offset + paging.perPage);
     log.debug("Leaving AcmeConsole.paged().");
     return { paging: adminViews.pagingJson(paging),
-             rows: rows.slice(paging.offset, paging.offset + paging.perPage) };
+             rows: decorate ? shown.map(decorate) : shown };
   }
 
   /**
@@ -411,7 +414,13 @@ class AcmeConsole {
     const { log, core, store, config, revocation } = this.deps;
     log.debug("Entering AcmeConsole.acmeView().");
     const query = (req && req.query) || {};
-    const eabs = core.eabsInRealm().map(function (one) {
+    // PAGED BEFORE THEY ARE DECORATED (#352): each list below is sorted and
+    // counted whole — which is what its paging needs — and only the rows of
+    // the page asked for are turned into what the page shows. That is an
+    // account lookup per EAB key and per certificate (`certificateRow()`
+    // asks the store which account ordered it); both were made for every row
+    // in the realm to show twenty-five.
+    const eabRow = function (one) {
       const bound = one.boundAccount
         ? store.accountByThumbprint(one.boundAccount) : null;
       return { kid: one.kid, entry: one.entry, entryUri: one.entryUri,
@@ -419,7 +428,7 @@ class AcmeConsole {
                expiresAt: one.expiresAt, createdBy: one.createdBy || '',
                boundAt: one.boundAt || null,
                boundAccount: bound ? bound.id : null };
-    });
+    };
     const json = {
       page: '/admin/acme',
       title: 'ACME',
@@ -436,15 +445,13 @@ class AcmeConsole {
       refusedProfiles: core.REFUSED_PROFILES,
       mode: this.modeJson(),
       eabLifetimeS: Number(config.value('acme.eabLifetimeS')),
-      eabKeys: this.paged(query, eabs, 'credentials', 'EAB keys'),
-      accounts: this.paged(query,
-                           store.listAccounts().map(this.accountRow.bind(this)),
-                           'accounts',
-                           'accounts'),
-      certificates: this.paged(query, core.certificatesInRealm(FAMILY)
-                                 .map(this.certificateRow.bind(this)),
-                                 'certificates',
-                               'certificates'),
+      eabKeys: this.paged(query, core.eabsInRealm(), 'credentials',
+                          'EAB keys', eabRow),
+      accounts: this.paged(query, store.listAccounts(), 'accounts',
+                           'accounts', this.accountRow.bind(this)),
+      certificates: this.paged(query, core.certificatesInRealm(FAMILY),
+                               'certificates', 'certificates',
+                               this.certificateRow.bind(this)),
       hostNames: this.paged(query, core.hostNamesInRealm(), 'hostNames',
                             'entries'),
       revocationReasons: revocation.REASONS.map(function (one) {
@@ -501,7 +508,9 @@ class AcmeConsole {
                 refused: snap.refused || 0, revoked: snap.revoked || 0,
                 accountsBound: snap.credentialsRedeemed || 0,
                 accounts: store.listAccounts().length,
-                certificatesHeld: core.certificatesInRealm(FAMILY).length },
+                // Counted, not listed (#352).
+                certificatesHeld:
+                  core.certificateCountsInRealm(FAMILY).held },
       operations: this.table(snap.operations),
       profiles: this.table(snap.profiles),
       principals: this.table(snap.principals),

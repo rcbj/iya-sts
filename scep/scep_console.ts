@@ -531,7 +531,9 @@ class ScepConsole {
       errorCodes: snap.codes || {},
       statuses: snap.statuses || {},
       failInfo: snap.failInfos || {},
-      issuedCertificates: core.certificatesInRealm('scep').length,
+      // COUNTED, not listed (#352): the tile wants a number, and the list
+      // built a row per certificate to have its length read.
+      issuedCertificates: core.certificateCountsInRealm('scep').held,
       lastAt: snap.lastAt || null,
       paging: adminViews.pagingJson(paging),
       recent: recent.slice(paging.offset, paging.offset + paging.perPage)
