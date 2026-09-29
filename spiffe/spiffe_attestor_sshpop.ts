@@ -193,7 +193,7 @@ class SshpopAttestor {
             agentPath } = this.deps;
     log.debug("Entering SshpopAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const authorities = String(config.value('spiffe.sshpopCertAuthorities') ||
                                '').split('\n').map(function (line) {
       return pki.parseSshAuthorizedKey(line);

@@ -104,8 +104,17 @@ import jwt = require('jsonwebtoken');
 import stsCrypto = require('../common/crypto');
 import qrcode = require('qrcode');
 import app = require('../common/app');
-import bbs2023 = require('../common/vendored/bbs2023.js');
 import helpers = require('../common/helpers');
+import LazyModule = require('../common/lazy_module');
+// THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
+// at its top, and together they are resident memory in every request worker
+// that never issues or verifies a BBS credential. `common/lazy_module.ts`
+// argues it; `common/helpers.js` defers the same file by hand.
+type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+  function () {
+    return require('../common/vendored/bbs2023.js') as Bbs2023;
+  }, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // THE MODE (2026-09-12), for one question: may a response go to an address the

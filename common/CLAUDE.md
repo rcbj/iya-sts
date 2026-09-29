@@ -1249,6 +1249,42 @@ predates this change by a fortnight, made for a different reason (binding can
 fail and a `require` that throws takes the process down), and is what makes a
 request worker possible at all.
 
+### `lazy_module.ts`: A PACKAGE REQUIRED AT FIRST USE (#348, 2026-09-29)
+
+**Every process loads this whole stack, so a package required at a module's
+top is paid for in every request and surface worker**, used or not (#339: a
+node runs five). `LazyModule.of(what, load, log)` returns a stand-in that
+requires the package on the first property READ and forwards to it after;
+holding it, destructuring it out of a deps object or exporting it loads
+nothing, so call sites keep their shape. A load that fails is thrown to the
+reader and logged under `STS-CORE-0140` first, because it now happens
+mid-request.
+
+**Deferred, because a worker never needs them**: `@grpc/grpc-js` and
+`@grpc/proto-loader` in `spiffe/spiffe_grpc.ts` (the protos too — see
+`spiffe/CLAUDE.md`), `jsonld` in `oid4vc/vc_jsonld.ts`, and the vendored
+`bbs2023.js`, which requires `jsonld` at its top, in `vc_issuer`, `vc_did`,
+`vc_verifier` and `admin-ui/crypto_metadata`. **`helpers.js` defers
+`bbs2023.js` BY HAND** (`bbs2023Suite()`), because it is in the parent
+project's Kerberos COPY closure and a require of `lazy_module` from it would
+add a file to that closure (`kerberos/CLAUDE.md`). Together about 8 MB of heap
+and 10 MB of resident memory per process, and 250 fewer modules; the
+measurements are on #348.
+
+**Not deferred, and why** (measured in a stack that has already loaded what
+they share): `@dagrejs/dagre`, `scimmy` and `qrcode` cost under 1 MB each, and
+`oid4vc/vc_api` — required and registered in product mode only to answer 404 —
+is about 0.1 MB of its own once `jsonld` is deferred, and keeping its
+registration keeps the route list and `sts_metadata`'s drift check as they
+were. **Only a PACKAGE (or a vendored copy) with no effect on this service at
+load may be deferred**: a module of this service stays an ordinary require,
+because where its load-time effects run is the require order.
+
+`tests/lazy_requires.js` loads a request worker's order in a child and fails
+if any deferred package is in the require cache — one top-level `require` of
+it anywhere in the stack would bring it back into every worker with nothing
+else failing.
+
 ## `request_pool.js` and `request_worker.ts`: THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER
 
 **This moved here from the root `CLAUDE.md` when that file was broken up.** The

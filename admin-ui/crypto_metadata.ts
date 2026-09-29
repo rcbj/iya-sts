@@ -179,6 +179,16 @@
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import LazyModule = require('../common/lazy_module');
+// THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
+// at its top, and together they are resident memory in every request worker
+// that never issues or verifies a BBS credential. `common/lazy_module.ts`
+// argues it; `common/helpers.js` defers the same file by hand.
+type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+  function () {
+    return require('../common/vendored/bbs2023.js') as Bbs2023;
+  }, helpers.log);
 import config = require('../common/config');
 // The signer groups' table (#68), a leaf: the model and the group ids.
 import signerGroups = require('../common/signer_groups');
@@ -208,7 +218,6 @@ import adminViews = require('../admin-core/admin_views');
 // again so that there stays exactly one spelling of it in the process.
 import stsCrypto = require('../common/crypto');
 import pqJose = require('../common/pq_jose');
-import bbs2023 = require('../common/vendored/bbs2023.js');
 import krb5crypto = require('../kerberos/krb5_crypto');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import webauthn = require('../authn/webauthn');

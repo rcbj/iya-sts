@@ -61,7 +61,14 @@ const crypto = require('crypto');
 const forge = require('node-forge');
 const jwt = require('jsonwebtoken');
 const bunyan = require("bunyan");
-const bbs2023 = require('./vendored/bbs2023.js');
+// THE VENDORED BBS SUITE IS REQUIRED AT FIRST USE (#348), through
+// `bbs2023Suite()` below: it requires `jsonld` at its top, and the two are
+// resident memory in every request worker that never makes a BBS key. By
+// hand rather than through `common/lazy_module.ts`, because this file is in
+// the parent project's Kerberos COPY closure (kerberos/CLAUDE.md) and a new
+// require here would add that file to it.
+/** @type {typeof import('./vendored/bbs2023.js') | null} */
+let bbs2023Loaded = null;
 // ---------------------------------------------------------------------------
 // THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS, since
 // 2026-08-27. It is a LEAF — it requires npm packages, the vendored XML signer
@@ -117,6 +124,31 @@ const clientAddress = require('./client_address');
  */
 const log = bunyan.createLogger({ name: 'sts',
                                 level: config.value('global.logLevel') });
+
+/**
+ * Returns the vendored BBS suite, requiring it the first time (#348).
+ *
+ * @returns {typeof import('./vendored/bbs2023.js')} the suite
+ */
+function bbs2023Suite() {
+  log.debug("Entering bbs2023Suite().");
+  if (!bbs2023Loaded) {
+    try {
+      bbs2023Loaded = require('./vendored/bbs2023.js');
+    } catch (e) {
+      // Thrown on to the caller, as the top-level require's failure was
+      // thrown at start; logged first, because it now happens mid-request.
+      log.error(errorCodes.tag('STS-CORE-0140') + 'helpers: ' +
+                'common/vendored/bbs2023.js, required at first use, did ' +
+                'not load: ' + ((e && e.message) || e));
+      log.debug("Leaving bbs2023Suite(). Threw.");
+      throw e;
+    }
+  }
+  log.debug("Leaving bbs2023Suite().");
+  return bbs2023Loaded;
+}
+
 // Registering it is what makes global.logLevel a setting rather than a claim:
 // bunyan takes a level when the logger is created, so without this
 // /admin/config could change the setting and every line after it would still be
@@ -4609,7 +4641,7 @@ async function mintStandbyKey(unitRow, role) {
     return entry;
   }
   if (unitRow.kind === 'bbs') {
-    const pair = await bbs2023.generateKeyPair();
+    const pair = await bbs2023Suite().generateKeyPair();
     const kid = bbsKidOf(pair.publicKey);
     log.debug("Leaving mintStandbyKey(). BBS " + kid);
     return Object.assign(base, {
@@ -5375,7 +5407,7 @@ function bbsKeyFor(keys) {
     log.debug("Leaving bbsKeyFor(). One is already in flight.");
     return keys.bbsKeyPromise;
   }
-  keys.bbsKeyPromise = bbs2023.generateKeyPair().then(function (made) {
+  keys.bbsKeyPromise = bbs2023Suite().generateKeyPair().then(function (made) {
     if (!keys.bbsKey) {
       keys.bbsKey = { secretKey: Uint8Array.from(made.secretKey),
                       publicKey: Uint8Array.from(made.publicKey),

@@ -270,7 +270,7 @@ class K8sPsatAttestor {
     const { log, spiffeId, rpc } = this.deps;
     log.debug("Entering K8sPsatAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const configured = this.clusters();
     if (configured.problem) {
       log.debug("Leaving K8sPsatAttestor.attest(). Not configured.");

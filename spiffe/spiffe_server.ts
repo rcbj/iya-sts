@@ -1919,7 +1919,7 @@ class SpiffeServer {
    *   bound
    */
   listen() {
-    const { log } = this.deps;
+    const { log, rpc } = this.deps;
     const self = this;
     log.debug('Entering SpiffeServer.listen().');
     if (started) {
@@ -1927,6 +1927,13 @@ class SpiffeServer {
       return { whenReady: Promise.resolve(this.bindingsNow()) };
     }
     started = true;
+    // THE PROTOS, LOADED HERE AND SYNCHRONOUSLY (#348). `spiffe_grpc.ts`
+    // loads them at first use so that a request worker never does; this is
+    // the front process's first use, and it is made before anything binds
+    // so that a proto missing from the image throws out of `listen()` — a
+    // service that does not start, as it was when they loaded at require —
+    // rather than rejecting inside a realm's asynchronous start.
+    rpc.services();
     const whenReady = this.reconcile().then(function () {
       return self.bindingsNow();
     });

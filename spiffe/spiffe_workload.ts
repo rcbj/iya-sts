@@ -613,13 +613,13 @@ class SpiffeWorkload {
     const fetchWitSvid = rpc.serverStream('workload', 'FetchWITSVID',
       async function (call) {
         errorCodes.mark(call, 'STS-SPIFFE-0029');
-        throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
+        throw rpc.statusError(rpc.status.UNIMPLEMENTED, WIT_MESSAGE);
       });
 
     const fetchWitBundles = rpc.serverStream('workload', 'FetchWITBundles',
       async function (call) {
         errorCodes.mark(call, 'STS-SPIFFE-0029');
-        throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
+        throw rpc.statusError(rpc.status.UNIMPLEMENTED, WIT_MESSAGE);
       });
 
     HANDLERS = {

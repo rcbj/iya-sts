@@ -377,7 +377,7 @@ class X509popAttestor {
     const self = this;
     log.debug("Entering X509popAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     // THE CONFIGURATION, checked as SPIRE checks it at Configure.
     const mode = String(config.value('spiffe.x509popMode') || 'external_pki');
     const bundleText = String(config.value('spiffe.x509popCaBundle') || '');

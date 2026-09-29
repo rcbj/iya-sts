@@ -883,6 +883,13 @@ const CODES = [
       'administrator removes it again, from another realm. Logged when ' +
       'such a realm is restored at start, and when the removal is finished.',
     spec: 'none — logged; /admin/realms and GET /admin-api/realms show it' },
+  { code: 'STS-CORE-0140',
+    summary: 'A package this service requires at first use rather than at ' +
+      'start (common/lazy_module.ts, #348) — the gRPC runtime, its proto ' +
+      'loader, jsonld through the vendored bbs2023.js — failed to load ' +
+      'when it was first needed, so the call that needed it fails. The ' +
+      'image is missing or has a broken copy of the package.',
+    spec: 'none — logged; the call fails as it would have at start' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

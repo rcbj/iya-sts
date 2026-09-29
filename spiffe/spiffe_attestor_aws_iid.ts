@@ -475,7 +475,7 @@ class AwsIidAttestor {
     const self = this;
     log.debug("Entering AwsIidAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     // THE CONFIGURATION AND THE SDK.
     let template = null;
     let org = null;

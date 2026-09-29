@@ -402,7 +402,7 @@ class SpiffeBroker {
       log.debug("Entering invalid().");
       log.debug("Leaving invalid().");
       return self.refusal(call, 'STS-SPIFFE-0136',
-                          rpc.grpc.status.INVALID_ARGUMENT, why,
+                          rpc.status.INVALID_ARGUMENT, why,
                           'WORKLOAD_REFERENCE_INVALID');
     };
     if (!typeUrl) {
@@ -509,7 +509,7 @@ class SpiffeBroker {
     }
     log.debug("Leaving SpiffeBroker.authorizeType(). Refused.");
     throw this.refusal(call, 'STS-SPIFFE-0135',
-                       rpc.grpc.status.PERMISSION_DENIED,
+                       rpc.status.PERMISSION_DENIED,
                        'broker "' + broker.id + '" is not allowed to use ' +
                        'reference type "' + typeUrl + '"', '');
   }
@@ -533,7 +533,7 @@ class SpiffeBroker {
       log.debug("Entering notAttested().");
       log.debug("Leaving notAttested().");
       return self.refusal(call, 'STS-SPIFFE-0139',
-                          rpc.grpc.status.UNAVAILABLE,
+                          rpc.status.UNAVAILABLE,
                           'workload attestation failed: ' + why, '');
     };
     if (ref.type === 'pid') {
@@ -541,7 +541,7 @@ class SpiffeBroker {
       if ((facts as any).missing) {
         log.debug("Leaving SpiffeBroker.resolve(). No such process.");
         throw this.refusal(call, 'STS-SPIFFE-0137',
-                           rpc.grpc.status.NOT_FOUND,
+                           rpc.status.NOT_FOUND,
                            'the referenced process ' + ref.pid + ' does not ' +
                            'exist', 'WORKLOAD_NOT_FOUND',
                            { pid: String(ref.pid) });
@@ -567,7 +567,7 @@ class SpiffeBroker {
         peer.release(facts);
         log.debug("Leaving SpiffeBroker.resolve(). It changed.");
         throw this.refusal(call, 'STS-SPIFFE-0137',
-                           rpc.grpc.status.NOT_FOUND,
+                           rpc.status.NOT_FOUND,
                            'the referenced process ' + ref.pid + ' is gone: ' +
                            changed, 'WORKLOAD_NOT_FOUND',
                            { pid: String(ref.pid) });
@@ -604,7 +604,7 @@ class SpiffeBroker {
     }
     if (!found.found) {
       log.debug("Leaving SpiffeBroker.resolve(). No such pod.");
-      throw this.refusal(call, 'STS-SPIFFE-0137', rpc.grpc.status.NOT_FOUND,
+      throw this.refusal(call, 'STS-SPIFFE-0137', rpc.status.NOT_FOUND,
                          found.why, 'WORKLOAD_NOT_FOUND',
                          ref.pod.uid ? { uid: ref.pod.uid } : {});
     }
@@ -657,7 +657,7 @@ class SpiffeBroker {
     if (!typeUrl) {
       log.debug("Leaving SpiffeBroker.referenced(). No reference.");
       throw this.refusal(call, 'STS-SPIFFE-0136',
-                         rpc.grpc.status.INVALID_ARGUMENT,
+                         rpc.status.INVALID_ARGUMENT,
                          'workload reference must be provided',
                          'WORKLOAD_REFERENCE_INVALID');
     }
@@ -707,7 +707,7 @@ class SpiffeBroker {
     log.debug("Entering SpiffeBroker.notEntitled().");
     log.debug("Leaving SpiffeBroker.notEntitled().");
     return this.refusal(call, 'STS-SPIFFE-0138',
-                        rpc.grpc.status.PERMISSION_DENIED,
+                        rpc.status.PERMISSION_DENIED,
                         'no identity issued: the referenced ' +
                         resolved.describe + ' is not entitled to an SVID',
                         'WORKLOAD_NOT_ENTITLED');
@@ -760,7 +760,7 @@ class SpiffeBroker {
       return resolved.gone().then(function (why) {
         if (why) {
           end(self.refusal(call, 'STS-SPIFFE-0137',
-                           rpc.grpc.status.NOT_FOUND,
+                           rpc.status.NOT_FOUND,
                            'the referenced ' + resolved.describe +
                            ' has stopped: ' + why, 'WORKLOAD_NOT_FOUND'));
           log.debug("Leaving resend(). The workload stopped.");
