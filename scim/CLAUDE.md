@@ -508,6 +508,14 @@ Four things about it are this module's own and are easy to get wrong:
   five creates is one `bulk` AND five `create`s, because each of the five really
   is performed.
 
+**A BULK IS ONE BATCH OF PERSON DELETES (#351, 2026-09-29).** The handler runs
+scimmy's `apply()` inside `directory.inPersonBatch()`, so every operation is
+still applied in order and answered with its own status (RFC 7644 section
+3.7: `bulkId` references, `failOnErrors`), a delete's entry goes at once, and
+what each deleted person held is read and ended for the batch together
+(`ldap/CLAUDE.md`, *Deleting people in bulk*). The User degress handler awaits
+`directory.personBatchStep()`, which yields a macrotask every 500 deletes.
+
 **THE COUNTERS ARE PER TRUST REALM AND WERE NOT UNTIL THIS PAGE WAS WRITTEN.**
 `scimCounts` was a plain object beside a file in which everything else is
 `realms.map()`, `realms.arr()` or `realms.obj()` — the third store found

@@ -328,6 +328,11 @@ class SharedSignals {
   // SETs being built, signed or pushed now, per realm (#232): what a realm's
   // removal waits for before its queues are purged. See transmit().
   private readonly inFlight = new Map<string, number>();
+  // THE RISC EVENTS OF ONE BURST, told in one line per type (#351) — see
+  // riscTally().
+  private readonly riscBurst: { open: number, scheduled: boolean,
+    byType: Map<string, Json> } = { open: 0, scheduled: false,
+                                    byType: new Map() };
 
   /**
    * Builds the transmitter from its dependencies.
@@ -4783,27 +4788,22 @@ class SharedSignals {
   // account. Split out of riscAutoEmit() because that function now has a list
   // to walk and the body was the same three paragraphs each time round.
   private sendOneRiscEvent(due: Json): Promise<EmitResult> {
-    const { log, subjects, events, risc, streams } = this.deps;
+    const { log, events, risc, streams } = this.deps;
     log.debug('Entering SharedSignals.sendOneRiscEvent(). ' + due.uri);
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, due.uri) &&
              streams.streamCoversSubject(record, due.subject);
     });
+    const type = due.uri.slice(events.RISC_PREFIX.length);
     if (!candidates.length) {
-      // SAID ONCE, AT INFO, and it is the most useful line this feature
-      // produces, for the reason the CAEP half's is: "nothing arrived" is the
-      // commonest report about any Shared Signals deployment and its commonest
-      // cause is this — the act happened, the transmitter built the event, and
-      // no stream had asked for that type or covered that subject.
-      log.info('risc: a ' + due.uri.slice(events.RISC_PREFIX.length) + ' is ' +
-               'due for account ' + due.row.accountId + ' and NO STREAM ' +
-               'takes it — ' + streams.listStreams().length +
-               ' stream(s) exist, and ' +
-               'none both delivers that type and covers ' +
-               subjects.describeSubject(due.subject) + '. The event is ' +
-               'recorded on /admin/risc-accounts with nothing sent.');
-      due.row.notes.push('A ' + due.uri.slice(events.RISC_PREFIX.length) +
-          ' was due and no stream takes it.');
+      // SAID ONCE PER BURST, AT INFO, and it is the most useful line this
+      // feature produces, for the reason the CAEP half's is: "nothing
+      // arrived" is the commonest report about any Shared Signals deployment
+      // and its commonest cause is this — the act happened, the transmitter
+      // built the event, and no stream had asked for that type or covered
+      // that subject. See riscTally() for the burst.
+      this.riscTally(type, due, 0, 0, true);
+      due.row.notes.push('A ' + type + ' was due and no stream takes it.');
       due.row.notes = due.row.notes.slice(-5);
       // AND THE REGISTER STILL FOLLOWS THE ACT. The ordinary path applies the
       // state on the way back through `noteTransmitted()`, which reads a token
@@ -4820,6 +4820,7 @@ class SharedSignals {
     log.debug("Leaving SharedSignals.sendOneRiscEvent().");
     // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
     const txn = this.newTxn();
+    this.riscBurst.open += 1;
     return Promise.all(candidates.map((record) => {
       return this.transmit(record, { txn: txn, uri: due.uri,
         payload: due.payload,
@@ -4828,13 +4829,88 @@ class SharedSignals {
       const sent = reports.filter((one) => {
         return one.ok;
       }).length;
-      log.info('risc: ' + due.uri.slice(events.RISC_PREFIX.length) + ' for ' +
-               'account ' + due.row.accountId + ' went to ' + sent + ' of ' +
-               candidates.length + ' stream(s).');
+      this.riscBurst.open -= 1;
+      this.riscTally(type, due, sent, candidates.length, false);
       log.debug('Leaving SharedSignals.sendOneRiscEvent(). ' + sent + ' sent.');
       return { sent: sent, streams: candidates.length, uri: due.uri,
         reports: reports };
+    }, (e) => {
+      this.riscBurst.open -= 1;
+      this.riscTally(type, due, 0, candidates.length, false);
+      throw e;
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE LINE PER BURST, NOT ONE PER EVENT (#351, 2026-09-29). A SCIM Bulk of a
+  // thousand deletes is a thousand `account-purged` events, and each said
+  // "went to N of M stream(s)" at info — a thousand lines saying one thing.
+  // Every SET is still built and sent per subject, as SSF requires; what is
+  // gathered is only the sentence. An event's outcome is tallied by type, and
+  // once nothing is in flight and the event loop has turned, the tally is
+  // said: the old sentence, word for word, when the burst was one event, and
+  // a count when it was more. /admin/risc-accounts keeps the per-account
+  // record either way.
+  // ---------------------------------------------------------------------------
+  private riscTally(type: string, due: Json, sent: number, streams: number,
+                    noStream: boolean): void {
+    const { log, streams: registry, subjects } = this.deps;
+    log.debug('Entering SharedSignals.riscTally(). ' + type);
+    const burst = this.riscBurst;
+    const tally = burst.byType.get(type) ||
+      { events: 0, sent: 0, streams: 0, noStream: 0, first: null };
+    tally.events += 1;
+    tally.sent += sent;
+    tally.streams += streams;
+    tally.noStream += noStream ? 1 : 0;
+    if (!tally.first) {
+      tally.first = { account: due.row.accountId, sent: sent,
+                      streams: streams, noStream: noStream,
+                      subject: subjects.describeSubject(due.subject) };
+    }
+    burst.byType.set(type, tally);
+    if (burst.scheduled) {
+      log.debug('Leaving SharedSignals.riscTally(). Gathered.');
+      return;
+    }
+    burst.scheduled = true;
+    const say = (): void => {
+      burst.scheduled = false;
+      if (burst.open > 0) {
+        // Still sending: the last of them to finish tallies, and schedules
+        // this again.
+        return;
+      }
+      const told = burst.byType;
+      burst.byType = new Map();
+      told.forEach((one: Json, name: string) => {
+        if (one.events === 1 && one.first.noStream) {
+          log.info('risc: a ' + name + ' is due for account ' +
+                   one.first.account + ' and NO STREAM takes it — ' +
+                   registry.listStreams().length + ' stream(s) exist, and ' +
+                   'none both delivers that type and covers ' +
+                   one.first.subject + '. The event is recorded on ' +
+                   '/admin/risc-accounts with nothing sent.');
+        } else if (one.events === 1) {
+          log.info('risc: ' + name + ' for account ' + one.first.account +
+                   ' went to ' + one.first.sent + ' of ' +
+                   one.first.streams + ' stream(s).');
+        } else {
+          log.info('risc: ' + one.events + ' ' + name + ' event(s): ' +
+                   one.sent + ' of ' + one.streams + ' stream deliveries ' +
+                   'went' +
+                   (one.noStream
+                     ? ', and ' + one.noStream + ' were due with NO STREAM ' +
+                       'taking them (' + registry.listStreams().length +
+                       ' stream(s) exist; none both delivers that type and ' +
+                       'covers the account) — recorded on ' +
+                       '/admin/risc-accounts with nothing sent'
+                     : '') + '.');
+        }
+      });
+    };
+    setImmediate(say);
+    log.debug('Leaving SharedSignals.riscTally(). Scheduled.');
   }
 
   // ---------------------------------------------------------------------------

@@ -422,19 +422,112 @@ class Logout {
   // one started before a rename is still found by the entry's `urn:uuid:`
   // subject (2026-09-14).
   private sessionsForKey(key?) {
-    const { log, authn, stats } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Logout.sessionsForKey(). key=" + key);
     const wanted = String(key || '');
-    const out = [];
+    const indexed = this.indexed(wanted);
+    const out = (indexed
+      ? indexed.sessions.get(wanted)
+      : this.sessionsByKey([wanted]).get(wanted)) || [];
+    log.debug("Leaving Logout.sessionsForKey(). " + out.length +
+              " session(s).");
+    return out.slice(0);
+  }
+
+  // The sessions of every key asked, from ONE walk of the session store, by
+  // the rule above: grouped by `holderKeyOf()` where the old walk compared it
+  // with one key, so a batch of a thousand people walks the store once.
+  private sessionsByKey(keys: string[]): Map<string, Loose[]> {
+    const { log, authn, stats } = this.deps;
+    log.debug("Entering Logout.sessionsByKey(). " + keys.length + " key(s).");
+    const out = new Map();
+    keys.forEach((key) => { out.set(String(key || ''), []); });
     authn.sessions.forEach((session) => {
       const username = (session.user && session.user.username) || '';
       const sub = (session.user && session.user.sub) || '';
-      if (stats.holderKeyOf(username, sub) === wanted) out.push(session);
+      const list = out.get(stats.holderKeyOf(username, sub));
+      if (list) list.push(session);
     });
-    out.sort((a, b) => { return (b.authTime || 0) - (a.authTime || 0); });
-    log.debug("Leaving Logout.sessionsForKey(). " + out.length +
-              " session(s).");
+    out.forEach((list) => {
+      list.sort((a, b) => { return (b.authTime || 0) - (a.authTime || 0); });
+    });
+    log.debug("Leaving Logout.sessionsByKey().");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE READ OF THE BIG STORES FOR A WHOLE SET OF PEOPLE (#351, 2026-09-29).
+  //
+  // Every family is written for ONE identity — `collect(ctx)` — and three of
+  // them read a store that grows with the whole service rather than with the
+  // person: the sign-on sessions, the token and artifact register, and the
+  // wallet credentials. Asked person by person, a directory delete of a
+  // hundred people walked each of those two hundred times (once to read what
+  // they held, once to end it), and a SCIM Bulk spent a minute doing it.
+  //
+  // So `heldIdsFor()` and `terminateEach()` build this index ONCE for every key
+  // they are given, and the three readers below consult it: the same rule
+  // (`holderKeyOf()`, `identityKeyOf()`), grouped by key instead of compared
+  // with one. It lives only for the synchronous call that built it — nothing
+  // can be issued or signed in while it stands — and a key it was not built
+  // for falls through to the unindexed read, so it can never answer "nothing"
+  // for somebody it never looked at. One path: a single person's read is an
+  // index of one.
+  // ---------------------------------------------------------------------------
+  private index: Loose | null = null;
+
+  // The index entry for a key, or null when there is none for it.
+  private indexed(key: string): Loose | null {
+    const { log } = this.deps;
+    log.debug("Entering Logout.indexed().");
+    const index = this.index;
+    log.debug("Leaving Logout.indexed().");
+    return index && index.keys.has(key) ? index : null;
+  }
+
+  // Runs `fn` with the index built for `keys`, and takes it down after —
+  // nested calls reuse the outer one when it covers them.
+  private withIndex<T>(keys: string[], fn: () => T): T {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.withIndex(). " + keys.length + " key(s).");
+    const wanted = keys.map((key) => { return String(key || ''); });
+    if (this.index && wanted.every((key) => { return this.index.keys.has(key);
+    })) {
+      log.debug("Leaving Logout.withIndex(). The outer index covers it.");
+      return fn();
+    }
+    const outer = this.index;
+    this.index = {
+      keys: new Set(wanted),
+      sessions: this.sessionsByKey(wanted),
+      holdings: stats.holdingsOf(wanted),
+      wallet: this.walletRowsByKey(wanted)
+    };
+    try {
+      log.debug("Leaving Logout.withIndex(). Built.");
+      return fn();
+    } finally {
+      this.index = outer;
+    }
+  }
+
+  // What the `token` and `issued` families read: the person's token and
+  // artifact records, from the index, or read once per context and kept on
+  // it — both families ask, and each used to fold the whole register.
+  private holdingsFor(ctx: Loose): Loose {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.holdingsFor().");
+    const key = String((ctx && ctx.key) || '');
+    const indexed = this.indexed(key);
+    if (indexed) {
+      log.debug("Leaving Logout.holdingsFor(). Indexed.");
+      return indexed.holdings.get(key);
+    }
+    if (!ctx.holdings) {
+      ctx.holdings = stats.holdingsOf([key]).get(key);
+    }
+    log.debug("Leaving Logout.holdingsFor().");
+    return ctx.holdings;
   }
 
   // ---------------------------------------------------------------------------
@@ -841,7 +934,7 @@ class Logout {
               'promise about tokens issued long ago.',
         collect: (ctx) => {
           log.debug("Entering token.collect().");
-          const detail = stats.userDetail(ctx.key);
+          const detail = this.holdingsFor(ctx);
           if (!detail) {
             log.debug("Leaving token.collect().");
             return [];
@@ -1410,7 +1503,7 @@ class Logout {
               'it did not.',
         collect: (ctx) => {
           log.debug("Entering issued.collect().");
-          const detail = stats.userDetail(ctx.key);
+          const detail = this.holdingsFor(ctx);
           if (!detail) {
             log.debug("Leaving issued.collect().");
             return [];
@@ -1484,14 +1577,28 @@ class Logout {
   // live, undisowned row whose subject files under this key, by the
   // normalisation `sessionsForKey()` uses.
   private walletRowsFor(key: string): any[] {
-    const { log, stats } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Logout.walletRowsFor().");
-    const rows = vcIssued.rowsForSubject(null).filter(function (row) {
-      return stats.holderKeyOf(helpers.nameForSubject(row.subject) || '',
-                               row.subject) === key;
-    });
+    const indexed = this.indexed(key);
+    const rows = (indexed ? indexed.wallet.get(key)
+      : this.walletRowsByKey([key]).get(key)) || [];
     log.debug("Leaving Logout.walletRowsFor(). " + rows.length + ".");
-    return rows;
+    return rows.slice(0);
+  }
+
+  // The wallet credential rows of every key asked, from one walk (#351).
+  private walletRowsByKey(keys: string[]): Map<string, any[]> {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.walletRowsByKey().");
+    const out = new Map();
+    keys.forEach((key) => { out.set(String(key || ''), []); });
+    vcIssued.rowsForSubject(null).forEach(function (row) {
+      const list = out.get(stats.holderKeyOf(
+        helpers.nameForSubject(row.subject) || '', row.subject));
+      if (list) list.push(row);
+    });
+    log.debug("Leaving Logout.walletRowsByKey().");
+    return out;
   }
 
   private contextFor(key?, issuer?, by?, initiatingEntity?) {
@@ -2121,22 +2228,86 @@ class Logout {
   // session exists, so ending everything on a crossing into HIGH does not
   // end the session the issuance policy has just decided on the same risk.
   // Ids only — never the rows, whose `secret` stays in this module.
+  //
+  // **ONLY WHAT CAN BE ENDED (#351, 2026-09-29).** It listed every row, and
+  // the `krb5` family always has one: "no such principal in this KDC", or
+  // "this trust realm has no KDC", `terminable: false`, because the page must
+  // say Kerberos was looked at. So EVERY person held one thing, every deleted
+  // person was scheduled a selective sign-out, and every one of those ended
+  // "0 of 1 live item(s)" and was audited refused (`STS-LOGOUT-0007`) — a
+  // hundred of them, a quarter of a second each, after one SCIM Bulk on
+  // testidp. A row nothing can end is not something a later sign-out could
+  // end either, so it is not a thing held: a person holding nothing now
+  // answers an empty list, and their caller does nothing.
   // ---------------------------------------------------------------------------
   /**
-   * Returns the ids of everything an identity holds now, so a later
-   * terminate() can end those and nothing issued after.
+   * Returns the ids of everything an identity holds now that a sign-out can
+   * end, so a later terminate() can end those and nothing issued after.
    *
    * @param key - the identity key
-   * @returns the row ids
+   * @returns the row ids of the terminable rows
    */
   heldIds(key?) {
     const { log } = this.deps;
     log.debug("Entering Logout.heldIds(). key=" + key);
-    const ids = this.allRows(this.contextFor(key)).map((r) => {
-      return String(r.id);
-    });
+    const ids = this.heldIdsFor([String(key || '')]).get(String(key || ''));
     log.debug("Leaving Logout.heldIds(). " + ids.length + ".");
     return ids;
+  }
+
+  /**
+   * heldIds() for several identities at once, reading each large store once
+   * for the whole set (#351).
+   *
+   * @param keys - the identity keys
+   * @returns a Map from each key to the ids of the terminable rows it holds
+   */
+  heldIdsFor(keys?: string[]): Map<string, string[]> {
+    const { log } = this.deps;
+    const wanted = (keys || []).map((key) => { return String(key || ''); });
+    log.debug("Entering Logout.heldIdsFor(). " + wanted.length + " key(s).");
+    const out = new Map();
+    this.withIndex(wanted, () => {
+      wanted.forEach((key) => {
+        out.set(key, this.allRows(this.contextFor(key)).filter((r) => {
+          return r.terminable &&
+                 typeof this.familyById[r.family].terminate === 'function';
+        }).map((r) => {
+          return String(r.id);
+        }));
+      });
+    });
+    log.debug("Leaving Logout.heldIdsFor().");
+    return out;
+  }
+
+  /**
+   * terminate() for several identities, one after another, with each large
+   * store read once for the whole set (#351). Each is exactly the terminate()
+   * a single sign-out is — its own audit row, its own back-channel
+   * deliveries, its own CAEP — and `opts.quiet` moves each one's info line
+   * to debug, for a caller that logs one line for the set.
+   *
+   * @param list - `{ key, selection }` per identity; an empty selection is
+   *   a global sign-out, as terminate()'s is
+   * @param opts - terminate()'s options, and `quiet`
+   * @returns terminate()'s result per identity, in the order given
+   */
+  terminateEach(list?: Loose[], opts?: Loose): Loose[] {
+    const { log } = this.deps;
+    const items = (list || []).map((one) => {
+      return { key: String((one && one.key) || ''),
+               selection: (one && one.selection) || [] };
+    });
+    log.debug("Entering Logout.terminateEach(). " + items.length + ".");
+    const results = this.withIndex(items.map((one) => { return one.key; }),
+      () => {
+        return items.map((one) => {
+          return this.terminate(one.key, one.selection, opts);
+        });
+      });
+    log.debug("Leaving Logout.terminateEach().");
+    return results;
   }
 
   // Every row, flattened, WITH its secret — the internal form, for terminate().
@@ -2422,7 +2593,11 @@ class Logout {
     if (acrossCluster.length) {
       result.acrossCluster = acrossCluster;
     }
-    log.info('logout: ' + result.message);
+    if (options.quiet) {
+      log.debug('logout: ' + result.message);
+    } else {
+      log.info('logout: ' + result.message);
+    }
     // OPENID PROVIDER COMMANDS (#151): a GLOBAL sign-out of a person is
     // `invalidate` at every relying party that supports it. A disable passes
     // `providerCommand: false` — it sends `suspend`, which invalidates too.
@@ -3281,6 +3456,8 @@ export = {
   inventoryFor: slot.forward('inventoryFor'),
   terminate: slot.forward('terminate'),
   heldIds: slot.forward('heldIds'),
+  heldIdsFor: slot.forward('heldIdsFor'),
+  terminateEach: slot.forward('terminateEach'),
   // A federation partner's sign-out (#167): the one session it named, ended
   // through terminate(), and what a browser then has to draw.
   endPartnerSession: slot.forward('endPartnerSession'),
