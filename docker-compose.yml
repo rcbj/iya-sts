@@ -757,7 +757,7 @@ services:
       #   request workers   the handlers off the thread that owns every socket,
       #                     which is the only configuration where a slow
       #                     signature does not stop the KDC answering.
-      #   coordination      because three workers against one store are three
+      #   coordination      because two workers against one store are two
       #                     processes, and the change log is what makes them
       #                     one service.
       #
@@ -768,16 +768,27 @@ services:
       # ---------------------------------------------------------------------
       - STS_MODE=${STS_MODE:-product}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-true}
-      - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-3}
-      # The console and the portal on workers of their own, so that neither
-      # queues behind protocol traffic. It needs read-your-write, which the
+      # TWO REQUEST WORKERS AND NO SURFACE WORKER SINCE 2026-09-29 (#340; it
+      # was three and two). Every worker is a whole copy of the service — the
+      # directory and every store in its own heap (#339) — so this stack ran
+      # six copies, and memory grows with the process count, not the load.
+      # Keep 1 + request + surface within one per CPU plus one, and size the
+      # memory to (processes x one process's working set) + headroom:
+      # deploy/aws/CLAUDE.md, *Sizing a node*. Two request workers still take
+      # the handlers off the thread that owns every socket and still spread
+      # across more than one worker.
+      - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-2}
+      # With 0 the console and the portal are answered by the request workers.
+      # A surface pool puts them on workers of their own, so that neither
+      # queues behind protocol traffic; it needs read-your-write, which the
       # line below turns on — see common/request_pool.js's surfacePoolProblem().
-      # TWO since 2026-09-13 (it was one): with one, a console page walking the
-      # directory held the only worker every portal page and every console
-      # sign-in callback was waiting on, and a worker that died left both
-      # surfaces on the protocol pool until it was re-forked. Each is a whole
-      # copy of the service, so raise it with the memory to match.
-      - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-2}
+      # It was TWO from 2026-09-13 (one before): with one, a console page
+      # walking the directory held the only worker every portal page and every
+      # console sign-in callback was waiting on. With none they share the two
+      # request workers, so no single worker is theirs to hold. Set it for a
+      # stack that needs the split, with the memory to match. The test modes
+      # set their own counts (tests/tools/modes.sh) and do not read this.
+      - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-*}
       - STS_WORKERS_FANOUT=${STS_WORKERS_FANOUT:-/scim,/xacml,/admin-api}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-true}
