@@ -67,14 +67,18 @@ variable "pep_image_tag" {
 variable "ldap_max_entries" {
   description = <<-EOT
     The directory's entry ceiling (LDAP_MAX_ENTRIES) on every node. The service
-    default is 2000; the three bulk-load jobs leave about 15,000 entries in the
-    default realm on every run, and an environment is reused run after run, so
-    reset-environment.js resets the override they leave back to THIS value
-    rather than to one that refuses every later create. Entries are held in
-    each node's memory: raise the task memory with it.
+    default is 2000. The three bulk-load jobs add about 15,000 entries to the
+    default realm on every run (raising `ldap.maxEntries` for themselves while
+    they do), and an environment is reused run after run, so
+    reset-environment.js deletes the previous runs' bulk-load entries and then
+    resets that override back to THIS value (#344). 50,000 holds one run's bulk
+    loads beside the seeded population with room to spare. It was 200,000
+    until 2026-09-29, when nothing was deleted between runs. Every entry is
+    held in the memory of every node process (1 + request + surface workers):
+    raise task_memory with it.
   EOT
   type        = number
-  default     = 200000
+  default     = 50000
 }
 
 variable "applications_max" {

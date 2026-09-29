@@ -117,8 +117,11 @@ terraform -chdir=deploy/aws/environment destroy -var environment=dev \
 
 `deploy/aws/terraform-local.sh dev apply|suite|destroy` does the Terraform and
 suite steps inside a container, with nothing but Docker installed. An
-environment can be reused: each suite run first removes the realms the
-previous run left (`STS_SUITE_KEEP_REALMS=1` keeps them).
+environment can be reused: each suite run first removes what the previous
+runs left — every realm but the default one, and in the default realm the
+bulk-load people and groups, the applications the suite registered and the
+runtime overrides (`deploy/aws/reset-environment.js`; `--dry-run` lists them;
+`STS_SUITE_KEEP_REALMS=1` keeps everything).
 
 **From GitHub Actions**: the *AWS cluster test* workflow
 (`.github/workflows/aws-cluster.yml`), started by hand, with the actions
