@@ -167,6 +167,16 @@ records `appPassword` when one was used. `authn/CLAUDE.md` owns the rule.
 * Every requested key usage, extended key usage and basic constraint in a CSR is
   ignored: the profile decides.
 
+## The monitor counts; the console decorates its page (#352, 2026-09-29)
+
+`/admin/est/monitor`'s four certificate tiles (held, valid, revoked, expired)
+built the whole list and filtered it four times; they are
+`certificateCountsInRealm()` now, the same records and `publicRecord()`'s same
+state rule, and no rows. `/admin/est` already sliced before `certificateRow()`.
+The listing underneath reads holders in one walk and never parses another
+family's records (`common/CLAUDE.md`, 3ag); `tests/certificate_listing_bounds.js`
+holds the counts equal to the list's.
+
 ## Error codes
 
 `STS-EST-0001`–`0022` for the protocol surface, `0030`–`0033` for the console

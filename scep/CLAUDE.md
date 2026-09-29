@@ -259,6 +259,14 @@ it as a tenth profile row.
   offered, and reads every FAILURE; every AES size with SHA-256 and SHA-512
   enrolls, and DES, DES-EDE3 and SHA-1 are `badAlg`.
 
+## The monitor counts (#352, 2026-09-29)
+
+`/admin/scep/monitor`'s *issued certificates* built the whole SCEP list to
+read its length; it is `certificateCountsInRealm('scep').held`. `/admin/scep`
+slices before `certificateRow()` and its listing reads holders in one walk,
+never parsing an ACME or EST record (`common/CLAUDE.md`, 3ag).
+`tests/certificate_listing_bounds.js` holds both.
+
 ## Documented exceptions
 
 | Not implemented | Why |

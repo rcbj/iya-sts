@@ -207,6 +207,18 @@ in process: a continuation refused without rotating gives its claim back, a
 node still holding a rotated token or a followed start link refuses it, the
 empty-store control accepts, and a proof another node accepted is refused.
 
+## The monitor reads the store once (#352, 2026-09-29)
+
+`/admin/gnap/monitor` asked `store.listGrants()` — which copies and sorts every
+grant — and filtered `listTokens()` once PER APPLICATION, so the page cost
+applications × (grants + tokens). It groups both once per request, grants by
+`client.identifier` and live tokens (not revoked, not past `exp`) by
+`instanceId`, into two Maps, and each row reads its own bucket: the same
+filters over the same records, so the same rows. The totals still sum every
+row's counters, which are the monitor's own and cost nothing to read.
+`tests/certificate_listing_bounds.js` counts the store calls against two
+hundred applications and compares every row with the per-application filters.
+
 ## Error codes
 
 `STS-GNAP-NNNN`, registered in `common/error_codes.js`:
