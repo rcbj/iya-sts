@@ -306,18 +306,40 @@ class GnapConsole {
                      registered: false };
       }
     });
-    const liveTokens = store.listTokens();
+    // ---------------------------------------------------------------------
+    // GROUPED ONCE, READ PER ROW (#352, 2026-09-29). Each row asked the store
+    // for EVERY grant (`listGrants()` copies and sorts them) and filtered the
+    // whole token list, so the page cost applications × (grants + tokens).
+    // The grants and the live tokens are now put under their client's
+    // identifier in one pass each, and a row reads its own bucket. The
+    // counts are the same filters over the same records: a grant is its
+    // client's when `grant.client.identifier` names it, and a token is live
+    // when it is not revoked and not past `exp`.
+    // ---------------------------------------------------------------------
     const now = nowSec();
+    const grantsByClient = new Map<string, any[]>();
+    store.listGrants().forEach(function (grant) {
+      const id = grant.client && grant.client.identifier;
+      if (!id) {
+        return;
+      }
+      if (!grantsByClient.has(id)) {
+        grantsByClient.set(id, []);
+      }
+      grantsByClient.get(id).push(grant);
+    });
+    const liveByInstance = new Map<string, number>();
+    store.listTokens().forEach(function (record) {
+      if (!record.revoked && (!record.exp || record.exp > now)) {
+        liveByInstance.set(record.instanceId,
+                           (liveByInstance.get(record.instanceId) || 0) + 1);
+      }
+    });
     const rows = Object.keys(byId).sort().map(function (id) {
       const app = byId[id];
       const counted = snapshot.rows[id] || snapshot.blank;
-      const mine = store.listGrants().filter(function (grant) {
-        return grant.client && grant.client.identifier === id;
-      });
-      const active = liveTokens.filter(function (record) {
-        return record.instanceId === id && !record.revoked &&
-               (!record.exp || record.exp > now);
-      }).length;
+      const mine = grantsByClient.get(id) || [];
+      const active = liveByInstance.get(id) || 0;
       return {
         identifier: id,
         name: app.name || null,

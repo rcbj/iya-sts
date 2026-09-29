@@ -109,6 +109,9 @@ import personAssertions = require('../common/person_assertions');
 import helpers = require('../common/helpers');
 import x509 = require('../common/vendored/x509');
 import pkijs = require('pkijs');
+import nodeCrypto = require('crypto');
+import pqcSupport = require('../common/pqc_support');
+import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
 
 // The pages a details view is drawn on. The route that draws one passes its
@@ -137,7 +140,69 @@ interface CertificateViewsDeps {
   helpers: typeof helpers;
   x509: typeof x509;
   pkijs: typeof pkijs;
+  // Which key a certificate carries, for `pqcOf()` (#352).
+  pqcSupport: typeof pqcSupport;
 }
+
+// ---------------------------------------------------------------------------
+// WHAT A LIST SHOWS ABOUT A CERTIFICATE, PARSED ONCE (#352, 2026-09-29).
+//
+// `listView()` parsed EVERY certificate in the catalogue with pkijs on every
+// request — the subject, the issuer and the notAfter of each — and then
+// filtered and sliced; `/admin/pki` asked `pqc_support.of()` for every
+// holder's certificate, which is another pkijs parse, on every view. A
+// realm's holders are the part of the catalogue that grows, and a parse per
+// holder per page view is the cost #352 was filed about.
+//
+// **THE LIST NOW PAGES FIRST AND PARSES THE SLICE**, and what a parse finds
+// is kept here so that a filter — which has to read the subject and issuer of
+// every certificate it is asked about — pays for each certificate once rather
+// than once per request. Two kinds of fact, one map:
+//
+//   * `fp:<fingerprint>` — `{ subject, issuer, notAfter }`, keyed by the
+//     SHA-256 of the DER, which the catalogue computes anyway.
+//   * `pqc:<sha-256 of the PEM text>` — `pqc_support.of()`'s answer, keyed by
+//     the text it reads (it reads the first block of it), so no parse is
+//     needed to find the key.
+//
+// **CONTENT-KEYED, SO IT IS NEVER WRONG**, in this process or any other: a
+// certificate's subject and key do not change, and a reissued certificate is
+// a different key. That is also why it needs no version and no invalidation;
+// a request worker holding facts about a certificate another process has
+// since taken off an entry holds facts nothing asks for, until they are the
+// oldest and go. Bounded (4,096, the oldest dropped) and described to
+// `/admin/caches` (rule 3ap).
+// ---------------------------------------------------------------------------
+const FACTS_LIMIT = 4096;
+const facts = new Map<string, any>();
+
+const factsCount = cacheRegistry.register({
+  name: 'certificates.parsed-facts',
+  title: 'Parsed certificate facts',
+  description: 'The subject, issuer and notAfter a certificate list shows, ' +
+    'and whether a certificate carries a post-quantum key, parsed once per ' +
+    'certificate for /admin/pki and GET /admin-api/certificates. Keyed by ' +
+    'the certificate\'s own SHA-256.',
+  owner: 'admin-core/certificate_views.ts',
+  scope: 'process',
+  maxEntries: function () {
+    return FACTS_LIMIT;
+  },
+  bound: 'Enforced: 4,096 certificates, the oldest dropped and parsed ' +
+    'again when next shown.',
+  lifetime: function () {
+    return 'No expiry: keyed by the certificate\'s content, whose facts ' +
+      'never change. The oldest goes first when full.';
+  },
+  entries: function () {
+    const out = [];
+    facts.forEach(function (_value, key) {
+      out.push({ key: key.slice(0, 24) + '…', validUntil: null,
+                 basis: 'content-keyed' });
+    });
+    return out;
+  }
+});
 
 /**
  * Which certificates a details view may show, and the two views both admin
@@ -189,7 +254,8 @@ class CertificateViews {
       personAssertions: personAssertions,
       helpers: helpers,
       x509: x509,
-      pkijs: pkijs
+      pkijs: pkijs,
+      pqcSupport: pqcSupport
     };
   }
 
@@ -540,62 +606,138 @@ class CertificateViews {
    * @returns the page of rows and its paging
    */
   listView(req) {
-    const { log, realms, x509, pkijs, loadAdminViews } = this.deps;
+    const { log, realms, loadAdminViews } = this.deps;
+    const self = this;
     log.debug("Entering CertificateViews.listView().");
     const query = (req && req.query) || {};
     const catalogue = this.newCatalogue();
     this.addAuthorities(catalogue);
     this.addHolders(catalogue);
     const needle = String(query.q || '').toLowerCase();
-    const rows = catalogue.entries().map(function (entry) {
-      let subject = '';
-      let issuer = '';
-      let notAfter = '';
-      try {
-        const der = Buffer.from(entry.pem.replace(/-----[^-]+-----/g, '')
-          .replace(/\s+/g, ''), 'base64');
-        const cert = pkijs.Certificate.fromBER(new Uint8Array(der));
-        subject = x509.dnToString(cert.subject);
-        issuer = x509.dnToString(cert.issuer);
-        notAfter = cert.notAfter.value.toISOString();
-      } catch (e) {
-        log.debug("Caught in CertificateViews.listView(): " + ((e &&
-            e.message) || e));
-      }
-      return {
-        fingerprint: entry.fingerprint,
-        subject: subject,
-        issuer: issuer,
-        notAfter: notAfter,
-        selfIssued: !!subject && subject === issuer,
-        appearances: entry.appearances.slice()
-      };
-    }).filter(function (row) {
+    // **PAGE, THEN PARSE (#352).** The catalogue is in the order its sources
+    // were read and nothing sorts it, so without `q` the page is a slice of
+    // it and only the slice is parsed. With `q` every certificate has to be
+    // asked, and it is asked the cheap question first — where it appears,
+    // which is text already in hand — and parsed (once per certificate per
+    // process, `facts` above) only when that does not match.
+    const entries = catalogue.entries().filter(function (entry) {
       if (!needle) {
         return true;
       }
-      const hay = (row.subject + ' ' + row.issuer + ' ' +
-                   row.appearances.map(function (a) { return a.label; })
-                     .join(' ')).toLowerCase();
-      return hay.indexOf(needle) >= 0;
+      const labels = entry.appearances.map(function (a) {
+        return a.label;
+      }).join(' ');
+      if (labels.toLowerCase().indexOf(needle) >= 0) {
+        return true;
+      }
+      // The same haystack the list always searched, so a needle spanning the
+      // issuer and the first label still matches: the test above is only
+      // the part of it that needs no parse.
+      const known = self.factsOf(entry);
+      return (known.subject + ' ' + known.issuer + ' ' + labels)
+        .toLowerCase().indexOf(needle) >= 0;
     });
     // Lazily, for the load-order reason in the header: `admin_views.ts`
     // requires route-registering modules and this file is required at 18a.
-    const pg = loadAdminViews().pagingOf(query, rows.length);
+    const pg = loadAdminViews().pagingOf(query, entries.length);
     const out = {
       realm: this.scopeOfRealm() || realms.DEFAULT_ID,
       total: catalogue.entries().length,
-      matched: rows.length,
+      matched: entries.length,
       page: pg.page,
       pages: pg.pages,
       perPage: pg.perPage,
       firstRow: pg.firstRow,
       lastRow: pg.lastRow,
-      certificates: rows.slice(pg.offset, pg.offset + pg.perPage)
+      certificates: entries.slice(pg.offset, pg.offset + pg.perPage)
+        .map(function (entry) {
+          const known = self.factsOf(entry);
+          return {
+            fingerprint: entry.fingerprint,
+            subject: known.subject,
+            issuer: known.issuer,
+            notAfter: known.notAfter,
+            selfIssued: !!known.subject && known.subject === known.issuer,
+            appearances: entry.appearances.slice()
+          };
+        })
     };
     log.debug("Leaving CertificateViews.listView(). " + out.matched +
               " certificate(s).");
     return out;
+  }
+
+  // What a list row shows about one catalogue entry, parsed at most once per
+  // certificate (`facts` above). A certificate that does not parse shows
+  // empty strings, as it always did, and that answer is kept too.
+  private factsOf(entry) {
+    const { log, x509, pkijs } = this.deps;
+    log.debug("Entering CertificateViews.factsOf().");
+    const key = 'fp:' + entry.fingerprint;
+    const held = facts.get(key);
+    if (held) {
+      factsCount.hit();
+      log.debug("Leaving CertificateViews.factsOf(). Held.");
+      return held;
+    }
+    factsCount.miss();
+    const known = { subject: '', issuer: '', notAfter: '' };
+    try {
+      const der = Buffer.from(entry.pem.replace(/-----[^-]+-----/g, '')
+        .replace(/\s+/g, ''), 'base64');
+      const cert = pkijs.Certificate.fromBER(new Uint8Array(der));
+      known.subject = x509.dnToString(cert.subject);
+      known.issuer = x509.dnToString(cert.issuer);
+      known.notAfter = cert.notAfter.value.toISOString();
+    } catch (e) {
+      log.debug("Caught in CertificateViews.factsOf(): " + ((e &&
+          e.message) || e));
+    }
+    CertificateViews.remember(key, known);
+    log.debug("Leaving CertificateViews.factsOf(). Parsed.");
+    return known;
+  }
+
+  // Hot path for a page of holders: no Entering/Leaving pair beyond the
+  // parse itself would add anything but two lines per row.
+  private static remember(key: string, value: any) {
+    cacheRegistry.makeRoom(facts, FACTS_LIMIT, { counter: factsCount });
+    facts.set(key, value);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHETHER A CERTIFICATE CARRIES A POST-QUANTUM KEY, `pqc_support.of()`'s
+  // answer for `{ certificatePem }`, parsed once per certificate text (#352).
+  // `/admin/pki` asks it of every row it DRAWS — and of every row of the
+  // whole list when the JSON is asked for, which is where the memo pays.
+  // Nothing to read is answered without a lookup, exactly as `of()` would.
+  // ---------------------------------------------------------------------------
+  /**
+   * Describes the key a certificate carries, as `pqc_support.of()` does for
+   * `{ certificatePem }`, remembering the answer per certificate.
+   *
+   * @param pem - a PEM certificate, or nothing
+   * @returns the answer, or null for a classical key or no certificate
+   */
+  pqcOf(pem) {
+    const { log, pqcSupport } = this.deps;
+    log.debug("Entering CertificateViews.pqcOf().");
+    if (!pem) {
+      log.debug("Leaving CertificateViews.pqcOf(). No certificate.");
+      return pqcSupport.of({ certificatePem: pem });
+    }
+    const key = 'pqc:' + nodeCrypto.createHash('sha256')
+      .update(String(pem)).digest('hex');
+    if (facts.has(key)) {
+      factsCount.hit();
+      log.debug("Leaving CertificateViews.pqcOf(). Held.");
+      return facts.get(key);
+    }
+    factsCount.miss();
+    const answer = pqcSupport.of({ certificatePem: pem });
+    CertificateViews.remember(key, answer);
+    log.debug("Leaving CertificateViews.pqcOf(). Parsed.");
+    return answer;
   }
 }
 
@@ -630,5 +772,10 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   normalFingerprint: slot.forward('normalFingerprint'),
   detailsView: slot.forward('detailsView'),
-  listView: slot.forward('listView')
+  listView: slot.forward('listView'),
+  pqcOf: slot.forward('pqcOf'),
+  // For the #352 test: how many parsed facts are held, and a way to forget
+  // them so a count starts from nothing.
+  factsHeld: (): number => facts.size,
+  forgetFacts: (): void => facts.clear()
 };

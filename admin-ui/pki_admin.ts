@@ -759,14 +759,23 @@ class PkiAdmin {
    * No private key is in it; `common/pki.js`'s `describe()` drops every one.
    * @param req - the request, for paging
    * @param draft - the pane's draft to draw, after a pane action
+   * @param options - `shownOnly: true` reads each key pair's certificate for
+   *   the rows the two tables draw and no others (the page's own call);
+   *   absent, every row of both lists carries `pqc`, as the JSON always did
    * @returns the model
    */
-  pkiJson(req: Json, draft?: Json) {
-    const { log, pki, authoring, applications, personAssertions, pqcSupport,
-            adminViews, admin } = this.deps;
+  pkiJson(req: Json, draft?: Json, options?: { shownOnly?: boolean }) {
+    const { log, pki, authoring, applications, personAssertions,
+            certificateViews, adminViews, admin } = this.deps;
     const self = this;
     log.debug('Entering PkiAdmin.pkiJson().');
     const chain = pki.describe();
+    // ONCE, where it was read once PER PROFILE (#352): the two profiles'
+    // rows are two readings of the same entries.
+    const everyApplication = applications.list();
+    // Each application row's certificate, for `decorate()` below, beside the
+    // row rather than on it so that it is in no reply.
+    const certificateOf = new WeakMap<object, Json>();
     const report = pki.report();
     const json: Json = {
       realm: self.realmLabel(),
@@ -806,9 +815,9 @@ class PkiAdmin {
       // have had to say which of two things each of its buttons meant.
       issued: pki.PURPOSE_IDS.reduce(function (rows, purpose) {
         const table = self.purposeWrites[purpose];
-        return rows.concat(applications.list().map(function (one) {
+        return rows.concat(everyApplication.map(function (one) {
           const fields = one.fields || {};
-          return {
+          const row: Json = {
             identifier: one.identifier,
             name: one.name,
             purpose: purpose,
@@ -842,12 +851,12 @@ class PkiAdmin {
             registeredOwnKeys: purpose === 'saml'
               ? !!fields.oauthSamlAssertionSigningCertificate
               : !!fields.oauthJwks,
-            // Whether the key pair on the entry uses a post-quantum algorithm,
-            // read off its certificate (2026-09-13): `null` for a classical key
-            // or none, otherwise `pqc_support.js`'s kind, label and standard.
-            pqc: pqcSupport.of({ certificatePem:
-              fields[table.certificateAttribute] })
+            // `pqc` goes LAST, added by `decorate()` below — whether the key
+            // pair on the entry uses a post-quantum algorithm, read off its
+            // certificate (2026-09-13).
           };
+          certificateOf.set(row, fields[table.certificateAttribute]);
+          return row;
         }).filter(function (one) {
           return one.hasKeyPair || one.assertionIssuers.length ||
                  one.registeredOwnKeys;
@@ -871,13 +880,12 @@ class PkiAdmin {
       // before that day reads the profile it always did; the page draws a row
       // per profile held, as it does for applications.
       // ---------------------------------------------------------------------
-      // Each with `pqc`, read off the person's certificate as `issued` above.
+      // Each with `pqc`, read off the person's certificate as `issued` above
+      // and added by `decorate()` below. `holders()` reads presence off the
+      // entries in one walk and opens no private key (#352).
       persons: personAssertions.holders().map(function (one) {
         return Object.assign({}, one, {
-          pqc: pqcSupport.of({ certificatePem: one.certificatePem }),
-          saml: Object.assign({}, one.saml, {
-            pqc: pqcSupport.of({ certificatePem: one.saml.certificatePem }) })
-        });
+          saml: Object.assign({}, one.saml) });
       }),
       personsStorable: personAssertions.storable(),
       personAttributes: personAssertions.ATTRIBUTES.slice(),
@@ -936,6 +944,28 @@ class PkiAdmin {
     const paged = self.keyPairPaging(req && req.query, json);
     json.issuedPaging = adminViews.pagingJson(paged.applications.paging);
     json.personsPaging = adminViews.pagingJson(paged.people.paging);
+    // ---------------------------------------------------------------------
+    // PAGE, THEN READ THE CERTIFICATES (#352, 2026-09-29). `pqc` is the one
+    // member of a key-pair row that costs a certificate parse, and it was
+    // computed for every application and every person before either table
+    // was paged. The page draws twenty-five of each, so it asks for those
+    // (`shownOnly`); the JSON carries both lists whole and so asks for every
+    // row, through `certificateViews.pqcOf()`, which parses a certificate
+    // once and remembers the answer. Added in place, as the LAST member of
+    // each row — where it always was — so the reply is byte for byte what it
+    // was, and the rows `keyPairPaging()` slices for the page are these same
+    // objects.
+    // ---------------------------------------------------------------------
+    const decorate = function (row: Json) {
+      row.pqc = certificateViews.pqcOf(certificateOf.has(row)
+        ? certificateOf.get(row) : row.certificatePem);
+      if (row.saml) {
+        row.saml.pqc = certificateViews.pqcOf(row.saml.certificatePem);
+      }
+    };
+    const shownOnly = !!(options && options.shownOnly);
+    (shownOnly ? paged.applications.shown : json.issued).forEach(decorate);
+    (shownOnly ? paged.people.shown : json.persons).forEach(decorate);
     log.debug('Leaving PkiAdmin.pkiJson(). ' + json.issued.length +
               ' application(s).');
     return json;
@@ -4325,7 +4355,9 @@ class PkiAdmin {
             esc } = this.deps;
     const self = this;
     log.debug('Entering PkiAdmin.renderPki().');
-    const json = self.pkiJson(req, draft);
+    // THE PAGE'S OWN CALL reads the certificates of the rows it draws and no
+    // others (#352); see the end of `pkiJson()`.
+    const json = self.pkiJson(req, draft, { shownOnly: true });
     if (certificate) {
       json.certificateDetails = certificate;
     }
