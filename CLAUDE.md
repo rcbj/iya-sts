@@ -436,6 +436,7 @@ is and the named file says why.
 |---|---|---|---|
 | 0 | `common/compiled_tree` | Before everything (#50): refuses a tree whose TypeScript is not compiled, and requires nothing of this service. Called by `server.js` itself rather than listed in `protocol_stack.ts`. | `common/CLAUDE.md` |
 | 1 | `common/config_file` | First of all that configures anything; every reader of `CONFIG_FILE` is below it. | `common/CLAUDE.md` |
+| 1a | `common/process_memory` | Right after `config_file` (#341), called by `server.js` itself: when a heap limit is due and not in force, the process re-executes itself with `--max-old-space-size` before anything else is loaded. A leaf (config, error_codes); `protocol_stack.ts` registers its `process.memory-report` job beside the scheduler's page (18i). | `common/CLAUDE.md` |
 | 2 | `common/app` | Before every protocol module and every `register()` call: routes are registered against it, and middleware applies only to routes added after it. Also installs the JWT recorder (rule 3e). | `common/CLAUDE.md` |
 | 2a | `common/realms` | No line of its own (loaded by `app` and `helpers`), but above every setting read and every store: requiring it fills `config.js`'s realm slot (rule 3m). | `common/CLAUDE.md` |
 | 3–4 | `common/helpers`, `common/config` | `config.js` is below `helpers.js` and requires nothing here. | `common/CLAUDE.md` |

@@ -1090,6 +1090,22 @@ const CODES = [
     summary: 'A request worker could not be forked at all (the fork call ' +
       'threw); the start gate moved on to the next (#342).',
     spec: '' },
+  { code: 'STS-WORKER-0046',
+    summary: 'A request worker was aborted (SIGABRT), which is how V8 ends a ' +
+      'process whose heap reached its limit (--max-old-space-size, ' +
+      'workers.heapLimitMb); V8\'s own "JavaScript heap out of memory" ' +
+      'line precedes it in the log (#341).',
+    spec: 'Nothing directly: requests in flight on it were answered 502' },
+  { code: 'STS-WORKER-0047',
+    summary: 'A request worker was SIGKILLed while the container cgroup\'s ' +
+      'oom_kill count rose: the kernel\'s OOM killer ended it because the ' +
+      'container reached its memory limit (#341).',
+    spec: 'Nothing directly: requests in flight on it were answered 502' },
+  { code: 'STS-WORKER-0048',
+    summary: 'A heap limit was due for the front process and it could not ' +
+      'restart itself with one (no process.execve, or the call failed), so ' +
+      'it runs without a limit; its request workers still get one (#341).',
+    spec: '' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',

@@ -99,6 +99,10 @@ const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
 const lingeringClose = require('./lingering_close');
+// A LEAF (config, error_codes, node's own modules): every process's heap
+// budget, which fork() hands each worker, and the container's OOM-kill count,
+// which reap() reads for a worker that was SIGKILLed (#341).
+const processMemory = require('./process_memory');
 // THE JA4 READER (#62 P0) IS REQUIRED LAZILY, in `clientHelloModule()`
 // below: this file is loaded by `app.js` before the composition root defers
 // instance building, and a load here would build `tls/client_hello`'s
@@ -2418,6 +2422,20 @@ function fork(pool, slot) {
     // be added to.
     // -------------------------------------------------------------------
     serialization: 'advanced',
+    // -------------------------------------------------------------------
+    // ITS HEAP LIMIT (#341): this process's own node options without any
+    // heap flag, and the budget every process of the node shares
+    // (`common/process_memory.ts`). A heap that reaches it ends in V8, with
+    // a line that says so and a SIGABRT reap() reports as STS-WORKER-0046,
+    // before the kernel's OOM killer picks a victim. No budget (no visible
+    // container limit) leaves the options exactly as they were.
+    // -------------------------------------------------------------------
+    // With the limit OFF (workers.heapLimitMb -1) this process's own
+    // options are passed on unchanged, which is fork()'s default.
+    execArgv: processMemory.budget().off
+      ? process.execArgv.slice()
+      : processMemory.workerExecArgv(process.execArgv,
+                                     processMemory.budget().mb),
     // THE MARKER THAT STOPS A WORKER PROXYING TO ITSELF. See the constant at
     // the top of this file for what happens without it.
     //
@@ -2572,6 +2590,12 @@ function fork(pool, slot) {
         receiveSync(entry, message);
         return;
       }
+      // ITS LATEST MEMORY FIGURES, from its own `process.memory-report` run
+      // (#341), kept so that its exit can be reported beside them.
+      if (message && message.memoryReport) {
+        entry.memory = message.memoryReport;
+        return;
+      }
       if (message && message.operation) {
         receiveOperation(entry, message);
         return;
@@ -2661,6 +2685,9 @@ function reap(entry, code, signal) {
   }
   failOperations(entry);
   const how = signal ? 'was killed with ' + signal : 'exited with code ' + code;
+  // WHY IT DIED, WHERE THIS PROCESS CAN TELL (#341): a heap that reached its
+  // limit, or the kernel's OOM killer. See exitCause().
+  noteExit(entry, code, signal);
   // A FAILED START: a worker that never became ready, however long it took
   // to fail, or one that went within QUICK_EXIT_MS of being forked having
   // served nothing. A worker that was ready resets the count (fork()), so
@@ -2705,6 +2732,134 @@ function reap(entry, code, signal) {
   }
   replaceIfWanted(entry);
   log.debug('Leaving reap().');
+}
+
+// ---------------------------------------------------------------------------
+// WHY A WORKER DIED, WHERE THE FRONT PROCESS CAN TELL (#341, 2026-09-29).
+//
+// Two exits used to look alike: `worker N was killed with SIGKILL`, and
+// nothing else. Since #341 every worker has a heap limit, and there are two
+// ways out of memory with different codes:
+//
+// * **SIGABRT is the heap.** V8 ends a process whose old space reached
+//   `--max-old-space-size` by printing `FATAL ERROR: … JavaScript heap out
+//   of memory` and calling abort(). A worker's stderr is this process's, so
+//   that line is just above in the log. The code does not depend on reading
+//   it: a SIGABRT from a request worker is a fatal error inside node, and
+//   heap exhaustion is the one this service has seen. `STS-WORKER-0046`.
+// * **SIGKILL with the cgroup's `oom_kill` count risen is the kernel.** The
+//   container reached its memory limit and the kernel chose a victim.
+//   `STS-WORKER-0047`. A SIGKILL with the count unchanged was somebody's
+//   kill, and is logged as it always was. With no counter visible (no memory
+//   cgroup) nothing is claimed.
+//
+// Each line carries the worker's last memory report, when it sent one, and
+// the latest exits are in `stats().memory.exits`.
+// ---------------------------------------------------------------------------
+const EXITS_KEPT = 20;
+let recentExits = [];
+// The container's OOM-kill count when last read; null until it is read.
+let oomSeen = null;
+// The counter reap() reads; only tests/process_memory.js replaces it.
+let oomCounter = function () {
+  log.debug("Entering oomCounter().");
+  log.debug("Leaving oomCounter().");
+  return processMemory.oomKillCount();
+};
+
+/**
+ * Classifies a worker's exit. A decision over its arguments.
+ *
+ * @param signal - the signal it died of, or null
+ * @param oomBefore - the cgroup's OOM-kill count before, or null
+ * @param oomNow - the count now, or null
+ * @returns `STS-WORKER-0046`, `STS-WORKER-0047` or '' when nothing can be
+ *   said
+ */
+function exitCause(signal, oomBefore, oomNow) {
+  log.debug("Entering exitCause().");
+  if (signal === 'SIGABRT') {
+    log.debug("Leaving exitCause(). The heap.");
+    return 'STS-WORKER-0046';
+  }
+  if (signal === 'SIGKILL' && typeof oomBefore === 'number' &&
+      typeof oomNow === 'number' && oomNow > oomBefore) {
+    log.debug("Leaving exitCause(). The kernel.");
+    return 'STS-WORKER-0047';
+  }
+  log.debug("Leaving exitCause(). Nothing to say.");
+  return '';
+}
+
+// The last figures a worker reported, as a clause for the lines below.
+function lastReport(entry) {
+  log.debug("Entering lastReport().");
+  const m = entry.memory;
+  if (!m) {
+    log.debug("Leaving lastReport(). None.");
+    return ' It had sent no memory report.';
+  }
+  log.debug("Leaving lastReport().");
+  return ' Its last memory report, ' +
+    Math.round((Date.now() - (m.at || Date.now())) / 1000) + 's before: ' +
+    'rss ' + m.rssMb + ' MiB, heap ' + m.heapUsedMb + ' of ' + m.heapTotalMb +
+    ' MiB (limit ' + m.heapLimitMb + '), external ' + m.externalMb + ' MiB.';
+}
+
+function noteExit(entry, code, signal) {
+  log.debug("Entering noteExit(). pid=" + entry.pid);
+  const before = oomSeen;
+  let now = null;
+  if (signal === 'SIGKILL') {
+    now = oomCounter();
+    oomSeen = now;
+  }
+  const cause = exitCause(signal, before, now);
+  const pool = entry.pool || PROTOCOL_POOL;
+  const budget = processMemory.budget();
+  if (cause === 'STS-WORKER-0046') {
+    log.error(errorCodes.tag(cause) + 'request_pool: ' + pool + ' worker ' +
+              entry.pid + ' was aborted (SIGABRT): its heap reached its ' +
+              'limit' + (budget.mb ? ' of ' + budget.mb + ' MiB (' +
+                                     budget.source + ')'
+                                   : ', V8\'s own default') +
+              ' — V8\'s "JavaScript heap out of memory" lines are above.' +
+              lastReport(entry));
+  } else if (cause === 'STS-WORKER-0047') {
+    log.error(errorCodes.tag(cause) + 'request_pool: ' + pool + ' worker ' +
+              entry.pid + ' was killed by the kernel\'s OOM killer: SIGKILL, ' +
+              'and the container cgroup\'s oom_kill count rose from ' +
+              before + ' to ' + now + '. The container is at its memory ' +
+              'limit' + (budget.limitBytes
+                ? ' of ' + Math.round(budget.limitBytes / (1024 * 1024)) +
+                  ' MiB'
+                : '') + '; each process\'s heap budget is ' +
+              (budget.mb ? budget.mb + ' MiB' : 'unset') + '.' +
+              lastReport(entry));
+  }
+  recentExits.push({ pid: entry.pid, pool: pool, code: code,
+                     signal: signal || null, cause: cause || null,
+                     at: Date.now(), memory: entry.memory || null });
+  if (recentExits.length > EXITS_KEPT) {
+    recentExits = recentExits.slice(-EXITS_KEPT);
+  }
+  log.debug("Leaving noteExit().");
+}
+
+// For tests/process_memory.js only: the OOM-kill counter reap() reads.
+/**
+ * Sets the OOM-kill counter reap() reads; for tests. Nothing restores the
+ * real one.
+ *
+ * @param fn - answers the count, or null
+ */
+function useOomCounter(fn) {
+  log.debug("Entering useOomCounter().");
+  oomCounter = fn || function () {
+    return processMemory.oomKillCount();
+  };
+  oomSeen = oomCounter();
+  log.debug("Leaving useOomCounter().");
 }
 
 // ---------------------------------------------------------------------------
@@ -3773,6 +3928,10 @@ function start() {
                'minted survives a restart, which is unchanged.');
     }
   }
+
+  // THE CONTAINER'S OOM-KILL COUNT BEFORE ANY WORKER EXISTS (#341), so that
+  // the first SIGKILL can be told apart. See exitCause().
+  oomSeen = oomCounter();
 
   // THE PARENT'S OWN KEY GENERATION JOINS THE REGISTRY. Installed before the
   // first fork so that a realm generated here on the way up is already in
@@ -5605,6 +5764,13 @@ function stats() {
     // are starting, and how many wait behind them.
     starts: { concurrency: startConcurrency(), starting: startsInFlight,
               queued: forkQueue.length },
+    // EVERY PROCESS'S HEAP BUDGET AND THE LATEST EXITS (#341): the limit a
+    // worker is forked with and where it came from, the container's
+    // OOM-kill count when last read, and each exit with its cause.
+    memory: { heapLimitMb: processMemory.budget().mb,
+              source: processMemory.budget().source,
+              oomKills: oomSeen,
+              exits: recentExits.slice() },
     // THE BARRIER'S OWN BOOKKEEPING, reported because the failure it can have
     // is invisible from outside: a ticket nothing will ever clear makes this
     // service answer correctly and 2,000ms slower per read, for ever. See
@@ -5647,6 +5813,14 @@ function reset() {
   // And the start gate (#342): nothing queued, nothing counted as starting.
   dropQueuedForks();
   startsInFlight = 0;
+  // And the memory bookkeeping (#341): the budget is read again, the real
+  // OOM-kill counter is back, and no exit is remembered.
+  processMemory.resetBudget();
+  recentExits = [];
+  oomSeen = null;
+  oomCounter = function () {
+    return processMemory.oomKillCount();
+  };
   // AND THE BARRIER, because it is process-wide module state exactly as the
   // generation is: a test that armed a ticket and left it would make every
   // later file in the same run wait the full bound.
@@ -5780,6 +5954,10 @@ module.exports = {
   // start() and a replacement queue theirs.
   queueFork: queueFork,
   startOrder: startOrder,
+  // WHY A WORKER DIED (#341), for tests/process_memory.js: the decision, and
+  // the OOM-kill counter reap() reads.
+  exitCause: exitCause,
+  useOomCounter: useOomCounter,
   workerTable: workerTable,
   PEER_AUTHORIZED_HEADER: PEER_AUTHORIZED_HEADER
 };

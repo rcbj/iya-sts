@@ -1470,6 +1470,54 @@ false`, a failed channel, or an exit). Four decisions:
 `stats().starts` reports the width of the gate, the number starting and the
 number queued. `tests/request_worker_replacement.js` section 5 holds it.
 
+**EVERY PROCESS HAS A HEAP LIMIT, AND A DEATH BY MEMORY SAYS WHICH KIND (#341,
+2026-09-29).** Nothing set a V8 heap limit, so each process's heap was sized to
+the machine, and a task that ran out got an anonymous SIGKILL from the kernel:
+`worker N was killed with SIGKILL`, with no code and no figure.
+`common/process_memory.ts` argues the whole design. What a maintainer needs:
+
+* **One budget for every process of the node.** `workers.heapLimitMb` when it
+  is above 0. **-1 is OFF** (rcbj, 2026-09-29: testidp runs with it while its
+  processes are larger than a derived budget): no re-exec, no flag on a worker
+  (its options are passed on unchanged), and STS-WORKER-0046 cannot occur. The
+  memory report and the OOM-kill attribution (0047) work the same. At 0 it is
+  (container limit − headroom) ÷ (1 + requestCount +
+  surfaceCount + 1 for the crypto children), where the headroom is 15 % and at
+  least 256 MiB, and the result is floored at 256 MiB. The limit is read from
+  cgroup v2 `memory.max`, then v1 `memory.limit_in_bytes`, then v1's
+  `hierarchical_memory_limit`, then the ECS task metadata endpoint. `ecs.tf`
+  sets `memory` on the TASK, so on Fargate a container's own cgroup may show
+  none. With no visible limit, nothing is set. The flag bounds the OLD SPACE;
+  V8's `heap_size_limit` adds the young generation's ceiling (192 MiB in
+  node 24).
+* **The front process RE-EXECUTES ITSELF** with `--max-old-space-size`, through
+  `process.execve()`, from `server.js` right after `config_file` (row 1a of the
+  require order). It keeps the same pid and descriptors, and works for every
+  way the image is started. `v8.setFlagsFromString()` was refused because the
+  heap is already sized by then. NODE_OPTIONS from an entrypoint was refused
+  because every child and every `node -e` would inherit it, and the compose
+  files and ECS do not go through one entrypoint. A spawning launcher was
+  refused because it doubles the processes and puts signal forwarding in front
+  of the service. An operator's own flag is left alone. With no `execve`, the
+  front runs without a limit and says so (`STS-WORKER-0048`).
+* **Each worker is forked with `execArgv`** carrying the same budget.
+* **`reap()` names the cause.** SIGABRT is V8 ending a heap at its limit
+  (`STS-WORKER-0046`; V8's own lines are just above in the log). SIGKILL while
+  the cgroup's `oom_kill` count (v2 `memory.events`, v1 `memory.oom_control`)
+  rose since the last read is the kernel's OOM killer (`STS-WORKER-0047`).
+  Either line carries the worker's last memory report, and
+  `stats().memory.exits` keeps the last twenty exits.
+* **`process.memory-report`**, a per-process scheduler job every five minutes
+  (registered in `protocol_stack.ts` beside the scheduler's page, so every
+  process lists it). It logs one line per process with the role, rss, heap
+  used and total, the heap limit, external memory and array buffers. A request
+  worker also sends its figures to the front process over the pool's channel.
+  The scheduler records the run's summary, so Monitoring → Scheduler shows
+  every process's latest figures.
+
+`tests/process_memory.js` holds it, including a real re-exec and a real heap
+exhaustion.
+
 **DISPATCH WITHOUT COORDINATION IS REFUSED, AND THE SERVICE DOES NOT START.**
 Everything else about the pool degrades — no workers means the front process
 does the work, a dead worker's requests in flight are a 502 and the worker is
