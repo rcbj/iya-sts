@@ -4077,15 +4077,20 @@ class AdminViews {
       adminActions } = this.deps;
     log.debug("Entering AdminViews.kerberosPrincipalsJson().");
     const query = (req && req.query) || {};
-    const people = krb5PersonKeys.listPeople();
+    // PAGED, THEN DESCRIBED (#352): the population is the undescribed rows,
+    // sorted by username, and only the page is parsed, stamped and given
+    // its retained versions.
+    const people = krb5PersonKeys.listPeopleKeys();
     const services = krb5PersonKeys.listServices();
     // `name` and NOT `param`: pagingOf() builds the parameter as `<name>Page`
     // and reads no `param` option at all. This passed `param` until 2026-09-13,
     // so both lists read the bare `?page=` while the page's links wrote
     // `peoplePage` and `servicesPage` — every next and previous link on
     // /admin/kerberos/principals reloaded the same first page.
-    const peoplePage = this.pagedRows(query, people,
-                                      { name: 'people', noun: 'people' });
+    const peopleKeyPage = this.pagedRows(query, people,
+                                         { name: 'people', noun: 'people' });
+    const peoplePage = Object.assign({}, peopleKeyPage, {
+      shown: krb5PersonKeys.describePeople(peopleKeyPage.shown) });
     const servicesPage = this.pagedRows(query, services,
                                         { name: 'services', noun: 'service ' +
                                             'principals' });
