@@ -3488,6 +3488,14 @@ module.exports = {
           return answer;
         })
     ];
+    // A KEY ROW WHOSE LAST WRITE FAILED is tried again now rather than at the
+    // retry's backoff: a request held for the backlog (the barrier's rule for
+    // a writing method) must wait for THAT write too, and the wait below only
+    // sees rows that are queued.
+    if (typeof keystore.failing === 'function' && keystore.failing() &&
+        typeof keystore.retryFailed === 'function') {
+      keystore.retryFailed();
+    }
     if (typeof keystore.pendingWrites === 'function' &&
         keystore.pendingWrites() && typeof keystore.settleAll === 'function') {
       // AND A KEY ROW THAT FAILED IS A FAILURE (#351). The outcomes were
