@@ -3100,6 +3100,34 @@ const SETTINGS = [
                  'path.' },
 
   // ---------------------------------------------------------------------
+  // HOW MANY REQUEST WORKERS MAY BE STARTING AT ONCE (#342, 2026-09-29).
+  //
+  // Every worker restores the whole store into its own heap when it starts,
+  // and the pool used to fork them all at once. On testidp's node-a on
+  // 2026-09-28 the task's memory limit SIGKILLed all four within three
+  // seconds: five processes, each holding a directory plus the transient
+  // arrays of its restore. Starting them one at a time keeps the peak at
+  // one start above the steady state. `common/request_pool.js`'s start gate
+  // argues why the count covers BOTH pools rather than each one.
+  // ---------------------------------------------------------------------
+  { key: 'workers.startConcurrency', group: 'Global',
+    label: 'Request workers starting at once',
+    env: 'STS_WORKERS_START_CONCURRENCY', type: 'int', dflt: 1, min: 1,
+    max: 64, runtime: false, perProcess: true,
+    restartReason: 'the pool forks its workers when the process starts; a ' +
+                   'replacement after a crash waits behind the same gate',
+    description: 'How many request workers may be starting at the same ' +
+                 'time, counting the protocol and hosted-surface pools ' +
+                 'together. The next worker is forked when one reports that ' +
+                 'it is ready or that it failed. The default, 1, starts them ' +
+                 'one after another. Each start restores the whole store ' +
+                 'into that worker\'s memory, and starting them together is ' +
+                 'what put a node over its memory limit (#342). The listener ' +
+                 'binds once the first worker of each pool has settled, and ' +
+                 'the rest come up behind it. A worker that replaces one ' +
+                 'that died waits its turn the same way.' },
+
+  // ---------------------------------------------------------------------
   // WHAT IS HANDLED IN A WORKER, AND IT WAS TWO SETTINGS UNTIL 2026-09-12.
   //
   // `workers.operations` held the non-HTTP half and is GONE. The distinction

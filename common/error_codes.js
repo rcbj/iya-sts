@@ -1086,6 +1086,10 @@ const CODES = [
       'replacement was forked into its pool and slot.',
     spec: 'Nothing directly: requests in flight on the dead worker were ' +
       'answered 502 (STS-WORKER-0030)' },
+  { code: 'STS-WORKER-0045',
+    summary: 'A request worker could not be forked at all (the fork call ' +
+      'threw); the start gate moved on to the next (#342).',
+    spec: '' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',

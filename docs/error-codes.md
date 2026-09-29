@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3863** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3864** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -52,7 +52,7 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 66
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 43
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 44
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 68
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 85
@@ -262,6 +262,7 @@ Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, co
 | `STS-WORKER-0041` | A batch request (workers.batch) waited workers.batchQueueTimeoutS for the pool's batch lane and was refused. | HTTP 503 with Retry-After |
 | `STS-WORKER-0042` | The connection to a request worker failed before any byte of a dispatched request reached it, and the request was sent again on a new connection (#77). | Nothing: the client gets the worker's answer |
 | `STS-WORKER-0043` | A request worker exited (or could not start) and a replacement was forked into its pool and slot. | Nothing directly: requests in flight on the dead worker were answered 502 (STS-WORKER-0030) |
+| `STS-WORKER-0045` | A request worker could not be forked at all (the fork call threw); the start gate moved on to the next (#342). | — |
 
 ## STS-STORE
 
