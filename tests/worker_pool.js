@@ -523,6 +523,57 @@ module.exports = {
         resolve();
       });
     });
+
+    // -----------------------------------------------------------------------
+    t.log.info('H. A REQUEST WORKER COMPUTES IN PLACE BY DEFAULT (#347)');
+    // -----------------------------------------------------------------------
+    // A request or surface worker loads the whole stack, and this module with
+    // it, and read `workers.count` as the front process does — so a node with
+    // four such workers could fork 25 crypto children. Inside one it is
+    // `workers.countInRequestWorkers`, 0 by default. Driven in a CHILD with
+    // the variable `request_pool.js` gives every worker, since the decision
+    // is the process's and this runner is a front process.
+    t.equal(pool.stats().setting, 'workers.count',
+            'the front process sizes its pool with workers.count');
+    t.check(config.isPerProcess('workers.countInRequestWorkers'),
+            'workers.countInRequestWorkers is perProcess, as workers.count is');
+    const inWorker = function (extra) {
+      log.debug("Entering inWorker().");
+      const program =
+        "const pool = require(" + JSON.stringify(require.resolve(
+          '../common/worker_pool')) + ");" +
+        "const pq = require(" + JSON.stringify(require.resolve(
+          '../common/pq_jose')) + ");" +
+        "const p = pq.generate('ML-DSA-44');" +
+        "pq.signAsync('ML-DSA-44', p.priv, Buffer.from('x')).then(" +
+        "function (sig) { const s = pool.stats();" +
+        "process.stdout.write('RESULT ' + JSON.stringify({ " +
+        "setting: s.setting, configured: s.configured, running: s.running, " +
+        "signed: sig.length > 0 }) + '\\n');" +
+        "return pool.stop(); });";
+      const out = child_process.spawnSync(process.execPath, ['-e', program], {
+        env: Object.assign({}, process.env, { STS_REQUEST_WORKER: '1',
+                                              STS_LOG_LEVEL: 'warn' }, extra),
+        encoding: 'utf8', timeout: 120000 });
+      const line = String(out.stdout || '').split('\n').filter(function (l) {
+        return l.indexOf('RESULT ') === 0;
+      })[0];
+      log.debug("Leaving inWorker().");
+      return line ? JSON.parse(line.slice(7))
+                  : { error: String(out.stderr || '').slice(-400) };
+    };
+    const byDefault = inWorker({});
+    t.check(byDefault.setting === 'workers.countInRequestWorkers' &&
+            byDefault.configured === 0 && byDefault.running === 0 &&
+            byDefault.signed === true,
+            'a request worker with the default forks no pool and signs in ' +
+            'place', JSON.stringify(byDefault));
+    const raised = inWorker({ STS_WORKERS_COUNT_IN_REQUEST_WORKERS: '1' });
+    t.check(raised.setting === 'workers.countInRequestWorkers' &&
+            raised.configured === 1 && raised.running === 1 &&
+            raised.signed === true,
+            'and raising workers.countInRequestWorkers forks that many, ' +
+            'whatever workers.count says', JSON.stringify(raised));
     log.debug("Leaving run().");
 
   }

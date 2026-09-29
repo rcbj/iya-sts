@@ -41,7 +41,7 @@ The dispatcher hands work from the leader to three pools of child processes:
 
 | Pool | What a worker runs | Setting | Default |
 |---|---|---|---|
-| **Crypto** | Post-quantum signing and verification, key generation, password hashing: slow computations that would otherwise freeze every listener | `workers.count` | 2, forked only when the first such job arrives |
+| **Crypto** | Post-quantum signing and verification, key generation, password hashing: slow computations that would otherwise freeze every listener | `workers.count` in the front process, `workers.countInRequestWorkers` in a request or surface worker | 5 and 0, forked only when the first such job arrives; 0 computes in the process itself |
 | **Admin** | Only the admin console and the user portal | `workers.surfaceCount` | 0 (off) |
 | **Request** | The whole protocol stack | `workers.requestCount` | 0 (off) |
 
