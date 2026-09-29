@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3766** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3771** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 71
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 65
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 70
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
@@ -280,7 +280,7 @@ Raised from: persistence/.
 | Code | What failed | Client sees |
 |---|---|---|
 | `STS-STORE-0001` | A scheduled persistence flush threw past its own handler. | — |
-| `STS-STORE-0002` | Writing the directory, the realm registry or the settings overrides to the persistence store failed; the service keeps answering from memory and retries on the next change. | — |
+| `STS-STORE-0002` | Writing the directory, the realm registry or the settings overrides to the persistence store failed; the change stays in memory, the write is retried with a backoff, and in postgres mode a request whose change was in it is answered 503 (STS-STORE-0066). | — |
 | `STS-STORE-0003` | persistence.mode names a mode the persistence module does not know, so nothing is persisted. | — |
 | `STS-STORE-0004` | The service refused to start: a persisting mode is configured and no directory module is installed to persist. | — |
 | `STS-STORE-0005` | The service refused to start: the database password comes from a secret store but persistence.databaseUrl is not a URL it can be injected into. | — |
@@ -299,7 +299,7 @@ Raised from: persistence/.
 | `STS-STORE-0018` | Minted state could not be written because no key-encryption key is available to seal it. | — |
 | `STS-STORE-0019` | A handle that is not a declared store reported a minted write; its rows cannot be written. | — |
 | `STS-STORE-0020` | A minted store holds a value that will not serialise, so that row cannot be written. | — |
-| `STS-STORE-0021` | Writing minted state (sessions, tokens, codes, the audit log) to the store failed; the keys stay journalled and the next flush retries. | — |
+| `STS-STORE-0021` | Writing minted state (sessions, tokens, codes, the audit log) to the store failed; the keys stay journalled, the write is retried with a backoff, and in postgres mode a request whose rows were in it is answered 503 (STS-STORE-0066). | — |
 | `STS-STORE-0022` | The service refused to start: minted state is persisted but no key-encryption key is available to open it. | — |
 | `STS-STORE-0023` | An earlier run's unreadable minted rows could not be cleared from the store. | — |
 | `STS-STORE-0024` | A store refused a minted row restored at startup; the row was dropped. | — |
@@ -344,6 +344,11 @@ Raised from: persistence/.
 | `STS-STORE-0063` | A minted store journalled a key holding a NUL character, which PostgreSQL text cannot hold; the row is left out of the write rather than failing every write after it. | none — logged |
 | `STS-STORE-0064` | A minted store's expiresAt hook threw while its row was being written; the row is written as not expiring, so it is restored and kept until the store deletes it. Said once per store. | none — logged |
 | `STS-STORE-0065` | The persistence.minted-expiry-purge job could not delete the expired, orphaned or stale minted rows; a start skips them anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
+| `STS-STORE-0066` | A request changed the store and the commit of that change failed, so it was answered 503 with Retry-After instead of its success (#351); the change is still in memory and its write is retried. | RFC 9110 section 15.6.4 |
+| `STS-STORE-0067` | An LDAP operation changed the store and the commit of that change failed, so it was answered unavailable (52) instead of its result (#351); the change is still in memory and its write is retried. | RFC 4511 section 4.1.9 |
+| `STS-STORE-0068` | This process's event loop was blocked past the warning threshold in the last report window; timers such as the origin renewal and the cluster heartbeat ran that late too. | none — logged |
+| `STS-STORE-0069` | The renewal of this process's origin claim started or answered more than half the claim's lifetime late; the line names the event loop's delay, so a lost origin says why. | none — logged |
+| `STS-STORE-0070` | The liveness connection (origin renewal, heartbeat, leases) dropped or could not be opened; the next statement reconnects, and one that cannot goes through the pool. | none — logged |
 
 ## STS-CLUSTER
 
@@ -371,7 +376,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0016` | A secret every node must share could not be written to or read from the store; the service does not start. | — |
 | `STS-CLUSTER-0017` | A shared secret could not be sealed or opened with the key-encryption key; the service does not start. | — |
 | `STS-CLUSTER-0018` | A request could not catch up with the other nodes' committed writes before it was served; it is answered from this process's copy. | — |
-| `STS-CLUSTER-0019` | A response held until its writes committed could not commit them; it is sent anyway and the writes are retried. | — |
+| `STS-CLUSTER-0019` | An outbound message held until this node's writes committed could not commit them; it is sent anyway and the writes are retried. (A held RESPONSE whose commit fails is STS-STORE-0066 since #351.) | — |
 | `STS-CLUSTER-0020` | Active-active mode is running with capabilities an operator accepted as missing; each named one is a known way nodes disagree. | — |
 | `STS-CLUSTER-0021` | A request worker could not attach to its node's cluster membership; the worker does not start. | — |
 | `STS-CLUSTER-0022` | A counter that may only go up (a WebAuthn signature counter, a one-time code step) could not be advanced because the store could not be asked; the credential is refused. | — |

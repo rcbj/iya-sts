@@ -404,8 +404,17 @@ app.use(requestPool.middleware({ enterRealm: enterRealm }));
 // request — a worker, or this process for a request it keeps — and never in a
 // front process that only proxies. Above everything else, because every
 // middleware below here may read a store: the arrival session, the CSRF check,
-// the rate limiter. It does nothing unless the node is active-active.
-// cluster/cluster_barrier.js argues both of its rules.
+// the rate limiter. Its first rule (catch up with other nodes) runs only
+// when the node is active-active; its second (answer a write after its
+// commit, 503 when the commit fails) wherever the store is a database, one
+// node or many (#351). cluster/cluster_barrier.js argues both rules.
+//
+// **WHY A WRAPPED `res.end()` AND NOT A HOOK IN EVERY HANDLER**: it is
+// installed here, above every route, so every route is covered, including
+// the ones written after it — the only way nobody can forget it. Express's
+// `res.send()`, `res.json()` and `res.redirect()` all finish through
+// `res.end()`, so a redirect is held (and its `Location` discarded on a
+// refusal) like any other answer.
 // ---------------------------------------------------------------------------
 app.use(clusterBarrier.middleware());
 
@@ -983,6 +992,20 @@ app.use(function (req, res, next) {
       durationMs: Date.now() - started
     });
   });
+
+  // A RESPONSE WHOSE COMMIT FAILED IS RECORDED AGAIN, AS WHAT WAS SENT (#351).
+  // The row above is written before the barrier decides, with the handler's
+  // status; when the commit then fails the client is answered 503 instead
+  // (cluster/cluster_barrier.js, rule 2), and this second row — the 503 and
+  // STS-STORE-0066 — is the one an operator needs beside it.
+  clusterBarrier.onCommitRefused(res, realms.bind(req.realm, function () {
+    const matchedPath = (req.route && req.route.path) || '';
+    audit.recordHttp(req, res, {
+      route: matchedPath,
+      matched: !!matchedPath,
+      durationMs: Date.now() - started
+    });
+  }));
 
   res.end = function (chunk) {
     log.debug("Entering end().");

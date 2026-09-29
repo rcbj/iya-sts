@@ -309,6 +309,10 @@ let flushInFlight = null;
 // ---------------------------------------------------------------------------
 let generation = 0;
 let committedAt = 0;
+// True from a failed write until the next one succeeds (#351): the keys it
+// held are back on the journal and not in the store. `failing()` answers it
+// for `persistence.commitBacklog()`.
+let failedWrite = false;
 let inFlightTakenAt = 0;
 // ---------------------------------------------------------------------------
 // HOW MANY OF THOSE KEYS WERE AN OBSERVATION (2026-09-15, #46): a store
@@ -1268,6 +1272,7 @@ function flush() {
     rowsDeleted += deletes.length;
     lastWriteAt = new Date().toISOString();
     lastError = '';
+    failedWrite = false;
     log.debug('Leaving flush(). ' + upserts.length + ' row(s) written, ' +
               deletes.length + ' removed' +
               (unsealable ? ', ' + unsealable + ' unsealable' : '') + '.');
@@ -1309,10 +1314,13 @@ function flush() {
     }
     failures++;
     lastError = err.message;
+    failedWrite = true;
     log.error(errorCodes.tag('STS-STORE-0021') +
               'persistence: minted state could not be written: ' + err.message +
-              '. The service is unaffected and is still answering from ' +
-              'memory; the next change will try again.');
+              '. It is retried shortly (persistence.js, ' +
+              'retryAfterFailure()); ' +
+              'a request whose rows were in it is answered 503 in postgres ' +
+              'mode (#351).');
     log.debug('Leaving flush(). It failed.');
     return { written: false, error: err.message };
   });
@@ -1406,6 +1414,17 @@ function flushThrough(target) {
   }
   log.debug("Leaving flushThrough(). Flushing.");
   return flush();
+}
+
+/**
+ * Tells whether a failed write's keys are back on the journal and have not
+ * reached the store since (#351).
+ * @returns true from a failed write until the next successful one
+ */
+function failing() {
+  log.debug("Entering failing().");
+  log.debug("Leaving failing().");
+  return failedWrite && journal.size > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -2086,6 +2105,7 @@ function reset() {
   observedGeneration = 0;
   observational.clear();
   committedAt = 0;
+  failedWrite = false;
   inFlightTakenAt = 0;
   lastWriteAt = null;
   lastError = '';
@@ -2127,6 +2147,7 @@ module.exports = {
   dirty: dirty,
   flush: flush,
   flushThrough: flushThrough,
+  failing: failing,
   generation: generationNow,
   observedGeneration: observedGenerationNow,
   committedGeneration: committedGeneration,

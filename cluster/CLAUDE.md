@@ -227,6 +227,16 @@ transaction — the used-assertion claims, the cluster claims, the purges.
 change row now, so a rotation reaches the other nodes.) A claim is a decision rather than a state write, and a deposed node
 making one decides for a request it is still answering.
 
+### The heartbeat and the leases have a connection of their own (2026-09-29, #351)
+
+The heartbeat, `acquireLease()`, `releaseLease()`, `leaveCluster()` and the
+persistence origin's renewal run on the postgres driver's LIVENESS connection
+(`liveQuery()` in `persistence/persistence_postgres.js`), not the pool: on
+testidp a SCIM Bulk load held all four of a worker's pooled connections past
+the origin claim's 30 s, and the worker exited. The fence checks above are
+unchanged — they run inside the write's own transaction, on its client, which
+is the only place they mean anything. `persistence/CLAUDE.md` has the rest.
+
 ## The two modes
 
 **Active-passive.** The service lease (`SERVICE_LEASE`). The first node takes
@@ -254,7 +264,16 @@ startup runs, so a capability declared by a step that succeeds later would
 never count. `tests/cluster_foundation.js` holds every `provide()` call to a row
 and to the file the row names.
 
-## The barrier (active-active)
+## The barrier (active-active — and its second rule everywhere, #351)
+
+**Since 2026-09-29 (#351) rule 2 is not a cluster rule**: it holds in every
+process whose store is postgres (`persistence.answersAfterCommit()`), one node
+or many, and a commit that FAILS answers the request 503 with `Retry-After`
+(STS-STORE-0066), or an LDAP operation `unavailable` (52, STS-STORE-0067),
+instead of the success its handler wrote. A worker on testidp answered SCIM
+deletes 204 before their write, exited before the retry, and ~600 people came
+back. Rule 1 stays active-active only. `persistence/CLAUDE.md`, *A write is
+answered after its commit*, has the design.
 
 Two rules, argued in `cluster_barrier.js`: a request is served after its node
 has applied everything committed before it arrived (one shared change pull per
@@ -691,6 +710,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |
 | `persistence.tombstone-purge` | cluster, service; ten minutes, registered at the first flush | `persistence/persistence_minted.js` (P5) |
 | `persistence.minted-expiry-purge` | cluster, service; five minutes, registered at start-up in every process, off where minted state is not persisted — deletes from `sts_minted`, in batches of 5000 and at most 20 batches of each kind per run, the rows no start reads any more: past their own `expires_at`, of a realm no longer in `sts_realms` (written over an hour ago), and a `retain: 'age'` store's rows with no expiry older than `persistence.mintedRetention`. The restore used to do the last of these in every process at every start (#333) | `persistence/persistence_minted.js` |
+| `persistence.event-loop-lag` | per-process, quiet; ten seconds, in every process that started its store (any mode) — reads and resets `perf_hooks.monitorEventLoopDelay()`, keeps the window for `/admin/persistence`, warns STS-STORE-0068 past 5 s (#351) | `persistence/persistence.js` |
 | `cluster.cache-report` | per-process, quiet; front processes that joined | `cluster/cluster.js` (P5) |
 | `cluster.node-snapshot` | per-process, quiet; every 15 s, joined front processes of a cluster whose store is shared — writes the node's Worker Pools and Node Health views to `sts_node_snapshots` (#332) | `cluster/node_snapshots.ts` |
 | `cluster.node-snapshot-purge` | cluster, service; hourly, off with no cluster store — deletes the row of a node that is not a live member once its snapshot is older than `cluster.nodeSnapshotRetentionHours` (24); never a live member's, nothing while membership cannot be read (#332) | `cluster/node_snapshots.ts` |

@@ -3042,6 +3042,10 @@ const writes = new Map();        // row key -> { tail, queued, pending }
 // before it answers `pending` (see its header).
 const APPLY_WAIT_ROUNDS = 3;
 const lastOutcome = new Map();   // row key -> what its last write decided
+// row key -> { payload, perform } of a write whose outcome carried `error`,
+// until a later write of the row succeeds (#351). `retryFailed()` queues it
+// again; `failing()` says whether any is waiting.
+const failedWrites = new Map();
 const pkiBase = new Map();       // scope id -> ciphertext last read or written
 const pkiLocalGen = new Map();   // scope id -> attachPki() calls so far
 
@@ -3150,6 +3154,17 @@ function queueWrite(rowKey, payload, perform) {
     return { ok: false, error: (e && e.message) || String(e) };
   }).then(function (outcome) {
     lastOutcome.set(rowKey, outcome);
+    // THE PAYLOAD OF A FAILED WRITE IS KEPT (#351), so the write can be tried
+    // again without anybody attaching the row anew: until then a key set or
+    // a certificate authority that failed to reach the store stayed in memory
+    // only, and a restart generated different keys. A refusal that is an
+    // answer — `not-newer`, a merge that decided — carries no `error` and is
+    // not a failure.
+    if (outcome && outcome.ok === false && outcome.error) {
+      failedWrites.set(rowKey, { payload: entry.payload, perform: perform });
+    } else {
+      failedWrites.delete(rowKey);
+    }
     slot.pending -= 1;
     if (!slot.pending && writes.get(rowKey) === slot) {
       writes.delete(rowKey);
@@ -3188,6 +3203,44 @@ function settle(rowKey) {
   log.debug("Leaving settle().");
   return slot ? slot.tail : Promise.resolve(lastOutcome.get(String(rowKey)) ||
                                             null);
+}
+
+// ---------------------------------------------------------------------------
+// THE ROWS WHOSE LAST WRITE FAILED, AND ONE MORE TRY OF EACH (#351), for
+// `persistence.js`'s retry of a failed write. A row already queued again is
+// left to that write, which carries a newer payload.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether a row's last write failed and no later write has landed.
+ *
+ * @returns true while a failed row waits for its retry
+ */
+function failing() {
+  log.debug("Entering failing().");
+  log.debug("Leaving failing().");
+  return failedWrites.size > 0;
+}
+
+/**
+ * Queues every row whose last write failed once more, with the payload it
+ * failed with.
+ *
+ * @returns how many rows were queued
+ */
+function retryFailed() {
+  log.debug("Entering retryFailed().");
+  let queued = 0;
+  Array.from(failedWrites.keys()).forEach(function (rowKey) {
+    const failed = failedWrites.get(rowKey);
+    failedWrites.delete(rowKey);
+    if (writes.has(rowKey)) {
+      return;
+    }
+    queueWrite(rowKey, failed.payload, failed.perform);
+    queued += 1;
+  });
+  log.debug("Leaving retryFailed(). " + queued + " row(s).");
+  return queued;
 }
 
 /**
@@ -3803,6 +3856,7 @@ function reset() {
   // starts with nothing queued and no base to merge from.
   writes.clear();
   lastOutcome.clear();
+  failedWrites.clear();
   pkiBase.clear();
   pkiLocalGen.clear();
   publisher = null;
@@ -3892,6 +3946,8 @@ module.exports = {
   pendingWrites: pendingWrites,
   settle: settle,
   settleAll: settleAll,
+  failing: failing,
+  retryFailed: retryFailed,
   pkiSettled: pkiSettled,
   report: report
 };

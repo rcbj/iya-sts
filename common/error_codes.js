@@ -1128,8 +1128,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-STORE-0002',
     summary: 'Writing the directory, the realm registry or the settings ' +
-      'overrides to the persistence store failed; the service keeps ' +
-      'answering from memory and retries on the next change.',
+      'overrides to the persistence store failed; the change stays in ' +
+      'memory, the write is retried with a backoff, and in postgres mode ' +
+      'a request whose change was in it is answered 503 (STS-STORE-0066).',
     spec: '' },
   { code: 'STS-STORE-0003',
     summary: 'persistence.mode names a mode the persistence module does not ' +
@@ -1206,8 +1207,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-STORE-0021',
     summary: 'Writing minted state (sessions, tokens, codes, the audit log) ' +
-      'to the store failed; the keys stay journalled and the next ' +
-      'flush retries.',
+      'to the store failed; the keys stay journalled, the write is retried ' +
+      'with a backoff, and in postgres mode a request whose rows were in it ' +
+      'is answered 503 (STS-STORE-0066).',
     spec: '' },
   { code: 'STS-STORE-0022',
     summary: 'The service refused to start: minted state is persisted but no ' +
@@ -1406,6 +1408,33 @@ const CODES = [
       'expired, orphaned or stale minted rows; a start skips them anyway, ' +
       'and the next run tries again.',
     spec: 'none — logged, and the job run is recorded as failed' },
+  { code: 'STS-STORE-0066',
+    summary: 'A request changed the store and the commit of that change ' +
+      'failed, so it was answered 503 with Retry-After instead of its ' +
+      'success (#351); the change is still in memory and its write is ' +
+      'retried.',
+    spec: 'RFC 9110 section 15.6.4' },
+  { code: 'STS-STORE-0067',
+    summary: 'An LDAP operation changed the store and the commit of that ' +
+      'change failed, so it was answered unavailable (52) instead of its ' +
+      'result (#351); the change is still in memory and its write is ' +
+      'retried.',
+    spec: 'RFC 4511 section 4.1.9' },
+  { code: 'STS-STORE-0068',
+    summary: 'This process\'s event loop was blocked past the warning ' +
+      'threshold in the last report window; timers such as the origin ' +
+      'renewal and the cluster heartbeat ran that late too.',
+    spec: 'none — logged' },
+  { code: 'STS-STORE-0069',
+    summary: 'The renewal of this process\'s origin claim started or ' +
+      'answered more than half the claim\'s lifetime late; the line names ' +
+      'the event loop\'s delay, so a lost origin says why.',
+    spec: 'none — logged' },
+  { code: 'STS-STORE-0070',
+    summary: 'The liveness connection (origin renewal, heartbeat, leases) ' +
+      'dropped or could not be opened; the next statement reconnects, and ' +
+      'one that cannot goes through the pool.',
+    spec: 'none — logged' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
@@ -1484,8 +1513,9 @@ const CODES = [
       'copy.',
     spec: '' },
   { code: 'STS-CLUSTER-0019',
-    summary: 'A response held until its writes committed could not commit ' +
-      'them; it is sent anyway and the writes are retried.',
+    summary: 'An outbound message held until this node\'s writes committed ' +
+      'could not commit them; it is sent anyway and the writes are retried. ' +
+      '(A held RESPONSE whose commit fails is STS-STORE-0066 since #351.)',
     spec: '' },
   { code: 'STS-CLUSTER-0020',
     summary: 'Active-active mode is running with capabilities an operator ' +
