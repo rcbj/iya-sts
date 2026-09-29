@@ -1015,11 +1015,15 @@ on Configuration. A realm's own administrator is refused it.
 `/admin/node-health` shows the container this node runs in and every Node.js
 process in it:
 
-* **CPU** — the container's utilisation, measured from its cgroup (v2) over
-  a short interval, as a percentage of its CPU quota; with no quota, of the
-  CPUs the host gives it, which the page says. How often the quota held it
+* **CPU** — the container's utilisation, measured from its cgroup (v2, or
+  v1 as on AWS Fargate — the page says which) over a short interval, as a
+  percentage of its CPU quota. With no quota of its own it is a percentage of
+  the ECS task's vCPUs on Amazon ECS, and of the CPUs the host gives it
+  elsewhere; the page says which. Where the cgroup cannot be read at all but
+  the ECS agent answers, the figures are the agent's, and labelled so. How often the quota held it
   back (throttling) beside it.
-* **Memory** — what the container uses against its limit, and how much of it
+* **Memory** — what the container uses against its limit (the ECS task's
+  memory when the container has none of its own, as on Fargate), and how much of it
   is the processes' own memory, page cache the kernel can reclaim, and the
   kernel's; how many processes the kernel killed at the limit.
 * **Node.js processes** — for the front process, each request and console

@@ -13,7 +13,7 @@
 // the channel and the ECS task metadata endpoint. Its constructor takes each
 // of those as a dependency, so this file hands it a cgroup of its own — a
 // temporary directory of cgroup v2 files it rewrites between samples — a
-// clock it moves, and pools that answer what it says. Eight claims:
+// clock it moves, and pools that answer what it says. Nine claims:
 //
 //   1. CPU UTILISATION is CPU time over wall time against `cpu.max`'s
 //      quota: two samples taken for a first page, the kept sample used by a
@@ -23,7 +23,8 @@
 //   2. NO QUOTA, NO LIMIT: `cpu.max` of `max` is a share of
 //      `os.availableParallelism()` and says so; `memory.max` of `max` gives
 //      no percentage and says so.
-//   3. A SOURCE THAT IS NOT THERE IS A SENTENCE — no cgroup v2, cgroup v1,
+//   3. A SOURCE THAT IS NOT THERE IS A SENTENCE — no cgroup, a v1 host
+//      without a cpuacct controller,
 //      not Linux, no ECS endpoint, an ECS endpoint that does not answer —
 //      and never a zero.
 //   4. THE PROCESS'S OWN CGROUP is found through `/proc/self/cgroup` when the
@@ -41,6 +42,12 @@
 //      with its own figures, the question is not counted as a job, a child
 //      computing a job is absent from a bounded answer, and the page draws
 //      the child from its answer.
+//   9. CGROUP V1 (Fargate's): cpuacct.usage against cfs_quota_us /
+//      cfs_period_us, usage_in_bytes against limit_in_bytes and the rest,
+//      found through controller-named hierarchies; v1's "no limit" sentinel
+//      and a quota of -1 falling back to the ECS TASK's limits, said; no
+//      cgroup at all on ECS drawn from the agent's figures, labelled; and
+//      the cluster totals adding whichever each node reported.
 //
 // Section 5 also holds the children's rows: one that answered with its own
 // five figures, the debugger's api child likewise, a busy one kept as a
@@ -344,10 +351,16 @@ async function checkUnavailable(t) {
           !('currentBytes' in view.memory),
           'no cgroup v2: both unavailable, with a sentence and no figure',
           JSON.stringify([view.cpu, view.memory]));
+  // A cgroup v1 host with a memory controller and no cpuacct: its memory
+  // is read (section 9 has the rest), and the CPU says what is missing.
   const v1 = tree({ 'memory/memory.usage_in_bytes': '1000\n' });
   view = await anInstance(v1).instance.nodeHealthView();
-  t.check(/cgroup v1/.test(view.memory.unavailableText),
-          'a cgroup v1 host is named as one', view.memory.unavailableText);
+  t.check(view.memory.available === true && view.memory.cgroupVersion === 1 &&
+          view.cpu.available === false &&
+          /cpuacct/.test(view.cpu.unavailableText),
+          'a cgroup v1 host is read as one, and a missing controller is said',
+          JSON.stringify([view.memory.cgroupVersion,
+                          view.cpu.unavailableText]));
   view = await anInstance(aCgroup(), { platform: 'darwin' }).instance
     .nodeHealthView();
   t.check(view.cpu.available === false && /not running on Linux/.test(
@@ -832,6 +845,182 @@ async function checkRealPqChild(t) {
   log.debug("Leaving checkRealPqChild().");
 }
 
+// ---------------------------------------------------------------------------
+// 9. CGROUP V1, AND THE ECS TASK'S FIGURES (#329, as Fargate has it).
+// ---------------------------------------------------------------------------
+// A cgroup v1 container: a hierarchy per controller, `cpu,cpuacct` shared,
+// each mounted at the container's own cgroup, and `/proc/self/cgroup`
+// naming paths under them that do not exist inside it.
+function aV1Cgroup(overrides) {
+  log.debug("Entering aV1Cgroup().");
+  const files = Object.assign({
+    'memory/memory.usage_in_bytes': String(512 * MIB) + '\n',
+    'memory/memory.limit_in_bytes': String(1024 * MIB) + '\n',
+    'memory/memory.max_usage_in_bytes': String(700 * MIB) + '\n',
+    'memory/memory.stat': 'cache ' + (90 * MIB) + '\nrss ' + (290 * MIB) +
+      '\ntotal_cache ' + (100 * MIB) + '\ntotal_rss ' + (300 * MIB) + '\n',
+    'memory/memory.oom_control': 'oom_kill_disable 0\nunder_oom 0\n' +
+      'oom_kill 1\n',
+    'memory/memory.kmem.usage_in_bytes': String(10 * MIB) + '\n',
+    'cpu,cpuacct/cpuacct.usage': '10000000000\n',
+    'cpu,cpuacct/cpu.cfs_quota_us': '200000\n',
+    'cpu,cpuacct/cpu.cfs_period_us': '100000\n',
+    'cpu,cpuacct/cpu.stat': 'nr_periods 100\nnr_throttled 4\n' +
+      'throttled_time 2000000000\n'
+  }, overrides || {});
+  Object.keys(files).forEach(function (name) {
+    if (files[name] === null) {
+      delete files[name];
+    }
+  });
+  log.debug("Leaving aV1Cgroup().");
+  return tree(files);
+}
+
+const V1_SELF = '12:memory:/ecs/task/container\n' +
+                '4:cpu,cpuacct:/ecs/task/container\n' +
+                '1:name=systemd:/ecs/task/container\n';
+
+// The ECS agent as Fargate answers: a two-vCPU, 8 GiB task whose container
+// has no memory limit of its own (the agent's number near 2^63).
+function anEcs(opts) {
+  log.debug("Entering anEcs().");
+  const o = opts || {};
+  const answers = {
+    '': { DockerId: 'c1', Limits: { CPU: 2 } },
+    '/task': { Limits: { CPU: 2, Memory: 8192 } },
+    '/task/stats': { c1: {
+      memory_stats: { usage: 3019096064, limit: 9223372036854772000 },
+      cpu_stats: { cpu_usage: { total_usage: 1112000000 },
+                   system_cpu_usage: 40000000000, online_cpus: 2 },
+      precpu_stats: { cpu_usage: { total_usage: 1000000000 },
+                      system_cpu_usage: 36000000000 } } }
+  };
+  log.debug("Leaving anEcs().");
+  return {
+    ecsUri: function () {
+      return 'http://169.254.170.2/v4/c1';
+    },
+    fetchJson: function (url) {
+      if (o.fails) {
+        return Promise.reject(new Error('timeout'));
+      }
+      return Promise.resolve(answers[url.replace(
+        'http://169.254.170.2/v4/c1', '')]);
+    }
+  };
+}
+
+async function checkV1AndEcs(t) {
+  log.debug("Entering checkV1AndEcs().");
+  t.log.info('=== 9. cgroup v1, the task\'s limits where the cgroup has ' +
+             'none, and the ECS agent\'s figures where there is no cgroup ===');
+  // (a) cgroup v1 arithmetic.
+  let dir = aV1Cgroup();
+  let made = anInstance(dir, { procRoot: tree({ 'self/cgroup': V1_SELF }) });
+  made.clock.onSleep = function () {
+    fs.writeFileSync(path.join(dir, 'cpu,cpuacct', 'cpuacct.usage'),
+                     '10500000000\n');
+  };
+  let view = await made.instance.nodeHealthView();
+  t.check(view.cgroupVersion === 1 && view.cpu.cgroupVersion === 1 &&
+          view.memory.cgroupVersion === 1 &&
+          view.cgroup === path.join(dir, 'memory'),
+          'a cgroup v1 container is found through its controller-named ' +
+          'hierarchies, and says it is v1', JSON.stringify({
+            v: view.cgroupVersion, cgroup: view.cgroup }));
+  t.check(view.cpu.available && view.cpu.limitVcpus === 2 &&
+          view.cpu.coresUsed === 1 && view.cpu.utilisationPercent === 50 &&
+          view.cpu.usageSeconds === 10.5 &&
+          view.cpu.throttling.throttledPercentOfPeriods === 4 &&
+          view.cpu.throttling.throttledSeconds === 2 &&
+          /cgroup v1, cpu\.cfs_quota_us \/ cpu\.cfs_period_us/.test(
+            view.cpu.limitText),
+          'v1 CPU: cpuacct.usage in nanoseconds over the window against ' +
+          'cfs_quota_us / cfs_period_us (1 CPU of 2 is 50 %), throttled_time ' +
+          'in nanoseconds', JSON.stringify(view.cpu));
+  t.check(view.memory.available && view.memory.currentBytes === 512 * MIB &&
+          view.memory.limitBytes === 1024 * MIB &&
+          view.memory.utilisationPercent === 50 &&
+          view.memory.anonBytes === 300 * MIB &&
+          view.memory.fileBytes === 100 * MIB &&
+          view.memory.peakBytes === 700 * MIB &&
+          view.memory.kernelBytes === 10 * MIB &&
+          view.memory.oomKills === 1 &&
+          /memory\.limit_in_bytes/.test(view.memory.limitText),
+          'v1 memory: usage_in_bytes against limit_in_bytes, total_rss and ' +
+          'total_cache, max_usage_in_bytes as the peak, oom_control\'s ' +
+          'oom_kill', JSON.stringify(view.memory));
+  // (b) v1 with no limit and no quota, on ECS: the task's limits.
+  dir = aV1Cgroup({ 'memory/memory.limit_in_bytes': '9223372036854771712\n',
+                    'cpu,cpuacct/cpu.cfs_quota_us': '-1\n' });
+  made = anInstance(dir, Object.assign({
+    procRoot: tree({ 'self/cgroup': V1_SELF }) }, anEcs()));
+  made.clock.onSleep = function () {
+    fs.writeFileSync(path.join(dir, 'cpu,cpuacct', 'cpuacct.usage'),
+                     '10500000000\n');
+  };
+  view = await made.instance.nodeHealthView();
+  t.check(view.memory.limitBytes === 8192 * MIB &&
+          view.memory.limitSource === 'ecs-task' &&
+          view.memory.utilisationPercent === 6.3 &&
+          /ECS TASK's, 8192 MiB/.test(view.memory.limitText),
+          'v1\'s "no limit" sentinel falls back to the ECS task\'s 8 GiB, ' +
+          'and says so (512 MiB is 6.3 %)', JSON.stringify(view.memory));
+  t.check(view.cpu.limitVcpus === null && view.cpu.percentOfVcpus === 2 &&
+          view.cpu.limitSource === 'ecs-task' &&
+          view.cpu.utilisationPercent === 50 &&
+          /ECS TASK's 2 vCPU/.test(view.cpu.limitText),
+          'a quota of -1 falls back to the ECS task\'s 2 vCPU',
+          JSON.stringify(view.cpu));
+  t.check(view.ecs.stats.memoryLimitBytes === null &&
+          view.ecs.stats.memoryLimitUnlimited === true,
+          'the agent\'s own "no limit" number is said as none, not drawn',
+          JSON.stringify(view.ecs.stats));
+  const v1Node = view;
+  // (c) No cgroup at all, on ECS: the agent's figures, labelled as its.
+  made = anInstance(tree({ 'nothing': '' }), anEcs());
+  view = await made.instance.nodeHealthView();
+  t.check(view.memory.available && view.memory.fromEcs === true &&
+          view.memory.currentBytes === 3019096064 &&
+          view.memory.limitBytes === 8192 * MIB &&
+          view.memory.utilisationPercent === 35.1 &&
+          /ECS agent/.test(view.memory.limitText) &&
+          /no cgroup/.test(view.memory.cgroupUnavailableText),
+          'no cgroup: memory from the ECS agent, against the task\'s ' +
+          'limit, labelled as ECS\'s', JSON.stringify(view.memory));
+  t.check(view.cpu.available && view.cpu.fromEcs === true &&
+          view.cpu.coresUsed === 0.056 && view.cpu.percentOfVcpus === 2 &&
+          view.cpu.utilisationPercent === 2.8 && view.cpu.sampled === 'ecs',
+          'and CPU from the agent\'s two samples, against the task\'s ' +
+          '2 vCPU (0.056 of 2 is 2.8 %)', JSON.stringify(view.cpu));
+  const page = await (async function () {
+    return made.instance.html(view);
+  })();
+  t.check(/ECS agent/.test(page) && !/Not available/.test(
+    page.slice(page.indexOf('id="cpu"'), page.indexOf('id="processes"'))),
+          'the page draws both from the agent, not as unavailable', '');
+  // (d) The cluster's totals use whichever each node reported.
+  const totals = NodeHealthAdmin.totalsOf([
+    { name: 'a', state: 'live', view: v1Node },
+    { name: 'b', state: 'live', view: view }]);
+  t.check(totals.memoryNodes === 2 &&
+          totals.memoryUsedBytes === 512 * MIB + 3019096064 &&
+          totals.memoryLimitBytes === 16384 * MIB &&
+          totals.cpuNodes === 2 && totals.cpuOf === 4 &&
+          totals.cpuCoresUsed === 1.056,
+          'the cluster totals add a v1 node with the task\'s limit and an ' +
+          'ECS-only node', JSON.stringify(totals));
+  // (e) No cgroup and no ECS: still unavailable, in words.
+  made = anInstance(tree({ 'nothing': '' }), anEcs({ fails: true }));
+  view = await made.instance.nodeHealthView();
+  t.check(!view.memory.available && !view.cpu.available &&
+          /no cgroup/.test(view.memory.unavailableText),
+          'no cgroup and an ECS endpoint that does not answer: unavailable, ' +
+          'said', view.memory.unavailableText);
+  log.debug("Leaving checkV1AndEcs().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await checkTheArithmetic(t);
@@ -840,6 +1029,7 @@ async function run(t) {
   await checkOwnCgroup(t);
   await checkEveryProcess(t);
   await checkEcs(t);
+  await checkV1AndEcs(t);
   try {
     await checkTheChannelAndThePage(t);
     await checkRealPqChild(t);

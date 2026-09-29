@@ -36,6 +36,23 @@
 //     cross-check of the cgroup figures from the agent's side. It needs no
 //     IAM; locally it is absent and the page says so.
 //
+// **CGROUP V1 TOO, AND THE ECS TASK WHERE THE CGROUP IS SILENT (2026-09-28,
+// found on Fargate).** Fargate's platform mounts cgroup v1, so the first
+// deploy drew both container sections as unavailable while the ECS agent
+// answered. v1 is read as v2 is — `cpuacct.usage` (nanoseconds) sampled the
+// same way, against `cpu.cfs_quota_us` / `cpu.cfs_period_us` (-1 is none),
+// `cpu.stat`'s `throttled_time`; `memory.usage_in_bytes` against
+// `memory.limit_in_bytes`, `memory.stat`'s `total_rss` / `total_cache`,
+// `memory.max_usage_in_bytes` as the peak, `memory.oom_control`'s
+// `oom_kill` — each controller found through the hierarchy
+// `/proc/self/cgroup` names it in, and every figure says which version it
+// came from (`cgroupVersion`). A limit that means NONE (v2's `max`, v1's
+// number near 2^63, the agent's own) falls back to the ECS TASK's limit
+// (`/task` Limits), with `limitSource: 'ecs-task'` and a sentence; and where
+// there is no cgroup at all but the agent answers, the container's figures
+// are the agent's (`fromEcs`), labelled as such (`withEcs()`). The cluster
+// totals add whichever each node reported.
+//
 // **NOT `os.totalmem()`, `os.freemem()` OR `os.loadavg()` AS THE
 // CONTAINER'S.** On Fargate they describe the micro-VM the task runs in, and
 // on a workstation the whole machine: a container at its memory limit can
@@ -369,96 +386,243 @@ class NodeHealthAdmin {
     return Math.round(n * 10) / 10;
   }
 
-  /**
-   * Finds the directory of this process's cgroup v2: the one
-   * `/proc/self/cgroup` names under the cgroup root when that directory has
-   * the files (a host, or a container sharing the host's cgroup namespace),
-   * and otherwise the root itself (a container with a cgroup namespace of
-   * its own, where the root is the container).
-   *
-   * @returns `{ dir }`, or `{ dir: null, why }` when there is no cgroup v2
-   */
-  async cgroupDir(): Promise<{ dir: string | null; why: string }> {
-    const { log, cgroupRoot, procRoot, platform } = this.deps;
-    log.debug("Entering NodeHealthAdmin.cgroupDir().");
-    if (platform !== 'linux') {
-      log.debug("Leaving NodeHealthAdmin.cgroupDir(). Not Linux.");
-      return { dir: null, why: 'This node is not running on Linux (' +
-        platform + '), so there are no cgroup files to read.' };
-    }
-    const controllers = await this.read(path.join(cgroupRoot,
-                                                  'cgroup.controllers'));
-    if (controllers.text === null) {
-      const v1 = await this.read(path.join(cgroupRoot, 'memory',
-                                           'memory.usage_in_bytes'));
-      log.debug("Leaving NodeHealthAdmin.cgroupDir(). No cgroup v2.");
-      return { dir: null, why: v1.text !== null
-        ? 'This host mounts cgroup v1 at ' + cgroupRoot + ', not cgroup ' +
-          'v2, and this page reads only cgroup v2.'
-        : 'There is no cgroup v2 at ' + cgroupRoot + ' (' +
-          controllers.why + ').' };
-    }
+  // /proc/self/cgroup, as its lines: `{ controllers, hierarchy, rel }`.
+  private async selfCgroups(): Promise<Json[]> {
+    const { log, procRoot } = this.deps;
+    log.debug("Entering NodeHealthAdmin.selfCgroups().");
     const self = await this.read(path.join(procRoot, 'self', 'cgroup'));
-    const line = String(self.text || '').split('\n').filter(
-      function (one: string): boolean {
-        return one.indexOf('0::') === 0;
-      })[0];
-    const rel = line ? line.slice(3).trim() : '/';
-    if (rel && rel !== '/') {
-      const candidate = path.join(cgroupRoot, rel);
-      const has = await this.read(path.join(candidate, 'memory.current'));
-      if (has.text !== null) {
-        log.debug("Leaving NodeHealthAdmin.cgroupDir(). " + candidate);
-        return { dir: candidate, why: '' };
+    const lines = String(self.text || '').split('\n').map(
+      function (one: string): Json {
+        const m = /^(\d+):([^:]*):(.*)$/.exec(one.trim());
+        return m ? { hierarchy: m[2],
+                     controllers: m[2] ? m[2].split(',') : [],
+                     rel: m[3] || '/' } : null;
+      }).filter(function (one: Json): boolean {
+      return !!one;
+    });
+    log.debug("Leaving NodeHealthAdmin.selfCgroups(). " + lines.length);
+    return lines;
+  }
+
+  // The first of `dirs` holding `file`, or null.
+  private async firstWith(dirs: string[], file: string):
+    Promise<string | null> {
+    const { log } = this.deps;
+    log.debug("Entering NodeHealthAdmin.firstWith(). " + file);
+    const seen = new Set<string>();
+    for (const dir of dirs) {
+      if (seen.has(dir)) {
+        continue;
+      }
+      seen.add(dir);
+      const got = await this.read(path.join(dir, file));
+      if (got.text !== null) {
+        log.debug("Leaving NodeHealthAdmin.firstWith(). " + dir);
+        return dir;
       }
     }
-    log.debug("Leaving NodeHealthAdmin.cgroupDir(). The root.");
-    return { dir: cgroupRoot, why: '' };
+    log.debug("Leaving NodeHealthAdmin.firstWith(). None.");
+    return null;
   }
 
-  // `cpu.stat`'s cumulative usage, and when it was read.
-  private async cpuSample(dir: string):
-    Promise<{ stat: Json | null; atUs: number; why: string }> {
-    const { log, clockUs } = this.deps;
-    log.debug("Entering NodeHealthAdmin.cpuSample().");
-    const read = await this.read(path.join(dir, 'cpu.stat'));
-    const atUs = clockUs();
-    if (read.text === null) {
-      log.debug("Leaving NodeHealthAdmin.cpuSample(). Unreadable.");
-      return { stat: null, atUs: atUs, why: read.why };
+  // A cgroup v1 controller's directory for this process: the hierarchy
+  // `/proc/self/cgroup` names it in (`cpu,cpuacct`) or the controller's own
+  // name, with the process's path under it (a host) or without (a container,
+  // whose hierarchy is mounted at its own cgroup — Fargate's case).
+  private async v1Dir(lines: Json[], controller: string, file: string):
+    Promise<string | null> {
+    const { log, cgroupRoot } = this.deps;
+    log.debug("Entering NodeHealthAdmin.v1Dir(). " + controller);
+    const line = lines.filter(function (one: Json): boolean {
+      return one.controllers.indexOf(controller) >= 0;
+    })[0];
+    const dirs: string[] = [];
+    if (line) {
+      dirs.push(path.join(cgroupRoot, line.hierarchy, line.rel),
+                path.join(cgroupRoot, controller, line.rel),
+                path.join(cgroupRoot, line.hierarchy));
     }
-    const stat = NodeHealthAdmin.keyed(read.text);
-    log.debug("Leaving NodeHealthAdmin.cpuSample().");
-    return { stat: 'usage_usec' in stat ? stat : null, atUs: atUs,
-             why: 'usage_usec' in stat ? '' : 'it has no usage_usec' };
+    dirs.push(path.join(cgroupRoot, controller));
+    if (controller === 'cpu' || controller === 'cpuacct') {
+      dirs.push(path.join(cgroupRoot, 'cpu,cpuacct'),
+                path.join(cgroupRoot, 'cpuacct,cpu'));
+    }
+    const found = await this.firstWith(dirs, file);
+    log.debug("Leaving NodeHealthAdmin.v1Dir(). " + found);
+    return found;
   }
 
   /**
-   * The container's CPU: utilisation over a window, against the quota.
+   * Finds this process's cgroup, and which version it is.
    *
-   * @param dir - the cgroup directory, or null when there is none
-   * @param why - the sentence for no cgroup
+   * CGROUP V2: the directory `/proc/self/cgroup`'s `0::` line names under
+   * the cgroup root when that directory has the files (a host, or a
+   * container sharing the host's cgroup namespace), and otherwise the root
+   * (a container with a namespace of its own, where the root is the
+   * container). CGROUP V1 (#329, 2026-09-28 — Fargate's platform mounts it):
+   * a directory per controller, `memory`, `cpu` and `cpuacct`, found through
+   * the controller-named hierarchies of `/proc/self/cgroup`.
+   *
+   * @returns `{ version, dir }` for v2, `{ version: 1, memoryDir, cpuDir,
+   *   cpuacctDir }` for v1, or `{ version: null, why }` when there is none
+   */
+  async cgroupDir(): Promise<Json> {
+    const { log, cgroupRoot, platform } = this.deps;
+    log.debug("Entering NodeHealthAdmin.cgroupDir().");
+    const none = { version: null, dir: null, memoryDir: null, cpuDir: null,
+                   cpuacctDir: null, why: '' };
+    if (platform !== 'linux') {
+      log.debug("Leaving NodeHealthAdmin.cgroupDir(). Not Linux.");
+      return Object.assign(none, { why: 'This node is not running on ' +
+        'Linux (' + platform + '), so there are no cgroup files to read.' });
+    }
+    const lines = await this.selfCgroups();
+    const controllers = await this.read(path.join(cgroupRoot,
+                                                  'cgroup.controllers'));
+    if (controllers.text !== null) {
+      const unified = lines.filter(function (one: Json): boolean {
+        return !one.hierarchy;
+      })[0];
+      const rel = unified ? unified.rel : '/';
+      let dir = cgroupRoot;
+      if (rel && rel !== '/') {
+        const candidate = path.join(cgroupRoot, rel);
+        const has = await this.read(path.join(candidate, 'memory.current'));
+        if (has.text !== null) {
+          dir = candidate;
+        }
+      }
+      log.debug("Leaving NodeHealthAdmin.cgroupDir(). v2 " + dir);
+      return Object.assign(none, { version: 2, dir: dir });
+    }
+    const memoryDir = await this.v1Dir(lines, 'memory',
+                                       'memory.usage_in_bytes');
+    const cpuacctDir = await this.v1Dir(lines, 'cpuacct', 'cpuacct.usage');
+    const cpuDir = await this.v1Dir(lines, 'cpu', 'cpu.cfs_period_us');
+    if (memoryDir || cpuacctDir) {
+      log.debug("Leaving NodeHealthAdmin.cgroupDir(). v1.");
+      return Object.assign(none, { version: 1, memoryDir: memoryDir,
+                                   cpuDir: cpuDir, cpuacctDir: cpuacctDir });
+    }
+    log.debug("Leaving NodeHealthAdmin.cgroupDir(). None.");
+    return Object.assign(none, { why: 'There is no cgroup at ' + cgroupRoot +
+      ': no cgroup v2 (' + controllers.why + ') and no cgroup v1 memory or ' +
+      'cpuacct controller.' });
+  }
+
+  // The container's cumulative CPU time, as cgroup v2's `cpu.stat` names it
+  // — v1's `cpuacct.usage` (nanoseconds) and `cpu.stat` (`throttled_time`,
+  // nanoseconds) translated — and when it was read.
+  private async cpuSample(where: Json):
+    Promise<{ stat: Json | null; atUs: number; why: string;
+              source: string }> {
+    const { log, clockUs } = this.deps;
+    log.debug("Entering NodeHealthAdmin.cpuSample(). v" + where.version);
+    if (where.version === 2) {
+      const file = path.join(where.dir, 'cpu.stat');
+      const read = await this.read(file);
+      const atUs = clockUs();
+      if (read.text === null) {
+        log.debug("Leaving NodeHealthAdmin.cpuSample(). Unreadable.");
+        return { stat: null, atUs: atUs, why: read.why, source: file };
+      }
+      const stat = NodeHealthAdmin.keyed(read.text);
+      log.debug("Leaving NodeHealthAdmin.cpuSample().");
+      return { stat: 'usage_usec' in stat ? stat : null, atUs: atUs,
+               why: 'usage_usec' in stat ? '' : 'it has no usage_usec',
+               source: file };
+    }
+    if (!where.cpuacctDir) {
+      log.debug("Leaving NodeHealthAdmin.cpuSample(). No cpuacct.");
+      return { stat: null, atUs: clockUs(), source: 'cpuacct.usage',
+               why: 'there is no cgroup v1 cpuacct controller' };
+    }
+    const file = path.join(where.cpuacctDir, 'cpuacct.usage');
+    const usage = await this.read(file);
+    const atUs = clockUs();
+    const ns = usage.text === null ? NaN : Number(usage.text.trim());
+    if (!(ns >= 0)) {
+      log.debug("Leaving NodeHealthAdmin.cpuSample(). Unreadable v1.");
+      return { stat: null, atUs: atUs, source: file,
+               why: usage.text === null ? usage.why : 'it is not a number' };
+    }
+    const stat: Json = { usage_usec: ns / 1000 };
+    if (where.cpuDir) {
+      const cs = await this.read(path.join(where.cpuDir, 'cpu.stat'));
+      const k = cs.text === null ? {} : NodeHealthAdmin.keyed(cs.text);
+      if ('nr_periods' in k) {
+        stat.nr_periods = k.nr_periods;
+        stat.nr_throttled = k.nr_throttled || 0;
+        stat.throttled_usec = (k.throttled_time || 0) / 1000;
+      }
+    }
+    log.debug("Leaving NodeHealthAdmin.cpuSample(). v1.");
+    return { stat: stat, atUs: atUs, why: '', source: file };
+  }
+
+  // The CPU quota in vCPUs: v2's `cpu.max`, v1's `cpu.cfs_quota_us` over
+  // `cpu.cfs_period_us` (-1 is none). `kind`: `quota`, `unlimited` (the file
+  // says none) or `no-file`.
+  private async cpuQuota(where: Json):
+    Promise<{ vcpus: number | null; kind: string; file: string }> {
+    const { log } = this.deps;
+    log.debug("Entering NodeHealthAdmin.cpuQuota().");
+    if (where.version === 2) {
+      const max = await this.read(path.join(where.dir, 'cpu.max'));
+      const q = max.text === null ? null : NodeHealthAdmin.vcpusOf(max.text);
+      log.debug("Leaving NodeHealthAdmin.cpuQuota(). v2.");
+      return { vcpus: q, file: 'cpu.max',
+               kind: q !== null ? 'quota'
+                                : max.text === null ? 'no-file' : 'unlimited' };
+    }
+    if (!where.cpuDir) {
+      log.debug("Leaving NodeHealthAdmin.cpuQuota(). No cpu controller.");
+      return { vcpus: null, kind: 'no-file', file: 'cpu.cfs_quota_us' };
+    }
+    const got = await Promise.all([
+      this.read(path.join(where.cpuDir, 'cpu.cfs_quota_us')),
+      this.read(path.join(where.cpuDir, 'cpu.cfs_period_us'))]);
+    const quota = got[0].text === null ? NaN : Number(got[0].text.trim());
+    const period = got[1].text === null ? NaN : Number(got[1].text.trim());
+    log.debug("Leaving NodeHealthAdmin.cpuQuota(). v1.");
+    if (got[0].text === null) {
+      return { vcpus: null, kind: 'no-file', file: 'cpu.cfs_quota_us' };
+    }
+    return quota > 0 && period > 0
+      ? { vcpus: quota / period, kind: 'quota',
+          file: 'cpu.cfs_quota_us / cpu.cfs_period_us' }
+      : { vcpus: null, kind: 'unlimited', file: 'cpu.cfs_quota_us' };
+  }
+
+  /**
+   * The container's CPU: utilisation over a window, against the quota — from
+   * cgroup v2 or v1, whichever this node has.
+   *
+   * @param where - `cgroupDir()`'s answer
    * @returns the CPU view
    */
-  async cpuView(dir: string | null, why: string): Promise<Json> {
+  async cpuView(where: Json): Promise<Json> {
     const { log, sleep, sampleMs, availableParallelism } = this.deps;
     log.debug("Entering NodeHealthAdmin.cpuView().");
-    if (!dir) {
+    if (!where || !where.version) {
       log.debug("Leaving NodeHealthAdmin.cpuView(). No cgroup.");
-      return { available: false, unavailableText: why };
+      return { available: false, cgroupVersion: null,
+               unavailableText: where ? where.why : 'No cgroup.' };
     }
-    let current = await this.cpuSample(dir);
+    const key = where.version + ':' + (where.dir || where.cpuacctDir);
+    let current = await this.cpuSample(where);
     if (!current.stat) {
-      log.debug("Leaving NodeHealthAdmin.cpuView(). No cpu.stat.");
-      return { available: false, source: path.join(dir, 'cpu.stat'),
+      log.debug("Leaving NodeHealthAdmin.cpuView(). No CPU time.");
+      return { available: false, cgroupVersion: where.version,
+               source: current.source,
                unavailableText: 'The container\'s CPU time cannot be read: ' +
-                 path.join(dir, 'cpu.stat') + ' — ' + current.why + '.' };
+                 current.source + ' — ' + current.why + '.' };
     }
     const kept = this.lastCpu;
     let previous: { usageUsec: number; atUs: number };
     let how: string;
-    const age = kept && kept.dir === dir ? current.atUs - kept.atUs : -1;
-    if (kept && kept.dir === dir && age >= MIN_WINDOW_US &&
+    const age = kept && kept.dir === key ? current.atUs - kept.atUs : -1;
+    if (kept && kept.dir === key && age >= MIN_WINDOW_US &&
         age <= MAX_WINDOW_US &&
         current.stat.usage_usec >= kept.usageUsec) {
       previous = kept;
@@ -467,38 +631,41 @@ class NodeHealthAdmin {
       previous = { usageUsec: current.stat.usage_usec,
                    atUs: current.atUs };
       await sleep(sampleMs);
-      const second = await this.cpuSample(dir);
+      const second = await this.cpuSample(where);
       if (!second.stat) {
         log.debug("Leaving NodeHealthAdmin.cpuView(). Second read failed.");
-        return { available: false, source: path.join(dir, 'cpu.stat'),
+        return { available: false, cgroupVersion: where.version,
+                 source: second.source,
                  unavailableText: 'The container\'s CPU time could be read ' +
                    'once and not a second time: ' + second.why + '.' };
       }
       current = second;
       how = 'fresh-sample';
     }
-    this.lastCpu = { dir: dir, usageUsec: current.stat.usage_usec,
+    this.lastCpu = { dir: key, usageUsec: current.stat.usage_usec,
                      atUs: current.atUs };
     const windowUs = Math.max(1, current.atUs - previous.atUs);
     const usedUs = Math.max(0, current.stat.usage_usec - previous.usageUsec);
     const cores = usedUs / windowUs;
-    const max = await this.read(path.join(dir, 'cpu.max'));
-    const quota = max.text === null ? null : NodeHealthAdmin.vcpusOf(max.text);
+    const q = await this.cpuQuota(where);
     const hostCpus = availableParallelism();
-    const vcpus = quota === null ? hostCpus : quota;
+    const vcpus = q.vcpus === null ? hostCpus : q.vcpus;
+    const version = 'cgroup v' + where.version;
     let limitText: string;
-    if (quota !== null) {
-      limitText = 'The container may use ' + NodeHealthAdmin.round1(quota) +
-        ' vCPU (cpu.max), and the percentage is of that.';
-    } else if (max.text === null) {
-      limitText = 'This cgroup has no cpu.max, so it has no CPU quota of ' +
-        'its own; the percentage is of the ' + hostCpus + ' CPU(s) node ' +
-        'reports available (os.availableParallelism()).';
-    } else {
-      limitText = 'No CPU quota (cpu.max is "max"): the container may use ' +
-        'every CPU the host gives it, and the percentage is of the ' +
+    if (q.kind === 'quota') {
+      limitText = 'The container may use ' +
+        NodeHealthAdmin.round1(q.vcpus as number) + ' vCPU (' + version +
+        ', ' + q.file + '), and the percentage is of that.';
+    } else if (q.kind === 'no-file') {
+      limitText = 'This cgroup (' + version + ') has no ' + q.file + ', so ' +
+        'it has no CPU quota of its own; the percentage is of the ' +
         hostCpus + ' CPU(s) node reports available ' +
         '(os.availableParallelism()).';
+    } else {
+      limitText = 'No CPU quota (' + version + ', ' + q.file + ' says ' +
+        'none): the container may use every CPU the host gives it, and the ' +
+        'percentage is of the ' + hostCpus + ' CPU(s) node reports ' +
+        'available (os.availableParallelism()).';
     }
     const s = current.stat;
     const throttling = 'nr_periods' in s
@@ -512,11 +679,13 @@ class NodeHealthAdmin {
       : null;
     const view = {
       available: true,
-      source: path.join(dir, 'cpu.stat'),
-      limitVcpus: quota === null ? null : quota,
-      limitSource: quota !== null ? 'cpu.max'
-                                  : max.text === null ? 'no-cpu.max'
-                                                      : 'unlimited',
+      cgroupVersion: where.version,
+      source: current.source,
+      limitVcpus: q.vcpus,
+      limitSource: q.kind === 'quota' ? (where.version === 2 ? 'cpu.max'
+                                                             : 'cpu.cfs')
+                   : q.kind === 'no-file' ? 'no-' + q.file.split(' ')[0]
+                                          : 'unlimited',
       percentOfVcpus: vcpus,
       limitText: limitText,
       sampled: how,
@@ -530,7 +699,7 @@ class NodeHealthAdmin {
         ? NodeHealthAdmin.round1(s.system_usec / 1e6) : null,
       throttling: throttling,
       throttlingText: throttling ? null
-        : 'cpu.stat has no throttling counters: with no quota there is ' +
+        : 'The cgroup has no throttling counters: with no quota there is ' +
           'nothing to throttle against.'
     };
     log.debug("Leaving NodeHealthAdmin.cpuView().");
@@ -538,69 +707,224 @@ class NodeHealthAdmin {
   }
 
   /**
-   * The container's memory: `memory.current` against `memory.max`, and what
-   * `memory.stat` says it is made of.
+   * Whether a memory limit is one that means "none": v2's `max` is not a
+   * number at all, but v1's `memory.limit_in_bytes` and the ECS agent's
+   * container limit say none with a number near 2^63 (9223372036854771712).
    *
-   * @param dir - the cgroup directory, or null when there is none
-   * @param why - the sentence for no cgroup
+   * @param bytes - the limit
+   * @returns true for no limit
+   */
+  static unlimitedBytes(bytes: number): boolean {
+    helpers.log.debug("Entering NodeHealthAdmin.unlimitedBytes().");
+    helpers.log.debug("Leaving NodeHealthAdmin.unlimitedBytes().");
+    return !(bytes > 0) || bytes >= Math.pow(2, 60);
+  }
+
+  // A file's text as a whole number, or null.
+  private static numberOf(got: { text: string | null }): number | null {
+    helpers.log.debug("Entering NodeHealthAdmin.numberOf().");
+    helpers.log.debug("Leaving NodeHealthAdmin.numberOf().");
+    return got.text !== null && /^\d+$/.test(got.text.trim())
+      ? Number(got.text.trim()) : null;
+  }
+
+  /**
+   * The container's memory, from cgroup v2 (`memory.current` against
+   * `memory.max`, `memory.stat`, `memory.peak`, `memory.events`) or v1
+   * (`memory.usage_in_bytes` against `memory.limit_in_bytes`, `memory.stat`'s
+   * rss and cache, `memory.max_usage_in_bytes`, `memory.oom_control`).
+   *
+   * @param where - `cgroupDir()`'s answer
    * @returns the memory view
    */
-  async memoryView(dir: string | null, why: string): Promise<Json> {
+  async memoryView(where: Json): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering NodeHealthAdmin.memoryView().");
-    if (!dir) {
+    if (!where || !where.version) {
       log.debug("Leaving NodeHealthAdmin.memoryView(). No cgroup.");
-      return { available: false, unavailableText: why };
+      return { available: false, cgroupVersion: null,
+               unavailableText: where ? where.why : 'No cgroup.' };
     }
-    const files = await Promise.all(['memory.current', 'memory.max',
-      'memory.stat', 'memory.peak', 'memory.events'].map((name: string) =>
-      this.read(path.join(dir, name))));
-    const current = files[0];
-    if (current.text === null || !/^\d+/.test(current.text.trim())) {
-      log.debug("Leaving NodeHealthAdmin.memoryView(). No memory.current.");
-      return { available: false, source: path.join(dir, 'memory.current'),
+    const v2 = where.version === 2;
+    const dir = v2 ? where.dir : where.memoryDir;
+    if (!dir) {
+      log.debug("Leaving NodeHealthAdmin.memoryView(). No v1 memory.");
+      return { available: false, cgroupVersion: 1,
+               unavailableText: 'This cgroup v1 host has no memory ' +
+                 'controller for this process.' };
+    }
+    const names = v2
+      ? ['memory.current', 'memory.max', 'memory.stat', 'memory.peak',
+         'memory.events', '']
+      : ['memory.usage_in_bytes', 'memory.limit_in_bytes', 'memory.stat',
+         'memory.max_usage_in_bytes', 'memory.oom_control',
+         'memory.kmem.usage_in_bytes'];
+    const files = await Promise.all(names.map((name: string) =>
+      name ? this.read(path.join(dir, name))
+           : Promise.resolve({ text: null, why: '' })));
+    const source = path.join(dir, names[0]);
+    const used = NodeHealthAdmin.numberOf(files[0]);
+    if (used === null) {
+      log.debug("Leaving NodeHealthAdmin.memoryView(). No usage.");
+      return { available: false, cgroupVersion: where.version,
+               source: source,
                unavailableText: 'The container\'s memory cannot be read: ' +
-                 path.join(dir, 'memory.current') + ' — ' +
-                 (current.why || 'it is not a number') + '.' };
+                 source + ' — ' + (files[0].why || 'it is not a number') +
+                 '.' };
     }
-    const used = Number(current.text.trim());
     const maxText = files[1].text === null ? null : files[1].text.trim();
-    const limit = maxText !== null && /^\d+$/.test(maxText)
-      ? Number(maxText) : null;
+    const raw = NodeHealthAdmin.numberOf(files[1]);
+    const limit = raw !== null && !NodeHealthAdmin.unlimitedBytes(raw)
+      ? raw : null;
     const stat = files[2].text === null ? null
                                         : NodeHealthAdmin.keyed(files[2].text);
     const events = files[4].text === null
       ? null : NodeHealthAdmin.keyed(files[4].text);
-    const peak = files[3].text !== null && /^\d+$/.test(files[3].text.trim())
-      ? Number(files[3].text.trim()) : null;
+    const pick = function (keys: string[]): number | null {
+      helpers.log.debug("Entering pick().");
+      helpers.log.debug("Leaving pick().");
+      const k = keys.filter(function (one: string): boolean {
+        return !!stat && one in stat;
+      })[0];
+      return k ? (stat as Json)[k] : null;
+    };
+    const version = 'cgroup v' + where.version;
+    const limitName = names[1];
     const view = {
       available: true,
-      source: path.join(dir, 'memory.current'),
+      cgroupVersion: where.version,
+      source: source,
       currentBytes: used,
       limitBytes: limit,
+      limitSource: limit !== null ? limitName
+                                  : maxText === null ? 'no-' + limitName
+                                                     : 'unlimited',
       limitText: limit !== null
-        ? 'The container may use ' + (limit / MIB).toFixed(0) + ' MiB ' +
-          '(memory.max).'
+        ? 'The container may use ' + (limit / MIB).toFixed(0) + ' MiB (' +
+          version + ', ' + limitName + ').'
         : maxText === null
-          ? 'This cgroup has no memory.max, so it has no memory limit of ' +
-            'its own and there is no percentage to give.'
-          : 'No memory limit (memory.max is "max"), so there is no ' +
-            'percentage to give.',
+          ? 'This cgroup (' + version + ') has no ' + limitName + ', so it ' +
+            'has no memory limit of its own and there is no percentage to ' +
+            'give.'
+          : 'No memory limit (' + version + ', ' + limitName + ' says ' +
+            'none), so there is no percentage to give.',
       utilisationPercent: limit ? NodeHealthAdmin.round1(100 * used / limit)
                                 : null,
-      peakBytes: peak,
-      anonBytes: stat && 'anon' in stat ? stat.anon : null,
-      fileBytes: stat && 'file' in stat ? stat.file : null,
-      kernelBytes: stat && 'kernel' in stat ? stat.kernel : null,
-      statText: stat ? 'anon is the processes\' own memory; file is page ' +
+      peakBytes: NodeHealthAdmin.numberOf(files[3]),
+      anonBytes: v2 ? pick(['anon']) : pick(['total_rss', 'rss']),
+      fileBytes: v2 ? pick(['file']) : pick(['total_cache', 'cache']),
+      kernelBytes: v2 ? pick(['kernel']) : NodeHealthAdmin.numberOf(files[5]),
+      statText: stat ? (v2 ? 'anon' : 'rss') + ' is the processes\' own ' +
+                       'memory; ' + (v2 ? 'file' : 'cache') + ' is page ' +
                        'cache the kernel reclaims under pressure before it ' +
                        'kills anything.'
                      : 'memory.stat cannot be read, so what the memory is ' +
                        'made of is not known.',
       oomKills: events && 'oom_kill' in events ? events.oom_kill : null
     };
-    log.debug("Leaving NodeHealthAdmin.memoryView().");
+    log.debug("Leaving NodeHealthAdmin.memoryView(). " + version);
     return view;
+  }
+
+  /**
+   * Gives the container's figures what only the ECS agent knows (#329, on
+   * Fargate): where the cgroup says there is no limit — v2's `max`, v1's
+   * sentinel — the limit is the ECS TASK's (`/task` Limits), and the page
+   * says so; and where there is no cgroup to read at all, the container's
+   * memory and CPU are the agent's own (`/task/stats`), labelled as ECS's.
+   *
+   * @param cpu - the CPU view
+   * @param memory - the memory view
+   * @param ecs - the ECS view
+   * @returns `{ cpu, memory }`, new objects
+   */
+  static withEcs(cpu: Json, memory: Json, ecs: Json): Json {
+    helpers.log.debug("Entering NodeHealthAdmin.withEcs().");
+    const round1 = NodeHealthAdmin.round1;
+    const outCpu = Object.assign({}, cpu);
+    const outMem = Object.assign({}, memory);
+    const task = ecs && ecs.available && ecs.taskLimits ? ecs.taskLimits : {};
+    const stats = ecs && ecs.available && ecs.stats ? ecs.stats : null;
+    const taskCpu = Number(task.cpuVcpus) > 0 ? Number(task.cpuVcpus) : null;
+    const taskMem = Number(task.memoryMiB) > 0
+      ? Number(task.memoryMiB) * MIB : null;
+    if (!outMem.available && stats && typeof stats.memoryUsageBytes ===
+        'number') {
+      const lim = typeof stats.memoryLimitBytes === 'number'
+        ? stats.memoryLimitBytes : taskMem;
+      Object.assign(outMem, {
+        available: true, fromEcs: true, source: 'ECS /task/stats',
+        cgroupUnavailableText: memory.unavailableText || null,
+        unavailableText: undefined,
+        currentBytes: stats.memoryUsageBytes, limitBytes: lim,
+        limitSource: typeof stats.memoryLimitBytes === 'number'
+          ? 'ecs-container' : lim ? 'ecs-task' : 'none',
+        limitText: 'From the ECS agent (/task/stats), because the cgroup ' +
+          'cannot be read here. ' + (typeof stats.memoryLimitBytes ===
+          'number' ? 'The limit is the container\'s, as the agent reports it.'
+          : lim ? 'The container has no limit of its own, so the limit is ' +
+                  'the ECS TASK\'s, ' + (lim / MIB).toFixed(0) + ' MiB.'
+                : 'There is no limit to measure against.'),
+        utilisationPercent: lim ? round1(100 * stats.memoryUsageBytes / lim)
+                                : null,
+        peakBytes: null, anonBytes: null, fileBytes: null, kernelBytes: null,
+        oomKills: null,
+        statText: 'The ECS agent reports the total only.'
+      });
+    } else if (outMem.available && outMem.limitBytes === null && taskMem) {
+      Object.assign(outMem, {
+        limitBytes: taskMem, limitSource: 'ecs-task',
+        limitText: 'The container has no memory limit of its own (cgroup ' +
+          'v' + outMem.cgroupVersion + '), so the limit is the ECS TASK\'s, ' +
+          (taskMem / MIB).toFixed(0) + ' MiB (/task Limits.Memory), and the ' +
+          'percentage is of that.',
+        utilisationPercent: round1(100 * outMem.currentBytes / taskMem)
+      });
+    }
+    if (!outCpu.available && stats && typeof stats.cpuCoresUsed ===
+        'number') {
+      Object.assign(outCpu, {
+        available: true, fromEcs: true, source: 'ECS /task/stats',
+        cgroupUnavailableText: cpu.unavailableText || null,
+        unavailableText: undefined,
+        coresUsed: stats.cpuCoresUsed, limitVcpus: taskCpu,
+        percentOfVcpus: taskCpu,
+        limitSource: taskCpu ? 'ecs-task' : 'none',
+        limitText: 'From the ECS agent (/task/stats), between its last two ' +
+          'samples, because the cgroup cannot be read here' + (taskCpu
+            ? '; the percentage is of the ECS TASK\'s ' + taskCpu + ' vCPU.'
+            : '; the task names no CPU limit, so there is no percentage.'),
+        utilisationPercent: taskCpu ? round1(100 * stats.cpuCoresUsed /
+                                             taskCpu) : null,
+        sampled: 'ecs', windowSeconds: null, usageSeconds: null,
+        userSeconds: null, systemSeconds: null, throttling: null,
+        throttlingText: 'The ECS agent does not report throttling.'
+      });
+    } else if (outCpu.available && outCpu.limitVcpus === null && taskCpu) {
+      Object.assign(outCpu, {
+        percentOfVcpus: taskCpu, limitSource: 'ecs-task',
+        limitText: 'The container has no CPU quota of its own (cgroup v' +
+          outCpu.cgroupVersion + '), so the percentage is of the ECS ' +
+          'TASK\'s ' + taskCpu + ' vCPU (/task Limits.CPU).',
+        utilisationPercent: round1(100 * outCpu.coresUsed / taskCpu)
+      });
+    }
+    helpers.log.debug("Leaving NodeHealthAdmin.withEcs().");
+    return { cpu: NodeHealthAdmin.scrubUndefined(outCpu),
+             memory: NodeHealthAdmin.scrubUndefined(outMem) };
+  }
+
+  // A copy without the members set to undefined.
+  private static scrubUndefined(o: Json): Json {
+    helpers.log.debug("Entering NodeHealthAdmin.scrubUndefined().");
+    const out: Json = {};
+    Object.keys(o).forEach(function (k: string): void {
+      if (o[k] !== undefined) {
+        out[k] = o[k];
+      }
+    });
+    helpers.log.debug("Leaving NodeHealthAdmin.scrubUndefined().");
+    return out;
   }
 
   // `/proc/<pid>/status`'s resident size and its high-water mark.
@@ -887,7 +1211,12 @@ class NodeHealthAdmin {
       figures = {
         read: stats.read || null,
         memoryUsageBytes: typeof ms.usage === 'number' ? ms.usage : null,
-        memoryLimitBytes: typeof ms.limit === 'number' ? ms.limit : null,
+        // The agent says "no limit" with a number near 2^63, as cgroup v1
+        // does; that is not a limit, and is said as one here (#329).
+        memoryLimitBytes: typeof ms.limit === 'number' &&
+          !NodeHealthAdmin.unlimitedBytes(ms.limit) ? ms.limit : null,
+        memoryLimitUnlimited: typeof ms.limit === 'number' &&
+          NodeHealthAdmin.unlimitedBytes(ms.limit),
         cpuCoresUsed: cores === null ? null : Math.round(cores * 1000) / 1000,
         cpuPercentOfTaskLimit: cores !== null && taskCpu
           ? NodeHealthAdmin.round1(100 * cores / taskCpu) : null
@@ -969,8 +1298,8 @@ class NodeHealthAdmin {
     });
     const where = await this.cgroupDir();
     const got = await Promise.all([
-      this.cpuView(where.dir, where.why),
-      this.memoryView(where.dir, where.why),
+      this.cpuView(where),
+      this.memoryView(where),
       asking ? pool.askWorkerPoolStatus(ASK_WORKERS_MS,
                                         { childMemory: ASK_CHILDREN_MS })
              : Promise.resolve({}),
@@ -980,6 +1309,9 @@ class NodeHealthAdmin {
     ]);
     const processes = await this.processesView(stats, got[2] || {},
                                                got[4] || {}, got[5]);
+    // The ECS task's limits where the cgroup has none, and the agent's own
+    // figures where there is no cgroup to read (#329, Fargate).
+    const container = NodeHealthAdmin.withEcs(got[0], got[1], got[3]);
     const view = {
       generatedAt: new Date(now()).toISOString(),
       node: node,
@@ -988,9 +1320,10 @@ class NodeHealthAdmin {
       scopeText: 'These are the figures of the node ' + node + ' — its ' +
         'container — drawn by its front process, pid ' + pid + '. Every ' +
         'node of a cluster is a container of its own, with its own figures.',
-      cgroup: where.dir,
-      cpu: got[0],
-      memory: got[1],
+      cgroup: where.dir || where.memoryDir || null,
+      cgroupVersion: where.version,
+      cpu: container.cpu,
+      memory: container.memory,
       processes: processes,
       ecs: got[3],
       machine: Object.assign({
@@ -1148,6 +1481,18 @@ class NodeHealthAdmin {
         admin.esc(cpu.unavailableText) + '</p>';
     }
     const t = cpu.throttling;
+    if (cpu.fromEcs) {
+      const ecsHtml = head + '<p>' + admin.esc(cpu.limitText) + '</p>' +
+        this.rows([
+          ['Utilisation', admin.esc(this.pct(cpu.utilisationPercent)),
+           admin.esc(cpu.coresUsed) + ' CPU(s)' + (cpu.percentOfVcpus
+             ? ' of ' + admin.esc(cpu.percentOfVcpus) : '') +
+           ', as the ECS agent measured it']
+        ]) + '<p><small>The cgroup: ' +
+        admin.esc(cpu.cgroupUnavailableText || '') + '</small></p>';
+      log.debug("Leaving NodeHealthAdmin.cpuHtml(). From ECS.");
+      return ecsHtml;
+    }
     const html = head + '<p>' + admin.esc(cpu.limitText) + '</p>' +
       this.rows([
         ['Utilisation', admin.esc(this.pct(cpu.utilisationPercent)),
@@ -1167,8 +1512,8 @@ class NodeHealthAdmin {
              'periods, ' + admin.esc(t.throttledSeconds) + ' s held back ' +
              'by the quota'
            : admin.esc(cpu.throttlingText)]
-      ]) + '<p><small>From <code>' + admin.esc(cpu.source) +
-      '</code>.</small></p>';
+      ]) + '<p><small>From cgroup v' + admin.esc(cpu.cgroupVersion) +
+      ', <code>' + admin.esc(cpu.source) + '</code>.</small></p>';
     log.debug("Leaving NodeHealthAdmin.cpuHtml().");
     return html;
   }
@@ -1199,10 +1544,13 @@ class NodeHealthAdmin {
          'the kernel\'s own structures on the container\'s behalf'],
         ['Killed for memory', m.oomKills === null ? '—'
                                                   : admin.esc(m.oomKills),
-         'processes the kernel killed at the limit (memory.events ' +
-         'oom_kill)']
-      ]) + '<p><small>' + admin.esc(m.statText) + ' From <code>' +
-      admin.esc(m.source) + '</code>.</small></p>';
+         'processes the kernel killed at the limit (oom_kill, in ' +
+         'memory.events or v1\'s memory.oom_control)']
+      ]) + '<p><small>' + admin.esc(m.statText) + ' From ' +
+      (m.fromEcs ? 'the ECS agent, because the cgroup cannot be read: ' +
+                   admin.esc(m.cgroupUnavailableText || '')
+                 : 'cgroup v' + admin.esc(m.cgroupVersion) + ', <code>' +
+                   admin.esc(m.source) + '</code>') + '.</small></p>';
     log.debug("Leaving NodeHealthAdmin.memoryHtml().");
     return html;
   }
@@ -1272,7 +1620,9 @@ class NodeHealthAdmin {
                      limits.memoryMiB === null
                        ? '—' : limits.memoryMiB) + ' MiB', '/task'],
         ['Memory', admin.esc(this.mib(s.memoryUsageBytes)),
-         'of ' + admin.esc(this.mib(s.memoryLimitBytes)) + ', /task/stats'],
+         (s.memoryLimitUnlimited ? 'no container limit (the agent\'s "none")'
+            : 'of ' + admin.esc(this.mib(s.memoryLimitBytes))) +
+         ', /task/stats'],
         ['CPU', s.cpuCoresUsed === null || s.cpuCoresUsed === undefined
            ? '—' : admin.esc(s.cpuCoresUsed) + ' CPU(s)',
          admin.esc(this.pct(s.cpuPercentOfTaskLimit)) + ' of the task\'s ' +
