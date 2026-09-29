@@ -1981,6 +1981,7 @@ class Authn {
       events: []
     };
     const cookieValue = this.mintSessionHandle(session);
+    this.makeRoomForSession(sessions.realmMap(), sessionId);
     sessions.set(sessionId, session);
     this.setCookieHeader(res, this.sessionCookieLine(SESSION_COOKIE,
                                                      cookieValue));
@@ -2436,6 +2437,7 @@ class Authn {
       calls: 1
     };
     const cookieValue = this.mintSessionHandle(session);
+    this.makeRoomForSession(store, sessionId);
     store.set(sessionId, session);
     this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
                                                           cookieValue));
@@ -3059,6 +3061,11 @@ class Authn {
     // away too long" and "your session is an hour old" are different things to
     // tell somebody, and a receiver may treat them differently.
     const idle = why === 'idle';
+    // THE THIRD WAY A SESSION RUNS OUT (#345): the realm's store was full
+    // (`authn.maxSessions`) when another session was created, and this was
+    // the least recently used. A policy ending a session nobody signed out
+    // of, exactly as an expiry is, so it takes this same end.
+    const evicted = why === 'capacity';
     store.delete(id);
     // THE BACK-CHANNEL LOGOUT TOKENS, ON AN EXPIRY TOO (2026-09-17, #36
     // follow-up) — while `oauth2.backchannelLogoutOnExpiry` is on, which it is
@@ -3070,14 +3077,18 @@ class Authn {
     // sweep, an idle timeout noticed on a later request — has no page to
     // draw one on.
     const planned = this.backchannelOnExpiry()
-      ? this.planBackchannel(session, idle
-          ? 'the session went idle (authn.sessionIdleTimeoutS)'
-          : 'the session expired (authn.sessionLifetimeS)', 'expiry')
+      ? this.planBackchannel(session, evicted
+          ? 'the realm held authn.maxSessions sessions and this was the ' +
+            'least recently used'
+          : idle
+            ? 'the session went idle (authn.sessionIdleTimeoutS)'
+            : 'the session expired (authn.sessionLifetimeS)', 'expiry')
       : [];
     // THE REPORT ONCE FOR THE CLUSTER; the delete above is this process's own.
     // See sessionEndOnce().
     this.sessionEndOnce(id, function () {
-      self.reportExpiry(id, session, via, idle);
+      self.reportExpiry(id, session, via, evicted ? 'capacity'
+                                                  : (idle ? 'idle' : ''));
       self.dispatchBackchannel(planned);
     });
     log.debug("Leaving Authn.expireSession().");
@@ -3149,10 +3160,14 @@ class Authn {
 
   // The audit row and the event for an expiry — what sessionEndOnce() lets out
   // once for the cluster. Split from expireSession() for that reason only.
-  private reportExpiry(id, session, via, idle) {
+  // `kind` is 'idle', 'capacity' (#345: ended to keep the realm under
+  // `authn.maxSessions`) or '' for the absolute expiry.
+  private reportExpiry(id, session, via, kind) {
     const { log, audit } = this.deps;
     log.debug("Entering Authn.reportExpiry(). id=" + id);
-    audit.audit({
+    const idle = kind === 'idle';
+    const evicted = kind === 'capacity';
+    const row: any = {
       action: 'session.end',
       outcome: 'success',
       actor: (session && session.user && session.user.username) || '',
@@ -3161,21 +3176,32 @@ class Authn {
       target: id,
       summary: ((session && session.user &&
                  session.user.username) || 'somebody') +
-               '\'s session ' + id + ' expired and was discarded',
+               '\'s session ' + id + (evicted
+                 ? ' was ended to make room: the realm held ' +
+                   'authn.maxSessions sessions'
+                 : ' expired and was discarded'),
       detail: {
         sessionId: id,
         // Not "signed out": nobody asked for this and no browser was involved.
         // A receiver told the session was established has to be able to tell
         // the two apart, which is what `initiating_entity` carries in the
         // event.
-        reason: idle
-          ? 'the session went unused for longer than authn.sessionIdleTimeoutS'
-          : 'the session lifetime ran out',
+        reason: evicted
+          ? 'the realm held authn.maxSessions sessions when another was ' +
+            'created, and this one was the least recently used'
+          : idle
+            ? 'the session went unused for longer than ' +
+              'authn.sessionIdleTimeoutS'
+            : 'the session lifetime ran out',
         noticedBy: via,
         expiresAt: session && session.expires
           ? new Date(session.expires).toISOString() : ''
       }
-    });
+    };
+    if (evicted) {
+      row.errorCode = 'STS-AUTHN-0292';
+    }
+    audit.audit(row);
     // THE EVENT. `revoked` is CAEP's word for a session that is no longer good,
     // and an expiry is exactly that — the observer decides what to send and
     // this says what happened.
@@ -3190,7 +3216,11 @@ class Authn {
     this.notifySession('revoked', session, {
       via: via, byAdmin: false, expired: true,
       initiatingEntity: 'policy',
-      reason: idle
+      reason: evicted
+        ? 'This service holds a bounded number of sessions, it was full, ' +
+          'and this was the session least recently used. Nobody signed ' +
+          'out — this service stopped honouring it to make room.'
+        : idle
         ? 'The session went unused for longer than this service\'s idle ' +
           'timeout. Nobody signed out — this service stopped honouring a ' +
           'session nobody was using.'
@@ -3257,6 +3287,110 @@ class Authn {
     }
     log.debug("Leaving Authn.sweepExpiredSessions(). " + gone + " ended.");
     return gone;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIZE CAP (#345): `authn.maxSessions` per realm, checked where a
+  // session is CREATED, because a bound cannot wait for the expiry job (root
+  // CLAUDE.md, *Anything periodic is a scheduler job*). Called by the three
+  // doors that add a key to the store — `startArrivalSession()`,
+  // `startRelyingPartySession()` and `startSessionHere()` — before the set;
+  // a write back to a session that already exists is not an insert and
+  // passes.
+  //
+  // **AT THE CAP THE LEAST RECENTLY USED SESSION ENDS, through
+  // `expireSession()`** — the one end an expiry takes: the delete, the
+  // back-channel Logout Tokens planned, and, once for the cluster, the audit
+  // row (carrying STS-AUTHN-0292) and CAEP session-revoked. Nothing is
+  // dropped silently; the person behind it signs in again.
+  //
+  // **"LEAST RECENTLY USED" IS `lastSeenAt`, falling back to `startedAt`**,
+  // because that is what the row tracks. Oldest-by-creation would end a
+  // console operator's session while a burst of arrivals from nobody sat
+  // behind it. `lastSeenAt` is stamped at creation, at every sign-in on the
+  // session, on every call an API client makes, and — while an idle timeout
+  // is in force — on every use (`noteSessionUsed()`); with no idle timeout a
+  // browser read writes nothing (a read must not be a write to a persisted
+  // store), so it is then "last authenticated", which is still the better
+  // order. Map order would be free and is creation order, which is the
+  // wrong question.
+  //
+  // **O(n) in the realm's sessions, and only at the cap** — the ordinary
+  // insert asks `size` and nothing else. When the cap was LOWERED below the
+  // store's size, one sort ends every session over it at once rather than
+  // one per insert, which would never converge.
+  //
+  // **SEVERAL PROCESSES, ONE STORE.** `sessions` is persisted and
+  // replicated (`realms.map({persist, tombstone})`), so the end is a normal
+  // tombstoned delete that reaches every node, and its report is claimed
+  // once (`sessionEndOnce()`). The check runs ONLY in the process doing the
+  // insert, against that process's view of the store: a worker RESTORING
+  // sessions at start, or applying another's writes from the change log,
+  // does not come through here and evicts nothing — so processes never
+  // evict each other's choices differently. Two processes inserting at the
+  // same instant may each see room, so the store can overshoot by one per
+  // concurrent inserter until the next insert; a bound, not an exact count.
+  // ---------------------------------------------------------------------------
+  private sessionCapLoggedAt = 0;
+  private sessionCapEnded = 0;
+
+  private makeRoomForSession(store, newId) {
+    const { log, config, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.makeRoomForSession().");
+    const cap = Math.floor(Number(config.value('authn.maxSessions')));
+    if (!(cap > 0) || !store || store.size < cap ||
+        (newId && store.has(newId))) {
+      log.debug("Leaving Authn.makeRoomForSession(). Room.");
+      return 0;
+    }
+    // A HOT PATH: called for every session the scan or the sort compares,
+    // so no Entering/Leaving pair — one would drown the log.
+    const usedAt = function (session) {
+      return Number(session && (session.lastSeenAt || session.startedAt)) ||
+             0;
+    };
+    const over = store.size - cap + 1;
+    let victims = [];
+    if (over === 1) {
+      let oldest = null;
+      store.forEach(function (session, id) {
+        // Strictly less: a tie keeps the first, the older in Map order.
+        if (oldest === null || usedAt(session) < usedAt(oldest[1])) {
+          oldest = [id, session];
+        }
+      });
+      if (oldest) {
+        victims = [oldest];
+      }
+    } else {
+      const all = [];
+      store.forEach(function (session, id) {
+        all.push([id, session]);
+      });
+      all.sort(function (a, b) {
+        return usedAt(a[1]) - usedAt(b[1]);
+      });
+      victims = all.slice(0, over);
+    }
+    victims.forEach(function (pair) {
+      self.expireSession(store, pair[0], pair[1],
+                         'the session cap (authn.maxSessions)', 'capacity');
+    });
+    this.sessionCapEnded += victims.length;
+    const now = Date.now();
+    if (now - this.sessionCapLoggedAt >= 60000) {
+      log.warn(errorCodes.tag('STS-AUTHN-0292') + 'authn: the realm held ' +
+               'authn.maxSessions (' + cap + ') sessions, so ' +
+               this.sessionCapEnded + ' least recently used session(s) were ' +
+               'ended to make room for new ones. Each is an audit row. ' +
+               'Raise the setting if this is ordinary load.');
+      this.sessionCapEnded = 0;
+      this.sessionCapLoggedAt = now;
+    }
+    log.debug("Leaving Authn.makeRoomForSession(). " + victims.length +
+              " ended.");
+    return victims.length;
   }
 
   // ---------------------------------------------------------------------------
@@ -4939,6 +5073,8 @@ class Authn {
     // fixation, whatever the randomness of the id. Rotating the handle keeps
     // the correlation and ends the fixation.
     const cookieValue = this.mintSessionHandle(session);
+    // An upgraded arrival row keeps its id and is not an insert.
+    this.makeRoomForSession(sessions.realmMap(), sessionId);
     sessions.set(sessionId, session);
     // The sweep that ends it if nobody signs it out is the scheduler job
     // `authn.session-expiry` (see the header); nothing is armed here.

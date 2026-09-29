@@ -1277,6 +1277,36 @@ refresh; `cluster/CLAUDE.md`, *The scheduler*). What moved and what did not:
   dispatch without coordination is refused. A configuration where a process
   holds sessions nobody else can see would make it a *per-process* job there.
 
+**A REALM HOLDS AT MOST `authn.maxSessions` SESSIONS (#345, 2026-09-29;
+100,000 by default).** Until then only the expiry job bounded the store, so a
+burst of sign-ins — a suite run, credential stuffing, a client that never
+keeps its cookie — grew every process until the job caught up.
+
+* **Checked at INSERT**, in `makeRoomForSession()`, by the three doors that
+  add a key: `startArrivalSession()`, `startRelyingPartySession()` and
+  `startSessionHere()` (an upgraded arrival keeps its id and is not an
+  insert). The scheduler rule allows it: a bound cannot wait for a timer.
+* **At the cap the LEAST RECENTLY USED session ends, through
+  `expireSession()`** with `why` = `capacity` — the delete, back-channel
+  Logout Tokens planned, and once for the cluster the `session.end` audit row
+  carrying `STS-AUTHN-0292` and CAEP `session-revoked` initiated by `policy`.
+  The log line is at most once a minute per process, with a count.
+* **Least recently used is `lastSeenAt`, falling back to `startedAt`**,
+  because it is what the row tracks. It moves at every sign-in on the
+  session and every API client call, and on every use only while an idle
+  timeout is in force (`noteSessionUsed()`: a browser read is not a write
+  otherwise). Creation order would end an operator's session behind a burst
+  of arrivals.
+* **Only the process doing the insert checks**, against its own view of the
+  replicated store. A worker restoring sessions, or applying another's
+  writes from the change log, never evicts, so processes do not each evict
+  differently. The end is a normal tombstoned delete. Two concurrent
+  inserters may overshoot by one each until the next insert.
+* **Lowering the cap** ends every session over it at the next insert, in one
+  sort, rather than one per insert.
+
+`tests/session_cap.js` holds it.
+
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
 neither — a lifetime this service configured ran out, which is what CAEP section

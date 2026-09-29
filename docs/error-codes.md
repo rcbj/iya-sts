@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3867** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3869** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -63,8 +63,8 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 252
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 666
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 253
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 667
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1294,6 +1294,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400, the set-up page again |
 | `STS-AUTHN-0290` | A session was ended by a caller that did not say who initiated it (#242): CAEP session-revoked says `system`, and the caller should state admin, user, policy or system. | none — logged; the session is ended |
 | `STS-AUTHN-0291` | Reporting a session's end (its audit row, CAEP session-revoked and back-channel Logout Tokens) threw after the claim that decides who reports it was won (#242); it is not tried again, because a second try could tell a receiver twice. | none — logged |
+| `STS-AUTHN-0292` | A realm held authn.maxSessions sign-on sessions when another was created, so the least recently used session was ended to make room (#345) — through the same end an expiry takes: its audit row (which carries this code), CAEP session-revoked and back-channel Logout Tokens. | none — audited; logged at most once a minute per process |
 | `STS-AUTHN-0293` | The directory's credential census threw (#352), so the users list's counts and second-factor filter asked each person's credentials one at a time instead — slower, and the same answer. | none — logged |
 
 ## STS-OAUTH
@@ -1970,6 +1971,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0784` | Under FAPI 1.0 Advanced, an authorization request (its signed request object) named no scope; RFC 6749 section 3.3's refusal rather than a default (#187). | invalid_request |
 | `STS-OAUTH-0785` | An RP-Initiated Logout request carried a post_logout_redirect_uri with neither an id_token_hint nor a client_id, so it was not followed (section 2: nothing confirms the address, #187). | none (the sign-out page says so; no redirect) |
 | `STS-OAUTH-0786` | A CAEP session-revoked (or, for a replay, risk-level-change) about a revoked OAuth grant could not be delivered; the revocation stands (#239). | none (a log line) |
+| `STS-OAUTH-0787` | A realm's register of revoked token ids reached oauth2.maxRevokedJtis and none of its entries had expired, so the revocation whose token expires soonest was forgotten to make room (#345): that token, if it is still unexpired, is accepted again by a check that asks only this register. | none — logged, at most once a minute per process |
 
 ## STS-SAML
 
