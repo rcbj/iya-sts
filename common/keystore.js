@@ -2684,14 +2684,14 @@ function open(ciphertext, label) {
 // memo must be keyed on is the key set, and the key set is the one thing this
 // file never hands out.
 //
-// So it hands out a COUNTER instead: it moves whenever `kek` or `cellKek` is
-// not the value it was when last asked — `start()`, an ephemeral key installed
+// So it hands out a COUNTER instead: it moves whenever `kek` is not the
+// value it was when last asked — `start()`, an ephemeral key installed
 // or dropped by a test, `reset()` — and a verdict remembered under an older
 // number is a verdict about keys this process no longer holds. The values are
 // compared by identity inside this file and nothing derived from them leaves:
 // no digest, no fingerprint, only how many times they have changed.
 // ---------------------------------------------------------------------------
-let epochSeen = { kek: null, cellKek: null, epoch: 0 };
+let epochSeen = { kek: null, epoch: 0 };
 
 /**
  * Returns a number that changes whenever the keys `open()` tries change, for
@@ -2701,8 +2701,8 @@ let epochSeen = { kek: null, cellKek: null, epoch: 0 };
  */
 function kekEpoch() {
   log.debug("Entering kekEpoch().");
-  if (epochSeen.kek !== kek || epochSeen.cellKek !== cellKek) {
-    epochSeen = { kek: kek, cellKek: cellKek, epoch: epochSeen.epoch + 1 };
+  if (epochSeen.kek !== kek) {
+    epochSeen = { kek: kek, epoch: epochSeen.epoch + 1 };
   }
   log.debug("Leaving kekEpoch().");
   return epochSeen.epoch;
