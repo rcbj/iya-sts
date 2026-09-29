@@ -9831,7 +9831,15 @@ Five decisions:
     `oauth2.redeemedCodeCacheSize`, `gnap.replayCacheSize`,
     `oid4vci.cNonceCacheSize`, `oid4vp.maxTransactions` and
     `oid4vp.signInRegisterMaxEntries`. A cache that only costs a rebuild keeps
-    a constant, as the 256s and 512s before it did.
+    a constant, as the 256s and 512s before it did. **#346 (2026-09-29)
+    lowered the DPoP, GNAP and wallet sign-in defaults from 100,000 to
+    10,000 and made ACME's spent-nonce literal a setting
+    (`acme.maxSpentNonces`, 10,000)**: each store is whole in every process
+    of every node, per realm (#339). The three replay stores REFUSE at the
+    bound, so the lower number costs throughput (about 16 or 33 requests a
+    second, `docs/caches.md`) and never the replay window; the register
+    fails closed, so it costs a wallet its sign-in. VC status entries
+    (131,072) were left alone: that bound is the status list's size.
   - **The Kerberos long-term keys are bounded by PRINCIPALS**: at most 4,096
     hold keys at once, least recently used first, and one whose keys were
     cleared derives or reads them again at its next ticket.

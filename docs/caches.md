@@ -243,10 +243,10 @@ something be used twice, which is why none of them has a control.
 |---|---|---|---|---|
 | Used assertions | every RFC 7523 JWT and RFC 7522 SAML assertion accepted, for a grant or client authentication, and the `jti` of every RFC 9101 request object an authorization response was issued on | per realm, persisted in every store mode | `oauth2.assertionReplayCacheSize` (1000); **refuses new assertions when full** | once the assertion itself expires; a request that fails releases its claim |
 | Kerberos authenticators | each authenticator the protected service accepted | per trust realm (the realm whose Kerberos realm issued the ticket), persisted | `krb5.replayCacheMaxEntries` (10000); **refuses when full** | after twice the clock skew |
-| DPoP proof IDs | each DPoP proof's `jti` | per realm, persisted | `oauth2.dpopReplayCacheSize` (100000); **refuses new proofs when full** | after twice `oauth2.dpopIatSkewS` (300) |
+| DPoP proof IDs | each DPoP proof's `jti` | per realm, persisted | `oauth2.dpopReplayCacheSize` (10000); **refuses new proofs when full** | after twice `oauth2.dpopIatSkewS` (300) |
 | DPoP nonces | server-issued DPoP nonces | per realm, persisted | `oauth2.dpopNonceCacheSize` (10000), oldest first | after `oauth2.dpopNonceTtlS` (300) |
-| GNAP signatures | each signed GNAP request | per realm, persisted | `gnap.replayCacheSize` (100000); **refuses new signatures when full** | after twice `gnap.signatureMaxAgeS` (300) |
-| ACME nonces | spent ACME `Replay-Nonce` values | per realm, persisted | 100,000; **refuses when full of live nonces** (answered `badNonce`) | expired ones are cleared when the limit is reached |
+| GNAP signatures | each signed GNAP request | per realm, persisted | `gnap.replayCacheSize` (10000); **refuses new signatures when full** | after twice `gnap.signatureMaxAgeS` (300) |
+| ACME nonces | spent ACME `Replay-Nonce` values | per realm, persisted | `acme.maxSpentNonces` (10000); **refuses when full of live nonces** (answered `badNonce`) | expired ones are cleared when the limit is reached |
 | SCIM Digest nonces | Digest challenges handed out | per realm | `scim.maxDigestNonces` (2000) | after `scim.digestNonceSeconds` (300), then oldest first |
 | SCIM HOBA challenges | HOBA challenges handed out | per realm | `scim.maxHobaChallenges` (2000) | after `scim.hobaMaxAgeSeconds` (600), then oldest first |
 | SCIM HOBA signatures | HOBA signatures already seen | per realm | `scim.maxHobaSeen` (5000) | oldest first |
@@ -254,7 +254,7 @@ something be used twice, which is why none of them has a control.
 | OID4VCI nonces | `c_nonce` values issued to wallets | per realm, persisted | `oid4vci.cNonceCacheSize` (10000), oldest first | after `oid4vci.cNonceTtlS` (300), or when used |
 | Redeemed codes | each authorization code already exchanged, and the tokens it produced | per realm, persisted | `oauth2.redeemedCodeCacheSize` (10000), oldest first | one code lifetime (five minutes by default) after the code would have expired |
 | OpenID4VP transactions | every presentation request the Verifier is waiting on — the bar door's, and a wallet sign-in's with its Digital Credentials API request and the key its answer is encrypted to | per realm, persisted | `oid4vp.maxTransactions` (5000), oldest first | `oid4vp.presentationRequestTtlS`, or `oid4vp.signInTtlS` for a sign-in |
-| Wallet sign-in register | the credentials this realm issued for a person on an access token it verified, which are the only ones a wallet may sign in with | per realm, persisted | `oid4vp.signInRegisterMaxEntries` (100000), the row issued first dropped | until the last credential on the row expires |
+| Wallet sign-in register | the credentials this realm issued for a person on an access token it verified, which are the only ones a wallet may sign in with | per realm, persisted | `oid4vp.signInRegisterMaxEntries` (10000), the row issued first dropped | until the last credential on the row expires |
 | Credential status entries | each issued credential's index in this realm's status lists, and the status set for it | per realm, persisted | 131,072 | as long as the credential it describes |
 | Back-channel Logout deliveries | one row per relying party told that a session ended: its state, its attempts, when it is next due and the signed Logout Token | per realm, persisted | `oauth2.backchannelLogoutMaxRows` (2000), oldest FINISHED first | `oauth2.backchannelLogoutRetentionS` (86400) after it was queued; a row still pending then becomes a dead letter |
 
@@ -267,12 +267,26 @@ Three behaviours are worth knowing:
   refusals until entries expire. Each refusal is counted on the Caches page and
   `STS-CORE-0097` is logged at most once a minute. Raise the limit if a
   legitimate load reaches it.
+- **What the limits cost.** Each of these stores is held whole in every
+  process of every node, once per realm, which is why the DPoP, GNAP, ACME
+  and wallet sign-in limits are 10,000 rather than the 100,000 they were
+  until 2026-09-29. A lower limit on a store that refuses does not shorten
+  the replay window; it lowers the rate at which the realm stops answering.
+  At the defaults that is about 16 DPoP proofs or GNAP signed requests a
+  second (10,000 over the 600-second window) and about 33 ACME requests a
+  second (10,000 over the 300-second nonce lifetime), sustained. **Past it,
+  every request of that kind in the realm is refused until entries age out,
+  and a client that can make such requests at that rate can cause it.**
+  Raise the setting for a realm expected to see more.
 - **Stores of values this service handed out drop their oldest entry.** A DPoP
   nonce, a `c_nonce` or a Digest nonce that is dropped is simply refused as
   unknown, and the client asks for a fresh one, which each protocol already
   requires it to handle.
 - **The wallet sign-in register fails closed.** A credential whose row has been
   dropped signs nobody in, which is the same as a credential that was disowned.
+  With the default of 10,000, a realm that has issued that many sign-in
+  credentials stops the oldest still-valid one from signing in each time it
+  issues another; its holder has to be issued a fresh one.
 
 ## Not caches
 
