@@ -10609,6 +10609,61 @@ if (typeof mailChannel.setDirectory === 'function') {
 // ---------------------------------------------------------------------------
 if (typeof personAssertions.setDirectory === 'function') {
   personAssertions.setDirectory({
+    // EVERY PERSON HOLDING ANY OF THESE ATTRIBUTES, with those attributes'
+    // RAW values, in ONE walk (#352, 2026-09-29). `holders()` over there
+    // asked `persons()` for every name in the realm and `read()` for each —
+    // twenty-nine thousand lookups on testidp to find the handful who hold
+    // a key pair — and opened every sealed private key on the way. This
+    // answers the handful and opens nothing: the values are exactly as
+    // stored, sealed ones sealed, because a report of WHO holds a key pair
+    // never needs the private half. The ambient realm's, as below.
+    //
+    // **IN `allPersons()`'S ORDER** (the normalised DN), so a caller that
+    // walked `persons()` and filtered gets the same rows in the same order;
+    // only the matches are sorted, and each key is normalised once.
+    //
+    // **ONE STATEMENT UNDER #349's WINDOW**: this is
+    // `persistence/directory_queries.js`'s `withAttribute()` under
+    // `ou=users`, once per attribute named (or one `attrs ?| $n` for all of
+    // them), and the window should answer it that way rather than by
+    // walking what it holds.
+    holdingAny: function (names) {
+      log.debug('Entering holdingAny().');
+      const wanted = (names || []).map(function (name) {
+        return String(name).toLowerCase();
+      });
+      const found = [];
+      eachEntryInRealm(function (stored) {
+        const attrs = stored.attributes || {};
+        const held = wanted.some(function (one) {
+          return (attrs[one] || []).length > 0;
+        });
+        if (!held || !isPersonEntry(stored)) {
+          return;
+        }
+        const username = usernameOfEntry(stored);
+        if (!username) {
+          return;
+        }
+        // Canonical spellings out, for `read()`'s reason below.
+        const out = {};
+        personAssertions.ATTRIBUTES.forEach(function (name) {
+          const values = attrs[name.toLowerCase()];
+          if (values && values.length) {
+            out[name] = values.slice();
+          }
+        });
+        found.push({ key: normalizeDn(stored.dn), username: username,
+                     attributes: out });
+      });
+      found.sort(function (a, b) {
+        return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+      });
+      log.debug('Leaving holdingAny(). ' + found.length + ' person(s).');
+      return found.map(function (one) {
+        return { username: one.username, attributes: one.attributes };
+      });
+    },
     // **THE AMBIENT REALM'S**, like the portal's and `credentials.persons()`:
     // a realm is a logical copy of this service with its own people, and an
     // assertion presented at `/realm/acme/oauth2/token` is about somebody in
@@ -10785,6 +10840,45 @@ if (typeof certEnrollment.setDirectory === 'function') {
         });
       }
       log.debug('Leaving holders(). ' + out.length + '.');
+      return out;
+    },
+    // `holders()` WITH THE VALUES, in the same walk and the same order
+    // (#352, 2026-09-29): `[{ id, values }]`. The enrollment listings asked
+    // `holders()` for the ids and then `read()` for each — a second lookup
+    // per holder of a value the walk had in its hand. The values are the
+    // stored strings, unparsed and unopened; what they MEAN is the far
+    // side's business, as it is for `read()`. The attribute test comes
+    // before the placement test, which is the cheaper order for a realm
+    // where few entries hold one.
+    //
+    // **ONE STATEMENT UNDER #349's WINDOW** — `withAttribute()` under
+    // `ou=users` or `ou=applications` in `persistence/directory_queries.js`,
+    // keyset-paged — and the window should answer it that way.
+    holdersWithValues: function (kind, name) {
+      log.debug('Entering holdersWithValues(). kind=' + kind + ' name=' +
+                name);
+      const attribute = String(name).toLowerCase();
+      const out = [];
+      if (kind === 'person') {
+        eachEntryInRealm(function (stored) {
+          const values = stored.attributes[attribute] || [];
+          if (values.length && isPersonEntry(stored)) {
+            const username = usernameOfEntry(stored);
+            if (username) {
+              out.push({ id: username, values: values.slice() });
+            }
+          }
+        });
+      } else if (kind === 'application') {
+        entriesUnder(applicationsDn()).forEach(function (stored) {
+          const identifier = (stored.attributes.appidentifier || [])[0];
+          const values = stored.attributes[attribute] || [];
+          if (identifier && values.length) {
+            out.push({ id: String(identifier), values: values.slice() });
+          }
+        });
+      }
+      log.debug('Leaving holdersWithValues(). ' + out.length + '.');
       return out;
     }
   });

@@ -6795,6 +6795,22 @@ entry rather than of any reply, and a certificate issued to somebody who has
 since been deleted is a state no sequence of endpoint calls can produce while
 still holding the key that goes with it.
 
+**`holders()` REPORTS PRESENCE AND OPENS NOTHING (#352, 2026-09-29).** It was
+`persons()` — every name in the realm, uncapped — then `recordFor()` for each:
+a directory read per person, and a `keystore.open()` of both private keys per
+holder, to build a list that carries no private key. It asks the directory's
+optional `holdingAny(names)` instead — every person holding any of the two
+issuer declarations or the two `present` attributes, with those raw values, in
+the directory's own order, in one walk (#349's `withAttribute()` under
+`ou=users`, one statement) — and builds each record through `recordOf(...,
+openKeys false)`, which leaves the private keys out altogether rather than
+copying them sealed. The test that makes somebody a row is the old one, applied
+to the same record, so the rows and their order are unchanged; a directory
+without `holdingAny()` is walked the old way, still without an unseal.
+`recordFor()` itself still opens, because its callers — the grant, `clear()`,
+`write()` — need the key or its absence. `tests/certificate_listing_bounds.js`
+holds both.
+
 
 ### THE REALM WATCHER ASKS AND DOES NOT TAKE (2026-09-12)
 
@@ -8932,6 +8948,28 @@ fourteen caught and one recorded as EQUIVALENT (the canonical-base64url check in
 `entryOfCredentialId()`, which the exact kid comparison makes unobservable). Two
 survived the first version and both were the fixture: the non-canonical kid never
 got past the regex, and no certificate was presented that its entry did not hold.
+
+### The realm listings read in one walk and parse one family (#352, 2026-09-29)
+
+`certificatesInRealm()`, `eabsInRealm()`, `challengesInRealm()` and
+`hostNamesInRealm()` were `holdersOf()` — a walk of the realm that FOUND each
+holder's values — and then `readAttribute()` per holder, a second lookup
+(`resolveEntry()`, eight attributes copied) of a value the walk had in hand;
+and every certificate record of every family was `JSON.parse`d before the
+family was compared. They read through `holdersWithValuesOf()` now, over the
+directory's `holdersWithValues()` (one walk, the values unparsed, #349's
+`withAttribute()` — one statement), falling back to the old reads for a
+directory without it. **A record of another family is recognised on its TEXT
+and never parsed** (`mayBeOfFamily()`): without a `\u` escape anywhere in the
+value, a record whose `family` is `scep` must contain `"family"`, a colon and
+`"scep"` literally, so the absence is proof; with one, the value is parsed —
+the test can only skip what cannot match, so the list is unchanged.
+**`certificateCountsInRealm()`** answers the monitors' tiles (held, valid,
+revoked, expired) with `publicRecord()`'s own state rule and builds no row; the
+three monitors called the list to read its length. The consoles page before
+they decorate (`acme/CLAUDE.md`). `tests/certificate_listing_bounds.js`
+compares every listing with the read-per-holder walk and counts the reads and
+the parses.
 
 
 ### The `device` profile (#164 decision 6c, phase 2, 2026-09-26)

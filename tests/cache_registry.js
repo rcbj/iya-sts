@@ -104,7 +104,9 @@ const OWNERS = {
   // module, because `common/version.js` may require nothing of this service.
   '../common/client_address': ['global.trusted-proxies'],
   '../persistence/persistence_minted': ['persistence.observational-stores'],
-  '../admin-ui/caches_admin': ['version.stamp']
+  '../admin-ui/caches_admin': ['version.stamp'],
+  // #352: what a certificate list shows, parsed once per certificate.
+  '../admin-core/certificate_views': ['certificates.parsed-facts']
 };
 
 // A marker no row may ever carry.

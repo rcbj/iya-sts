@@ -444,7 +444,10 @@ class EstConsole {
     const recent = snapshot.recent || [];
     const paging = adminViews.pagingOf(query, recent.length,
                                        { noun: 'requests' });
-    const issuedHere = core.certificatesInRealm(FAMILY);
+    // COUNTED, not listed (#352): the four tiles are four numbers, and
+    // `certificateCountsInRealm()` reads the same records with the same
+    // state rule and builds no row.
+    const issuedHere = core.certificateCountsInRealm(FAMILY);
     const json = {
       page: '/admin/est/monitor',
       title: 'EST enrollments',
@@ -457,16 +460,10 @@ class EstConsole {
         revoked: snapshot.revoked || 0
       },
       certificates: {
-        held: issuedHere.length,
-        valid: issuedHere.filter(function (one) {
-          return one.status === 'valid';
-        }).length,
-        revoked: issuedHere.filter(function (one) {
-          return one.status === 'revoked';
-        }).length,
-        expired: issuedHere.filter(function (one) {
-          return one.status === 'expired';
-        }).length
+        held: issuedHere.held,
+        valid: issuedHere.valid,
+        revoked: issuedHere.revoked,
+        expired: issuedHere.expired
       },
       operations: this.tableOf(snapshot.operations),
       profiles: this.tableOf(snapshot.profiles),

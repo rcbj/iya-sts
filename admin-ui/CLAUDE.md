@@ -1950,6 +1950,34 @@ not the console's fifty, because this page carries eight sections), with one
 
 `tests/pki_key_pair_paging.js` pins all of it.
 
+### AND THE ROWS ARE READ BEFORE THEY ARE DECORATED (#352, 2026-09-29)
+
+Paging the TABLES did not page the WORK: `pkiJson()` still built both lists
+whole, and for `persons` that was `personAssertions.holders()` walking every
+name in the realm — uncapped — with a directory read per person and a
+`keystore.open()` of both private keys per holder, and then a pkijs parse per
+certificate for `pqc`. On testidp's 29,267 people that was the cost of every
+view of this page. Three changes, none of which changes the reply:
+
+* **WHO HOLDS A KEY PAIR IS PRESENCE, READ IN ONE WALK, AND NOTHING IS
+  UNSEALED.** `holders()` asks the directory's `holdingAny()` for the people
+  carrying any of the four attributes that make a row (`common/CLAUDE.md`,
+  3ab), and builds each record with the private keys left out — the list
+  never carried one, so opening it was pure cost.
+* **`pqc` IS ADDED AFTER THE PAGING, AS THE LAST MEMBER OF EACH ROW, WHERE IT
+  ALWAYS WAS.** The page's own call passes `shownOnly`, so it reads the
+  certificates of the rows it draws and no others; `?format=json` and
+  `GET /admin-api/pki` carry both lists whole and so ask for every row, through
+  `certificate_views.pqcOf()`, which parses a certificate once per process
+  (`certificates.parsed-facts`, `admin-core/CLAUDE.md`). The rows the page
+  slices are the same objects the decoration wrote to.
+* **`applications.list()` IS READ ONCE**, where it was read once per profile.
+
+The tiles (*applications holding one*, *people holding one*) still count the
+whole lists, which are now cheap to have whole. `tests/certificate_listing_
+bounds.js` counts the reads, the unseals and the certificate readings against
+three thousand people.
+
 ### Two limits, drawn as a `warn()` rather than left as absences
 
 **THE FIRST OF THEM REVERSED ON 2026-09-11 AND THE `warn()` DID NOT GO AWAY.**

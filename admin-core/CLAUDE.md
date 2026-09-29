@@ -305,6 +305,24 @@ Four decisions, and each is a refusal:
   loaded, so inside a function the require is a cache hit. `admin_views.ts` is
   required lazily too, for the same reason read the other way.
 
+**THE LIST PAGES BEFORE IT PARSES (#352, 2026-09-29).** `listView()` parsed
+every certificate in the catalogue with pkijs — subject, issuer, notAfter —
+before it filtered and sliced; the holders are the part of the catalogue that
+grows with the realm. The catalogue is in the order its sources were read and
+nothing sorts it, so without `q` the page is a slice and only the slice is
+parsed; with `q` a certificate is asked the cheap question first (the labels of
+where it appears, text already in hand) and parsed only when that does not
+match, against the same haystack the old filter searched. What a parse finds
+is kept in `certificates.parsed-facts` — CONTENT-KEYED (the fingerprint, or
+the SHA-256 of the PEM text for `pqcOf()`), so it can never be wrong in this
+process or any other and needs no version or invalidation; bounded at 4,096,
+the oldest dropped, and on `/admin/caches` (rule 3ap). `pqcOf()` is the same
+memo put in front of `pqc_support.of()` for `/admin/pki`. **The details
+lookup's miss path parses nothing it does not open**: it fingerprints the
+holders' certificates (a SHA-256 of the DER, not an X.509 parse), and the
+holders themselves come from `person_assertions.holders()`, which reads
+presence in one walk. `tests/certificate_listing_bounds.js` counts it.
+
 It is here rather than in `common/` because both surfaces read it and it reads
 the two route-registering modules above — lazily, but it reads them — which is
 what this directory's position rule is about. `tests/admin_actions_layer.js`
