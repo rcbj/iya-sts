@@ -27,10 +27,12 @@
 // Registers that are the RECORD of something — sessions, tokens, the audit
 // log, consent, the directory — are neither, and are not registered.
 //
-// There was no shared cache class before this file and there still is not
-// one. Each cache stays the `Map`, `realms.map()` or `realms.keyed()` it was,
-// in the module that owns it, and DESCRIBES itself here once, beside its
-// declaration:
+// There was no shared cache class before this file, and the caches it was
+// written for are still not one. Each stays the `Map`, `realms.map()` or
+// `realms.keyed()` it was, in the module that owns it, and DESCRIBES itself
+// here once, beside its declaration. (`common/bounded_lru.ts`, #349, is the
+// one class since: for a cache whose victim is the entry least recently READ,
+// which `makeRoom()` below does not do. It registers through the same door.)
 //
 //   * `register(descriptor)` — a name, a title, a description, the owning
 //     file, a scope (`process` or `realm`), a `maxEntries()`, a `lifetime()`

@@ -9934,6 +9934,24 @@ bypassed; and `keys.plaintext`, whose decrypted key is dropped by a one-shot
 deadline re-armed at each use — to the second, where a minute-long job would
 leave it decrypted up to a minute longer than `keys.plaintextTtlS` says.
 
+### `bounded_lru.ts`: THE FIRST SHARED CACHE CLASS (#349 phase 1, 2026-09-29)
+
+**The registry's "there is no shared cache class" stopped being true here, on
+purpose.** Every cache above evicts the OLDEST INSERTED entry through
+`makeRoom()`, which is right for a replay history and a fetched document.
+#349's request-worker window onto the directory needs the entry least
+recently READ to go, and recency of use is a policy worth writing once.
+`BoundedLru` is a Map in recency order with three additions: the bound is a
+function asked at every insert (an unusable bound is one, never unbounded); a
+PINNED key is never evicted — what a worker changed and has not written, and a
+running request's working set — so with every key pinned the cache stays over
+its bound and `stats().overBound` says by how much; and it registers with the
+cache registry when handed one, a row carrying the key as `rowOf` shows it and
+never the value. A leaf (rule 3): the registry arrives through the
+constructor. **Nothing in the service builds one yet** — the directory window
+is #349's next phase, behind its own setting — so it has no row in
+`docs/caches.md` until something does. `tests/bounded_lru.js`.
+
 
 ## 3ba. The mail channel: `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts` (#63, 2026-09-22)
 
