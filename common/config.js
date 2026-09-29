@@ -10382,7 +10382,45 @@ const SETTINGS = [
     env: 'LDAP_MAX_ENTRIES', type: 'int', dflt: 2000, runtime: true,
     description: 'How large the directory may grow. A ceiling rather than a ' +
                  'target: entries appear for anybody who authenticates ' +
-                 'through any protocol here.' },
+                 'through any protocol here. Counted over every realm this ' +
+                 'process holds; in a request worker with ' +
+                 'ldap.workerDirectory=postgres-lru, over the realm\'s rows ' +
+                 'in the store instead.' },
+
+  // THE DIRECTORY AS A WINDOW IN A REQUEST OR SURFACE WORKER (#349, rcbj's
+  // decisions of 2026-09-29): `memory` holds the whole directory in every
+  // process, as always; `postgres-lru` has each worker hold the people and
+  // devices as a bounded window and ask the store for the rest, through a
+  // synchronous bridge. The front process holds the whole directory either
+  // way. Restart-only: the store's shape is chosen when `ldap_server.js`
+  // loads. `persistence.start()` refuses postgres-lru without a postgres
+  // store or in a multi-cell deployment (STS-LDAP-0133).
+  { key: 'ldap.workerDirectory', group: 'LDAP',
+    label: 'Directory in request workers',
+    env: 'LDAP_WORKER_DIRECTORY', type: 'enum',
+    enumValues: ['memory', 'postgres-lru'], dflt: 'memory', runtime: false,
+    restartReason: 'the directory\'s store is chosen when the process loads ' +
+                   'it',
+    description: 'How a request or surface worker holds the directory. ' +
+                 'memory (the default): every entry, in every process. ' +
+                 'postgres-lru: the people and devices as a window of at ' +
+                 'most ldap.workerCacheEntries entries, the rest read from ' +
+                 'PostgreSQL when asked for — a worker\'s memory no longer ' +
+                 'grows with the directory, and a miss costs one database ' +
+                 'round trip. Requires persistence.mode=postgres and a ' +
+                 'single cell; the front process always holds the whole ' +
+                 'directory.' },
+
+  // THE WINDOW'S BOUND (#349): entries, about 2.5 KB each with the JSON it
+  // keeps for the merge. Read at every insert, so a change applies at once.
+  { key: 'ldap.workerCacheEntries', group: 'LDAP',
+    label: 'Directory window size (entries)',
+    env: 'LDAP_WORKER_CACHE_ENTRIES', type: 'int', dflt: 10000,
+    min: 100, max: 1000000, runtime: true,
+    description: 'With ldap.workerDirectory=postgres-lru, how many people ' +
+                 'and devices a request worker holds at once (about 2.5 KB ' +
+                 'each), the least recently read dropped first. An entry it ' +
+                 'changed and has not yet written is never dropped.' },
 
   // THE BOUND ON ONE SYNCHRONOUS QUESTION TO THE STORE (#349), which is how
   // long a windowed worker's whole event loop may wait for an entry it does

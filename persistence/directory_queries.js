@@ -250,6 +250,45 @@ function hasChild(realm, key) {
 }
 
 /**
+ * One page of the entries under a base that HOLD an attribute (any value),
+ * in key order after `afterKey`. `attrs ? name` has no index behind it here
+ * and is a scan of the realm's rows under the base; it answers only the
+ * holders, which is what the lists of who holds a credential need.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as the store holds it
+ * @param afterKey - the last key of the previous page, or ''
+ * @param limit - the page size (at most 1,000)
+ * @returns the statement
+ */
+function withAttribute(realm, baseKey, attribute, afterKey, limit) {
+  log.debug("Entering withAttribute().");
+  log.debug("Leaving withAttribute().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND ' + underClause(2, 6, false) + ' AND ' +
+                 'attrs ? $3 AND dn_key > $4 ORDER BY dn_key LIMIT $5',
+           values: [String(realm), String(baseKey),
+                    String(attribute).toLowerCase(), String(afterKey || ''),
+                    pageSize(limit), suffixLength(baseKey)] };
+}
+
+/**
+ * Whether any entry of a realm holds an attribute.
+ *
+ * @param realm - the realm id
+ * @param attribute - the attribute name, lower-cased as the store holds it
+ * @returns the statement; a row means yes
+ */
+function anyWithAttribute(realm, attribute) {
+  log.debug("Entering anyWithAttribute().");
+  log.debug("Leaving anyWithAttribute().");
+  return { text: 'SELECT 1 AS one FROM sts_ldap_entries WHERE realm = $1 ' +
+                 'AND attrs ? $2 LIMIT 1',
+           values: [String(realm), String(attribute).toLowerCase()] };
+}
+
+/**
  * Every entry EXCEPT those strictly under the given containers, for the
  * restore of a worker that holds those containers as a window.
  *
@@ -300,7 +339,7 @@ function answerOf(name, rows) {
     log.debug("Leaving answerOf(). A count.");
     return Number((list[0] || {}).n || 0);
   }
-  if (name === 'hasChild') {
+  if (name === 'hasChild' || name === 'anyWithAttribute') {
     log.debug("Leaving answerOf(). A yes or a no.");
     return list.length > 0;
   }
@@ -319,6 +358,8 @@ const QUERIES = {
   page: page,
   count: count,
   hasChild: hasChild,
+  withAttribute: withAttribute,
+  anyWithAttribute: anyWithAttribute,
   residentOnly: residentOnly
 };
 
@@ -357,5 +398,7 @@ module.exports = {
   page: page,
   count: count,
   hasChild: hasChild,
+  withAttribute: withAttribute,
+  anyWithAttribute: anyWithAttribute,
   residentOnly: residentOnly
 };

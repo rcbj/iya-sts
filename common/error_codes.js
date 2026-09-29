@@ -10979,6 +10979,13 @@ const CODES = [
       'question it was answering timed out (STS-LDAP-0130); the next ' +
       'question starts a new thread.',
     spec: 'none — logged' },
+  { code: 'STS-LDAP-0133',
+    summary: 'ldap.workerDirectory=postgres-lru (#349) was set where it ' +
+      'cannot work: the store is not PostgreSQL (a memory or ldif store has ' +
+      'nothing for a window to read), or the service is deployed as ' +
+      'several cells (a person\'s entry may be in another cell\'s ' +
+      'database). The service does not start.',
+    spec: 'none — fatal at startup' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +

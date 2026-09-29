@@ -850,6 +850,8 @@ var config = {
     tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
     autocreateUsers: true,                                                                                                                      // Auto-create users
     maxEntries: 2000,                                                                                                                           // Maximum entries
+    workerDirectory: "memory",                                                                                                                  // Directory in request workers; restart to apply
+    workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
     workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
     sizeLimit: 500,                                                                                                                             // Search size limit
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply

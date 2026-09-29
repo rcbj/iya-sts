@@ -570,6 +570,81 @@ the ceiling was never the intention; `hasChildren()`, a question about one DN in
 the realm being asked; and the realm purge, which now deletes nothing at all
 because `realms.map()` drops the whole store with the realm.
 
+### IN A REQUEST WORKER, `entries` MAY BE A WINDOW ONTO THE STORE (#349, 2026-09-29)
+
+**rcbj's decisions on #349**: with `ldap.workerDirectory=postgres-lru` a
+request or surface worker holds `ldap/directory_window.ts` as `entries` — the
+same Map shape, answering the ambient realm, with `realmMap(id)` — so not one
+reader or writer in this file changed. The front process always holds the
+whole directory.
+
+* **Resident**: every entry NOT strictly under a realm's `ou=users` or
+  `ou=devices` (`windowedContainersOf()`), held whole — groups stay resident,
+  so the group index is unchanged.
+* **Windowed**: the people and devices, in a bounded LRU
+  (`ldap.workerCacheEntries`); a key not held is read through the synchronous
+  bridge (`common/sync_query.ts`), an absence is held too.
+* **Walks** (`forEach`, `values`, `keys`, `for…of`) page through the store;
+  `hasChildren()` asks it (`hasChildIn()`). Correct and O(n) in rows — the hot
+  walks become indexed questions in #349's phase 5.
+* **Writes stay local and are PINNED until flushed.** What changed is found by
+  comparing each candidate's JSON with its BASE — the JSON it had when loaded
+  or last written, kept for held entries only, and the base of the store's
+  three-way merge. The candidates are what was set or deleted, what was HANDED
+  OUT since the last flush (an in-place edit with no `touchDirectory()` DN is
+  still found), what the journal names, and — for a write that named nothing —
+  everything held plus every EVICTED entry a caller still holds (a WeakRef).
+  A digest could say "changed" and could not be that base, which is why #343's
+  digest is not used here.
+* **A row another process wrote** is `forgetEntry()`-ed (read again next
+  time) unless the key is busy here, in which case this process's own flush
+  goes first and the store merges.
+* **The hooks** use `adopt()` (a row the store holds, not a write) in
+  `applyEntry()` and `replaceRealm()`, `forget()` in `removeEntry()`;
+  `realmEntries()` and `entryAt()` answer the RESIDENT half only, so the write
+  shadow never holds a windowed key; `storedFromRow()` is the one construction
+  of a stored entry from a row.
+* **`size`** is resident + the store's count when first asked + this process's
+  own net: a change detector beside `directoryVersion`, not a cap.
+* **`ldap.maxEntries` is a PER-REALM cap on the STORE in a windowed worker**
+  (rcbj): `cappedEntries()` asks the window's `capCount()` — the realm's rows
+  counted by the store at most ten seconds ago, plus this process's net since.
+  Everywhere else it is `totalEntries()`, what the process holds, as before.
+* **The walks that can say what they want do** (phase 5), and each is the old
+  walk outside a windowed worker:
+  - `eachResidentEntry()` for a filter that cannot match a person or device:
+    the federations, policies, roles, PEPs, trust anchors, SPIFFE, and the
+    GROUPS (`groupsFor()`, `buildGroupIndex()`, `allGroupEntries()`,
+    `membershipsNaming()`, `dropMemberships()`). **A group placed under
+    `ou=users` or `ou=devices` is not seen in a windowed worker** —
+    `groupRuleFor()` is placement-blind everywhere else — the price of groups
+    staying resident.
+  - `windowedFind()` for an indexed question (`directory_queries.js`), each
+    answer read back through the window and asked the service's own rule, the
+    entries changed here and not yet written added: `existingUserEntry()`
+    (`byName`, replacing the username index there), `entryByUuid()` (`byUuid`
+    after a RESIDENT-only index), `entryByDidSubject()`,
+    `entryBySpiffeSubject()`, `locateEntry()`'s `x509subject`, `objectFor()`'s
+    `alsoNamed` (`byAttribute`), `peopleByMail()` (`byMail`),
+    `peopleByFederationLink()`.
+  - `eachHolderOfAny()` for a walk that acts only on holders of an attribute
+    (`withAttribute`, paged): consent, claim-source tokens, self-issued
+    subjects, federation links, claimed memberships, delegation flags, a
+    person attribute's holders, Kerberos key infos; `anybodyHoldsACredential()`
+    asks `anyWithAttribute`.
+  - `personCount()` is the store's count; `allPersons()` pages `ou=users`
+    alone; `entriesUnder()` pages a windowed container and does NOT cache it;
+    the LDAP search walks only what its base reaches, read-only and lazily, so
+    a size limit stops the paging.
+  - **Still whole walks, correct and paged**: `populateVcAttributes()`
+    (development only), `ldapDirectoryView()`, the realm-retirement
+    announcement and the seed; `buildUsernameIndex()` is not reached.
+* **A bridge failure inside an LDAP operation** answers `unavailable` (52),
+  `STS-LDAP-0130`/`0131`, from `performOperation()`; over HTTP the worker's
+  last error middleware answers 503 (`common/CLAUDE.md`).
+
+`tests/directory_window.js`, section H loading this file as a windowed worker.
+
 ### The socket picks a store, and it picks it from the DN
 
 There is no ambient realm on port 389 — no path, no header, nothing but the

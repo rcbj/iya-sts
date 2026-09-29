@@ -1079,6 +1079,47 @@ the list merge, the session rank).
 * The capability `ops.change-log-retention` is provided by
   `persistence_replication.js`, not `persistence.js` as the row first named.
 
+## A WINDOWED WORKER'S DIRECTORY (#349, 2026-09-29)
+
+With `ldap.workerDirectory=postgres-lru` the directory slot carries a
+`window` (`ldap/directory_window.ts`) and a `forgetEntry()`, and this module
+does four things differently. `ldap/CLAUDE.md` argues the window itself.
+
+* **`start()` refuses** postgres-lru without a postgres store or with cells
+  (`STS-LDAP-0133`), in every process, before anything is opened; and on
+  postgres it hands the window its bridge (`common/sync_query.ts`, dialled
+  with the driver's `bridgeConnection()`) BEFORE the restore. `stop()` ends
+  the bridge's thread after the last flush.
+* **The flush asks the window first** — `collect()`, with the journal or null
+  for a write that named nothing — before deciding whether anything is dirty:
+  an entry edited in place is found only by comparison, and the window lets go
+  of what it handed out only when a flush has looked. Its upserts (each with
+  its own base) and deletes go in the SAME `saveDirectory()` transaction as the
+  resident diff; `committed()` or `failed()` answers them, and the write
+  shadow is never advanced by them (a windowed key is never in it:
+  `realmEntries()` and `entryAt()` answer the resident half).
+* **`directoryTouched()`** is a fifth door: an entry was handed out, so a
+  flush is scheduled; it marks nothing and moves no generation, because a
+  read is not a write and the barrier must not wait on one.
+* **`applyDirectoryChange()` merges nothing for a windowed key**: a busy key
+  (changed, in flight or handed out) is left for this process's own flush,
+  which the store merges against the window's base; any other is forgotten
+  and read again when asked for. `applyDirectoryOutcomes()` leaves windowed
+  keys to `committed()`.
+
+* **The restore reads the RESIDENT entries only** (`loadDirectoryRows()`,
+  the `residentOnly` question with each realm's windowed containers from the
+  slot's `windowedContainers()`): the people and devices are read when first
+  asked for, which takes the directory out of a worker's start (#333 measured
+  it at a fifth of a sixty-eight-second start). Two consequences, both for the
+  HTTP run to confirm: a windowed worker does not register restored people in
+  its own `admin_stats` identity register (the front process does), and a
+  realm's seed is still built at require time in every process.
+
+`tests/directory_window.js` section F drives all of it through this module
+over a `pg` double, including a change made here and one made there to the
+same entry both surviving, and the resident-only restore.
+
 ## WHAT A RESTART MUST NOT LOSE (2026-09-18)
 
 A redeploy of the testidp cluster showed `/admin/users` with one authenticated

@@ -1120,10 +1120,86 @@ let boundTlsPort = LDAPS_PORT;
 // showing `givenname` where every schema document says `givenName` reads as a
 // bug in the debugger.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// OR A WINDOW ONTO THE STORE, IN A REQUEST OR SURFACE WORKER (#349).
+//
+// With `ldap.workerDirectory=postgres-lru` a worker holds the people and the
+// devices — everything strictly under `ou=users` and `ou=devices` of each
+// realm — as a bounded window, and asks the store for the rest; every other
+// entry is held whole, as here. `ldap/directory_window.ts` is the whole of it,
+// and it has this Map's shape, so nothing below reads it differently. The
+// FRONT process always holds the whole directory: it owns the listeners and
+// its own writes (#349's design; moving it too is a later decision). Memory
+// and ldif stores cannot have a window — `persistence.start()` refuses the
+// setting with them (STS-LDAP-0133).
+// ---------------------------------------------------------------------------
+const directoryWindow = (function () {
+  if (!process.env.STS_REQUEST_WORKER ||
+      String(config.value('ldap.workerDirectory')) !== 'postgres-lru' ||
+      String(config.value('persistence.mode')) !== 'postgres') {
+    return null;
+  }
+  const DirectoryWindow = require('./directory_window');
+  const made = new DirectoryWindow({
+    currentId: function () {
+      return realms.currentId();
+    },
+    onRemove: function (fn) {
+      realms.onRemove(fn);
+    },
+    windowedContainers: windowedContainersOf,
+    fromRow: storedFromRow,
+    maxEntries: function () {
+      return Number(config.value('ldap.workerCacheEntries'));
+    },
+    onTouched: function () {
+      return persistence.directoryTouched();
+    },
+    registry: cacheRegistry
+  });
+  log.info('ldap: this worker holds the people and devices as a window ' +
+           'onto the store (ldap.workerDirectory=postgres-lru), at most ' +
+           config.value('ldap.workerCacheEntries') + ' of them at once.');
+  return made;
+})();
+
 /**
- * The directory's entries, one Map per trust realm, keyed by normalised DN.
+ * The directory's entries, one Map per trust realm, keyed by normalised DN —
+ * or, in a windowed worker, the window in that shape (#349).
  */
-const entries = realms.map();
+const entries = directoryWindow ? directoryWindow.facade() : realms.map();
+
+// The containers a windowed worker does not hold whole (#349): a realm's
+// people and devices, as normalised keys.
+function windowedContainersOf(realmId) {
+  log.debug("Entering windowedContainersOf().");
+  const base = realmBaseDn(realmId);
+  log.debug("Leaving windowedContainersOf().");
+  return [normalizeDn('ou=users,' + base), normalizeDn('ou=devices,' + base)];
+}
+
+// A row read from the store as a stored entry: the one construction every
+// door that puts a stored row into the directory uses — the restore, a row
+// another process wrote, and a windowed worker's read (#349). A row written
+// before `entryUUID` existed gets the value every process computes alike.
+function storedFromRow(realmId, row) {
+  log.debug("Entering storedFromRow().");
+  const stored = {
+    dn: String(row.dn),
+    attributes: row.attributes || {},
+    createdAt: row.createdAt || null,
+    modifiedAt: row.modifiedAt || row.createdAt || null
+  };
+  if (row.origin) {
+    stored.origin = String(row.origin);
+  }
+  if (!entryUuidOf(stored)) {
+    stored.attributes.entryuuid =
+      [backfilledEntryUuid(realmId, normalizeDn(stored.dn))];
+  }
+  log.debug("Leaving storedFromRow().");
+  return stored;
+}
 
 // EVERY REALM'S STORE, ADDED UP. The one number that is still about the process
 // rather than about a realm, and it exists for exactly one purpose: the
@@ -1137,6 +1213,26 @@ function totalEntries() {
   });
   log.debug("Leaving totalEntries().");
   return n;
+}
+
+// WHAT `ldap.maxEntries` IS COMPARED WITH. Everywhere but a windowed worker,
+// `totalEntries()` above: what this process holds in memory, every realm
+// summed, which is what the cap has always been about. In a windowed worker
+// (#349) memory is bounded by `ldap.workerCacheEntries` instead, and the cap
+// becomes what rcbj decided it should be there: a PER-REALM cap on the
+// STORE, the realm's rows counted by the store (at most ten seconds old, plus
+// this process's own creates and deletes since), so a worker holding a
+// window of ten thousand does not measure a directory of a hundred thousand
+// by what it happens to hold.
+function cappedEntries() {
+  log.debug("Entering cappedEntries().");
+  if (directoryWindow) {
+    const n = directoryWindow.capCount(realms.currentId());
+    log.debug("Leaving cappedEntries(). The realm, counted by the store.");
+    return n;
+  }
+  log.debug("Leaving cappedEntries().");
+  return totalEntries();
 }
 
 // WHICH REALM A DN BELONGS TO, decided by the DN alone. It is what lets the
@@ -1346,6 +1442,84 @@ function eachEntryInRealm(fn) {
   log.debug("Entering eachEntryInRealm().");
   entries.forEach(fn);
   log.debug("Leaving eachEntryInRealm().");
+}
+
+// ---------------------------------------------------------------------------
+// THE WALKS A WINDOWED WORKER NEED NOT MAKE (#349 phase 5, 2026-09-29).
+//
+// In a request worker with `ldap.workerDirectory=postgres-lru`, `entries` is a
+// window (see its declaration) and `eachEntryInRealm()` is still correct — it
+// pages every person and device through the store — and O(n) in the store's
+// rows. These three are what a walk becomes when it can say what it wants.
+// Outside a windowed worker each is exactly the walk it replaced.
+//
+//   * `eachResidentEntry()`: a walk whose filter can only match an entry
+//     OUTSIDE `ou=users` and `ou=devices` — a container's children, the
+//     groups. **A group placed under `ou=users` is therefore not seen in a
+//     windowed worker**, where `groupRuleFor()` is placement-blind on purpose
+//     everywhere else: the one thing this changes, and the price of groups
+//     staying resident (rcbj's decision on #349).
+//   * `windowedFind()`: an indexed question to the store
+//     (`persistence/directory_queries.js`) for the windowed entries, each
+//     answer read back through the window and asked the service's own rule.
+//   * `eachHolderOfAny()`: a walk that acts only on the entries holding one
+//     of some attributes — resident ones walked, windowed ones asked of the
+//     store.
+// ---------------------------------------------------------------------------
+function eachResidentEntry(fn) {
+  log.debug("Entering eachResidentEntry().");
+  if (directoryWindow) {
+    directoryWindow.eachResident(realms.currentId(), fn);
+  } else {
+    entries.forEach(fn);
+  }
+  log.debug("Leaving eachResidentEntry().");
+}
+
+// The windowed entries matching a named question and `predicate`, or null
+// outside a windowed worker (the caller then walks as it always did).
+function windowedFind(name, args, predicate) {
+  log.debug("Entering windowedFind(). " + name);
+  if (!directoryWindow) {
+    log.debug("Leaving windowedFind(). No window.");
+    return null;
+  }
+  const realmId = realms.currentId();
+  const found = directoryWindow.findWindowed(realmId, name,
+    [realmId].concat(args), predicate).map(function (hit) {
+    return hit.entry;
+  });
+  log.debug("Leaving windowedFind(). " + found.length + ".");
+  return found;
+}
+
+// A walk whose callback acts only on entries holding one of `attributes`
+// (lower-cased), and filters for that itself: outside a windowed worker the
+// walk it replaced; inside one, every resident entry and the windowed entries
+// the store says hold one of them, each once.
+function eachHolderOfAny(attributes, fn) {
+  log.debug("Entering eachHolderOfAny(). " + attributes.join(','));
+  if (!directoryWindow) {
+    eachEntryInRealm(fn);
+    log.debug("Leaving eachHolderOfAny().");
+    return;
+  }
+  const realmId = realms.currentId();
+  directoryWindow.eachResident(realmId, fn);
+  const seen = new Set();
+  windowedContainersOf(realmId).forEach(function (container) {
+    attributes.forEach(function (attribute) {
+      directoryWindow.holders(realmId, container, attribute, function () {
+        return true;
+      }).forEach(function (hit) {
+        if (!seen.has(hit.key)) {
+          seen.add(hit.key);
+          fn(hit.entry, hit.key);
+        }
+      });
+    });
+  });
+  log.debug("Leaving eachHolderOfAny().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1654,6 +1828,28 @@ const MAX_SUBTREE_LISTINGS = 64;
 function entriesUnder(containerDn) {
   log.debug('Entering entriesUnder(). container=' + containerDn);
   const key = normalizeDn(containerDn);
+  // A WINDOWED CONTAINER IN A WINDOWED WORKER (#349) is paged from the store
+  // and NOT kept: a listing of every person held until the next write under
+  // `ou=users` would be the whole container in memory again. A container that
+  // holds none of them is walked resident, and cached as before.
+  if (directoryWindow) {
+    const realmId = realms.currentId();
+    const reaches = windowedContainersOf(realmId).some(function (c) {
+      return c === key || c.endsWith(',' + key) || key.endsWith(',' + c);
+    });
+    if (reaches) {
+      const paged = [];
+      for (const pair of directoryWindow.walk(realmId, key)) {
+        if (pair[0] !== key) {
+          paged.push(pair[1]);
+        }
+      }
+      listingCount.miss();
+      log.debug('Leaving entriesUnder(). ' + paged.length + ' row(s), ' +
+                'paged from the store.');
+      return paged;
+    }
+  }
   const clock = subtreeClocks();
   const version = subtreeVersion(containerDn);
   const hit = clock.listings.get(key);
@@ -1664,7 +1860,7 @@ function entriesUnder(containerDn) {
   }
   listingCount.miss();
   const rows = [];
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, containerDn) && normalizeDn(stored.dn) !== key) {
       rows.push(stored);
     }
@@ -2640,6 +2836,12 @@ function getEntry(dn) {
 function hasChildren(dn) {
   log.debug('Entering hasChildren(). dn=' + dn);
   const key = normalizeDn(dn);
+  if (directoryWindow) {
+    // A windowed worker asks the store rather than walking it (#349).
+    const has = directoryWindow.hasChildIn(realms.currentId(), key);
+    log.debug('Leaving hasChildren(). Asked the window: ' + has + '.');
+    return has;
+  }
   for (const other of entries.keys()) {
     if (other !== key && other.endsWith(',' + key)) {
       log.debug('Leaving hasChildren(). It has at least one child.');
@@ -2955,7 +3157,9 @@ function entryByUuid(uuid) {
     uuidIndexCount.miss();
     const index = new Map();
     let collisions = 0;
-    eachEntryInRealm(function (entry, key) {
+    // The RESIDENT entries in a windowed worker (#349): its people and
+    // devices are asked of the store below.
+    eachResidentEntry(function (entry, key) {
       const value = entryUuidOf(entry);
       if (value && !index.has(value)) {
         index.set(value, key);
@@ -2964,7 +3168,7 @@ function entryByUuid(uuid) {
       }
     });
     // An alias second, so a primary value always wins the slot.
-    eachEntryInRealm(function (entry, key) {
+    eachResidentEntry(function (entry, key) {
       entryUuidAliasesOf(entry).forEach(function (alias) {
         if (!index.has(alias)) {
           index.set(alias, key);
@@ -2981,6 +3185,17 @@ function entryByUuid(uuid) {
     // Answered by the index as it stood — found, or current and saying
     // nobody holds that UUID.
     uuidIndexCount.hit();
+  }
+  if (!found && directoryWindow) {
+    // A PERSON OR A DEVICE, ASKED OF THE STORE (#349): a primary value
+    // before an alias, as the index ranks them.
+    const hits = windowedFind('byUuid', [wanted], function (entry) {
+      return entryUuidOf(entry) === wanted ||
+        entryUuidAliasesOf(entry).indexOf(wanted) >= 0;
+    }) || [];
+    found = hits.filter(function (entry) {
+      return entryUuidOf(entry) === wanted;
+    })[0] || hits[0] || null;
   }
   log.debug("Leaving entryByUuid(). " + (found ? found.dn : 'None.'));
   return found;
@@ -3854,20 +4069,10 @@ const directoryHooks = {
   applyEntry: function (realmId, key, row) {
     log.debug('Entering applyEntry(). realmId=' + realmId + ', key=' + key);
     const store = entries.realmMap(realmId);
-    const stored = {
-      dn: String(row.dn),
-      attributes: row.attributes || {},
-      createdAt: row.createdAt || null,
-      modifiedAt: row.modifiedAt || row.createdAt || null
-    };
-    if (row.origin) {
-      stored.origin = String(row.origin);
-    }
     // A row written before `entryUUID` existed: every process computes the same
     // value from the realm and the key, so none has to write it back first.
-    if (!entryUuidOf(stored)) {
-      stored.attributes.entryuuid = [backfilledEntryUuid(realmId, key)];
-    }
+    // `storedFromRow()` is that construction (#349 made it one function).
+    const stored = storedFromRow(realmId, row);
     // TWO CREATES OF ONE ENTRY IN TWO PROCESSES — see `mergeCreateRace()`.
     // The row is applied AS STORED first, because the caller records what it
     // applied as what the store holds; the reconciliation is then this
@@ -3922,8 +4127,15 @@ const directoryHooks = {
     // An entry REPLACED here may carry other UUIDs than the one it replaces
     // (a create race reconciled — see above), so the UUID index follows only
     // a new entry and is left to rebuild after a replacement (#351).
-    const replaced = store.has(key);
-    store.set(key, stored);
+    // A WINDOWED WORKER (#349) asks what it holds, not the store, and ADOPTS
+    // the row: what the store holds, not a write of this process's.
+    const replaced = directoryWindow
+      ? !!directoryWindow.peekIn(realmId, key) : store.has(key);
+    if (directoryWindow) {
+      directoryWindow.adopt(realmId, key, stored);
+    } else {
+      store.set(key, stored);
+    }
     // THE DN IS NAMED. `touchDirectory()` with no argument marks every listing
     // in this realm invalid and makes the next flush diff the whole directory;
     // this applier knows exactly which entry moved, and the entry it is being
@@ -3993,9 +4205,11 @@ const directoryHooks = {
   removeEntry: function (realmId, key) {
     log.debug('Entering removeEntry(). realmId=' + realmId + ', key=' + key);
     const store = entries.realmMap(realmId);
-    const was = store.get(key) || null;
+    const was = directoryWindow ? directoryWindow.peekIn(realmId, key)
+      : (store.get(key) || null);
     const current = indexesCurrent();
-    const gone = store.delete(key);
+    const gone = directoryWindow ? directoryWindow.forget(realmId, key)
+      : store.delete(key);
     if (gone) {
       // In the row's realm, for applyEntry()'s reason (#352), and BY ITS DN,
       // AND THE INDEXES KEPT (#351): this is every OTHER process applying a
@@ -4018,6 +4232,11 @@ const directoryHooks = {
   // that decides what to write.
   realmEntries: function (realmId) {
     log.debug("Entering realmEntries().");
+    if (directoryWindow) {
+      // The RESIDENT entries only (#349): the window writes its own.
+      log.debug("Leaving realmEntries(). Resident rows.");
+      return directoryWindow.residentRows(realmId);
+    }
     const out = [];
     entries.realmMap(realmId).forEach(function (entry, key) {
       out.push({ key: key, entry: entry });
@@ -4045,7 +4264,31 @@ const directoryHooks = {
   entryAt: function (realmId, key) {
     log.debug("Entering entryAt().");
     log.debug("Leaving entryAt().");
+    // A windowed key is not the write shadow's (#349): null, so the diff
+    // leaves it to the window.
+    if (directoryWindow) {
+      return directoryWindow.isWindowed(realmId, key) ? null
+        : directoryWindow.peekIn(realmId, key);
+    }
     return entries.realmMap(realmId).get(key) || null;
+  },
+
+  // THE WINDOW ITSELF (#349), for the flush and the change log; null in every
+  // process that holds the whole directory.
+  window: directoryWindow,
+  // The containers a windowed worker does not read back at start (#349).
+  windowedContainers: windowedContainersOf,
+
+  // A ROW ANOTHER PROCESS WROTE, FOR A WINDOWED KEY (#349): the held copy is
+  // dropped and read again when next asked for, and the indexes are told, as
+  // `applyEntry()` tells them.
+  forgetEntry: function (realmId, key) {
+    log.debug('Entering forgetEntry(). realmId=' + realmId + ', key=' + key);
+    if (directoryWindow) {
+      directoryWindow.forget(realmId, key);
+      touchDirectory(key);
+    }
+    log.debug('Leaving forgetEntry().');
   },
 
   // One realm's whole directory, replaced by what was read back. Called only
@@ -4060,21 +4303,18 @@ const directoryHooks = {
     // that was deleted in the last run and reseeded in this one, and the
     // person who deleted it would find it back.
     store.clear();
+    // What was put back, walked below for the identity register — the LIST
+    // and not the store, which in a windowed worker holds at most its bound
+    // of these (#349).
+    const restored = [];
     list.forEach(function (row) {
-      const stored = {
-        dn: String(row.dn),
-        attributes: row.attributes || {},
-        createdAt: row.createdAt || null,
-        modifiedAt: row.modifiedAt || row.createdAt || null
-      };
-      if (row.origin) {
-        stored.origin = String(row.origin);
+      const stored = storedFromRow(realmId, row);
+      if (directoryWindow) {
+        directoryWindow.adopt(realmId, normalizeDn(stored.dn), stored);
+      } else {
+        store.set(normalizeDn(stored.dn), stored);
       }
-      if (!entryUuidOf(stored)) {
-        stored.attributes.entryuuid =
-          [backfilledEntryUuid(realmId, normalizeDn(stored.dn))];
-      }
-      store.set(normalizeDn(stored.dn), stored);
+      restored.push(stored);
     });
     // A whole realm replaced: its UUID index describes nothing now (#351).
     realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
@@ -4115,7 +4355,7 @@ const directoryHooks = {
     // -------------------------------------------------------------------
     realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
       let people = 0;
-      store.forEach(function (stored) {
+      restored.forEach(function (stored) {
         if (!isPersonEntry(stored)) {
           return;
         }
@@ -4155,7 +4395,8 @@ const directoryHooks = {
                'restored rather than as having authenticated here — they ' +
                'have not, in this process.');
     });
-    log.debug('Leaving replaceRealm(). ' + store.size + ' entry/entries.');
+    log.debug('Leaving replaceRealm(). ' + restored.length +
+              ' entry/entries.');
   }
 };
 persistence.setDirectory(directoryHooks);
@@ -4420,7 +4661,15 @@ function entryByDidSubject(did) {
     return null;
   }
   let found = null;
-  eachEntryInRealm(function (entry) {
+  // Resident entries walked; a person or device asked of the store (#349).
+  const asked = windowedFind('byAttribute', ['didsubject', wanted, 2],
+    function (entry) {
+      return (entry.attributes.didsubject || []).indexOf(wanted) >= 0;
+    });
+  if (asked && asked.length) {
+    found = asked[0];
+  }
+  (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
     if (found) {
       return;
     }
@@ -4446,7 +4695,15 @@ function entryBySpiffeSubject(id) {
     return null;
   }
   let found = null;
-  eachEntryInRealm(function (entry) {
+  // Resident entries walked; a person or device asked of the store (#349).
+  const asked = windowedFind('byAttribute', ['spiffesubject', wanted, 2],
+    function (entry) {
+      return (entry.attributes.spiffesubject || []).indexOf(wanted) >= 0;
+    });
+  if (asked && asked.length) {
+    found = asked[0];
+  }
+  (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
     if (found) {
       return;
     }
@@ -4487,6 +4744,18 @@ function existingUserEntry(name) {
   // the walk it replaces made a create cost a pass over the whole directory.
   // The index answers the same question over the same pair of names, in the
   // same first-entry-wins order.
+  // A WINDOWED WORKER ASKS THE STORE (#349): its index would be a walk of
+  // every person, rebuilt after every write. Same pair of names, same
+  // first-by-key rule a restored process's index has.
+  const users = normalizeDn(usersDn());
+  const asked = windowedFind('byName', [users, wanted], function (entry) {
+    return normalizeDn(parentDn(entry.dn)) === users &&
+      usernameKeysOf(entry).indexOf(wanted) >= 0;
+  });
+  if (asked) {
+    log.debug('Leaving existingUserEntry(). Asked the store.');
+    return asked[0] || null;
+  }
   const key = usernameIndexNow().get(wanted);
   const found = key ? (entries.get(key) || null) : null;
   log.debug('Leaving existingUserEntry().');
@@ -5843,7 +6112,7 @@ function autoCreateUser(detail) {
     log.debug('Leaving autoCreateUser(). The entry already existed.');
     return existing;
   }
-  if (totalEntries() >= maxEntries()) {
+  if (cappedEntries() >= maxEntries()) {
     // Reported rather than thrown: the authentication itself succeeded and must
     // not be failed by a directory that is full.
     log.warn(errorCodes.tag('STS-LDAP-0007') +
@@ -6172,7 +6441,7 @@ function createUser(name, options) {
                       'entry happens to be named by.'],
              existing: { dn: clash.dn, origin: clash.origin || '' } });
   }
-  if (totalEntries() >= maxEntries()) {
+  if (cappedEntries() >= maxEntries()) {
     log.debug('Leaving createUser(). The directory is full.');
     return coded('STS-LDAP-0007', { ok: false, errors: [
       'This directory holds its maximum of ' + maxEntries() + ' entries.'] });
@@ -6686,7 +6955,15 @@ function locateEntry(key) {
       return { dn: direct.dn, stored: direct };
     }
     let found = null;
-    eachEntryInRealm(function (entry) {
+    // Resident entries walked; a person asked of the store (#349).
+    const asked = windowedFind('byAttribute', ['x509subject', key, 2],
+      function (entry) {
+        return (entry.attributes.x509subject || []).indexOf(key) >= 0;
+      });
+    if (asked && asked.length) {
+      found = asked[0];
+    }
+    (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
       if (found) {
         return;
       }
@@ -6780,12 +7057,17 @@ function objectFor(name) {
   const alsoNamed = [];
   if (key && !DN_SHAPED.test(key) && !DID_SHAPED.test(key) &&
       !SPIFFE_SHAPED.test(key)) {
-    eachEntryInRealm(function (entry) {
-      if (normalizeDn(entry.dn) === normalizeDn(dn)) {
-        return;
-      }
-      const uids = entry.attributes.uid || [];
-      if (uids.indexOf(key) >= 0) {
+    const named = function (entry) {
+      return normalizeDn(entry.dn) !== normalizeDn(dn) &&
+        (entry.attributes.uid || []).indexOf(key) >= 0;
+    };
+    // Resident entries walked; people asked of the store (#349).
+    const asked = windowedFind('byAttribute', ['uid', key, 100], named);
+    (asked || []).forEach(function (entry) {
+      alsoNamed.push(entry.dn);
+    });
+    (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
+      if (named(entry)) {
         alsoNamed.push(entry.dn);
       }
     });
@@ -6813,7 +7095,7 @@ function objectFor(name) {
     // Not `entryCount >= maxEntries` computed by the caller: the cap is this
     // module's and a second copy of the comparison is a second thing to keep
     // right.
-    full: totalEntries() >= maxEntries()
+    full: cappedEntries() >= maxEntries()
   };
   if (stored) {
     // Canonically spelled, and OPERATIONAL ATTRIBUTES INCLUDED. A search would
@@ -7053,8 +7335,9 @@ function memberPresenceOf(stored) {
 // live stored entries, which is safe for the same reason: nothing can change
 // one without moving the clock that throws the index away.
 //
-// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: the entries whose
-// `memberof` holds a given DN — an attribute-value lookup, indexable.
+// **IN #349's WINDOW** it visits the holders of a `memberof` only
+// (`eachHolderOfAny()`, the store's `withAttribute` question, paged), and
+// holds those — never every person.
 // ---------------------------------------------------------------------------
 const claimsIndexes = realms.keyed(function () {
   return { version: -1, byGroup: null };
@@ -7071,7 +7354,9 @@ function memberOfClaims() {
   }
   claimsIndexCount.miss();
   const byGroup = new Map();
-  eachEntryInRealm(function (entry) {
+  // Only the entries holding a `memberof`, which in a windowed worker are
+  // asked of the store (#349); elsewhere the walk it always was.
+  eachHolderOfAny(['memberof'], function (entry) {
     const values = entry.attributes.memberof || [];
     if (!values.length) {
       return;
@@ -7201,7 +7486,7 @@ function groupsFor(dn) {
 
   const groups = [];
   const sortKeys = new Map();
-  eachEntryInRealm(function (entry) {
+  eachResidentEntry(function (entry) {
     const rule = groupRuleFor(entry);
     if (!rule) {
       return;
@@ -7416,7 +7701,7 @@ function buildGroupIndex() {
   log.debug('Entering buildGroupIndex().');
   const byMember = new Map();
   const byDn = new Map();
-  eachEntryInRealm(function (entry) {
+  eachResidentEntry(function (entry) {
     const rule = groupRuleFor(entry);
     if (!rule) {
       return;
@@ -8136,7 +8421,7 @@ function removeConsentValues(key, values, attribute) {
 function listConsentValues() {
   log.debug('Entering listConsentValues().');
   const rows = [];
-  eachEntryInRealm(function (entry) {
+  eachHolderOfAny(['oauthconsent'], function (entry) {
     const values = entry.attributes.oauthconsent || [];
     if (!values.length) {
       return;
@@ -9151,7 +9436,11 @@ function anybodyHoldsACredential() {
   // bootstrap a per-realm question. A new realm switched to product mode gets
   // its own bootstrap account rather than being judged by the default realm's.
   let found = false;
-  eachEntryInRealm(function (entry) {
+  if (directoryWindow) {
+    // A windowed worker asks the store whether a person holds one (#349).
+    found = directoryWindow.anyHolder(realms.currentId(), 'userpassword');
+  }
+  (directoryWindow ? eachResidentEntry : eachEntryInRealm)(function (entry) {
     if (found) return;
     if (entry && entry.attributes &&
         (entry.attributes.userpassword || []).length > 0) {
@@ -9483,7 +9772,7 @@ function writeClaimSourceTokens(key, value) {
 function claimSourceTokenHolders() {
   log.debug('Entering claimSourceTokenHolders().');
   const out = [];
-  eachEntryInRealm(function (stored) {
+  eachHolderOfAny(['stsclaimsourcetokens'], function (stored) {
     const value = (stored.attributes.stsclaimsourcetokens || [])[0];
     const uid = (stored.attributes.uid || [])[0];
     if (value && uid && isPersonEntry(stored)) {
@@ -9521,7 +9810,7 @@ function writeClaimProviderEntry(cn, attributes) {
   log.debug('Entering writeClaimProviderEntry(). cn=' + cn);
   const dn = claimProviderEntryDn(cn);
   const existing = getEntry(dn);
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
@@ -9583,7 +9872,7 @@ function writeAttributeSourceEntry(cn, attributes) {
   log.debug('Entering writeAttributeSourceEntry(). cn=' + cn);
   const dn = attributeSourceEntryDn(cn);
   const existing = getEntry(dn);
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
@@ -9810,7 +10099,7 @@ function writeSelfIssuedSubjects(key, values) {
 function selfIssuedSubjectOwner(matches) {
   log.debug('Entering selfIssuedSubjectOwner().');
   let owner = '';
-  eachEntryInRealm(function (stored) {
+  eachHolderOfAny(['stsselfissuedsubject'], function (stored) {
     if (owner || !isPersonEntry(stored)) {
       return;
     }
@@ -9854,11 +10143,13 @@ function listDeviceEntries() {
 // copied and JSON-parsed a second time, after `list()` had done it once. The
 // kept container listing's length is the same number.
 //
-// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: a count of the
-// keys under `ou=devices`.
+// **IN #349's WINDOW** it is the store's count of the keys under
+// `ou=devices` (`countUnder()`), with this process's own changes.
 function countDeviceEntries() {
   log.debug('Entering countDeviceEntries().');
-  const n = entriesUnder(devicesDn()).length;
+  const n = directoryWindow
+    ? directoryWindow.countUnder(realms.currentId(), normalizeDn(devicesDn()))
+    : entriesUnder(devicesDn()).length;
   log.debug('Leaving countDeviceEntries(). ' + n + '.');
   return n;
 }
@@ -9869,7 +10160,7 @@ function writeDeviceEntry(id, attributes) {
   const existing = getEntry(dn);
   // Read BEFORE the write, for usernameIndexIsCurrent()'s reason.
   const indexWasCurrent = deviceIndexIsCurrent();
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
@@ -10082,7 +10373,7 @@ function writeOidfedEntry(cn, attributes) {
   log.debug('Entering writeOidfedEntry(). cn=' + cn);
   const dn = oidfedEntryDn(cn);
   const existing = getEntry(dn);
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
@@ -10411,8 +10702,9 @@ if (typeof credentials.setDirectory === 'function') {
       // display objects.
       // The two flags are read FIRST (#352) — property lookups — and only an
       // entry carrying one pays for `isPersonEntry()`'s DN normalising. Same
-      // rows, same walk order.
-      eachEntryInRealm(function (entry) {
+      // rows, same walk order. In a windowed worker only the holders of one
+      // of the two are visited (#349).
+      eachHolderOfAny(['stsnotdelegated', 'stsmayact'], function (entry) {
         const a = entry.attributes;
         const notDelegated =
           String((a.stsnotdelegated || [])[0] || '').toUpperCase() === 'TRUE';
@@ -10691,16 +10983,16 @@ if (typeof personAssertions.setDirectory === 'function') {
     //
     // **ONE STATEMENT UNDER #349's WINDOW**: this is
     // `persistence/directory_queries.js`'s `withAttribute()` under
-    // `ou=users`, once per attribute named (or one `attrs ?| $n` for all of
-    // them), and the window should answer it that way rather than by
-    // walking what it holds.
+    // `ou=users`, once per attribute named — which is how #349's window
+    // answers it (`eachHolderOfAny()`).
     holdingAny: function (names) {
       log.debug('Entering holdingAny().');
       const wanted = (names || []).map(function (name) {
         return String(name).toLowerCase();
       });
       const found = [];
-      eachEntryInRealm(function (stored) {
+      // The holders only; in a windowed worker asked of the store (#349).
+      eachHolderOfAny(wanted, function (stored) {
         const attrs = stored.attributes || {};
         const held = wanted.some(function (one) {
           return (attrs[one] || []).length > 0;
@@ -10834,10 +11126,9 @@ if (typeof personAssertions.setDirectory === 'function') {
 // only an identifier-shaped key (a subject, a DN, a DID, a SPIFFE ID) costs
 // what it always cost, once rather than nine times.
 //
-// **THE METHOD #349'S DIRECTORY WINDOW SHOULD ANSWER WITH ONE QUERY**: a
-// batch of names is `persistence/directory_queries.js`'s `byKeys()` shape
-// (one statement over `ANY($1)`), selecting five attributes, where nine
-// synchronous round trips per person would be the alternative.
+// **IN #349's WINDOW** each name is one `locateEntry()`, so a person the
+// worker does not hold costs one synchronous round trip; batching the names
+// into one `byKeys()` question is left for the prefetch rcbj deferred.
 // ---------------------------------------------------------------------------
 /**
  * Reads the credential attributes of each named person, raw, in one call.
@@ -11010,7 +11301,7 @@ if (typeof certEnrollment.setDirectory === 'function') {
       const attribute = String(name).toLowerCase();
       const out = [];
       if (kind === 'person') {
-        eachEntryInRealm(function (stored) {
+        eachHolderOfAny([attribute], function (stored) {
           if (isPersonEntry(stored) &&
               (stored.attributes[attribute] || []).length) {
             const username = usernameOfEntry(stored);
@@ -11041,14 +11332,16 @@ if (typeof certEnrollment.setDirectory === 'function') {
     //
     // **ONE STATEMENT UNDER #349's WINDOW** — `withAttribute()` under
     // `ou=users` or `ou=applications` in `persistence/directory_queries.js`,
-    // keyset-paged — and the window should answer it that way.
+    // keyset-paged — which is how #349's window answers it
+    // (`eachHolderOfAny()`).
     holdersWithValues: function (kind, name) {
       log.debug('Entering holdersWithValues(). kind=' + kind + ' name=' +
                 name);
       const attribute = String(name).toLowerCase();
       const out = [];
       if (kind === 'person') {
-        eachEntryInRealm(function (stored) {
+        // The holders only; in a windowed worker asked of the store (#349).
+        eachHolderOfAny([attribute], function (stored) {
           const values = stored.attributes[attribute] || [];
           if (values.length && isPersonEntry(stored)) {
             const username = usernameOfEntry(stored);
@@ -11216,8 +11509,9 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
       const out = [];
       // The attributes are asked FIRST (#352): a property lookup, where
       // `isPersonEntry()` normalises two DNs — so only the people who hold
-      // keys pay for it, not the realm. Same rows, same walk order.
-      eachEntryInRealm(function (stored) {
+      // keys pay for it, not the realm. Same rows, same walk order. In a
+      // windowed worker only the holders are visited (#349).
+      eachHolderOfAny(['stskrb5keyinfo', 'stskrb5keys'], function (stored) {
         if ((stored.attributes.stskrb5keyinfo ||
              stored.attributes.stskrb5keys) && isPersonEntry(stored)) {
           out.push({ username: usernameOfEntry(stored) || stored.dn,
@@ -12646,7 +12940,7 @@ function membershipsNaming(dn) {
   const uid = (splitRdns(dn)[0] || '').toLowerCase().indexOf('uid=') === 0
     ? unescapeDnValue(rdnPairs(splitRdns(dn)[0])[0].value) : '';
   let count = 0;
-  eachEntryInRealm(function (entry) {
+  eachResidentEntry(function (entry) {
     const names = MEMBER_ATTRIBUTES.some(function (attribute) {
       return (entry.attributes[attribute.name] || []).some(function (value) {
         return attribute.holds === 'uid'
@@ -12680,7 +12974,7 @@ function dropMemberships(dn) {
   const uid = (splitRdns(dn)[0] || '').toLowerCase().indexOf('uid=') === 0
     ? unescapeDnValue(rdnPairs(splitRdns(dn)[0])[0].value).toLowerCase() : '';
   const rewrites = [];
-  eachEntryInRealm(function (entry) {
+  eachResidentEntry(function (entry) {
     let changed = false;
     const next = {};
     Object.keys(entry.attributes).forEach(function (name) {
@@ -13130,13 +13424,29 @@ function performOperation(operation, shape) {
   const finished = new Promise(function (resolve) {
     signal = resolve;
   });
-  handler(req, res, function (err) {
-    called = true;
-    if (err) {
-      failure = err;
+  try {
+    handler(req, res, function (err) {
+      called = true;
+      if (err) {
+        failure = err;
+      }
+      signal();
+    });
+  } catch (e) {
+    // A DIRECTORY THIS WORKER COULD NOT READ (#349): a windowed worker's
+    // question to the store went unanswered or was refused, and the handler
+    // threw it. The client is told `unavailable` (52) — the directory could
+    // not be consulted, which is not a statement about its contents — and
+    // anything else is thrown on as it always was.
+    const code = errorCodes.codeOf(e);
+    if (code !== 'STS-LDAP-0130' && code !== 'STS-LDAP-0131') {
+      throw e;
     }
-    signal();
-  });
+    log.debug("Caught in performOperation(): " + e.message);
+    called = true;
+    failure = coded(code, new ldap.UnavailableError('the directory could ' +
+                                                    'not be read'));
+  }
   // A HANDLER THAT SAID IT WENT ASYNCHRONOUS (2026-09-14, #46): the bind asks
   // the cluster's shared rate limiter before it looks at a password. The
   // answer is a promise then — `request_worker.ts`'s `handleOperation()`
@@ -14159,7 +14469,7 @@ function ldapAddNow(req, res, next) {
       ' named a parent that does not exist',
       new ldap.NoSuchObjectError(parent), dn));
   }
-  if (totalEntries() >= maxEntries()) {
+  if (cappedEntries() >= maxEntries()) {
     log.debug('Leaving the LDAP add handler. The directory is full.');
     return next(ldapRefusal(req, 'STS-LDAP-0007', 'an add of ' + dn +
       ' was refused because the directory holds its maximum of ' +
@@ -14994,7 +15304,19 @@ server.search('', function (req, res, next) {
   // so it neither matches nor counts against the size limit, and counted here
   // for the audit row only.
   let withheldEntries = 0;
-  for (const stored of entries.values()) {
+  // A WINDOWED WORKER WALKS ONLY WHAT THE BASE REACHES (#349): the resident
+  // entries under it and the part of the people and devices it names, paged
+  // from the store and handed out to nobody — a search edits nothing, so
+  // nothing it read is held once it has been sent.
+  const candidates = directoryWindow
+    ? (function* () {
+      for (const pair of directoryWindow.walk(realms.currentId(),
+                                              normalizeDn(base), true)) {
+        yield pair[1];
+      }
+    })()
+    : entries.values();
+  for (const stored of candidates) {
     if (!isUnder(stored.dn, base)) continue;
     const depth = depthUnder(stored.dn, base);
     if (scope === 'base' && depth !== 0) continue;
@@ -15681,9 +16003,10 @@ const DIRECTORY_COLLATOR = new Intl.Collator();
 // already decide; and the copy is made for the page's rows alone. Same rows,
 // same order, same counts.
 //
-// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: the DNs and
-// origins under the base, ordered, with the count per origin — and the rows
-// of one page by key.
+// **IN #349's WINDOW** this is still a whole walk, paged through the store:
+// correct, and O(n) in the store's rows, on an administrator's page. The
+// indexed form — the DNs and origins under the base, ordered, with the count
+// per origin, and the rows of one page by key — is not built.
 // ---------------------------------------------------------------------------
 function ldapDirectoryView(req) {
   log.debug('Entering ldapDirectoryView().');
@@ -16059,7 +16382,7 @@ function writeApplication(identifier, attributes) {
     log.debug('Leaving writeApplication(). The container is full.');
     return false;
   }
-  if (totalEntries() >= maxEntries() && !existing) {
+  if (cappedEntries() >= maxEntries() && !existing) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its maximum ' +
                                           'of ' +
@@ -16193,7 +16516,7 @@ function federationEntry(id) {
   }
   const wanted = String(id);
   let found = null;
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (found || !isUnder(stored.dn, federationsDn())) {
       return;
     }
@@ -16217,7 +16540,7 @@ function readFederation(id) {
 function federationCount() {
   log.debug("Entering federationCount().");
   let n = 0;
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, federationsDn()) &&
         normalizeDn(stored.dn) !== normalizeDn(federationsDn())) {
       n++;
@@ -16230,7 +16553,7 @@ function federationCount() {
 function allFederations() {
   log.debug('Entering allFederations().');
   const rows = [];
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, federationsDn()) &&
         normalizeDn(stored.dn) !== normalizeDn(federationsDn())) {
       rows.push(entryObject(stored));
@@ -16257,7 +16580,7 @@ function writeFederation(id, attributes) {
     log.debug('Leaving writeFederation(). The container is full.');
     return false;
   }
-  if (totalEntries() >= maxEntries() && !existing) {
+  if (cappedEntries() >= maxEntries() && !existing) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its maximum ' +
                                           'of ' +
@@ -16321,7 +16644,7 @@ function policyEntry(name) {
 function policyCount() {
   log.debug("Entering policyCount().");
   let n = 0;
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, policiesDn()) &&
         normalizeDn(stored.dn) !== normalizeDn(policiesDn())) {
       n++;
@@ -16366,7 +16689,7 @@ function writePolicy(name, attributes) {
     log.debug('Leaving writePolicy(). The container is full.');
     return false;
   }
-  if (totalEntries() >= maxEntries() && !existing) {
+  if (cappedEntries() >= maxEntries() && !existing) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
@@ -16434,7 +16757,7 @@ function roleEntry(name) {
 function roleCount() {
   log.debug("Entering roleCount().");
   let n = 0;
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, rolesDn()) &&
         normalizeDn(stored.dn) !== normalizeDn(rolesDn())) {
       n++;
@@ -16473,7 +16796,7 @@ function writeRole(name, attributes) {
     log.debug('Leaving writeRole(). The container is full.');
     return false;
   }
-  if (totalEntries() >= maxEntries() && !existing) {
+  if (cappedEntries() >= maxEntries() && !existing) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
@@ -16545,7 +16868,7 @@ function writePasswordPolicy(name, attributes) {
   log.debug('Entering writePasswordPolicy(). name=' + name);
   const dn = passwordPolicyDn(name);
   const existing = getEntry(dn);
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
@@ -16614,7 +16937,7 @@ function writeAuthnPolicy(name, attributes) {
   log.debug('Entering writeAuthnPolicy(). name=' + name);
   const dn = authnPolicyDn(name);
   const existing = getEntry(dn);
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
@@ -16682,7 +17005,7 @@ function pepEntry(name) {
 function pepCount() {
   log.debug("Entering pepCount().");
   let n = 0;
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, pepsDn()) &&
         normalizeDn(stored.dn) !== normalizeDn(pepsDn())) {
       n++;
@@ -16695,7 +17018,7 @@ function pepCount() {
 function allPeps() {
   log.debug('Entering allPeps().');
   const rows = [];
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, pepsDn()) &&
         normalizeDn(stored.dn) !== normalizeDn(pepsDn())) {
       const object = entryObject(stored);
@@ -16724,7 +17047,7 @@ function writePep(name, attributes) {
     log.debug('Leaving writePep(). The container is full.');
     return false;
   }
-  if (totalEntries() >= maxEntries() && !existing) {
+  if (cappedEntries() >= maxEntries() && !existing) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
@@ -16757,7 +17080,7 @@ function allTrustAnchors() {
   log.debug('Entering allTrustAnchors().');
   const rows = [];
   const base = normalizeDn(trustAnchorsDn());
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (!isUnder(stored.dn, trustAnchorsDn()) ||
         normalizeDn(stored.dn) === base) {
       return;
@@ -16781,7 +17104,7 @@ function writeTrustAnchor(fingerprint, pem, meta) {
   log.debug('Entering writeTrustAnchor(). fingerprint=' + fingerprint);
   const dn = trustAnchorDn(fingerprint);
   const existing = entries.get(normalizeDn(dn));
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     log.warn('ldap: not storing trust anchor ' + fingerprint + '; the ' +
              'directory holds its maximum of ' + maxEntries() + ' entries, ' +
              'so this anchor is in force until the next start and no longer.');
@@ -16927,6 +17250,19 @@ function peopleByFederationLink(value) {
     log.debug('Leaving peopleByFederationLink(). No value.');
     return out;
   }
+  const asked = windowedFind('byAttribute', ['federationlink', wanted, 1000],
+    function (stored) {
+      return (stored.attributes.federationlink || []).indexOf(wanted) >= 0 &&
+        isPersonEntry(stored);
+    });
+  if (asked) {
+    // A person is always windowed, so the store is the whole answer (#349).
+    asked.forEach(function (stored) {
+      out.push({ username: usernameOfEntry(stored), dn: stored.dn });
+    });
+    log.debug('Leaving peopleByFederationLink(). ' + out.length + ', asked.');
+    return out;
+  }
   eachEntryInRealm(function (stored) {
     if ((stored.attributes.federationlink || []).indexOf(wanted) >= 0 &&
         isPersonEntry(stored)) {
@@ -16947,6 +17283,19 @@ function peopleByMail(address) {
   const out = [];
   if (!wanted) {
     log.debug('Leaving peopleByMail(). No address.');
+    return out;
+  }
+  const asked = windowedFind('byMail', [wanted, 1000], function (stored) {
+    return (stored.attributes.mail || []).some(function (one) {
+      return String(one).toLowerCase() === wanted;
+    }) && isPersonEntry(stored);
+  });
+  if (asked) {
+    // A person is always windowed, so the store is the whole answer (#349).
+    asked.forEach(function (stored) {
+      out.push({ username: usernameOfEntry(stored), dn: stored.dn });
+    });
+    log.debug('Leaving peopleByMail(). ' + out.length + ', asked.');
     return out;
   }
   eachEntryInRealm(function (stored) {
@@ -16970,7 +17319,7 @@ function federationLinksThrough(fedId) {
     log.debug('Leaving federationLinksThrough(). No relationship.');
     return out;
   }
-  eachEntryInRealm(function (stored) {
+  eachHolderOfAny(['federationlink'], function (stored) {
     (stored.attributes.federationlink || []).forEach(function (value) {
       if (String(value).indexOf(prefix) === 0 && isPersonEntry(stored)) {
         out.push({ username: usernameOfEntry(stored), dn: stored.dn,
@@ -17137,7 +17486,7 @@ function spiffeStored(containerDn, attributeName, identifier) {
   const wanted = String(identifier);
   const key = String(attributeName).toLowerCase();
   let found = null;
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (found || !isUnder(stored.dn, containerDn)) {
       return;
     }
@@ -17155,7 +17504,7 @@ function spiffeStored(containerDn, attributeName, identifier) {
 function spiffeChildren(containerDn) {
   log.debug("Entering spiffeChildren().");
   const rows = [];
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, containerDn) &&
         normalizeDn(stored.dn) !== normalizeDn(containerDn)) {
       rows.push(entryObject(stored));
@@ -17168,7 +17517,7 @@ function spiffeChildren(containerDn) {
 function spiffeChildCount(containerDn) {
   log.debug("Entering spiffeChildCount().");
   let n = 0;
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, containerDn) &&
         normalizeDn(stored.dn) !== normalizeDn(containerDn)) {
       n++;
@@ -17191,7 +17540,7 @@ function spiffeWrite(containerDn, attributeName, identifier, attributes,
   const dn = existing ? existing.dn
     : (containerDn === spiffeEntriesDn() ? spiffeEntryDn(identifier)
                                          : spiffeAgentDn(identifier));
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     // Warned rather than thrown, as a full directory always is here: whatever
     // the caller was doing succeeded, and a registry that could fail an SVID
     // request would be the tail wagging the dog.
@@ -17390,9 +17739,14 @@ function isPersonEntry(stored) {
 function personCount() {
   log.debug("Entering personCount().");
   let n = 0;
-  eachEntryInRealm(function (stored) {
-    if (isPersonEntry(stored)) n++;
-  });
+  if (directoryWindow) {
+    // Counted by the store, with this process's own changes (#349).
+    n = directoryWindow.countUnder(realms.currentId(), normalizeDn(usersDn()));
+  } else {
+    eachEntryInRealm(function (stored) {
+      if (isPersonEntry(stored)) n++;
+    });
+  }
   log.debug("Leaving personCount().");
   return n;
 }
@@ -17418,10 +17772,9 @@ function personCount() {
 // created, deleted or renamed moves it; an attribute changed in place moves
 // it too, which costs a re-sort and never a wrong answer.
 //
-// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: the keys under
-// `ou=users`, ordered — `SELECT key ... WHERE key LIKE '%,ou=users,<base>'
-// ORDER BY key` — and, for `personsPage()`, the same with a keyset bound.
-// Nothing here reads an entry to answer it.
+// **IN #349's WINDOW** the rows come from paging `ou=users` in key order
+// through the store, read-only — the keys and names are kept, the entries
+// are not. Nothing here reads an entry to answer it.
 // ---------------------------------------------------------------------------
 const personRowsMemo = realms.keyed(function () {
   return { version: -1, rows: null, byUid: null };
@@ -17443,7 +17796,17 @@ function personRows() {
   const rows = [];
   // `isPersonEntry()`'s test on a DN normalised once: under the container
   // (`isUnder()`'s `endsWith`) and not the container itself.
-  eachEntryInRealm(function (stored, storeKey) {
+  // A windowed worker pages `ou=users` alone from the store, read-only: the
+  // rows keep keys and names, never an entry (#349).
+  const visit = directoryWindow
+    ? function (fn) {
+      for (const pair of directoryWindow.walk(realms.currentId(), base,
+                                              true)) {
+        fn(pair[1], pair[0]);
+      }
+    }
+    : eachEntryInRealm;
+  visit(function (stored, storeKey) {
     const key = normalizeDn(stored.dn);
     if (key !== base && key.endsWith(suffix)) {
       rows.push({ key: key, storeKey: storeKey, dn: stored.dn,
@@ -17535,8 +17898,9 @@ function personNames() {
 // `allPersons()`'s order as the old stable sort did — and a page is a binary
 // search for `after` and `limit` entry reads.
 //
-// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: a keyset page —
-// `... WHERE uid > $after ORDER BY uid LIMIT $limit + 1`.
+// **IN #349's WINDOW** `personRows()` pages `ou=users` through the store,
+// read-only, and this pages its rows; a keyset page by `uid` in SQL is the
+// further step, not built.
 // ---------------------------------------------------------------------------
 /**
  * Returns one page of this realm's residents (people not projected from
@@ -18238,7 +18602,7 @@ function writePerson(dn, attributes, options) {
               '.');
     return coded('STS-LDAP-0048', { ok: false, reason: 'notAPerson', dn: dn });
   }
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its maximum ' +
                                           'of ' +
@@ -18465,7 +18829,8 @@ function logBatchDangling(batch) {
     }
   });
   let values = 0;
-  eachEntryInRealm(function (entry) {
+  // The groups hold membership values, and groups are resident (#349).
+  eachResidentEntry(function (entry) {
     MEMBER_ATTRIBUTES.forEach(function (attribute) {
       (entry.attributes[attribute.name] || []).forEach(function (value) {
         if (attribute.holds === 'uid'
@@ -18586,6 +18951,13 @@ function noteIndexesDelete(stored, current) {
 // `directoryVersion` past what the counts know, and they are counted again.
 function batchHasChildren(batch, dn) {
   log.debug('Entering batchHasChildren().');
+  if (directoryWindow) {
+    // A windowed worker asks, one DN at a time, rather than counting every
+    // key it would have to page through the store to see (#349).
+    const asked = hasChildren(dn);
+    log.debug('Leaving batchHasChildren(). Asked the window: ' + asked);
+    return asked;
+  }
   if (!batch.children || batch.childrenVersion !== directoryVersion) {
     const counts = new Map();
     for (const key of entries.keys()) {
@@ -18706,7 +19078,7 @@ function deletePerson(dn, options) {
 function allGroupEntries() {
   log.debug('Entering allGroupEntries().');
   const rows = [];
-  eachEntryInRealm(function (stored) {
+  eachResidentEntry(function (stored) {
     if (groupRuleFor(stored)) {
       rows.push(stored);
     }
@@ -18868,7 +19240,7 @@ function writeGroupEntry(dn, attributes, origin) {
                                                    'group.');
     return coded('STS-LDAP-0048', { ok: false, reason: 'notAGroup', dn: dn });
   }
-  if (!existing && totalEntries() >= maxEntries()) {
+  if (!existing && cappedEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its maximum ' +
                                           'of ' +
@@ -21365,7 +21737,13 @@ module.exports = {
   // calls this; the sweep is for the two callers that mean the whole directory.
   populateVcAttributesAt: populateVcAttributesAt,
   // THIS REALM's entries, not the Map's. See realmEntryCount().
-  entryCount: realmEntryCount
+  entryCount: realmEntryCount,
+  // THE WINDOW (#349), or null outside a windowed worker. Exported for
+  // `tests/directory_window.js`, which gives it a stand-in bridge to hold
+  // this module's own lookups to what they answer through a window; nothing
+  // in the service reads it from here (persistence.js has it through the
+  // directory slot).
+  directoryWindow: directoryWindow
 };
 
 // Loaded: from here on a membership note can read what it needs (see

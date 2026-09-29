@@ -619,6 +619,60 @@ class RequestWorker {
     deps.log.debug("Leaving RequestWorker.constructor().");
   }
 
+  // When the last refusal line was written, and how many since (#349).
+  private static lastRefusalLine = 0;
+  private static refusedSinceLine = 0;
+
+  // THE ERROR MIDDLEWARE FOR A DIRECTORY THE STORE COULD NOT ANSWER FOR (#349):
+  // see where start() registers it. A 503 with Retry-After, the code marked
+  // for the call log and at the front of one warning line; the body says the
+  // directory could not be read and nothing about the store. Any other error
+  // goes on to Express's own handler, unchanged.
+  /**
+   * Refuses a request whose directory read the store did not answer
+   * (STS-LDAP-0130, STS-LDAP-0131) with a 503; passes anything else on.
+   *
+   * @param err - the error a handler threw
+   * @param req - the request
+   * @param res - the response
+   * @param next - the next error handler
+   */
+  static directoryUnavailable(err: any, req: http.IncomingMessage,
+                              res: any, next: (e?: any) => void): void {
+    log.debug("Entering RequestWorker.directoryUnavailable().");
+    const code = errorCodes.codeOf(err);
+    if (code !== 'STS-LDAP-0130' && code !== 'STS-LDAP-0131') {
+      log.debug("Leaving RequestWorker.directoryUnavailable(). Not ours.");
+      next(err);
+      return;
+    }
+    // ONE LINE A MINUTE, with how many were refused since the last one: a
+    // database outage refuses every request that misses, and a line per
+    // request is the flood the no-per-event-failure-logs rule forbids.
+    RequestWorker.refusedSinceLine += 1;
+    const now = Date.now();
+    if (now - RequestWorker.lastRefusalLine >= 60000) {
+      log.warn(errorCodes.tag(code) + 'request_worker: ' +
+               RequestWorker.refusedSinceLine + ' request(s) refused because ' +
+               'the directory could not be read, the latest ' + req.method +
+               ' ' + String(req.url || '').split('?')[0] + ': ' +
+               ((err && err.message) || err));
+      RequestWorker.lastRefusalLine = now;
+      RequestWorker.refusedSinceLine = 0;
+    }
+    if (res.headersSent) {
+      log.debug("Leaving RequestWorker.directoryUnavailable(). Too late.");
+      next(err);
+      return;
+    }
+    errorCodes.mark(res, code);
+    res.statusCode = 503;
+    res.setHeader('Retry-After', '5');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end('The directory could not be read. Try again shortly.\n');
+    log.debug("Leaving RequestWorker.directoryUnavailable().");
+  }
+
   // What the bottom of this file passes, from the real modules.
   /**
    * Answers the dependencies built from the real modules.
@@ -764,6 +818,17 @@ class RequestWorker {
     app.set('trust proxy', true);
 
     require('./protocol_stack');
+
+    // A DIRECTORY THIS WORKER COULD NOT READ (#349). With
+    // `ldap.workerDirectory=postgres-lru` a directory read this worker's
+    // window does not hold asks the store synchronously, and a store that
+    // does not answer throws STS-LDAP-0130 or -0131 out of whatever handler
+    // asked. Express hands a thrown error to the error middleware, and this
+    // is the last one: the request is refused as unavailable, with a
+    // Retry-After, rather than answered out of a window that cannot say what
+    // it is missing. Registered after every route, which is what an error
+    // middleware must be, and only in a worker. Anything else is passed on.
+    app.use(RequestWorker.directoryUnavailable);
 
     // The four startup steps, shared with server.js — the store, the keys, the
     // minted rows and COORDINATION. See service_state.ts. Required HERE, after

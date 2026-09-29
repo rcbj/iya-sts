@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3873** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3874** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 137
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 90
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
@@ -2633,6 +2633,7 @@ Raised from: ldap/.
 | `STS-LDAP-0130` | A request or surface worker holding the directory as a window (ldap.workerDirectory=postgres-lru, #349) asked the store for an entry it did not hold and no answer came within ldap.workerDirectoryTimeoutMs — the database is down, unreachable or too slow. The request is refused rather than answered out of a window that cannot say what it is missing. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
 | `STS-LDAP-0131` | A windowed worker's question to the store (#349) was refused by the database: the connection failed or the statement errored. The request is refused as for STS-LDAP-0130. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
 | `STS-LDAP-0132` | The directory bridge's worker thread (#349) failed. The question it was answering timed out (STS-LDAP-0130); the next question starts a new thread. | none — logged |
+| `STS-LDAP-0133` | ldap.workerDirectory=postgres-lru (#349) was set where it cannot work: the store is not PostgreSQL (a memory or ldif store has nothing for a window to read), or the service is deployed as several cells (a person's entry may be in another cell's database). The service does not start. | none — fatal at startup |
 
 ## STS-ATTR
 

@@ -216,6 +216,7 @@ time it is asked for.
 |---|---|---|---|
 | Crypto worker affinity | which crypto worker last handled a session | per process | 1,000; forgotten when a worker exits |
 | Request worker affinity | which request worker a browser, credential or LDAP connection is pinned to, one map for each pool | front process | 5,000 per pool; forgotten when a worker exits |
+| Directory window | with `ldap.workerDirectory=postgres-lru`, the people and devices a request or surface worker read most recently, and those it changed and has not yet written (never dropped) | each request and surface worker | `ldap.workerCacheEntries` (10,000), least recently read first |
 | Unchanged-write shadow | the last copy of each directory entry written to the store, so an unchanged entry is not written again | per process | refreshed at each flush; one row per directory entry, so at most `ldap.maxEntries` + 1 in a realm |
 
 ## Small memos
