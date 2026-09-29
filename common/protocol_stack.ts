@@ -1091,6 +1091,10 @@ class ProtocolStack {
     // And the expired-row purge (#333), for the same reason.
     require('../persistence/persistence_minted')
       .ensureExpiryPurgeJob(jobScheduler);
+    // AND THE MEMORY REPORT (#341): `process.memory-report`, a per-process
+    // job every process registers here for the same reason, whose owner is
+    // a leaf `server.js` loads before the stack.
+    require('./process_memory').ensureReportJob(jobScheduler);
     // 18j. RISK SCORING (#62 P1, 2026-09-22): the store, the datasets and
     // the failure history are LIBRARIES (rule 3) that register no route, and
     // then Monitoring → Risk, for 18a's reason — the console's shell and the
