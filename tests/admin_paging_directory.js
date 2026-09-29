@@ -219,6 +219,8 @@ function checkApplications(t) {
   });
   // The old answers, by the old algorithm: a filter over the whole list.
   const oldFind = function (attribute, value) {
+    log.debug("Entering oldFind().");
+    log.debug("Leaving oldFind().");
     return applications.list().filter(function (row) {
       const v = row.fields[attribute];
       return (Array.isArray(v) ? v : (v ? [v] : [])).map(String)
@@ -438,10 +440,13 @@ function checkResidents(t) {
   t.log.info('=== a cell\'s residents, a page at a time ===');
   // The old algorithm, over allPersons().
   const old = function (after, limit) {
+    log.debug("Entering old().");
     const page = ldap.allPersons().filter(function (entry) {
       return String(entry.origin || '').indexOf('projection') !== 0;
     }).map(function (entry) {
       const a = entry.attributes || {};
+      // A HOT PATH: per attribute per person, so no Entering/Leaving pair —
+      // it would drown the log.
       const one = function (k) {
         const key = Object.keys(a).filter(function (n) {
           return n.toLowerCase() === k;
@@ -457,6 +462,7 @@ function checkResidents(t) {
       return x.name < y.name ? -1 : (x.name > y.name ? 1 : 0);
     });
     const out = page.slice(0, limit);
+    log.debug("Leaving old().");
     return { people: out,
              next: page.length > limit ? out[out.length - 1].name : '' };
   };
