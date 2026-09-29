@@ -2808,9 +2808,22 @@ function workerTable() {
   return workers.slice();
 }
 
+// A REPLACEMENT GOES THROUGH THE START GATE (#342), like every fork after
+// start(). A crash that takes several workers at once — the kernel's OOM
+// killer does exactly that — would otherwise fork all their replacements at
+// once, and those restores would repeat the memory peak that killed them. The
+// forks still waiting are counted as held, so that two deaths close together
+// cannot queue more workers than the pool's size or hand out one slot twice.
+/**
+ * Queues a replacement for a dead worker, when `replacementFor()` says so.
+ *
+ * @param dead - the dead worker's entry
+ * @returns a promise of the replacement's settled entry, or null when none
+ *   is queued
+ */
 function replaceIfWanted(dead) {
   log.debug("Entering replaceIfWanted().");
-  const plan = replacementFor(dead, workers);
+  const plan = replacementFor(dead, workers.concat(queuedForks()));
   if (!plan.replace) {
     log.info('request_pool: ' + plan.pool + ' worker ' + dead.pid +
              ' is not replaced: ' + plan.why + '.');
@@ -2821,10 +2834,161 @@ function replaceIfWanted(dead) {
   log.warn(errorCodes.tag('STS-WORKER-0043') +
            'request_pool: forking a replacement for ' + plan.pool +
            ' worker ' + dead.pid + ' in slot ' + plan.slot + ' (' +
-           replaced[plan.pool] + ' replaced in this pool so far).');
-  const next = fork(plan.pool, plan.slot);
+           replaced[plan.pool] + ' replaced in this pool so far)' +
+           (startsInFlight >= startConcurrency()
+             ? ', once the ' + startsInFlight + ' worker(s) starting now ' +
+               'have settled'
+             : '') + '.');
+  const next = queueFork(plan.pool, plan.slot);
   log.debug("Leaving replaceIfWanted().");
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// WORKERS START ONE AT A TIME (#342, 2026-09-29).
+//
+// A request worker's start restores the WHOLE store into its own heap: the
+// directory, the realms and their keys, the minted rows, and the transient
+// arrays the restore builds on the way. start() used to fork every worker in
+// the same instant, so the node's memory peaked at N restores running at once
+// on top of the front process. On testidp's node-a on 2026-09-28 at
+// 20:32 UTC, a new task's surface worker and all three protocol workers were
+// SIGKILLed within three seconds of each other, twice. That was the Fargate
+// task's memory limit, and it was reached only while they were starting.
+//
+// So every fork after start() goes through this gate, replacements included.
+// At most `workers.startConcurrency` workers (default 1) are between their
+// fork and their first answer. The next one is forked when one of those
+// settles: it reported ready, it reported that it could not start, its
+// channel failed, or it exited. That is `entry.settled`, which fork() already
+// resolves in each of those cases.
+//
+// **ONE COUNT FOR BOTH POOLS, NOT ONE PER POOL.** What this gate limits is the
+// memory of the NODE, and a surface worker's start costs the same as a
+// protocol worker's: the same stack, and the same restore of the same store.
+// A count per pool would still allow two restores at once with the default
+// of 1, and the node that died had both pools starting together.
+//
+// **AND THE LISTENER DOES NOT WAIT FOR ALL OF THEM.** server.js binds when
+// start() resolves. start() used to resolve when every worker had settled,
+// which with serial forks would be the SUM of the starts: about 4 × 68 s on
+// testidp. It now resolves once the FIRST worker of each configured pool has
+// settled. The queue is interleaved (protocol 0, surfaces 0, protocol 1, and
+// so on) so that both pools have a worker as early as possible. The rest come
+// up behind a listener that is already answering, and routing sends requests
+// to whichever workers are ready (readyWorkers()), which it has always done
+// for a replacement. STS-WORKER-0025 and 0026 are still decided over the
+// whole initial set, when its last member settles.
+//
+// **THE START TIMEOUT IS EACH WORKER'S OWN.** `request_worker.ts` arms it in
+// the child after `begin`, so it runs from that worker's own fork and never
+// from the pool's. A worker queued behind three others does not use up its
+// time while it waits.
+//
+// A queued fork is dropped when the pool is stopping or its pool has given
+// up. By then, forking it would be the fork loop that give-up exists to
+// prevent.
+// ---------------------------------------------------------------------------
+let forkQueue = [];
+let startsInFlight = 0;
+
+/**
+ * Reads `workers.startConcurrency`: how many workers of both pools may be
+ * starting at once.
+ *
+ * @returns the count, at least 1; 1 with no configuration
+ */
+function startConcurrency() {
+  log.debug("Entering startConcurrency().");
+  let n = 1;
+  try {
+    n = parseInt(config.value('workers.startConcurrency'), 10);
+  } catch (e) {
+    log.debug("Caught in startConcurrency(): " + ((e && e.message) || e));
+    // No configuration at all (an in-process test): one at a time, which is
+    // the default and the conservative answer.
+    n = 1;
+  }
+  log.debug("Leaving startConcurrency().");
+  return n >= 1 ? n : 1;
+}
+
+// The forks still waiting, as `{ pool, slot }`, for replacementFor()'s count.
+function queuedForks() {
+  log.debug("Entering queuedForks().");
+  log.debug("Leaving queuedForks().");
+  return forkQueue.map(function (one) {
+    return { pool: one.pool, slot: one.slot, queued: true };
+  });
+}
+
+/**
+ * Queues one worker's fork behind the start gate.
+ *
+ * @param pool - the pool name; the protocol pool unless `SURFACE_POOL`
+ * @param slot - the worker's position in its pool
+ * @returns a promise of the worker's entry once it is ready, or null when
+ *   it failed to start or was never forked
+ */
+function queueFork(pool, slot) {
+  log.debug("Entering queueFork(). pool=" + pool + " slot=" + slot);
+  const which = pool === SURFACE_POOL ? SURFACE_POOL : PROTOCOL_POOL;
+  const settled = new Promise(function (resolve) {
+    forkQueue.push({ pool: which, slot: slot, resolve: resolve });
+  });
+  pumpForks();
+  log.debug("Leaving queueFork().");
+  return settled;
+}
+
+// Forks from the front of the queue while fewer than startConcurrency() are
+// starting. Called when a fork is queued and whenever one settles.
+function pumpForks() {
+  log.debug("Entering pumpForks().");
+  while (forkQueue.length && startsInFlight < startConcurrency()) {
+    const next = forkQueue.shift();
+    if (stopped || givenUp[next.pool]) {
+      log.info('request_pool: a queued ' + next.pool + ' worker (slot ' +
+               next.slot + ') is not forked: ' +
+               (stopped ? 'the pool is stopping'
+                        : 'the ' + next.pool + ' pool has given up on its ' +
+                          'workers') + '.');
+      next.resolve(null);
+      continue;
+    }
+    let entry;
+    try {
+      entry = fork(next.pool, next.slot);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-WORKER-0045') +
+                'request_pool: could not fork a ' + next.pool + ' worker ' +
+                '(slot ' + next.slot + '): ' + ((e && e.message) || e) +
+                '. Moving on to the next one queued.');
+      next.resolve(null);
+      continue;
+    }
+    startsInFlight++;
+    log.info('request_pool: ' + next.pool + ' worker ' + entry.pid +
+             ' (slot ' + next.slot + ') forked; ' + startsInFlight +
+             ' starting, ' + forkQueue.length + ' queued behind it.');
+    entry.settled.then(function (settled) {
+      startsInFlight = Math.max(0, startsInFlight - 1);
+      next.resolve(settled);
+      pumpForks();
+    });
+  }
+  log.debug("Leaving pumpForks().");
+}
+
+// Drops every queued fork, for stop() and reset().
+function dropQueuedForks() {
+  log.debug("Entering dropQueuedForks().");
+  const dropped = forkQueue;
+  forkQueue = [];
+  dropped.forEach(function (one) {
+    one.resolve(null);
+  });
+  log.debug("Leaving dropQueuedForks(). " + dropped.length + " dropped.");
 }
 
 // The ready workers of ONE pool — the protocol pool when none is named. Every
@@ -3432,15 +3596,44 @@ function surfacePoolProblem() {
 // service, seeds a directory and generates a realm's keys), so forking one on
 // the first request would make that request wait for all of it. The front
 // process is not answering yet at this point, so the cost is paid where nobody
-// is waiting.
+// is waiting — for each pool's first worker, since #342; the rest start one
+// at a time behind the listener (see the start gate above queueFork()).
 // ---------------------------------------------------------------------------
+// THE ORDER THE INITIAL WORKERS ARE QUEUED IN (#342): interleaved, protocol 0,
+// surfaces 0, protocol 1, and so on, so that each pool has its first worker as
+// early as possible. start() lists them pool by pool, protocol first, and a
+// stable sort by slot interleaves them. Exported for
+// tests/request_worker_replacement.js.
 /**
- * Forks both pools and waits for their workers to be ready; called once from
- * `server.js` before the listener binds.
+ * Sorts start()'s list of initial workers, in place, into the order they
+ * are queued.
+ *
+ * @param forks - `[{ pool, slot }]`, pool by pool, the protocol pool first
+ * @returns the same array, interleaved by slot
+ */
+function startOrder(forks) {
+  log.debug("Entering startOrder().");
+  forks.sort(function (a, b) {
+    return a.slot - b.slot;
+  });
+  log.debug("Leaving startOrder().");
+  return forks;
+}
+
+// **SINCE #342 (2026-09-29) THE WORKERS ARE FORKED ONE AT A TIME** through
+// the start gate above queueFork(), and the promise resolves once the first
+// worker of each pool has settled rather than when all have.
+/**
+ * Queues both pools' workers behind the start gate and waits for the first
+ * worker of each pool to settle; called once from `server.js` before the
+ * listener binds.
  *
  * Rejects when anything is dispatched while the store does not coordinate,
  * or when the surface pool's configuration is fatal.
- * @returns a promise of `{ started, wanted, pools }`
+ * @returns a promise of `{ started, wanted, pending, all, pools }`:
+ *   `started` workers ready so far, `pending` of the initial set not yet
+ *   settled, and `all` a promise of `{ started, wanted, pools }` once every
+ *   one of the initial set has
  */
 function start() {
   log.debug('Entering start().');
@@ -3615,10 +3808,24 @@ function start() {
   const forks = [];
   POOLS.forEach(function (pool) {
     for (let i = 0; i < wantedByPool[pool]; i++) {
-      forks.push(fork(pool, i).settled);
+      forks.push({ pool: pool, slot: i });
     }
   });
-  starting = Promise.all(forks).then(function (settled) {
+  startOrder(forks);
+  forks.forEach(function (one) {
+    one.settled = queueFork(one.pool, one.slot).then(function (entry) {
+      one.done = true;
+      return entry;
+    });
+  });
+  // THE LISTENER WAITS FOR EACH POOL'S FIRST WORKER ONLY, and the rest come
+  // up behind it; `pending` is how many of the initial set had not settled.
+  const firsts = forks.filter(function (one) {
+    return one.slot === 0;
+  });
+  const all = Promise.all(forks.map(function (one) {
+    return one.settled;
+  })).then(function (settled) {
     const up = settled.filter(Boolean).length;
     const upByPool = {};
     POOLS.forEach(function (pool) {
@@ -3646,6 +3853,24 @@ function start() {
     return { started: up, wanted: wanted,
              pools: POOLS.map(function (pool) {
                return { pool: pool, started: upByPool[pool],
+                        wanted: wantedByPool[pool] };
+             }) };
+  });
+  // What server.js is told once each pool's first worker has settled: how
+  // many are serving so far and how many of the initial set are still to
+  // come. `all` is the whole initial set's outcome, as start() used to
+  // report it, for a caller that wants to wait for it (the tests do).
+  starting = Promise.all(firsts.map(function (one) {
+    return one.settled;
+  })).then(function () {
+    const pending = forks.filter(function (one) {
+      return !one.done;
+    }).length;
+    return { started: readyWorkers(PROTOCOL_POOL).length +
+                      readyWorkers(SURFACE_POOL).length,
+             wanted: wanted, pending: pending, all: all,
+             pools: POOLS.map(function (pool) {
+               return { pool: pool, started: readyWorkers(pool).length,
                         wanted: wantedByPool[pool] };
              }) };
   });
@@ -5259,6 +5484,8 @@ function failOperations(entry) {
 function stop(timeoutMs) {
   log.debug('Entering stop().');
   stopped = true;
+  // A worker still waiting behind the start gate is never forked (#342).
+  dropQueuedForks();
   const limit = timeoutMs === undefined ? 8000 : timeoutMs;
   const going = workers.slice();
   if (!going.length) {
@@ -5374,6 +5601,10 @@ function stats() {
     // Requests sent again because none of their bytes had reached the worker
     // when its connection failed (#77, STS-WORKER-0042). See proxy().
     replayed: replayCount,
+    // THE START GATE (#342): how many workers may start at once, how many
+    // are starting, and how many wait behind them.
+    starts: { concurrency: startConcurrency(), starting: startsInFlight,
+              queued: forkQueue.length },
     // THE BARRIER'S OWN BOOKKEEPING, reported because the failure it can have
     // is invisible from outside: a ticket nothing will ever clear makes this
     // service answer correctly and 2,000ms slower per read, for ever. See
@@ -5413,6 +5644,9 @@ function reset() {
   workerModule = WORKER_MODULE;
   stopped = false;
   starting = null;
+  // And the start gate (#342): nothing queued, nothing counted as starting.
+  dropQueuedForks();
+  startsInFlight = 0;
   // AND THE BARRIER, because it is process-wide module state exactly as the
   // generation is: a test that armed a ticket and left it would make every
   // later file in the same run wait the full bound.
@@ -5542,6 +5776,10 @@ module.exports = {
   replacementFor: replacementFor,
   useWorkerModule: useWorkerModule,
   fork: fork,
+  // THE START GATE (#342), for the same file: a fork queued behind it, as
+  // start() and a replacement queue theirs.
+  queueFork: queueFork,
+  startOrder: startOrder,
   workerTable: workerTable,
   PEER_AUTHORIZED_HEADER: PEER_AUTHORIZED_HEADER
 };
