@@ -13095,6 +13095,11 @@ const CODES = [
       'never dropped to make room: RISC 1.0 section 2.8 makes the choice ' +
       'theirs. The register stays over its cap until the cap is raised.',
     spec: 'none — logged; the opt-outs are kept' },
+  { code: 'STS-SSF-0131',
+    summary: 'An Add Subject request on a stream a person owns named ' +
+      'somebody other than that person, and ssf.personStreamsSelfOnly is ' +
+      'on. A person\'s stream carries events only about them.',
+    spec: 'HTTP 403 access_denied' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

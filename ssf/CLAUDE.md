@@ -1065,6 +1065,89 @@ default to the only issuer whose key it holds and to the endpoint's own URL.
 
 ---
 
+## A PERSON'S STREAM IS ABOUT THAT PERSON (#336, 2026-09-28)
+
+**Found from a relying party's side.** A CAEP receiver signed a person in with
+the authorization code grant, then created its stream with that person's
+access token (`ssf:read ssf:write`; the client's `oauthAllowedScope` declared
+both, so #110's check passed). Under `default_subjects: ALL` it was sent every
+other person's `session-established`, `credential-change` and
+`risk-level-change`. The CAEP Interoperability Profile allows exactly this kind
+of token (section 2.7.1: client credentials OR authorization code), and SSF
+1.0 section 10.1 requires "that only authorized parties can access the shared
+signals". A person is an authorized party for their own signals and nobody
+else's. Basic had the same gap: in product mode every verified directory
+person can create a stream.
+
+* **What kind of party authenticated is on the decision.** `ssf_auth.ts` puts
+  an `owner` on every accepted decision:
+  * `person`: a token whose principal is not its own client, so it was issued
+    FOR somebody. It carries the `sub` and the client.
+  * `client`: the client's own token, in either spelling of `sub`.
+  * `basic`: a name and password.
+  * `gnap`: a GNAP application.
+
+  `ssf.ts`'s `contextOf()` carries it to `createStream()`. It comes from the
+  context and never from the body, for the same reason as `internalSurface`.
+* **The owner is recorded at creation** as `ownerPerson` (`sub`, client,
+  username). `ownerPersonOf()` resolves the username:
+  * A public `sub` resolves through `nameForSubject()`.
+  * An ephemeral one resolves through `pairwise_subjects.localFor()`, AT
+    CREATION, while the mapping still exists.
+  * A pairwise one cannot be reversed, so it is matched FORWARDS at delivery:
+    the event's public `sub` is mapped through the owner's client and compared.
+    Only for a client whose `subject_type` is `pairwise`, because asking an
+    ephemeral client's mapping would mint one per event.
+  * A Basic name counts as a person only when the directory holds it. In
+    development any name authenticates, and every receiver under test relies
+    on a made-up name keeping the old behaviour.
+* **`ownerPersonCovers()` is the one decision**, asked in two places:
+  * by `streamCoversSubject()`, BEFORE the subject list and the family scopes,
+    so a list naming somebody else cannot widen the stream;
+  * by `POST /ssf/subjects/add`, which refuses with `403 access_denied`
+    (STS-SSF-0131). SSF 1.0 section 8.1.3.2 lets a transmitter ignore such a
+    request silently, but a receiver that believed it had subscribed would wait
+    forever. A malformed subject still gets its 400 (STS-SSF-0017) first.
+
+  It matches:
+  * an `iss_sub` by `sub`;
+  * `email`, `phone_number`, `account` and `opaque` through
+    `risc.accountIdOf()`, the register that already knows every identifier an
+    account has had. `risc.ts` requires nothing in this directory but
+    `ssf_events` and `ssf_subjects`, and it is required lazily, so there is no
+    cycle;
+  * `aliases` when any alias matches;
+  * a complex subject by its `user` member. With no `user` it names nobody.
+  * An event with no subject (SSF's own two) still goes to the stream.
+* **Built in, not a registered subject scope.** It is the same shape as GNAP's
+  scope (it takes events away and never adds one), but it is about who OWNS
+  the stream, which is `ssf_streams.ts`'s own fact. Registering it through
+  `setSubjectScope()` would make the store depend on a hook to know its own
+  records.
+* **A stream from before** carries no `ownerPerson`. If its `createdBy` is a
+  person's `urn:uuid:` subject, `ownerPersonOfRecord()` treats it as theirs, so
+  existing user-token streams are narrowed without being recreated. A pairwise
+  or Basic owner from before is not recognised.
+* **Unaffected:** a client's own stream, a GNAP application's, this service's
+  own two (`internalSurface`), and everything while
+  `ssf.personStreamsSelfOnly` is off.
+* **The `ssf.defaultSubjects` description said the opposite of the code.** It
+  said that with ALL "adding one narrows nothing", and the comment above
+  `addSubject()` said the same. `streamCoversSubject()` has always narrowed to
+  a non-empty list. Both now say so, and add that removing the last subject
+  widens the stream back to everybody. A receiver that believed the old text
+  kept its list empty and received the whole realm.
+
+`tests/ssf_person_streams.js` asserts all of the above in a child process:
+twenty-two assertions. Eight mutants, all caught: the coverage hook removed;
+person tokens reported as client tokens; the legacy `createdBy` fallback
+removed; the pairwise forward match removed; the ephemeral mapping removed; a
+complex subject judged whole rather than by `user`; every Basic name treated as
+a person; the internal streams recorded as a person's. The Add Subject 403 in
+`ssf.ts` is not covered by it; a vendored job with a person's token would be.
+
+---
+
 ## STATUS CHANGES, IN THE ORDER SECTION 8.1.5 GIVES (#144)
 
 SSF 1.0's three statuses, and the difference between the middle one and the last
