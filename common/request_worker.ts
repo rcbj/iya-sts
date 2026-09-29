@@ -915,10 +915,14 @@ class RequestWorker {
       //
       // So the wait moved to the side that was already waiting. This worker
       // answers immediately and, when its flush has actually committed, tells
-      // the front process the sequence it reached. The pool holds the
-      // generation until that arrives, so a reader still cannot be told it is
-      // current ahead of the write — the barrier it already runs does the
-      // waiting, and no writer blocks on a store.
+      // the front process the sequence it reached. (**Since #351, 2026-09-29,
+      // a worker on a postgres store answers a WRITE only after its commit**
+      // — `cluster/cluster_barrier.js`, rule 2, in the app below — because an
+      // answer sent first is one the process can lose; the journalled flush
+      // made that cost the rows written. The announcement still runs.) The
+      // pool holds the generation until that arrives, so a reader still
+      // cannot be told it is current ahead of the write — the barrier it
+      // already runs does the waiting, and no writer blocks on a store.
       // -------------------------------------------------------------------
       // IN THE RESPONSE'S OWN CONTEXT. Everything the handler does — including
       // a sign-out reaching `ldap_server.js` several modules down — can find

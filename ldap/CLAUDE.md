@@ -1811,6 +1811,21 @@ operation not named in `workers.dispatch`, no worker to take it — all three
 resolve `{ dispatched: false }`, which is what `workers.requestCount = 0` means
 and is a supported configuration rather than a degraded one.
 
+### A write is answered after its commit, and `unavailable` when it is not (#351)
+
+In postgres mode an operation that changed the store sends its result only
+once that change has committed, and **`unavailable` (52)** (STS-STORE-0067)
+when the commit fails — the same code a worker that died mid-operation gets,
+and the true one: RFC 4511's "a subsystem necessary to complete the operation
+is offline", where `busy` (51) would claim a load problem. It is
+`cluster/cluster_barrier.js`'s `answerAfterCommit()`, put on every handler at
+registration INSIDE what `LOCAL_HANDLERS` holds, so it runs wherever the
+handler runs; it holds `res.end()` and the handler's `next()` and sets
+`req.stsAsyncOperation` so `performOperation()` waits for it. A search or
+compare is held only for directory or key changes, never for its audit rows.
+`persistence/CLAUDE.md`, *A write is answered after its commit*, argues the
+rest; `tests/answer_after_commit.js` section C drives an add both ways.
+
 ### The wrapper goes on at REGISTRATION, beside the realm wrapper
 
 For that wrapper's reason, stated one section up: seven bodies each remembering

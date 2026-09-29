@@ -139,6 +139,11 @@
 const crypto = require('crypto');
 const ldap = require('ldapjs');
 const app = require('../common/app');
+// Rule 2 of the barrier for an operation (#351): its result is sent once its
+// writes commit, and `unavailable` when they do not. A library that
+// registers nothing and requires config, the error codes and the capability
+// table; `common/app.js` has already loaded it.
+const clusterBarrier = require('../cluster/cluster_barrier');
 const { log, xmlEscape, dnRfc4514 } = require('../common/helpers');
 // The subject resolver slot this module fills (2026-09-14). Named apart from
 // the destructure above because it is a FILLING, not a use.
@@ -11645,6 +11650,16 @@ OPERATIONS.forEach(function (operation) {
   server[operation] = function () {
     const args = Array.prototype.slice.call(arguments);
     args[args.length - 1] = fromClientAddress(args[args.length - 1]);
+    // ANSWERED AFTER COMMIT (#351), innermost with the address, so it is in
+    // what `LOCAL_HANDLERS` holds and runs wherever the handler does. An
+    // unbind has no result to hold. cluster/cluster_barrier.js argues it.
+    if (operation !== 'unbind') {
+      args[args.length - 1] = clusterBarrier.answerAfterCommit(
+        operation, args[args.length - 1], function (message) {
+          // Logged by the barrier as STS-STORE-0067 before this is sent.
+          return new ldap.UnavailableError(message);
+        });
+    }
     if (REALMLESS_OPERATIONS.indexOf(operation) < 0) {
       // The handler is the LAST argument — ldapjs takes (dn, [middleware…],
       // handler) — and only it is wrapped, so a route registered with

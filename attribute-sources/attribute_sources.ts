@@ -104,8 +104,17 @@ const lookupCount = cacheRegistry.register({
     return (CACHE_MS / 1000) + ' s after the lookup; a change to the source ' +
       'drops its rows.';
   },
-  entries: function (): number {
-    return lookups.size;
+  // THE ROWS, not their count (#351): `cache_registry.js` maps what this
+  // answers, and a number made `/admin/caches` — and every report after this
+  // module was loaded — throw `raw.map is not a function`. The key is a
+  // person's lookup key, so it is shown as a digest.
+  entries: function (): unknown[] {
+    const rows: unknown[] = [];
+    lookups.forEach(function (held, key) {
+      rows.push({ key: cacheRegistry.digestKey(key),
+                  validUntil: held.at + CACHE_MS });
+    });
+    return rows;
   },
   eject: function (now: number): number {
     let gone = 0;
