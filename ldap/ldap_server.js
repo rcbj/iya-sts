@@ -17278,6 +17278,7 @@ function residentsPage(after, limit) {
   byUid.slice(lo, lo + count).forEach(function (row) {
     const stored = storedPersonAt(row);
     const attrs = (stored && stored.attributes) || {};
+    // A HOT PATH: three reads per row, so no Entering/Leaving pair.
     const one = function (name) {
       return String((attrs[name] || [])[0] || '');
     };

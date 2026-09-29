@@ -11567,15 +11567,15 @@ const listingCount = cacheRegistry.register({
   }
 });
 
+// A HOT PATH: once per value of every kept application, recursively, so no
+// Entering/Leaving pair — it would drown the log.
 function deepFreeze(value) {
-  log.debug("Entering deepFreeze().");
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
     Object.keys(value).forEach(function (key) {
       deepFreeze(value[key]);
     });
   }
-  log.debug("Leaving deepFreeze().");
   return value;
 }
 
@@ -11604,8 +11604,9 @@ function viewOfItem(item) {
   return view(record, entry);
 }
 
+// A HOT PATH: once per indexed value of every application, so no
+// Entering/Leaving pair — it would drown the log.
 function indexInto(map, key, item) {
-  log.debug("Entering indexInto().");
   if (!map.has(key)) {
     map.set(key, []);
   }
@@ -11613,7 +11614,6 @@ function indexInto(map, key, item) {
   if (held.indexOf(item) < 0) {
     held.push(item);
   }
-  log.debug("Leaving indexInto().");
 }
 
 function buildListing(backing) {
