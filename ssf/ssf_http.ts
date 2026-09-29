@@ -659,9 +659,12 @@ class SsfHttp {
         // THE ANCHOR AND NOT THE CERTIFICATE — see common/oidc_rp.ts's
         // back channel, which pinned the leaf and stopped being able to reach
         // this service at all the hour that leaf acquired an issuer.
-        const own = loadTlsServer().serverCertificate();
-        anchor = own.trustAnchorPem;
-        ownLeaf = String(own.fingerprint256 || '');
+        anchor = loadTlsServer().serverCertificate().trustAnchorPem;
+        // The leaf's fingerprint, for a SUPPLIED certificate with no anchor
+        // (#311, below) — read as its own call so the anchor read above keeps
+        // the one shape tests/tls_trust_anchor.js holds every pin to.
+        ownLeaf = String(loadTlsServer().serverCertificate().fingerprint256 ||
+                         '');
       } catch (e) {
         // Reported as a push failure rather than thrown, like every other
         // outcome here: the stream's log is where a receiver's operator finds
