@@ -93,11 +93,12 @@ async function counting(obj, name, fn) {
 
 function missesOf(name) {
   log.debug("Entering missesOf().");
-  const row = registry.report(Date.now()).filter(function (one) {
-    return one.name === name;
-  })[0];
+  // `detail()` and not `report()`: the one store asked about, so another
+  // store's descriptor (one loaded by another file in the same run) cannot
+  // make the count throw.
+  const held = registry.detail(name);
   log.debug("Leaving missesOf().");
-  return row ? Number(row.misses || 0) : 0;
+  return held ? Number(held.summary.misses || 0) : 0;
 }
 
 // ---------------------------------------------------------------------------
