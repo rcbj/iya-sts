@@ -235,7 +235,7 @@ class GcpIitAttestor {
             now } = this.deps;
     log.debug("Entering GcpIitAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const projects = this.csv('spiffe.gcpIitProjectIdAllowList');
     let template = null;
     let problem = projects.length ? '' : 'projectid_allow_list is required ' +

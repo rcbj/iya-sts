@@ -43,9 +43,11 @@
 // THE `.proto` FILES ARE VENDORED AND ARE LOAD-BEARING
 //
 // `protos/workloadapi.proto` and `protos/brokerapi.proto` are verbatim copies
-// of the SPIFFE project's own, and `protos/spire/**` of the `spire-api-sdk`'s. They are read AT REQUIRE
-// TIME, at module scope, and a missing one is not a degraded feature — this
-// module does not load. That is the same decision `bbs2023.js` makes about
+// of the SPIFFE project's own, and `protos/spire/**` of the
+// `spire-api-sdk`'s. They are read when first needed (`services()`, since
+// #348) — which in the front process is at START, when the default realm's
+// listeners are bound — and a missing one is not a degraded feature: the
+// service does not start. That is the same decision `bbs2023.js` makes about
 // `contexts/`, and for a similar reason: a service that advertised the Workload
 // API and then answered `Unimplemented` because a file was missing would be
 // worse than one that did not start.
@@ -66,11 +68,39 @@
 
 import fs = require('fs');
 import path = require('path');
-import grpc = require('@grpc/grpc-js');
-import loader = require('@grpc/proto-loader');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import LazyModule = require('../common/lazy_module');
 const { log } = helpers;
+// ---------------------------------------------------------------------------
+// THE gRPC RUNTIME AND ITS PROTO LOADER ARE REQUIRED AT FIRST USE (#348).
+//
+// Every request and surface worker loads this module (the stack is the same
+// in every process), and only the FRONT process binds a SPIFFE socket — so
+// requiring `@grpc/grpc-js` and `@grpc/proto-loader` here put about 5 MB of
+// heap and 13 MB of resident memory into every worker that never used them
+// (measured on #348). `grpc` and `loader` are stand-ins that require the
+// package the first time a property is read: binding a server, building its
+// credentials, a `Metadata`, loading the protos.
+//
+// **WHAT A WORKER DOES NEED IS THE STATUS NUMBERS**, because a dispatched
+// method refuses with a gRPC status and that number crosses back to the
+// front process. They are grpc-js's own table — `grpc.status` IS
+// `build/src/constants.js`'s `Status`, a file that requires nothing — so
+// `status` below is that table, the same object, read without the runtime.
+// `tests/spiffe_operations.js` checks the two are the same object, so a
+// grpc-js that moved the file fails there rather than in a refusal.
+// ---------------------------------------------------------------------------
+type Grpc = typeof import('@grpc/grpc-js');
+type ProtoLoader = typeof import('@grpc/proto-loader');
+const grpc: Grpc = LazyModule.of('@grpc/grpc-js', function () {
+  return require('@grpc/grpc-js') as Grpc;
+}, log);
+const loader: ProtoLoader = LazyModule.of('@grpc/proto-loader', function () {
+  return require('@grpc/proto-loader') as ProtoLoader;
+}, log);
+import grpcConstants = require('@grpc/grpc-js/build/src/constants');
+const status: Grpc['status'] = grpcConstants.Status;
 import config = require('../common/config');
 // A LEAF (it requires `config` and `error_codes` only), for the one
 // development-only setting this file reads (#181).
@@ -157,8 +187,10 @@ const SERVER_PROTOS = [
 interface SpiffeGrpcDeps {
   fs: typeof fs;
   path: typeof path;
-  grpc: typeof grpc;
-  loader: typeof loader;
+  grpc: Grpc;
+  loader: ProtoLoader;
+  // grpc-js's status numbers without the runtime (#348) — see the top.
+  status: Grpc['status'];
   log: typeof log;
   config: typeof config;
   mode: typeof mode;
@@ -245,6 +277,7 @@ class SpiffeGrpc {
       path: path,
       grpc: grpc,
       loader: loader,
+      status: status,
       log: log,
       config: config,
       mode: mode,
@@ -274,18 +307,41 @@ class SpiffeGrpc {
 
   // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
   // run by `common/instance_slot.ts` once for whichever instance is
-  // installed: loading the vendored protos and naming the services, and
-  // refusing to go on when one is missing.
+  // installed. It loaded the vendored protos and named the services until
+  // #348 (2026-09-29); that moved to `services()`, at first use, because
+  // every request worker built this instance and only the front process
+  // binds a SPIFFE socket. The front process still loads them at START,
+  // because `spiffe_server.ts` binds the default realm's listeners from
+  // `listen()` whether `spiffe.enabled` is on or not — so a missing proto is
+  // still a service that does not start rather than a surface that answers
+  // `Unimplemented` later, which is what the header asks for.
   /**
-   * Loads the vendored protos and names the services for the installed
-   * instance, refusing to go on when one is missing (#50, R2).
+   * The installed instance's wire step: nothing since #348 — the protos are
+   * loaded by `services()` when first needed.
    *
    * @param instance - the installed instance
-   * @throws an Error when a service is missing from the loaded definitions
    */
   static wire(instance: SpiffeGrpc): void {
     helpers.log.debug("Entering SpiffeGrpc.wire().");
-    const DEFINITIONS = instance.loadDefinitions();
+    helpers.log.debug("Leaving SpiffeGrpc.wire(). " +
+                      (instance ? 'Protos at first use.' : ''));
+  }
+
+  /**
+   * Loads the vendored protos and names the services, the first time a caller
+   * needs them (#348), refusing to go on when one is missing.
+   *
+   * @returns the service definitions by name
+   * @throws an Error when a service is missing from the loaded definitions
+   */
+  services(): Record<ServiceName, any> {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.services().");
+    if (SERVICES) {
+      log.debug("Leaving SpiffeGrpc.services(). Already loaded.");
+      return SERVICES;
+    }
+    const DEFINITIONS = this.loadDefinitions();
     const services = {
       workload: DEFINITIONS.workload['SpiffeWorkloadAPI'],
       entry: DEFINITIONS.server['spire.api.server.entry.v1.Entry'],
@@ -297,18 +353,18 @@ class SpiffeGrpc {
       debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug'],
       broker: DEFINITIONS.broker['spiffe.broker.API']
     };
-    SERVICES = services;
     Object.keys(services).forEach(function (name) {
       if (!services[name]) {
-        helpers.log.debug("Leaving SpiffeGrpc.wire(). " + name +
-                          " missing.");
+        log.debug("Leaving SpiffeGrpc.services(). " + name + " missing.");
         throw new Error('spiffe: the ' + name + ' service is not in the ' +
                         'vendored protos. This is a build problem rather ' +
                         'than a runtime one — see protos/ and the note at ' +
                         'the top of spiffe_grpc.js.');
       }
     });
-    helpers.log.debug("Leaving SpiffeGrpc.wire().");
+    SERVICES = services;
+    log.debug("Leaving SpiffeGrpc.services().");
+    return SERVICES;
   }
 
   /**
@@ -342,7 +398,7 @@ class SpiffeGrpc {
   methodsOf(serviceName) {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.methodsOf().");
-    const service = SERVICES[serviceName];
+    const service = this.services()[serviceName];
     log.debug("Leaving SpiffeGrpc.methodsOf().");
     return Object.keys(service).map(function (key) {
       const method = service[key];
@@ -443,11 +499,11 @@ class SpiffeGrpc {
    */
   // error-code: none — the definition of this helper, not a call to it
   invalidArgument(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.invalidArgument().");
     log.debug("Leaving SpiffeGrpc.invalidArgument().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.INVALID_ARGUMENT, message);
+    return this.statusError(status.INVALID_ARGUMENT, message);
   }
 
   /**
@@ -458,11 +514,11 @@ class SpiffeGrpc {
    */
   // error-code: none — the definition of this helper, not a call to it
   notFound(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.notFound().");
     log.debug("Leaving SpiffeGrpc.notFound().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.NOT_FOUND, message);
+    return this.statusError(status.NOT_FOUND, message);
   }
 
   /**
@@ -473,11 +529,11 @@ class SpiffeGrpc {
    */
   // error-code: none — the definition of this helper, not a call to it
   permissionDenied(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.permissionDenied().");
     log.debug("Leaving SpiffeGrpc.permissionDenied().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.PERMISSION_DENIED, message);
+    return this.statusError(status.PERMISSION_DENIED, message);
   }
 
   /**
@@ -488,11 +544,11 @@ class SpiffeGrpc {
    */
   // error-code: none — the definition of this helper, not a call to it
   unavailable(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.unavailable().");
     log.debug("Leaving SpiffeGrpc.unavailable().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.UNAVAILABLE, message);
+    return this.statusError(status.UNAVAILABLE, message);
   }
 
   // WHICH CODE THE AUDIT ROW FOR A FAILED CALL CARRIES. A throw that is not a
@@ -529,7 +585,7 @@ class SpiffeGrpc {
    * @returns the status
    */
   errorToStatus(err, where) {
-    const { log, errorCodes, grpc } = this.deps;
+    const { log, errorCodes, status } = this.deps;
     log.debug("Entering SpiffeGrpc.errorToStatus().");
     if (err && typeof err.code === 'number') {
       log.debug("Leaving SpiffeGrpc.errorToStatus().");
@@ -544,7 +600,7 @@ class SpiffeGrpc {
               'error, which is a defect in this service rather than in the ' +
               'call: ' + (err && err.stack ? err.stack : err));
     log.debug("Leaving SpiffeGrpc.errorToStatus().");
-    return { code: grpc.status.UNKNOWN,
+    return { code: status.UNKNOWN,
              details: (err && err.message) || 'Something went wrong.' };
   }
 
@@ -615,9 +671,9 @@ class SpiffeGrpc {
    * @returns the error
    */
   fromDescriptor(descriptor) {
-    const { log, grpc, errorCodes } = this.deps;
+    const { log, status, errorCodes } = this.deps;
     log.debug("Entering SpiffeGrpc.fromDescriptor().");
-    const code = grpc.status[descriptor.status];
+    const code = status[descriptor.status];
     if (typeof code !== 'number') {
       log.error(errorCodes.tag('STS-SPIFFE-0004') +
                 'spiffe: spiffe_auth.js returned the status name "' +
@@ -626,7 +682,7 @@ class SpiffeGrpc {
                 'with PERMISSION_DENIED; this is a defect in this service.');
       log.debug("Leaving SpiffeGrpc.fromDescriptor().");
       // The refusal STS-SPIFFE-0004 above describes.
-      return this.statusError(grpc.status.PERMISSION_DENIED,
+      return this.statusError(status.PERMISSION_DENIED,
                               descriptor.message);
     }
     log.debug("Leaving SpiffeGrpc.fromDescriptor().");
@@ -900,7 +956,7 @@ class SpiffeGrpc {
    * @returns the wrapped handler
    */
   fromCaller(handler) {
-    const { log, audit, errorCodes, grpc } = this.deps;
+    const { log, audit, errorCodes, status } = this.deps;
     const self = this;
     log.debug("Entering SpiffeGrpc.fromCaller().");
     log.debug("Leaving SpiffeGrpc.fromCaller().");
@@ -922,7 +978,7 @@ class SpiffeGrpc {
                   'handler threw after the cluster read barrier: ' +
                   ((e && e.message) || e));
         if (typeof callback === 'function') {
-          callback({ code: grpc.status.INTERNAL,
+          callback({ code: status.INTERNAL,
                      details: 'The call failed inside the service.' });
         }
       });
@@ -2072,8 +2128,9 @@ class SpiffeGrpc {
     const { log, grpc } = this.deps;
     log.debug('Entering SpiffeGrpc.buildServer().');
     const server = new grpc.Server();
+    const definitions = this.services();
     services.forEach(function (entry) {
-      server.addService(SERVICES[entry.name], entry.handlers);
+      server.addService(definitions[entry.name], entry.handlers);
     });
     log.debug('Leaving SpiffeGrpc.buildServer(). ' + services.length +
               ' service(s).');
@@ -2445,12 +2502,13 @@ const slot = new InstanceSlot<SpiffeGrpc>(
   helpers.log);
 
 // The service definitions, by the fully-qualified name the wire uses. Named
-// in `SpiffeGrpc.wire()`, once, so that a typo in a service name is a
-// `TypeError` at startup rather than a method nothing ever routes to. Loaded
-// by the instance, so filled when the instance is installed (#50, R2).
+// in `SpiffeGrpc.services()`, once, so that a typo in a service name is an
+// Error when the front process binds at startup rather than a method nothing
+// ever routes to. Filled at first use since #348 (it was when the instance
+// was installed, #50's R2).
 /**
  * The service definitions by fully-qualified name, filled by
- * `SpiffeGrpc.wire()`.
+ * `SpiffeGrpc.services()` at first use.
  */
 let SERVICES: Record<ServiceName, any> | null = null;
 
@@ -2609,19 +2667,23 @@ export = {
   SpiffeGrpc: SpiffeGrpc,
   installInstance: (instance: SpiffeGrpc): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
+  // A stand-in that requires grpc-js when first read (#348); `status` is its
+  // status table without the runtime, for anything a worker runs.
   grpc: grpc,
-  // Named by `SpiffeGrpc.wire()`, so read once the instance exists.
+  status: status,
+  // Named by `SpiffeGrpc.services()`, which loads the protos if nothing has
+  // yet (#348).
   /**
    * The service definitions, once the instance exists.
    */
   get SERVICES(): Record<ServiceName, any> {
     log.debug("Entering SERVICES().");
-    slot.get();
     log.debug("Leaving SERVICES().");
-    return SERVICES;
+    return slot.get().services();
   },
   SECURITY_HEADER: SECURITY_HEADER,
   BROKER_SECURITY_HEADER: BROKER_SECURITY_HEADER,
+  services: slot.forward('services'),
   methodsOf: slot.forward('methodsOf'),
   statusError: slot.forward('statusError'),
   invalidArgument: slot.forward('invalidArgument'),

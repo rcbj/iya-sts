@@ -138,7 +138,7 @@ import awsIidAttestor = require('./spiffe_attestor_aws_iid');
 import gcpIitAttestor = require('./spiffe_attestor_gcp_iit');
 import azureImdsAttestor = require('./spiffe_attestor_azure_imds');
 
-const status = rpc.grpc.status;
+const status = rpc.status;
 
 // What `SpiffeApi` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
