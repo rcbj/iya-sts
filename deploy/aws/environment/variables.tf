@@ -129,13 +129,25 @@ variable "node_count" {
 }
 
 variable "task_cpu" {
-  description = "Fargate CPU units per node."
+  description = <<-EOT
+    Fargate CPU units per node. It bounds the worker counts: do not run more
+    than task_cpu / 1024 + 1 node processes (1 + workers_request_count +
+    workers_surface_count) — a process beyond that adds a whole copy of the
+    service's memory and no parallelism (#340).
+  EOT
   type        = number
   default     = 1024
 }
 
 variable "task_memory" {
-  description = "Fargate memory (MiB) per node."
+  description = <<-EOT
+    Fargate memory (MiB) per node. Size it as (node processes x one process's
+    working set) + headroom, where node processes = 1 + workers_request_count
+    + workers_surface_count: every process holds the whole directory and every
+    store (#339), so memory grows with the process count, not the load. The
+    task is OOM-killed past it, and a restart — every process restoring from
+    postgres at once — is the peak (#340).
+  EOT
   type        = number
   default     = 3072
 }
@@ -322,13 +334,23 @@ variable "pki_listener_port" {
 }
 
 variable "workers_request_count" {
-  description = "STS_WORKERS_REQUEST_COUNT on every node: request workers running the whole service. 0 is off."
+  description = <<-EOT
+    STS_WORKERS_REQUEST_COUNT on every node: request workers running the whole
+    service. 0 is off. Each is a whole copy of the service in memory, so keep
+    1 + request + surface within task_cpu / 1024 + 1 and size task_memory to
+    it (#340).
+  EOT
   type        = number
   default     = 0
 }
 
 variable "workers_surface_count" {
-  description = "STS_WORKERS_SURFACE_COUNT on every node: workers running only /admin and /portal. 0 is off."
+  description = <<-EOT
+    STS_WORKERS_SURFACE_COUNT on every node: workers running only /admin and
+    /portal. 0 is off, and those paths then go to the request workers. Each is
+    a whole copy of the service in memory like a request worker, and counts
+    against the same bound (#340).
+  EOT
   type        = number
   default     = 0
 }
@@ -340,7 +362,12 @@ variable "workers_dispatch" {
 }
 
 variable "workers_read_your_write" {
-  description = "STS_WORKERS_READ_YOUR_WRITE on every node. Required by the surface pool."
+  description = <<-EOT
+    STS_WORKERS_READ_YOUR_WRITE on every node. Required by the surface pool
+    (the service refuses to start without it, STS-WORKER-0038), and needed
+    with more than one request worker too, where a caller that writes through
+    one worker and reads back through another must see its write.
+  EOT
   type        = bool
   default     = false
 }

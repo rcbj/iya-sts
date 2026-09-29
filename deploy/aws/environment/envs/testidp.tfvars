@@ -32,8 +32,14 @@
 #     ADMINISTRATOR'S PASSWORD IS IN SECRETS MANAGER (2026-09-17), at
 #     mock-sts/testidp/bootstrap-admin-password, and is printed nowhere; it
 #     was a log line in whichever node won the bootstrap claim until then.
-#   * larger nodes: five node processes per task (front, three request
-#     workers, one surface worker)
+#   * larger nodes: 2 vCPU / 8 GiB, with THREE node processes per task
+#     (front and two request workers, no surface worker) since 2026-09-29
+#     (#340). It was five (three request workers and one surface worker).
+#     Every process holds the whole directory and every store, so five idled
+#     at 76-87 % of 8 GiB after a few suite runs and a restart was OOM-killed
+#     (#339). Two vCPUs gain little from more than 1 + task_cpu / 1024
+#     processes. With no surface pool the console and portal go to the
+#     request workers. deploy/aws/CLAUDE.md, *Sizing a node*.
 #   * no suite runner. Backups are deleted with the environment: it is
 #     rebuilt many times over the coming weeks, and kept backups would pile up, billed.
 # ---------------------------------------------------------------------------
@@ -65,8 +71,8 @@ extra_environment = {
 }
 
 sts_mode                = "product"
-workers_request_count   = 3
-workers_surface_count   = 1
+workers_request_count   = 2
+workers_surface_count   = 0
 workers_dispatch        = "*"
 workers_read_your_write = true
 
