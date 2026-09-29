@@ -6932,6 +6932,127 @@ function membersOf(stored) {
   return out;
 }
 
+// The normalised DN each membership value on a group MEANS — `resolveMember()`'s
+// `dn`, without resolving anything — for the questions that only need to know
+// which entries a group lists, or whether they are there.
+function memberKeysOf(stored) {
+  log.debug("Entering memberKeysOf().");
+  const out = [];
+  MEMBER_ATTRIBUTES.forEach(function (attribute) {
+    (stored.attributes[attribute.name] || []).forEach(function (value) {
+      const raw = String(value == null ? '' : value);
+      out.push(normalizeDn(attribute.holds === 'uid'
+        ? 'uid=' + raw + ',' + usersDn() : raw));
+    });
+  });
+  log.debug("Leaving memberKeysOf().");
+  return out;
+}
+
+// How many of a group's membership values name an entry this realm holds —
+// `membersOf()`'s `present`, counted with one Map lookup a value instead of a
+// resolution (#352). The list of groups draws the counts for every group and
+// the members of none.
+function memberPresenceOf(stored) {
+  log.debug("Entering memberPresenceOf().");
+  const keys = memberKeysOf(stored);
+  let present = 0;
+  keys.forEach(function (key) {
+    if (entries.get(key)) {
+      present++;
+    }
+  });
+  log.debug("Leaving memberPresenceOf().");
+  return { memberCount: keys.length, presentCount: present,
+           danglingCount: keys.length - present };
+}
+
+// ---------------------------------------------------------------------------
+// WHO CLAIMS EACH GROUP THROUGH THEIR OWN `memberOf`, ONE WALK FOR ALL OF THEM
+// (#352, 2026-09-29).
+//
+// `claimedMembersOf()` walked the whole realm to answer about ONE group, and
+// `/admin/groups` asked it once per group (for the count) and `/admin/rbac`
+// once per role — on testidp a walk of 29,267 entries, normalising every
+// `memberOf` value on each, per group on the page. The question has an
+// inverse that one walk answers for every group at once: for each group DN,
+// the entries whose `memberOf` names it, in the order the walk met them.
+//
+// **KEPT UNTIL THE DIRECTORY NEXT CHANGES**, on `directoryVersion`, which
+// every write moves — a replicated one included, since the appliers go
+// through `touchDirectory()` — and which is the right clock rather than a
+// subtree's because a `memberOf` can be on any entry in the realm, the base
+// entry itself included, which no container's clock covers. The rows hold the
+// live stored entries, which is safe for the same reason: nothing can change
+// one without moving the clock that throws the index away.
+//
+// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: the entries whose
+// `memberof` holds a given DN — an attribute-value lookup, indexable.
+// ---------------------------------------------------------------------------
+const claimsIndexes = realms.keyed(function () {
+  return { version: -1, byGroup: null };
+});
+const claimsIndexCount = cacheRegistry.counter('ldap.memberof-claims');
+
+function memberOfClaims() {
+  log.debug('Entering memberOfClaims().');
+  const held = claimsIndexes();
+  if (held.byGroup && held.version === directoryVersion) {
+    claimsIndexCount.hit();
+    log.debug('Leaving memberOfClaims(). Kept.');
+    return held.byGroup;
+  }
+  claimsIndexCount.miss();
+  const byGroup = new Map();
+  eachEntryInRealm(function (entry) {
+    const values = entry.attributes.memberof || [];
+    if (!values.length) {
+      return;
+    }
+    const key = normalizeDn(entry.dn);
+    const named = new Set();
+    values.forEach(function (value) {
+      const groupKey = normalizeDn(value);
+      if (named.has(groupKey)) {
+        return;
+      }
+      named.add(groupKey);
+      if (!byGroup.has(groupKey)) {
+        byGroup.set(groupKey, []);
+      }
+      byGroup.get(groupKey).push({ key: key, entry: entry });
+    });
+  });
+  held.byGroup = byGroup;
+  held.version = directoryVersion;
+  log.debug('Leaving memberOfClaims(). ' + byGroup.size + ' group(s) ' +
+            'claimed.');
+  return byGroup;
+}
+
+// The claimants of one group that the group does not list back, as index rows.
+function unlistedClaimsOf(groupDn) {
+  log.debug('Entering unlistedClaimsOf().');
+  const key = normalizeDn(groupDn);
+  const claims = memberOfClaims().get(key) || [];
+  if (!claims.length) {
+    log.debug('Leaving unlistedClaimsOf(). None.');
+    return [];
+  }
+  const listed = new Set();
+  const stored = getEntry(groupDn);
+  if (stored) {
+    memberKeysOf(stored).forEach(function (one) {
+      listed.add(one);
+    });
+  }
+  const out = claims.filter(function (row) {
+    return !listed.has(row.key);
+  });
+  log.debug('Leaving unlistedClaimsOf(). ' + out.length + '.');
+  return out;
+}
+
 // The OTHER answer to "who is in this group": entries elsewhere in the tree
 // whose own `memberOf` names it and which the group's member attributes do NOT
 // list back.
@@ -6945,35 +7066,26 @@ function membersOf(stored) {
 // their own heading, says which side of the disagreement each name came from —
 // merging them into the member list would manufacture a consistency this
 // directory never claimed.
+//
+// Read off `memberOfClaims()` since #352 rather than by a walk of its own.
 function claimedMembersOf(groupDn) {
   log.debug('Entering claimedMembersOf().');
-  const listed = {};
-  const stored = getEntry(groupDn);
-  if (stored) {
-    membersOf(stored).forEach(function (member) {
-      listed[normalizeDn(member.dn)] = true;
-    });
-  }
-  const out = [];
-  const key = normalizeDn(groupDn);
-  eachEntryInRealm(function (entry) {
-    const claims = (entry.attributes.memberof || []).some(function (value) {
-      return normalizeDn(value) === key;
-    });
-    if (!claims || listed[normalizeDn(entry.dn)]) {
-      return;
-    }
-    out.push({
+  const rows = unlistedClaimsOf(groupDn).slice(0);
+  // The walk's order, then the same comparison on keys computed once.
+  rows.sort(function (a, b) {
+    return a.key < b.key ? -1 : 1;
+  });
+  const out = rows.map(function (row) {
+    const entry = row.entry;
+    return {
       dn: entry.dn,
       userKey: consoleKeyFor(entry.dn, entry),
       cn: (entry.attributes.cn || [])[0] || '',
       mail: (entry.attributes.mail || [])[0] || ''
-    });
+    };
   });
   log.debug('Leaving claimedMembersOf().');
-  return out.sort(function (a, b) {
-    return normalizeDn(a.dn) < normalizeDn(b.dn) ? -1 : 1;
-  });
+  return out;
 }
 
 // The directory-level facts every one of the console's LDAP sections needs. The
@@ -7021,13 +7133,17 @@ function groupsFor(dn) {
   out.group = null;
 
   const groups = [];
+  const sortKeys = new Map();
   eachEntryInRealm(function (entry) {
     const rule = groupRuleFor(entry);
     if (!rule) {
       return;
     }
-    const members = membersOf(entry);
-    groups.push({
+    // COUNTS, NOT MEMBERS (#352): the list draws how many values each group
+    // holds and how many resolve, and resolving every member of every group
+    // to draw three numbers was most of the page's cost after the claims.
+    const presence = memberPresenceOf(entry);
+    const row = {
       dn: entry.dn,
       cn: (entry.attributes.cn || [])[0] || commonNameOf(entry.dn),
       rule: rule,
@@ -7036,19 +7152,23 @@ function groupsFor(dn) {
       origin: entry.origin || 'unstated',
       createdAt: entry.createdAt,
       modifiedAt: entry.modifiedAt,
-      memberCount: members.length,
+      memberCount: presence.memberCount,
       // Split out because the two numbers are the interesting pair: a group
       // whose seven members resolve to five entries is the
       // referential-integrity story, and a single count tells it as "seven
       // members" with nothing wrong.
-      presentCount: members.filter(function (m) { return m.present; }).length,
-      danglingCount: members.filter(function (m) { return !m.present; }).length,
-      claimedCount: claimedMembersOf(entry.dn).length,
+      presentCount: presence.presentCount,
+      danglingCount: presence.danglingCount,
+      // Off the one claims index (#352), not a walk of the realm per group.
+      claimedCount: unlistedClaimsOf(entry.dn).length,
       attributeCount: Object.keys(entry.attributes).length
-    });
+    };
+    groups.push(row);
+    sortKeys.set(row, normalizeDn(entry.dn));
   });
+  // The same comparison, on each DN normalised once.
   groups.sort(function (a, b) {
-    return normalizeDn(a.dn) < normalizeDn(b.dn) ? -1 : 1;
+    return sortKeys.get(a) < sortKeys.get(b) ? -1 : 1;
   });
   out.groups = groups;
   out.groupCount = groups.length;
@@ -10131,9 +10251,8 @@ if (typeof credentials.setDirectory === 'function') {
     persons: function () {
       log.debug("Entering persons().");
       log.debug("Leaving persons().");
-      return allPersons().map(function (entry) {
-        return usernameOfEntry(entry);
-      }).filter(function (name) { return !!name; });
+      // Names only, from the kept keys (#352): no entry is copied.
+      return personNames();
     },
     // **THE ONE EXCEPTION TO "PRODUCT MODE CREATES NOTHING", AND IT IS NARROW
     // ON PURPOSE.** `createUser()` is this module's ordinary door and is not
@@ -10534,9 +10653,8 @@ if (typeof personAssertions.setDirectory === 'function') {
     persons: function () {
       log.debug("Entering persons().");
       log.debug("Leaving persons().");
-      return allPersons().map(function (entry) {
-        return usernameOfEntry(entry);
-      }).filter(function (name) { return !!name; });
+      // Names only, from the kept keys (#352): no entry is copied.
+      return personNames();
     }
   });
 } else {
@@ -10799,9 +10917,12 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
     personKeyInfos: function () {
       log.debug('Entering personKeyInfos().');
       const out = [];
+      // The attributes are asked FIRST (#352): a property lookup, where
+      // `isPersonEntry()` normalises two DNs — so only the people who hold
+      // keys pay for it, not the realm. Same rows, same walk order.
       eachEntryInRealm(function (stored) {
-        if (isPersonEntry(stored) && (stored.attributes.stskrb5keyinfo ||
-                                      stored.attributes.stskrb5keys)) {
+        if ((stored.attributes.stskrb5keyinfo ||
+             stored.attributes.stskrb5keys) && isPersonEntry(stored)) {
           out.push({ username: usernameOfEntry(stored) || stored.dn,
                      info: firstValue(stored, 'stskrb5keyinfo'),
                      passwordHash: firstValue(stored, 'userpassword') });
@@ -11192,6 +11313,8 @@ function rosterViewFor(realm) {
     usernameOfEntry: usernameOfEntry,
     nameUsableInDn: nameUsableInDn,
     allPersons: inRealm(allPersons),
+    // DNs only (#352), for the candidates list: no entry is copied.
+    personDns: inRealm(personDns),
     // THE OTHER DIRECTION OF MEMBERSHIP. `readGroupEntry()` answers what the
     // GROUP lists; this answers who CLAIMS the group through their own
     // `memberOf` while the group does not list them back. `groupsOfUser()`
@@ -15198,31 +15321,68 @@ function withheldKeyTableValues(name, values) {
   });
 }
 
+// ONE ENTRY AS THIS PAGE SHOWS IT: every attribute canonically spelled, its
+// values copied and the withheld ones replaced. Built for the rows a page
+// SHOWS and for the entries a `q` has to look inside — never for the whole
+// realm to draw twenty-five rows (#352).
+function directoryRowOf(stored) {
+  log.debug('Entering directoryRowOf().');
+  const attributes = {};
+  Object.keys(stored.attributes).forEach(function (name) {
+    // A KERBEROS KEY IS WITHHELD, ciphertext included (2026-09-12) — see
+    // `kerberos/krb5_person_keys.ts`. This page's job is to show an entry
+    // faithfully and the sentence says exactly what was kept back.
+    // AND A KEY TABLE'S PRIVATE KEYS (#168, #132): this page is what
+    // withheldKeyTableValues()'s header names, and #168 applied it to the
+    // wire only.
+    attributes[canonicalName(name)] = withheldKeyTableValues(name,
+      certEnrollment.withheldValues(name,
+        krb5PersonKeys.withheldValues(name,
+                                      stored.attributes[name].slice(0))));
+  });
+  log.debug('Leaving directoryRowOf().');
+  return {
+    dn: stored.dn,
+    origin: stored.origin || 'unstated',
+    attributes: attributes
+  };
+}
+
+// `a.localeCompare(b)` with no locale is this collator's `compare` — the
+// specification defines it so — built once instead of once per comparison.
+const DIRECTORY_COLLATOR = new Intl.Collator();
+
+// ---------------------------------------------------------------------------
+// PAGE FIRST, THEN COPY (#352, 2026-09-29).
+//
+// This page copied EVERY attribute of EVERY entry through three withholding
+// transforms and `canonicalName()`, sorted the lot with `localeCompare`, and
+// counted each origin with a filter of the whole list — and then showed a
+// page of twenty-five. On testidp that was 29,267 entries copied per request.
+//
+// Now the population is `{ dn, origin }` and the stored entry behind it; the
+// sort and the origin counts read only those; a `q` that does not match the
+// DN is the one thing that still looks inside an entry (it searches names and
+// VALUES, so it has to), and does so only for the entries the DN did not
+// already decide; and the copy is made for the page's rows alone. Same rows,
+// same order, same counts.
+//
+// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: the DNs and
+// origins under the base, ordered, with the count per origin — and the rows
+// of one page by key.
+// ---------------------------------------------------------------------------
 function ldapDirectoryView(req) {
   log.debug('Entering ldapDirectoryView().');
   const listed = [];
   eachEntryInRealm(function (stored) {
-    const attributes = {};
-    Object.keys(stored.attributes).forEach(function (name) {
-      // A KERBEROS KEY IS WITHHELD, ciphertext included (2026-09-12) — see
-      // `kerberos/krb5_person_keys.ts`. This page's job is to show an entry
-      // faithfully and the sentence says exactly what was kept back.
-      // AND A KEY TABLE'S PRIVATE KEYS (#168, #132): this page is what
-      // withheldKeyTableValues()'s header names, and #168 applied it to the
-      // wire only.
-      attributes[canonicalName(name)] = withheldKeyTableValues(name,
-        certEnrollment.withheldValues(name,
-          krb5PersonKeys.withheldValues(name,
-                                        stored.attributes[name].slice(0))));
-    });
     listed.push({
       dn: stored.dn,
       origin: stored.origin || 'unstated',
-      attributes: attributes
+      stored: stored
     });
   });
   listed.sort(function (a, b) {
-    return a.dn.localeCompare(b.dn);
+    return DIRECTORY_COLLATOR.compare(a.dn, b.dn);
   });
 
   const wantedText = String(req.query.q || '').trim();
@@ -15240,19 +15400,28 @@ function ldapDirectoryView(req) {
     }
     // The NAMES and the VALUES both. See the header: the reader who needs
     // this box most often has a value in hand and no idea which entry it is
-    // on, which a DN-only search cannot answer at all.
-    return Object.keys(entry.attributes).some(function (name) {
+    // on, which a DN-only search cannot answer at all. What is searched is
+    // what the page SHOWS — canonical names, withheld values replaced — so
+    // the entry is built as a row to be looked into.
+    const attributes = directoryRowOf(entry.stored).attributes;
+    return Object.keys(attributes).some(function (name) {
       if (name.toLowerCase().indexOf(needle) >= 0) {
         return true;
       }
-      return entry.attributes[name].some(function (value) {
+      return attributes[name].some(function (value) {
         return String(value).toLowerCase().indexOf(needle) >= 0;
       });
     });
   });
 
-  const paged = directoryPaging(req, filtered, 'entries');
-  const paging = paged.paging;
+  const pagedKeys = directoryPaging(req, filtered, 'entries');
+  const paging = pagedKeys.paging;
+  // The copies, for the shown rows only.
+  const paged = Object.assign({}, pagedKeys, {
+    shown: pagedKeys.shown.map(function (entry) {
+      return directoryRowOf(entry.stored);
+    })
+  });
 
   if (String(req.query.format || '').toLowerCase() === 'json') {
     log.debug('Leaving ldapDirectoryView(). JSON, ' + paged.shown.length +
@@ -15262,20 +15431,19 @@ function ldapDirectoryView(req) {
   // ORIGINS COUNTED OVER EVERYTHING and never over the filtered set, for the
   // reason /admin/applications gives about its Kind select: options that
   // renumber themselves as the reader narrows the list cannot be used to find
-  // out where the rows went.
-  const origins = [];
+  // out where the rows went. Counted in the one pass (#352), not by a filter
+  // of the whole list per origin.
+  const originCounts = new Map();
   listed.forEach(function (entry) {
-    if (origins.indexOf(entry.origin) < 0) {
-      origins.push(entry.origin);
-    }
+    originCounts.set(entry.origin, (originCounts.get(entry.origin) || 0) + 1);
   });
+  const origins = Array.from(originCounts.keys());
   origins.sort();
   const originOptions = ['<option value=""' +
                          (wantedOrigin ? '' : ' selected') +
                          '>any origin</option>']
     .concat(origins.map(function (origin) {
-      const n =
-          listed.filter(function (e) { return e.origin === origin; }).length;
+      const n = originCounts.get(origin);
       return '<option value="' + xmlEscape(origin) + '"' +
              (origin === wantedOrigin ? ' selected' : '') + '>' +
              xmlEscape(origin) + ' (' + n + ')</option>';
@@ -16915,6 +17083,82 @@ function personCount() {
   return n;
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE OF A REALM AS KEYS, SORTED ONCE (#352, 2026-09-29).
+//
+// `allPersons()` was the population of `/admin/users`, `/admin/pki`, the
+// roster's candidates and the cells page, and it paid for the whole realm on
+// every call: `isPersonEntry()` normalised each entry's DN twice (and the
+// container's twice), the sort normalised BOTH DNs in every comparison — about
+// 2 × n log n calls, 900,000 for testidp's 29,267 people — and then every one
+// of them was copied whole by `entryObject()`, attributes and all, for callers
+// that mostly wanted a name.
+//
+// **So the ORDER is kept apart from the ENTRIES.** `personRows()` is the
+// realm's people as `{ key, name }` — the normalised DN, computed once per
+// entry, and the name `usernameOfEntry()` reads off the RDN — sorted by the
+// key exactly as `allPersons()` sorted (the same comparison, on the same
+// strings), and kept until something is written under `ou=users`: the subtree
+// clock, which every write there moves, a replicated one included (it is
+// applied in the row's realm with its DN named — `applyEntry()`). A person
+// created, deleted or renamed moves it; an attribute changed in place moves
+// it too, which costs a re-sort and never a wrong answer.
+//
+// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: the keys under
+// `ou=users`, ordered — `SELECT key ... WHERE key LIKE '%,ou=users,<base>'
+// ORDER BY key` — and, for `personsPage()`, the same with a keyset bound.
+// Nothing here reads an entry to answer it.
+// ---------------------------------------------------------------------------
+const personRowsMemo = realms.keyed(function () {
+  return { version: -1, rows: null };
+});
+const personRowsCount = cacheRegistry.counter('ldap.person-keys');
+
+function personRows() {
+  log.debug('Entering personRows().');
+  const version = subtreeVersion(usersDn());
+  const held = personRowsMemo();
+  if (held.rows && held.version === version) {
+    personRowsCount.hit();
+    log.debug('Leaving personRows(). ' + held.rows.length + ' kept.');
+    return held.rows;
+  }
+  personRowsCount.miss();
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  const rows = [];
+  // `isPersonEntry()`'s test on a DN normalised once: under the container
+  // (`isUnder()`'s `endsWith`) and not the container itself.
+  eachEntryInRealm(function (stored, storeKey) {
+    const key = normalizeDn(stored.dn);
+    if (key !== base && key.endsWith(suffix)) {
+      rows.push({ key: key, storeKey: storeKey, dn: stored.dn,
+                  name: usernameOfEntry(stored) });
+    }
+  });
+  // `allPersons()`'s comparison, on keys computed once.
+  rows.sort(function (a, b) {
+    return a.key < b.key ? -1 : 1;
+  });
+  rows.forEach(function (row) {
+    Object.freeze(row);
+  });
+  held.rows = Object.freeze(rows);
+  held.version = version;
+  log.debug('Leaving personRows(). ' + rows.length + ' person(s), walked.');
+  return held.rows;
+}
+
+// The stored entry behind one of `personRows()`'s rows, or null if it has gone
+// since — which the clock says cannot happen, and which is answered as absence
+// rather than trusted.
+function storedPersonAt(row) {
+  log.debug('Entering storedPersonAt().');
+  const stored = entries.get(row.storeKey) || null;
+  log.debug('Leaving storedPersonAt().');
+  return stored;
+}
+
 // Every person, as entry objects. Sorted by normalised DN so that the order a
 // SCIM list response comes back in is stable across calls — scimmy sorts and
 // pages on top of this, and a list whose underlying order changed between two
@@ -16926,17 +17170,53 @@ function personCount() {
  */
 function allPersons() {
   log.debug('Entering allPersons().');
-  const rows = [];
-  eachEntryInRealm(function (stored) {
-    if (isPersonEntry(stored)) {
-      rows.push(stored);
+  const out = [];
+  personRows().forEach(function (row) {
+    const stored = storedPersonAt(row);
+    if (stored) {
+      out.push(entryObject(stored));
     }
   });
-  rows.sort(function (a, b) {
-    return normalizeDn(a.dn) < normalizeDn(b.dn) ? -1 : 1;
-  });
-  const out = rows.map(entryObject);
   log.debug('Leaving allPersons(). ' + out.length + ' person(s).');
+  return out;
+}
+
+// The NAMES of every person, in `allPersons()`'s order, with the empty ones
+// dropped — what the `persons()` slots hand to the credential stores and the
+// key-pair register, which ask about names and never needed the entries.
+/**
+ * Lists the username of every person in the ambient realm, in
+ * `allPersons()`'s order; no entry is read or copied.
+ *
+ * @returns the names
+ */
+function personNames() {
+  log.debug('Entering personNames().');
+  const out = [];
+  personRows().forEach(function (row) {
+    if (row.name) {
+      out.push(row.name);
+    }
+  });
+  log.debug('Leaving personNames(). ' + out.length + ' name(s).');
+  return out;
+}
+
+// The DNs of every person, as stored, in `allPersons()`'s order — for a caller
+// that parses the RDN its own way (the roster's candidates) and must keep
+// doing so exactly.
+/**
+ * Lists the DN of every person in the ambient realm, in `allPersons()`'s
+ * order; no entry is read or copied.
+ *
+ * @returns the DNs
+ */
+function personDns() {
+  log.debug('Entering personDns().');
+  const out = personRows().map(function (row) {
+    return row.dn;
+  });
+  log.debug('Leaving personDns(). ' + out.length + ' DN(s).');
   return out;
 }
 
@@ -20059,6 +20339,72 @@ function describeDirectoryCaches() {
       return out;
     }
   });
+  cacheRegistry.register({
+    name: 'ldap.person-keys',
+    title: 'People, as sorted keys',
+    description: 'Every person\'s normalised DN and username, in the order ' +
+      'allPersons() lists them, so a page of people does not walk, ' +
+      'normalise and sort the realm per request (#352).',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: function () {
+      return 1;
+    },
+    bound: 'One list per realm, the size of ou=users.',
+    lifetime: function () {
+      return 'Until anything under the realm\'s ou=users is written.';
+    },
+    entries: function () {
+      const out = [];
+      personRowsMemo.existing().forEach(function (held, id) {
+        if (!held.rows) {
+          return;
+        }
+        out.push({
+          realm: id,
+          key: 'ou=users (' + held.rows.length + ' people)',
+          validUntil: null,
+          valid: inRealmById(id, function () {
+            return held.version === subtreeVersion(usersDn());
+          }),
+          basis: 'subtree version'
+        });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
+    name: 'ldap.memberof-claims',
+    title: 'memberOf claims, by group',
+    description: 'For each group, the entries whose own memberOf names it, ' +
+      'so the groups and roster pages do not walk the realm once per group ' +
+      '(#352).',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: function () {
+      return 1;
+    },
+    bound: 'One index per realm, one row per memberOf value.',
+    lifetime: function () {
+      return 'Until the directory is next written, anywhere.';
+    },
+    entries: function () {
+      const out = [];
+      claimsIndexes.existing().forEach(function (held, id) {
+        if (!held.byGroup) {
+          return;
+        }
+        out.push({
+          realm: id,
+          key: held.byGroup.size + ' group(s) claimed',
+          validUntil: null,
+          valid: held.version === directoryVersion,
+          basis: 'directory version'
+        });
+      });
+      return out;
+    }
+  });
   log.debug("Leaving describeDirectoryCaches().");
 }
 
@@ -20149,6 +20495,8 @@ module.exports = {
   isPersonEntry: isPersonEntry,
   personCount: personCount,
   allPersons: allPersons,
+  personNames: personNames,
+  personDns: personDns,
   readPerson: readPerson,
   writePerson: writePerson,
   deletePerson: deletePerson,
