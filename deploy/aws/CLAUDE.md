@@ -75,9 +75,15 @@ in this order:
    no person or group delete) with a token the script mints for the seeded
    `sts-management-api` client, so it needs `STS_ADMIN_API_CLIENT_SECRET` as
    well as the admin token (both runners have it);
-3. **the applications suite runs registered in the default realm**, by the
-   identifier patterns `isSuiteApplication()` names, through
-   `/admin-api/applications/forget` — never a seeded one;
+3. **the applications suite runs registered in the default realm**, through
+   `/admin-api/applications/forget`: the identifiers jobs name per run
+   (`gl-all-<stamp>`, `portal-probe-…`, `consent-client-<digits>` — the list
+   is `APPLICATION_PATTERNS`, surveyed on 2026-09-29, and a job that starts
+   naming a default-realm application per run adds to it) and
+   `sts_userinfo_protected.js`'s RFC 7591 registrations (`sts-client-…`
+   redirecting only to its `http://localhost:9999/callback`). Never a seeded
+   one, and never a FIXED identifier (`admin-api-test`, `dpop-test-client`…),
+   which the next run finds again rather than adding;
 4. **the default realm's runtime overrides** (`tests/vendored/admin_api.js`
    requires none, and the store keeps them). `ldap.maxEntries`, which the bulk
    loads raise and leave raised, resets to the nodes' `LDAP_MAX_ENTRIES =

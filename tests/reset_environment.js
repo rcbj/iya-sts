@@ -21,8 +21,10 @@
 //   2. nothing else: the bootstrap administrator, an ordinary person, a
 //      person whose name merely starts `bulk-`, a group that is not a bulk
 //      group;
-//   3. applications: the suite's registrations, and never one this service
-//      seeded or one that merely turned up.
+//   3. applications: the identifiers the jobs name per run in the default
+//      realm and sts_userinfo_protected.js's RFC 7591 registrations; never
+//      one this service seeded, a fixed identifier the next run finds again,
+//      or an operator's.
 //
 // Requiring the script runs nothing: it acts only as `require.main`.
 // ===========================================================================
@@ -84,12 +86,59 @@ function applications(t) {
                                         registeredBy: 'startup' }),
             'the seeded application ' + identifier + ' is never removed');
   });
-  t.check(!reset.isSuiteApplication({ identifier: 'bulk-scim-abc-000001',
-                                      registeredBy: '' }),
-          'an application that merely turned up is never removed');
-  t.check(!reset.isSuiteApplication({ identifier: 'payroll',
-                                      registeredBy: 'administrator' }),
-          'an operator\'s application is left alone');
+  const stamp = 'mumksh9l1axcm';
+  ['urn:test:saml11:' + stamp, 'parmon-a-' + stamp, 'parmon-b-' + stamp,
+   'portal-probe-open-' + stamp, 'portal-probe-ssf-' + stamp,
+   'oauth21-control-c-' + stamp, 'gl-all-' + stamp, 'gl-krb5-' + stamp,
+   'https://enc-gcm-' + stamp + '.example.com', 'sp-admin-scopepol-' + stamp,
+   'closed-sets-admin-read-mumksh9l', 'consent-client-12345678',
+   'consent-other-client-12345678'
+  ].forEach(function (identifier) {
+    t.check(reset.isSuiteApplication({ identifier: identifier,
+                                       registeredBy: 'administrator' }),
+            identifier + ', which a job names per run, is removed');
+  });
+  t.check(reset.isSuiteApplication({ identifier: 'urn:test:not:registered:42',
+                                     registeredBy: '' }),
+          'sts_saml11.js\'s unregistered sighting is removed');
+  // Fixed identifiers are found again by the next run: left in place.
+  ['admin-api-test', 'sts-endpoint-test-client', 'dpop-test-client',
+   'idptools-debugger-tests', 'abcapp1', 'urn:test:wsfed', 'wa-probe'
+  ].forEach(function (identifier) {
+    t.check(!reset.isSuiteApplication({ identifier: identifier,
+                                        registeredBy: 'administrator' }),
+            'the fixed ' + identifier + ' is left for the next run');
+  });
+  ['payroll', 'gl-all', 'gl-payroll-app', 'https://enc-gcm-x.example.org',
+   'https://sp.example.com', 'consent-client-1234', 'urn:test:saml11:',
+   'my-parmon-a-x'
+  ].forEach(function (identifier) {
+    t.check(!reset.isSuiteApplication({ identifier: identifier,
+                                        registeredBy: 'administrator' }),
+            'an operator\'s ' + identifier + ' is left alone');
+  });
+  t.check(!reset.isSuiteApplication({ identifier: 'gl-all-' + stamp,
+                                      registeredBy: 'startup' }),
+          'a seeded application is never removed, whatever it is called');
+  const registration = {
+    identifier: 'sts-client-7f3a', registeredBy: 'rfc7591',
+    attributes: { oauthRedirectUri: ['http://localhost:9999/callback'] }
+  };
+  t.check(reset.isSuiteApplication(registration),
+          'sts_userinfo_protected.js\'s RFC 7591 registration is removed');
+  t.check(!reset.isSuiteApplication(Object.assign({}, registration,
+    { attributes: { oauthRedirectUri: ['http://localhost:9999/callback',
+                                       'https://app.example/cb'] } })),
+    'a registration with another redirect URI as well is left alone');
+  t.check(!reset.isSuiteApplication(Object.assign({}, registration,
+    { attributes: { oauthRedirectUri: ['https://app.example/cb'] } })),
+    'a registration redirecting anywhere else is left alone');
+  t.check(!reset.isSuiteApplication(Object.assign({}, registration,
+    { registeredBy: 'administrator' })),
+    'an administrator\'s sts-client-… is left alone');
+  t.check(!reset.isSuiteApplication(Object.assign({}, registration,
+    { identifier: 'payroll' })),
+    'a registration under another client_id is left alone');
   t.check(!reset.isSuiteApplication(null), 'a missing row is left alone');
   log.debug("Leaving applications().");
 }
