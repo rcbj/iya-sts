@@ -151,7 +151,19 @@ const queued = realms.map({ persist: 'ssf_streams.queued' });
 // went in, the oldest past `ssf.deadLetterMaxPerStream`, a probe that
 // delivered it, and everything when its stream is deleted.
 // ---------------------------------------------------------------------------
-const deadLetters = realms.map({ persist: 'ssf_streams.deadLetters' });
+// `expiresAt` (#333): the sweep keeps a dead letter
+// `ssf.deadLetterRetentionS` (3600 when not a positive number) past
+// `deadAtMs`.
+const deadLetters = realms.map({
+  persist: 'ssf_streams.deadLetters',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (letter: any): number | null {
+    const at = Number(letter && letter.deadAtMs);
+    const keepS = Number(config.value('ssf.deadLetterRetentionS'));
+    const keep = Number.isFinite(keepS) && keepS > 0 ? keepS : 3600;
+    return at > 0 ? at + keep * 1000 : null;
+  }
+});
 
 // What this service has RECEIVED, when the debugger is the transmitter and
 // this service is the receiver. Also per realm, and capped the same way.

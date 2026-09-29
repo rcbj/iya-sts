@@ -175,7 +175,9 @@ const definitionCount = cacheRegistry.register({
 // ALLOW, ONCE: `username client digest` → expiry. Persisted, because the
 // consent POST and the authorization endpoint's second pass may be answered by
 // two different request workers.
-const consented = realms.map({ persist: 'authorization_details.consented' });
+const consented = realms.map({ persist: 'authorization_details.consented',
+                               // #333: the value IS the expiry, in ms.
+                               expiresAt: realms.expiryField(null, 1) });
 
 /**
  * RFC 9396 rich authorization requests: the types applications declare, the

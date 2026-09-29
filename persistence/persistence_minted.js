@@ -212,7 +212,10 @@ function storedKey(row, key) {
 // ---------------------------------------------------------------------------
 const expiryHookFailed = new Set();
 
-function expiryOf(row, value, key) {
+// THE HOOK RUNS IN THE ROW'S REALM, not the flush's: a flush scheduled from a
+// request runs in that request's realm and writes every realm's journal, and
+// a hook that reads a lifetime setting must read the one the row's realm has.
+function expiryOf(row, value, key, realmId) {
   log.debug("Entering expiryOf().");
   if (!row || typeof row.expiresAt !== 'function') {
     log.debug("Leaving expiryOf(). No hook.");
@@ -220,7 +223,11 @@ function expiryOf(row, value, key) {
   }
   let at = null;
   try {
-    at = row.expiresAt(value, key);
+    const id = String(realmId || '');
+    const realm = id && id !== realms.DEFAULT_ID ? realms.get(id) : null;
+    at = realms.run(realm, function () {
+      return row.expiresAt(value, key);
+    });
   } catch (e) {
     log.debug("Caught in expiryOf(): " + ((e && e.message) || e));
     if (!expiryHookFailed.has(row.handle)) {
@@ -1220,7 +1227,7 @@ function flush() {
                        key: storedKey(row, key), journalKey: key, body: body,
                        // WHEN THE RECORD IS DEAD (#333), or null: what the
                        // restore and the expiry purge read. See expiryOf().
-                       expiresAt: expiryOf(row, present.value, key),
+                       expiresAt: expiryOf(row, present.value, key, realmId),
                        // WHETHER A READER HAS TO WAIT FOR THIS ROW. An `own`
                        // store is per-process fan-in — every process keeps its
                        // own contribution and the console SUMS them when
@@ -1231,7 +1238,8 @@ function flush() {
                        tombstone: row.tombstone === true,
                        merge: undefined });
         if (row.mergeRow) {
-          upsert.merge = mergerFor(row, handle, key, present.value, upsert);
+          upsert.merge = mergerFor(row, handle, key, present.value, upsert,
+                                   realmId);
         }
         upserts.push(upsert);
       });
@@ -1433,7 +1441,7 @@ function flushThrough(target) {
 // back — through the scheduler job `persistence.tombstone-purge`. 0 keeps
 // them with everything else.
 // ---------------------------------------------------------------------------
-function mergerFor(row, handle, key, mine, upsert) {
+function mergerFor(row, handle, key, mine, upsert, realmId) {
   log.debug("Entering mergerFor().");
   log.debug("Leaving mergerFor().");
   return function (storedBody) {
@@ -1448,7 +1456,7 @@ function mergerFor(row, handle, key, mine, upsert) {
       const merged = row.mergeRow(mine, JSON.parse(text));
       // THE MERGED RECORD'S EXPIRY IS WHAT IS WRITTEN (#333), not this
       // process's copy's: the other node may have extended it.
-      upsert.expiresAt = expiryOf(row, merged, key);
+      upsert.expiresAt = expiryOf(row, merged, key, realmId);
       return keystore.seal(JSON.stringify(merged), 'minted-rows');
     } catch (e) {
       log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +

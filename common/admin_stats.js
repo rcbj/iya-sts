@@ -307,7 +307,21 @@ function recordCall(call) {
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // jti (or a synthetic key) -> the record below
-const tokens = realms.map({ persist: 'admin_stats.tokens' });
+// `expiresAt` (#333): the purge's own rule — a record is kept
+// `oauth2.expiredTokenRetentionS` past its `exp` (epoch seconds, plus the
+// clock skew) so /admin/tokens can show it expired, and then goes. A token
+// with no `exp` (0) never expires.
+const tokens = realms.map({
+  persist: 'admin_stats.tokens',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (record) {
+    const exp = Number(record && record.exp);
+    const skewS = Number(config.value('oauth2.clockSkewS'));
+    const keepS = Number(config.value('oauth2.expiredTokenRetentionS'));
+    return exp > 0 && isFinite(skewS) && isFinite(keepS)
+      ? (exp + Math.max(0, skewS) + Math.max(0, keepS)) * 1000 : null;
+  }
+});
 
 
 

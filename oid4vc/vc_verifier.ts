@@ -327,7 +327,10 @@ const VP_DCQL_ID = vpConfig.DCQL_ID;
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions',
-                                    retain: 'age' });
+                                    retain: 'age',
+                                    // #333: the transaction's `expires`, ms.
+                                    expiresAt: realms.expiryField('expires',
+                                                                  1) });
 
 // id -> state, so a Request Object fetched by reference can find its
 // transaction. PER TRUST REALM. `realms.map()` is a Map that holds a separate

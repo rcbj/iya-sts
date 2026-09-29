@@ -697,6 +697,47 @@ async function body(t, dir) {
   throwing.delete('k');
   expiring.clear();
   await minted.flush();
+  // The common shape of a hook: a field in ms, in seconds, an ISO string, the
+  // bare value; anything else is "does not expire".
+  const ms = realms.expiryField('expires', 1);
+  const sec = realms.expiryField('until', 1000);
+  const bare = realms.expiryField(null, 1000);
+  t.check(ms({ expires: 1234 }) === 1234 && sec({ until: 5 }) === 5000 &&
+          bare(7) === 7000 &&
+          ms({ expires: '2030-01-01T00:00:00.000Z' }) ===
+            Date.parse('2030-01-01T00:00:00.000Z') &&
+          ms({}) === null && ms({ expires: 0 }) === null && ms(null) === null &&
+          bare('x') === null,
+          'realms.expiryField() reads ms, seconds, ISO and a bare value, and ' +
+          'answers null for anything that is not a positive instant');
+  // The real stores' hooks, where the ticket found the rows (#333): a code,
+  // a DPoP nonce (issued, seconds), a refresh family, a tracked token past
+  // its retention — each answers the store's own rule.
+  require('../oauth-oidc/oauth2');
+  require('../oauth-oidc/dpop');
+  require('../common/admin_stats');
+  const hook = function (handle) {
+    const row = realms.handleFor(handle);
+    return row && row.expiresAt;
+  };
+  t.check(hook('oauth2.authzCodes')({ expires: now + 5 }) === now + 5 &&
+          hook('oauth2_bcp.refreshFamilies')({ forget: now + 9 }) ===
+            now + 9 &&
+          hook('dpop.issuedNonces')(1000) ===
+            (1000 + Number(config.value('oauth2.dpopNonceTtlS'))) * 1000 &&
+          hook('admin_stats.tokens')({ exp: 1000 }) ===
+            (1000 + Number(config.value('oauth2.clockSkewS')) +
+             Number(config.value('oauth2.expiredTokenRetentionS'))) * 1000 &&
+          hook('admin_stats.tokens')({ exp: 0 }) === null,
+          'the declared stores\' hooks answer their own rules — a code its ' +
+          'expires, a DPoP nonce its issue time plus its lifetime, a tracked ' +
+          'token its exp plus the skew and the retention, and none for exp 0');
+  t.check(!hook('authn.sessions') && !hook('gnap.tokens') &&
+          !hook('vc_status.entries') && !hook('oauth2.backchannelDeliveries'),
+          'and the stores whose ending DOES something declare none: a ' +
+          'session (audit, CAEP, back-channel logout), a GNAP token (an ' +
+          'expired one may be rotated), a status-list entry (its bit), a ' +
+          'delivery (dead-lettered first)');
   // The job: a cluster job, bounded, owned here.
   const jobs = [];
   minted.ensureExpiryPurgeJob({

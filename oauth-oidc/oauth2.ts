@@ -637,7 +637,9 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 // tombstone in the store, so a node holding an older copy of the row cannot
 // write it back. `persistence/persistence_minted.js` carries the mechanism.
 const authzCodes = realms.map({ persist: 'oauth2.authzCodes', retain: 'age',
-                                tombstone: true });
+                                tombstone: true,
+                                // #333: the code's `expires`, ms.
+                                expiresAt: realms.expiryField('expires', 1) });
 
 // ---------------------------------------------------------------------------
 // NON-SPEC: what happens when the SAME authorization code arrives twice.
@@ -685,7 +687,10 @@ const authzCodes = realms.map({ persist: 'oauth2.authzCodes', retain: 'age',
 // this behaves as the plain Map it replaced. See common/realms.js.
 // code -> the token set it was redeemed for
 const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes',
-                                   retain: 'age' });
+                                   retain: 'age',
+                                   // #333: the sweep's `forget`, ms.
+                                   expiresAt: realms.expiryField('forget',
+                                                                 1) });
 
 // Described to `/admin/caches` (#74, rule 3ap). The key is an authorization
 // code and the value holds the tokens it produced, so a row is the code's

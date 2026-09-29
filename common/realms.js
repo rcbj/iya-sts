@@ -2637,6 +2637,34 @@ function declareHandle(options, shape, accessors) {
   return handle;
 }
 
+// ---------------------------------------------------------------------------
+// THE COMMON SHAPE OF AN `expiresAt` HOOK (#333): the record's own expiry is
+// one field of it — or the value itself, when the value is a bare number —
+// in milliseconds (`scale` 1) or seconds (`scale` 1000). Anything that is not
+// a positive number is "does not expire".
+// ---------------------------------------------------------------------------
+/**
+ * Builds an `expiresAt` hook that reads one field of the record.
+ *
+ * @param field - the field holding the expiry; null for the value itself
+ * @param scale - what one unit of it is in milliseconds (1000 for seconds)
+ * @returns the hook, `(value) => epoch milliseconds | null`
+ */
+function expiryField(field, scale) {
+  log.debug("Entering expiryField().");
+  const factor = Number(scale) > 0 ? Number(scale) : 1;
+  log.debug("Leaving expiryField().");
+  // A HOT PATH: it runs for every row a minted flush writes, so no
+  // Entering/Leaving pair — one would drown the log.
+  return function expiryOfField(value) {
+    const raw = field === null || field === undefined ? value
+      : (value && typeof value === 'object' ? value[field] : null);
+    const n = typeof raw === 'string' && isNaN(Number(raw))
+      ? Date.parse(raw) / factor : Number(raw);
+    return Number.isFinite(n) && n > 0 ? n * factor : null;
+  };
+}
+
 // What a store calls when something in it moved. `key` is null for a
 // whole-store change, which is what a counter object reports — those are one
 // small row and rewriting it is cheaper than working out which field moved.
@@ -4227,6 +4255,7 @@ module.exports = {
   arr: arr,
   obj: obj,
   sharedMap: sharedMap,
+  expiryField: expiryField,
   setPersistObserver: setPersistObserver,
   unknownRealmPath: unknownRealmPath,
   handles: handles,
