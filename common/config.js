@@ -1172,12 +1172,23 @@ const SETTINGS = [
   { key: 'gnap.replayCacheSize', group: 'GNAP',
     label: 'Signature replay history size (per realm)',
     path: 'gnap.replayCacheSize', env: 'STS_GNAP_REPLAY_CACHE_SIZE',
-    type: 'int', dflt: 100000, min: 100, max: 10000000, runtime: true,
+    // 10,000 since #346 (2026-09-29; it was 100,000): the history is
+    // resident in every process of every node, per realm (#339). A full one
+    // refuses, so the lower number costs throughput and never the replay
+    // window.
+    type: 'int', dflt: 10000, min: 100, max: 10000000, runtime: true,
     description: 'How many live signed GNAP requests (JWS proofs and HTTP ' +
                  'message signature nonces) a trust realm remembers, each ' +
                  'for twice gnap.signatureMaxAgeS. **A FULL HISTORY REFUSES ' +
                  'THE NEXT REQUEST (STS-GNAP-0718) RATHER THAN FORGETTING A ' +
-                 'LIVE ONE**, since a forgotten signature can be replayed.' },
+                 'LIVE ONE**, since a forgotten signature can be replayed. ' +
+                 'The cost of the default is throughput: past about this ' +
+                 'many signed requests per twice gnap.signatureMaxAgeS ' +
+                 '(about 16 a second at the defaults) the realm refuses ' +
+                 'every signed request until entries age out, and anybody ' +
+                 'able to send signed requests can bring that on. Raise it ' +
+                 'for a realm that sees more; every process of every node ' +
+                 'holds the whole history.' },
   { key: 'gnap.interactionStartModes', group: 'GNAP', label: 'Interaction ' +
       'start modes',
     path: 'gnap.interactionStartModes', env: 'STS_GNAP_INTERACTION_START_MODES',
@@ -4268,15 +4279,25 @@ const SETTINGS = [
   // oldest and that client is simply asked again with a fresh nonce.
   { key: 'oauth2.dpopReplayCacheSize', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP proof replay history size (per realm)',
-    env: 'STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE', type: 'int', dflt: 100000,
+    // 10,000 since #346 (2026-09-29; it was 100,000): the history is
+    // resident in every process of every node, per realm (#339). A full one
+    // refuses, so the lower number costs throughput and never the replay
+    // window.
+    env: 'STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE', type: 'int', dflt: 10000,
     min: 100, max: 10000000, runtime: true,
     description: 'How many live DPoP proof IDs (jti) a trust realm ' +
                  'remembers, each for twice oauth2.dpopIatSkewS. **A FULL ' +
                  'HISTORY REFUSES THE NEXT PROOF (STS-OAUTH-0554) RATHER ' +
                  'THAN FORGETTING A LIVE ONE**, since a forgotten jti is a ' +
                  'proof that can be replayed. Expired IDs are dropped first. ' +
-                 'Raise it for a realm that sees more than this many ' +
-                 'DPoP-bound requests in the replay window.' },
+                 'The cost of the default is throughput: past about this ' +
+                 'many DPoP proofs per replay window (about 16 a second at ' +
+                 'the defaults) the realm refuses every DPoP proof until ' +
+                 'entries age out, and anybody able to send a proof the ' +
+                 'token endpoint accepts can bring that on. Raise it for a ' +
+                 'realm that sees more than this many DPoP-bound requests ' +
+                 'in the replay window; every process of every node holds ' +
+                 'the whole history.' },
 
   { key: 'oauth2.dpopNonceCacheSize', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP server nonces held (per realm)',
@@ -5966,6 +5987,26 @@ const SETTINGS = [
     min: 5, max: 86400, runtime: true,
     description: 'How long a Replay-Nonce may wait before it is presented. ' +
                  'Each is accepted once.' },
+  // A literal 100,000 in acme/acme_store.ts until #346 (2026-09-29). The
+  // history is resident in every process of every node, per realm (#339). A
+  // full one refuses, so the lower number costs throughput and never the
+  // replay window.
+  { key: 'acme.maxSpentNonces', group: 'ACME',
+    label: 'Spent nonce history size (per realm)',
+    env: 'STS_ACME_MAX_SPENT_NONCES', type: 'int', dflt: 10000,
+    min: 100, max: 10000000, runtime: true,
+    description: 'How many spent Replay-Nonce values a trust realm ' +
+                 'remembers, each until the nonce expires. Expired ones are ' +
+                 'cleared at the bound; **A HISTORY STILL FULL OF LIVE ' +
+                 'SPENDS REFUSES THE NEXT REQUEST (badNonce) RATHER THAN ' +
+                 'FORGETTING ONE**, since a forgotten nonce can be replayed. ' +
+                 'The cost of the default is throughput: past about this ' +
+                 'many requests per acme.nonceLifetimeS (about 33 a second ' +
+                 'at the defaults) the realm answers every ACME request ' +
+                 'badNonce until nonces expire, and anybody able to fetch a ' +
+                 'nonce and sign a request can bring that on. Raise it for ' +
+                 'a realm that sees more; every process of every node holds ' +
+                 'the whole history.' },
   { key: 'acme.orderLifetimeS', group: 'ACME',
     label: 'Order lifetime (seconds)',
     env: 'STS_ACME_ORDER_LIFETIME_S', type: 'int', dflt: 86400,
@@ -9380,14 +9421,23 @@ const SETTINGS = [
 
   { key: 'oid4vp.signInRegisterMaxEntries', group: 'OID4VP',
     label: 'Wallet sign-in register size (per realm)',
-    env: 'OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES', type: 'int', dflt: 100000,
+    // 10,000 since #346 (2026-09-29; it was 100,000): the register is
+    // resident in every process of every node, per realm (#339). Dropping a
+    // row fails closed, so the lower number costs a wallet its sign-in and
+    // never lets a credential in.
+    env: 'OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES', type: 'int', dflt: 10000,
     min: 100, max: 10000000, runtime: true,
     description: 'How many rows the wallet sign-in register keeps per trust ' +
                  'realm — one per credential issued for a person on a ' +
                  'verified access token (per holder key for ldp_vc). Past it ' +
                  'the row ISSUED FIRST is dropped. That fails CLOSED: a ' +
                  'credential with no row signs nobody in, which is also what ' +
-                 'a disowned row does.' },
+                 'a disowned row does. The cost of the default: once a realm ' +
+                 'has issued this many sign-in credentials, each new one ' +
+                 'stops the oldest still-valid one signing its holder in, ' +
+                 'and the holder has to be issued another. Raise it for a ' +
+                 'realm that issues more; every process of every node holds ' +
+                 'the whole register.' },
 
 
   { key: 'oid4vp.walletPresentationPath', group: 'OID4VP',

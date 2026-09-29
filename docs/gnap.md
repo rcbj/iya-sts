@@ -279,7 +279,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.continueWaitS` | `STS_GNAP_CONTINUE_WAIT_S` | `5` | yes | The `wait` of every continuation response; continuing sooner is `too_fast`, and `0` lets a test run without sleeping. |
 | `gnap.maxPolls` | `STS_GNAP_MAX_POLLS` | `60` | yes | Continuation polls a pending grant accepts before it is finalized with `too_many_attempts`. |
 | `gnap.signatureMaxAgeS` | `STS_GNAP_SIGNATURE_MAX_AGE_S` | `300` | yes | How far a key proof's created time may be from now; nonces and JWS proofs are remembered for twice this. |
-| `gnap.replayCacheSize` | `STS_GNAP_REPLAY_CACHE_SIZE` | `100000` | yes | Live signed requests a realm remembers; a full history refuses the next request (`STS-GNAP-0718`) rather than forgetting a live one. |
+| `gnap.replayCacheSize` | `STS_GNAP_REPLAY_CACHE_SIZE` | `10000` | yes | Live signed requests a realm remembers; a full history refuses the next request (`STS-GNAP-0718`) rather than forgetting a live one. **At the default that is about 16 signed requests a second, sustained; past it every signed request in the realm is refused until entries age out.** Raise it for a busier realm. |
 | `gnap.interactionStartModes` | `STS_GNAP_INTERACTION_START_MODES` | `redirect,app,user_code,user_code_uri` | yes | `interaction_start_modes_supported`; a client may narrow it with `gnapInteractionStartModes`. |
 | `gnap.finishMethods` | `STS_GNAP_FINISH_METHODS` | `redirect,push` | yes | `interaction_finish_methods_supported`; `push` is also switched by `gnap.pushFinish`. |
 | `gnap.keyProofs` | `STS_GNAP_KEY_PROOFS` | `httpsig,mtls,jwsd,jws` | yes | `key_proofs_supported`; `mtls` needs the main port on HTTPS so a client certificate can arrive. |

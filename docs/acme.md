@@ -251,6 +251,7 @@ done.
 | `acme.attemptsPerIdentity` | `STS_ACME_ATTEMPTS_PER_IDENTITY` | `30` | yes | Refused requests one account or EAB key id may make in a web-security window before `rateLimited`. |
 | `acme.attemptsPerAddress` | `STS_ACME_ATTEMPTS_PER_ADDRESS` | `120` | yes | Refused requests one client address may make in a web-security window before `rateLimited`. |
 | `acme.nonceLifetimeS` | `STS_ACME_NONCE_LIFETIME_S` | `300` | yes | How long a `Replay-Nonce` may wait before it is presented; each is accepted once. |
+| `acme.maxSpentNonces` | `STS_ACME_MAX_SPENT_NONCES` | `10000` | yes | Spent nonces a realm remembers. A history still full of live ones answers the next request `badNonce` rather than forget one, which would let it be replayed. **At the default that is about 33 requests a second, sustained; past it every ACME request in the realm is refused until nonces expire**, and any client able to fetch a nonce and sign a request can cause it. Raise it for a busier realm. |
 | `acme.orderLifetimeS` | `STS_ACME_ORDER_LIFETIME_S` | `86400` | yes | How long an order stays pending or ready before it expires with its authorizations. |
 | `acme.eabLifetimeS` | `STS_ACME_EAB_LIFETIME_S` | `604800` | yes | How long an EAB key may wait before it binds an account; each binds one account and no other. |
 
