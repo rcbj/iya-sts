@@ -1452,10 +1452,16 @@ class AdminViews {
     // the default — and the difference matters, because every application in
     // this service requires EVERYBODY and listing all of them would bury the
     // handful that were narrowed.
-    const requiring = applications.list().filter(function (row) {
-      return applications.requiresNarrowedRoles(row.identifier);
+    //
+    // ONE `list()`, AND THE REQUIREMENT READ OFF THE ROW (#352): this asked
+    // `requiresNarrowedRoles()` and `requiredRolesOf()` by identifier, each
+    // of which read the entry out of the directory again — two reads per
+    // application for a register the list had already read whole.
+    const listed = applications.list();
+    const requiring = listed.filter(function (row) {
+      return applications.narrowedRoles(applications.requiredRolesFrom(row));
     }).map(function (row) {
-      const required = applications.requiredRolesOf(row.identifier);
+      const required = applications.requiredRolesFrom(row);
       return {
         application: row.identifier,
         name: row.name || row.identifier,
@@ -1479,7 +1485,9 @@ class AdminViews {
       };
     });
     const permissions = [];
-    applications.list().forEach(function (row) {
+    // `roleGatingFor()` is a Map lookup now (#352), not a `list()` per
+    // permission.
+    listed.forEach(function (row) {
       applications.permissionsOf(row).forEach(function (one) {
         if (one.id) {
           const gating = applications.roleGatingFor(one.id);
@@ -4237,15 +4245,20 @@ class AdminViews {
       adminActions } = this.deps;
     log.debug("Entering AdminViews.kerberosPrincipalsJson().");
     const query = (req && req.query) || {};
-    const people = krb5PersonKeys.listPeople();
+    // PAGED, THEN DESCRIBED (#352): the population is the undescribed rows,
+    // sorted by username, and only the page is parsed, stamped and given
+    // its retained versions.
+    const people = krb5PersonKeys.listPeopleKeys();
     const services = krb5PersonKeys.listServices();
     // `name` and NOT `param`: pagingOf() builds the parameter as `<name>Page`
     // and reads no `param` option at all. This passed `param` until 2026-09-13,
     // so both lists read the bare `?page=` while the page's links wrote
     // `peoplePage` and `servicesPage` — every next and previous link on
     // /admin/kerberos/principals reloaded the same first page.
-    const peoplePage = this.pagedRows(query, people,
-                                      { name: 'people', noun: 'people' });
+    const peopleKeyPage = this.pagedRows(query, people,
+                                         { name: 'people', noun: 'people' });
+    const peoplePage = Object.assign({}, peopleKeyPage, {
+      shown: krb5PersonKeys.describePeople(peopleKeyPage.shown) });
     const servicesPage = this.pagedRows(query, services,
                                         { name: 'services', noun: 'service ' +
                                             'principals' });
@@ -7195,15 +7208,21 @@ class AdminViews {
     // relationship with ten thousand linked people is an ordinary one, and a
     // page drawing all of them is not. Service-provider side only: an
     // identity-provider-side relationship asserts, and nobody is linked to it.
-    const linkPage = this.pagedRows(req.query,
+    //
+    // PAGED BEFORE IT IS PARSED (#352): the links are paged as the directory
+    // hands them over, and only the page's are taken apart into issuer and
+    // subject.
+    const linkKeyPage = this.pagedRows(req.query,
       row.role === 'service-provider'
-        ? federation.linkedThrough(record.fedId).map(function (one) {
-            const parts = fedLinks.parse(one.value) || {};
-            return { username: one.username, dn: one.dn, link: one.value,
-                     issuer: parts.issuer, subject: parts.subject };
-          })
-        : [],
+        ? federation.linkedThrough(record.fedId) : [],
       { name: 'links', noun: 'links' });
+    const linkPage = Object.assign({}, linkKeyPage, {
+      shown: linkKeyPage.shown.map(function (one) {
+        const parts = fedLinks.parse(one.value) || {};
+        return { username: one.username, dn: one.dn, link: one.value,
+                 issuer: parts.issuer, subject: parts.subject };
+      })
+    });
     // WHAT THE PARTNER SENT AND NOTHING WROTE (#94): names no mapping names,
     // and names mapped onto an attribute no partner may write, newest
     // first. Service-provider side only, where attributes arrive.

@@ -250,37 +250,22 @@ class CellsAdmin {
     const limit = Math.max(1, Math.min(PEOPLE_PAGE, Number(body.limit) ||
                                                     PEOPLE_PAGE));
     const after = String(body.after || '').toLowerCase();
-    let page: Json[] = [];
+    // A REAL KEYSET (#352): the directory answers the page after `after`
+    // from its sorted names and reads `limit` entries — it built every
+    // person's entry to throw all but `limit` of them away. A projection is
+    // somebody else's resident, never listed as this cell's; the directory's
+    // page leaves them out.
+    let answer: Json = { people: [], more: false };
     realms.run(realm, function () {
-      const all = require('../ldap/ldap_server').allPersons() || [];
-      // A projection is somebody else's resident, never listed as this
-      // cell's.
-      page = all.filter(function (entry: Json): boolean {
-        return String(entry.origin || '').indexOf('projection') !== 0;
-      }).map(function (entry: Json): Json {
-        const a = entry.attributes || {};
-        const one = function (k: string): string {
-          const key = Object.keys(a).filter(function (n: string): boolean {
-            return n.toLowerCase() === k;
-          })[0];
-          const v = key ? a[key] : '';
-          return String(Array.isArray(v) ? v[0] || '' : v || '');
-        };
-        return { name: one('uid').toLowerCase(), uuid: one('entryuuid'),
-                 displayName: one('displayname') || one('cn') };
-      }).filter(function (p: Json): boolean {
-        return p.name && p.name > after;
-      }).sort(function (x: Json, y: Json): number {
-        return x.name < y.name ? -1 : (x.name > y.name ? 1 : 0);
-      });
+      answer = require('../ldap/ldap_server').residentsPage(after, limit);
     });
-    const out = page.slice(0, limit);
+    const out: Json[] = answer.people;
     log.info('cells: ' + out.length + ' of this cell\'s residents were ' +
              'listed for an administrator at cell "' + ctx.peer + '", which ' +
              'the release policy permits.');
     log.debug("Leaving CellsAdmin.answerPeople().");
     return { people: out,
-             next: page.length > limit ? out[out.length - 1].name : '' };
+             next: answer.more ? out[out.length - 1].name : '' };
   }
 
   /**
