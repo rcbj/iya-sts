@@ -74,6 +74,10 @@ extra_environment = {
   # STS-WORKER-0047. Set 0 (derive) once those reports show what each
   # process really needs.
   STS_WORKERS_HEAP_LIMIT_MB = "-1"
+  # Minted rows kept two hours past expiry, not the default (rcbj,
+  # 2026-09-29): here rather than as a runtime override, which the suite's
+  # reset-environment.js clears before every run.
+  STS_PERSISTENCE_MINTED_RETENTION = "7200000"
 }
 
 sts_mode                = "product"
