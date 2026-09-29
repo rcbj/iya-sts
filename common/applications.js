@@ -11533,8 +11533,8 @@ const listingCount = cacheRegistry.register({
   maxEntries: function () {
     return 1;
   },
-  bound: 'One listing per realm, the size of ou=applications (itself ' +
-    'capped by applications.max).',
+  bound: 'Structural: one listing per realm, the size of ou=applications ' +
+    '(itself capped by applications.max).',
   lifetime: function () {
     return 'Until anything under the realm\'s ou=applications changes; ' +
       'the next read then parses it again.';

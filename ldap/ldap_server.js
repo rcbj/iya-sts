@@ -20439,7 +20439,7 @@ function describeDirectoryCaches() {
     maxEntries: function () {
       return 1;
     },
-    bound: 'One list per realm, the size of ou=users.',
+    bound: 'Structural: one list per realm, the size of ou=users.',
     lifetime: function () {
       return 'Until anything under the realm\'s ou=users is written.';
     },
@@ -20473,7 +20473,7 @@ function describeDirectoryCaches() {
     maxEntries: function () {
       return 1;
     },
-    bound: 'One index per realm, one row per memberOf value.',
+    bound: 'Structural: one index per realm, one row per memberOf value.',
     lifetime: function () {
       return 'Until the directory is next written, anywhere.';
     },
@@ -20550,6 +20550,9 @@ module.exports = {
   personNames: personNames,
   personDns: personDns,
   residentsPage: residentsPage,
+  // /admin/ldap/directory's view, for the in-process test that counts what
+  // it copies (#352).
+  ldapDirectoryView: ldapDirectoryView,
   readPerson: readPerson,
   writePerson: writePerson,
   deletePerson: deletePerson,
