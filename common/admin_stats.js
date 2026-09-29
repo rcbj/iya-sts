@@ -516,9 +516,22 @@ function recordJwt(payload, signed, context) {
 //     `oauth2.expiredTokenRetentionS` — kept that long so /admin/tokens can
 //     still show a token as EXPIRED, which an operator asks about; and
 //   * a revoked jti whose token has expired: a revocation of a token that no
-//     verifier would accept anyway protects nothing. A revoked jti whose
-//     record is already gone is KEPT, because nothing here knows when that
-//     token expires.
+//     verifier would accept anyway protects nothing. **Since #345 the
+//     revocation carries its token's `exp` itself** (see `revokedJtis`), so
+//     one whose record the register's cap (MAX_TOKENS, 5,000) has already
+//     forgotten is dropped at its expiry too — until then it was kept for
+//     ever, and nothing removed it. A revocation whose `exp` nobody stated
+//     and whose record is gone is still kept; the size cap at insert
+//     (`oauth2.maxRevokedJtis`, `makeRoomForRevocation()`) is what bounds
+//     those.
+//
+// **A CLUSTER JOB, NOT A PER-PROCESS ONE, AND THE REVOKED JTIS STAY IN IT
+// (#345).** The ticket asked for a per-process job, and the root rule says
+// which: a per-process job is for state "reachable from no other process".
+// `revokedJtis` is `realms.map({persist})` — REPLICATED through the change
+// log — so a delete on the leader reaches every process's copy, and a
+// per-process job would journal the same delete once per process. This job
+// already walked the revocations for the half of them it could date.
 //
 // Registered at the first recording, lazily: the scheduler loads after this.
 // A record with no `exp` is a token that never expires and is never purged —
@@ -558,6 +571,15 @@ function purgeExpiredTokens(nowMs) {
         }
         if (deadAt + keepMs <= now) {
           gone.push(key);
+        }
+      });
+      // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
+      // register still holds their record.
+      revoked.forEach(function (value, jti) {
+        const exp = revokedExpOf(value);
+        if (exp && exp * 1000 + skewMs <= now &&
+            deadJtis.indexOf(jti) < 0) {
+          deadJtis.push(jti);
         }
       });
       deadJtis.forEach(function (jti) {
@@ -667,7 +689,122 @@ setJwtRecorder(recordJwt);
 // revoked through /admin-api introspected as ACTIVE on any other worker,
 // because that worker had never been told. `realms.map({persist})` is the
 // declaration that makes a store replicate, and a Set has no such declaration.
+//
+// **THE VALUE IS `{ exp }` SINCE #345** — the revoked token's own `exp`, in
+// epoch seconds, or 0 where nobody stated it — because a revocation is worth
+// keeping only until its token would have expired anyway: after that no
+// verifier accepts it on `exp` alone. The hourly purge above drops it then.
+// A row written before #345 holds `true`, which `revokedExpOf()` reads as
+// "not stated", the same as a token with no `exp`: kept until the cap.
+//
+// (feature/333 adds an `expiresAt` hook to the minted-store declaration, so
+// a start need not restore a row past its expiry. It is not on develop yet;
+// once it is, this declaration's hook is `revokedExpOf()` plus the clock
+// skew, in milliseconds.)
 const revokedJtis = realms.map({ persist: 'admin_stats.revokedJtis' });
+
+/**
+ * Reads the token expiry a revocation carries.
+ *
+ * @param value - a `revokedJtis` value: `{ exp }`, or `true` from before #345
+ * @returns the expiry in epoch seconds, or 0 when none was stated
+ */
+function revokedExpOf(value) {
+  // A HOT PATH: called for every revocation the purge and the cap walk, so
+  // no Entering/Leaving pair — one would drown the log.
+  const exp = Number(value && typeof value === 'object' ? value.exp : 0);
+  return isFinite(exp) && exp > 0 ? exp : 0;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIZE CAP (#345), `oauth2.maxRevokedJtis`, checked AT INSERT because a
+// bound cannot wait for a timer (root CLAUDE.md, *Anything periodic*). At the
+// cap it first drops every revocation whose token has already expired — free,
+// since no verifier accepts that token — and only if that leaves no room
+// does it FORGET ONE THAT STILL MATTERS: the one whose token expires
+// SOONEST, which is the smallest window in which a revoked token is accepted
+// again. A
+// revocation with no stated `exp` sorts LAST, because forgetting it re-opens
+// a token for good; among those the oldest goes first (Map order).
+//
+// O(n) in the realm's revocations, and only when the register is full — the
+// ordinary insert costs nothing; a sort only when the cap was lowered below
+// the register's size. Logged under STS-OAUTH-0787 at most once a
+// minute per process, with the count since the last line, rather than once
+// per revocation (the no-per-event-log rule).
+// ---------------------------------------------------------------------------
+let revocationsForgotten = 0;
+let revocationsForgottenLoggedAt = 0;
+
+function makeRoomForRevocation() {
+  log.debug("Entering makeRoomForRevocation().");
+  const cap = Number(config.value('oauth2.maxRevokedJtis'));
+  if (!(cap > 0) || revokedJtis.size < cap) {
+    log.debug("Leaving makeRoomForRevocation(). Room.");
+    return 0;
+  }
+  const skewMs = Number(config.value('oauth2.clockSkewS')) * 1000;
+  const now = Date.now();
+  const dead = [];
+  const live = [];
+  revokedJtis.forEach(function (value, jti) {
+    const exp = revokedExpOf(value);
+    if (exp && exp * 1000 + skewMs <= now) {
+      dead.push(jti);
+      return;
+    }
+    live.push([jti, exp || Infinity]);
+  });
+  dead.forEach(function (jti) {
+    revokedJtis.delete(jti);
+  });
+  // Room for ONE more; more than one over only when the cap was lowered, and
+  // then every revocation over it goes now rather than one per insert, which
+  // would never converge.
+  const over = revokedJtis.size - cap + 1;
+  if (over <= 0) {
+    log.debug("Leaving makeRoomForRevocation(). " + dead.length +
+              " expired dropped.");
+    return 0;
+  }
+  let forgotten = [];
+  if (over === 1) {
+    // The steady state at the cap: one linear pass, no sort. Strictly less,
+    // so a tie keeps the first — the oldest — in Map order.
+    let soonest = null;
+    live.forEach(function (pair) {
+      if (soonest === null || pair[1] < soonest[1]) {
+        soonest = pair;
+      }
+    });
+    forgotten = soonest ? [soonest[0]] : [];
+  } else {
+    // Array.prototype.sort is stable, so a tie keeps Map order here too.
+    live.sort(function (a, b) {
+      return a[1] === b[1] ? 0 : (a[1] < b[1] ? -1 : 1);
+    });
+    forgotten = live.slice(0, over).map(function (pair) {
+      return pair[0];
+    });
+  }
+  forgotten.forEach(function (jti) {
+    revokedJtis.delete(jti);
+  });
+  revocationsForgotten += forgotten.length;
+  if (now - revocationsForgottenLoggedAt >= 60000) {
+    log.warn(errorCodes.tag('STS-OAUTH-0787') + 'admin: the revoked-token ' +
+             'register reached oauth2.maxRevokedJtis (' + cap + ') with ' +
+             'nothing expired in it, so ' + revocationsForgotten + ' ' +
+             'revocation(s) of unexpired tokens were forgotten, the soonest ' +
+             'to expire first (the latest was ' +
+             forgotten[forgotten.length - 1] + '). Raise the setting.');
+    revocationsForgotten = 0;
+    revocationsForgottenLoggedAt = now;
+  }
+  log.debug("Leaving makeRoomForRevocation(). Forgot " + forgotten.length +
+            ".");
+  return forgotten.length;
+}
 
 // ---------------------------------------------------------------------------
 // WHO IS TOLD THAT A TOKEN WAS REVOKED (#239, 2026-09-26): an INVERTED HOOK,
@@ -739,18 +876,30 @@ function tellRevocationObserver(jti, record, via, how) {
  * @param jti - the token's jti
  * @param via - which door revoked it, for the record and the log
  * @param how - the door's statement of the act, passed to the observer
+ * @param expSec - the token's `exp`, in epoch seconds, where the door has
+ *   it; otherwise the register's record's, and 0 (kept until the cap) where
+ *   neither knows (#345)
  * @returns true when the jti was newly revoked, false when it was already
  *   revoked or empty
  */
-function revoke(jti, via, how) {
+function revoke(jti, via, how, expSec) {
   log.debug("Entering revoke(). jti=" + jti);
   if (!jti) {
     log.debug("Leaving revoke(). There was no jti to revoke.");
     return false;
   }
-  const first = !revokedJtis.has(jti);
-  revokedJtis.set(jti, true);
   const record = tokens.get(jti);
+  const first = !revokedJtis.has(jti);
+  if (first) {
+    makeRoomForRevocation();
+  }
+  // The latest of what anybody stated: one jti is one token with one `exp`,
+  // and a later door that knows it dates a revocation an earlier one could
+  // not.
+  const exp = Math.max(revokedExpOf({ exp: expSec }),
+                       revokedExpOf(record),
+                       revokedExpOf(revokedJtis.get(jti)));
+  revokedJtis.set(jti, { exp: exp });
   if (record) {
     record.revoked = true;
     record.revokedAt = record.revokedAt || Date.now();

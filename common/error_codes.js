@@ -5074,6 +5074,13 @@ const CODES = [
       'claim that decides who reports it was won (#242); it is not tried ' +
       'again, because a second try could tell a receiver twice.',
     spec: 'none — logged' },
+  { code: 'STS-AUTHN-0292',
+    summary: 'A realm held authn.maxSessions sign-on sessions when another ' +
+      'was created, so the least recently used session was ended to make ' +
+      'room (#345) — through the same end an expiry takes: its audit row ' +
+      '(which carries this code), CAEP session-revoked and back-channel ' +
+      'Logout Tokens.',
+    spec: 'none — audited; logged at most once a minute per process' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -8112,6 +8119,13 @@ const CODES = [
       'about a revoked OAuth grant could not be delivered; the revocation ' +
       'stands (#239).',
     spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0787',
+    summary: 'A realm\'s register of revoked token ids reached ' +
+      'oauth2.maxRevokedJtis and none of its entries had expired, so the ' +
+      'revocation whose token expires soonest was forgotten to make room ' +
+      '(#345): that token, if it is still unexpired, is accepted again by ' +
+      'a check that asks only this register.',
+    spec: 'none — logged, at most once a minute per process' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

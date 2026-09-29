@@ -2816,6 +2816,30 @@ with `Cannot find module` naming a file the operator never mentioned.
    act is one row at this funnel**, and a caller that starts a session must not
    also record the authentication that started it.
 
+   **A REVOCATION IS KEPT UNTIL ITS TOKEN WOULD HAVE EXPIRED, AND NO LONGER
+   (#345, 2026-09-29).** `revokedJtis` holds `{ exp }` — the token's `exp`
+   in epoch seconds, 0 where nobody stated it — where it held `true`; a row
+   from before reads as "not stated". `revoke()` takes the `exp` as a fourth
+   argument, and otherwise from the register's record. The doors that hold
+   the claims pass it: `/oauth2/revoke`, the refresh grant's rotation and
+   superseded grant, Grant Management's `revokeIssued()` (from its row), and
+   GNAP's three. A family revoked by a replay or a withdrawn consent passes
+   jtis only and relies on the record, which the register's 5,000 cap may
+   already have forgotten — those are dated by the cap, and the family is
+   refused by id anyway (`oauth2_bcp.js`'s `revokeFamily()`).
+   - **The hourly `oauth2.expired-token-purge` drops it** at `exp` plus the
+     clock skew, with or without its record. Before, a revocation whose
+     record had been forgotten was kept for ever. A CLUSTER job, although
+     the ticket asked for a per-process one: the store is replicated, so a
+     delete on the leader reaches every process, and a per-process job would
+     journal one delete per process (`cluster/CLAUDE.md`'s job table).
+   - **`oauth2.maxRevokedJtis` (100,000 per realm) bounds it at insert**
+     (`makeRoomForRevocation()`): the expired revocations go first, free;
+     only when there are none is the one whose token expires SOONEST
+     forgotten — the shortest window in which a revoked token works again —
+     with an undated one last, and `STS-OAUTH-0787` logged at most once a
+     minute. `tests/revoked_jti_expiry.js` holds all three.
+
 3c. **`audit.js` is a library too, it sits BESIDE `admin_stats.js` rather than
    under it, and one dependency into it is inverted.** `admin_stats.js` answers
    "how much"; this answers "what, when, and to whom", as a list of discrete

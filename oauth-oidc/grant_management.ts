@@ -652,15 +652,16 @@ class GrantManagement {
                        via: string, how?: Json): number {
     const { log, stats } = this.deps;
     log.debug("Entering GrantManagement.revokeIssued().");
-    const jtis: string[] = [];
+    const jtis: Array<[string, number]> = [];
     issued.forEach(function (row: Json, jti: string): void {
       if (row && row.grant === grantId && which(row)) {
-        jtis.push(jti);
+        jtis.push([jti, Number(row.exp) || 0]);
       }
     });
     let count = 0;
-    jtis.forEach(function (jti: string): void {
-      if (stats.revoke(jti, via, how)) {
+    // Each with its token's `exp` (#345), which this row recorded at issue.
+    jtis.forEach(function (pair: [string, number]): void {
+      if (stats.revoke(pair[0], via, how, pair[1])) {
         count += 1;
       }
     });

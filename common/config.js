@@ -1639,6 +1639,25 @@ const SETTINGS = [
                  'already exist, because it is checked where a session is ' +
                  'read rather than stamped where one is made.' },
 
+  // #345: the sign-on session store's size cap, per realm.
+  { key: 'authn.maxSessions', group: 'Web security',
+    label: 'Most sign-on sessions per realm',
+    env: 'STS_AUTHN_MAX_SESSIONS', type: 'int', dflt: 100000,
+    min: 1, max: 10000000, runtime: true,
+    description: 'The most sign-on sessions a trust realm holds — browser ' +
+                 'sign-ins, the arrival sessions a browser is given at a ' +
+                 'protocol\'s front door, the console\'s and the portal\'s ' +
+                 'own, and the sessions of API, SCIM and SPIRE clients. ' +
+                 'Checked when a session is CREATED: at the cap the least ' +
+                 'recently used session is ended to make room, exactly as ' +
+                 'an expiry ends one — an audit row carrying STS-AUTHN-0292, ' +
+                 'CAEP session-revoked and back-channel Logout Tokens — so ' +
+                 'its holder has to sign in again. Without it only the ' +
+                 'session expiry job bounded the store, and a burst of ' +
+                 'sign-ins grew every process until the job caught up. ' +
+                 'Lowering it takes effect at the next session created, ' +
+                 'which then ends every session over the new cap at once.' },
+
   { key: 'authn.pendingTtlS', group: 'Web security',
     label: 'How long a sign-in waits at the screen (seconds)',
     env: 'STS_AUTHN_PENDING_TTL_S',
@@ -6232,6 +6251,25 @@ const SETTINGS = [
                  'its record. The revocation of an expired token is deleted ' +
                  'at its expiry, since no verifier accepts it any more. A ' +
                  'day by default; 0 deletes a record as soon as it expires.' },
+
+  // #345: the revoked-jti register's size cap, per realm.
+  { key: 'oauth2.maxRevokedJtis', group: 'OAuth 2.0 / OIDC',
+    label: 'Most revoked token ids kept per realm',
+    env: 'STS_OAUTH2_MAX_REVOKED_JTIS', type: 'int', dflt: 100000,
+    min: 1, max: 10000000, runtime: true,
+    description: 'The most revocations of tokens (by jti) a trust realm ' +
+                 'keeps, in every process. A revocation is dropped anyway ' +
+                 'once its token has expired (the hourly ' +
+                 'oauth2.expired-token-purge), so this bounds only the ' +
+                 'revocations of tokens still unexpired and of tokens whose ' +
+                 'expiry is not known. At the cap an expired revocation is ' +
+                 'dropped first; only when there is none is the revocation ' +
+                 'of the token that expires SOONEST forgotten — **and that ' +
+                 'token is then accepted again by every check that asks ' +
+                 'only this register** (introspection, UserInfo, the ' +
+                 'refresh grant), until it expires. Each such loss is ' +
+                 'logged as STS-OAUTH-0787. Raise it rather than lower it: ' +
+                 'a revocation is about a hundred bytes.' },
 
   { key: 'oauth2.clockSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'Token clock skew (s)',
