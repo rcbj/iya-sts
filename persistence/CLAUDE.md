@@ -318,26 +318,121 @@ Both modes schedule; they differ only in the delay.
 | `postgres` | 0 | Every change made while handling one request coalesces into ONE transaction that runs the moment that request's synchronous work is done. Write-through at the granularity anybody cares about, and what stops a bulk SCIM import from becoming one transaction per entry. |
 | `ldif` | `persistence.writeDelay`, 1500ms | The unit of writing there is a whole FILE. A realm build writes thirteen entries; three of those in one file rewrite is the point of the delay. |
 
+A response that wrote waits for this flush in postgres mode (#351; the next
+section): the zero delay is not waited out — the wait starts the flush.
+
 Both flush on the way out: `server.js` traps SIGTERM and SIGINT and calls
 `stop()`. `kill -9` sends SIGKILL, which cannot be trapped by anything, and what
 that costs is up to `writeDelay` milliseconds in ldif mode and nothing in
 postgres mode.
 
-## A failed write is logged and never thrown
+## A failed write is logged and never thrown — and in postgres mode never acknowledged (#351)
 
-The service keeps answering out of memory, `GET /admin/ldap/service` and `/admin/persistence`
-both carry the error, and the next flush recomputes the same diff — **the shadow
-is only advanced on success**, so nothing is lost by a failure and the retry
-needs no queue.
+The service keeps answering out of memory, `GET /admin/ldap/service` and
+`/admin/persistence` both carry the error, and the write is retried — **the
+shadow is only advanced on success**, so the retry recomputes the same diff.
 
-The alternative — refusing the LDAP operation whose write failed — was
-considered and rejected: it would make a database outage take down sixteen
-protocol families that do not need a database, and no other refusal in this
-service is that expensive. This was verified by stopping the database under a
-running service: the `POST /admin-api/users/create` succeeded, `/healthcheck`
-answered 200, `/admin/ldap/service` reported `healthy: false` with the connection error, and
-when the database came back the next change wrote the entry made during the
-outage along with the new one.
+**What this section said until 2026-09-29, and why it stopped being true.** It
+said the next CHANGE retries, and that refusing the operation whose write
+failed "would make a database outage take down sixteen protocol families that
+do not need a database". On testidp (#351) a SCIM Bulk load starved a request
+worker's pool: its deletes were answered 204 while their writes failed
+(STS-STORE-0002), the worker then exited on a lost origin claim
+(STS-STORE-0061), and ~600 people it had reported deleted came back from the
+database. No `try`/`catch` fixes that — nothing threw, and nothing survives a
+SIGKILL, an OOM kill or a lost node. The guarantee that holds is **never
+answer a write until it is committed**, and it is now the rule.
+
+### A write is answered after its commit
+
+* **Where it waits: `cluster/cluster_barrier.js`, rule 2** — the same
+  `res.end()` hold active-active mode already had, installed in `common/app.js`
+  directly below the request pool, so it runs in whichever process SERVES the
+  request (a worker, or the front process for what it keeps) and covers every
+  route, including redirects (`res.redirect()` ends through `res.end()`).
+  `persistence.answersAfterCommit()` turns it on for every postgres process,
+  one node or many. Rule 1 (catching up with other nodes) stays active-active
+  only. There is no second mechanism: the request worker's commit
+  announcement (`request_worker.ts`) is unchanged and still tells the front
+  process which tickets committed.
+* **Which flush carries a request's changes: the write position.** A request
+  reads `writeGeneration()` — the directory generation (which the realm and
+  settings writes move too) and the minted generation less its observation
+  tallies — when it arrives and again when it answers; if it moved,
+  `commitThrough()` waits for the flush in flight that took that position, or
+  starts one. The position is process-wide, so a request that overlapped
+  another's write waits for that too — conservative, never wrong. The call
+  log's own success row is left out, as it always was for active-active.
+* **No debounce is waited out.** In postgres mode the schedule's delay is 0,
+  and `directoryThrough()` / `flushThrough()` call `flush()` at once rather
+  than waiting for the timer; a commit is the cost of the rows written.
+* **The stores it covers**: the directory, the realm registry and the
+  settings overrides (one flush, one generation); every minted store
+  (`flushThrough()`); and the keystore's queued rows — a key set or a
+  certificate authority row whose write fails is now a failure of the
+  request that caused it (its outcome's `error` was dropped before; a realm
+  was answered as created and generated different keys at the next restart).
+  Nothing a request writes goes to the store any other way.
+* **A failed commit is 503 with `Retry-After`** (STS-STORE-0066, marked on the
+  response and recorded as a second audit row carrying the 503) and the
+  handler's response is discarded whole — its body, `Location`, `Set-Cookie`
+  and `Content-*`; the security headers and CORS stay. A response whose
+  headers already left (a handler that streamed or called `writeHead()`
+  itself; none that writes does) is destroyed rather than completed. An
+  **LDAP** operation is wrapped at registration in `ldap/ldap_server.js`,
+  inside what a worker runs, and answered **`unavailable` (52)**
+  (STS-STORE-0067) — RFC 4511's "a subsystem necessary to complete the
+  operation is offline", which is true, where `busy` (51) is not; it is also
+  what a worker that dies mid-operation is already answered. An LDAP read
+  (search, compare) is held only for directory or key changes, never for its
+  audit rows — the HTTP call log's reason.
+* **The change a refused request made is still in memory, and is retried**:
+  a failed flush puts its dirty bits AND ITS JOURNAL back (the journal was
+  lost until #351, so the next journalled flush advanced the commit position
+  past the failed DNs and they reached the store only if a full walk ever
+  ran), and arms ONE retry of the whole flush — 1 s, doubling to 30 s, reset
+  by the first success; the failed key rows are queued again with it
+  (`keystore.retryFailed()`). It is the retry of one failed write, not a
+  periodic job, and it exists only while a write is failing.
+* **A client's retry must be safe against a change already in memory.** A
+  retried DELETE finds the entry gone and answers 404, a retried create finds
+  it and answers 409. So while a refused write waits for its retry
+  (`commitBacklog()`), a request with a WRITING method (POST, PUT, PATCH,
+  DELETE; add, delete, modify, modifyDN) is held for that retry's commit too,
+  even when it changed nothing itself: its 404 then means the delete is in the
+  store, or it is 503 again. Reads are answered from memory as always.
+* **What is NOT waited for**: `ldif` (its unit is a whole file on
+  `persistence.writeDelay`; waiting would put 1.5 s on every write of a
+  development store) and memory mode. Both behave as before, except that a
+  failed ldif write now keeps its journal and retries on its own.
+
+`tests/answer_after_commit.js` holds each of these in process; what it cannot
+hold is a real pool starved by a real load, which only a run against postgres
+shows.
+
+### The liveness connection
+
+The origin-claim renewal, the cluster heartbeat and the lease statements run
+on a `pg.Client` of their own (`liveQuery()` in `persistence_postgres.js`) —
+like the LISTEN connection, opened on first use and again after it drops, with
+no timer — so write load cannot starve the lease that keeps a process writing.
+If it cannot be opened (a server at `max_connections`) the statement goes
+through the pool once rather than failing (STS-STORE-0070). A write's own
+fence checks stay inside its transaction. Each process now holds up to
+`poolMax() + 2` connections; `POOL_FLOOR` stays 4, argued above it.
+
+**A lapsed origin claim is not purged with the other claims** (for a day):
+`purgeClaims()` deleted every expired claim, so a claim that lapsed during a
+stall was deleted at the next purge, the owner's renewal matched no row, and it
+exited reading "another process took it" when nobody had — a likely route to
+the testidp STS-STORE-0061.
+
+**And a late renewal says why**: `persistence.event-loop-lag`, a per-process
+scheduler job, reads `perf_hooks.monitorEventLoopDelay()` every ten seconds
+into `status().eventLoop` and warns STS-STORE-0068 past 5 s; a renewal that
+started or answered more than half the claim's lifetime late logs
+STS-STORE-0069 naming the loop's worst delay, so the next lost origin says
+whether the loop, the pool or the database was the cause.
 
 ### IT BINDS NOTHING, AND IT STILL GOES FIRST — THE ORDERING IS A DEPENDENCY
 

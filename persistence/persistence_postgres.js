@@ -138,12 +138,27 @@ const capabilities = require('../cluster/cluster_capabilities');
 // therefore holds the same size.
 //
 // **WHAT IT COSTS THE SERVER**: each process opens up to this many, plus its
-// LISTEN connection, so a node holds up to (1 + workers) * (poolMax() + 1).
+// LISTEN connection and its LIVENESS connection (#351, `liveQuery()` below),
+// so a node holds up to (1 + workers) * (poolMax() + 2).
 // The local cluster mode — two nodes of one front process and four workers
 // — is 2 * 5 * 9 = 90, which is why the test stacks' postgres runs with
 // max_connections=200. A deployment sizes the server's max_connections for
 // its own node and worker counts. Idle connections are closed after 30 s,
 // so this is the ceiling under load, not the steady state.
+//
+// **FOUR IS STILL THE FLOOR AFTER #351, AND WHY WRITERS DO NOT GET MORE.**
+// What starved on testidp was the origin renewal, which shared these four with
+// the writes; it has a connection of its own now, with the heartbeat and the
+// leases, so a full pool delays a write and can no longer end the process.
+// The writes themselves do not scale with connections: a process flushes its
+// directory one transaction at a time and its minted rows one at a time
+// (`persistence.js`, `persistence_minted.js`), so a writer holds at most two
+// connections however many requests are waiting, and the rest are the
+// change-log pull, claims and reads. A bigger pool per process would multiply
+// the server's connections by every process on every node — the cost above —
+// to buy concurrency the flush does not use. A write that still cannot get a
+// connection within the pool's wait now answers its request 503 rather than
+// being acknowledged and lost (`cluster/cluster_barrier.js`, rule 2).
 const POOL_FLOOR = 4;
 
 // A PURE FUNCTION of the node's request-worker count, so the scheduler's cap
@@ -1233,6 +1248,22 @@ const METRIC_PROBES = [
 const ORIGIN_SCOPE = 'persistence.origin';
 
 // ---------------------------------------------------------------------------
+// A LAPSED ORIGIN CLAIM IS NOT PURGED WITH THE OTHERS (2026-09-29, #351).
+//
+// `purgeClaims()` deleted every expired claim, and an origin claim that had
+// lapsed — a renewal starved past its 30 s — went with it at the next purge.
+// The owner's renewal then matched no row, which `reassertOrigin()` can only
+// read as "another process took it", and the process EXITED on a claim nobody
+// held (STS-STORE-0061) — the one outcome the lapse-is-not-taken rule of
+// 2026-09-21 exists to prevent, reintroduced by a housekeeping job on another
+// node. A taker REPLACES the reservation in place, so a lapsed origin row is
+// the evidence that nobody took it; it is kept for ORIGIN_RETAIN_MS past its
+// expiry, one row per node name and slot, and only then swept. A process
+// whose claim has been lapsed for a day has been gone for a day.
+// ---------------------------------------------------------------------------
+const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
 // HOW A CONNECTION STRING BECOMES WHAT `pg` IS GIVEN — the one place, shared
 // by this driver's writer pool, its LISTEN client, its read pool and, since
 // #98's conversion tool (`persistence/cell_convert.js`), a process that is
@@ -1575,6 +1606,107 @@ function create(options) {
               '. The pool will make a new one on the next write.');
   });
 
+  // -------------------------------------------------------------------------
+  // THE LIVENESS CONNECTION (2026-09-29, #351).
+  //
+  // The origin-claim renewal went through `pool`, and on testidp a SCIM Bulk
+  // load held all four of a worker's connections for longer than the claim
+  // lives: the renewal could not get one, the claim lapsed, and the worker
+  // exited (STS-STORE-0061) with acknowledged writes still in memory. The
+  // lease that keeps a process writing must not queue behind the writes.
+  //
+  // So the statements that keep this process ALIVE in the store — the origin
+  // renewal and its re-assertion, the cluster heartbeat, a lease acquired,
+  // released or given up when leaving — go through a `Client` of their own,
+  // like the LISTEN connection (a pooled client cannot be reserved). pg
+  // queues a client's queries in order, which is what one heartbeat and one
+  // renewal every few seconds want. Opened on first use and again after it
+  // drops — no timer, the next statement reconnects. A statement that finds
+  // it cannot CONNECT goes through the pool instead, once, and says so
+  // (STS-STORE-0070): a server at `max_connections` refuses a new connection
+  // while a pooled one may be free, and a renewal that could run must.
+  //
+  // **A TRANSACTION'S OWN FENCE CHECKS STAY IN ITS TRANSACTION** —
+  // `checkOriginFence()`, `checkClusterFence()` and the lapse re-assertion
+  // they make run on the transaction's client under its locks, because the
+  // check is only worth anything held to that transaction's COMMIT.
+  // -------------------------------------------------------------------------
+  let liveClient = null;
+  let liveConnecting = null;
+  let liveClosed = false;
+  const liveStats = { queries: 0, connects: 0, drops: 0, viaPool: 0 };
+
+  function liveConnection() {
+    log.debug("Entering liveConnection().");
+    if (liveClient) {
+      log.debug("Leaving liveConnection(). Open.");
+      return Promise.resolve(liveClient);
+    }
+    if (liveConnecting) {
+      log.debug("Leaving liveConnection(). Connecting.");
+      return liveConnecting;
+    }
+    const client = new Client(clientOptions());
+    client.on('error', function (err) {
+      // A dropped connection: the next statement opens another. An 'error'
+      // with no listener on a Client is a process exit.
+      liveStats.drops += 1;
+      log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
+               'liveness connection dropped (' + err.message + '); the ' +
+               'next renewal or heartbeat opens another.');
+      if (liveClient === client) {
+        liveClient = null;
+      }
+      Promise.resolve(client.end()).catch(function (e) {
+        log.debug("Caught in a callback in liveConnection(): " +
+                  ((e && e.message) || e));
+      });
+    });
+    liveConnecting = Promise.resolve(client.connect()).then(function () {
+      liveConnecting = null;
+      if (liveClosed) {
+        Promise.resolve(client.end()).catch(function (e) {
+          log.debug("Caught in a callback in liveConnection(): " +
+                    ((e && e.message) || e));
+        });
+        throw new Error('the store is closed');
+      }
+      liveStats.connects += 1;
+      liveClient = client;
+      return client;
+    }, function (err) {
+      liveConnecting = null;
+      throw err;
+    });
+    log.debug("Leaving liveConnection(). Connecting.");
+    return liveConnecting;
+  }
+
+  /**
+   * Runs one liveness statement on the liveness connection, or through the
+   * pool when that connection cannot be opened.
+   * @param sql - the statement
+   * @param params - its parameters
+   * @returns the query's result
+   */
+  function liveQuery(sql, params) {
+    log.debug("Entering liveQuery().");
+    liveStats.queries += 1;
+    log.debug("Leaving liveQuery().");
+    return Promise.resolve().then(liveConnection).then(function (client) {
+      return client.query(sql, params);
+    }, function (err) {
+      liveStats.viaPool += 1;
+      log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
+               'liveness connection could not be opened (' + err.message +
+               '); this statement goes through the pool.');
+      return pool.query(sql, params);
+    });
+  }
+
+  // The runner `reassertOrigin()` is given outside a transaction.
+  const liveRunner = { query: liveQuery };
+
   // WHO THIS PROCESS IS. It is stamped on every `sts_changes` row and on every
   // notification, and it does ONE job: letting a process skip its own writes
   // instead of applying its own work back over itself.
@@ -1689,7 +1821,7 @@ function create(options) {
   // has taken the claim (and so replaced the reservation). One statement, so a
   // claimant racing it either wins first (and this matches nothing) or finds
   // a live claim and is refused. `runner` is a client inside a transaction, or
-  // the pool.
+  // the liveness connection (#351).
   function reassertOrigin(runner, held) {
     log.debug("Entering reassertOrigin().");
     log.debug("Leaving reassertOrigin().");
@@ -2271,9 +2403,18 @@ function create(options) {
     close: function () {
       log.debug('Entering the postgres driver close().');
       log.debug("Leaving close().");
+      liveClosed = true;
+      const live = liveClient;
+      liveClient = null;
       return pool.end().then(function () {
         // The read replica's pool, when it is a pool of its own (#98).
         return readPool !== pool ? readPool.end() : null;
+      }).then(function () {
+        // The liveness connection, last: leaving the cluster and giving the
+        // origin back were its final statements.
+        return live ? Promise.resolve(live.end()).catch(function (e) {
+          log.debug("Caught in close(): " + ((e && e.message) || e));
+        }) : null;
       }).then(function () {
         log.debug('Leaving the postgres driver close().');
       });
@@ -3248,15 +3389,23 @@ function create(options) {
       // the claim extended by its reservation, and said so.
       const held = { key: originClaim.key,
                      reservation: originClaim.reservation, ttlMs: ttlMs };
-      return pool.query(
+      // On the LIVENESS connection (#351), both statements.
+      return liveQuery(
         'UPDATE sts_cluster_claims SET expires_at = ' + DB_NOW + ' + $4 ' +
         'WHERE scope = $1 AND realm = \'\' AND key = $2 AND reservation = $3 ' +
         'AND expires_at > ' + DB_NOW,
         [ORIGIN_SCOPE, held.key, held.reservation,
          Math.max(1000, Number(ttlMs) || 30000)]
       ).then(function (r) {
-        return r.rowCount > 0 ? true : reassertOrigin(pool, held);
+        return r.rowCount > 0 ? true : reassertOrigin(liveRunner, held);
       });
+    },
+
+    // The liveness connection's counters (#351), for `persistence.status()`.
+    livenessStatus: function () {
+      log.debug("Entering livenessStatus().");
+      log.debug("Leaving livenessStatus().");
+      return Object.assign({ open: !!liveClient }, liveStats);
     },
 
     setOriginLost: function (fn) {
@@ -3666,7 +3815,8 @@ function create(options) {
     heartbeat: function (nodeId, ttlMs, info) {
       log.debug("Entering heartbeat(). node=" + nodeId);
       log.debug("Leaving heartbeat().");
-      return pool.query(
+      // On the LIVENESS connection (#351).
+      return liveQuery(
         'WITH n AS (UPDATE sts_cluster_nodes SET heartbeat_at = ' + DB_NOW +
         ', expires_at = ' + DB_NOW + ' + $2, info = COALESCE($3::jsonb, ' +
         'info) WHERE node_id = $1 AND left_at = 0 AND expires_at > ' + DB_NOW +
@@ -3696,7 +3846,7 @@ function create(options) {
     leaveCluster: function (nodeId) {
       log.debug("Entering leaveCluster(). node=" + nodeId);
       log.debug("Leaving leaveCluster().");
-      return pool.query(
+      return liveQuery(
         'WITH n AS (UPDATE sts_cluster_nodes SET left_at = ' + DB_NOW +
         ', expires_at = LEAST(expires_at, ' + DB_NOW + ') WHERE node_id = $1 ' +
         'RETURNING node_id) ' +
@@ -3713,7 +3863,7 @@ function create(options) {
     acquireLease: function (name, nodeId, ttlMs) {
       log.debug("Entering acquireLease(). name=" + name);
       log.debug("Leaving acquireLease().");
-      return pool.query(
+      return liveQuery(
         'INSERT INTO sts_cluster_leases (name, holder, token, acquired_at, ' +
         'expires_at) SELECT $1, $2, 1, ' + DB_NOW + ', ' + DB_NOW + ' + $3 ' +
         'WHERE EXISTS (SELECT 1 FROM sts_cluster_nodes WHERE node_id = $2 ' +
@@ -3736,7 +3886,7 @@ function create(options) {
           return { held: true, token: Number(row.token),
                    expiresAt: Number(row.expires_at) };
         }
-        return pool.query(
+        return liveQuery(
           'SELECT holder, token, expires_at FROM sts_cluster_leases ' +
           'WHERE name = $1', [name]
         ).then(function (found) {
@@ -3752,7 +3902,7 @@ function create(options) {
     releaseLease: function (name, nodeId, token) {
       log.debug("Entering releaseLease(). name=" + name);
       log.debug("Leaving releaseLease().");
-      return pool.query(
+      return liveQuery(
         'UPDATE sts_cluster_leases SET expires_at = 0 WHERE name = $1 AND ' +
         'holder = $2 AND token = $3', [name, nodeId, Number(token)]
       ).then(function (r) {
@@ -3870,8 +4020,12 @@ function create(options) {
     purgeClaims: function () {
       log.debug("Entering purgeClaims().");
       log.debug("Leaving purgeClaims().");
+      // A lapsed ORIGIN claim is kept for ORIGIN_RETAIN_MS: see the note
+      // above ORIGIN_RETAIN_MS.
       return pool.query('DELETE FROM sts_cluster_claims WHERE expires_at <= ' +
-                        DB_NOW).then(function (r) {
+                        DB_NOW + ' AND (scope <> $1 OR expires_at <= ' +
+                        DB_NOW + ' - $2)',
+                        [ORIGIN_SCOPE, ORIGIN_RETAIN_MS]).then(function (r) {
         return r.rowCount || 0;
       });
     },

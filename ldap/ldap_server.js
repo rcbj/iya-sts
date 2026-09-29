@@ -139,6 +139,11 @@
 const crypto = require('crypto');
 const ldap = require('ldapjs');
 const app = require('../common/app');
+// Rule 2 of the barrier for an operation (#351): its result is sent once its
+// writes commit, and `unavailable` when they do not. A library that
+// registers nothing and requires config, the error codes and the capability
+// table; `common/app.js` has already loaded it.
+const clusterBarrier = require('../cluster/cluster_barrier');
 const { log, xmlEscape, dnRfc4514 } = require('../common/helpers');
 // The subject resolver slot this module fills (2026-09-14). Named apart from
 // the destructure above because it is a FILLING, not a use.
@@ -1277,6 +1282,9 @@ function touchDirectory(dn) {
   // safe answer has to stay the one they get for free.
   if (dn === undefined || dn === null || dn === '') {
     noteWriteAnywhere();
+    // A writer that does not say where may have moved a UUID (#351; see the
+    // block above `uuidIndexes`).
+    uuidIndexes().dirty = true;
   } else {
     noteWriteUnder(dn);
   }
@@ -1384,7 +1392,10 @@ function eachEntryInRealm(fn) {
 // the base would leave an index describing a container nothing is in any more.
 // ---------------------------------------------------------------------------
 const usernameIndexes = realms.keyed(function () {
-  return { index: null, version: -1, usersDn: '', builds: 0 };
+  // `collisions`: how many names more than one entry claims (#351). While it
+  // is 0 a delete can take a person's names out exactly — see
+  // noteIndexesDelete().
+  return { index: null, version: -1, usersDn: '', builds: 0, collisions: 0 };
 });
 
 // The registry counters of this file's four caches (#74, rule 3ap) — the
@@ -1428,11 +1439,15 @@ function buildUsernameIndex() {
   log.debug('Entering buildUsernameIndex().');
   const parent = normalizeDn(usersDn());
   const index = new Map();
+  let collisions = 0;
   eachEntryInRealm(function (entry) {
     if (normalizeDn(parentDn(entry.dn)) !== parent) {
       return;
     }
     usernameKeysOf(entry).forEach(function (key) {
+      if (index.has(key) && index.get(key) !== normalizeDn(entry.dn)) {
+        collisions += 1;
+      }
       // FIRST ENTRY WINS, because the walk this replaces stopped at its first
       // hit and the store iterates in insertion order — so the entry named here
       // is the entry that walk would have returned. Two entries claiming one
@@ -1444,6 +1459,7 @@ function buildUsernameIndex() {
     });
   });
   usernameIndexes().builds++;
+  usernameIndexes().collisions = collisions;
   log.debug('Leaving buildUsernameIndex(). ' + index.size + ' name(s), built ' +
             usernameIndexes().builds + ' time(s) so far.');
   return index;
@@ -1519,6 +1535,8 @@ function noteUsernameIndexPut(stored, hadNames, wasCurrent) {
       // walk would have found first, and this one is later.
       if (!cache.index.has(name)) {
         cache.index.set(name, key);
+      } else if (cache.index.get(name) !== key) {
+        cache.collisions += 1;
       }
     });
   }
@@ -1672,6 +1690,8 @@ function noteUsernameIndexRefresh(stored, wasCurrent) {
     usernameKeysOf(stored).forEach(function (name) {
       if (!cache.index.has(name)) {
         cache.index.set(name, key);
+      } else if (cache.index.get(name) !== key) {
+        cache.collisions += 1;
       }
     });
   }
@@ -2841,8 +2861,29 @@ function mergeCreateRace(local, incoming) {
 // credential's random subject — rebuilds at most once per write rather than
 // once per lookup.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE INDEX IS KEPT BY WHAT CAN MOVE A UUID, NOT BY EVERY WRITE (#351,
+// 2026-09-29). It was rebuilt — two walks of the realm — on the first miss
+// after ANY write, and nearly every write cannot touch it: an attribute
+// changed in place leaves an entry's UUID where it was. What can move one is
+// an entry arriving (a put: folded in, noteUuidIndexPut()), an entry leaving
+// (a delete: folded out, noteIndexesDelete()), and a writer this file cannot
+// see into — a touchDirectory() that names no DN (a rename, a restore, a
+// modify of the whole entry), a create race reconciled, a replicated entry
+// replacing another. Those mark it `dirty`, and a miss on a dirty index
+// rebuilds, as every miss after a write used to. A clean index's miss is
+// authoritative: nobody holds that UUID. And a hit is always checked against
+// the entry it names, so an entry that left by a path that did not fold it
+// out is a miss, never a wrong answer.
+//
+// It mattered because a deleted person's `urn:uuid:` is looked up by the
+// RISC register on every event it sends, by the sign-out's session filing and
+// by every token read — each a miss, each after the write that deleted them:
+// on a realm of fifty thousand, two walks per delete and per create.
+// `collisions` is the username index's (see noteIndexesDelete()).
+// ---------------------------------------------------------------------------
 const uuidIndexes = realms.keyed(function () {
-  return { index: null, version: -1 };
+  return { index: null, dirty: true, collisions: 0 };
 });
 
 // ---------------------------------------------------------------------------
@@ -2910,13 +2951,16 @@ function entryByUuid(uuid) {
       ? stored : null;
   };
   let found = lookup();
-  if (!found && cache.version !== directoryVersion) {
+  if (!found && (cache.dirty || !cache.index)) {
     uuidIndexCount.miss();
     const index = new Map();
+    let collisions = 0;
     eachEntryInRealm(function (entry, key) {
       const value = entryUuidOf(entry);
       if (value && !index.has(value)) {
         index.set(value, key);
+      } else if (value && index.get(value) !== key) {
+        collisions += 1;
       }
     });
     // An alias second, so a primary value always wins the slot.
@@ -2924,11 +2968,14 @@ function entryByUuid(uuid) {
       entryUuidAliasesOf(entry).forEach(function (alias) {
         if (!index.has(alias)) {
           index.set(alias, key);
+        } else if (index.get(alias) !== key) {
+          collisions += 1;
         }
       });
     });
     cache.index = index;
-    cache.version = directoryVersion;
+    cache.collisions = collisions;
+    cache.dirty = false;
     found = lookup();
   } else {
     // Answered by the index as it stood — found, or current and saying
@@ -2960,6 +3007,7 @@ function putEntry(dn, attributes, options) {
   // answer about itself. See noteUsernameIndexPut().
   const usernameIndexWasCurrent = usernameIndexIsCurrent();
   const groupIndexWasCurrent = groupIndexIsCurrent();
+  const uuidIndexWasCurrent = indexesCurrent().uuid;
   // The names the entry at this DN answered to BEFORE this write, so that an
   // overwrite can take out the ones it no longer answers to. Read here because
   // afterwards the old attributes are gone. Empty for a create.
@@ -2996,6 +3044,7 @@ function putEntry(dn, attributes, options) {
   touchDirectory(stored.dn);
   noteUsernameIndexPut(stored, hadNames, usernameIndexWasCurrent);
   noteGroupIndexPut(stored, groupIndexWasCurrent);
+  noteUuidIndexPut(stored, uuidIndexWasCurrent);
   // A group's members, told per person (#145). `previous` is the entry this
   // write replaced — putEntry() builds a fresh object, so it is a true before.
   if (moduleLoaded &&
@@ -3834,6 +3883,7 @@ const directoryHooks = {
           }
           stored.attributes.entryuuid = [reconcile.uuid];
           stored.attributes[ENTRY_UUID_ALIAS] = reconcile.aliases;
+          uuidIndexes().dirty = true;
           stored.modifiedAt = generalizedTime();
           stored.attributes.modifytimestamp = [stored.modifiedAt];
           log.info('ldap: ' + stored.dn + ' was created in two processes ' +
@@ -3868,6 +3918,11 @@ const directoryHooks = {
     // ---------------------------------------------------------------------
     const usernameWasCurrent = usernameIndexIsCurrent();
     const groupWasCurrent = groupIndexIsCurrent();
+    const uuidWasCurrent = indexesCurrent().uuid;
+    // An entry REPLACED here may carry other UUIDs than the one it replaces
+    // (a create race reconciled — see above), so the UUID index follows only
+    // a new entry and is left to rebuild after a replacement (#351).
+    const replaced = store.has(key);
     store.set(key, stored);
     // THE DN IS NAMED. `touchDirectory()` with no argument marks every listing
     // in this realm invalid and makes the next flush diff the whole directory;
@@ -3886,6 +3941,7 @@ const directoryHooks = {
     });
     noteUsernameIndexRefresh(stored, usernameWasCurrent);
     noteGroupIndexPut(stored, groupWasCurrent);
+    noteUuidIndexPut(stored, uuidWasCurrent && !replaced);
     // AN ANCHOR ANOTHER PROCESS ADDED reaches this process's listeners here:
     // the entry is in the store now, and the truststore array is what a
     // handshake reads. See `tls_server.js`'s `reloadStoredAnchors()`.
@@ -3937,11 +3993,18 @@ const directoryHooks = {
   removeEntry: function (realmId, key) {
     log.debug('Entering removeEntry(). realmId=' + realmId + ', key=' + key);
     const store = entries.realmMap(realmId);
+    const was = store.get(key) || null;
+    const current = indexesCurrent();
     const gone = store.delete(key);
     if (gone) {
-      // In the row's realm, for applyEntry()'s reason (#352).
+      // In the row's realm, for applyEntry()'s reason (#352), and BY ITS DN,
+      // AND THE INDEXES KEPT (#351): this is every OTHER process applying a
+      // delete made elsewhere — a SCIM Bulk of a thousand deletes is a
+      // thousand of these in each of them — and a DN-less touch dropped every
+      // cached listing and every index there, once per entry.
       realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
-        touchDirectory();
+        touchDirectory(was.dn);
+        noteIndexesDelete(was, current);
       });
     }
     if (gone && isTrustAnchorKey(realmId, key)) {
@@ -4012,6 +4075,10 @@ const directoryHooks = {
           [backfilledEntryUuid(realmId, normalizeDn(stored.dn))];
       }
       store.set(normalizeDn(stored.dn), stored);
+    });
+    // A whole realm replaced: its UUID index describes nothing now (#351).
+    realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
+      uuidIndexes().dirty = true;
     });
     // The reverse group index describes a directory that is no longer there.
     // This is the one call to touchDirectory() in this file that is NOT a
@@ -11949,6 +12016,16 @@ OPERATIONS.forEach(function (operation) {
   server[operation] = function () {
     const args = Array.prototype.slice.call(arguments);
     args[args.length - 1] = fromClientAddress(args[args.length - 1]);
+    // ANSWERED AFTER COMMIT (#351), innermost with the address, so it is in
+    // what `LOCAL_HANDLERS` holds and runs wherever the handler does. An
+    // unbind has no result to hold. cluster/cluster_barrier.js argues it.
+    if (operation !== 'unbind') {
+      args[args.length - 1] = clusterBarrier.answerAfterCommit(
+        operation, args[args.length - 1], function (message) {
+          // Logged by the barrier as STS-STORE-0067 before this is sent.
+          return new ldap.UnavailableError(message);
+        });
+    }
     if (REALMLESS_OPERATIONS.indexOf(operation) < 0) {
       // The handler is the LAST argument — ldapjs takes (dn, [middleware…],
       // handler) — and only it is wrapped, so a route registered with
@@ -14256,15 +14333,22 @@ server.del('', function (req, res, next) {
   const deletedPerson = isPersonEntry(stored);
   const deletedGroup = !!groupRuleFor(stored);
   const deletedAttributes = attributeSnapshot(stored);
-  const deletedName = usernameOfEntry(stored);
-  entries.delete(normalizeDn(dn));
-  touchDirectory();
   if (deletedPerson) {
-    noteAccountChange('deleted:' + deletedName, stored.dn, deletedAttributes,
-                      {}, { door: 'an LDAP delete' });
-  } else if (deletedGroup) {
+    // The one path every door's person delete takes (#351): by its DN, and
+    // what they held read and ended as a batch — of one, here, since an LDAP
+    // DelRequest names one entry (RFC 4511 section 4.8).
+    removePersonEntry(stored, 'an LDAP delete');
+  } else {
+    entries.delete(normalizeDn(dn));
+    // By its DN (#351): a leaf, so nothing else moved, and a DN-less touch
+    // would drop every cached listing and make the next flush diff the
+    // whole store.
+    touchDirectory(stored.dn);
+  }
+  // A person's delete was noted by removePersonEntry().
+  if (!deletedPerson && deletedGroup) {
     noteMembershipChange(stored.dn, deletedAttributes, {});
-  } else if (isRoleEntry(stored)) {
+  } else if (!deletedPerson && isRoleEntry(stored)) {
     noteRoleChange(stored.dn, deletedAttributes, {});
   }
   // Note what is NOT done here: the DN is left in any group that lists it as a
@@ -17793,13 +17877,21 @@ function noteAccountChange(kind, dn, before, after, options) {
   // there were none, and a person deleted over SCIM or LDAP kept single
   // sign-on until their session ran out. `consequences: false` is a caller
   // that has ended everything itself: a realm being removed.
+  // IN A BATCH (#351) the delete is gathered and the batch hands its people
+  // over together — see inPersonBatch(); outside one it is a batch of one.
   if (String(kind).indexOf('deleted:') === 0 &&
       !(options && options.consequences === false)) {
+    const change = {
+      username: String(kind).slice('deleted:'.length),
+      realm: realmFor(dn).id,
+      door: String((options && options.door) || 'a directory delete') };
+    const batch = personBatches.getStore();
     try {
-      require('../common/account_state').directoryDeleted({
-        username: String(kind).slice('deleted:'.length),
-        realm: realmFor(dn).id,
-        door: String((options && options.door) || 'a directory delete') });
+      if (batch) {
+        batch.pending.push(change);
+      } else {
+        require('../common/account_state').directoryDeletedMany([change]);
+      }
     } catch (e) {
       log.error(errorCodes.tag('STS-LDAP-0120') + 'ldap: ' + dn + ' was ' +
                 'deleted and what the person held could not be ended with ' +
@@ -18231,6 +18323,331 @@ function isBootstrapAdministratorEntry(stored) {
   return answer;
 }
 
+// ---------------------------------------------------------------------------
+// DELETING PEOPLE IN BULK (#351, 2026-09-29).
+//
+// A SCIM Bulk of a hundred DELETE /Users held a request worker on testidp for
+// about a minute — long enough for its origin claim to lapse — and nearly
+// none of that was the delete. Per person it was: `touchDirectory()` with no
+// DN, which invalidated every cached container listing (so each RISC event
+// that followed walked the whole directory to find the stream's owning
+// application) and made the next flush diff the whole store; then reading
+// what the person held and ending it, each a fold of the session and token
+// registers; then a selective sign-out of the one row every person has and
+// nothing can end (`logout.ts`'s heldIds(), `STS-LOGOUT-0007`).
+//
+// So a delete names its DN, a person holding nothing costs nothing, and the
+// CONSEQUENCES of a run of deletes — reading what everybody in it held and
+// ending that — are gathered and handed to `account_state.ts` together, where
+// the stores are read once for the set. Every per-person semantic stays: the
+// entry goes at once, the account observers (RISC `account-purged`, OpenID
+// Provider Commands) are told per person as before, and each person's
+// sign-out is still their own act with their own audit row, CAEP and
+// back-channel Logout Tokens.
+//
+// A BATCH IS AMBIENT, like the realm: `inPersonBatch(fn)` runs `fn` in an
+// AsyncLocalStorage of its own, so a SCIM Bulk's handler — which scimmy calls
+// once per operation, awaited — adds to the batch its request opened, and a
+// delete made by another request meanwhile is not swept into it. Outside a
+// batch, a delete is a batch of one: the same code. The gathered consequences
+// are handed over when the batch closes and at every `PERSON_BATCH_CHUNK`
+// deletes (`personBatchStep()`), so what is read as "held at the delete" is
+// read before the event loop next turns, as it always was.
+// ---------------------------------------------------------------------------
+const { AsyncLocalStorage } = require('async_hooks');
+const personBatches = new AsyncLocalStorage();
+const PERSON_BATCH_CHUNK = 500;
+
+/**
+ * Runs `fn` as one batch of person deletes: what each deleted person held is
+ * read and ended for the batch together, when it closes. `fn` may return a
+ * promise; the batch closes when it settles.
+ *
+ * @param fn - the work, which deletes people through this module
+ * @param options - `door`, the words the sign-outs and the summary name
+ * @returns what `fn` returns
+ */
+function inPersonBatch(fn, options) {
+  log.debug('Entering inPersonBatch().');
+  const batch = { door: String((options && options.door) || ''),
+                  pending: [], deleted: 0, dns: [], children: null,
+                  childrenVersion: -1 };
+  const close = function () {
+    log.debug('Entering inPersonBatch() close.');
+    flushPersonBatch(batch);
+    if (batch.deleted > 1) {
+      logBatchDangling(batch);
+    }
+    log.debug('Leaving inPersonBatch() close.');
+  };
+  let result;
+  try {
+    result = personBatches.run(batch, fn);
+  } catch (e) {
+    log.debug('Caught in inPersonBatch(): ' + ((e && e.message) || e));
+    // What was deleted before the throw was deleted; its consequences still
+    // run. The throw is the caller's.
+    close();
+    throw e;
+  }
+  if (result && typeof result.then === 'function') {
+    log.debug('Leaving inPersonBatch(). Closes when the work settles.');
+    return result.then(function (value) {
+      close();
+      return value;
+    }, function (e) {
+      log.debug('Caught in inPersonBatch(): ' + ((e && e.message) || e));
+      close();
+      throw e;
+    });
+  }
+  close();
+  log.debug('Leaving inPersonBatch().');
+  return result;
+}
+
+// The batch's gathered consequences, handed to account_state.ts together.
+function flushPersonBatch(batch) {
+  log.debug('Entering flushPersonBatch(). ' + batch.pending.length + '.');
+  const pending = batch.pending.splice(0);
+  if (!pending.length) {
+    log.debug('Leaving flushPersonBatch(). Nothing pending.');
+    return;
+  }
+  try {
+    require('../common/account_state').directoryDeletedMany(pending);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-LDAP-0120') + 'ldap: ' + pending.length +
+              ' person(s) were deleted and what they held could not be ' +
+              'ended with them: ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving flushPersonBatch().');
+}
+
+/**
+ * Called by a door between the operations of a batch: every
+ * `PERSON_BATCH_CHUNK` deletes it hands the gathered consequences over and
+ * answers a promise that settles on the next macrotask, so a batch of
+ * thousands never holds the event loop for all of them. Anything else — no
+ * batch, or not yet a chunk — answers null and the caller carries on.
+ *
+ * @returns a promise to await, or null
+ */
+function personBatchStep() {
+  log.debug('Entering personBatchStep().');
+  const batch = personBatches.getStore();
+  if (!batch || !batch.deleted || batch.deleted % PERSON_BATCH_CHUNK !== 0 ||
+      batch.steppedAt === batch.deleted) {
+    log.debug('Leaving personBatchStep(). Not a chunk boundary.');
+    return null;
+  }
+  batch.steppedAt = batch.deleted;
+  flushPersonBatch(batch);
+  log.debug('Leaving personBatchStep(). Yielding.');
+  return new Promise(function (resolve) {
+    setImmediate(resolve);
+  });
+}
+
+// ONE line for a batch's dangling memberships, counted in ONE walk after the
+// batch rather than one walk per delete (membershipsNaming()): referential
+// integrity is not done here on purpose, and /admin/groups reports the
+// result.
+function logBatchDangling(batch) {
+  log.debug('Entering logBatchDangling(). ' + batch.dns.length + '.');
+  const dns = new Set();
+  const uids = new Set();
+  batch.dns.forEach(function (dn) {
+    dns.add(normalizeDn(dn));
+    const first = splitRdns(dn)[0] || '';
+    if (first.toLowerCase().indexOf('uid=') === 0) {
+      uids.add(unescapeDnValue(rdnPairs(first)[0].value).toLowerCase());
+    }
+  });
+  let values = 0;
+  eachEntryInRealm(function (entry) {
+    MEMBER_ATTRIBUTES.forEach(function (attribute) {
+      (entry.attributes[attribute.name] || []).forEach(function (value) {
+        if (attribute.holds === 'uid'
+          ? uids.has(String(value).toLowerCase())
+          : dns.has(normalizeDn(value))) {
+          values += 1;
+        }
+      });
+    });
+  });
+  log.info('ldap: ' + batch.deleted + ' people were deleted' +
+           (batch.door ? ' (' + batch.door + ')' : '') +
+           (values ? '; ' + values + ' group member value(s) still name ' +
+                     'them — this directory does no referential integrity ' +
+                     'on purpose, and /admin/groups reports them as dangling'
+                   : '') + '.');
+  log.debug('Leaving logBatchDangling().');
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON DELETED KEEPS THE THREE INDEXES CURRENT (#351, 2026-09-29).
+//
+// The username, group and entryUUID indexes are each rebuilt by a walk of the
+// realm when they are asked after any write they were not told about, and
+// putEntry() tells the first two about a put. Nothing told any of them about
+// a delete, and everything that follows a person's delete asks them: the RISC
+// event names its account by `sub`, the sign-out files each session by it, and
+// the deleted person's own `urn:uuid:` is exactly the lookup that misses. So
+// every delete cost a walk of the whole realm — two, for the UUID index — and
+// on a directory of sixty thousand that was most of a third of a second.
+//
+// Taking one entry OUT is exact where it is followed: the names and UUIDs
+// that pointed at THIS entry go, and the rest of each index is what a walk
+// would build again — unless two entries claimed one name or UUID (a
+// directory built by hand over the raw socket), which each index counts as it
+// is built; then it is left to rebuild, as before. A person is not a group,
+// so the group index loses nothing (noteGroupIndexPut()'s invariant); it is
+// re-stamped with the size it now has.
+// ---------------------------------------------------------------------------
+function indexesCurrent() {
+  log.debug('Entering indexesCurrent().');
+  const uuid = uuidIndexes();
+  const answer = { username: usernameIndexIsCurrent(),
+                   group: groupIndexIsCurrent(),
+                   uuid: !!uuid.index && !uuid.dirty };
+  log.debug('Leaving indexesCurrent().');
+  return answer;
+}
+
+// A put, folded into the entryUUID index (#351) as noteUsernameIndexPut()
+// folds one into the username index. An overwrite carries the entry's UUID
+// and aliases over (see the header above `entryUUID`), so what this key
+// answers to only ever grows here. Before this, every create was followed by
+// a rebuild — two walks of the realm — the first time anything looked up a
+// UUID nobody holds any more, which the RISC register does for every deleted
+// person it still lists.
+function noteUuidIndexPut(stored, wasCurrent) {
+  log.debug('Entering noteUuidIndexPut().');
+  const cache = uuidIndexes();
+  if (!wasCurrent || !cache.index || cache.dirty) {
+    cache.dirty = true;
+    log.debug('Leaving noteUuidIndexPut(). Left to be rebuilt.');
+    return;
+  }
+  const key = normalizeDn(stored.dn);
+  [entryUuidOf(stored)].concat(entryUuidAliasesOf(stored))
+    .forEach(function (value) {
+      if (!value) {
+        return;
+      }
+      if (!cache.index.has(value)) {
+        cache.index.set(value, key);
+      } else if (cache.index.get(value) !== key) {
+        cache.collisions += 1;
+      }
+    });
+  log.debug('Leaving noteUuidIndexPut().');
+}
+
+function noteIndexesDelete(stored, current) {
+  log.debug('Entering noteIndexesDelete(). dn=' + stored.dn);
+  const key = normalizeDn(stored.dn);
+  const names = usernameIndexes();
+  if (current.username && names.index && !names.collisions) {
+    usernameKeysOf(stored).forEach(function (name) {
+      if (names.index.get(name) === key) {
+        names.index.delete(name);
+      }
+    });
+    names.version = directoryVersion;
+  }
+  const uuids = uuidIndexes();
+  if (current.uuid && !uuids.collisions) {
+    [entryUuidOf(stored)].concat(entryUuidAliasesOf(stored))
+      .forEach(function (value) {
+        if (value && uuids.index.get(value) === key) {
+          uuids.index.delete(value);
+        }
+      });
+  } else {
+    // Another entry may hold one of these UUIDs without the slot; a miss
+    // must look.
+    uuids.dirty = true;
+  }
+  const groups = groupIndexes();
+  if (current.group && groups.index && !groupRuleFor(stored)) {
+    groups.version = directoryVersion;
+    groups.size = entries.size;
+  }
+  log.debug('Leaving noteIndexesDelete().');
+}
+
+// hasChildren() for a batch: ONE walk counts, for every key that is a suffix
+// of some entry's DN after a comma, how many entries sit under it — exactly
+// what hasChildren()'s `endsWith(',' + key)` asks, one entry at a time — and
+// each of the batch's own deletes takes its entry off the counts. Any other
+// write in between (the batch yields to the event loop) moves
+// `directoryVersion` past what the counts know, and they are counted again.
+function batchHasChildren(batch, dn) {
+  log.debug('Entering batchHasChildren().');
+  if (!batch.children || batch.childrenVersion !== directoryVersion) {
+    const counts = new Map();
+    for (const key of entries.keys()) {
+      let comma = key.indexOf(',');
+      while (comma >= 0) {
+        const above = key.slice(comma + 1);
+        counts.set(above, (counts.get(above) || 0) + 1);
+        comma = key.indexOf(',', comma + 1);
+      }
+    }
+    batch.children = counts;
+    batch.childrenVersion = directoryVersion;
+  }
+  const answer = (batch.children.get(normalizeDn(dn)) || 0) > 0;
+  log.debug('Leaving batchHasChildren(). ' + answer);
+  return answer;
+}
+
+// A batch's own delete, taken off its counts — only while they are current,
+// which this write keeps them.
+function batchForgetEntry(batch, key, before) {
+  log.debug('Entering batchForgetEntry().');
+  if (batch.children && batch.childrenVersion === before) {
+    let comma = key.indexOf(',');
+    while (comma >= 0) {
+      const above = key.slice(comma + 1);
+      batch.children.set(above, (batch.children.get(above) || 1) - 1);
+      comma = key.indexOf(',', comma + 1);
+    }
+    batch.childrenVersion = directoryVersion;
+  }
+  log.debug('Leaving batchForgetEntry().');
+}
+
+// THE ONE PLACE A PERSON'S ENTRY LEAVES THE DIRECTORY BY A DELETE — SCIM's,
+// the LDAP delete handler's, a re-homing's. The entry goes, the write is
+// marked BY ITS DN (a DN-less touch invalidates every cached listing and makes
+// the next flush diff the whole store), and the consequences are noted: the
+// observers at once, what the person held through the ambient batch.
+function removePersonEntry(stored, door) {
+  log.debug('Entering removePersonEntry(). dn=' + stored.dn);
+  const goneAttributes = attributeSnapshot(stored);
+  const goneName = usernameOfEntry(stored);
+  const current = indexesCurrent();
+  const before = directoryVersion;
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory(stored.dn);
+  noteIndexesDelete(stored, current);
+  const batch = personBatches.getStore();
+  if (batch) {
+    batchForgetEntry(batch, normalizeDn(stored.dn), before);
+    batch.deleted += 1;
+    batch.dns.push(stored.dn);
+  }
+  // AFTER the entry is gone, so a RISC account-purged reports a purge that
+  // actually happened; and with the name carried, because
+  // canonicalUsernameOfDn() can no longer read an entry that is not there.
+  noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {},
+                    { door: door });
+  log.debug('Leaving removePersonEntry().');
+}
+
 // Delete a person's entry. It leaves that DN behind in every group that lists
 // it, which is deliberate and is the same non-feature `GET /admin/ldap/service`
 // documents: referential integrity is a directory feature and not a protocol
@@ -18239,11 +18656,14 @@ function isBootstrapAdministratorEntry(stored) {
 /**
  * Deletes a person's entry, leaving its DN in any group that lists it.
  *
+ * Inside `inPersonBatch()` what the person held is ended with the batch;
+ * outside one, as a batch of one.
+ *
  * @param dn - the SCIM id or DN
- * @returns `{ ok: true, dn, dangling }`, or a refusal marked with its error
- * code
+ * @param options - `door`, the words the sign-out names (a SCIM DELETE)
+ * @returns `{ ok: true, dn }`, or a refusal marked with its error code
  */
-function deletePerson(dn) {
+function deletePerson(dn, options) {
   log.debug('Entering deletePerson(). dn=' + dn);
   // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
   // resolves, which is what every other caller hands this.
@@ -18261,22 +18681,16 @@ function deletePerson(dn) {
     return coded('STS-LDAP-0077', { ok: false, reason: 'protected',
                                     dn: stored.dn });
   }
-  if (hasChildren(stored.dn)) {
+  const batch = personBatches.getStore();
+  if (batch ? batchHasChildren(batch, stored.dn) : hasChildren(stored.dn)) {
     log.debug('Leaving deletePerson(). It has children.');
     return coded('STS-LDAP-0014',
                  { ok: false, reason: 'notLeaf', dn: stored.dn });
   }
-  const goneAttributes = attributeSnapshot(stored);
-  const goneName = usernameOfEntry(stored);
-  entries.delete(normalizeDn(stored.dn));
-  touchDirectory();
-  // AFTER the entry is gone, so a RISC account-purged reports a purge that
-  // actually happened; and with the name carried, because
-  // canonicalUsernameOfDn() can no longer read an entry that is not there.
-  noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {},
-                    { door: 'a SCIM DELETE' });
+  removePersonEntry(stored,
+                    String((options && options.door) || 'a SCIM DELETE'));
   log.debug('Leaving deletePerson(). ' + entries.size + ' entry/entries left.');
-  return { ok: true, dn: stored.dn, dangling: membershipsNaming(stored.dn) };
+  return { ok: true, dn: stored.dn };
 }
 
 // Every group, as entry objects, by BOTH of groupRuleFor()'s rules. The rule
@@ -20806,6 +21220,8 @@ module.exports = {
   readPerson: readPerson,
   writePerson: writePerson,
   deletePerson: deletePerson,
+  inPersonBatch: inPersonBatch,
+  personBatchStep: personBatchStep,
   groupDnFor: groupDnFor,
   // ---------------------------------------------------------------------
   // THE OPERATION CODEC, EXPORTED FOR `tests/ldap_operations.js` AND FOR

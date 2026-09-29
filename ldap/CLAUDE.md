@@ -1283,6 +1283,81 @@ handle a group that names a person and a person who names a group as two
 separate edits. It was not attempted on 2026-09-07; the three fixes above were,
 and this is the measurement that says where the next one would go.
 
+## DELETING PEOPLE IN BULK, AND THE INDEXES A DELETE USED TO THROW AWAY (#351, 2026-09-29)
+
+One SCIM Bulk of a hundred `DELETE /Users` held a request worker on testidp
+for about a minute — long enough for its origin claim to lapse (#351's first
+two parts are that side). Reproduced in process on a realm of 50,000 people
+with 2,000 live sessions, it was 185ms per person, and almost none of it was
+the delete:
+
+* **`deletePerson()` and the LDAP delete called `touchDirectory()` with no
+  DN.** That drops every cached container listing — so each RISC event after
+  it walked the whole realm to find its stream's owning application — and
+  makes the next flush diff the whole store. Both name the DN now, and so does
+  `removeEntry()`, the change-log applier every OTHER process runs a delete
+  through, which had the same DN-less touch once per entry.
+* **The three indexes were rebuilt after every delete.** Puts fold into the
+  username and group indexes (below); nothing told any index about a delete,
+  and everything after one asks: the deleted person's `urn:uuid:` is exactly
+  the lookup that misses, and the RISC register, the sign-out's session filing
+  and every token read make it. `noteIndexesDelete()` takes the entry out of
+  the username and entryUUID indexes and re-stamps the group index (a person
+  is not a group). Exact unless two entries claimed one name or UUID, which
+  each index now counts as it is built (`collisions`); then it rebuilds, as
+  before. **The entryUUID index is kept by what can move a UUID rather than by
+  `directoryVersion`**: a put folds in (`noteUuidIndexPut()`), a delete folds
+  out, and a DN-less touch, a create race reconciled or a replicated entry
+  replacing another marks it `dirty`; a miss on a clean index is
+  authoritative, and a hit is checked against the entry it names. Before, an
+  attribute changed in place — most writes — made the next miss rebuild it
+  with two walks, which also made every SCIM create at 50,000 cost 38ms.
+* **Reading and ending what each person held** was two folds of the token
+  register and a walk of the sessions per person, and then a selective
+  sign-out of the `krb5` row nothing can end (`STS-LOGOUT-0007`) —
+  `logout/CLAUDE.md` and `common/CLAUDE.md` have that half.
+
+**So a person's delete has one path, `removePersonEntry()`** — SCIM's
+`deletePerson()`, the LDAP delete handler and a re-homing all reach it — and
+its consequences go through a BATCH. `inPersonBatch(fn, { door })` runs `fn`
+in an `AsyncLocalStorage` of its own (the realm's arrangement), so a SCIM
+Bulk's degress handler — which scimmy calls once per operation, awaited —
+adds to the batch its request opened, and another request's delete meanwhile
+is not swept into it. The observers (RISC `account-purged`, OpenID Provider
+Commands) are still told per person, at once; what each person held is
+gathered and handed to `account_state.directoryDeletedMany()` together — at
+every 500 deletes (`personBatchStep()`, which also yields a macrotask so a
+Bulk of thousands never holds the event loop for all of them) and when the
+batch closes. Outside a batch a delete is a batch of one. Inside one,
+`hasChildren()` — a walk per delete — is `batchHasChildren()`: one walk counts
+the entries under every DN, the batch's own deletes come off the counts, and
+any other write in between makes it count again. The dangling memberships the
+deletes leave are counted in one walk at the end and logged in one line
+(`deletePerson()` no longer returns `dangling`: its one reader, SCIM, logged
+it under a test that read `.length` of a number and so never fired).
+
+**The store sees one flush per chunk**: postgres flushes on a `setTimeout(0)`
+(`persistence/CLAUDE.md`), and a chunk runs without turning the event loop, so
+its deletes are one transaction; a Bulk larger than 500 is one per 500.
+
+Measured in process with one benchmark (a realm of 5,000 or 50,000 people,
+530 or 2,030 live sessions and tokens, 100 people per door; ms per person,
+the Bulk as answered; before is origin/feature/351 at 3f558a2f):
+
+| | 5,000, before | 5,000, after | 50,000, before | 50,000, after |
+|---|---|---|---|---|
+| SCIM Bulk of 100 DELETE | 34 | 4.1 | 185 | 8.0 |
+| `deletePerson()` one at a time | 30 | 3.9 | 192 | 11 |
+| SCIM `DELETE`, one request each | 46 | 11 | 293 | 19 |
+| SCIM Bulk of 100 POST | 6.0 | 5.0 | 38 | 6.1 |
+
+At 50,000 the Bulk of 100 deletes took 0.98s of CPU (was 20.2s) and held the
+event loop for at most 0.37s at a time (was 17.9s).
+
+What is left per single delete is `hasChildren()`'s walk and one pass over the
+live sessions (each resolved by `holderKeyOf()`), both O(the service) rather
+than O(the batch); a batch pays each once.
+
 ## A WRITE MUST CALL `touchDirectory()`
 
 `groupsOfUser()` is called ONCE PER TOKEN — every access token, every ID Token
@@ -1782,6 +1857,21 @@ running here is only for the paths where nothing ran anywhere**: no pool, the
 operation not named in `workers.dispatch`, no worker to take it — all three
 resolve `{ dispatched: false }`, which is what `workers.requestCount = 0` means
 and is a supported configuration rather than a degraded one.
+
+### A write is answered after its commit, and `unavailable` when it is not (#351)
+
+In postgres mode an operation that changed the store sends its result only
+once that change has committed, and **`unavailable` (52)** (STS-STORE-0067)
+when the commit fails — the same code a worker that died mid-operation gets,
+and the true one: RFC 4511's "a subsystem necessary to complete the operation
+is offline", where `busy` (51) would claim a load problem. It is
+`cluster/cluster_barrier.js`'s `answerAfterCommit()`, put on every handler at
+registration INSIDE what `LOCAL_HANDLERS` holds, so it runs wherever the
+handler runs; it holds `res.end()` and the handler's `next()` and sets
+`req.stsAsyncOperation` so `performOperation()` waits for it. A search or
+compare is held only for directory or key changes, never for its audit rows.
+`persistence/CLAUDE.md`, *A write is answered after its commit*, argues the
+rest; `tests/answer_after_commit.js` section C drives an add both ways.
 
 ### The wrapper goes on at REGISTRATION, beside the realm wrapper
 

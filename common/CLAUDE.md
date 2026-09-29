@@ -1482,6 +1482,16 @@ Measured cost, three workers on one PostgreSQL store: 37ms to 43ms per read and
 that existed before it, and because whether the wait is worth it is a question
 about the callers rather than about the pool.
 
+**A WORKER NO LONGER ANSWERS A WRITE BEFORE IT COMMITS (2026-09-29, #351).**
+`request_worker.ts`'s header still says the worker "answers immediately" and
+announces the commit afterwards; in postgres mode the first half stopped being
+true when `cluster/cluster_barrier.js`'s rule 2 was turned on for every
+postgres process — the worker holds a writing response until its commit and
+answers 503 when it fails. The announcement and the tickets are unchanged and
+still needed: they tell the FRONT process which answered requests have landed,
+and a request whose response was held has landed by the time it arrives.
+`persistence/CLAUDE.md`, *A write is answered after its commit*, has the design.
+
 **THE BARRIER HAS A SECOND HALF — THE TICKETS — AND A 502 WEDGED IT FOR THE
 LIFE OF THE PROCESS (2026-09-11).** The generation says whether a worker is
 BEHIND; the tickets say whether everything already ANSWERED has actually
@@ -1823,6 +1833,21 @@ name before the deferred step runs from losing the session they have.
 names no entry is ended through `dropSession()` the next time it is presented,
 which is how a delete made on another node ends the sessions this node holds.
 `tests/account_delete.js` holds all three.
+
+**SEVERAL DELETES ARE ONE BATCH (#351, 2026-09-29).** `directoryDeleted()` is
+`directoryDeletedMany()` with one change, and the directory hands a batch over
+whole (`ldap/CLAUDE.md`, *Deleting people in bulk*): what everybody in it held
+is read with ONE read of the session, token and wallet stores
+(`logout.heldIdsFor()`), a person holding nothing is dropped there and costs
+nothing after, and the rest are ended later with one index
+(`logout.terminateEach()`), in chunks of 500 a macrotask apart. Each person's
+sign-out is still their own act — their own `logout.selective` row, CAEP and
+Logout Tokens — and the batch logs ONE line. Until then every deleted person
+was scheduled a selective sign-out whether they held anything or not, because
+`heldIds()` listed the `krb5` family's "no such principal" row, which nothing
+can end: a SCIM Bulk of a hundred deletes on testidp logged a hundred
+`STS-LOGOUT-0007` "ended 0 of 1 live item(s)" refusals, a quarter of a second
+each. `tests/directory_bulk_delete.js` holds the batch and the root cause.
 
 ## `realms.js`: several logical copies of this service, in one process
 
