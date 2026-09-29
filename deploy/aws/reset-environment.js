@@ -252,7 +252,8 @@ function request(method, url, token, body, contentType) {
         } catch (e) {
           log.debug('Caught in request(): ' + ((e && e.message) || e));
         }
-        resolve({ status: res.statusCode, json: json, text: text });
+        resolve({ status: res.statusCode, json: json, text: text,
+                  retryAfter: res.headers['retry-after'] || '' });
       });
     });
     req.on('timeout', function () {
@@ -264,6 +265,48 @@ function request(method, url, token, body, contentType) {
     }
     req.end();
   });
+}
+
+// A REQUEST THAT FAILED ON THE WAY IS ASKED AGAIN (#311). Every request this
+// script makes may be repeated — a GET, and a DELETE (in a Bulk or alone),
+// whose 404 is the outcome wanted — and on testidp's first reset of 29,600
+// leftovers one page out of a 37-minute listing failed with `read ETIMEDOUT`
+// and threw the whole listing away. So is a 503: since #351 a write the
+// service could not commit is answered 503 with a Retry-After rather than a
+// 204 it might lose, and a 502 is a request worker that went away without
+// answering. Any other answer is the service speaking, and the caller judges
+// it.
+async function requestRetrying(method, url, token, body, contentType) {
+  log.debug('Entering requestRetrying(). ' + method + ' ' + url);
+  let last = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const answer = await request(method, url, token, body, contentType);
+      if ((answer.status === 503 || answer.status === 502) && attempt < 3) {
+        const after = parseInt(String(answer.retryAfter || ''), 10);
+        const waitS = isFinite(after) && after > 0 ? Math.min(after, 60) :
+          5 * attempt;
+        say(method + ' answered ' + answer.status + ', attempt ' + attempt +
+            ' of 3; asking again in ' + waitS + 's.');
+        await new Promise(function (resolve) {
+          setTimeout(resolve, waitS * 1000);
+        });
+        continue;
+      }
+      log.debug('Leaving requestRetrying().');
+      return answer;
+    } catch (e) {
+      log.debug('Caught in requestRetrying(): ' + ((e && e.message) || e));
+      last = e;
+      say(method + ' failed (' + ((e && e.message) || e) + '), attempt ' +
+          attempt + ' of 3.');
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 5000 * attempt);
+      });
+    }
+  }
+  log.debug('Leaving requestRetrying(). Gave up.');
+  throw last;
 }
 
 function say(line) {
@@ -393,7 +436,7 @@ async function scimList(base, scim, type, attribute, wanted) {
     const url = base + '/scim/v2/' + type + '?filter=' +
       encodeURIComponent(attribute + ' sw "bulk-"') +
       '&attributes=' + attribute + '&count=1000&startIndex=' + start;
-    const r = await request('GET', url, scim);
+    const r = await requestRetrying('GET', url, scim);
     if (r.status !== 200 || !r.json || !Array.isArray(r.json.Resources)) {
       log.debug('Leaving scimList().');
       throw new Error('GET /scim/v2/' + type + ' answered ' + brief(r));
@@ -469,8 +512,8 @@ async function scimDelete(base, scim, type, rows, perBatch, failed) {
           return { method: 'DELETE', path: '/' + type + '/' + row.id };
         })
       };
-      const r = await request('POST', base + '/scim/v2/Bulk', scim, body,
-                              'application/scim+json');
+      const r = await requestRetrying('POST', base + '/scim/v2/Bulk', scim,
+                                      body, 'application/scim+json');
       if (r.status !== 200 || !r.json || !Array.isArray(r.json.Operations)) {
         failed.push(type + ' bulk of ' + batch.length + ' (' + brief(r) + ')');
       } else {
@@ -487,8 +530,9 @@ async function scimDelete(base, scim, type, rows, perBatch, failed) {
       }
     } else {
       for (const row of batch) {
-        const r = await request('DELETE', base + '/scim/v2/' + type + '/' +
-                                encodeURIComponent(row.id), scim);
+        const r = await requestRetrying('DELETE', base + '/scim/v2/' + type +
+                                        '/' + encodeURIComponent(row.id),
+                                        scim);
         if (r.status === 204 || r.status === 200 || r.status === 404) {
           deleted += 1;
         } else {
@@ -508,39 +552,95 @@ async function scimDelete(base, scim, type, rows, perBatch, failed) {
   return deleted;
 }
 
+// THE PEOPLE ARE DELETED A PAGE AT A TIME, AS THEY ARE LISTED (#311). A
+// filtered SCIM page costs the service ~15 s at testidp's size, so listing
+// 29,600 leftovers before deleting any took 37 minutes and deleted nothing
+// when the run stopped. Here each page is deleted before the next is asked
+// for, and the next is asked for from the front again — what was deleted is
+// no longer there — skipping only the rows kept (a `bulk-` name
+// `isSuitePerson()` does not recognise) and rows already tried, which a node
+// that has not yet heard of the delete may still list. Progress survives a
+// stop, and the next reset starts where this one ended.
+async function scimSweep(base, scim, type, attribute, wanted, perBatch,
+                         failed) {
+  log.debug('Entering scimSweep(). ' + type);
+  const tried = new Set();
+  let skipped = 0;
+  let deleted = 0;
+  let total = 0;
+  for (;;) {
+    const url = base + '/scim/v2/' + type + '?filter=' +
+      encodeURIComponent(attribute + ' sw "bulk-"') +
+      '&attributes=' + attribute + '&count=1000&startIndex=' + (skipped + 1);
+    const r = await requestRetrying('GET', url, scim);
+    if (r.status !== 200 || !r.json || !Array.isArray(r.json.Resources)) {
+      log.debug('Leaving scimSweep().');
+      throw new Error('GET /scim/v2/' + type + ' answered ' + brief(r));
+    }
+    total = Number(r.json.totalResults) || 0;
+    const rows = r.json.Resources;
+    if (!rows.length) {
+      break;
+    }
+    const batch = [];
+    rows.forEach(function (row) {
+      const name = String(row[attribute] || '');
+      if (!row.id || !wanted(name) || tried.has(String(row.id))) {
+        skipped += 1;
+      } else {
+        tried.add(String(row.id));
+        batch.push({ id: String(row.id), name: name });
+      }
+    });
+    if (batch.length) {
+      const before = failed.length;
+      await scimDelete(base, scim, type, batch, perBatch, failed);
+      deleted += batch.length - (failed.length - before);
+      say('deleted ' + deleted + ' ' + type + ' so far; ' +
+          Math.max(0, total - skipped - batch.length) + ' left to look at.');
+    }
+  }
+  say('deleted ' + deleted + ' ' + type + ' (' + skipped + ' kept or ' +
+      'already tried).');
+  log.debug('Leaving scimSweep(). ' + deleted + ' deleted.');
+  return deleted;
+}
+
 async function resetDirectory(base, token, dryRun, failed) {
   log.debug('Entering resetDirectory().');
   const scim = await scimToken(base, token, dryRun);
   const groups = await scimList(base, scim, 'Groups', 'displayName',
                                 isSuiteGroup);
+  if (!dryRun) {
+    const perBatch = await bulkLimit(base, scim);
+    const started = Date.now();
+    say(groups.length + ' bulk-load group(s) in the default realm.');
+    await scimDelete(base, scim, 'Groups', groups, perBatch, failed);
+    await scimSweep(base, scim, 'Users', 'userName', isSuitePerson, perBatch,
+                    failed);
+    say('the directory took ' + Math.round((Date.now() - started) / 1000) +
+        's.');
+    log.debug('Leaving resetDirectory().');
+    return;
+  }
   const people = await scimList(base, scim, 'Users', 'userName',
                                 isSuitePerson);
   say(groups.length + ' bulk-load group(s) and ' + people.length +
       ' bulk-load person/people in the default realm.');
-  if (dryRun) {
-    const sample = function (rows) {
-      log.debug('Entering sample().');
-      log.debug('Leaving sample().');
-      return rows.slice(0, 5).map(function (row) {
-        return row.name;
-      }).join(', ') + (rows.length > 5 ? ', …' : '');
-    };
-    if (groups.length) {
-      say('  groups, e.g. ' + sample(groups));
-    }
-    if (people.length) {
-      say('  people, e.g. ' + sample(people));
-    }
-    log.debug('Leaving resetDirectory(). Dry run.');
-    return;
+  const sample = function (rows) {
+    log.debug('Entering sample().');
+    log.debug('Leaving sample().');
+    return rows.slice(0, 5).map(function (row) {
+      return row.name;
+    }).join(', ') + (rows.length > 5 ? ', …' : '');
+  };
+  if (groups.length) {
+    say('  groups, e.g. ' + sample(groups));
   }
-  const perBatch = await bulkLimit(base, scim);
-  const started = Date.now();
-  await scimDelete(base, scim, 'Groups', groups, perBatch, failed);
-  await scimDelete(base, scim, 'Users', people, perBatch, failed);
-  say('the directory took ' + Math.round((Date.now() - started) / 1000) +
-      's.');
-  log.debug('Leaving resetDirectory().');
+  if (people.length) {
+    say('  people, e.g. ' + sample(people));
+  }
+  log.debug('Leaving resetDirectory(). Dry run.');
 }
 
 // ---------------------------------------------------------------------------
