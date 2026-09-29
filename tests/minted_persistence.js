@@ -78,17 +78,62 @@ function fakeDriver(origin) {
       log.debug("Leaving origin().");
       return origin || 'test-origin';
     },
-    loadMinted: function () {
+    // THE SAME WHERE THE POSTGRES DRIVER'S QUERY APPLIES (#333), so what a
+    // restore asks for is asserted here: realms that exist, rows not past
+    // their own expiry, and a short-lived store's row with no expiry only
+    // while it is younger than the retention. `lastFilter` is what it asked.
+    lastFilter: null,
+    loadMinted: function (filter) {
       log.debug("Entering loadMinted().");
+      this.lastFilter = filter;
+      const out = Array.from(rows.values()).filter(function (row) {
+        if (filter.realms.indexOf(row.realm) < 0) {
+          return false;
+        }
+        if (row.expiresAt !== null && row.expiresAt !== undefined &&
+            row.expiresAt <= filter.nowMs) {
+          return false;
+        }
+        return !(filter.staleBefore > 0 &&
+                 (row.expiresAt === null || row.expiresAt === undefined) &&
+                 filter.ageHandles.indexOf(row.handle) >= 0 &&
+                 Number(row.writtenAt || 0) < filter.staleBefore);
+      });
       log.debug("Leaving loadMinted().");
-      return Promise.resolve(Array.from(rows.values()));
+      return Promise.resolve(out);
+    },
+    purgeExpiredMinted: function (kind, options) {
+      log.debug("Entering purgeExpiredMinted().");
+      let gone = 0;
+      rows.forEach(function (row, k) {
+        if (gone >= options.limit) {
+          return;
+        }
+        const noExpiry = row.expiresAt === null || row.expiresAt === undefined;
+        const hit = kind === 'expired'
+          ? !noExpiry && row.expiresAt <= options.nowMs
+          : kind === 'stale'
+            ? noExpiry && options.handles.indexOf(row.handle) >= 0 &&
+              Number(row.writtenAt || 0) < options.staleBeforeMs
+            : row.realm !== '' && row.realm !== options.defaultRealm &&
+              !realms.get(row.realm) &&
+              Number(row.writtenAt || 0) < options.orphanBeforeMs;
+        if (hit) {
+          rows.delete(k);
+          gone++;
+        }
+      });
+      log.debug("Leaving purgeExpiredMinted().");
+      return Promise.resolve(gone);
     },
     saveMinted: function (upserts, deletes) {
       log.debug("Entering saveMinted().");
       upserts.forEach(function (row) {
         rows.set(id(row.handle, row.realm, row.key),
                  { handle: row.handle, realm: row.realm, key: row.key,
-                   body: row.body, writtenAt: Date.now() });
+                   body: row.body, writtenAt: Date.now(),
+                   expiresAt: row.expiresAt === undefined ? null
+                     : row.expiresAt });
       });
       deletes.forEach(function (row) {
         rows.delete(id(row.handle, row.realm, row.key));
@@ -524,6 +569,8 @@ async function body(t, dir) {
   //    is not restored and is deleted; every other store's is kept however
   //    old it is. Until that day every old row of every store went — a
   //    configuration or an account not written for a week included.
+  //    SINCE #333 THE READ SKIPS IT AND THE PURGE JOB DELETES IT: a restore
+  //    runs in every process and deletes nothing.
   // -------------------------------------------------------------------------
   t.log.info('=== retention ===');
   const shortLived = realms.map({ persist: 'test.short', retain: 'age' });
@@ -552,16 +599,177 @@ async function body(t, dir) {
   t.equal(sessions.size, sessionRows,
           'and a KEPT store\'s row is restored however old it is — unchanged ' +
           'is not stale');
+  t.check(driver.lastFilter &&
+          driver.lastFilter.ageHandles.indexOf('test.short') >= 0 &&
+          driver.lastFilter.ageHandles.indexOf('test.sessions') < 0 &&
+          driver.lastFilter.staleBefore > 0,
+          'the READ was asked to leave it out: the short-lived stores and ' +
+          'the retention cutoff are in the filter, the kept store is not',
+          JSON.stringify(driver.lastFilter && driver.lastFilter.ageHandles
+            .filter(function (h) { return /^test\./.test(h); })));
+  t.equal(driver.rows.size, before,
+          'and the restore DELETES NOTHING (#333) — every process runs it');
+  const swept = await minted.purgeExpired(Date.now());
   let shortRows = 0;
   driver.rows.forEach(function (row) {
     if (row.handle === 'test.short') {
       shortRows++;
     }
   });
-  t.check(shortRows === 0 && driver.rows.size === before - 1,
-          'AND THE SHORT-LIVED ROW IS DELETED RATHER THAN SKIPPED, while ' +
-          'every other old row stays in the store',
-          JSON.stringify([before, driver.rows.size, shortRows]));
+  t.check(shortRows === 0 && driver.rows.size === before - 1 &&
+          swept.stale === 1,
+          'AND THE PURGE JOB DELETES THE SHORT-LIVED ROW, while every other ' +
+          'old row stays in the store',
+          JSON.stringify([before, driver.rows.size, shortRows, swept]));
+
+  // -------------------------------------------------------------------------
+  // 6b. ONLY LIVE ROWS OF DEFINED REALMS ARE READ (2026-09-28, #333). A store
+  //     that declares `expiresAt` has each row's own expiry written with it;
+  //     a restore reads no row past it, however recently it was written, and
+  //     no row of a realm that is not defined; the purge job deletes both —
+  //     in bounded batches — and leaves a live row and a row with no expiry.
+  // -------------------------------------------------------------------------
+  t.log.info('=== expiry and realms (#333) ===');
+  const expiring = realms.map({
+    persist: 'test.expiring', retain: 'age',
+    expiresAt: function (value) {
+      return value && value.expiresAt;
+    }
+  });
+  const now = Date.now();
+  expiring.set('dead', { expiresAt: now - 1000 });
+  expiring.set('live', { expiresAt: now + 60 * 60 * 1000 });
+  expiring.set('forever', { note: 'no expiry' });
+  await minted.flush();
+  const stored = function (key) {
+    return driver.rows.get(['test.expiring', 'default', key].join('\u0000'));
+  };
+  t.check(stored('dead') && stored('dead').expiresAt === now - 1000 &&
+          stored('live').expiresAt === now + 60 * 60 * 1000 &&
+          stored('forever').expiresAt === null,
+          'the flush writes each row\'s own expiry, from the store\'s hook, ' +
+          'and none for a record the hook answers nothing for',
+          JSON.stringify(['dead', 'live', 'forever'].map(function (k) {
+            return stored(k) && stored(k).expiresAt;
+          })));
+  // A row of a realm nobody defines, as a removed realm's straggler would be.
+  driver.rows.set(['test.expiring', 'gone-realm', 'x'].join('\u0000'),
+                  { handle: 'test.expiring', realm: 'gone-realm', key: 'x',
+                    body: keystore.seal(JSON.stringify({ expiresAt: now +
+                                                         3600000 }),
+                                        'minted-rows'),
+                    writtenAt: now - 2 * 60 * 60 * 1000,
+                    expiresAt: now + 3600000 });
+  expiring.clear();
+  minted.reset();
+  minted.setDriver(driver, 'postgres');
+  await minted.restore();
+  t.check(!expiring.has('dead') && expiring.has('live') &&
+          expiring.has('forever'),
+          'a restore reads no row past its own expiry, and reads a live one ' +
+          'and one that does not expire',
+          JSON.stringify(Array.from(expiring.keys())));
+  t.check(driver.lastFilter.realms.indexOf('gone-realm') < 0 &&
+          driver.lastFilter.realms.indexOf('default') >= 0 &&
+          driver.lastFilter.realms.indexOf('') >= 0,
+          'the read names the realms that exist — the default realm and the ' +
+          'shared stores\' partition — and not one that does not',
+          JSON.stringify(driver.lastFilter.realms));
+  const purge = await minted.purgeExpired(Date.now());
+  t.check(purge.expired === 1 && purge.orphaned === 1 && !stored('dead') &&
+          !!stored('live') && !!stored('forever'),
+          'the purge job deletes the expired row and the undefined realm\'s ' +
+          'row, and keeps the live one and the one that does not expire',
+          JSON.stringify(purge));
+  // The hook that throws: written as not expiring, never lost.
+  const throwing = realms.map({
+    persist: 'test.expiring-throws',
+    expiresAt: function () {
+      throw new Error('no idea');
+    }
+  });
+  throwing.set('k', { a: 1 });
+  await minted.flush();
+  t.equal(driver.rows.get(['test.expiring-throws', 'default', 'k']
+                          .join('\u0000')).expiresAt, null,
+          'a hook that throws writes the row as NOT expiring — kept, never ' +
+          'lost');
+  throwing.delete('k');
+  expiring.clear();
+  await minted.flush();
+  // The common shape of a hook: a field in ms, in seconds, an ISO string, the
+  // bare value; anything else is "does not expire".
+  const ms = realms.expiryField('expires', 1);
+  const sec = realms.expiryField('until', 1000);
+  const bare = realms.expiryField(null, 1000);
+  t.check(ms({ expires: 1234 }) === 1234 && sec({ until: 5 }) === 5000 &&
+          bare(7) === 7000 &&
+          ms({ expires: '2030-01-01T00:00:00.000Z' }) ===
+            Date.parse('2030-01-01T00:00:00.000Z') &&
+          ms({}) === null && ms({ expires: 0 }) === null && ms(null) === null &&
+          bare('x') === null,
+          'realms.expiryField() reads ms, seconds, ISO and a bare value, and ' +
+          'answers null for anything that is not a positive instant');
+  // The real stores' hooks, where the ticket found the rows (#333): a code,
+  // a DPoP nonce (issued, seconds), a refresh family, a tracked token past
+  // its retention — each answers the store's own rule.
+  require('../oauth-oidc/oauth2');
+  require('../oauth-oidc/dpop');
+  require('../common/admin_stats');
+  const hook = function (handle) {
+    const row = realms.handleFor(handle);
+    return row && row.expiresAt;
+  };
+  t.check(hook('oauth2.authzCodes')({ expires: now + 5 }) === now + 5 &&
+          hook('oauth2_bcp.refreshFamilies')({ forget: now + 9 }) ===
+            now + 9 &&
+          hook('dpop.issuedNonces')(1000) ===
+            (1000 + Number(config.value('oauth2.dpopNonceTtlS'))) * 1000 &&
+          hook('admin_stats.tokens')({ exp: 1000 }) ===
+            (1000 + Number(config.value('oauth2.clockSkewS')) +
+             Number(config.value('oauth2.expiredTokenRetentionS'))) * 1000 &&
+          hook('admin_stats.tokens')({ exp: 0 }) === null,
+          'the declared stores\' hooks answer their own rules — a code its ' +
+          'expires, a DPoP nonce its issue time plus its lifetime, a tracked ' +
+          'token its exp plus the skew and the retention, and none for exp 0');
+  t.check(!hook('authn.sessions') && !hook('gnap.tokens') &&
+          !hook('vc_status.entries') && !hook('oauth2.backchannelDeliveries'),
+          'and the stores whose ending DOES something declare none: a ' +
+          'session (audit, CAEP, back-channel logout), a GNAP token (an ' +
+          'expired one may be rotated), a status-list entry (its bit), a ' +
+          'delivery (dead-lettered first)');
+  // The job: a cluster job, bounded, owned here.
+  const jobs = [];
+  minted.ensureExpiryPurgeJob({
+    register: function (spec) {
+      jobs.push(spec);
+    },
+    job: function () {
+      return null;
+    }
+  });
+  t.check(jobs.length === 1 && jobs[0].id ===
+          'persistence.minted-expiry-purge' && jobs[0].kind === 'cluster' &&
+          jobs[0].owner === 'persistence/persistence_minted.js' &&
+          jobs[0].everyMs() > 0 && /batches of \d+/.test(jobs[0].describe),
+          'the purge is ONE cluster scheduler job, bounded per run',
+          JSON.stringify(jobs.map(function (j) {
+            return { id: j.id, kind: j.kind, describe: j.describe };
+          })));
+  // Bounded: a backlog larger than one run is left for the next.
+  for (let i = 0; i < 20 * 5000 + 10; i++) {
+    driver.rows.set('bulk\u0000default\u0000' + i,
+                    { handle: 'test.expiring', realm: 'default',
+                      key: 'b' + i, body: 'x', writtenAt: now,
+                      expiresAt: now - 1 });
+  }
+  const bounded = await minted.purgeExpired(Date.now());
+  t.check(bounded.expired === 20 * 5000 && bounded.more === true,
+          'one run deletes at most its bound and says more remain',
+          JSON.stringify(bounded));
+  const rest = await minted.purgeExpired(Date.now());
+  t.check(rest.expired === 10 && rest.more === false,
+          'and the next run finishes the backlog', JSON.stringify(rest));
   // An unknown retention word is refused and read as keep.
   const odd = realms.map({ persist: 'test.odd-retain', retain: 'forever' });
   t.equal(realms.handleFor('test.odd-retain').retain, 'keep',

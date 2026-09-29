@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3757** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3758** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 71
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 44
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 65
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
@@ -299,7 +299,7 @@ Raised from: persistence/.
 | `STS-STORE-0022` | The service refused to start: minted state is persisted but no key-encryption key is available to open it. | — |
 | `STS-STORE-0023` | An earlier run's unreadable minted rows could not be cleared from the store. | — |
 | `STS-STORE-0024` | A store refused a minted row restored at startup; the row was dropped. | — |
-| `STS-STORE-0025` | Minted rows older than persistence.mintedRetention could not be purged from the store. | — |
+| `STS-STORE-0025` *(retired)* | Minted rows older than persistence.mintedRetention could not be purged from the store at startup. Retired (#333): a start deletes nothing; the persistence.minted-expiry-purge job does, and its failure is STS-STORE-0065. | — |
 | `STS-STORE-0026` | The service refused to start: the minted state in the store could not be read. | — |
 | `STS-STORE-0027` | The service refused to start: persistence.mode is postgres and persistence.databaseUrl was set to empty. | — |
 | `STS-STORE-0028` | The service refused to start: persistence.mode is postgres and the pg package is not installed. | — |
@@ -338,6 +338,8 @@ Raised from: persistence/.
 | `STS-STORE-0061` | A process lost the claim on its persistence origin while running — another process took it — and exits rather than go on refusing every write. | none — logged, then the process exits |
 | `STS-STORE-0062` | The claim on this process's persistence origin could not be renewed because the store did not answer. Not fatal: the claim outlives a short outage and every write checks it. | none — logged |
 | `STS-STORE-0063` | A minted store journalled a key holding a NUL character, which PostgreSQL text cannot hold; the row is left out of the write rather than failing every write after it. | none — logged |
+| `STS-STORE-0064` | A minted store's expiresAt hook threw while its row was being written; the row is written as not expiring, so it is restored and kept until the store deletes it. Said once per store. | none — logged |
+| `STS-STORE-0065` | The persistence.minted-expiry-purge job could not delete the expired, orphaned or stale minted rows; a start skips them anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
 
 ## STS-CLUSTER
 

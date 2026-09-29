@@ -313,7 +313,9 @@ const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 // which is the denial of service the cap exists to bound arriving through the
 // door it was meant to close.
 const contexts = realms.map({ persist: 'federation_sp.contexts',
-                              retain: 'age' });
+                              retain: 'age',
+                              // #333: the context's `expires`, ms.
+                              expiresAt: realms.expiryField('expires', 1) });
 
 // ---------------------------------------------------------------------------
 // PAGES. This module draws two: a refusal and an index. Both are plain HTML

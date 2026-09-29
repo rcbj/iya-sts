@@ -99,7 +99,10 @@ const CLAIM_SCOPE = 'devices.challenge';
 const MAX_LABEL = 128;
 
 const challenges = realms.map({ persist: 'devices.challenges',
-                                tombstone: true });
+                                tombstone: true,
+                                // #333: the challenge's `expiresAt`, ms.
+                                expiresAt: realms.expiryField('expiresAt',
+                                                              1) });
 
 function challengeTtlMs(): number {
   helpers.log.debug("Entering challengeTtlMs().");

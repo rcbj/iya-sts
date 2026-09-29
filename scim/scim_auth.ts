@@ -285,8 +285,17 @@ void mtls;
 // `cluster_claims.js` before a credential is accepted (`spendPresented()`),
 // which is what decides a replay presented at two nodes at once.
 // ---------------------------------------------------------------------------
-const digestNonces = realms.map({ persist: 'scim.digestNonces',
-                                  retain: 'age' });
+// `expiresAt` (#333): a nonce lives `scim.digestNonceSeconds` from `at`.
+const digestNonces = realms.map({
+  persist: 'scim.digestNonces',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: any): number | null {
+    const at = Number(row && row.at);
+    const ttlS = Number(config.value('scim.digestNonceSeconds'));
+    return at > 0 && ttlS > 0 ? at + ttlS * 1000 : null;
+  }
+});
 // nonce -> the nonce-counts this process has accepted. Per realm for
 // `digestNonces`'s reason. It was not persisted (see above) until
 // 2026-09-18 — below.
@@ -342,8 +351,18 @@ const MAX_COUNTS_PER_NONCE = 1024;
 // is last writer wins. **It is persisted since 2026-09-18** all the same
 // (`scim.hobaSeen`), so a restarted process's fast refusal survives the
 // restart; the claim is still what decides between two live processes.
-const hobaChallenges = realms.map({ persist: 'scim.hobaChallenges',
-                                    retain: 'age' });
+// `expiresAt` (#333): the value is when the challenge was ISSUED, ms; it
+// lives `scim.hobaMaxAgeSeconds`.
+const hobaChallenges = realms.map({
+  persist: 'scim.hobaChallenges',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (issuedMs: any): number | null {
+    const at = Number(issuedMs);
+    const ttlS = Number(config.value('scim.hobaMaxAgeSeconds'));
+    return at > 0 && ttlS > 0 ? at + ttlS * 1000 : null;
+  }
+});
 const hobaSeen = realms.map({ persist: 'scim.hobaSeen', retain: 'age' });
 
 // ---------------------------------------------------------------------------

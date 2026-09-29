@@ -201,8 +201,15 @@ CREATE TABLE IF NOT EXISTS sts_keys (
 -- here is queryable by SQL and that is the trade, taken deliberately: what
 -- wants querying is `sts_ldap_entries`, which is JSONB and is not sealed.
 --
+-- `expires_at` IS THE RECORD'S OWN EXPIRY (2026-09-28, schema version 12,
+-- #333), in epoch milliseconds, as the store's `expiresAt` hook answered it
+-- when the row was written; NULL for a record that does not expire and for a
+-- tombstone. A start reads no row whose instant has passed, and the
+-- `persistence.minted-expiry-purge` job deletes them in batches.
+--
 -- `written_at` IS WHAT RETENTION READS — `persistence.mintedRetention`, seven
--- days by default. A row older than that is neither restored nor kept.
+-- days by default — for a short-lived store's row that has NO expiry. A row
+-- older than that is neither restored nor kept.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sts_minted (
   handle     text        NOT NULL,
@@ -210,10 +217,18 @@ CREATE TABLE IF NOT EXISTS sts_minted (
   key        text        NOT NULL,
   body       text        NOT NULL,
   written_at timestamptz NOT NULL DEFAULT now(),
+  expires_at bigint,
   PRIMARY KEY (handle, realm, key));
+
+-- Added separately as well, for `sts_realms.domain`'s reason: a table built by
+-- an older version of this file has no such column. Existing rows get NULL.
+ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint;
 
 CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, realm);
 CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at);
+-- Partial: the purge looks rows up by it only where there is an expiry, and
+-- every INSERT into this, the busiest table, pays for an index.
+CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted (expires_at) WHERE expires_at IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- THE CHANGE LOG (2026-09-06), which is what makes several processes against
@@ -643,7 +658,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (11) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (12) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

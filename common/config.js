@@ -14433,10 +14433,13 @@ const SETTINGS = [
     dflt: 7 * 24 * 60 * 60 * 1000, runtime: true,
     description: 'How long a row of a SHORT-LIVED persisted store — a ' +
                  'nonce, a code, a pending flow, an in-flight transaction ' +
-                 '(`retain: \'age\'`) — is kept. Such a row older than this ' +
-                 'was left behind by a process that stopped before sweeping ' +
-                 'it; it is neither restored nor kept, and is deleted on the ' +
-                 'start that skipped it. Every other persisted store — ' +
+                 '(`retain: \'age\'`) — that carries NO expiry of its own ' +
+                 'is kept. A row whose store says when it expires is kept ' +
+                 'until then and no longer, whatever this says (#333). Such ' +
+                 'a row older than this was left behind by a process that ' +
+                 'stopped before sweeping it; no start reads it, and the ' +
+                 'persistence.minted-expiry-purge job deletes it. Every ' +
+                 'other persisted store — ' +
                  'configuration, accounts, sessions, tokens, the audit log ' +
                  'and the counters — is KEPT until the store itself deletes ' +
                  'a row, however old it is (2026-09-18: until then this ' +

@@ -215,7 +215,10 @@ interface LimitAnswer {
 // limiter is for.
 const buckets = realms.sharedMap({ persist: 'security.rateLimitBuckets',
                                    retain: 'age',
-                                   scope: 'shared' });
+                                   scope: 'shared',
+                                   // #333: the window's `until`, ms.
+                                   expiresAt: realms.expiryField('until',
+                                                                 1) });
 const MAX_BUCKETS = 20000;
 
 // The scope the shared windows are counted under — see the block above

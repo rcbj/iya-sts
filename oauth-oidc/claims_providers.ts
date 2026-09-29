@@ -120,8 +120,16 @@ const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
 // Setup flows in progress: state -> { username, provider, verifier, at }.
 // PERSISTED: the provider may send the person back to another node.
-const flows = realms.map({ persist: 'oauth2.claimSourceFlows',
-                           retain: 'age' });
+// `expiresAt` (#333): a link request lives FLOW_TTL_MS from its `at`.
+const flows = realms.map({
+  persist: 'oauth2.claimSourceFlows',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (flow: Json): number | null {
+    const at = Number(flow && flow.at);
+    return at > 0 ? at + FLOW_TTL_MS : null;
+  }
+});
 
 interface Provider {
   id: string;

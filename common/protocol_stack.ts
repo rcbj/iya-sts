@@ -1088,6 +1088,9 @@ class ProtocolStack {
     require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
     require('../persistence/persistence_minted')
       .ensureTombstoneJob(jobScheduler);
+    // And the expired-row purge (#333), for the same reason.
+    require('../persistence/persistence_minted')
+      .ensureExpiryPurgeJob(jobScheduler);
     // 18j. RISK SCORING (#62 P1, 2026-09-22): the store, the datasets and
     // the failure history are LIBRARIES (rule 3) that register no route, and
     // then Monitoring → Risk, for 18a's reason — the console's shell and the

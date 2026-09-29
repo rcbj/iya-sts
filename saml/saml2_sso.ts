@@ -360,7 +360,10 @@ const AA_PATH = BASE_PATH + '/aa';
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const pendingRequests = realms.map({ persist: 'saml2_sso.pendingRequests',
-                                     retain: 'age' });
+                                     retain: 'age',
+                                     // #333: the request's `expires`, ms.
+                                     expiresAt: realms.expiryField('expires',
+                                                                   1) });
 
 // Artifact -> the message it stands for. See decision 6: resolving one deletes
 // it, so this map is also the record of what has NOT been resolved yet.
@@ -369,14 +372,18 @@ const pendingRequests = realms.map({ persist: 'saml2_sso.pendingRequests',
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const artifacts = realms.map({ persist: 'saml2_sso.artifacts', retain: 'age' });
+const artifacts = realms.map({ persist: 'saml2_sso.artifacts', retain: 'age',
+                               // #333: the artifact's `expires`, ms.
+                               expiresAt: realms.expiryField('expires', 1) });
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const spContexts = realms.map({ persist: 'saml2_sso.spContexts' });
+const spContexts = realms.map({ persist: 'saml2_sso.spContexts',
+                                // #333: the context's `expires`, ms.
+                                expiresAt: realms.expiryField('expires', 1) });
 
 // ---------------------------------------------------------------------------
 // WHICH SERVICE PROVIDER A PATH NAMES.

@@ -123,11 +123,23 @@ const PURGE_JOB = 'oauth2.grant-management-purge';
 // grant_id -> the grant (see `apply()` for its shape). PERSISTED: every node
 // must answer the same grant, and a refresh refused on one node must be
 // refused on all.
-const grants = realms.map({ persist: 'oauth2.grants' });
+// `expiresAt` (#333): the purge's own rule — the grant's `expiresAt` (epoch
+// SECONDS, the latest exp of its tokens; 0 is none) plus the clock skew.
+const grants = realms.map({
+  persist: 'oauth2.grants',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (grant: Json): number | null {
+    const at = Number(grant && grant.expiresAt);
+    const skew = Number(config.value('oauth2.clockSkewS'));
+    return at > 0 && isFinite(skew) && skew >= 0 ? (at + skew) * 1000 : null;
+  }
+});
 // jti -> { grant, gen, kind, forget } — one row per token minted under a
 // grant, so a DELETE can revoke each. TOMBSTONED, so a row the purge removed
 // is not written back by a node that had not heard.
-const issued = realms.map({ persist: 'oauth2.grantIssued', tombstone: true });
+const issued = realms.map({ persist: 'oauth2.grantIssued', tombstone: true,
+                            // #333: the purge's `forget`, in ms.
+                            expiresAt: realms.expiryField('forget', 1) });
 
 interface GrantManagementDeps {
   log: typeof helpers.log;

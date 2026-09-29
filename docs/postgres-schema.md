@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 11**: 27 tables in a schema of their own, `sts`.
+**Schema version 12**: 27 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -48,6 +48,7 @@ which shape is on disk.
 | 9 | the columns `sts_risk_assessments.feedback` and `.feedback_at` |
 | 10 | the column `sts_realms.retiring_at` (#262) |
 | 11 | `sts_node_snapshots`: each cluster node's latest Worker Pools and Node Health views (#332) |
+| 12 | the column `sts_minted.expires_at` and its partial index `sts_minted_expires` (#333) |
 
 ### The application role
 
@@ -192,10 +193,16 @@ only, and `persistence.minted` turns it off.
 | `realm` | text | the realm id, or `''` for a store shared by the whole process (`realms.sharedMap()`) |
 | `key` | text | the key within that store |
 | `body` | text | **always ciphertext**, `$aesgcm$1$…` |
-| `written_at` | timestamptz | used by retention: a row older than `persistence.mintedRetention` (7 days) is neither restored nor kept |
+| `written_at` | timestamptz | when the row was last written. A short-lived store's row with no `expires_at` that is older than `persistence.mintedRetention` (7 days) is neither restored nor kept |
+| `expires_at` | bigint | **the record's own expiry**, in epoch milliseconds, as the store computed it when it wrote the row, or NULL for a record that does not expire (and for a tombstone). A start reads no row whose expiry has passed, and the `persistence.minted-expiry-purge` job deletes such rows in batches (schema version 12, #333) |
 
-Primary key `(handle, realm, key)`, with indexes on `(handle, realm)` and
-`written_at`.
+Primary key `(handle, realm, key)`, with indexes on `(handle, realm)`,
+`written_at`, and `expires_at` where it is not NULL.
+
+A start reads only the rows of the realms that exist: `''` (the shared
+stores), the default realm, and every realm in `sts_realms`. Rows of a realm
+that is no longer defined are deleted by the same job once they are an hour
+old.
 
 **There is one table rather than one per family**, so that persisting a new
 store costs one word at its declaration and no DDL. The price is that nothing

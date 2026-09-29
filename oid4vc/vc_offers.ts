@@ -144,7 +144,10 @@ const VCI_FORMATS = Array.from(new Set(
  * issuerState, expires }`.
  */
 const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers',
-                                      retain: 'age' });
+                                      retain: 'age',
+                                      // #333: the offer's `expires`, ms.
+                                      expiresAt: realms.expiryField('expires',
+                                                                    1) });
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -157,7 +160,10 @@ const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers',
  * configurationIds, expires }`.
  */
 const issuerStates = realms.map({ persist: 'vc_offers.issuerStates',
-                                  retain: 'age' });
+                                  retain: 'age',
+                                  // #333: its `expires`, ms.
+                                  expiresAt: realms.expiryField('expires',
+                                                                1) });
 
 // Pre-authorized codes (OID4VCI Appendix H.2 / H.3): the End-User authorized
 // the issuance out of band, so there is no authorization request at all — the
@@ -176,7 +182,9 @@ const issuerStates = realms.map({ persist: 'vc_offers.issuerStates',
  * `{ configurationIds, txCode, user, deferred, expires }`.
  */
 const preAuthorizedCodes =
-    realms.map({ persist: 'vc_offers.preAuthorizedCodes', retain: 'age' });
+    realms.map({ persist: 'vc_offers.preAuthorizedCodes', retain: 'age',
+                 // #333: the code's `expires`, ms.
+                 expiresAt: realms.expiryField('expires', 1) });
 
 // Deferred issuance transactions (OID4VCI section 9): the credential endpoint
 // answered 202 with one of these instead of a credential.
@@ -191,7 +199,9 @@ const preAuthorizedCodes =
  * `transaction_id` to `{ claims, holderJwk, readyAt, expires }`.
  */
 const deferredTransactions =
-    realms.map({ persist: 'vc_offers.deferredTransactions', retain: 'age' });
+    realms.map({ persist: 'vc_offers.deferredTransactions', retain: 'age',
+                 // #333: the transaction's `expires`, ms.
+                 expiresAt: realms.expiryField('expires', 1) });
 
 // Access tokens minted from a deferred offer: the credential endpoint answers
 // 202 for these instead of issuing straight away.

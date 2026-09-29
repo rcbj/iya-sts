@@ -215,7 +215,9 @@ interface VcIssuerDeps {
  * The `c_nonce` values this issuer has handed out and not yet seen used, per
  * trust realm; each is single-use.
  */
-const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age' });
+const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age',
+                               // #333: the value IS the expiry, ms.
+                               expiresAt: realms.expiryField(null, 1) });
 
 // `oid4vci.cNonceTtlS` since 2026-09-12; the constant is its default and keeps
 // its exported name.
@@ -283,7 +285,10 @@ const CLAIM_SKEW_MS = 60 * 1000;
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // id -> { accessToken, expires, event }
-const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds' });
+const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds',
+                                     // #333: its `expires`, ms.
+                                     expiresAt: realms.expiryField('expires',
+                                                                   1) });
 
 // ---------------------------------------------------------------------------
 // Credential Response encryption (OID4VCI section 10).
