@@ -342,7 +342,8 @@ class DevicesAdmin {
     const rows = devices.list(filter);
     const paged = adminViews.pagedRows(q, rows, { noun: 'devices' });
     const out: Json = {
-      total: devices.all().length,
+      // Counted by the store (#352): no second copy of every device.
+      total: devices.count(),
       matched: rows.length,
       filter: filter,
       devices: paged.shown.map(function (d: Json) {

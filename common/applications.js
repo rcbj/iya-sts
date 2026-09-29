@@ -12731,17 +12731,48 @@ function forAppliesTo(appliesTo) {
 function requiredRolesOf(identifier) {
   log.debug("Entering requiredRolesOf(). identifier=" + identifier);
   const loaded = load(identifier);
-  const values = loaded.known
-    ? valuesOf((loaded.record && loaded.record.fields || {}).appRequiredRole)
+  log.debug("Leaving requiredRolesOf().");
+  return requiredRolesFrom(loaded.known ? loaded.record : null);
+}
+
+// The same answer read off a view or a record already in hand (#352) — what
+// `/admin/roles` has for every application after one `list()`, where asking
+// `requiredRolesOf()` by identifier read each entry out of the directory a
+// second time. Null (an unknown application) requires EVERYBODY, as above.
+/**
+ * Returns the roles an application requires, read off a view or record the
+ * caller already holds.
+ *
+ * @param source - a view or a record, or null for an unknown application
+ * @returns the role names, never empty
+ */
+function requiredRolesFrom(source) {
+  log.debug("Entering requiredRolesFrom().");
+  const values = source
+    ? valuesOf((source.fields || {}).appRequiredRole)
         .map(function (one) { return String(one).trim(); })
         .filter(function (one) { return one.length > 0; })
     : [];
   if (!values.length) {
-    log.debug("Leaving requiredRolesOf(). None named, so EVERYBODY.");
+    log.debug("Leaving requiredRolesFrom(). None named, so EVERYBODY.");
     return [roles.DEFAULT_REQUIRED_ROLE];
   }
-  log.debug("Leaving requiredRolesOf(). " + values.length + " role(s).");
+  log.debug("Leaving requiredRolesFrom(). " + values.length + " role(s).");
   return values;
+}
+
+/**
+ * Says whether a required-roles list asks for anything beyond the permissive
+ * default role.
+ *
+ * @param required - what `requiredRolesOf()` or `requiredRolesFrom()` answered
+ * @returns true when narrowed
+ */
+function narrowedRoles(required) {
+  log.debug("Entering narrowedRoles().");
+  log.debug("Leaving narrowedRoles().");
+  return !(required.length === 1 &&
+           required[0] === roles.DEFAULT_REQUIRED_ROLE);
 }
 
 // Whether this application has been NARROWED — whether somebody has asked for
@@ -12761,8 +12792,7 @@ function requiresNarrowedRoles(identifier) {
   log.debug("Entering requiresNarrowedRoles().");
   const required = requiredRolesOf(identifier);
   log.debug("Leaving requiresNarrowedRoles().");
-  return !(required.length === 1 &&
-           required[0] === roles.DEFAULT_REQUIRED_ROLE);
+  return narrowedRoles(required);
 }
 
 /**
@@ -13321,6 +13351,8 @@ module.exports = {
   frontchannelOriginProblem: frontchannelOriginProblem,
   backchannelSchemeProblem: backchannelSchemeProblem,
   requiredRolesOf: requiredRolesOf,
+  requiredRolesFrom: requiredRolesFrom,
+  narrowedRoles: narrowedRoles,
   requiresNarrowedRoles: requiresNarrowedRoles,
   KINDS: KINDS,
   KIND_IDS: KIND_IDS,

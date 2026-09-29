@@ -9581,9 +9581,9 @@ function deviceDn(id) {
 
 function listDeviceEntries() {
   log.debug('Entering listDeviceEntries().');
-  const out = entriesUnder(devicesDn()).filter(function (stored) {
-    return normalizeDn(stored.dn) !== normalizeDn(devicesDn());
-  }).map(function (stored) {
+  // `entriesUnder()` already leaves the container itself out, so the filter
+  // that normalised two DNs per device to do it again is gone (#352).
+  const out = entriesUnder(devicesDn()).map(function (stored) {
     const attributes = {};
     Object.keys(stored.attributes).forEach(function (name) {
       attributes[name] = stored.attributes[name].slice(0);
@@ -9592,6 +9592,20 @@ function listDeviceEntries() {
   });
   log.debug('Leaving listDeviceEntries(). ' + out.length + '.');
   return out;
+}
+
+// HOW MANY DEVICES THE REALM HOLDS, without copying one (#352): the
+// `total` on /admin/devices was `devices.all().length` — every device entry
+// copied and JSON-parsed a second time, after `list()` had done it once. The
+// kept container listing's length is the same number.
+//
+// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: a count of the
+// keys under `ou=devices`.
+function countDeviceEntries() {
+  log.debug('Entering countDeviceEntries().');
+  const n = entriesUnder(devicesDn()).length;
+  log.debug('Leaving countDeviceEntries(). ' + n + '.');
+  return n;
 }
 
 function writeDeviceEntry(id, attributes) {
@@ -10013,6 +10027,7 @@ if (typeof credentials.setDirectory === 'function') {
     writeCibaUserCode: writeCibaUserCode,
     // The device register (#130), checked where it is used.
     listDeviceEntries: listDeviceEntries,
+    countDeviceEntries: countDeviceEntries,
     writeDeviceEntry: writeDeviceEntry,
     deleteDeviceEntry: deleteDeviceEntry,
     // One device by its id, a key thumbprint or its secret's hash (#164
@@ -10139,15 +10154,15 @@ if (typeof credentials.setDirectory === 'function') {
       const out = [];
       // The STORED entries (lower-cased attribute keys), not allPersons()'s
       // display objects.
+      // The two flags are read FIRST (#352) — property lookups — and only an
+      // entry carrying one pays for `isPersonEntry()`'s DN normalising. Same
+      // rows, same walk order.
       eachEntryInRealm(function (entry) {
-        if (!isPersonEntry(entry)) {
-          return;
-        }
         const a = entry.attributes;
         const notDelegated =
           String((a.stsnotdelegated || [])[0] || '').toUpperCase() === 'TRUE';
         const mayAct = String((a.stsmayact || [])[0] || '');
-        if (notDelegated || mayAct) {
+        if ((notDelegated || mayAct) && isPersonEntry(entry)) {
           out.push({ username: usernameOfEntry(entry), dn: entry.dn,
                      notDelegated: notDelegated, mayAct: mayAct });
         }
@@ -16783,7 +16798,7 @@ function personCount() {
 // Nothing here reads an entry to answer it.
 // ---------------------------------------------------------------------------
 const personRowsMemo = realms.keyed(function () {
-  return { version: -1, rows: null };
+  return { version: -1, rows: null, byUid: null };
 });
 const personRowsCount = cacheRegistry.counter('ldap.person-keys');
 
@@ -16806,7 +16821,13 @@ function personRows() {
     const key = normalizeDn(stored.dn);
     if (key !== base && key.endsWith(suffix)) {
       rows.push({ key: key, storeKey: storeKey, dn: stored.dn,
-                  name: usernameOfEntry(stored) });
+                  name: usernameOfEntry(stored),
+                  // For `residentsPage()`: the first `uid`, lower-cased, and
+                  // whether the entry is another cell's projection.
+                  uid: String((stored.attributes.uid || [])[0] || '')
+                    .toLowerCase(),
+                  projection: String(stored.origin || '')
+                    .indexOf('projection') === 0 });
     }
   });
   // `allPersons()`'s comparison, on keys computed once.
@@ -16817,6 +16838,7 @@ function personRows() {
     Object.freeze(row);
   });
   held.rows = Object.freeze(rows);
+  held.byUid = null;
   held.version = version;
   log.debug('Leaving personRows(). ' + rows.length + ' person(s), walked.');
   return held.rows;
@@ -16873,6 +16895,70 @@ function personNames() {
   });
   log.debug('Leaving personNames(). ' + out.length + ' name(s).');
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// A CELL'S RESIDENTS, A PAGE AT A TIME BY `uid` (#352, #98).
+//
+// `/admin/cells?people=` and the inter-cell `directory-people` operation list
+// this cell's own people — not another cell's projections — by lower-cased
+// first `uid`, `limit` at a time after the `after` a previous page ended on.
+// It was `allPersons()` (every entry copied), then a filter, a sort and a
+// slice, so the keyset cursor bought nothing. Here the order is kept beside
+// `personRows()` — the same rows, stably sorted by that name, so a tie keeps
+// `allPersons()`'s order as the old stable sort did — and a page is a binary
+// search for `after` and `limit` entry reads.
+//
+// **WHAT #349's WINDOW SHOULD ANSWER WITH ONE STATEMENT**: a keyset page —
+// `... WHERE uid > $after ORDER BY uid LIMIT $limit + 1`.
+// ---------------------------------------------------------------------------
+/**
+ * Returns one page of this realm's residents (people not projected from
+ * another cell) by lower-cased first `uid`, after a cursor.
+ *
+ * @param after - the name the previous page ended on, or ''
+ * @param limit - how many to answer
+ * @returns `people` (`{ name, uuid, displayName }`) and `more`, whether
+ *   another page follows
+ */
+function residentsPage(after, limit) {
+  log.debug('Entering residentsPage().');
+  const rows = personRows();
+  const held = personRowsMemo();
+  if (!held.byUid) {
+    held.byUid = rows.filter(function (row) {
+      return !row.projection && !!row.uid;
+    });
+    held.byUid.sort(function (x, y) {
+      return x.uid < y.uid ? -1 : (x.uid > y.uid ? 1 : 0);
+    });
+  }
+  const byUid = held.byUid;
+  const cursor = String(after || '').toLowerCase();
+  // The first row whose name is strictly after the cursor.
+  let lo = 0;
+  let hi = byUid.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (byUid[mid].uid > cursor) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  const count = Math.max(0, Number(limit) || 0);
+  const people = [];
+  byUid.slice(lo, lo + count).forEach(function (row) {
+    const stored = storedPersonAt(row);
+    const attrs = (stored && stored.attributes) || {};
+    const one = function (name) {
+      return String((attrs[name] || [])[0] || '');
+    };
+    people.push({ name: row.uid, uuid: one('entryuuid'),
+                  displayName: one('displayname') || one('cn') });
+  });
+  log.debug('Leaving residentsPage(). ' + people.length + ' person(s).');
+  return { people: people, more: byUid.length - lo > count };
 }
 
 // The DNs of every person, as stored, in `allPersons()`'s order — for a caller
@@ -20463,6 +20549,7 @@ module.exports = {
   allPersons: allPersons,
   personNames: personNames,
   personDns: personDns,
+  residentsPage: residentsPage,
   readPerson: readPerson,
   writePerson: writePerson,
   deletePerson: deletePerson,

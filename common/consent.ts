@@ -618,7 +618,21 @@ class Consent {
       log.debug("Leaving Consent.globalConsentsOf(). No entry for it.");
       return [];
     }
-    const raw = (entry.fields || {})[GLOBAL_ATTRIBUTE];
+    log.debug("Leaving Consent.globalConsentsOf().");
+    return this.globalConsentsFrom(entry);
+  }
+
+  // The same, read off an application view already in hand (#352).
+  /**
+   * Lists the scopes an application view carries as global consents.
+   *
+   * @param entry - the application's view
+   * @returns the scopes, without repeats
+   */
+  globalConsentsFrom(entry) {
+    const { log } = this.deps;
+    log.debug("Entering Consent.globalConsentsFrom().");
+    const raw = ((entry && entry.fields) || {})[GLOBAL_ATTRIBUTE];
     const out = [];
     (Array.isArray(raw) ? raw :
      (raw === undefined || raw === null || raw === '' ? [] : [raw]))
@@ -628,7 +642,7 @@ class Consent {
           out.push(text);
         }
       });
-    log.debug("Leaving Consent.globalConsentsOf(). " + out.length +
+    log.debug("Leaving Consent.globalConsentsFrom(). " + out.length +
               " scope(s).");
     return out;
   }
@@ -1719,8 +1733,12 @@ class Consent {
     const self = this;
     log.debug("Entering Consent.register().");
     const globals = [];
+    // The scopes read off the row the list already holds (#352), where
+    // `globalConsentsOf()` read each application out of the directory again;
+    // `forPermission()` and `holdsPermission()` below are Map lookups in the
+    // registry's kept listing, not a `list()` each.
     applications.list().forEach(function (row) {
-      self.globalConsentsOf(row.identifier).forEach(function (scope) {
+      self.globalConsentsFrom(row).forEach(function (scope) {
         const permission = applications.forPermission(scope);
         globals.push({
           client: row.identifier,
