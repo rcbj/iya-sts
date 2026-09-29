@@ -3110,6 +3110,35 @@ const SETTINGS = [
   // one start above the steady state. `common/request_pool.js`'s start gate
   // argues why the count covers BOTH pools rather than each one.
   // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
+  // EVERY PROCESS'S HEAP LIMIT (#341, 2026-09-29). Nothing set one, so V8
+  // sized each process's heap to the MACHINE, five processes could each grow
+  // towards it, and the kernel's OOM killer ended whichever was biggest with
+  // an anonymous SIGKILL. `common/process_memory.ts` argues the derivation
+  // and why the front process re-executes itself to take the flag.
+  // ---------------------------------------------------------------------
+  { key: 'workers.heapLimitMb', group: 'Global',
+    label: 'Heap limit per process (MiB)',
+    env: 'STS_WORKERS_HEAP_LIMIT_MB', type: 'int', dflt: 0, min: 0,
+    max: 1048576, runtime: false, perProcess: true,
+    restartReason: 'V8 reads the heap limit when a process starts: the front ' +
+                   'process restarts itself with it before it loads ' +
+                   'anything, and each request worker is forked with it',
+    description: 'The V8 heap limit (--max-old-space-size) of the front ' +
+                 'process and of every request worker. The default, 0, ' +
+                 'DERIVES it from the container: (the memory limit − 15 % ' +
+                 'headroom, at least 256 MiB) ÷ (1 + workers.requestCount + ' +
+                 'workers.surfaceCount + 1 for the post-quantum children), ' +
+                 'and never less than 256 MiB. The limit is read from ' +
+                 'cgroup v2, then cgroup v1, then the ECS task metadata ' +
+                 'endpoint. With no visible limit nothing is set. A process ' +
+                 'whose heap reaches the limit is ended by V8 with a line ' +
+                 'that says so, and a request worker\'s exit is reported as ' +
+                 'STS-WORKER-0046, where the alternative was an anonymous ' +
+                 'SIGKILL from the kernel. A flag an operator set on the ' +
+                 'command line or in NODE_OPTIONS is left alone and used for ' +
+                 'every process. Read before the store is opened.' },
+
   { key: 'workers.startConcurrency', group: 'Global',
     label: 'Request workers starting at once',
     env: 'STS_WORKERS_START_CONCURRENCY', type: 'int', dflt: 1, min: 1,

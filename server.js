@@ -78,6 +78,19 @@
 // from the first converted module. See `common/compiled_tree.js`.
 require('./common/compiled_tree').refuseUncompiledTree('node server.js');
 require('./common/config_file').resolveConfigFile();
+// ---------------------------------------------------------------------------
+// THE HEAP LIMIT, BEFORE ANYTHING ELSE IS LOADED (#341, 2026-09-29). V8 reads
+// --max-old-space-size when it starts, so when a limit is due — derived from
+// the container, or workers.heapLimitMb — and not yet in force, this process
+// REPLACES ITSELF with the same command and the flag (`process.execve()`: the
+// same pid and descriptors) and never returns from this line. It runs where
+// every way of starting this service meets: the image's CMD, the compose
+// files' `exec node server.js`, `docker run` and ECS. Here, after the
+// appconfig file is resolved and before the service is loaded, so the second
+// start repeats as little as possible. `common/process_memory.ts` argues it
+// against NODE_OPTIONS and a launcher.
+// ---------------------------------------------------------------------------
+require('./common/process_memory').reexecWithHeapLimit();
 
 const http = require('http');
 const https = require('https');

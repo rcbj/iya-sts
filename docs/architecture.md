@@ -49,7 +49,12 @@ With the admin and request pools off, the leader answers every request itself.
 When they are on, **their workers start one at a time**
 (`workers.startConcurrency`, default 1), because each one loads the whole
 store into its own memory as it starts. The listener opens once the first
-worker of each pool is up, and the rest start behind it.
+worker of each pool is up, and the rest start behind it. **Every process has a
+heap limit** derived from the container's memory limit and the number of
+processes (`workers.heapLimitMb`, 0 to derive). Each process logs its memory
+every five minutes (the `process.memory-report` job). A worker that runs out of
+memory is reported with a code that says whether the heap or the kernel ended
+it.
 When they are on, the processes share state through the persistence store and
 not through memory. For that reason, turning dispatch on without
 [coordination](persistence.md#processes-against-one-store-coordinate) is refused
