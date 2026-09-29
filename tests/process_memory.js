@@ -124,6 +124,11 @@ function checkTheBudget(t) {
   b = pm.derive({ configuredMb: 700, limitBytes: 8192 * MIB,
                   requestCount: 3, surfaceCount: 1 });
   t.equal(b.mb, 700, 'workers.heapLimitMb wins when it is set');
+  b = pm.derive({ configuredMb: -1, limitBytes: 8192 * MIB,
+                  requestCount: 3, surfaceCount: 1 });
+  t.check(b.mb === 0 && b.off === true,
+          '-1 is OFF: no limit, whatever the container says',
+          JSON.stringify(b));
   log.debug("Leaving checkTheBudget().");
 }
 
@@ -241,6 +246,20 @@ function checkTheReexec(t, dir) {
           'and V8\'s heap limit is 300 MiB plus the young generation',
           String(got.limit));
   t.equal(got.budget, 300, 'the budget came across the re-exec');
+
+  // AND WITH THE LIMIT OFF (-1): no re-exec and no flag.
+  env.STS_WORKERS_HEAP_LIMIT_MB = '-1';
+  const offOut = childProcess.execFileSync(process.execPath, [script],
+    { env: env, encoding: 'utf8', timeout: 30000 });
+  const offLines = offOut.split('\n').filter(function (line) {
+    return /^(before|after) /.test(line);
+  });
+  const offAfter = /^after (.*)$/.exec(offLines[1] || '');
+  const off = offAfter ? JSON.parse(offAfter[1]) : null;
+  t.check(!!off && off.budget === 0 &&
+          off.argv.join(' ').indexOf('--max-old-space-size') < 0,
+          'workers.heapLimitMb -1: the child ran once more without the flag ' +
+          'and was not re-executed', JSON.stringify(offLines));
   log.debug("Leaving checkTheReexec().");
 }
 
@@ -334,22 +353,31 @@ async function checkTheHeapExit(t, stub) {
 async function checkTheKernelKill(t, stub) {
   log.debug("Entering checkTheKernelKill().");
   t.log.info('=== a SIGKILL while the OOM count rises is the kernel ===');
-  await withEnv({ STS_WORKERS_REQUEST_COUNT: '0', STUB_MODE: 'ok' },
-                async function () {
+  await withEnv({ STS_WORKERS_REQUEST_COUNT: '0', STUB_MODE: 'ok',
+                  STS_WORKERS_HEAP_LIMIT_MB: '-1' }, async function () {
     pool.useWorkerModule(stub);
     let kills = 7;
     pool.useOomCounter(function () {
       return kills;
     });
+    t.check(pool.stats().memory.heapLimitMb === 0,
+            'with the limit OFF the pool forks with no budget', '');
     let entry = pool.fork(pool.PROTOCOL_POOL, 0);
     await entry.settled;
+    t.check(entry.child.spawnargs.join(' ')
+      .indexOf('--max-old-space-size') < 0,
+    'and the worker was forked without the flag',
+    entry.child.spawnargs.join(' '));
+    t.check(!!entry.memory,
+            'its memory report still reaches the front process', '');
     kills = 8;
     entry.child.kill('SIGKILL');
     t.check(await waitFor(function () {
       return !!lastExit();
     }, 10000), 'the killed worker was reaped', '');
     t.equal((lastExit() || {}).cause, 'STS-WORKER-0047',
-            'a SIGKILL with the count risen is the OOM killer');
+            'a SIGKILL with the count risen is the OOM killer, with the ' +
+            'limit off too');
     entry = pool.fork(pool.PROTOCOL_POOL, 0);
     await entry.settled;
     entry.child.kill('SIGKILL');

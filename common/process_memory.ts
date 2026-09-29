@@ -19,8 +19,13 @@
 // node-a, 2026-09-28 20:32 UTC) with no code, no heap figure and no hint of
 // which store had grown.
 //
-// **THE BUDGET.** `workers.heapLimitMb`, when it is not 0, is every process's
-// limit. At 0, the default, the limit is DERIVED:
+// **THE BUDGET.** `workers.heapLimitMb`, when it is above 0, is every
+// process's limit. At -1 it is OFF: this service applies no limit at all, so
+// the front process is not re-executed and no worker is forked with the flag.
+// That is rcbj's setting for testidp while its processes are larger than a
+// derived budget would allow (2026-09-29); the memory report and the
+// OOM-kill attribution (STS-WORKER-0047) work the same with it off. At 0, the
+// default, the limit is DERIVED:
 //
 //     (container limit − headroom) ÷ (1 + requestCount + surfaceCount + 1)
 //
@@ -154,6 +159,8 @@ interface ContainerLimit {
  */
 interface Budget {
   mb: number;
+  // workers.heapLimitMb is -1: no limit is applied, and nothing is stripped.
+  off?: boolean;
   source: string;
   limitBytes: number | null;
   processes: number;
@@ -330,6 +337,12 @@ class ProcessMemory {
     log.debug("Entering ProcessMemory.derive().");
     const processes = 1 + Math.max(0, input.requestCount || 0) +
       Math.max(0, input.surfaceCount || 0) + CRYPTO_ALLOWANCE;
+    if (input.configuredMb < 0) {
+      log.debug("Leaving ProcessMemory.derive(). Off.");
+      return { mb: 0, off: true,
+               source: 'workers.heapLimitMb is -1: no heap limit is applied',
+               limitBytes: input.limitBytes, processes: processes };
+    }
     if (input.configuredMb > 0) {
       log.debug("Leaving ProcessMemory.derive(). Configured.");
       return { mb: Math.floor(input.configuredMb),
@@ -360,14 +373,17 @@ class ProcessMemory {
    * Reads the three settings the budget depends on.
    *
    * @returns `{ configuredMb, requestCount, surfaceCount }`, all 0 with no
-   *   configuration
+   *   configuration; `configuredMb` is -1 when the limit is off
    */
   static settings(): { configuredMb: number; requestCount: number;
                        surfaceCount: number } {
     log.debug("Entering ProcessMemory.settings().");
-    const read = function (key: string): number {
+    const read = function (key: string, allowOff?: boolean): number {
       try {
         const n = parseInt(config.value(key), 10);
+        if (allowOff && n < 0) {
+          return -1;
+        }
         return n > 0 ? n : 0;
       } catch (e) {
         log.debug("Caught in ProcessMemory.settings(): " +
@@ -377,7 +393,7 @@ class ProcessMemory {
       }
     };
     log.debug("Leaving ProcessMemory.settings().");
-    return { configuredMb: read('workers.heapLimitMb'),
+    return { configuredMb: read('workers.heapLimitMb', true),
              requestCount: read('workers.requestCount'),
              surfaceCount: read('workers.surfaceCount') };
   }
@@ -435,6 +451,17 @@ class ProcessMemory {
       }
     }
     const s = ProcessMemory.settings();
+    // OFF COMES FIRST: -1 applies nothing, whatever the container or an
+    // operator's flag says. An operator's own flag still reaches the front
+    // process, and fork() passes the options on unchanged.
+    if (s.configuredMb < 0) {
+      cachedBudget = ProcessMemory.derive({ configuredMb: -1,
+                                            limitBytes: null,
+                                            requestCount: s.requestCount,
+                                            surfaceCount: s.surfaceCount });
+      log.debug("Leaving ProcessMemory.budget(). Off.");
+      return cachedBudget;
+    }
     const operator = ProcessMemory.explicitFlag(process.execArgv,
                                                 process.env.NODE_OPTIONS || '');
     if (operator > 0) {
@@ -485,13 +512,13 @@ class ProcessMemory {
       log.debug("Leaving ProcessMemory.reexecWithHeapLimit(). Done already.");
       return { reexec: false, why: 'already re-executed' };
     }
-    if (!budget.mb || budget.source.indexOf(FLAG) === 0) {
+    if (budget.off || !budget.mb || budget.source.indexOf(FLAG) === 0) {
       log.info('process_memory: no heap limit is set by this service: ' +
                (budget.mb ? budget.source + ', ' + budget.mb + ' MiB'
                           : budget.source) + '.');
       log.debug("Leaving ProcessMemory.reexecWithHeapLimit(). Not needed.");
-      return { reexec: false, why: budget.mb ? 'set by the operator'
-                                             : 'no limit' };
+      return { reexec: false, why: budget.off ? 'off'
+        : (budget.mb ? 'set by the operator' : 'no limit') };
     }
     const execve = (process as any).execve;
     if (typeof execve !== 'function') {
