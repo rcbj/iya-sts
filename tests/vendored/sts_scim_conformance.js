@@ -407,7 +407,7 @@ async function test() {
       return;
     }
     unexplained.push(key + " " + row.outcome + ": " +
-                     row.message.slice(0, 500));
+                     row.message.slice(0, 4000));
   });
   Object.keys(EXCEPTIONS).forEach(function (key) {
     if (!excepted[key]) {
