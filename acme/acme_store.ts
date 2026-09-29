@@ -53,6 +53,7 @@ import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 import realms = require('../common/realms');
+import config = require('../common/config');
 // The atomic "once" a nonce is spent through across nodes — see
 // `spendNonceOnce()`. A LIBRARY that reaches `persistence.js` lazily.
 import claims = require('../cluster/cluster_claims');
@@ -91,11 +92,26 @@ const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age',
 // A realm holding this many spent nonces refuses to remember more by dropping
 // the ones that have expired first; a nonce is only useful until it expires, so
 // what is dropped can never be presented again anyway.
+//
+// A SETTING SINCE #346 (2026-09-29), `acme.maxSpentNonces`, where it was a
+// literal 100,000. The default came down to 10,000 because the history is
+// resident in every process of every node, per realm (#339). Lowering it does
+// not shorten the replay window — a full history REFUSES, it never forgets a
+// live spend — so what the lower number costs is throughput: a realm answers
+// badNonce past about acme.maxSpentNonces / acme.nonceLifetimeS spends a
+// second (33 at the defaults).
 /**
  * How many spent nonces a realm remembers; past it, expired ones are dropped
  * first and a new spend is refused rather than forgotten.
+ *
+ * @returns the realm's `acme.maxSpentNonces`
  */
-const MAX_USED_NONCES = 100000;
+function maxUsedNonces(): number {
+  log.debug("Entering maxUsedNonces().");
+  const max = Number(config.value('acme.maxSpentNonces'));
+  log.debug("Leaving maxUsedNonces().");
+  return max;
+}
 
 // Described to `/admin/caches` (#74, rule 3ap). The value is the nonce's
 // expiry in seconds. The bound is soft: at it, only expired nonces go.
@@ -109,10 +125,11 @@ const usedNoncesCount = cacheRegistry.register({
   kind: 'replay',
   persisted: true,
   hitMeaning: 'a nonce already spent, so the request was refused',
+  settings: ['acme.nonceLifetimeS', 'acme.maxSpentNonces'],
   maxEntries: function (): number {
-    return MAX_USED_NONCES;
+    return maxUsedNonces();
   },
-  bound: 'Enforced: ' + MAX_USED_NONCES + ' spent nonces per realm. Expired ' +
+  bound: 'Enforced: acme.maxSpentNonces spent nonces per realm. Expired ' +
     'ones are cleared at the bound; a history still full REFUSES the next ' +
     'spend (answered badNonce) rather than forget a live one.',
   lifetime: function (): string {
@@ -568,7 +585,7 @@ class AcmeStore {
       return false;
     }
     usedNoncesCount.miss();
-    // THE BOUND (MAX_USED_NONCES). The expired go first, as they always did;
+    // THE BOUND (acme.maxSpentNonces). The expired go first, as they always did;
     // what changed on 2026-09-18 is a store still full of LIVE spends, which
     // took the new one anyway and grew past its bound. It decides a replay,
     // so it refuses rather than forgets: the spend answers false, the request
@@ -576,8 +593,9 @@ class AcmeStore {
     // which RFC 8555 section 6.5 has it do. The registry logs the real reason
     // (STS-CORE-0097) at most once a minute.
     const nowS = Math.floor(this.nowMs() / 1000);
-    const room = cacheRegistry.makeRoom(usedNonces, MAX_USED_NONCES, {
+    const room = cacheRegistry.makeRoom(usedNonces, maxUsedNonces(), {
       policy: 'refuse', counter: usedNoncesCount, name: 'acme.nonces',
+      setting: 'acme.maxSpentNonces',
       expired: function (value: unknown): boolean {
         return Number(value) <= nowS;
       }
@@ -671,7 +689,6 @@ export = {
   AcmeStore: AcmeStore,
   installInstance: (instance: AcmeStore): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  MAX_USED_NONCES: MAX_USED_NONCES,
   createAccount: slot.forward('createAccount'),
   getAccount: slot.forward('getAccount'),
   accountByThumbprint: slot.forward('accountByThumbprint'),

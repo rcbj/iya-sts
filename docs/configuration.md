@@ -1417,6 +1417,7 @@ Automatic Certificate Management Environment (RFC 8555), drawn on `/admin/acme`.
 | `acme.attemptsPerIdentity` | `STS_ACME_ATTEMPTS_PER_IDENTITY` | `30` | yes | Refused requests one account (or EAB key id) may make in one web-security window before ACME answers rateLimited. |
 | `acme.attemptsPerAddress` | `STS_ACME_ATTEMPTS_PER_ADDRESS` | `120` | yes | Refused requests one client address may make in one web-security window before ACME answers rateLimited. |
 | `acme.nonceLifetimeS` | `STS_ACME_NONCE_LIFETIME_S` | `300` | yes | How long a Replay-Nonce may wait before it is presented. |
+| `acme.maxSpentNonces` | `STS_ACME_MAX_SPENT_NONCES` | `10000` | yes | Spent nonces a realm remembers; a history full of live ones answers the next request `badNonce` rather than forget one. **At the default that is about 33 requests a second, sustained; past it every ACME request in the realm is refused until nonces expire.** Raise it for a busier realm. |
 | `acme.orderLifetimeS` | `STS_ACME_ORDER_LIFETIME_S` | `86400` | yes | How long an order stays pending or ready before it expires with its authorizations. |
 | `acme.eabLifetimeS` | `STS_ACME_EAB_LIFETIME_S` | `604800` | yes | How long an EAB key issued on the console, through /admin-api or on the user portal may wait before it binds an account. |
 

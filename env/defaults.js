@@ -83,7 +83,7 @@ var config = {
     continueWaitS: 5,                                                      // Continuation wait (seconds)
     maxPolls: 60,                                                          // Polls allowed before too_many_attempts
     signatureMaxAgeS: 300,                                                 // Key proof freshness (seconds)
-    replayCacheSize: 100000,                                               // Signature replay history size (per realm)
+    replayCacheSize: 10000,                                                // Signature replay history size (per realm)
     interactionStartModes: "redirect,app,user_code,user_code_uri",         // Interaction start modes
     finishMethods: "redirect,push",                                        // Interaction finish methods
     keyProofs: "httpsig,mtls,jwsd,jws",                                    // Key proofing methods
@@ -320,7 +320,7 @@ var config = {
     dpopNonceRequired: false,                    // Require a DPoP server nonce
     dpopIatSkewS: 300,                           // DPoP proof iat window (s)
     dpopNonceTtlS: 300,                          // DPoP server nonce lifetime (s)
-    dpopReplayCacheSize: 100000,                 // DPoP proof replay history size (per realm)
+    dpopReplayCacheSize: 10000,                  // DPoP proof replay history size (per realm)
     dpopNonceCacheSize: 10000,                   // DPoP server nonces held (per realm)
     refreshTokenRotation: false,                 // Rotate refresh tokens
     refreshTokenRequireDpop: false,              // Require DPoP on refresh tokens
@@ -524,6 +524,7 @@ var config = {
     attemptsPerIdentity: 30,                                                                                                                       // Failed requests per account a window
     attemptsPerAddress: 120,                                                                                                                       // Failed requests per address a window
     nonceLifetimeS: 300,                                                                                                                           // Replay nonce lifetime (seconds)
+    maxSpentNonces: 10000,                                                                                                                         // Spent nonce history size (per realm)
     orderLifetimeS: 86400,                                                                                                                         // Order lifetime (seconds)
     eabLifetimeS: 604800                                                                                                                           // External account binding key lifetime (seconds)
   },
@@ -749,7 +750,7 @@ var config = {
     claims: "given_name,family_name",                  // Requested claims
     presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
     maxTransactions: 5000,                             // Presentation requests waiting (per realm)
-    signInRegisterMaxEntries: 100000,                  // Wallet sign-in register size (per realm)
+    signInRegisterMaxEntries: 10000,                   // Wallet sign-in register size (per realm)
     walletPresentationPath: "/vc-presentation-1.html", // Wallet presentation page
     allowedWalletUrls: "",                             // Other wallet URLs a request link may name (product)
     trustedIssuerCertificates: "",                     // Other trusted credential issuers (PEM)
