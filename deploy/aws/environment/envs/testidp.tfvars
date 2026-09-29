@@ -68,6 +68,12 @@ extra_environment = {
   # this cluster that passed the 60 s default after a day of suite runs — the
   # pools gave up and every node ran on its front process alone.
   STS_WORKERS_START_TIMEOUT_MS = "300000"
+  # NO V8 HEAP LIMIT YET (#341, rcbj 2026-09-29): -1 turns the derived limit
+  # off. Each process still logs its memory every five minutes
+  # (`process.memory-report`) and a kernel OOM kill is reported as
+  # STS-WORKER-0047. Set 0 (derive) once those reports show what each
+  # process really needs.
+  STS_WORKERS_HEAP_LIMIT_MB = "-1"
 }
 
 sts_mode                = "product"

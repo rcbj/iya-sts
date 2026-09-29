@@ -308,8 +308,10 @@ class WorkerPoolsAdmin {
         'process.';
     } else if (!configured && !running) {
       state = 'off';
-      stateText = 'Off: workers.count is 0, so every job is computed in ' +
-        'this process.';
+      // A request or surface worker's pool is sized by its own setting
+      // (#347), which `stats().setting` names.
+      stateText = 'Off: ' + String(pq.setting || 'workers.count') +
+        ' is 0, so every job is computed in this process.';
     } else if (!running && !c.forked) {
       state = 'not-forked';
       stateText = 'Not forked yet: the pool forks on the first ' +
@@ -420,7 +422,9 @@ class WorkerPoolsAdmin {
       id: 'post-quantum',
       title: 'Post-quantum pool',
       module: 'common/worker_pool.js',
-      setting: 'workers.count',
+      // Two settings size it (#347): `workers.count` in the front process,
+      // `workers.countInRequestWorkers` in each request or surface worker.
+      setting: 'workers.count, workers.countInRequestWorkers',
       state: state,
       stateText: stateText,
       perProcess: true,
