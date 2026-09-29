@@ -2000,11 +2000,55 @@ class CertEnrollment {
       return [];
     }
     log.debug("Leaving CertEnrollment.enrolledOf().");
-    return self.parseJsonValues(values).map(function (one) {
-      return self.publicRecord(one);
-    }).sort(function (a, b) {
+    return self.enrolledFrom(values).sort(function (a, b) {
       return String(b.issuedAt).localeCompare(String(a.issuedAt));
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE RECORDS OUT OF VALUES ALREADY READ, optionally of ONE FAMILY — and
+  // the family is decided BEFORE the parse (#352, 2026-09-29).
+  //
+  // Each value is one JSON record carrying a PEM, a subject, names and a
+  // `family`; the SCEP page wanted SCEP's and parsed EST's and ACME's to find
+  // out they were not. `ofFamily()` below reads the family off the TEXT, and a
+  // value that cannot be of the family asked for is never parsed.
+  // ---------------------------------------------------------------------------
+  enrolledFrom(values, family?) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.enrolledFrom(). family=" + family);
+    const wanted = family ? (values || []).filter(function (value) {
+      return self.mayBeOfFamily(value, family);
+    }) : (values || []);
+    const out = self.parseJsonValues(wanted).filter(function (one) {
+      return !family || one.family === family;
+    }).map(function (one) {
+      return self.publicRecord(one);
+    });
+    log.debug("Leaving CertEnrollment.enrolledFrom(). " + out.length + ".");
+    return out;
+  }
+
+  // Can this stored value be a record of `family`? **FALSE ONLY WHEN IT
+  // CANNOT**, so the answer after the parse is exactly the answer without
+  // this test. JSON can spell a key or a string in two ways: literally, or
+  // with `\u` escapes. Without a `\u` anywhere in the value, a record whose
+  // `family` is `scep` must contain `"family"`, optional whitespace, a colon,
+  // optional whitespace and `"scep"` literally — so the absence of that is
+  // proof. With one, the value is parsed, whatever it holds. A family is one
+  // of three fixed words, so it needs no escaping inside the expression; a
+  // name that is not a plain word is not tested and the value is parsed.
+  // Hot path for a realm's enrolled certificates: one test per stored value,
+  // so no Entering/Leaving pair — two log lines per value would be most of
+  // the listing's log.
+  mayBeOfFamily(value, family) {
+    const text = String(value);
+    const word = String(family);
+    if (!/^[a-z0-9-]+$/.test(word) || text.indexOf('\\u') >= 0) {
+      return true;
+    }
+    return new RegExp('"family"\\s*:\\s*"' + word + '"').test(text);
   }
 
   // ---------------------------------------------------------------------------
@@ -3360,8 +3404,17 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.eabsOf().");
     const values = self.readAttribute(entry, 'eab') || [];
-    const nowMs = Date.now();
     log.debug("Leaving CertEnrollment.eabsOf().");
+    return self.eabsFrom(values);
+  }
+
+  // `eabsOf()` out of values already read (#352), for the realm listing.
+  eabsFrom(values) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.eabsFrom().");
+    const nowMs = Date.now();
+    log.debug("Leaving CertEnrollment.eabsFrom().");
     return self.parseJsonValues(values).map(function (one) {
       return { kid: one.kid, createdAt: one.createdAt,
                expiresAt: one.expiresAt, createdBy: one.createdBy,
@@ -3621,8 +3674,17 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.scepChallengesOf().");
     const values = self.readAttribute(entry, 'challenge') || [];
-    const nowMs = Date.now();
     log.debug("Leaving CertEnrollment.scepChallengesOf().");
+    return self.challengesFrom(values);
+  }
+
+  // `scepChallengesOf()` out of values already read (#352).
+  challengesFrom(values) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.challengesFrom().");
+    const nowMs = Date.now();
+    log.debug("Leaving CertEnrollment.challengesFrom().");
     return self.parseJsonValues(values).map(function (one) {
       return { id: one.id, profile: one.profile, createdAt: one.createdAt,
                expiresAt: one.expiresAt, createdBy: one.createdBy,
@@ -3730,8 +3792,65 @@ class CertEnrollment {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // EVERY HOLDER OF AN ATTRIBUTE WITH ITS VALUES, IN ONE WALK (#352,
+  // 2026-09-29): `[{ entry, values }]`, in `holdersOf()`'s order.
+  //
+  // The four realm listings below were `holdersOf()` — a walk that FOUND the
+  // values — and then `readAttribute()` per holder, which is `resolveEntry()`:
+  // a second directory lookup, and a copy of eight attributes, to read the
+  // one the walk had just seen. The directory's `holdersWithValues()` hands
+  // the values back from the walk. Under #349's window each is one
+  // statement, where the old shape was one plus one per holder.
+  //
+  // A directory without `holdersWithValues()` (an older filler, a test's
+  // stub) is asked the old way.
+  // ---------------------------------------------------------------------------
+  holdersWithValuesOf(key) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.holdersWithValuesOf(). key=" + key);
+    const out = [];
+    if (!self.directory) {
+      log.debug("Leaving CertEnrollment.holdersWithValuesOf(). No directory.");
+      return out;
+    }
+    if (typeof self.directory.holdersWithValues !== 'function') {
+      self.holdersOf(key).forEach(function (entry) {
+        const values = self.readAttribute(entry, key);
+        if (values) {
+          out.push({ entry: entry, values: values });
+        }
+      });
+      log.debug("Leaving CertEnrollment.holdersWithValuesOf(). " +
+                out.length + ", read one by one.");
+      return out;
+    }
+    ['person', 'application'].forEach(function (kind) {
+      let rows = [];
+      try {
+        rows = self.directory.holdersWithValues(kind,
+                                                ATTRIBUTES[kind][key]) || [];
+      } catch (e) {
+        log.debug("Caught in CertEnrollment.holdersWithValuesOf(): " +
+                  ((e && e.message) || e));
+        rows = [];
+      }
+      rows.forEach(function (row) {
+        out.push({ entry: { kind: kind, id: String(row.id) },
+                   values: (row.values || []).slice() });
+      });
+    });
+    log.debug("Leaving CertEnrollment.holdersWithValuesOf(). " + out.length +
+              " holder(s).");
+    return out;
+  }
+
   /**
    * Lists every enrolled certificate in the ambient realm, newest first.
+   *
+   * Records of another family are recognised on their text and never parsed
+   * (#352).
    *
    * @param family - the family to list; every family when omitted
    * @returns the records, each with its entry
@@ -3742,13 +3861,13 @@ class CertEnrollment {
     log.debug("Entering CertEnrollment.certificatesInRealm(). family=" +
               family);
     const out = [];
-    self.holdersOf('certificate').forEach(function (entry) {
-      self.enrolledOf(entry).forEach(function (record) {
-        if (!family || record.family === family) {
-          out.push(Object.assign({ entry: entry,
-                                   entryUri: self.entryUri(entry) },
-                                 record));
-        }
+    self.holdersWithValuesOf('certificate').forEach(function (held) {
+      const entryUri = self.entryUri(held.entry);
+      self.enrolledFrom(held.values, family).sort(function (a, b) {
+        return String(b.issuedAt).localeCompare(String(a.issuedAt));
+      }).forEach(function (record) {
+        out.push(Object.assign({ entry: held.entry, entryUri: entryUri },
+                               record));
       });
     });
     log.debug("Leaving CertEnrollment.certificatesInRealm(). " + out.length +
@@ -3756,6 +3875,37 @@ class CertEnrollment {
     return out.sort(function (a, b) {
       return String(b.issuedAt).localeCompare(String(a.issuedAt));
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // HOW MANY, AND IN WHICH STATE — for the monitors' tiles (#352). They asked
+  // `certificatesInRealm()` for the whole list to read its `length`, which
+  // built, copied and sorted a row per certificate to count them. This reads
+  // the same records and keeps four numbers; the state is `publicRecord()`'s
+  // own rule, so a tile and the list beside it cannot disagree.
+  // ---------------------------------------------------------------------------
+  /**
+   * Counts the enrolled certificates of a family in the ambient realm, by
+   * state, without building a row for any of them.
+   *
+   * @param family - the family to count; every family when omitted
+   * @returns `{ held, valid, revoked, expired }`
+   */
+  certificateCountsInRealm(family?) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.certificateCountsInRealm(). family=" +
+              family);
+    const out = { held: 0, valid: 0, revoked: 0, expired: 0 };
+    self.holdersWithValuesOf('certificate').forEach(function (held) {
+      self.enrolledFrom(held.values, family).forEach(function (record) {
+        out.held += 1;
+        out[record.status] += 1;
+      });
+    });
+    log.debug("Leaving CertEnrollment.certificateCountsInRealm(). " +
+              out.held + ".");
+    return out;
   }
 
   /**
@@ -3768,9 +3918,10 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.eabsInRealm().");
     const out = [];
-    self.holdersOf('eab').forEach(function (entry) {
-      self.eabsOf(entry).forEach(function (one) {
-        out.push(Object.assign({ entry: entry, entryUri: self.entryUri(entry) },
+    self.holdersWithValuesOf('eab').forEach(function (held) {
+      const entryUri = self.entryUri(held.entry);
+      self.eabsFrom(held.values).forEach(function (one) {
+        out.push(Object.assign({ entry: held.entry, entryUri: entryUri },
                                one));
       });
     });
@@ -3790,9 +3941,10 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.challengesInRealm().");
     const out = [];
-    self.holdersOf('challenge').forEach(function (entry) {
-      self.scepChallengesOf(entry).forEach(function (one) {
-        out.push(Object.assign({ entry: entry, entryUri: self.entryUri(entry) },
+    self.holdersWithValuesOf('challenge').forEach(function (held) {
+      const entryUri = self.entryUri(held.entry);
+      self.challengesFrom(held.values).forEach(function (one) {
+        out.push(Object.assign({ entry: held.entry, entryUri: entryUri },
                                one));
       });
     });
@@ -3812,10 +3964,13 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.hostNamesInRealm().");
     const out = [];
-    self.holdersOf('hostName').forEach(function (entry) {
-      const names = self.hostNamesOf(entry);
+    self.holdersWithValuesOf('hostName').forEach(function (held) {
+      // `resolveEntry()`'s reading of the attribute, from the values in hand.
+      const names = held.values.map(function (one) {
+        return self.normalHostName(one);
+      }).filter(function (one) { return !!one; });
       if (names.length) {
-        out.push({ entry: entry, entryUri: self.entryUri(entry),
+        out.push({ entry: held.entry, entryUri: self.entryUri(held.entry),
                    hostNames: names });
       }
     });
@@ -4388,6 +4543,7 @@ export = {
   addHostName: slot.forward('addHostName'),
   removeHostName: slot.forward('removeHostName'),
   certificatesInRealm: slot.forward('certificatesInRealm'),
+  certificateCountsInRealm: slot.forward('certificateCountsInRealm'),
   eabsInRealm: slot.forward('eabsInRealm'),
   challengesInRealm: slot.forward('challengesInRealm'),
   hostNamesInRealm: slot.forward('hostNamesInRealm'),
