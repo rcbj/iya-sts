@@ -889,6 +889,12 @@ const CODES = [
       'starts failing, not on every run or page; the page draws this node ' +
       'alone and says why.',
     spec: 'none — the pages and their API still answer 200' },
+  { code: 'STS-CORE-0128',
+    summary: 'The hourly cluster.node-snapshot-purge job could not delete ' +
+      'the snapshots of nodes that are no longer live cluster members ' +
+      '(#332). Logged when it starts failing, not on every run; the rows ' +
+      'stay, and the pages go on drawing those nodes as gone.',
+    spec: 'none — the scheduler records the failed run' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

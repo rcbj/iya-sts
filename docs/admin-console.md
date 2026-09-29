@@ -1047,8 +1047,9 @@ In a cluster, Worker pools and Node health show **every node, by name**
 that draws the page shows its own figures live; every other node's come from
 the snapshot it writes to the shared database every 15 seconds, each stamped
 with its age. A node whose snapshot is more than 45 seconds old is marked
-**stale**, one the cluster no longer lists is marked **gone**, and one that
-has not written a snapshot yet says so — none is left off. Above the nodes,
+**stale**, one the cluster no longer lists is marked **gone** — and is removed a day
+after its last snapshot (`cluster.nodeSnapshotRetentionHours`), which its
+section says — and one that has not written a snapshot yet says so. Above the nodes,
 the cluster's totals: each pool's workers, busy and free, and crashes; the
 containers' memory against their limits, CPU, and the processes. Add
 `?node=<name>` to see one node. With no cluster the pages show the one node,

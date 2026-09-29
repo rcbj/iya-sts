@@ -623,6 +623,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `persistence.tombstone-purge` | cluster, service; ten minutes, registered at the first flush | `persistence/persistence_minted.js` (P5) |
 | `cluster.cache-report` | per-process, quiet; front processes that joined | `cluster/cluster.js` (P5) |
 | `cluster.node-snapshot` | per-process, quiet; every 15 s, joined front processes of a cluster whose store is shared — writes the node's Worker Pools and Node Health views to `sts_node_snapshots` (#332) | `cluster/node_snapshots.ts` |
+| `cluster.node-snapshot-purge` | cluster, service; hourly, off with no cluster store — deletes the row of a node that is not a live member once its snapshot is older than `cluster.nodeSnapshotRetentionHours` (24); never a live member's, nothing while membership cannot be read (#332) | `cluster/node_snapshots.ts` |
 | `cluster.claims-purge` | cluster, service; a minute, registered at the first claim against a database | `cluster/cluster_claims.js` (P5) |
 | `cluster.rate-window-purge` | cluster, service; a minute, registered at the first shared count | `cluster/cluster_counters.js` (P5) |
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
@@ -675,11 +676,22 @@ node draws a page reads every row.
   `cluster.nodeName` (`STS_CLUSTER_NODE_NAME`), which survives a restart
   where the membership UUID does not, so the table is as long as the list of
   names and never grows with time.
-* **MARKED, NEVER DROPPED.** Every age is the database's clock (`taken_at`
-  against the query's `now`). `stale` past three intervals, `gone` when
-  membership has no live row by the name (its last snapshot kept and drawn),
-  `no-snapshot` for a live member that has written none; when membership
-  cannot be read, nobody is called gone.
+* **MARKED, NEVER SILENTLY DROPPED.** Every age is the database's clock
+  (`taken_at` against the query's `now`). `stale` past three intervals,
+  `gone` when membership has no live row by the name (its last snapshot kept
+  and drawn, saying when it will be removed), `no-snapshot` for a live member
+  that has written none; when membership cannot be read, nobody is called
+  gone.
+* **A GONE NODE EXPIRES AFTER A DAY** (rcbj's answer on #332):
+  `cluster.node-snapshot-purge`, a CLUSTER job run hourly on the scheduler's
+  leader, deletes every row older than `cluster.nodeSnapshotRetentionHours`
+  (24, at least 1) by the database's clock whose name is not a live member's.
+  The names to keep are read FRESH (`cluster.state()`), with this node's own
+  added; a read that fails, or a state with no membership, deletes nothing
+  and says so in the run's summary. The driver refuses an empty keep list for
+  the same reason. Each deletion is logged once at info, by name; a delete
+  that fails is `STS-CORE-0128`, logged when it starts failing, and thrown so
+  the scheduler records the run as failed.
 * **THE ANSWERING NODE IS LIVE.** Its own section is its live view; its own
   row is never drawn. The totals are over the nodes not gone.
 * **NAMES, NEVER ADDRESSES.** Neither page carries a host name any more — it

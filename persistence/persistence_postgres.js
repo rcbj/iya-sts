@@ -3721,6 +3721,32 @@ function create(options) {
       });
     },
 
+    // A GONE NODE'S SNAPSHOT, EXPIRED (#332): every row older than
+    // `olderThanMs` by the database's clock whose name is not in
+    // `keepNames` — the live members, which the caller read — deleted, and
+    // the names answered for the log. An empty `keepNames` is refused: the
+    // caller keeps at least its own name, and a list that came back empty
+    // is a membership read that failed, not a cluster with no members.
+    purgeNodeSnapshots: function (olderThanMs, keepNames) {
+      log.debug("Entering purgeNodeSnapshots().");
+      const keep = (keepNames || []).map(String);
+      if (!keep.length || !(Number(olderThanMs) > 0)) {
+        log.debug("Leaving purgeNodeSnapshots(). Refused.");
+        return Promise.reject(new Error('purgeNodeSnapshots needs the live ' +
+          'names and an age'));
+      }
+      log.debug("Leaving purgeNodeSnapshots().");
+      return pool.query(
+        'DELETE FROM sts_node_snapshots WHERE taken_at < ' + DB_NOW +
+        ' - $1 AND NOT (name = ANY($2::text[])) RETURNING name, taken_at',
+        [Number(olderThanMs), keep]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { name: row.name, takenAt: Number(row.taken_at) };
+        });
+      });
+    },
+
     // EVERY NODE'S LATEST SNAPSHOT (#332), with the database clock to read
     // their ages against. Bounded twice: a row per name, and at most 64.
     nodeSnapshots: function () {

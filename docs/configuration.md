@@ -2468,3 +2468,14 @@ a field, read through `common/secrets.js` — never a value here), the outbox th
 | `mail.verificationTtlMinutes` | `STS_MAIL_VERIFICATION_TTL_MINUTES` | `1440` | yes | How long an address verification link works. |
 | `mail.securityNotices` | `STS_MAIL_SECURITY_NOTICES` | `true` | yes | Tell a person, at the address on their entry, when their account is disabled, their sessions are ended by an administrator, their password is changed or reset, their credential is marked compromised or recovery is started. |
 | `mail.notifyAdministrators` | `STS_MAIL_NOTIFY_ADMINISTRATORS` | `true` | yes | When the SERVICE, not a person, marks a credential compromised or disables an account (risk scoring), also mail every member of the realm's Admin Write roster that has an address. |
+
+### Cluster
+
+Several containers against one PostgreSQL store (`cluster/CLAUDE.md`). Most of
+the cluster's settings are read when a node joins and are argued on
+Server configuration → **Cluster** (`/admin/cluster`); this is the one that
+belongs to the pages that show every node.
+
+| Setting | Environment | Default | Change while running | What it does |
+|---|---|---|---|---|
+| `cluster.nodeSnapshotRetentionHours` | `STS_CLUSTER_NODE_SNAPSHOT_RETENTION_HOURS` | `24` | yes | How long Monitoring → Worker Pools and → Node Health keep showing a node that is no longer a live cluster member, from its last snapshot; the hourly `cluster.node-snapshot-purge` job then deletes it. A live member's row is never deleted, and nothing is deleted while membership cannot be read. |

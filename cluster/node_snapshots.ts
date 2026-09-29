@@ -27,12 +27,17 @@
 //     node, its own from its LIVE figures and every other from its row,
 //     stamped with its age by the DATABASE's clock (the row's `taken_at` and
 //     the query's `now`, never this container's clock against another's).
-//   * **A NODE IS MARKED, NEVER DROPPED.** `stale` when its row is older than
-//     STALE_MS (three intervals), `gone` when cluster membership has no live
-//     row by that name, `no-snapshot` when membership lists it and it has
-//     written nothing yet. A decommissioned node's row stays, marked gone,
-//     until somebody deletes it — it is one row, and a node that vanished
-//     from the page would read as a cluster that is smaller than it is.
+//   * **A NODE IS MARKED, NEVER SILENTLY DROPPED.** `stale` when its row is
+//     older than STALE_MS (three intervals), `gone` when cluster membership
+//     has no live row by that name, `no-snapshot` when membership lists it
+//     and it has written nothing yet. A gone node stays on the page, saying
+//     when it will be removed, until its snapshot is older than
+//     `cluster.nodeSnapshotRetentionHours` (a day — rcbj's answer on #332);
+//     then the CLUSTER job `cluster.node-snapshot-purge`, hourly on the
+//     scheduler's leader, deletes its row. **A live member's row is never
+//     deleted, however old**, and **nothing is deleted while membership
+//     cannot be read**: the list of names to keep is read fresh for the run,
+//     and a read that fails or comes back empty ends the run with no delete.
 //   * **NODES ARE NAMED, NEVER ADDRESSED.** The name is `cluster.nodeName`
 //     (`STS_CLUSTER_NODE_NAME`, node-a, node-b, …); a name that is itself an
 //     address — the host name a node falls back to, which on Fargate is
@@ -75,6 +80,17 @@ const STALE_MS = 3 * INTERVAL_MS;
  */
 const JOB_ID = 'cluster.node-snapshot';
 
+/**
+ * The job that deletes a gone node's row once it is older than
+ * `cluster.nodeSnapshotRetentionHours`.
+ */
+const PURGE_JOB_ID = 'cluster.node-snapshot-purge';
+
+/**
+ * How often the purge runs: hourly.
+ */
+const PURGE_EVERY_MS = 60 * 60 * 1000;
+
 // An IPv4 literal, wherever it is in a string. IPv6 is not matched: nothing
 // on these pages is IPv6, and a pattern loose enough to find one would find
 // every time of day.
@@ -87,6 +103,8 @@ const IP_HOST = /^ip-\d{1,3}-\d{1,3}-\d{1,3}-\d{1,3}\b/;
 interface NodeSnapshotsDeps {
   log: typeof helpers.log;
   errorCodes: typeof errorCodes;
+  // `cluster.nodeSnapshotRetentionHours`, read when used.
+  retentionHours: () => number;
   cluster: () => any;
   store: () => any;
   scheduler: () => any;
@@ -113,12 +131,17 @@ class NodeSnapshots {
    */
   static readonly JOB_ID = JOB_ID;
 
+  /**
+   * See the module's `PURGE_JOB_ID`.
+   */
+  static readonly PURGE_JOB_ID = PURGE_JOB_ID;
+
   // The views this node writes, by key: `workerPools`, `nodeHealth`.
   private providers = new Map<string, () => Promise<Json>>();
 
   // Whether the last read or write of the store failed, so that a failure is
   // logged when it starts rather than on every page and every run.
-  private failing = { read: false, write: false };
+  private failing = { read: false, write: false, purge: false };
 
   /**
    * Builds an instance over the modules it depends on.
@@ -142,6 +165,13 @@ class NodeSnapshots {
     return {
       log: log,
       errorCodes: errorCodes,
+      retentionHours: function retentionHours(): number {
+        log.debug("Entering retentionHours().");
+        const hours = Number(require('../common/config')
+          .value('cluster.nodeSnapshotRetentionHours'));
+        log.debug("Leaving retentionHours().");
+        return hours >= 1 ? hours : 24;
+      },
       cluster: function cluster(): any {
         log.debug("Entering cluster().");
         log.debug("Leaving cluster().");
@@ -314,8 +344,35 @@ class NodeSnapshots {
       // A process without the scheduler (a narrow test) runs no job.
       sched = null;
     }
-    if (!sched || typeof sched.register !== 'function' || sched.job(JOB_ID)) {
-      log.debug("Leaving NodeSnapshots.ensureJob(). Nothing to register.");
+    if (!sched || typeof sched.register !== 'function') {
+      log.debug("Leaving NodeSnapshots.ensureJob(). No scheduler.");
+      return;
+    }
+    if (!sched.job(PURGE_JOB_ID)) {
+      sched.register({
+        id: PURGE_JOB_ID,
+        title: 'Node snapshot purge',
+        describe: 'Deletes the Worker Pools and Node Health snapshot of a ' +
+                  'node that is no longer a live cluster member once it is ' +
+                  'older than cluster.nodeSnapshotRetentionHours; never a ' +
+                  'live member\'s, and nothing while membership cannot be ' +
+                  'read (#332).',
+        owner: 'cluster/node_snapshots.ts',
+        kind: 'cluster',
+        everyMs: function (): number {
+          return PURGE_EVERY_MS;
+        },
+        off: function (): string {
+          return self.whyNoCluster();
+        },
+        manual: true,
+        run: function (): Promise<Json> {
+          return self.purge();
+        }
+      });
+    }
+    if (sched.job(JOB_ID)) {
+      log.debug("Leaving NodeSnapshots.ensureJob(). Registered.");
       return;
     }
     sched.register({
@@ -385,6 +442,88 @@ class NodeSnapshots {
     return { written: true, node: name, views: keys };
   }
 
+  /**
+   * Deletes the row of every node that is not a live member and whose
+   * snapshot is older than the retention; keeps everything when membership
+   * cannot be read (#332).
+   *
+   * @returns a promise of the run's summary
+   */
+  async purge(): Promise<Json> {
+    const { log, store, cluster, errorCodes, retentionHours } = this.deps;
+    log.debug("Entering NodeSnapshots.purge().");
+    const shared = store();
+    if (!shared || typeof shared.purgeNodeSnapshots !== 'function') {
+      log.debug("Leaving NodeSnapshots.purge(). No store.");
+      return { purged: 0, why: 'no cluster store' };
+    }
+    // FRESH, not the snapshot a page reads: a purge acts on it.
+    let live: Set<string> | null = null;
+    try {
+      live = this.liveNamesOf(await cluster().state());
+    } catch (e) {
+      log.debug("Caught in NodeSnapshots.purge(): " +
+                ((e && e.message) || e));
+      // Unknown membership deletes nothing; said in the summary.
+      live = null;
+    }
+    if (!live || !live.size) {
+      log.debug("Leaving NodeSnapshots.purge(). Membership unknown.");
+      return { purged: 0,
+               why: 'cluster membership could not be read, so nothing was ' +
+                    'deleted' };
+    }
+    live.add(this.selfName());
+    const hours = retentionHours();
+    let gone: Json[] = [];
+    try {
+      gone = await shared.purgeNodeSnapshots(hours * 60 * 60 * 1000,
+                                             Array.from(live));
+    } catch (e) {
+      log.debug("Caught in NodeSnapshots.purge(): " +
+                ((e && e.message) || e));
+      if (!this.failing.purge) {
+        log.warn(errorCodes.tag('STS-CORE-0128') + 'node snapshots: gone ' +
+                 'nodes\' snapshots could not be deleted from the shared ' +
+                 'store: ' + ((e && e.message) || e));
+      }
+      this.failing.purge = true;
+      log.debug("Leaving NodeSnapshots.purge(). Failed.");
+      throw e;
+    }
+    this.failing.purge = false;
+    gone.forEach(function (row: Json): void {
+      log.info('node snapshots: removed the snapshot of ' +
+               NodeSnapshots.displayName(row.name) + ', which is not a live ' +
+               'cluster member and wrote nothing for ' + hours + ' h ' +
+               '(cluster.nodeSnapshotRetentionHours).');
+    });
+    log.debug("Leaving NodeSnapshots.purge(). " + gone.length + " removed.");
+    return { purged: gone.length, retentionHours: hours,
+             nodes: gone.map(function (row: Json): string {
+               return NodeSnapshots.displayName(row.name);
+             }) };
+  }
+
+  // The names a cluster state lists as live, or null when it cannot say.
+  private liveNamesOf(state: Json): Set<string> | null {
+    const { log } = this.deps;
+    log.debug("Entering NodeSnapshots.liveNamesOf().");
+    if (!state || !state.available || !Array.isArray(state.nodes)) {
+      log.debug("Leaving NodeSnapshots.liveNamesOf(). Unknown.");
+      return null;
+    }
+    const now = Number(state.now) || 0;
+    const names = new Set<string>();
+    state.nodes.forEach(function (node: Json): void {
+      if (!Number(node.leftAt) && Number(node.expiresAt) > now) {
+        names.add(NodeSnapshots.displayName(node.name));
+      }
+    });
+    log.debug("Leaving NodeSnapshots.liveNamesOf(). " + names.size);
+    return names;
+  }
+
   // The names cluster membership lists as live, or null when it cannot say.
   private async liveNames(): Promise<Set<string> | null> {
     const { log, cluster } = this.deps;
@@ -402,19 +541,8 @@ class NodeSnapshots {
       // Membership unknown: no node is called gone on a guess.
       state = null;
     }
-    if (!state || !state.available || !Array.isArray(state.nodes)) {
-      log.debug("Leaving NodeSnapshots.liveNames(). Unknown.");
-      return null;
-    }
-    const now = Number(state.now) || 0;
-    const names = new Set<string>();
-    state.nodes.forEach(function (node: Json): void {
-      if (!Number(node.leftAt) && Number(node.expiresAt) > now) {
-        names.add(NodeSnapshots.displayName(node.name));
-      }
-    });
-    log.debug("Leaving NodeSnapshots.liveNames(). " + names.size);
-    return names;
+    log.debug("Leaving NodeSnapshots.liveNames().");
+    return this.liveNamesOf(state);
   }
 
   /**
@@ -441,6 +569,7 @@ class NodeSnapshots {
                               (STALE_MS / 1000) + ' s.',
                             intervalSeconds: INTERVAL_MS / 1000,
                             staleAfterSeconds: STALE_MS / 1000,
+                            goneRemovedAfterHours: this.deps.retentionHours(),
                             readError: null };
     if (why) {
       log.debug("Leaving NodeSnapshots.read(). No cluster.");
@@ -466,6 +595,7 @@ class NodeSnapshots {
     }
     const live = await this.liveNames();
     const now = Number(answer.now) || 0;
+    const retention = this.deps.retentionHours() * 3600000;
     const seen = new Set<string>([selfName]);
     const others: Json[] = [];
     (answer.rows || []).forEach(function (row: Json): void {
@@ -480,9 +610,14 @@ class NodeSnapshots {
       let stateText: string;
       if (live && !live.has(name)) {
         state = 'gone';
+        const leftH = Math.max(0, retention - ageMs) / 3600000;
         stateText = 'Gone: cluster membership has no live node by this ' +
           'name. Its last snapshot is kept, ' + Math.round(ageMs / 1000) +
-          ' s old.';
+          ' s old, and removed after ' + (retention / 3600000) + ' h ' +
+          'without a snapshot (cluster.nodeSnapshotRetentionHours) — ' +
+          (leftH > 0 ? 'in about ' + (leftH >= 1 ? Math.ceil(leftH) + ' h'
+                                                 : 'an hour')
+                     : 'at the next hourly purge') + '.';
       } else if (ageMs > STALE_MS) {
         state = 'stale';
         stateText = 'Stale: its latest snapshot is ' +
@@ -549,6 +684,7 @@ export = {
   INTERVAL_MS: INTERVAL_MS,
   STALE_MS: STALE_MS,
   JOB_ID: JOB_ID,
+  PURGE_JOB_ID: PURGE_JOB_ID,
   /**
    * Installs the instance the composition root built; a second install is
    * refused.
@@ -561,6 +697,7 @@ export = {
   provide: slot.forward('provide'),
   read: slot.forward('read'),
   write: slot.forward('write'),
+  purge: slot.forward('purge'),
   selfName: slot.forward('selfName'),
   whyNoCluster: slot.forward('whyNoCluster'),
   scrub: NodeSnapshots.scrub,

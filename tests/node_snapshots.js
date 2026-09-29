@@ -12,7 +12,7 @@
 // store and reads every node's back; the two pages draw a section per node
 // and the cluster's totals. This file drives the REAL class over a cluster
 // and a store it fakes — membership rows, snapshot rows and the database
-// clock — and the REAL page classes over it. Seven claims:
+// clock — and the REAL page classes over it. Eight claims:
 //
 //   1. STATES: this node live from its own view; another node live, stale
 //      past three intervals, gone when membership has no live row by its
@@ -33,6 +33,11 @@
 //      narrowing to one and refusing an unknown name — and each page's
 //      HTML with a section per node whose anchors do not collide.
 //   7. A READ THAT FAILS draws this node alone and says why.
+//   8. THE PURGE (rcbj: a day): a gone node past
+//      `cluster.nodeSnapshotRetentionHours` is deleted by the hourly CLUSTER
+//      job; a gone node younger is kept and says when it goes; a live
+//      member's old row and this node's are never deleted; membership that
+//      cannot be read deletes nothing; a failed delete is thrown.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -116,6 +121,7 @@ function healthView(name, usedMiB, limitMiB, cores, vcpus) {
 function aCluster(opts) {
   log.debug("Entering aCluster().");
   const puts = [];
+  const purgeCalls = [];
   const cluster = {
     enabled: function () {
       return opts.enabled !== false;
@@ -139,6 +145,17 @@ function aCluster(opts) {
     },
     refreshState: function () {
       return Promise.resolve(null);
+    },
+    // The fresh read a purge makes; `opts.stateFails` makes it throw and
+    // `opts.stateUnavailable` answers a state with no membership.
+    state: function () {
+      if (opts.stateFails) {
+        return Promise.reject(new Error('the pool is closed'));
+      }
+      if (opts.stateUnavailable) {
+        return Promise.resolve({ available: false });
+      }
+      return Promise.resolve(cluster.snapshot().state);
     }
   };
   const store = opts.noStore ? null : {
@@ -154,6 +171,24 @@ function aCluster(opts) {
         return Promise.reject(new Error('the pool is closed'));
       }
       return Promise.resolve({ now: NOW, rows: opts.rows || [] });
+    },
+    // The driver's rule, over the rows given: older than the age by the
+    // database clock (NOW) and not a kept name.
+    purgeNodeSnapshots: function (olderThanMs, keepNames) {
+      purgeCalls.push({ olderThanMs: olderThanMs, keep: keepNames.slice() });
+      if (opts.failPurge) {
+        return Promise.reject(new Error('permission denied'));
+      }
+      const gone = (opts.rows || []).filter(function (row) {
+        return row.takenAt < NOW - olderThanMs &&
+               keepNames.indexOf(row.name) < 0;
+      });
+      opts.rows = (opts.rows || []).filter(function (row) {
+        return gone.indexOf(row) < 0;
+      });
+      return Promise.resolve(gone.map(function (row) {
+        return { name: row.name, takenAt: row.takenAt };
+      }));
     }
   };
   const registered = [];
@@ -171,6 +206,9 @@ function aCluster(opts) {
   const instance = new NodeSnapshots({
     log: require('../common/helpers').log,
     errorCodes: require('../common/error_codes'),
+    retentionHours: function () {
+      return opts.retentionHours || 24;
+    },
     cluster: function () {
       return cluster;
     },
@@ -182,7 +220,8 @@ function aCluster(opts) {
     }
   });
   log.debug("Leaving aCluster().");
-  return { instance: instance, puts: puts, registered: registered };
+  return { instance: instance, puts: puts, registered: registered,
+           purgeCalls: purgeCalls, opts: opts };
 }
 
 // Two other nodes' rows and a membership, the shape of a three-node
@@ -346,8 +385,11 @@ async function checkJob(t) {
   c.instance.provide('nodeHealth', function () {
     return Promise.resolve({ node: 'node-a' });
   });
-  t.equal(c.registered.length, 1, 'one registration for both views');
-  const job = c.registered[0];
+  t.equal(c.registered.length, 2,
+          'one snapshot job for both views, and the purge');
+  const job = c.registered.filter(function (j) {
+    return j.id === 'cluster.node-snapshot';
+  })[0];
   t.check(job.id === 'cluster.node-snapshot' && job.kind === 'per-process' &&
           job.quiet === true && job.everyMs() === 15000,
           'cluster.node-snapshot, per-process, quiet, every 15 s',
@@ -360,14 +402,18 @@ async function checkJob(t) {
   worker.instance.provide('workerPools', function () {
     return Promise.resolve({});
   });
-  t.check(/not a joined front process/.test(worker.registered[0].off('')),
-          'off in a request worker', worker.registered[0].off(''));
+  const workerJob = worker.registered.filter(function (j) {
+    return j.id === 'cluster.node-snapshot';
+  })[0];
+  t.check(/not a joined front process/.test(workerJob.off('')),
+          'off in a request worker', workerJob.off(''));
   const off = aCluster({ enabled: false });
   off.instance.provide('workerPools', function () {
     return Promise.resolve({});
   });
-  t.check(/no cluster/.test(off.registered[0].off('')),
-          'off with no cluster', off.registered[0].off(''));
+  t.check(off.registered.every(function (j) {
+    return /no cluster/.test(j.off(''));
+  }), 'both off with no cluster', off.registered[0].off(''));
   log.debug("Leaving checkJob().");
 }
 
@@ -473,6 +519,93 @@ async function checkReadFailure(t) {
   log.debug("Leaving checkReadFailure().");
 }
 
+// ---------------------------------------------------------------------------
+// 8. A GONE NODE EXPIRES AFTER THE RETENTION, AND NOTHING ELSE DOES.
+// ---------------------------------------------------------------------------
+async function checkPurge(t) {
+  log.debug("Entering checkPurge().");
+  t.log.info('=== 8. the purge: a gone node older than the retention, and ' +
+             'nothing else ===');
+  const HOUR = 3600000;
+  const rows = function () {
+    return [
+      // Gone, 30 h without a snapshot: past a day, deleted.
+      { name: 'node-old', takenAt: NOW - 30 * HOUR, body: {} },
+      // Gone, 2 h: kept, and the page says when it goes.
+      { name: 'node-young', takenAt: NOW - 2 * HOUR, body: {
+        workerPools: poolsView('node-young', 1, 0, 0) } },
+      // A LIVE member whose row is 40 h old: never deleted.
+      { name: 'node-b', takenAt: NOW - 40 * HOUR, body: {} },
+      // This node's own, old: never deleted either.
+      { name: 'node-a', takenAt: NOW - 50 * HOUR, body: {} }
+    ];
+  };
+  const members = [{ name: 'node-a' }, { name: 'node-b' },
+                   { name: 'node-old', left: true },
+                   { name: 'node-young', expired: true }];
+  let c = aCluster({ self: 'node-a', members: members, rows: rows() });
+  c.instance.ensureJob();
+  const job = c.registered.filter(function (j) {
+    return j.id === 'cluster.node-snapshot-purge';
+  })[0];
+  t.check(!!job && job.kind === 'cluster' && job.everyMs() === HOUR &&
+          job.off('') === '',
+          'cluster.node-snapshot-purge: a CLUSTER job, hourly, on in a ' +
+          'cluster', JSON.stringify(job && { kind: job.kind }));
+  const read = await c.instance.read('workerPools',
+                                     poolsView('node-a', 1, 0, 0));
+  const young = byName(read.nodes, 'node-young');
+  t.check(young.state === 'gone' &&
+          /removed after 24 h without a snapshot/.test(young.stateText) &&
+          /in about 22 h/.test(young.stateText) &&
+          read.cluster.goneRemovedAfterHours === 24,
+          'a gone node says when it will be removed', young.stateText);
+  const summary = await job.run({});
+  t.equal(summary.nodes.join(','), 'node-old',
+          'the gone node past the retention is deleted, and only it');
+  t.check(c.purgeCalls.length === 1 &&
+          c.purgeCalls[0].olderThanMs === 24 * HOUR &&
+          c.purgeCalls[0].keep.indexOf('node-b') >= 0 &&
+          c.purgeCalls[0].keep.indexOf('node-a') >= 0 &&
+          c.purgeCalls[0].keep.indexOf('node-young') < 0,
+          'asked with the retention and the live names to keep',
+          JSON.stringify(c.purgeCalls));
+  t.equal(c.opts.rows.map(function (r) {
+    return r.name;
+  }).join(','), 'node-young,node-b,node-a',
+  'the gone node younger than the retention, the live member\'s old row ' +
+  'and this node\'s are kept');
+
+  for (const failure of ['stateFails', 'stateUnavailable']) {
+    const opts = { self: 'node-a', members: members, rows: rows() };
+    opts[failure] = true;
+    c = aCluster(opts);
+    const s = await c.instance.purge();
+    t.check(s.purged === 0 && c.purgeCalls.length === 0 &&
+            /could not be read/.test(s.why) && c.opts.rows.length === 4,
+            'membership unreadable (' + failure + '): nothing is deleted, ' +
+            'and the store is not even asked', JSON.stringify(s));
+  }
+  c = aCluster({ self: 'node-a', members: members, rows: rows(),
+                 retentionHours: 1 });
+  const s1 = await c.instance.purge();
+  t.equal(s1.nodes.sort().join(','), 'node-old,node-young',
+          'a retention of one hour deletes both gone nodes, and still no ' +
+          'live one');
+  c = aCluster({ self: 'node-a', members: members, rows: rows(),
+                 failPurge: true });
+  let threw = null;
+  try {
+    await c.instance.purge();
+  } catch (e) {
+    log.debug("Caught in checkPurge(): " + ((e && e.message) || e));
+    threw = e;
+  }
+  t.check(!!threw, 'a failed delete is thrown for the scheduler to record',
+          String(threw));
+  log.debug("Leaving checkPurge().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await checkStates(t);
@@ -482,6 +615,7 @@ async function run(t) {
   await checkJob(t);
   await checkPages(t);
   await checkReadFailure(t);
+  await checkPurge(t);
   log.debug("Leaving run().");
 }
 

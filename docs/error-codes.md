@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3756** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3757** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 70
+* [Service core (`STS-CORE`)](#sts-core) — 71
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 44
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -212,6 +212,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0125` | ECS_CONTAINER_METADATA_URI_V4 is set, but the ECS task metadata endpoint did not answer Monitoring → Node Health within its bound, or answered with an error (#329). Logged when it starts failing, not on every page; the page says so in a sentence and draws the cgroup figures without the cross-check. | none — the page and GET /admin-api/node-health still answer 200 |
 | `STS-CORE-0126` | Monitoring → Worker Pools or → Node Health, or their management API operations, were asked about a node (?node=) that is neither this node nor any node with a snapshot or a membership row (#332). | HTTP 404, with the names there are |
 | `STS-CORE-0127` | A cluster node's snapshot of Monitoring → Worker Pools and → Node Health could not be written to the shared store, or the other nodes' snapshots could not be read from it (#332). Logged when it starts failing, not on every run or page; the page draws this node alone and says why. | none — the pages and their API still answer 200 |
+| `STS-CORE-0128` | The hourly cluster.node-snapshot-purge job could not delete the snapshots of nodes that are no longer live cluster members (#332). Logged when it starts failing, not on every run; the rows stay, and the pages go on drawing those nodes as gone. | none — the scheduler records the failed run |
 
 ## STS-WORKER
 

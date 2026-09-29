@@ -1237,8 +1237,11 @@ ends anything. The ldif driver needs nothing: it writes the rows as JSON.
 Pools and → Node Health views, one row per node NAME, overwritten every
 fifteen seconds by `cluster/node_snapshots.ts`'s per-process job and read by
 whichever node draws those pages. The driver's `putNodeSnapshot()` (one
-upsert at the database's clock) and `nodeSnapshots()` (every row, at most 64,
-with the database's `now`) are the whole interface, reached through
+upsert at the database's clock), `nodeSnapshots()` (every row, at most 64,
+with the database's `now`) and `purgeNodeSnapshots(olderThanMs, keepNames)`
+(one DELETE of the rows older than the age by the database's clock whose name
+is not kept, answering the names; an empty keep list is refused, because it
+means a membership read that failed) are the whole interface, reached through
 `clusterStore()`; memory and ldif have neither, and the pages say there is
 no cluster store. **Not `sts_cluster_nodes.info`**, which is where another
 node's cache figures ride: that column is rewritten on every heartbeat and

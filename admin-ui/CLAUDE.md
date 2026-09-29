@@ -6687,8 +6687,9 @@ draw every node of a cluster by NAME: this node's section from its live view,
 every other node's from the snapshot its front process writes to the shared
 store every fifteen seconds (`cluster/node_snapshots.ts`, `cluster/CLAUDE.md`
 *Every node on two pages*), each with its age by the database's clock and
-marked `stale` (past 45 s), `gone` (membership has no live row by the name)
-or `no-snapshot`, never dropped — and the cluster's totals above them:
+marked `stale` (past 45 s), `gone` (membership has no live row by the name,
+saying when it will be removed — after `cluster.nodeSnapshotRetentionHours`,
+a day, without a snapshot) or `no-snapshot`, never silently dropped — and the cluster's totals above them:
 Worker Pools sums each pool's current, busy and free workers, forks, crashes
 and failed starts; Node Health sums container memory against the summed
 limits (only when every node has one), CPU against the summed CPUs, and the
