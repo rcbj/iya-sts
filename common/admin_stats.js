@@ -5082,14 +5082,57 @@ function userDetail(key) {
     log.debug("Leaving userDetail(). No such user.");
     return null;
   }
+  const held = holdingsOf([wanted]).get(wanted);
+  log.debug("Leaving userDetail(). " + held.tokens.length + " token(s), " +
+            held.artifacts.length + " artifact(s).");
+  return { user: row, tokens: held.tokens, artifacts: held.artifacts };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT SEVERAL IDENTITIES HOLD, FROM ONE PASS OVER EACH REGISTER (#351,
+// 2026-09-29).
+//
+// userDetail() answers one identity and builds EVERY user row to find it,
+// then walks every token and every artifact. The sign-out's `token` and
+// `issued` families asked it once each per person — four whole folds of this
+// register per person deleted, since a delete reads what the person held and
+// then ends it — and a SCIM Bulk of a hundred deletes spent most of its time
+// here. This is the half of it a sign-out needs: the token and artifact
+// records, in userDetail()'s shapes and filtered by its rules, for every key
+// asked at once. userDetail() is this with the row beside it, so the two
+// cannot disagree about what a person holds.
+//
+// What it does NOT ask is whether the identity has a row on /admin/users.
+// userDetail() answered null without one, and a sign-out read that null as
+// "holds nothing"; but every token's holder and every artifact's subject makes
+// a row (userRows() is built from exactly these records), so the only thing
+// the row ever hid was an artifact filed under somebody by its `person` alone
+// — which is theirs to have ended, and is ended now.
+// ---------------------------------------------------------------------------
+/**
+ * Returns what each identity holds: their token records and their artifact
+ * records, in userDetail()'s shapes, from one pass over each register.
+ *
+ * @param keys - the identity keys
+ * @returns a Map from each key asked to `{ tokens, artifacts }`, newest first
+ */
+function holdingsOf(keys) {
+  log.debug("Entering holdingsOf(). " + (keys || []).length + " key(s).");
+  const out = new Map();
+  (keys || []).forEach(function (key) {
+    out.set(String(key || ''), { tokens: [], artifacts: [] });
+  });
+  if (!out.size) {
+    log.debug("Leaving holdingsOf(). Nobody asked.");
+    return out;
+  }
   const nowMs = Date.now();
-  const theirTokens = [];
   tokens.forEach(function (record) {
-    if (holderKeyOf(record.username, record.sub) !== wanted) return;
-    theirTokens.push(Object.assign({ state: tokenStateOf(record, nowMs) },
+    const held = out.get(holderKeyOf(record.username, record.sub));
+    if (!held) return;
+    held.tokens.push(Object.assign({ state: tokenStateOf(record, nowMs) },
                                    record));
   });
-  theirTokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   // ACROSS EVERY PROCESS'S ROWS — see allArtifacts(). This was the LAST reader
   // still walking the bare array, and it was the one that mattered most: this
   // is what `logout.js`'s `issued` family collects, so a credential another
@@ -5099,16 +5142,22 @@ function userDetail(key) {
   // ticket whose artifact stayed `valid` because nothing had offered it for
   // revocation. The SAML assertions beside it revoked correctly, which is what
   // made it look like a Kerberos problem for a day.
-  const theirArtifacts = allArtifacts().filter(function (record) {
-    return identityKeyOf(record.subject) === wanted ||
-           (!!record.person && identityKeyOf(record.person) === wanted);
-  }).map(function (one) {
+  allArtifacts().forEach(function (one) {
+    const bySubject = out.get(identityKeyOf(one.subject));
+    const byPerson = one.person ? out.get(identityKeyOf(one.person)) : null;
+    if (!bySubject && !byPerson) return;
     const record = withRevocation(one);
-    return Object.assign({ state: artifactStateOf(record, nowMs) }, record);
-  }).sort(function (a, b) { return b.issuedAt - a.issuedAt; });
-  log.debug("Leaving userDetail(). " + theirTokens.length + " token(s), " +
-            theirArtifacts.length + " artifact(s).");
-  return { user: row, tokens: theirTokens, artifacts: theirArtifacts };
+    const shaped = Object.assign({ state: artifactStateOf(record, nowMs) },
+                                 record);
+    if (bySubject) bySubject.artifacts.push(shaped);
+    if (byPerson && byPerson !== bySubject) byPerson.artifacts.push(shaped);
+  });
+  out.forEach(function (held) {
+    held.tokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
+    held.artifacts.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
+  });
+  log.debug("Leaving holdingsOf().");
+  return out;
 }
 
 // The session a token was issued under, by jti. The refresh grant is what needs
@@ -5515,6 +5564,7 @@ module.exports = {
   renameIdentity: renameIdentity,
   userRows: userRows,
   userDetail: userDetail,
+  holdingsOf: holdingsOf,
   sessionIdOfJti: sessionIdOfJti,
   sessionAuthenticatedOfJti: sessionAuthenticatedOfJti,
   recordAssertion: recordAssertion,

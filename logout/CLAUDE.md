@@ -494,3 +494,28 @@ and a GLOBAL logout with `logout.ldapDisconnect` on sends the instruction even
 when nothing was listed and adds **`acrossCluster`** to the result and a
 sentence to `message`. `pending` and `acrossCluster` are additive; nothing that
 read the old shape loses a member.
+
+## WHAT A PERSON HOLDS IS WHAT A SIGN-OUT CAN END, AND A SET OF PEOPLE IS READ ONCE (#351, 2026-09-29)
+
+**`heldIds()` lists only terminable rows.** It listed every row, and the
+`krb5` family always has one — "no such principal in this KDC" or "this trust
+realm has no KDC", `terminable: false` — because the PAGE must say Kerberos
+was looked at. So every person held one thing; every deleted person was
+scheduled a selective sign-out that ended "0 of 1 live item(s)" and was
+audited refused (`STS-LOGOUT-0007`). A row nothing can end is not something a
+later `terminate(key, ids)` could end either, so it is not held. The page
+(`inventoryFor()`) is unchanged: it still draws the row with its reason.
+
+**`heldIdsFor(keys)` and `terminateEach(list)` are the batch forms**, and the
+single forms are a batch of one. Three families read a store that grows with
+the service rather than with the person — the sessions (`sessionsForKey()`),
+the token and artifact register (`token`, `issued`, through
+`admin_stats.holdingsOf()`, which replaced two `userDetail()` folds of the
+whole register per read) and the wallet credentials — and `withIndex()` reads
+each ONCE for every key, grouped by the same `holderKeyOf()` the per-key read
+compared with. The index lives only for the synchronous call that built it; a
+key it was not built for falls through to the unindexed read. Each
+`terminate()` in a `terminateEach()` is exactly the single one — its own audit
+row, back-channel deliveries and CAEP — and `quiet` moves its info line to
+debug for a caller that logs one line for the set (`account_state.ts`).
+

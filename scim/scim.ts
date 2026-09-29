@@ -291,7 +291,7 @@ interface ScimDeps {
                     'readGroupEntry' | 'allGroupEntries' | 'nameUsableInDn' |
                     'groupDnFor' | 'writeGroupEntry' | 'deleteGroupEntry' |
                     'objectFor' | 'groupsDn' | 'baseDn' | 'personCount' |
-                    'entryCount', Fn>;
+                    'entryCount' | 'inPersonBatch' | 'personBatchStep', Fn>;
   createClaims: { refusalMessage: Fn };
   scimAuth: Record<'schemesForConfig' | 'authenticateSpent' |
                    'schemesBeyondTheCanonicalList' | 'primarySchemeId' |
@@ -2059,7 +2059,7 @@ class Scim {
                   (written.created ? 'created.' : 'updated.'));
         return scimMap.prune(this.userResourceFor(entry, req));
       }))
-      .degress((resource, ctx) => {
+      .degress(async (resource, ctx) => {
         log.debug("Entering the SCIM User degress handler. id=" + resource.id);
         const removed = directory.deletePerson(resource.id);
         if (!removed.ok && removed.reason === 'protected') {
@@ -2085,19 +2085,19 @@ class Scim {
               : 'There is no entry at ' + resource.id + ' under ' +
                 directory.usersDn() + '.'));
         }
-        // The dangling memberships this delete just created, logged rather than
-        // repaired: referential integrity is a directory feature and not a
-        // protocol rule, and /admin/groups exists to report exactly this. A
-        // SCIM client that means to remove somebody from their groups has to
-        // say so.
-        if ((removed.dangling || []).length) {
-          log.info('scim: ' + resource.id + ' was deleted and is still ' +
-                   'listed as a member by ' + removed.dangling.length +
-                   ' group(s). This ' +
-                   'directory does no referential integrity on purpose; ' +
-                   '/admin/groups reports them as dangling members.');
-        }
+        // The dangling memberships a delete leaves are logged by the
+        // directory for the batch, in one walk (#351): referential integrity
+        // is a directory feature and not a protocol rule, and /admin/groups
+        // exists to report exactly this. A SCIM client that means to remove
+        // somebody from their groups has to say so.
         this.auditScim('user.delete', resource.id, {}, (ctx || {}).req);
+        // INSIDE A BULK (#351), every so many deletes: the batch's gathered
+        // sign-outs are handed over and the event loop turns once, so a
+        // BulkRequest of thousands never holds this process for all of them.
+        const step = directory.personBatchStep();
+        if (step) {
+          await step;
+        }
         log.debug("Leaving the SCIM User degress handler.");
       });
 
@@ -3309,9 +3309,16 @@ class Scim {
                                         'published as ' +
             'bulk.maxPayloadSize in the ServiceProviderConfig).'));
         }
-        const result = await new SCIMMY.Messages.BulkRequest(
-          body, this.bulkMaxOperations())
-          .apply([SCIMMY.Resources.User, SCIMMY.Resources.Group], { req: req });
+        // ONE BATCH OF PERSON DELETES (#351): each operation is still applied
+        // in order and answered with its own status, as section 3.7 requires,
+        // and a delete's entry goes at once; what each deleted person held is
+        // read and ended for the batch together, not one person at a time.
+        const bulk = new SCIMMY.Messages.BulkRequest(body,
+                                                     this.bulkMaxOperations());
+        const result = await directory.inPersonBatch(() => {
+          return bulk.apply([SCIMMY.Resources.User, SCIMMY.Resources.Group],
+                            { req: req });
+        }, { door: 'a SCIM Bulk' });
         // 200 rather than a status derived from the operations inside: RFC 7644
         // section 3.7 puts each operation's own status in its own `status`
         // member, and a bulk that was accepted and processed succeeded whatever

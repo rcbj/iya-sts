@@ -1240,6 +1240,77 @@ handle a group that names a person and a person who names a group as two
 separate edits. It was not attempted on 2026-09-07; the three fixes above were,
 and this is the measurement that says where the next one would go.
 
+## DELETING PEOPLE IN BULK, AND THE INDEXES A DELETE USED TO THROW AWAY (#351, 2026-09-29)
+
+One SCIM Bulk of a hundred `DELETE /Users` held a request worker on testidp
+for about a minute — long enough for its origin claim to lapse (#351's first
+two parts are that side). Reproduced in process on a realm of 50,000 people
+with 2,000 live sessions, it was 185ms per person, and almost none of it was
+the delete:
+
+* **`deletePerson()` and the LDAP delete called `touchDirectory()` with no
+  DN.** That drops every cached container listing — so each RISC event after
+  it walked the whole realm to find its stream's owning application — and
+  makes the next flush diff the whole store. Both name the DN now, and so does
+  `removeEntry()`, the change-log applier every OTHER process runs a delete
+  through, which had the same DN-less touch once per entry.
+* **The three indexes were rebuilt after every delete.** Puts fold into the
+  username and group indexes (below); nothing told any index about a delete,
+  and everything after one asks: the deleted person's `urn:uuid:` is exactly
+  the lookup that misses, and the RISC register, the sign-out's session filing
+  and every token read make it. `noteIndexesDelete()` takes the entry out of
+  the username and entryUUID indexes and re-stamps the group index (a person
+  is not a group). Exact unless two entries claimed one name or UUID, which
+  each index now counts as it is built (`collisions`); then it rebuilds, as
+  before. **The entryUUID index is kept by what can move a UUID rather than by
+  `directoryVersion`**: a put folds in (`noteUuidIndexPut()`), a delete folds
+  out, and a DN-less touch, a create race reconciled or a replicated entry
+  replacing another marks it `dirty`; a miss on a clean index is
+  authoritative, and a hit is checked against the entry it names. Before, an
+  attribute changed in place — most writes — made the next miss rebuild it
+  with two walks, which also made every SCIM create at 50,000 cost 38ms.
+* **Reading and ending what each person held** was two folds of the token
+  register and a walk of the sessions per person, and then a selective
+  sign-out of the `krb5` row nothing can end (`STS-LOGOUT-0007`) —
+  `logout/CLAUDE.md` and `common/CLAUDE.md` have that half.
+
+**So a person's delete has one path, `removePersonEntry()`** — SCIM's
+`deletePerson()`, the LDAP delete handler and a re-homing all reach it — and
+its consequences go through a BATCH. `inPersonBatch(fn, { door })` runs `fn`
+in an `AsyncLocalStorage` of its own (the realm's arrangement), so a SCIM
+Bulk's degress handler — which scimmy calls once per operation, awaited —
+adds to the batch its request opened, and another request's delete meanwhile
+is not swept into it. The observers (RISC `account-purged`, OpenID Provider
+Commands) are still told per person, at once; what each person held is
+gathered and handed to `account_state.directoryDeletedMany()` together — at
+every 500 deletes (`personBatchStep()`, which also yields a macrotask so a
+Bulk of thousands never holds the event loop for all of them) and when the
+batch closes. Outside a batch a delete is a batch of one. Inside one,
+`hasChildren()` — a walk per delete — is `batchHasChildren()`: one walk counts
+the entries under every DN, the batch's own deletes come off the counts, and
+any other write in between makes it count again. The dangling memberships the
+deletes leave are counted in one walk at the end and logged in one line
+(`deletePerson()` no longer returns `dangling`: its one reader, SCIM, logged
+it under a test that read `.length` of a number and so never fired).
+
+**The store sees one flush per chunk**: postgres flushes on a `setTimeout(0)`
+(`persistence/CLAUDE.md`), and a chunk runs without turning the event loop, so
+its deletes are one transaction; a Bulk larger than 500 is one per 500.
+
+Measured with the same benchmark, 5,000 and 50,000 people, 100 deleted per
+door (ms per person, the Bulk as answered):
+
+| | 5,000, before | 5,000, after | 50,000, before | 50,000, after |
+|---|---|---|---|---|
+| SCIM Bulk of 100 DELETE | 36 | 3.9 | 185 | 8.5 |
+| `deletePerson()` one at a time | 37 | 4.0 | 192 | 14 |
+| SCIM `DELETE` one request each | 54 | 14 | 293 | 21 |
+| SCIM Bulk of 100 POST | 5.6 | — | 38 | 9.4 |
+
+What is left per single delete is `hasChildren()`'s walk and one pass over the
+live sessions (each resolved by `holderKeyOf()`), both O(the service) rather
+than O(the batch); a batch pays each once.
+
 ## A WRITE MUST CALL `touchDirectory()`
 
 `groupsOfUser()` is called ONCE PER TOKEN — every access token, every ID Token
