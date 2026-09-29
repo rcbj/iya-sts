@@ -46,11 +46,17 @@ The dispatcher hands work from the leader to three pools of child processes:
 | **Request** | The whole protocol stack | `workers.requestCount` | 0 (off) |
 
 With the admin and request pools off, the leader answers every request itself.
+When they are on, **their workers start one at a time**
+(`workers.startConcurrency`, default 1), because each one loads the whole
+store into its own memory as it starts. The listener opens once the first
+worker of each pool is up, and the rest start behind it.
+
 Monitoring → Worker Pools (`/admin/worker-pools`) shows each pool of the node:
 its workers now, busy and free, its maximum and initial size, its crashes and
 restarts, and its average response time. Monitoring → Node Health
 (`/admin/node-health`) shows the container's CPU and memory and the memory of
 every one of those processes.
+
 When they are on, the processes share state through the persistence store and
 not through memory. For that reason, turning dispatch on without
 [coordination](persistence.md#processes-against-one-store-coordinate) is refused

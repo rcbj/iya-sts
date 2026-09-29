@@ -1102,6 +1102,10 @@ const CODES = [
     summary: 'The /admin/worker-pools page or GET /admin-api/worker-pools ' +
       'could not build its report of the worker pools (#327).',
     spec: 'HTTP 500 page or JSON' },
+  { code: 'STS-WORKER-0045',
+    summary: 'A request worker could not be forked at all (the fork call ' +
+      'threw); the start gate moved on to the next (#342).',
+    spec: '' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',

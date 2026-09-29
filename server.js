@@ -877,6 +877,12 @@ serviceState.start().then(function (both) {
                      return one.started + ' of ' + one.wanted + ' ' + one.pool;
                    }).join(', ') + ')'
                    : '') +
+                 // THE REST START BEHIND THE LISTENER, one at a time (#342):
+                 // start() resolves once each pool's first worker settled.
+                 (pool.pending
+                   ? ', and ' + pool.pending + ' more are starting behind ' +
+                     'the listener (workers.startConcurrency)'
+                   : '') +
                  (requestPool.dispatchPrefixes().length
                    ? '; dispatching ' +
                      requestPool.dispatchPrefixes().join(', ')

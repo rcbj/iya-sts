@@ -1293,7 +1293,7 @@ file and the only one in the image; a source-reading test reads the `.ts`.
 | A worker runs | a JOB TABLE — four leaf computations | THE SERVICE — the whole protocol stack |
 | Handed | everything the job needs | an HTTP request |
 | Speaks | the IPC channel, structured clone | real HTTP over a unix socket |
-| Forked | LAZILY, on the first post-quantum job | EAGERLY, before the listener binds |
+| Forked | LAZILY, on the first post-quantum job | EAGERLY, ONE AT A TIME (#342); the listener binds once each pool's first has settled |
 | Setting | `workers.count` (5) | `workers.requestCount` (0) |
 | Off by default | no | **yes, and nothing is dispatched until `workers.dispatch` names a path** |
 
@@ -1456,6 +1456,36 @@ worker that can never start is tried three times rather than forked for ever.
 `STS-WORKER-0043` names each replacement and `stats().pools[].replaced` counts
 them. `tests/request_worker_replacement.js` drives the real `fork()` and
 `reap()` with a stub worker.
+
+**WORKERS START ONE AT A TIME (#342, 2026-09-29).** Each worker's start
+restores the whole store into its own heap, and `start()` forked every worker
+in the same instant. On testidp's node-a on 2026-09-28, a new task's four
+workers were SIGKILLed by the Fargate memory limit within three seconds of each
+other, twice. The node was over its limit only while they were starting. Every
+fork now goes through one gate (`queueFork()`), and replacements go through it
+too, because an OOM kill takes several workers at once. At most
+`workers.startConcurrency` workers (default 1) are between their fork and
+their first answer, and the next is forked when one settles (ready, `ready:
+false`, a failed channel, or an exit). Four decisions:
+
+* **One count for both pools.** The gate limits the node's memory, and a
+  surface worker's restore costs what a protocol worker's does. A count per
+  pool would still allow two restores at once at the default.
+* **The listener no longer waits for every worker.** `server.js` binds when
+  `start()` resolves, and `start()` resolved when every worker had settled.
+  With serial forks that is the sum of the starts, about 4 × 68 s on testidp.
+  It now resolves once the FIRST worker of each pool has settled. The queue is
+  interleaved (protocol 0, surfaces 0, protocol 1, …), and the rest start
+  behind a listener that is already answering, which routing always allowed
+  for a replacement. `STS-WORKER-0025`/`0026` still judge the whole initial
+  set, when it has settled.
+* **The start timeout is each worker's own.** It is armed in the child after
+  `begin`, so a worker waiting in the queue uses none of its time.
+* **A queued fork is dropped** when the pool is stopping or has given up. A
+  fork that throws is `STS-WORKER-0045`, and the gate moves on to the next.
+
+`stats().starts` reports the width of the gate, the number starting and the
+number queued. `tests/request_worker_replacement.js` section 5 holds it.
 
 **DISPATCH WITHOUT COORDINATION IS REFUSED, AND THE SERVICE DOES NOT START.**
 Everything else about the pool degrades — no workers means the front process
