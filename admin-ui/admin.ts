@@ -28025,10 +28025,35 @@ class AdminConsole {
         : info.lastError
           ? '<strong>THE LAST WRITE FAILED</strong> — ' +
             this.esc(info.lastError) +
-            '. This service is unaffected and is still answering everything ' +
-            'out of memory. The next change will recompute the same ' +
-            'difference and try again, so nothing has been lost yet.'
+            '. Reads are still answered out of memory, and the write is ' +
+            'retried on its own' + (info.retryArmed ? ' (a retry is armed)'
+              : '') + '. ' + (info.answersAfterCommit
+              ? 'A request whose change was in it was answered 503 (LDAP: ' +
+                'unavailable), never its success (#351).'
+              : 'The request that made the change was answered before it.')
           : 'writing normally'],
+      // ANSWER AFTER COMMIT AND THE EVENT LOOP (#351): what
+      // persistence.status() carries for them, drawn so an operator does not
+      // need the API to see a refused write waiting or a blocked loop.
+      ['Answered after commit', off ? '—'
+        : (info.answersAfterCommit
+          ? 'yes — a request that changed the store is answered once that ' +
+            'change has committed, and 503 (LDAP: unavailable) when it has ' +
+            'not'
+          : 'no — this store is written after the answer') +
+          (info.commitBacklog
+            ? '. <strong class="bad">A REFUSED WRITE IS WAITING FOR ITS ' +
+              'RETRY</strong>; writing requests are held for it.'
+            : '.')],
+      ['Event loop', !info.eventLoop ? '—'
+        : 'worst delay ' +
+          this.esc(String((info.eventLoop.sinceReport || {}).maxMs)) +
+          ' ms since the last report' +
+          (info.eventLoop.lastReport
+            ? ', ' + this.esc(String(info.eventLoop.lastReport.maxMs)) +
+              ' ms in the window before it'
+            : '') + ' (a warning is logged over ' +
+          this.esc(String(info.eventLoop.warnAboveMs)) + ' ms).'],
       ['Written so far', off ? '—'
         : this.esc(String(info.writes)) + ' flush(es), ' +
           this.esc(String(info.failures)) +

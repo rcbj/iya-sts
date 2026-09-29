@@ -1482,6 +1482,16 @@ Measured cost, three workers on one PostgreSQL store: 37ms to 43ms per read and
 that existed before it, and because whether the wait is worth it is a question
 about the callers rather than about the pool.
 
+**A WORKER NO LONGER ANSWERS A WRITE BEFORE IT COMMITS (2026-09-29, #351).**
+`request_worker.ts`'s header still says the worker "answers immediately" and
+announces the commit afterwards; in postgres mode the first half stopped being
+true when `cluster/cluster_barrier.js`'s rule 2 was turned on for every
+postgres process — the worker holds a writing response until its commit and
+answers 503 when it fails. The announcement and the tickets are unchanged and
+still needed: they tell the FRONT process which answered requests have landed,
+and a request whose response was held has landed by the time it arrives.
+`persistence/CLAUDE.md`, *A write is answered after its commit*, has the design.
+
 **THE BARRIER HAS A SECOND HALF — THE TICKETS — AND A 502 WEDGED IT FOR THE
 LIFE OF THE PROCESS (2026-09-11).** The generation says whether a worker is
 BEHIND; the tickets say whether everything already ANSWERED has actually

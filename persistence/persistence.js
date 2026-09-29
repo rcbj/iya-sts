@@ -133,14 +133,23 @@
 // what that costs in postgres mode is nothing, and in ldif mode it is up to
 // `writeDelay` milliseconds of writes.
 //
-// A FAILED WRITE IS LOGGED AND REPORTED AND NEVER THROWN. The service keeps
+// A FAILED WRITE IS LOGGED AND REPORTED AND NEVER THROWN — and, since
+// 2026-09-29 (#351), in postgres mode NEVER ACKNOWLEDGED. The service keeps
 // answering out of memory, `GET /admin/ldap/service` and `/admin/persistence`
-// both carry the error, and the next flush tries again with the same diff (the
-// shadow is only advanced on success, so nothing is lost by a failure). The
-// alternative — refusing the LDAP operation whose write failed — was considered
-// and rejected: it would make a database outage take down sixteen protocol
-// families that do not need a database, and no other refusal in this service is
-// that expensive.
+// both carry the error, and the write is retried on its own with a backoff
+// (`retryAfterFailure()`), its journal put back (the shadow is only advanced
+// on success). What changed is the request whose change was in the failed
+// write: it was answered with its success before the flush ran, so a process
+// that died before the retry lost a change its client had been told was
+// done — ~600 deleted people came back on testidp. A request that changed the
+// store is now answered only once that change has COMMITTED, and 503 (an LDAP
+// operation `unavailable`) when it did not: `cluster/cluster_barrier.js`'s
+// rule 2, which `answersAfterCommit()` turns on for every postgres process.
+// This file's old argument against refusing — "a database outage would take
+// down sixteen protocol families that do not need a database" — is answered
+// by what is refused: a request that WROTE, which a database outage cannot
+// make durable; a read is still answered from memory. ldif keeps the old
+// behaviour, because its write is a file on a debounce.
 //
 // ---------------------------------------------------------------------------
 // TWO INVERTED HOOKS, AND EACH PASSES RULE 3e's TEST INDEPENDENTLY.
@@ -187,6 +196,10 @@
 // ---------------------------------------------------------------------------
 
 const path = require('path');
+// Node's event-loop delay sampler and its monotonic clock (#351): see
+// startLagMonitor() and checkRenewalTiming().
+const perfHooks = require('perf_hooks');
+const performance = perfHooks.performance;
 const bunyan = require('bunyan');
 const config = require('../common/config');
 // The keystore, so this module can hand it the driver the moment one is open.
@@ -561,6 +574,37 @@ let dirtyEverything = false;
 let dirGeneration = 0;
 let dirCommittedAt = 0;
 let flushingTakenAt = 0;
+// The highest generation a FAILED flush had taken (#351). While it is above
+// `dirCommittedAt` the store is behind this process's memory by a write that
+// was tried and refused — `commitBacklog()` below.
+let dirFailedAt = 0;
+
+// ---------------------------------------------------------------------------
+// A FAILED WRITE IS RETRIED ON ITS OWN, NOT BY "THE NEXT CHANGE" (2026-09-29,
+// #351).
+//
+// A failed flush put its dirty bits back and said "the next change will try
+// again", and nothing else did. That was harmless while every response went
+// out before its write anyway; once a response waits for its commit
+// (`cluster/cluster_barrier.js`, rule 2) and is answered 503 when it fails,
+// the client's retry is the natural next change — and a retry that finds its
+// change already made in memory (a DELETE answering 404, a create answering
+// 409) writes nothing, so nothing would ever write the change the first
+// attempt left in memory. On testidp that was ~600 people deleted, answered,
+// and back from the database after the worker exited (#351).
+//
+// So a failure arms ONE retry of the whole flush — directory, realms,
+// settings, minted rows, and the keystore rows whose write failed — after
+// RETRY_FIRST_MS, doubling on each consecutive failure to RETRY_MAX_MS, and
+// the first success disarms it. It is the retry of one failed write, not
+// periodic work: it exists only while a write is failing, which is the
+// "retry delay inside one operation" the scheduler directive leaves out
+// (root CLAUDE.md, *Anything periodic is a scheduler job*).
+// ---------------------------------------------------------------------------
+const RETRY_FIRST_MS = 1000;
+const RETRY_MAX_MS = 30000;
+let retryTimer = null;
+let retryFailures = 0;
 // { gen, resolve } for each caller of directoryThrough() still waiting.
 let dirWaiters = [];
 
@@ -578,6 +622,71 @@ function settleDirWaiters(error) {
   });
   dirWaiters = still;
   log.debug("Leaving settleDirWaiters().");
+}
+
+/**
+ * Arms the one retry of a failed write, if none is armed; see RETRY_FIRST_MS.
+ * @param why - what failed, for the debug line
+ */
+function retryAfterFailure(why) {
+  log.debug("Entering retryAfterFailure(). " + why);
+  if (retryTimer || stopped || !enabled()) {
+    log.debug("Leaving retryAfterFailure(). Armed already, or stopped.");
+    return;
+  }
+  const delay = Math.min(RETRY_MAX_MS,
+                         RETRY_FIRST_MS * Math.pow(2, Math.min(retryFailures,
+                                                               5)));
+  retryFailures += 1;
+  retryTimer = setTimeout(function () {
+    retryTimer = null;
+    // A keystore row whose write failed has no generation and no journal: it
+    // is queued again here, whole, with what it held when it failed.
+    if (typeof keystore.retryFailed === 'function') {
+      keystore.retryFailed();
+    }
+    flush().catch(function (err) {
+      log.error(errorCodes.tag('STS-STORE-0001') +
+                'persistence: a retried flush failed: ' + err.message);
+    });
+  }, delay);
+  if (retryTimer.unref) {
+    retryTimer.unref();
+  }
+  log.debug("Leaving retryAfterFailure(). In " + delay + " ms.");
+}
+
+// The first success after a failure: the backoff starts again from the top.
+function retrySucceeded() {
+  log.debug("Entering retrySucceeded().");
+  retryFailures = 0;
+  log.debug("Leaving retrySucceeded().");
+}
+
+/**
+ * Tells whether a response that wrote waits for its commit: a postgres
+ * store, open and not restoring. See the exports' note.
+ * @returns true in postgres mode once started
+ */
+function answersAfterCommit() {
+  log.debug("Entering answersAfterCommit().");
+  log.debug("Leaving answersAfterCommit().");
+  return enabled() && activeMode === 'postgres' && !restoring && !stopped &&
+    !!driver;
+}
+
+/**
+ * Tells whether a failed write is still waiting for its retry to land. See
+ * the exports' note.
+ * @returns true while the store is behind memory by a refused write
+ */
+function commitBacklog() {
+  log.debug("Entering commitBacklog().");
+  log.debug("Leaving commitBacklog().");
+  return enabled() && !restoring &&
+    (dirFailedAt > dirCommittedAt ||
+     (typeof minted.failing === 'function' && minted.failing()) ||
+     (typeof keystore.failing === 'function' && keystore.failing()));
 }
 
 // Resolves once everything dirtied up to generation `target` has committed,
@@ -1411,7 +1520,14 @@ function flush() {
       return null;
     }
     return minted.flush();
-  }).then(function () {
+  }).then(function (mintedAnswer) {
+    // The minted write reports its own failure and keeps its journal; what
+    // it cannot do is retry, so a failure here arms the retry (#351).
+    if (mintedAnswer && mintedAnswer.error) {
+      retryAfterFailure('the minted write failed');
+    } else {
+      retrySucceeded();
+    }
     writes++;
     lastWriteAt = new Date().toISOString();
     lastError = '';
@@ -1425,17 +1541,39 @@ function flush() {
     // NOT rethrown, and the header argues why at length: the service keeps
     // answering out of memory. The dirty bits go back on so the next flush
     // retries, and the shadow was not advanced, so the same diff is recomputed
-    // and nothing is lost.
+    // and nothing is lost. Logged below as STS-STORE-0002.
     failures++;
     lastError = err.message;
     directoryDirty = directoryDirty || wantDirectory;
     realmsDirty = realmsDirty || wantRealms;
     configDirty = configDirty || wantConfig;
+    // ---------------------------------------------------------------------
+    // AND THE JOURNAL GOES BACK TOO (2026-09-29, #351). The dirty bit alone
+    // was put back, and the DNs this flush had taken were not: the next
+    // flush compared only the DNs dirtied AFTER this one, found the failed
+    // ones equal to nothing it was asked about, advanced `dirCommittedAt`
+    // past them, and they reached the store only if a full walk ever ran —
+    // "the shadow is only advanced on success" was true, and the journal
+    // made it irrelevant. So the taken DNs rejoin the journal, and a flush
+    // that had walked everything marks everything again.
+    // ---------------------------------------------------------------------
+    if (wantDirectory) {
+      if (wanted && !dirtyEverything) {
+        wanted.forEach(function (dn) {
+          dirtyDns.add(dn);
+        });
+      } else if (!wanted) {
+        dirtyEverything = true;
+      }
+    }
+    dirFailedAt = Math.max(dirFailedAt, takenAt);
     settleDirWaiters(err.message);
+    retryAfterFailure('the directory write failed');
     log.error(errorCodes.tag('STS-STORE-0002') +
               'persistence: could not write to the ' + activeMode +
-              ' store: ' + err.message + '. The service is unaffected and is ' +
-              'still answering from memory; the next change will try again.');
+              ' store: ' + err.message + '. It is retried shortly; a ' +
+              'request whose change was in it is answered 503 in postgres ' +
+              'mode (#351), and the change stays in memory until it lands.');
     log.debug('Leaving flush(). It failed.');
     return { written: false, error: err.message };
   }).then(function (result) {
@@ -1646,6 +1784,9 @@ function workerCount() {
  */
 function start() {
   log.debug('Entering start().');
+  // In every mode, a store or none: a blocked loop is worth measuring in a
+  // process with nothing to renew, and costs a histogram (#351).
+  startLagMonitor();
   const chosen = mode();
   if (MODES.indexOf(chosen) < 0) {
     // Unreachable through config.value(), whose enum type refuses anything
@@ -1909,6 +2050,164 @@ const ORIGIN_RENEW_MS = 10 * 1000;
 const ORIGIN_WAIT_MS = ORIGIN_TTL_MS + 5 * 1000;
 let originTimer = null;
 let originAdoption = null;
+// When the last renewal STARTED, on the monotonic clock, for the lateness
+// check below; 0 before the first.
+let originRenewStartedAt = 0;
+
+// ---------------------------------------------------------------------------
+// HOW LONG THE EVENT LOOP WAS BLOCKED, MEASURED (2026-09-29, #351).
+//
+// The incident that lost the origin had one worker log nothing for about a
+// minute while a SCIM Bulk request deleted a hundred people in a row, and the
+// renewal due every ten seconds did not run. That the loop was blocked was
+// INFERRED from the cadence of the lines around the gap; nothing measured it,
+// so the log said "could not be renewed" and not why. Two things now say
+// why:
+//
+//   * `perf_hooks.monitorEventLoopDelay()` — node's own sampler, a histogram
+//     of how late the loop ran, kept by libuv rather than by a timer of this
+//     module's — read and reset by the PER-PROCESS scheduler job
+//     `persistence.event-loop-lag` every LAG_REPORT_MS. A maximum above
+//     LAG_WARN_MS is a coded warning naming it (STS-STORE-0068); every
+//     sample is in `status().eventLoop` for `/admin/persistence` and the API.
+//     Per process, because each process has its own loop: a worker's stall
+//     is invisible from the front process.
+//   * THE ORIGIN RENEWAL CHECKS ITS OWN TIMING: a renewal that started more
+//     than half the claim's lifetime later than its interval said, or took
+//     more than half of it to answer, logs STS-STORE-0069 with the lateness
+//     and the loop's worst delay since the last report — so the next lost
+//     origin says whether the loop, the pool or the database was the cause.
+//
+// LAG_WARN_MS is five seconds and a constant, not a setting: it is a
+// diagnostic threshold on a log line, far below every lease and claim
+// lifetime here (the smallest is the origin's 30 s), and nothing decides on
+// it.
+// ---------------------------------------------------------------------------
+const LAG_JOB = 'persistence.event-loop-lag';
+const LAG_REPORT_MS = 10 * 1000;
+const LAG_WARN_MS = 5 * 1000;
+let lagHistogram = null;
+let lagReport = null;
+
+// The histogram, read in milliseconds; `reset` starts the next window.
+function lagSample(reset) {
+  log.debug("Entering lagSample().");
+  if (!lagHistogram) {
+    log.debug("Leaving lagSample(). Not measuring.");
+    return null;
+  }
+  const h = lagHistogram;
+  const toMs = function (ns) {
+    return Math.round((Number(ns) || 0) / 1e6);
+  };
+  const sample = { maxMs: toMs(h.max), p99Ms: toMs(h.percentile(99)),
+                   meanMs: toMs(h.mean), at: new Date().toISOString() };
+  if (reset) {
+    h.reset();
+  }
+  log.debug("Leaving lagSample().");
+  return sample;
+}
+
+/**
+ * Starts measuring the event loop's delay and registers the per-process job
+ * that reports it. Idempotent.
+ */
+function startLagMonitor() {
+  log.debug("Entering startLagMonitor().");
+  if (lagHistogram) {
+    log.debug("Leaving startLagMonitor(). Already measuring.");
+    return;
+  }
+  lagHistogram = perfHooks.monitorEventLoopDelay({ resolution: 20 });
+  lagHistogram.enable();
+  const scheduler = require('../cluster/scheduler');
+  if (!scheduler.job(LAG_JOB)) {
+    scheduler.register({
+      id: LAG_JOB,
+      title: 'Event-loop delay report',
+      describe: 'Reads, in this process, how late its event loop ran since ' +
+                'the last report, and warns when it was blocked for more ' +
+                'than ' + (LAG_WARN_MS / 1000) + ' s — the cause a late ' +
+                'lease or claim renewal otherwise leaves unsaid.',
+      owner: 'persistence/persistence.js',
+      kind: 'per-process', quiet: true,
+      everyMs: function () {
+        return LAG_REPORT_MS;
+      },
+      off: function () {
+        return lagHistogram ? '' : 'this process is not measuring its ' +
+          'event loop';
+      },
+      run: function () {
+        return reportLag();
+      }
+    });
+  }
+  log.debug("Leaving startLagMonitor().");
+}
+
+// One run of the job: the window's sample, kept for status(), and the
+// warning when the loop was blocked past LAG_WARN_MS.
+function reportLag() {
+  log.debug("Entering reportLag().");
+  const sample = lagSample(true);
+  if (!sample) {
+    log.debug("Leaving reportLag(). Not measuring.");
+    return { measuring: false };
+  }
+  lagReport = sample;
+  if (sample.maxMs > LAG_WARN_MS) {
+    log.warn(errorCodes.tag('STS-STORE-0068') + 'persistence: this ' +
+             'process\'s event loop was blocked for up to ' + sample.maxMs +
+             ' ms in the last ' + (LAG_REPORT_MS / 1000) + ' s (p99 ' +
+             sample.p99Ms + ' ms). Timers — the origin-claim renewal, the ' +
+             'cluster heartbeat — ran that late too.');
+  }
+  log.debug("Leaving reportLag().");
+  return sample;
+}
+
+function stopLagMonitor() {
+  log.debug("Entering stopLagMonitor().");
+  if (lagHistogram) {
+    lagHistogram.disable();
+    lagHistogram = null;
+  }
+  log.debug("Leaving stopLagMonitor().");
+}
+
+// A renewal's timing, checked: late to start or slow to answer by more than
+// half the claim's lifetime is STS-STORE-0069, naming the loop's delay.
+/**
+ * Warns when an origin-claim renewal started or answered late.
+ * @param previous - when the renewal before it started, or 0
+ * @param startedAt - when this one started
+ * @param answeredAt - when it answered
+ * @returns true when it warned
+ */
+function checkRenewalTiming(previous, startedAt, answeredAt) {
+  log.debug("Entering checkRenewalTiming().");
+  const half = ORIGIN_TTL_MS / 2;
+  const late = previous ? Math.round(startedAt - previous -
+                                     ORIGIN_RENEW_MS) : 0;
+  const slow = Math.round(answeredAt - startedAt);
+  if (late > half || slow > half) {
+    const lag = lagSample(false);
+    log.warn(errorCodes.tag('STS-STORE-0069') + 'persistence: the renewal ' +
+             'of this process\'s origin claim started ' + Math.max(0, late) +
+             ' ms late and took ' + slow + ' ms to answer, against a ' +
+             ORIGIN_TTL_MS + ' ms claim. The event loop\'s worst delay ' +
+             'since the last report was ' + (lag ? lag.maxMs + ' ms' :
+             'not measured') + (lag && lag.maxMs > half ? ' — the loop ' +
+             'was blocked' : ' — the loop was not the cause; the ' +
+             'renewal waited on its connection or the database') + '.');
+    log.debug("Leaving checkRenewalTiming(). Late.");
+    return true;
+  }
+  log.debug("Leaving checkRenewalTiming().");
+  return false;
+}
 
 function originSlot() {
   log.debug("Entering originSlot().");
@@ -1958,13 +2257,19 @@ function adoptStableOrigin() {
               Math.round(a.waitedMs / 1000) + ' s for the previous ' +
               'holder\'s claim to lapse' : '') + '; what that origin wrote ' +
              'before a restart is restored as this process\'s own.');
+    originRenewStartedAt = 0;
     originTimer = setInterval(function () {
+      const startedAt = performance.now();
+      const previous = originRenewStartedAt;
+      originRenewStartedAt = startedAt;
       driver.renewOrigin(ORIGIN_TTL_MS).then(function (still) {
+        checkRenewalTiming(previous, startedAt, performance.now());
         if (!still) {
           originLost(new Error('the claim on ' + a.origin + ' could not ' +
                                'be renewed'));
         }
       }, function (err) {
+        checkRenewalTiming(previous, startedAt, performance.now());
         // The store being unreachable is not losing the origin: the claim
         // outlives a short outage, and every write checks it anyway.
         log.warn(errorCodes.tag('STS-STORE-0062') + 'persistence: the ' +
@@ -2541,6 +2846,13 @@ function stop() {
     clearTimeout(timer);
     timer = null;
   }
+  // The retry of a failed write is not wanted either: the flush below is the
+  // last attempt, and its failure is STS-STORE-0008's to report.
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  stopLagMonitor();
   log.debug("Leaving stop().");
   return replication.stop().then(function () {
     return globalReplication ? globalReplication.stop() : null;
@@ -3088,6 +3400,21 @@ function status() {
     // This process's persistence origin, and whether it is the stable one
     // its node name and slot give it (2026-09-18, adoptStableOrigin()).
     origin: originStatus(),
+    // ANSWER AFTER COMMIT AND ITS RETRY (#351): whether a writing response
+    // waits for its commit here, whether a refused write is still waiting to
+    // land, and the retry's backoff.
+    answersAfterCommit: answersAfterCommit(),
+    commitBacklog: commitBacklog(),
+    retryArmed: !!retryTimer,
+    // The postgres driver's liveness connection (#351): the origin renewal,
+    // the heartbeat and the leases, apart from the pool the writes use.
+    liveness: driver && typeof driver.livenessStatus === 'function'
+      ? driver.livenessStatus() : null,
+    // THE EVENT LOOP (#351): the last report of `persistence.event-loop-lag`
+    // and the window since it.
+    eventLoop: lagHistogram ? { lastReport: lagReport,
+                                sinceReport: lagSample(false),
+                                warnAboveMs: LAG_WARN_MS } : null,
     note: (replication.status().coordinating
             ? 'Processes against this store COORDINATE: every change is ' +
               'written to a monotonic log inside the transaction that made ' +
@@ -3495,17 +3822,65 @@ module.exports = {
                                minted: minted.generation() };
     const waits = [
       directoryThrough(Number(wanted.directory) || 0),
-      minted.flushThrough(Number(wanted.minted) || 0)
+      // A minted flush started HERE is not inside flush(), whose tail arms
+      // the retry, so its failure arms it here (#351).
+      Promise.resolve(minted.flushThrough(Number(wanted.minted) || 0))
+        .then(function (answer) {
+          if (answer && answer.error) {
+            retryAfterFailure('a minted write a response waited for failed');
+          }
+          return answer;
+        })
     ];
     if (typeof keystore.pendingWrites === 'function' &&
         keystore.pendingWrites() && typeof keystore.settleAll === 'function') {
-      waits.push(Promise.resolve(keystore.settleAll()).then(function () {
-        return null;
+      // AND A KEY ROW THAT FAILED IS A FAILURE (#351). The outcomes were
+      // dropped — "the keystore reports its own failures" — so a realm whose
+      // signing keys never reached the store was answered as created, and
+      // generated different keys at the next restart. Now the outcome's
+      // `error` is this wait's answer, like the two flushes'.
+      waits.push(Promise.resolve(keystore.settleAll()).then(function (all) {
+        const failed = (all || []).filter(function (one) {
+          return one && one.ok === false && one.error;
+        });
+        if (!failed.length) {
+          return null;
+        }
+        retryAfterFailure('a key row a response waited for failed');
+        return { written: false, error: 'the key store could not write ' +
+                 failed.length + ' row(s): ' + failed.map(function (one) {
+                   return one.error;
+                 }).join('; ') };
       }));
     }
     log.debug("Leaving commitThrough().");
     return Promise.all(waits);
   },
+  // ---------------------------------------------------------------------
+  // ANSWER AFTER COMMIT (2026-09-29, #351) — whether this process's store is
+  // one a response waits for. A DATABASE: its transaction is the durable
+  // moment, a commit is milliseconds, and a response sent before it is an
+  // acknowledgement the process can lose (a SIGKILL, an OOM kill, a worker
+  // that exits on a lost origin — testidp lost ~600 acknowledged deletes
+  // that way). NOT `ldif`: its unit of writing is a whole file on a
+  // `persistence.writeDelay` debounce, and waiting for it would put 1.5 s on
+  // every write for a store that is a development convenience. NOT memory,
+  // which has nothing to wait for. Nor while restoring or stopped.
+  // `cluster/cluster_barrier.js` and its LDAP wrapper ask it.
+  // ---------------------------------------------------------------------
+  answersAfterCommit: answersAfterCommit,
+  // ---------------------------------------------------------------------
+  // A WRITE THAT WAS TRIED AND REFUSED AND HAS NOT LANDED SINCE (#351): a
+  // directory flush that failed and nothing after it committed, a minted
+  // journal holding keys a failed write put back, a key row whose write
+  // failed. The barrier holds a WRITING request (by method or operation)
+  // for it even when that request changed nothing itself — the retry of a
+  // DELETE answered 503 finds the entry gone from memory and writes nothing,
+  // and answering its 404 at once would report as done a delete the store
+  // does not hold yet.
+  // ---------------------------------------------------------------------
+  commitBacklog: commitBacklog,
+
   // Whether anything this process has changed is not yet committed, for the
   // cluster barrier's commit-before-respond. See cluster/cluster_barrier.js.
   /**
