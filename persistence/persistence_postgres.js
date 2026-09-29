@@ -189,11 +189,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // `realms.retire()` sets before it ends anything, which every process reads
 // to refuse new sign-ins in a realm being removed. 11 SINCE 2026-09-28, for
 // `sts_node_snapshots` (#332): each cluster node's latest snapshot of
-// Monitoring → Worker Pools and → Node Health, one row per node NAME.
+// Monitoring → Worker Pools and → Node Health, one row per node NAME. 12
+// SINCE 2026-09-28, for `sts_minted.expires_at` and its partial index (#333):
+// a minted row's own expiry, so a start reads only live rows.
 /**
  * The version of the schema this driver creates, recorded in `sts_schema`.
  */
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -358,12 +360,25 @@ const SCHEMA_OBJECTS = [
   '  key        text        NOT NULL,' +
   '  body       text        NOT NULL,' +
   '  written_at timestamptz NOT NULL DEFAULT now(),' +
+  '  expires_at bigint,' +
   '  PRIMARY KEY (handle, realm, key))' },
   { name: 'sts_minted_handle', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, ' +
   'realm)' },
   { name: 'sts_minted_written', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at)' },
+  // `expires_at` (#333, schema version 12) IS THE RECORD'S OWN EXPIRY, in
+  // epoch milliseconds, as its store's `expiresAt` hook answered it — NULL
+  // for a record that does not expire, and for a tombstone. A restore reads
+  // no row whose instant has passed, and the `persistence.minted-expiry-purge`
+  // job deletes them in batches through this index. PARTIAL, because the
+  // rows with no expiry are the ones the purge never looks for by it, and an
+  // index is paid for by every INSERT into the busiest table here.
+  // `afterColumns`: an older table gets the column from SCHEMA_COLUMNS, so
+  // the index can only be built after that.
+  { name: 'sts_minted_expires', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted ' +
+  '(expires_at) WHERE expires_at IS NOT NULL' },
   // -------------------------------------------------------------------------
   // THE CHANGE LOG (2026-09-06), which is what makes several processes against
   // one store agree rather than merely coexist.
@@ -892,7 +907,12 @@ const SCHEMA_COLUMNS = [
   'NOT NULL DEFAULT \'\'' },
   { table: 'sts_risk_assessments', column: 'feedback_at', statement:
   'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback_at ' +
-  'bigint NOT NULL DEFAULT 0' }
+  'bigint NOT NULL DEFAULT 0' },
+  // A minted row's own expiry (#333, schema version 12). An existing row gets
+  // NULL — no expiry — and so falls under the write-age rule once, which is
+  // the whole of the migration.
+  { table: 'sts_minted', column: 'expires_at', statement:
+  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint' }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -1886,6 +1906,7 @@ function create(options) {
     open: function () {
       log.debug('Entering the postgres driver open().');
       const created = [];
+      let late = [];
       log.debug("Leaving open().");
       return withTransaction(function (client) {
         // -------------------------------------------------------------
@@ -1909,6 +1930,11 @@ function create(options) {
           const missing = SCHEMA_OBJECTS.filter(function (object, index) {
             return !row['o' + index];
           });
+          // AN OBJECT BUILT ON A COLUMN THAT SCHEMA_COLUMNS MAY STILL HAVE TO
+          // ADD (#333) waits for the column step below.
+          late = missing.filter(function (object) {
+            return object.afterColumns === true;
+          });
           if (!missing.length) {
             log.debug('open(): every object in the schema is present; no ' +
                       'CREATE is issued.');
@@ -1920,7 +1946,9 @@ function create(options) {
                    ') and this process is creating them. A store built by ' +
                    'postgres/schema.sql needs none of this.');
           let chain = Promise.resolve();
-          missing.forEach(function (object) {
+          missing.filter(function (object) {
+            return object.afterColumns !== true;
+          }).forEach(function (object) {
             chain = chain.then(function () {
               return client.query(object.statement).then(function () {
                 created.push(object.name);
@@ -1957,6 +1985,16 @@ function create(options) {
             });
             return chain;
           });
+        }).then(function () {
+          let chain = Promise.resolve();
+          late.forEach(function (object) {
+            chain = chain.then(function () {
+              return client.query(object.statement).then(function () {
+                created.push(object.name);
+              });
+            });
+          });
+          return chain;
         }).then(function () {
           // DML, and the one statement here that runs on every open. The
           // script writes this row too; `ON CONFLICT DO NOTHING` is what
@@ -2749,13 +2787,45 @@ function create(options) {
     // for — `persistence_minted.js` hands it exactly the rows that moved, so
     // there is nothing here to work out.
     // -----------------------------------------------------------------------
-    loadMinted: function () {
+    // -----------------------------------------------------------------------
+    // ONLY WHAT IS STILL WORTH HAVING (2026-09-28, #333). `filter` is
+    // `persistence_minted.js`'s restoreFilter(): the realm partitions that
+    // exist, the instant a row's own expiry is compared with, and the
+    // write-age rule for a short-lived store's row that carries no expiry.
+    // It is REQUIRED: this read had no WHERE, and every process on testidp
+    // fetched, decrypted and parsed 127,131 rows — most of them dead or of
+    // realms long gone — in 31 s before it could serve. A caller that does
+    // not say what it wants is refused rather than handed the table.
+    //
+    // `expires_at` is compared with a NUMBER from the caller rather than the
+    // database clock, because the stores computed it on their own clocks —
+    // `sts_used_assertions`' arrangement. The scan is sequential either way:
+    // what is read is most of the live table, and an index would only have
+    // to be walked back to the heap for every row.
+    // -----------------------------------------------------------------------
+    loadMinted: function (filter) {
       log.debug('Entering the postgres driver loadMinted().');
+      if (!filter || !Array.isArray(filter.realms)) {
+        log.debug("Leaving loadMinted(). No filter.");
+        return Promise.reject(new Error('loadMinted() needs the realms to ' +
+                                        'read and the instant to read at'));
+      }
+      const staleBefore = Number(filter.staleBefore) || 0;
+      const shortLived = Array.isArray(filter.ageHandles)
+        ? filter.ageHandles.map(String) : [];
+      const aged = staleBefore > 0 && shortLived.length > 0;
       log.debug("Leaving loadMinted().");
       return pool.query(
-        'SELECT handle, realm, key, body,        (extract(epoch from ' +
-        'written_at) * 1000)::bigint AS written_ms FROM sts_minted ' +
-        'WHERE body <> $1', [TOMBSTONE]
+        'SELECT handle, realm, key, body, (extract(epoch from written_at) ' +
+        '* 1000)::bigint AS written_ms, expires_at FROM sts_minted ' +
+        'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
+        '(expires_at IS NULL OR expires_at > $3)' +
+        (aged ? ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
+                'AND written_at < to_timestamp($5 / 1000.0))' : ''),
+        aged ? [TOMBSTONE, filter.realms.map(String),
+                Number(filter.nowMs) || Date.now(), shortLived, staleBefore]
+             : [TOMBSTONE, filter.realms.map(String),
+                Number(filter.nowMs) || Date.now()]
       ).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return {
@@ -2767,7 +2837,9 @@ function create(options) {
             // reader compares it against `Date.now()` and a driver that
             // answered a Date would make the ldif driver — which has no
             // timestamptz — answer something different for the same field.
-            writtenAt: Number(row.written_ms || 0)
+            writtenAt: Number(row.written_ms || 0),
+            expiresAt: row.expires_at === null || row.expires_at === undefined
+              ? null : Number(row.expires_at)
           };
         });
         log.debug('Leaving the postgres driver loadMinted(). ' + rows.length +
@@ -2832,14 +2904,20 @@ function create(options) {
       return withTransaction(function (client) {
         let chain = Promise.resolve();
         const upsert = function (row, body, guarded) {
+          // `expires_at` (#333) is the store's own answer for the record,
+          // or NULL; see `expiresAt` in common/realms.js.
+          const expires = Number(row.expiresAt) > 0
+            ? Math.floor(Number(row.expiresAt)) : null;
           return client.query(
             'INSERT INTO sts_minted (handle, realm, key, body, ' +
-            'written_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT ' +
-            '(handle, realm, key) DO UPDATE SET   body = EXCLUDED.body, ' +
-            'written_at = now()' +
-            (guarded ? ' WHERE sts_minted.body <> $5' : ''),
-            guarded ? [row.handle, row.realm, row.key, body, TOMBSTONE]
-                    : [row.handle, row.realm, row.key, body]
+            'written_at, expires_at) VALUES ($1, $2, $3, $4, now(), $5) ' +
+            'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
+            'body = EXCLUDED.body, written_at = now(), ' +
+            'expires_at = EXCLUDED.expires_at' +
+            (guarded ? ' WHERE sts_minted.body <> $6' : ''),
+            guarded ? [row.handle, row.realm, row.key, body, expires,
+                       TOMBSTONE]
+                    : [row.handle, row.realm, row.key, body, expires]
           ).then(function (r) {
             if (guarded && !(r && r.rowCount)) {
               refused.push(row);
@@ -2880,11 +2958,14 @@ function create(options) {
               return upsert(row, row.body, !!row.tombstone);
             }
             if (row.tombstone) {
+              // A TOMBSTONE HAS NO EXPIRY OF ITS OWN (#333): it lives for
+              // `persistence.mintedRetention` whatever the record it ended
+              // said, so the expiry purge never takes it early.
               return client.query(
                 'INSERT INTO sts_minted (handle, realm, key, body, ' +
-                'written_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT ' +
-                '(handle, realm, key) DO UPDATE SET body = EXCLUDED.body, ' +
-                'written_at = now()',
+                'written_at, expires_at) VALUES ($1, $2, $3, $4, now(), ' +
+                'NULL) ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
+                'body = EXCLUDED.body, written_at = now(), expires_at = NULL',
                 [row.handle, row.realm, row.key, TOMBSTONE]
               );
             }
@@ -5319,25 +5400,81 @@ function create(options) {
       });
     },
 
-    // `handles`, when given, limits the delete to those stores — the
-    // short-lived ones (`retain: 'age'`, 2026-09-18). Without it every row
-    // older than `beforeMs` goes, which is right only for the ephemeral-key
-    // clear, where nothing in the table can be opened anyway.
-    purgeMinted: function (beforeMs, handles) {
+    // EVERY ROW OLDER THAN `beforeMs`, of every store. Right only for the
+    // ephemeral-key clear, where nothing in the table can be opened anyway;
+    // the ordinary deleting is purgeExpiredMinted()'s (#333).
+    purgeMinted: function (beforeMs) {
       log.debug('Entering the postgres driver purgeMinted(). before=' +
                 beforeMs);
       log.debug("Leaving purgeMinted().");
-      if (Array.isArray(handles) && !handles.length) {
-        return Promise.resolve(0);
-      }
-      const limited = Array.isArray(handles);
       return pool.query(
-        'DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)' +
-        (limited ? ' AND handle = ANY($2::text[])' : ''),
-        limited ? [Number(beforeMs), handles.map(String)] : [Number(beforeMs)]
+        'DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)',
+        [Number(beforeMs)]
       ).then(function (r) {
         log.debug('Leaving the postgres driver purgeMinted(). ' +
                   (r.rowCount || 0) + ' row(s).');
+        return r.rowCount || 0;
+      });
+    },
+
+    // -----------------------------------------------------------------------
+    // ONE BATCH OF THE MINTED ROWS NOTHING WILL READ AGAIN (2026-09-28, #333),
+    // for the `persistence.minted-expiry-purge` job. `kind` is one of:
+    //
+    //   'expired'  `expires_at` has passed `nowMs`. A tombstone is never one
+    //              (its expiry is NULL; `purgeTombstones()` has it).
+    //   'orphan'   the row's realm is neither the shared '' nor the default
+    //              realm nor a row of `sts_realms`, and it was written before
+    //              `orphanBeforeMs`. A realm removal already deletes its rows
+    //              in the same transaction (saveDirectory()); what reaches
+    //              here is a flush another process had in flight for it.
+    //              THE GRACE IS FOR THE OTHER ORDER: a realm created on
+    //              another node writes its minted rows and its registry row in
+    //              two transactions, and a row whose registry row has not
+    //              committed yet is not an orphan.
+    //   'stale'    a `retain: 'age'` store's row with NO expiry, written
+    //              before `staleBeforeMs` — the retention rule the restore
+    //              used to apply by deleting at every start.
+    //
+    // At most `limit` rows, chosen by ctid and deleted by ctid, so each batch
+    // is one short statement and a row rewritten between the two (a renewal)
+    // has a new ctid and is left alone. Returns how many went.
+    // -----------------------------------------------------------------------
+    purgeExpiredMinted: function (kind, options) {
+      log.debug('Entering the postgres driver purgeExpiredMinted(). ' + kind);
+      const o = options || {};
+      const limit = Math.max(1, Math.floor(Number(o.limit) || 1000));
+      let where = '';
+      let binds = [];
+      if (kind === 'expired') {
+        where = 'expires_at IS NOT NULL AND expires_at <= $1';
+        binds = [Number(o.nowMs)];
+      } else if (kind === 'orphan') {
+        where = 'realm <> \'\' AND realm <> $1 AND written_at < ' +
+                'to_timestamp($2 / 1000.0) AND NOT EXISTS (SELECT 1 FROM ' +
+                'sts_realms r WHERE r.id = sts_minted.realm)';
+        binds = [String(o.defaultRealm || 'default'),
+                 Number(o.orphanBeforeMs)];
+      } else if (kind === 'stale') {
+        const handles = Array.isArray(o.handles) ? o.handles.map(String) : [];
+        if (!handles.length || !(Number(o.staleBeforeMs) > 0)) {
+          log.debug("Leaving purgeExpiredMinted(). No stale rule.");
+          return Promise.resolve(0);
+        }
+        where = 'expires_at IS NULL AND body <> $1 AND handle = ' +
+                'ANY($2::text[]) AND written_at < to_timestamp($3 / 1000.0)';
+        binds = [TOMBSTONE, handles, Number(o.staleBeforeMs)];
+      } else {
+        log.debug("Leaving purgeExpiredMinted(). Unknown kind.");
+        return Promise.reject(new Error('purgeExpiredMinted(): unknown kind ' +
+                                        String(kind)));
+      }
+      log.debug("Leaving purgeExpiredMinted().");
+      return pool.query(
+        'DELETE FROM sts_minted WHERE ctid = ANY(ARRAY(SELECT ctid FROM ' +
+        'sts_minted WHERE ' + where + ' LIMIT ' + limit + '))',
+        binds
+      ).then(function (r) {
         return r.rowCount || 0;
       });
     }

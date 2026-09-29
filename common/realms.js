@@ -2595,6 +2595,28 @@ function declareHandle(options, shape, accessors) {
     // ---------------------------------------------------------------------
     retain: retainOf(options, handle),
     // ---------------------------------------------------------------------
+    // WHEN ONE ROW STOPS BEING WORTH ANYTHING (2026-09-28, #333).
+    //
+    // `expiresAt(value, key)` answers the instant, in epoch milliseconds on
+    // this process's clock, after which the record under `key` is dead — a
+    // code past its expiry, a nonce past its window, a pending flow past its
+    // lifetime — or null for a record that does not expire.
+    // `persistence_minted.js` calls it when it writes the row and stores the
+    // answer in `sts_minted.expires_at`; a restore then never reads a row
+    // whose instant has passed, and the `persistence.minted-expiry-purge`
+    // job deletes it from the table. Without it the only bound on what a
+    // start reads back was `retain: 'age'`'s seven days of WRITE age — and
+    // testidp restored 127,131 rows in 31 s, in every process.
+    //
+    // **IT MUST BE THE RECORD'S OWN EXPIRY AND NEVER EARLIER**: a row it
+    // declares dead is gone from every node's next start. A record whose
+    // life is extended on use answers the latest instant it could still be
+    // live, which the write that extended it recomputes. Pure and cheap — it
+    // runs in the flush, for every row written.
+    // ---------------------------------------------------------------------
+    expiresAt: typeof options.expiresAt === 'function' ? options.expiresAt
+      : null,
+    // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
     // Proxies over a real Array and a real Object, and a `persistRead` member

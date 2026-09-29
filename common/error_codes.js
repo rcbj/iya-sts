@@ -1203,8 +1203,10 @@ const CODES = [
     spec: '' },
   { code: 'STS-STORE-0025',
     summary: 'Minted rows older than persistence.mintedRetention could not ' +
-      'be purged from the store.',
-    spec: '' },
+      'be purged from the store at startup. Retired (#333): a start deletes ' +
+      'nothing; the persistence.minted-expiry-purge job does, and its ' +
+      'failure is STS-STORE-0065.',
+    spec: '', retired: true },
   { code: 'STS-STORE-0026',
     summary: 'The service refused to start: the minted state in the store ' +
       'could not be read.',
@@ -1374,6 +1376,16 @@ const CODES = [
       'PostgreSQL text cannot hold; the row is left out of the write rather ' +
       'than failing every write after it.',
     spec: 'none — logged' },
+  { code: 'STS-STORE-0064',
+    summary: 'A minted store\'s expiresAt hook threw while its row was being ' +
+      'written; the row is written as not expiring, so it is restored and ' +
+      'kept until the store deletes it. Said once per store.',
+    spec: 'none — logged' },
+  { code: 'STS-STORE-0065',
+    summary: 'The persistence.minted-expiry-purge job could not delete the ' +
+      'expired, orphaned or stale minted rows; a start skips them anyway, ' +
+      'and the next run tries again.',
+    spec: 'none — logged, and the job run is recorded as failed' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
