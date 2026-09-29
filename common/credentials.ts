@@ -3929,7 +3929,7 @@ class Credentials {
       try {
         raws = census(list);
       } catch (e) {
-        log.error(errorCodes.tag('STS-AUTHN-0292') +
+        log.error(errorCodes.tag('STS-AUTHN-0293') +
                   'credentials: the directory\'s credential census threw, so ' +
                   'each person is asked on their own: ' + e.message);
         raws = null;

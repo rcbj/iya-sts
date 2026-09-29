@@ -5131,7 +5131,7 @@ const CODES = [
       'claim that decides who reports it was won (#242); it is not tried ' +
       'again, because a second try could tell a receiver twice.',
     spec: 'none — logged' },
-  { code: 'STS-AUTHN-0292',
+  { code: 'STS-AUTHN-0293',
     summary: 'The directory\'s credential census threw (#352), so the users ' +
       'list\'s counts and second-factor filter asked each person\'s ' +
       'credentials one at a time instead — slower, and the same answer.',
