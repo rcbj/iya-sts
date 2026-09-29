@@ -431,7 +431,20 @@ async function bulkLimit(base, scim) {
     return 0;
   }
   log.debug('Leaving bulkLimit(). ' + most);
-  return Math.min(most, 1000);
+  return Math.min(most, bulkBatchSize());
+}
+
+// HOW MANY DELETES ONE BULK REQUEST CARRIES (#311). A person's delete ends
+// everything they held (common/CLAUDE.md, *A deleted person ends the same
+// way*), so a Bulk of 1,000 people ran past this script's 120 s request
+// timeout on testidp's first reset of 29,600 leftovers and the run stopped
+// before its first job. 100 is well inside it; STS_RESET_BULK_SIZE moves it,
+// never past the service's own advertised bulk.maxOperations.
+function bulkBatchSize() {
+  log.debug('Entering bulkBatchSize().');
+  const asked = parseInt(String(process.env.STS_RESET_BULK_SIZE || ''), 10);
+  log.debug('Leaving bulkBatchSize().');
+  return isFinite(asked) && asked > 0 ? Math.min(asked, 1000) : 100;
 }
 
 // Deletes `rows` of `type`, in Bulk requests when the service offers them and
