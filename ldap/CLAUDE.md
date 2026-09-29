@@ -1297,15 +1297,19 @@ it under a test that read `.length` of a number and so never fired).
 (`persistence/CLAUDE.md`), and a chunk runs without turning the event loop, so
 its deletes are one transaction; a Bulk larger than 500 is one per 500.
 
-Measured with the same benchmark, 5,000 and 50,000 people, 100 deleted per
-door (ms per person, the Bulk as answered):
+Measured in process with one benchmark (a realm of 5,000 or 50,000 people,
+530 or 2,030 live sessions and tokens, 100 people per door; ms per person,
+the Bulk as answered; before is origin/feature/351 at 3f558a2f):
 
 | | 5,000, before | 5,000, after | 50,000, before | 50,000, after |
 |---|---|---|---|---|
-| SCIM Bulk of 100 DELETE | 36 | 3.9 | 185 | 8.5 |
-| `deletePerson()` one at a time | 37 | 4.0 | 192 | 14 |
-| SCIM `DELETE` one request each | 54 | 14 | 293 | 21 |
-| SCIM Bulk of 100 POST | 5.6 | — | 38 | 9.4 |
+| SCIM Bulk of 100 DELETE | 34 | 4.1 | 185 | 8.0 |
+| `deletePerson()` one at a time | 30 | 3.9 | 192 | 11 |
+| SCIM `DELETE`, one request each | 46 | 11 | 293 | 19 |
+| SCIM Bulk of 100 POST | 6.0 | 5.0 | 38 | 6.1 |
+
+At 50,000 the Bulk of 100 deletes took 0.98s of CPU (was 20.2s) and held the
+event loop for at most 0.37s at a time (was 17.9s).
 
 What is left per single delete is `hasChildren()`'s walk and one pass over the
 live sessions (each resolved by `holderKeyOf()`), both O(the service) rather
