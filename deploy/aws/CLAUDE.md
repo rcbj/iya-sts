@@ -61,24 +61,40 @@ environment with its own address at the image tag already deployed (the
 `image_tag` output) — rcbj's choice over running the suite in the apply's job
 or letting the suite admit itself.
 
-**An environment is reusable, so each run starts by removing the previous
-run's realms** (`reset-environment.js`, from both runners). Creating an environment
-takes most of half an hour; the suite leaves every realm it creates standing,
-which is the record a person reads after a red run and state the next run did
-not make. The record is kept until the next run starts. The default realm's
-runtime overrides are reset too (`tests/vendored/admin_api.js` requires none,
-and the store keeps them), which is safe for `ldap.maxEntries` only because the
-nodes start with `LDAP_MAX_ENTRIES = ldap_max_entries` (200,000). The default
-realm's CONTENTS are not cleared — a job writing there names what it writes for
-the run — so the directory grows by about 15,000 entries a run (the bulk loads),
-held in every node's memory; destroy and re-create the environment, or raise
-`ldap_max_entries` and `task_memory`, when that matters. The same growth fills
-the default realm's application registry — a few hundred clients a run, against
-a service default of 500 — so the nodes start with `STS_APPLICATIONS_MAX =
-applications_max` (10,000). The second reuse of the dev cluster found it full:
-every registration was refused `STS-REG-0020`, which `sts_userinfo_protected`
-reported as an unencrypted UserInfo response.
-`STS_SUITE_KEEP_REALMS=1` skips the reset.
+**An environment is reusable, so each run starts by removing what the
+previous runs left** (`reset-environment.js`, from both runners). Creating an
+environment takes most of half an hour; the suite leaves every realm it creates
+standing, which is the record a person reads after a red run and state the next
+run did not make. The record is kept until the next run starts, and then goes,
+in this order:
+
+1. **every realm but the default one**;
+2. **the bulk-load people and groups in the default realm (#344, 2026-09-29)**
+   — about 15,000 entries a run, named `bulk-<door>-…` by
+   `tests/vendored/bulk_load.js`, deleted through SCIM Bulk (`/admin-api` has
+   no person or group delete) with a token the script mints for the seeded
+   `sts-management-api` client, so it needs `STS_ADMIN_API_CLIENT_SECRET` as
+   well as the admin token (both runners have it);
+3. **the applications suite runs registered in the default realm**, by the
+   identifier patterns `isSuiteApplication()` names, through
+   `/admin-api/applications/forget` — never a seeded one;
+4. **the default realm's runtime overrides** (`tests/vendored/admin_api.js`
+   requires none, and the store keeps them). `ldap.maxEntries`, which the bulk
+   loads raise and leave raised, resets to the nodes' `LDAP_MAX_ENTRIES =
+   ldap_max_entries` — 50,000 since 2026-09-29, one run's bulk loads beside the
+   seeded population. It was 200,000 while nothing was deleted between runs.
+
+Only the suite's own names go; `node deploy/aws/reset-environment.js --dry-run
+<url>` lists what would. Until #344 nothing in the default realm was deleted, so
+its directory grew by about 15,000 entries and its registry by a few hundred
+applications a run, held in every node process's memory — on testidp an idle
+floor of 76–87 % of 8 GiB and a restart OOM-killed (#339). Other people and
+groups a job makes in the default realm (named `<x>-<run stamp>`) are still
+left; they are a few hundred a run. The registry's ceiling stays at
+`STS_APPLICATIONS_MAX = applications_max` (10,000): the second reuse of the dev
+cluster found the service default of 500 full, and every registration was
+refused `STS-REG-0020`, which `sts_userinfo_protected` reported as an
+unencrypted UserInfo response. `STS_SUITE_KEEP_REALMS=1` skips the reset.
 
 **Four published ports.** 443 → 8081; 389 (the directory in the clear) and
 **636 (the same directory behind TLS, since 2026-09-17)** on the same numbers
