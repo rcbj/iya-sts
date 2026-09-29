@@ -3987,6 +3987,11 @@ class AdminApi {
                      'when the share is of `os.availableParallelism()`, ' +
                      'which `limitText` says), `usageSeconds`, ' +
                      '`userSeconds`, `systemSeconds` and `throttling`. ' +
+                     'Both say which cgroup they came from ' +
+                     '(`cgroupVersion`, 2 or 1); a limit that means none ' +
+                     'is the ECS task\'s where the agent answers ' +
+                     '(`limitSource` `ecs-task`), and with no cgroup at ' +
+                     'all the figures are the agent\'s (`fromEcs`). ' +
                      '`memory`: `available`, and either `unavailableText` ' +
                      'or `currentBytes` (`memory.current`), `limitBytes` ' +
                      '(`memory.max`; null for none), ' +

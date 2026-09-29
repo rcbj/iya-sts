@@ -6648,10 +6648,28 @@ what shows WHICH process grows. Four sections and the machine's own figures:
   section of its own that says it is NOT the container (on Fargate it is the
   micro-VM). Never beside a container figure.
 
+**AND CGROUP V1, AND THE ECS TASK (2026-09-28, found on Fargate).** Fargate
+mounts cgroup v1, so the first deploy drew both container sections as
+unavailable while the ECS agent answered. Both versions are read now, and
+each figure says which (`cgroupVersion`): v1's `cpuacct.usage` (nanoseconds,
+sampled the same way) against `cpu.cfs_quota_us` / `cpu.cfs_period_us` (-1 is
+none) with `cpu.stat`'s `throttled_time`, and `memory.usage_in_bytes` against
+`memory.limit_in_bytes` with `total_rss` / `total_cache`,
+`memory.max_usage_in_bytes` and `memory.oom_control`'s `oom_kill`, each
+controller found through the hierarchy `/proc/self/cgroup` names it in (the
+path under it when it exists, the hierarchy's root otherwise — a container's
+view). **A limit that means none** — v2's `max`, v1's number near 2^63, the
+agent's own — **falls back to the ECS TASK's** (`/task` Limits.CPU and
+.Memory) where the agent answers, `limitSource: 'ecs-task'` and a sentence
+saying the percentage is of the task's; **and with no cgroup at all** the
+container's memory and CPU are the agent's `/task/stats` figures, `fromEcs`
+and labelled so. `withEcs()` is the one place both happen, after both are
+read; the cluster totals then add whichever each node reported.
+
 Five decisions:
 
-* **A SOURCE THAT IS NOT THERE IS A SENTENCE.** Not Linux, no cgroup v2 (and
-  cgroup v1 named as such), a missing file, no ECS endpoint, an ECS endpoint
+* **A SOURCE THAT IS NOT THERE IS A SENTENCE.** Not Linux, no cgroup of
+  either version, a v1 host without a controller, a missing file, no ECS endpoint, an ECS endpoint
   that does not answer (`STS-CORE-0125`, logged when it starts failing and
   not on every page): `available: false` and `unavailableText`, with no
   figure at all — a zero would read as an idle container.
