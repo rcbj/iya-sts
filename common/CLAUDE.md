@@ -1084,7 +1084,7 @@ so it is phase 1 of that plan rather than eleven separate conversions, and
 converting some of them now would leave one policy behaving two ways across
 five protocols.
 
-### Five things to know before touching any of it
+### Six things to know before touching any of it
 
 **These moved here from the root `CLAUDE.md` when that file was broken up.** The
 root keeps what is genuinely cross-cutting — that this process owns six listener
@@ -1141,6 +1141,22 @@ families on one thread, and the stalls that measured — and this is the rest.
    the writing end in `realms.js`'s `checkRealmOverride()` — because the two
    ends of the `realms.*` rule were written separately and disagreed within the
    hour.
+
+6. **A REQUEST OR SURFACE WORKER SIZES ITS POOL WITH A SETTING OF ITS OWN,
+   `workers.countInRequestWorkers`, AND IT IS 0 (#347, 2026-09-29).** Item 3's
+   "a worker process is never armed" is about THIS pool's children; a request
+   worker is a different kind of worker (the table below) and runs the whole
+   stack, `crypto.js` and so this module included. It read `workers.count`
+   like the front process did, so a node with three request workers and one
+   surface worker could fork 5 + 4 × 5 = 25 crypto children, each a whole
+   node footprint — part of what put testidp's nodes at 80 % of their memory
+   idle (#339). The pool's reason is the thread that holds the listeners, and
+   a request worker holds none: a sign there delays only the requests it is
+   answering, and the front process sends the next one to another worker. So
+   `size()` reads `workers.countInRequestWorkers` when `STS_REQUEST_WORKER` is
+   set — the variable `request_pool.js` gives both pools' workers — and
+   `stats().setting` names which one sized the pool. Both are `perProcess`
+   and runtime. `tests/worker_pool.js` section H drives it in a child.
 
 **A REALM'S ELEVEN KEYS ARE MADE WHEN THE REALM IS**, and that is the pool's
 second consequence rather than a sixth thing to know about it. One of the
@@ -1277,7 +1293,7 @@ file and the only one in the image; a source-reading test reads the `.ts`.
 | Handed | everything the job needs | an HTTP request |
 | Speaks | the IPC channel, structured clone | real HTTP over a unix socket |
 | Forked | LAZILY, on the first post-quantum job | EAGERLY, before the listener binds |
-| Setting | `workers.count` (5) | `workers.requestCount` (0) |
+| Setting | `workers.count` (5); `workers.countInRequestWorkers` (0) inside a request or surface worker | `workers.requestCount` (0) |
 | Off by default | no | **yes, and nothing is dispatched until `workers.dispatch` names a path** |
 
 **The goal of the second one is one sentence: the front process should be doing

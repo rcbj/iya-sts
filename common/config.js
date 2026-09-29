@@ -3023,6 +3023,32 @@ const SETTINGS = [
                  'and a realm resizing it would be resizing every other ' +
                  'realm\'s too.' },
 
+  // THE SAME POOL INSIDE A REQUEST OR SURFACE WORKER (#347, 2026-09-29). Such
+  // a worker runs the whole stack and so has a post-quantum pool of its own,
+  // sized by workers.count until this row: a node with three request workers
+  // and one surface worker could fork 5 + 4 x 5 = 25 crypto children (#339).
+  // Zero by default because the pool's reason is the thread holding the
+  // listeners, and a request worker holds none: a sign there blocks only the
+  // requests that worker is answering, and the front process sends the next
+  // one to another worker. common/worker_pool.js's size() chooses the row.
+  { key: 'workers.countInRequestWorkers', group: 'Global',
+    label: 'Worker processes in each request worker',
+    env: 'STS_WORKERS_COUNT_IN_REQUEST_WORKERS', type: 'int', dflt: 0,
+    min: 0, max: 32, runtime: true, perProcess: true,
+    description: 'workers.count for a request or surface worker ' +
+                 '(workers.requestCount, workers.surfaceCount): how many ' +
+                 'child processes EACH such worker hands its post-quantum ' +
+                 'signing, verification and key generation to. 0, the ' +
+                 'default, computes in the worker itself — which holds no ' +
+                 'listener, so an SLH-DSA sign there delays only the ' +
+                 'requests that worker is answering, and the front process ' +
+                 'sends the next one to another worker. Each child is a ' +
+                 'whole node process, and every request worker forks its ' +
+                 'own, so raising this multiplies by the number of workers. ' +
+                 'The front process keeps workers.count. Forked lazily and ' +
+                 're-read per job, as workers.count is. A REALM MAY NOT ' +
+                 'CARRY THIS.' },
+
   // ---------------------------------------------------------------------
   // HOW LONG A POST-QUANTUM JOB MAY TAKE BEFORE THE POOL GIVES UP ON IT
   // (2026-09-11).
