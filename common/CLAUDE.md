@@ -10046,3 +10046,34 @@ strict rule read from the facts (`strictReading()` in the library, a copy in
 the gate for the process that cannot load it — `STS-CELL-0180`,
 `STS-CELL-0181`). `tests/cell_transfer.js` holds the document and both copies
 to one truth table, so the three cannot drift apart.
+
+## THE APPLICATION REGISTRY IS PARSED ONCE PER VERSION, AND A LIST OPENS NO KEY (#352, 2026-09-29)
+
+`applications.list()` read every entry, rebuilt a record from each (a pass over
+the whole SCHEMA per entry), built a view of each and opened every sealed key;
+and five lookups — `forClientId()`, `forAudience()`, `forAppliesTo()`,
+`forPermission()`, `forPermissionBase()` — were filters over it. So a console
+page that asked one per row was quadratic in the registry with a
+`keystore.open` inside the square (`/admin/consent`, `/admin/roles`, the
+delegation policy), and so was the token endpoint's own `forClientId()`.
+
+**What is kept is the parse, not the view.** Per realm, the entries, the
+records and a Map per lookup, in `list()`'s order — keyed on the store's
+`applicationsVersion()`, the `ou=applications` subtree clock, which every write
+there moves, a replicated one included (`ldap/CLAUDE.md`, the eighth section).
+The kept records are frozen and never handed out: **every caller still gets
+views of its own**, built by copying the kept values, because two hundred call
+sites read these views and nobody ever checked that none of them writes to one.
+`get()` does not use it — one entry by its DN is cheaper than a rebuild after a
+sighting moved the clock, which every authentication does. The mode is not in
+the key: the one mode-dependent member of a view is computed when it is built.
+`applications.listing` on `/admin/caches`.
+
+**A sealed field opens when it is READ.** `view()` makes each sealed member of
+`fields` an accessor that calls `keystore.open` on access and keeps nothing
+(key-material residency): a caller that wants the PEM gets it as before, and a
+reply's `JSON.stringify` opens the keys of the rows it carries — the page, not
+the population. `requiredRolesFrom()` and `consent.globalConsentsFrom()` read a
+view already in hand, which is what `/admin/roles` and `/admin/consent` do now
+instead of reading each entry back out of the directory by identifier.
+
