@@ -51,7 +51,7 @@ When they are on, **their workers start one at a time**
 store into its own memory as it starts. The listener opens once the first
 worker of each pool is up, and the rest start behind it. **Every process has a
 heap limit** derived from the container's memory limit and the number of
-processes (`workers.heapLimitMb`, 0 to derive). Each process logs its memory
+processes (`workers.heapLimitMb`: 0 to derive, -1 for none). Each process logs its memory
 every five minutes (the `process.memory-report` job). A worker that runs out of
 memory is reported with a code that says whether the heap or the kernel ended
 it.

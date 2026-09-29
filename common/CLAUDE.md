@@ -1494,7 +1494,11 @@ the machine, and a task that ran out got an anonymous SIGKILL from the kernel:
 `common/process_memory.ts` argues the whole design. What a maintainer needs:
 
 * **One budget for every process of the node.** `workers.heapLimitMb` when it
-  is set. Otherwise (container limit − headroom) ÷ (1 + requestCount +
+  is above 0. **-1 is OFF** (rcbj, 2026-09-29: testidp runs with it while its
+  processes are larger than a derived budget): no re-exec, no flag on a worker
+  (its options are passed on unchanged), and STS-WORKER-0046 cannot occur. The
+  memory report and the OOM-kill attribution (0047) work the same. At 0 it is
+  (container limit − headroom) ÷ (1 + requestCount +
   surfaceCount + 1 for the crypto children), where the headroom is 15 % and at
   least 256 MiB, and the result is floored at 256 MiB. The limit is read from
   cgroup v2 `memory.max`, then v1 `memory.limit_in_bytes`, then v1's

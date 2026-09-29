@@ -2498,8 +2498,12 @@ function fork(pool, slot) {
     // before the kernel's OOM killer picks a victim. No budget (no visible
     // container limit) leaves the options exactly as they were.
     // -------------------------------------------------------------------
-    execArgv: processMemory.workerExecArgv(process.execArgv,
-                                           processMemory.budget().mb),
+    // With the limit OFF (workers.heapLimitMb -1) this process's own
+    // options are passed on unchanged, which is fork()'s default.
+    execArgv: processMemory.budget().off
+      ? process.execArgv.slice()
+      : processMemory.workerExecArgv(process.execArgv,
+                                     processMemory.budget().mb),
     // THE MARKER THAT STOPS A WORKER PROXYING TO ITSELF. See the constant at
     // the top of this file for what happens without it.
     //

@@ -3099,13 +3099,16 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'workers.heapLimitMb', group: 'Global',
     label: 'Heap limit per process (MiB)',
-    env: 'STS_WORKERS_HEAP_LIMIT_MB', type: 'int', dflt: 0, min: 0,
+    env: 'STS_WORKERS_HEAP_LIMIT_MB', type: 'int', dflt: 0, min: -1,
     max: 1048576, runtime: false, perProcess: true,
     restartReason: 'V8 reads the heap limit when a process starts: the front ' +
                    'process restarts itself with it before it loads ' +
                    'anything, and each request worker is forked with it',
     description: 'The V8 heap limit (--max-old-space-size) of the front ' +
-                 'process and of every request worker. The default, 0, ' +
+                 'process and of every request worker. -1 turns it OFF: no ' +
+                 'limit is applied, the front process is not restarted with ' +
+                 'one and no worker is forked with one, while the memory ' +
+                 'report and the OOM-kill attribution go on. The default, 0, ' +
                  'DERIVES it from the container: (the memory limit − 15 % ' +
                  'headroom, at least 256 MiB) ÷ (1 + workers.requestCount + ' +
                  'workers.surfaceCount + 1 for the post-quantum children), ' +
