@@ -37,6 +37,8 @@
 //      cannot connect; a lapsed origin claim is not purged with the others.
 //   E. THE EVENT-LOOP DELAY: the per-process job is registered and the status
 //      carries its report.
+//   F. A KEY ROW WHOSE WRITE FAILED fails the commit a response waits for,
+//      and is written again by the retry with what it held.
 //
 // IN A CHILD PROCESS, for `cluster_barrier_throughput.js`'s reason: the store
 // modules are one per process, and this file installs stubs on them.
@@ -215,6 +217,76 @@ async function journalAndRetry(t, dir) {
   await persistence.stop();
   ldif.create = create;
   log.debug("Leaving journalAndRetry().");
+}
+
+// ---------------------------------------------------------------------------
+// F. A key row whose write fails is a failure of the commit, and is retried.
+// ---------------------------------------------------------------------------
+async function keyRows(t, dir) {
+  log.debug("Entering keyRows().");
+  t.log.info('=== F. a failed key row fails the commit and is retried ===');
+  const nodeCrypto = require('crypto');
+  const keystore = require('../common/keystore');
+  const helpers = require('../common/helpers');
+  const persistence = require('../persistence/persistence');
+  const kekFile = path.join(dir, 'kek');
+  fs.writeFileSync(kekFile, nodeCrypto.randomBytes(32).toString('base64'),
+                   'utf8');
+  process.env.STS_KEYS_SOURCE = 'persisted';
+  process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_KEYS_KEK_FILE = kekFile;
+  const store = { rows: new Map(), fail: true,
+    loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
+      return Promise.resolve([]);
+    },
+    saveKeys: function (realm, material) {
+      log.debug("Entering saveKeys().");
+      if (store.fail) {
+        log.debug("Leaving saveKeys(). Failing.");
+        return Promise.reject(new Error('the key table refused on purpose'));
+      }
+      store.rows.set(realm, material);
+      log.debug("Leaving saveKeys().");
+      return Promise.resolve();
+    },
+    deleteKeys: function () {
+      log.debug("Entering deleteKeys().");
+      log.debug("Leaving deleteKeys().");
+      return Promise.resolve();
+    } };
+  try {
+    keystore.setStore(store);
+    await keystore.start();
+    helpers.resetStsKeys();
+    const kid = helpers.STS.kid;
+    const answers = await persistence.commitThrough();
+    const failed = (answers || []).filter(function (one) {
+      return one && one.error;
+    });
+    t.check(!!kid && failed.length === 1 && store.rows.size === 0,
+            'F: A KEY ROW THAT FAILED FAILS THE COMMIT a response waits for ' +
+            '— its outcome was dropped, and a realm was answered as created ' +
+            'with keys the store never held', JSON.stringify(answers));
+    t.check(keystore.failing() === true,
+            'F: and the key store says a failed row is waiting',
+            String(keystore.failing()));
+    store.fail = false;
+    keystore.retryFailed();
+    await keystore.settleAll();
+    t.check(store.rows.size === 1 && keystore.failing() === false,
+            'F: the retry writes the row it failed with, and nothing is left ' +
+            'waiting', JSON.stringify({ rows: store.rows.size,
+                                        failing: keystore.failing() }));
+  } finally {
+    delete process.env.STS_KEYS_SOURCE;
+    delete process.env.STS_KEYS_KEK_PROVIDER;
+    delete process.env.STS_KEYS_KEK_FILE;
+    keystore.reset();
+    helpers.resetStsKeys();
+  }
+  log.debug("Leaving keyRows().");
 }
 
 // ---------------------------------------------------------------------------
@@ -712,6 +784,7 @@ async function childMain() {
   let threw = '';
   try {
     await journalAndRetry(t, dir);
+    await keyRows(t, dir);
     const state = stubTheStore();
     await theApp(t, state);
     await theDirectory(t, state);
