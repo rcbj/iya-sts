@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3771** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3772** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 252
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 253
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 667
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
@@ -1209,6 +1209,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0290` | A session was ended by a caller that did not say who initiated it (#242): CAEP session-revoked says `system`, and the caller should state admin, user, policy or system. | none — logged; the session is ended |
 | `STS-AUTHN-0291` | Reporting a session's end (its audit row, CAEP session-revoked and back-channel Logout Tokens) threw after the claim that decides who reports it was won (#242); it is not tried again, because a second try could tell a receiver twice. | none — logged |
 | `STS-AUTHN-0292` | A realm held authn.maxSessions sign-on sessions when another was created, so the least recently used session was ended to make room (#345) — through the same end an expiry takes: its audit row (which carries this code), CAEP session-revoked and back-channel Logout Tokens. | none — audited; logged at most once a minute per process |
+| `STS-AUTHN-0293` | The directory's credential census threw (#352), so the users list's counts and second-factor filter asked each person's credentials one at a time instead — slower, and the same answer. | none — logged |
 
 ## STS-OAUTH
 

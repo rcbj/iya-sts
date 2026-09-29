@@ -4804,6 +4804,11 @@ const CODES = [
       '(which carries this code), CAEP session-revoked and back-channel ' +
       'Logout Tokens.',
     spec: 'none — audited; logged at most once a minute per process' },
+  { code: 'STS-AUTHN-0293',
+    summary: 'The directory\'s credential census threw (#352), so the users ' +
+      'list\'s counts and second-factor filter asked each person\'s ' +
+      'credentials one at a time instead — slower, and the same answer.',
+    spec: 'none — logged' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

@@ -10554,6 +10554,127 @@ if (typeof personAssertions.setDirectory === 'function') {
 }
 
 // ---------------------------------------------------------------------------
+// THE CREDENTIAL CENSUS (#352, 2026-09-29): the raw values of the credential
+// attributes, for many names in ONE call.
+//
+// `/admin/users` counts who holds what over everybody in the realm, and it
+// did that by asking `credentials.mechanismsFor()` of each person — about
+// nine `locateEntry()`s, a copy of the whole entry for the mail factor and an
+// unseal of the TOTP secret, per person, per request. What the counts need
+// is five attributes of each entry, and this hands exactly those over.
+//
+// **RAW, AND DELIBERATELY SO.** The values go back as the store holds them —
+// the `stsWebauthnCredential` strings, the `stsTotpCredential` string, the
+// four mail-factor attributes — and `common/credentials.ts` interprets them,
+// through the same functions it reads one person with. What an enrolment IS
+// is decided there, and `persons()`'s header above argues why this module
+// must not start deciding it. The one thing reduced here is the password:
+// PRESENCE, `readStoredPassword()`'s answer, never the hash.
+//
+// **EACH NAME IS FOUND THE WAY `locateEntry()` FINDS IT**, because that is
+// the entry every one-name reader in `credentials.ts` would have read, and a
+// count that resolved a name differently from the sign-in screen would count
+// somebody else's credentials against them. For a plain name that is the
+// username index — one walk, kept until the next write — and a Map lookup;
+// only an identifier-shaped key (a subject, a DN, a DID, a SPIFFE ID) costs
+// what it always cost, once rather than nine times.
+//
+// **THE METHOD #349'S DIRECTORY WINDOW SHOULD ANSWER WITH ONE QUERY**: a
+// batch of names is `persistence/directory_queries.js`'s `byKeys()` shape
+// (one statement over `ANY($1)`), selecting five attributes, where nine
+// synchronous round trips per person would be the alternative.
+// ---------------------------------------------------------------------------
+/**
+ * Reads the credential attributes of each named person, raw, in one call.
+ *
+ * @param names - the names, as `locateEntry()` takes them
+ * @returns one element per name: null where no entry is found, else
+ *   `{ password, webauthn, totp, mail }` — `mail` the four mail-factor
+ *   attributes, or null for an entry the mail channel would not read
+ */
+function credentialCensus(names) {
+  log.debug('Entering credentialCensus(). ' + (names || []).length +
+            ' name(s).');
+  const out = (names || []).map(function (name) {
+    const stored = locateEntry(String(name == null ? '' : name)).stored;
+    if (!stored) {
+      return null;
+    }
+    const a = stored.attributes;
+    const password = (a.userpassword || []).length > 0 &&
+                     !!String(a.userpassword[0]);
+    return {
+      password: password,
+      webauthn: (a.stswebauthncredential || []).slice(0),
+      totp: (a.ststotpcredential || [])[0]
+        ? String(a.ststotpcredential[0]) : '',
+      // The mail channel's `personEntry()` reads only an entry with a name
+      // (`usernameOfEntry()`), so the census hands the four over on the same
+      // condition — otherwise an entry that channel refuses would be counted
+      // as holding an emailed factor.
+      mail: usernameOfEntry(stored)
+        ? { mail: (a.mail || []).slice(0),
+            stsmailverified: (a.stsmailverified || []).slice(0),
+            stsmailfactor: (a.stsmailfactor || []).slice(0),
+            stsmailfactorfailures: (a.stsmailfactorfailures || []).slice(0) }
+        : null
+    };
+  });
+  log.debug('Leaving credentialCensus().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// WHICH KEYS NAME A REGISTERED APPLICATION, AS ONE FUNCTION (#352).
+//
+// `/admin/users` leaves an application off its list of people, and asked
+// `applications.get()` of every register row with no person entry to find
+// out — a `getEntry()` and, on a miss, a walk of `ou=applications` per row;
+// thousands of rows on a cluster that has seen many clients. The answer is a
+// property of one container, so it is read once: the DNs and `appIdentifier`
+// values of every entry under it, and a function that asks exactly what
+// `applicationEntry()` asks — the entry at the DN the key WOULD have, or an
+// entry carrying the key as its identifier.
+//
+// `entriesUnder()` is the cached listing `allApplications()` reads, current
+// until something is written under the container. For #349's window it is
+// the `page()` query over `ou=applications`, which is a few hundred rows.
+// ---------------------------------------------------------------------------
+/**
+ * Builds a function that says whether a key names an application registered
+ * in the ambient realm, as `applicationEntry()` would find it.
+ *
+ * @returns the function
+ */
+function applicationMatcher() {
+  log.debug('Entering applicationMatcher().');
+  const dns = new Set();
+  const identifiers = new Set();
+  entriesUnder(applicationsDn()).forEach(function (stored) {
+    dns.add(normalizeDn(stored.dn));
+    const identifier = (stored.attributes.appidentifier || [])[0];
+    if (identifier !== undefined) {
+      identifiers.add(identifier);
+    }
+  });
+  log.debug('Leaving applicationMatcher(). ' + dns.size + ' application(s).');
+  // Asked once per row of a users list, so no Entering/Leaving pair: two log
+  // lines per row would drown the page's own.
+  return function (key) {
+    const wanted = String(key);
+    return dns.has(normalizeDn(applicationDn(wanted))) ||
+           identifiers.has(wanted);
+  };
+}
+
+if (typeof credentials.addDirectoryHooks === 'function') {
+  credentials.addDirectoryHooks({
+    credentialCensus: credentialCensus,
+    applicationMatcher: applicationMatcher
+  });
+}
+
+// ---------------------------------------------------------------------------
 // CERTIFICATE ENROLLMENT'S SLOT (2026-09-13).
 //
 // `common/cert_enrollment.ts` keeps what ACME, EST and SCEP issued — and the

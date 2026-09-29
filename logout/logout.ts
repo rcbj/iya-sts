@@ -1990,9 +1990,18 @@ class Logout {
     // record of one that exists here, and deliberately not a store of the
     // KDC's: a real KDC keeps no state about the tickets it has issued, which
     // is what lets one be replicated read-only.
+    //
+    // **ONE KIND ASKED FOR, NOT EVERYTHING ISSUED FILTERED (#352).** This
+    // built `stats.issuedList()` — every token and artifact copied, given a
+    // state and sorted — on every `/admin/sessions` request, to keep the
+    // tickets. `issuedArtifactsOfKind()` answers the same rows in the same
+    // order from one walk of the artifacts; a `stats` without it (an older
+    // one, or a test's stub) is asked the old way.
     const realm = krb5Principals.REALM;
     const signOutOn = config.value('logout.kerberosSignOut');
-    stats.issuedList().forEach((record) => {
+    const tickets = typeof stats.issuedArtifactsOfKind === 'function'
+      ? stats.issuedArtifactsOfKind('Kerberos TGT') : stats.issuedList();
+    tickets.forEach((record) => {
       if (record.kind !== 'Kerberos TGT') {
         return;
       }

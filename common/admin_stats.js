@@ -2519,16 +2519,27 @@ function copyOfUserRecord(record) {
 // as a person with no directory entry — its `isClient` was on a row nobody
 // read. Keyed by identity key, in the ambient realm, as copies.
 // ---------------------------------------------------------------------------
-function everyUserRecord() {
+//
+// `onlyKey` (#352) keeps one identity's record and copies nobody else's —
+// `userRow()`'s question, which built every copy to keep one. The fold is the
+// same fold, so the record it keeps is the one the whole map would have held.
+function everyUserRecord(onlyKey) {
   log.debug("Entering everyUserRecord().");
   const merged = new Map();
+  const wanted = onlyKey === undefined ? null : String(onlyKey);
   users.forEach(function (record) {
+    if (wanted !== null && record.key !== wanted) {
+      return;
+    }
     merged.set(record.key, copyOfUserRecord(record));
   });
   replication.remoteKeys('admin_stats.users').forEach(function (key) {
     replication.remoteRows('admin_stats.users', undefined, key)
       .forEach(function (value) {
         if (!value || typeof value !== 'object') {
+          return;
+        }
+        if (wanted !== null && (value.key || key) !== wanted) {
           return;
         }
         const theirs = Object.assign({}, value, { key: value.key || key,
@@ -4655,6 +4666,58 @@ function issuedList() {
 }
 
 // ---------------------------------------------------------------------------
+// ONE KIND OF ARTIFACT, AS `issuedList()` WOULD LIST IT (#352, 2026-09-29).
+//
+// `/admin/sessions` (through `logout.liveSessions()`) wanted the Kerberos
+// ticket-granting tickets and built `issuedList()` to find them: every token
+// copied and given a state, every artifact of every kind given one, all of it
+// sorted — up to five thousand tokens on each request, to keep a handful of
+// tickets. This walks the artifacts once, keeps the kind asked for, and
+// builds each kept row by the artifact branch of `issuedList()` — the same
+// members, the same state against the same clock — in the same order that
+// list would have put them in: newest first, and among equal instants the one
+// recorded later first.
+// ---------------------------------------------------------------------------
+/**
+ * Lists the issued artifacts of one kind, each as `issuedList()` would list
+ * it, newest first.
+ *
+ * @param kind - the artifact kind, such as `Kerberos TGT`
+ * @returns the rows
+ */
+function issuedArtifactsOfKind(kind) {
+  log.debug("Entering issuedArtifactsOfKind(). kind=" + kind);
+  const nowMs = Date.now();
+  const family = FAMILY_BY_ARTIFACT_KIND[kind];
+  const out = [];
+  if (!family) {
+    log.debug("Leaving issuedArtifactsOfKind(). Not a listed kind.");
+    return out;
+  }
+  allArtifacts().forEach(function (one, index) {
+    if (!one || one.kind !== kind) {
+      return;
+    }
+    const record = withRevocation(one);
+    out.push(Object.assign({}, record, {
+      family: family,
+      state: artifactStateOf(record, nowMs),
+      expiresAtMs: record.expiresAt || 0,
+      identifier: record.id || '',
+      setId: '',
+      revocable: true,
+      revocationReach: 'record-only',
+      order: index
+    }));
+  });
+  out.sort(function (a, b) {
+    return (b.issuedAt - a.issuedAt) || (b.order - a.order);
+  });
+  log.debug("Leaving issuedArtifactsOfKind(). " + out.length + " row(s).");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE SAME LIST, GROUPED INTO WHAT WAS ISSUED TOGETHER.
 //
 // **This is what /admin/tokens draws, and the reason it is a different list
@@ -4934,12 +4997,92 @@ function blankUserRow(identity) {
  */
 function userRows() {
   log.debug("Entering userRows().");
+  const out = buildUserRows(undefined);
+  log.debug("Leaving userRows().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// ONE IDENTITY'S ROW, WITHOUT EVERYBODY ELSE'S (#352, 2026-09-29).
+//
+// `userDetail()` found its row by building `userRows()` and filtering it —
+// every register record copied and folded, every token and artifact walked
+// into a row, every row's counted maps turned into sorted arrays, all sorted
+// by activity — to keep one. On testidp that is thirteen thousand rows built
+// for each click on a name. `buildUserRows()` takes the key and builds only
+// that row, through the same code, so the row it answers is the row the
+// whole list would have held: the register fold keeps the one record, and
+// a token or artifact is counted only if it files under that key.
+// ---------------------------------------------------------------------------
+/**
+ * Returns one identity's row, exactly as `userRows()` would list it.
+ *
+ * @param key - the identity's key
+ * @returns the row, or null when nothing here knows that key
+ */
+function userRow(key) {
+  log.debug("Entering userRow(). key=" + key);
+  const rows = buildUserRows(String(key == null ? '' : key));
+  log.debug("Leaving userRow(). " + (rows.length ? "Found." : "None."));
+  return rows[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// EVERY KEY `userRows()` WOULD LIST, AND NOTHING ELSE (#352, 2026-09-29).
+//
+// Nine console pages asked `userRows()` for a set of keys — "is this member
+// somebody the users page knows, so the name can be a link" — and threw the
+// rows away. The keys come from the same three sources by the same rules (the
+// register's records, `holderKeyOf()` of every token, `identityOf()` of every
+// artifact's subject); no row is built, copied or sorted.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the key of every identity `userRows()` would list.
+ *
+ * @returns a Set of keys
+ */
+function userKeys() {
+  log.debug("Entering userKeys().");
+  const keys = new Set();
+  users.forEach(function (record) {
+    keys.add(record.key);
+  });
+  replication.remoteKeys('admin_stats.users').forEach(function (key) {
+    replication.remoteRows('admin_stats.users', undefined, key)
+      .forEach(function (value) {
+        if (value && typeof value === 'object') {
+          keys.add(value.key || key);
+        }
+      });
+  });
+  // `rowFor()`'s rule: the key is `identityOf()` of what it is handed, and an
+  // empty one files nothing.
+  const add = function (value) {
+    const identity = identityOf(value);
+    if (identity.key) {
+      keys.add(identity.key);
+    }
+  };
+  tokens.forEach(function (record) {
+    add(holderKeyOf(record.username, record.sub));
+  });
+  allArtifacts().forEach(function (record) {
+    add(record.subject);
+  });
+  log.debug("Leaving userKeys(). " + keys.size + " key(s).");
+  return keys;
+}
+
+// `userRows()`, or with `onlyKey` the one row it would hold under that key.
+function buildUserRows(onlyKey) {
+  log.debug("Entering buildUserRows().");
+  const wanted = onlyKey === undefined ? null : String(onlyKey);
   const nowMs = Date.now();
   const rows = new Map();
   const rowFor = function (value) {
     log.debug("Entering rowFor().");
     const identity = identityOf(value);
-    if (!identity.key) {
+    if (!identity.key || (wanted !== null && identity.key !== wanted)) {
       log.debug("Leaving rowFor().");
       return null;
     }
@@ -4952,7 +5095,7 @@ function userRows() {
     return row;
   };
 
-  everyUserRecord().forEach(function (record) {
+  everyUserRecord(onlyKey).forEach(function (record) {
     const row = blankUserRow(record);
     // The registry's own counts win over anything reconstructed below: they
     // count authentications, and the forms map there was built one presentation
@@ -5037,7 +5180,7 @@ function userRows() {
   // Most recently active first, which on a mock is nearly always the person
   // being debugged right now.
   out.sort(function (a, b) { return b.lastActivityAt - a.lastActivityAt; });
-  log.debug("Leaving userRows(). " + out.length + " user(s), " +
+  log.debug("Leaving buildUserRows(). " + out.length + " user(s), " +
             out.filter(function (r) { return r.authenticated; }).length + " " +
                 "authenticated here.");
   return out;
@@ -5056,8 +5199,9 @@ function userRows() {
 function userDetail(key) {
   log.debug("Entering userDetail(). key=" + key);
   const wanted = String(key || '');
-  const row = userRows().filter(function (r) { return r.key === wanted; })[0] ||
-              null;
+  // `userRow()` and not `userRows()` filtered (#352): the same row, without
+  // building everybody else's to find it.
+  const row = wanted ? userRow(wanted) : null;
   if (!row) {
     log.debug("Leaving userDetail(). No such user.");
     return null;
@@ -5543,6 +5687,10 @@ module.exports = {
   holderKeyOf: holderKeyOf,
   renameIdentity: renameIdentity,
   userRows: userRows,
+  // #352: one row, and the keys alone, without building every row.
+  userRow: userRow,
+  userKeys: userKeys,
+  issuedArtifactsOfKind: issuedArtifactsOfKind,
   userDetail: userDetail,
   holdingsOf: holdingsOf,
   sessionIdOfJti: sessionIdOfJti,

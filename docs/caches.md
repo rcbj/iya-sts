@@ -176,6 +176,19 @@ console, `/admin-api`, SCIM or LDAP on port 389. Each index is one per realm and
 can hold no more than the directory does, and the directory is capped by
 `ldap.maxEntries`.
 
+## Sign-in credentials
+
+| Cache | Holds | Scope | How long |
+|---|---|---|---|
+| Authenticator secret verdicts | whether each encrypted authenticator-app (TOTP) secret can be decrypted by this process: yes or no, never the secret | per process | until the key-encryption keys change; 20,000 verdicts, oldest first |
+
+**Why it exists.** Users and the second-factor roster (`/admin/users`,
+`GET /admin-api/users` and `GET /admin-api/mfa`) count the people whose
+authenticator enrolment cannot be read. Without this cache, every request
+decrypted every enrolled person's secret to count them. A new enrolment is
+encrypted afresh, so it is always checked again. Signing in with a code does
+not use this cache: it decrypts the secret every time.
+
 ## Other protocols
 
 | Cache | Holds | Scope | How long | Setting |

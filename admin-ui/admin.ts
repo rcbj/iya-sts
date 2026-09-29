@@ -15395,9 +15395,10 @@ class AdminConsole {
     const perOptions = this.perPageOptions(paging.perPage);
 
     // THE SECOND-FACTOR COUNTS (2026-09-10), over the WHOLE population rather
-    // than the page — which is why peopleRows() scans rather than reading the
-    // rows being shown. A tile that counted one page of twenty would answer a
-    // question nobody asked.
+    // than the page. A tile that counted one page of twenty would answer a
+    // question nobody asked. Since #352 they come from `peopleCensus()`, one
+    // pass over the directory, and only the rows drawn below are decorated —
+    // `admin-core/CLAUDE.md`, *The users list pages before it decorates*.
     const inner = this.messagesOf(req) +
       '<div class="tiles">' +
         this.tile(all.length, 'people') +
