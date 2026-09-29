@@ -148,3 +148,27 @@ output "cell_kek_secret_arn" {
   description = "The cell's own key-encryption key, replicated nowhere; empty for a single-cell environment."
   value       = local.multi ? aws_secretsmanager_secret.main["cell-kek"].arn : ""
 }
+
+# ---------------------------------------------------------------------------
+# A CONVERTED CELL'S ONE-OFF TASK (conversion.tf, #98): what entrypoint.sh
+# needs to run it — the task definition, and the subnet and security group a
+# node would get. Empty in every cell that names no snapshot, and in `base`.
+# ---------------------------------------------------------------------------
+output "db_snapshot_identifier" {
+  description = "The snapshot this cell's database was restored from; empty for one made empty."
+  value       = local.db_snapshot_identifier
+}
+
+output "conversion_task_definition" {
+  description = "The conversion task's definition ARN, in a restored cell's `full` phase; empty otherwise."
+  value       = local.restored && local.full ? aws_ecs_task_definition.convert[0].arn : ""
+}
+
+output "conversion_network" {
+  description = "Where the conversion task runs: node-a's public subnet (it pulls its image and reads its secrets with no NAT, as a node does) and the nodes' security group."
+  value = {
+    subnets          = [aws_subnet.public[0].id]
+    security_groups  = [aws_security_group.nodes.id]
+    assign_public_ip = "ENABLED"
+  }
+}

@@ -124,6 +124,69 @@ A cell refuses to start when:
     receiving cell's key;
   * they are removed from the old cell.
 
+## Turning a single-cell deployment into a cell
+
+A service that has been running in single-cell mode keeps everything in one
+database. It can become one cell of a new multi-cell service **without losing
+anything**: its people, their credentials and devices, its realms and signing
+keys, and its whole risk-scoring history. This is a **one-time conversion**,
+made by an operator's tool that runs once before the new cells first start:
+
+```bash
+node persistence/cell_convert.js --dry-run   # say what would move; change nothing
+node persistence/cell_convert.js             # convert
+```
+
+Run it inside the service's image, **configured exactly like the cell the
+database will become**:
+
+* `cells.id` (`STS_CELL_ID`) is the new cell;
+* `persistence.databaseUrl` is the single-cell deployment's database (for
+  example, restored from its snapshot), which becomes that cell's own;
+* `persistence.globalDatabaseUrl` is the new global database, created empty
+  and at the current schema (`postgres/schema.sql`);
+* the service key-encryption key (`keys.kek*`) and both password providers
+  are the ones the service would use.
+
+The tool makes no change to any other database.
+
+**What moves to the global database:**
+
+* realms and settings;
+* signing keys and the certificate authorities;
+* the used-assertion history and the cluster's shared secrets;
+* applications, policies and every other configuration entry;
+* each group's definition and its non-person members;
+* the stored state that belongs to the whole service, such as revocations
+  and replay caches.
+
+**What stays in the cell:**
+
+* the people, with their credentials and devices;
+* each group's person members;
+* everything the deployment minted, such as sessions and tokens;
+* the audit log;
+* every `sts_risk_*` table, untouched.
+
+**The routing index is filled in:** every person the database holds is
+recorded as homed in this cell.
+
+It copies first, reads the copy back and compares it, and only then removes
+the moved rows from the cell database, so a failure never loses anything.
+Running it again is always safe:
+
+* After a partial failure, a re-run finishes the job.
+* After a success, it reports the store already converted and changes
+  nothing.
+* It refuses a global database that already holds another service's realms
+  or keys, and it refuses when there is nothing to convert.
+
+Every refusal is an `STS-CELL-020x` code, and the exit status is non-zero.
+
+> **Warning.** Stop the single-cell service before converting, and keep it
+> stopped: a process still writing the old database would write global rows
+> into it that no cell reads. Take a snapshot first.
+
 ## The decisions are policy
 
 Whether a session may be held away from home, whether a request may be

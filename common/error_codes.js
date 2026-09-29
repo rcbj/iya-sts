@@ -1847,6 +1847,63 @@ const CODES = [
       'cells\' settings disagree); it is refused 400 rather than relayed ' +
       'again, and nothing is created.',
     spec: '' },
+  { code: 'STS-CELL-0200',
+    summary: 'The one-time conversion of a single-cell store into a cell ' +
+      '(persistence/cell_convert.js) was refused before it read anything: ' +
+      'an unknown argument, no cells.id, a store that is not postgres, no ' +
+      'global database, or keys not persisted under an operator ' +
+      'key-encryption key. Nothing is changed and it exits non-zero.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-CELL-0201',
+    summary: 'The conversion found the cell or the global database at a ' +
+      'schema version other than this service\'s; postgres/schema.sql has ' +
+      'to be run against both first. Nothing is changed.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-CELL-0202',
+    summary: 'The conversion found nothing to convert: the cell database ' +
+      'holds no realm and no key and the global database is empty — the ' +
+      'cell\'s database URL does not name the single-cell deployment\'s ' +
+      'database. Nothing is changed.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-CELL-0203',
+    summary: 'The conversion refused a second source: the global database ' +
+      'already holds realms or keys that are not the cell database\'s, or ' +
+      'a routing index row naming another cell. Nothing is changed.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-CELL-0204',
+    summary: 'The conversion\'s copy into the global database (or an ' +
+      'already-converted store\'s missing routing index rows) could not be ' +
+      'written; the transaction was rolled back and the cell database is ' +
+      'unchanged. Running it again is safe.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-CELL-0205',
+    summary: 'The conversion read the global database back after the copy ' +
+      'and it did not hold what was copied (a row missing or different, or ' +
+      'a person indexed in another cell); the cell database is unchanged.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-CELL-0206',
+    summary: 'The conversion copied and verified the global rows and then ' +
+      'could not take them out of the cell database; that transaction was ' +
+      'rolled back. Running it again finds the copy and finishes.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-CELL-0207',
+    summary: 'The conversion could not hold the service key-encryption ' +
+      'key, or it did not open the stored key sets: the routing index\'s ' +
+      'digests are keyed under it and would route nobody. Nothing is ' +
+      'changed.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-CELL-0208',
+    summary: 'The conversion could not dial or read the cell or the global ' +
+      'database the way the service does (a connection, a password ' +
+      'provider or a statement failed). Nothing is changed.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-CELL-0209',
+    summary: 'A conversion finished with something worth a look: the ' +
+      'sts_risk_* counts moved while it ran (something else was writing ' +
+      'the cell database), or an already-converted cell database holds a ' +
+      'global-tier directory row or a person indexed in another cell. ' +
+      'Nothing is changed for it.',
+    spec: 'none — a warning in the log' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +

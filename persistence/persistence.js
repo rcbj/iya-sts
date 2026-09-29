@@ -1834,6 +1834,54 @@ function resolveGlobalUrls() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// THE GLOBAL TIER, DIALLED THE WAY A CELL DIALS IT (#98), for a process that
+// is not the service: `databaseConnection()`'s arrangement for the global
+// database. `persistence/cell_convert.js`, the one-time conversion of a
+// single-cell store into a cell, writes the global tier through the writer
+// URL this answers, so the two cannot disagree about how the connection is
+// made. Rejects as `resolveGlobalUrls()` does.
+// ---------------------------------------------------------------------------
+/**
+ * Returns what a process needs to dial the global tier's database the way a
+ * cell does.
+ *
+ * @returns a promise of `{ url, readUrl, verifyTls }`
+ */
+function globalDatabaseConnection() {
+  log.debug("Entering globalDatabaseConnection().");
+  log.debug("Leaving globalDatabaseConnection().");
+  return resolveGlobalUrls().then(function (urls) {
+    return { url: urls.url, readUrl: urls.readUrl,
+             verifyTls: verifiesDatabaseTls() };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE ROUTING INDEX'S DIGEST (#98), ONE DEFINITION: the keyed digest under
+// the service key that `persistence_tiered.js` claims a person's name and
+// entryUUID with at the flush, and that `persistence/cell_convert.js`
+// backfills the index with for a converted store — so a backfilled row is
+// the row the flush would have written. `common/cell_routing.ts`' own
+// `digest()` makes the same value for a lookup (it lower-cases and trims
+// the value, which the flush's callers have already done). Null without a
+// key-encryption key.
+// ---------------------------------------------------------------------------
+/**
+ * The keyed digest a routing index row is keyed by.
+ *
+ * @param realmId - the realm
+ * @param kind - 'name' or 'uuid'
+ * @param value - the login name or entryUUID, already lower-cased
+ * @returns the digest, or null without a key-encryption key
+ */
+function routingDigest(realmId, kind, value) {
+  log.debug("Entering routingDigest().");
+  log.debug("Leaving routingDigest().");
+  return keystore.keyedDigest('cell-routing', String(realmId) + '\n' +
+                              String(kind) + '\n' + String(value));
+}
+
 // The half of `start()` that runs once the connection string is final. Split
 // out above; `resolvedUrl` is what postgres dials and is ignored by ldif.
 // ---------------------------------------------------------------------------
@@ -1966,11 +2014,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
       });
       driver = tiered.create({
         global: globalDriver, cell: driver, cellId: cells.id(),
-        digest: function (realmId, kind, value) {
-          return keystore.keyedDigest('cell-routing', String(realmId) +
-                                      '\n' + String(kind) + '\n' +
-                                      String(value));
-        }
+        digest: routingDigest
       });
       // WHAT A CELL'S SESSIONS MODULE IS TOLD (#98 D4): reached lazily at
       // each call, because `common/cell_sessions.ts` is built with the
@@ -3325,6 +3369,10 @@ module.exports = {
   // The connection an out-of-process tool dials the database with, made the
   // way this service makes its own (#213) — see databaseConnection().
   databaseConnection: databaseConnection,
+  // The same for the global tier, and the routing index's one digest (#98):
+  // what `persistence/cell_convert.js` converts a single-cell store with.
+  globalDatabaseConnection: globalDatabaseConnection,
+  routingDigest: routingDigest,
   verifiesDatabaseTls: verifiesDatabaseTls,
   MODES: MODES,
   mode: mode,

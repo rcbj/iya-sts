@@ -320,6 +320,10 @@ const GLOBAL_MINTED = {
 // Cell-tier: minted here, or somebody's. Listed rather than defaulted — see
 // the header.
 const CELL_MINTED = [
+  // `attribute_sources.status` and `federation.unmapped` (#94) are
+  // OBSERVATIONS of this cell's own traffic: a source's last error can name
+  // the person it was looking up, and the names a partner sent arrived at
+  // somebody's sign-in. Each cell's console shows what that cell saw.
   'acme.accountKeys', 'acme.accounts', 'acme.authorizations',
   'acme.certificates', 'acme.orders', 'acme.renewalInfo', 'acme.usedNonces',
   'admin_stats.artifacts', 'admin_stats.calls', 'admin_stats.claimSets',

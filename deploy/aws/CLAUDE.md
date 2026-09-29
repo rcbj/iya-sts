@@ -12,6 +12,8 @@ Dockerfile removes this directory from the image.
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction, VPC CIDR and pinned countries, and which cell holds the global database's writer. Its presence is what makes an environment multi-cell; `testidpna` is the one there is | the deployer role |
+| `environment/envs/<env>.conversion.tfvars.json` | per conversion | **a single-region environment converted into this one's cells (#98)**: which old environment, each converted cell's source snapshot and the copy it restores from, and the carry-over secret. Laid over the cells file by `entrypoint.sh` ONLY with `TF_CONVERT=1` (*Converting a single-region environment into cells*, below); `testidpna`'s converts `testidp` | the deployer role |
+| `convert-to-cells.sh` | per conversion | the conversion's runbook: checks (read only, the default), `--carry-secrets`, `--copy-snapshot`, and the `terraform-local.sh` commands in order — never an apply or a destroy itself | a person |
 | `global/` | per multi-cell environment | the global tier of a multi-cell environment (#98): the global PostgreSQL writer and a cross-region read replica per other cell, the global secrets and their replicas, the peering mesh and the inter-cell name associations — state at `environment/<env>/global.tfstate` (*Cells*, below) | the deployer role, through `entrypoint.sh` |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
@@ -487,7 +489,9 @@ applied with no `TF_CELL`:
 
 A cell that already has state skips step 1, because `base` scales its nodes
 to zero and on a running cell that is an outage. Every later apply is steps
-2 and 3. **Destroy** reverses it: every cell's dependent stacks
+2 and 3. **A cell CONVERTED from a single-region environment** takes step 3
+twice, with its nodes held at 0 and a one-off conversion task between
+(*Converting a single-region environment into cells*, below). **Destroy** reverses it: every cell's dependent stacks
 (`spiffe-realm`, `suite-callbacks` — whose state is under
 `environment/<env>/<cell>/` now — the 2026-09-20 lesson, kept), then
 `global/` while the cells it reads still exist (routes, peerings, zone
@@ -643,6 +647,137 @@ us-west-2, ca-central-1, eu-central-1 and ap-southeast-1, and a module block
 per region (and per pair, for the peering) that exists only when used. A cell
 in a fifth region is those blocks plus a row in `cell_of_region`, then the
 map entry — and is refused by validation until then.
+
+### Converting a single-region environment into cells (2026-09-28)
+
+**`testidp` becomes cell `usw2` of `testidpna` WITH ITS DATABASE** — the
+risk datasets and their history in `sts_risk_*` above all, which take days
+to import again and, for the refused-password and sign-in history, cannot be
+imported at all. Everything a new cell does, it does; what differs is three
+things in `environment/`, one in `global/`, one in the orchestration and a
+runbook. **Written and checked statically only, by instruction**, like the
+rest of *Cells*; nothing was planned or applied, and the first
+`TF_CONVERT=1` apply is its test.
+
+**THE TWO THINGS A DESTROY OF THE OLD ENVIRONMENT TAKES WITH IT, AND WHAT
+KEEPS EACH.** `rds.tf` has `skip_final_snapshot = true` and
+`delete_automated_backups`, so the database goes with no record; the
+secrets have `recovery_window_in_days = 0`, so they go at once — and every
+sealed row opens only under the old key-encryption key. So both are copied
+OUT first, by `convert-to-cells.sh`, which refuses nothing and destroys
+nothing and whose default run only reads:
+
+* **the snapshot, RE-ENCRYPTED UNDER THE CELL KEY.** RDS restores a snapshot
+  under the snapshot's own KMS key — `RestoreDBInstanceFromDBSnapshot` has no
+  key parameter (RDS API reference) — and a copy is the only way to change
+  it: `CopyDBSnapshot` with `KmsKeyId` "encrypt[s] the copy with a new KMS
+  key" (RDS API reference, *CopyDBSnapshot*). `testidp`'s snapshot is under
+  the project key; a cell's database is under `alias/mock-sts-cell-<cell>`
+  (the residency line). Restoring the project-key snapshot as it is would
+  put the cell's data under a key it must not be under, and the instance's
+  `kms_key_id` would disagree with the config on every plan — the provider's
+  answer to which is to REPLACE the database. `--copy-snapshot` makes
+  `<source>-<cell>` under the cell key, in the cell's region (cross-region
+  with `--source-region` for a cell elsewhere), and waits for it.
+* **the carry-over secret**, `mock-sts/carryover/<old env>`: one JSON secret
+  under the project key with the four values the restored rows depend on —
+  the KEK, the management client's secret, the bootstrap administrator's
+  password and the Kerberos service password. `global/secrets.tf`, *A
+  converted environment's secrets*, argues each against the code and the
+  two NOT carried: the krbtgt password (product mode does not read it since
+  #169; the key is sealed on the directory entry and travels in the
+  snapshot) and the database passwords (new ones, set on the restored
+  instance and role). `--carry-secrets` reads each value into a file of its
+  own process and never prints one.
+
+**THE CONVERSION FILE IS AN OVERLAY, NOT AN EDIT OF THE CELLS FILE** —
+`envs/testidpna.conversion.tfvars.json`, which `entrypoint.sh` lays over the
+cells file only with `TF_CONVERT=1` (jq's deep merge, restricted to each
+cell's `db_snapshot_identifier`, so it can add a snapshot and never a cell),
+and whose `carryover_secret` it hands to `global/` alone. The cells file
+could carry `db_snapshot_identifier` itself — the field is part of the cells
+object — and deliberately does not for `testidpna`: every fresh apply of the
+environment by anybody would then restore from a snapshot of a database that
+stopped being current the day it was taken, run a conversion nobody asked
+for, and FAIL on the day the snapshot or the carry-over secret was deleted.
+A conversion is one event; the overlay is named on the one apply that is it.
+
+**WHAT MAKES A LATER APPLY WITHOUT THE OVERLAY SAFE.** Two things read their
+input once and keep it:
+
+* `aws_db_instance.primary` IGNORES `snapshot_identifier` after creation
+  (`lifecycle`). It forces a new instance when it changes, so without that
+  the first apply after the conversion — which names no snapshot — would
+  destroy the converted database and make an empty one. Ignored in every
+  environment; null stays null for all the others.
+* `global/`'s `terraform_data.carryover` takes the carried values when the
+  global stack is first created and ignores its input from then on, so a
+  later apply keeps the old KEK rather than putting a generated one in its
+  place. **A carry-over named on a global stack that already generated its
+  secrets is refused at plan**: its rows were sealed under the generated
+  KEK, and carrying one in would lose them.
+
+**WHERE THE CONVERSION RUNS, IN `orchestrate_cells`.** For a cell with a
+snapshot and no state yet:
+
+1. **a marker, `environment/<env>/<cell>.conversion.json`, set PENDING**,
+   before anything is made;
+2. `base` — the cell database is a `base` resource, so the RESTORE happens
+   here (tens of minutes for the risk tables), then the same-region replica
+   from it;
+3. `global/` as always, with the carried secrets;
+4. the cell's `full` **twice**: first with `TF_CELL_HOLD` (`cell_hold_nodes`
+   — the task definitions, the global tier's addresses and a conversion task
+   definition, and every node service at 0); then the conversion task, run
+   once and waited for (`convert_cell`, up to `TF_CONVERT_TIMEOUT`, 7200 s);
+   then the marker set DONE and `full` as usual, which starts the nodes.
+
+**The conversion task** (`environment/conversion.tf`) is a node's task with
+the service replaced by `node persistence/cell_convert.js`: the same roles,
+image, subnet, security group, environment and secrets — less the public
+certificate's two paths, since no `cert-init` runs and the tool binds
+nothing — and the two schema inits first, in the same task, so the tool
+opens two databases at the current schema with `sts_app` already on THIS
+environment's password (schema-init ALTERs a role that exists, `postgres/
+schema.sql`). A task definition of its own rather than the node's with a
+command override: the node's declares the upload volume
+`configure_at_launch`, which a RunTask would have to configure, and an
+override of one container's command cannot put the schema inits before it.
+
+**On failure** — the tool exits non-zero, a schema init fails, the task
+cannot start — the apply STOPS: the cell's nodes stay at 0, the marker stays
+PENDING, the cells after it are not applied, and the message names the task,
+each container's exit and the log stream. The tool leaves its sources in
+place, so the same `TF_CONVERT=1` command is the retry. **On re-apply**:
+PENDING runs the held apply and the conversion again (the tool is
+idempotent); a conversion task still RUNNING from an interrupted apply is
+waited for rather than doubled; DONE skips it, reading nothing; and PENDING
+without `TF_CONVERT` REFUSES rather than starting nodes on unconverted rows.
+A snapshot named for a cell that already existed restored nothing and is
+said so. The marker is deleted with the cell. Other cells are untouched by
+any of it — `cac1` is made empty, exactly as before.
+
+**The deployer's two new RDS actions** (`foundation/iam_deployer.tf`,
+`RdsRestoreAndCopyProjectSnapshots`): `RestoreDBInstanceFromDBSnapshot`,
+which the provider calls in place of `CreateDBInstance`, and
+`CopyDBSnapshot`, for the runbook — on `mock-sts-*` snapshots and instances
+only, and **no `DeleteDBSnapshot`**: the snapshot is the only record of the
+database the conversion destroyed, and removing it is an administrator's
+call. So `foundation/` is re-applied before the conversion, as it already
+must be for any cell (*What foundation/ must be re-applied with first*).
+
+**What it costs and what it loses.** The service is DOWN from the old
+environment's destroy until the converted cell's nodes are healthy — a
+destroy, a restore and a first cell apply, most of an hour. Anything written
+after the snapshot was taken is lost; the runbook prints how to stop the old
+environment's nodes and snapshot its primary first when that matters.
+
+If the first conversion fails, look first at: `kms_key_id` planned to change
+on `aws_db_instance.primary` (the snapshot named is not under the cell key —
+stop, it would replace the database); an AccessDenied on
+`RestoreDBInstanceFromDBSnapshot` (`foundation/` not re-applied); a restore
+refused for storage (`db_allocated_storage` below the snapshot's); and the
+conversion task's own log, `<env>-<cell>-convert/cell-convert/<task id>`.
 
 ### What was checked, and what to look at first
 
