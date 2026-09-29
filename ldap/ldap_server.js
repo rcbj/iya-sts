@@ -3873,7 +3873,17 @@ const directoryHooks = {
     // in this realm invalid and makes the next flush diff the whole directory;
     // this applier knows exactly which entry moved, and the entry it is being
     // told about is the one thing it can always name.
-    touchDirectory(stored.dn);
+    //
+    // **IN THE ROW'S REALM** (#352): the subtree clocks are per realm and
+    // AMBIENT, and a flush's outcomes (`applyDirectoryOutcomes()`) are applied
+    // outside any realm — so a merged or conflicting row of another realm
+    // moved the default realm's clock and left its own where it was, and a
+    // listing kept on that clock (`entriesUnder()`, the applications
+    // registry's) could not see it. The change-log applier already runs in
+    // the row's realm, where this is the same call.
+    realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
+      touchDirectory(stored.dn);
+    });
     noteUsernameIndexRefresh(stored, usernameWasCurrent);
     noteGroupIndexPut(stored, groupWasCurrent);
     // AN ANCHOR ANOTHER PROCESS ADDED reaches this process's listeners here:
@@ -3929,7 +3939,10 @@ const directoryHooks = {
     const store = entries.realmMap(realmId);
     const gone = store.delete(key);
     if (gone) {
-      touchDirectory();
+      // In the row's realm, for applyEntry()'s reason (#352).
+      realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
+        touchDirectory();
+      });
     }
     if (gone && isTrustAnchorKey(realmId, key)) {
       reloadTrustAnchorsQuietly();
