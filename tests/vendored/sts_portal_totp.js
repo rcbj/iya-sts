@@ -871,14 +871,19 @@ async function anActivationLinkCanSetOneUp() {
 async function enrolledPerson(who) {
   log.debug("Entering enrolledPerson(). who=" + who);
   const b = await signIn("/portal/mfa", who);
-  const page = await b.go("GET", "/portal/mfa");
+  let page = await b.go("GET", "/portal/mfa");
   let r = await b.go("POST", "/portal/mfa",
                      form({ action: "start", csrf_token: csrfOf(page.text) }));
-  const secret = secretShownOn(r.text);
+  // The start REDIRECTS (section 1 says why); the secret is on the page it
+  // lands on, and so is the token the confirmation carries.
+  assert.ok(r.status === 303 || r.status === 302,
+            "starting " + who + "'s enrolment answered " + r.status);
+  page = await b.go("GET", "/portal/mfa");
+  const secret = secretShownOn(page.text);
   assert.ok(secret, "no secret was shown when enrolling " + who);
   r = await b.go("POST", "/portal/mfa",
                  form({ action: "confirm", code: codeFor(secret),
-                        csrf_token: csrfOf(r.text) }));
+                        csrf_token: csrfOf(page.text) }));
   assert.ok(r.status < 400, "confirming " + who + "'s enrolment answered " +
             r.status);
   log.debug("Leaving enrolledPerson().");
