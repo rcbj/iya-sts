@@ -47,9 +47,10 @@
 //     `bulk.maxOperations`, a bounded number at a time
 //     (`STS_RESET_CONCURRENCY`, default 2, at most 8), with progress on
 //     stdout.
-//   * applications `isSuiteApplication()` recognises, through
-//     `POST /admin-api/applications/forget`. Never one this service seeded
-//     (`registeredBy: startup`), never one that merely turned up.
+//   * applications `isSuiteApplication()` recognises — the identifiers the
+//     jobs name per run in the default realm, and sts_userinfo_protected.js's
+//     RFC 7591 registrations — through `POST /admin-api/applications/forget`.
+//     Never one this service seeded (`registeredBy: startup`).
 //
 // Nothing an operator made goes, because an operator does not name a person
 // `bulk-scim-<run>-000001` — and the default realm itself, its bootstrap
@@ -129,30 +130,99 @@ function isSuiteGroup(displayName) {
   return answer;
 }
 
-// APPLICATIONS THE SUITE REGISTERS IN THE DEFAULT REALM. A job registering
-// into a realm it created is not here: that application goes with the realm.
-const APPLICATION_PATTERNS = [];
+// APPLICATIONS THE SUITE REGISTERS IN THE DEFAULT REALM AND NAMES FOR THE RUN
+// (surveyed 2026-09-29, #344). A job registering into a realm it created is
+// not here: that application goes with the realm. Nor is one registered under
+// a FIXED identifier (`admin-api-test`, `sts-endpoint-test-client`,
+// `dpop-test-client`, `abcapp1`…): the next run finds it again, so it does not
+// accumulate, and removing it would only make that run re-create it. Each
+// pattern names the job that makes it; `<stamp>` is random_username.js's
+// `runStamp()`. A job that starts naming a default-realm application per run
+// belongs here too.
+const STAMP = '[a-z0-9-]+';
+const APPLICATION_PATTERNS = [
+  // sts_saml11.js: `urn:test:saml11:<stamp>`
+  new RegExp('^urn:test:saml11:' + STAMP + '$'),
+  // sts_oauth2_monitor.js: `parmon-a-<stamp>`, `parmon-b-<stamp>`
+  new RegExp('^parmon-[ab]-' + STAMP + '$'),
+  // sts_portal_sessions.js: `portal-probe-{open,narrowed,nowhere,ssf}-<stamp>`
+  new RegExp('^portal-probe-(open|narrowed|nowhere|ssf)-' + STAMP + '$'),
+  // sts_oauth21.js (product only): `oauth21-control-c-<stamp>`
+  new RegExp('^oauth21-control-c-' + STAMP + '$'),
+  // sts_global_logout.js: `gl-all-<stamp>`, `gl-<protocol>-<stamp>`
+  new RegExp('^gl-(all|oauth2|oidc|saml2|saml11|wsfed|wstrust|krb5|ldap|' +
+             'mtls)-' + STAMP + '$'),
+  // sts_saml_encryption.js: `https://enc-{gcm,cbc,nokey,logout}-<stamp>.
+  // example.com`
+  new RegExp('^https://enc-(gcm|cbc|nokey|logout)-' + STAMP +
+             '\\.example\\.com$'),
+  // sts_scope_policy.js: `sp-admin-scopepol-<stamp>` (it forgets its own, and
+  // an interrupted run leaves it)
+  new RegExp('^sp-admin-scopepol-' + STAMP + '$'),
+  // sts_admin_closed_sets.js: `closed-sets-<scope>-<Date.now() in base 36>`
+  new RegExp('^closed-sets-' + STAMP + '$'),
+  // sts_consent.js: `consent-{resource,client,other-client}-<8 digits>`
+  /^consent-(resource|client|other-client)-[0-9]{8}$/,
+  // sts_saml11.js's unregistered relying party, where a sighting is recorded:
+  // `urn:test:not:registered:<pid>`
+  /^urn:test:not:registered:[0-9]+$/
+];
+
+// sts_userinfo_protected.js registers about fourteen clients a run through
+// RFC 7591 and deletes none. Their client_id is the service's
+// (`oauth2.registeredClientIdPrefix`, `sts-client-` unless set), so they are
+// told apart by all three of: registered through RFC 7591, that prefix, and
+// the job's one redirect URI and nothing else. The other jobs registering the
+// same way (oauth2_sts_endpoints.js) delete theirs through RFC 7592.
+const SUITE_REGISTRATION_REDIRECT = 'http://localhost:9999/callback';
+
+// The values of `name` in an entry's attributes, whatever case the directory
+// hands the attribute name back in.
+function attributeValues(attributes, name) {
+  log.debug('Entering attributeValues().');
+  const wanted = name.toLowerCase();
+  const key = Object.keys(attributes || {}).filter(function (one) {
+    return one.toLowerCase() === wanted;
+  })[0];
+  const values = key === undefined ? [] : [].concat(attributes[key]);
+  log.debug('Leaving attributeValues().');
+  return values.map(String);
+}
+
+function isSuiteRegistration(row) {
+  log.debug('Entering isSuiteRegistration().');
+  const redirects = attributeValues(row.attributes, 'oauthRedirectUri');
+  const answer = String(row.registeredBy) === 'rfc7591' &&
+                 /^sts-client-/.test(String(row.identifier)) &&
+                 redirects.length === 1 &&
+                 redirects[0] === SUITE_REGISTRATION_REDIRECT;
+  log.debug('Leaving isSuiteRegistration(). ' + answer);
+  return answer;
+}
 
 /**
  * Tells whether an application row from `GET /admin-api/applications` is one
  * a suite run registered in the default realm.
  *
- * @param {object} row - the row: `identifier`, `registeredBy`, `name`
+ * @param {object} row - the row: `identifier`, `registeredBy`, `attributes`
  * @returns {boolean} true for a suite application
  */
 function isSuiteApplication(row) {
   log.debug('Entering isSuiteApplication().');
   const identifier = String((row && row.identifier) || '');
   const by = String((row && row.registeredBy) || '');
-  // Seeded by this service at startup, or never registered at all (it turned
-  // up in development mode): neither is the suite's to remove.
-  if (!identifier || by === 'startup' || !by) {
-    log.debug('Leaving isSuiteApplication(). Not a registration.');
+  // Seeded by this service at startup: never the suite's to remove, whatever
+  // it is called. A sighting (an application that turned up, registered by
+  // nobody) is removed when its NAME is the suite's — sts_saml11.js presents
+  // an unregistered one on purpose.
+  if (!identifier || by === 'startup') {
+    log.debug('Leaving isSuiteApplication(). Seeded, or no identifier.');
     return false;
   }
-  const answer = APPLICATION_PATTERNS.some(function (pattern) {
-    return pattern.test(identifier);
-  });
+  const answer = isSuiteRegistration(row) ||
+                 APPLICATION_PATTERNS.some(function (pattern) {
+                   return pattern.test(identifier);
+                 });
   log.debug('Leaving isSuiteApplication(). ' + answer);
   return answer;
 }
@@ -436,6 +506,8 @@ async function resetDirectory(base, token, dryRun, failed) {
       ' bulk-load person/people in the default realm.');
   if (dryRun) {
     const sample = function (rows) {
+      log.debug('Entering sample().');
+      log.debug('Leaving sample().');
       return rows.slice(0, 5).map(function (row) {
         return row.name;
       }).join(', ') + (rows.length > 5 ? ', …' : '');
