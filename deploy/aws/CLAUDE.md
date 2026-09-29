@@ -356,9 +356,12 @@ plan against its state showed two new empty outputs and nothing else.
   in `testidp.tfvars` until then; they are the variables' defaults now, so a
   temporary test environment publishes what this one does. See *Four
   published ports* above.
-* **Product mode with the dispatcher**: `tests/tools/modes.sh`'s `dispatch`
-  row (three request workers, one surface worker, `*`, read-your-write) with
-  `sts_mode = "product"`, from four `workers_*` variables. The bootstrap
+* **Product mode with the dispatcher**: `sts_mode = "product"` and four
+  `workers_*` variables — **two request workers, no surface worker** since
+  2026-09-29 (#340), `*`, read-your-write. It was `tests/tools/modes.sh`'s
+  three request workers and one surface worker until then, which on 2 vCPU /
+  8 GiB idled at 76–87 % after a few suite runs and was OOM-killed on a
+  restart (#339); *Sizing a node*, below. The bootstrap
   administrator's password is in Secrets Manager at
   `mock-sts/testidp/bootstrap-admin-password` and is printed nowhere (*Four
   secrets*, above); it was a log line in whichever node won the bootstrap
@@ -417,6 +420,39 @@ Route53 (`foundation/variables.tf`'s `public_dns`: listed zones, and only the
 listed record names in them — the validation record is `_<random>.<name>`,
 hence the wildcard). Route53 requests carry us-east-1, so the region fence
 exempts `route53:*`.
+
+## Sizing a node: every process is a whole copy (#340, 2026-09-29)
+
+**A node runs 1 + `workers_request_count` + `workers_surface_count` node
+processes, and each holds the whole directory and every store in its own
+heap** — a request or surface worker is a fork of the whole service that
+restores everything from postgres at start (`common/CLAUDE.md`, the two
+pools; #339 for the measurements). So a node's memory grows with the PROCESS
+COUNT, not with the load, and two rules follow:
+
+* **`task_memory` ≥ (node processes × one process's working set) +
+  headroom.** The working set is about 200 MB for a process that has only
+  loaded the stack, plus whatever the directory and the minted stores hold —
+  about 1.3 GiB per process on testidp after a few suite runs. The peak is a
+  restart, when every process restores at the same moment, and past the limit
+  Fargate's OOM killer takes them with an anonymous SIGKILL.
+* **Node processes ≤ `task_cpu` / 1024 + 1.** A process beyond one per vCPU
+  (plus the front, which mostly proxies) buys no parallelism and costs a whole
+  copy of the memory.
+
+**A surface worker is the first to go**: with `workers_surface_count = 0`
+the console and portal are answered by the request workers, which is what the
+service does whenever the count is 0. `workers_read_your_write` stays on with
+two or more request workers — the surface pool refuses to start without it
+(`STS-WORKER-0038`), and a caller writing through one request worker and
+reading back through another needs it just the same. `testidp` and
+`testidpna` run 2 + 0 on 2048 / 8192 (three processes); they ran 3 + 1 (five)
+until #340.
+
+The test modes are a different question and keep their counts:
+`tests/tools/modes.sh`'s `single-node` and `cluster` run three request workers
+and one surface worker ON PURPOSE, because one worker cannot show a routing
+mistake and one surface worker crosses the pools on every console sign-in.
 
 ## Cells: one environment in several regions (#98, 2026-09-28)
 

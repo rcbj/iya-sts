@@ -36,8 +36,8 @@ extra_environment = {
 }
 
 sts_mode                = "product"
-workers_request_count   = 3
-workers_surface_count   = 1
+workers_request_count   = 2
+workers_surface_count   = 0
 workers_dispatch        = "*"
 workers_read_your_write = true
 
