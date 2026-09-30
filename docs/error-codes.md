@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3884** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3886** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 211
 * [Management API (`STS-API`)](#sts-api) — 75
-* [User portal (`STS-PORTAL`)](#sts-portal) — 75
+* [User portal (`STS-PORTAL`)](#sts-portal) — 77
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 135
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -4165,6 +4165,8 @@ Raised from: portal/.
 | `STS-PORTAL-0095` | A user code typed or approved on /portal/device matched no waiting device (#150). | none (a portal page, HTTP 404 or 400) |
 | `STS-PORTAL-0096` | A sign-on session typed too many user codes that matched nothing on /portal/device and is refused for ten minutes (RFC 8628 section 5.1, #150). | none (a portal page, HTTP 429) |
 | `STS-PORTAL-0097` | Answering a device sign-in on /portal/device failed unexpectedly (#150). | none (a portal page, HTTP 500) |
+| `STS-PORTAL-0098` | A live admin console session in the same browser was not adopted by /portal — it names nobody, the realm it was signed in through is no longer defined, its tokens ran out beyond renewal, or its person is homed in another cell — so the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
+| `STS-PORTAL-0099` | Adopting a live admin console session on /portal threw; the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
 
 ## STS-LOGOUT
 

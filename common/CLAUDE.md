@@ -8610,6 +8610,18 @@ asks again. It is fixed at `oidc_rp.ts`'s one choke point and is idempotent,
 because a prefix a caller has to remember to add is one the eighth call site
 will not have.
 
+**A THIRD WAY A SURFACE SESSION IS MADE, AND IT RUNS ONE WAY (2026-09-30).**
+The portal ADOPTS a live console session in the same browser rather than
+running its code flow, because the console outlives the sign-on session its
+single sign-on rested on (section 4, above). The adopted row names the CONSOLE
+session as its parent, in the default partition, and holds no tokens. So
+`relyingPartySessionOf()` ends it as soon as the console session is gone, and
+`dropSession()`'s cascade now walks one more NAMED partition: a console
+session's `derivedFromRealm`, where its adopted children live (`derivedFrom()`'s
+`alsoRealm`). That makes the recursion two levels deep for the first time.
+`portal/CLAUDE.md` argues the rest. `authn.adoptRelyingPartySession()` is the
+function, and the portal is its only caller.
+
 ## `version.js`: M.N.O, and why the build number is not computed at startup (2026-09-06)
 
 **It is a PORT of the parent project's `client/version.js`, not an invention**,
