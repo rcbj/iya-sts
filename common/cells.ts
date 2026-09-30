@@ -55,8 +55,13 @@ interface Cell {
   id: string;
   jurisdiction: string;
   url: string;
+  // The cell's own console origin (#361), '' when none is configured.
+  consoleUrl: string;
   self: boolean;
 }
+
+// A console origin: https, a host, an optional port, nothing after it.
+const CONSOLE_ORIGIN = /^https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/;
 
 // What the map reads from the rest of the service; a test supplies a stub.
 interface CellsDeps {
@@ -173,6 +178,7 @@ class Cells {
         id: String(one.id || '').trim(),
         jurisdiction: String(one.jurisdiction || '').trim().toLowerCase(),
         url: String(one.url || '').trim().replace(/\/+$/, ''),
+        consoleUrl: String(one.consoleUrl || '').trim().replace(/\/+$/, ''),
         self: false
       }))
       .filter((one) => one.id && one.id !== self);
@@ -195,6 +201,48 @@ class Cells {
   }
 
   /**
+   * This cell's own console origin (`cells.consoleUrl`, #361), without a
+   * trailing slash; '' when none is configured.
+   *
+   * @returns the origin, or ''
+   */
+  consoleUrl(): string {
+    this.deps.log.debug("Entering Cells.consoleUrl().");
+    const out = String(this.deps.value('cells.consoleUrl') || '').trim()
+      .replace(/\/+$/, '');
+    this.deps.log.debug("Leaving Cells.consoleUrl().");
+    return out;
+  }
+
+  /**
+   * The cell whose console origin a request's Host names — this cell's or
+   * another's — or null. The console signs in AT a cell's own address, and
+   * a request there may be served here (relayed, or the address is this
+   * cell's), so every cell's is recognised.
+   *
+   * @param host - the request's Host header
+   * @returns `{ id, consoleUrl }`, or null
+   */
+  consoleOfHost(host: string): { id: string; consoleUrl: string } | null {
+    this.deps.log.debug("Entering Cells.consoleOfHost().");
+    const want = String(host || '').trim().toLowerCase();
+    if (!want || !this.isMulti()) {
+      this.deps.log.debug("Leaving Cells.consoleOfHost(). None.");
+      return null;
+    }
+    const hit = this.all().filter((one) => {
+      if (!one.consoleUrl) {
+        return false;
+      }
+      const at = one.consoleUrl.replace(/^https:\/\//, '').toLowerCase();
+      return at === want || at === want.replace(/:443$/, '');
+    })[0];
+    this.deps.log.debug("Leaving Cells.consoleOfHost(). " +
+                        (hit ? hit.id : 'none'));
+    return hit ? { id: hit.id, consoleUrl: hit.consoleUrl } : null;
+  }
+
+  /**
    * This cell and every other one.
    *
    * @returns this cell first, then its peers; in single-cell mode one cell
@@ -203,7 +251,8 @@ class Cells {
   all(): Cell[] {
     this.deps.log.debug("Entering Cells.all().");
     const self: Cell = { id: this.id(), jurisdiction: this.jurisdiction(),
-                         url: '', self: true };
+                         url: '', consoleUrl: this.consoleUrl(),
+                         self: true };
     this.deps.log.debug("Leaving Cells.all().");
     return [self].concat(this.peers());
   }
@@ -379,6 +428,11 @@ class Cells {
       problems.push('cells.jurisdiction "' + this.jurisdiction() + '" is ' +
                     'empty or not a jurisdiction code');
     }
+    const ownConsole = this.consoleUrl();
+    if (ownConsole && !CONSOLE_ORIGIN.test(ownConsole)) {
+      problems.push('cells.consoleUrl "' + ownConsole + '" is not ' +
+                    'https://host[:port]');
+    }
     const raw = String(this.deps.value('cells.peers') || '').trim();
     let list: unknown = [];
     if (raw) {
@@ -413,6 +467,11 @@ class Cells {
         problems.push('cells.peers[' + i + '].jurisdiction is missing or ' +
                       'not a jurisdiction code');
       }
+      const consoleAt = String((one && one.consoleUrl) || '');
+      if (consoleAt && !CONSOLE_ORIGIN.test(consoleAt.replace(/\/+$/, ''))) {
+        problems.push('cells.peers[' + i + '].consoleUrl "' + consoleAt +
+                      '" is not https://host[:port]');
+      }
       const url = String((one && one.url) || '');
       if (!/^https:\/\/[^/\s]+(:\d+)?\/?$/.test(url)) {
         problems.push('cells.peers[' + i + '].url "' + url + '" is not ' +
@@ -432,18 +491,22 @@ class Cells {
    * What `/admin/cells` and `GET /admin-api/cells` report about the map.
    *
    * @returns this cell, its jurisdiction, and every cell with its
-   *   jurisdiction (never a peer's address)
+   *   jurisdiction and console origin (never a channel address)
    */
   describe(): { multi: boolean; id: string; jurisdiction: string;
-                cells: { id: string; jurisdiction: string; self: boolean }[] } {
+                cells: { id: string; jurisdiction: string; self: boolean;
+                         consoleUrl: string }[] } {
     this.deps.log.debug("Entering Cells.describe().");
     const out = {
       multi: this.isMulti(),
       id: this.id(),
       jurisdiction: this.jurisdiction(),
+      // The console origin is the one address this page draws (#361): the
+      // administrators' door into each cell. The channel's `url` never is.
       cells: this.all().map((one) => ({ id: one.id,
                                         jurisdiction: one.jurisdiction,
-                                        self: one.self }))
+                                        self: one.self,
+                                        consoleUrl: one.consoleUrl }))
     };
     this.deps.log.debug("Leaving Cells.describe().");
     return out;
@@ -468,6 +531,9 @@ export = {
   JURISDICTION: JURISDICTION,
   id: (): string => cells.id(),
   isMulti: (): boolean => cells.isMulti(),
+  consoleUrl: (): string => cells.consoleUrl(),
+  consoleOfHost: (host: string): { id: string; consoleUrl: string } | null =>
+    cells.consoleOfHost(host),
   jurisdiction: (): string => cells.jurisdiction(),
   hostname: (): string => cells.hostname(),
   peers: (): Cell[] => cells.peers(),

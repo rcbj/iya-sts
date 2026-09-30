@@ -10286,6 +10286,32 @@ names the service; no token, cookie, page or error names a cell. Where a cell
 has to travel with something a client holds, it is a KEYED TAG
 (`cell_locator.ts`) that only a cell can read.
 
+**EXCEPT ON ONE CONSOLE PAGE, BY rcbj'S DECISION (#361, 2026-09-30).** Each
+cell may have a console address of its own — `cells.consoleUrl`, and
+`consoleUrl` on each `cells.peers` entry; on AWS `https://<cell>.<public
+name>`, a DNS record aimed at that cell's load balancer alone and a name on
+its certificate — because the shared public name goes to whichever cell is
+nearest and an operator needs a way into each. Server configuration → Cells
+(and `GET /admin-api/cells`) draws those links and NOTHING else does: no
+token, metadata document, error or public page names a cell, and the
+channel's `url` is still never drawn. The console signs in AT such an
+address: `oidc_rp.ts`'s `cellConsoleBase()` puts the console's callback and
+authorization request on the configured origin the request's Host names
+(this cell's or a peer's — a relayed request arrives at a peer's), and
+`ensureRedirectUri()` registers that callback on `sts-admin-console` as
+configuration, in both modes. A Host that is not a configured console
+address, and every other surface, keeps the shared name.
+
+**EVERY CELL'S CLUSTER ON EVERY CELL'S CLUSTER PAGE (#361).** Each cell
+answers `cluster-summary` over the channel (`admin-ui/cells_admin.ts`'s
+`clusterSummaryHere()`): its members folded by name (`cluster.
+foldMembers()`), its leases by holder NAME, each node's worker pools —
+never a host, port or pid. The Cluster page's row has a `prepare` step
+(`admin.ts`'s `prepareClusterPage()`, run by the page route and by
+`GET /admin-api/cluster` through `preparedSettingsJsonFor()`) that asks
+every peer before the synchronous status block draws; a cell that does not
+answer is drawn unreachable (`STS-CELL-0194`), never dropped.
+
 | Module | What it is |
 |---|---|
 | `cells.ts` | The map: this cell, its jurisdiction, the peers (`cells.peers`, JSON), where a new person is homed (`homeFor()`, D1), what a realm lists as permitted transfers, and the startup check (STS-CELL-0001). A leaf: config, error codes, a logger. |

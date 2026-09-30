@@ -46,9 +46,15 @@
 # would need it written again by an apply.
 # ---------------------------------------------------------------------------
 locals {
-  cells_dns     = local.multi && local.public_name
-  latency_name  = "cells.${var.public_hostname}"
-  pinned_places = local.cells_dns ? toset(local.this_cell.geolocation_countries) : toset([])
+  cells_dns    = local.multi && local.public_name
+  latency_name = "cells.${var.public_hostname}"
+  # EACH CELL'S OWN CONSOLE NAME (#361, rcbj 2026-09-30): `<cell>.<public
+  # name>`, aimed at this cell's load balancer alone and on this cell's
+  # certificate, so an administrator can open a given region's console from
+  # Server configuration → Cells. Deterministic, like the inter-cell names,
+  # so no cell reads another's state to know its peers'.
+  cell_console_host = local.cells_dns ? "${var.cell}.${var.public_hostname}" : ""
+  pinned_places     = local.cells_dns ? toset(local.this_cell.geolocation_countries) : toset([])
 
   # Three is Route 53's minimum. Chosen for spread (two continents) and kept
   # this short because each region's checker ranges are security-group rules
@@ -143,4 +149,20 @@ resource "aws_route53_record" "default" {
   # name that has no record yet ("that target was not found"), and the first
   # testidpna apply created this one first.
   depends_on = [aws_route53_record.latency]
+}
+
+# THIS CELL'S OWN CONSOLE NAME (#361): one record, this cell's load
+# balancer and no other — never the latency or geolocation tree, which is
+# what sends the shared name to whichever cell is nearest.
+resource "aws_route53_record" "cell_console" {
+  count   = local.cell_console_host != "" ? 1 : 0
+  zone_id = data.aws_route53_zone.public[0].zone_id
+  name    = local.cell_console_host
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = false
+  }
 }

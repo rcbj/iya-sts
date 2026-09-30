@@ -2020,10 +2020,14 @@ class AdminApi {
                handler: function (req, res) {
                  log.debug("Entering the management API " + row.console + " " +
                      "endpoint.");
-                 self.sendJson(res, 200,
-                               admin.protocolSettingsJsonFor(row.console));
-                 log.debug("Leaving the management API " + row.console + " " +
-                     "endpoint.");
+                 // Through the row's `prepare` step, which the Cluster page
+                 // has (#361): the same answer the console draws.
+                 admin.preparedSettingsJsonFor(row.console).then(
+                   function (json) {
+                     self.sendJson(res, 200, json);
+                     log.debug("Leaving the management API " + row.console +
+                               " endpoint.");
+                   });
                } };
     });
     log.debug("Leaving AdminApi.buildProtocolSettingsOperations().");

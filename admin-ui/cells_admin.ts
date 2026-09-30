@@ -93,6 +93,134 @@ class CellsAdmin {
   }
 
   // -------------------------------------------------------------------------
+  // EVERY CELL'S CLUSTER (#361, 2026-09-30). A cell's Cluster page read only
+  // its own membership — its own database's — so an operator signed in at
+  // one region could see nothing of the others' nodes ("this thing is going
+  // to be difficult to manage without the ability to peer inside the
+  // clusters in other peers", rcbj). Each cell answers `cluster-summary`
+  // with what its own page reads: the mode, the members folded by name
+  // (`cluster.foldMembers()`), the leases, and each node's worker pools.
+  //
+  // **NAMES, NEVER ADDRESSES.** A member row's `info` carries the host,
+  // port and pid the node runs at; none of it crosses (the Node Health
+  // rule, and #98's — no cell's address is drawn). What crosses is what an
+  // operator reads: node names, versions, times, counts.
+  // -------------------------------------------------------------------------
+  /**
+   * Answers `cluster-summary` for another cell: this cell's members folded
+   * by name, its leases and each node's pools, with no address.
+   *
+   * @returns a promise of the summary
+   */
+  async clusterSummaryHere(): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering CellsAdmin.clusterSummaryHere().");
+    const cluster = require('../cluster/cluster');
+    const state = await cluster.state();
+    const now = Number(state && state.now) || Date.now();
+    const holderName: Json = {};
+    ((state && state.nodes) || []).forEach(function (node: Json) {
+      holderName[node.nodeId] = node.name || '';
+    });
+    const leases = ((state && state.leases) || []).filter(function (lease:
+                                                                    Json) {
+      return lease.expiresAt > now;
+    }).map(function (lease: Json) {
+      return { name: lease.name, holder: holderName[lease.holder] || '',
+               expiresAt: lease.expiresAt };
+    });
+    const folded = state && state.available
+      ? (state.members || cluster.foldMembers(state.nodes, now))
+      : { live: [], restarts: {}, gone: [] };
+    const heldBy: Json = {};
+    leases.forEach(function (lease: Json) {
+      (heldBy[lease.holder] = heldBy[lease.holder] || []).push(lease.name);
+    });
+    const live = folded.live.map(function (node: Json) {
+      const info = node.info || {};
+      return { name: node.name || '', mode: node.mode || '',
+               version: node.version || '', startedAt: node.startedAt || 0,
+               heartbeatAt: node.heartbeatAt || 0,
+               expiresAt: node.expiresAt || 0,
+               uptimeMs: Number(info.uptimeMs) || 0,
+               workers: Number(info.workers) || 0,
+               lastStallMs: Number(info.lastStallMs) || 0,
+               agrees: node.agrees === undefined ? null : node.agrees,
+               leases: heldBy[node.name || ''] || [] };
+    });
+    const gone = folded.gone.map(function (node: Json) {
+      return { name: node.name || '', version: node.version || '',
+               endedAt: node.leftAt || node.expiresAt || 0,
+               how: node.leftAt ? 'left' : 'expired',
+               earlierLives: node.earlierLives || 0 };
+    });
+    let pools: Json[] = [];
+    let poolsError = '';
+    try {
+      const view = await require('./worker_pools_admin').workerPoolsView();
+      pools = ((view && view.nodes) || []).map(function (n: Json) {
+        const v = n.view || {};
+        return { name: n.name, state: n.state,
+                 pools: (v.pools || []).map(function (p: Json) {
+                   const r = p.restarts || {};
+                   return { id: p.id, title: p.title, state: p.state,
+                            currentWorkers: Number(p.currentWorkers) || 0,
+                            busyWorkers: Number(p.busyWorkers) || 0,
+                            freeWorkers: Number(p.freeWorkers) || 0,
+                            crashed: Number(r.crashed) || 0,
+                            failedStarts: Number(r.failedStarts) || 0 };
+                 }) };
+      });
+    } catch (e) {
+      log.debug("Caught in CellsAdmin.clusterSummaryHere(): " +
+                ((e && e.message) || e));
+      poolsError = String((e && e.message) || e);
+    }
+    log.debug("Leaving CellsAdmin.clusterSummaryHere().");
+    return { cell: cells.id(), jurisdiction: cells.jurisdiction(),
+             at: now, clustered: !!(state && state.available),
+             mode: (state && state.self && state.self.mode) || 'off',
+             members: { live: live, restarts: folded.restarts || {},
+                        gone: gone },
+             leases: leases, pools: pools, poolsError: poolsError };
+  }
+
+  /**
+   * Asks every other cell for its `cluster-summary`, each bounded by the
+   * channel's timeout; a cell that does not answer is reported, never
+   * dropped.
+   *
+   * @returns a promise of one row per other cell
+   */
+  async peerClusters(): Promise<Json[]> {
+    const { log } = this.deps;
+    log.debug("Entering CellsAdmin.peerClusters().");
+    if (!cells.isMulti()) {
+      log.debug("Leaving CellsAdmin.peerClusters(). Single cell.");
+      return [];
+    }
+    const channel = require('../common/cell_channel');
+    const rows = await Promise.all(cells.peers().map(function (peer: any) {
+      const began = Date.now();
+      return channel.call(peer.id, 'cluster-summary', {}).then(
+        function (summary: Json) {
+          return { cell: peer.id, jurisdiction: peer.jurisdiction,
+                   reachable: true, answeredMs: Date.now() - began,
+                   summary: summary };
+        }, function (err: any) {
+          log.warn(errorCodes.tag('STS-CELL-0194') + 'cells: cell "' +
+                   peer.id + '" did not answer cluster-summary: ' +
+                   ((err && err.message) || err));
+          return { cell: peer.id, jurisdiction: peer.jurisdiction,
+                   reachable: false,
+                   error: String((err && err.message) || err) };
+        });
+    }));
+    log.debug("Leaving CellsAdmin.peerClusters(). " + rows.length);
+    return rows;
+  }
+
+  // -------------------------------------------------------------------------
   // THE VIEW. Asynchronous, because it asks the other cells and the global
   // tier's replica; every question has a bound (the channel's timeout) and a
   // failure is drawn as the failure, never as an empty map.
@@ -113,10 +241,12 @@ class CellsAdmin {
       return channel.call(peer.id, 'cell-ping', {}).then(function (answer:
                                                                     Json) {
         return { id: peer.id, jurisdiction: peer.jurisdiction,
+                 consoleUrl: peer.consoleUrl || '',
                  reachable: true, answeredMs: Date.now() - began,
                  reportedJurisdiction: answer && answer.jurisdiction };
       }, function (err: any) {
         return { id: peer.id, jurisdiction: peer.jurisdiction,
+                 consoleUrl: peer.consoleUrl || '',
                  reachable: false,
                  error: String((err && err.message) || err) };
       });
@@ -147,6 +277,8 @@ class CellsAdmin {
       multi: described.multi,
       cell: described.id,
       jurisdiction: described.jurisdiction,
+      // This cell's own console origin (#361); each peer carries its own.
+      consoleUrl: cells.consoleUrl(),
       peers: peers,
       store: {
         tiered: !!(driver && driver.tiered),
@@ -320,10 +452,23 @@ class CellsAdmin {
       '<p><code>cells.id</code> is empty: this is <strong>single-cell ' +
       'mode</strong>, the whole service in one deployment and one ' +
       'database, exactly as before cells existed.</p>', 'Single-cell mode');
+    // THE REGIONAL CONSOLES (#361): each cell's own console, through its
+    // own load balancer — the one place a cell's address is drawn, by
+    // rcbj's decision. An ABSOLUTE URL, so the realm rewrite leaves it
+    // alone; the console there is its own sign-in, on its own host.
+    const consoleCell = function (c: Json): string {
+      if (!c.consoleUrl) {
+        return '<span class="sub">none configured</span>';
+      }
+      const href = String(c.consoleUrl) + '/admin';
+      return '<a href="' + esc(href) + '">' + esc(href) + '</a>' +
+        (c.self ? ' <small>(this cell\'s own)</small>' : '');
+    };
     const map = '<h2>The cells</h2><table class="grid"><thead><tr>' +
       '<th>Cell</th><th>Jurisdiction</th><th>Reachable</th><th>People ' +
-      'held</th></tr></thead><tbody>' +
-      [{ id: json.cell, jurisdiction: json.jurisdiction, self: true }]
+      'held</th><th>Its own console</th></tr></thead><tbody>' +
+      [{ id: json.cell, jurisdiction: json.jurisdiction, self: true,
+         consoleUrl: json.consoleUrl }]
         .concat(json.peers).map(function (c: Json): string {
           const held = (json.store.peoplePerCell || []).filter(function (
             row: Json): boolean {
@@ -337,8 +482,15 @@ class CellsAdmin {
             (c.self ? 'yes' : c.reachable ? 'yes, ' + c.answeredMs + ' ms'
                                           : '<strong>no</strong> — ' +
                                             esc(c.error || '')) +
-            '</td><td>' + held + '</td></tr>';
-        }).join('') + '</tbody></table>';
+            '</td><td>' + held + '</td><td>' + consoleCell(c) +
+            '</td></tr>';
+        }).join('') + '</tbody></table>' +
+      '<p class="sub">Each cell\'s own console is reached through that ' +
+      'cell\'s load balancer, under a name of its own, and signs in there: ' +
+      'what it shows is that cell. The shared public name goes to whichever ' +
+      'cell is nearest. Every cell\'s members are also on ' +
+      '<a href="/admin/cluster">Cluster</a>, asked over the inter-cell ' +
+      'channel.</p>';
     const store = '<h2>The store</h2><table class="grid"><tbody>' +
       '<tr><th>Tiered</th><td>' + (json.store.tiered ? 'yes: the global ' +
         'tier\'s database and this cell\'s own' : 'no') + '</td></tr>' +
@@ -472,6 +624,9 @@ class CellsAdmin {
                                                      ctx: { peer: string }) {
       return self.answerPeople(body, ctx);
     });
+    channel.registerOp('cluster-summary', function () {
+      return self.clusterSummaryHere();
+    });
     log.debug("Leaving CellsAdmin.registerRoutes().");
   }
 }
@@ -507,5 +662,8 @@ export = {
   // For `mgmt-api/admin_api.ts` (rule 7).
   cellsView: slot.forward('cellsView'),
   peopleOf: slot.forward('peopleOf'),
+  // For admin-ui/admin.ts's Cluster page and GET /admin-api/cluster (#361).
+  peerClusters: slot.forward('peerClusters'),
+  clusterSummaryHere: slot.forward('clusterSummaryHere'),
   rehomeAction: slot.forward('rehomeAction')
 };

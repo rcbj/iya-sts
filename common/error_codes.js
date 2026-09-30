@@ -1954,6 +1954,11 @@ const CODES = [
       'cells\' settings disagree); it is refused 400 rather than relayed ' +
       'again, and nothing is created.',
     spec: '' },
+  { code: 'STS-CELL-0194',
+    summary: 'Another cell did not answer cluster-summary (#361): the ' +
+      'Cluster page and GET /admin-api/cluster draw that cell as ' +
+      'unreachable, with the reason, and every other cell as it answered.',
+    spec: '' },
   { code: 'STS-CELL-0200',
     summary: 'The one-time conversion of a single-cell store into a cell ' +
       '(persistence/cell_convert.js) was refused before it read anything: ' +

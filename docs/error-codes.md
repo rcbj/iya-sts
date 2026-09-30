@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3883** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3884** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 70
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 85
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 86
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -473,6 +473,7 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0191` | GET /admin-api/cells could not read the cell map; the call answers 500 server_error. | — |
 | `STS-CELL-0192` | POST /admin-api/cells/rehome failed without a refusal of its own (the move threw, or a refusal carried no code); the call answers an error and the person stays where they were homed. | — |
 | `STS-CELL-0193` | A person's creation from the console or /admin-api arrived relayed from another cell for a home that is not this cell (the two cells' settings disagree); it is refused 400 rather than relayed again, and nothing is created. | — |
+| `STS-CELL-0194` | Another cell did not answer cluster-summary (#361): the Cluster page and GET /admin-api/cluster draw that cell as unreachable, with the reason, and every other cell as it answered. | — |
 | `STS-CELL-0200` | The one-time conversion of a single-cell store into a cell (persistence/cell_convert.js) was refused before it read anything: an unknown argument, no cells.id, a store that is not postgres, no global database, or keys not persisted under an operator key-encryption key. Nothing is changed and it exits non-zero. | none — an operator tool |
 | `STS-CELL-0201` | The conversion found the cell or the global database at a schema version other than this service's; postgres/schema.sql has to be run against both first. Nothing is changed. | none — an operator tool |
 | `STS-CELL-0202` | The conversion found nothing to convert: the cell database holds no realm and no key and the global database is empty — the cell's database URL does not name the single-cell deployment's database. Nothing is changed. | none — an operator tool |

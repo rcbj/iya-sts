@@ -260,12 +260,16 @@ locals {
     STS_CELL_PORT         = tostring(local.intercell_port)
     STS_CELL_HOSTNAME     = local.intercell_hostname
     STS_CELL_PEERS = jsonencode([
-      for id in sort(keys(local.peers)) : {
+      for id in sort(keys(local.peers)) : merge({
         id           = id
         jurisdiction = local.peers[id].jurisdiction
         url          = "https://nodes.${id}.${var.environment}.${var.name}.internal:${local.intercell_port}"
-      }
+        }, local.cell_console_host != "" ? {
+        consoleUrl = "https://${id}.${var.public_hostname}"
+      } : {})
     ])
+    # THIS CELL'S OWN CONSOLE ADDRESS (#361), '' without a public name.
+    STS_CELL_CONSOLE_URL  = local.cell_console_host != "" ? "https://${local.cell_console_host}" : ""
     STS_CELL_KEK_PROVIDER = "aws"
     STS_CELL_KEK_REF      = aws_secretsmanager_secret.main["cell-kek"].arn
     STS_CELL_KEK_REGION   = local.region

@@ -685,6 +685,16 @@ validates it with the same record in every region, so each cell writes it
 with `allow_overwrite` and a cell destroyed ALONE takes it with it; the cells
 are destroyed together.
 
+**AND EACH CELL HAS A NAME OF ITS OWN (#361, 2026-09-30)**: `<cell>.<public
+name>` (`usw2.test-idp.iyasec.io`), one A alias to that cell's NLB and no
+routing policy (`dns_cells.tf`'s `cell_console`), on that cell's
+certificate as a subject alternative name, and handed to its nodes as
+`STS_CELL_CONSOLE_URL` — every peer's in `STS_CELL_PEERS`' `consoleUrl` — so
+Server configuration → Cells links each region's own console. Adding the
+name REPLACES each cell's certificate once (`create_before_destroy`); the
+nodes pick the new one up because the same apply changes their task
+definition.
+
 ### The contract with the code half
 
 Every node of a cell is given, beside everything a single-cell node already
