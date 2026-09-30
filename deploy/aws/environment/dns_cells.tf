@@ -138,4 +138,9 @@ resource "aws_route53_record" "default" {
     zone_id                = data.aws_route53_zone.public[0].zone_id
     evaluate_target_health = true
   }
+
+  # AFTER this cell's latency record (#311): Route 53 refuses an alias to a
+  # name that has no record yet ("that target was not found"), and the first
+  # testidpna apply created this one first.
+  depends_on = [aws_route53_record.latency]
 }

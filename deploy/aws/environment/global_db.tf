@@ -27,14 +27,14 @@
 resource "aws_db_subnet_group" "global" {
   count       = local.multi ? 1 : 0
   name        = "${local.prefix}-global"
-  description = "mock-sts ${var.environment} ${var.cell}: the global database, in this cell's private subnets"
+  description = "mock-sts ${var.environment} ${var.cell}: the global database, in the private subnets of this cell"
   subnet_ids  = aws_subnet.private[*].id
 }
 
 resource "aws_security_group" "global_database" {
   count       = local.multi ? 1 : 0
   name        = "${local.prefix}-global-db"
-  description = "mock-sts ${var.environment} ${var.cell}: the global database, reachable from every cell's VPC"
+  description = "mock-sts ${var.environment} ${var.cell}: the global database, reachable from the VPC of every cell"
   vpc_id      = aws_vpc.main.id
   tags        = { Name = "${local.prefix}-global-db" }
 }
@@ -42,7 +42,7 @@ resource "aws_security_group" "global_database" {
 resource "aws_vpc_security_group_ingress_rule" "global_database_from_cells" {
   for_each          = local.multi ? toset(local.all_cell_cidrs) : toset([])
   security_group_id = aws_security_group.global_database[0].id
-  description       = "PostgreSQL from a cell's VPC"
+  description       = "PostgreSQL from the VPC of a cell"
   cidr_ipv4         = each.value
   ip_protocol       = "tcp"
   from_port         = local.db_port

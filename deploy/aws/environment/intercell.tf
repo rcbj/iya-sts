@@ -47,7 +47,7 @@
 resource "aws_service_discovery_private_dns_namespace" "cells" {
   count       = local.multi ? 1 : 0
   name        = local.intercell_zone
-  description = "mock-sts ${var.environment} ${var.cell}: the inter-cell name (#98), private to the cells' VPCs"
+  description = "mock-sts ${var.environment} ${var.cell}: the inter-cell name (#98), private to the VPCs of the cells"
   vpc         = aws_vpc.main.id
 }
 
@@ -72,7 +72,7 @@ resource "aws_service_discovery_service" "nodes" {
 resource "aws_vpc_security_group_ingress_rule" "nodes_from_cells" {
   for_each          = local.multi ? toset(local.peer_cell_cidrs) : toset([])
   security_group_id = aws_security_group.nodes.id
-  description       = "The inter-cell listener, from another cell's VPC over the peering"
+  description       = "The inter-cell listener, from the VPC of another cell over the peering"
   cidr_ipv4         = each.value
   ip_protocol       = "tcp"
   from_port         = local.intercell_port
@@ -95,7 +95,7 @@ resource "aws_vpc_security_group_egress_rule" "nodes_to_cells" {
 resource "aws_vpc_security_group_egress_rule" "nodes_to_global_database" {
   for_each          = local.multi ? toset(local.all_cell_cidrs) : toset([])
   security_group_id = aws_security_group.nodes.id
-  description       = "The global database (#98), in a cell's VPC"
+  description       = "The global database (#98), in the VPC of a cell"
   cidr_ipv4         = each.value
   ip_protocol       = "tcp"
   from_port         = local.db_port
