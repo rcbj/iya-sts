@@ -397,6 +397,15 @@ data "aws_iam_policy_document" "deploy_network" {
     }
   }
 
+}
+
+# THE REST OF WHAT WAS `deploy_network` (#311, 2026-09-29): load balancers,
+# certificates, Route 53, the SES identity and the service-linked roles. One
+# document held all of it until #98 wrote every regional ARN once per permitted
+# region, and with two regions it passed IAM's 6,144-character limit on a
+# managed policy (LimitExceeded on the foundation apply). Split, not trimmed:
+# the deployer is attached to both, so it may do exactly what it could before.
+data "aws_iam_policy_document" "deploy_edge" {
   statement {
     sid       = "ElbRead"
     actions   = ["elasticloadbalancing:Describe*"]
@@ -1088,6 +1097,11 @@ resource "aws_iam_policy" "deploy_network" {
   policy = data.aws_iam_policy_document.deploy_network.json
 }
 
+resource "aws_iam_policy" "deploy_edge" {
+  name   = "${var.name}-deploy-edge"
+  policy = data.aws_iam_policy_document.deploy_edge.json
+}
+
 resource "aws_iam_policy" "deploy_data" {
   name   = "${var.name}-deploy-data"
   policy = data.aws_iam_policy_document.deploy_data.json
@@ -1106,6 +1120,7 @@ resource "aws_iam_policy" "deploy_cells" {
 resource "aws_iam_role_policy_attachment" "deployer" {
   for_each = {
     network = aws_iam_policy.deploy_network.arn
+    edge    = aws_iam_policy.deploy_edge.arn
     data    = aws_iam_policy.deploy_data.arn
     compute = aws_iam_policy.deploy_compute.arn
     cells   = aws_iam_policy.deploy_cells.arn

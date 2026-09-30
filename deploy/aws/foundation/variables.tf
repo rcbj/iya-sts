@@ -28,8 +28,13 @@ variable "permitted_regions" {
     fifth region is those two blocks and a row in `locals.tf`'s
     `cell_of_region`, then an entry here.
   EOT
-  type        = list(string)
-  default     = ["us-west-2"]
+  type = list(string)
+  # BOTH REGIONS SINCE 2026-09-29 (#311): the foundation was applied with
+  # ca-central-1 for testidpna's cac1 cell, and this is the value the account
+  # now holds. A default of us-west-2 alone would make the next foundation
+  # apply from any checkout DESTROY ca-central-1's cell key, global-key
+  # replica, log group and repository replica. Narrow it only on purpose.
+  default = ["us-west-2", "ca-central-1"]
   validation {
     condition = contains(var.permitted_regions, var.aws_region) && alltrue([
       for r in var.permitted_regions :
