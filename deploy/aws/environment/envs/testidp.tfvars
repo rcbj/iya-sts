@@ -83,6 +83,11 @@ extra_environment = {
   # 2026-09-29): here rather than as a runtime override, which the suite's
   # reset-environment.js clears before every run.
   STS_PERSISTENCE_MINTED_RETENTION = "7200000"
+  # THE DIRECTORY AS A WINDOW IN EVERY WORKER (#349): the request and surface
+  # workers hold at most ldap.workerCacheEntries people and devices and read
+  # the rest from PostgreSQL; the front process still holds all of it. Off
+  # (`memory`) by default; this is what lets testidp run the surface worker.
+  LDAP_WORKER_DIRECTORY = "postgres-lru"
 }
 
 sts_mode                = "product"
