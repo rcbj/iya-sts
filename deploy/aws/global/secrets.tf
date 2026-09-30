@@ -83,6 +83,13 @@ resource "random_password" "krb5_service" {
   special = false
 }
 
+# The replication role's (#97). Made in every global stack so that turning a
+# GCP cell on or off does not replace it; stored only in a multi-cloud one.
+resource "random_password" "db_repl" {
+  length  = 40
+  special = false
+}
+
 data "aws_kms_key" "global" {
   key_id = "alias/${var.name}-global"
 }
@@ -184,14 +191,19 @@ resource "terraform_data" "carryover" {
 locals {
   carried = terraform_data.carryover.output
 
-  replicated_secrets = {
+  replicated_secrets = merge({
     kek                      = lookup(local.carried, "kek", random_bytes.kek.base64)
     global-db-app-password   = random_password.db_app.result
     admin-api-client-secret  = lookup(local.carried, "admin-api-client-secret", random_password.admin_api_client_secret.result)
     bootstrap-admin-password = lookup(local.carried, "bootstrap-admin-password", random_password.bootstrap_admin.result)
     krb5-krbtgt-password     = random_password.krb5_krbtgt.result
     krb5-service-password    = lookup(local.carried, "krb5-service-password", random_password.krb5_service.result)
-  }
+    }, local.multi_cloud ? {
+    # THE REPLICATION ROLE'S PASSWORD (#97): what a GCP cell's subscription
+    # connects to the writer with. Copied into GCP Secret Manager by
+    # deploy/multicloud/gcp-global, like every other global value.
+    global-db-repl-password = random_password.db_repl.result
+  } : {})
 }
 
 resource "aws_secretsmanager_secret" "global" {
@@ -242,7 +254,7 @@ locals {
   # Each global secret's ARN IN EACH CELL'S REGION: a replica's ARN is the
   # primary's with the region changed.
   secret_arns = {
-    for id, c in var.cells : id => {
+    for id, c in local.aws_cells : id => {
       for k, s in aws_secretsmanager_secret.global :
       k => replace(s.arn, ":${local.primary_region}:", ":${c.region}:")
     }

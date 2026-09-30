@@ -38,7 +38,8 @@
 locals {
   cell_order = concat(
     [var.primary_cell],
-    sort([for id in keys(var.cells) : id if id != var.primary_cell]),
+    # AWS cells only (#97): a GCP cell is joined by HA VPN, not peered.
+    sort([for id in keys(local.aws_cells) : id if id != var.primary_cell]),
   )
   pairs = {
     for p in flatten([
@@ -111,7 +112,7 @@ moved {
 # ---------------------------------------------------------------------------
 resource "aws_route53_zone_association" "intercell" {
   for_each = {
-    for p in setproduct(keys(var.cells), keys(var.cells)) :
+    for p in setproduct(keys(local.aws_cells), keys(local.aws_cells)) :
     "${p[0]}-in-${p[1]}" => { zone = p[0], vpc = p[1] } if p[0] != p[1]
   }
 

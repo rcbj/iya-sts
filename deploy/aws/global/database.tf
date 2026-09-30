@@ -45,6 +45,23 @@ resource "aws_db_parameter_group" "global" {
     apply_method = "pending-reboot"
   }
 
+  # A MULTI-CLOUD ENVIRONMENT'S WRITER PUBLISHES (#97): logical decoding on,
+  # and a ceiling on the WAL any one slot may hold back (variables.tf,
+  # `max_slot_wal_keep_size_mb`), so a GCP subscriber that is gone cannot fill
+  # this disk. Static: applied at creation, and at the next reboot on a writer
+  # that was made without it.
+  dynamic "parameter" {
+    for_each = local.multi_cloud ? {
+      "rds.logical_replication" = { value = "1", method = "pending-reboot" }
+      "max_slot_wal_keep_size"  = { value = tostring(var.max_slot_wal_keep_size_mb), method = "immediate" }
+    } : {}
+    content {
+      name         = parameter.key
+      value        = parameter.value.value
+      apply_method = parameter.value.method
+    }
+  }
+
   lifecycle {
     create_before_destroy = true
   }

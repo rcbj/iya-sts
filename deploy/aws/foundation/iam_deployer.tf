@@ -1115,6 +1115,140 @@ data "aws_iam_policy_document" "deploy_cells" {
   }
 }
 
+# ---------------------------------------------------------------------------
+# DEPLOY POLICY 5 OF 5: WHAT ONLY A MULTI-CLOUD ENVIRONMENT DOES (#97,
+# 2026-09-30) — deploy/multicloud/interconnect joins each AWS cell to its GCP
+# partner. A policy of its own for the reason policy 4 is one: the size of a
+# managed policy, and so that what an AWS-only environment can do is still
+# read in the first four.
+#
+#   * the HA VPN's AWS half: a virtual private gateway on the cell's VPC, two
+#     customer gateways (the GCP HA VPN gateway's two interfaces), two
+#     Site-to-Site connections, and route propagation into the cell's route
+#     tables — created only tagged, changed and deleted only tagged;
+#   * a Route 53 Resolver INBOUND endpoint per AWS cell, so GCP's Cloud DNS
+#     can forward the AWS cells' inter-cell names to it over the VPN;
+#   * the records of the private zones that name the GCP cells inside the AWS
+#     VPCs — only names under `.mock-sts.internal`, which no public zone holds.
+# ---------------------------------------------------------------------------
+data "aws_iam_policy_document" "deploy_multicloud" {
+  statement {
+    sid = "Ec2VpnCreateOnlyTagged"
+    actions = [
+      "ec2:CreateVpnGateway", "ec2:CreateCustomerGateway",
+      "ec2:CreateVpnConnection",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid = "Ec2VpnChangeOnlyTagged"
+    actions = [
+      "ec2:AttachVpnGateway", "ec2:DetachVpnGateway", "ec2:DeleteVpnGateway",
+      "ec2:DeleteCustomerGateway", "ec2:DeleteVpnConnection",
+      "ec2:ModifyVpnConnectionOptions", "ec2:ModifyVpnTunnelOptions",
+      "ec2:EnableVgwRoutePropagation", "ec2:DisableVgwRoutePropagation",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "Route53ResolverCreateOnlyTagged"
+    actions   = ["route53resolver:CreateResolverEndpoint", "route53resolver:TagResource"]
+    resources = [for p in local.rarn.route53resolver : "${p}:resolver-endpoint/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid = "Route53ResolverChangeOnlyTagged"
+    actions = [
+      "route53resolver:DeleteResolverEndpoint",
+      "route53resolver:UpdateResolverEndpoint",
+      "route53resolver:AssociateResolverEndpointIpAddress",
+      "route53resolver:DisassociateResolverEndpointIpAddress",
+      "route53resolver:UntagResource",
+    ]
+    resources = [for p in local.rarn.route53resolver : "${p}:resolver-endpoint/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "Route53ResolverRead"
+    actions   = ["route53resolver:Get*", "route53resolver:List*"]
+    resources = ["*"]
+  }
+
+  # THE ENDPOINT'S INTERFACES are made with the CALLER's rights, in a
+  # project subnet behind a project security group. Resolver does not tag
+  # them, so their deletion cannot be scoped by tag: an interface still
+  # attached cannot be deleted, which bounds what this can reach. If the
+  # first apply answers AccessDenied on another ec2 action, it is named here.
+  statement {
+    sid       = "Ec2ResolverInterfacesInProjectSubnets"
+    actions   = ["ec2:CreateNetworkInterface"]
+    resources = [for p in local.rarn.ec2 : "${p}:subnet/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "Ec2ResolverInterfaces"
+    actions   = ["ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface"]
+    resources = [for p in local.rarn.ec2 : "${p}:network-interface/*"]
+  }
+
+  statement {
+    sid       = "Ec2ResolverInterfacesBehindProjectGroups"
+    actions   = ["ec2:CreateNetworkInterface"]
+    resources = [for p in local.rarn.ec2 : "${p}:security-group/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  # THE GCP CELLS' INTER-CELL NAMES, in private zones this deployer makes
+  # (policy 4, Route53PrivateZonesForCloudMap): only `.mock-sts.internal`
+  # names, which the public zones cannot hold.
+  statement {
+    sid       = "Route53PrivateInterCellRecords"
+    actions   = ["route53:ChangeResourceRecordSets"]
+    resources = ["arn:${local.partition}:route53:::hostedzone/*"]
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = ["*.mock-sts.internal"]
+    }
+  }
+}
+
+resource "aws_iam_policy" "deploy_multicloud" {
+  name   = "${var.name}-deploy-multicloud"
+  policy = data.aws_iam_policy_document.deploy_multicloud.json
+}
+
 resource "aws_iam_policy" "deploy_network" {
   name   = "${var.name}-deploy-network"
   policy = data.aws_iam_policy_document.deploy_network.json
@@ -1147,6 +1281,9 @@ resource "aws_iam_role_policy_attachment" "deployer" {
     data    = aws_iam_policy.deploy_data.arn
     compute = aws_iam_policy.deploy_compute.arn
     cells   = aws_iam_policy.deploy_cells.arn
+    # #97: the HA VPN, the inbound resolver and the private inter-cell
+    # records of a multi-cloud environment.
+    multicloud = aws_iam_policy.deploy_multicloud.arn
   }
   role       = aws_iam_role.deployer.name
   policy_arn = each.value

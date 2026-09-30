@@ -122,8 +122,13 @@ resource "aws_route53_health_check" "cell" {
   tags              = { Name = "${local.prefix}-https" }
 }
 
+# IN A MULTI-CLOUD ENVIRONMENT (#97) THE TREE IS NOT THE CELLS' TO WRITE:
+# deploy/multicloud/interconnect writes it, over every cell of both clouds,
+# with geoproximity where this file has latency (Route 53's latency routing
+# knows only AWS regions). Each AWS cell still makes its health check, which
+# that stack reads, and its own console name.
 resource "aws_route53_record" "latency" {
-  count          = local.cells_dns ? 1 : 0
+  count          = local.cells_dns && !local.multi_cloud ? 1 : 0
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = local.latency_name
   type           = "A"
@@ -144,9 +149,11 @@ resource "aws_route53_record" "latency" {
 
 # THIS CELL IN ITS JURISDICTION'S SET (#367): what a pinned country's
 # record aliases. The same load balancer and the same health check as the
-# record above; only the set differs.
+# record above; only the set differs. Not in a multi-cloud environment (#97),
+# whose jurisdiction sets deploy/multicloud/interconnect writes over both
+# clouds' cells.
 resource "aws_route53_record" "jurisdiction_latency" {
-  count          = local.cells_dns ? 1 : 0
+  count          = local.cells_dns && !local.multi_cloud ? 1 : 0
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = local.jurisdiction_name
   type           = "A"
@@ -166,7 +173,7 @@ resource "aws_route53_record" "jurisdiction_latency" {
 }
 
 resource "aws_route53_record" "pinned" {
-  for_each       = local.pinned_places
+  for_each       = local.multi_cloud ? toset([]) : local.pinned_places
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = var.public_hostname
   type           = "A"
@@ -190,7 +197,7 @@ resource "aws_route53_record" "pinned" {
 }
 
 resource "aws_route53_record" "default" {
-  count          = local.cells_dns && local.is_primary ? 1 : 0
+  count          = local.cells_dns && local.is_primary && !local.multi_cloud ? 1 : 0
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = var.public_hostname
   type           = "A"

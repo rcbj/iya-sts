@@ -4714,6 +4714,16 @@ function create(options) {
 
     // The replica's lag behind its writer, in milliseconds, or null where
     // this is not a replica or the question cannot be asked — `/admin/cells`.
+    //
+    // TWO KINDS OF REPLICA (#97). An RDS read replica is PHYSICAL and is in
+    // recovery, so its last replayed transaction's age is the lag. A GCP
+    // cell's copy of the global tier is a LOGICAL subscriber of the RDS
+    // writer (deploy/multicloud/CLAUDE.md) and is NOT in recovery — the one
+    // question alone answered 0 there, whatever the subscription's state. Its
+    // lag is the age of the last position the subscription reported, which
+    // `pg_stat_subscription` shows the application role. Both read the time
+    // of the last thing received, so an idle writer reads as a lag of up to
+    // its keepalive interval.
     replicaLagMs: function () {
       log.debug("Entering replicaLagMs().");
       if (readPool === pool) {
@@ -4724,7 +4734,12 @@ function create(options) {
       return readPool.query(
         'SELECT CASE WHEN pg_is_in_recovery() THEN ' +
         '(extract(epoch from (now() - pg_last_xact_replay_timestamp())) ' +
-        '* 1000)::bigint ELSE 0 END AS lag'
+        '* 1000)::bigint ' +
+        'WHEN EXISTS (SELECT 1 FROM pg_stat_subscription ' +
+        'WHERE relid IS NULL) THEN ' +
+        '(SELECT (extract(epoch from (now() - max(latest_end_time))) ' +
+        '* 1000)::bigint FROM pg_stat_subscription WHERE relid IS NULL) ' +
+        'ELSE 0 END AS lag'
       ).then(function (r) {
         const row = (r.rows || [])[0];
         return row && row.lag !== null ? Number(row.lag) : null;

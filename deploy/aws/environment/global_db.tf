@@ -48,3 +48,17 @@ resource "aws_vpc_security_group_ingress_rule" "global_database_from_cells" {
   from_port         = local.db_port
   to_port           = local.db_port
 }
+
+# THE GCP CELLS' COPIES OF THE GLOBAL TIER (#97): each GCP cell's Cloud SQL
+# subscribes to this writer's publication over the HA VPN, from the
+# private-services range its instance was given — not from the cell's VPC
+# CIDR, which the rule above admits for the GCP nodes' own writes.
+resource "aws_vpc_security_group_ingress_rule" "global_database_from_gcp_subscribers" {
+  for_each          = local.multi ? toset(local.gcp_global_db_cidrs) : toset([])
+  security_group_id = aws_security_group.global_database[0].id
+  description       = "PostgreSQL logical replication, from a GCP cell's copy of the global tier (#97)"
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = local.db_port
+  to_port           = local.db_port
+}

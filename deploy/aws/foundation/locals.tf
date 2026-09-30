@@ -53,7 +53,7 @@ locals {
   rarn = {
     for svc in [
       "secretsmanager", "logs", "rds", "ecs", "ec2", "elasticloadbalancing",
-      "acm", "ecr", "servicediscovery",
+      "acm", "ecr", "servicediscovery", "route53resolver",
     ] : svc => ["arn:${local.partition}:${svc}:*:${local.account_id}"]
   }
 

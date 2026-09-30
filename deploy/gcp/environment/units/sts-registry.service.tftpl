@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# mock-sts: Docker's credential helper for the project's Artifact Registry,
+# with the VM's service account (Container-Optimized OS ships the helper).
+[Unit]
+Description=mock-sts: registry credentials
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOME=/var/lib/sts
+ExecStartPre=/bin/mkdir -p /var/lib/sts
+ExecStart=/usr/bin/docker-credential-gcr configure-docker --registries=${registry_host}

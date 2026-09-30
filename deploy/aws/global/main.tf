@@ -12,7 +12,18 @@ locals {
 
   primary        = var.cells[var.primary_cell]
   primary_region = local.primary.region
-  replica_cells  = { for id, c in var.cells : id => c if id != var.primary_cell }
+  # THE AWS CELLS (#97): everything this stack does with a cell — read its
+  # state, make its replica, peer its VPC, replicate a secret into its
+  # region — it does with these. A GCP cell is deploy/multicloud's.
+  aws_cells     = { for id, c in var.cells : id => c if c.cloud == "aws" }
+  multi_cloud   = length(local.aws_cells) < length(var.cells)
+  replica_cells = { for id, c in local.aws_cells : id => c if id != var.primary_cell }
+
+  # THE PUBLICATION A MULTI-CLOUD ENVIRONMENT'S GCP CELLS SUBSCRIBE TO, and
+  # the role they subscribe as (#97) — made by the primary cell's
+  # global-schema-init (deploy/aws/schema-init/apply.sh), named here once.
+  publication = "sts_global"
+  repl_user   = "sts_repl"
 
   tags = merge(var.tags, {
     Project     = "STS"
@@ -34,7 +45,7 @@ locals {
 # is applied (at least in its `base` phase) before this stack.
 # ---------------------------------------------------------------------------
 data "terraform_remote_state" "cell" {
-  for_each = var.cells
+  for_each = local.aws_cells
   backend  = "s3"
   config = {
     region = var.state_region
@@ -45,7 +56,7 @@ data "terraform_remote_state" "cell" {
 
 locals {
   cell = {
-    for id, c in var.cells : id => {
+    for id, c in local.aws_cells : id => {
       region                      = c.region
       vpc_id                      = data.terraform_remote_state.cell[id].outputs.vpc_id
       vpc_cidr                    = data.terraform_remote_state.cell[id].outputs.vpc_cidr

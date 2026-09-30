@@ -568,6 +568,17 @@ relaxing that for one name was not worth the audit. **It cannot run beside
 name with a geolocation record — so the two share one concurrency group in
 the workflows, and one is destroyed before the other is applied.
 
+**A CELL MAY BE ANOTHER CLOUD'S (#97, 2026-09-30).** A cell's `cloud`
+(`aws` by default) says whose it is; a multi-cloud environment's cells file
+is `deploy/multicloud/envs/<env>.cells.tfvars.json`, and its GCP cells are
+PEERS here — in `STS_CELL_PEERS`, admitted on 8446 and by the global
+database, and their private-services ranges admitted as subscribers of the
+writer's publication. Everything this directory does WITH a cell (its state,
+replica, peering, secret replicas) it does with the AWS cells only; the
+public name's Route 53 tree is written by `deploy/multicloud/interconnect`
+instead of by each cell; and only `deploy/multicloud/terraform-local.sh`
+may orchestrate such an environment. `deploy/multicloud/CLAUDE.md` argues it.
+
 ### The apply order, and why it is two passes
 
 A cell and the global tier need each other: the global database's writer
