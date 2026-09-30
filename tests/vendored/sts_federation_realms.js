@@ -1099,9 +1099,11 @@ async function provisioning() {
   const ldapOn = String(await facts.setting(realmBase(SP) + "/admin-api",
                                             "ldap.autocreateUsers")) !==
                  "false";
-  // mode.autoCreates(): a product-mode directory creates nobody because a
-  // sign-in named them, whatever either switch says.
-  const creates = switchOn && ldapOn && !isProduct;
+  // BOTH SWITCHES, IN EITHER MODE (#325, 2026-09-29): product mode honours a
+  // relationship's fedAutocreateUsers as development does. What still
+  // creates nobody is either switch off; mode.autoCreates() no longer
+  // decides it for a federated sign-in.
+  const creates = switchOn && ldapOn;
   log.info("  fedAutocreateUsers=" + rel.fields.fedAutocreateUsers +
            ", ldap.autocreateUsers=" + ldapOn + ", mode=" +
            (isProduct ? "product" : "development") + " — so the SP realm " +

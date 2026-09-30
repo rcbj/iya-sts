@@ -1632,7 +1632,10 @@ is on: that switch is the operator's own, per partner, and until then
 federated newcomer `STS-FED-0090` whatever the switch said. Nothing else
 creates in product mode, and an entry created there carries only the
 identity and what the partner sent — no invented value
-(`mode.inventsClaimValues()`).
+(`mode.inventsClaimValues()`). **What it lifts is the mode's gate only**:
+a realm whose `ldap.autocreateUsers` is off still creates nobody, in either
+mode, whatever the relationship says (2026-09-30,
+`tests/federation_provisioning.js` 7c).
 
 **UNLINKING** — the console's *Federation links* panel, `POST /admin-api/users/
 federation-unlink`, SCIM, `ldapmodify` — goes through the directory's write

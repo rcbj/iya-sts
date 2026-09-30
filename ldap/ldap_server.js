@@ -6058,8 +6058,16 @@ function autoCreateUser(detail) {
   // mode. Nothing else creates in product mode, and what is created there
   // carries no invented value: namePlan() and applyVcAttributes() ask
   // `mode.inventsClaimValues()`.
+  //
+  // WHAT IS LIFTED IS THE MODE'S GATE AND NOT THE OPERATOR'S (2026-09-30).
+  // `ldap.autocreateUsers` off is an explicit "this realm creates nobody", for
+  // every protocol, and a relationship's switch does not overrule it:
+  // `tests/federation_provisioning.js` 7c holds a newcomer refused there with
+  // the relationship's switch on. The first version of this exception
+  // bypassed both, and that check failed on the merged develop.
   const federationMayCreate = !!(info.federation &&
-                                 info.federation.create === true);
+                                 info.federation.create === true) &&
+    !!config.value('ldap.autocreateUsers');
   if (!autocreateUsers() && !federationMayCreate) {
     if (existing &&
         applyFederatedAttributes(existing, info, { created: false })) {
