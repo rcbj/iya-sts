@@ -3020,18 +3020,15 @@ class PkiAdmin {
           '<strong>' + esc(slow.map(function (one) { return one.family; })
             .filter(function (v, i, a) { return a.indexOf(v) === i; })
                                .join(', ')) +
-          ' key generation takes SECONDS and it runs on this ' +
+          ' key generation takes up to a second and it runs on this ' +
           'thread.</strong> This process owns six listener families on one ' +
           'thread, so while a key like that is being made this service ' +
           'answers nobody &mdash; not the next HTTP caller, not the KDC on ' +
-          'port 88, not the LDAP socket. It is deliberately not moved to ' +
-          '<code>common/worker_pool.js</code>: that pool runs this ' +
-          'service\'s own reading of the post-quantum constructions, which ' +
-          'is independent of the vendored one on purpose, and crossing the ' +
-          'two to save a button a few seconds is exactly the defect that ' +
-          'independence exists to expose. In <code>dispatch</code> mode the ' +
-          'console holds affinity to a request worker, so the stall is that ' +
-          'worker\'s rather than the listener\'s.',
+          'port 88, not the LDAP socket. The primitive is native (node\'s ' +
+          'OpenSSL since #363), and the SLH-DSA <code>s</code> parameter ' +
+          'sets are slow by design even so. In <code>dispatch</code> mode ' +
+          'the console holds affinity to a request worker, so the stall is ' +
+          'that worker\'s rather than the listener\'s.',
           'One algorithm family is slow, and the cost is real')
         : '') +
       '<div class="pki-row">' +

@@ -372,7 +372,7 @@ load with `Cannot find module` naming a file nobody edited. See
 
 **AND IT IS OWED AGAIN AS OF 2026-09-12: `common/error_codes.js`.** The error
 code registry is required by `common/audit.js`, `config.js`, `helpers.js`,
-`realms.js`, `crypto.js`, `worker_pool.js`, `worker.js`, `krb5_kdc.js`,
+`realms.js`, `crypto.js`, `krb5_kdc.js`,
 `krb5_service.js` and `spnego_exchange.js` — all inside that closure — so the
 commit that bumps the `sts/` pin across it needs `COPY
 sts/common/error_codes.js ./sts/common/` in the parent's `tests/Dockerfile`, or
@@ -412,6 +412,17 @@ now reads `socket.remoteAddress` once per connection for its debug line and its
 two refusal warnings, which is the header's source when one was read. The UDP
 socket is not covered — a datagram has no stream to put a header in front of —
 so behind a load balancer Kerberos clients use TCP.
+
+**AND OWED AGAIN AS OF 2026-09-30, BOTH WAYS: `common/pq_native.js` IN,
+`common/worker.js` AND `common/worker_pool.js` OUT** (#363). `crypto.js` no
+longer requires the post-quantum pool (it was deleted), and `pq_jose.js` and
+`vendored/pqc.js` now require `pq_native.js`. So the commit that bumps the
+`sts/` pin across #363 must change the parent's `tests/Dockerfile` line
+`COPY sts/common/pq_jose.js sts/common/worker.js sts/common/worker_pool.js
+./sts/common/` to copy `pq_jose.js` and `pq_native.js` — a COPY of a file that
+no longer exists fails the image build, and a missing `pq_native.js` fails
+four Kerberos jobs at load with `Cannot find module './pq_native'`. The
+parent's closure also no longer needs `@noble/post-quantum` for this tree.
 
 **AND OWED AGAIN AS OF 2026-09-17: `common/cache_registry.js`** (#74).
 `common/helpers.js`, `keystore.js`, `revocation_status.js`, `jose_kid.js`,

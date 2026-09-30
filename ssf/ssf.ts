@@ -882,10 +882,10 @@ class SharedSignals {
     log.debug("Leaving SharedSignals.transmitNow().");
     return events.signSet(claims).then((token): TransmitReport |
                                            Promise<TransmitReport> => {
-      // THE RECORD HELD NOW, AND NOT THE ONE READ BEFORE THE SIGNATURE.
-      // Signing may go to the worker pool and take seconds, and in a service
-      // whose request workers share the stream store another process's write
-      // can REPLACE this record in the meantime — a PATCH, a pause, a poll's
+      // THE RECORD HELD NOW, AND NOT THE ONE READ BEFORE THE SIGNATURE. Signing
+      // may go to libuv's thread pool and take seconds, and in a service whose
+      // request workers share the stream store another process's write can
+      // REPLACE this record in the meantime — a PATCH, a pause, a poll's
       // counters. Editing the copy read above and writing it back would undo
       // that write; streams.touch() refuses to, so the edit would be lost
       // instead. See ssf_streams.ts's touch().
@@ -3949,8 +3949,8 @@ class SharedSignals {
   // now move this family's LOAD (its stores, hooks and slots) to 19 instead.
   //
   // `action` returns a PROMISE, like the signals slot's and for the same
-  // reason: emitting an event signs a JWS — possibly on the worker pool — and
-  // then POSTs it to somebody else's endpoint.
+  // reason: emitting an event signs a JWS — possibly on libuv's thread pool —
+  // and then POSTs it to somebody else's endpoint.
   // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
   // WHAT THIS TRANSMITTER HAS SAID TO EACH RECEIVER, ACROSS EVERY SESSION.

@@ -652,10 +652,8 @@ class IntrospectionJwt {
   //
   // ASYNCHRONOUS because a client may register one of the post-quantum
   // algorithms `introspection_signing_alg_values_supported` advertises, and an
-  // SLH-DSA signature is seconds of computation that `signJwtAsAsync()` moves
-  // to the worker pool. `session` is the pool's routing hint: the resource
-  // server's own client_id, so one resource server's signatures queue behind
-  // each other.
+  // SLH-DSA signature is up to a second of computation that
+  // `signJwtAsAsync()` moves to libuv's thread pool.
   //
   // SIGN, THEN ENCRYPT — section 5's "it MUST be a Nested JWT" — with the
   // outer header carrying `cty: "JWT"` (RFC 7519 section 5.2) and the same
@@ -666,8 +664,8 @@ class IntrospectionJwt {
    * Signs, and where the client registered it encrypts, an introspection
    * response for the authenticated resource server.
    *
-   * A signature may be post-quantum and slow, so it goes through the worker
-   * pool, with the client_id as the routing hint.
+   * A signature may be post-quantum and slow, so it goes through libuv's
+   * thread pool.
    *
    * @param opts - `client` (the authenticated caller's registration),
    *   `introspection`, `issuer`, `advertised` and an optional `now`
@@ -708,8 +706,7 @@ class IntrospectionJwt {
     return signJwtAsAsync(claims, protection.signAlg,
                           client.client_secret,
                           { header: { typ: TYP },
-                            certificateHeader: 'introspection',
-                            session: audience })
+                            certificateHeader: 'introspection' })
       .then(function (signed) {
         if (!protection.encAlg) {
           return { contentType: MEDIA_TYPE, body: signed,

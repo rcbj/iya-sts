@@ -24,13 +24,13 @@
 //     front process and of each request and hosted-surface worker, which
 //     answer over the channel #327 added (`{ poolStatus }`, bounded at a
 //     second, a silent worker listed as unanswered); and the same figures
-//     from every post-quantum child and the debugger's api child, each asked
-//     over its own channel (`worker_pool.askMemoryStatus()` — a control
-//     message, not a job — and `debugger_api_process.askMemory()`, answered
-//     by a preload), bounded at half a second. A child that does not answer
-//     in time — a post-quantum worker computing a job cannot — is drawn with
+//     from the debugger's api child, asked over its own channel
+//     (`debugger_api_process.askMemory()`, answered by a preload), bounded
+//     at half a second. A child that does not answer in time is drawn with
 //     its resident size from `/proc/<pid>/status` and the reason. The totals
-//     across them.
+//     across them. There were post-quantum children too until #363
+//     (2026-09-30); post-quantum signing and scrypt now run on libuv's
+//     thread pool inside each process, so their memory is that process's.
 //   * THE ECS TASK METADATA ENDPOINT, where the platform sets
 //     `ECS_CONTAINER_METADATA_URI_V4` — its `/task/stats` and `/task`, as a
 //     cross-check of the cgroup figures from the agent's side. It needs no
@@ -89,9 +89,7 @@
 // of its own; the page names the node and the front process that drew it, and
 // it is ALWAYS the front process: both paths are in `request_pool.js`'s
 // `NEVER_DISPATCHED` beside Worker Pools', because only the front process
-// knows the workers and can ask them. A request worker asks its OWN
-// post-quantum children when the front process asks it (`childMemory`),
-// within ASK_CHILDREN_MS, which is under the front process's bound.
+// knows the workers and can ask them.
 //
 // **A SERVICE PAGE** (`admin_scope.ts`): the container is the process's, so a
 // realm's own administrator is refused it. No control and no POST.
@@ -136,9 +134,7 @@ const PAGE = '/admin/node-health';
 // How long the page waits for the request workers, and for each request to
 // the ECS task metadata endpoint.
 const ASK_WORKERS_MS = 1000;
-// How long a post-quantum child or the debugger's api child is waited for,
-// by the front process and by each request worker for its own children —
-// under ASK_WORKERS_MS, so a worker's answer can include its children's.
+// How long the debugger's api child is waited for.
 const ASK_CHILDREN_MS = 500;
 const ECS_TIMEOUT_MS = 1000;
 // The interval between two CPU samples taken for one page, and the ages
@@ -153,10 +149,9 @@ interface NodeHealthAdminDeps {
   log: typeof helpers.log;
   admin: typeof admin;
   errorCodes: typeof errorCodes;
-  // LAZY, all three, as in `worker_pools_admin.ts`: by the time a page is
-  // drawn each is in node's module cache.
+  // LAZY, both, as in `worker_pools_admin.ts`: by the time a page is drawn
+  // each is in node's module cache.
   requestPool: () => any;
-  workerPool: () => any;
   debuggerProcess: () => any;
   // A file's text, or a rejection (ENOENT for a file that is not there).
   readFile: (file: string) => Promise<string>;
@@ -229,11 +224,6 @@ class NodeHealthAdmin {
         log.debug("Entering requestPool().");
         log.debug("Leaving requestPool().");
         return require('../common/request_pool');
-      },
-      workerPool: function workerPool(): any {
-        log.debug("Entering workerPool().");
-        log.debug("Leaving workerPool().");
-        return require('../common/worker_pool');
       },
       debuggerProcess: function debuggerProcess(): any {
         log.debug("Entering debuggerProcess().");
@@ -991,7 +981,7 @@ class NodeHealthAdmin {
   // A child that answered its memory status: its own figures. One that did
   // not: its resident size from /proc, and why there is no heap.
   private async childRow(pid: number, role: string, answer: Json,
-                         busy: boolean, noAnswer: string): Promise<Json> {
+                         noAnswer: string): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering NodeHealthAdmin.childRow(). " + pid);
     if (answer && answer.memory) {
@@ -1004,32 +994,27 @@ class NodeHealthAdmin {
     row.notReported = answer
       ? 'it answered without its memory, so only its resident size is ' +
         'shown, from /proc'
-      : (busy ? 'it was computing a job, which reads no message until it ' +
-                'returns, and '
-              : '') + noAnswer + ', so only its resident size is shown, ' +
-        'from /proc';
+      : noAnswer + ', so only its resident size is shown, from /proc';
     log.debug("Leaving NodeHealthAdmin.childRow(). From /proc.");
     return row;
   }
 
   /**
    * Every process of the node and its memory: the front process, each
-   * request and hosted-surface worker that answered, the post-quantum
-   * children of each of them, and the debugger's api child — each child
-   * with its own `process.memoryUsage()` when it answered its memory status
-   * (#329), and its resident size from /proc when it did not.
+   * request and hosted-surface worker that answered, and the debugger's api
+   * child — the child with its own `process.memoryUsage()` when it answered
+   * its memory status (#329), and its resident size from /proc when it did
+   * not.
    *
    * @param stats - `request_pool.stats()`
-   * @param answers - `{ [pid]: { pq, memory, cpu, uptimeS, pqMemory } }`
-   *   from the workers
-   * @param ownChildren - `{ [pid]: { memory, cpu, uptimeS } }` from this
-   *   process's post-quantum children
+   * @param answers - `{ [pid]: { memory, cpu, uptimeS, error } }` from the
+   *   workers
    * @param debuggerAnswer - the debugger's api child's answer, or null
    * @returns the processes view
    */
-  async processesView(stats: Json, answers: Json, ownChildren?: Json,
+  async processesView(stats: Json, answers: Json,
                       debuggerAnswer?: Json): Promise<Json> {
-    const { log, pid, memoryUsage, cpuUsage, uptimeS, workerPool,
+    const { log, pid, memoryUsage, cpuUsage, uptimeS,
             debuggerProcess } = this.deps;
     const self = this;
     log.debug("Entering NodeHealthAdmin.processesView().");
@@ -1038,22 +1023,6 @@ class NodeHealthAdmin {
     const children: Promise<Json>[] = [];
     rows.push(this.reportedRow(pid, 'front process', memoryUsage(),
                                cpuUsage(), uptimeS()));
-    const pqChildren = function (pq: Json, reported: Json,
-                                 parent: number, parentAnswered: boolean):
-      void {
-      log.debug("Entering pqChildren(). " + parent);
-      ((pq && pq.workers) || []).forEach(function (w: Json): void {
-        children.push(self.childRow(w.pid, 'post-quantum worker of pid ' +
-                                    parent, (reported || {})[w.pid],
-                                    Number(w.inFlight) > 0,
-                                    parentAnswered
-                                      ? 'it did not answer within ' +
-                                        ASK_CHILDREN_MS + 'ms'
-                                      : 'its parent did not ask it'));
-      });
-      log.debug("Leaving pqChildren().");
-    };
-    pqChildren(workerPool().stats(), ownChildren, pid, true);
     (stats.workers || []).filter(function (one: Json): boolean {
       return one.ready;
     }).forEach(function (one: Json): void {
@@ -1063,7 +1032,6 @@ class NodeHealthAdmin {
       if (answer && answer.memory) {
         rows.push(self.reportedRow(one.pid, role, answer.memory, answer.cpu,
                                    answer.uptimeS));
-        pqChildren(answer.pq, answer.pqMemory, one.pid, !!answer.pqMemory);
       } else {
         unanswered.push({ pid: one.pid, role: role,
                           why: answer
@@ -1078,7 +1046,7 @@ class NodeHealthAdmin {
       if (status && status.pid) {
         children.push(this.childRow(status.pid, 'protocol debugger api',
           debuggerAnswer && debuggerAnswer.pid === status.pid
-            ? debuggerAnswer : null, false,
+            ? debuggerAnswer : null,
           'it did not answer within ' + ASK_CHILDREN_MS + 'ms (its ' +
           'memory preload, debugger_api_status.js, answers when it is ' +
           'installed)'));
@@ -1127,8 +1095,10 @@ class NodeHealthAdmin {
         'and it can exceed the container\'s memory.current. The heap ' +
         'figures are the ' + withHeap + ' process(es) that reported ' +
         'process.memoryUsage() themselves; a child that did not answer in ' +
-        'time — a post-quantum worker computing a job cannot — is shown ' +
-        'with its resident size from /proc and no heap, and says why.'
+        'time is shown with its resident size from /proc and no heap, and ' +
+        'says why. Post-quantum signing and scrypt have had no processes ' +
+        'of their own since #363: they run on libuv\'s thread pool, and ' +
+        'their memory is counted in the process that asked.'
     };
     log.debug("Leaving NodeHealthAdmin.processesView(). " + rows.length +
               " process(es).");
@@ -1250,21 +1220,6 @@ class NodeHealthAdmin {
     return view;
   }
 
-  // This process's post-quantum children's memory, or none at all.
-  private askOwnChildren(): Promise<Json> {
-    const { log, workerPool } = this.deps;
-    log.debug("Entering NodeHealthAdmin.askOwnChildren().");
-    log.debug("Leaving NodeHealthAdmin.askOwnChildren().");
-    return Promise.resolve().then(function (): Json {
-      return workerPool().askMemoryStatus(ASK_CHILDREN_MS);
-    }).catch(function (e: any): Json {
-      log.debug("Caught in NodeHealthAdmin.askOwnChildren(): " +
-                ((e && e.message) || e));
-      // The children are then drawn from /proc, each saying why.
-      return {};
-    });
-  }
-
   // The debugger's api child's memory, or null.
   private askDebugger(): Promise<Json> {
     const { log, debuggerProcess } = this.deps;
@@ -1300,15 +1255,13 @@ class NodeHealthAdmin {
     const got = await Promise.all([
       this.cpuView(where),
       this.memoryView(where),
-      asking ? pool.askWorkerPoolStatus(ASK_WORKERS_MS,
-                                        { childMemory: ASK_CHILDREN_MS })
+      asking ? pool.askWorkerPoolStatus(ASK_WORKERS_MS)
              : Promise.resolve({}),
       this.ecsView(),
-      this.askOwnChildren(),
       this.askDebugger()
     ]);
     const processes = await this.processesView(stats, got[2] || {},
-                                               got[4] || {}, got[5]);
+                                               got[4]);
     // The ECS task's limits where the cgroup has none, and the agent's own
     // figures where there is no cgroup to read (#329, Fargate).
     const container = NodeHealthAdmin.withEcs(got[0], got[1], got[3]);

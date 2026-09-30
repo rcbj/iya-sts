@@ -107,14 +107,14 @@ function checkTheBudget(t) {
   t.log.info('=== the budget: (limit − headroom) ÷ processes ===');
   let b = pm.derive({ configuredMb: 0, limitBytes: 8192 * MIB,
                       requestCount: 3, surfaceCount: 1 });
-  // 15 % of 8192 is 1228.8 MiB of headroom; six processes (front, three
-  // protocol, one surface, the crypto allowance).
-  t.equal(b.processes, 6, 'front + 3 + 1 + the crypto allowance');
-  t.equal(b.mb, Math.floor((8192 - 1228.8) / 6),
-          'testidp\'s 8 GiB node: 1160 MiB per process');
+  // 15 % of 8192 is 1228.8 MiB of headroom; five processes (front, three
+  // protocol, one surface).
+  t.equal(b.processes, 5, 'front + 3 + 1');
+  t.equal(b.mb, Math.floor((8192 - 1228.8) / 5),
+          'testidp\'s 8 GiB node: 1392 MiB per process');
   b = pm.derive({ configuredMb: 0, limitBytes: 1024 * MIB,
                   requestCount: 0, surfaceCount: 0 });
-  t.equal(b.mb, 384, 'a 1 GiB single process: (1024 − 256) ÷ 2');
+  t.equal(b.mb, 768, 'a 1 GiB single process: (1024 − 256) ÷ 1');
   b = pm.derive({ configuredMb: 0, limitBytes: 512 * MIB,
                   requestCount: 4, surfaceCount: 2 });
   t.equal(b.mb, 256, 'never below the 256 MiB floor');

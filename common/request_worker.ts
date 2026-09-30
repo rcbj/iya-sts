@@ -1445,41 +1445,23 @@ class RequestWorker {
     log.debug("Leaving RequestWorker.listen().");
   }
 
-  // THIS WORKER'S OWN POST-QUANTUM POOL, for Monitoring → Worker Pools
-  // (#327). The front process asks every ready worker at once, because a job
-  // computed while a worker answers a request goes to children THIS process
-  // forks (`common/worker_pool.js` is loaded here with `common/crypto.js`),
-  // and nothing else can see them. Required lazily: by the time a worker is
-  // ready the stack has loaded it, so this is a module-cache lookup; a worker
-  // that cannot reach it answers with the reason rather than not at all.
-  //
-  // **AND THIS PROCESS'S OWN MEMORY AND CPU TIME (#329, 2026-09-28)**, for
-  // Monitoring → Node Health: `process.memoryUsage()` and
+  // THIS PROCESS'S OWN MEMORY AND CPU TIME (#329, 2026-09-28), for
+  // Monitoring → Worker Pools and Node Health: `process.memoryUsage()` and
   // `process.cpuUsage()`, which only the process itself can read — the heap
-  // figures in particular are nowhere in `/proc`. The same one message, so
-  // the front process asks every worker one question for both pages, and a
-  // worker that cannot read one answers without it rather than not at all.
+  // figures in particular are nowhere in `/proc`. (Until #363 the answer
+  // also carried this worker's own post-quantum pool, which is gone.)
   /**
    * Answers the front process's `{ poolStatus }` question with this
-   * process's `worker_pool.stats()`, its `process.memoryUsage()` and its
-   * `process.cpuUsage()`.
+   * process's `process.memoryUsage()` and `process.cpuUsage()`.
    *
    * @param message - the question, carrying the id to answer under
    */
   reportPoolStatus(message: any): void {
     const { log } = this.deps;
     log.debug("Entering RequestWorker.reportPoolStatus().");
-    let pq: unknown = null;
-    let error = '';
-    try {
-      pq = require('./worker_pool').stats();
-    } catch (e) {
-      log.debug("Caught in RequestWorker.reportPoolStatus(): " +
-                ((e && e.message) || e));
-      error = String((e && e.message) || e);
-    }
     let memory: unknown = null;
     let cpu: unknown = null;
+    let error = '';
     try {
       memory = process.memoryUsage();
       cpu = process.cpuUsage();
@@ -1487,38 +1469,13 @@ class RequestWorker {
       log.debug("Caught in RequestWorker.reportPoolStatus(): " +
                 ((e && e.message) || e));
       // `memoryUsage()` reads /proc on Linux and can fail for want of a
-      // file descriptor; the pool's figures still go back, and whichever of
-      // these two was read before the throw.
+      // file descriptor; the answer still goes back, with the reason.
+      error = String((e && e.message) || e);
     }
-    const answer = { poolStatus: true, id: message.id, pid: process.pid,
-                     pq: pq, error: error || null, memory: memory, cpu: cpu,
-                     uptimeS: Math.round(process.uptime()),
-                     pqMemory: null as unknown };
-    // THIS WORKER'S OWN POST-QUANTUM CHILDREN'S MEMORY, only when Node
-    // Health asks (`childMemory`, #329): they answer this process and no
-    // other, so it asks them — `worker_pool.askMemoryStatus()`, bounded by
-    // `childMemoryMs`, which the front process keeps under its own bound —
-    // and answers with what came back. Worker Pools does not ask, and so
-    // does not wait on it.
-    if (!message.childMemory || !pq) {
-      this.report(answer);
-      log.debug("Leaving RequestWorker.reportPoolStatus().");
-      return;
-    }
-    const self = this;
-    require('./worker_pool').askMemoryStatus(Number(message.childMemoryMs) ||
-                                             500)
-      .then(function (children: unknown): void {
-        answer.pqMemory = children;
-        self.report(answer);
-      }, function (e: any): void {
-        log.debug("Caught in RequestWorker.reportPoolStatus(): " +
-                  ((e && e.message) || e));
-        // The children's memory is a courtesy; the rest still goes back.
-        self.report(answer);
-      });
-    log.debug("Leaving RequestWorker.reportPoolStatus(). Asking the " +
-              "children.");
+    this.report({ poolStatus: true, id: message.id, pid: process.pid,
+                  error: error || null, memory: memory, cpu: cpu,
+                  uptimeS: Math.round(process.uptime()) });
+    log.debug("Leaving RequestWorker.reportPoolStatus().");
   }
 
   // ---------------------------------------------------------------------------

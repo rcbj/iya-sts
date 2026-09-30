@@ -2880,7 +2880,7 @@ class ScimAuth {
   // ---------------------------------------------------------------------------
   /**
    * Decides as `authenticate()` does, with a Basic password verified in the
-   * worker pool and a single-use Digest or HOBA credential claimed across the
+   * thread pool and a single-use Digest or HOBA credential claimed across the
    * cluster before any session is made.
    *
    * @param req - the request
@@ -2905,14 +2905,14 @@ class ScimAuth {
   }
 
   // ---------------------------------------------------------------------------
-  // A BASIC PASSWORD, VERIFIED IN THE WORKER POOL (2026-09-21).
+  // A BASIC PASSWORD, VERIFIED ON LIBUV'S THREAD POOL (2026-09-21).
   //
   // `attemptBasic()` is synchronous, so in product mode it hashed the password
   // with scrypt ON THE REQUEST THREAD — about 70ms at the default cost, in
   // which this worker answered nothing else. The asynchronous path
   // (`authenticateSpent()`, which `scim.ts` takes) now asks
   // `credentials.verifyAsync()` first, which is the same check with the hash
-  // done in the worker pool, and leaves the verdict on the request for
+  // done on libuv's thread pool, and leaves the verdict on the request for
   // `attemptBasic()` to use. It keeps the username and a SHA-256 of the
   // password beside the verdict — never the password — so a verdict is only
   // used for the credential it was reached for. Only when the Basic scheme is

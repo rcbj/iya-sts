@@ -103,20 +103,14 @@ const { log, PORT, HOST, warmPqKeys,
         warmSignerGroups } = require('./common/helpers');
 const realms = require('./common/realms');
 const config = require('./common/config');
-// A LIBRARY, rule 3's shape: it registers no route and its position in the
-// require order is not a position at all. It is named here for one thing — the
-// drain in shutdown() below — and it is already loaded by then, because
-// common/crypto.js requires it. See common/worker_pool.js.
-const workerPool = require('./common/worker_pool');
 // ---------------------------------------------------------------------------
-// AND THE SECOND POOL, WHICH IS A DIFFERENT KIND OF WORKER.
-//
-// `worker_pool.js` above forks children that run a JOB TABLE — four leaf
-// computations. `request_pool.js` forks children that run THE SERVICE: each
-// loads the same protocol stack in the same order, binds no protocol port, and
-// answers HTTP on a unix socket this process proxies to. It is required here
-// for its lifecycle only; the middleware that uses it is installed in app.js,
-// because that is where the order it has to sit in is decided.
+// THE REQUEST POOL. Its workers run THE SERVICE: each loads the same protocol
+// stack in the same order, binds no protocol port, and answers HTTP on a unix
+// socket this process proxies to. It is required here for its lifecycle only;
+// the middleware that uses it is installed in app.js, because that is where
+// the order it has to sit in is decided. (There was a second pool until #363,
+// `common/worker_pool.js`, of processes that computed post-quantum signatures
+// and scrypt; those run on libuv's thread pool now — `common/pq_native.js`.)
 // ---------------------------------------------------------------------------
 const requestPool = require('./common/request_pool');
 // THE VERSION, M.N.O. A LIBRARY and a LEAF: it registers no route and requires
@@ -247,14 +241,11 @@ function announce() {
   // intermittently, in about half of the coverage runs on `main`. The
   // service was never wrong; the work was simply in the wrong place.
   //
-  // IT IS HERE AND NOT AT REQUIRE TIME, which matters: `workers.count`'s own
-  // description promises that nothing is forked until the first post-quantum
-  // job, so that the parent project's in-process Kerberos jobs, this
-  // repository's own `npm test` and `node env/generate_defaults.js` never pay
-  // for a pool they will not use. Warming from `helpers.js` would have broken
-  // that for every one of them. A process that has bound a socket is a
-  // SERVICE, and a service is exactly the thing that will be asked for a
-  // JWKS.
+  // IT IS HERE AND NOT AT REQUIRE TIME, so that the parent project's
+  // in-process Kerberos jobs, this repository's own `npm test` and
+  // `node env/generate_defaults.js` never pay for eleven key generations they
+  // will not use. A process that has bound a socket is a SERVICE, and a
+  // service is exactly the thing that will be asked for a JWKS.
   //
   // NOT AWAITED, and failure is not fatal. The port is already open; this is
   // work moved off the first request's path, not a precondition for
@@ -609,20 +600,9 @@ function shutdown(signal) {
            'down, then exiting. Sessions, tokens, codes, artifacts and ' +
            'tickets are not persisted and are going with this process, which ' +
            'is what they have always done.');
-  // THE COMPUTATION POOL IS DRAINED rather than killed: a child
-  // part way through an SLH-DSA signature is answering a request this process
-  // still has open, and thirteen seconds of computation thrown away is a
-  // request that gets nothing back. It gives them five seconds and kills what
-  // is left, which costs nothing — a worker holds no state. It resolves rather
-  // than rejects for the same reason persistence.stop() does: the only move
-  // left here is to exit, and a rejection would replace the sentence that says
-  // what was flushed with a stack trace. See common/worker_pool.js.
-  // ---------------------------------------------------------------------
-  // THE REQUEST WORKERS GO FIRST, AND THE ORDER IS A DEPENDENCY RATHER THAN A
-  // PREFERENCE: a request worker that is still finishing a response may be
-  // waiting on a post-quantum signature from the COMPUTATION pool, so draining
-  // that pool first would fail the job the request is blocked on and turn a
-  // clean shutdown into a truncated answer.
+  // THE REQUEST WORKERS ARE DRAINED BEFORE THE STORE IS FLUSHED: a worker
+  // still finishing a response may write, and its write has to be in the
+  // store before persistence.stop() closes it.
   // ---------------------------------------------------------------------
   // The debugger's api child first: it is not a worker of either pool and
   // holds nothing worth draining, and an orphan would keep its socket.
@@ -642,12 +622,6 @@ function shutdown(signal) {
   }).then(function (drained) {
     if (drained.stopped || drained.killed) {
       log.info('sts: ' + drained.stopped + ' request worker(s) finished and ' +
-               drained.killed + ' had to be killed.');
-    }
-    return workerPool.stop();
-  }).then(function (drained) {
-    if (drained.stopped || drained.killed) {
-      log.info('sts: ' + drained.stopped + ' worker process(es) finished and ' +
                drained.killed + ' had to be killed.');
     }
     return persistence.stop();

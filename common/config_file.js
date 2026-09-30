@@ -41,9 +41,9 @@
 // repository may not edit (see common/vendored/CLAUDE.md and
 // kerberos/CLAUDE.md).
 //
-// Five callers require this first and between them cover every way the service
-// is loaded: server.js (the whole service), common/worker.js and
-// common/request_worker.ts (the two kinds of forked child), common/config.js
+// Four callers require this first and between them cover every way the
+// service is loaded: server.js (the whole service), common/request_worker.ts
+// (a request worker), common/config.js
 // and common/helpers.js (a module loaded in-process by a test, which is how the
 // parent project drives the KDC). It is idempotent, so all of them calling
 // costs nothing.

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
 // File: pqc.js
 //
 // ---------------------------------------------------------------------------
@@ -37,30 +39,31 @@
 // here, and `MISSING` below records why it is not here yet so the next reader
 // does not have to re-derive it.
 //
-// ONE CONSTRAINT SHAPES WHAT IS IN HERE AND IT IS NOT A CRYPTOGRAPHIC ONE.
-// This client is bundled with browserify, which is a CommonJS bundler, and
-// `@noble/post-quantum` became ESM-ONLY at version 0.5.0 ("type": "module",
-// no CJS build, no esm/ + cjs/ pair). 0.4.1 is therefore the last version
-// this build can consume, and `esmify` does not rescue it: the transform gets
-// as far as the nested `@noble/hashes` 1.8.0 and browserify's parser rejects
-// that file's syntax outright. So everything below is built on 0.4.1, which
-// carries ML-KEM, ML-DSA and SLH-DSA — including their context strings and
-// their pre-hash variants with the correct OIDs — and does NOT carry Falcon
-// or any hybrid preset. What that costs is recorded in MISSING and the two
-// gaps are filled differently: X-Wing is implemented here from the draft's
-// own pseudocode (and checked against its three published test vectors), and
-// FN-DSA is absent rather than pulled from an unmaintained third-party WASM
-// wrapper. Moving to a newer library means changing the bundler, which is a
-// larger decision than this module gets to make on its own.
+// THIS SERVICE'S OWN COPY SINCE #363 (2026-09-30), AND THE PRIMITIVES ARE
+// NODE'S OPENSSL. Until then this file was a byte-identical copy of the
+// parent project's browser module, built on @noble/post-quantum 0.4.1 (the
+// last CommonJS release, which that project's browserify bundle needed).
+// rcbj's decision on #363 made it this repository's own — it no longer
+// follows the parent — and moved ML-DSA, SLH-DSA and ML-KEM onto
+// `common/pq_native.js`, which is OpenSSL 3.5 in the same shape. Two things
+// the JavaScript library had are not offered by node's API and are refused
+// rather than approximated: the pre-hash variants (HashML-DSA,
+// HashSLH-DSA), and encapsulation with given randomness (X-Wing's `eseed`,
+// which only reproduced test vectors). X-Wing is still implemented here from
+// the draft's pseudocode and checked against its published vectors from the
+// decapsulating side. The traditional curves and hashes below are still
+// @noble/curves and @noble/hashes.
 //
 // NO DOM. Bytes in, bytes out, so tests/pqc_engines.js drives every path in
 // node with no browser — the same rule pk_encryption.js and jws.js follow.
 // ---------------------------------------------------------------------------
 
 var bunyan = require("bunyan");
-var mldsa = require("@noble/post-quantum/ml-dsa.js");
-var slh = require("@noble/post-quantum/slh-dsa.js");
-var mlkem = require("@noble/post-quantum/ml-kem.js");
+// ML-DSA, SLH-DSA and ML-KEM on node's OpenSSL, in @noble/post-quantum
+// 0.4.1's shape, which is why these three names did not change (#363).
+var mldsa = require("../pq_native");
+var slh = mldsa;
+var mlkem = mldsa;
 var p256 = require("@noble/curves/p256").p256;
 var p384 = require("@noble/curves/p384").p384;
 var p521 = require("@noble/curves/p521").p521;
@@ -264,13 +267,9 @@ var MISSING = [
     reason: 'NIST selected it and draft-ietf-cose-falcon-04 registers ' +
             'FN-DSA-512 and FN-DSA-1024 for JOSE, so unlike HQC there IS a ' +
             'specification to implement. What is missing is an ' +
-            'implementation this build can load: @noble/post-quantum ships ' +
-            'Falcon only from 0.5.0, which is ESM-only, and this client is ' +
-            'bundled with browserify (CommonJS). The alternative on npm is ' +
-            'an unmaintained 2021 WASM wrapper, which is not a dependency ' +
-            'worth adding to a security tool for an algorithm whose FIPS ' +
-            '206 is still unpublished. It belongs here when the bundler ' +
-            'moves.'
+            'implementation: the post-quantum primitives here are node\'s ' +
+            'OpenSSL 3.5, which does not implement FN-DSA, and FIPS 206 is ' +
+            'still unpublished. It belongs here when OpenSSL carries it.'
   },
   {
     name: 'HQC',
@@ -1200,11 +1199,17 @@ var xwing = {
     log.debug("Leaving X-Wing keygen().");
     return { secretKey: sk, publicKey: concatBytes(parts.pkM, parts.pkX) };
   },
-  // `eseed` is the 64-byte encapsulation seed the draft's EncapsulateDerand
-  // takes. It exists so the test vectors can be reproduced; ordinary callers
-  // omit it and get fresh randomness.
+  // The draft's EncapsulateDerand takes a 64-byte `eseed`, which exists only
+  // to reproduce the test vectors. ML-KEM on node's OpenSSL cannot take the
+  // ML-KEM half of it (#363), so a given `eseed` is refused rather than
+  // half-honoured; the vectors are checked by decapsulation instead.
   encapsulate: function (pk, eseed) {
     log.debug("Entering X-Wing encapsulate().");
+    if (eseed != null) {
+      log.debug("Leaving X-Wing encapsulate(). Derandomized.");
+      throw new Error('X-Wing encapsulation with a given eseed is not ' +
+                      'available: node\'s ML-KEM takes no randomness.');
+    }
     var pkBytes = asBytes(pk);
     var mlPubLen = ML_KEM_SIZES['ML-KEM-768'].publicKey;
     if (pkBytes.length !== mlPubLen + 32) {
@@ -1214,16 +1219,10 @@ var xwing = {
     }
     var pkM = pkBytes.slice(0, mlPubLen);
     var pkX = pkBytes.slice(mlPubLen);
-    var seedBytes = eseed ? asBytes(eseed) : bytes.randomBytes(64);
-    if (seedBytes.length !== 64) {
-      log.debug("Leaving X-Wing encapsulate(). Bad eseed length.");
-      throw new Error('An X-Wing encapsulation seed is 64 bytes; this one ' +
-                      'is ' + seedBytes.length + '.');
-    }
-    var ekX = seedBytes.slice(32, 64);
+    var ekX = bytes.randomBytes(32);
     var ctX = asBytes(x25519.getPublicKey(ekX));
     var ssX = asBytes(x25519.getSharedSecret(ekX, pkX));
-    var enc = mlkem.ml_kem768.encapsulate(pkM, seedBytes.slice(0, 32));
+    var enc = mlkem.ml_kem768.encapsulate(pkM);
     log.debug("Leaving X-Wing encapsulate().");
     return {
       cipherText: concatBytes(asBytes(enc.cipherText), ctX),

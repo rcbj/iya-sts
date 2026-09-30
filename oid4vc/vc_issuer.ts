@@ -1209,7 +1209,7 @@ class VcIssuer {
   // advertises every asymmetric algorithm in the shared table — the eleven
   // post-quantum and composite ones included. Verifying one of those takes
   // SECONDS on the thread that owns every listener here, and a wallet may send
-  // a batch of them. See common/worker.js.
+  // a batch of them. See common/pq_native.js.
   private async verifyProofJwt(proofJwt, credentialIssuer) {
     const { log, logArtifact, jsonFromB64u, stsCrypto, vciNonces } = this.deps;
     log.debug("Entering VcIssuer.verifyProofJwt().");

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
 // File: pqc_x509.js
 //
 // ---------------------------------------------------------------------------
@@ -83,7 +85,8 @@ var bunyan = require("bunyan");
 var asn1js = require("asn1js");
 var pqc = require("./pqc");
 var bytes = require("./crypto_bytes");
-var mlkem = require("@noble/post-quantum/ml-kem.js");
+// ML-KEM on node's OpenSSL, in @noble/post-quantum 0.4.1's shape (#363).
+var mlkem = require("../pq_native");
 var p256 = require("@noble/curves/p256").p256;
 var p384 = require("@noble/curves/p384").p384;
 var p521 = require("@noble/curves/p521").p521;

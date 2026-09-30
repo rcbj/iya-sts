@@ -1167,7 +1167,7 @@ async function start() {
 
 // Guarded so that `tests/xacml_pep.js` can require this file for `enforce()`
 // and `decide()` without starting a listener or a timer — the same guard
-// `common/worker.js` carries, for the same reason.
+// `common/request_worker.ts` carries, for the same reason.
 if (require.main === module) {
   start().catch(function (error) {
     log.error(tag('STS-XPEP-0013') + 'xacml-pep: could not start: ' +
