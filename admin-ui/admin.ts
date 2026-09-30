@@ -808,6 +808,9 @@ import validation = require('../common/validation');
 // require in the ordinary direction, not a slot: neither calls the other.
 import closedSets = require('../common/closed_sets');
 import InstanceSlot = require('../common/instance_slot');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -4573,7 +4576,9 @@ class AdminConsole {
     log.debug("Entering AdminConsole.runtimeFacts().");
     const facts: Record<string, any> = {};
     try {
-      const count = parseInt(config.value('workers.requestCount'), 10) || 0;
+      // The #364 rule: the default of one worker is none without a store
+      // that coordinates.
+      const count = require('../common/process_memory').requestWorkers();
       const rawDispatch = config.value('workers.dispatch');
       const dispatch = (Array.isArray(rawDispatch) ? rawDispatch
                                                    : String(rawDispatch || '')
@@ -4592,7 +4597,8 @@ class AdminConsole {
           (surfaceCount
             ? ' + ' + surfaceCount + ' for the console and portal' : '') +
           (process.env.STS_REQUEST_WORKER
-            ? '; this page from ' + pool + 'worker ' + process.pid : '') + ')'
+            ? '; this page from ' + pool + 'worker ' + WorkerChannel.id()
+            : '') + ')'
         : 'single process';
     } catch (e) {
       log.debug("Caught in AdminConsole.runtimeFacts(): " +

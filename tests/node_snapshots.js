@@ -105,11 +105,12 @@ function healthView(name, usedMiB, limitMiB, cores, vcpus) {
                      kernelBytes: null, statText: 's', oomKills: 0,
                      source: '/m' },
            processes: { rows: [], unanswered: [], debuggerNote: null,
-                        totals: { processes: 3, rssBytes: 300 * MIB,
-                                  processesWithRss: 3,
+                        totals: { rows: 3, processes: 1,
+                                  workerThreads: 2, rssBytes: 300 * MIB,
+                                  processesWithRss: 1,
                                   heapUsedBytes: 90 * MIB,
                                   heapTotalBytes: 120 * MIB,
-                                  externalBytes: 0, processesWithHeap: 3 },
+                                  externalBytes: 0, isolatesWithHeap: 3 },
                         totalsText: 't' },
            ecs: { available: false, unavailableText: 'not ECS' },
            machine: { text: 'm', loadavg: [0, 0, 0], totalmemBytes: 1,
@@ -490,9 +491,11 @@ async function checkPages(t) {
           tt.memoryLimitBytes === 3072 * MIB &&
           tt.memoryPercent === 33.3 && tt.cpuCoresUsed === 2 &&
           tt.cpuOf === 6 && tt.cpuPercent === 33.3 &&
-          tt.processes === 9 && tt.rssBytes === 900 * MIB,
+          tt.processes === 3 && tt.workerThreads === 6 &&
+          tt.rssBytes === 900 * MIB,
           'Node Health totals: container memory against the summed limits, ' +
-          'CPU against the summed CPUs, the processes', JSON.stringify(tt));
+          'CPU against the summed CPUs, the processes and, apart from them, ' +
+          'the worker threads (#364)', JSON.stringify(tt));
   json = await health.nodeHealthView({ node: 'node-f' });
   t.check(json.node === 'node-f' && json.state === 'stale' &&
           json.memory.currentBytes === 256 * MIB,

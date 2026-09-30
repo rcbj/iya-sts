@@ -109,6 +109,7 @@ import childProcess = require('child_process');
 import bunyan = require('bunyan');
 import config = require('./config');
 import errorCodes = require('./error_codes');
+import WorkerChannel = require('./worker_channel');
 
 let logLevelProblem: any = null;
 const log = bunyan.createLogger({
@@ -373,6 +374,75 @@ class ProcessMemory {
    * @returns `{ configuredMb, requestCount, surfaceCount }`, all 0 with no
    *   configuration; `configuredMb` is -1 when the limit is off
    */
+  // -------------------------------------------------------------------------
+  // ONE REQUEST WORKER BY DEFAULT, WHERE THE STORE CAN COORDINATE (#364,
+  // rcbj).
+  //
+  // `workers.requestCount` defaults to 1, `workers.dispatch` to `*` and
+  // `workers.readYourWrite` to on. A worker needs a store that coordinates —
+  // persistence.mode postgres with persistence.coordinate on — because it
+  // holds its own copy of every store and learns the others' writes from the
+  // change log. On the memory or ldif store the DEFAULT therefore means none:
+  // a development service is one thread, as it always was, and says so once.
+  // An OPERATOR's value is theirs: `workers.requestCount` set explicitly
+  // without coordination is still refused at startup (STS-WORKER-0024,
+  // `request_pool.js`'s start()).
+  //
+  // HERE rather than in `request_pool.js`, which asks it for its size:
+  // this file divides the heap budget by the same count, and runs first of
+  // all — before the store is opened and before the pool is loaded — so the
+  // rule is decided from the settings alone and written once.
+  // -------------------------------------------------------------------------
+  /**
+   * How many request worker threads this process runs: `workers.requestCount`,
+   * except that its default of 1 is 0 where the store cannot coordinate.
+   *
+   * @returns the count, 0 or more
+   */
+  static requestWorkers(): number {
+    log.debug("Entering ProcessMemory.requestWorkers().");
+    let wanted = 0;
+    let byDefault = false;
+    let coordinates = false;
+    let mode = '';
+    try {
+      wanted = parseInt(config.value('workers.requestCount'), 10);
+      const source = config.sourceOf('workers.requestCount');
+      byDefault = source === 'default' || source === 'defaults';
+      mode = String(config.value('persistence.mode'));
+      coordinates = mode === 'postgres' &&
+        config.value('persistence.coordinate') !== false;
+    } catch (e) {
+      log.debug("Caught in ProcessMemory.requestWorkers(): " +
+                ((e && e.message) || e));
+      // No configuration at all (an in-process test): no worker, which is
+      // the right answer for a module loaded on its own.
+      log.debug("Leaving ProcessMemory.requestWorkers(). No settings; 0.");
+      return 0;
+    }
+    if (!(wanted > 0)) {
+      log.debug("Leaving ProcessMemory.requestWorkers(). 0.");
+      return 0;
+    }
+    if (byDefault && !coordinates) {
+      if (!ProcessMemory.noCoordinationNoted) {
+        ProcessMemory.noCoordinationNoted = true;
+        log.info('process_memory: no request worker — ' +
+                 'workers.requestCount is at its default and the store ' +
+                 '(persistence.mode "' + mode + '") does not coordinate, so ' +
+                 'every request is handled in the front thread.');
+      }
+      log.debug("Leaving ProcessMemory.requestWorkers(). The default, " +
+                "without coordination; 0.");
+      return 0;
+    }
+    log.debug("Leaving ProcessMemory.requestWorkers(). " + wanted + ".");
+    return wanted;
+  }
+
+  // Whether requestWorkers() has said once that the default means none.
+  private static noCoordinationNoted = false;
+
   static settings(): { configuredMb: number; requestCount: number;
                        surfaceCount: number } {
     log.debug("Entering ProcessMemory.settings().");
@@ -392,7 +462,7 @@ class ProcessMemory {
     };
     log.debug("Leaving ProcessMemory.settings().");
     return { configuredMb: read('workers.heapLimitMb', true),
-             requestCount: read('workers.requestCount'),
+             requestCount: ProcessMemory.requestWorkers(),
              surfaceCount: read('workers.surfaceCount') };
   }
 
@@ -546,34 +616,6 @@ class ProcessMemory {
     return { reexec: false, why: 'process.execve failed' };
   }
 
-  /**
-   * The `execArgv` a request worker is forked with: this process's own,
-   * without any heap flag, and the budget's.
-   *
-   * @param base - the options to start from (`process.execArgv`)
-   * @param mb - the limit in MiB; 0 adds none
-   * @returns the options
-   */
-  static workerExecArgv(base: string[], mb: number): string[] {
-    log.debug("Entering ProcessMemory.workerExecArgv().");
-    const out: string[] = [];
-    const list = base || [];
-    for (let i = 0; i < list.length; i++) {
-      if (list[i].indexOf(FLAG + '=') === 0) {
-        continue;
-      }
-      if (list[i] === FLAG) {
-        i++;
-        continue;
-      }
-      out.push(list[i]);
-    }
-    if (mb > 0) {
-      out.push(FLAG + '=' + mb);
-    }
-    log.debug("Leaving ProcessMemory.workerExecArgv().");
-    return out;
-  }
 
   /**
    * How many processes the kernel's OOM killer has killed in this
@@ -646,7 +688,11 @@ class ProcessMemory {
       return Math.round((n || 0) / MIB);
     };
     log.debug("Leaving ProcessMemory.snapshot().");
-    return { role: ProcessMemory.role(), pid: process.pid, rssMb: mb(m.rss),
+    // `pid` is the worker's THREAD id in a request worker (#364), and
+    // `rssMb` the whole process's there: RSS is process-wide, and only the
+    // heap figures are this isolate's own.
+    return { role: ProcessMemory.role(), pid: WorkerChannel.id(),
+             rssMb: mb(m.rss),
              heapUsedMb: mb(m.heapUsed), heapTotalMb: mb(m.heapTotal),
              externalMb: mb(m.external), arrayBuffersMb: mb(m.arrayBuffers),
              heapLimitMb: ProcessMemory.heapLimitMb(), at: Date.now() };
@@ -678,10 +724,9 @@ class ProcessMemory {
     log.debug("Entering ProcessMemory.report().");
     const s = ProcessMemory.snapshot();
     log.info('process_memory: ' + ProcessMemory.describe(s) + '.');
-    if (process.env.STS_REQUEST_WORKER && typeof process.send === 'function' &&
-        process.connected) {
+    if (process.env.STS_REQUEST_WORKER && WorkerChannel.inWorkerThread()) {
       try {
-        process.send({ memoryReport: s });
+        WorkerChannel.send({ memoryReport: s });
       } catch (e) {
         log.debug("Caught in ProcessMemory.report(): " +
                   ((e && e.message) || e));

@@ -16,12 +16,15 @@
 //
 //   2. A REQUEST POOL COUNTS its forks, a crash apart from a stop, and the
 //      time from dispatch to answer of a request `proxy()` really streamed —
-//      the REAL fork(), reap() and proxy() over a STUB worker, as
-//      `tests/request_worker_replacement.js` does.
-//   3. THE PAGE DRAWS EACH REQUEST WORKER from the pool's own table, asks
-//      no worker anything — a worker that would not answer does not hold
-//      the page — and has no post-quantum section.
-//   4. A POOL THAT IS OFF SAYS SO IN WORDS — the page and its JSON.
+//      the REAL fork(), reap() and proxy() over a STUB worker THREAD (#364),
+//      as `tests/request_worker_replacement.js` does.
+//   3. THE PAGE DRAWS EACH REQUEST WORKER THREAD from the pool's own table,
+//      by its threadId and called a thread, asks no worker anything — a
+//      worker that would not answer does not hold the page — and has no
+//      post-quantum section.
+//   4. A POOL THAT IS OFF SAYS SO IN WORDS — the page and its JSON — and
+//      says WHICH off: `workers.requestCount` at its default of 1 is none on
+//      a store that cannot coordinate (#364), which is not "is 0".
 //   5. The page and the API are PINNED to the front process
 //      (`NEVER_DISPATCHED`) even with `workers.dispatch=*`.
 //   6. It is a SERVICE page: a realm's own administrator is refused it.
@@ -49,29 +52,32 @@ const log = require('bunyan').createLogger({
 
 const PROTO = requestPool.PROTOCOL_POOL;
 
-// The stub request worker: `begin` in, `ready` out, an HTTP server on the
-// socket it is given; GET / answers its pid after 30ms, so a response time is
-// something to measure. It answers `{ poolStatus }` — unless STUB_MODE=mute,
-// which is a worker that never answers the question — and exits when a drain
-// says `stop`.
+// The stub request worker, a THREAD as the real one is since #364: `begin`
+// in, `ready` out over `parentPort`, an HTTP server on the socket it is
+// given; GET / answers its threadId (the pool's id for it) after 30ms, so a
+// response time is something to measure. It answers `{ poolStatus }` —
+// unless STUB_MODE=mute, which is a worker that never answers the question —
+// and exits when a drain says `stop`; `process.exit()` ends the thread alone.
 const STUB = [
   "'use strict';",
   "const http = require('http');",
-  "process.on('message', function (m) {",
+  "const wt = require('worker_threads');",
+  "wt.parentPort.on('message', function (m) {",
   "  if (m && m.poolStatus) {",
   "    if (process.env.STUB_MODE === 'mute') { return; }",
-  "    process.send({ poolStatus: true, id: m.id, pid: process.pid,",
-  "                   memory: process.memoryUsage() });",
+  "    wt.parentPort.postMessage({ poolStatus: true, id: m.id,",
+  "      pid: wt.threadId, memory: process.memoryUsage() });",
   "    return;",
   "  }",
   "  if (m && m.stop) { process.exit(0); }",
   "  if (!m || !m.begin) { return; }",
   "  const server = http.createServer(function (req, res) {",
-  "    setTimeout(function () { res.end(String(process.pid)); }, 30);",
+  "    setTimeout(function () { res.end(String(wt.threadId)); }, 30);",
   "  });",
-  "  server.listen(m.socket, function () { process.send({ ready: true }); });",
+  "  server.listen(m.socket, function () {",
+  "    wt.parentPort.postMessage({ ready: true });",
+  "  });",
   "});",
-  "process.on('disconnect', function () { process.exit(0); });",
   ""
 ].join('\n');
 
@@ -264,7 +270,7 @@ async function checkARequestPool(t, stubPath) {
         const entry = readyProto()[0];
         const body = await proxyThrough(entry);
         t.equal(body, String(entry.pid), 'a request proxied to a worker is ' +
-                'answered by it');
+                'answered by it — the thread whose threadId the pool holds');
         s = protoStats();
         t.equal(s.history.answered, 1, 'and counted as answered');
         t.check(s.averageMs >= 25 && s.recentAverageMs >= 25,
@@ -274,11 +280,12 @@ async function checkARequestPool(t, stubPath) {
 
         // The worker that served the request: one that served nothing within
         // QUICK_EXIT_MS of its fork is a failed start by the pool's own rule.
-        entry.child.kill('SIGKILL');
+        entry.child.kill();
         t.check(await waitFor(function () {
           return protoStats().history.crashed === 1 &&
                  readyProto().length === 2;
-        }, 10000), 'a SIGKILLed worker is a crash, and is replaced',
+        }, 10000), 'a worker thread terminated unasked is a crash, and is ' +
+        'replaced',
         JSON.stringify(protoStats().history));
         s = protoStats();
         t.equal(s.replaced, 1, 'one replacement');
@@ -320,10 +327,39 @@ async function checkThePageDrawsTheWorkers(t, stubPath) {
         const request = poolOf(json, 'request');
         t.equal(request.currentWorkers, 2, 'the request pool has two workers');
         t.equal(request.maxWorkers, 2, 'its maximum is the configured two');
-        t.equal(request.state, 'not-dispatching',
-                'and with workers.dispatch empty it says it is idle by ' +
-                'configuration');
+        t.check(request.state === 'running' &&
+                /^2 of 2 worker thread\(s\) serving\.$/.test(
+                  request.stateText),
+                'and with workers.dispatch at its default of * (#364) it ' +
+                'says they are serving, as threads',
+                request.state + ': ' + request.stateText);
+        await withEnv({ STS_WORKERS_DISPATCH: '' }, async function () {
+          const idle = poolOf(await workerPoolsAdmin.workerPoolsView(),
+                              'request');
+          t.equal(idle.state, 'not-dispatching',
+                  'with workers.dispatch empty it says it is idle by ' +
+                  'configuration');
+        });
         t.equal(request.workers.length, 2, 'each worker is listed');
+        const ids = readyProto().map(function (one) {
+          return one.pid;
+        }).sort().join(',');
+        t.check(request.workers.map(function (w) {
+          return w.threadId;
+        }).sort().join(',') === ids && request.workers.every(function (w) {
+          return !('pid' in w) && w.threadId !== process.pid;
+        }), 'each by its threadId — the pool\'s id for a thread — and ' +
+        'never by the pid every thread shares', JSON.stringify(
+          request.workers));
+        t.check(json.mainThread === true && json.pid === process.pid,
+                'drawn by the front process\'s main thread, which holds the ' +
+                'pools', JSON.stringify({ mainThread: json.mainThread,
+                                          pid: json.pid }));
+        const page = await draw({});
+        t.check(!!page && /<h3>Worker threads<\/h3>/.test(page.body) &&
+                /<th>Thread<\/th>/.test(page.body) &&
+                /Each worker is a thread of that process/.test(page.body),
+                'the page lists them as worker threads, by thread', '');
         t.check(json.pools.length === 2 && !poolOf(json, 'post-quantum'),
                 'and there are two pools, none of them post-quantum (#363)',
                 JSON.stringify(json.pools.map(function (one) {
@@ -376,15 +412,29 @@ async function checkOffIsSaid(t) {
             'the ' + id + ' pool is off and says so in a sentence',
             p ? p.state + ': ' + p.stateText : 'missing');
   });
+  // WHICH OFF (#364): workers.requestCount defaults to 1, and on this
+  // file's memory store that default means none.
+  t.check(/^Off: workers\.requestCount is at its default of 1, which means none where the store cannot coordinate/.test(
+    poolOf(json, 'request').stateText),
+  'the request pool off by its default says so, rather than "is 0"',
+  poolOf(json, 'request').stateText);
   t.equal(json.scope, 'node', 'the figures are said to be the node\'s');
   t.check(json.pid === process.pid && !!json.node && !('host' in json),
           'naming the process and node that drew them, by name and not ' +
           'by host (#332)', '');
   const page = await draw({});
-  t.check(!!page && /Off: workers\.requestCount is 0/.test(page.body) &&
+  t.check(!!page &&
+          /Off: workers\.requestCount is at its default of 1/.test(
+            page.body) &&
           /Off: workers\.surfaceCount is 0/.test(page.body),
           'the page says each pool is off rather than drawing zeros',
           page ? page.body.slice(0, 300) : 'no page');
+  await withEnv({ STS_WORKERS_REQUEST_COUNT: '0' }, async function () {
+    const zero = poolOf(await workerPoolsAdmin.workerPoolsView(), 'request');
+    t.check(zero.state === 'off' &&
+            /^Off: workers\.requestCount is 0,/.test(zero.stateText),
+            'and one set to 0 says it is 0', zero.stateText);
+  });
   t.check(!!page && !/workers\.count\b/.test(page.body) &&
           !/Post-quantum pool/.test(page.body),
           'and names no post-quantum pool or its setting (#363)', '');

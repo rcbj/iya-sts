@@ -6,15 +6,23 @@
 // File: worker_pools_admin.ts
 //
 // ===========================================================================
-// MONITORING → WORKER POOLS (#327, 2026-09-28): THE TWO POOLS OF CHILD
-// PROCESSES THIS NODE RUNS, AND HOW WELL EACH IS DOING.
+// MONITORING → WORKER POOLS (#327, 2026-09-28): THE TWO POOLS OF WORKER
+// THREADS THIS NODE RUNS, AND HOW WELL EACH IS DOING.
+//
+// **A WORKER IS A THREAD SINCE #364 (2026-09-30)**: a `worker_threads`
+// Worker of the front process, where it was a forked process. So a worker is
+// named by its `threadId` — every thread has the process's pid — and each
+// row here says `threadId`, never `pid`. The pool's own counters keep the
+// names they had (`forked`, a start of a worker); the page says "started".
 //
 // `GET /admin/worker-pools` draws one section per pool —
 //
 //   * the REQUEST pool (`common/request_pool.js`, `workers.requestCount`):
-//     workers that run the whole protocol stack;
+//     worker threads that run the whole protocol stack — one by default
+//     where the store coordinates, none where it cannot
+//     (`process_memory.requestWorkers()`, #364);
 //   * the HOSTED-SURFACE pool (the same module, `workers.surfaceCount`): the
-//     console's and the portal's own workers, the "admin" pool;
+//     console's and the portal's own worker threads, the "admin" pool;
 //
 // There was a THIRD until #363 (2026-09-30): the post-quantum pool
 // (`common/worker_pool.js`), processes forked to compute post-quantum
@@ -36,9 +44,12 @@
 // pool had never counted: its crashes, its stops, its response times, its
 // initial size) are in the pool beside what they count, not kept here.
 //
-// **A POOL THAT IS OFF SAYS SO IN WORDS.** Both request pools are off by
-// default; a row of zeros would read as a pool that is broken rather than
-// one that is not there, so each pool carries a `state` and a sentence.
+// **A POOL THAT IS OFF SAYS SO IN WORDS.** The surface pool is off by
+// default, and so is the request pool on a store that cannot coordinate; a
+// row of zeros would read as a pool that is broken rather than one that is
+// not there, so each pool carries a `state` and a sentence — which says
+// WHICH off it is, since `workers.requestCount` at its default of 1 is none
+// on the memory store.
 //
 // **EVERY NODE, BY NAME (#332, 2026-09-28).** In a cluster the page draws a
 // section per node — this node's live, every other's from the snapshot its
@@ -49,12 +60,13 @@
 //
 // **THE LIVE NUMBERS ARE THIS NODE'S.** Each node — each container of a
 // cluster — has pools of its own, held by its front process, and the page
-// says which node and which pid drew it. **AND IT IS ALWAYS THE FRONT PROCESS THAT DRAWS
-// IT**: both paths are in `request_pool.js`'s `NEVER_DISPATCHED`, the
-// debugger's arrangement, because a request worker's copy of that module
-// forked nothing and would report every pool off on a service running eight
-// workers. Nothing here is asked of a request worker since #363: the only
-// pool a worker held of its own was the post-quantum one.
+// says which node and which pid drew it. **AND IT IS ALWAYS THE FRONT
+// PROCESS'S MAIN THREAD THAT DRAWS IT** (`mainThread` in the view): both
+// paths are in `request_pool.js`'s `NEVER_DISPATCHED`, the debugger's
+// arrangement, because a worker thread's copy of that module started nothing
+// and would report every pool off on a service running eight workers.
+// Nothing here is asked of a request worker since #363: the only pool a
+// worker held of its own was the post-quantum one.
 //
 // **A SERVICE PAGE** (`admin_scope.ts`): the pools belong to the process, so
 // a realm's own administrator is refused it. No control and no POST — the
@@ -74,6 +86,8 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import nodeSnapshots = require('../cluster/node_snapshots');
+import workerThreads = require('worker_threads');
+import config = require('../common/config');
 
 type Req = any;
 type Res = any;
@@ -95,6 +109,12 @@ interface WorkerPoolsAdminDeps {
   requestPool: () => any;
   now: () => number;
   pid: number;
+  // Whether this code runs in the process's main thread — the front process
+  // that holds the pools — rather than a worker thread (#364).
+  mainThread: boolean;
+  // A setting's value and the layer it came from, for the sentence that says
+  // which kind of off a pool is (#364).
+  setting: (key: string) => { value: unknown; source: string };
   // This node's NAME, never its host or address (#332).
   nodeName: () => string;
   // Every other node's snapshot, and the job that writes this one's (#332).
@@ -141,6 +161,24 @@ class WorkerPoolsAdmin {
       },
       now: Date.now,
       pid: process.pid,
+      mainThread: workerThreads.isMainThread,
+      setting: function setting(key: string): { value: unknown;
+                                                source: string } {
+        helpers.log.debug("Entering setting().");
+        try {
+          const answer = { value: config.value(key),
+                           source: String(config.sourceOf(key)) };
+          helpers.log.debug("Leaving setting().");
+          return answer;
+        } catch (e) {
+          helpers.log.debug("Caught in setting(): " +
+                            ((e && e.message) || e));
+          // No configuration (a module loaded on its own): the sentence
+          // falls back to the plain "is 0".
+          helpers.log.debug("Leaving setting(). None.");
+          return { value: null, source: '' };
+        }
+      },
       nodeName: function nodeName(): string {
         helpers.log.debug("Entering nodeName().");
         helpers.log.debug("Leaving nodeName().");
@@ -190,16 +228,30 @@ class WorkerPoolsAdmin {
     let stateText: string;
     if (!configured && !running) {
       state = 'off';
+      // WHICH OFF (#364): `workers.requestCount` defaults to 1, and that
+      // default means none where the store cannot coordinate
+      // (`process_memory.requestWorkers()`), so "is 0" would be untrue.
+      const count = surface ? { value: 0, source: '' }
+                            : this.deps.setting(setting);
+      const byDefault = /^defaults?$/.test(count.source) &&
+        Number(count.value) > 0;
       stateText = surface
         ? 'Off: ' + setting + ' is 0, so /admin and /portal go wherever the ' +
           'rest of workers.dispatch goes — to the request pool, or answered ' +
           'here by the front process.'
-        : 'Off: ' + setting + ' is 0, so every request is answered by the ' +
-          'front process itself, on one thread.';
+        : byDefault
+          ? 'Off: ' + setting + ' is at its default of ' + count.value +
+            ', which means none where the store cannot coordinate ' +
+            '(persistence.mode is not postgres, or persistence.coordinate ' +
+            'is off), so every request is answered by the front process ' +
+            'itself, on one thread.'
+          : 'Off: ' + setting + ' is 0, so every request is answered by the ' +
+            'front process itself, on one thread.';
     } else if (pool.gaveUp) {
       state = 'given-up';
-      stateText = 'Given up: ' + (h.failedStarts || 0) + ' worker(s) failed ' +
-        'to start and the pool stopped forking them (STS-WORKER-0023). ' +
+      stateText = 'Given up: ' + (h.failedStarts || 0) + ' worker ' +
+        'thread(s) failed to start and the pool stopped starting them ' +
+        '(STS-WORKER-0023). ' +
         (surface ? 'The hosted surfaces go to the request pool.'
                  : 'Every request is answered by the front process.');
     } else if (!h.initial && !running) {
@@ -217,21 +269,23 @@ class WorkerPoolsAdmin {
       }
       state = 'not-started';
       stateText = 'Not started: ' + setting + ' is ' + configured + ', and ' +
-        'this process forked none — it was not started as the front ' +
-        'process of a service, or the pool was idled at start.' + why;
+        'this process started no worker thread — it was not started as the ' +
+        'front process of a service, or the pool was idled at start.' + why;
     } else if (!dispatching) {
       state = 'not-dispatching';
       stateText = 'Running, and idle by configuration: workers.dispatch ' +
-        'names nothing, so no request is sent to these workers.';
+        'names nothing, so no request is sent to these worker threads.';
     } else {
       state = 'running';
-      stateText = ready + ' of ' + configured + ' worker(s) serving.';
+      stateText = ready + ' of ' + configured + ' worker thread(s) serving.';
     }
     const workers = (stats.workers || []).filter(function (one: Json):
       boolean {
       return (one.pool || 'protocol') === which;
     }).map(function (one: Json): Json {
-      return { pid: one.pid, slot: one.slot === undefined ? null : one.slot,
+      // `pid` in the pool's table is the thread's id since #364.
+      return { threadId: one.pid,
+               slot: one.slot === undefined ? null : one.slot,
                ready: !!one.ready, busy: one.inFlight > 0,
                inFlight: one.inFlight, served: one.served,
                retiring: !!one.retiring,
@@ -284,7 +338,7 @@ class WorkerPoolsAdmin {
    * @returns a promise of the view
    */
   localView(): Promise<Json> {
-    const { log, requestPool, now, pid, nodeName } = this.deps;
+    const { log, requestPool, now, pid, mainThread, nodeName } = this.deps;
     log.debug("Entering WorkerPoolsAdmin.localView().");
     const node = nodeName();
     const stats = requestPool().stats();
@@ -293,9 +347,12 @@ class WorkerPoolsAdmin {
       generatedAt: new Date(at).toISOString(),
       node: node,
       pid: pid,
+      mainThread: mainThread,
       scope: 'node',
       scopeText: 'These are the pools of the node ' + node + ', held ' +
-        'by its front process, pid ' + pid + '. Every node of a cluster ' +
+        'by its front process, pid ' + pid + '. Each worker is a thread of ' +
+        'that process (#364), named by its thread id, with a V8 heap of its ' +
+        'own and the process\'s memory and CPU. Every node of a cluster ' +
         'has pools of its own. Post-quantum signing and scrypt have had no ' +
         'pool of processes since #363: they run on libuv\'s thread pool, ' +
         'inside whichever process asked.',
@@ -419,8 +476,8 @@ class WorkerPoolsAdmin {
     const t = json.totals;
     const html = '<h2 id="cluster">Cluster</h2><p>' + admin.esc(c.text) +
       '</p>' + (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
-      '<table class="grid"><thead><tr><th>Pool</th><th>Workers</th>' +
-      '<th>Busy</th><th>Free</th><th>Forked</th><th>Crashed</th>' +
+      '<table class="grid"><thead><tr><th>Pool</th><th>Worker threads</th>' +
+      '<th>Busy</th><th>Free</th><th>Started</th><th>Crashed</th>' +
       '<th>Nodes on</th></tr></thead><tbody>' +
       t.pools.map(function (p: Json): string {
         return '<tr><td>' + admin.esc(p.title) + '</td><td>' +
@@ -494,7 +551,8 @@ class WorkerPoolsAdmin {
     };
     const html = '<table class="grid"><tbody>' +
       row('Current workers', admin.esc(p.currentWorkers),
-          'forked now, ' + admin.esc(p.readyWorkers) + ' of them ready') +
+          'worker threads started now, ' + admin.esc(p.readyWorkers) +
+          ' of them ready') +
       row('Busy', admin.esc(p.busyWorkers), 'with a request in flight') +
       row('Free', admin.esc(p.freeWorkers), 'ready and idle') +
       row('Maximum workers', admin.esc(p.maxWorkers),
@@ -507,7 +565,7 @@ class WorkerPoolsAdmin {
                             'started)' : '') + ', ' +
           admin.esc(r.replaced) + ' replaced, ' +
           admin.esc(r.stopped) + ' stopped',
-          admin.esc(r.forked) + ' forked in all; a crash is an exit ' +
+          admin.esc(r.forked) + ' started in all; a crash is an exit ' +
           'nobody asked for') +
       row('Average response time',
           this.ms(t.averageMs) + ' (recent ' +
@@ -545,11 +603,11 @@ class WorkerPoolsAdmin {
       }
       let detail = '';
       if (p.workers.length) {
-        detail = '<h3>Workers</h3><table class="grid"><thead><tr>' +
-          '<th>pid</th><th>Slot</th><th>State</th><th>In flight</th>' +
+        detail = '<h3>Worker threads</h3><table class="grid"><thead><tr>' +
+          '<th>Thread</th><th>Slot</th><th>State</th><th>In flight</th>' +
           '<th>Served</th><th>Up</th></tr></thead><tbody>' +
           p.workers.map(function (w: Json): string {
-            return '<tr><td>' + admin.esc(w.pid) + '</td><td>' +
+            return '<tr><td>' + admin.esc(w.threadId) + '</td><td>' +
               admin.esc(w.slot === null ? '—' : w.slot) + '</td><td>' +
               (w.retiring ? 'stopping' : !w.ready ? 'starting'
                                        : w.busy ? 'busy' : 'free') +

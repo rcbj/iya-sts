@@ -6,18 +6,20 @@
 // File: request_worker.ts
 //
 // ---------------------------------------------------------------------------
-// ONE WORKER THAT HANDLES REQUESTS, RATHER THAN ONE THAT COMPUTES A SIGNATURE.
+// ONE WORKER THAT HANDLES REQUESTS: A THREAD OF THE FRONT PROCESS (#364).
 //
-// `worker.js` beside this file is the OTHER kind and the two are not rivals:
-// that one runs a JOB TABLE — four leaf computations handed everything they
-// need — and it exists because a post-quantum signature took 14.6 seconds on
-// the thread that owns every socket. This one runs the SERVICE. It loads the
-// same protocol stack the front process loads, in the same order, and answers
-// HTTP.
+// This runs the SERVICE. It loads the same protocol stack the front process
+// loads, in the same order, and answers HTTP. Since #364 (2026-09-30) it runs
+// as a `worker_threads` Worker of the front process — its own V8 isolate,
+// heap and event loop, and the process's pid — and it was a forked process
+// until then. It speaks to the front through `common/worker_channel.ts`
+// (`parentPort`), is known by its `threadId`, receives no signal, and ends
+// with `process.exit()`, which ends the thread and nothing else. (A second
+// kind of worker, `worker.js`, computed post-quantum signatures until #363
+// moved them to libuv's thread pool.)
 //
 // The goal it serves is one sentence: **the front process should be doing
-// request/response I/O and nothing else.** Four leaf computations moved off
-// that thread; every handler still ran on it. This is the machinery for moving
+// request/response I/O and nothing else.** This is the machinery for moving
 // the handlers.
 //
 // ---------------------------------------------------------------------------
@@ -191,6 +193,9 @@ import errorCodes = require('./error_codes');
 // Requires only bunyan and `config`, both already loaded above: every
 // dispatched request's close lingers (the server's request handler below).
 import lingeringClose = require('./lingering_close');
+// THE CHANNEL TO THE FRONT PROCESS (#364): `parentPort`, since a worker is a
+// thread. A leaf; see common/worker_channel.ts.
+import WorkerChannel = require('./worker_channel');
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -489,8 +494,8 @@ class CommitAnnouncer {
       const wrote = committedNow > this.announcedWritten;
       this.announcedWritten = Math.max(this.announcedWritten, committedNow);
       try {
-        process.send({ committed: { wrote: wrote, through: through,
-                                    tickets: covered } });
+        WorkerChannel.send({ committed: { wrote: wrote, through: through,
+                                          tickets: covered } });
       } catch (e) {
         // The front process has gone; this worker is about to be told so.
         log.debug("Caught in a callback in " +
@@ -1107,7 +1112,7 @@ class RequestWorker {
     // requests itself.
     // ---------------------------------------------------------------------
     serviceState.start().then((state) => {
-      log.info('request_worker ' + process.pid + ': state is up — ' +
+      log.info('request_worker ' + WorkerChannel.id() + ': state is up — ' +
                'persistence ' + (state.started && state.started.mode) +
                ', coordinating ' +
                !!(state.coordinating && state.coordinating.coordinating) +
@@ -1121,8 +1126,8 @@ class RequestWorker {
       this.bindSocket();
     }).catch((err) => {
       log.error(errorCodes.tag('STS-WORKER-0019') +
-                'request_worker ' + process.pid + ': the state could not be ' +
-                'brought up: ' + err.message);
+                'request_worker ' + WorkerChannel.id() + ': the state could ' +
+                'not be brought up: ' + err.message);
       this.report({ ready: false, error: 'the state could not be brought ' +
                     'up: ' + err.message });
     });
@@ -1174,10 +1179,11 @@ class RequestWorker {
                  this.socketPath + ', so it keeps the process umask: ' +
                  e.message);
       }
-      log.info('request_worker ' + process.pid + ': ready on ' +
+      log.info('request_worker ' + WorkerChannel.id() + ': ready on ' +
                this.socketPath + '. It holds NO protocol port — every ' +
                'listener is the front process\'s.');
-      this.report({ ready: true, pid: process.pid, socket: this.socketPath });
+      this.report({ ready: true, pid: WorkerChannel.id(),
+                    socket: this.socketPath });
     });
     log.debug('Leaving RequestWorker.bindSocket().');
   }
@@ -1195,9 +1201,7 @@ class RequestWorker {
     const { log, errorCodes } = this.deps;
     log.debug('Entering RequestWorker.report().');
     try {
-      if (process.send) {
-        process.send(message);
-      }
+      WorkerChannel.send(message);
     } catch (e) {
       log.warn(errorCodes.tag('STS-WORKER-0034') +
                'request_worker: could not reach the front process: ' +
@@ -1231,8 +1235,8 @@ class RequestWorker {
     }
     this.server.close(() => {
       this.cleanup();
-      log.info('request_worker ' + process.pid + ': served ' + this.served +
-               ' request(s); exiting.');
+      log.info('request_worker ' + WorkerChannel.id() + ': served ' +
+               this.served + ' request(s); exiting.');
       process.exit(0);
     });
     // `close()` waits for open keep-alive connections, and the front process
@@ -1284,7 +1288,7 @@ class RequestWorker {
         'require order.');
     }
     this.operations.set(kind, fn);
-    log.debug('register(): worker ' + process.pid + ' answers "' + kind +
+    log.debug('register(): worker ' + WorkerChannel.id() + ' answers "' + kind +
               '".');
     log.debug("Leaving RequestWorker.register().");
   }
@@ -1333,9 +1337,10 @@ class RequestWorker {
       // ticket rather than arming it — exactly as proxy() does for a request
       // a worker never answered. Announcing here would arm a ticket for a
       // flush that covers nothing.
-      process.send({ operation: true, id: message.id, ok: false, ran: false,
-        error: 'this worker does not answer to the "' + message.kind + '" ' +
-          'operation. It answers to: ' +
+      WorkerChannel.send({ operation: true, id: message.id, ok: false,
+        ran: false,
+        error: 'this worker does not answer to the "' + message.kind +
+          '" operation. It answers to: ' +
           (Array.from(this.operations.keys()).join(', ') || '(nothing)') +
           '.',
         errorName: 'Error' });
@@ -1350,18 +1355,20 @@ class RequestWorker {
       // It RAN, so it is announced: a handler that threw part way through may
       // still have written.
       this.operationFinished(ticket);
-      process.send({ operation: true, id: message.id, ok: false, ran: true,
+      WorkerChannel.send({ operation: true, id: message.id, ok: false,
+                           ran: true,
                      error: e.message, errorName: e.name || 'Error' });
       log.debug('Leaving RequestWorker.handleOperation(). It threw.');
       return;
     }
     Promise.resolve(result).then((value) => {
       this.operationFinished(ticket);
-      process.send({ operation: true, id: message.id, ok: true, ran: true,
+      WorkerChannel.send({ operation: true, id: message.id, ok: true, ran: true,
                      result: value });
     }, (e) => {
       this.operationFinished(ticket);
-      process.send({ operation: true, id: message.id, ok: false, ran: true,
+      WorkerChannel.send({ operation: true, id: message.id, ok: false,
+                           ran: true,
                      error: e.message, errorName: e.name || 'Error' });
     });
     log.debug('Leaving RequestWorker.handleOperation(). Running.');
@@ -1384,7 +1391,7 @@ class RequestWorker {
     log.debug('Entering RequestWorker.handleSync(). id=' + message.id);
     const persistence = require('../persistence/persistence');
     persistence.syncNow().then(function (state: any) {
-      process.send({ sync: true, id: message.id, ok: true,
+      WorkerChannel.send({ sync: true, id: message.id, ok: true,
                      applied: state.applied, caughtUp: state.caughtUp });
       log.debug('Leaving RequestWorker.handleSync(). applied=' +
                 state.applied);
@@ -1394,7 +1401,7 @@ class RequestWorker {
       // above.
       log.error(errorCodes.tag('STS-WORKER-0036') +
                 'request_worker: the read barrier threw: ' + err.message);
-      process.send({ sync: true, id: message.id, ok: false,
+      WorkerChannel.send({ sync: true, id: message.id, ok: false,
                      error: err.message });
     });
     log.debug("Leaving RequestWorker.handleSync().");
@@ -1404,14 +1411,13 @@ class RequestWorker {
   // as it always did at load: the channel's stop / sync / operation messages,
   // the channel closing, and the status signal.
   /**
-   * Installs the process listeners: the channel's stop, sync and operation
-   * messages, the channel closing (which stops the worker), and SIGUSR2, which
-   * reports the worker's status.
+   * Installs the channel's listener: the front process's stop, sync,
+   * operation and status messages.
    */
   listen(): void {
     const { log } = this.deps;
     log.debug("Entering RequestWorker.listen().");
-    process.on('message', (message: any) => {
+    WorkerChannel.on((message: any) => {
       if (message && message.stop) {
         this.stop();
         return;
@@ -1429,19 +1435,10 @@ class RequestWorker {
       }
     });
 
-    // The front process closing the channel is how a worker is told to go,
-    // exactly as it is for the computation pool — see worker.js.
-    process.on('disconnect', () => {
-      log.debug('request_worker ' + process.pid + ': the channel closed.');
-      this.stop();
-    });
-
-    // STATUS ON REQUEST, so the front process can report what its workers are
-    // doing without keeping a second tally that could disagree with this one.
-    process.on('SIGUSR2', () => {
-      this.report({ status: true, pid: process.pid, inFlight: this.inFlight,
-                    served: this.served });
-    });
+    // NO 'disconnect' AND NO SIGUSR2 SINCE #364. A thread's channel does not
+    // close under it — the front process ending ends the thread with it —
+    // and a thread receives no signal. The front's own counters are what
+    // Worker Pools reports; nothing ever sent the status signal.
     log.debug("Leaving RequestWorker.listen().");
   }
 
@@ -1459,6 +1456,9 @@ class RequestWorker {
   reportPoolStatus(message: any): void {
     const { log } = this.deps;
     log.debug("Entering RequestWorker.reportPoolStatus().");
+    // IN A THREAD (#364) `rss` and the CPU time are the WHOLE PROCESS's, the
+    // same in every thread; only the heap figures are this isolate's. They
+    // are sent as read, and Node Health draws a thread's heap only.
     let memory: unknown = null;
     let cpu: unknown = null;
     let error = '';
@@ -1472,7 +1472,7 @@ class RequestWorker {
       // file descriptor; the answer still goes back, with the reason.
       error = String((e && e.message) || e);
     }
-    this.report({ poolStatus: true, id: message.id, pid: process.pid,
+    this.report({ poolStatus: true, id: message.id, pid: WorkerChannel.id(),
                   error: error || null, memory: memory, cpu: cpu,
                   uptimeS: Math.round(process.uptime()) });
     log.debug("Leaving RequestWorker.reportPoolStatus().");
@@ -1503,9 +1503,12 @@ class RequestWorker {
   waitForBegin(): void {
     const { log } = this.deps;
     log.debug("Entering RequestWorker.waitForBegin().");
-    process.on('message', this.onStart);
+    this.startListener = WorkerChannel.on(this.onStart);
     log.debug("Leaving RequestWorker.waitForBegin().");
   }
+
+  // What WorkerChannel.on() installed for `onStart`, which is what off() takes.
+  private startListener: ((message: any) => void) | null = null;
 
   // A PROPERTY rather than a method, so that the listener removed below is the
   // very function that was added.
@@ -1516,7 +1519,8 @@ class RequestWorker {
       log.debug("Leaving RequestWorker.onStart().");
       return;
     }
-    process.removeListener('message', this.onStart);
+    WorkerChannel.off(this.startListener);
+    this.startListener = null;
     this.begin(message);
     log.debug("Leaving RequestWorker.onStart().");
   };
@@ -1606,7 +1610,7 @@ class RequestWorker {
       try {
         // `confirmed` (#46): the set is the store's answer, not this
         // process's offer — see request_pool.js's receivePublishedKeys().
-        process.send({ publishKeys: { realm: realmId, blob: blob,
+        WorkerChannel.send({ publishKeys: { realm: realmId, blob: blob,
                                       confirmed: !!(options &&
                                                     options.confirmed) } });
       } catch (e) {
@@ -1618,7 +1622,8 @@ class RequestWorker {
     });
     keystore.setPkiPublisher(function (realmId: string, chain: unknown) {
       try {
-        process.send({ publishPki: { realm: realmId, chain: chain || null } });
+        WorkerChannel.send({ publishPki: { realm: realmId,
+                                           chain: chain || null } });
       } catch (e) {
         // Same case, same answer: the parent has gone and this worker is on
         // its way out.
@@ -1633,7 +1638,7 @@ class RequestWorker {
     // THE DIRECTORY'S CONNECTION LIST ARRIVES ON THIS SAME LISTENER, and is
     // handed straight to `ldap_server.js` — see installDirectoryMirror() for
     // what it is for and why this process cannot work it out for itself.
-    process.on('message', function (later: any) {
+    WorkerChannel.on(function (later: any) {
       if (later && later.adoptKeys && later.adoptKeys.realm) {
         keystore.adoptShared(later.adoptKeys.realm, later.adoptKeys.blob);
       }
@@ -1701,7 +1706,9 @@ class RequestWorker {
 // ---------------------------------------------------------------------------
 const worker = new RequestWorker(RequestWorker.defaultDeps());
 worker.listen();
-if (require.main === module) {
+// A worker THREAD's main module (#364): `require.main === module` holds in a
+// thread started on this file, and the channel exists only there.
+if (require.main === module && WorkerChannel.inWorkerThread()) {
   worker.waitForBegin();
 }
 

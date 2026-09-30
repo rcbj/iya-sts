@@ -1142,16 +1142,17 @@ const CODES = [
       'threw); the start gate moved on to the next (#342).',
     spec: '' },
   { code: 'STS-WORKER-0046',
-    summary: 'A request worker was aborted (SIGABRT), which is how V8 ends a ' +
-      'process whose heap reached its limit (--max-old-space-size, ' +
-      'workers.heapLimitMb); V8\'s own "JavaScript heap out of memory" ' +
-      'line precedes it in the log (#341).',
+    summary: 'A request worker ran out of heap: its heap reached its limit ' +
+      '(workers.heapLimitMb, #341) — ERR_WORKER_OUT_OF_MEMORY for a worker ' +
+      'thread since #364, a SIGABRT of a worker process before.',
     spec: 'Nothing directly: requests in flight on it were answered 502' },
   { code: 'STS-WORKER-0047',
     summary: 'A request worker was SIGKILLed while the container cgroup\'s ' +
       'oom_kill count rose: the kernel\'s OOM killer ended it because the ' +
-      'container reached its memory limit (#341).',
-    spec: 'Nothing directly: requests in flight on it were answered 502' },
+      'container reached its memory limit (#341). Retired by #364: a ' +
+      'worker is a thread, and the kernel\'s OOM killer ends the whole ' +
+      'process.',
+    spec: '', retired: true },
   { code: 'STS-WORKER-0048',
     summary: 'A heap limit was due for the front process and it could not ' +
       'restart itself with one (no process.execve, or the call failed), so ' +

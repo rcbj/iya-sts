@@ -341,10 +341,12 @@ a directory entry to be the subject of, so federation's provisioning switches
 
 **This service is one node process that owns every listener**, and node runs all
 of them on one thread. **`common/request_pool.js` takes work off it**: workers
-that run THE SERVICE — the whole protocol stack — forked eagerly before the
-listener binds, `workers.requestCount` (0 — off by default), and
-`workers.surfaceCount` (0) for a second pool that runs only `/admin` and
-`/portal`; `common/CLAUDE.md` argues it. **The slow computations are not a
+that run THE SERVICE — the whole protocol stack — each a `worker_threads`
+Worker of this process since #364 (a forked process until then), started
+before the listener binds: `workers.requestCount` (1, and none where the store
+cannot coordinate), and `workers.surfaceCount` (0) for a separate pool that
+runs only `/admin` and `/portal`; `common/CLAUDE.md` argues it. A thread has a
+V8 heap of its own and shares nothing with the front but the store. **The slow computations are not a
 pool** since #363: post-quantum signing, verification and key generation, and
 scrypt, run natively on node's OpenSSL on libuv's thread pool
 (`common/pq_native.js`), where `common/worker_pool.js` forked processes for
