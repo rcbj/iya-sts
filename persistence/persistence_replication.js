@@ -1354,8 +1354,16 @@ function createReplication(label) {
     purging = true;
     log.debug("Leaving purgeOnce(). Trimming.");
     return Promise.resolve().then(function () {
+      // THE GLOBAL LOG'S READERS ARE NOT JUDGED BY MEMBERSHIP (2026-09-30):
+      // a node's membership row is in its CELL database and the global one
+      // holds none, so every reader of the global log named a node that was
+      // "not live" and every trim declared every cell's processes gone
+      // (STS-STORE-0057 on testidpna) — and a trim between their reports
+      // could remove changes they had not applied. Only the report's age
+      // judges them there.
       return driver.purgeChangeLog({ retentionMs: keep,
-                                     readerTtlMs: readerTtlMs() });
+                                     readerTtlMs: readerTtlMs(),
+                                     nodeLiveness: tierLabel !== 'global' });
     }).then(function (answer) {
       purging = false;
       lastPurge = Object.assign({ at: new Date().toISOString(), error: null },
