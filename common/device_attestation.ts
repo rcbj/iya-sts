@@ -111,6 +111,10 @@ const OID_APPLE_NONCE = '1.2.840.113635.100.8.2';
 const OID_TCG_AIK = '2.23.133.8.3';
 
 // KeyMint's SecurityLevel (Android's key attestation schema).
+/**
+ * KeyMint's security levels, in Android's key attestation schema:
+ * `software`, `trusted-environment` and `strongbox`.
+ */
 const SECURITY_LEVELS = ['software', 'trusted-environment', 'strongbox'];
 
 // App Attest's two AAGUIDs: "appattestdevelop", and "appattest" padded
@@ -127,6 +131,7 @@ const TPMA_SENSITIVE_DATA_ORIGIN = 0x00000020;
 
 // The typ a device key proof carries, so a DPoP proof or any other JWS
 // signed by the same key cannot be replayed as one (RFC 8725 section 3.11).
+/** The `typ` a device key proof carries: `device-key-proof+jwt`. */
 const PROOF_TYP = 'device-key-proof+jwt';
 
 interface DeviceAttestationDeps {
@@ -139,18 +144,42 @@ interface DeviceAttestationDeps {
   now: () => number;
 }
 
+/**
+ * Verifies what a device key's attestation proves: where the key lives.
+ *
+ * Android Key Attestation, Apple App Attest and TPM key attestation in a
+ * certificate request. A statement that does not verify is refused; one
+ * that verifies but chains to no anchor is `self-asserted`; one that chains
+ * to an anchor is `attested`.
+ */
 class DeviceAttestation {
+  /** The `typ` a device key proof carries. */
   static readonly PROOF_TYP = PROOF_TYP;
+  /** KeyMint's security levels. */
   static readonly SECURITY_LEVELS = SECURITY_LEVELS;
+  /** The Android key attestation extension's OID. */
   static readonly OID_ANDROID_KEY = OID_ANDROID_KEY;
+  /** Apple's nonce extension's OID. */
   static readonly OID_APPLE_NONCE = OID_APPLE_NONCE;
+  /** TCG's Attestation Key certificate purpose OID. */
   static readonly OID_TCG_AIK = OID_TCG_AIK;
 
+  /**
+   * Builds a verifier over the given dependencies.
+   *
+   * @param deps - the logger, settings, `crypto`, `pki`, error codes, the
+   *   WebAuthn codec and a clock
+   */
   constructor(private readonly deps: DeviceAttestationDeps) {
     deps.log.debug("Entering DeviceAttestation.constructor().");
     deps.log.debug("Leaving DeviceAttestation.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): DeviceAttestationDeps {
     helpers.log.debug("Entering DeviceAttestation.defaultDeps().");
     helpers.log.debug("Leaving DeviceAttestation.defaultDeps().");
@@ -225,6 +254,15 @@ class DeviceAttestation {
   // audience }. Resolves { ok, jwk, alg, attestation } or a refusal. An `x5c`
   // in the header is an Android Key Attestation, verified by android().
   // =========================================================================
+  /**
+   * Verifies a JWK proof: a compact JWS with `typ` `device-key-proof+jwt`, the
+   * public key in its header's `jwk`, over `{ nonce, aud, iat }`.
+   *
+   * An `x5c` in the header is an Android Key Attestation, verified by
+   * `android()`; without one the key is `self-asserted`.
+   * @param spec - `token`, `nonce` (the enrolment challenge) and `audience`
+   * @returns `{ ok, jwk, alg, attestation }`, or a refusal
+   */
   async verifyJwkProof(spec: Json): Promise<Json> {
     const { log, stsCrypto, config } = this.deps;
     log.debug("Entering DeviceAttestation.verifyJwkProof().");
@@ -314,6 +352,15 @@ class DeviceAttestation {
   // =========================================================================
   // ANDROID KEY ATTESTATION: the header's `x5c` (base64 DER, leaf first).
   // =========================================================================
+  /**
+   * Verifies an Android Key Attestation carried in a proof's `x5c`.
+   *
+   * @param x5c - the header's `x5c`, base64 DER, leaf first
+   * @param jwk - the proven public key the leaf must certify
+   * @param nonce - the enrolment challenge the attestation must carry
+   * @returns `{ ok, attestation }`, `attested` when the chain ends at a
+   *   trusted root and `self-asserted` otherwise, or a refusal
+   */
   async android(x5c: unknown, jwk: Json, nonce: string): Promise<Json> {
     const { log, pki, stsCrypto, config } = this.deps;
     log.debug("Entering DeviceAttestation.android().");
@@ -390,6 +437,15 @@ class DeviceAttestation {
   // (base64 or base64url CBOR), nonce (the challenge string) }. Resolves
   // { ok, jwk, alg, appId, environment, attestation } or a refusal.
   // =========================================================================
+  /**
+   * Verifies an Apple App Attest attestation object, following Apple's
+   * validation steps 1-9.
+   *
+   * @param spec - `keyId` and `attestation` (base64 or base64url) and `nonce`
+   *   (the challenge string)
+   * @returns `{ ok, jwk, alg, appId, environment, attestation }`, or a
+   *   refusal
+   */
   async appAttest(spec: Json): Promise<Json> {
     const { log, pki, stsCrypto, config, webauthnCodec } = this.deps;
     log.debug("Entering DeviceAttestation.appAttest().");
@@ -535,6 +591,15 @@ class DeviceAttestation {
   // Resolves { ok, attestation } — `none` and self-asserted when there is
   // no bundle or no statement this service verifies — or a refusal.
   // =========================================================================
+  /**
+   * Verifies a TPM key attestation carried in a certificate request's
+   * id-aa-attestation attribute.
+   *
+   * @param spec - `bundle` (the attribute value's DER, or null for none) and
+   *   `publicKeyPem` (the request's key)
+   * @returns `{ ok, attestation }` — `self-asserted` when there is no bundle
+   *   or no statement this service verifies — or a refusal
+   */
   async csrAttestation(spec: Json): Promise<Json> {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering DeviceAttestation.csrAttestation().");
@@ -715,10 +780,28 @@ const slot = new InstanceSlot<DeviceAttestation>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * What a device key's attestation proves, verified.
+ *
+ * A library that registers and holds nothing; the functions forward to the
+ * instance the composition root installs.
+ * @namespace
+ */
 export = {
   DeviceAttestation: DeviceAttestation,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: DeviceAttestation): void =>
     slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   PROOF_TYP: PROOF_TYP,
   SECURITY_LEVELS: SECURITY_LEVELS,

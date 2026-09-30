@@ -402,12 +402,29 @@ class PortalKerberosPage {
   }
 }
 
+/**
+ * The portal page at /portal/kerberos: where a person sees their Kerberos
+ * principal and makes a keytab for it from their own password (#59).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalKerberos {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalKerberosDeps) {
     deps.log.debug("Entering PortalKerberos.constructor().");
     deps.log.debug("Leaving PortalKerberos.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalKerberosDeps {
     helpers.log.debug("Entering PortalKerberos.defaultDeps().");
     helpers.log.debug("Leaving PortalKerberos.defaultDeps().");
@@ -424,6 +441,13 @@ class PortalKerberos {
 
   // The portal's call, at the point in its body where the route order is
   // right. Answers the page's path.
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalKerberos.register().");
     const page = new PortalKerberosPage(this.deps, context);
@@ -443,6 +467,10 @@ const slot = new InstanceSlot<PortalKerberos>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/kerberos, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalKerberos: PortalKerberos,
   installInstance: (instance: PortalKerberos): void =>

@@ -8,7 +8,8 @@
 # THE PROTOCOL SUITE, INSIDE AN AWS ENVIRONMENT (issue #51).
 #
 # The `suite` container of environment/runner.tf's task; started by
-# deploy/aws/run-suite-in-aws.sh, never by hand. What deploy/aws/run-suite.sh
+# deploy/aws/run-suite.sh (the two callback jobs, or every job with
+# STS_SUITE_IN_AWS=1), never by hand. What deploy/aws/run-suite.sh
 # does from outside, with three differences that are why it exists:
 #
 #   * NO JOB IS EXCLUDED. The nodes can reach this task, so sts_gnap_core's
@@ -24,14 +25,14 @@
 #     as report.tar.gz and summary.json, because nothing outside the task can
 #     see its file system.
 #   * THE EXIT CODE IS run-report.js's, and ECS records it on the container,
-#     which is what run-suite-in-aws.sh reports.
+#     which is what run-suite.sh reports.
 #
 # Environment (the task definition sets all but the overrides):
 #   STS_SUITE_SERVICE_URL, STS_SUITE_ENVIRONMENT, STS_REPORTS_BUCKET,
 #   STS_ADMIN_API_CLIENT_SECRET (injected from Secrets Manager),
 #   STS_SUITE_RUN_ID            the report's key prefix (override per run)
 #   STS_SUITE_EXCLUDE, STS_SUITE_ONLY, STS_SUITE_JOB_TIMEOUT_MS (overrides)
-#   STS_SUITE_KEEP_REALMS=1     do not remove the previous run's realms first
+#   STS_SUITE_KEEP_REALMS=1     do not remove the previous runs' leftovers first
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -87,14 +88,16 @@ TOKEN="$(node tests/tools/admin-api-token.js "${URL}")" || {
   exit 1
 }
 
-# THE PREVIOUS RUN'S REALMS AND OVERRIDES GO FIRST, so the environment can be
-# reused: the suite leaves every realm it creates, and a long-lived cluster
-# would otherwise carry every run's. deploy/aws/reset-environment.js argues it;
+# THE PREVIOUS RUNS' REALMS, BULK-LOAD ENTRIES, APPLICATIONS AND OVERRIDES GO
+# FIRST, so the environment can be reused: the suite leaves every realm it
+# creates, and a long-lived cluster would otherwise carry every run's.
+# deploy/aws/reset-environment.js argues it (it reads
+# STS_ADMIN_API_CLIENT_SECRET, above, for its SCIM token);
 # a failure to remove one is the run's failure, because a realm with a fixed id
 # left behind fails the job that creates it with a message about something
 # else.
 STS_ADMIN_API_TOKEN="${TOKEN}" node deploy/aws/reset-environment.js "${URL}" || {
-  echo "run-in-task: the previous run's realms could not all be removed." >&2
+  echo "run-in-task: the previous runs' leftovers could not all be removed." >&2
   exit 1
 }
 

@@ -180,13 +180,32 @@ const LIMITS = { max_facts: 10000, max_iterations: 100,
 
 const VALUE_RE = /^[A-Za-z0-9_-]+={0,2}$/;
 
+/**
+ * The `biscuit` GNAP token format (RFC 9767 section 5.3.2): Biscuit v3 on
+ * `@biscuit-auth/biscuit-wasm`, loaded lazily on the first mint or verify.
+ *
+ * A route-free library; a biscuit is verified with a public key, so a resource
+ * server can verify and attenuate one without a shared secret.
+ */
 class TokenBiscuit {
+  /**
+   * The format's name, `biscuit`.
+   */
   static readonly FORMAT = FORMAT;
+  /**
+   * The Datalog run limits every authorization is bounded by (facts, iterations
+   * and time).
+   */
   static readonly LIMITS = LIMITS;
 
   // The one load of the WASM library, shared by every call.
   private loading: Promise<any> | null = null;
 
+  /**
+   * Builds the format from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: TokenBiscuitDeps) {
     deps.log.debug("Entering TokenBiscuit.constructor().");
     deps.log.debug("Leaving TokenBiscuit.constructor().");
@@ -205,6 +224,13 @@ class TokenBiscuit {
   // briefly unreadable during a deploy) should not disable the format for the
   // life of the process.
   // -------------------------------------------------------------------------
+  /**
+   * Loads the WASM library, once, the way a bundler would.
+   *
+   * A failure is remembered, but a new attempt is allowed on the next call.
+   *
+   * @returns the loaded library, or a refusal
+   */
   loadBiscuit(): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering TokenBiscuit.loadBiscuit().");
@@ -427,6 +453,14 @@ class TokenBiscuit {
   // -------------------------------------------------------------------------
   // mint(model, keys): keys = { privateKey: node KeyObject, Ed25519 }.
   // -------------------------------------------------------------------------
+  /**
+   * Mints a biscuit carrying an access model, its authority block signed with
+   * the AS's Ed25519 root key.
+   *
+   * @param model - the token model `gnap_access` validates
+   * @param keys - `{ privateKey }`, an Ed25519 node KeyObject
+   * @returns `{ value, format, jti }`, or a refusal
+   */
   async mint(model: any, keys: any): Promise<any> {
     const { log, errorCodes, access } = this.deps;
     log.debug("Entering TokenBiscuit.mint().");
@@ -719,6 +753,15 @@ class TokenBiscuit {
   // verify(value, keys, context) -> { ok:true, model, attenuated } | refusal.
   // keys = { publicKey: node KeyObject, Ed25519 }.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies a biscuit against the AS's public key and checks it against the
+   * presentation context.
+   *
+   * @param value - the presented token value
+   * @param keys - `{ publicKey }`, an Ed25519 node KeyObject
+   * @param context - the presentation to check the token against
+   * @returns `{ ok: true, model, attenuated }`, or a refusal
+   */
   async verify(value: unknown, keys: any, context?: any): Promise<any> {
     const { log, access, nowSec } = this.deps;
     log.debug("Entering TokenBiscuit.verify().");
@@ -798,6 +841,19 @@ class TokenBiscuit {
   // right default; a block cannot hold a policy (`allow if`) and the library
   // refuses one. Returns `{ ok:true, value, format }` or a refusal.
   // -------------------------------------------------------------------------
+  /**
+   * Appends a block of checks to a biscuit, deriving a narrower token without
+   * calling the AS (RFC 9767 section 2.2).
+   *
+   * The token is verified first; a block holding a policy (`allow if`) is
+   * refused by the library.
+   *
+   * @param value - the biscuit to attenuate
+   * @param datalogSource - the Datalog checks of the new block
+   * @param keys - `{ publicKey }` the biscuit verifies against
+   * @param parameters - values for the block's parameters
+   * @returns `{ ok: true, value, format }`, or a refusal
+   */
   async attenuate(value: unknown, datalogSource: unknown, keys: any,
                   parameters?: Record<string, unknown>): Promise<any> {
     const { log } = this.deps;
@@ -858,6 +914,12 @@ class TokenBiscuit {
     return { ok: true, value: out, format: FORMAT };
   }
 
+  /**
+   * Describes the format for the console: its library, algorithms and the
+   * fields it carries.
+   *
+   * @returns the format's description
+   */
   describe() {
     const { log, access } = this.deps;
     log.debug("Entering TokenBiscuit.describe().");
@@ -882,6 +944,12 @@ class TokenBiscuit {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): TokenBiscuitDeps {
     helpers.log.debug("Entering TokenBiscuit.defaultDeps().");
     helpers.log.debug("Leaving TokenBiscuit.defaultDeps().");
@@ -916,9 +984,26 @@ const slot = new InstanceSlot<TokenBiscuit>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The `biscuit` GNAP token format (RFC 9767 section 5.3.2).
+ *
+ * A route-free library: mint, verify, attenuate and describe.
+ *
+ * @namespace
+ */
 export = {
   TokenBiscuit: TokenBiscuit,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: TokenBiscuit): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   FORMAT: TokenBiscuit.FORMAT,
   LIMITS: TokenBiscuit.LIMITS,

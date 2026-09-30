@@ -472,9 +472,12 @@ const PLAN = [
       ex(/^EMS with session resume/, ["session_id == srv_hello.session_id",
          "server_hello"], "sessionCache"),
       ex(/TLSv1\.1/, REFUSED_OLD, "oldVersion"),
+      // A full handshake by design (RFC 7627 refuses to resume a non-EMS
+      // session with EMS), which the balancer may put on the other node:
+      // either listener, whatever its ticket key.
       ex(/^resume non-EMS session with EMS extension$/,
          "Server Key Exchange signature invalid", "perNodeKey",
-         { clustered: true, on: ["main"] })] },
+         { clustered: true })] },
   { script: "test-extended-master-secret-extension-with-client-cert.py",
     on: CR, certificate: "rsa",
     exceptions: [ex("resume with certificate and EMS",
@@ -558,7 +561,12 @@ const PLAN = [
   { script: "test-session-ticket-resumption.py",
     args: ["--no-new-ticket-on-resumption"],
     exceptions: [ex(/renegotiation/, "no_renegotiation",
-                    "renegotiation")] },
+                    "renegotiation"),
+                 // The other node cannot open the ticket, so it makes a full
+                 // handshake and issues a new one (or signs with its own key).
+                 ex(/^session resumption/, ["session_ticket",
+                    "Server Key Exchange signature invalid"],
+                    "perNodeTicketKey", { clustered: true, on: ["main"] })] },
   { script: "test-sig-algs.py",
     exceptions: [ex(/^rsa_pss_pss_sha\d+ only$/, "handshake_failure",
                     "rsaKey")] },

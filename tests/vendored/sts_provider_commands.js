@@ -444,14 +444,15 @@ async function test() {
   });
   const deliveries = (await hop(null, "GET", api + "/deliveries")).json;
   check("a 503 is retried and lands; /admin-api/deliveries lists the " +
-        "three kinds", function () {
+        "four kinds (cells' inter-cell deliveries joined the queue, #98)",
+        function () {
     const d = retried.deliveries.filter(function (one) {
       return one.clientId === FAIL && one.state === "sent";
     })[0];
     assert.strictEqual(d.attempts, 2);
     assert.deepStrictEqual(deliveries.kinds.map(function (k) {
       return k.id;
-    }), ["backchannel-logout", "ciba", "provider-commands"]);
+    }), ["backchannel-logout", "ciba", "cell-ops", "provider-commands"]);
   });
 
   log.info("=== 7. the callback ===");

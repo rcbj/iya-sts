@@ -129,6 +129,9 @@ const config = require('../common/config');
 const mode = require('../common/mode');
 const keystore = require('../common/keystore');
 const realms = require('../common/realms');
+// WHICH TIER A STORE IS IN (#98): the cell tier is sealed under the cell's
+// own key. A LEAF with no requires of this service.
+const tiers = require('./tiers');
 // THE FAN-IN FOR `merge: 'own'` STORES. A LIBRARY, like this one, and required
 // in the ordinary direction: it does not require this file back.
 const replication = require('./persistence_replication');
@@ -203,6 +206,48 @@ function storedKey(row, key) {
          Buffer.from(String(origin), 'utf8').toString('base64url');
 }
 
+// ---------------------------------------------------------------------------
+// A ROW'S OWN EXPIRY (2026-09-28, #333), from the store's `expiresAt` hook
+// (see `expiresAt` in common/realms.js). Anything but a finite positive number
+// is "does not expire" — the safe failure, since a row wrongly kept is read
+// once more at a start and a row wrongly expired is lost on every node. A
+// hook that throws is said once per store, for the no-per-event-logs rule.
+// ---------------------------------------------------------------------------
+const expiryHookFailed = new Set();
+
+// THE HOOK RUNS IN THE ROW'S REALM, not the flush's: a flush scheduled from a
+// request runs in that request's realm and writes every realm's journal, and
+// a hook that reads a lifetime setting must read the one the row's realm has.
+function expiryOf(row, value, key, realmId) {
+  log.debug("Entering expiryOf().");
+  if (!row || typeof row.expiresAt !== 'function') {
+    log.debug("Leaving expiryOf(). No hook.");
+    return null;
+  }
+  let at = null;
+  try {
+    const id = String(realmId || '');
+    const realm = id && id !== realms.DEFAULT_ID ? realms.get(id) : null;
+    at = realms.run(realm, function () {
+      return row.expiresAt(value, key);
+    });
+  } catch (e) {
+    log.debug("Caught in expiryOf(): " + ((e && e.message) || e));
+    if (!expiryHookFailed.has(row.handle)) {
+      expiryHookFailed.add(row.handle);
+      log.warn(errorCodes.tag('STS-STORE-0064') + 'persistence: "' +
+               row.handle + '" could not say when a row expires (' +
+               ((e && e.message) || e) + '); such rows are written as not ' +
+               'expiring. Said once per store.');
+    }
+    at = null;
+  }
+  const ms = Number(at);
+  log.debug("Leaving expiryOf().");
+  return at !== null && at !== undefined && Number.isFinite(ms) && ms > 0
+    ? Math.floor(ms) : null;
+}
+
 // The journal: handle -> realm -> Set of keys. Nested rather than a flat set of
 // composite strings because the flush walks it handle-first (a handle is what
 // finds the store) and because a composite key would have to be split back
@@ -267,6 +312,10 @@ let flushInFlight = null;
 // ---------------------------------------------------------------------------
 let generation = 0;
 let committedAt = 0;
+// True from a failed write until the next one succeeds (#351): the keys it
+// held are back on the journal and not in the store. `failing()` answers it
+// for `persistence.commitBacklog()`.
+let failedWrite = false;
 let inFlightTakenAt = 0;
 // ---------------------------------------------------------------------------
 // HOW MANY OF THOSE KEYS WERE AN OBSERVATION (2026-09-15, #46): a store
@@ -365,7 +414,6 @@ let rowsWritten = 0;
 let rowsDeleted = 0;
 let restoredAt = null;
 let restoredRows = 0;
-let droppedStale = 0;
 let droppedUnreadable = 0;
 let droppedUnknown = 0;
 let unsupportedReason = '';
@@ -390,6 +438,14 @@ let realmOnlyKeylessWarned = false;
 // A KEK is required too and is checked at the point of sealing rather than
 // here, because it arrives later than everything above: `keystore.start()` runs
 // after `persistence.start()`.
+/**
+ * Tells whether this process writes minted state down at all.
+ *
+ * True when `persistence.minted` is set, a driver that can hold minted rows
+ * is open, and either the mode is product or several processes or nodes must
+ * agree and hold a key to seal the rows with.
+ * @returns true when minted state is being persisted
+ */
 function enabled() {
   log.debug("Entering enabled().");
   if (stopped || !driver) {
@@ -492,7 +548,9 @@ function processIsProduct() {
 
 function severalProcesses() {
   log.debug("Entering severalProcesses().");
-  const count = Number(config.value('workers.requestCount')) || 0;
+  // The #364 rule: the default of one worker is none without a store that
+  // coordinates.
+  const count = require('../common/process_memory').requestWorkers();
   const paths = String(config.value('workers.dispatch') || '').trim();
   log.debug("Leaving severalProcesses().");
   return count > 0 && paths !== '';
@@ -521,6 +579,14 @@ function retentionMs() {
 // `persistence.realms` already practises about a half-persisted service: one
 // sentence at the point of the decision beats a surprise afterwards.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether a persistence driver can hold minted rows.
+ *
+ * The ldif driver cannot: it writes whole files, which is wrong for stores
+ * that change on every request.
+ * @param theDriver - the driver to test
+ * @returns true when it has `loadMinted()` and `saveMinted()`
+ */
 function supports(theDriver) {
   log.debug("Entering supports().");
   log.debug("Leaving supports().");
@@ -533,6 +599,15 @@ function supports(theDriver) {
 // this is where the observer is armed — after which every declared store
 // reports its writes.
 // ---------------------------------------------------------------------------
+/**
+ * Installs the driver minted rows are written through, and arms the journal.
+ *
+ * For a driver that cannot hold minted state, says so at startup (a warning
+ * in product mode) and journals nothing.
+ * @param theDriver - the opened persistence driver
+ * @param activeMode - the persistence mode's name, for the messages
+ * @returns true when the driver was installed
+ */
 function setDriver(theDriver, activeMode) {
   log.debug('Entering setDriver(). mode=' + activeMode);
   if (!supports(theDriver)) {
@@ -613,6 +688,10 @@ function note(handle, realmId, key) {
 }
 
 // `persistence.js` hands its `mintedChanged()` here once a driver is open.
+/**
+ * Installs the function a journalled write calls to ask for a flush.
+ * @param fn - `persistence.js`'s `mintedChanged()`; anything else clears it
+ */
 function setScheduler(fn) {
   log.debug("Entering setScheduler().");
   scheduler = typeof fn === 'function' ? fn : null;
@@ -691,6 +770,16 @@ function splitKey(row, storedName) {
 // ---------------------------------------------------------------------------
 let prefetched = null;
 
+/**
+ * Reads, in one query, every minted row a page of change-log rows names.
+ *
+ * The applier then reads from this map instead of querying per row; the map
+ * is a page's working set, cleared by `endPrefetch()`. A driver without
+ * `readMintedMany()` leaves it empty, and a failed read falls back to one
+ * query per row.
+ * @param changes - the change-log rows of the page
+ * @returns a promise of the number of references read
+ */
 function prefetch(changes) {
   log.debug("Entering prefetch().");
   prefetched = null;
@@ -750,6 +839,9 @@ function prefetch(changes) {
   });
 }
 
+/**
+ * Discards the page's prefetched rows.
+ */
 function endPrefetch() {
   log.debug("Entering endPrefetch().");
   prefetched = null;
@@ -779,6 +871,16 @@ function splitChangeKey(key) {
   }
 }
 
+/**
+ * Applies one minted change another process committed into this process.
+ *
+ * Reads the row the change names (from the prefetch where present), opens it
+ * under the key-encryption key, and puts it in the live store with the
+ * journal suppressed — or, for a `merge: 'own'` row of another origin, hands
+ * it to the replication fan-in. A row that cannot be read is skipped.
+ * @param change - the change-log row, `{ key, realm, ... }`
+ * @returns a promise of true when the change was applied
+ */
 function applyChange(change) {
   log.debug('Entering applyChange(). key=' + change.key);
   if (!driver || typeof driver.readMinted !== 'function') {
@@ -915,6 +1017,10 @@ function applyLocally(store, realmId, key, value, remove) {
 }
 
 // Is there anything to write? `persistence.js` asks before scheduling.
+/**
+ * Tells whether any journalled key is waiting to be written.
+ * @returns true when there is something to flush
+ */
 function dirty() {
   log.debug("Entering dirty().");
   log.debug("Leaving dirty().");
@@ -975,6 +1081,15 @@ function dirty() {
 // `tests/minted_persistence.js` section 5b holds it with a store that commits
 // when told to.
 // ---------------------------------------------------------------------------
+/**
+ * Writes every journalled key to the store, sealed; deletes what is gone.
+ *
+ * One flush at a time per process: a call made while one is in flight waits
+ * for it and then takes the journal itself. On failure the keys go back into
+ * the journal. Resolves rather than rejects.
+ * @returns a promise of `{ written, upserts, deletes }`, or `{ written:
+ * false }` with `error` when nothing was written or the write failed
+ */
 function flush() {
   log.debug('Entering flush().');
   if (flushInFlight) {
@@ -1102,7 +1217,8 @@ function flush() {
         }
         let body = null;
         try {
-          body = keystore.seal(JSON.stringify(present.value), 'minted-rows');
+          body = keystore.seal(JSON.stringify(present.value), 'minted-rows',
+                               tierOfHandle(handle));
         } catch (e) {
           // A value with a cycle in it, or a BigInt. Counted and skipped:
           // failing the whole transaction because one store holds something
@@ -1115,8 +1231,13 @@ function flush() {
           unsealable++;
           return;
         }
-        upserts.push({ handle: handle, realm: realmId,
+        // Built first and merged into after: the merger writes the merged
+        // record's expiry back onto it. `any`, because `merge` is filled in.
+        const upsert = /** @type {any} */ ({ handle: handle, realm: realmId,
                        key: storedKey(row, key), journalKey: key, body: body,
+                       // WHEN THE RECORD IS DEAD (#333), or null: what the
+                       // restore and the expiry purge read. See expiryOf().
+                       expiresAt: expiryOf(row, present.value, key, realmId),
                        // WHETHER A READER HAS TO WAIT FOR THIS ROW. An `own`
                        // store is per-process fan-in — every process keeps its
                        // own contribution and the console SUMS them when
@@ -1125,9 +1246,12 @@ function flush() {
                        // recordChanges() and replication's syncNow().
                        own: row.merge === 'own',
                        tombstone: row.tombstone === true,
-                       merge: row.mergeRow
-                         ? mergerFor(row, handle, key, present.value)
-                         : undefined });
+                       merge: undefined });
+        if (row.mergeRow) {
+          upsert.merge = mergerFor(row, handle, key, present.value, upsert,
+                                   realmId);
+        }
+        upserts.push(upsert);
       });
     });
   });
@@ -1154,6 +1278,7 @@ function flush() {
     rowsDeleted += deletes.length;
     lastWriteAt = new Date().toISOString();
     lastError = '';
+    failedWrite = false;
     log.debug('Leaving flush(). ' + upserts.length + ' row(s) written, ' +
               deletes.length + ' removed' +
               (unsealable ? ', ' + unsealable + ' unsealable' : '') + '.');
@@ -1195,10 +1320,13 @@ function flush() {
     }
     failures++;
     lastError = err.message;
+    failedWrite = true;
     log.error(errorCodes.tag('STS-STORE-0021') +
               'persistence: minted state could not be written: ' + err.message +
-              '. The service is unaffected and is still answering from ' +
-              'memory; the next change will try again.');
+              '. It is retried shortly (persistence.js, ' +
+              'retryAfterFailure()); ' +
+              'a request whose rows were in it is answered 503 in postgres ' +
+              'mode (#351).');
     log.debug('Leaving flush(). It failed.');
     return { written: false, error: err.message };
   });
@@ -1227,6 +1355,10 @@ function flush() {
 
 // The generation every key journalled so far has reached, and the one whose
 // writes have settled in the store.
+/**
+ * Returns the generation every key journalled so far has reached.
+ * @returns the generation counter
+ */
 function generationNow() {
   log.debug("Entering generationNow().");
   log.debug("Leaving generationNow().");
@@ -1234,12 +1366,23 @@ function generationNow() {
 }
 
 // The part of `generation` that was observations. See `observedGeneration`.
+/**
+ * Returns the part of the generation that was observations.
+ *
+ * Journalled writes to `observation: true` stores (decision counters), which
+ * the cluster barrier subtracts when it asks whether a request wrote.
+ * @returns the observed-generation counter
+ */
 function observedGenerationNow() {
   log.debug("Entering observedGenerationNow().");
   log.debug("Leaving observedGenerationNow().");
   return observedGeneration;
 }
 
+/**
+ * Returns the generation whose writes have settled in the store.
+ * @returns the committed-generation counter
+ */
 function committedGeneration() {
   log.debug("Entering committedGeneration().");
   log.debug("Leaving committedGeneration().");
@@ -1256,6 +1399,15 @@ function committedGeneration() {
 // the one in flight and then takes the journal holding the target. Resolves
 // flush()'s answer; `error` set means the write did not land.
 // ---------------------------------------------------------------------------
+/**
+ * Makes sure the writes up to a generation are in the store.
+ *
+ * Answers at once when already committed, returns the flush in flight when
+ * its journal covered the target, and otherwise calls `flush()`.
+ * @param target - the generation to cover
+ * @returns a promise of `flush()`'s answer; `error` set means the write did
+ * not land
+ */
 function flushThrough(target) {
   log.debug("Entering flushThrough().");
   if (committedAt >= target) {
@@ -1268,6 +1420,17 @@ function flushThrough(target) {
   }
   log.debug("Leaving flushThrough(). Flushing.");
   return flush();
+}
+
+/**
+ * Tells whether a failed write's keys are back on the journal and have not
+ * reached the store since (#351).
+ * @returns true from a failed write until the next successful one
+ */
+function failing() {
+  log.debug("Entering failing().");
+  log.debug("Leaving failing().");
+  return failedWrite && journal.size > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1303,7 +1466,19 @@ function flushThrough(target) {
 // back — through the scheduler job `persistence.tombstone-purge`. 0 keeps
 // them with everything else.
 // ---------------------------------------------------------------------------
-function mergerFor(row, handle, key, mine) {
+// THE TIER A ROW IS SEALED FOR (#98). A handle `tiers.js` has not classified
+// is sealed as CELL — the tier that keeps it where it was made — and the
+// refusal that makes an unclassified store an error is `tests/cell_tiers.js`,
+// at build time, rather than a flush that fails in production.
+function tierOfHandle(handle) {
+  log.debug("Entering tierOfHandle().");
+  const out = tiers.isClassified(handle) ? tiers.mintedTierOf(handle)
+                                         : 'cell';
+  log.debug("Leaving tierOfHandle().");
+  return out;
+}
+
+function mergerFor(row, handle, key, mine, upsert, realmId) {
   log.debug("Entering mergerFor().");
   log.debug("Leaving mergerFor().");
   return function (storedBody) {
@@ -1316,7 +1491,11 @@ function mergerFor(row, handle, key, mine) {
         return null;
       }
       const merged = row.mergeRow(mine, JSON.parse(text));
-      return keystore.seal(JSON.stringify(merged), 'minted-rows');
+      // THE MERGED RECORD'S EXPIRY IS WHAT IS WRITTEN (#333), not this
+      // process's copy's: the other node may have extended it.
+      upsert.expiresAt = expiryOf(row, merged, key, realmId);
+      return keystore.seal(JSON.stringify(merged), 'minted-rows',
+                           tierOfHandle(handle));
     } catch (e) {
       log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
                handle + '" row under "' + key + '" could not be merged with ' +
@@ -1381,15 +1560,25 @@ let tombstoneJobRegistered = false;
 // THE SWEEP IS A SCHEDULER JOB (#49 P5): `persistence.tombstone-purge`, a
 // CLUSTER job every TOMBSTONE_SWEEP_MS — the tombstones are rows every
 // process shares. It was piggy-backed on the next flush in every process.
-// Registered at the first flush, lazily: the scheduler loads after this.
-function ensureTombstoneJob() {
+// Registered at the first flush, lazily: the scheduler loads after this —
+// **AND AT START-UP IN EVERY PROCESS (2026-09-28)**, by
+// `common/protocol_stack.ts` with the scheduler it hands in, for
+// `common/admin_stats.js`'s ensureTokenPurgeJob() reason: a cluster job known
+// only to the processes that had flushed is not a job every node can run, nor
+// one both of the console's doors list.
+function ensureTombstoneJob(schedulerInstance) {
   log.debug("Entering ensureTombstoneJob().");
   if (tombstoneJobRegistered) {
     log.debug("Leaving ensureTombstoneJob(). Registered.");
     return;
   }
+  const scheduler = schedulerInstance || require('../cluster/scheduler');
+  // Not latched before a registration can happen: see ensureTokenPurgeJob().
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensureTombstoneJob(). No scheduler yet.");
+    return;
+  }
   tombstoneJobRegistered = true;
-  const scheduler = require('../cluster/scheduler');
   if (scheduler.job(TOMBSTONE_JOB)) {
     log.debug("Leaving ensureTombstoneJob(). Registered elsewhere.");
     return;
@@ -1430,6 +1619,166 @@ function ensureTombstoneJob() {
   log.debug("Leaving ensureTombstoneJob().");
 }
 
+// ---------------------------------------------------------------------------
+// THE ROWS NOTHING WILL READ AGAIN, DELETED FROM THE TABLE (2026-09-28, #333).
+//
+// `persistence.minted-expiry-purge`: a CLUSTER job — the table is every
+// process's, so one process deleting is enough and five per node would be
+// four too many — every EXPIRY_PURGE_MS. Three kinds of row, each named in
+// the driver's purgeExpiredMinted(): past its own expiry; of a realm that is
+// no longer defined, written more than ORPHAN_GRACE_MS ago; and a short-lived
+// store's row with no expiry older than `persistence.mintedRetention` — which
+// the restore used to delete, in EVERY process at every start.
+//
+// BOUNDED PER RUN: batches of EXPIRY_PURGE_BATCH rows, at most
+// EXPIRY_PURGE_MAX_BATCHES per kind per run, so one run is a few short
+// statements and never one delete of a whole backlog holding locks on the
+// busiest table here. A backlog larger than a run is finished by the next
+// runs — and a start skips those rows in the meantime, so a backlog costs
+// disk and never start-up time.
+//
+// Logged as ONE summary line per run that deleted anything, and the failure
+// once per run with STS-STORE-0065 (the no-per-event-failure-logs rule).
+// ---------------------------------------------------------------------------
+const EXPIRY_PURGE_JOB = 'persistence.minted-expiry-purge';
+const EXPIRY_PURGE_MS = 5 * 60 * 1000;
+const EXPIRY_PURGE_BATCH = 5000;
+const EXPIRY_PURGE_MAX_BATCHES = 20;
+// A realm another node is creating writes its minted rows and its registry
+// row in two transactions; an hour is far longer than the gap between them.
+const ORPHAN_GRACE_MS = 60 * 60 * 1000;
+let expiryPurgeJobRegistered = false;
+
+// One kind, batch after batch until a batch comes back short or the bound is
+// reached. Resolves to `{ removed, more }`: `more` when the bound stopped it.
+function purgeKind(kind, options) {
+  log.debug("Entering purgeKind(). " + kind);
+  let removed = 0;
+  let batches = 0;
+  function next() {
+    log.debug("Entering next().");
+    if (batches >= EXPIRY_PURGE_MAX_BATCHES) {
+      log.debug("Leaving next(). The bound was reached.");
+      return Promise.resolve({ removed: removed, more: true });
+    }
+    batches++;
+    log.debug("Leaving next().");
+    return driver.purgeExpiredMinted(kind, Object.assign({
+      limit: EXPIRY_PURGE_BATCH
+    }, options)).then(function (count) {
+      const n = Number(count) || 0;
+      removed += n;
+      if (n < EXPIRY_PURGE_BATCH) {
+        return { removed: removed, more: false };
+      }
+      return next();
+    });
+  }
+  log.debug("Leaving purgeKind().");
+  return next();
+}
+
+/**
+ * Deletes, in bounded batches, the minted rows no restore will read again:
+ * expired, of an undefined realm, or a short-lived store's stale row.
+ * @param nowMs - the instant, in epoch milliseconds
+ * @returns a promise of `{ expired, orphaned, stale, more }`
+ */
+function purgeExpired(nowMs) {
+  log.debug("Entering purgeExpired().");
+  if (!driver || typeof driver.purgeExpiredMinted !== 'function') {
+    log.debug("Leaving purgeExpired(). This store cannot.");
+    return Promise.resolve({ expired: 0, orphaned: 0, stale: 0,
+                             more: false });
+  }
+  const retention = retentionMs();
+  const out = { expired: 0, orphaned: 0, stale: 0, more: false };
+  log.debug("Leaving purgeExpired().");
+  return purgeKind('expired', { nowMs: nowMs }).then(function (r) {
+    out.expired = r.removed;
+    out.more = out.more || r.more;
+    return purgeKind('orphan', { defaultRealm: realms.DEFAULT_ID,
+                                 orphanBeforeMs: nowMs - ORPHAN_GRACE_MS });
+  }).then(function (r) {
+    out.orphaned = r.removed;
+    out.more = out.more || r.more;
+    if (!retention) {
+      return { removed: 0, more: false };
+    }
+    return purgeKind('stale', { handles: shortLivedHandles(),
+                                staleBeforeMs: nowMs - retention });
+  }).then(function (r) {
+    out.stale = r.removed;
+    out.more = out.more || r.more;
+    return out;
+  });
+}
+
+// Registered at start-up in every process, by `common/protocol_stack.ts`,
+// for ensureTombstoneJob()'s reason.
+function ensureExpiryPurgeJob(schedulerInstance) {
+  log.debug("Entering ensureExpiryPurgeJob().");
+  if (expiryPurgeJobRegistered) {
+    log.debug("Leaving ensureExpiryPurgeJob(). Registered.");
+    return;
+  }
+  const scheduler = schedulerInstance || require('../cluster/scheduler');
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensureExpiryPurgeJob(). No scheduler yet.");
+    return;
+  }
+  expiryPurgeJobRegistered = true;
+  if (scheduler.job(EXPIRY_PURGE_JOB)) {
+    log.debug("Leaving ensureExpiryPurgeJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: EXPIRY_PURGE_JOB,
+    kind: 'cluster',
+    title: 'Expired minted rows purge',
+    describe: 'Deletes from the shared store, in batches of ' +
+              EXPIRY_PURGE_BATCH + ' and at most ' +
+              EXPIRY_PURGE_MAX_BATCHES + ' batches of each kind per run, ' +
+              'the minted rows no start will read again: past their own ' +
+              'expiry, of a realm that is no longer defined (written over ' +
+              'an hour ago), and a short-lived store\'s rows with no expiry ' +
+              'older than persistence.mintedRetention.',
+    owner: 'persistence/persistence_minted.js',
+    everyMs: function () {
+      return EXPIRY_PURGE_MS;
+    },
+    off: function () {
+      if (!driver || typeof driver.purgeExpiredMinted !== 'function') {
+        return 'this store keeps no minted rows';
+      }
+      return enabled() ? '' : 'minted state is not persisted here';
+    },
+    run: function () {
+      return Promise.resolve().then(function () {
+        return purgeExpired(Date.now());
+      }).then(function (result) {
+        const total = result.expired + result.orphaned + result.stale;
+        if (total) {
+          log.info('persistence: ' + total + ' minted row(s) purged from ' +
+                   'the store — ' + result.expired + ' expired, ' +
+                   result.orphaned + ' of realms no longer defined, ' +
+                   result.stale + ' short-lived and older than ' +
+                   'persistence.mintedRetention' +
+                   (result.more ? '; more remain for the next run' : '') +
+                   '.');
+        }
+        return result;
+      }, function (e) {
+        log.warn(errorCodes.tag('STS-STORE-0065') + 'persistence: purging ' +
+                 'expired minted rows failed: ' + ((e && e.message) || e) +
+                 '. A start skips them anyway; the next run tries again.');
+        throw e;
+      });
+    }
+  });
+  log.debug("Leaving ensureExpiryPurgeJob().");
+}
+
 capabilities.provide('sessions.no-resurrection');
 
 // ---------------------------------------------------------------------------
@@ -1443,16 +1792,83 @@ capabilities.provide('sessions.no-resurrection');
 // already back, rather than turning away the first arrivals and letting them
 // in a moment later.
 //
-// Three kinds of row are dropped and each is counted separately, because they
-// mean completely different things to somebody reading the startup line:
+// **ONLY WHAT IS STILL WORTH HAVING IS READ (2026-09-28, #333).** The query
+// itself — `restoreFilter()` below, which the driver turns into a WHERE —
+// leaves out three kinds of row, so they are never fetched, decrypted or
+// parsed: a row of a realm that is not defined (the realm registry was loaded
+// by `persistence.start()`, before this runs); a row whose own expiry
+// (`expiresAt` on its store's declaration, `sts_minted.expires_at`) has
+// passed; and a row of a `retain: 'age'` store that has NO expiry and was
+// written longer than `persistence.mintedRetention` ago. None of them is
+// deleted here: every process runs this, and the table is the cluster's, so
+// the deleting is one job's (`persistence.minted-expiry-purge`, below).
+// Until then this read the whole table, with no WHERE, in every process —
+// 127,131 rows and 31 s per process on testidp.
 //
-//   * STALE — older than `persistence.mintedRetention`. Ordinary.
+// Two kinds of what IS read are dropped, and each is counted separately,
+// because they mean completely different things to somebody reading the
+// startup line:
+//
 //   * UNREADABLE — will not open under the current key-encryption key, which
 //     is what rotating one does to every row written under the old one.
 //     Ordinary after a rotation, alarming otherwise.
 //   * UNKNOWN — a handle no store in this build declares, which is what an
 //     older or newer build's rows look like. Harmless and worth saying.
 // ---------------------------------------------------------------------------
+// What the restore asks the driver for: the realm partitions that exist — the
+// shared stores' '' and the default realm under both of its spellings (a row's
+// realm is `currentId()`, 'default', and '' is what `partitionId()` also reads
+// as it) — the instant a row's own expiry is compared with, and the write-age
+// rule for the short-lived stores that declare no expiry.
+/**
+ * Describes which minted rows a restore reads.
+ * @param nowMs - the instant, in epoch milliseconds
+ * @returns `{ realms, nowMs, staleBefore, ageHandles }`
+ */
+function restoreFilter(nowMs) {
+  log.debug("Entering restoreFilter().");
+  const ids = new Set(['', realms.DEFAULT_ID]);
+  realms.list().forEach(function (one) {
+    ids.add(String(one.id));
+  });
+  const retention = retentionMs();
+  log.debug("Leaving restoreFilter().");
+  return {
+    realms: Array.from(ids),
+    nowMs: nowMs,
+    // 0 is "no write-age rule": `persistence.mintedRetention` 0 keeps
+    // everything, as it always did.
+    staleBefore: retention ? nowMs - retention : 0,
+    ageHandles: shortLivedHandles()
+  };
+}
+
+// THE STORES THE WRITE-AGE RULE COVERS: `retain: 'age'`. It is applied only
+// to a row with NO expiry (a NULL `expires_at`): a store with an `expiresAt`
+// hook is bounded by its records' own expiries, which are always shorter
+// than the retention. What it still reaches is a short-lived store that
+// declares no hook, a record the hook answers null for, and every row written
+// before #333 added the column — read at most for one retention period and
+// then purged, which is all the migration there is.
+function shortLivedHandles() {
+  log.debug("Entering shortLivedHandles().");
+  log.debug("Leaving shortLivedHandles().");
+  return realms.handles().filter(function (one) {
+    return one.retain === 'age';
+  }).map(function (one) {
+    return one.handle;
+  });
+}
+
+/**
+ * Restores the minted rows from the store into this process at startup.
+ *
+ * Runs after the keystore has started. The query reads only live rows of
+ * defined realms; unreadable and unknown rows are dropped and counted.
+ * @returns a promise of `{ restored }`
+ * @throws a rejected promise when minted state is persisted but no
+ * key-encryption key is available, or the rows cannot be read
+ */
 function restore() {
   log.debug('Entering restore().');
   if (!enabled()) {
@@ -1472,7 +1888,6 @@ function restore() {
       'artifacts cannot be read.'));
   }
 
-  const cutoff = retentionMs() ? Date.now() - retentionMs() : 0;
   // ---------------------------------------------------------------------
   // AN EPHEMERAL RUN RESTORES NOTHING AND CLEARS WHAT IT FINDS (2026-09-07).
   //
@@ -1513,11 +1928,11 @@ function restore() {
       return { restored: 0, cleared: 0 };
     });
   }
+  const filter = restoreFilter(Date.now());
   log.debug("Leaving restore().");
-  return driver.loadMinted().then(function (rows) {
+  return driver.loadMinted(filter).then(function (rows) {
     restoring = true;
     let restored = 0;
-    droppedStale = 0;
     droppedUnreadable = 0;
     droppedUnknown = 0;
     const staleHandles = new Set();
@@ -1527,15 +1942,6 @@ function restore() {
       if (!store) {
         droppedUnknown++;
         staleHandles.add(row.handle);
-        return;
-      }
-      // ONLY A SHORT-LIVED STORE'S ROW IS DROPPED BY AGE (2026-09-18; see
-      // `retain` in common/realms.js). Every other row is kept however old it
-      // is: a configuration, an account or an accumulator not written for a
-      // week is not stale, it is simply unchanged.
-      if (cutoff && store.retain === 'age' && Number(row.writtenAt || 0) &&
-          Number(row.writtenAt) < cutoff) {
-        droppedStale++;
         return;
       }
       const text = keystore.open(row.body, 'minted-rows');
@@ -1615,41 +2021,14 @@ function restore() {
                'should not lose.');
     }
     log.info('persistence: ' + restored + ' minted row(s) restored across ' +
-             realms.handles().length + ' declared store(s)' +
-             (droppedStale ? ', ' + droppedStale + ' dropped as older than ' +
-                             'persistence.mintedRetention' : '') +
+             realms.handles().length + ' declared store(s) and ' +
+             filter.realms.length + ' realm partition(s)' +
              (droppedUnreadable ? ', ' + droppedUnreadable + ' unreadable ' +
                                   '(written under a different key-encryption ' +
                                   'key?)' : '') + '. Sessions, tokens, ' +
              'codes, artifacts, tickets, the replay caches and the audit log ' +
              'are as they were before the restart.');
 
-    // WHAT THE RETENTION DROPPED IS DELETED, not merely skipped. Skipping
-    // alone would leave every row this service has ever written in the table
-    // for ever, and the next start would read them all again to skip them
-    // again. Best-effort: a purge that fails is logged and the service starts.
-    if (cutoff && droppedStale && typeof driver.purgeMinted === 'function') {
-      // By age, and ONLY in the short-lived stores — the same rule the loop
-      // above applied, said to the database. A purge naming no handle list
-      // would delete every old row of every store, which is the defect this
-      // replaced.
-      const ageHandles = realms.handles().filter(function (one) {
-        return one.retain === 'age';
-      }).map(function (one) {
-        return one.handle;
-      });
-      return driver.purgeMinted(cutoff, ageHandles).then(function (removed) {
-        log.info('persistence: ' + removed + ' stale minted row(s) removed ' +
-                 'from the store.');
-        return { restored: restored };
-      }).catch(function (err) {
-        log.warn(errorCodes.tag('STS-STORE-0025') +
-                 'persistence: the stale minted rows could not be removed: ' +
-                 err.message + '. They are skipped on every start until they ' +
-                 'can be.');
-        return { restored: restored };
-      });
-    }
     log.debug('Leaving restore(). ' + restored + ' row(s).');
     return { restored: restored };
   }).catch(function (err) {
@@ -1667,6 +2046,10 @@ function restore() {
 // costs here is whatever was journalled and not yet flushed, which in postgres
 // mode is one turn of the event loop.
 // ---------------------------------------------------------------------------
+/**
+ * Writes what is journalled and stops journalling, for a clean shutdown.
+ * @returns a promise of the last flush's answer
+ */
 function stop() {
   log.debug('Entering stop().');
   log.debug("Leaving stop().");
@@ -1680,6 +2063,11 @@ function stop() {
 // What the console and the management API draw. ONE object through ONE
 // function, so the page and the API cannot disagree about what is persisted —
 // rule 7's shape applied to a report rather than to an action.
+/**
+ * Describes minted persistence for the console and the management API.
+ * @returns whether it is on and supported, the declared stores, and the
+ * counters of writes, failures, restored and dropped rows
+ */
 function status() {
   log.debug("Entering status().");
   const declared = realms.handles();
@@ -1707,7 +2095,6 @@ function status() {
     lastError: lastError,
     restoredAt: restoredAt,
     restored: restoredRows,
-    droppedStale: droppedStale,
     droppedUnreadable: droppedUnreadable,
     droppedUnknown: droppedUnknown
   };
@@ -1718,6 +2105,9 @@ function status() {
 // pays and the same reason it is paid: the alternative is a test that launches
 // two processes and therefore cannot run in the in-process suite at all.
 // ---------------------------------------------------------------------------
+/**
+ * Clears every piece of state in this module, for the tests.
+ */
 function reset() {
   log.debug("Entering reset().");
   journal.clear();
@@ -1734,6 +2124,7 @@ function reset() {
   observedGeneration = 0;
   observational.clear();
   committedAt = 0;
+  failedWrite = false;
   inFlightTakenAt = 0;
   lastWriteAt = null;
   lastError = '';
@@ -1743,15 +2134,28 @@ function reset() {
   rowsDeleted = 0;
   restoredAt = null;
   restoredRows = 0;
-  droppedStale = 0;
   droppedUnreadable = 0;
   droppedUnknown = 0;
   unsupportedReason = '';
   realmOnlyKeylessWarned = false;
+  expiryHookFailed.clear();
   log.debug("Leaving reset().");
 }
 
+/**
+ * Persistence of what this process minted — sessions, tokens, codes, replay
+ * caches, statistics and the audit log.
+ *
+ * In product mode, or where several processes or nodes must agree, each
+ * declared store's writes are journalled and flushed sealed under the
+ * key-encryption key; in development mode nothing minted is persisted.
+ * @namespace
+ */
 module.exports = {
+  ensureTombstoneJob: ensureTombstoneJob,
+  ensureExpiryPurgeJob: ensureExpiryPurgeJob,
+  purgeExpired: purgeExpired,
+  restoreFilter: restoreFilter,
   setDriver: setDriver,
   setScheduler: setScheduler,
   applyChange: applyChange,
@@ -1762,6 +2166,7 @@ module.exports = {
   dirty: dirty,
   flush: flush,
   flushThrough: flushThrough,
+  failing: failing,
   generation: generationNow,
   observedGeneration: observedGenerationNow,
   committedGeneration: committedGeneration,

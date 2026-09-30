@@ -67,10 +67,17 @@ type Req = any;
 type Res = any;
 type Json = any;
 
+/**
+ * The console path of Monitoring → Risk: the datasets a score reads and the
+ * failure history.
+ */
 const PAGE = '/admin/risk';
 
 // THE UPLOAD (#215): its own path, because its body is a file the body
 // parsers leave unread (`common/app.js`), which is decided by path.
+/**
+ * The path a dataset version is uploaded to as a file.
+ */
 const UPLOAD = '/admin/risk/upload';
 
 // MONITORING → RISK SCORING (#62): the scoring system measured — what it
@@ -79,9 +86,16 @@ const UPLOAD = '/admin/risk/upload';
 // above, because rcbj asked for it as a page and because the two answer
 // different questions: that one is "what does the service know", this one
 // "is the scoring working".
+/**
+ * The console path of Monitoring → Risk scoring: the scoring system measured.
+ */
 const METRICS_PAGE = '/admin/risk-scoring';
 
 // The windows offered, by the name the query carries.
+/**
+ * The windows the metrics page offers, by the name the query carries, each with
+ * its span in milliseconds.
+ */
 const WINDOWS: Record<string, number> = {
   '1h': 3600000, '24h': 86400000, '7d': 7 * 86400000, '30d': 30 * 86400000 };
 
@@ -92,6 +106,10 @@ const LEVEL_COLOURS: Record<string, string> = {
 const LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'UNSCORED'];
 
 // What `riskAction()` does, and what each needs.
+/**
+ * The actions `riskAction()` takes: `import`, `activate`, `rollback`, `delete`
+ * and `accept-terms`.
+ */
 const ACTIONS = ['import', 'activate', 'rollback', 'delete', 'accept-terms'];
 
 // EVERY ACTION `/risk` HAS, which is what the unknown-action refusal names
@@ -127,16 +145,41 @@ interface RiskAdminDeps {
   now(): number;
 }
 
+/**
+ * Monitoring → Risk and Monitoring → Risk scoring: the external datasets a risk
+ * score reads, the failure history, the assessments and the scoring system
+ * measured, and the imports an Admin Write may make.
+ */
 class RiskAdmin {
+  /**
+   * See the module's `PAGE`.
+   */
   static readonly PAGE = PAGE;
+  /**
+   * See the module's `UPLOAD`.
+   */
   static readonly UPLOAD = UPLOAD;
+  /**
+   * See the module's `ACTIONS`.
+   */
   static readonly ACTIONS = ACTIONS;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the console, the risk datasets, failures, engine and upload,
+   * and a clock
+   */
   constructor(private readonly deps: RiskAdminDeps) {
     deps.log.debug("Entering RiskAdmin.constructor().");
     deps.log.debug("Leaving RiskAdmin.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): RiskAdminDeps {
     helpers.log.debug("Entering RiskAdmin.defaultDeps().");
     helpers.log.debug("Leaving RiskAdmin.defaultDeps().");
@@ -235,6 +278,17 @@ class RiskAdmin {
   // -------------------------------------------------------------------------
   // `realmOnly` is for a realm administrator: the realm's own and nothing
   // of the service's (see the header).
+  /**
+   * Builds the view `GET /admin/risk?format=json` and `GET /admin-api/risk`
+   * both answer: the store, the dataset registry, the failure history, and the
+   * assessments and standings, each paged in the store.
+   *
+   * @param query - `address` for a lookup, `offset` for the failures, and the
+   * paging parameters
+   * @param realmOnly - true for a realm administrator, who sees the realm's own
+   * and nothing of the service's
+   * @returns the view
+   */
   async riskView(query: Json, realmOnly?: boolean): Promise<Json> {
     const { log, datasets, failures, engine, now } = this.deps;
     log.debug("Entering RiskAdmin.riskView().");
@@ -322,6 +376,15 @@ class RiskAdmin {
   // `actor` names who acted: the console's signed-in administrator, or ''
   // for the management API, which authenticates a client rather than a
   // person — its audit row for the request names the caller.
+  /**
+   * Performs one of the page's actions, for its forms and
+   * `/admin-api/risk/:action`.
+   *
+   * @param body - `action` and its fields
+   * @param via - the door, for the audit row
+   * @param actor - the signed-in administrator, or '' for the management API
+   * @returns `ok` with a message, or a refusal carrying its error code
+   */
   async riskAction(body: Json, via: string, actor?: string): Promise<Json> {
     const { log, datasets, errorCodes } = this.deps;
     log.debug("Entering RiskAdmin.riskAction().");
@@ -395,6 +458,15 @@ class RiskAdmin {
   // and `GET /admin-api/risk/metrics` both answer. `window` is one of
   // WINDOWS' names (24h by default); `realm` as on the page above.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the view `GET /admin/risk-scoring?format=json` and `GET
+   * /admin-api/risk/metrics` both answer: what was assessed over the window,
+   * how the levels and signals fell, how long it took and what it did.
+   *
+   * @param query - `window`, one of `WINDOWS`' names (24h by default)
+   * @param realmOnly - true for a realm administrator
+   * @returns the view
+   */
   async metricsView(query: Json, realmOnly?: boolean): Promise<Json> {
     const { log, engine } = this.deps;
     log.debug("Entering RiskAdmin.metricsView().");
@@ -497,6 +569,12 @@ class RiskAdmin {
   }
 
   // A duration in the largest unit that divides it.
+  /**
+   * Says a duration in the largest unit that divides it.
+   *
+   * @param ms - the duration in milliseconds
+   * @returns the duration as text
+   */
   static duration(ms: number): string {
     helpers.log.debug("Entering RiskAdmin.duration().");
     helpers.log.debug("Leaving RiskAdmin.duration().");
@@ -1075,6 +1153,13 @@ class RiskAdmin {
   // Whether the request is a realm administrator's (#32): theirs is the
   // realm-only view. The console's session and the management API's token
   // both answer through `gateStateFor()`.
+  /**
+   * Answers whether the request is a realm administrator's, whose view is the
+   * realm's own.
+   *
+   * @param req - the request
+   * @returns true for a realm authority
+   */
   realmOnly(req: Req): boolean {
     const { log, adminViews } = this.deps;
     log.debug("Entering RiskAdmin.realmOnly().");
@@ -1100,6 +1185,16 @@ class RiskAdmin {
   // rule `/admin/risk`'s own actions meet at the gate (`admin_scope.ts`),
   // asked of the upload's fields because the gate could not read them.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the door `risk/risk_upload.ts` is handed: who is uploading, the
+   * console's CSRF check, and a realm administrator's scope check on the
+   * upload's fields.
+   *
+   * @param req - the request
+   * @param via - which surface asked
+   * @param withCsrf - whether to check the console's CSRF token
+   * @returns the door: `via`, `source`, `actor`, `csrf` and `scope`
+   */
   uploadDoor(req: Req, via: string, withCsrf: boolean): Json {
     const { log, adminViews, websecurity, adminScope } = this.deps;
     log.debug("Entering RiskAdmin.uploadDoor().");
@@ -1138,6 +1233,14 @@ class RiskAdmin {
 
   // The management API's upload (#215): the same door, no CSRF (see
   // `uploadDoor()`), the file as the body and the fields in the query.
+  /**
+   * Receives the management API's upload: the file as the body and the fields
+   * in the query, with no CSRF check.
+   *
+   * @param req - the request
+   * @param via - which surface asked
+   * @returns a promise of the upload's result
+   */
   receiveUpload(req: Req, via: string): Promise<Json> {
     const { log, upload } = this.deps;
     log.debug("Entering RiskAdmin.receiveUpload().");
@@ -1145,6 +1248,11 @@ class RiskAdmin {
     return upload.receiveRaw(req, this.uploadDoor(req, via, false));
   }
 
+  /**
+   * Registers both pages, the actions and the upload.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
@@ -1266,10 +1374,24 @@ const slot = new InstanceSlot<RiskAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Monitoring → Risk (`/admin/risk`) and Monitoring → Risk scoring
+ * (`/admin/risk-scoring`), and what the management API mirrors of them (rule
+ * 7).
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   RiskAdmin: RiskAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: RiskAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
   UPLOAD: UPLOAD,

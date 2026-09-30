@@ -80,6 +80,11 @@
 #   ./run-tests.sh --modes=memory,single-node # what CI's `tests` job runs; its
 #                                             # `cluster` job runs the third
 #                                             # (2026-09-21)
+#   ./run-tests.sh --modes=cells --only=sts_cells --no-browser
+#                                             # the fourth mode, two cells of
+#                                             # one service (#98): run only
+#                                             # when named, never by a bare
+#                                             # run or by CI
 #   ./run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -166,6 +171,11 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-run-tests.yml}"
 # no other mode's stack reads the layer. The layer's own header argues its
 # contents; tests/tools/modes.sh defines the mode.
 CLUSTER_COMPOSE_FILE="tests/docker-compose-run-tests-cluster.yml"
+# THE `cells` MODE'S LAYER (#98, 2026-09-28): a second cell, a global-tier
+# database, cell B's own database and the cell keys, over the same file. Read
+# only in that mode, which runs only when named (`--modes=cells`); its header
+# argues the stack and tests/tools/modes.sh the mode.
+CELLS_COMPOSE_FILE="tests/docker-compose-run-tests-cells.yml"
 COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
 # do not share a project: compose scopes containers, networks and images by it,
@@ -184,6 +194,14 @@ STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}"
 # same reason.
 STS2_CONTAINER_NAME="${STS2_CONTAINER_NAME:-sts-docker-tests-node-b}"
 STS_LB_CONTAINER_NAME="${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}"
+# The `cells` mode's two databases and its one-shot cell-key writer (#98,
+# 2026-09-28), named for the same reason. Cell B is `sts2` and so reuses
+# STS2_CONTAINER_NAME.
+STS_POSTGRES_GLOBAL_CONTAINER_NAME="${STS_POSTGRES_GLOBAL_CONTAINER_NAME:-sts-docker-tests-postgres-global}"
+STS_POSTGRES_CELLB_CONTAINER_NAME="${STS_POSTGRES_CELLB_CONTAINER_NAME:-sts-docker-tests-postgres-cellb}"
+STS_CELL_KEK_CONTAINER_NAME="${STS_CELL_KEK_CONTAINER_NAME:-sts-docker-tests-cell-kek}"
+# And the link cell A dials cell B through, which a job can cut (#98 D6).
+STS_CELL_LINK_CONTAINER_NAME="${STS_CELL_LINK_CONTAINER_NAME:-sts-docker-tests-cell-link}"
 # The OpenID conformance suite's three (#176), named for the same reason.
 STS_CONFORMANCE_MONGO_CONTAINER_NAME="${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}"
 STS_CONFORMANCE_SERVER_CONTAINER_NAME="${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}"
@@ -345,6 +363,10 @@ DOCKER_SUDO=""
 COMPOSE_CMD=""
 COMPOSE_ENV=()
 STACK_UP=0
+# Whether the mode that is up has had its container logs taken (2026-09-27):
+# teardown() takes them if it has not, which is what an interrupted mode
+# needs — a cancelled CI job used to lose every service log with the stack.
+LOGS_TAKEN=0
 
 # The header of this file IS the usage, printed by reading it back rather than
 # by keeping a second copy of it in a here-document — which is the only way the
@@ -411,6 +433,9 @@ STS_TEST_ARGS="${STS_TEST_ARGS# }"
 #                           service to call back in an ephemeral task in the
 #                           VPC, one merged report in tests/report/aws-<env>.
 #                           Never destroys the environment.
+#                           STS_SUITE_IN_AWS=1 runs EVERY job in that
+#                           task instead, and nothing from here (#311): the
+#                           way to run a long suite against a deployment.
 #   --target=aws-ephemeral[:<env>]
 #                           build and push this tree's images, APPLY <env>
 #                           (default `ci`), run deploy/aws/run-suite.sh against
@@ -792,6 +817,16 @@ STS_NETWORK_BITS="${STS_NETWORK_SUBNET##*/}"
 STS_NETWORK_PREFIX="${STS_NETWORK_SUBNET%/*}"
 STS_NETWORK_PREFIX="${STS_NETWORK_PREFIX%.*}"
 STS_SERVICE_ADDRESS="${STS_NETWORK_PREFIX}.10"
+# The `cells` mode's entry cell (#98): refused here, before any stack starts,
+# rather than when the mode is reached after the others have run.
+case "${STS_TEST_CELLS_ENTRY:-a}" in
+  a|b) ;;
+  *)
+    echo "run-tests.sh: STS_TEST_CELLS_ENTRY must be a or b, not" \
+         "'${STS_TEST_CELLS_ENTRY}'." >&2
+    exit 2
+    ;;
+esac
 STS_SERVICE_EXTRA_IPS="${STS_NETWORK_PREFIX}.11/${STS_NETWORK_BITS}"
 STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.12/${STS_NETWORK_BITS}"
 STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.13/${STS_NETWORK_BITS}"
@@ -816,6 +851,10 @@ COMPOSE_ENV=(
   "STS_TESTS_CONTAINER_NAME=${STS_TESTS_CONTAINER_NAME}"
   "STS2_CONTAINER_NAME=${STS2_CONTAINER_NAME}"
   "STS_LB_CONTAINER_NAME=${STS_LB_CONTAINER_NAME}"
+  "STS_POSTGRES_GLOBAL_CONTAINER_NAME=${STS_POSTGRES_GLOBAL_CONTAINER_NAME}"
+  "STS_POSTGRES_CELLB_CONTAINER_NAME=${STS_POSTGRES_CELLB_CONTAINER_NAME}"
+  "STS_CELL_KEK_CONTAINER_NAME=${STS_CELL_KEK_CONTAINER_NAME}"
+  "STS_CELL_LINK_CONTAINER_NAME=${STS_CELL_LINK_CONTAINER_NAME}"
   "STS_CONFORMANCE_MONGO_CONTAINER_NAME=${STS_CONFORMANCE_MONGO_CONTAINER_NAME}"
   "STS_CONFORMANCE_SERVER_CONTAINER_NAME=${STS_CONFORMANCE_SERVER_CONTAINER_NAME}"
   "STS_CONFORMANCE_NGINX_CONTAINER_NAME=${STS_CONFORMANCE_NGINX_CONTAINER_NAME}"
@@ -995,6 +1034,12 @@ captureContainerLogs()
       "Node B log"
     captureOneContainerLog "${mode}" sts-lb "00-load-balancer.log" \
       "Balancer log"
+  fi
+  # The `cells` mode's cell B (#98), whose log goes with its container.
+  if stsModeIsCells "${mode}";
+  then
+    captureOneContainerLog "${mode}" sts2   "00-mock-sts-service-cell-b.log" \
+      "Cell B log"
   fi
   captureOneContainerLog "${mode}" tests "00-test-runner.log"      "Runner log"
 }
@@ -1233,6 +1278,17 @@ teardown()
     echo "  stop it: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${files} down -v"
     return 0
   fi
+  # A MODE INTERRUPTED BEFORE ITS LOGS WERE TAKEN (2026-09-27): a cancelled
+  # CI job, a Ctrl-C. The stack is about to go, and the service's log with
+  # it — the only record of why a job in that mode failed — so it is taken
+  # first, into the mode's report as usual. Bounded like everything here.
+  if [ "${STACK_UP}" = "1" ] && [ "${LOGS_TAKEN}" = "0" ] &&
+     [ -n "${MODE:-}" ];
+  then
+    echo "Interrupted in the ${MODE} mode: taking its container logs first."
+    captureContainerLogs "${MODE}" || true
+    LOGS_TAKEN=1
+  fi
   # BOUNDED. This is the EXIT trap, so an unbounded call here can hold a run
   # open after everything it was asked to do is finished and reported — which
   # is the shape of the 2026-09-10 incident, one function along.
@@ -1241,6 +1297,11 @@ teardown()
     > /dev/null 2>&1 || true
 }
 trap teardown EXIT
+# A SIGNAL GOES THROUGH THE EXIT TRAP (2026-09-27). bash runs an EXIT trap on
+# `exit`, not when a signal kills it, and GitHub cancels a job with SIGINT and
+# then SIGTERM: without these the stack and its logs were simply abandoned.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # A stack left behind by an interrupted run holds the container names this one
 # is about to ask for. Removing it is safe BECAUSE of the project name: this
@@ -1316,11 +1377,14 @@ COMPOSE_ENV=(${BUILD_ENV[@]+"${BUILD_ENV[@]}"})
 # ---------------------------------------------------------------------------
 waitForStsHealthy()
 {
+  # The container to wait for: the service's by default, cell B's in the
+  # `cells` mode's second call (#98).
+  local container="${1:-${STS_CONTAINER_NAME}}"
   local waited=0 state=""
   while [ "${waited}" -lt "${STS_TEST_READY_SECONDS:-180}" ];
   do
     state="$(docker inspect -f '{{.State.Health.Status}}' \
-             "${STS_CONTAINER_NAME}" 2>/dev/null || echo unknown)"
+             "${container}" 2>/dev/null || echo unknown)"
     if [ "${state}" = "healthy" ];
     then
       return 0
@@ -1328,7 +1392,7 @@ waitForStsHealthy()
     sleep 2
     waited=$(( waited + 2 ))
   done
-  echo "The mock STS did not become healthy in ${waited}s (last: ${state})." >&2
+  echo "${container} did not become healthy in ${waited}s (last: ${state})." >&2
   return 1
 }
 
@@ -1703,6 +1767,50 @@ do
       "STS_TRUSTED_PROXIES=${STS_NETWORK_PREFIX}.30/32"
     )
   fi
+  # ---- THE `cells` MODE: TWO CELLS OF ONE SERVICE (#98, 2026-09-28) -------
+  #
+  # The layer and the two cells `up -d` starts (their databases and the
+  # cell-key one-shot come with them as dependencies). No balancer: the
+  # runner is handed cell A as the service, as `sts` in every mode, and
+  # both cells by name through the layer. Cell B's address is pinned like
+  # `cluster`'s node B, because `sts2` extends `sts`, whose address is.
+  if stsModeIsCells "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${CELLS_COMPOSE_FILE}")
+    UP_SERVICES=(sts sts2)
+    MODE_ENV+=(
+      "STS2_ADDRESS=${STS_NETWORK_PREFIX}.20"
+      # The link cell A reaches cell B's channel through (the layer's
+      # `sts-cell-link`), pinned because cell A's /etc/hosts names it.
+      "STS_CELL_LINK_ADDRESS=${STS_NETWORK_PREFIX}.21"
+    )
+    # Which cell the runner's `sts` is (the layer's `extra_hosts`):
+    # STS_TEST_CELLS_ENTRY=b sends the whole suite in through cell B.
+    # With `b` the two cells swap ROLES as well (the layer's comments): the
+    # runner's `sts` is cell B and is the cells jobs' "A", cell A is their
+    # "B" as `sts-cella`, and the link moves in front of cell A so that the
+    # direction the unreachable job cuts is still its A towards its B.
+    case "${STS_TEST_CELLS_ENTRY:-a}" in
+      a)
+        MODE_ENV+=(
+          "STS_TEST_ENTRY_ADDRESS=${STS_SERVICE_ADDRESS}"
+          "STS_CELL_A_REACHES_B=${STS_NETWORK_PREFIX}.21"
+          "STS_CELL_B_REACHES_A=${STS_SERVICE_ADDRESS}"
+        )
+        ;;
+      b)
+        MODE_ENV+=(
+          "STS_TEST_ENTRY_ADDRESS=${STS_NETWORK_PREFIX}.20"
+          "STS_CELL_A_REACHES_B=${STS_NETWORK_PREFIX}.20"
+          "STS_CELL_B_REACHES_A=${STS_NETWORK_PREFIX}.21"
+          "STS_CELL_LINK_TARGET=sts:8446"
+          "STS_TEST_CELL_A_URL=https://sts:8081"
+          "STS_TEST_CELL_B_URL=https://sts-cella:8081"
+          "STS_TEST_CELLS=cellb:ca,cella:us"
+        )
+        ;;
+    esac
+  fi
 
   # ---- A PRODUCT-MODE MODE: WHAT A DEPLOYMENT IS GIVEN (2026-09-21) ------
   # (`single-node` and `cluster` since that evening; it was written for the
@@ -1747,6 +1855,12 @@ do
   # the job reports every module itself.
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
                 --no-attach mailpit-tls --no-attach mailpit)
+  # The `cells` mode's one-shot cell-key writer exits 0 by design, and an
+  # attached exit ends the mode (see THE TWO ONE-SHOT CONTAINERS below).
+  if stsModeIsCells "${MODE}";
+  then
+    UP_NO_ATTACH+=(--no-attach sts-cell-kek)
+  fi
   # The profiles this mode brings up, joined once below: compose reads ONE
   # COMPOSE_PROFILES, and the conformance suite and the SAML peers can both
   # be on.
@@ -1799,6 +1913,7 @@ do
   )
 
   STACK_UP=1
+  LOGS_TAKEN=0
   MODE_RC=0
   # This mode's start, which modeWroteReport() compares a report against, so a
   # report from an earlier mode or run is never taken for this one's.
@@ -1812,6 +1927,11 @@ do
   then
     echo "The mock STS never became healthy in mode ${MODE}. Nothing was" >&2
     echo "run — see the container log captured below." >&2
+    MODE_RC=1
+  elif stsModeIsCells "${MODE}" && ! waitForStsHealthy "${STS2_CONTAINER_NAME}";
+  then
+    echo "Cell B never became healthy in mode ${MODE}. Nothing was run —" >&2
+    echo "see the container log captured below." >&2
     MODE_RC=1
   elif ! mintAdminApiToken;
   then
@@ -1972,6 +2092,7 @@ do
   fi
 
   captureContainerLogs "${MODE}"
+  LOGS_TAKEN=1
 
   # KEPT: the last mode under --keep-stack stays up for the teardown trap to
   # describe, and is the one stack this launcher leaves behind.

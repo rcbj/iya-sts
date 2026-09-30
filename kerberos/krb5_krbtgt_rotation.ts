@@ -72,11 +72,21 @@ import InstanceSlot = require('../common/instance_slot');
 
 type Json = any;
 
+/**
+ * The id of the scheduled krbtgt rotation job, checked hourly per realm.
+ */
 const ROTATE_JOB = 'krb5.krbtgt-rotate';
+/**
+ * The id of the by-hand krbtgt rotation job, which the console and the API
+ * queue.
+ */
 const ROTATE_NOW_JOB = 'krb5.krbtgt-rotate-now';
 const CHECK_EVERY_MS = 3600000;
 const DAY_MS = 86400000;
 // The word a person types to confirm "rotate and invalidate".
+/**
+ * The word a person sends to confirm "rotate and invalidate".
+ */
 const CONFIRM_WORD = 'invalidate';
 
 interface KrbtgtRotationDeps {
@@ -94,16 +104,44 @@ interface KrbtgtRotationDeps {
   now: () => number;
 }
 
+/**
+ * When each trust realm's krbtgt key is rotated: on the scheduler once it
+ * reaches its age, or by hand, optionally keeping no previous version.
+ *
+ * What a rotation is belongs to `krb5_person_keys.ts`; this decides when, and
+ * announces an invalidation over Shared Signals.
+ */
 class KrbtgtRotation {
+  /**
+   * The id of the scheduled rotation job.
+   */
   static readonly ROTATE_JOB = ROTATE_JOB;
+  /**
+   * The id of the by-hand rotation job.
+   */
   static readonly ROTATE_NOW_JOB = ROTATE_NOW_JOB;
+  /**
+   * The word that confirms "rotate and invalidate".
+   */
   static readonly CONFIRM_WORD = CONFIRM_WORD;
 
+  /**
+   * Builds the rotation over the given dependencies.
+   *
+   * @param deps - the modules it uses, the lazily reached ones as loaders, and
+   *   a clock
+   */
   constructor(private readonly deps: KrbtgtRotationDeps) {
     deps.log.debug("Entering KrbtgtRotation.constructor().");
     deps.log.debug("Leaving KrbtgtRotation.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): KrbtgtRotationDeps {
     helpers.log.debug("Entering KrbtgtRotation.defaultDeps().");
     helpers.log.debug("Leaving KrbtgtRotation.defaultDeps().");
@@ -144,6 +182,12 @@ class KrbtgtRotation {
   }
 
   // The interval, in milliseconds, for the AMBIENT realm; 0 is off.
+  /**
+   * Returns the rotation interval in the ambient realm,
+   * `krb5.krbtgtRotationIntervalDays` in milliseconds.
+   *
+   * @returns the interval, 0 for off
+   */
   intervalMs(): number {
     const { log, config } = this.deps;
     log.debug("Entering KrbtgtRotation.intervalMs().");
@@ -154,6 +198,13 @@ class KrbtgtRotation {
 
   // WHY THE SCHEDULE IS OFF IN A REALM, or ''. Four reasons, in the order a
   // person would look for them.
+  /**
+   * Says why the schedule is off in a realm: development mode, no KDC, a zero
+   * interval, or no retained key versions.
+   *
+   * @param realmId - the trust realm id; the default realm when omitted
+   * @returns the reason, or the empty string when it is on
+   */
   offReason(realmId?: string): string {
     const self = this;
     const { log, config, mode, principals, realms } = this.deps;
@@ -195,6 +246,17 @@ class KrbtgtRotation {
   //     schedule;
   //   * no stored key yet (product) is due at once: it is the first key.
   // -------------------------------------------------------------------------
+  /**
+   * Decides whether a realm's krbtgt is due for rotation from its state and the
+   * time; never while the version the last rotation kept is inside its window.
+   * Pure.
+   *
+   * @param state - the register's `krbtgtState()`
+   * @param nowMs - the time, in epoch milliseconds
+   * @param intervalMs - the rotation interval
+   * @returns `{ due, dueAt, lastMs, openUntilMs, why }`, with `first` when no
+   *   key is stored yet
+   */
   decide(state: Json, nowMs: number, intervalMs: number): Json {
     const { log } = this.deps;
     log.debug("Entering KrbtgtRotation.decide().");
@@ -236,6 +298,15 @@ class KrbtgtRotation {
   // -------------------------------------------------------------------------
   // THE SCHEDULED RUN of one realm (ambient: the scheduler entered it).
   // -------------------------------------------------------------------------
+  /**
+   * The scheduled run for one realm: gives it its first key, or rotates it if
+   * it is due and this node still owns the run.
+   *
+   * @param realmId - the trust realm id
+   * @param ctx - the scheduler's run context, with `nowMs()` and `stillOwner()`
+   * @returns a promise of the run's result: the kvno, whether it rotated, and
+   *   when the next is due
+   */
   async rotateDue(realmId: string, ctx?: Json): Promise<Json> {
     const { log, keys } = this.deps;
     log.debug("Entering KrbtgtRotation.rotateDue(). realm=" + realmId);
@@ -288,6 +359,15 @@ class KrbtgtRotation {
   // ONE ROTATION — the scheduler's, or the one an administrator queued.
   // Announced when it invalidated.
   // -------------------------------------------------------------------------
+  /**
+   * Rotates a realm's krbtgt key, and announces it over Shared Signals when the
+   * key that sealed the live TGTs is gone.
+   *
+   * @param realmId - the trust realm id
+   * @param options - `invalidate` (keep no previous version), `reason`, `actor`
+   *   and `via`
+   * @returns a promise of the register's result
+   */
   async rotate(realmId: string, options?: Json): Promise<Json> {
     const { log, keys } = this.deps;
     const o = options || {};
@@ -361,6 +441,16 @@ class KrbtgtRotation {
   // `confirm` to be the word `invalidate`, because it ends every TGT in the
   // realm and cannot be undone.
   // -------------------------------------------------------------------------
+  /**
+   * Queues a by-hand rotation on the scheduler rather than rotating in the
+   * request; the invalidate form needs `confirm` to be the confirm word.
+   *
+   * @param realmId - the trust realm id
+   * @param options - `invalidate`, `confirm`, `requestedBy`, `via` and
+   *   `channel`
+   * @returns `{ ok: true, queued, runId, alreadyQueued, invalidate, trustRealm,
+   *   message }`, or `{ ok: false, errors }` with its code marked
+   */
   requestRotation(realmId: string, options?: Json): Json {
     const { log, scheduler, principals, realms } = this.deps;
     const o = options || {};
@@ -416,6 +506,13 @@ class KrbtgtRotation {
   // public state, and the schedule — whether it is on, the interval, the
   // last rotation and when the next is due.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the state of a realm's krbtgt for the console and the API: the
+   * register's public state and the schedule.
+   *
+   * @param realmId - the trust realm id; the ambient realm when omitted
+   * @returns the view
+   */
   rotationView(realmId?: string): Json {
     const self = this;
     const { log, keys, realms } = this.deps;
@@ -447,6 +544,12 @@ class KrbtgtRotation {
   // listener binds, so a KDC has its key before its first request. One realm
   // at a time, each under the register's claim. Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Gives every product realm with a KDC its first stored krbtgt key, one realm
+   * at a time; awaited at startup before any listener binds. Never rejects.
+   *
+   * @returns a promise of one result per realm
+   */
   async ensureAll(): Promise<Json[]> {
     const { log, keys, principals, realms } = this.deps;
     log.debug("Entering KrbtgtRotation.ensureAll().");
@@ -479,6 +582,11 @@ class KrbtgtRotation {
   }
 
   // The two jobs, registered once per process.
+  /**
+   * Registers the scheduled and by-hand rotation jobs, once per process.
+   *
+   * @returns whether they were registered now
+   */
   registerJobs(): boolean {
     const { log, scheduler } = this.deps;
     log.debug("Entering KrbtgtRotation.registerJobs().");
@@ -558,19 +666,61 @@ const slot = new InstanceSlot<KrbtgtRotation>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The krbtgt key's rotation, per trust realm, on the scheduler and by hand.
+ *
+ * A library: it registers two scheduler jobs and no route.
+ *
+ * @namespace
+ */
 export = {
   KrbtgtRotation: KrbtgtRotation,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: KrbtgtRotation): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   ROTATE_JOB: ROTATE_JOB,
   ROTATE_NOW_JOB: ROTATE_NOW_JOB,
   CONFIRM_WORD: CONFIRM_WORD,
+  /**
+   * Forwards to `KrbtgtRotation.offReason()` on the installed instance.
+   */
   offReason: slot.forward('offReason'),
+  /**
+   * Forwards to `KrbtgtRotation.intervalMs()` on the installed instance.
+   */
   intervalMs: slot.forward('intervalMs'),
+  /**
+   * Forwards to `KrbtgtRotation.decide()` on the installed instance.
+   */
   decide: slot.forward('decide'),
+  /**
+   * Forwards to `KrbtgtRotation.rotateDue()` on the installed instance.
+   */
   rotateDue: slot.forward('rotateDue'),
+  /**
+   * Forwards to `KrbtgtRotation.rotate()` on the installed instance.
+   */
   rotate: slot.forward('rotate'),
+  /**
+   * Forwards to `KrbtgtRotation.requestRotation()` on the installed instance.
+   */
   requestRotation: slot.forward('requestRotation'),
+  /**
+   * Forwards to `KrbtgtRotation.rotationView()` on the installed instance.
+   */
   rotationView: slot.forward('rotationView'),
+  /**
+   * Forwards to `KrbtgtRotation.ensureAll()` on the installed instance.
+   */
   ensureAll: slot.forward('ensureAll')
 };

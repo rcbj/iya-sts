@@ -258,11 +258,29 @@ const DECISIONS: Record<string, string> = {
   NotApplicable: 'notApplicable',
   Indeterminate: 'indeterminate' };
 
+/**
+ * Counts, per trust realm, the decisions each asker of the PDP in this
+ * process received and what it enforced, and reports them with the remote
+ * PEPs' own counts for `/admin/xacml/monitor`.
+ *
+ * A decision and an enforcement are kept as two counts: a PEP's bias and
+ * an undischargeable obligation make them differ.
+ */
 class XacmlMonitor {
+  /**
+   * The four external decisions, each mapped to the counter row field that
+   * tallies it.
+   */
   static readonly DECISIONS = DECISIONS;
 
   private readonly byId: Record<string, PepDefinition> = {};
 
+  /**
+   * Builds a monitor over the given dependencies, indexing the catalogue by
+   * asker id.
+   * @param deps - the logger, settings, realms, PEP register, catalogue,
+   * counter store and start time
+   */
   constructor(private readonly deps: XacmlMonitorDeps) {
     deps.log.debug("Entering XacmlMonitor.constructor().");
     const byId = this.byId;
@@ -273,6 +291,11 @@ class XacmlMonitor {
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, for the default
+   * instance.
+   * @returns the monitor's dependencies
+   */
   static defaultDeps(): XacmlMonitorDeps {
     helpers.log.debug("Entering XacmlMonitor.defaultDeps().");
     helpers.log.debug("Leaving XacmlMonitor.defaultDeps().");
@@ -304,6 +327,15 @@ class XacmlMonitor {
   // bias this process started with, printed beside counters that were produced
   // under a different one.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the catalogue of every asker of the PDP in this process, in the
+   * order the page draws them; `enforces: false` marks the one row that is
+   * not a PEP (`POST /xacml/pdp`).
+   * @param log - the logger
+   * @param settings - the settings reader, consulted when a row's `bias()`
+   * is called
+   * @returns the catalogue rows
+   */
   static catalogue(log: { debug(message: string): void },
                    settings: { value(key: string): any }): PepDefinition[] {
     log.debug("Entering XacmlMonitor.catalogue().");
@@ -425,6 +457,16 @@ class XacmlMonitor {
   // observers and `vc_claims.js`'s directory hooks already follow in the same
   // direction.
   // -------------------------------------------------------------------------
+  /**
+   * Counts one decision against an asker in the catalogue, in the current
+   * realm.
+   *
+   * It never throws: a failure is logged and nothing is counted, and an id
+   * not in the catalogue is logged and not counted.
+   * @param id - the asker's catalogue id
+   * @param outcome - the decision, whether the PEP allowed it and whether an
+   * obligation could not be discharged
+   */
   record(id: string, outcome?: Outcome | null): void {
     const { log, errorCodes, counters, catalogue } = this.deps;
     log.debug("Entering XacmlMonitor.record().");
@@ -583,6 +625,13 @@ class XacmlMonitor {
     return out;
   }
 
+  /**
+   * Reports every asker's counts in this realm, merged with other nodes' rows,
+   * beside the registered remote PEPs' reported counts and the totals.
+   * @param policies - the repository's policy counts, drawn with the numbers
+   * @returns the monitor page's document: rows, remote rows, totals, the
+   * time counting started and the realm
+   */
   snapshot(policies?: PolicyCounts | null): Json {
     const self = this;
     const { log, config, errorCodes, realms, peps, catalogue,
@@ -776,6 +825,10 @@ class XacmlMonitor {
   // — and it is the right scope: a test asserting a count runs inside the
   // realm it made the decisions in, and one that reached across realms would
   // be able to pass while the isolation was broken.
+  /**
+   * Clears the current realm's counters. For the tests only; no console
+   * control calls it.
+   */
   resetForTests(): void {
     const { log, counters } = this.deps;
     log.debug('Entering XacmlMonitor.resetForTests().');
@@ -802,6 +855,10 @@ const counters = realms.map({ persist: 'xacml_monitor.counters',
 const startedAt = new Date().toISOString();
 
 // THE CATALOGUE, built once at load — see `XacmlMonitor.catalogue()`.
+/**
+ * The catalogue of every asker of the PDP in this process, built once at
+ * load.
+ */
 const PEPS = XacmlMonitor.catalogue(helpers.log, config);
 
 // ---------------------------------------------------------------------------
@@ -822,6 +879,14 @@ const slot = new InstanceSlot<XacmlMonitor>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Counts what this service's XACML authorization is doing: decisions and
+ * enforcement outcomes per asker of the PDP, per trust realm.
+ *
+ * A leaf: it registers no route. The functions forward to the instance the
+ * composition root installs.
+ * @namespace
+ */
 export = {
   XacmlMonitor: XacmlMonitor,
   installInstance: (instance: XacmlMonitor): void => slot.install(instance),

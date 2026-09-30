@@ -264,11 +264,34 @@ const ALGORITHMS: Record<string, any> = {
              spec: 'RFC 7518 section 3.2' }
 };
 
+/**
+ * HTTP Message Signatures (RFC 9421) and Content-Digest (RFC 9530): the
+ * `httpsig` proof method of GNAP (RFC 9635 section 7.3.1).
+ *
+ * The mechanism and none of the policy: the caller says which components, tag,
+ * age and key are required; `gnap_proof.ts` decides those answers.
+ */
 class GnapHttpsig {
+  /**
+   * The signature algorithms, from RFC 9421 section 3.3's registry and their
+   * JWS names.
+   */
   static readonly ALGORITHMS = ALGORITHMS;
+  /**
+   * The Content-Digest algorithms this module computes and checks.
+   */
   static readonly DIGEST_ALGORITHMS = Object.keys(DIGEST_ALGORITHMS);
+  /**
+   * The fields whose Structured Field type is known, so `;sf` and `;key=` can
+   * be honoured (RFC 9421 section 2.1.1).
+   */
   static readonly KNOWN_FIELD_TYPES = KNOWN_FIELD_TYPES;
 
+  /**
+   * Builds the signer and verifier from the modules they read.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapHttpsigDeps) {
     deps.log.debug("Entering GnapHttpsig.constructor().");
     deps.log.debug("Leaving GnapHttpsig.constructor().");
@@ -319,6 +342,14 @@ class GnapHttpsig {
   // supporting a population of verifiers sends. It THROWS on an unknown name,
   // carrying the code: an unsupported algorithm here is the caller's own
   // configuration, not anything a client sent.
+  /**
+   * Computes a Content-Digest field value for a body.
+   *
+   * @param body - the body's bytes
+   * @param algorithm - one algorithm name, or an array of them, each computed
+   * @returns the serialized Dictionary
+   * @throws Error, carrying its code, for an unknown algorithm name
+   */
   contentDigest(body, algorithm) {
     const { log, errorCodes, nodeCrypto, sf } = this.deps;
     log.debug("Entering GnapHttpsig.contentDigest().");
@@ -357,6 +388,16 @@ class GnapHttpsig {
   // accepted must match, and at least one must be present. "Any one matches"
   // would let a client send a correct sha-256 beside a wrong sha-512 and have a
   // verifier that prefers sha-512 accept a body the sha-512 does not describe.
+  /**
+   * Verifies a Content-Digest field against a body: every member whose
+   * algorithm is accepted must match, and at least one must be present.
+   *
+   * @param headerValue - the Content-Digest field value
+   * @param body - the body's bytes
+   * @param options - `accepted`, the algorithms accepted (sha-256 and
+   *   sha-512 by default)
+   * @returns `{ ok: true, algorithms }` naming those matched, or a refusal
+   */
   verifyContentDigest(headerValue, body, options) {
     const { log, nodeCrypto, sf } = this.deps;
     log.debug("Entering GnapHttpsig.verifyContentDigest().");
@@ -1010,6 +1051,15 @@ class GnapHttpsig {
 
   // A component's canonical value, or a refusal. `identifier` is the serialized
   // component identifier the value is written after in a signature base.
+  /**
+   * Returns a component's canonical value in a message, with its serialized
+   * component identifier.
+   *
+   * @param message - the HTTP message
+   * @param component - the component
+   * @param options - per-call options, such as extra field types
+   * @returns `{ ok: true, value, identifier }`, or a refusal
+   */
   componentValue(message, component, options) {
     const { log, sf } = this.deps;
     log.debug("Entering GnapHttpsig.componentValue().");
@@ -1085,6 +1135,17 @@ class GnapHttpsig {
   // `signatureParams` is not given — which is what a PARSED Signature-Input
   // member is) or an array of components in any form `componentItem()` reads.
   // `signatureParams` is an ordered [[key, value]] array or a plain object.
+  /**
+   * Builds the signature base (RFC 9421 section 2.5) over the covered
+   * components.
+   *
+   * @param message - the HTTP message
+   * @param covered - an Inner List, or an array of components
+   * @param signatureParams - an ordered `[[key, value]]` array or a plain
+   *   object; an Inner List's own `params` when absent
+   * @param options - per-call options, such as extra field types
+   * @returns `{ ok: true, base, signatureParams, components }`, or a refusal
+   */
   signatureBase(message, covered, signatureParams, options) {
     const { log, sf } = this.deps;
     log.debug("Entering GnapHttpsig.signatureBase().");
@@ -1327,6 +1388,16 @@ class GnapHttpsig {
   // whether the signature carries `alg` is the signer's decision (GNAP forbids
   // it), so the parameters are exactly what the caller passed, in the caller's
   // order.
+  /**
+   * Signs a message (section 3.1). The parameters are exactly what the caller
+   * passed, in its order; `alg` is never added.
+   *
+   * @param message - the HTTP message
+   * @param options - `{ label, components, params, key, algorithm, fieldTypes
+   *   }`
+   * @returns `{ ok: true, label, algorithm, signatureInput, ... }`, or a
+   *   refusal
+   */
   sign(message, options) {
     const { log, sf } = this.deps;
     log.debug("Entering GnapHttpsig.sign().");
@@ -1444,6 +1515,15 @@ class GnapHttpsig {
   // field makes one nobody can read, and a label already present in either
   // field is refused — section 4 says a label MUST be unique, and a second
   // member under it would replace the first for every last-wins parser.
+  /**
+   * Returns a new message with a signature's two members appended to its
+   * Signature-Input and Signature fields, as text, so bytes already signed do
+   * not change (RFC 9635 section 7.3.1.1). A label already present is refused.
+   *
+   * @param message - the HTTP message
+   * @param result - what `sign()` returned
+   * @returns `{ ok: true, message }`, or a refusal
+   */
   appendSignature(message, result) {
     const { log, sf } = this.deps;
     log.debug("Entering GnapHttpsig.appendSignature().");
@@ -1562,6 +1642,13 @@ class GnapHttpsig {
   // Every signature the message carries, in Signature-Input order:
   // { ok: true, signatures: [{ label, components, componentIds, params,
   //   paramList, signature, serializedParams }] }, or a refusal.
+  /**
+   * Parses every signature a message carries, in Signature-Input order.
+   *
+   * @param message - the HTTP message
+   * @returns `{ ok: true, signatures }`, each with its label, components,
+   *   parameters and signature, or a refusal
+   */
   parseSignatures(message) {
     const { log, sf } = this.deps;
     log.debug("Entering GnapHttpsig.parseSignatures().");
@@ -1679,6 +1766,18 @@ class GnapHttpsig {
   // required tag, else every signature. The default is 'all' because a verifier
   // that quietly passed over a failing signature has made a policy decision its
   // caller did not.
+  /**
+   * Verifies a message's signatures (section 3.2) against the keys
+   * `options.keyFor()` names; an unknown key fails.
+   *
+   * By default every candidate signature must verify.
+   *
+   * @param message - the HTTP message
+   * @param options - `label`, `keyFor`, `now`, `maxAgeS`, `skewS`,
+   *   `requireCreated`, `requireComponents`, `requireTag`, `forbidAlgParam`,
+   *   `allowedAlgorithms`, `require` (`all` or `any`) and `fieldTypes`
+   * @returns `{ ok: true, verified }`, or a refusal
+   */
   verify(message, options) {
     const { log } = this.deps;
     log.debug("Entering GnapHttpsig.verify().");
@@ -1940,6 +2039,12 @@ class GnapHttpsig {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapHttpsigDeps {
     helpers.log.debug("Entering GnapHttpsig.defaultDeps().");
     helpers.log.debug("Leaving GnapHttpsig.defaultDeps().");
@@ -1969,9 +2074,25 @@ const slot = new InstanceSlot<GnapHttpsig>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * HTTP Message Signatures (RFC 9421) and Content-Digest (RFC 9530), the
+ * `httpsig` proof method of GNAP.
+ *
+ * @namespace
+ */
 export = {
   GnapHttpsig: GnapHttpsig,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapHttpsig): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   ALGORITHMS: GnapHttpsig.ALGORITHMS,
   DIGEST_ALGORITHMS: GnapHttpsig.DIGEST_ALGORITHMS,

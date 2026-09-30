@@ -83,6 +83,13 @@ function store() {
   return persistence.clusterStore();
 }
 
+/**
+ * Digests a single-use value under its scope, the form in which it is stored.
+ *
+ * @param scope - the kind of value
+ * @param value - the value itself
+ * @returns the SHA-256 digest, base64url
+ */
 function digestOf(scope, value) {
   log.debug("Entering digestOf().");
   const out = nodeCrypto.createHash('sha256')
@@ -125,6 +132,14 @@ function sweepMemory(now) {
 // end of its own module: it requires this module, so this one cannot require
 // it back while it is still loading. The first-claim call stays, and finds the
 // job registered. `off` says why it does not run where there is no table.
+/**
+ * Registers the `cluster.claims-purge` scheduler job once per process.
+ *
+ * Does nothing until a scheduler with `register()` is reachable, so a call
+ * through a half-loaded scheduler can be repeated.
+ * @param schedulerInstance - the scheduler, when the caller is it; otherwise
+ *   it is required
+ */
 function ensurePurgeJob(schedulerInstance) {
   log.debug("Entering ensurePurgeJob().");
   if (purgeJobRegistered) {
@@ -190,6 +205,13 @@ function ensurePurgeJob(schedulerInstance) {
 // or `{ ok: false, reason: 'store', why }`. It never rejects.
 // ---------------------------------------------------------------------------
 /**
+ * Claims a single-use value once, for the whole cluster where the store is
+ * shared and for this process otherwise. `opts` holds `scope`, `value`,
+ * `ttlMs` and `realm` (the ambient realm by default). Resolves
+ * `{ ok: true, handle, claimedAt }`, `{ ok: false, reason: 'used', existing }`
+ * or `{ ok: false, reason: 'store', why }`, on which the caller refuses; it
+ * never rejects.
+ *
  * @param {any} opts
  * @returns {Promise<import('../types/cluster').ClaimResult>}
  */
@@ -312,6 +334,14 @@ function storeFailed(scope, e) {
 }
 
 // Gives a claim back: what it guarded did not happen. Never rejects.
+/**
+ * Gives a claim back because what it guarded did not happen. Only the claim
+ * the handle names is released, and a failure leaves it held until it
+ * expires.
+ *
+ * @param handle - the handle claim() returned
+ * @returns a promise of true when released; it never rejects
+ */
 function release(handle) {
   log.debug("Entering release().");
   if (!handle || !handle.key) {
@@ -346,6 +376,13 @@ function release(handle) {
 // otherwise — the shape `used_assertions.js` gives an assertion. A redirect
 // counts as success because the protocols that spend codes in a browser answer
 // with one.
+/**
+ * Binds a claim to a response: kept when it finishes 2xx or 3xx, released
+ * when it finishes otherwise or closes unfinished.
+ *
+ * @param res - the response
+ * @param handle - the handle claim() returned
+ */
 function releaseUnlessSucceeded(res, handle) {
   log.debug("Entering releaseUnlessSucceeded().");
   if (!res || typeof res.once !== 'function' || !handle) {
@@ -373,6 +410,12 @@ function releaseUnlessSucceeded(res, handle) {
 }
 
 // Whether a live claim exists, without making one.
+/**
+ * Says whether a live claim on a value exists, without making one.
+ *
+ * @param opts - `scope`, `value` and `realm`, as for claim()
+ * @returns a promise of true while a claim is held
+ */
 function isClaimed(opts) {
   log.debug("Entering isClaimed().");
   const o = opts || {};
@@ -393,6 +436,9 @@ function isClaimed(opts) {
 }
 
 // For tests.
+/**
+ * Forgets this process's in-memory claims. For tests.
+ */
 function reset() {
   log.debug("Entering reset().");
   memory.clear();
@@ -415,6 +461,10 @@ capabilities.provide('cluster.claims');
 // answer is the table's, as it always is.
 // ---------------------------------------------------------------------------
 /**
+ * Answers what claim() would, synchronously, when this process holds no
+ * shared claims table; returns null when one is configured, and the caller
+ * must then claim() and wait.
+ *
  * @param {any} opts
  * @returns {import('../types/cluster').ClaimResult | null}
  */
@@ -460,6 +510,13 @@ function claimInProcess(opts) {
                      reservation: reservation } };
 }
 
+/**
+ * Single-use values claimed once across every node (#46): authorization
+ * codes, artifacts and the like, held by one conditional insert in the shared
+ * store, or in this process's memory where the store cannot be shared. A
+ * store that cannot be asked fails closed.
+ * @namespace
+ */
 module.exports = {
   claim: claim,
   claimInProcess: claimInProcess,

@@ -59,6 +59,10 @@ const vz = validation.z;
 
 const FAMILY = 'acme';
 
+/**
+ * The six actions an operator takes by hand on `/admin/acme` and through
+ * `/admin-api`.
+ */
 const ACME_ACTIONS = ['create-eab', 'delete-eab', 'deactivate-account',
                       'revoke-certificate', 'add-host-name',
                       'remove-host-name'];
@@ -109,7 +113,19 @@ interface AcmeConsoleDeps {
   loadAcme(): typeof import('./acme');
 }
 
+/**
+ * What the two ACME console pages and their management API operations read and
+ * do: one model, two doors.
+ *
+ * A view computes the facts once and both doors render them; an action changes
+ * state once and validates its own body. No route, no response, no markup.
+ */
 class AcmeConsole {
+  /**
+   * Creates the view model.
+   *
+   * @param deps - the modules it uses, and a lazy loader of `acme.ts`
+   */
   constructor(private readonly deps: AcmeConsoleDeps) {
     deps.log.debug("Entering AcmeConsole.constructor().");
     deps.log.debug("Leaving AcmeConsole.constructor().");
@@ -117,6 +133,11 @@ class AcmeConsole {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AcmeConsoleDeps {
     log.debug("Entering AcmeConsole.defaultDeps().");
     log.debug("Leaving AcmeConsole.defaultDeps().");
@@ -137,6 +158,13 @@ class AcmeConsole {
     };
   }
 
+  /**
+   * Builds a refusal marked with its error code.
+   *
+   * @param code - the error code
+   * @param sentence - what was refused, and why
+   * @returns `{ ok: false, errors }`
+   */
   refused(code, sentence) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AcmeConsole.refused(). code=" + code);
@@ -146,6 +174,14 @@ class AcmeConsole {
 
   // The core's refusal, handed on with its code and without its HTTP status (a
   // console action answers the way `respondToAction()` decides).
+  /**
+   * Hands on the enrollment core's refusal with its error code and without its
+   * HTTP status.
+   *
+   * @param refusal - the core's refusal
+   * @param fallback - the code to use when the refusal carries none
+   * @returns `{ ok: false, errors }`
+   */
   handedOn(refusal, fallback) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AcmeConsole.handedOn().");
@@ -154,6 +190,11 @@ class AcmeConsole {
     return errorCodes.mark(out, errorCodes.codeOf(refusal) || fallback);
   }
 
+  /**
+   * Returns the ACME server module, required lazily to avoid a cycle.
+   *
+   * @returns the `acme` module
+   */
   acmeModule() {
     const { log, loadAcme } = this.deps;
     log.debug("Entering AcmeConsole.acmeModule().");
@@ -164,6 +205,11 @@ class AcmeConsole {
     return loadAcme();
   }
 
+  /**
+   * Returns the ACME settings group, as the console draws it.
+   *
+   * @returns the settings
+   */
   settingsJson() {
     const { log, config } = this.deps;
     log.debug("Entering AcmeConsole.settingsJson().");
@@ -174,6 +220,13 @@ class AcmeConsole {
     return group ? group.settings : [];
   }
 
+  /**
+   * Lists the absolute URLs of this realm's ACME endpoints, as reached by a
+   * request.
+   *
+   * @param req - the request, for the base URL
+   * @returns the directory and every resource URL
+   */
   endpointsOf(req) {
     const { log } = this.deps;
     log.debug("Entering AcmeConsole.endpointsOf().");
@@ -197,6 +250,12 @@ class AcmeConsole {
     };
   }
 
+  /**
+   * Describes this realm's ACME Issuing CA.
+   *
+   * @returns its subject, serial, algorithms, validity, thumbprint and parents,
+   * or `present: false` with a note
+   */
   authorityJson() {
     const { log, core } = this.deps;
     log.debug("Entering AcmeConsole.authorityJson().");
@@ -225,6 +284,12 @@ class AcmeConsole {
     };
   }
 
+  /**
+   * Lists the certificate profiles, each with what it needs and whether
+   * `acme.allowedProfiles` allows it.
+   *
+   * @returns one row per profile
+   */
   profilesJson() {
     const { log, core } = this.deps;
     log.debug("Entering AcmeConsole.profilesJson().");
@@ -239,6 +304,12 @@ class AcmeConsole {
     });
   }
 
+  /**
+   * Describes what the mode changes for certificate enrollment, and what is in
+   * force now.
+   *
+   * @returns the current mode and the development and product descriptions
+   */
   modeJson() {
     const { log, mode } = this.deps;
     log.debug("Entering AcmeConsole.modeJson().");
@@ -252,16 +323,35 @@ class AcmeConsole {
                                          row.development || '' };
   }
 
-  paged(query, rows, name, noun) {
+  /**
+   * Pages a list of rows as the console's query asks.
+   *
+   * @param query - the request's query
+   * @param rows - every row
+   * @param name - the paging parameter's name
+   * @param noun - what the rows are, for the pager
+   * @param decorate - turns a row into what the page shows, called for the
+   *   rows of the page asked for and no others
+   * @returns `{ paging, rows }` for the page asked for
+   */
+  paged(query, rows, name, noun, decorate?) {
     const { log, adminViews } = this.deps;
     log.debug("Entering AcmeConsole.paged(). name=" + name);
     const paging = adminViews.pagingOf(query, rows.length,
                                        { name: name, noun: noun });
+    const shown = rows.slice(paging.offset, paging.offset + paging.perPage);
     log.debug("Leaving AcmeConsole.paged().");
     return { paging: adminViews.pagingJson(paging),
-             rows: rows.slice(paging.offset, paging.offset + paging.perPage) };
+             rows: decorate ? shown.map(decorate) : shown };
   }
 
+  /**
+   * Describes one certificate issued through ACME, with the account that
+   * ordered it.
+   *
+   * @param one - the certificate as the enrollment core lists it
+   * @returns the row
+   */
   certificateRow(one) {
     const { log, store } = this.deps;
     log.debug("Entering AcmeConsole.certificateRow().");
@@ -284,6 +374,12 @@ class AcmeConsole {
     };
   }
 
+  /**
+   * Describes one ACME account.
+   *
+   * @param account - the stored account
+   * @returns the row
+   */
   accountRow(account) {
     const { log, core } = this.deps;
     log.debug("Entering AcmeConsole.accountRow().");
@@ -305,11 +401,26 @@ class AcmeConsole {
   // ---------------------------------------------------------------------------
   // GET /admin/acme — what the ACME server IS in this realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `GET /admin/acme`: what the ACME server is in this realm.
+   *
+   * EAB keys are listed without their key material.
+   *
+   * @param req - the request, for its query and base URL
+   * @returns the endpoints, the Issuing CA, the profiles, the mode, the EAB
+   * keys, accounts, certificates and host names, paged, and the settings
+   */
   acmeView(req) {
     const { log, core, store, config, revocation } = this.deps;
     log.debug("Entering AcmeConsole.acmeView().");
     const query = (req && req.query) || {};
-    const eabs = core.eabsInRealm().map(function (one) {
+    // PAGED BEFORE THEY ARE DECORATED (#352): each list below is sorted and
+    // counted whole — which is what its paging needs — and only the rows of
+    // the page asked for are turned into what the page shows. That is an
+    // account lookup per EAB key and per certificate (`certificateRow()`
+    // asks the store which account ordered it); both were made for every row
+    // in the realm to show twenty-five.
+    const eabRow = function (one) {
       const bound = one.boundAccount
         ? store.accountByThumbprint(one.boundAccount) : null;
       return { kid: one.kid, entry: one.entry, entryUri: one.entryUri,
@@ -317,7 +428,7 @@ class AcmeConsole {
                expiresAt: one.expiresAt, createdBy: one.createdBy || '',
                boundAt: one.boundAt || null,
                boundAccount: bound ? bound.id : null };
-    });
+    };
     const json = {
       page: '/admin/acme',
       title: 'ACME',
@@ -334,15 +445,13 @@ class AcmeConsole {
       refusedProfiles: core.REFUSED_PROFILES,
       mode: this.modeJson(),
       eabLifetimeS: Number(config.value('acme.eabLifetimeS')),
-      eabKeys: this.paged(query, eabs, 'credentials', 'EAB keys'),
-      accounts: this.paged(query,
-                           store.listAccounts().map(this.accountRow.bind(this)),
-                           'accounts',
-                           'accounts'),
-      certificates: this.paged(query, core.certificatesInRealm(FAMILY)
-                                 .map(this.certificateRow.bind(this)),
-                                 'certificates',
-                               'certificates'),
+      eabKeys: this.paged(query, core.eabsInRealm(), 'credentials',
+                          'EAB keys', eabRow),
+      accounts: this.paged(query, store.listAccounts(), 'accounts',
+                           'accounts', this.accountRow.bind(this)),
+      certificates: this.paged(query, core.certificatesInRealm(FAMILY),
+                               'certificates', 'certificates',
+                               this.certificateRow.bind(this)),
       hostNames: this.paged(query, core.hostNamesInRealm(), 'hostNames',
                             'entries'),
       revocationReasons: revocation.REASONS.map(function (one) {
@@ -358,6 +467,12 @@ class AcmeConsole {
   // ---------------------------------------------------------------------------
   // GET /admin/acme/monitor — what the ACME server has DONE in this realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Turns a map of counts into rows, largest first.
+   *
+   * @param counts - name to count
+   * @returns `{ name, count }` rows
+   */
   table(counts) {
     const { log } = this.deps;
     log.debug("Entering AcmeConsole.table().");
@@ -369,6 +484,14 @@ class AcmeConsole {
     });
   }
 
+  /**
+   * Builds `GET /admin/acme/monitor`: what the ACME server has done in this
+   * realm.
+   *
+   * @param req - the request, for its query
+   * @returns the totals, the counts by operation, profile, principal, error
+   * code and status, and the recent requests, paged
+   */
   acmeMonitorView(req) {
     const { log, monitor, store, core } = this.deps;
     log.debug("Entering AcmeConsole.acmeMonitorView().");
@@ -385,7 +508,9 @@ class AcmeConsole {
                 refused: snap.refused || 0, revoked: snap.revoked || 0,
                 accountsBound: snap.credentialsRedeemed || 0,
                 accounts: store.listAccounts().length,
-                certificatesHeld: core.certificatesInRealm(FAMILY).length },
+                // Counted, not listed (#352).
+                certificatesHeld:
+                  core.certificateCountsInRealm(FAMILY).held },
       operations: this.table(snap.operations),
       profiles: this.table(snap.profiles),
       principals: this.table(snap.principals),
@@ -402,6 +527,12 @@ class AcmeConsole {
   // ---------------------------------------------------------------------------
   // POST /admin/acme — the six things an operator does by hand.
   // ---------------------------------------------------------------------------
+  /**
+   * Names the directory entry an action is about.
+   *
+   * @param value - the parsed action body, with `kind` and `identifier`
+   * @returns `{ kind, id }`
+   */
   entryOf(value) {
     const { log } = this.deps;
     log.debug("Entering AcmeConsole.entryOf().");
@@ -409,6 +540,15 @@ class AcmeConsole {
     return { kind: value.kind, id: String(value.identifier) };
   }
 
+  /**
+   * Builds the certbot command line that registers an account with a new EAB
+   * key.
+   *
+   * @param directory - the ACME directory URL
+   * @param kid - the EAB key identifier
+   * @param hmacKey - the EAB MAC key
+   * @returns the command
+   */
   certbotLine(directory, kid, hmacKey) {
     const { log } = this.deps;
     log.debug("Entering AcmeConsole.certbotLine().");
@@ -418,6 +558,17 @@ class AcmeConsole {
            '--register-unsafely-without-email';
   }
 
+  /**
+   * Performs one of the six actions: create or delete an EAB key, deactivate an
+   * account, revoke a certificate, add or remove a host name.
+   *
+   * The body is validated here whichever door sent it. `create-eab` answers the
+   * MAC key in the clear, the one time it is ever answered.
+   *
+   * @param body - the action and its fields
+   * @param context - `actor`, `via` and `req`
+   * @returns `{ ok, ... }`, or a refusal marked with its error code
+   */
   async acmeAction(body, context) {
     const { log, core, monitor, store, audit } = this.deps;
     log.debug("Entering AcmeConsole.acmeAction(). action=" +
@@ -563,6 +714,12 @@ class AcmeConsole {
   // be required by this file and not by that one
   // (tests/admin_actions_layer.js); it is not a view, and reads the session
   // only to name the actor.
+  /**
+   * Returns the console session's username, recorded as who took an action.
+   *
+   * @param req - the request
+   * @returns the username, or ''
+   */
   consoleActorOf(req) {
     const { log, adminViews } = this.deps;
     log.debug("Entering AcmeConsole.consoleActorOf().");
@@ -597,6 +754,14 @@ const slot = new InstanceSlot<AcmeConsole>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The ACME console view model shared by `/admin/acme` and `/admin-api`.
+ *
+ * Exports the class, the action list and facades forwarding to the instance the
+ * composition root built.
+ *
+ * @namespace
+ */
 export = {
   AcmeConsole: AcmeConsole,
   installInstance: (instance: AcmeConsole): void => slot.install(instance),

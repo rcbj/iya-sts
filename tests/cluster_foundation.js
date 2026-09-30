@@ -216,6 +216,7 @@ async function run(t) {
     await activeActiveGate(t);
     await claimsAndSecrets(t);
     capabilityTable(t);
+    membersByName(t);
   } finally {
     cluster.reset();
     replication.reset();
@@ -604,6 +605,51 @@ function capabilityTable(t) {
   t.equal(wrong.join('; '), '',
           'EVERY provide() NAMES A ROW, FROM THE FILE THAT ROW NAMES');
   log.debug("Leaving capabilityTable().");
+}
+
+// 8. THE MEMBERS FOLDED BY NAME (2026-09-30): a restarted node's dead rows
+// are its restart history, not more nodes; only a name with no live row has
+// left or expired, and it is shown once. testidpna drew 24 "left or expired"
+// beside three healthy members.
+function membersByName(t) {
+  log.debug("Entering membersByName().");
+  const now = 1000000;
+  const row = function (id, name, leftAt, expiresAt) {
+    return { nodeId: id, name: name, leftAt: leftAt, expiresAt: expiresAt };
+  };
+  const folded = cluster.foldMembers([
+    row('a-now', 'node-a', 0, now + 30000),
+    row('a-1', 'node-a', 0, now - 90000),
+    row('a-2', 'node-a', now - 5000, now + 5000),
+    row('b-now', 'node-b', 0, now + 30000),
+    row('c-old', 'node-c', 0, now - 70000),
+    row('c-last', 'node-c', now - 20000, now + 10000),
+    row('c-older', 'node-c', 0, now - 99000),
+    row('x', '', 0, now - 1),
+    row('y', '', 0, now - 2)
+  ], now);
+  t.check(folded.live.map(function (n) {
+    return n.nodeId;
+  }).join() === 'a-now,b-now', 'the live rows are the live members');
+  t.check(folded.restarts['node-a'] &&
+          folded.restarts['node-a'].count === 2 &&
+          folded.restarts['node-a'].lastEndedAt === now - 5000 &&
+          !folded.restarts['node-b'],
+          'a dead row whose name is running is that node\'s restart ' +
+          'history, with when its last life ended',
+          JSON.stringify(folded.restarts));
+  const gone = folded.gone.map(function (n) {
+    return n.nodeId + ':' + n.earlierLives;
+  });
+  t.check(gone.join() === 'x:0,y:0,c-last:2',
+          'a name with no live row is shown once, as its latest life, with ' +
+          'its earlier lives counted, the latest ended first; a row with no ' +
+          'name stands alone',
+          gone.join());
+  t.check(cluster.foldMembers([], now).gone.length === 0 &&
+          cluster.foldMembers(null, now).live.length === 0,
+          'no rows is nothing folded');
+  log.debug("Leaving membersByName().");
 }
 
 module.exports = {

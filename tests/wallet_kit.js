@@ -560,9 +560,14 @@ async function boot() {
                                                      dataOrPresentation)) };
       const jwks = s.dcPayload.client_metadata.jwks;
       if (s.dcPayload.response_mode === 'dc_api.jwt' && o.encrypt !== false) {
-        const key = jwks.keys[0];
+        // The request offers a key per alg (#82: the X-Wing hybrid first,
+        // ECDH-ES second); `o.keyAlg` picks one, ECDH-ES by default.
+        const keyAlg = o.keyAlg || 'ECDH-ES';
+        const key = jwks.keys.filter(function (k) {
+          return k.alg === keyAlg;
+        })[0];
         const jwe = m.stsCrypto.encryptJweCompact(JSON.stringify(payload), {
-          alg: 'ECDH-ES', enc: 'A128GCM', jwk: o.jwk || key
+          alg: keyAlg, enc: 'A128GCM', jwk: o.jwk || key
         });
         data = { response: jwe };
       } else {

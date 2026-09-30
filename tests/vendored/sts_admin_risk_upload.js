@@ -381,6 +381,51 @@ async function theRefusals(readOnlyCookie) {
   log.debug("Leaving theRefusals().");
 }
 
+// WHAT THIS JOB FOUND IS WHAT IT LEAVES (#311). Every version this job
+// imports into the default realm becomes ACTIVE, and on a shared environment
+// that replaced the operator's own list for good — the next run's
+// sts_admin_risk was then refused by the shrink guard against a suite
+// version. So the active version of each dataset this job touches is read
+// before it starts and made active again when it ends, pass or fail.
+// deploy/aws/reset-environment.js is the backstop for a job that is killed.
+async function activeVersions(datasets) {
+  log.debug("Entering activeVersions().");
+  const r = await call("GET", base + "/admin-api/risk");
+  const found = {};
+  ((r.body && r.body.datasets) || []).forEach(function (d) {
+    if (datasets.indexOf(d.dataset) >= 0) {
+      found[d.dataset] = String(d.activeVersion || "");
+      found[d.dataset + "@realm"] = String(d.realm || "default");
+    }
+  });
+  log.debug("Leaving activeVersions().");
+  return found;
+}
+
+async function putBack(saved) {
+  log.debug("Entering putBack().");
+  const datasets = Object.keys(saved).filter(function (k) {
+    return k.indexOf("@realm") < 0;
+  });
+  const now = await activeVersions(datasets);
+  for (const dataset of datasets) {
+    const was = saved[dataset];
+    if (!was || now[dataset] === was) {
+      continue;
+    }
+    const r = await call("POST", base + "/admin-api/risk/activate",
+                         { headers: { "Content-Type": "application/json" },
+                           body: JSON.stringify({
+                             dataset: dataset, version: was,
+                             // Versions are held per realm; an activate naming
+                             // none looks in realm '' and finds nothing.
+                             realm: saved[dataset + "@realm"] || "default" }) });
+    log.info("put " + dataset + " back to " + was + " (it was " +
+             (now[dataset] || "none") + "): " + r.status);
+  }
+  log.debug("Leaving putBack().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const cookie = await signin.signInToTheConsole(base, "risk-up-" + STAMP,
@@ -389,10 +434,15 @@ async function main() {
     ? await signin.signInToTheConsole(base, "risk-ro-" + STAMP, log,
                                       { grant: "read" })
     : null;
-  await theApi();
-  await theConsole(cookie || "");
-  await aRealm();
-  await theRefusals(reader);
+  const saved = await activeVersions([DATASET]);
+  try {
+    await theApi();
+    await theConsole(cookie || "");
+    await aRealm();
+    await theRefusals(reader);
+  } finally {
+    await putBack(saved);
+  }
   log.info("sts_admin_risk_upload: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

@@ -196,6 +196,10 @@ interface Protocol {
 // means the shape is right and the enforcement is deliberately absent, which is
 // what a test double is for.
 // ---------------------------------------------------------------------------
+/**
+ * The specifications this service implements, each with its coverage (`full`,
+ * `partial` or `mock`) and what is missing.
+ */
 const SPECS: Spec[] = [
   // The one specification on this page that is not a protocol this service
   // speaks: it is the shape of the DOCUMENT that describes the management API.
@@ -3128,6 +3132,10 @@ const SPECS: Spec[] = [
 // `group` orders the page. `specs` are ids from SPECS above; a typo there is
 // reported on the page rather than silently dropping the link.
 // ---------------------------------------------------------------------------
+/**
+ * What each HTTP endpoint is, keyed by its Express path: its group, a
+ * description and the specifications it implements.
+ */
 const ENDPOINTS: EndpointEntry[] = [
   // --- Kerberos ---
   //
@@ -6129,6 +6137,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'the picture), the Kerberos policy, and `delegationPolicy` — the ' +
           'WS-Trust and token-exchange one, paged as GET ' +
           '/admin-api/delegation/policy pages it.' },
+  { path: '/admin/attribute-sources', group: 'Admin',
+    name: 'Attribute sources', specs: [],
+    what: 'NON-SPEC PAGE (#94). The SQL databases this realm reads people\'s ' +
+          'attributes from, onto their directory entries: each source\'s ' +
+          'database, the one row it reads (a table or view, the key column ' +
+          'and the person\'s attribute it matches), the columns it writes ' +
+          'onto which attributes, when it reads — at sign-in, once, on a ' +
+          'schedule, on demand — and what a failure does, with its status. ' +
+          'Add, change, test (read one row, write nothing), read everyone ' +
+          'now, read one person now, remove. TLS always verified; the ' +
+          'password read from where the source names, never stored.' },
   { path: '/admin/roles', group: 'Admin', name: 'Roles',
     // XACML because the decision is a XACML one, and rfc6749/oidc/saml because
     // those are the issuances a role gates. NOT the delegation page's four:
@@ -6682,6 +6701,44 @@ const ENDPOINTS: EndpointEntry[] = [
           'valid. Keys only, never values, and no control. A service page: ' +
           'a realm administrator is refused it. The figures are the ' +
           'answering process\'s. Add ?format=json, or GET /admin-api/caches.' },
+  { path: '/admin/worker-pools', group: 'Admin',
+    name: 'The worker pools of this node',
+    specs: [],
+    what: 'NON-SPEC (#327). Filed under Monitoring. The pools of workers ' +
+          'this node runs — the request workers (workers.requestCount) and ' +
+          'the console and portal\'s own (workers.surfaceCount) — each ' +
+          'with its workers now, busy and free, its ' +
+          'maximum and initial size, how many crashed (and never started) ' +
+          'against how many were stopped, and its average response time. A ' +
+          'pool that is off says so. Always drawn by the front process, ' +
+          'which asks each request worker for its own figures. ' +
+          'In a cluster, a section per node by name (#332) — this one ' +
+          'live, every other from its snapshot in the shared store, marked ' +
+          'stale or gone — and the totals; ?node= narrows it to one. A ' +
+          'service page: a realm ' +
+          'administrator is refused it. Add ?format=json, or ' +
+          'GET /admin-api/worker-pools.' },
+  { path: '/admin/node-health', group: 'Admin',
+    name: 'The container and processes of this node',
+    specs: [],
+    what: 'NON-SPEC (#329). Filed under Monitoring. The CPU utilisation of ' +
+          'this node\'s container (cgroup v2 cpu.stat over an interval, ' +
+          'against the quota in cpu.max), its memory (memory.current ' +
+          'against memory.max, and memory.stat), and the Node.js memory of ' +
+          'every process of the node — the front process and each request ' +
+          'and hosted-surface worker (process.memoryUsage(), asked over the ' +
+          'channel), each post-quantum child and the debugger\'s api ' +
+          '(the same, each asked over its own channel; a child busy with a ' +
+          'job is read from /proc and says so) — with the total; the ECS ' +
+          'task ' +
+          'metadata endpoint as a cross-check where there is one. A source ' +
+          'that is not there says so. Always drawn by the front process. ' +
+          'In a cluster, a section per node by name (#332) — this one ' +
+          'live, every other from its snapshot in the shared store, marked ' +
+          'stale or gone — and the totals; ?node= narrows it to one. A ' +
+          'service page: a realm ' +
+          'administrator is refused it. Add ?format=json, or ' +
+          'GET /admin-api/node-health.' },
   { path: '/admin/encryption', group: 'Admin',
     name: 'What is encrypted at rest, and how much of it has happened',
     specs: [],
@@ -7011,6 +7068,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'exactly wrong for the one endpoint whose purpose is to land you ' +
           'in a different one. 303, so the reload after it is a GET.' },
 
+  { path: '/admin/cells', group: 'Admin', name: 'Cells',
+    specs: [],
+    what: 'NON-SPEC (#98). One service deployed as several cells: this ' +
+          'cell and its jurisdiction, every other cell and whether it ' +
+          'answers (never where it is), the global tier\'s replica lag, how ' +
+          'many people each cell holds, the sessions held away from home, ' +
+          'the inter-cell channel, the Cells settings, and — with ?people= — ' +
+          'another cell\'s residents where its release policy permits. Add ' +
+          '?format=json.' },
   { path: '/admin/mode', group: 'Admin', name: 'Mode',
     specs: [],
     what: 'NON-SPEC (#181). What global.mode changes and what is in force ' +
@@ -7559,6 +7625,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'each with its realm, key and time left. An unknown name answers ' +
           '200 with found: false. No cached value is in the reply. Mirrors ' +
           'GET /admin/caches.' },
+  { path: '/admin-api/worker-pools', group: 'Management API',
+    name: 'Worker pools', specs: [],
+    what: 'NON-SPEC (#327). Everything /admin/worker-pools draws, as JSON: ' +
+          'the request, hosted-surface and post-quantum pools of this node, ' +
+          'each with its state, current, busy, free, maximum and initial ' +
+          'workers, its crashes, failed starts and stops, and its response ' +
+          'time; the post-quantum pool per process; in a cluster every ' +
+          'node by name and the totals, ?node= for one (#332). Mirrors ' +
+          'GET /admin/worker-pools.' },
+  { path: '/admin-api/node-health', group: 'Management API',
+    name: 'Node health', specs: [],
+    what: 'NON-SPEC (#329). Everything /admin/node-health draws, as JSON: ' +
+          'the container\'s CPU utilisation and memory from its cgroup, ' +
+          'the Node.js memory of every process of this node and their ' +
+          'total, the ECS task metadata endpoint\'s figures where there is ' +
+          'one, and the machine\'s own figures labelled as such; in a ' +
+          'cluster every node by name and the totals, ?node= for one ' +
+          '(#332). Mirrors GET /admin/node-health.' },
   { path: '/admin-api/encryption', group: 'Management API',
     name: 'Encryption at rest', specs: [],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +
@@ -8195,8 +8279,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'is a receiver that asked for it at POST /ssf/stream — an API that ' +
           'could mint one would be a second, ungated door onto the outbound ' +
           'request. It is also the ONE action handler in this API that ' +
-          'awaits: transmitting signs a JWS, possibly on the worker pool, ' +
-          'and then POSTs it, and answering before either had happened would ' +
+          'awaits: transmitting signs a JWS, possibly on libuv\'s thread ' +
+          'pool, and then POSTs it, and answering before either had happened would ' +
           'be reporting "sent" about nothing.' },
   { path: '/admin-api/spiffe', group: 'Management API', name: 'The SPIFFE ' +
       'trust domain',
@@ -8368,6 +8452,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'not revoke the grants naming it — they become dangling, because ' +
           'tidying them would be one call writing to entries it did not ' +
           'name.' },
+  { path: '/admin-api/attribute-sources', group: 'Management API',
+    name: 'Attribute sources', specs: ['openapi'],
+    what: 'NON-SPEC (#94). What GET /admin/attribute-sources draws, out of ' +
+          'the same call: every source with its status, and the rules a ' +
+          'definition is held to. Never a password.' },
+  { path: '/admin-api/attribute-sources/:action', group: 'Management API',
+    name: 'Change the attribute sources', specs: ['openapi'],
+    what: 'NON-SPEC (#94). add-source, update-source, remove-source, ' +
+          'test-source, refresh-source and refresh-person: the console\'s ' +
+          'six acts, each audited.' },
   { path: '/admin-api/roles', group: 'Management API', name: 'Roles',
     specs: ['openapi', 'xacml30'],
     what: 'NON-SPEC. The role register, both relations. `roles` is ' +
@@ -8555,6 +8649,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'existing — and the default realm cannot be removed at all, since ' +
           'every URL this service published before realms existed is a URL ' +
           'in it.' },
+  { path: '/admin-api/cells', group: 'Management API', name: 'Cells',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98). GET /admin/cells over JSON: the cell map, the ' +
+          'store\'s tiers, the channel and the sessions held across cells.' },
+  { path: '/admin-api/cells/:action', group: 'Management API',
+    name: 'Re-home a person',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98 §8.8). Moves a person homed in this cell to ' +
+          'another: ended everywhere first, the entry with its entryUUID, ' +
+          'devices and memberships sent, credentials sealed again there, the ' +
+          'routing index moved, and the person taken out of this cell.' },
+  { path: '/admin-api/cells/people', group: 'Management API',
+    name: 'Cell residents',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
+          'answered by that cell only where its release policy permits.' },
   { path: '/admin-api/mode', group: 'Management API', name: 'Mode',
     specs: ['openapi'],
     what: 'NON-SPEC (#181). GET /admin/mode over JSON: the realm\'s mode, ' +
@@ -11279,6 +11389,11 @@ SPECS.forEach(function (s) {
 // `sockets` is the sentence the table cannot say for itself: where the protocol
 // actually lives when it does not live on the router.
 // ---------------------------------------------------------------------------
+/**
+ * The protocol families this service advertises, each a card naming its
+ * endpoint groups, specifications and, where it has one, the socket it lives
+ * on.
+ */
 const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
@@ -11716,11 +11831,24 @@ interface StsMetadataDeps {
   version: typeof version;
 }
 
+/**
+ * The `/admin/sts-metadata` page: what this service is, protocol by protocol,
+ * endpoint by endpoint and specification by specification.
+ *
+ * The endpoint list is read from the running router, and drift between it and
+ * the descriptions is reported in both directions.
+ */
 class StsMetadata {
   // THE BUILD THIS PAGE REPORTS, read once when the instance is built — at
   // load, for a process without the root, which is when it was read before.
   private readonly appVersion: ReturnType<typeof version.load>;
 
+  /**
+   * Builds the page, reading the build's version once.
+   *
+   * @param deps - the app, logger, helpers, settings, the console shell, the
+   *   authorization servers, the crypto page and the version module
+   */
   constructor(private readonly deps: StsMetadataDeps) {
     deps.log.debug("Entering StsMetadata.constructor().");
     this.appVersion = deps.version.load();
@@ -11729,6 +11857,11 @@ class StsMetadata {
 
   // What the composition root passes: the real modules, as the load-time
   // code used before R2 (#50).
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time code used before #50's R2
+   */
   static defaultDeps(): StsMetadataDeps {
     helpers.log.debug("Entering StsMetadata.defaultDeps().");
     helpers.log.debug("Leaving StsMetadata.defaultDeps().");
@@ -11765,6 +11898,12 @@ class StsMetadata {
   // this file used to run it, or when a process without the root loads this
   // module. The table it hands over is still the one just above.
   // -------------------------------------------------------------------------
+  /**
+   * Hands the protocol list to the crypto metadata page, so its family list is
+   * checked against this one.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: StsMetadata): void {
     helpers.log.debug("Entering StsMetadata.wire().");
     instance.deps.cryptoMetadata.setProtocolFamilies(PROTOCOLS);
@@ -11846,6 +11985,11 @@ class StsMetadata {
   // future Express moves it, the tests fail loudly (the page reports every
   // described path as stale) rather than quietly reporting nothing.
   // -------------------------------------------------------------------------
+  /**
+   * Lists what the router has registered, one row per path with its methods.
+   *
+   * @returns the registered routes
+   */
   registeredRoutes(): RegisteredRoute[] {
     const { log } = this.deps;
     log.debug("Entering StsMetadata.registeredRoutes().");
@@ -11883,6 +12027,14 @@ class StsMetadata {
 
   // Join the router's paths to their descriptions, and report both kinds of
   // drift.
+  /**
+   * Joins the router's paths to their descriptions and reports both kinds of
+   * drift.
+   *
+   * @returns the described rows, the paths registered and undescribed, the
+   *   descriptions naming no registered path, unknown specification ids, and
+   *   the protocol cards' own drift
+   */
   describeEndpoints() {
     const { log } = this.deps;
     log.debug("Entering StsMetadata.describeEndpoints().");
@@ -12443,6 +12595,12 @@ class StsMetadata {
     };
   }
 
+  /**
+   * Registers `GET /admin/sts-metadata`, last of all the routes, drawn in the
+   * console's shell.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: { get: Function }): void {
     const { log, baseUrlOf, admin } = this.deps;
     const self = this;
@@ -12504,11 +12662,29 @@ const slot = new InstanceSlot<StsMetadata>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The `/admin/sts-metadata` page and its three tables: the specifications, the
+ * protocol families and the endpoints.
+ *
+ * Required and registered last, because it reads the router to list what
+ * everything else registered.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Registers `GET /admin/sts-metadata` on the installed instance.
+   */
   registerRoutes: slot.forward('registerRoutes'),
   StsMetadata: StsMetadata,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: StsMetadata): void =>
     slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   // The three tables are data, not instance state: the same arrays they
   // always were.

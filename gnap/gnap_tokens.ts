@@ -112,10 +112,29 @@ const FORMATS = ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit', 'zcap'];
 
 const JWT_TYP = 'GNAP';
 
+/**
+ * The five access token formats of RFC 9767 section 5.3 behind one mint and one
+ * verify, every one carrying the same token model.
+ *
+ * The dispatcher, and the home of the two JWT formats, which use the service's
+ * own JOSE module.
+ */
 class GnapTokens {
+  /**
+   * The five formats: `jwt-signed`, `jwt-encrypted`, `macaroon`, `biscuit` and
+   * `zcap`.
+   */
   static readonly FORMATS = FORMATS;
+  /**
+   * The `typ` header of a GNAP JWT access token, `GNAP`.
+   */
   static readonly JWT_TYP = JWT_TYP;
 
+  /**
+   * Builds the dispatcher from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapTokensDeps) {
     deps.helpers.log.debug("Entering GnapTokens.constructor().");
     deps.helpers.log.debug("Leaving GnapTokens.constructor().");
@@ -160,6 +179,14 @@ class GnapTokens {
   // The macaroon root key a resource server verifies with. `rsIdentity` is the
   // RS application's identifier; '' is the key for tokens with no RS audience,
   // which only this AS (introspection, the demonstration RS) can verify.
+  /**
+   * Returns the macaroon root key a resource server verifies with; '' is the
+   * key for tokens with no resource server audience, which only this AS can
+   * verify.
+   *
+   * @param rsIdentity - the resource server application's identifier
+   * @returns the root key
+   */
   macaroonKeyFor(rsIdentity?: unknown): Buffer {
     const { log } = this;
     log.debug("Entering GnapTokens.macaroonKeyFor().");
@@ -168,11 +195,21 @@ class GnapTokens {
                              String(rsIdentity || ''), 32);
   }
 
+  /**
+   * Returns the realm's current Ed25519 signing key, which biscuit and zcap
+   * tokens are signed with.
+   *
+   * @returns `{ privateKey, publicKey, publicJwk }`
+   * @throws Error when the realm holds no Ed25519 signing key
+   */
   ed25519Keys() {
     const { log } = this;
     const { helpers } = this.deps;
     log.debug("Entering GnapTokens.ed25519Keys().");
-    const found = helpers.allSigningKeys().filter(function (one) {
+    // The curve keys alone (2026-09-28): the full list makes the realm's
+    // post-quantum keys on this thread the first time, for a lookup that
+    // can only ever find a curve key — helpers.js's keyListFor().
+    const found = helpers.curveSigningKeys().filter(function (one) {
       return one.alg === 'EdDSA' &&
              (one.publicJwk.crv || 'Ed25519') === 'Ed25519';
     })[0];
@@ -194,6 +231,13 @@ class GnapTokens {
   // unit, so the signing rotation already rotates it; what a rotation needs
   // here is only that a biscuit or a capability signed before it still
   // verifies. Public halves only.
+  /**
+   * Returns every generation of the Ed25519 key that still verifies, current
+   * first, so a token signed before a rotation still verifies. Public halves
+   * only.
+   *
+   * @returns the generations' public keys and JWKs
+   */
   ed25519Generations(): Array<{ publicKey: any; publicJwk: any }> {
     const { log } = this;
     const { helpers } = this.deps;
@@ -218,6 +262,12 @@ class GnapTokens {
 
   // The proof suite a zcap token is signed and verified with in this realm
   // (#43, `gnap/token_zcap.ts`'s header).
+  /**
+   * Returns the proof suite zcap tokens are signed and verified with in this
+   * realm.
+   *
+   * @returns the cryptosuite's name
+   */
   zcapCryptosuite(): string {
     const { log } = this;
     const { config, zcap } = this.deps;
@@ -237,9 +287,19 @@ class GnapTokens {
   // The two Ed25519 suites use the realm's Ed25519 unit, as biscuits do. The
   // post-quantum ones use the realm's `jose:ML-DSA-44` or
   // `jose:SLH-DSA-SHA2-128s` unit — keys the realm already makes, publishes
-  // in its JWKS and rotates (#42), brought into being in the worker pool by
+  // in its JWKS and rotates (#42), brought into being on libuv's thread pool by
   // `allSigningKeysAsync()` on first use, which is why this is asynchronous.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the zcap keys for the realm's cryptosuite, with the controller
+   * built from the given base and the key's other live generations.
+   *
+   * Asynchronous because a post-quantum key may first be made in the worker
+   * pool.
+   *
+   * @param base - the realm's base URL the controller document lives under
+   * @returns the keys, the controller and the other generations
+   */
   async zcapKeys(base?: string): Promise<any> {
     const { log } = this;
     const { helpers } = this.deps;
@@ -353,6 +413,14 @@ class GnapTokens {
   // capability formats call, so a jwt-signed token and a biscuit are refused
   // for the same reasons under the same codes rather than by two
   // implementations that agree until one of them changes.
+  /**
+   * Applies to a JWT's model the checks every format's `verify()` makes,
+   * through `gnap_access.checkPresentation()`.
+   *
+   * @param model - the token model read from the JWT
+   * @param context - the presentation context
+   * @returns the check's verdict
+   */
   checkModel(model: any, context?: any): any {
     const { log } = this;
     const { access } = this.deps;
@@ -392,6 +460,16 @@ class GnapTokens {
     return minted;
   }
 
+  /**
+   * Mints an access token in the named format from a token model.
+   *
+   * @param format - one of `FORMATS`
+   * @param model - the token model, validated first
+   * @param ctx - the mint's context (keys, audience, base)
+   * @returns `{ value, format, jti }`
+   * @throws Error when the model is invalid, the format is unknown or its
+   *   library refuses to mint
+   */
   async mint(format: string, model: any, ctx?: any): Promise<any> {
     const { log } = this;
     const { helpers, stsCrypto, errorCodes, config, macaroon, biscuit, zcap,
@@ -479,6 +557,13 @@ class GnapTokens {
   // Which format a presented value is, read off its shape. Used by the
   // demonstration RS, which is handed a value and no format — as a real RS
   // that accepts several formats is.
+  /**
+   * Reads which format a presented value is from its shape, for a resource
+   * server handed a value and no format.
+   *
+   * @param value - the presented token value
+   * @returns the format's name
+   */
   formatOf(value: unknown): string {
     const { log } = this;
     log.debug("Entering GnapTokens.formatOf().");
@@ -522,6 +607,16 @@ class GnapTokens {
   // context (`now`, `audience`, `presentedKey`, `requiredAccess`) plus `base`,
   // `rsIdentity`, and `rsPrivateJwk` for a jwt-encrypted token to an RS key.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies a value as a self-contained token of the named format.
+   *
+   * @param format - one of `FORMATS`
+   * @param value - the token value
+   * @param ctx - the format modules' context (`now`, `audience`,
+   *   `presentedKey`, `requiredAccess`) plus `base`, `rsIdentity` and
+   *   `rsPrivateJwk`
+   * @returns the format's verdict: the model, or a refusal
+   */
   async verify(format: string, value: any, ctx?: any): Promise<any> {
     const { log } = this;
     const { STS, stsCrypto, macaroon, biscuit, zcap } = this.deps;
@@ -663,6 +758,14 @@ class GnapTokens {
   // What `GET /gnap/keys` publishes: the material an RS needs to verify the
   // self-contained formats without calling this AS. The macaroon root key is
   // NOT here — it is a secret, and per resource server.
+  /**
+   * Returns what `GET /gnap/keys` publishes: the material a resource server
+   * needs to verify the self-contained formats. The macaroon root key is secret
+   * and is not in it.
+   *
+   * @param base - the realm's base URL
+   * @returns the public verification material
+   */
   publicMaterial(base: string) {
     const { log } = this;
     const { helpers, STS } = this.deps;
@@ -705,6 +808,11 @@ class GnapTokens {
     };
   }
 
+  /**
+   * Describes every format for the console.
+   *
+   * @returns each format's description
+   */
   describe() {
     const { log } = this;
     const { macaroon, biscuit, zcap } = this.deps;
@@ -721,6 +829,12 @@ class GnapTokens {
     };
   }
 
+  /**
+   * Says whether an access token's identifier is recorded as revoked.
+   *
+   * @param jti - the token identifier
+   * @returns true when revoked
+   */
   isRevokedJti(jti: string): boolean {
     const { log } = this;
     const { stats } = this.deps;
@@ -731,6 +845,12 @@ class GnapTokens {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapTokensDeps {
     helpers.log.debug("Entering GnapTokens.defaultDeps().");
     helpers.log.debug("Leaving GnapTokens.defaultDeps().");
@@ -766,9 +886,25 @@ const slot = new InstanceSlot<GnapTokens>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The five GNAP access token formats of RFC 9767 section 5.3, behind one mint
+ * and one verify.
+ *
+ * @namespace
+ */
 export = {
   GnapTokens: GnapTokens,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapTokens): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   FORMATS: GnapTokens.FORMATS,
   JWT_TYP: GnapTokens.JWT_TYP,

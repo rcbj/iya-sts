@@ -285,33 +285,71 @@ const MAINTENANCE_JOB = 'ssf.stream-maintenance';
 // See scheduleOptOuts().
 const OPT_OUT_JOB = 'risc.opt-out-effective';
 
+/**
+ * The Shared Signals Framework transmitter (OpenID SSF 1.0) and its CAEP and
+ * RISC emission: the configuration metadata, the stream management, status,
+ * subject, verification and poll endpoints, push and poll delivery, and the
+ * console's three reports.
+ *
+ * Automatic emissions are called from sign-in, directory and credential
+ * changes, and none of them is awaited or rejects.
+ */
 class SharedSignals {
   // The well-known suffix RFC 8414's registry carries for this document. It
   // is `ssf-configuration` and NOT `ssf-configuration.json`, and not under
   // `/openid-configuration` either — a receiver fetches this exact path.
+  /**
+   * The path of the transmitter configuration metadata,
+   * `/.well-known/ssf-configuration`.
+   */
   static readonly WELL_KNOWN = '/.well-known/ssf-configuration';
 
   // The seven actions of the signals slot; see consoleAction().
+  /**
+   * The actions of the signals console and `POST /admin-api/ssf/:action`.
+   */
   static readonly CONSOLE_ACTIONS: string[] = ['status', 'delete', 'transmit',
     'clear-received', 'revive', 'clear-dead-letters', 'verify'];
 
   // The three actions of the CAEP slot; see caepAction().
+  /**
+   * The actions of the CAEP console: `emit`, `reset-session` and `clear`.
+   */
   static readonly CAEP_CONSOLE_ACTIONS: string[] = ['emit', 'reset-session',
                                                     'clear'];
 
   // The three actions of the RISC slot; see riscAction().
+  /**
+   * The actions of the RISC console: `emit`, `reset-account` and `clear`.
+   */
   static readonly RISC_CONSOLE_ACTIONS: string[] = ['emit', 'reset-account',
                                                     'clear'];
 
   // SETs being built, signed or pushed now, per realm (#232): what a realm's
   // removal waits for before its queues are purged. See transmit().
   private readonly inFlight = new Map<string, number>();
+  // THE RISC EVENTS OF ONE BURST, told in one line per type (#351) — see
+  // riscTally().
+  private readonly riscBurst: { open: number, scheduled: boolean,
+    byType: Map<string, Json> } = { open: 0, scheduled: false,
+                                    byType: new Map() };
 
+  /**
+   * Builds the transmitter from its dependencies.
+   *
+   * @param deps - the modules it reads, from `SharedSignals.defaultDeps()` or
+   * the composition root
+   */
   constructor(private readonly deps: SharedSignalsDeps) {
     deps.log.debug('Entering SharedSignals.constructor().');
     deps.log.debug('Leaving SharedSignals.constructor().');
   }
 
+  /**
+   * Says whether the transmitter is on (`ssf.enabled`, on unless false).
+   *
+   * @returns true when it is on
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug('Entering SharedSignals.enabled().');
@@ -547,6 +585,12 @@ class SharedSignals {
   // A `txn` (SSF 1.0 section 4.1.9, SHOULD): unique to the underlying event,
   // and the same on every SET that event becomes. A caller emitting one event
   // to several streams makes one and passes it to each transmit().
+  /**
+   * Returns a new `txn`, the value every SET made from one underlying event
+   * shares.
+   *
+   * @returns the `txn`
+   */
   newTxn(): string {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.newTxn().');
@@ -564,6 +608,16 @@ class SharedSignals {
   // A public client, and a stream no client owns, get the event unchanged.
   // The `device` member of a complex subject follows the same rule (#164
   // phase 6) — `pairwise_subjects.ts`'s `deviceIdFor()`.
+  /**
+   * Rewrites an event's subject as a stream's owning client knows the person:
+   * an `iss_sub` user (or a complex subject's `user` and `device`) becomes that
+   * client's pairwise or ephemeral value. A public client, and a stream no
+   * client owns, get the subject unchanged.
+   *
+   * @param record - the stream
+   * @param subject - the event's subject
+   * @returns the subject for this receiver
+   */
   subjectForReceiver(record: Json, subject: Json): Json {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.subjectForReceiver().');
@@ -614,6 +668,18 @@ class SharedSignals {
   // it is counted as IN FLIGHT in its realm (#232), so a realm being removed
   // can wait — bounded — for what it has already said to arrive before the
   // stream and its queue are purged. The work is transmitNow()'s.
+  /**
+   * Builds, signs, queues and (on a push stream) delivers one SET on a stream,
+   * counting it in flight in its realm until it settles.
+   *
+   * The event is validated, and refused when the stream does not take its type
+   * or cover its subject.
+   *
+   * @param record - the stream
+   * @param options - `uri` and `payload` (the event), `subject`, `txn` and
+   * `toe`
+   * @returns a promise of `{ ok, delivered, jti, why }`; it never rejects
+   */
   transmit(record: Json, options?: Json): Promise<TransmitReport> {
     const { log, realms } = this.deps;
     log.debug('Entering SharedSignals.transmit().');
@@ -646,6 +712,12 @@ class SharedSignals {
   }
 
   // How many SETs are in flight in one realm now (#232).
+  /**
+   * Returns how many SETs are being built, signed or pushed in a realm now.
+   *
+   * @param realmId - the realm id
+   * @returns the count
+   */
   inFlightIn(realmId: string): number {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.inFlightIn().');
@@ -810,10 +882,10 @@ class SharedSignals {
     log.debug("Leaving SharedSignals.transmitNow().");
     return events.signSet(claims).then((token): TransmitReport |
                                            Promise<TransmitReport> => {
-      // THE RECORD HELD NOW, AND NOT THE ONE READ BEFORE THE SIGNATURE.
-      // Signing may go to the worker pool and take seconds, and in a service
-      // whose request workers share the stream store another process's write
-      // can REPLACE this record in the meantime — a PATCH, a pause, a poll's
+      // THE RECORD HELD NOW, AND NOT THE ONE READ BEFORE THE SIGNATURE. Signing
+      // may go to libuv's thread pool and take seconds, and in a service whose
+      // request workers share the stream store another process's write can
+      // REPLACE this record in the meantime — a PATCH, a pause, a poll's
       // counters. Editing the copy read above and writing it back would undo
       // that write; streams.touch() refuses to, so the edit would be lost
       // instead. See ssf_streams.ts's touch().
@@ -913,6 +985,13 @@ class SharedSignals {
   }
 
   // Whether `uri` is one of SSF's own two events. See transmit().
+  /**
+   * Says whether an event type is one of SSF's own two, `verification` and
+   * `stream-updated`.
+   *
+   * @param uri - the event type URI
+   * @returns true when it is
+   */
   isPipeEvent(uri: string): boolean {
     const { log, events } = this.deps;
     log.debug('Entering SharedSignals.isPipeEvent().');
@@ -1004,6 +1083,14 @@ class SharedSignals {
   // receiver collects what is waiting — or on a stream that is not enabled or
   // is dead.
   // -------------------------------------------------------------------------
+  /**
+   * Pushes what a paused push stream held, one at a time in the order it was
+   * queued; nothing happens on a poll stream or one that is not enabled or is
+   * dead.
+   *
+   * @param record - the stream
+   * @returns a promise of `{ pushed, failed }`
+   */
   drainHeld(record: Json): Promise<Json> {
     const { log, streams } = this.deps;
     log.debug('Entering SharedSignals.drainHeld(). ' + record.stream_id);
@@ -1042,6 +1129,13 @@ class SharedSignals {
   // A verification event this transmitter decided to send (section 8.1.4),
   // with no state (8.1.4.2). The console's Verify and the scheduler's
   // `ssf.verificationEveryS` both come here. Never rejects.
+  /**
+   * Sends a transmitter-initiated verification event (SSF 1.0 section 8.1.4)
+   * with no state.
+   *
+   * @param record - the stream
+   * @returns a promise of the transmission's report; it never rejects
+   */
   transmitterVerification(record: Json): Promise<TransmitReport> {
     const { log, events, streams } = this.deps;
     log.debug('Entering SharedSignals.transmitterVerification(). ' +
@@ -1076,6 +1170,19 @@ class SharedSignals {
   //
   // Resolves `{ ok, errors, stream, report }`; never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Changes a stream's status and tells its receiver in SSF 1.0 section 8.1.5's
+   * order: stopping transmits `stream-updated` first and then changes the
+   * status; enabling changes it, transmits, and pushes what a paused stream
+   * held. No change sends nothing.
+   *
+   * @param record - the stream
+   * @param status - `enabled`, `paused` or `disabled`
+   * @param reason - why, for the event and the stream's log
+   * @param options - `forHealth`, for a pause this transmitter made because
+   * the receiver is unhealthy
+   * @returns a promise of `{ ok, errors, stream, report }`; it never rejects
+   */
   changeStatus(record: Json, status: string, reason: string,
                options?: Json): Promise<Json> {
     const { log, events, streams } = this.deps;
@@ -1160,6 +1267,15 @@ class SharedSignals {
   // The receiver's own `DELETE /ssf/stream` sends nothing: it asked.
   // Resolves when the stream is gone; never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Deletes a stream this transmitter decided to remove, after telling its
+   * receiver `stream-updated` `disabled` through `changeStatus()`.
+   *
+   * @param record - the stream
+   * @param reason - why
+   * @returns a promise that resolves when the stream is gone; it never
+   * rejects
+   */
   retireStream(record: Json, reason: string): Promise<void> {
     const { log, streams } = this.deps;
     log.debug('Entering SharedSignals.retireStream(). ' +
@@ -1394,6 +1510,12 @@ class SharedSignals {
     });
   }
 
+  /**
+   * Runs the dead-letter sweep in every realm, one after another; a realm whose
+   * sweep fails is logged and the rest go on.
+   *
+   * @returns a promise that settles when every realm is swept
+   */
   sweepSignals(): Promise<unknown> {
     const { log, realms, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.sweepSignals().');
@@ -1432,6 +1554,9 @@ class SharedSignals {
   // stream — was already gated to one node (`ssfCluster.leadsProbes()`), and
   // deleting an expired dead letter is idempotent. Registered by the wire
   // step, once per process.
+  /**
+   * Registers the per-process `ssf.dead-letter-sweep` scheduler job, once.
+   */
   scheduleSweep(): void {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.scheduleSweep().');
@@ -1474,6 +1599,15 @@ class SharedSignals {
   // they have no remote receiver whose activity could be observed, and a
   // verification event to one lands in an inbox page as noise.
   // -------------------------------------------------------------------------
+  /**
+   * Runs stream maintenance in the ambient realm: applies
+   * `ssf.inactivityAction` to a stream idle past `ssf.inactivityTimeoutS`, and
+   * sends a transmitter verification every `ssf.verificationEveryS`. This
+   * service's own receiver streams are left alone.
+   *
+   * @param nowSecOverride - the current time in seconds, for tests
+   * @returns a promise of what was done
+   */
   maintainStreams(nowSecOverride?: number): Promise<Json> {
     const { log, config, streams } = this.deps;
     log.debug('Entering SharedSignals.maintainStreams().');
@@ -1542,6 +1676,9 @@ class SharedSignals {
     });
   }
 
+  /**
+   * Registers the per-realm cluster scheduler job for stream maintenance, once.
+   */
   scheduleMaintenance(): void {
     const { log, config } = this.deps;
     log.debug('Entering SharedSignals.scheduleMaintenance().');
@@ -1586,6 +1723,10 @@ class SharedSignals {
   // event is the point. Every five minutes, so the delay is honoured to within
   // that.
   // -------------------------------------------------------------------------
+  /**
+   * Registers the per-realm cluster scheduler job that makes RISC opt-outs
+   * effective after `risc.optOutDelayHours`, once.
+   */
   scheduleOptOuts(): void {
     const { log, config } = this.deps;
     log.debug('Entering SharedSignals.scheduleOptOuts().');
@@ -1620,6 +1761,11 @@ class SharedSignals {
   }
 
   // The job's body: one opt-out-effective per account that is due.
+  /**
+   * Sends `opt-out-effective` for each account whose opt-out delay has passed.
+   *
+   * @returns a promise of what was sent
+   */
   makeOptOutsEffective(): Promise<Json> {
     const { log, risc } = this.deps;
     log.debug('Entering SharedSignals.makeOptOutsEffective().');
@@ -1648,6 +1794,9 @@ class SharedSignals {
   // (`ssf_cluster.ts`). `ssf/CLAUDE.md` argues all four and what stays per
   // process.
   // -------------------------------------------------------------------------
+  /**
+   * Declares the `ssf.delivery` cluster capability.
+   */
   provideCapability(): void {
     const { log, loadCapabilities } = this.deps;
     log.debug('Entering SharedSignals.provideCapability().');
@@ -1667,6 +1816,13 @@ class SharedSignals {
   // specific, where a 404 would leave it unable to tell "this service does not
   // speak SSF" from "the path is wrong".
   // -------------------------------------------------------------------------
+  /**
+   * Builds the transmitter configuration metadata (SSF 1.0 section 6), which is
+   * never gated and answers whether or not `ssf.enabled` is on.
+   *
+   * @param req - the request, for the base URL
+   * @returns the metadata document
+   */
   metadata(req: Req): Json {
     const { log, config, streams, ssfAuth } = this.deps;
     const { baseUrlOf } = this.deps.helpers;
@@ -1830,6 +1986,13 @@ class SharedSignals {
   // registered them (rule 1). Called by `common/protocol_stack.ts` (#50, R1),
   // not at load. The comments above each are the original's.
   // -------------------------------------------------------------------------
+  /**
+   * Registers every Shared Signals route on the app, in the family's route
+   * order: the metadata, stream management, status, subjects, verification,
+   * poll, receive and the `/ssf` pages. Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: typeof import('../common/app')): void {
     const { log, config, audit, applications, events, streams, subjects,
             transport, ssfCluster, errorCodes } = this.deps;
@@ -2759,6 +2922,13 @@ class SharedSignals {
   // `?format=json`, so the two cannot disagree — the same reason
   // /admin/sts-metadata reads the router.
   // -------------------------------------------------------------------------
+  /**
+   * Describes this transmitter as data, for `GET /ssf` and its JSON form: its
+   * endpoints, settings, delivery methods, event types and authentication.
+   *
+   * @param req - the request
+   * @returns the description
+   */
   description(req: Req): Json {
     const { log, config, events, streams, subjects, transport,
             ssfAuth } = this.deps;
@@ -2969,6 +3139,13 @@ class SharedSignals {
   // happens and is fine. So a slot is the answer rather than an indirection
   // added by analogy.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/ssf`'s report: the description plus every stream's detail,
+   * its queue, dead letters and log, and what this service has received.
+   *
+   * @param req - the request
+   * @returns the report
+   */
   consoleReport(req: Req): Json {
     const { log, config, subjects, events, streams, transport } = this.deps;
     log.debug('Entering SharedSignals.consoleReport().');
@@ -3064,6 +3241,14 @@ class SharedSignals {
 
   // The six actions the console's forms and `POST /admin-api/ssf/:action` share
   // — one function, so the two doors cannot disagree about what happened.
+  /**
+   * Performs one of `CONSOLE_ACTIONS` for the console and the management API.
+   *
+   * @param name - the action
+   * @param body - its fields; most take a `stream_id`
+   * @param req - the request
+   * @returns a promise of `{ ok, errors, ... }`
+   */
   consoleAction(name: string, body?: Json, req?: Req): Promise<Json> {
     const { log, audit, events, streams } = this.deps;
     const { numberWord } = this.deps.helpers;
@@ -3297,6 +3482,15 @@ class SharedSignals {
   // receiver's TCP timeout would be a sign-out that hangs. Every outcome is
   // logged and recorded on the stream, which is where a person looks anyway.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends the CAEP event a session change calls for, as `caep.observe()`
+   * decides it, to every stream that takes its type and covers its subject.
+   * Installed as `authn`'s session observer; nobody awaits it.
+   *
+   * @param notice - the session observer's notice
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   caepAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, subjects, events, caep, streams, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.caepAutoEmit().');
@@ -3379,6 +3573,14 @@ class SharedSignals {
   // for the type gets it. Never throws: the rotation stands whatever happens
   // to the notice of it.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends this service's `signing-key-rotated` event to every stream of the
+   * ambient realm that takes it, after a rotation of the realm's signing keys.
+   *
+   * @param notice - what rotated
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   signingKeyRotated(notice?: Json): Promise<EmitResult> {
     const { log, events, streams, errorCodes, helpers } = this.deps;
     log.debug('Entering SharedSignals.signingKeyRotated().');
@@ -3444,6 +3646,15 @@ class SharedSignals {
   // refused from now on. No subject, so every stream that asked for the type
   // gets it. Never throws, for `signingKeyRotated()`'s reason.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends this service's `kerberos-tickets-invalidated` event to every stream
+   * of the ambient realm that takes it, after the krbtgt key was rotated with
+   * nothing kept.
+   *
+   * @param notice - what was rotated
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   kerberosTicketsInvalidated(notice?: Json): Promise<EmitResult> {
     const { log, events, streams, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.kerberosTicketsInvalidated().');
@@ -3502,6 +3713,18 @@ class SharedSignals {
   // address a receiver fetches again is built here, from the realm's base.
   // Never throws, for `signingKeyRotated()`'s reason.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends this service's event for a moved key relying parties pin to every
+   * stream of the ambient realm that takes it: `federation-key-rotated`,
+   * `spiffe-authority-rotated` or `tls-certificate-changed`, naming the address
+   * to fetch again.
+   *
+   * @param kind - `federation`, `spiffe` or `tls`
+   * @param notice - `rotated: [{ unit, from, to }]`, the reason, and
+   * `bundleChanged` for SPIFFE
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   serviceKeyChanged(kind: string, notice?: Json): Promise<EmitResult> {
     const { log, events, streams, errorCodes, helpers, config } = this.deps;
     log.debug('Entering SharedSignals.serviceKeyChanged(). ' + kind);
@@ -3600,6 +3823,16 @@ class SharedSignals {
   // **IT NEVER REJECTS.** A grant revocation does not wait on somebody else's
   // push endpoint, and a failure is logged, coded and recorded on the stream.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends a CAEP event a protocol family observed about something that is not a
+   * sign-on session, such as a revoked GNAP grant. The caller builds the
+   * subject; the payload and the streams are chosen here.
+   *
+   * @param asked - `protocol`, `type` (the CAEP event type), `subject`,
+   * `values`, `initiatingEntity` and the reasons
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   emitProtocolEvent(asked?: Json): Promise<EmitResult> {
     const { log, audit, subjects, events, caep, streams,
             errorCodes } = this.deps;
@@ -3716,8 +3949,8 @@ class SharedSignals {
   // now move this family's LOAD (its stores, hooks and slots) to 19 instead.
   //
   // `action` returns a PROMISE, like the signals slot's and for the same
-  // reason: emitting an event signs a JWS — possibly on the worker pool — and
-  // then POSTs it to somebody else's endpoint.
+  // reason: emitting an event signs a JWS — possibly on libuv's thread pool —
+  // and then POSTs it to somebody else's endpoint.
   // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
   // WHAT THIS TRANSMITTER HAS SAID TO EACH RECEIVER, ACROSS EVERY SESSION.
@@ -3889,6 +4122,13 @@ class SharedSignals {
     return out;
   }
 
+  /**
+   * Builds `/admin/caep-sessions`' report: the CAEP register's, plus the issuer
+   * and which streams would take a CAEP event.
+   *
+   * @param req - the request
+   * @returns the report
+   */
   caepReport(req?: Req): Json {
     const { log, subjects, events, caep, streams } = this.deps;
     log.debug('Entering SharedSignals.caepReport().');
@@ -4034,6 +4274,14 @@ class SharedSignals {
     });
   }
 
+  /**
+   * Performs one of `CAEP_CONSOLE_ACTIONS` for the console and the management
+   * API.
+   *
+   * @param name - `emit`, `reset-session` or `clear`
+   * @param body - its fields
+   * @returns a promise of the outcome
+   */
   caepAction(name: string, body?: Json): Promise<Json> {
     const { log, caep } = this.deps;
     const { numberWord } = this.deps.helpers;
@@ -4112,6 +4360,12 @@ class SharedSignals {
   // to claimsAutoEmit(), which decides whether CAEP's token-claims-change is
   // due. Nothing here is awaited — the rule riscAutoEmit()'s header gives.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles the directory's account observer notice: a person's own write goes
+   * to RISC, and every notice goes to the CAEP token-claims-change check.
+   *
+   * @param notice - the observer's notice
+   */
   directoryChanged(notice?: Json): void {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.directoryChanged().');
@@ -4153,6 +4407,14 @@ class SharedSignals {
   // guessed". The subject names the PERSON (`principal` USER): the standing
   // moved, not one session. `claimsAutoEmit()`'s shape, and never rejects.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends CAEP `risk-level-change` about a person whose risk level changed.
+   *
+   * @param notice - `username`, `sub`, `previous`, `current` (`LOW`,
+   * `MEDIUM` or `HIGH`) and `reason`
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   riskAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, caep, subjects } = this.deps;
     log.debug('Entering SharedSignals.riskAutoEmit().');
@@ -4192,10 +4454,17 @@ class SharedSignals {
   }
 
   // The observer notices that move claims and nothing RISC reads.
+  /**
+   * The observer notice kinds that move claims and that RISC does not read:
+   * `membership` and `roles`.
+   */
   static readonly CLAIMS_ONLY_KINDS = ['membership', 'roles'];
 
   // How many holders one turn of the event loop takes in a fan-out. See
   // claimsFanOut().
+  /**
+   * How many holders one turn of the event loop takes in a claims fan-out.
+   */
   static readonly FAN_OUT_SLICE = 100;
 
   // ---------------------------------------------------------------------------
@@ -4207,6 +4476,15 @@ class SharedSignals {
   // checked first, and `claims` may be a function so that nothing is computed
   // for a person who holds nothing. Never rejects.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends CAEP `token-claims-change` for a change that is not a directory
+   * attribute, when the person holds something live that carries the claims.
+   *
+   * @param notice - `username`, `claims` (or a function answering them),
+   * and optionally `protocol` and the reasons
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   emitClaimsChange(notice?: Json): Promise<EmitResult> {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.emitClaimsChange().');
@@ -4235,6 +4513,14 @@ class SharedSignals {
   // chosen, a stream that takes the type — none of which reads a register.
   // Never rejects.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends CAEP `token-claims-change` to every person holding a live artifact a
+   * configuration change moved, in slices of `FAN_OUT_SLICE`.
+   *
+   * @param notice - `match(record)` and `claimsFor(bearer)`
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   claimsFanOut(notice?: Json): Promise<EmitResult> {
     const { log, caep, events, streams, stats } = this.deps;
     log.debug('Entering SharedSignals.claimsFanOut().');
@@ -4314,6 +4600,14 @@ class SharedSignals {
   // It rides the same act as the `acr` change (`caep.autoEmitTypes` names
   // the TYPE, and both are assurance-level-change). Never rejects.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends CAEP `assurance-level-change` about a person's identity assurance.
+   *
+   * @param notice - `username`, `namespace`, `current`, and where known
+   * `previous` and `direction`
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   emitIdentityAssuranceChange(notice?: Json): Promise<EmitResult> {
     const { log, caep, subjects } = this.deps;
     const { subjectForName } = this.deps.helpers;
@@ -4359,6 +4653,15 @@ class SharedSignals {
                   'changed.' });
   }
 
+  /**
+   * Sends CAEP `token-claims-change` for a directory write that moved a claim,
+   * to every stream that takes it and covers the person, only when the person
+   * holds something live that carries it. The cheap checks come first.
+   *
+   * @param notice - the observer's notice, or one naming the moved `claims`
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   claimsAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, caep, events, streams, stats, subjects } = this.deps;
     const { subjectForName } = this.deps.helpers;
@@ -4430,6 +4733,15 @@ class SharedSignals {
     });
   }
 
+  /**
+   * Sends every RISC event a directory write calls for, as `risc.observe()`
+   * decides them, to every stream that takes the type and covers the subject.
+   * Nobody awaits it.
+   *
+   * @param notice - the directory's account observer notice
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   riscAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, risc, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.riscAutoEmit().');
@@ -4476,27 +4788,22 @@ class SharedSignals {
   // account. Split out of riscAutoEmit() because that function now has a list
   // to walk and the body was the same three paragraphs each time round.
   private sendOneRiscEvent(due: Json): Promise<EmitResult> {
-    const { log, subjects, events, risc, streams } = this.deps;
+    const { log, events, risc, streams } = this.deps;
     log.debug('Entering SharedSignals.sendOneRiscEvent(). ' + due.uri);
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, due.uri) &&
              streams.streamCoversSubject(record, due.subject);
     });
+    const type = due.uri.slice(events.RISC_PREFIX.length);
     if (!candidates.length) {
-      // SAID ONCE, AT INFO, and it is the most useful line this feature
-      // produces, for the reason the CAEP half's is: "nothing arrived" is the
-      // commonest report about any Shared Signals deployment and its commonest
-      // cause is this — the act happened, the transmitter built the event, and
-      // no stream had asked for that type or covered that subject.
-      log.info('risc: a ' + due.uri.slice(events.RISC_PREFIX.length) + ' is ' +
-               'due for account ' + due.row.accountId + ' and NO STREAM ' +
-               'takes it — ' + streams.listStreams().length +
-               ' stream(s) exist, and ' +
-               'none both delivers that type and covers ' +
-               subjects.describeSubject(due.subject) + '. The event is ' +
-               'recorded on /admin/risc-accounts with nothing sent.');
-      due.row.notes.push('A ' + due.uri.slice(events.RISC_PREFIX.length) +
-          ' was due and no stream takes it.');
+      // SAID ONCE PER BURST, AT INFO, and it is the most useful line this
+      // feature produces, for the reason the CAEP half's is: "nothing
+      // arrived" is the commonest report about any Shared Signals deployment
+      // and its commonest cause is this — the act happened, the transmitter
+      // built the event, and no stream had asked for that type or covered
+      // that subject. See riscTally() for the burst.
+      this.riscTally(type, due, 0, 0, true);
+      due.row.notes.push('A ' + type + ' was due and no stream takes it.');
       due.row.notes = due.row.notes.slice(-5);
       // AND THE REGISTER STILL FOLLOWS THE ACT. The ordinary path applies the
       // state on the way back through `noteTransmitted()`, which reads a token
@@ -4513,6 +4820,7 @@ class SharedSignals {
     log.debug("Leaving SharedSignals.sendOneRiscEvent().");
     // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
     const txn = this.newTxn();
+    this.riscBurst.open += 1;
     return Promise.all(candidates.map((record) => {
       return this.transmit(record, { txn: txn, uri: due.uri,
         payload: due.payload,
@@ -4521,13 +4829,88 @@ class SharedSignals {
       const sent = reports.filter((one) => {
         return one.ok;
       }).length;
-      log.info('risc: ' + due.uri.slice(events.RISC_PREFIX.length) + ' for ' +
-               'account ' + due.row.accountId + ' went to ' + sent + ' of ' +
-               candidates.length + ' stream(s).');
+      this.riscBurst.open -= 1;
+      this.riscTally(type, due, sent, candidates.length, false);
       log.debug('Leaving SharedSignals.sendOneRiscEvent(). ' + sent + ' sent.');
       return { sent: sent, streams: candidates.length, uri: due.uri,
         reports: reports };
+    }, (e) => {
+      this.riscBurst.open -= 1;
+      this.riscTally(type, due, 0, candidates.length, false);
+      throw e;
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE LINE PER BURST, NOT ONE PER EVENT (#351, 2026-09-29). A SCIM Bulk of a
+  // thousand deletes is a thousand `account-purged` events, and each said
+  // "went to N of M stream(s)" at info — a thousand lines saying one thing.
+  // Every SET is still built and sent per subject, as SSF requires; what is
+  // gathered is only the sentence. An event's outcome is tallied by type, and
+  // once nothing is in flight and the event loop has turned, the tally is
+  // said: the old sentence, word for word, when the burst was one event, and
+  // a count when it was more. /admin/risc-accounts keeps the per-account
+  // record either way.
+  // ---------------------------------------------------------------------------
+  private riscTally(type: string, due: Json, sent: number, streams: number,
+                    noStream: boolean): void {
+    const { log, streams: registry, subjects } = this.deps;
+    log.debug('Entering SharedSignals.riscTally(). ' + type);
+    const burst = this.riscBurst;
+    const tally = burst.byType.get(type) ||
+      { events: 0, sent: 0, streams: 0, noStream: 0, first: null };
+    tally.events += 1;
+    tally.sent += sent;
+    tally.streams += streams;
+    tally.noStream += noStream ? 1 : 0;
+    if (!tally.first) {
+      tally.first = { account: due.row.accountId, sent: sent,
+                      streams: streams, noStream: noStream,
+                      subject: subjects.describeSubject(due.subject) };
+    }
+    burst.byType.set(type, tally);
+    if (burst.scheduled) {
+      log.debug('Leaving SharedSignals.riscTally(). Gathered.');
+      return;
+    }
+    burst.scheduled = true;
+    const say = (): void => {
+      burst.scheduled = false;
+      if (burst.open > 0) {
+        // Still sending: the last of them to finish tallies, and schedules
+        // this again.
+        return;
+      }
+      const told = burst.byType;
+      burst.byType = new Map();
+      told.forEach((one: Json, name: string) => {
+        if (one.events === 1 && one.first.noStream) {
+          log.info('risc: a ' + name + ' is due for account ' +
+                   one.first.account + ' and NO STREAM takes it — ' +
+                   registry.listStreams().length + ' stream(s) exist, and ' +
+                   'none both delivers that type and covers ' +
+                   one.first.subject + '. The event is recorded on ' +
+                   '/admin/risc-accounts with nothing sent.');
+        } else if (one.events === 1) {
+          log.info('risc: ' + name + ' for account ' + one.first.account +
+                   ' went to ' + one.first.sent + ' of ' +
+                   one.first.streams + ' stream(s).');
+        } else {
+          log.info('risc: ' + one.events + ' ' + name + ' event(s): ' +
+                   one.sent + ' of ' + one.streams + ' stream deliveries ' +
+                   'went' +
+                   (one.noStream
+                     ? ', and ' + one.noStream + ' were due with NO STREAM ' +
+                       'taking them (' + registry.listStreams().length +
+                       ' stream(s) exist; none both delivers that type and ' +
+                       'covers the account) — recorded on ' +
+                       '/admin/risc-accounts with nothing sent'
+                     : '') + '.');
+        }
+      });
+    };
+    setImmediate(say);
+    log.debug('Leaving SharedSignals.riscTally(). Scheduled.');
   }
 
   // ---------------------------------------------------------------------------
@@ -4553,6 +4936,15 @@ class SharedSignals {
   // has already happened, and a receiver's push endpoint being down must not
   // turn it into a failure on the page that made it.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends the RISC events for an act that carries its own meaning (a password
+   * reset, recovery, a compromise, an opt-out move, a device's sessions), as
+   * `risc.observeAct()` decides them.
+   *
+   * @param notice - `username`, `act`, and what the act knows
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   emitRiscAccountAct(notice?: Json): Promise<EmitResult> {
     const { log, risc, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.emitRiscAccountAct().');
@@ -4604,6 +4996,16 @@ class SharedSignals {
   // from an ID Token — which is what `caep.ts`'s own subject is minus the
   // session, so a stream that names the person covers it by the member rule in
   // `streamCoversSubject()`, exactly as it covers that person's sessions.
+  /**
+   * Sends CAEP `credential-change` about a person, with a complex subject
+   * naming only the `user`.
+   *
+   * @param asked - `username`, `credentialType`, `changeType`,
+   * `friendlyName`, `initiatingEntity`, the reasons, `via` and CAEP's
+   * identifying members
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   emitCredentialChange(asked?: Json): Promise<EmitResult> {
     const { log, audit, subjects, events, caep, streams,
             errorCodes } = this.deps;
@@ -4731,6 +5133,13 @@ class SharedSignals {
   // An application's device has no `user`: an application has no CAEP user
   // subject here (#145), and the device alone is still one principal.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns a registered device's subject: `iss_sub` with this realm's issuer
+   * and the device's id.
+   *
+   * @param deviceId - the device's id
+   * @returns the subject
+   */
   deviceSubjectOf(deviceId: string): Json {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.deviceSubjectOf().');
@@ -4739,6 +5148,16 @@ class SharedSignals {
              sub: String(deviceId) };
   }
 
+  /**
+   * Sends a CAEP event about a registered device (a compliance change, a risk
+   * level change, or a credential change for a device key or secret), with a
+   * complex subject naming the device and, for a person's device, its owner.
+   *
+   * @param asked - `type`, `act`, `deviceId`, `username`, `values`,
+   * `initiatingEntity` and the reasons
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
   emitDeviceEvent(asked?: Json): Promise<EmitResult> {
     const { log, caep, subjects } = this.deps;
     const { subjectForName } = this.deps.helpers;
@@ -4917,6 +5336,13 @@ class SharedSignals {
     return out;
   }
 
+  /**
+   * Builds `/admin/risc-accounts`' report: the RISC register's, plus the
+   * issuer, the applications and which streams would take a RISC event.
+   *
+   * @param req - the request
+   * @returns the report
+   */
   riscReport(req?: Req): Json {
     const { log, subjects, events, risc, streams } = this.deps;
     log.debug('Entering SharedSignals.riscReport().');
@@ -5113,6 +5539,14 @@ class SharedSignals {
     });
   }
 
+  /**
+   * Performs one of `RISC_CONSOLE_ACTIONS` for the console and the management
+   * API.
+   *
+   * @param name - `emit`, `reset-account` or `clear`
+   * @param body - its fields
+   * @returns a promise of the outcome
+   */
   riscAction(name: string, body?: Json): Promise<Json> {
     const { log, risc } = this.deps;
     const { numberWord } = this.deps.helpers;
@@ -5166,6 +5600,12 @@ class SharedSignals {
   // reads the same family through the same require, and rule 3e's test for a
   // new slot is a new cycle or a moved route, neither of which a second reader
   // adds.
+  /**
+   * Returns the ambient realm's dead-letter report, for Monitoring → Shared
+   * Signals → Dead letters and the management API.
+   *
+   * @returns the report
+   */
   deadLetters(): Json {
     const { log, deadLetterReport } = this.deps;
     log.debug('Entering SharedSignals.deadLetters().');
@@ -5177,6 +5617,11 @@ class SharedSignals {
 
   // Every event type, and whether this transmitter offers it: the signals
   // slot's `eventTypes`.
+  /**
+   * Lists every event type and whether this transmitter offers it.
+   *
+   * @returns `{ uri, name, offered }` per type
+   */
   signalEventTypes(): Json[] {
     const { log, events } = this.deps;
     log.debug("Entering SharedSignals.signalEventTypes().");
@@ -5188,6 +5633,11 @@ class SharedSignals {
   }
 
   // CAEP's eight, with their members: the CAEP slot's `eventTypes`.
+  /**
+   * Lists CAEP's event types with their members and whether each is offered.
+   *
+   * @returns one row per type
+   */
   caepEventTypes(): Json[] {
     const { log, events } = this.deps;
     log.debug("Entering SharedSignals.caepEventTypes().");
@@ -5208,6 +5658,12 @@ class SharedSignals {
   }
 
   // RISC's fourteen, with their members: the RISC slot's `eventTypes`.
+  /**
+   * Lists RISC's event types with their members, subject formats and
+   * deprecation, and whether each is offered.
+   *
+   * @returns one row per type
+   */
   riscEventTypes(): Json[] {
     const { log, events } = this.deps;
     log.debug("Entering SharedSignals.riscEventTypes().");
@@ -5237,6 +5693,11 @@ class SharedSignals {
   // one carries (consoleReport(), caepAutoEmit(), caepReport(),
   // riscAutoEmit(), riscReport()).
   // -------------------------------------------------------------------------
+  /**
+   * Fills the slots this family fills at load: the console's signals, CAEP and
+   * RISC reporters, `authn`'s session observer and the directory's account
+   * observer.
+   */
   installHooks(): void {
     const { log, adminConsole, authn, directory, events,
             subjects } = this.deps;
@@ -5307,6 +5768,16 @@ class SharedSignals {
   // waited on, because collection is the receiver's act and a removal that
   // waited for it would wait for a receiver that may never come back.
   // =========================================================================
+  /**
+   * Retires a trust realm's streams while it is being removed: waits until
+   * `ctx.deadline` for its session ends and in-flight SETs to settle, counts
+   * what is still queued onto `ctx.undelivered`, and tells every stream
+   * `stream-updated` `disabled`.
+   *
+   * @param realmId - the realm being removed
+   * @param ctx - `deadline` and `undelivered`
+   * @returns a promise that resolves when it is done
+   */
   async retireRealmStreams(realmId: string, ctx?: Json): Promise<void> {
     const { log, streams } = this.deps;
     log.debug('Entering SharedSignals.retireRealmStreams(). ' + realmId);
@@ -5395,6 +5866,10 @@ class SharedSignals {
   // process already holds. What it DOES need is `ssf_streams.ts`,
   // `ssf_events.js` and the realm registry, all of which are above this line.
   // =========================================================================
+  /**
+   * Registers this service's console and portal as receivers in the ambient
+   * realm, and in every realm created later.
+   */
   seedOwnReceivers(): void {
     const { log, receivers, realms } = this.deps;
     log.debug('Entering SharedSignals.seedOwnReceivers().');
@@ -5411,6 +5886,12 @@ class SharedSignals {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the transmitter depends on, as the composition
+   * root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): SharedSignalsDeps {
     helpers.log.debug("Entering SharedSignals.defaultDeps().");
     helpers.log.debug("Leaving SharedSignals.defaultDeps().");
@@ -5448,6 +5929,12 @@ class SharedSignals {
   // sweep, the capability, the hooks, the receivers. The routes, which came
   // between the capability and the hooks, are registered by the composition
   // root right after it installs the instance.
+  /**
+   * Runs the installed instance's load-time steps: the three scheduler jobs,
+   * the capability, the hooks and the receivers.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: SharedSignals): void {
     helpers.log.debug('Entering SharedSignals.wire().');
     instance.scheduleSweep();
@@ -5481,8 +5968,22 @@ const slot = new InstanceSlot<SharedSignals>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Shared Signals Framework transmitter and its CAEP and RISC emission.
+ *
+ * Exports the `SharedSignals` class, its constants, `registerRoutes`, the
+ * internal receivers, and facades that forward to the installed instance.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SharedSignals): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   SharedSignals: SharedSignals,

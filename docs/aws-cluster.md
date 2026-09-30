@@ -117,8 +117,11 @@ terraform -chdir=deploy/aws/environment destroy -var environment=dev \
 
 `deploy/aws/terraform-local.sh dev apply|suite|destroy` does the Terraform and
 suite steps inside a container, with nothing but Docker installed. An
-environment can be reused: each suite run first removes the realms the
-previous run left (`STS_SUITE_KEEP_REALMS=1` keeps them).
+environment can be reused: each suite run first removes what the previous
+runs left — every realm but the default one, and in the default realm the
+bulk-load people and groups, the applications the suite registered and the
+runtime overrides (`deploy/aws/reset-environment.js`; `--dry-run` lists them;
+`STS_SUITE_KEEP_REALMS=1` keeps everything).
 
 **From GitHub Actions**: the *AWS cluster test* workflow
 (`.github/workflows/aws-cluster.yml`), started by hand, with the actions
@@ -128,6 +131,153 @@ of the workflow's own IAM user, which may only assume the deployer role — and
 admits the runner's own address to the load balancer. The `keep` input leaves
 an `apply-and-test` environment running; the report is uploaded as an
 artifact either way.
+
+## Several regions: cells
+
+An environment can also be built in several AWS regions at once, as
+**cells** (issue #98). Each cell is a complete copy of the environment above
+in one region: its own nodes, load balancer, database and logs. The cells
+answer to one public name. A **global** stack joins them.
+
+```
+                  test-idp.iyasec.io (Route 53)
+      Canada ─────────┘          └───────── everyone else: the nearest
+        │                                   healthy cell (latency)
+        ▼                                          ▼
+  cell cac1 (ca-central-1)  ◀── peering, 8446 ──▶  cell usw2 (us-west-2)
+  nodes, cell database                             nodes, cell database
+  global read replica  ◀──── RDS replication ────  global database (writer)
+```
+
+**What stays in a cell**: its own database and its own key-encryption key.
+That key is sealed by a KMS key that exists only in the cell's region and is
+never copied.
+
+**What every cell shares**: the global database (one writer, and a read
+replica in each other cell), the global key-encryption key, and a few
+secrets that must be the same everywhere. Secrets Manager copies these into
+each cell's region.
+
+**How clients reach a cell**:
+
+- Clients in a country that has been pinned to a cell always go to that cell,
+  even when it is down. Canada is pinned to `cac1`.
+- Everyone else goes to the nearest cell that passes its health check.
+- The cells reach one another on port 8446, over VPC peering, by private
+  names. That port is on no public load balancer.
+
+**Before the first apply**, an administrator re-applies `foundation/` with
+every cell's region in `permitted_regions`, for example
+`["us-west-2", "ca-central-1"]`.
+
+**Building and removing it**: a multi-cell environment is described by
+`deploy/aws/environment/envs/<env>.cells.tfvars.json`. The first one,
+`testidpna`, has two cells, `usw2` and `cac1`. You apply and destroy it as
+one environment, and the entrypoint takes the steps in order:
+
+```bash
+IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply
+deploy/aws/terraform-local.sh testidpna destroy
+TF_CELL=cac1 deploy/aws/terraform-local.sh testidpna output   # one cell
+```
+
+You can also use the **testidp deploy** and **testidp destroy** workflows with
+`environment: testidpna`.
+
+**`testidp` and `testidpna` cannot both exist**, because they use the same
+public name. Destroy one before you apply the other.
+
+**Cost**: each cell costs about as much as `testidp`, roughly $0.50 an hour.
+Add a global replica per extra cell and data sent between regions.
+
+### Converting testidp into testidpna without losing its data
+
+`testidp`'s database becomes the database of cell `usw2`, so its people,
+applications, keys and risk datasets and history carry over. Destroying
+`testidp` deletes its database with no final snapshot and deletes its secrets
+straight away, so two things have to exist before you destroy it:
+
+- a **snapshot** of its database, copied so that it is encrypted with the
+  `usw2` cell's key (a restored database keeps its snapshot's key);
+- a **carry-over secret**, `mock-sts/carryover/testidp`, that holds the
+  values the database was written with: the key-encryption key, the
+  management API client's secret, the bootstrap administrator's password
+  and the Kerberos service password.
+
+`deploy/aws/convert-to-cells.sh` checks both and makes them. Run it with no
+flags first. It only reads, and it prints what is missing and the whole
+sequence:
+
+```bash
+deploy/aws/convert-to-cells.sh testidp testidpna
+```
+
+Then:
+
+1. An administrator re-applies `foundation/` with both regions in
+   `permitted_regions`. This also lets the deployer copy and restore
+   snapshots.
+2. `deploy/aws/convert-to-cells.sh testidp testidpna --carry-secrets`
+3. `deploy/aws/convert-to-cells.sh testidp testidpna --copy-snapshot`, then
+   the check again, until nothing is missing.
+4. Destroy `testidp`. The service is down from here until step 5 finishes.
+   Anything written after the snapshot was taken is lost; the check prints
+   how to stop writes and take a new snapshot first.
+   ```bash
+   deploy/aws/terraform-local.sh testidp destroy
+   ```
+5. Apply `testidpna` with the conversion:
+   ```bash
+   TF_CONVERT=1 IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply
+   ```
+   The `usw2` database is restored from the snapshot. Its nodes are held
+   at zero while a one-off task converts the data. If the conversion fails,
+   the apply stops with the nodes still at zero and nothing lost; fix the
+   cause and run the same command again.
+6. Sign in with the same bootstrap password as before
+   (`mock-sts/testidpna/bootstrap-admin-password`) and check Monitoring →
+   Risk.
+
+After that, apply `testidpna` **without** `TF_CONVERT`. When you are sure
+the cell is good, delete the carry-over secret and the two snapshots.
+
+The snapshot and the secret's name are in
+`deploy/aws/environment/envs/testidpna.conversion.tfvars.json`, which is
+used only when `TF_CONVERT=1` is set. A new `testidpna` built without it
+starts empty.
+
+### Trying two cells on one machine
+
+The test suite can run two cells locally, with no AWS account:
+
+```bash
+./run-tests.sh --modes=cells --only=sts_cells --protocol=only --no-browser
+```
+
+This starts cell `cella` (jurisdiction `us`) and cell `cellb` (jurisdiction
+`ca`), each with its own database, and a third database for the global tier.
+Both cells answer as `https://sts:8081`. The `cells` mode runs only when you
+name it; a plain `./run-tests.sh` does not start it.
+
+The nine `sts_cells_*` jobs check, over HTTP:
+
+- each cell sees the other and never reports where it is;
+- a login name is unique across cells, and a person can be created in the
+  other cell;
+- a person homed in `cellb` who starts signing in at `cella` is sent back to
+  the start of the flow, finishes it in `cellb`, and gets tokens that verify
+  against the one key set of the realm;
+- where a realm permits it (`cells.permittedTransfers` set to `ca>us`), the
+  session moves to `cella`, and disabling the person in `cellb` ends it there;
+- `cellb`'s people can be listed from `cella` only where the realm permits it.
+- a person moved from `cellb` to `cella` loses what they held, keeps their
+  `sub`, and signs in at `cella`; a move the realm's jurisdictions forbid is
+  refused;
+- an administrator can sign in to the console through `cellb`, and a
+  directory bind at `cellb` is checked in the person's home cell;
+- when `cella` cannot reach `cellb`, a sign-in, a refresh and a directory
+  bind are refused, and `fail-open` lets a session held at `cella` be
+  refreshed.
 
 ## Reading the logs
 

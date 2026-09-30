@@ -50,6 +50,18 @@ name: testidp deploy
 # It was a log line in whichever node won the bootstrap claim until then, which
 # meant the only way in was in CloudWatch and was gone once it rolled off.
 #
+# OR AS CELLS (#98, 2026-09-28): `environment: testidpna` applies the same
+# deployment as two cells, usw2 (us-west-2) and cac1 (ca-central-1), behind
+# the same name — environment/envs/testidpna.cells.tfvars.json. It is one
+# apply to the entrypoint, which does the cells and the global stack in order
+# (deploy/aws/CLAUDE.md, *Cells*). The images are built and pushed to the
+# home region once; ECR replicates them to each cell's region. The two
+# environments answer to the same name and cannot both exist, so they share
+# one concurrency group: destroy one before deploying the other.
+#
+#   gh workflow run testidp-deploy.yml --ref develop -f environment=testidpna \
+#     -f allowed_ip="$(curl -fsS https://checkip.amazonaws.com)"
+#
 # NOTE: a workflow_dispatch workflow can only be dispatched once the file is on
 # the default branch.
 # ---------------------------------------------------------------------------
@@ -57,6 +69,13 @@ name: testidp deploy
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: "testidp (one region) or testidpna (cells usw2 + cac1, #98)"
+        type: choice
+        options:
+          - testidp
+          - testidpna
+        default: testidp
       allowed_ip:
         description: "Your public IPv4 address (comma-separated for several); only these reach the load balancer"
         type: string
@@ -69,13 +88,16 @@ on:
 permissions:
   contents: read
 
+# ONE GROUP FOR BOTH ENVIRONMENTS: they claim the same public name.
 concurrency:
   group: aws-cluster-testidp
   cancel-in-progress: false
 
 env:
+  # The HOME region: where the images are pushed and the state is. A cell's
+  # region comes from its cells file (deploy/aws/entrypoint.sh).
   AWS_REGION: us-west-2
-  TF_ENV: testidp
+  TF_ENV: ${{ github.event.inputs.environment }}
   TF_IMAGE: mock-sts-terraform
 
 jobs:
@@ -161,7 +183,7 @@ jobs:
           set -euo pipefail
           repo="${REGISTRY}/mock-sts"
           docker build -t "${repo}:${TAG}" \
-            --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
+            --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-sesv2" \
             --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
             --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
             --build-arg BUILD_NUMBER="${{ github.run_number }}" .
@@ -183,7 +205,11 @@ jobs:
       ${{ always() && needs.check.result == 'success' &&
           (needs.images.result == 'success' || needs.images.result == 'skipped') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 90 minutes for one region; a multi-cell first build applies every cell
+    # twice and a cross-region database replica between (#98), each RDS
+    # instance a quarter of an hour or more — inside the deployer role's
+    # four-hour session, which the whole apply runs in.
+    timeout-minutes: ${{ github.event.inputs.environment == 'testidpna' && 230 || 90 }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -191,7 +217,7 @@ jobs:
       - name: Build terraform image
         run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
 
-      - name: Terraform apply (testidp)
+      - name: Terraform apply (${{ github.event.inputs.environment }})
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -219,9 +245,9 @@ jobs:
         run: |
           outputs="$(docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
             -e AWS_REGION -e TF_ENV -e TF_ACTION=output "${TF_IMAGE}" 2>/dev/null \
-            | grep -E '^(service_url|public_hostname|nlb_dns_name) ' || true)"
+            | grep -E '^(== |service_url|public_hostname|nlb_dns_name|aws_region|cell) ' || true)"
           {
-            echo "### testidp — \`${TAG}\`"
+            echo "### ${TF_ENV} — \`${TAG}\`"
             echo ""
             echo "Admitted by the load balancer: \`${ADMITTED}\`"
             echo ""
@@ -237,5 +263,5 @@ jobs:
             echo '```'
             echo "aws secretsmanager get-secret-value --region ${AWS_REGION} --secret-id mock-sts/${TF_ENV}/bootstrap-admin-password --query SecretString --output text"
             echo '```'
-            echo "Take it down with the **testidp destroy** workflow."
+            echo "Take it down with the **testidp destroy** workflow (environment \`${TF_ENV}\`)."
           } >> "$GITHUB_STEP_SUMMARY"

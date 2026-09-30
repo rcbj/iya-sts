@@ -149,6 +149,14 @@ import authnContext = require('../saml/authn_context');
 // refusal decided below handleRst() travels out on the result's `errorCode` and
 // is marked on the response by the route; it never reaches the SOAP body.
 import errorCodes = require('../common/error_codes');
+// WHERE A REQUEST IS SERVED IN A SERVICE DEPLOYED AS CELLS (#98 D10): at the
+// home of the person it names. Libraries that register no route.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
+// A DELEGATED SUBJECT'S ATTRIBUTES FROM THEIR HOME (#98 section 5): required
+// at load, not lazily, because loading it is what registers the
+// `fetch-attributes` operation this cell answers as somebody's home.
+import cellAttributes = require('../common/cell_attributes');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -229,7 +237,18 @@ const STATUS_INVALID = WST_NS + '/status/invalid';
 const NOT_A_CREDENTIAL = ['OnBehalfOf', 'ActAs', 'RenewTarget',
                           'ValidateTarget', 'CancelTarget'];
 
+/**
+ * WS-Trust 1.0 to 1.4: the SOAP RequestSecurityToken endpoint at `/sts`,
+ * dispatching on the request type (Issue, Renew, Validate, Cancel), and
+ * everything that reads or writes an RST.
+ */
 class WsTrust {
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - the helpers, settings, crypto, the assertion builders, the
+   * registers, the issuance gate and the delegation policy, among others
+   */
   constructor(private readonly deps: WsTrustDeps) {
     deps.log.debug("Entering WsTrust.constructor().");
     deps.log.debug("Leaving WsTrust.constructor().");
@@ -237,6 +256,11 @@ class WsTrust {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): WsTrustDeps {
     helpers.log.debug("Entering WsTrust.defaultDeps().");
     helpers.log.debug("Leaving WsTrust.defaultDeps().");
@@ -272,6 +296,12 @@ class WsTrust {
 
   // The work loading this module did with its own instance before R2,
   // run once for whichever instance is installed.
+  /**
+   * Runs the startup check once for the installed instance: whether the two
+   * issuer names agree.
+   *
+   * @param instance - the instance being installed
+   */
   static wire(instance: WsTrust): void {
     helpers.log.debug("Entering WsTrust.wire().");
     instance.warnAtStartup();
@@ -281,6 +311,11 @@ class WsTrust {
   // -------------------------------------------------------------------------
   // THE ROUTES, in the order this module has always registered them.
   // -------------------------------------------------------------------------
+  /**
+   * Registers `GET /sts/cert`, `GET /sts` and `POST /sts`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: RouteRegistrar): void {
     const { log } = this.deps;
     log.debug("Entering WsTrust.registerRoutes().");
@@ -367,6 +402,19 @@ class WsTrust {
   // authnContextOf() — and is written into a SAML assertion's AuthnStatement.
   // It is optional so an existing caller of this export gets `unspecified`,
   // which is the builder's default and overstates nothing.
+  /**
+   * Builds the token that goes inside `wst:RequestedSecurityToken`: a signed
+   * SAML 2.0 assertion, or a JWT in a BinarySecurityToken when the token type
+   * asks for one.
+   *
+   * @param tokenType - the requested token type
+   * @param subject - the subject
+   * @param audience - the audience
+   * @param lifetimeMin - the lifetime in minutes
+   * @param authnContextClassRef - how the requester authenticated; unspecified
+   * when absent
+   * @returns the token's XML, its reference, its token type and its id
+   */
   buildToken(tokenType, subject, audience, lifetimeMin,
                       authnContextClassRef) {
     const { buildSamlAssertion, authnContext, log, xmlEscape } = this.deps;
@@ -432,6 +480,16 @@ class WsTrust {
   // the faultcode below." So on 1.1 it REPLACES `soap:Client` as the
   // faultcode, and on 1.2 it is the Subcode under `soap:Sender`. Without it
   // the fault is the generic one every other refusal here still sends.
+  /**
+   * Builds a SOAP Fault for the request's SOAP version, qualified with a
+   * WS-Trust 1.4 section 11 fault code when one is given.
+   *
+   * @param version - the SOAP version, `1.1` or `1.2`
+   * @param reason - the fault's reason
+   * @param trustFault - a WS-Trust fault code, such as `RequestFailed`
+   * @param trustNs - the trust namespace to qualify it with, the request's own
+   * @returns the SOAP envelope
+   */
   // error-code: none — the definition of the helper, not a call to it
   soapFault(version, reason, trustFault?, trustNs?) {
     const { log, xmlEscape } = this.deps;
@@ -578,6 +636,15 @@ class WsTrust {
   // accepting any certificate in the document's own KeyInfo would be accepting
   // any assertion at all.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a SAML assertion presented to this STS, as a credential or inside
+   * OnBehalfOf or ActAs: its signature against this realm's own signing
+   * certificate, its conditions within `oauth2.clockSkewS`, and a subject.
+   *
+   * @param assertion - the assertion element
+   * @param what - what it was presented as, for the refusal
+   * @returns `{ ok, subject }`, or `{ ok: false, errorCode, … }`
+   */
   checkedAssertion(assertion, what) {
     const { stsCrypto, config, log, STS, firstByLocal } = this.deps;
     log.debug("Entering WsTrust.checkedAssertion(). what=" + what);
@@ -1008,6 +1075,17 @@ class WsTrust {
     return authnContext.AC_UNSPECIFIED;
   }
 
+  /**
+   * Handles one RequestSecurityToken: parses the SOAP body, authenticates the
+   * requester, decides delegation and issuance, and answers the RSTR or a SOAP
+   * Fault. Never throws on a malformed body.
+   *
+   * @param rawBody - the request body
+   * @param contentType - the request's content type
+   * @param options - `encrypt`, to encrypt an issued assertion
+   * @returns the HTTP status, the SOAP version, the envelope body and, where
+   * issued, the sign-in to record
+   */
   handleRst(rawBody, contentType, options) {
     const {
       config, validation, encryptAssertion, applications, gate, delegation,
@@ -1692,6 +1770,12 @@ class WsTrust {
   // rather than reconciled, because making one follow the other would take away
   // the split.
   // ---------------------------------------------------------------------------
+  /**
+   * Reports whether the two names this STS signs under disagree:
+   * `wstrust.issuer` for a JWT and `saml.issuer` for a SAML assertion.
+   *
+   * @returns the sentence saying they disagree, or '' when they agree
+   */
   issuerDisagreement() {
     const { config, log } = this.deps;
     log.debug("Entering WsTrust.issuerDisagreement().");
@@ -1732,7 +1816,7 @@ class WsTrust {
   // cannot answer leaves the decision to roles alone.
   // -------------------------------------------------------------------------
   private stsEndpoint(req, res) {
-    const { log, validation, textByLocal, subjectForName } = this.deps;
+    const { log, validation, textByLocal } = this.deps;
     log.debug("Entering WsTrust.stsEndpoint().");
     const self = this;
     let claimed = '';
@@ -1740,6 +1824,167 @@ class WsTrust {
     if (read.ok) {
       claimed = textByLocal(read.value, 'Username');
     }
+    // THE PERSON'S HOME CELL (#98 D10), before anything is read, verified,
+    // recorded or spent: see homeNameOf(). Single-cell mode goes straight
+    // on, as it always did.
+    const home = read.ok && cells.isMulti() && !req.stsCellRelay
+      ? this.homeNameOf(read.value) : '';
+    // THE DELEGATED SUBJECT, when it is somebody other than the person the
+    // request is served for: see delegatedHere().
+    const delegated = read.ok && cells.isMulti()
+      ? this.delegatedNameOf(read.value, home) : '';
+    if (home) {
+      log.debug("Leaving WsTrust.stsEndpoint(). Finding the home cell.");
+      return cellPlacement.relayToHome(req, res,
+        require('../common/realms').currentId(), 'name', home,
+        'a WS-Trust request').then(function (relayed: boolean): unknown {
+          return relayed ? undefined
+            : self.stsEndpointHere(req, res, claimed, delegated,
+                                   read.value);
+        });
+    }
+    log.debug("Leaving WsTrust.stsEndpoint().");
+    return this.stsEndpointHere(req, res, claimed, delegated,
+                                read.ok ? read.value : null);
+  }
+
+  // The subject of an OnBehalfOf / ActAs, when the request is served for
+  // somebody ELSE — its requester, whose home this is (homeNameOf()). ''
+  // when nothing is delegated, or the delegated subject is the one the
+  // request was placed by.
+  private delegatedNameOf(doc, placedBy: string): string {
+    const { firstByLocal, log } = this.deps;
+    log.debug("Entering WsTrust.delegatedNameOf().");
+    const obo = firstByLocal(doc, 'OnBehalfOf') || firstByLocal(doc, 'ActAs');
+    const named = obo ? firstByLocal(obo, 'NameID') ||
+                        firstByLocal(obo, 'NameIdentifier') : null;
+    const name = named ? String(named.textContent || '').trim() : '';
+    log.debug("Leaving WsTrust.delegatedNameOf().");
+    return name && name.toLowerCase() !== String(placedBy || '').toLowerCase()
+      ? name : '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DELEGATED SUBJECT HOMED IN ANOTHER CELL (#98 section 5,
+  // `fetch-attributes`). The request is served at its REQUESTER's home, whose
+  // directory does not hold the person the token is about — so the token's
+  // subject, its configured attributes, the delegation policy's flags on
+  // their entry and the issuance policy's roles would be made from nothing.
+  // Their home is asked for their credential-free attributes
+  // (`common/cell_attributes.ts`), which it releases only where the transfer
+  // policy says, and the exchange runs with them held in this process's
+  // directory for exactly its own synchronous duration.
+  //
+  // FAIL-CLOSED (D6): home refusing to release them, or not reachable, is a
+  // refused issuance — a Fault naming which, never a token about somebody
+  // this cell cannot describe. A person already held here as a projection is
+  // read as they are; one unknown to every cell is served as a name nobody
+  // knows always was.
+  // ---------------------------------------------------------------------------
+  private delegatedHere(req, res, delegated: string, doc): unknown {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering WsTrust.delegatedHere().");
+    const self = this;
+    const realms = require('../common/realms');
+    const realmId = realms.currentId();
+    if (require('../common/cell_sessions').isProjected(realmId, 'name',
+                                                       delegated)) {
+      log.debug("Leaving WsTrust.delegatedHere(). Held here already.");
+      return this.stsEndpointNow(req, res);
+    }
+    log.debug("Leaving WsTrust.delegatedHere(). Asking where they live.");
+    return require('../common/cell_routing').homeOf(realmId, 'name', delegated)
+      .then(function (home: string): unknown {
+        if (!home || home === cells.id() || !cells.get(home)) {
+          return self.stsEndpointNow(req, res);
+        }
+        return cellAttributes.fetch(realmId, delegated, home)
+          .then(function (got: any): unknown {
+            if (!got.ok) {
+              const version = self.detectSoapVersion(doc,
+                req.headers['content-type'] || '');
+              errorCodes.mark(res, got.code);
+              res.status(got.code === 'STS-CELL-0125' ? 503 : 403)
+                 .type(version === '1.1' ? 'text/xml; charset=utf-8'
+                                         : 'application/soap+xml; ' +
+                                           'charset=utf-8')
+                 .send(self.soapFault(version, 'The subject of this ' +
+                   'request\'s delegation is held in another part of this ' +
+                   'service, which ' + (got.code === 'STS-CELL-0125'
+                     ? 'could not be reached'
+                     : 'did not release what a token about them needs') +
+                   ', so no token is issued about them.'));
+              return undefined;
+            }
+            return cellAttributes.withPerson(realmId, got.projection,
+              function () {
+                return self.stsEndpointNow(req, res);
+              });
+          });
+      });
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHICH PERSON'S HOME SERVES AN RST (#98 D10). A request is served where the
+  // person whose CREDENTIAL it presents is homed, because that is the one
+  // cell that can verify it — a UsernameToken's password is checked against
+  // a `userPassword` only the home cell holds, and a person's second factor,
+  // lockout and app passwords are there too. In order:
+  //
+  //   1. the requester's UsernameToken, by its Username;
+  //   2. the requester's own SAML assertion, by its NameID. **An assertion
+  //      this realm signed would VERIFY in any cell** — the signing keys are
+  //      the global tier's (D8) — and it is relayed anyway, because what
+  //      follows the verification is the person's: the authentication is
+  //      recorded against their entry, the issuance policy and the risk
+  //      standing read it, the token's attributes are its attributes, and a
+  //      browser session may be started for them. None of that exists
+  //      outside their home;
+  //   3. with no requester credential (development's delegation with nobody
+  //      in the requester's seat), the subject of the OnBehalfOf / ActAs.
+  //
+  // **A DELEGATION ACROSS CELLS IS SERVED AT THE REQUESTER'S HOME**, which
+  // does not hold the delegated subject's entry when that person is homed
+  // elsewhere; the token about them then carries what that cell knows of
+  // them, which is nothing beyond the name. Fetching a subject's attributes
+  // from its home is the design's `fetch-attributes` operation (#98 section
+  // 5), not built yet — recorded in `ws-trust/CLAUDE.md`.
+  //
+  // A NameID that is not a login name (an email address, a pairwise value)
+  // is unknown to the routing index, and the request is served where it
+  // arrived — the answer it always had.
+  // ---------------------------------------------------------------------------
+  private homeNameOf(doc): string {
+    const { firstByLocal, log, textByLocal } = this.deps;
+    log.debug("Entering WsTrust.homeNameOf().");
+    const nameOf = function (el): string {
+      log.debug("Entering nameOf().");
+      const named = el ? firstByLocal(el, 'NameID') ||
+                         firstByLocal(el, 'NameIdentifier') : null;
+      log.debug("Leaving nameOf().");
+      return named ? String(named.textContent || '').trim() : '';
+    };
+    const scope = this.credentialScope(doc);
+    const ut = this.firstOwnedByRequester(scope, 'UsernameToken');
+    if (ut) {
+      log.debug("Leaving WsTrust.homeNameOf(). A UsernameToken.");
+      return String(textByLocal(ut, 'Username') || '').trim();
+    }
+    const assertion = this.firstOwnedByRequester(scope, 'Assertion');
+    if (assertion) {
+      log.debug("Leaving WsTrust.homeNameOf(). The requester's assertion.");
+      return nameOf(assertion);
+    }
+    log.debug("Leaving WsTrust.homeNameOf(). The delegated subject.");
+    return nameOf(firstByLocal(doc, 'OnBehalfOf') ||
+                  firstByLocal(doc, 'ActAs'));
+  }
+
+  // The endpoint, once the request is known to be served HERE.
+  private stsEndpointHere(req, res, claimed, delegated?: string, doc?) {
+    const { log, subjectForName } = this.deps;
+    log.debug("Entering WsTrust.stsEndpointHere().");
+    const self = this;
     let preload: Promise<unknown> = Promise.resolve(null);
     if (claimed) {
       try {
@@ -1748,20 +1993,23 @@ class WsTrust {
           require('../common/realms').currentId(), claimed, sub)
           : preload;
       } catch (e) {
-        log.debug("Caught in WsTrust.stsEndpoint(): " +
+        log.debug("Caught in WsTrust.stsEndpointHere(): " +
                   ((e && e.message) || e));
         // No risk engine in this process: nothing to read, and the roles
         // decide.
         preload = Promise.resolve(null);
       }
     }
-    log.debug("Leaving WsTrust.stsEndpoint().");
+    log.debug("Leaving WsTrust.stsEndpointHere().");
     return preload.then(function (): unknown {
-      return self.stsEndpointNow(req, res);
+      return delegated ? self.delegatedHere(req, res, delegated, doc)
+                       : self.stsEndpointNow(req, res);
     }, function (e: any): unknown {
-      log.debug("Caught in WsTrust.stsEndpoint(): " + ((e && e.message) || e));
+      log.debug("Caught in WsTrust.stsEndpointHere(): " +
+                ((e && e.message) || e));
       // loadStanding() never rejects; this is its belt and braces.
-      return self.stsEndpointNow(req, res);
+      return delegated ? self.delegatedHere(req, res, delegated, doc)
+                       : self.stsEndpointNow(req, res);
     });
   }
 
@@ -1844,6 +2092,10 @@ class WsTrust {
 
   // The startup half of issuerDisagreement(), once, for the process-wide
   // values.
+  /**
+   * Logs once at startup, for the process-wide values, when the two issuer
+   * names disagree.
+   */
   warnAtStartup(): void {
     const { log } = this.deps;
     log.debug("Entering WsTrust.warnAtStartup().");
@@ -1878,10 +2130,23 @@ const slot = new InstanceSlot<WsTrust>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * WS-Trust 1.0 to 1.4: the RequestSecurityToken endpoint, and the functions
+ * that build and check what goes in and out of it.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   WsTrust: WsTrust,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: WsTrust): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   handleRst: slot.forward('handleRst'),
   issuerDisagreement: slot.forward('issuerDisagreement'),

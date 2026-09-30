@@ -102,6 +102,9 @@
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -133,12 +136,28 @@ const REFERENCE_BYTES = 32;
 const DEFAULT_AUTHORIZATION_SERVER = 'default';
 
 // request_uri -> the pushed request. See the header for the shape.
+// `expiresAt` (#333): the record's own expiry — see common/realms.js.
 const pushedRequests = realms.map({ persist: 'oauth2.pushedRequests',
-                                    retain: 'age' });
+                                    retain: 'age',
+                                    expiresAt: realms.expiryField('expiresAt',
+                                                                  1) });
 
+/**
+ * The store of RFC 9126 pushed authorization requests and the request_uri each
+ * is answered with; the endpoint and the validation are `oauth2.ts`'s.
+ */
 class PushedRequests {
+  /**
+   * The URN namespace every request_uri issued here is in (section 2.2).
+   */
   static readonly REQUEST_URI_PREFIX = REQUEST_URI_PREFIX;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, settings, error codes and monitor this class
+   *   reads
+   */
   constructor(private readonly deps: PushedRequestsDeps) {
     deps.log.debug("Entering PushedRequests.constructor().");
     deps.log.debug("Leaving PushedRequests.constructor().");
@@ -146,6 +165,11 @@ class PushedRequests {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): PushedRequestsDeps {
     helpers.log.debug("Entering PushedRequests.defaultDeps().");
     helpers.log.debug("Leaving PushedRequests.defaultDeps().");
@@ -169,6 +193,11 @@ class PushedRequests {
   // The lifetime, bounded by the row's own range (5..600) — read directly,
   // not `|| 60`, for the code-style rule about a legal value the fallback
   // would hide.
+  /**
+   * Returns how long a pushed request lives, in seconds (5 to 600).
+   *
+   * @returns the lifetime
+   */
   lifetimeS(): number {
     const { log, config } = this.deps;
     log.debug("Entering PushedRequests.lifetimeS().");
@@ -191,6 +220,13 @@ class PushedRequests {
   // Whether a value is a request_uri in the namespace this file issues from.
   // Case-sensitive in the reference and not in the URN's own letters, which
   // RFC 8141 section 3.1 makes case-insensitive in the NID.
+  /**
+   * Tells whether a value is a request_uri in the namespace this module issues
+   * from.
+   *
+   * @param value - a request_uri
+   * @returns true when it is in the namespace
+   */
   isPushedRequestUri(value: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering PushedRequests.isPushedRequestUri().");
@@ -238,6 +274,12 @@ class PushedRequests {
   // Drop every record past its expiry. A spent one is simply gone; one that
   // expired UNSPENT is counted, because a request_uri a client pushed and
   // never used is the thing somebody debugging a client wants to see.
+  /**
+   * Drops every record past its expiry, counting those that expired unspent.
+   *
+   * @param now - the time to compare with, in milliseconds
+   * @returns how many records were dropped
+   */
   sweep(now?: number): number {
     const { log, monitor } = this.deps;
     log.debug("Entering PushedRequests.sweep().");
@@ -280,6 +322,17 @@ class PushedRequests {
   // endpoint's job to have validated everything first; this checks only what
   // it owns.
   // -------------------------------------------------------------------------
+  /**
+   * Keeps a validated pushed request, bound to the client that pushed it and
+   * the authorization server it was pushed at, and mints its request_uri.
+   *
+   * The caller has validated the request; this checks only what it owns.
+   *
+   * @param entry - `clientId`, `authorizationServer`, `params`,
+   *   `clientAuthenticated`, `method`, `source`, `alg`, `encrypted`, `dpopJkt`,
+   *   `attestedJkt` and `redirectRelaxed`
+   * @returns `{ ok, requestUri, expiresIn }`, or a refusal
+   */
   push(entry: Json): Json {
     const { log, errorCodes, monitor } = this.deps;
     log.debug("Entering PushedRequests.push().");
@@ -311,8 +364,11 @@ class PushedRequests {
         'forgotten to make room.');
     }
     const seconds = this.lifetimeS();
-    const requestUri = REQUEST_URI_PREFIX +
-      crypto.randomBytes(REFERENCE_BYTES).toString('base64url');
+    // The reference is stamped with the minting cell (#98 D10): the
+    // browser that carries it may reach another cell, whose edge relays the
+    // authorization request here.
+    const requestUri = REQUEST_URI_PREFIX + cellLocator.stamp(
+      crypto.randomBytes(REFERENCE_BYTES).toString('base64url'));
     const params = Object.assign({}, options.params || {});
     delete params.request;
     delete params.request_uri;
@@ -371,6 +427,16 @@ class PushedRequests {
   //
   // Counts one read. It does NOT spend — see decision 2 in the header.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the pushed request a request_uri names, for the authorization
+   * endpoint. It counts a read and does not spend the request_uri.
+   *
+   * @param requestUri - the request_uri presented
+   * @param clientId - the client_id of the authorization request
+   * @param opts - `authorizationServer` the request selected, and `req`
+   * @returns `{ ok: true, params, alg, encrypted, pushed }`, or a refusal whose
+   *   error is `invalid_request_uri`
+   */
   resolve(requestUri: unknown, clientId: unknown, opts?: Json): Json {
     const { log, monitor } = this.deps;
     const self = this;
@@ -464,6 +530,13 @@ class PushedRequests {
   // whether anything was spent. Kept until its expiry, marked, so a replay is
   // refused as USED rather than as unknown.
   // -------------------------------------------------------------------------
+  /**
+   * Marks a request_uri spent when an authorization response is issued on it,
+   * so a replay is refused as used.
+   *
+   * @param requestUri - the request_uri
+   * @returns true when something was spent
+   */
   spend(requestUri: unknown): boolean {
     const { log, monitor } = this.deps;
     log.debug("Entering PushedRequests.spend().");
@@ -485,6 +558,13 @@ class PushedRequests {
   // paginated. `opts.state` narrows to 'live', 'spent' or 'all' (the default,
   // which is every record not yet swept); `opts.clientId` to one client.
   // -------------------------------------------------------------------------
+  /**
+   * Lists the pushed requests, newest first and paginated.
+   *
+   * @param opts - `state` (`live`, `spent` or `all`), `clientId`, `offset` and
+   *   `limit`
+   * @returns `{ total, offset, limit, capacity, lifetime_s, items }`
+   */
   list(opts?: Json): Json {
     const { log } = this.deps;
     const self = this;
@@ -525,6 +605,12 @@ class PushedRequests {
     };
   }
 
+  /**
+   * Describes one pushed request.
+   *
+   * @param requestUri - the request_uri
+   * @returns its description, or null
+   */
   get(requestUri: unknown): Json | null {
     const { log } = this.deps;
     log.debug("Entering PushedRequests.get().");
@@ -535,6 +621,12 @@ class PushedRequests {
   }
 
   // An administrator withdrew a request_uri. Answers whether there was one.
+  /**
+   * Withdraws a request_uri, for an administrator.
+   *
+   * @param requestUri - the request_uri
+   * @returns true when there was one
+   */
   remove(requestUri: unknown): boolean {
     const { log, monitor } = this.deps;
     log.debug("Entering PushedRequests.remove().");
@@ -550,6 +642,90 @@ class PushedRequests {
     return true;
   }
 }
+
+// ---------------------------------------------------------------------------
+// A PUSHED REQUEST HANDED TO ANOTHER CELL (#98 D9). A flow that restarts at
+// its person's home cell starts from the authorization request, and one that
+// names a request_uri names a record THIS cell holds — so the record is sent
+// home first, under the same reference, and the browser pinned there finds it.
+// The reference keeps this cell's tag, which is harmless: a pinned browser's
+// affinity wins over an artifact's tag on a browser route
+// (`common/cell_placement.ts`), and the record is only ever read by the cell
+// the browser is pinned to.
+//
+// STATIC, because the store is this module's, not an instance's, and the
+// operation is registered once at load (`common/cell_channel.ts` keeps a map;
+// registering binds and dials nothing).
+// ---------------------------------------------------------------------------
+/**
+ * Pushed requests handed between the cells of a service deployed as cells.
+ */
+class PushedRequestHandover {
+  /**
+   * Sends a pushed request this cell holds to another cell.
+   *
+   * @param realmId - the realm
+   * @param requestUri - the reference
+   * @param cellId - the receiving cell
+   * @returns a promise of true when it was sent, false when not held here
+   */
+  static handOver(realmId: string, requestUri: string,
+                  cellId: string): Promise<boolean> {
+    helpers.log.debug("Entering PushedRequestHandover.handOver().");
+    const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);
+    let record = null;
+    realms.run(realm, function () {
+      record = pushedRequests.get(String(requestUri));
+    });
+    if (!record) {
+      helpers.log.debug("Leaving PushedRequestHandover.handOver(). None.");
+      return Promise.resolve(false);
+    }
+    helpers.log.debug("Leaving PushedRequestHandover.handOver().");
+    return require('../common/cell_channel').call(cellId,
+      'adopt-pushed-request', { realm: realmId,
+                                requestUri: String(requestUri),
+                                record: record })
+      .then(function () {
+        return true;
+      });
+  }
+
+  /**
+   * Takes a pushed request another cell handed over.
+   *
+   * @param body - `{ realm, requestUri, record }`
+   * @returns `{ adopted: true }`
+   * @throws an Error for a malformed hand-over or an unknown realm
+   */
+  static adopt(body: any): { adopted: boolean } {
+    helpers.log.debug("Entering PushedRequestHandover.adopt().");
+    const uri = String((body && body.requestUri) || '');
+    if (uri.indexOf(REQUEST_URI_PREFIX) !== 0 || !body.record ||
+        typeof body.record !== 'object') {
+      helpers.log.debug("Leaving PushedRequestHandover.adopt(). Malformed.");
+      throw new Error('not a pushed authorization request');
+    }
+    const realm = realms.get(String(body.realm || '')) ||
+      (String(body.realm || '') ? null : realms.get(realms.DEFAULT_ID));
+    if (!realm) {
+      helpers.log.debug("Leaving PushedRequestHandover.adopt(). No realm.");
+      throw new Error('no such realm');
+    }
+    realms.run(realm, function () {
+      pushedRequests.set(uri, body.record);
+    });
+    helpers.log.info('par: a pushed authorization request was handed over ' +
+                     'from another cell, for a flow restarting here.');
+    helpers.log.debug("Leaving PushedRequestHandover.adopt().");
+    return { adopted: true };
+  }
+}
+
+require('../common/cell_channel').registerOp('adopt-pushed-request',
+  function (body: any) {
+    return PushedRequestHandover.adopt(body);
+  });
 
 // ---------------------------------------------------------------------------
 // THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
@@ -569,11 +745,31 @@ const slot = new InstanceSlot<PushedRequests>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9126 pushed authorization requests: the store and the request_uri.
+ *
+ * The composition root builds the instance; each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   PushedRequests: PushedRequests,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: PushedRequests): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   REQUEST_URI_PREFIX: PushedRequests.REQUEST_URI_PREFIX,
+  // Handed between cells (#98 D9).
+  handOver: PushedRequestHandover.handOver,
   isPushedRequestUri: slot.forward('isPushedRequestUri'),
   lifetimeS: slot.forward('lifetimeS'),
   push: slot.forward('push'),

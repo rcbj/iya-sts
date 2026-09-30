@@ -41,9 +41,9 @@
 // repository may not edit (see common/vendored/CLAUDE.md and
 // kerberos/CLAUDE.md).
 //
-// Five callers require this first and between them cover every way the service
-// is loaded: server.js (the whole service), common/worker.js and
-// common/request_worker.ts (the two kinds of forked child), common/config.js
+// Four callers require this first and between them cover every way the
+// service is loaded: server.js (the whole service), common/request_worker.ts
+// (a request worker), common/config.js
 // and common/helpers.js (a module loaded in-process by a test, which is how the
 // parent project drives the KDC). It is idempotent, so all of them calling
 // costs nothing.
@@ -64,6 +64,9 @@ const path = require('path');
 const fs = require('fs');
 
 // The package root: this file is common/config_file.js, so one level up.
+/**
+ * The package root: the absolute path of the directory above common/.
+ */
 const ROOT = path.join(__dirname, '..');
 
 // Resolve CONFIG_FILE to an absolute path, in place, and return it.
@@ -74,6 +77,16 @@ const ROOT = path.join(__dirname, '..');
 // test is `startsWith('.')` rather than `!path.isAbsolute()`: a bare specifier
 // is somebody's installed module and rewriting it into a filesystem path would
 // break a resolution that works.
+/**
+ * Resolves CONFIG_FILE to an absolute path, in place, and returns it.
+ *
+ * A relative path is tried against the package root and then the working
+ * directory; the first that exists is written back to process.env. An unset
+ * variable, an absolute path or a package name is left alone. It never
+ * throws, and it is idempotent.
+ * @returns the resolved path, the value as given when nothing matched, or
+ *   null when CONFIG_FILE is unset
+ */
 function resolveConfigFile() {
   const given = process.env.CONFIG_FILE;
   if (!given) {
@@ -105,4 +118,12 @@ function resolveConfigFile() {
   return given;
 }
 
+/**
+ * The one place that decides what CONFIG_FILE means.
+ *
+ * Makes the variable absolute before anything reads it, so every later
+ * `require(process.env.CONFIG_FILE)` in any directory resolves to the same
+ * file. A leaf that requires nothing and has no logger.
+ * @namespace
+ */
 module.exports = { resolveConfigFile, ROOT };

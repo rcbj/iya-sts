@@ -109,7 +109,15 @@ interface VcApiDeps {
 }
 
 // The two scopes, protected in both modes (`common/scope_policy.ts`).
+/**
+ * The scope that allows issuing through the VC-API, `vc-api:issue`, protected
+ * in both modes.
+ */
 const SCOPE_ISSUE = 'vc-api:issue';
+/**
+ * The scope that allows verifying through the VC-API, `vc-api:verify`,
+ * protected in both modes.
+ */
 const SCOPE_VERIFY = 'vc-api:verify';
 
 const BASE = '/vc-api';
@@ -118,6 +126,11 @@ const PUBLISH_PATH = '/oid4vci/status-lists/bitstring/:purpose/publish';
 // THE ISSUERS: a securing mechanism and the realm key it signs with.
 // `kind` 'di' is an embedded Data Integrity proof; 'jose' an ENVELOPE of
 // VC-JOSE-COSE (#198), `form` saying which.
+/**
+ * The VC-API issuers by name: a securing mechanism — an embedded Data Integrity
+ * proof (`di`) or a VC-JOSE-COSE envelope (`jose`) — and the realm key it signs
+ * with.
+ */
 const ISSUERS: Record<string, { kind: string; cryptosuite?: string;
                                 form?: string; curve: string }> = {
   'eddsa-rdfc-2022': { kind: 'di', cryptosuite: 'eddsa-rdfc-2022',
@@ -162,7 +175,9 @@ const MAX_ISSUED = 4096;
 
 // credential id -> { idx, expiresAt }. PER REALM, persisted, so a status
 // change reaches the index whichever process issued the credential.
-const issued = realms.map({ persist: 'vc_api.issued' });
+// `expiresAt` (#333): the credential's own `expiresAt`, ms.
+const issued = realms.map({ persist: 'vc_api.issued',
+                            expiresAt: realms.expiryField('expiresAt', 1) });
 
 const issuedCount = cacheRegistry.register({
   name: 'vc-api.issued',
@@ -198,16 +213,42 @@ const issuedCount = cacheRegistry.register({
   }
 });
 
+/**
+ * The W3C VC-API test endpoints over this service's own issuer and verifier
+ * (#194 to #199), a test control: issue, verify, prove, derive, status changes
+ * and DID resolution, for the W3C interoperability suites.
+ *
+ * An adapter to this service's own machinery, not a second copy of it.
+ */
 class VcApi {
+  /**
+   * The VC-API issuers by name, each with its securing mechanism and key.
+   */
   static readonly ISSUERS = ISSUERS;
+  /**
+   * The scope that allows issuing, `vc-api:issue`.
+   */
   static readonly SCOPE_ISSUE = SCOPE_ISSUE;
+  /**
+   * The scope that allows verifying, `vc-api:verify`.
+   */
   static readonly SCOPE_VERIFY = SCOPE_VERIFY;
 
+  /**
+   * Builds the adapter from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcApiDeps) {
     deps.log.debug("Entering VcApi.constructor().");
     deps.log.debug("Leaving VcApi.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcApiDeps {
     helpers.log.debug("Entering VcApi.defaultDeps().");
     helpers.log.debug("Leaving VcApi.defaultDeps().");
@@ -267,6 +308,14 @@ class VcApi {
   // a document `validation.checkDocument()` accepts — no polluting key, a
   // bounded depth and size. Null when it has answered the request itself.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the request body as a JSON document `validation.checkDocument()`
+   * accepts, answering the request itself when it is not.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns the body, or null when the request has been answered
+   */
   readBody(req: any, res: any): any {
     const { log, checkDocument } = this.deps;
     log.debug("Entering VcApi.readBody().");
@@ -302,6 +351,15 @@ class VcApi {
   // THE GATE: a test control (404 outside one), then the access token.
   // Answers true when the request may go on; otherwise it has answered.
   // ---------------------------------------------------------------------------
+  /**
+   * The gate: a test control (404 outside one), then an access token with the
+   * scope.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param scope - the scope required
+   * @returns true when the request may go on; otherwise it has been answered
+   */
   admitted(req: any, res: any, scope: string): boolean {
     const { log, opensTestControls, presentedAccessToken, isRevoked,
             declares } = this.deps;
@@ -346,6 +404,12 @@ class VcApi {
   }
 
   // The issuer a name selects, with its key, or null.
+  /**
+   * Returns the issuer a name selects, with its key.
+   *
+   * @param name - the issuer's name
+   * @returns the issuer, or null
+   */
   issuerFor(name: string): any {
     const { log, di } = this.deps;
     log.debug("Entering VcApi.issuerFor(). " + name);
@@ -361,6 +425,12 @@ class VcApi {
   }
 
   // Every issuer, as the job's implementation manifest wants them.
+  /**
+   * Returns every issuer, as the suites' implementation manifest wants them.
+   *
+   * @param req - the request, for the issuers' URLs
+   * @returns the issuers
+   */
   issuers(req: any): any[] {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcApi.issuers().");
@@ -409,6 +479,13 @@ class VcApi {
   // ---------------------------------------------------------------------------
   // ISSUE.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles `/credentials/issue`: secures the credential it is handed with the
+   * named issuer.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   async issue(req: any, res: any): Promise<void> {
     const { log, model, di, status, baseUrlOf, now } = this.deps;
     log.debug("Entering VcApi.issue().");
@@ -599,6 +676,13 @@ class VcApi {
   // `options.challenge` and `options.domain` go on a Data Integrity proof,
   // and on an envelope as its `nonce` and `aud`.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles `/presentations/prove`: a presentation secured by the named holder,
+   * with `challenge` and `domain` on its proof.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   async prove(req: any, res: any): Promise<void> {
     const { log, model, di } = this.deps;
     log.debug("Entering VcApi.prove().");
@@ -690,6 +774,14 @@ class VcApi {
   // VERIFY. Answers `{ verified, checks, warnings, errors }` — errors naming
   // what failed, each with a `message`.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies a credential: its data model, its proofs or envelope, and its
+   * status.
+   *
+   * @param vc - the credential
+   * @param options - the verification options
+   * @returns `{ verified, checks, warnings, errors }`
+   */
   async verifyCredentialDocument(vc: any, options: any): Promise<any> {
     const { log, model, di, status, now, jose } = this.deps;
     log.debug("Entering VcApi.verifyCredentialDocument().");
@@ -842,6 +934,14 @@ class VcApi {
     return failed.join(' ') || 'the proof did not verify.';
   }
 
+  /**
+   * Verifies a presentation and every credential in it.
+   *
+   * @param vp - the presentation
+   * @param options - the verification options, `challenge` and `domain` among
+   *   them
+   * @returns `{ verified, checks, warnings, errors }`
+   */
   async verifyPresentationDocument(vp: any, options: any): Promise<any> {
     const { log, model, di, now, jose } = this.deps;
     log.debug("Entering VcApi.verifyPresentationDocument().");
@@ -961,6 +1061,13 @@ class VcApi {
   // for the purpose, false clears a suspension. Revocation is final
   // (`vc_status.setStatus()`).
   // ---------------------------------------------------------------------------
+  /**
+   * Handles `/credentials/status`: sets or clears a credential's status bit for
+   * a purpose. Revocation is final.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   changeStatus(req: any, res: any): void {
     const { log, issued, status, now } = this.deps;
     log.debug("Entering VcApi.changeStatus().");
@@ -1018,6 +1125,13 @@ class VcApi {
   // the holder's act, offered so that a base proof issued here can be taken
   // to a verifier. 201 `{ verifiableCredential }`.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles `/credentials/derive`: an ecdsa-sd-2023 derived proof revealing the
+   * mandatory statements and the selective pointers.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   async derive(req: any, res: any): Promise<void> {
     const { log, di } = this.deps;
     log.debug("Entering VcApi.derive().");
@@ -1062,6 +1176,12 @@ class VcApi {
     return typeof v === 'string' ? v : undefined;
   }
 
+  /**
+   * Handles `/resolve`: DID resolution through `vc_did_resolver.ts`.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   async resolveDid(req: any, res: any): Promise<void> {
     const { log, resolver, errorCodes } = this.deps;
     log.debug("Entering VcApi.resolveDid().");
@@ -1083,6 +1203,12 @@ class VcApi {
     log.debug("Leaving VcApi.resolveDid(). " + (error || 'resolved'));
   }
 
+  /**
+   * Handles `/dereference`: DID URL dereferencing through `vc_did_resolver.ts`.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   async dereferenceDidUrl(req: any, res: any): Promise<void> {
     const { log, resolver, errorCodes } = this.deps;
     log.debug("Entering VcApi.dereferenceDidUrl().");
@@ -1130,6 +1256,14 @@ class VcApi {
     log.debug("Leaving VcApi.run().");
   }
 
+  /**
+   * Registers the VC-API routes under `/vc-api` and the status list publish
+   * route.
+   *
+   * Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteApp): void {
     const { log } = this.deps;
     const self = this;
@@ -1235,9 +1369,25 @@ const slot = new InstanceSlot<VcApi>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The W3C VC-API test endpoints over this service's own issuer and verifier, a
+ * test control.
+ *
+ * @namespace
+ */
 export = {
   VcApi: VcApi,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcApi): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   ISSUERS: ISSUERS,

@@ -171,8 +171,11 @@ async function library(t) {
   a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'my client ' + spaced);
   t.check(a.text === 'unchanged', '2f. a client_id with a space parses ' +
           '(the last space divides)', JSON.stringify(a));
-  a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'c1 ' +
-                         state.replace(/^./, 'Z'));
+  // A DIFFERENT first character, always: replacing it with a fixed 'Z'
+  // changed nothing whenever the random value already began with one (one
+  // run in 64, CI run 36553670107's cluster job).
+  const tampered = (state[0] === 'Z' ? 'Y' : 'Z') + state.slice(1);
+  a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'c1 ' + tampered);
   t.check(a.text === 'changed', '2g. a tampered value is changed',
           JSON.stringify(a));
   for (const bad of ['nospace', 'c1 nodot', 'c1 abc.', ' abc.def']) {

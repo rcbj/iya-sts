@@ -63,6 +63,20 @@ resource "aws_vpc_security_group_ingress_rule" "nlb_ports" {
   to_port           = each.value.port
 }
 
+# THE NODES, CALLING THE SERVICE BY ITS OWN PUBLIC NAME (#311): inside the VPC
+# that name resolves to the load balancer's private addresses (dns.tf), so the
+# connection comes from a node's security group rather than from the
+# internet. Only where there is a public name.
+resource "aws_vpc_security_group_ingress_rule" "nlb_from_nodes" {
+  for_each                     = local.public_name ? local.published_ports : {}
+  security_group_id            = aws_security_group.nlb.id
+  description                  = "Port ${each.value.listener} from the nodes (the service calling itself)"
+  referenced_security_group_id = aws_security_group.nodes.id
+  ip_protocol                  = "tcp"
+  from_port                    = each.value.listener
+  to_port                      = each.value.listener
+}
+
 resource "aws_vpc_security_group_egress_rule" "nlb_to_nodes" {
   for_each                     = local.published_ports
   security_group_id            = aws_security_group.nlb.id

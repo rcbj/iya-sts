@@ -116,12 +116,34 @@ const DELETE_BODY = vz.looseObject({
   request_uri: vz.string().min(1).max(512)
 });
 
+/**
+ * The view and the action behind the OAuth 2.0 / OIDC monitoring page and its
+ * management API operations: one model, two doors (rule 7).
+ */
 class OAuth2MonitorConsole {
+  /**
+   * The console page's path.
+   */
   static readonly PAGE_PATH = PAGE_PATH;
+  /**
+   * The actions the page and the API accept.
+   */
   static readonly MONITOR_ACTIONS = MONITOR_ACTIONS;
+  /**
+   * The pushed-request states the table can show.
+   */
   static readonly STATES = STATES;
+  /**
+   * The largest page of pushed requests one reply carries.
+   */
   static readonly MAX_LIMIT = MAX_LIMIT;
 
+  /**
+   * Builds the model from its dependencies.
+   *
+   * @param deps - the logger, error codes, audit log, validation, admin view
+   *   layer, pushed-request store, counters and step-up module
+   */
   constructor(private readonly deps: OAuth2MonitorConsoleDeps) {
     deps.log.debug("Entering OAuth2MonitorConsole.constructor().");
     deps.log.debug("Leaving OAuth2MonitorConsole.constructor().");
@@ -129,6 +151,11 @@ class OAuth2MonitorConsole {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): OAuth2MonitorConsoleDeps {
     helpers.log.debug("Entering OAuth2MonitorConsole.defaultDeps().");
     helpers.log.debug("Leaving OAuth2MonitorConsole.defaultDeps().");
@@ -153,6 +180,12 @@ class OAuth2MonitorConsole {
 
   // Whether a query is one both doors accept. Answers the validation result,
   // so the door can refuse with its own code and the detail.
+  /**
+   * Validates a request's query against what both doors accept.
+   *
+   * @param req - the request
+   * @returns the validation result, for the door to refuse with its own code
+   */
   checkQuery(req: Req): Json {
     const { log, validation } = this.deps;
     log.debug("Entering OAuth2MonitorConsole.checkQuery().");
@@ -359,6 +392,12 @@ class OAuth2MonitorConsole {
   // -------------------------------------------------------------------------
   // GET /admin/oauth2/monitor and GET /admin-api/oauth2/monitor.
   // -------------------------------------------------------------------------
+  /**
+   * Computes the monitoring page's facts, section by section.
+   *
+   * @param req - the request, of which only the query is read
+   * @returns `{ page, title, since, sections, actions }`
+   */
   monitorView(req: Req): Json {
     const { log, monitor } = this.deps;
     const self = this;
@@ -385,6 +424,15 @@ class OAuth2MonitorConsole {
   // `context.via` is `console` or `api`, and `context.actor` the console
   // session's username where there is one; the audit row names both.
   // -------------------------------------------------------------------------
+  /**
+   * Performs an action from the page or the API: withdrawing a pushed
+   * authorization request.
+   *
+   * @param body - the posted body, naming `action` and the `request_uri`
+   * @param context - `via` (`console` or `api`) and `actor`, for the audit row
+   * @returns `{ ok: true, request_uri, client_id, state, message }`, or `{ ok:
+   *   false, errors }` carrying its error code
+   */
   monitorAction(body: Json, context?: Json): Json {
     const { log, par, audit } = this.deps;
     const self = this;
@@ -456,6 +504,12 @@ class OAuth2MonitorConsole {
   // `oauth2_monitor_admin.ts` for `acme_console.js`'s reason: the admin view
   // layer may be required by this file and not by that one
   // (tests/admin_actions_layer.js).
+  /**
+   * Returns the console session's username, for the audit row.
+   *
+   * @param req - the request
+   * @returns the username, or ''
+   */
   consoleActorOf(req: Req): string {
     const { log, adminViews } = this.deps;
     log.debug("Entering OAuth2MonitorConsole.consoleActorOf().");
@@ -493,10 +547,30 @@ const slot = new InstanceSlot<OAuth2MonitorConsole>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OAuth 2.0 / OIDC monitoring model shared by the console page and
+ * `/admin-api`.
+ *
+ * No route, no response object and no markup. The composition root builds the
+ * instance; each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   OAuth2MonitorConsole: OAuth2MonitorConsole,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: OAuth2MonitorConsole): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE_PATH: OAuth2MonitorConsole.PAGE_PATH,
   MONITOR_ACTIONS: OAuth2MonitorConsole.MONITOR_ACTIONS,

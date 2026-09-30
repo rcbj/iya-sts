@@ -142,6 +142,9 @@ import json = require('./xacml_json');
 import pdp = require('./xacml_pdp');
 import store = require('./xacml_store');
 import pip = require('./xacml_pip');
+// THE ONE REQUEST BUILDER (#306).
+import xacmlRequest = require('./xacml_request');
+const { AuthorizationRequest } = xacmlRequest;
 // The datatype table, for `POST /xacml/pip` alone: a resolver answers with
 // PARSED values and a caller's engine wants the LEXICAL form its own parser
 // reads. A LEAF (rule 3) that registers nothing and requires nothing that
@@ -166,6 +169,12 @@ import monitor = require('./xacml_monitor');
 // a decider this family itself installs at 23c.
 import roles = require('../common/roles');
 import accessGate = require('../common/access_gate');
+// WHICH CELL ANSWERS A PIP QUERY (#98): the cell map, the placement helper
+// and the ambient realm. Libraries that register nothing; the placement's
+// own requires are lazy.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
+import realms = require('../common/realms');
 // THE CONSOLE PAGES. Required from here rather than from
 // `common/protocol_stack.ts` so that the require order has ONE line for this
 // family: this module is 23c and the pages are part of it. Requiring them
@@ -354,13 +363,35 @@ const PIP_NS = 'urn:sts:xacml:pip:1.0';
 // one.
 const PIP_MAX_DESIGNATORS = 50;
 
+/**
+ * The XACML protocol surface: the decision endpoint, the policy
+ * repository as the PDP sees it, the embedded PEP at `/xacml/protected`,
+ * the remote PEP endpoints and `POST /xacml/pip`.
+ *
+ * No decision logic lives here; it reads a request, hands it to
+ * `xacml_pdp.js` and writes what comes back.
+ */
 class XacmlSurface {
+  /**
+   * Builds the surface over its dependencies.
+   *
+   * @param deps - the logger, helpers, configuration, audit log, error
+   *   codes, the engine modules, the store, the PIP, the PEP register and
+   *   its HTTP client, the monitor, the role register, the access gate, and
+   *   lazy loaders for the cluster barrier and persistence
+   */
   constructor(private readonly deps: XacmlSurfaceDeps) {
     deps.log.debug("Entering XacmlSurface.constructor().");
     deps.log.debug("Leaving XacmlSurface.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): XacmlSurfaceDeps {
     helpers.log.debug("Entering XacmlSurface.defaultDeps().");
     helpers.log.debug("Leaving XacmlSurface.defaultDeps().");
@@ -397,6 +428,11 @@ class XacmlSurface {
     };
   }
 
+  /**
+   * Reports whether the XACML family is on (`xacml.enabled` is not false).
+   *
+   * @returns true unless switched off
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering XacmlSurface.enabled().");
@@ -552,6 +588,16 @@ class XacmlSurface {
   // a PEP and a PDP disagree in a real deployment and is the hardest kind to
   // find.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides a parsed request against the realm's root policy, with the
+   * repository and the PIP; the one place the engine, store and PIP are put
+   * together.
+   *
+   * With no root policy the answer is NotApplicable with a note; a root
+   * policy that does not load is an Indeterminate marked STS-XACML-0012.
+   * @param request - the request, in the shapes of `xacml_model.js`
+   * @returns the PDP's response
+   */
   decide(request: any): any {
     const { log, config, errorCodes, model, pdp, store, pip } = this.deps;
     log.debug('Entering XacmlSurface.decide().');
@@ -622,6 +668,17 @@ class XacmlSurface {
   //      reported success. This PEP can discharge exactly one obligation — the
   //      one it knows about, below — and refuses on any other, loudly.
   // ---------------------------------------------------------------------------
+  /**
+   * Applies this service's PEP bias and obligation rule to a decision
+   * (section 7.2).
+   *
+   * `xacml.pepBias` chooses deny-biased (the default) or permit-biased. An
+   * obligation this PEP cannot discharge turns an allowed access into a
+   * refusal; only `urn:sts:xacml:obligation:log` is dischargeable.
+   * @param answer - the PDP's response
+   * @returns whether access is allowed, the bias, why, and the obligations
+   *   discharged and not dischargeable
+   */
   enforce(answer: any): Enforcement {
     const { log, config, model } = this.deps;
     log.debug('Entering XacmlSurface.enforce(). decision=' + answer.decision);
@@ -1084,6 +1141,55 @@ class XacmlSurface {
   // is exactly what an audit log is for.
   // ===========================================================================
 
+  /**
+   * How the routing index keys the subject a PIP query names (#98): a
+   * `urn:uuid:` subject by its entryUUID, a DN by its RDN value, anything
+   * else as a login name. Read leniently — any failure is null, and the query
+   * is then served where it arrived and refused there in its own words.
+   *
+   * @param req - the request, its body read as text
+   * @returns `{ kind, value }`, or null when no subject can be read
+   */
+  pipSubjectKey(req: any): { kind: string; value: string } | null {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.pipSubjectKey().');
+    const raw = typeof req.body === 'string' ? req.body
+      : (Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '');
+    let subject = '';
+    try {
+      const parsed = validation.parseXml(raw, 'PIP query',
+                                         { max: validation.CAP.LARGE });
+      const root = parsed.ok ? parsed.value.documentElement : null;
+      const node = root && xml.localName(root) === 'PIPRequest'
+        ? xml.firstNamed(root, 'Request') : null;
+      subject = node ? String(pip.subjectOf(xml.readRequest(node)) || '') : '';
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.pipSubjectKey(): ' +
+                ((e && e.message) || e));
+      subject = '';
+    }
+    subject = subject.trim();
+    if (!subject || subject.length > validation.CAP.NAME) {
+      log.debug('Leaving XacmlSurface.pipSubjectKey(). No subject.');
+      return null;
+    }
+    const uuid = /^urn:uuid:([0-9a-f-]{36})$/i.exec(subject);
+    if (uuid) {
+      log.debug('Leaving XacmlSurface.pipSubjectKey(). A UUID.');
+      return { kind: 'uuid', value: uuid[1].toLowerCase() };
+    }
+    const rdn = /^[A-Za-z][A-Za-z0-9-]*=([^,+]+)[,+]/.exec(subject);
+    log.debug('Leaving XacmlSurface.pipSubjectKey().');
+    return { kind: 'name',
+             value: rdn ? rdn[1].replace(/\\(.)/g, '$1').trim() : subject };
+  }
+
+  /**
+   * Returns the most designators one `POST /xacml/pip` query may carry,
+   * from `xacml.pipMaxDesignators` (50 when unset or not positive).
+   *
+   * @returns the cap
+   */
   pipMaxDesignators(): number {
     const { log, config } = this.deps;
     log.debug("Entering XacmlSurface.pipMaxDesignators().");
@@ -1099,7 +1205,7 @@ class XacmlSurface {
   // caller, and it is why `<Unresolved>` exists.
   // ---------------------------------------------------------------------------
   private pipWhy(designator: any, subject: string, stored: any,
-                 mapped: string | null): string {
+                 mapped: string | null, subjectKind?: string): string {
     const { log, model, pip } = this.deps;
     log.debug("Entering XacmlSurface.pipWhy().");
     if (designator.category !== model.CATEGORY.ACCESS_SUBJECT) {
@@ -1107,6 +1213,17 @@ class XacmlSurface {
       return 'Only the access-subject category is resolved by this PIP: a ' +
              'resource or environment designator has no directory entry to ' +
              'be looked up on.';
+    }
+    if (designator.attributeId === pip.ROLE_ATTRIBUTE) {
+      log.debug("Leaving XacmlSurface.pipWhy().");
+      return subject
+        ? '"' + subject + '" holds no configured role in this realm (as a ' +
+          (subjectKind === 'application' ? 'an application' : 'a person') +
+          '). Only configured ' +
+          'roles are resolved here; the built-in ones describe the request ' +
+          'and are the PEP\'s to assert.'
+        : 'The request names no ' + model.ATTRIBUTE.SUBJECT_ID + ', so ' +
+          'there is nobody whose roles could be resolved.';
     }
     if (!mapped) {
       log.debug("Leaving XacmlSurface.pipWhy().");
@@ -1315,16 +1432,24 @@ class XacmlSurface {
   // in flight this shares, rather than a second transaction started
   // mid-request. A commit that fails still nudges — the nudge is an
   // optimisation, and the PEP's pull then converges as it would have.
-  // Everywhere else (one node, the cluster off, a dispatched pool) nothing
-  // changes: the nudge goes at once.
+  // A dispatched pool's worker waits the same way (below). Everywhere else
+  // (one process, the cluster off) the nudge goes at once.
   // ---------------------------------------------------------------------------
   private afterCommit(dispatch: () => void): void {
     const { log, errorCodes, loadBarrier, loadPersistence } = this.deps;
     log.debug("Entering XacmlSurface.afterCommit().");
     const barrier = loadBarrier();
-    if (!barrier.isActive()) {
-      log.debug("Leaving XacmlSurface.afterCommit(). Not active-active; " +
-                "at once.");
+    // A REQUEST WORKER WAITS TOO (2026-09-30). In the single-node mode the
+    // PEP's pull is dispatched to whichever worker the front process picks,
+    // and the nudge left from this worker before its write was committed —
+    // before the request that made the change had even answered, so the
+    // front process's read barrier held no ticket for it. The other worker
+    // answered the old sync token and the PEP converged on its next
+    // heartbeat (sts_xacml_remote_pep, 1959ms). After the commit the
+    // barrier makes that worker catch up before it answers.
+    if (!barrier.isActive() && !process.env.STS_REQUEST_WORKER) {
+      log.debug("Leaving XacmlSurface.afterCommit(). One process, not " +
+                "active-active; at once.");
       dispatch();
       return;
     }
@@ -1356,6 +1481,14 @@ class XacmlSurface {
     log.debug("Leaving XacmlSurface.afterCommit(). Deferred until the commit.");
   }
 
+  /**
+   * Tells every registered remote PEP with a notify URL that the repository
+   * changed, once the change has committed.
+   *
+   * Does nothing when notification or remote PEPs are switched off. The
+   * nudge is an optimisation; a PEP converges on its next poll without it.
+   * @param what - a description of the change, for the log
+   */
   nudgeRegisteredPeps(what: string): void {
     const self = this;
     const { log, pepHttp } = this.deps;
@@ -1404,6 +1537,9 @@ class XacmlSurface {
   }
 
   // Installs `nudgeRegisteredPeps()` as the repository's change observer.
+  /**
+   * Installs `nudgeRegisteredPeps()` as the policy store's change observer.
+   */
   installChangeObserver(): void {
     const { log, store } = this.deps;
     log.debug("Entering XacmlSurface.installChangeObserver().");
@@ -1414,6 +1550,14 @@ class XacmlSurface {
   // ---------------------------------------------------------------------------
   // GET /xacml — what this surface is.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes this surface for `GET /xacml`: whether it is on, the
+   * specification, the PDP endpoint, the repository and what is not
+   * supported.
+   *
+   * @param req - the request, for the base URL
+   * @returns the description
+   */
   description(req: Req): any {
     const self = this;
     const { log, baseUrlOf, config, store, pip, peps, pepHttp } = this.deps;
@@ -1523,6 +1667,13 @@ class XacmlSurface {
   // Every route, in the order this file has always registered them — with
   // the change observer installed where it always was, between the PIP
   // and `GET /xacml`.
+  /**
+   * Registers the surface's routes on the shared app, in their fixed order,
+   * and installs the repository change observer between the PIP and
+   * `GET /xacml`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteTable): void {
     const self = this;
     const { log, xmlEscape, baseUrlOf, parseBody, validation, websecurity,
@@ -1695,29 +1846,20 @@ class XacmlSurface {
       const resource = String(req.query.resource ||
                               baseUrlOf(req) + '/xacml/protected');
       const action = String(req.query.action || 'GET');
-      const request = {
-        returnPolicyIdList: true,
-        combinedDecision: false,
-        categories: [
-          { category: model.CATEGORY.ACCESS_SUBJECT, id: null, content: null,
-            attributes: subject ? [{ attributeId: model.ATTRIBUTE.SUBJECT_ID,
-                                     issuer: null, includeInResult: true,
-                                     values: [{ type: model.TYPE.STRING,
-                                                lexical: subject }] }] : [] },
-          { category: model.CATEGORY.RESOURCE, id: null, content: null,
-            attributes: [{ attributeId: model.ATTRIBUTE.RESOURCE_ID,
-                           issuer: null, includeInResult: true,
-                           values: [{ type: model.TYPE.ANYURI,
-                                      lexical: resource }] }] },
-          { category: model.CATEGORY.ACTION, id: null, content: null,
-            attributes: [{ attributeId: model.ATTRIBUTE.ACTION_ID,
-                           issuer: null, includeInResult: true,
-                           values: [{ type: model.TYPE.STRING,
-                                      lexical: action }] }] },
-          { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-            attributes: [] }
-        ]
-      };
+      // THROUGH THE ONE BUILDER (#306), in the four categories and the
+      // order this demonstration always sent — an empty subject category
+      // when `?subject=` names nobody.
+      const built = new AuthorizationRequest({ includeInResult: true });
+      [model.CATEGORY.ACCESS_SUBJECT, model.CATEGORY.RESOURCE,
+       model.CATEGORY.ACTION, model.CATEGORY.ENVIRONMENT]
+        .forEach(function (id) {
+          built.category(id);
+        });
+      if (subject) {
+        built.subject(model.ATTRIBUTE.SUBJECT_ID, [subject]);
+      }
+      const request = built.target(resource, model.TYPE.ANYURI)
+        .requestedAction(action).build();
       const answer = self.decide(request);
       const enforcement = self.enforce(answer);
       // ---------------------------------------------------------------------
@@ -2200,6 +2342,35 @@ class XacmlSurface {
         return;
       }
       // ---------------------------------------------------------------------
+      // WHICH CELL ANSWERS (#98 D10), BEFORE THE IDENTITY, THE RATE LIMIT
+      // AND THE ACCESS CHECK. What comes back is a person's directory
+      // attributes, and a person's entry exists only in the cell they are
+      // homed in — so a query about somebody homed elsewhere is sent there
+      // WHOLE, and that cell counts it, checks the PEP's certificate (the
+      // channel carries it, `cell_channel.ts`) and audits the read. Read
+      // leniently here: a query that does not parse is refused where it is
+      // served, in its own words. Single-cell mode does not ask.
+      // ---------------------------------------------------------------------
+      if (cells.isMulti() && !req.stsCellRelay) {
+        const key = self.pipSubjectKey(req);
+        if (key) {
+          let relayed = false;
+          try {
+            relayed = await cellPlacement.relayToHome(req, res,
+              realms.currentId(), key.kind, key.value, 'xacml-pip');
+          } catch (e) {
+            // A lookup that failed is served here, as an unknown subject is.
+            log.debug('Caught in POST /xacml/pip: ' +
+                      ((e && e.message) || e));
+            relayed = false;
+          }
+          if (relayed) {
+            log.debug('Leaving POST /xacml/pip. Relayed to the home cell.');
+            return;
+          }
+        }
+      }
+      // ---------------------------------------------------------------------
       // THE IDENTITY IS READ ONCE, HERE, BEFORE ANYTHING ELSE.
       //
       // The rate limiter below needs to know WHO is asking and the access check
@@ -2431,7 +2602,8 @@ class XacmlSurface {
           attributeId: designator.attributeId,
           dataType: designator.dataType,
           mustBePresent: designator.mustBePresent,
-          why: self.pipWhy(designator, subject, stored, mapped)
+          why: self.pipWhy(designator, subject, stored, mapped,
+                           pip.subjectKindOf(request))
         });
       });
       audit.audit({
@@ -2627,6 +2799,13 @@ const slot = new InstanceSlot<XacmlSurface>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The XACML protocol surface, registered by `common/protocol_stack.ts`.
+ *
+ * The functions forward to the `XacmlSurface` instance the composition
+ * root installs; requiring the module registers no route.
+ * @namespace
+ */
 export = {
   registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   XacmlSurface: XacmlSurface,

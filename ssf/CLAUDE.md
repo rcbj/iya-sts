@@ -711,6 +711,16 @@ choose whose choice to lose. `tests/risc_register.js` section O.
 
 ---
 
+## A BURST OF RISC EVENTS IS ONE LINE (#351, 2026-09-29)
+
+A SCIM Bulk of a thousand deletes is a thousand `account-purged` events, and
+each said "went to N of M stream(s)" (or "NO STREAM takes it") at info.
+Every SET is still built and sent per subject, as SSF requires; only the
+sentence is gathered. `riscTally()` counts each event's outcome by type, and
+once nothing is in flight and the event loop has turned it says the burst:
+the old sentence word for word when it was one event, a count when it was
+more. `/admin/risc-accounts` keeps the per-account record either way.
+
 ## THREE THINGS ABOUT RISC'S ROWS THAT SURPRISE SOMEBODY WHO KNOWS CAEP
 
 * **Eleven of the fourteen have no payload members at all**, and only

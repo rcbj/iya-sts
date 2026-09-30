@@ -105,6 +105,10 @@ import claims = require('../cluster/cluster_claims');
 import accountSignals = require('../ssf/account_signals');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
+// Which cell minted a credential (#98 D10): a keyed tag appended to an EAB
+// key id and a SCEP challenge id. A leaf library; stamps nothing in a
+// single-cell service.
+import cellLocator = require('./cell_locator');
 // A DEVICE AS THE HOLDER (#164 phase 2): the device register, what a
 // request's key attestation proves, and the enrolment counters. Three
 // libraries; none requires this file.
@@ -112,8 +116,14 @@ import devices = require('./devices');
 import deviceAttestation = require('./device_attestation');
 import deviceRecognition = require('./device_recognition');
 
+/**
+ * The three enrollment protocol families: `acme`, `est` and `scep`.
+ */
 const FAMILIES = ['acme', 'est', 'scep'];
 
+/**
+ * Each enrollment family's display name.
+ */
 const FAMILY_LABELS = { acme: 'ACME', est: 'EST', scep: 'SCEP' };
 
 // ---------------------------------------------------------------------------
@@ -125,12 +135,22 @@ const FAMILY_LABELS = { acme: 'ACME', est: 'EST', scep: 'SCEP' };
 // needs the names to keep an EST label and a trust realm apart, and cannot
 // require this module. They are DECIDED here, as before.
 // ---------------------------------------------------------------------------
+/**
+ * The leaf profiles a certificate may be issued under.
+ */
 const PROFILE_IDS = enrollmentProfiles.PROFILE_IDS;
 
+/**
+ * The leaf profiles an enrollment protocol never issues, each with its reason.
+ */
 const REFUSED_PROFILES = enrollmentProfiles.REFUSED_PROFILES;
 
 // What each issued profile REQUIRES of the request or the entry, beyond the
 // identity rule. Drawn on the pages from this table.
+/**
+ * What each profile requires of the request or the entry beyond the identity
+ * rule, as drawn on the pages.
+ */
 const PROFILE_NEEDS = {
   'tls-server': 'at least one dNSName or iPAddress registered on the entry',
   'tls-server-client': 'at least one dNSName or iPAddress registered on ' +
@@ -142,6 +162,9 @@ const PROFILE_NEEDS = {
 
 // Attribute names, canonical spelling. The directory lower-cases a name when it
 // stores it; `ldap/ldap_server.js`'s slot translates back.
+/**
+ * The host-name attribute on a person and on an application entry.
+ */
 const ATTRIBUTES = {
   person: {
     certificate: 'stsEnrolledCertificate',
@@ -164,6 +187,10 @@ const ATTRIBUTES = {
 // are public; the private keys and the two credentials are not — an EAB MAC
 // key or a SCEP challenge is a working credential, and the challenge record
 // holds only a digest but is still an offline guessing target.
+/**
+ * The attributes no reader of the directory socket may see: server-generated
+ * private keys, EAB MAC keys and SCEP challenge records.
+ */
 const SECRET_ATTRIBUTES = ['stsEnrolledPrivateKey', 'appEnrolledPrivateKey',
                            'stsAcmeEabKey', 'appAcmeEabKey',
                            'stsScepChallenge', 'appScepChallenge'];
@@ -180,6 +207,10 @@ const READ_NAMES = {
     }))
 };
 
+/**
+ * The `urn:sts:` subjectAltName prefix that names a person or an application
+ * entry.
+ */
 const URN_PREFIX = { person: 'urn:sts:person:',
                      application: 'urn:sts:application:' };
 
@@ -219,14 +250,26 @@ const URN_PREFIX = { person: 'urn:sts:person:',
 //     so both are refused for it (STS-DEVICE-0025) with the sentence that
 //     says what to do instead.
 // ---------------------------------------------------------------------------
+/**
+ * The profile a device entry's certificate is issued under.
+ */
 const DEVICE_PROFILE = 'device';
+/**
+ * The families that may issue the device profile: EST and SCEP.
+ */
 const DEVICE_PROFILE_FAMILIES = ['est', 'scep'];
+/**
+ * The `urn:sts:` subjectAltName prefix that names a device entry.
+ */
 const DEVICE_URN_PREFIX = 'urn:sts:device:';
 // What a device certificate's extensions are: /admin/pki's tls-client leaf.
 const DEVICE_CERTIFICATE_PROFILE = 'tls-client';
 
 // A single-use credential per entry is plenty; a list somebody can grow without
 // bound is a list somebody will.
+/**
+ * The most live EAB keys or SCEP challenges one entry may hold.
+ */
 const MAX_CREDENTIALS_PER_ENTRY = 10;
 
 // The OID of Microsoft's UPN otherName, which is what the smartcard-logon
@@ -265,6 +308,7 @@ interface CertEnrollmentDeps {
   devices: typeof devices;
   deviceAttestation: typeof deviceAttestation;
   deviceRecognition: typeof deviceRecognition;
+  cellLocator: typeof cellLocator;
   // Required when first called, as the JavaScript did: `pki_revocation.js`
   // by `revokeEnrolled()`, and `websecurity.ts` by the throttles
   // (`websecurityModule()`).
@@ -272,23 +316,72 @@ interface CertEnrollmentDeps {
   loadWebsecurity(): typeof import('./websecurity');
 }
 
+/**
+ * The core ACME, EST and SCEP issue through: who may be issued a certificate
+ * for whom, and what goes in it (rule 3ag).
+ *
+ * The identity rule, the profiles, proof of possession, names built from the
+ * entry, storage on the entry, and the two entry-bound credentials (EAB keys
+ * and SCEP challenges).
+ */
 class CertEnrollment {
+  /**
+   * The three enrollment families.
+   */
   static readonly FAMILIES = FAMILIES;
+  /**
+   * Each family's display name.
+   */
   static readonly FAMILY_LABELS = FAMILY_LABELS;
+  /**
+   * The profiles a certificate may be issued under.
+   */
   static readonly PROFILE_IDS = PROFILE_IDS;
+  /**
+   * The profiles never issued.
+   */
   static readonly REFUSED_PROFILES = REFUSED_PROFILES;
+  /**
+   * What each profile requires.
+   */
   static readonly PROFILE_NEEDS = PROFILE_NEEDS;
+  /**
+   * The host-name attributes.
+   */
   static readonly ATTRIBUTES = ATTRIBUTES;
+  /**
+   * The attributes withheld from every reader.
+   */
   static readonly SECRET_ATTRIBUTES = SECRET_ATTRIBUTES;
+  /**
+   * The URN prefixes naming a person or an application.
+   */
   static readonly URN_PREFIX = URN_PREFIX;
+  /**
+   * The device profile's id.
+   */
   static readonly DEVICE_PROFILE = DEVICE_PROFILE;
+  /**
+   * The families that may issue the device profile.
+   */
   static readonly DEVICE_PROFILE_FAMILIES = DEVICE_PROFILE_FAMILIES;
+  /**
+   * The URN prefix naming a device.
+   */
   static readonly DEVICE_URN_PREFIX = DEVICE_URN_PREFIX;
+  /**
+   * The most live EAB keys or challenges per entry.
+   */
   static readonly MAX_CREDENTIALS_PER_ENTRY = MAX_CREDENTIALS_PER_ENTRY;
 
   // THE DIRECTORY SLOT — see `setDirectory()`.
   private directory = null;
 
+  /**
+   * Builds the enrollment core with no directory installed.
+   *
+   * @param deps - the modules it uses
+   */
   constructor(private readonly deps: CertEnrollmentDeps) {
     deps.log.debug("Entering CertEnrollment.constructor().");
     deps.log.debug("Leaving CertEnrollment.constructor().");
@@ -296,6 +389,11 @@ class CertEnrollment {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time instance is built from
+   */
   static defaultDeps(): CertEnrollmentDeps {
     log.debug("Entering CertEnrollment.defaultDeps().");
     log.debug("Leaving CertEnrollment.defaultDeps().");
@@ -324,6 +422,7 @@ class CertEnrollment {
       devices: devices,
       deviceAttestation: deviceAttestation,
       deviceRecognition: deviceRecognition,
+      cellLocator: cellLocator,
       loadRevocation: function () {
         return require('./pki_revocation');
       },
@@ -335,6 +434,12 @@ class CertEnrollment {
 
   // What loading this module did with its instance before R2, run once
   // for whichever instance is installed (#50, R2).
+  /**
+   * Declares the instance's cluster capability, as loading this module did
+   * before #50's R2.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: CertEnrollment): void {
     log.debug("Entering CertEnrollment.wire().");
     instance.provideCapability();
@@ -346,6 +451,14 @@ class CertEnrollment {
   // and an STS code; the sentence is for an operator reading a console reply or
   // a problem document's `detail`, and never contains a secret.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a refusal carrying an HTTP status and an error code.
+   *
+   * @param code - the STS error code
+   * @param status - the HTTP status a protocol module should send
+   * @param sentence - the reason, for an operator; never a secret
+   * @returns `ok: false`, the status and the errors, marked with the code
+   */
   refuse(code, status, sentence) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering CertEnrollment.refuse(). code=" + code);
@@ -366,6 +479,13 @@ class CertEnrollment {
   // Validated whole, for `setLogoutReader()`'s reason: half a store is a
   // register that can issue a credential it cannot find again.
   // ---------------------------------------------------------------------------
+  /**
+   * Installs the directory slot the enrollment records are read and written
+   * through; filled by `ldap_server.js` and validated whole.
+   *
+   * @param store - `read(kind, id, names)`, `write(kind, id, name, values)` and
+   *   `holders(kind, name)`
+   */
   setDirectory(store) {
     const { log } = this.deps;
     const self = this;
@@ -383,6 +503,11 @@ class CertEnrollment {
     log.debug("Leaving CertEnrollment.setDirectory().");
   }
 
+  /**
+   * Says whether the directory slot is filled.
+   *
+   * @returns true when filled
+   */
   hasDirectory() {
     const { log } = this.deps;
     const self = this;
@@ -394,6 +519,12 @@ class CertEnrollment {
   // ---------------------------------------------------------------------------
   // SHAPES.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a name is one of the three enrollment families.
+   *
+   * @param family - the name
+   * @returns true for `acme`, `est` or `scep`
+   */
   isFamily(family) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.isFamily().");
@@ -401,6 +532,12 @@ class CertEnrollment {
     return FAMILIES.indexOf(String(family)) >= 0;
   }
 
+  /**
+   * Says whether a name is an entry kind a certificate may be issued for here.
+   *
+   * @param kind - the name
+   * @returns true for `person` or `application`
+   */
   isKind(kind) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.isKind().");
@@ -412,6 +549,13 @@ class CertEnrollment {
   // characters. The same bar `common/validation.js` sets on a name, applied
   // here as well because this module is also reached from credential kids that
   // were decoded from base64url and never passed a schema.
+  /**
+   * Says whether an identifier has the shape a directory holds: printable, 1 to
+   * 256 characters, no control characters.
+   *
+   * @param id - the identifier
+   * @returns true when well formed
+   */
   wellFormedId(id) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.wellFormedId().");
@@ -421,6 +565,12 @@ class CertEnrollment {
            !/[\u0000-\u001f\u007f]/.test(text);
   }
 
+  /**
+   * Returns the `urn:sts:` URI that names an entry.
+   *
+   * @param entry - the entry's `kind` and `id`
+   * @returns the URI
+   */
   entryUri(entry) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.entryUri().");
@@ -429,6 +579,12 @@ class CertEnrollment {
                                     : URN_PREFIX[entry.kind]) + entry.id;
   }
 
+  /**
+   * Reads a person or application entry out of a `urn:sts:` URI.
+   *
+   * @param uri - the URI
+   * @returns the entry's `kind` and `id`, or null
+   */
   entryFromUri(uri) {
     const { log } = this.deps;
     const self = this;
@@ -447,6 +603,54 @@ class CertEnrollment {
     return found;
   }
 
+  // THE ENTRY A CERTIFICATE NAMES, READ AND NOT BELIEVED (#98 D10). Where a
+  // request is served in a service deployed as cells is decided before it is
+  // authenticated — a credential is verified, a claim spent and a certificate
+  // written only in the cell that holds the entry — so the enrollment
+  // families need the entry a presented certificate's `urn:sts:`
+  // subjectAltName names without verifying anything: it chooses only WHERE
+  // `authenticatePresentedCertificate()` then asks the three real questions.
+  /**
+   * Reads the one person or application a certificate's `urn:sts:`
+   * subjectAltName names, without verifying the certificate.
+   *
+   * @param certificate - the certificate, as PEM or DER
+   * @returns the entry's `kind` and `id`, or null when it names none or
+   *   several, or cannot be read
+   */
+  entryNamedByCertificate(certificate) {
+    const { nodeCrypto, log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.entryNamedByCertificate().");
+    let cert = null;
+    try {
+      cert = certificate ? new nodeCrypto.X509Certificate(certificate) : null;
+    } catch (e) {
+      log.debug("Caught in CertEnrollment.entryNamedByCertificate(): " +
+                ((e && e.message) || e));
+      cert = null;
+    }
+    const named = String((cert && cert.subjectAltName) || '').split(/,\s*/)
+      .filter(function (one) {
+        return one.indexOf('URI:') === 0;
+      })
+      .map(function (one) {
+        return self.entryFromUri(one.slice(4));
+      })
+      .filter(function (one) {
+        return !!one;
+      });
+    log.debug("Leaving CertEnrollment.entryNamedByCertificate(). " +
+              named.length);
+    return named.length === 1 ? named[0] : null;
+  }
+
+  /**
+   * Names an entry in a sentence, such as `person "alice"`.
+   *
+   * @param entry - the entry's `kind` and `id`
+   * @returns the label
+   */
   entryLabel(entry) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.entryLabel().");
@@ -465,6 +669,14 @@ class CertEnrollment {
   // ---------------------------------------------------------------------------
   // THE ENTRY.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads an entry in the ambient realm.
+   *
+   * @param kind - `person` or `application`
+   * @param id - the entry's identifier
+   * @returns `ok`, the entry, its DN, mail, UPN, registered host names and
+   *   attributes; or a refusal
+   */
   resolveEntry(kind, id) {
     const { log } = this.deps;
     const self = this;
@@ -517,6 +729,13 @@ class CertEnrollment {
     };
   }
 
+  /**
+   * Normalises a host name or IP address: lower-cased, a trailing dot removed,
+   * RFC 1123 labels with one leading wildcard allowed.
+   *
+   * @param value - the host name or address
+   * @returns the normalised name, or '' when it is not one
+   */
   normalHostName(value) {
     const { net, log } = this.deps;
     log.debug("Entering CertEnrollment.normalHostName().");
@@ -555,6 +774,18 @@ class CertEnrollment {
   // (`open`) grants nothing here, as it grants nothing on the LDAP socket:
   // "everybody is an administrator because nobody is" is a bootstrap for the
   // console and not a reason to issue certificates in anybody's name.
+  /**
+   * Says whether a person is an administrator for enrollment: holds Admin Write
+   * in the default realm's roster or the ambient realm's, with the password
+   * verified in that roster's realm.
+   *
+   * An empty roster grants nothing here.
+   *
+   * @param username - the person
+   * @param password - their password
+   * @param via - the door, for the log
+   * @returns a promise of true when they are
+   */
   async adminFor(username, password, via?) {
     const { log, credentials, realms, adminRbac } = this.deps;
     log.debug("Entering CertEnrollment.adminFor(). username=" + username);
@@ -632,6 +863,13 @@ class CertEnrollment {
   // roster that says whether they administer it — the default realm's in the
   // default realm, a realm's own anywhere else. Asking the default realm's by
   // name from inside a realm was the collision `adminFor()` describes.
+  /**
+   * Says whether a principal a session already authenticated holds Admin Write
+   * in the ambient realm's roster.
+   *
+   * @param username - the person
+   * @returns true when they do
+   */
   sessionIsAdmin(username) {
     const { log, realms, adminRbac } = this.deps;
     log.debug("Entering CertEnrollment.sessionIsAdmin().");
@@ -653,6 +891,14 @@ class CertEnrollment {
               roles.claimPending !== true);
   }
 
+  /**
+   * Authenticates a person by password, for EST.
+   *
+   * @param username - the person
+   * @param password - their password
+   * @param via - the door
+   * @returns a promise of `ok` and the principal, or a refusal
+   */
   async authenticatePerson(username, password, via?) {
     const { log, credentials, realms } = this.deps;
     const self = this;
@@ -719,6 +965,14 @@ class CertEnrollment {
     return nodeCrypto.timingSafeEqual(a, b) && !!expected;
   }
 
+  /**
+   * Authenticates an application by its client id and secret, for EST.
+   *
+   * @param clientId - the client id
+   * @param secret - the client secret
+   * @param via - the door
+   * @returns a promise of `ok` and the principal, or a refusal
+   */
   async authenticateApplication(clientId, secret, via?) {
     const { log, applications, mode, realms } = this.deps;
     const self = this;
@@ -779,6 +1033,15 @@ class CertEnrollment {
   //      entry" buys: a certificate the entry does not list is not that
   //      entry's credential.
   // ---------------------------------------------------------------------------
+  /**
+   * Authenticates the TLS client certificate on a connection: it verifies to
+   * this realm's path with revocation consulted, certifies `clientAuth`, and is
+   * listed on the entry its URN names.
+   *
+   * @param req - the request
+   * @param via - the door
+   * @returns a promise of `ok` and the principal, or a refusal
+   */
   async authenticateCertificate(req, via?) {
     const { log, mtls } = this.deps;
     const self = this;
@@ -814,6 +1077,17 @@ class CertEnrollment {
   // renewal of an S/MIME certificate is signed by that certificate, which
   // certifies `emailProtection` and has never been a TLS credential.
   // ---------------------------------------------------------------------------
+  /**
+   * Authenticates a certificate presented inside a message rather than on the
+   * connection (SCEP's signed requests), held to what a TLS client certificate
+   * is.
+   *
+   * @param pem - the certificate
+   * @param via - the door
+   * @param options - `clientAuth`: false where the certificate is not being
+   *   used as a TLS client credential
+   * @returns a promise of `ok` and the principal, or a refusal
+   */
   async authenticatePresentedCertificate(pem, via?, options?) {
     const { nodeCrypto, log, pki, realms, x509 } = this.deps;
     const self = this;
@@ -886,6 +1160,15 @@ class CertEnrollment {
   // authenticated user identity", and "an admin user can request one that maps
   // to any user object in the current realm".
   // ---------------------------------------------------------------------------
+  /**
+   * Applies the identity rule: a principal may be issued a certificate for its
+   * own entry, and an administrator for any person or application in the realm.
+   *
+   * @param principal - the authenticated principal
+   * @param target - the entry the certificate is for
+   * @returns `ok`, whether it is for the principal itself and whether as an
+   *   administrator; or a refusal
+   */
   authorizeTarget(principal, target) {
     const { log } = this.deps;
     const self = this;
@@ -916,6 +1199,13 @@ class CertEnrollment {
   // ---------------------------------------------------------------------------
   // PROFILES AGAINST SETTINGS.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the profiles a family may issue in this realm, from its
+   * `allowedProfiles` setting.
+   *
+   * @param family - the enrollment family
+   * @returns the profile ids
+   */
   allowedProfiles(family) {
     const { log, config } = this.deps;
     log.debug("Entering CertEnrollment.allowedProfiles(). family=" + family);
@@ -932,6 +1222,14 @@ class CertEnrollment {
     });
   }
 
+  /**
+   * Checks that a profile exists, is not refused, and is allowed for a family
+   * in this realm.
+   *
+   * @param family - the enrollment family
+   * @param profileId - the profile
+   * @returns `ok` and the profile, or a refusal
+   */
   checkProfile(family, profileId) {
     const { log } = this.deps;
     const self = this;
@@ -970,6 +1268,12 @@ class CertEnrollment {
     return { ok: true, profile: id };
   }
 
+  /**
+   * Returns a family's default profile in this realm.
+   *
+   * @param family - the enrollment family
+   * @returns the profile id
+   */
   defaultProfile(family) {
     const { log, config } = this.deps;
     log.debug("Entering CertEnrollment.defaultProfile().");
@@ -1005,6 +1309,15 @@ class CertEnrollment {
   // is chosen by the path or the realm before a CSR is read), so ACME is the
   // one caller; the rule is here because the profiles are.
   // ---------------------------------------------------------------------------
+  /**
+   * Chooses the profile for an ACME order that named none: `tls-server` for an
+   * order of host names or addresses only, where allowed, else the realm
+   * default.
+   *
+   * @param family - the enrollment family
+   * @param types - the identifier types in the order
+   * @returns the profile id
+   */
   profileForIdentifiers(family, types) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.profileForIdentifiers().");
@@ -1040,6 +1353,13 @@ class CertEnrollment {
   // the CSR is only a TEMPLATE (EST /serverkeygen, where the key is this
   // service's).
   // ---------------------------------------------------------------------------
+  /**
+   * Wraps DER bytes as PEM.
+   *
+   * @param der - the bytes
+   * @param label - the PEM label; `CERTIFICATE` when omitted
+   * @returns the PEM
+   */
   derToPem(der, label?) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.derToPem().");
@@ -1070,6 +1390,18 @@ class CertEnrollment {
       ? value.valueBlock.value : '');
   }
 
+  /**
+   * Parses a PKCS #10 request and checks its proof of possession with the
+   * request's own key.
+   *
+   * A key-encapsulation key is refused unless the request is only a template.
+   *
+   * @param bytes - the DER request
+   * @param options - `template`, for a request whose key this service will
+   *   generate
+   * @returns a promise of `ok`, the DER, the public key, its algorithm and
+   *   kind, and the subject and names requested; or a refusal
+   */
   async parseCsr(bytes, options?) {
     const { asn1js, pkijs, log, keyMaterial } = this.deps;
     const self = this;
@@ -1207,6 +1539,13 @@ class CertEnrollment {
 
   // A key described by `describePublicPem()` in the vocabulary /admin/pki and
   // `keyMaterial.KEY_ALGS` use — `rsa-2048`, `ec-p256`, `ed25519`, `ml-dsa-44`.
+  /**
+   * Names a key in the vocabulary `/admin/pki` uses, such as `rsa-2048`,
+   * `ec-p256`, `ed25519` or `ml-dsa-44`.
+   *
+   * @param desc - the key as `describePublicPem()` described it
+   * @returns the name
+   */
   keyAlgName(desc) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.keyAlgName().");
@@ -1332,6 +1671,16 @@ class CertEnrollment {
   // client configured with a subject and nothing else sends. More than one URN
   // naming different entries is refused: one certificate maps to one entry.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides which entry a request is for: the one its `urn:sts:` subjectAltName
+   * names, else the principal itself, or for an administrator the entry its
+   * common name names.
+   *
+   * @param requested - the names the request asked for
+   * @param commonName - the request's common name
+   * @param principal - the authenticated principal
+   * @returns `ok`, the target and how it was found; or a refusal
+   */
   targetFromRequest(requested, commonName, principal) {
     const { log } = this.deps;
     const self = this;
@@ -1394,6 +1743,15 @@ class CertEnrollment {
   // certificate that does not do what its requester configured, and they would
   // find out at a TLS handshake a week later.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the names that go in the certificate from the entry; every name
+   * requested must be owned by the entry.
+   *
+   * @param resolved - the entry as `resolveEntry()` answered
+   * @param profileId - the profile
+   * @param requested - the names the request asked for
+   * @returns `ok` and the names, or a refusal naming the one not owned
+   */
   namesFor(resolved, profileId, requested) {
     const { net, log } = this.deps;
     const self = this;
@@ -1519,6 +1877,12 @@ class CertEnrollment {
     return { ok: true, names: names };
   }
 
+  /**
+   * Returns the organisation and country certificates in this realm are issued
+   * under.
+   *
+   * @returns the organisation and country
+   */
   organisationOf() {
     const { log, config, pki, realms } = this.deps;
     log.debug("Entering CertEnrollment.organisationOf().");
@@ -1598,7 +1962,7 @@ class CertEnrollment {
     return !!written;
   }
 
-  sealText(plain, label?) {
+  sealText(plain, label?, tier?) {
     const { log, keystore } = this.deps;
     log.debug("Entering CertEnrollment.sealText().");
     if (!keystore.persists()) {
@@ -1608,7 +1972,10 @@ class CertEnrollment {
     }
     let sealed = null;
     try {
-      sealed = keystore.seal(String(plain), label);
+      // `tier` 'cell' for a PERSON's material (#98): sealed under their home
+      // cell's key where there is one; an application's is configuration
+      // every cell holds, under the service key.
+      sealed = keystore.seal(String(plain), label, tier);
     } catch (e) {
       log.debug("Caught in CertEnrollment.sealText(): " +
                 ((e && e.message) || e));
@@ -1642,6 +2009,12 @@ class CertEnrollment {
     return opened === null || opened === undefined ? null : String(opened);
   }
 
+  /**
+   * Normalises a certificate serial to lower-case hex.
+   *
+   * @param serial - the serial
+   * @returns the hex
+   */
   normalSerial(serial) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.normalSerial().");
@@ -1662,6 +2035,12 @@ class CertEnrollment {
   }
 
   // The certificates on an entry, newest first, with no key material.
+  /**
+   * Lists the certificates on an entry, newest first, with no key material.
+   *
+   * @param entry - the entry's `kind` and `id`
+   * @returns the certificate records
+   */
   enrolledOf(entry) {
     const { log } = this.deps;
     const self = this;
@@ -1672,11 +2051,55 @@ class CertEnrollment {
       return [];
     }
     log.debug("Leaving CertEnrollment.enrolledOf().");
-    return self.parseJsonValues(values).map(function (one) {
-      return self.publicRecord(one);
-    }).sort(function (a, b) {
+    return self.enrolledFrom(values).sort(function (a, b) {
       return String(b.issuedAt).localeCompare(String(a.issuedAt));
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE RECORDS OUT OF VALUES ALREADY READ, optionally of ONE FAMILY — and
+  // the family is decided BEFORE the parse (#352, 2026-09-29).
+  //
+  // Each value is one JSON record carrying a PEM, a subject, names and a
+  // `family`; the SCEP page wanted SCEP's and parsed EST's and ACME's to find
+  // out they were not. `ofFamily()` below reads the family off the TEXT, and a
+  // value that cannot be of the family asked for is never parsed.
+  // ---------------------------------------------------------------------------
+  enrolledFrom(values, family?) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.enrolledFrom(). family=" + family);
+    const wanted = family ? (values || []).filter(function (value) {
+      return self.mayBeOfFamily(value, family);
+    }) : (values || []);
+    const out = self.parseJsonValues(wanted).filter(function (one) {
+      return !family || one.family === family;
+    }).map(function (one) {
+      return self.publicRecord(one);
+    });
+    log.debug("Leaving CertEnrollment.enrolledFrom(). " + out.length + ".");
+    return out;
+  }
+
+  // Can this stored value be a record of `family`? **FALSE ONLY WHEN IT
+  // CANNOT**, so the answer after the parse is exactly the answer without
+  // this test. JSON can spell a key or a string in two ways: literally, or
+  // with `\u` escapes. Without a `\u` anywhere in the value, a record whose
+  // `family` is `scep` must contain `"family"`, optional whitespace, a colon,
+  // optional whitespace and `"scep"` literally — so the absence of that is
+  // proof. With one, the value is parsed, whatever it holds. A family is one
+  // of three fixed words, so it needs no escaping inside the expression; a
+  // name that is not a plain word is not tested and the value is parsed.
+  // Hot path for a realm's enrolled certificates: one test per stored value,
+  // so no Entering/Leaving pair — two log lines per value would be most of
+  // the listing's log.
+  mayBeOfFamily(value, family) {
+    const text = String(value);
+    const word = String(family);
+    if (!/^[a-z0-9-]+$/.test(word) || text.indexOf('\\u') >= 0) {
+      return true;
+    }
+    return new RegExp('"family"\\s*:\\s*"' + word + '"').test(text);
   }
 
   // ---------------------------------------------------------------------------
@@ -1733,6 +2156,16 @@ class CertEnrollment {
   //   spec.via          what to call the door on audit rows
   //   spec.replaces     a serial this certificate supersedes (re-enrollment)
   // ---------------------------------------------------------------------------
+  /**
+   * Issues a certificate: the identity rule, the profile, the names from the
+   * entry, issuance by the family's CA, and the record kept on the entry.
+   *
+   * @param spec - `family`, `profile`, `principal`, `target`, `publicKeyPem`,
+   *   `requested`, `keySource`, `privateKeyPem` (for a server key), `via` and
+   *   `replaces`
+   * @returns a promise of `ok` and the issued certificate, or a refusal
+   *   (audited)
+   */
   async issue(spec?) {
     const { nodeCrypto, log, helpers, audit, config, errorCodes, pki,
             realms } = this.deps;
@@ -1809,6 +2242,28 @@ class CertEnrollment {
     const counted = live.filter(function (one) {
       return self.normalSerial(one.serialHex) !== replacing;
     });
+    // **A RENEWAL MUST BE ABLE TO SUPERSEDE WHAT IT RENEWS, OR IT IS REFUSED
+    // (2026-09-28).** The certificate it replaces is revoked `superseded`
+    // once the new one is issued, and that revocation used to be awaited and
+    // ignored — so when the issued register had lost the old serial (a
+    // single-node lost update of the certificate authority row,
+    // `sts_scep_sscep`), the renewal succeeded and the old certificate stayed
+    // valid and off the CRL, with nothing said. A renewal that leaves the old
+    // certificate standing is the one outcome a renewal must not have, so the
+    // old certificate is looked for BEFORE anything is issued, and must be
+    // this entry's.
+    if (replacing) {
+      const old = self.findEnrolled(replacing, undefined);
+      if (!old || !self.sameEntry(resolved.entry, old.entry)) {
+        log.debug("Leaving CertEnrollment.issue(). The certificate it " +
+                  "replaces cannot be superseded.");
+        return auditRefusal(self.refuse('STS-ENROLL-0092', 409, 'The ' +
+          'certificate this request renews (serial ' + replacing + ') is ' +
+          'not recorded as issued to the ' + self.entryLabel(resolved.entry) +
+          ' in this realm, so it could not be superseded; no certificate ' +
+          'was issued.'));
+      }
+    }
     if (counted.length >= cap) {
       log.debug("Leaving CertEnrollment.issue(). The entry is full.");
       return auditRefusal(self.refuse('STS-ENROLL-0040', 409, 'The ' +
@@ -1877,7 +2332,8 @@ class CertEnrollment {
     const kind = resolved.entry.kind;
     if (record.keySource === 'server') {
       const sealed = self.sealText(asked.privateKeyPem, kind === 'person'
-        ? 'person-private-key' : 'application-private-key');
+        ? 'person-private-key' : 'application-private-key',
+        kind === 'person' ? 'cell' : '');
       if (!sealed.ok) {
         log.debug("Leaving CertEnrollment.issue(). The key could not be " +
                   "sealed.");
@@ -1954,10 +2410,28 @@ class CertEnrollment {
         reasonUser: 'A certificate was issued to you.' });
     }
     if (replacing) {
-      await self.revokeEnrolled(replacing, 'superseded',
-                                asked.principal ? String(asked.principal.id)
-                                                : '',
-                                { quiet: true });
+      const by = asked.principal ? String(asked.principal.id) : '';
+      const superseded = await self.revokeEnrolled(replacing, 'superseded',
+                                                   by, { quiet: true });
+      if (!superseded || superseded.ok === false) {
+        // THE CHECK ABOVE PASSED AND THE REVOCATION STILL FAILED — the
+        // register moved between the two, or the authority refused. The new
+        // certificate is taken back rather than left beside an old one that
+        // is still valid, and the request is refused.
+        const undone = await self.revokeEnrolled(record.serialHex,
+          'cessationOfOperation', by, { quiet: true });
+        log.error(errorCodes.tag('STS-ENROLL-0093') + 'cert_enrollment: ' +
+                  'the certificate serial ' + replacing + ' could not be ' +
+                  'superseded by its renewal ' + record.serialHex + ' (' +
+                  String((superseded && superseded.why) || 'no answer') +
+                  '); the renewal ' + (undone && undone.ok ? 'was revoked'
+                    : 'could NOT be revoked either') + ' and the request ' +
+                  'refused.');
+        log.debug("Leaving CertEnrollment.issue(). The supersede failed.");
+        return auditRefusal(self.refuse('STS-ENROLL-0093', 503, 'The ' +
+          'certificate this request renews could not be revoked, so the ' +
+          'renewal was taken back; try again.'));
+      }
     }
     log.debug("Leaving CertEnrollment.issue(). serial=" + record.serialHex);
     return { ok: true, record: self.publicRecord(record),
@@ -2251,6 +2725,15 @@ class CertEnrollment {
   // A key pair generated HERE and certified in one act — EST /serverkeygen and
   // the console's "issue with a server-generated key". The private key is
   // returned ONCE and kept, sealed, on the entry.
+  /**
+   * Generates a key pair here and certifies it in one act (EST /serverkeygen
+   * and the console); the private key is returned once and kept, sealed, on the
+   * entry.
+   *
+   * @param spec - as for `issue()`, with `keyAlg`
+   * @returns a promise of the issued certificate with `privateKeyPem`, or a
+   *   refusal
+   */
   async issueWithServerKey(spec?) {
     const { log, keyMaterial } = this.deps;
     const self = this;
@@ -2296,6 +2779,13 @@ class CertEnrollment {
   // ---------------------------------------------------------------------------
   // FIND AND REVOKE.
   // ---------------------------------------------------------------------------
+  /**
+   * Finds the entry holding an enrolled certificate by serial.
+   *
+   * @param serialHex - the serial
+   * @param family - the family to look in; every family when omitted
+   * @returns the entry, the record and the family, or null
+   */
   findEnrolled(serialHex, family) {
     const { log, helpers, pki, realms } = this.deps;
     const self = this;
@@ -2357,6 +2847,15 @@ class CertEnrollment {
   // because the revocation register is. Answers one row per certificate:
   // `{ serialHex, family, ok, already, why }`.
   // -------------------------------------------------------------------------
+  /**
+   * Revokes every certificate a device entry holds that this service issued
+   * over EST or SCEP.
+   *
+   * @param device - the device
+   * @param reason - the RFC 5280 reason
+   * @param by - who revoked them
+   * @returns one row per certificate: serial, family, `ok`, `already` and `why`
+   */
   revokeDeviceCertificates(device, reason, by?) {
     const { log, audit, realms, loadRevocation } = this.deps;
     const self = this;
@@ -2405,6 +2904,17 @@ class CertEnrollment {
     });
   }
 
+  /**
+   * Revokes an enrolled certificate by serial.
+   *
+   * @param serialHex - the serial
+   * @param reason - the RFC 5280 reason
+   * @param by - who revoked it
+   * @param options - `entry` and `family` to hold the revocation to, and
+   *   `quiet`
+   * @returns a promise of `ok`, the serial, entry, family and reason; or a
+   *   refusal
+   */
   async revokeEnrolled(serialHex, reason, by?, options?) {
     const { log, audit, errorCodes, realms, loadRevocation } = this.deps;
     const self = this;
@@ -2499,6 +3009,14 @@ class CertEnrollment {
 
   // A server-generated private key held on an entry, opened. For the entry's
   // own holder through the portal and never through a view.
+  /**
+   * Returns a server-generated private key held on an entry, opened: for the
+   * entry's own holder through the portal only.
+   *
+   * @param entry - the entry
+   * @param serialHex - the certificate's serial
+   * @returns the private key PEM, or ''
+   */
   serverKeyOf(entry, serialHex) {
     const { log } = this.deps;
     const self = this;
@@ -2527,21 +3045,38 @@ class CertEnrollment {
   // the portal, an administrator on the console or the API), shown once, and
   // spent once.
   // ---------------------------------------------------------------------------
+  //
+  // **AND, IN A SERVICE DEPLOYED AS CELLS, THE CELL THAT MINTED IT (#98
+  // D10).** The random part carries `cell_locator.ts`'s keyed tag — twelve
+  // base64url characters after the sixteen hex digits, nothing a reader can
+  // map to a cell — so an ACME newAccount or a SCEP PKCSReq presented at
+  // another cell is relayed to the one that minted the credential before
+  // anything is verified or spent there. A PERSON's credential is placed by
+  // their home instead (the entry the identifier names, through the routing
+  // index), which is where it was minted and where it still is if they are
+  // ever re-homed; the tag is what places an APPLICATION's, whose entry is
+  // the global tier's and whose binding claim (`bindEabOnce()`,
+  // `redeemScepChallengeOnce()`) is held in one cell. A single-cell service
+  // appends nothing, so its identifiers are what they always were.
   credentialId(prefix, entry) {
-    const { nodeCrypto, log } = this.deps;
+    const { nodeCrypto, log, cellLocator } = this.deps;
     log.debug("Entering CertEnrollment.credentialId().");
     log.debug("Leaving CertEnrollment.credentialId().");
     return prefix + '-' + (entry.kind === 'person' ? 'p' : 'a') + '-' +
            Buffer.from(entry.id, 'utf8').toString('base64url') + '-' +
-           nodeCrypto.randomBytes(8).toString('hex');
+           cellLocator.stamp(nodeCrypto.randomBytes(8).toString('hex'));
   }
 
   entryOfCredentialId(prefix, id) {
-    const { log } = this.deps;
+    const { log, cellLocator } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.entryOfCredentialId().");
+    // The random part, and the cell's tag after it when there is one (see
+    // `credentialId()`); the tag is `cell_locator.TAG_LENGTH` characters.
     const match = new RegExp('^' + prefix + '-([pa])-([A-Za-z0-9_-]{1,400})-' +
-                             '([0-9a-f]{16})$').exec(String(id || ''));
+                             '([0-9a-f]{16})(?:[A-Za-z0-9_-]{' +
+                             cellLocator.TAG_LENGTH + '})?$')
+      .exec(String(id || ''));
     if (!match) {
       log.debug("Leaving CertEnrollment.entryOfCredentialId(). Malformed.");
       return null;
@@ -2583,6 +3118,13 @@ class CertEnrollment {
     });
   }
 
+  /**
+   * Creates an ACME External Account Binding key for an entry.
+   *
+   * @param spec - `target`, `lifetimeS` and `createdBy`
+   * @returns `ok`, the kid, the HMAC key (shown once), the algorithm, the
+   *   expiry and the target; or a refusal
+   */
   createEab(spec?) {
     const { nodeCrypto, log, audit } = this.deps;
     const self = this;
@@ -2612,7 +3154,9 @@ class CertEnrollment {
     }
     const kid = self.credentialId('eab', resolved.entry);
     const hmacKey = nodeCrypto.randomBytes(32).toString('base64url');
-    const sealed = self.sealText(hmacKey, 'acme-eab-key');
+    const sealed = self.sealText(hmacKey, 'acme-eab-key',
+                                 resolved.entry.kind === 'person' ? 'cell'
+                                                                  : '');
     if (!sealed.ok) {
       log.debug("Leaving CertEnrollment.createEab(). Could not seal.");
       return self.refuse('STS-ENROLL-0043', 503, 'The EAB key could not be ' +
@@ -2652,6 +3196,13 @@ class CertEnrollment {
              expiresAt: record.expiresAt, target: resolved.entry };
   }
 
+  /**
+   * Finds an EAB key by kid.
+   *
+   * @param kid - the key id
+   * @returns the entry, the kid, the HMAC key, whether it expired, the bound
+   *   account and the expiry; or null
+   */
   findEab(kid) {
     const { log } = this.deps;
     const self = this;
@@ -2693,6 +3244,14 @@ class CertEnrollment {
   // refused; the SAME account re-presenting it (a client retrying newAccount)
   // is the idempotent case RFC 8555 section 7.3.1 describes and is answered as
   // such.
+  /**
+   * Binds an EAB key to one ACME account for life; the same account presenting
+   * it again is answered idempotently.
+   *
+   * @param kid - the key id
+   * @param accountThumbprint - the account key's thumbprint
+   * @returns the bound record, or a refusal
+   */
   bindEab(kid, accountThumbprint) {
     const { log } = this.deps;
     const self = this;
@@ -2766,6 +3325,14 @@ class CertEnrollment {
   // twice is a certificate for somebody else's entry; a retry refused once is a
   // retry.
   // ---------------------------------------------------------------------------
+  /**
+   * Binds an EAB key through a cluster claim, so two nodes cannot bind one key
+   * to two accounts.
+   *
+   * @param kid - the key id
+   * @param accountThumbprint - the account key's thumbprint
+   * @returns a promise of the bound record, or a refusal
+   */
   bindEabOnce(kid, accountThumbprint) {
     const { log, errorCodes, claims } = this.deps;
     const self = this;
@@ -2812,6 +3379,13 @@ class CertEnrollment {
       });
   }
 
+  /**
+   * Deletes an EAB key.
+   *
+   * @param kid - the key id
+   * @param by - who deleted it
+   * @returns `ok`, the kid and the entry; or a refusal
+   */
   deleteEab(kid, by?) {
     const { log, audit } = this.deps;
     const self = this;
@@ -2890,13 +3464,28 @@ class CertEnrollment {
     log.debug("Leaving CertEnrollment.signalEnrolmentCredential().");
   }
 
+  /**
+   * Lists the EAB keys on an entry, without the key material.
+   *
+   * @param entry - the entry
+   * @returns the records
+   */
   eabsOf(entry) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.eabsOf().");
     const values = self.readAttribute(entry, 'eab') || [];
-    const nowMs = Date.now();
     log.debug("Leaving CertEnrollment.eabsOf().");
+    return self.eabsFrom(values);
+  }
+
+  // `eabsOf()` out of values already read (#352), for the realm listing.
+  eabsFrom(values) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.eabsFrom().");
+    const nowMs = Date.now();
+    log.debug("Leaving CertEnrollment.eabsFrom().");
     return self.parseJsonValues(values).map(function (one) {
       return { kid: one.kid, createdAt: one.createdAt,
                expiresAt: one.expiresAt, createdBy: one.createdBy,
@@ -2907,6 +3496,14 @@ class CertEnrollment {
     });
   }
 
+  /**
+   * Creates a single-use SCEP challenge password for an entry; only a digest is
+   * kept.
+   *
+   * @param spec - `target`, `profile`, `lifetimeS` and `createdBy`
+   * @returns `ok`, the id, the challenge (shown once), the profile, the expiry
+   *   and the target; or a refusal
+   */
   createScepChallenge(spec?) {
     const { nodeCrypto, log, audit } = this.deps;
     const self = this;
@@ -2977,6 +3574,13 @@ class CertEnrollment {
   // Redeem a challenge password. `peek` checks without spending — SCEP answers
   // a retried PKIOperation for a transaction it already completed, and the
   // protocol module decides whether a retry is that case.
+  /**
+   * Redeems a SCEP challenge password, spending it.
+   *
+   * @param challenge - the challenge password
+   * @param options - `peek`, to check without spending
+   * @returns `ok`, the id, the entry and the profile; or a refusal
+   */
   redeemScepChallenge(challenge, options?) {
     const { nodeCrypto, log } = this.deps;
     const self = this;
@@ -3041,6 +3645,13 @@ class CertEnrollment {
   // The synchronous `redeemScepChallenge()` is unchanged and is still what
   // marks the entry, which every page reads.
   // ---------------------------------------------------------------------------
+  /**
+   * Redeems a SCEP challenge password through a cluster claim, so two nodes
+   * cannot both spend it.
+   *
+   * @param challenge - the challenge password
+   * @returns a promise of what `redeemScepChallenge()` answers
+   */
   async redeemScepChallengeOnce(challenge) {
     const { log, errorCodes, claims } = this.deps;
     const self = this;
@@ -3085,6 +3696,13 @@ class CertEnrollment {
     return spent;
   }
 
+  /**
+   * Deletes a SCEP challenge.
+   *
+   * @param id - the challenge's id
+   * @param by - who deleted it
+   * @returns `ok`, the id and the entry; or a refusal
+   */
   deleteScepChallenge(id, by?) {
     const { log, audit } = this.deps;
     const self = this;
@@ -3116,13 +3734,28 @@ class CertEnrollment {
     return { ok: true, id: String(id), entry: entry };
   }
 
+  /**
+   * Lists the SCEP challenges on an entry, without the digests.
+   *
+   * @param entry - the entry
+   * @returns the records
+   */
   scepChallengesOf(entry) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.scepChallengesOf().");
     const values = self.readAttribute(entry, 'challenge') || [];
-    const nowMs = Date.now();
     log.debug("Leaving CertEnrollment.scepChallengesOf().");
+    return self.challengesFrom(values);
+  }
+
+  // `scepChallengesOf()` out of values already read (#352).
+  challengesFrom(values) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.challengesFrom().");
+    const nowMs = Date.now();
+    log.debug("Leaving CertEnrollment.challengesFrom().");
     return self.parseJsonValues(values).map(function (one) {
       return { id: one.id, profile: one.profile, createdAt: one.createdAt,
                expiresAt: one.expiresAt, createdBy: one.createdBy,
@@ -3136,6 +3769,12 @@ class CertEnrollment {
   // ---------------------------------------------------------------------------
   // HOST NAMES (an administrator's act).
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the host names registered on an entry.
+   *
+   * @param entry - the entry
+   * @returns the names
+   */
   hostNamesOf(entry) {
     const { log } = this.deps;
     const self = this;
@@ -3224,19 +3863,82 @@ class CertEnrollment {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // EVERY HOLDER OF AN ATTRIBUTE WITH ITS VALUES, IN ONE WALK (#352,
+  // 2026-09-29): `[{ entry, values }]`, in `holdersOf()`'s order.
+  //
+  // The four realm listings below were `holdersOf()` — a walk that FOUND the
+  // values — and then `readAttribute()` per holder, which is `resolveEntry()`:
+  // a second directory lookup, and a copy of eight attributes, to read the
+  // one the walk had just seen. The directory's `holdersWithValues()` hands
+  // the values back from the walk. Under #349's window each is one
+  // statement, where the old shape was one plus one per holder.
+  //
+  // A directory without `holdersWithValues()` (an older filler, a test's
+  // stub) is asked the old way.
+  // ---------------------------------------------------------------------------
+  holdersWithValuesOf(key) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.holdersWithValuesOf(). key=" + key);
+    const out = [];
+    if (!self.directory) {
+      log.debug("Leaving CertEnrollment.holdersWithValuesOf(). No directory.");
+      return out;
+    }
+    if (typeof self.directory.holdersWithValues !== 'function') {
+      self.holdersOf(key).forEach(function (entry) {
+        const values = self.readAttribute(entry, key);
+        if (values) {
+          out.push({ entry: entry, values: values });
+        }
+      });
+      log.debug("Leaving CertEnrollment.holdersWithValuesOf(). " +
+                out.length + ", read one by one.");
+      return out;
+    }
+    ['person', 'application'].forEach(function (kind) {
+      let rows = [];
+      try {
+        rows = self.directory.holdersWithValues(kind,
+                                                ATTRIBUTES[kind][key]) || [];
+      } catch (e) {
+        log.debug("Caught in CertEnrollment.holdersWithValuesOf(): " +
+                  ((e && e.message) || e));
+        rows = [];
+      }
+      rows.forEach(function (row) {
+        out.push({ entry: { kind: kind, id: String(row.id) },
+                   values: (row.values || []).slice() });
+      });
+    });
+    log.debug("Leaving CertEnrollment.holdersWithValuesOf(). " + out.length +
+              " holder(s).");
+    return out;
+  }
+
+  /**
+   * Lists every enrolled certificate in the ambient realm, newest first.
+   *
+   * Records of another family are recognised on their text and never parsed
+   * (#352).
+   *
+   * @param family - the family to list; every family when omitted
+   * @returns the records, each with its entry
+   */
   certificatesInRealm(family) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.certificatesInRealm(). family=" +
               family);
     const out = [];
-    self.holdersOf('certificate').forEach(function (entry) {
-      self.enrolledOf(entry).forEach(function (record) {
-        if (!family || record.family === family) {
-          out.push(Object.assign({ entry: entry,
-                                   entryUri: self.entryUri(entry) },
-                                 record));
-        }
+    self.holdersWithValuesOf('certificate').forEach(function (held) {
+      const entryUri = self.entryUri(held.entry);
+      self.enrolledFrom(held.values, family).sort(function (a, b) {
+        return String(b.issuedAt).localeCompare(String(a.issuedAt));
+      }).forEach(function (record) {
+        out.push(Object.assign({ entry: held.entry, entryUri: entryUri },
+                               record));
       });
     });
     log.debug("Leaving CertEnrollment.certificatesInRealm(). " + out.length +
@@ -3246,14 +3948,51 @@ class CertEnrollment {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // HOW MANY, AND IN WHICH STATE — for the monitors' tiles (#352). They asked
+  // `certificatesInRealm()` for the whole list to read its `length`, which
+  // built, copied and sorted a row per certificate to count them. This reads
+  // the same records and keeps four numbers; the state is `publicRecord()`'s
+  // own rule, so a tile and the list beside it cannot disagree.
+  // ---------------------------------------------------------------------------
+  /**
+   * Counts the enrolled certificates of a family in the ambient realm, by
+   * state, without building a row for any of them.
+   *
+   * @param family - the family to count; every family when omitted
+   * @returns `{ held, valid, revoked, expired }`
+   */
+  certificateCountsInRealm(family?) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.certificateCountsInRealm(). family=" +
+              family);
+    const out = { held: 0, valid: 0, revoked: 0, expired: 0 };
+    self.holdersWithValuesOf('certificate').forEach(function (held) {
+      self.enrolledFrom(held.values, family).forEach(function (record) {
+        out.held += 1;
+        out[record.status] += 1;
+      });
+    });
+    log.debug("Leaving CertEnrollment.certificateCountsInRealm(). " +
+              out.held + ".");
+    return out;
+  }
+
+  /**
+   * Lists every EAB key in the ambient realm, newest first.
+   *
+   * @returns the records, each with its entry
+   */
   eabsInRealm() {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.eabsInRealm().");
     const out = [];
-    self.holdersOf('eab').forEach(function (entry) {
-      self.eabsOf(entry).forEach(function (one) {
-        out.push(Object.assign({ entry: entry, entryUri: self.entryUri(entry) },
+    self.holdersWithValuesOf('eab').forEach(function (held) {
+      const entryUri = self.entryUri(held.entry);
+      self.eabsFrom(held.values).forEach(function (one) {
+        out.push(Object.assign({ entry: held.entry, entryUri: entryUri },
                                one));
       });
     });
@@ -3263,14 +4002,20 @@ class CertEnrollment {
     });
   }
 
+  /**
+   * Lists every SCEP challenge in the ambient realm, newest first.
+   *
+   * @returns the records, each with its entry
+   */
   challengesInRealm() {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.challengesInRealm().");
     const out = [];
-    self.holdersOf('challenge').forEach(function (entry) {
-      self.scepChallengesOf(entry).forEach(function (one) {
-        out.push(Object.assign({ entry: entry, entryUri: self.entryUri(entry) },
+    self.holdersWithValuesOf('challenge').forEach(function (held) {
+      const entryUri = self.entryUri(held.entry);
+      self.challengesFrom(held.values).forEach(function (one) {
+        out.push(Object.assign({ entry: held.entry, entryUri: entryUri },
                                one));
       });
     });
@@ -3280,15 +4025,23 @@ class CertEnrollment {
     });
   }
 
+  /**
+   * Lists every registered host name in the ambient realm.
+   *
+   * @returns the names, each with its entry
+   */
   hostNamesInRealm() {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.hostNamesInRealm().");
     const out = [];
-    self.holdersOf('hostName').forEach(function (entry) {
-      const names = self.hostNamesOf(entry);
+    self.holdersWithValuesOf('hostName').forEach(function (held) {
+      // `resolveEntry()`'s reading of the attribute, from the values in hand.
+      const names = held.values.map(function (one) {
+        return self.normalHostName(one);
+      }).filter(function (one) { return !!one; });
       if (names.length) {
-        out.push({ entry: entry, entryUri: self.entryUri(entry),
+        out.push({ entry: held.entry, entryUri: self.entryUri(held.entry),
                    hostNames: names });
       }
     });
@@ -3297,6 +4050,12 @@ class CertEnrollment {
   }
 
   // The family's Issuing CA in this realm (and nothing private).
+  /**
+   * Describes a family's Issuing CA in this realm, with nothing private.
+   *
+   * @param family - the enrollment family
+   * @returns the description
+   */
   authorityOf(family) {
     const { log, pki, realms } = this.deps;
     log.debug("Entering CertEnrollment.authorityOf(). family=" + family);
@@ -3316,6 +4075,13 @@ class CertEnrollment {
   // Intermediate and the service Root, leaf-most first. What EST /cacerts and
   // SCEP GetCACert serve and what ACME appends to a certificate chain (without
   // the Root).
+  /**
+   * Returns the CA certificates a client installs: the family's Issuing CA, the
+   * realm Intermediate and the service Root.
+   *
+   * @param family - the enrollment family
+   * @returns `ok` and the three PEMs
+   */
   caChainOf(family) {
     const { log, pki, realms } = this.deps;
     log.debug("Entering CertEnrollment.caChainOf(). family=" + family);
@@ -3337,6 +4103,12 @@ class CertEnrollment {
 
   // Make sure the family CA exists in this realm, topping a branch up that was
   // built before the enrollment use cases did. Answers what `caChainOf()` does.
+  /**
+   * Makes sure the family's Issuing CA exists in this realm.
+   *
+   * @param family - the enrollment family
+   * @returns a promise of what `caChainOf()` answers
+   */
   async ensureAuthority(family) {
     const { log, pki, realms } = this.deps;
     const self = this;
@@ -3365,6 +4137,17 @@ class CertEnrollment {
   // elsewhere: the console gate, the /admin-api token gate, or the portal's
   // own sign-in. `admin` asks the roster of the realm the session is in — the
   // default realm's for a session there, the realm's own otherwise.
+  /**
+   * Builds a principal for a console, API or portal session that authenticated
+   * elsewhere.
+   *
+   * @param username - the person
+   * @param via - the door
+   * @param opts - `admin`: true or false to decide, else the ambient realm's
+   *   roster decides
+   * @returns the principal: kind, id, admin, via, realm and whether an entry
+   *   exists
+   */
   sessionPrincipal(username, via?, opts?) {
     const { log, realms } = this.deps;
     const self = this;
@@ -3391,6 +4174,14 @@ class CertEnrollment {
   // dump that printed it would hand the key to anybody holding Admin Read.
   // `ldap/ldap_server.js` calls this with the LOWER-CASED names the store uses.
   // ---------------------------------------------------------------------------
+  /**
+   * Replaces the values of a secret attribute with a sentence, for every
+   * directory dump and search, in every mode.
+   *
+   * @param attribute - the attribute's lower-cased name
+   * @param values - its values
+   * @returns the values, withheld where the attribute is secret
+   */
   withheldValues(attribute, values) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.withheldValues().");
@@ -3423,6 +4214,14 @@ class CertEnrollment {
   // `attempt()` is called after a refusal): a device fleet enrolling
   // legitimately from one NAT must not be locked out by its own successes.
   // ---------------------------------------------------------------------------
+  /**
+   * Refuses, in product mode, an ACME or EST request that reached a plain HTTP
+   * listener; SCEP never asks.
+   *
+   * @param req - the request
+   * @param family - the enrollment family
+   * @returns a refusal, or null
+   */
   transportRefusal(req, family) {
     const { log, mode } = this.deps;
     const self = this;
@@ -3470,6 +4269,15 @@ class CertEnrollment {
   }
 
   // Is this caller over a limit right now? Counts nothing.
+  /**
+   * Says whether a caller is over a family's limit of refused requests right
+   * now; counts nothing.
+   *
+   * @param family - the enrollment family
+   * @param req - the request
+   * @param identity - the identity the request named
+   * @returns a 429 refusal, or null
+   */
   throttled(family, req, identity?) {
     const { log } = this.deps;
     const self = this;
@@ -3501,6 +4309,14 @@ class CertEnrollment {
   // `websecurity.blockedShared()`, which is `blocked()` where no store is
   // shared. Every door in the three families asks this one; `throttled()` stays
   // for a caller that cannot wait.
+  /**
+   * Asks `throttled()`'s question against one budget for the cluster.
+   *
+   * @param family - the enrollment family
+   * @param req - the request
+   * @param identity - the identity the request named
+   * @returns a promise of a 429 refusal, or null
+   */
   throttledShared(family, req, identity?) {
     const { log } = this.deps;
     const self = this;
@@ -3533,6 +4349,14 @@ class CertEnrollment {
   // Every caller is a refusal writer that has already decided and is sending;
   // the count is not a decision, `throttledShared()` on the NEXT request is.
   // The count is one statement and lands well before a client can come back.
+  /**
+   * Counts one refused request against the caller, in the cluster's window
+   * where one is shared, without waiting.
+   *
+   * @param family - the enrollment family
+   * @param req - the request
+   * @param identity - the identity the request named
+   */
   countFailure(family, req, identity?) {
     const { log } = this.deps;
     const self = this;
@@ -3569,6 +4393,15 @@ class CertEnrollment {
   // or null. Where nothing is shared, `sharesLimits()` is false and the writers
   // keep `countFailure()`, synchronously, exactly as before.
   // ---------------------------------------------------------------------------
+  /**
+   * Counts one refused request in the shared window and waits for the answer.
+   *
+   * @param family - the enrollment family
+   * @param req - the request
+   * @param identity - the identity the request named
+   * @returns a promise of the throttle's 429 refusal when the count passed the
+   *   limit, or null
+   */
   countFailureShared(family, req, identity?) {
     const { log } = this.deps;
     const self = this;
@@ -3598,6 +4431,11 @@ class CertEnrollment {
   }
 
   // Whether a refusal writer should wait for `countFailureShared()`.
+  /**
+   * Says whether a refusal writer should wait for `countFailureShared()`.
+   *
+   * @returns true when the limits are shared across the cluster
+   */
   sharesThrottle() {
     const { log } = this.deps;
     const self = this;
@@ -3608,6 +4446,12 @@ class CertEnrollment {
   }
 
   // The retry-after of a throttled refusal, for a Retry-After header.
+  /**
+   * Reads a throttled refusal's retry-after, for a Retry-After header.
+   *
+   * @param refusal - the refusal
+   * @returns the seconds, 60 when it names none
+   */
   retryAfterOf(refusal) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.retryAfterOf().");
@@ -3618,6 +4462,14 @@ class CertEnrollment {
   }
 
   // The two halves of `changeHostName()` the pages and the API call by name.
+  /**
+   * Registers a host name on an entry: an administrator's act.
+   *
+   * @param entry - the entry
+   * @param name - the host name or address
+   * @param by - who added it
+   * @returns `ok` and the names now held, or a refusal
+   */
   addHostName(entry, name, by?) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.addHostName().");
@@ -3625,6 +4477,14 @@ class CertEnrollment {
     return this.changeHostName(entry, name, true, by);
   }
 
+  /**
+   * Removes a registered host name from an entry.
+   *
+   * @param entry - the entry
+   * @param name - the host name or address
+   * @param by - who removed it
+   * @returns `ok` and the names now held, or a refusal
+   */
   removeHostName(entry, name, by?) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.removeHostName().");
@@ -3664,9 +4524,23 @@ const slot = new InstanceSlot<CertEnrollment>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Certificate enrollment's core: who may be issued a certificate for whom, and
+ * what goes in it, for ACME, EST and SCEP (rule 3ag).
+ *
+ * The exports forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
   CertEnrollment: CertEnrollment,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: CertEnrollment): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   FAMILIES: CertEnrollment.FAMILIES,
   withheldValues: slot.forward('withheldValues'),
@@ -3698,6 +4572,8 @@ export = {
   entryUri: slot.forward('entryUri'),
   organisationOf: slot.forward('organisationOf'),
   entryFromUri: slot.forward('entryFromUri'),
+  entryNamedByCertificate: slot.forward('entryNamedByCertificate'),
+  entryOfCredentialId: slot.forward('entryOfCredentialId'),
   entryLabel: slot.forward('entryLabel'),
   resolveEntry: slot.forward('resolveEntry'),
   normalHostName: slot.forward('normalHostName'),
@@ -3740,6 +4616,7 @@ export = {
   addHostName: slot.forward('addHostName'),
   removeHostName: slot.forward('removeHostName'),
   certificatesInRealm: slot.forward('certificatesInRealm'),
+  certificateCountsInRealm: slot.forward('certificateCountsInRealm'),
   eabsInRealm: slot.forward('eabsInRealm'),
   challengesInRealm: slot.forward('challengesInRealm'),
   hostNamesInRealm: slot.forward('hostNamesInRealm'),

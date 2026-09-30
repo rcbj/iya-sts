@@ -70,17 +70,42 @@ interface SshpopDeps {
   agentPath: typeof agentPath;
 }
 
+/**
+ * The `sshpop` node attestor: an SSH host certificate signed by one of the
+ * realm's certificate authorities, and proof of possession of its host key.
+ *
+ * It follows SPIRE's `sshpop` handshake, reports no selectors, and answers most
+ * failures with INTERNAL as SPIRE does.
+ */
 class SshpopAttestor {
+  /**
+   * The attestation type an agent names in `params.data.type`.
+   */
   readonly type = 'sshpop';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'An SSH host certificate signed by one of the ' +
     'realm\'s sshpop certificate authorities, and a signature over a fresh ' +
     'challenge with its host key.';
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, clock, crypto, `net`, configuration, error codes,
+   *   SPIFFE, gRPC and PKI helpers and the agent path template
+   */
   constructor(private readonly deps: SshpopDeps) {
     deps.log.debug("Entering SshpopAttestor.constructor().");
     deps.log.debug("Leaving SshpopAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SshpopDeps {
     helpers.log.debug("Entering SshpopAttestor.defaultDeps().");
     helpers.log.debug("Leaving SshpopAttestor.defaultDeps().");
@@ -89,6 +114,12 @@ class SshpopAttestor {
              rpc: rpc, pki: pki, agentPath: agentPath };
   }
 
+  /**
+   * Parses bytes as a JSON object.
+   *
+   * @param bytes - the bytes to parse
+   * @returns the object, or null when the bytes are not a JSON object
+   */
   json(bytes: Buffer): any {
     const { log } = this.deps;
     log.debug("Entering SshpopAttestor.json().");
@@ -105,6 +136,14 @@ class SshpopAttestor {
 
   // Is `ip` inside a `source-address` list of addresses and CIDR ranges?
   // '' when it is, otherwise why not — Go's `checkSourceAddress()`.
+  /**
+   * Checks whether an address is inside a `source-address` list of addresses
+   * and CIDR ranges, as Go's `checkSourceAddress()` does.
+   *
+   * @param ip - the agent's address
+   * @param list - the certificate's comma-separated `source-address` value
+   * @returns '' when the address is inside the list, otherwise why not
+   */
   sourceAddressProblem(ip: string, list: string): string {
     const { log, net } = this.deps;
     log.debug("Entering SshpopAttestor.sourceAddressProblem().");
@@ -137,13 +176,24 @@ class SshpopAttestor {
            'restriction';
   }
 
+  /**
+   * Checks the host certificate, challenges the agent with a nonce and verifies
+   * its signature over both nonces with the host key.
+   *
+   * @param context - the attestation context; the payload carries the
+   *   certificate
+   * @returns the agent's ID from `spiffe.sshpopAgentPathTemplate`, with no
+   *   selectors; re-attestable
+   * @throws a gRPC status error when the certificate or the signature is
+   *   refused
+   */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
     const { log, nowSec, crypto, config, errorCodes, spiffeId, rpc, pki,
             agentPath } = this.deps;
     log.debug("Entering SshpopAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const authorities = String(config.value('spiffe.sshpopCertAuthorities') ||
                                '').split('\n').map(function (line) {
       return pki.parseSshAuthorizedKey(line);
@@ -320,6 +370,11 @@ class SshpopAttestor {
   }
 }
 
+/**
+ * The `sshpop` node attestor (#40): SSH host certificate proof of possession,
+ * the server half of SPIRE's handshake.
+ * @namespace
+ */
 export = {
   SshpopAttestor: SshpopAttestor
 };

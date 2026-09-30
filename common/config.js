@@ -230,6 +230,7 @@ const bunyan = require('bunyan');
 // kind — every value the operator meant to set is missing, and continuing would
 // mean starting a service configured as nobody asked for.
 // ---------------------------------------------------------------------------
+/** The default appconfig file, which the operator's file is unioned on. */
 const DEFAULTS_FILE = path.join(configFile.ROOT, 'env', 'defaults.js');
 const defaults = require(DEFAULTS_FILE);
 
@@ -710,6 +711,29 @@ const DEVICE_ENROLLMENT_PROFILES = ENROLLMENT_PROFILES.concat(['device']);
 // oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES, for both OID4VCI rows.
 const OID4VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
 
+// THE KEM AND HPKE JWE ALGS (#82): `common/crypto.js`'s section 4a table,
+// written out because this file requires nothing in this repository.
+// `tests/jwe_pq_kem.js` holds the two equal. The ML-KEM six are
+// draft-ietf-jose-pqc-kem-05's; HPKE-0 to HPKE-7 (and -KE, less 4-KE and
+// 6-KE) draft-ietf-jose-hpke-encrypt-22's; HPKE-8 to HPKE-16 (and -KE)
+// draft-reddy-cose-jose-pqc-hybrid-hpke-11's.
+const JWE_KEM_ALGS = ['ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024',
+  'ML-KEM-512+A128KW', 'ML-KEM-768+A192KW', 'ML-KEM-1024+A256KW'].concat(
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].reduce(
+    function (all, n) {
+      return all.concat(n === 4 || n === 6 ? ['HPKE-' + n]
+        : ['HPKE-' + n, 'HPKE-' + n + '-KE']);
+    }, []));
+
+// The keys an OID4VP encrypted response may be encrypted to (#82): ECDH-ES,
+// and the Key Encryption forms of the KEM table — not HPKE Integrated
+// Encryption, which carries no `enc`, when the request names the `enc`
+// values it accepts (`encrypted_response_enc_values_supported`).
+const OID4VP_RESPONSE_KEY_ALGS = ['ECDH-ES'].concat(
+  JWE_KEM_ALGS.filter(function (alg) {
+    return !/^HPKE-\d+$/.test(alg);
+  }));
+
 // A list of short event-type names, and each again under its URI. The CAEP
 // and RISC readers strip ssf/ssf_events.js's CAEP_PREFIX / RISC_PREFIX before
 // they match, so a whole URI is a spelling they accept.
@@ -721,6 +745,11 @@ function withEventTypeUris(prefix, names) {
   }));
 }
 
+/**
+ * Every setting this service has, one row each: its key, type, where it may
+ * come from, what it means and whether changing it at runtime does
+ * anything.
+ */
 const SETTINGS = [
   // --- Global --------------------------------------------------------------
   { key: 'global.host', group: 'Global', label: 'HTTP bind address',
@@ -1143,12 +1172,23 @@ const SETTINGS = [
   { key: 'gnap.replayCacheSize', group: 'GNAP',
     label: 'Signature replay history size (per realm)',
     path: 'gnap.replayCacheSize', env: 'STS_GNAP_REPLAY_CACHE_SIZE',
-    type: 'int', dflt: 100000, min: 100, max: 10000000, runtime: true,
+    // 10,000 since #346 (2026-09-29; it was 100,000): the history is
+    // resident in every process of every node, per realm (#339). A full one
+    // refuses, so the lower number costs throughput and never the replay
+    // window.
+    type: 'int', dflt: 10000, min: 100, max: 10000000, runtime: true,
     description: 'How many live signed GNAP requests (JWS proofs and HTTP ' +
                  'message signature nonces) a trust realm remembers, each ' +
                  'for twice gnap.signatureMaxAgeS. **A FULL HISTORY REFUSES ' +
                  'THE NEXT REQUEST (STS-GNAP-0718) RATHER THAN FORGETTING A ' +
-                 'LIVE ONE**, since a forgotten signature can be replayed.' },
+                 'LIVE ONE**, since a forgotten signature can be replayed. ' +
+                 'The cost of the default is throughput: past about this ' +
+                 'many signed requests per twice gnap.signatureMaxAgeS ' +
+                 '(about 16 a second at the defaults) the realm refuses ' +
+                 'every signed request until entries age out, and anybody ' +
+                 'able to send signed requests can bring that on. Raise it ' +
+                 'for a realm that sees more; every process of every node ' +
+                 'holds the whole history.' },
   { key: 'gnap.interactionStartModes', group: 'GNAP', label: 'Interaction ' +
       'start modes',
     path: 'gnap.interactionStartModes', env: 'STS_GNAP_INTERACTION_START_MODES',
@@ -1609,6 +1649,25 @@ const SETTINGS = [
                  'not presenting. It is live: it applies to sessions that ' +
                  'already exist, because it is checked where a session is ' +
                  'read rather than stamped where one is made.' },
+
+  // #345: the sign-on session store's size cap, per realm.
+  { key: 'authn.maxSessions', group: 'Web security',
+    label: 'Most sign-on sessions per realm',
+    env: 'STS_AUTHN_MAX_SESSIONS', type: 'int', dflt: 100000,
+    min: 1, max: 10000000, runtime: true,
+    description: 'The most sign-on sessions a trust realm holds — browser ' +
+                 'sign-ins, the arrival sessions a browser is given at a ' +
+                 'protocol\'s front door, the console\'s and the portal\'s ' +
+                 'own, and the sessions of API, SCIM and SPIRE clients. ' +
+                 'Checked when a session is CREATED: at the cap the least ' +
+                 'recently used session is ended to make room, exactly as ' +
+                 'an expiry ends one — an audit row carrying STS-AUTHN-0292, ' +
+                 'CAEP session-revoked and back-channel Logout Tokens — so ' +
+                 'its holder has to sign in again. Without it only the ' +
+                 'session expiry job bounded the store, and a burst of ' +
+                 'sign-ins grew every process until the job caught up. ' +
+                 'Lowering it takes effect at the next session created, ' +
+                 'which then ends every session over the new cap at once.' },
 
   { key: 'authn.pendingTtlS', group: 'Web security',
     label: 'How long a sign-in waits at the screen (seconds)',
@@ -2526,6 +2585,63 @@ const SETTINGS = [
                  'algorithm; an algorithm outside the set still signs with ' +
                  'the per-algorithm key. Every key is a key pair of its own; ' +
                  'what the hybrid certificate shares is the certificate.' },
+  // THE REALM'S POST-QUANTUM AND HPKE DECRYPTION KEYS (#82, 2026-09-27).
+  // EMPTY BY DEFAULT, deliberately (rcbj's decision on #82): see the
+  // description. `common/helpers.js`'s kemEncryptionKeysFor() makes them.
+  { key: 'keys.encryptionKemAlgs', group: 'Key material',
+    label: 'Post-quantum / hybrid decryption keys',
+    path: 'keys.encryptionKemAlgs', env: 'STS_KEYS_ENCRYPTION_KEM_ALGS',
+    type: 'csv', dflt: '', runtime: true, csvValues: JWE_KEM_ALGS,
+    description: 'The ML-KEM and HPKE JWE algorithms this realm holds a ' +
+                 'decryption key for — one key pair per algorithm, ' +
+                 'published in the realm\'s JWKS (`use: enc`, with `alg`) ' +
+                 'and advertised in `request_object_encryption_alg_values_' +
+                 'supported` and `assertion_encryption_alg_values_' +
+                 'supported`, ' +
+                 'so a client can encrypt a request object or an RFC 7523 / ' +
+                 '7522 assertion to this realm with post-quantum or PQ/T ' +
+                 'hybrid key establishment. HPKE-10-KE is X-Wing ' +
+                 '(ML-KEM-768 + X25519). Encrypting TO a client that ' +
+                 'registered one of these algorithms needs nothing here. ' +
+                 '**Empty by default, and an administrator\'s choice:** ' +
+                 'every one of these algorithms is from an Internet-Draft ' +
+                 '(draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-' +
+                 'encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), ' +
+                 'and an AKP key in a JWKS is a key type many clients\' JOSE ' +
+                 'libraries do not yet parse — some refuse the whole key ' +
+                 'set. ' +
+                 'Name an algorithm here only where the clients reading this ' +
+                 'realm\'s JWKS are known to cope. Removing one stops ' +
+                 'publishing and accepting it; naming it again brings back ' +
+                 'the same key.' },
+  // THE OTHER DIRECTION (2026-09-28, rcbj): encrypting TO a client's or a
+  // wallet's key. The row above is the realm's own decryption keys; this one
+  // says whether the ML-KEM and HPKE algorithms are OFFERED where this service
+  // encrypts to a key somebody else holds, and it is off by default for the
+  // same compatibility reason: a client that registers every advertised
+  // algorithm (the debugger's `sts_userinfo_protected`) or a conformance
+  // suite validating the lists (OpenID4VCI's metadata test) meets draft
+  // algorithms it does not know.
+  { key: 'keys.offerKemEncryption', group: 'Key material',
+    label: 'Offer post-quantum / hybrid encryption to clients',
+    path: 'keys.offerKemEncryption', env: 'STS_KEYS_OFFER_KEM_ENCRYPTION',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'Whether the ML-KEM and HPKE JWE algorithms (#82 — drafts, ' +
+                 'see keys.encryptionKemAlgs) are offered where this realm ' +
+                 'encrypts TO a key a client or wallet holds: advertised in ' +
+                 '`userinfo_encryption_alg_values_supported`, ' +
+                 '`id_token_encryption_alg_values_supported`, ' +
+                 '`authorization_encryption_alg_values_supported` (JARM), ' +
+                 '`introspection_encryption_alg_values_supported` and an ' +
+                 'OpenID4VCI issuer\'s `credential_response_encryption`, and ' +
+                 'accepted when a client registers one or a wallet names ' +
+                 'one. **Off by default, and an administrator\'s choice:** ' +
+                 'these algorithms are from Internet-Drafts, and a client ' +
+                 'or a conformance suite that tries every advertised ' +
+                 'algorithm meets ones it does not know. A client already ' +
+                 'registered for one keeps its registration; with this off ' +
+                 'its next encrypted response is refused, as for any ' +
+                 'algorithm this realm does not offer.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
@@ -2741,6 +2857,58 @@ const SETTINGS = [
                  'deployment relies on.' },
 
   // -------------------------------------------------------------------------
+  // THE CELL KEY-ENCRYPTION KEY (#98, 2026-09-28). What a cell stores of its
+  // own — the people homed here and everything it mints — is sealed under a
+  // key that lives only in the cell's region and is never replicated, so a
+  // copy of the cell's rows taken anywhere else opens nothing. The global
+  // tier stays under `keys.kek*`, which every cell holds. Unset, and always
+  // in single-cell mode, the cell tier is sealed under `keys.kek*` too — the
+  // same code path with one key.
+  // -------------------------------------------------------------------------
+  { key: 'keys.cellKekProvider', group: 'Key material',
+    label: 'Where the cell key-encryption key is read from',
+    env: 'STS_CELL_KEK_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the key is read once, before the store is restored',
+    description: 'The provider of THIS CELL\'s key-encryption key, which ' +
+                 'seals what the cell stores of its own (#98). Five ' +
+                 'providers, as `keys.kekProvider`. `none` seals the cell ' +
+                 'tier under the service key-encryption key, which is ' +
+                 'correct for single-cell mode and for a test; a multi-cell ' +
+                 'deployment in product mode REFUSES to start with it, ' +
+                 'because then a copy of one cell\'s rows would open in ' +
+                 'every other.' },
+
+  { key: 'keys.cellKekRef', group: 'Key material',
+    label: 'The cell key-encryption key\'s location',
+    env: 'STS_CELL_KEK_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'Where the cell key is, in the provider ' +
+                 '`keys.cellKekProvider` names: a path, an ARN, a resource ' +
+                 'or a Vault read path. It must NOT be the service key\'s ' +
+                 'location; that is refused.' },
+
+  { key: 'keys.cellKekField', group: 'Key material',
+    label: 'The field the cell key is in',
+    env: 'STS_CELL_KEK_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The member of a JSON secret that holds the cell key. ' +
+                 'Empty takes the value whole, as `keys.kekField` does.' },
+
+  { key: 'keys.cellKekRegion', group: 'Key material',
+    label: 'AWS region of the cell key',
+    env: 'STS_CELL_KEK_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the cell key is read from — the cell\'s ' +
+                 'own. Empty uses the SDK\'s own resolution (AWS_REGION ' +
+                 'and the rest), NOT `keys.kekRegion`: the cell key has no ' +
+                 'fallback of any kind.' },
+
+  // -------------------------------------------------------------------------
   // THE MODE. What this service IS, rather than what any one surface requires.
   //
   // **IT IS ONE SETTING BECAUSE "IS AUTHENTICATION REQUIRED HERE" MUST HAVE
@@ -2834,132 +3002,133 @@ const SETTINGS = [
                  'with. That is ASN.1 and crypto tracing rather than this ' +
                  'service\'s account of what it did.' },
 
-  // --- The worker pool -----------------------------------------------------
+  // --- The request pool ----------------------------------------------------
   //
-  // THE ONLY SETTING HERE THAT CHANGES HOW MANY PROCESSES THIS SERVICE IS.
-  //
-  // Node runs every listener this service owns on one thread, so a
-  // synchronous computation does not slow it down, it STOPS it — and
-  // post-quantum signing is that computation. Stalls of 14.6, 15.4, 17.8 and
-  // 23.3 seconds were measured on 2026-08-29, during which this service
-  // answered nobody at all: not another HTTP caller, not the KDC on port 88.
-  // See common/worker.js.
-  //
-  // TWO, and not the core count — which is what this paragraph argued when the
-  // default was two; it is FIVE since 2026-09-06, and the note at the row says
-  // why. The property being bought is that the front
-  // process's event loop stays FREE, and one worker buys all of it; the second
-  // is what stops a caller's SLH-DSA signature queueing behind a stranger's.
-  // Beyond that the return falls off quickly and the cost does not — each
-  // worker is a node process — and this is a mock that commonly runs several
-  // to a machine under a test suite. Raising it is one setting, and the pool
-  // resizes on the next signature rather than at the next restart.
-  //
-  // NOTHING IS FORKED UNTIL THE FIRST POST-QUANTUM JOB, whatever this says, so
-  // a process that never signs one never pays for a pool. That is what keeps
-  // the parent project's in-process Kerberos jobs, this repository's own tests
-  // and `node env/generate_defaults.js` free of child processes they would
-  // never use and would have to wait for.
-  { key: 'workers.count', group: 'Global', label: 'Worker processes',
-    // FIVE SINCE 2026-09-06, where it was two. The pool is what keeps a
-    // post-quantum signature off the thread holding every listener —
-    // an SLH-DSA sign measured at 15 SECONDS on this hardware — and two
-    // workers means the third concurrent one waits behind them. Five is a
-    // working default for a machine with more than four cores and still costs
-    // nothing until the first post-quantum job, because the pool is lazy and
-    // forks nothing before then.
-    env: 'STS_WORKERS_COUNT', type: 'int', dflt: 5, min: 0, max: 32,
-    runtime: true, perProcess: true,
-    description: 'How many child processes the post-quantum signing, ' +
-                 'verification and key generation are handed to, so that the ' +
-                 'process holding the sockets is never the one computing an ' +
-                 'SLH-DSA signature — which takes SECONDS, during which node ' +
-                 'answers nothing at all. 0 means compute in this process, ' +
-                 'which is what this service did before the pool existed: ' +
-                 'correct, identical byte for byte, and blocking for as long ' +
-                 'as each signature takes. The pool is forked lazily, so a ' +
-                 'process that never signs post-quantum never forks anything ' +
-                 'whatever this is set to, and it is re-read per job, so ' +
-                 'changing it here takes effect on the next signature. A ' +
-                 'REALM MAY NOT CARRY THIS: a pool belongs to the process, ' +
-                 'and a realm resizing it would be resizing every other ' +
-                 'realm\'s too.' },
-
+  // (Until #363 this section began with `workers.count`,
+  // `workers.countInRequestWorkers` and `workers.jobTimeoutS`, the pool of
+  // forked processes that computed post-quantum signatures and scrypt. Those
+  // run on libuv's thread pool now — `common/pq_native.js` — and the three
+  // settings are gone.)
   // ---------------------------------------------------------------------
-  // HOW LONG A POST-QUANTUM JOB MAY TAKE BEFORE THE POOL GIVES UP ON IT
-  // (2026-09-11).
+  // THE REQUEST POOL. These configure workers that run THE SERVICE: each
+  // loads the whole protocol stack in the same order, binds no protocol port,
+  // and answers HTTP on a unix socket the front process proxies to. Since
+  // #364 a worker is a THREAD of the front process (`worker_threads`), not a
+  // forked process. `common/request_pool.js` argues it.
   //
-  // **`worker_pool.js` HAD NO BOUND AT ALL, AND ITS OWN HEADER SAYS WHY THAT
-  // IS THE WORST AVAILABLE FAILURE.** It rejects every job on a worker that
-  // DIES — "a promise nobody settles is a request that hangs" — and covers
-  // nothing for a worker that stays alive and simply never answers. One was
-  // observed doing exactly that: five idle children, no CPU anywhere, the
-  // service answering everything else in eleven milliseconds, and one HTTP
-  // request parked for ever. The suite's own 300s watchdog was the only thing
-  // that ended it, which is five minutes per occurrence and says nothing about
-  // what happened.
+  // **THREE DEFAULTS CHANGED WITH IT (rcbj, #364)**: one request worker,
+  // `workers.dispatch` `*` and `workers.readYourWrite` on. A worker needs a
+  // store that coordinates (postgres), so when the store cannot and those
+  // values are still the DEFAULTS, the pool quietly runs none — a
+  // development service on the memory store is one thread, as it always
+  // was. An operator's explicit value without coordination is still refused
+  // at startup (`STS-WORKER-0024`); `request_pool.js`'s `autoOff` is the
+  // rule.
   //
-  // **IT IS A BACKSTOP AND NOT A DIAGNOSIS.** Why a reply goes missing is not
-  // known; what this does is turn an unbounded hang into a named failure the
-  // caller can report, which is the same trade `reap()` already makes for the
-  // death case.
-  //
-  // **THE DEFAULT IS GENEROUS ON PURPOSE.** The stalls this pool was built to
-  // move off the event loop were measured at 15 to 23 seconds — a composite
-  // verify, an SLH-DSA-SHAKE-128s signature — and a machine running the whole
-  // suite under docker is slower than the one they were measured on. Two
-  // minutes is far beyond any of them and far short of a watchdog. Zero turns
-  // the bound off and restores the old behaviour exactly.
-  { key: 'workers.jobTimeoutS', group: 'Global',
-    label: 'Worker job timeout (seconds)',
-    path: 'workers.jobTimeoutS', env: 'STS_WORKERS_JOB_TIMEOUT_S',
-    type: 'int', dflt: 120, runtime: true, min: 0, max: 3600,
-    description: 'How long the post-quantum worker pool waits for a job it ' +
-                 'has sent to a child before failing it. **It exists because ' +
-                 'there was no bound**: a worker that dies has its jobs ' +
-                 'rejected, and a worker that stays alive and never answers ' +
-                 'left the request hanging for ever — observed, with an idle ' +
-                 'pool and a service answering everything else normally. A ' +
-                 'failed job is reported to the caller and the request fails ' +
-                 'with a reason; nothing is retried, because a worker holds ' +
-                 'no state and the caller can simply ask again.\n\n' +
-                 '**Generous on purpose.** The stalls this pool exists to ' +
-                 'move off the event loop were 15 to 23 seconds, so two ' +
-                 'minutes is far beyond any real job and far short of a test ' +
-                 'runner\'s watchdog. `0` turns the bound off.' },
-
-  // ---------------------------------------------------------------------
-  // THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER FROM THE ONE ABOVE.
-  //
-  // `workers.count` forks children that run a JOB TABLE — four leaf
-  // computations handed everything they need. These three configure children
-  // that run THE SERVICE: each loads the whole protocol stack in the same
-  // order, binds no protocol port, and answers HTTP on a unix socket the front
-  // process proxies to. `common/request_pool.js` argues it.
-  //
-  // All three are `perProcess` for `workers.count`'s reason, and
+  // All are `perProcess` — a pool belongs to the process, and a realm
+  // resizing it would be resizing every other realm's too — and
   // restart-only rather than runtime: a request worker takes seconds to start
   // because it loads the service, and the pool is brought up BEFORE the
   // listener binds so that cost is paid where nobody is waiting. A table that
   // said `runtime: true` and meant "on restart" is the lie this file refuses
   // to tell about a bound port.
   // ---------------------------------------------------------------------
+  { key: 'workers.startTimeoutMs', group: 'Global',
+    label: 'Request worker start limit (ms)',
+    env: 'STS_WORKERS_START_TIMEOUT_MS', type: 'int', dflt: 60000,
+    min: 5000, max: 900000, runtime: false, perProcess: true,
+    restartReason: 'a worker reads it once, when it starts',
+    description: 'How long a request or surface worker may take to bring its ' +
+                 'state up (the store, the keys, the minted rows and ' +
+                 'coordination) before it reports that it could not start. ' +
+                 'Three failures in a row and the pool stops forking and ' +
+                 'answers everything in the process that holds the sockets. ' +
+                 'Raise it where a worker\'s start is slow — a large realm ' +
+                 'key set that every start re-certifies, a cold database ' +
+                 '(#311).' },
   { key: 'workers.requestCount', group: 'Global',
-    label: 'Request worker processes',
-    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 0, min: 0, max: 32,
+    label: 'Request worker threads',
+    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 1, min: 0, max: 32,
     runtime: false, perProcess: true,
     restartReason: 'the pool is forked before the listener binds, and the ' +
                    'check that refuses to dispatch without a coordinating ' +
                    'store runs once, there',
-    description: 'How many child processes REQUESTS are handled in, so that ' +
-                 'the process holding the sockets is doing request and ' +
-                 'response I/O and not running handlers. Each worker loads ' +
-                 'the whole protocol stack in the same order and binds no ' +
-                 'protocol port. 0 — the default — means every request is ' +
-                 'handled in the process that holds the sockets, which is ' +
-                 'what this service has always done. Nothing is dispatched ' +
+    description: 'How many worker THREADS requests are handled in, so that ' +
+                 'the thread holding the sockets is doing request and ' +
+                 'response I/O and not running handlers. Each worker is a ' +
+                 'thread of this process with its own V8 heap: it loads the ' +
+                 'whole protocol stack in the same order and binds no ' +
+                 'protocol port. 1 — the default — is one worker when the ' +
+                 'store coordinates (postgres); with the memory or ldif ' +
+                 'store and this left at its default the pool runs none, ' +
+                 'and every request is handled in the thread that holds the ' +
+                 'sockets. 0 is that everywhere. Every worker costs a whole ' +
+                 'copy of the service\'s heap, so more than one is for a ' +
+                 'node with the cores to use them. Nothing is dispatched ' +
                  'whatever this is set to until workers.dispatch names a ' +
                  'path.' },
+
+  // ---------------------------------------------------------------------
+  // HOW MANY REQUEST WORKERS MAY BE STARTING AT ONCE (#342, 2026-09-29).
+  //
+  // Every worker restores the whole store into its own heap when it starts,
+  // and the pool used to fork them all at once. On testidp's node-a on
+  // 2026-09-28 the task's memory limit SIGKILLed all four within three
+  // seconds: five processes, each holding a directory plus the transient
+  // arrays of its restore. Starting them one at a time keeps the peak at
+  // one start above the steady state. `common/request_pool.js`'s start gate
+  // argues why the count covers BOTH pools rather than each one.
+  // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
+  // EVERY PROCESS'S HEAP LIMIT (#341, 2026-09-29). Nothing set one, so V8
+  // sized each process's heap to the MACHINE, five processes could each grow
+  // towards it, and the kernel's OOM killer ended whichever was biggest with
+  // an anonymous SIGKILL. `common/process_memory.ts` argues the derivation
+  // and why the front process re-executes itself to take the flag.
+  // ---------------------------------------------------------------------
+  { key: 'workers.heapLimitMb', group: 'Global',
+    label: 'Heap limit per process (MiB)',
+    env: 'STS_WORKERS_HEAP_LIMIT_MB', type: 'int', dflt: 0, min: -1,
+    max: 1048576, runtime: false, perProcess: true,
+    restartReason: 'V8 reads the heap limit when a process starts: the front ' +
+                   'process restarts itself with it before it loads ' +
+                   'anything, and each request worker is forked with it',
+    description: 'The V8 heap limit of the front thread ' +
+                 '(--max-old-space-size) and of every request worker thread ' +
+                 '(its resourceLimits). -1 turns it OFF: no limit is ' +
+                 'applied, the front process is not restarted with one and ' +
+                 'no worker is started with one, while the memory report ' +
+                 'goes on. The default, 0, DERIVES it from the container: ' +
+                 '(the memory limit − 15 % headroom, at least 256 MiB) ÷ ' +
+                 '(1 + workers.requestCount + workers.surfaceCount) — every ' +
+                 'thread has a V8 heap of its own — less the 48 MiB young ' +
+                 'generation each isolate is also given, and never less ' +
+                 'than 192 MiB. The limit is read from ' +
+                 'cgroup v2, then cgroup v1, then the ECS task metadata ' +
+                 'endpoint. With no visible limit nothing is set. A worker ' +
+                 'thread whose heap reaches the limit is ended by V8 and ' +
+                 'reported as STS-WORKER-0046, and the process carries on; ' +
+                 'the front\'s own heap reaching it ends the process with ' +
+                 'a line that says so. A flag an operator set on the ' +
+                 'command line or in NODE_OPTIONS is left alone and used for ' +
+                 'every process. Read before the store is opened.' },
+
+  { key: 'workers.startConcurrency', group: 'Global',
+    label: 'Request workers starting at once',
+    env: 'STS_WORKERS_START_CONCURRENCY', type: 'int', dflt: 1, min: 1,
+    max: 64, runtime: false, perProcess: true,
+    restartReason: 'the pool forks its workers when the process starts; a ' +
+                   'replacement after a crash waits behind the same gate',
+    description: 'How many request workers may be starting at the same ' +
+                 'time, counting the protocol and hosted-surface pools ' +
+                 'together. The next worker is forked when one reports that ' +
+                 'it is ready or that it failed. The default, 1, starts them ' +
+                 'one after another. Each start restores the whole store ' +
+                 'into that worker\'s memory, and starting them together is ' +
+                 'what put a node over its memory limit (#342). The listener ' +
+                 'binds once the first worker of each pool has settled, and ' +
+                 'the rest come up behind it. A worker that replaces one ' +
+                 'that died waits its turn the same way.' },
 
   // ---------------------------------------------------------------------
   // WHAT IS HANDLED IN A WORKER, AND IT WAS TWO SETTINGS UNTIL 2026-09-12.
@@ -2978,7 +3147,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'workers.dispatch', group: 'Global',
     label: 'Handled in a request worker',
-    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '',
+    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '*',
     runtime: false, perProcess: true,
     restartReason: 'dispatching is REFUSED at startup unless this process is ' +
                    'coordinating, and that check runs once, before the ' +
@@ -2998,9 +3167,12 @@ const SETTINGS = [
                  'writes the reply) and the worker does the work.\n- ' +
                  '**"*"**, which is EVERYTHING of both kinds — how "run the ' +
                  'service in the pool" is said, and the only spelling that ' +
-                 'cannot go stale the next time a family is added.\n\nEMPTY ' +
-                 'IS THE DEFAULT AND MEANS NOTHING IS DISPATCHED, which is ' +
-                 'what makes the pool inert until it is asked for. /tls is ' +
+                 'cannot go stale the next time a family is added.\n\n"*" IS ' +
+                 'THE DEFAULT (#364): with a coordinating store every ' +
+                 'request goes to the request worker. With the memory or ' +
+                 'ldif store and workers.requestCount at its default there ' +
+                 'is no worker, and nothing is dispatched. Empty means ' +
+                 'nothing is dispatched anywhere. /tls is ' +
                  'never dispatched whatever this says, because its whole ' +
                  'content is what the server saw of the connection the ' +
                  'request arrived on.\n\n**Nothing is dispatched unless this ' +
@@ -3071,7 +3243,7 @@ const SETTINGS = [
     restartReason: 'the pool is forked before the listener binds, and the ' +
                    'checks that refuse it without coordination and without ' +
                    'read-your-write run once, there',
-    description: 'How many request workers are kept for this service\'s OWN ' +
+    description: 'How many worker threads are kept for this service\'s OWN ' +
                  'two hosted surfaces — the admin console and the user ' +
                  'portal, or whatever workers.surfaces names — separately ' +
                  'from the workers.requestCount workers that run the ' +
@@ -3079,11 +3251,11 @@ const SETTINGS = [
                  'queues behind protocol traffic on the same worker, and a ' +
                  'console page walking the directory never holds a protocol ' +
                  'worker. 0 — the default — means there is no second pool ' +
-                 'and those paths go wherever the rest of workers.dispatch ' +
-                 'goes. Nothing is sent to these workers unless ' +
-                 'workers.dispatch names the paths too. **It REQUIRES ' +
+                 'and those paths go to the request workers with the rest ' +
+                 'of workers.dispatch. Nothing is sent to these workers ' +
+                 'unless workers.dispatch names the paths too. **It REQUIRES ' +
                  'workers.readYourWrite**: signing in to the console now ' +
-                 'crosses two processes (the sign-in in a protocol worker, ' +
+                 'crosses two workers (the sign-in in a protocol worker, ' +
                  'the console session in one of these), and without the ' +
                  'barrier the second would intermittently read a store the ' +
                  'first had not yet written — so the service refuses to ' +
@@ -3212,7 +3384,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'workers.readYourWrite', group: 'Global',
     label: 'Read-your-write across request workers',
-    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: false,
+    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: true,
     runtime: true, perProcess: true,
     description: 'Whether a request worker must catch up with what the other ' +
                  'workers have written before it serves. Coordination makes ' +
@@ -3225,10 +3397,12 @@ const SETTINGS = [
                  'there land anywhere. With it on, the pool counts writes ' +
                  'and a worker that is behind pulls before it answers — so ' +
                  'the cost falls on the first read after a write on each ' +
-                 'worker, and on nothing while nothing is being written. OFF ' +
-                 'BY DEFAULT because that is the behaviour that existed ' +
-                 'before it, and because whether the wait is worth it is a ' +
-                 'question about the callers rather than about the pool.' },
+                 'worker, and on nothing while nothing is being written. ON ' +
+                 'BY DEFAULT since #364, when a request worker became the ' +
+                 'default: the front thread still answers what is never ' +
+                 'dispatched, so a caller would otherwise see its own write ' +
+                 'go missing between two requests. It must be on for a ' +
+                 'surface pool (workers.surfaceCount).' },
 
   { key: 'workers.socketDir', group: 'Global',
     label: 'Request worker socket directory',
@@ -4130,15 +4304,25 @@ const SETTINGS = [
   // oldest and that client is simply asked again with a fresh nonce.
   { key: 'oauth2.dpopReplayCacheSize', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP proof replay history size (per realm)',
-    env: 'STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE', type: 'int', dflt: 100000,
+    // 10,000 since #346 (2026-09-29; it was 100,000): the history is
+    // resident in every process of every node, per realm (#339). A full one
+    // refuses, so the lower number costs throughput and never the replay
+    // window.
+    env: 'STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE', type: 'int', dflt: 10000,
     min: 100, max: 10000000, runtime: true,
     description: 'How many live DPoP proof IDs (jti) a trust realm ' +
                  'remembers, each for twice oauth2.dpopIatSkewS. **A FULL ' +
                  'HISTORY REFUSES THE NEXT PROOF (STS-OAUTH-0554) RATHER ' +
                  'THAN FORGETTING A LIVE ONE**, since a forgotten jti is a ' +
                  'proof that can be replayed. Expired IDs are dropped first. ' +
-                 'Raise it for a realm that sees more than this many ' +
-                 'DPoP-bound requests in the replay window.' },
+                 'The cost of the default is throughput: past about this ' +
+                 'many DPoP proofs per replay window (about 16 a second at ' +
+                 'the defaults) the realm refuses every DPoP proof until ' +
+                 'entries age out, and anybody able to send a proof the ' +
+                 'token endpoint accepts can bring that on. Raise it for a ' +
+                 'realm that sees more than this many DPoP-bound requests ' +
+                 'in the replay window; every process of every node holds ' +
+                 'the whole history.' },
 
   { key: 'oauth2.dpopNonceCacheSize', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP server nonces held (per realm)',
@@ -5828,6 +6012,26 @@ const SETTINGS = [
     min: 5, max: 86400, runtime: true,
     description: 'How long a Replay-Nonce may wait before it is presented. ' +
                  'Each is accepted once.' },
+  // A literal 100,000 in acme/acme_store.ts until #346 (2026-09-29). The
+  // history is resident in every process of every node, per realm (#339). A
+  // full one refuses, so the lower number costs throughput and never the
+  // replay window.
+  { key: 'acme.maxSpentNonces', group: 'ACME',
+    label: 'Spent nonce history size (per realm)',
+    env: 'STS_ACME_MAX_SPENT_NONCES', type: 'int', dflt: 10000,
+    min: 100, max: 10000000, runtime: true,
+    description: 'How many spent Replay-Nonce values a trust realm ' +
+                 'remembers, each until the nonce expires. Expired ones are ' +
+                 'cleared at the bound; **A HISTORY STILL FULL OF LIVE ' +
+                 'SPENDS REFUSES THE NEXT REQUEST (badNonce) RATHER THAN ' +
+                 'FORGETTING ONE**, since a forgotten nonce can be replayed. ' +
+                 'The cost of the default is throughput: past about this ' +
+                 'many requests per acme.nonceLifetimeS (about 33 a second ' +
+                 'at the defaults) the realm answers every ACME request ' +
+                 'badNonce until nonces expire, and anybody able to fetch a ' +
+                 'nonce and sign a request can bring that on. Raise it for ' +
+                 'a realm that sees more; every process of every node holds ' +
+                 'the whole history.' },
   { key: 'acme.orderLifetimeS', group: 'ACME',
     label: 'Order lifetime (seconds)',
     env: 'STS_ACME_ORDER_LIFETIME_S', type: 'int', dflt: 86400,
@@ -6095,6 +6299,25 @@ const SETTINGS = [
                  'at its expiry, since no verifier accepts it any more. A ' +
                  'day by default; 0 deletes a record as soon as it expires.' },
 
+  // #345: the revoked-jti register's size cap, per realm.
+  { key: 'oauth2.maxRevokedJtis', group: 'OAuth 2.0 / OIDC',
+    label: 'Most revoked token ids kept per realm',
+    env: 'STS_OAUTH2_MAX_REVOKED_JTIS', type: 'int', dflt: 100000,
+    min: 1, max: 10000000, runtime: true,
+    description: 'The most revocations of tokens (by jti) a trust realm ' +
+                 'keeps, in every process. A revocation is dropped anyway ' +
+                 'once its token has expired (the hourly ' +
+                 'oauth2.expired-token-purge), so this bounds only the ' +
+                 'revocations of tokens still unexpired and of tokens whose ' +
+                 'expiry is not known. At the cap an expired revocation is ' +
+                 'dropped first; only when there is none is the revocation ' +
+                 'of the token that expires SOONEST forgotten — **and that ' +
+                 'token is then accepted again by every check that asks ' +
+                 'only this register** (introspection, UserInfo, the ' +
+                 'refresh grant), until it expires. Each such loss is ' +
+                 'logged as STS-OAUTH-0787. Raise it rather than lower it: ' +
+                 'a revocation is about a hundred bytes.' },
+
   { key: 'oauth2.clockSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'Token clock skew (s)',
     env: 'STS_OAUTH2_CLOCK_SKEW_S', type: 'int', dflt: 30,
@@ -6157,11 +6380,13 @@ const SETTINGS = [
   { key: 'oauth2.refreshTokenEncryptionAlg', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token encryption: key management (alg)',
     env: 'STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ALG', type: 'enum',
+    // The ML-KEM and HPKE algs (#82) between the asymmetric and symmetric
+    // families, in `common/crypto.js`'s `JWE_ALGS` order.
     enumValues: ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES', 'ECDH-ES+A128KW',
-                 'ECDH-ES+A192KW', 'ECDH-ES+A256KW', 'A128KW', 'A192KW',
-                 'A256KW',
+                 'ECDH-ES+A192KW', 'ECDH-ES+A256KW'].concat(JWE_KEM_ALGS, [
+                 'A128KW', 'A192KW', 'A256KW',
                  'A128GCMKW', 'A192GCMKW', 'A256GCMKW', 'PBES2-HS256+A128KW',
-                 'PBES2-HS384+A192KW', 'PBES2-HS512+A256KW', 'dir'],
+                 'PBES2-HS384+A192KW', 'PBES2-HS512+A256KW', 'dir']),
     dflt: 'RSA-OAEP-256', runtime: true,
     description: 'The JWE key management algorithm every refresh token is ' +
                  'encrypted under. A refresh token is a signed JWT sealed to ' +
@@ -6171,7 +6396,14 @@ const SETTINGS = [
                  'EC key, and the rest a secret of the realm\'s own. ' +
                  'Changing it affects tokens issued from then on; tokens ' +
                  'already issued still open, because the realm holds a key ' +
-                 'of every kind. RSA1_5 is not offered.' },
+                 'of every kind. RSA1_5 is not offered. The ML-KEM and HPKE ' +
+                 'algorithms (#82 — drafts, see keys.encryptionKemAlgs) ' +
+                 'seal to a key pair DERIVED from the realm\'s secret for ' +
+                 'that algorithm, never published, so choosing one here ' +
+                 'needs no key and changes nothing a client sees; ' +
+                 'HPKE-10-KE (X-Wing) makes a refresh token captured today ' +
+                 'safe against a future quantum adversary as well as a ' +
+                 'classical one.' },
 
   { key: 'oauth2.refreshTokenEncryptionEnc', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token encryption: content (enc)',
@@ -7193,9 +7425,9 @@ const SETTINGS = [
                  'worked because this service USED TO BLOCK while it ' +
                  'answered: with the event loop stopped, the timer ' +
                  'enforcing that budget could not fire until the response ' +
-                 'was already made. The keys are ' +
-                 'generated in worker processes now (common/worker.js) and ' +
-                 'warmed when a realm is created, so the ordinary fetch is ' +
+                 'was already made. The keys are generated on libuv\'s ' +
+                 'thread pool now (common/pq_native.js) and warmed when a ' +
+                 'realm is created, so the ordinary fetch is ' +
                  'milliseconds — this is the budget for the one that arrives ' +
                  'while a realm is still being born.' },
 
@@ -8169,8 +8401,8 @@ const SETTINGS = [
                  '/oauth2/jwks under the kid in the header. Asymmetric and ' +
                  'classical only: an HMAC would need a secret this exchange ' +
                  'does not have, and a post-quantum signature is computed on ' +
-                 'the worker pool, which this synchronous endpoint does not ' +
-                 'reach.' },
+                 'libuv\'s thread pool, which this synchronous endpoint does ' +
+                 'not reach.' },
 
   certificateHeaderSetting('wstrust.jwtCertificateHeader', 'WS-Trust',
     'STS_WSTRUST_JWT_CERTIFICATE_HEADER', 'JWT certificate header',
@@ -8694,7 +8926,7 @@ const SETTINGS = [
     env: 'OID4VCI_CREDENTIAL_SIGNING_ALGORITHM', type: 'enum',
     // THE POST-QUANTUM ALGORITHMS SINCE #38's FOLLOW-UPS: the credential
     // builders sign asynchronously now, so an ML-DSA, SLH-DSA or composite
-    // signature is made in the worker pool, and the Verifier accepts one as
+    // signature is made on libuv's thread pool, and the Verifier accepts one as
     // this realm's (vc_verifier.ts, verifyIssuerSignatureAsync()).
     enumValues: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
                  'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA',
@@ -8939,8 +9171,8 @@ const SETTINGS = [
                  'ES256 by default, which OpenID4VC HAIP requires a wallet ' +
                  'to accept. A post-quantum algorithm is not offered yet: ' +
                  'the Request Object is signed on the request path, and ' +
-                 'this realm\'s post-quantum keys sign in the worker pool ' +
-                 '(oid4vc/CLAUDE.md, the x509 prefixes).' },
+                 'this realm\'s post-quantum keys sign on libuv\'s thread ' +
+                 'pool (oid4vc/CLAUDE.md, the x509 prefixes).' },
 
   { key: 'oid4vp.verifierAttestation', group: 'OID4VP',
     label: 'Verifier Attestation JWT',
@@ -9233,14 +9465,23 @@ const SETTINGS = [
 
   { key: 'oid4vp.signInRegisterMaxEntries', group: 'OID4VP',
     label: 'Wallet sign-in register size (per realm)',
-    env: 'OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES', type: 'int', dflt: 100000,
+    // 10,000 since #346 (2026-09-29; it was 100,000): the register is
+    // resident in every process of every node, per realm (#339). Dropping a
+    // row fails closed, so the lower number costs a wallet its sign-in and
+    // never lets a credential in.
+    env: 'OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES', type: 'int', dflt: 10000,
     min: 100, max: 10000000, runtime: true,
     description: 'How many rows the wallet sign-in register keeps per trust ' +
                  'realm — one per credential issued for a person on a ' +
                  'verified access token (per holder key for ldp_vc). Past it ' +
                  'the row ISSUED FIRST is dropped. That fails CLOSED: a ' +
                  'credential with no row signs nobody in, which is also what ' +
-                 'a disowned row does.' },
+                 'a disowned row does. The cost of the default: once a realm ' +
+                 'has issued this many sign-in credentials, each new one ' +
+                 'stops the oldest still-valid one signing its holder in, ' +
+                 'and the holder has to be issued another. Raise it for a ' +
+                 'realm that issues more; every process of every node holds ' +
+                 'the whole register.' },
 
 
   { key: 'oid4vp.walletPresentationPath', group: 'OID4VP',
@@ -9382,6 +9623,27 @@ const SETTINGS = [
                  'encrypted (ECDH-ES) to a key only this sign-in holds, so ' +
                  'the page\'s script carries a JWE — or dc_api, in the ' +
                  'clear, for a wallet that cannot encrypt.' },
+
+  // THE KEYS AN ENCRYPTED WALLET RESPONSE MAY BE ENCRYPTED TO (#82). The
+  // default is rcbj's decision on #82: the X-Wing hybrid first, the P-256
+  // ECDH-ES key HAIP requires second.
+  { key: 'oid4vp.responseEncryptionKeyAlgs', group: 'OID4VP',
+    label: 'Encrypted response: key algorithms offered',
+    env: 'OID4VP_RESPONSE_ENCRYPTION_KEY_ALGS', type: 'csv',
+    dflt: 'HPKE-10-KE,ECDH-ES', runtime: true,
+    csvValues: OID4VP_RESPONSE_KEY_ALGS,
+    description: 'The ephemeral keys a direct_post.jwt or dc_api.jwt ' +
+                 'request offers in `client_metadata.jwks`, in order — one ' +
+                 'key per algorithm, made for the one transaction and held ' +
+                 'sealed on it. The wallet encrypts to one it supports. The ' +
+                 'default offers the X-Wing hybrid (HPKE-10-KE, ML-KEM-768 + ' +
+                 'X25519, draft-reddy-cose-jose-pqc-hybrid-hpke-11) first, ' +
+                 'so a wallet that can protect the response against a ' +
+                 'future quantum adversary does, and the P-256 ECDH-ES key ' +
+                 'OpenID4VC HAIP requires second, so every HAIP wallet still ' +
+                 'can. Leaving ECDH-ES out refuses every wallet that has ' +
+                 'only ' +
+                 'it; an empty list is read as ECDH-ES alone.' },
 
   { key: 'oid4vp.statusListMaxCacheS', group: 'OID4VP',
     label: 'Longest a fetched status list is kept (s)',
@@ -10040,7 +10302,60 @@ const SETTINGS = [
     env: 'LDAP_MAX_ENTRIES', type: 'int', dflt: 2000, runtime: true,
     description: 'How large the directory may grow. A ceiling rather than a ' +
                  'target: entries appear for anybody who authenticates ' +
-                 'through any protocol here.' },
+                 'through any protocol here. Counted over every realm this ' +
+                 'process holds; in a request worker with ' +
+                 'ldap.workerDirectory=postgres-lru, over the realm\'s rows ' +
+                 'in the store instead.' },
+
+  // THE DIRECTORY AS A WINDOW IN A REQUEST OR SURFACE WORKER (#349, rcbj's
+  // decisions of 2026-09-29): `memory` holds the whole directory in every
+  // process, as always; `postgres-lru` has each worker hold the people and
+  // devices as a bounded window and ask the store for the rest, through a
+  // synchronous bridge. The front process holds the whole directory either
+  // way. Restart-only: the store's shape is chosen when `ldap_server.js`
+  // loads. `persistence.start()` refuses postgres-lru without a postgres
+  // store or in a multi-cell deployment (STS-LDAP-0133).
+  { key: 'ldap.workerDirectory', group: 'LDAP',
+    label: 'Directory in request workers',
+    env: 'LDAP_WORKER_DIRECTORY', type: 'enum',
+    enumValues: ['memory', 'postgres-lru'], dflt: 'memory', runtime: false,
+    restartReason: 'the directory\'s store is chosen when the process loads ' +
+                   'it',
+    description: 'How a request or surface worker holds the directory. ' +
+                 'memory (the default): every entry, in every process. ' +
+                 'postgres-lru: the people and devices as a window of at ' +
+                 'most ldap.workerCacheEntries entries, the rest read from ' +
+                 'PostgreSQL when asked for — a worker\'s memory no longer ' +
+                 'grows with the directory, and a miss costs one database ' +
+                 'round trip. Requires persistence.mode=postgres and a ' +
+                 'single cell; the front process always holds the whole ' +
+                 'directory.' },
+
+  // THE WINDOW'S BOUND (#349): entries, about 2.5 KB each with the JSON it
+  // keeps for the merge. Read at every insert, so a change applies at once.
+  { key: 'ldap.workerCacheEntries', group: 'LDAP',
+    label: 'Directory window size (entries)',
+    env: 'LDAP_WORKER_CACHE_ENTRIES', type: 'int', dflt: 10000,
+    min: 100, max: 1000000, runtime: true,
+    description: 'With ldap.workerDirectory=postgres-lru, how many people ' +
+                 'and devices a request worker holds at once (about 2.5 KB ' +
+                 'each), the least recently read dropped first. An entry it ' +
+                 'changed and has not yet written is never dropped.' },
+
+  // THE BOUND ON ONE SYNCHRONOUS QUESTION TO THE STORE (#349), which is how
+  // long a windowed worker's whole event loop may wait for an entry it does
+  // not hold. Read per question, so a change applies at the next one; the
+  // bridge's thread takes it as the statement timeout when it starts.
+  { key: 'ldap.workerDirectoryTimeoutMs', group: 'LDAP',
+    label: 'Worker directory read timeout (ms)',
+    env: 'LDAP_WORKER_DIRECTORY_TIMEOUT_MS', type: 'int', dflt: 2000,
+    min: 10, max: 60000, runtime: true,
+    description: 'With ldap.workerDirectory=postgres-lru, how long a request ' +
+                 'worker waits for the database when it needs a directory ' +
+                 'entry it does not hold. The worker does nothing else while ' +
+                 'it waits, so this is also the longest a database outage ' +
+                 'can hold one of its requests; past it the request is ' +
+                 'refused (503, STS-LDAP-0130).' },
 
   { key: 'ldap.sizeLimit', group: 'LDAP', label: 'Search size limit',
     env: 'LDAP_SIZE_LIMIT', type: 'int', dflt: 500, runtime: true,
@@ -10744,7 +11059,7 @@ const SETTINGS = [
                  'a SET records that something happened and RFC 8417 ' +
                  'section 4.1.4 forbids it to expire, so it is read long ' +
                  'after it was written. Note an SLH-DSA signature takes ' +
-                 'seconds — it runs on the worker pool, so this service ' +
+                 'seconds — it runs on libuv\'s thread pool, so this service ' +
                  'answers throughout, but the receiver waits.' },
 
   certificateHeaderSetting('ssf.setCertificateHeader', 'SSF',
@@ -14228,6 +14543,82 @@ const SETTINGS = [
                  'a real database whose certificate chains to something ' +
                  'NODE_EXTRA_CA_CERTS names.' },
 
+  // -------------------------------------------------------------------------
+  // THE GLOBAL TIER'S DATABASE (#98, 2026-09-28). With `cells.id` set, the
+  // store is TWO databases: `persistence.databaseUrl` is this cell's own
+  // (the people homed here, and what this cell mints) and these name the
+  // GLOBAL one — realms, settings, applications, policies, keys and the
+  // routing index — with one writer for the whole service and a read replica
+  // in every cell (#98 D3). `persistence/CLAUDE.md`, *Tiers*, argues it.
+  // Empty with `cells.id` set is refused at startup: a cell that kept its
+  // global rows in its own database would be a second service.
+  // -------------------------------------------------------------------------
+  { key: 'persistence.globalDatabaseUrl', group: 'Persistence',
+    label: 'Global tier database (writer)',
+    env: 'STS_GLOBAL_DATABASE_URL', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the global tier is opened and restored before the ' +
+                   'listener binds',
+    description: 'The connection string of the GLOBAL tier\'s one writable ' +
+                 'database, used for every global write (a realm, a ' +
+                 'setting, an application, a key) from every cell. Only ' +
+                 'read when `cells.id` is set; single-cell mode keeps all ' +
+                 'three tiers in `persistence.databaseUrl`. Carries ' +
+                 '`sslmode=require` exactly as that one does.' },
+
+  { key: 'persistence.globalDatabaseReadUrl', group: 'Persistence',
+    label: 'Global tier database (this cell\'s replica)',
+    env: 'STS_GLOBAL_DATABASE_READ_URL', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the global tier is opened and restored before the ' +
+                   'listener binds',
+    description: 'The global database\'s read replica in THIS cell\'s ' +
+                 'region, which every read of the global tier uses — the ' +
+                 'restore at start and every pull of the global change log. ' +
+                 'Empty means the writer. A replica lags its writer, so a ' +
+                 'global change made in another cell reaches this one after ' +
+                 'that lag (shown on /admin/cells).' },
+
+  { key: 'persistence.globalDatabasePasswordProvider', group: 'Persistence',
+    label: 'Where the global database password is read from',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the connection pool is opened before the listener binds',
+    description: '`persistence.databasePasswordProvider`, for the global ' +
+                 'tier\'s two connection strings. The password is put into ' +
+                 'both. `none` dials them as written.' },
+
+  { key: 'persistence.globalDatabasePasswordRef', group: 'Persistence',
+    label: 'The global database password\'s location',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup, before the pool is opened',
+    description: 'Where the global database password is, in whichever ' +
+                 'provider `persistence.globalDatabasePasswordProvider` ' +
+                 'names. Empty means the key-encryption key\'s location, ' +
+                 'with `persistence.globalDatabasePasswordField` telling the ' +
+                 'two apart.' },
+
+  { key: 'persistence.globalDatabasePasswordField', group: 'Persistence',
+    label: 'The field the global database password is in',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_FIELD', type: 'string',
+    dflt: 'globalDatabasePassword', runtime: false, perProcess: true,
+    restartReason: 'read once at startup, before the pool is opened',
+    description: 'The member of a JSON secret that holds the global ' +
+                 'database password; `password` for the shape AWS Secrets ' +
+                 'Manager writes for a database credential. Empty takes the ' +
+                 'value whole.' },
+
+  { key: 'persistence.globalDatabasePasswordRegion', group: 'Persistence',
+    label: 'AWS region of the global database password',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the global database password is read from ' +
+                 '— this cell\'s region, where its Secrets Manager replica ' +
+                 'is. Empty means the key-encryption key\'s region.' },
+
   { key: 'persistence.writeDelay', group: 'Persistence',
     label: 'Write delay (ms)',
     env: 'STS_PERSISTENCE_WRITE_DELAY', type: 'int', dflt: 1500,
@@ -14304,10 +14695,13 @@ const SETTINGS = [
     dflt: 7 * 24 * 60 * 60 * 1000, runtime: true,
     description: 'How long a row of a SHORT-LIVED persisted store — a ' +
                  'nonce, a code, a pending flow, an in-flight transaction ' +
-                 '(`retain: \'age\'`) — is kept. Such a row older than this ' +
-                 'was left behind by a process that stopped before sweeping ' +
-                 'it; it is neither restored nor kept, and is deleted on the ' +
-                 'start that skipped it. Every other persisted store — ' +
+                 '(`retain: \'age\'`) — that carries NO expiry of its own ' +
+                 'is kept. A row whose store says when it expires is kept ' +
+                 'until then and no longer, whatever this says (#333). Such ' +
+                 'a row older than this was left behind by a process that ' +
+                 'stopped before sweeping it; no start reads it, and the ' +
+                 'persistence.minted-expiry-purge job deletes it. Every ' +
+                 'other persisted store — ' +
                  'configuration, accounts, sessions, tokens, the audit log ' +
                  'and the counters — is KEPT until the store itself deletes ' +
                  'a row, however old it is (2026-09-18: until then this ' +
@@ -14419,6 +14813,18 @@ const SETTINGS = [
                  'identifies nothing: membership is a UUID made at every ' +
                  'start, so two nodes given one name are still two nodes.' },
 
+  { key: 'cluster.nodeSnapshotRetentionHours', group: 'Cluster',
+    label: 'Keep a gone node\'s snapshot (hours)',
+    env: 'STS_CLUSTER_NODE_SNAPSHOT_RETENTION_HOURS', type: 'int', dflt: 24,
+    min: 1, max: 8760, runtime: true, perProcess: true,
+    description: 'How long Monitoring → Worker Pools and → Node Health keep ' +
+                 'showing a node that is no longer a live cluster member, ' +
+                 'from its last snapshot (#332). The hourly ' +
+                 'cluster.node-snapshot-purge job deletes its row once the ' +
+                 'snapshot is older than this; a live member\'s row is ' +
+                 'never deleted, however old, and nothing is deleted while ' +
+                 'membership cannot be read. rcbj chose a day.' },
+
   { key: 'cluster.heartbeatMs', group: 'Cluster',
     label: 'Heartbeat interval (ms)',
     env: 'STS_CLUSTER_HEARTBEAT_MS', type: 'int', dflt: 2000, min: 250,
@@ -14470,6 +14876,253 @@ const SETTINGS = [
                  'and nothing else; the node starts, and says at every start ' +
                  'which ones it is running without. There is no "accept all": ' +
                  'a list somebody has to write is a list somebody has read.' },
+
+  // -------------------------------------------------------------------------
+  // CELLS (#98, 2026-09-28): one logical service deployed as several CELLS,
+  // each a copy of the whole stack with its own postgres, in one legal
+  // JURISDICTION. `common/cells.ts` and `persistence/CLAUDE.md` (*Tiers*)
+  // argue it. Every process setting here is restart-only and none may be
+  // carried by a realm: a cell is a fact about where a container runs, and
+  // a realm cannot move one. What a REALM decides — where its people may be
+  // homed and which transfers it permits — is the runtime group below.
+  //
+  // **EMPTY `cells.id` IS SINGLE-CELL MODE, WHICH IS EVERY DEPLOYMENT THAT
+  // HAS NOT ASKED FOR THIS**: all three tiers live in the one database, no
+  // locator is added to anything, and nothing below is read.
+  // -------------------------------------------------------------------------
+  { key: 'cells.id', group: 'Cells', label: 'This cell',
+    env: 'STS_CELL_ID', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'which cell a process belongs to decides which database ' +
+                   'it restores from and which people are resident here',
+    description: 'The id of the cell this container belongs to — a short ' +
+                 'lower-case name such as `usw2` (`[a-z0-9]{1,16}`). EMPTY, ' +
+                 'the default, is SINGLE-CELL MODE: the whole service is one ' +
+                 'deployment and every store is in one database, exactly as ' +
+                 'before cells existed. A cell id is never published: no ' +
+                 'token, cookie, certificate or metadata document names one. ' +
+                 'Every node of one cell must carry the same id, and every ' +
+                 'cell of one service a different one.' },
+
+  { key: 'cells.jurisdiction', group: 'Cells',
+    label: 'This cell\'s jurisdiction',
+    env: 'STS_CELL_JURISDICTION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the jurisdiction is part of every transfer decision ' +
+                   'this process makes',
+    description: 'The legal boundary this cell sits in: a lower-case code ' +
+                 '(`us`, `ca`, `eu`, `sg`, `id`). Personal data homed here is ' +
+                 'never replicated outside it, and every question of ' +
+                 'whether a session or an attribute may be held somewhere ' +
+                 'else is asked of the issuance policy in terms of it. ' +
+                 'Required when `cells.id` is set.' },
+
+  { key: 'cells.peers', group: 'Cells', label: 'The other cells',
+    env: 'STS_CELL_PEERS', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell channel dials these addresses and trusts ' +
+                   'these ids from the moment the process starts',
+    description: 'Every OTHER cell of this service, as a JSON array of ' +
+                 '`{"id", "jurisdiction", "url"}` — `url` being that cell\'s ' +
+                 'inter-cell address, `https://<internal address>:8446`. It ' +
+                 'is an address on a private network between cells and is ' +
+                 'never published anywhere. Empty with `cells.id` set is a ' +
+                 'service of ONE cell that still runs the tiered stores, ' +
+                 'which is how the tiers are tested alone. An entry may ' +
+                 'also carry `consoleUrl`, that cell\'s own ' +
+                 '`cells.consoleUrl` (#361), which Server configuration → ' +
+                 'Cells links to.' },
+
+  { key: 'cells.port', group: 'Cells', label: 'Inter-cell port',
+    env: 'STS_CELL_PORT', type: 'port', dflt: 8446,
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell listener binds once, from listen()',
+    description: 'The port the inter-cell channel listens on — mutual TLS, ' +
+                 'a leaf from the process\'s `cell` Issuing CA, and a peer ' +
+                 'accepted only when its certificate names a cell in ' +
+                 '`cells.peers`. Bound only when `cells.id` is set. It must ' +
+                 'never be reachable from the internet: it is reachable ' +
+                 'from the other cells\' networks and nothing else.' },
+
+  { key: 'cells.hostname', group: 'Cells',
+    label: 'This cell\'s inter-cell host name',
+    env: 'STS_CELL_HOSTNAME', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell certificate is issued with this name ' +
+                   'when the listener binds',
+    description: 'The private DNS name the OTHER cells dial this one at — ' +
+                 'the host of this cell\'s entry in their `cells.peers`. ' +
+                 'Each node\'s inter-cell certificate carries it, so a peer ' +
+                 'that dialled the name can check it. It resolves only on ' +
+                 'the private network between cells, to one address per ' +
+                 'node, and is never published. Empty means the node\'s own ' +
+                 'host name.' },
+
+  // THE ONE PLACE A CELL IS PUBLISHED (#361, 2026-09-30, rcbj): its own
+  // administrators' door, on Server configuration → Cells. #98's rule — no
+  // page names a cell — holds everywhere else.
+  { key: 'cells.consoleUrl', group: 'Cells',
+    label: 'This cell\'s own console address',
+    env: 'STS_CELL_CONSOLE_URL', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the console client\'s redirect addresses are ' +
+                   'registered for it when the service starts',
+    description: 'The public origin that reaches THIS cell\'s load ' +
+                 'balancer and no other — `https://<cell>.<public name>` ' +
+                 'on an AWS deployment — so an administrator can open this ' +
+                 'cell\'s own console from another cell\'s. Server ' +
+                 'configuration → Cells links every cell\'s, and the ' +
+                 'console signs in AT that address (its callback is ' +
+                 'registered for the console\'s client) rather than being ' +
+                 'sent back to the shared public name. It is drawn on that ' +
+                 'page and nowhere else: no token, metadata document or ' +
+                 'error names a cell. Empty — the default, and single-cell ' +
+                 'mode — draws no link.' },
+
+  { key: 'cells.relayTimeoutMs', group: 'Cells',
+    label: 'Inter-cell request timeout (ms)',
+    env: 'STS_CELL_RELAY_TIMEOUT_MS', type: 'int', dflt: 10000,
+    min: 1000, max: 120000, runtime: true, perProcess: true,
+    description: 'How long a request relayed to another cell, or a call on ' +
+                 'the inter-cell channel, may take before it is answered ' +
+                 'as the other cell being unreachable (and handled as ' +
+                 '`cells.homeUnreachable` says).' },
+
+  // THE DURABLE DELIVERIES BETWEEN CELLS (`common/cell_deliveries.ts`):
+  // the shared outbound queue's numbers, for its inter-cell kind.
+  { key: 'cells.deliveryAttempts', group: 'Cells',
+    label: 'Inter-cell delivery attempts',
+    env: 'STS_CELL_DELIVERY_ATTEMPTS', type: 'int', dflt: 12,
+    min: 1, max: 50, runtime: true, perProcess: true,
+    description: 'How many times a revocation or a changed projection owed ' +
+                 'to another cell is tried before it is dead-lettered (it ' +
+                 'is retried by hand from /admin/deliveries). The backoff ' +
+                 'doubles, so twelve attempts from two seconds cover about ' +
+                 'two hours of another cell being down.' },
+
+  { key: 'cells.deliveryBackoffMs', group: 'Cells',
+    label: 'Inter-cell delivery backoff (ms)',
+    env: 'STS_CELL_DELIVERY_BACKOFF_MS', type: 'int', dflt: 2000,
+    min: 0, max: 600000, runtime: true, perProcess: true,
+    description: 'The wait before the second attempt of an inter-cell ' +
+                 'delivery; it doubles for each attempt after.' },
+
+  { key: 'cells.deliveryRetentionS', group: 'Cells',
+    label: 'Inter-cell delivery retention (s)',
+    env: 'STS_CELL_DELIVERY_RETENTION_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true, perProcess: true,
+    description: 'How long an inter-cell delivery may stay pending before ' +
+                 'it is dead-lettered whatever its attempt count.' },
+
+  { key: 'cells.deliveryMaxRows', group: 'Cells',
+    label: 'Inter-cell deliveries held',
+    env: 'STS_CELL_DELIVERY_MAX_ROWS', type: 'int', dflt: 100000,
+    min: 100, max: 10000000, runtime: true, perProcess: true,
+    description: 'The most inter-cell deliveries a realm holds; the oldest ' +
+                 'finished ones make room first.' },
+
+  { key: 'cells.deliveryConcurrency', group: 'Cells',
+    label: 'Inter-cell deliveries at once',
+    env: 'STS_CELL_DELIVERY_CONCURRENCY', type: 'int', dflt: 8,
+    min: 1, max: 64, runtime: true, perProcess: true,
+    description: 'How many inter-cell deliveries a sweep attempts at once.' },
+
+  { key: 'cells.deliverySummaryS', group: 'Cells',
+    label: 'Inter-cell delivery summary interval (s)',
+    env: 'STS_CELL_DELIVERY_SUMMARY_S', type: 'int', dflt: 300,
+    min: 10, max: 86400, runtime: true, perProcess: true,
+    description: 'At most one summary line per realm per this many ' +
+                 'seconds, rather than a line per delivery.' },
+
+  { key: 'cells.deliverySweepS', group: 'Cells',
+    label: 'Inter-cell delivery sweep interval (s)',
+    env: 'STS_CELL_DELIVERY_SWEEP_S', type: 'int', dflt: 30,
+    min: 5, max: 3600, runtime: true, perProcess: true,
+    description: 'How often the sweep job attempts every inter-cell ' +
+                 'delivery that is due.' },
+
+  { key: 'cells.homeUnreachable', group: 'Cells',
+    label: 'When a person\'s home cell cannot be reached',
+    env: 'STS_CELL_HOME_UNREACHABLE', type: 'enum',
+    enumValues: ['fail-closed', 'fail-open'], dflt: 'fail-closed',
+    runtime: true,
+    description: '`fail-closed`, the default (#98 D6): a person homed in a ' +
+                 'cell this one cannot reach cannot sign in, refresh a ' +
+                 'token or step up until it answers; a session already held ' +
+                 'here goes on until its next check against home. ' +
+                 '`fail-open` lets a session held here be refreshed without ' +
+                 'home\'s confirmation for up to ' +
+                 '`cells.failOpenGraceS`. **WARNING: in `fail-open` a ' +
+                 'disable, a password change or a revocation made at home ' +
+                 'during the outage is not seen here until home answers ' +
+                 'again, so a person who should have been stopped is not.**' },
+
+  { key: 'cells.failOpenGraceS', group: 'Cells',
+    label: 'Fail-open grace (s)',
+    env: 'STS_CELL_FAIL_OPEN_GRACE_S', type: 'int', dflt: 900,
+    min: 0, max: 86400, runtime: true,
+    description: 'With `cells.homeUnreachable=fail-open`, how long after ' +
+                 'home last confirmed a subject a session held here may ' +
+                 'still be refreshed without it. Ignored in `fail-closed`.' },
+
+  { key: 'cells.subjectCheckS', group: 'Cells',
+    label: 'Subject state check interval (s)',
+    env: 'STS_CELL_SUBJECT_CHECK_S', type: 'int', dflt: 60,
+    min: 0, max: 3600, runtime: true,
+    description: 'A session held away from its subject\'s home asks home ' +
+                 'for the subject\'s state (disabled, password or factor ' +
+                 'changed, revoked) on every refresh, token exchange and ' +
+                 'step-up, and ALSO whenever it is used after this many ' +
+                 'seconds without an answer. Home pushes a revocation to ' +
+                 'every cell holding a session as well, so this is the ' +
+                 'bound when a push is lost. 0 asks on every use.' },
+
+  { key: 'cells.homeCell', group: 'Cells',
+    label: 'Default home cell for new people',
+    env: 'STS_CELL_HOME_CELL', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The cell a person created in this realm is homed in when ' +
+                 'nothing says otherwise (#98 D1: the home is per PERSON, ' +
+                 'and this is the realm\'s default). Empty means the cell ' +
+                 'that creates them. A creation naming a home — the console ' +
+                 'field, the SCIM extension attribute — wins, and must be a ' +
+                 'cell in a jurisdiction `cells.jurisdictions` allows.' },
+
+  { key: 'cells.jurisdictions', group: 'Cells',
+    label: 'Jurisdictions people may be homed in',
+    env: 'STS_CELL_JURISDICTIONS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Which jurisdictions this realm may place a person in. ' +
+                 'Empty means any jurisdiction the service has a cell in. ' +
+                 'A realm pinned to one jurisdiction lists one.' },
+
+  { key: 'cells.permittedTransfers', group: 'Cells',
+    label: 'Transfers this realm permits',
+    env: 'STS_CELL_PERMITTED_TRANSFERS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The loosenings of the strict default (#98 D4): each ' +
+                 'entry is `<home>><serving>` — `us>ca` means a session of a ' +
+                 'person homed in `us` may be HELD in a `ca` cell, with the ' +
+                 'person\'s attributes (never a credential) projected there ' +
+                 'for as long as it lasts. `*` on either side means any. ' +
+                 'EMPTY, the default, permits nothing: a person served away ' +
+                 'from their home jurisdiction is relayed to their home cell ' +
+                 'for every request, which is slower and keeps every ' +
+                 'personal value at home. **WARNING: each entry is a ' +
+                 'decision that personal data may be processed in the ' +
+                 'serving jurisdiction; make it only where the law of both ' +
+                 'allows it.** These are facts handed to the issuance ' +
+                 'policy, which decides (`hold-session`).' },
+
+  { key: 'cells.hardGeofence', group: 'Cells',
+    label: 'Refuse rather than relay',
+    env: 'STS_CELL_HARD_GEOFENCE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default: a person reaching a cell outside their ' +
+                 'home jurisdiction is served by relaying to home. On: they ' +
+                 'are REFUSED there with a page saying the service cannot ' +
+                 'be used from this location, for a realm whose law forbids ' +
+                 'even carrying the traffic.' },
 
   // -------------------------------------------------------------------------
   // SIGNER ROTATION (2026-09-22, #42/#48). A REALM carries these: each realm's
@@ -14556,25 +15209,33 @@ const SETTINGS = [
                  'is late by, and the most a Run now waits before it starts. ' +
                  'Read at every tick.' },
 
-  { key: 'scheduler.historyDays', group: 'Scheduler',
-    label: 'How long a finished run is kept (days)',
-    env: 'STS_SCHEDULER_HISTORY_DAYS', type: 'int', dflt: 30, min: 1,
-    max: 3650, runtime: true, perProcess: true,
-    description: 'A run that succeeded, failed or was abandoned is kept this ' +
-                 'long and then removed by the scheduler\'s own history job. ' +
-                 'The last run of every job is kept whatever its age, so a ' +
-                 'job that runs every 90 days still shows when it last ran. ' +
-                 'Queued and running rows are never removed by age.' },
+  // THE RUN HISTORY'S BOUND IS PER JOB (#338). It was thirty days and 5000
+  // runs PER REALM, and testidp held 126,160 run rows — a per-minute job in
+  // each of 135 realms is 194,000 runs a day — which every process restored
+  // at every start. `cluster/scheduler.ts`'s `purgeHistory()` argues the rule.
+  { key: 'scheduler.runHistoryCount', group: 'Scheduler',
+    label: 'Runs kept per job',
+    env: 'STS_SCHEDULER_RUN_HISTORY_COUNT', type: 'int', dflt: 100, min: 1,
+    max: 100000, runtime: true, perProcess: true,
+    description: 'How many of each job\'s most recent finished runs are ' +
+                 'kept, in each trust realm it runs in, whatever their age. ' +
+                 'A run is kept if it is one of these OR it ended within ' +
+                 'scheduler.runHistoryHours, so whichever of the two keeps ' +
+                 'more applies; the latest run of every job is always kept, ' +
+                 'and a queued or running one is never removed. The ' +
+                 'scheduler.history job deletes the rest, in batches, every ' +
+                 'ten minutes, and a start does not read back a run past ' +
+                 'the bound.' },
 
-  { key: 'scheduler.maxRuns', group: 'Scheduler',
-    label: 'Most runs kept per realm',
-    env: 'STS_SCHEDULER_MAX_RUNS', type: 'int', dflt: 5000, min: 100,
-    max: 1000000, runtime: true, perProcess: true,
-    description: 'The bound on the run history of one trust realm (the ' +
-                 'service-wide jobs\' runs are the default realm\'s). Past ' +
-                 'it the oldest FINISHED run goes first; a queued or running ' +
-                 'one, and the last run of each job, are never dropped to ' +
-                 'make room.' },
+  { key: 'scheduler.runHistoryHours', group: 'Scheduler',
+    label: 'Runs kept for (hours)',
+    env: 'STS_SCHEDULER_RUN_HISTORY_HOURS', type: 'int', dflt: 24, min: 0,
+    max: 8760, runtime: true, perProcess: true,
+    description: 'Every run that ended within this many hours is kept — a ' +
+                 'failed one included — beside each job\'s last ' +
+                 'scheduler.runHistoryCount runs, whichever keeps more. A ' +
+                 'job that runs every minute therefore keeps a day of runs ' +
+                 'in each realm it runs in. 0 keeps the count alone.' },
 
   { key: 'scheduler.disabledJobs', group: 'Scheduler',
     label: 'Jobs switched off',
@@ -14612,6 +15273,32 @@ const SETTINGS = [
                  'to, so the scheduler cannot take every connection from ' +
                  'the requests.' },
 
+  // ATTRIBUTE SOURCES (#94): the operators' SQL databases a realm reads
+  // people's attributes from. The sources themselves are a register
+  // (`ou=attributesources`, /admin/attribute-sources); these two bound them.
+  { key: 'attributeSources.hostPatterns', group: 'Attribute sources',
+    label: 'Hosts an attribute source may name',
+    env: 'STS_ATTRIBUTE_SOURCES_HOST_PATTERNS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The database hosts this realm\'s attribute sources may ' +
+                 'connect to, comma-separated, * matching any run of ' +
+                 'characters (db.example.com, *.hr.example.com). EMPTY, the ' +
+                 'default, allows ANY HOST — and a realm administrator ' +
+                 'manages their realm\'s sources, so an empty list lets a ' +
+                 'realm administrator make this service connect to any host ' +
+                 'its network reaches, internal ones included. Set it for ' +
+                 'every realm whose administrators you do not trust with ' +
+                 'that. Only a service administrator may change it; a ' +
+                 'source already stored is checked again when it is next ' +
+                 'changed.' },
+  { key: 'attributeSources.refreshBatch', group: 'Attribute sources',
+    label: 'People per scheduled refresh',
+    env: 'STS_ATTRIBUTE_SOURCES_REFRESH_BATCH', type: 'int', dflt: 200,
+    min: 1, max: 5000, runtime: true,
+    description: 'How many people each attribute source reads per run of ' +
+                 'the scheduled refresh (attribute-sources.refresh, every ' +
+                 'minute), picking up after the last one next time. Larger ' +
+                 'finishes a pass sooner and holds a node longer per run.' },
   // -------------------------------------------------------------------------
   // MAIL (#63, 2026-09-22): the one outbound mail channel, `common/mail.ts`.
   //
@@ -15051,6 +15738,10 @@ SETTINGS.forEach(function (setting) {
 // unknown key is (STS-CORE-0008), with the replacement named, and left in
 // the store.
 // ---------------------------------------------------------------------------
+/**
+ * The settings that were replaced, and what replaced them; one still named
+ * anywhere stops the service starting.
+ */
 const REPLACED_SETTINGS = [
   { key: 'gnap.pushAllowInsecure', env: 'STS_GNAP_PUSH_ALLOW_INSECURE',
     now: ['gnap.pushAllowHttp', 'gnap.pushSkipTlsVerification',
@@ -15198,6 +15889,15 @@ function pinnedSignerWriteProblem(key, parsed) {
     'or POST /admin-api/pki/unpin-key — and then turn it off.';
 }
 
+/**
+ * Says whether a value is refused by the mode rule: a development-only
+ * value in product mode, or a write that would turn a live pinned signer
+ * off.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @returns the problem as a sentence, or null
+ */
 function modeWriteProblem(key, raw) {
   log.debug("Entering modeWriteProblem(). key=" + key);
   const setting = byKey[key];
@@ -15249,6 +15949,15 @@ function modeWriteProblem(key, raw) {
 
 // checkOverride() and then the mode rule above, for the doors that WRITE a
 // value somebody asked for — the console's and the API's.
+/**
+ * Runs `checkOverride()` and then the mode rule, for the doors that write
+ * a value somebody asked for.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - as for `checkOverride()`
+ * @returns the problem as a sentence, or null
+ */
 function checkWrite(key, raw, forRealm) {
   log.debug("Entering checkWrite(). key=" + key);
   const problem = checkOverride(key, raw, forRealm) ||
@@ -15257,6 +15966,14 @@ function checkWrite(key, raw, forRealm) {
   return problem;
 }
 
+/**
+ * Returns the error code `checkWrite()` refused for.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - as for `checkOverride()`
+ * @returns the code, or empty
+ */
 function checkWriteCode(key, raw, forRealm) {
   log.debug("Entering checkWriteCode(). key=" + key);
   const code = checkOverrideCode(key, raw, forRealm) ||
@@ -15267,6 +15984,13 @@ function checkWriteCode(key, raw, forRealm) {
 
 // WHICH CODE `modeWriteProblem()` REFUSED FOR, or '' — the half of
 // `checkWriteCode()` the realm doors (`realms.js`) need on its own.
+/**
+ * Returns the error code `modeWriteProblem()` refused for.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @returns the code, or empty
+ */
 function modeWriteCode(key, raw) {
   log.debug("Entering modeWriteCode(). key=" + key);
   if (!modeWriteProblem(key, raw)) {
@@ -15331,6 +16055,12 @@ const overrides = {};
 // ---------------------------------------------------------------------------
 let overrideStore = null;
 
+/**
+ * Fills the override-store slot: the function told after every successful
+ * write, which persists it.
+ *
+ * @param fn - the persistence layer's writer
+ */
 function setOverrideStore(fn) {
   log.debug("Entering setOverrideStore().");
   overrideStore = fn;
@@ -15398,6 +16128,11 @@ let realmContext = null;
 // for what it is for and why a plain boolean is the right primitive.
 let suppressRealmLayer = false;
 
+/**
+ * Fills the realm slot: the function that says which realm is ambient.
+ *
+ * @param fn - `realms.js`'s reader of the ambient realm
+ */
 function setRealmContext(fn) {
   log.debug("Entering setRealmContext().");
   realmContext = fn;
@@ -15420,9 +16155,9 @@ function setRealmContext(fn) {
 //     the day somebody remembers this function.
 //   * `perProcess` on the row — a setting that is a property of the OS PROCESS
 //     rather than of the service's behaviour, so that one realm's value would
-//     silently be every realm's. `workers.count` is the first: a pool of child
-//     processes is forked once, by this process, and a realm resizing it would
-//     be resizing every other realm's too.
+//     silently be every realm's. The request pool's settings are the
+//     example: a pool is started once, by this process, and a realm resizing
+//     it would be resizing every other realm's too.
 //
 // The flag is read off the table rather than matched by name, which is what
 // makes the second rule as forgettable as the first. `byKey` rather than
@@ -15442,6 +16177,12 @@ function realmFor(key) {
 // Whether a realm may carry this setting at all. Exported, because the WRITING
 // end of the rule is in realms.js — see checkRealmOverride() there — and two
 // copies of a predicate is how the two ends come to disagree.
+/**
+ * Says whether a setting belongs to the process, so no realm may carry it.
+ *
+ * @param key - the setting's key
+ * @returns true when it is per process
+ */
 function isPerProcess(key) {
   log.debug("Entering isPerProcess().");
   const setting = byKey[key];
@@ -15573,6 +16314,14 @@ function resolve(key) {
 // THE function every module calls. Coerced to the setting's type, so a caller
 // never has to know whether the value arrived from a string environment or a
 // typed file.
+/**
+ * Returns a setting's value, coerced to its type, from the highest layer
+ * that has one: a runtime override (the ambient realm's first), the
+ * environment, the appconfig file, the defaults.
+ *
+ * @param key - the setting's key
+ * @returns the value
+ */
 function value(key) {
   log.debug("Entering value().");
   const setting = settingFor(key);
@@ -15637,6 +16386,12 @@ function processValue(key) {
 // standard port is left off, which is what `baseUrlOf()` gives a request that
 // carried a Host header without one.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the management API's base URL as the process knows it without a
+ * request; a wildcard bind is drawn as `localhost`.
+ *
+ * @returns the URL
+ */
 function managementApiBaseUrl() {
   log.debug("Entering managementApiBaseUrl().");
   const pinned = String(processValue('global.publicBaseUrl') || '').trim()
@@ -15661,6 +16416,13 @@ function managementApiBaseUrl() {
     (port === standard ? '' : ':' + port) + '/admin-api';
 }
 
+/**
+ * Says which layer a setting's value comes from.
+ *
+ * @param key - the setting's key
+ * @returns `realm`, `override`, `env`, `env-legacy`, `appconfig`,
+ *   `defaults` or `default`
+ */
 function sourceOf(key) {
   log.debug("Entering sourceOf().");
   log.debug("Leaving sourceOf().");
@@ -15669,6 +16431,13 @@ function sourceOf(key) {
 
 // The value as a single line: what the console's input shows, and what the
 // equivalent environment variable would carry.
+/**
+ * Returns a setting's value as a single line, as the console's input shows
+ * it and the environment variable would carry it.
+ *
+ * @param key - the setting's key
+ * @returns the text
+ */
 function text(key) {
   log.debug("Entering text().");
   const setting = settingFor(key);
@@ -15709,6 +16478,11 @@ function text(key) {
 // ---------------------------------------------------------------------------
 const loggers = [];
 
+/**
+ * Registers a bunyan logger so a change of `global.logLevel` reaches it.
+ *
+ * @param logger - the logger
+ */
 function registerLogger(logger) {
   log.debug("Entering registerLogger().");
   loggers.push(logger);
@@ -15741,6 +16515,16 @@ function applyLogLevel() {
 // restart-only rule rather than a hole in it: a realm binds no socket, so the
 // reason those rows are restart-only is not a reason a REALM cannot carry them.
 // The process-wide form is unchanged and still refuses.
+/**
+ * Says whether a value would be accepted as an override, without accepting
+ * it.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - true to validate for a realm, which admits the
+ *   `realmRuntime` rows; wherever the write would land when omitted
+ * @returns the problem as a sentence, or null when it would be accepted
+ */
 function checkOverride(key, raw, forRealm) {
   log.debug("Entering checkOverride().");
   // `forRealm` OMITTED MEANS "WHEREVER THIS WRITE WOULD LAND", which is what
@@ -15788,6 +16572,14 @@ function checkOverride(key, raw, forRealm) {
 // STRING that six callers render, and changing its shape to carry a code would
 // change what each of them sees. The order of the tests is checkOverride()'s
 // own, so the two cannot name different conditions for one refusal.
+/**
+ * Returns the error code of the condition `checkOverride()` refused for.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - as for `checkOverride()`
+ * @returns the code, or empty where it accepts
+ */
 function checkOverrideCode(key, raw, forRealm) {
   log.debug("Entering checkOverrideCode().");
   const inRealm = forRealm === undefined ? !!realmFor(key) : !!forRealm;
@@ -15866,6 +16658,15 @@ function announceClaimShape(key, before) {
   log.debug("Leaving announceClaimShape().");
 }
 
+/**
+ * Sets a runtime override, in the ambient realm where one is and the
+ * setting may be carried by a realm, and in the process otherwise.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @returns `{ ok: true, errors: [], key, realm }`, or `{ ok: false, errors }`
+ *   carrying its code
+ */
 function setOverride(key, raw) {
   log.debug("Entering setOverride(). key=" + key);
   // WHICH REALM THIS WRITE LANDS IN IS DECIDED FIRST, BECAUSE THE CHECK
@@ -15938,6 +16739,14 @@ function setOverride(key, raw) {
 
 // Drop one override, so the setting falls back to the environment, the file or
 // the default — whichever it would have used had nothing ever been set.
+/**
+ * Drops one override made here, so the setting falls back to what it would
+ * otherwise be.
+ *
+ * @param key - the setting's key
+ * @returns `{ ok: true, errors: [], key, realm }`, or `{ ok: false, errors }`
+ *   carrying its code
+ */
 function clearOverride(key) {
   log.debug("Entering clearOverride(). key=" + key);
   const setting = byKey[key];
@@ -15983,6 +16792,12 @@ function clearOverride(key) {
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }
 
+/**
+ * Drops every override made here: in a realm, the realm's only.
+ *
+ * Refused whole when one clear would turn a live pinned signer off.
+ * @returns `{ ok: true, errors: [], cleared, … }`, or a refusal
+ */
 function clearAllOverrides() {
   log.debug("Entering clearAllOverrides().");
   // In a realm this clears the REALM's settings and leaves the process-wide
@@ -16032,6 +16847,12 @@ function clearAllOverrides() {
 // create the one thing the realm layer exists to prevent: a realm's value in a
 // process-wide place.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the process-wide overrides, to be written down; a realm's are
+ * written with the realm registry.
+ *
+ * @returns the overrides by key
+ */
 function persistableOverrides() {
   log.debug("Entering persistableOverrides().");
   const out = {};
@@ -16067,6 +16888,14 @@ function persistableOverrides() {
 // and a saved value that is no longer valid must be reported and skipped rather
 // than smuggled past the validation every other caller goes through.
 // ---------------------------------------------------------------------------
+/**
+ * Puts stored process-wide overrides back, at startup or when another
+ * process changed the configuration: each validated as any write is, the
+ * invalid reported and skipped, and those no longer stored cleared.
+ *
+ * @param saved - the stored overrides by key
+ * @returns how many were applied
+ */
 function applyPersistedOverrides(saved) {
   log.debug("Entering applyPersistedOverrides().");
   const applied = [];
@@ -16131,6 +16960,13 @@ function applyPersistedOverrides(saved) {
 // OpenAPI document's example. A second shape for any of them is how a console
 // and an API start disagreeing about what the service is configured with.
 // ---------------------------------------------------------------------------
+/**
+ * Describes one setting in the one shape the console, the management API
+ * and the OpenAPI example all use.
+ *
+ * @param setting - the setting's row
+ * @returns the description
+ */
 function describe(setting) {
   log.debug("Entering describe().");
   const state = resolve(setting.key);
@@ -16178,9 +17014,10 @@ function describe(setting) {
     // and then refuses it under a realm prefix is telling half the truth, and
     // it is the half a caller acts on: `tests/vendored/
     // sts_admin_api_operations.js` walks this table for a runtime integer to
-    // drive a realm override with, and picked `workers.count` the day it was
-    // added — a setting a realm may not carry, so the write landed on the
-    // process and the row it read back said so.
+    // drive a realm override with, and picked `workers.count` (a setting
+    // removed by #363) the day it was added — a setting a realm may not
+    // carry, so the write landed on the process and the row it read back
+    // said so.
     //
     // `perProcess` and the `realms.*` prefix are the two reasons, and both are
     // config.js's own to state — see realmFor() and realms.js's
@@ -16195,6 +17032,12 @@ function describe(setting) {
 // Order matters here in a way it does not for most lists: the console renders
 // one section per group and a reader looking for the Kerberos realm should find
 // it where the Kerberos endpoints are described everywhere else.
+/**
+ * Returns every group, in the order the table declares them, with their
+ * settings in it.
+ *
+ * @returns `{ group, settings }` per group
+ */
 function groups() {
   log.debug("Entering groups().");
   const order = [];
@@ -16213,6 +17056,13 @@ function groups() {
   return out;
 }
 
+/**
+ * Returns what this service is configured with: the realm the snapshot is
+ * of and what it sets, the appconfig files, the counts, what is overridden,
+ * and every group of settings described.
+ *
+ * @returns the snapshot
+ */
 function snapshot() {
   log.debug("Entering snapshot().");
   // WHICH REALM THIS SNAPSHOT IS OF, and what it sets. Reported rather than
@@ -16264,6 +17114,11 @@ function snapshot() {
 // would answer "nothing is missing" every time and the warning would be dead
 // code that looked alive.
 // ---------------------------------------------------------------------------
+/**
+ * Compares the operator's appconfig file with this table.
+ *
+ * @returns `{ missing, unknown }` keys
+ */
 function auditAppconfig() {
   log.debug("Entering auditAppconfig().");
   // `derived` settings are left OUT of every appconfig file on purpose,
@@ -16580,6 +17435,15 @@ if (audit.unknown.length && distinctiveMissing !== DISTINCTIVE.length) {
 // identity provider that stopped issuing because somebody typed "yes" would be
 // a mock that stopped answering — which `applications.js`'s own header argues
 // at length about this directory being a vocabulary rather than a constraint.
+/**
+ * Parses a value that came from none of the five layers — a directory
+ * attribute, say — with the same checks the console and API run.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @returns `{ ok: true, value }`, or `{ ok: false, problem }` carrying its
+ *   code; never thrown
+ */
 function parseAs(key, raw) {
   log.debug("Entering parseAs(). key=" + key);
   const setting = byKey[key];
@@ -16608,6 +17472,15 @@ function parseAs(key, raw) {
   return { ok: true, value: parsed };
 }
 
+/**
+ * Every setting this service has, in one table, and the one place a value
+ * is read.
+ *
+ * Five layers, highest wins — a runtime override, the environment variable,
+ * its legacy variable, the appconfig file, `env/defaults.js` — and no
+ * sixth: a setting with no value stops the service starting.
+ * @namespace
+ */
 module.exports = {
   SETTINGS: SETTINGS,
   parseAs: parseAs,

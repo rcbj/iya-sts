@@ -69,13 +69,21 @@
 // document happened to be read.
 //
 // A LIBRARY (rule 3): no route. It requires `jsonld` (a dependency already,
-// for bbs2023.js) and `common/` leaves.
+// for bbs2023.js) at first use, and `common/` leaves.
 // ---------------------------------------------------------------------------
 
 import fs = require('fs');
 import path = require('path');
-import jsonld = require('jsonld');
 import helpers = require('../common/helpers');
+import LazyModule = require('../common/lazy_module');
+// `jsonld` IS REQUIRED AT FIRST USE (#348): a canonicalization is the first
+// use, and most processes of this service — every request worker that never
+// signs or verifies a Data Integrity proof — make none. See
+// `common/lazy_module.ts`.
+type JsonLd = typeof import('jsonld');
+const jsonld: JsonLd = LazyModule.of('jsonld', function () {
+  return require('jsonld') as JsonLd;
+}, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 
 interface VcJsonLdDeps {
@@ -112,16 +120,37 @@ const CONTEXT_FILES: Record<string, [string, string]> = {
   'https://w3id.org/citizenship/v4rc1': [OWN, 'citizenship_v4rc1.json']
 };
 
+/**
+ * JSON-LD for the Data Integrity cryptosuites that read a document as a graph:
+ * a closed document loader, and RDF Dataset Canonicalization (RDFC-1.0) over
+ * it.
+ *
+ * The loader fetches nothing: it answers from the contexts that ship with the
+ * service and refuses every other URL.
+ */
 class VcJsonLd {
+  /**
+   * The URLs of every `@context` this service holds.
+   */
   static readonly CONTEXT_URLS = Object.keys(CONTEXT_FILES);
 
   private readonly held = new Map<string, any>();
 
+  /**
+   * Builds the JSON-LD helper from the readers it uses.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcJsonLdDeps) {
     deps.log.debug("Entering VcJsonLd.constructor().");
     deps.log.debug("Leaving VcJsonLd.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcJsonLdDeps {
     helpers.log.debug("Entering VcJsonLd.defaultDeps().");
     helpers.log.debug("Leaving VcJsonLd.defaultDeps().");
@@ -141,6 +170,11 @@ class VcJsonLd {
   }
 
   // Every context URL this service holds.
+  /**
+   * Returns every context URL this service holds.
+   *
+   * @returns the URLs
+   */
   knownContexts(): string[] {
     const { log } = this.deps;
     log.debug("Entering VcJsonLd.knownContexts().");
@@ -149,6 +183,12 @@ class VcJsonLd {
   }
 
   // The context document for a URL, or null when this service holds none.
+  /**
+   * Returns the context document for a URL.
+   *
+   * @param url - the context URL
+   * @returns the parsed document, or null when this service holds none
+   */
   contextFor(url: unknown): any {
     const { log, readJson } = this.deps;
     log.debug("Entering VcJsonLd.contextFor().");
@@ -169,6 +209,13 @@ class VcJsonLd {
   // The BYTES of a held context, as served at its URL — what a
   // `relatedResource` digest is computed over (VCDM 2.0 section 5.3) — or
   // null when this service holds none.
+  /**
+   * Returns the bytes of a held context as served at its URL, which a
+   * `relatedResource` digest is computed over (VCDM 2.0 section 5.3).
+   *
+   * @param url - the context URL
+   * @returns the bytes, or null when this service holds none
+   */
   resourceBytes(url: unknown): Buffer | null {
     const { log, readBytes } = this.deps;
     log.debug("Entering VcJsonLd.resourceBytes().");
@@ -180,6 +227,11 @@ class VcJsonLd {
   }
 
   // THE LOADER jsonld is given. Never fetches: see the header.
+  /**
+   * Returns the document loader jsonld is given, which never fetches.
+   *
+   * @returns the loader
+   */
   documentLoader(): (url: string) => Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcJsonLd.documentLoader().");
@@ -234,6 +286,16 @@ class VcJsonLd {
   // jsonld's reason, for a document that is not safe to sign: an undefined
   // term, a relative IRI, an unknown context.
   // ---------------------------------------------------------------------------
+  /**
+   * Canonicalizes a JSON-LD document with RDFC-1.0, as canonical N-Quads.
+   *
+   * @param document - the JSON-LD document
+   * @param opts - `canonicalIdMap`, filled with the blank node relabelling when
+   *   given
+   * @returns the canonical N-Quads
+   * @throws Error, with jsonld's reason, for a document not safe to sign: an
+   *   undefined term, a relative IRI, an unknown context
+   */
   async canonize(document: any,
                  opts?: { canonicalIdMap?: Map<string, string> }):
     Promise<string> {
@@ -277,6 +339,14 @@ class VcJsonLd {
   }
 
   // RDFC-1.0 of a set of N-Quads (a string, one quad per line).
+  /**
+   * Canonicalizes a set of N-Quads with RDFC-1.0.
+   *
+   * @param nquads - the N-Quads, one quad per line
+   * @param opts - `canonicalIdMap`, filled with the blank node relabelling when
+   *   given
+   * @returns the canonical N-Quads
+   */
   async canonizeNQuads(nquads: string,
                        opts?: { canonicalIdMap?: Map<string, string> }):
     Promise<string> {
@@ -294,6 +364,12 @@ class VcJsonLd {
 
   // The document as N-Quads, NOT canonicalized (blank nodes as jsonld
   // labels them), safe mode.
+  /**
+   * Converts a document to N-Quads, not canonicalized, in safe mode.
+   *
+   * @param document - the JSON-LD document
+   * @returns the N-Quads
+   */
   async toNQuads(document: any): Promise<string> {
     const { log } = this.deps;
     log.debug("Entering VcJsonLd.toNQuads().");
@@ -311,6 +387,12 @@ class VcJsonLd {
   }
 
   // The document in JSON-LD expanded form, safe mode.
+  /**
+   * Expands a document to JSON-LD expanded form, in safe mode.
+   *
+   * @param document - the JSON-LD document
+   * @returns the expanded form
+   */
   async expand(document: any): Promise<any[]> {
     const { log } = this.deps;
     log.debug("Entering VcJsonLd.expand().");
@@ -327,6 +409,13 @@ class VcJsonLd {
   }
 
   // The document compacted to a context, safe mode.
+  /**
+   * Compacts a document to a context, in safe mode.
+   *
+   * @param document - the JSON-LD document
+   * @param context - the context to compact to
+   * @returns the compacted document
+   */
   async compact(document: any, context: any): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcJsonLd.compact().");
@@ -352,9 +441,25 @@ const slot = new InstanceSlot<VcJsonLd>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * JSON-LD for the RDFC Data Integrity cryptosuites: a closed document loader
+ * and RDFC-1.0 canonicalization.
+ *
+ * @namespace
+ */
 export = {
   VcJsonLd: VcJsonLd,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcJsonLd): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   CONTEXT_URLS: VcJsonLd.CONTEXT_URLS,
   knownContexts: slot.forward('knownContexts'),

@@ -9,6 +9,11 @@
 # MACHINE (issue #51; reworked 2026-09-18).
 #
 #   deploy/aws/run-suite.sh <environment>        # e.g. testidp, dev, ci
+#   TF_CELL=cac1 deploy/aws/run-suite.sh testidpna   # ONE CELL of a multi-cell
+#     environment (#98): its outputs, its load balancer's ports and its
+#     callback stack, in its region. `service_url` is the one public name, so
+#     which cell the jobs reach is DNS's choice (geolocation, then latency)
+#     from this machine — the cell named here is where the callback task runs.
 #
 # Needs docker, node and the AWS CLI on this machine, AWS credentials (the
 # deployer user's key, role credentials, or an `aws login` session), and THIS
@@ -28,9 +33,10 @@
 #   3. APPLIES deploy/aws/suite-callbacks/ in the background — a subnet, a NAT
 #      gateway the load balancer admits, and a task definition — which is
 #      where the two jobs the SERVICE must call back run (see below);
-#   4. waits for the load balancer, mints an /admin-api token, removes the
-#      previous run's realms (reset-environment.js; STS_SUITE_KEEP_REALMS=1
-#      keeps them), and runs every other job in the tests image on this
+#   4. waits for the load balancer, mints an /admin-api token, removes what
+#      the previous runs left — realms, bulk-load entries, applications,
+#      overrides (reset-environment.js; STS_SUITE_KEEP_REALMS=1 keeps them),
+#      and runs every other job in the tests image on this
 #      machine's network, into tests/report/aws-<environment>/;
 #   5. runs the callback task once, with the two jobs, waits for it, downloads
 #      its report and MERGES it into the local one (tests/tools/merge-report.js),
@@ -54,6 +60,19 @@
 # and the first run against AWS lost eight jobs to the 300-second default
 # rather than to any assertion. STS_SUITE_JOB_TIMEOUT_MS overrides it.
 #
+# THE WHOLE SUITE IN THE TASK: STS_SUITE_IN_AWS=1 (#311, 2026-09-28).
+# rcbj's call, reversing the 2026-09-18 split for a long run: from this
+# machine every request crosses the internet on a fresh TLS connection and a
+# full run takes most of a day, so with it set NOTHING runs here — the
+# callback task runs every job (MANIFEST.js, less STS_SUITE_EXCLUDE, or
+# STS_SUITE_ONLY), resets the previous run's realms itself, and its report is
+# the run's report, downloaded into tests/report/aws-<env>/. The task is sized
+# for Chrome and the bulk loads (suite-callbacks/ `task_cpu`/`task_memory`)
+# and may run STS_SUITE_TASK_TIMEOUT_SECS (default 8 hours in this mode).
+# This machine still reaches the load balancer for the health probe at the
+# start; the jobs reach it from the task's NAT address, which
+# suite-callbacks/ admits.
+#
 # Other knobs: STS_SUITE_EXCLUDE (comma-separated job files to leave out),
 # STS_SUITE_ONLY (the local job list, replacing the computed one — for
 # re-running what failed), STS_SUITE_REPORT_DIR, STS_SUITE_TASK_TIMEOUT_SECS
@@ -69,6 +88,11 @@ REPORT_DIR="${STS_SUITE_REPORT_DIR:-${ROOT}/tests/report/aws-${ENVIRONMENT}}"
 RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%S)"
 CALLBACK_JOBS="sts_xacml_remote_pep.js,sts_gnap_core.js"
 WITH_CALLBACKS="${STS_SUITE_CALLBACKS:-1}"
+IN_AWS="${STS_SUITE_IN_AWS:-0}"
+if [ "${IN_AWS}" = "1" ];
+then
+  WITH_CALLBACKS=1
+fi
 export AWS_REGION="${AWS_REGION:-us-west-2}"
 
 say() { echo "run-suite: $*" >&2; }
@@ -117,6 +141,13 @@ out() {
       (typeof v === "string" ? v : JSON.stringify(v)));' "${ENV_JSON}" "$1"
 }
 URL="$(out service_url)"
+# THE ENVIRONMENT'S OWN REGION, for the ECS, Secrets Manager and CloudWatch
+# calls below: a cell's, in a multi-cell environment (#98). An environment
+# applied before the output existed has none, and is in the home region.
+# AWS_REGION stays the home region, where the images are pushed and the
+# report bucket is.
+ENV_REGION="$(out aws_region)"
+ENV_REGION="${ENV_REGION:-${AWS_REGION}}"
 SECRET_ARN="$(out admin_api_client_secret_arn)"
 NLB_DNS="$(out nlb_dns_name)"
 LDAP_PORT="$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).ldap.listener))' "$(out load_balancer_ports)")"
@@ -124,15 +155,19 @@ NODES="$(node -e 'process.stdout.write(String(Object.keys(JSON.parse(process.arg
 # WHAT THIS ENVIRONMENT DOES NOT PUBLISH (2026-09-21), for the jobs that
 # dial a port of their own rather than the main one. Kerberos TCP 88 is a
 # row of `load_balancer_ports` only where `publish_kerberos` is on (testidp);
-# SPIFFE's ports come from the separate spiffe-realm stack, which this
-# environment's outputs cannot see, so they count as unpublished unless the
-# caller names a socket (STS_SPIFFE_WORKLOAD_URL). Without this both jobs
+# SPIFFE's are the default realm's two ports, which every environment
+# publishes since #311 (`spiffe_default_ports`, environment/spiffe_default.tf);
+# an environment built before that has no such output and counts SPIFFE as
+# unpublished unless the caller names a socket (STS_SPIFFE_WORKLOAD_URL).
+# Without this both jobs
 # dialled the load balancer on a port nobody listens on and failed on a
 # timeout, as though the service were broken; now each declines and says why.
 UNPUBLISHED="$(node -e 'const p = JSON.parse(process.argv[1]); const u = [];
   if (!p.kerberos) { u.push("kerberos"); }
-  if (!process.env.STS_SPIFFE_WORKLOAD_URL) { u.push("spiffe"); }
-  process.stdout.write(u.join(","));' "$(out load_balancer_ports)")"
+  if (!process.env.STS_SPIFFE_WORKLOAD_URL && !process.argv[2]) {
+    u.push("spiffe");
+  }
+  process.stdout.write(u.join(","));' "$(out load_balancer_ports)" "$(out spiffe_default_ports)")"
 [ -n "${URL}" ] || die "${ENVIRONMENT} has no service_url output; is it applied?"
 say "${ENVIRONMENT} at ${URL}, ${NODES} node(s), run ${RUN_ID}"
 
@@ -168,6 +203,87 @@ then
   fi
 fi
 
+# The job files MANIFEST.js lists, less a comma-separated exclusion list.
+# Read INSIDE the tests image, which has the suite's packages: MANIFEST.js
+# requires bunyan, and this machine's checkout — a clean worktree above all —
+# need not have run `npm install` (#311, the first in-AWS run died on it).
+manifestJobs() {
+  docker run --rm -e EXCLUDE="$1" "${TESTS_IMAGE}" node -e '
+    const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
+    process.stdout.write(require("./tests/vendored/MANIFEST.js").JOBS
+      .map(function (j) { return j.file; })
+      .filter(function (f) { return !skip.has(f); }).join(","));'
+}
+
+# THE SUITE'S ADDRESS ON THE DEFAULT REALM'S OPERATOR ALLOW LIST (#311).
+# Every job runs from the one NAT address, and the suite refuses passwords on
+# purpose — so within minutes the risk engine's `network-failures` signal
+# (refused passwords from this network in the last hour, x3) rates every
+# first sign-in MEDIUM and asks a step-up the suite's people cannot answer
+# (STS-RISK-0017 / 0018: about a dozen jobs in the first in-AWS run). A local
+# stack sets the thresholds out of reach instead
+# (docker-compose-run-tests.yml); a deployment keeps its own, so here the
+# address is allow-listed (x0.2), rcbj's call. The NAT gateway, and so the
+# address, is new on every run, which is why this is done here rather than by
+# hand. A list somebody else made is never replaced: only one whose version
+# this script named.
+allowTheSuitesAddress() {
+  # The NAT address, and the task's subnet: where the environment answers its
+  # public name inside the VPC (environment/dns.tf), the task arrives from
+  # there instead.
+  local ip="$*" token current
+  if [ -z "${ip}" ];
+  then
+    say "no egress address to allow-list"
+    return 0
+  fi
+  token="$(curl -fsS -u "sts-management-api:${CLIENT_SECRET}" \
+    -d grant_type=client_credentials \
+    --data-urlencode 'scope=admin:read admin:write' \
+    --data-urlencode "resource=${URL}/admin-api" "${URL}/oauth2/token" |
+    sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')" || true
+  if [ -z "${token}" ];
+  then
+    say "could not mint an /admin-api token to allow-list ${ip}"
+    return 0
+  fi
+  current="$(curl -fsS -H "Authorization: Bearer ${token}" \
+      "${URL}/admin-api/risk" |
+    docker run --rm -i "${TESTS_IMAGE}" node -e '
+      let t = "";
+      process.stdin.on("data", function (c) { t += c; });
+      process.stdin.on("end", function () {
+        const d = JSON.parse(t);
+        const one = (d.datasets || []).filter(function (x) {
+          return x.dataset === "iplist.operator-allow";
+        })[0] || {};
+        const active = (one.versions || []).filter(function (v) {
+          return v.state === "active" && (v.realm || "") === "default";
+        })[0];
+        process.stdout.write(active ? String(active.version) : "");
+      });')" || current=""
+  case "${current}" in
+    ""|suite-*)
+      ;;
+    *)
+      say "the default realm has an operator allow list of its own" \
+          "(${current}); not replacing it, so ${ip} is NOT allow-listed"
+      return 0
+      ;;
+  esac
+  if { printf '# the in-AWS suite run %s (deploy/aws/run-suite.sh)\n' \
+       "${RUN_ID}"; printf '%s\n' "$@"; } |
+     curl -fsS -o /dev/null -X POST -H "Authorization: Bearer ${token}" \
+       -H 'Content-Type: application/octet-stream' --data-binary @- \
+       "${URL}/admin-api/risk/upload?dataset=iplist.operator-allow&format=ip-list&realm=default&version=suite-${RUN_ID}";
+  then
+    say "${ip} is on the default realm's operator allow list" \
+        "(version suite-${RUN_ID})"
+  else
+    say "could not allow-list ${ip}; sign-ins may be asked to step up"
+  fi
+}
+
 # --- 3. the callback stack, applied while the local half runs -----------------
 APPLY_PID=""
 APPLIED=0
@@ -181,7 +297,7 @@ cleanup() {
   trap - EXIT INT TERM
   if [ -n "${TASK_ARN}" ] && [ -n "${CLUSTER}" ];
   then
-    aws ecs stop-task --cluster "${CLUSTER}" --task "${TASK_ARN}" \
+    aws ecs stop-task --region "${ENV_REGION}" --cluster "${CLUSTER}" --task "${TASK_ARN}" \
       --reason "run-suite cleanup" >/dev/null 2>&1 || true
   fi
   if [ -n "${APPLY_PID}" ];
@@ -232,25 +348,34 @@ do
 done
 say "${URL}/healthcheck answers."
 
-CLIENT_SECRET="$(aws secretsmanager get-secret-value --secret-id "${SECRET_ARN}" \
+CLIENT_SECRET="$(aws secretsmanager get-secret-value --region "${ENV_REGION}" --secret-id "${SECRET_ARN}" \
   --query SecretString --output text)"
 
 EXCLUDE="${CALLBACK_JOBS}${STS_SUITE_EXCLUDE:+,${STS_SUITE_EXCLUDE}}"
-ONLY="$(EXCLUDE="${EXCLUDE}" node -e '
-  const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
-  const jobs = require("./tests/vendored/MANIFEST.js").JOBS
-    .map(function (j) { return j.file; })
-    .filter(function (f) { return !skip.has(f); });
-  process.stdout.write(jobs.join(","));
-')"
+ONLY="$(manifestJobs "${EXCLUDE}")"
 if [ -n "${STS_SUITE_ONLY:-}" ];
 then
   ONLY="${STS_SUITE_ONLY}"
 fi
-say "$(echo "${ONLY}" | tr ',' '\n' | wc -l) job(s) here; ${CALLBACK_JOBS} in the callback task."
-
 mkdir -p "${REPORT_DIR}"
 chmod 0777 "${REPORT_DIR}"
+TASK_JOBS="${CALLBACK_JOBS}"
+TASK_KEEP_REALMS=1
+if [ "${IN_AWS}" = "1" ];
+then
+  # Every job in the task, and the task resets the previous run's realms,
+  # because nothing ran here first.
+  TASK_JOBS="$(manifestJobs "${STS_SUITE_EXCLUDE:-}")"
+  if [ -n "${STS_SUITE_ONLY:-}" ];
+  then
+    TASK_JOBS="${STS_SUITE_ONLY}"
+  fi
+  TASK_KEEP_REALMS="${STS_SUITE_KEEP_REALMS:-}"
+  say "$(echo "${TASK_JOBS}" | tr ',' '\n' | wc -l) job(s), all in the task in the VPC; none here."
+  LOCAL_RC=0
+  LOCAL_RUN=""
+else
+say "$(echo "${ONLY}" | tr ',' '\n' | wc -l) job(s) here; ${CALLBACK_JOBS} in the callback task."
 set +e
 docker run --rm --network host \
   -v "${REPORT_DIR}:/report" \
@@ -286,6 +411,7 @@ LOCAL_RC=$?
 set -e
 LOCAL_RUN="$(readlink -f "${REPORT_DIR}/latest" || true)"
 say "the local half exited ${LOCAL_RC}; report ${LOCAL_RUN}/report.html"
+fi
 
 # --- 5. the callback half ---------------------------------------------------------
 CALLBACK_RC=0
@@ -310,8 +436,13 @@ then
     SG="$(cb security_group_id)"
     BUCKET="$(cb reports_bucket)"
     LOG_GROUP="$(cb log_group)"
+    if [ "${IN_AWS}" = "1" ];
+    then
+      allowTheSuitesAddress "$(cb egress_ip)/32" "$(cb subnet_cidr)"
+    fi
     PEP_REALM="pep-$(date -u +%m%d%H%M%S)"
-    OVERRIDES="$(RUN_ID="${RUN_ID}" PEP_REALM="${PEP_REALM}" ONLY="${CALLBACK_JOBS}" \
+    OVERRIDES="$(RUN_ID="${RUN_ID}" PEP_REALM="${PEP_REALM}" ONLY="${TASK_JOBS}" \
+      KEEP="${TASK_KEEP_REALMS}" UNPUB="${UNPUBLISHED}" \
       JT="${STS_SUITE_JOB_TIMEOUT_MS:-}" node -e '
       const env = function (pairs) {
         return Object.keys(pairs).filter(function (k) { return pairs[k]; })
@@ -322,35 +453,65 @@ then
             STS_SUITE_RUN_ID: process.env.RUN_ID,
             XACML_PEP_REALM: process.env.PEP_REALM,
             STS_SUITE_ONLY: process.env.ONLY,
-            STS_SUITE_KEEP_REALMS: "1",
+            STS_SUITE_KEEP_REALMS: process.env.KEEP || "",
+            STS_TEST_UNPUBLISHED: process.env.UNPUB || "",
             STS_SUITE_JOB_TIMEOUT_MS: process.env.JT || "" }) },
         { name: "xacml-pep", environment: env({
             XACML_PEP_REALM: process.env.PEP_REALM }) }
       ] }));')"
-    TASK_ARN="$(aws ecs run-task --cluster "${CLUSTER}" --task-definition "${FAMILY}" \
-      --launch-type FARGATE --count 1 \
-      --network-configuration "awsvpcConfiguration={subnets=[${SUBNET}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
-      --overrides "${OVERRIDES}" \
-      --tags "key=Project,value=STS" "key=Environment,value=${ENVIRONMENT}" "key=SuiteRun,value=${RUN_ID}" \
-      --query 'tasks[0].taskArn' --output text)"
-    [ -n "${TASK_ARN}" ] && [ "${TASK_ARN}" != "None" ] || die "ecs run-task started nothing."
-    TASK_ID="${TASK_ARN##*/}"
-    say "callback task ${TASK_ID}; logs: aws logs tail ${LOG_GROUP} --log-stream-names ${ENVIRONMENT}-callbacks/suite/${TASK_ID} --follow"
-    tdeadline=$(( $(date +%s) + ${STS_SUITE_TASK_TIMEOUT_SECS:-3600} ))
+    # A TASK THAT CANNOT PULL ITS IMAGE IS STARTED AGAIN (#311). The NAT
+    # gateway this stack just made answers "available" before it forwards,
+    # and the second in-AWS run's task died on an ECR i/o timeout a minute
+    # after the apply finished. Up to three tries, a minute apart, and only
+    # for that failure: a task that ran and stopped is the run's answer.
+    say "giving the new NAT gateway a minute before the task starts"
+    sleep 60
+    attempt=1
     while :;
     do
-      status="$(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
-        --query 'tasks[0].lastStatus' --output text)"
-      [ "${status}" = "STOPPED" ] && break
-      if [ "$(date +%s)" -ge "${tdeadline}" ];
+      TASK_ARN="$(aws ecs run-task --region "${ENV_REGION}" --cluster "${CLUSTER}" --task-definition "${FAMILY}" \
+        --launch-type FARGATE --count 1 \
+        --network-configuration "awsvpcConfiguration={subnets=[${SUBNET}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
+        --overrides "${OVERRIDES}" \
+        --tags "key=Project,value=STS" "key=Environment,value=${ENVIRONMENT}" "key=SuiteRun,value=${RUN_ID}" \
+        --query 'tasks[0].taskArn' --output text)"
+      [ -n "${TASK_ARN}" ] && [ "${TASK_ARN}" != "None" ] || die "ecs run-task started nothing."
+      TASK_ID="${TASK_ARN##*/}"
+      say "callback task ${TASK_ID}; logs: aws logs tail --region ${ENV_REGION} ${LOG_GROUP} --log-stream-names ${ENVIRONMENT}${TF_CELL:+-${TF_CELL}}-callbacks/suite/${TASK_ID} --follow"
+      tdefault=3600
+      if [ "${IN_AWS}" = "1" ];
       then
-        say "the callback task ran past STS_SUITE_TASK_TIMEOUT_SECS; stopping it."
-        aws ecs stop-task --cluster "${CLUSTER}" --task "${TASK_ARN}" \
-          --reason "run-suite timeout" >/dev/null 2>&1 || true
+        tdefault=28800
       fi
-      sleep 20
+      tdeadline=$(( $(date +%s) + ${STS_SUITE_TASK_TIMEOUT_SECS:-${tdefault}} ))
+      while :;
+      do
+        status="$(aws ecs describe-tasks --region "${ENV_REGION}" --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+          --query 'tasks[0].lastStatus' --output text)"
+        [ "${status}" = "STOPPED" ] && break
+        if [ "$(date +%s)" -ge "${tdeadline}" ];
+        then
+          say "the callback task ran past STS_SUITE_TASK_TIMEOUT_SECS; stopping it."
+          aws ecs stop-task --region "${ENV_REGION}" --cluster "${CLUSTER}" --task "${TASK_ARN}" \
+            --reason "run-suite timeout" >/dev/null 2>&1 || true
+        fi
+        sleep 20
+      done
+      stop_code="$(aws ecs describe-tasks --region "${ENV_REGION}" --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+        --query 'tasks[0].stopCode' --output text)"
+      stop_reason="$(aws ecs describe-tasks --region "${ENV_REGION}" --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+        --query 'tasks[0].stoppedReason' --output text)"
+      if [ "${stop_code}" = "TaskFailedToStart" ] && [ "${attempt}" -lt 3 ] &&
+         echo "${stop_reason}" | grep -q CannotPullContainerError;
+      then
+        say "the task could not pull its image (${stop_reason}); starting it again in 60 s"
+        attempt=$((attempt + 1))
+        sleep 60
+        continue
+      fi
+      break
     done
-    read -r code reason < <(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+    read -r code reason < <(aws ecs describe-tasks --region "${ENV_REGION}" --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
       --query 'tasks[0].[containers[?name==`suite`].exitCode | [0], stoppedReason]' --output text)
     TASK_ARN=""
     say "the callback task stopped (${reason}); its suite exited ${code}."
@@ -363,7 +524,12 @@ then
       tar -C "${CB_DIR}" -xzf "${CB_DIR}/report.tar.gz"
       rm -f "${CB_DIR}/report.tar.gz"
       chmod -R a+rwX "${CB_DIR}"
-      if [ -n "${LOCAL_RUN}" ] && [ -d "${LOCAL_RUN}" ];
+      if [ "${IN_AWS}" = "1" ];
+      then
+        # The task's report IS the run's: `latest` points at it.
+        LOCAL_RUN="$(readlink -f "${CB_DIR}/latest" || true)"
+        ln -sfn "${LOCAL_RUN}" "${REPORT_DIR}/latest"
+      elif [ -n "${LOCAL_RUN}" ] && [ -d "${LOCAL_RUN}" ];
       then
         docker run --rm -v "${REPORT_DIR}:/report" "${TESTS_IMAGE}" \
           node tests/tools/merge-report.js \

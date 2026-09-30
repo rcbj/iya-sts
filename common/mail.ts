@@ -105,6 +105,9 @@ import cacheRegistry = require('./cache_registry');
 import clusterClaims = require('../cluster/cluster_claims');
 import MailTemplates = require('./mail_templates');
 import mailTransports = require('./mail_transports');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('./worker_channel');
 
 type Json = any;
 
@@ -236,6 +239,14 @@ function rankOf(row: Json): number[] {
           r.state === 'pending' ? 0 : 1, Number(r.updatedAt) || 0];
 }
 
+/**
+ * Orders two copies of an outbox row by which is newer: generation, attempt,
+ * fence, final over pending, then last update.
+ *
+ * @param a - one copy
+ * @param b - the other
+ * @returns -1, 0 or 1, as `a` is older, as new, or newer
+ */
 function compareRows(a: Json, b: Json): number {
   helpers.log.debug("Entering compareRows().");
   const x = rankOf(a);
@@ -308,7 +319,7 @@ cacheRegistry.register({
 });
 
 // This process's name on a row it is sending, for the console.
-const HOLDER = os.hostname() + ':' + process.pid;
+const HOLDER = os.hostname() + ':' + WorkerChannel.processTag();
 
 // THE DIRECTORY (header point 5), filled by `ldap/ldap_server.js`.
 let directory: Directory | null = null;
@@ -320,10 +331,31 @@ const lastSummaryAt = new Map<string, number>();
 // Attempts in flight in this process.
 let inFlightHere = 0;
 
+/**
+ * The mail channel: the one way this service tells a person something at an
+ * address, through a persisted outbox and one of five transports.
+ *
+ * A recipient is always a directory entry and a link is always built on this
+ * service's pinned origin. Each message is a row retried by the `mail.deliver`
+ * job, sent by exactly one process per attempt.
+ */
 class Mail {
+  /**
+   * The states a message passes through: `pending`, `sent`, `captured` and
+   * `dead`.
+   */
   static readonly STATES = STATES;
+  /**
+   * The transports `mail.transport` may name besides `default` and `off`.
+   */
   static readonly TRANSPORTS = TRANSPORTS;
+  /**
+   * The claim scope an attempt is spent under: `mail.attempt`.
+   */
   static readonly ATTEMPT_SCOPE = ATTEMPT_SCOPE;
+  /**
+   * The scheduler job that sweeps the outbox: `mail.deliver`.
+   */
   static readonly DELIVER_JOB = DELIVER_JOB;
 
   // BUILT TRANSPORTS, per realm, by fingerprint — a socket pool is held by
@@ -336,11 +368,23 @@ class Mail {
   // The last build failure per realm, for the console.
   private readonly buildProblems = new Map<string, Json>();
 
+  /**
+   * Creates the mail channel.
+   *
+   * @param deps - its dependencies: the logger, config, realms, mode, the
+   * error-code table, the audit log, cluster claims, the transports, a clock,
+   * the realm's administrators and the scheduler
+   */
   constructor(private readonly deps: MailDeps) {
     deps.log.debug("Entering Mail.constructor().");
     deps.log.debug("Leaving Mail.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): MailDeps {
     helpers.log.debug("Entering Mail.defaultDeps().");
     helpers.log.debug("Leaving Mail.defaultDeps().");
@@ -383,6 +427,12 @@ class Mail {
   // WHICH TRANSPORT, in the ambient realm (header points 1 and 2):
   // `capture`, `smtp`, `ses`, `acs`, `gmail` or `off`.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the transport in force in the ambient realm; `default` resolves to
+   * `capture` in development and `off` in product.
+   *
+   * @returns `capture`, `smtp`, `ses`, `acs`, `gmail` or `off`
+   */
   effectiveTransport(): string {
     const { log, mode } = this.deps;
     log.debug("Entering Mail.effectiveTransport().");
@@ -397,6 +447,11 @@ class Mail {
 
   // Is there a transport to send through, in the ambient realm? A caller
   // offering something that mails (a "forgot password" link) asks this.
+  /**
+   * Tells whether there is a transport to send through in the ambient realm.
+   *
+   * @returns true when mail can be sent
+   */
   available(): boolean {
     const { log, mode } = this.deps;
     log.debug("Entering Mail.available().");
@@ -408,6 +463,12 @@ class Mail {
 
   // The settings a transport is built from, resolved: presets applied, the
   // From address defaulted.
+  /**
+   * Resolves the settings a transport is built from, with presets applied and
+   * the From address defaulted.
+   *
+   * @returns the configuration
+   */
   transportConfig(): Json {
     const { log, realms } = this.deps;
     const self = this;
@@ -430,6 +491,13 @@ class Mail {
     return cfg;
   }
 
+  /**
+   * Digests the settings a transport was built from, so a changed setting
+   * rebuilds it.
+   *
+   * @param cfg - the resolved configuration
+   * @returns the fingerprint
+   */
   fingerprint(cfg: Json): string {
     const { log } = this.deps;
     log.debug("Entering Mail.fingerprint().");
@@ -447,6 +515,13 @@ class Mail {
   // first time and again whenever its settings change. Rejects with a coded
   // error; the failure is kept for the console.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the ambient realm's transport, built and its secrets read the first
+   * time and again whenever its settings change.
+   *
+   * @returns a promise of the transport; rejects with a coded error, which is
+   * kept for the console
+   */
   async transport(): Promise<Json> {
     const { log, realms, mode, transports } = this.deps;
     log.debug("Entering Mail.transport().");
@@ -489,6 +564,11 @@ class Mail {
 
   // The last reason the ambient realm's transport could not be built, or
   // null.
+  /**
+   * Returns the last reason the ambient realm's transport could not be built.
+   *
+   * @returns the problem, or null
+   */
   buildProblem(): Json {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.buildProblem().");
@@ -497,6 +577,12 @@ class Mail {
   }
 
   // The From address: the setting, or `no-reply@` the realm's DNS domain.
+  /**
+   * Returns the From address: `mail.from`, or `no-reply@` the realm's DNS
+   * domain.
+   *
+   * @returns the address
+   */
   fromAddress(): string {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.fromAddress().");
@@ -512,6 +598,13 @@ class Mail {
   // the realm's prefix; in development with that empty, the listener's
   // configured address; in product with it empty, '' — nothing is mailed.
   // -------------------------------------------------------------------------
+  /**
+   * Returns where a mailed link points: `global.publicBaseUrl` and the realm's
+   * prefix; with that empty, the listener's address in development and '' in
+   * product, where nothing is mailed.
+   *
+   * @returns the base URL, or ''
+   */
   linkBase(): string {
     const { log, config, realms, mode } = this.deps;
     log.debug("Entering Mail.linkBase().");
@@ -539,6 +632,11 @@ class Mail {
   // -------------------------------------------------------------------------
   // THE DIRECTORY, through its slot.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the directory hooks filled through the slot.
+   *
+   * @returns the hooks, or null
+   */
   directory(): Directory | null {
     const { log } = this.deps;
     log.debug("Entering Mail.directory().");
@@ -548,6 +646,13 @@ class Mail {
 
   // A person as the mail channel sees them: their address, whether it is
   // verified, the language they prefer. `null` when there is no entry.
+  /**
+   * Describes a person as the mail channel sees them: their address, whether it
+   * is verified, their preferred language.
+   *
+   * @param username - the person
+   * @returns the recipient, or null when there is no entry
+   */
   recipient(username: string): Json {
     const { log } = this.deps;
     log.debug("Entering Mail.recipient(). " + username);
@@ -579,6 +684,12 @@ class Mail {
   // -------------------------------------------------------------------------
   // PREFERENCES (header point 7): only an optional category may be declined.
   // -------------------------------------------------------------------------
+  /**
+   * Lists the optional categories a person has declined.
+   *
+   * @param username - the person
+   * @returns the category ids
+   */
   declined(username: string): string[] {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.declined(). " + username);
@@ -588,6 +699,16 @@ class Mail {
     return ((held && held.declined) || []).slice();
   }
 
+  /**
+   * Records whether a person declines a category; only an optional one may be
+   * declined.
+   *
+   * @param username - the person
+   * @param category - the category's id
+   * @param decline - true to decline it, false to receive it again
+   * @param actor - who did it
+   * @returns `{ ok, declined }`, or a coded refusal
+   */
   setDeclined(username: string, category: string, decline: boolean,
               actor?: string): Json {
     const { log, realms, audit, errorCodes, now } = this.deps;
@@ -626,6 +747,14 @@ class Mail {
   // -------------------------------------------------------------------------
   // A REALM'S TEMPLATES
   // -------------------------------------------------------------------------
+  /**
+   * Chooses the wording of a message: the realm's own in the first language it
+   * has, else the built-in English.
+   *
+   * @param id - the message's id
+   * @param languages - the languages to try, best first
+   * @returns `{ spec, parts, lang, own }`, or null for an unknown message
+   */
   templateFor(id: string, languages: string[]): Json {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.templateFor(). " + id);
@@ -651,6 +780,11 @@ class Mail {
   }
 
   // Every message, with the languages this realm has its own wording in.
+  /**
+   * Lists every message, with the languages the realm has its own wording in.
+   *
+   * @returns one row per message
+   */
   listTemplates(): Json[] {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.listTemplates().");
@@ -673,6 +807,14 @@ class Mail {
 
   // One message in one language: the realm's wording if it has one, else
   // the built-in (English).
+  /**
+   * Shows one message in one language: the realm's wording if it has one, else
+   * the built-in.
+   *
+   * @param id - the message's id
+   * @param lang - the language tag
+   * @returns the view
+   */
   templateView(id: string, lang: string): Json {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.templateView(). " + id + " " + lang);
@@ -694,6 +836,16 @@ class Mail {
              html: held ? held.html : spec.html };
   }
 
+  /**
+   * Saves the realm's own wording of a message in a language, after
+   * `MailTemplates.problem()` has checked it.
+   *
+   * @param id - the message's id
+   * @param lang - the language tag
+   * @param parts - `{ subject, text, html }`
+   * @param actor - who saved it
+   * @returns `{ ok, message }`, or a coded refusal
+   */
   saveTemplate(id: string, lang: string, parts: Json, actor?: string): Json {
     const { log, realms, audit, errorCodes, now } = this.deps;
     log.debug("Entering Mail.saveTemplate(). " + id + " " + lang);
@@ -727,6 +879,15 @@ class Mail {
              ' is this realm\'s own wording now.' };
   }
 
+  /**
+   * Removes the realm's own wording of a message in a language, putting the
+   * built-in back.
+   *
+   * @param id - the message's id
+   * @param lang - the language tag
+   * @param actor - who did it
+   * @returns `{ ok, message }`, or a coded refusal
+   */
   resetTemplate(id: string, lang: string, actor?: string): Json {
     const { log, realms, audit, errorCodes } = this.deps;
     log.debug("Entering Mail.resetTemplate(). " + id + " " + lang);
@@ -816,6 +977,17 @@ class Mail {
   // as a duplicate of one that was. It never throws: a notice is sent from
   // the middle of something else.
   // -------------------------------------------------------------------------
+  /**
+   * Queues a message for each recipient and attempts it at once.
+   *
+   * Recipients are a person by username or the realm's Admin Write roster,
+   * never an address. Ceilings, declined categories and duplicates are
+   * enforced. Never throws.
+   *
+   * @param req - `username` or `toAdministrators`, `template`, `values`,
+   * `links` (paths on this service), `dedupKey`, `via` and `actor`
+   * @returns `{ ok, queued, refused, duplicates }`
+   */
   send(req: SendRequest): Json {
     const { log, realms, errorCodes } = this.deps;
     const deps = this.deps;
@@ -908,6 +1080,13 @@ class Mail {
   // pending address, as `sendToFormerAddress()` sends to its former one.
   // One template only, `address-verification`.
   // -------------------------------------------------------------------------
+  /**
+   * Sends the verification link of an address change to the new address held on
+   * the entry; only the `address-verification` template.
+   *
+   * @param req - as for `send()`, with `username`
+   * @returns as for `send()`, or a coded refusal
+   */
   sendToPendingAddress(req: Json): Json {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Mail.sendToPendingAddress().");
@@ -963,6 +1142,13 @@ class Mail {
     return out;
   }
 
+  /**
+   * Sends the `address-changed` notice to the address the entry had, handed in
+   * by the directory; only that template.
+   *
+   * @param req - as for `send()`, with `username` and `formerAddress`
+   * @returns as for `send()`, or a coded refusal
+   */
   sendToFormerAddress(req: Json): Json {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Mail.sendToFormerAddress().");
@@ -1202,6 +1388,12 @@ class Mail {
     return written;
   }
 
+  /**
+   * Returns how long an attempt's claim lasts: `mail.leaseMs`, at least the
+   * send timeout plus two seconds.
+   *
+   * @returns the lease, in milliseconds
+   */
   leaseMs(): number {
     const { log } = this.deps;
     log.debug("Entering Mail.leaseMs().");
@@ -1216,6 +1408,14 @@ class Mail {
   // `captured`, `retry`, `dead`, or a reason nothing was done (`not-due`,
   // `claimed-elsewhere`, `deferred`, `gone`). Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Makes one claimed attempt of one message. Never rejects.
+   *
+   * @param realmId - the realm
+   * @param id - the message's id
+   * @returns a promise of `sent`, `captured`, `retry`, `dead`, or why nothing
+   * was done (`not-due`, `claimed-elsewhere`, `deferred`, `gone`)
+   */
   async attempt(realmId: string, id: string): Promise<string> {
     const { log, claims, realms, errorCodes, now } = this.deps;
     const self = this;
@@ -1332,6 +1532,12 @@ class Mail {
 
   // Attempt what was just queued. Returns a promise for a test to wait on;
   // every caller in the service ignores it. Never rejects.
+  /**
+   * Attempts messages just queued. Never rejects.
+   *
+   * @param rows - the queued rows
+   * @returns a promise for a test to wait on
+   */
   dispatch(rows: Json[] | null | undefined): Promise<void> {
     const { log, realms } = this.deps;
     const self = this;
@@ -1356,6 +1562,14 @@ class Mail {
   // attempt budget, the same body and the same Message-ID, to the address the
   // entry holds NOW (the commonest reason to retry is having corrected it).
   // -------------------------------------------------------------------------
+  /**
+   * Retries a dead letter: a new generation and attempt budget, the same body
+   * and Message-ID, to the address the entry holds now.
+   *
+   * @param id - the message's id
+   * @param actor - the administrator
+   * @returns `{ ok, row }`, or a coded refusal
+   */
   retry(id: string, actor?: string): Json {
     const { log, realms, audit, errorCodes, now } = this.deps;
     log.debug("Entering Mail.retry(). " + id);
@@ -1414,6 +1628,13 @@ class Mail {
   // `mail.concurrency`; then retention; then the summary line. Resolves
   // `{ attempted, removed, dead }`. Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Sweeps every realm's outbox: attempts what is due within
+   * `mail.concurrency`, applies retention, and writes the summary line. Never
+   * rejects.
+   *
+   * @returns a promise of `{ attempted, removed, dead }`
+   */
   sweep(): Promise<Json> {
     const { log, realms, errorCodes } = this.deps;
     const self = this;
@@ -1519,6 +1740,14 @@ class Mail {
   // ONE SUMMARY LINE per realm per sweep interval at most, and only when
   // something happened — never a line per message (rcbj's rule for delivery
   // failures).
+  /**
+   * Writes at most one summary line per realm per sweep interval, and only when
+   * something happened.
+   *
+   * @param realmId - the realm
+   * @param force - true to write it whatever the interval
+   * @returns the line, or ''
+   */
   summarise(realmId: string, force?: boolean): string {
     const { log, errorCodes, now } = this.deps;
     log.debug("Entering Mail.summarise(). " + realmId);
@@ -1551,6 +1780,9 @@ class Mail {
 
   // THE SWEEP IS A SCHEDULER JOB (#49): `mail.deliver`, a CLUSTER job — once,
   // on the leader, every `mail.deliverS`. Registered by the wire step.
+  /**
+   * Registers the `mail.deliver` cluster job with the scheduler.
+   */
   scheduleJobs(): void {
     const { log, scheduler } = this.deps;
     const self = this;
@@ -1583,6 +1815,12 @@ class Mail {
   // finds: a transport it cannot build is a dead letter there, not a boot
   // failure.
   // -------------------------------------------------------------------------
+  /**
+   * Checks, in product mode, that every realm's configured transport can be
+   * built; development answers '' whatever it finds.
+   *
+   * @returns a promise of '' or the reason, with its code at the front
+   */
   startupProblem(): Promise<string> {
     const { log, realms, mode, errorCodes } = this.deps;
     const self = this;
@@ -1621,6 +1859,13 @@ class Mail {
   // -------------------------------------------------------------------------
   // THE VIEWS
   // -------------------------------------------------------------------------
+  /**
+   * Presents an outbox row for the console and the API.
+   *
+   * @param row - the row
+   * @param withBody - true to include the body
+   * @returns the view
+   */
   view(row: Json, withBody?: boolean): Json {
     const { log } = this.deps;
     log.debug("Entering Mail.view().");
@@ -1656,6 +1901,13 @@ class Mail {
 
   // The outbox, newest first; `state` narrows, `q` searches the recipient,
   // the address, the template and the code.
+  /**
+   * Lists the ambient realm's outbox, newest first.
+   *
+   * @param options - `state` to narrow, `q` to search the recipient, address,
+   * template and code
+   * @returns the views
+   */
   list(options?: Json): Json[] {
     const { log, realms } = this.deps;
     const self = this;
@@ -1687,6 +1939,12 @@ class Mail {
   }
 
   // One message, with its body when it was captured.
+  /**
+   * Returns one message, with its body when it was captured.
+   *
+   * @param id - the message's id
+   * @returns the view, or null
+   */
   message(id: string): Json {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.message(). " + id);
@@ -1695,6 +1953,11 @@ class Mail {
     return row ? this.view(row, true) : null;
   }
 
+  /**
+   * Counts the ambient realm's outbox by state.
+   *
+   * @returns `{ pending, sent, captured, dead }`
+   */
   counts(): Json {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.counts().");
@@ -1710,6 +1973,12 @@ class Mail {
 
   // What the console and the API show about the channel in this realm. It
   // never carries a secret: only where each one is configured to be.
+  /**
+   * Describes the channel in the ambient realm for the console and the API;
+   * never a secret, only where each is configured to be.
+   *
+   * @returns the status
+   */
   status(): Json {
     const { log, realms, mode } = this.deps;
     log.debug("Entering Mail.status().");
@@ -1756,6 +2025,15 @@ const slot = new InstanceSlot<Mail>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The mail channel: `send()`, the persisted outbox and its delivery, templates,
+ * preferences and status.
+ *
+ * Exports the class, its constants, the directory slot and facades forwarding
+ * to the instance the composition root built.
+ *
+ * @namespace
+ */
 export = {
   Mail: Mail,
   installInstance: (instance: Mail): void => slot.install(instance),
@@ -1769,6 +2047,12 @@ export = {
   // The directory's slot (rule 3e), filled by `ldap/ldap_server.js`. A
   // plain function, not an instance method: the directory fills it at its
   // own require, which may come before the root installs this module.
+  /**
+   * Fills the directory slot recipients are read through; `ldap/ldap_server.js`
+   * fills it.
+   *
+   * @param d - the directory's hooks
+   */
   setDirectory: function (d: Directory): void {
     helpers.log.debug("Entering setDirectory().");
     directory = d || null;

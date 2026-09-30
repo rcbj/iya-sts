@@ -167,18 +167,45 @@ const JA4_SHAPE = new RegExp('^[tqd](13|12|11|10|s3|s2|d1|d2|d3|00)[di]' +
 const counters = { fingerprinted: 0, notTls: 0, unparsed: 0, overLimit: 0,
                    timedOut: 0 };
 
+/**
+ * The client's TLS fingerprint (FoxIO's JA4) read off the main port's
+ * ClientHello, for risk scoring.
+ *
+ * `install()` reads the ClientHello from the raw socket and puts every byte
+ * back before the TLS engine sees it; it never answers or refuses anything.
+ * Only JA4 is computed, never the rest of JA4+, whose licence differs.
+ */
 class ClientHello {
+  /**
+   * The header `common/request_pool.js` forwards the fingerprint to a request
+   * worker in, `x-sts-tls-client-hello`.
+   */
   static readonly FORWARD_HEADER = FORWARD_HEADER;
+  /**
+   * The most bytes read looking for a ClientHello: 64 KiB.
+   */
   static readonly MAX_HELLO_BYTES = MAX_HELLO_BYTES;
 
   // Connection key -> the answer, until `secureConnection` collects it.
   private readonly waiting = new Map<string, HelloInfo>();
 
+  /**
+   * Builds the reader from its dependencies.
+   *
+   * @param deps - the modules it reads, from `ClientHello.defaultDeps()` or the
+   * composition root
+   */
   constructor(private readonly deps: ClientHelloDeps) {
     deps.log.debug("Entering ClientHello.constructor().");
     deps.log.debug("Leaving ClientHello.constructor().");
   }
 
+  /**
+   * Returns the real modules the reader depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): ClientHelloDeps {
     log.debug("Entering ClientHello.defaultDeps().");
     log.debug("Leaving ClientHello.defaultDeps().");
@@ -194,6 +221,13 @@ class ClientHello {
   // every list of every ClientHello, and a pair here would drown the log.
   // `hex4()` and `count2()` below are the same case.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether a value is one of RFC 8701's sixteen GREASE values, which JA4
+   * ignores everywhere.
+   *
+   * @param value - a 16-bit value from a ClientHello list
+   * @returns true for a GREASE value
+   */
   static isGrease(value: number): boolean {
     return (value & 0x0f0f) === 0x0a0a && (value >> 8) === (value & 0xff);
   }
@@ -206,6 +240,15 @@ class ClientHello {
   // records (RFC 8446 section 5.1 allows fragmenting it), so the records'
   // bodies are joined before the handshake message is read.
   // -------------------------------------------------------------------------
+  /**
+   * Parses the TLS records at the front of a connection far enough to hold one
+   * whole ClientHello, joining a hello fragmented across records.
+   *
+   * @param bytes - what the connection has sent so far
+   * @returns `{ state: 'incomplete' }` when more bytes are needed, `{ state:
+   * 'invalid', reason }` when this is not a ClientHello, or `{ state:
+   * 'complete', hello }`
+   */
   static parse(bytes: Buffer): ParseResult {
     log.debug("Entering ClientHello.parse(). bytes=" + bytes.length);
     const body = [];
@@ -398,6 +441,13 @@ class ClientHello {
   // and with no signature algorithms part c has no '_' — both the
   // specification's own rules.
   // -------------------------------------------------------------------------
+  /**
+   * Computes FoxIO's JA4 from a parsed ClientHello.
+   *
+   * @param hello - the parsed ClientHello
+   * @param transport - JA4's transport character (default `t`, TCP)
+   * @returns the JA4 fingerprint
+   */
   static ja4(hello: ParsedHello, transport?: string): string {
     log.debug("Entering ClientHello.ja4().");
     const real = function (value) {
@@ -448,6 +498,15 @@ class ClientHello {
   // asked for a security key. What risk means by "the same TLS stack" is the
   // same library and configuration, which a resumption does not change.
   // -------------------------------------------------------------------------
+  /**
+   * Computes the JA4 of a ClientHello with `pre_shared_key` and `early_data`
+   * left out, so a client's first and resumed connections compare equal. This
+   * is not FoxIO's JA4 and is never shown as one.
+   *
+   * @param hello - the parsed ClientHello
+   * @param transport - JA4's transport character (default `t`)
+   * @returns the stack fingerprint
+   */
   static stack(hello: ParsedHello, transport?: string): string {
     log.debug("Entering ClientHello.stack().");
     const fresh = Object.assign({}, hello, {
@@ -482,6 +541,13 @@ class ClientHello {
   }
 
   // What `of()` answers, built from a parsed hello.
+  /**
+   * Builds what `of()` answers from a parsed ClientHello: its JA4, its stack
+   * fingerprint, its highest version, its SNI and its ALPN values.
+   *
+   * @param hello - the parsed ClientHello
+   * @returns the fingerprint
+   */
   static describe(hello: ParsedHello): HelloInfo {
     log.debug("Entering ClientHello.describe().");
     const versions = hello.supportedVersions.filter(function (value) {
@@ -516,6 +582,14 @@ class ClientHello {
   // -------------------------------------------------------------------------
   // install(server, { label }) — see the header. Idempotent per server.
   // -------------------------------------------------------------------------
+  /**
+   * Installs the ClientHello reader on a listener, ahead of the PROXY
+   * protocol's; idempotent per server.
+   *
+   * @param server - the listener
+   * @param options - `label`, the listener's name for the log
+   * @returns true when it was installed by this call
+   */
   install(server: any, options?: { label?: string } | null): boolean {
     const { log } = this.deps;
     const self = this;
@@ -665,16 +739,35 @@ class ClientHello {
   // HTTP, a hello that did not parse), or the request came from somewhere
   // with no TLS of its own and nobody forwarded one.
   // -------------------------------------------------------------------------
+  /**
+   * Returns a request's TLS fingerprint, from its socket or, in a request
+   * worker, from the request itself.
+   *
+   * @param req - the request
+   * @returns the fingerprint, or null when none was read or forwarded
+   */
   of(req: any): HelloInfo | null {
     const { log } = this.deps;
     log.debug("Entering ClientHello.of().");
-    const found = (req && req[INFO]) ||
-                  (req && req.socket && req.socket[INFO]) || null;
+    // A request that CARRIES its own answer — forwarded from the front
+    // process, or relayed from another cell (#98) — is answered from that
+    // answer even when it is null: a relayed request's socket is the peer
+    // cell's, and its ClientHello is that cell's, not the client's.
+    const found = req && Object.prototype.hasOwnProperty.call(req, INFO)
+      ? req[INFO]
+      : (req && req.socket && req.socket[INFO]) || null;
     log.debug("Leaving ClientHello.of(). " + (found ? found.ja4 : 'none'));
     return found;
   }
 
   // The header value `request_pool.js` forwards, or '' for none.
+  /**
+   * Encodes a request's fingerprint as the header value
+   * `common/request_pool.js` forwards to a worker.
+   *
+   * @param req - the request
+   * @returns the header value, or an empty string for none
+   */
   encodeForward(req: any): string {
     const { log } = this.deps;
     log.debug("Entering ClientHello.encodeForward().");
@@ -693,6 +786,12 @@ class ClientHello {
   // checked for shape, because a header that fails to parse must not become
   // a string on an authentication event.
   // -------------------------------------------------------------------------
+  /**
+   * In a request worker, reads the forwarded fingerprint header, puts a
+   * well-formed fingerprint on the request, and strips the header either way.
+   *
+   * @param req - the request
+   */
   adoptForwarded(req: any): void {
     const { log } = this.deps;
     log.debug("Entering ClientHello.adoptForwarded().");
@@ -732,7 +831,34 @@ class ClientHello {
     log.debug("Leaving ClientHello.adoptForwarded().");
   }
 
+  // -------------------------------------------------------------------------
+  // adoptRelayed(req) — on the inter-cell listener (#98): the fingerprint the
+  // sending cell forwarded, or NONE. Never the connection's own, which is
+  // the sending cell's node dialling out, and would put the service's own
+  // TLS stack on a person's authentication event as theirs.
+  // -------------------------------------------------------------------------
+  /**
+   * Adopts the fingerprint another cell forwarded with a relayed request,
+   * or records that there is none.
+   *
+   * @param req - the relayed request
+   */
+  adoptRelayed(req: any): void {
+    const { log } = this.deps;
+    log.debug("Entering ClientHello.adoptRelayed().");
+    this.adoptForwarded(req);
+    if (req && !Object.prototype.hasOwnProperty.call(req, INFO)) {
+      req[INFO] = null;
+    }
+    log.debug("Leaving ClientHello.adoptRelayed().");
+  }
+
   // For a report page and the tests.
+  /**
+   * Reports this process's counters and how many connections are waiting.
+   *
+   * @returns the counters
+   */
   report(): Record<string, number> {
     const { log } = this.deps;
     log.debug("Entering ClientHello.report().");
@@ -754,9 +880,23 @@ const slot = new InstanceSlot<ClientHello>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The client's JA4 TLS fingerprint, read off the main port.
+ *
+ * Exports the `ClientHello` class, its constants and static functions, and
+ * facades that forward to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   ClientHello: ClientHello,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: ClientHello): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   FORWARD_HEADER: ClientHello.FORWARD_HEADER,
   MAX_HELLO_BYTES: ClientHello.MAX_HELLO_BYTES,
@@ -768,6 +908,7 @@ export = {
   install: slot.forward('install'),
   of: slot.forward('of'),
   encodeForward: slot.forward('encodeForward'),
+  adoptRelayed: slot.forward('adoptRelayed'),
   adoptForwarded: slot.forward('adoptForwarded'),
   report: slot.forward('report')
 };

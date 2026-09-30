@@ -187,6 +187,9 @@ import InstanceSlot = require('./instance_slot');
 // FAPI (#139): whether this realm is in FAPI 1.0 Advanced, which changes how
 // a surface signs in. A leaf that requires only `helpers` and `config`.
 import fapi = require('../oauth-oidc/fapi');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('./worker_channel');
 
 type SurfaceId = 'admin' | 'portal' | 'debugger';
 
@@ -328,6 +331,11 @@ interface OidcRelyingPartyDeps {
 // carries `derivedFromRealm` for exactly that, and the cascade that ends a
 // derived session with its sign-on session reaches across.
 // ---------------------------------------------------------------------------
+/**
+ * The hosted surfaces that sign in as OpenID Connect relying parties of this
+ * service (`admin`, `portal`, `debugger`): each one's client id, callback path,
+ * cookie, realms and scopes.
+ */
 const SURFACES: Record<SurfaceId, Surface> = {
   admin: {
     id: 'admin',
@@ -456,7 +464,19 @@ const PAR_PATH = '/oauth2/par';
 // handle and every fact about the request stays on this side. The `returnTo`
 // in particular must never ride in a parameter, because a return address a
 // caller can write is an open redirect operated by whoever can forge a state.
-const flows = realms.map({ persist: 'oidc_rp.flows', retain: 'age' });
+// `expiresAt` (#333): a flow lives `authn.pendingTtlS` from `startedAt`
+// (flowTtlMs(), FLOW_TTL_MS when that is not a positive number).
+const flows = realms.map({
+  persist: 'oidc_rp.flows',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (flow: any): number | null {
+    const at = Number(flow && flow.startedAt);
+    const ttlS = Number(config.value('authn.pendingTtlS'));
+    const ttl = isFinite(ttlS) && ttlS > 0 ? ttlS * 1000 : FLOW_TTL_MS;
+    return at > 0 ? at + ttl : null;
+  }
+});
 // In flight at once, per realm rather than per process, for the reason
 // `federation_sp.ts` gives about a shared cap: one realm's flood would
 // otherwise evict another realm's in-flight sign-ins. `oidcRp.maxFlows` since
@@ -493,19 +513,70 @@ const renewing = new Map<string, Promise<RenewalAnswer>>();
 
 const RENEWAL_POLL_MS = 50;
 
+/**
+ * This service's own hosted surfaces as OpenID Connect relying parties of its
+ * own authorization server: the code flow with PKCE, a back-channel token
+ * request, a verified ID Token and a session of the surface's own.
+ *
+ * A library; it registers no route. The relying-party session is renewed with
+ * its refresh token and ends with the sign-on session it came from.
+ */
 class OidcRelyingParty {
+  /**
+   * The hosted surfaces, as the module-level `SURFACES`.
+   */
   static readonly SURFACES = SURFACES;
+  /**
+   * The authorization endpoint's path: `/oauth2/authorize`.
+   */
   static readonly AUTHORIZE_PATH = AUTHORIZE_PATH;
+  /**
+   * The token endpoint's path: `/oauth2/token`.
+   */
   static readonly TOKEN_PATH = TOKEN_PATH;
+  /**
+   * The JWK Set's path: `/oauth2/jwks`.
+   */
   static readonly JWKS_PATH = JWKS_PATH;
+  /**
+   * The default cap on sign-ins in flight per realm (`oidcRp.maxFlows`).
+   */
   static readonly MAX_FLOWS = MAX_FLOWS;
+  /**
+   * The default lifetime of a sign-in in flight, in milliseconds
+   * (`authn.pendingTtlS`).
+   */
   static readonly FLOW_TTL_MS = FLOW_TTL_MS;
+  /**
+   * The default back-channel timeout, in milliseconds
+   * (`oidcRp.backChannelTimeoutS`).
+   */
   static readonly BACK_CHANNEL_TIMEOUT_MS = BACK_CHANNEL_TIMEOUT_MS;
+  /**
+   * The largest back-channel response body read, in bytes.
+   */
   static readonly MAX_BODY_BYTES = MAX_BODY_BYTES;
+  /**
+   * The default cap on redirect URIs a surface's entry may learn
+   * (`oidcRp.maxRedirectUris`).
+   */
   static readonly MAX_REDIRECT_URIS = MAX_REDIRECT_URIS;
+  /**
+   * The default margin, in seconds, before the tokens run out at which a
+   * session is renewed (`oidcRp.renewBeforeExpiryS`).
+   */
   static readonly RENEW_BEFORE_EXPIRY_S = RENEW_BEFORE_EXPIRY_S;
+  /**
+   * The interval, in milliseconds, at which a renewal in flight is waited on.
+   */
   static readonly RENEWAL_POLL_MS = RENEWAL_POLL_MS;
 
+  /**
+   * Creates the relying party.
+   *
+   * @param deps - what it needs from the rest of the service, named for what is
+   * asked of each
+   */
   constructor(private readonly deps: OidcRelyingPartyDeps) {
     deps.log.debug("Entering OidcRelyingParty.constructor().");
     deps.log.debug("Leaving OidcRelyingParty.constructor().");
@@ -513,6 +584,11 @@ class OidcRelyingParty {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): OidcRelyingPartyDeps {
     helpers.log.debug("Entering OidcRelyingParty.defaultDeps().");
     helpers.log.debug("Leaving OidcRelyingParty.defaultDeps().");
@@ -574,6 +650,12 @@ class OidcRelyingParty {
     return this.positiveSetting('oidcRp.maxFlows', MAX_FLOWS);
   }
 
+  /**
+   * Returns how long a sign-in may be in flight, in milliseconds: the sign-in
+   * screen's own lifetime (`authn.pendingTtlS`).
+   *
+   * @returns the lifetime
+   */
   flowTtlMs(): number {
     const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.flowTtlMs().");
@@ -603,6 +685,14 @@ class OidcRelyingParty {
   // rather than answering null: a null here would produce a sign-in that
   // redirects to `undefined`.
   // -------------------------------------------------------------------------
+  /**
+   * Finds a hosted surface by id.
+   *
+   * @param id - `admin`, `portal` or `debugger`
+   * @returns the surface
+   * @throws Error when there is no such surface, which is a bug in this
+   * repository
+   */
   surfaceOf(id: string): Surface {
     const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.surfaceOf().");
@@ -675,6 +765,75 @@ class OidcRelyingParty {
     return baseUrlOf(req);
   }
 
+  // -------------------------------------------------------------------------
+  // A CELL'S OWN CONSOLE ADDRESS (#361, 2026-09-30). With `global.
+  // publicBaseUrl` set, every redirect URI is on the shared public name —
+  // which DNS sends to whichever cell is nearest — so a console opened at a
+  // cell's own name (`cells.consoleUrl`, `https://cac1.<public name>`)
+  // signed in and came back to a different cell. For the CONSOLE, a request
+  // whose Host is a configured cell console address signs in AT that
+  // address: its callback and its authorization request stay on it. The
+  // address is configuration, never the request's choice — a Host that is
+  // not one of them gets the public name as before.
+  // -------------------------------------------------------------------------
+  /**
+   * The console's base at a cell's own console address, when the request
+   * arrived at one; '' otherwise and for every other surface.
+   *
+   * @param req - the request
+   * @param surface - the surface signing in
+   * @returns the configured origin plus the realm prefix, or ''
+   */
+  private cellConsoleBase(req: any, surface: Surface): string {
+    const { log, realms } = this.deps;
+    log.debug("Entering OidcRelyingParty.cellConsoleBase().");
+    if (surface.id !== 'admin') {
+      log.debug("Leaving OidcRelyingParty.cellConsoleBase(). Not the " +
+                "console.");
+      return '';
+    }
+    const cells = require('./cells');
+    const host = String((req && req.headers && req.headers.host) || '');
+    const hit = cells.consoleOfHost(host);
+    log.debug("Leaving OidcRelyingParty.cellConsoleBase(). " +
+              (hit ? hit.id : 'none'));
+    return hit ? hit.consoleUrl + realms.currentPrefix() : '';
+  }
+
+  /**
+   * Tells whether a redirect URI is the console's callback at a CONFIGURED
+   * cell console address (`cells.consoleUrl` of this cell or a peer).
+   *
+   * @param surface - the surface
+   * @param uri - the redirect URI
+   * @returns true when it is
+   */
+  private isConfiguredCellCallback(surface: Surface, uri: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering OidcRelyingParty.isConfiguredCellCallback().");
+    if (surface.id !== 'admin') {
+      log.debug("Leaving OidcRelyingParty.isConfiguredCellCallback(). No.");
+      return false;
+    }
+    const cells = require('./cells');
+    const out = cells.all().some(function (one: any) {
+      if (!one.consoleUrl) {
+        return false;
+      }
+      const at = String(uri || '');
+      return at.indexOf(one.consoleUrl + '/') === 0 &&
+             at.slice(-surface.callbackPath.length) === surface.callbackPath;
+    });
+    log.debug("Leaving OidcRelyingParty.isConfiguredCellCallback(). " + out);
+    return out;
+  }
+
+  /**
+   * Returns the origin this process dials itself on for the back channel: the
+   * loopback address and this service's port.
+   *
+   * @returns the origin
+   */
   loopbackOrigin(): string {
     const { log, config, helpers, PORT } = this.deps;
     log.debug("Entering OidcRelyingParty.loopbackOrigin().");
@@ -802,6 +961,19 @@ class OidcRelyingParty {
   // It answers `{ ok, why }` and `beginSignIn()` refuses on `ok: false`. A
   // write the registry refuses is still only a warning, as it always was.
   // -------------------------------------------------------------------------
+  /**
+   * Makes sure a surface's client entry carries the redirect URI a sign-in is
+   * about to use.
+   *
+   * With `global.publicBaseUrl` set nothing is learnt; otherwise development
+   * adds the URI up to `oidcRp.maxRedirectUris`, and product refuses a flow at
+   * an address the entry does not carry.
+   *
+   * @param surface - the surface
+   * @param client - its client entry
+   * @param uri - the redirect URI
+   * @returns `{ ok, why }`
+   */
   ensureRedirectUri(surface: Surface, client: any, uri: string): any {
     const { log, helpers, mode, applications, errorCodes } = this.deps;
     log.debug('Entering OidcRelyingParty.ensureRedirectUri(). uri=' + uri);
@@ -812,6 +984,32 @@ class OidcRelyingParty {
       return { ok: true, learnt: false };
     }
     const pinned = !!helpers.pinnedBaseUrl();
+    // A CELL'S OWN CONSOLE CALLBACK IS CONFIGURATION (#361): it is built
+    // from `cells.consoleUrl` / `cells.peers`, never from a Host header, so
+    // it is REGISTERED on the entry in either mode — as an operator's value,
+    // not an observed one — the first time the console signs in there.
+    if (this.isConfiguredCellCallback(surface, uri)) {
+      const added = applications.updateApplication(surface.clientId, {
+        attribute: 'oauthRedirectUri', mode: 'add', value: uri,
+        actor: 'the ' + surface.label + ' (a configured cell console ' +
+               'address)'
+      });
+      if (!added || added.ok === false) {
+        const why = uri + ' is a configured cell console address, but it ' +
+                    'could not be registered on "' + surface.clientId +
+                    '": ' + ((added && (added.errors || []).join(' ')) ||
+                             'no reason given') + '.';
+        log.warn(errorCodes.tag('STS-AUTHN-0115') + 'oidc_rp: ' + why);
+        log.debug('Leaving OidcRelyingParty.ensureRedirectUri(). A cell ' +
+                  'console callback could not be registered.');
+        return this.coded('STS-AUTHN-0115', { ok: false, why: why });
+      }
+      log.info('oidc_rp: "' + surface.clientId + '" registered ' + uri +
+               ', a configured cell console address (#361).');
+      log.debug('Leaving OidcRelyingParty.ensureRedirectUri(). A cell ' +
+                'console callback, registered.');
+      return { ok: true, learnt: false, registered: true };
+    }
     // -----------------------------------------------------------------------
     // AN ADDRESS DEVELOPMENT LEARNT IS NOT A REGISTERED ONE (2026-09-12).
     // `client.redirect_uris` comes from `applications.clientConfigOf()`,
@@ -1097,7 +1295,7 @@ class OidcRelyingParty {
           process.env.STS_REQUEST_WORKER_POOL === 'surfaces';
         const target = inSurfacePool
           ? (Number(options.from && options.from.stsProtocolWorker) || 0)
-          : process.pid;
+          : WorkerChannel.id();
         if (target) {
           const pin = 'sts_pool=' + target;
           headers.cookie = headers.cookie ? (headers.cookie + '; ' + pin) :
@@ -1372,6 +1570,12 @@ class OidcRelyingParty {
   // `tests/oidc_rp_dpop.js`, which puts a proof from here through
   // `verifyProof()` there.
   // -------------------------------------------------------------------------
+  /**
+   * Generates the EC P-256 key one sign-in's tokens are bound to by DPoP, never
+   * written down.
+   *
+   * @returns the private key PEM and the public JWK
+   */
   dpopKey(): DpopKey {
     const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.dpopKey().");
@@ -1393,6 +1597,16 @@ class OidcRelyingParty {
   // asked for one; `accessToken` only where a proof accompanies one, which
   // this client never does — it presents its access token to no resource
   // server.
+  /**
+   * Makes an RFC 9449 DPoP proof for one request.
+   *
+   * @param key - the key from `dpopKey()`
+   * @param method - the HTTP method
+   * @param url - the URL, whose query and fragment are left out of `htu`
+   * @param opts - `nonce` where the server asked for one, `accessToken` for
+   * `ath`
+   * @returns the signed proof
+   */
   dpopProof(key: DpopKey, method: string, url: string,
             opts?: { nonce?: string; accessToken?: string }): string {
     const { log, stsCrypto } = this.deps;
@@ -1639,6 +1853,13 @@ class OidcRelyingParty {
   // The certificate and key this surface presents at the handshake: under
   // FAPI 1.0 Advanced with oauth2.fapiRequireMtls on, the certificate this
   // realm's CA issued with its signing key (#139); none otherwise.
+  /**
+   * Returns the certificate and key a surface presents at the handshake: only
+   * under FAPI 1.0 Advanced with mutual TLS required.
+   *
+   * @param surface - the surface
+   * @returns the PEM certificate and key, or null
+   */
   surfaceCertificate(surface: Surface): { cert: string; key: string } | null {
     const { log, applications, fapi } = this.deps;
     log.debug("Entering OidcRelyingParty.surfaceCertificate().");
@@ -1784,9 +2005,16 @@ class OidcRelyingParty {
       method: 'GET', path: realms.currentPrefix() + JWKS_PATH, host: host,
       poolPin: opts.poolPin, from: req
     });
-    const keys = (jwksAnswer.ok && jwksAnswer.json &&
-                  Array.isArray(jwksAnswer.json.keys)) ? jwksAnswer.json.keys
-                                                       : [];
+    // A JWKS THAT WAS NOT FETCHED IS SAID TO BE THAT (2026-09-27). It read
+    // as an empty key list until then, so a back-channel timeout arrived as
+    // "names key X, which this realm's JWKS does not hold" — a sentence about
+    // a key set, when the key was there and the answer had not come.
+    if (!jwksAnswer.ok || jwksAnswer.status !== 200) {
+      return refuse('this realm\'s JWKS could not be fetched: ' +
+                    (jwksAnswer.why || ('it answered ' + jwksAnswer.status)));
+    }
+    const keys = (jwksAnswer.json && Array.isArray(jwksAnswer.json.keys))
+      ? jwksAnswer.json.keys : [];
     const jwk = keys.filter(function (one: any) {
       return one && one.kid === header.kid;
     })[0];
@@ -1989,6 +2217,18 @@ class OidcRelyingParty {
   // refresh token is not renewed: it ends with its sign-on session, exactly
   // as every console session did before renewal existed.
   // -------------------------------------------------------------------------
+  /**
+   * Keeps what a relying-party session needs of a token response: the tokens,
+   * when they run out, and the ID Token's issuer, subject and authentication
+   * time a renewal must repeat.
+   *
+   * @param json - the token response
+   * @param claims - the verified ID Token's claims
+   * @param flowRealmId - the realm whose token endpoint issued the tokens
+   * @param host - the Host header the issuer was built from
+   * @param previous - the tokens kept before, on a renewal
+   * @returns the record kept on the session
+   */
   tokensFrom(json: any, claims: any, flowRealmId?: string, host?: string,
              previous?: any): any {
     const { log, realms } = this.deps;
@@ -2038,6 +2278,14 @@ class OidcRelyingParty {
   // authorization server answering a refresh with a different person — is
   // one this service will not produce on demand.
   // -------------------------------------------------------------------------
+  /**
+   * Checks that a renewed ID Token describes the same sign-in: the same `iss`
+   * and `sub`, and the same `auth_time` where both carry one.
+   *
+   * @param previous - the kept tokens record
+   * @param claims - the renewed ID Token's claims
+   * @returns `{ ok }`, with `why` when not
+   */
   checkRenewedClaims(previous: any, claims: any):
       { ok: boolean; why?: string } {
     const { log } = this.deps;
@@ -2080,6 +2328,20 @@ class OidcRelyingParty {
   // that gets `false` has already had a refusal drawn for it and must not
   // write to the response again.
   // -------------------------------------------------------------------------
+  /**
+   * Starts a surface's code flow by redirecting the browser to the
+   * authorization endpoint.
+   *
+   * It answers the request itself: `false` means a refusal has already been
+   * drawn and the caller must not write to the response again.
+   *
+   * @param req - the request that found no surface session
+   * @param res - its response
+   * @param surfaceId - the surface
+   * @param options - `returnTo`, `fallback`, `prompt`, `acrValues` and the
+   * bases to use
+   * @returns true when the redirect was sent
+   */
   beginSignIn(req: any, res: any, surfaceId: string,
               options?: SignInOptions): any {
     const { log, errorCodes, flows } = this.deps;
@@ -2102,7 +2364,9 @@ class OidcRelyingParty {
                           { ok: false, why: found.why, reason: 'no-client' },
                           res);
       }
-      const publicBase = opts.callbackBase || self.publicBaseOf(req);
+      const publicBase = opts.callbackBase ||
+                         self.cellConsoleBase(req, surface) ||
+                         self.publicBaseOf(req);
       const redirectUri = publicBase + surface.callbackPath;
       const registered = self.ensureRedirectUri(surface, found.client,
                                                 redirectUri);
@@ -2213,6 +2477,19 @@ class OidcRelyingParty {
   // refusal, because the console's shell and the portal's are different
   // applications and a page drawn here would belong to neither.
   // -------------------------------------------------------------------------
+  /**
+   * Handles the browser's return with a code: checks the state, redeems the
+   * code over the back channel, verifies the ID Token and starts the surface's
+   * session.
+   *
+   * Every refusal is reported rather than redirected; the caller draws it.
+   *
+   * @param req - the callback request
+   * @param res - its response
+   * @param surfaceId - the surface
+   * @param options - as for `beginSignIn()`
+   * @returns `{ ok, session, returnTo, why }`
+   */
   async handleCallback(req: any, res: any, surfaceId: string,
                        options?: SignInOptions): Promise<any> {
     const { log, realms, errorCodes, applications, config, audit, authn,
@@ -2323,7 +2600,9 @@ class OidcRelyingParty {
       // The authorization server's base, which is the request's own for the
       // console and the portal and the main port's for the debugger — see
       // the surface table.
-      const publicBase = opts.authorizationBase || self.publicBaseOf(req);
+      const publicBase = opts.authorizationBase ||
+                         self.cellConsoleBase(req, surface) ||
+                         self.publicBaseOf(req);
       const host = self.hostHeaderFrom(publicBase);
 
       // ---------------------------------------------------------------------
@@ -2549,6 +2828,13 @@ class OidcRelyingParty {
   // -------------------------------------------------------------------------
   // 3. THE READER. What a hosted surface asks on every request.
   // -------------------------------------------------------------------------
+  /**
+   * Reads a request's session for a surface, from the surface's own cookie.
+   *
+   * @param req - the request
+   * @param surfaceId - the surface
+   * @returns the relying-party session, or null
+   */
   sessionFor(req: any, surfaceId: string): any {
     const { log, authn } = this.deps;
     log.debug("Entering OidcRelyingParty.sessionFor().");
@@ -2914,6 +3200,15 @@ class OidcRelyingParty {
   //   `none`   — nothing to do (no tokens, or not due yet)
   //   `renew`  — redeem the refresh token now
   //   `end`    — the tokens have run out and cannot be renewed
+  /**
+   * Decides what a session's renewal should do, without doing it.
+   *
+   * @param session - the relying-party session
+   * @param nowMs - the time now
+   * @param marginMs - how long before the tokens run out a renewal is due
+   * @returns `none` (nothing to do), `renew`, or `end` (the tokens ran out and
+   * cannot be renewed) with `code` and `why`
+   */
   renewalDecision(session: any, nowMs: number, marginMs: number):
       { action: 'none' | 'renew' | 'end'; code?: string; why?: string } {
     const { log, authn } = this.deps;
@@ -2952,6 +3247,19 @@ class OidcRelyingParty {
                'not allow the refresh_token grant' };
   }
 
+  /**
+   * Renews a surface session's tokens with its refresh token when they are
+   * about to run out, writing them onto the same session.
+   *
+   * A renewal already in flight for the session is shared rather than repeated.
+   * A session that cannot be renewed is ended.
+   *
+   * @param req - the request
+   * @param res - its response
+   * @param surfaceId - the surface
+   * @returns `{ renewed }`, with `ended`, `elsewhere`, `session` and `why` as
+   * they apply
+   */
   async renewIfDue(req: any, res: any, surfaceId: string):
       Promise<RenewalAnswer> {
     const { log, realms, renewing } = this.deps;
@@ -3016,6 +3324,16 @@ class OidcRelyingParty {
   // that decision is made — and a renewal that throws is logged and the
   // request goes on, because the session it was renewing is still what the
   // gate reads.
+  /**
+   * Builds the middleware a surface registers above its gate and routes, which
+   * renews the session when due.
+   *
+   * It never answers the request; a renewal that throws is logged and the
+   * request goes on.
+   *
+   * @param surfaceId - the surface
+   * @returns the middleware
+   */
   renewal(surfaceId: string):
       (req: any, res: any, next: () => void) => void {
     const { log, errorCodes } = this.deps;
@@ -3038,6 +3356,17 @@ class OidcRelyingParty {
   // Ending one. The surface's own cookie is cleared and the session goes
   // through `dropSession()` like every other, so the audit row and the CAEP
   // event are the ones every sign-out writes.
+  /**
+   * Ends a request's surface session, as a sign-out, and clears the surface's
+   * cookie.
+   *
+   * @param req - the request
+   * @param res - its response
+   * @param surfaceId - the surface
+   * @param via - what ended it, for the audit row
+   * @param initiatingEntity - who initiated it, for the CAEP event
+   * @returns true when there was a session to end
+   */
   endSessionFor(req: any, res: any, surfaceId: string, via: string,
                 initiatingEntity: string): boolean {
     const { log, authn } = this.deps;
@@ -3059,6 +3388,12 @@ class OidcRelyingParty {
 
   // For the two surfaces' own metadata pages and for the tests: which client
   // a surface is, so that nothing has to write the identifier down twice.
+  /**
+   * Returns a surface's client id.
+   *
+   * @param surfaceId - the surface
+   * @returns the client id
+   */
   clientIdFor(surfaceId: string): string {
     const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.clientIdFor().");
@@ -3066,6 +3401,12 @@ class OidcRelyingParty {
     return this.surfaceOf(surfaceId).clientId;
   }
 
+  /**
+   * Returns the name of a surface's session cookie.
+   *
+   * @param surfaceId - the surface
+   * @returns the cookie name
+   */
   cookieFor(surfaceId: string): string {
     const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.cookieFor().");
@@ -3092,6 +3433,15 @@ const slot = new InstanceSlot<OidcRelyingParty>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * This service's `/admin`, `/portal` and debugger surfaces as OpenID Connect
+ * relying parties of its own authorization server.
+ *
+ * Exports the class, the surfaces and facades forwarding to the instance the
+ * composition root built.
+ *
+ * @namespace
+ */
 export = {
   OidcRelyingParty: OidcRelyingParty,
   installInstance: (instance: OidcRelyingParty): void => slot.install(instance),

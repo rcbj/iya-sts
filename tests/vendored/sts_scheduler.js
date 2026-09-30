@@ -28,6 +28,10 @@
 //      every slot of the session-expiry job is one run however many nodes
 //      could have run it. In every other mode a step-down is refused
 //      (STS-SCHED-0010): there is nobody to hand to.
+//   7. A REMOVED REALM'S JOBS GO WITH IT (#338): a realm created for the
+//      purpose has its realm jobs listed, and once it is removed no answer —
+//      through the balancer, from every node — lists a job or a run in it,
+//      and the history job is a cluster job every ten minutes.
 //
 // No sleep waits for a job: each wait is a bounded poll on the condition, at
 // the tick the service runs at (`scheduler.tickS`).
@@ -142,6 +146,75 @@ async function report(prefix) {
   return body;
 }
 
+// THE TWO JOB LISTS, WITH A REALM CREATED MID-WALK ALLOWED FOR (2026-09-28).
+// `ids` and `pageIds` are sorted `id@realm` lists. A row on one side only is
+// set aside when its realm has rows on both sides and its job has rows for
+// some other realm on both sides — the signature of a row inserted behind a
+// paged walk's cursor. Anything else is a real difference: `agree` is false
+// and the lists are handed back unchanged.
+function settleRealmWalk(ids, pageIds) {
+  log.debug("Entering settleRealmWalk().");
+  const split = function (row) {
+    const at = row.lastIndexOf("@");
+    return { job: row.slice(0, at), realm: row.slice(at + 1) };
+  };
+  const index = function (list) {
+    const realms = {};
+    const jobRealms = {};
+    list.forEach(function (row) {
+      const p = split(row);
+      realms[p.realm] = true;
+      (jobRealms[p.job] = jobRealms[p.job] || {})[p.realm] = true;
+    });
+    return { realms: realms, jobRealms: jobRealms };
+  };
+  const a = index(ids);
+  const b = index(pageIds);
+  const inA = {};
+  ids.forEach(function (row) {
+    inA[row] = true;
+  });
+  const inB = {};
+  pageIds.forEach(function (row) {
+    inB[row] = true;
+  });
+  const onlyOne = ids.filter(function (row) {
+    return !inB[row];
+  }).concat(pageIds.filter(function (row) {
+    return !inA[row];
+  }));
+  const explained = function (row) {
+    const p = split(row);
+    if (p.realm === "default" || !a.realms[p.realm] || !b.realms[p.realm]) {
+      return false;
+    }
+    const elsewhere = function (x) {
+      return Object.keys(x.jobRealms[p.job] || {}).some(function (r) {
+        return r !== p.realm;
+      });
+    };
+    return elsewhere(a) && elsewhere(b);
+  };
+  if (!onlyOne.length || !onlyOne.every(explained)) {
+    log.debug("Leaving settleRealmWalk(). " +
+              (onlyOne.length ? "A real difference." : "No difference."));
+    return { agree: !onlyOne.length, setAside: [], ids: ids,
+             pageIds: pageIds };
+  }
+  const drop = {};
+  onlyOne.forEach(function (row) {
+    drop[row] = true;
+  });
+  log.debug("Leaving settleRealmWalk(). Set aside " + onlyOne.length + ".");
+  return { agree: true, setAside: onlyOne,
+           ids: ids.filter(function (row) {
+             return !drop[row];
+           }),
+           pageIds: pageIds.filter(function (row) {
+             return !drop[row];
+           }) };
+}
+
 // Polls `fn` until it answers something truthy, at the service's own tick,
 // for at most `limitMs`. The condition, not the clock, ends the wait.
 async function until(what, fn, limitMs) {
@@ -216,10 +289,19 @@ async function thePageAndTheApiAgree(cookie) {
   let html = null;
   let ids = [];
   let pageIds = [];
+  // How far apart the two reads the nextRunAt check compares were made, for
+  // that check's allowance (below).
+  let readGapMs = 0;
+  let readEndedMs = 0;
+  // The `id@realm` rows set aside as a realm created mid-walk (below).
+  let walkSetAside = [];
   for (let attempt = 1; attempt <= 5; attempt++) {
+    const readStarted = Date.now();
     json = await report();
     pageJson = await call("GET", base + "/admin/scheduler?format=json" +
                                 "&per=200", { headers: { Cookie: cookie } });
+    readEndedMs = Date.now();
+    readGapMs = readEndedMs - readStarted;
     // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of
     // all the API's jobs with one page of the console's would fail on a
     // service with more than 200 job rows, about pages drawing exactly what
@@ -258,6 +340,27 @@ async function thePageAndTheApiAgree(cookie) {
     if (JSON.stringify(ids) === JSON.stringify(pageIds)) {
       break;
     }
+    // A REALM CREATED DURING THE WALK LOSES THE ROWS THAT LAND BEHIND IT
+    // (2026-09-28, CI run 36380417724, cluster). Each read walks the job
+    // table a page at a time while other lanes create realms, and a row
+    // inserted into a page a walk has already read is seen by that walk
+    // never — while the same realm's other rows, landing ahead of the cursor,
+    // are. So one side can lack `signing.retire@<realm>` while holding that
+    // realm's other jobs, and with realms made all the time in cluster mode
+    // five readings need not find a quiet moment. Such a row is set aside
+    // ONLY where its realm is on both sides and its job is listed for some
+    // other realm on both sides: a job a process never registered is missing
+    // for every realm or is a service-wide row, and still fails below.
+    const settled = settleRealmWalk(ids, pageIds);
+    if (settled.agree) {
+      log.info("the API and the page agree but for " + settled.setAside.length +
+               " row(s) of realms created during the walk, set aside: " +
+               settled.setAside.join(", "));
+      walkSetAside = settled.setAside;
+      ids = settled.ids;
+      pageIds = settled.pageIds;
+      break;
+    }
     log.info("the API and the page were read while the job list moved " +
              "(attempt " + attempt + "); reading both again");
     await new Promise(function (resolve) { setTimeout(resolve, 2000); });
@@ -275,7 +378,9 @@ async function thePageAndTheApiAgree(cookie) {
   });
   check("and every job is a row of the drawn page, by id", function () {
     assert.strictEqual(html.status, 200, "it answered " + html.status);
-    json.jobs.forEach(function (j) {
+    json.jobs.filter(function (j) {
+      return walkSetAside.indexOf(j.id + "@" + j.realm) < 0;
+    }).forEach(function (j) {
       assert.ok(html.text.indexOf('id="job-' + j.id + "-" + j.realm + '"') >= 0,
                 j.id + " has no row on /admin/scheduler");
     });
@@ -290,8 +395,34 @@ async function thePageAndTheApiAgree(cookie) {
             }
             const delta = Math.abs(Date.parse(j.nextRunAt) -
                                    Date.parse(other.nextRunAt));
-            assert.ok(delta < 1000, j.id + ": " + j.nextRunAt + " and " +
-                      other.nextRunAt);
+            // WHOLE SLOTS APART IS AGREEMENT (2026-09-27): the two reads
+            // are made one after the other, and for a job whose interval is
+            // a few seconds (persistence.change-log-pull, 5 s) slot
+            // boundaries can fall between them — the cluster run in CI saw
+            // 5 s exactly, and the single-node run 10 s, with the API's
+            // paged read taking more than five. Both then name the right
+            // next run for the instant they were asked, so the difference
+            // may be any whole number of slots that fits in the time the
+            // reads took; a disagreement is anything else.
+            const every = Number(j.schedule && j.schedule.everyMs) || 0;
+            const slots = every > 0 ? Math.round(delta / every) : 0;
+            const wholeSlots = every > 0 && every <= 60000 && slots >= 1 &&
+              Math.abs(delta - slots * every) < 1000 &&
+              delta <= readGapMs + every;
+            // A SLOT DUE BETWEEN THE READS (2026-09-28): a job whose slot
+            // had come due but not yet run answers that slot as its next
+            // run, and the other read, made after it ran, answers the one
+            // after. So one whole interval apart, the earlier of the two
+            // already past when the reads ended, is agreement at any
+            // interval (a 5-minute job met it at 17:50:00 in memory mode).
+            const earlier = Math.min(Date.parse(j.nextRunAt),
+                                     Date.parse(other.nextRunAt));
+            const ranBetween = every > 0 &&
+              Math.abs(delta - every) < 1000 && earlier <= readEndedMs;
+            assert.ok(delta < 1000 || wholeSlots || ranBetween,
+                      j.id + ": " + j.nextRunAt + " and " +
+                      other.nextRunAt + " (the reads took " + readGapMs +
+                      " ms)");
           });
         });
   log.debug("Leaving thePageAndTheApiAgree().");
@@ -466,16 +597,18 @@ async function theClusterAgrees() {
     log.debug("Leaving theClusterAgrees(). One node.");
     return;
   }
-  log.info("=== 6. two nodes agree, and hand over ===");
+  // EVERY node, not two (#311): the AWS environments run three, and
+  // STS_TEST_CLUSTER_NODES says how many; the local cluster mode sets 2.
+  log.info("=== 6. " + EXPECTED_NODES + " nodes agree, and hand over ===");
   const seen = {};
   const answers = [];
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 8 * EXPECTED_NODES; i++) {
     const r = await report();
     seen[r.answeredBy.node] = true;
     answers.push(r);
   }
-  check("both nodes answered through the balancer", function () {
-    assert.strictEqual(Object.keys(seen).length, 2,
+  check("every node answered through the balancer", function () {
+    assert.strictEqual(Object.keys(seen).length, EXPECTED_NODES,
                        JSON.stringify(Object.keys(seen)));
   });
   check("and every answer names the same leader", function () {
@@ -519,6 +652,67 @@ async function theClusterAgrees() {
   log.debug("Leaving theClusterAgrees().");
 }
 
+async function aRemovedRealmsJobsGo() {
+  log.debug("Entering aRemovedRealmsJobsGo().");
+  log.info("=== 7. a removed realm's jobs go with it (#338) ===");
+  const gone = "sched-gone-" + STAMP;
+  const made = await api("POST", "/admin-api/realms/create",
+                         { id: gone, domain: gone + ".example.net",
+                           name: "Scheduler removal test " + STAMP });
+  assert.ok(made.status === 200, "precondition: creating " + gone +
+            " answered " + made.status + " " + made.text.slice(0, 300));
+  await until("every node to list the new realm's jobs", async function () {
+    for (let i = 0; i < 4 * EXPECTED_NODES; i++) {
+      const r = await report();
+      if (!jobOf(r, "signing.rotate", gone)) {
+        return null;
+      }
+    }
+    return true;
+  });
+  check("the new realm's realm jobs are listed on every node", function () {
+    assert.ok(true);
+  });
+  const removed = await api("POST", "/admin-api/realms/remove", { id: gone });
+  check("the realm is removed (200)", function () {
+    assert.strictEqual(removed.status, 200, removed.text.slice(0, 300));
+  });
+  await until("no node to list a job in the removed realm", async function () {
+    for (let i = 0; i < 4 * EXPECTED_NODES; i++) {
+      const r = await report();
+      const left = (r.jobs || []).filter(function (j) {
+        return j.realm === gone;
+      });
+      if (left.length) {
+        return null;
+      }
+    }
+    return true;
+  });
+  check("no answer lists a job in the removed realm", function () {
+    assert.ok(true);
+  });
+  const runs = await api("GET", "/admin-api/scheduler?per=500&realm=" +
+                         encodeURIComponent(gone));
+  check("nor a run in it", function () {
+    const inGone = ((runs.body && runs.body.runs) || []).filter(function (r) {
+      return r.realm === gone;
+    });
+    assert.strictEqual(inGone.length, 0, JSON.stringify(inGone.slice(0, 3)));
+  });
+  const queued = await api("POST", "/admin-api/scheduler/run",
+                           { job: "signing.rotate-now", realm: gone });
+  check("and a Run now in it is refused", function () {
+    assert.strictEqual(queued.status, 400, queued.text.slice(0, 300));
+  });
+  const history = jobOf(await report(), "scheduler.history");
+  check("the history job is a cluster job every ten minutes", function () {
+    assert.ok(history && history.kind === "cluster" &&
+              history.schedule.everyMs === 600000, JSON.stringify(history));
+  });
+  log.debug("Leaving aRemovedRealmsJobsGo().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "sched-admin-" + STAMP;
@@ -531,6 +725,7 @@ async function main() {
   await adminReadRunsNothing();
   await aRealmTokenIsConfined();
   await theClusterAgrees();
+  await aRemovedRealmsJobsGo();
   log.info("sts_scheduler: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

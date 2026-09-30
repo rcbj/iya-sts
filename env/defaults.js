@@ -83,7 +83,7 @@ var config = {
     continueWaitS: 5,                                                      // Continuation wait (seconds)
     maxPolls: 60,                                                          // Polls allowed before too_many_attempts
     signatureMaxAgeS: 300,                                                 // Key proof freshness (seconds)
-    replayCacheSize: 100000,                                               // Signature replay history size (per realm)
+    replayCacheSize: 10000,                                                // Signature replay history size (per realm)
     interactionStartModes: "redirect,app,user_code,user_code_uri",         // Interaction start modes
     finishMethods: "redirect,push",                                        // Interaction finish methods
     keyProofs: "httpsig,mtls,jwsd,jws",                                    // Key proofing methods
@@ -161,6 +161,7 @@ var config = {
     sessionSweepS: 30,              // How often expired sessions are ended (seconds)
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
+    maxSessions: 100000,            // Most sign-on sessions per realm
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
     passwordAloneDoors: "",         // Password-only doors that accept a password alone
@@ -236,6 +237,8 @@ var config = {
     plaintextRetention: "timed",     // How long a decrypted private key is kept
     plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
     signerModel: "per-algorithm",    // Signer model
+    encryptionKemAlgs: "",           // Post-quantum / hybrid decryption keys
+    offerKemEncryption: false,       // Offer post-quantum / hybrid encryption to clients
     kidFormat: "internal",           // Signed token kid format
     kekProvider: "file",             // Key-encryption key provider; restart to apply
     kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
@@ -249,15 +252,20 @@ var config = {
     kekField: "value",               // Vault secret field; restart to apply
     kekToken: "",                    // Vault token; restart to apply
     storeProbeTimeoutMs: 5000,       // Secret store probe timeout (ms)
-    kekRegion: ""                    // AWS region; restart to apply
+    kekRegion: "",                   // AWS region; restart to apply
+    cellKekProvider: "none",         // Where the cell key-encryption key is read from; restart to apply
+    cellKekRef: "",                  // The cell key-encryption key's location; restart to apply
+    cellKekField: "",                // The field the cell key is in; restart to apply
+    cellKekRegion: ""                // AWS region of the cell key; restart to apply
   },
 
   // --- Global ----------------------------------------------------------
   workers: {
-    count: 5,                                                      // Worker processes
-    jobTimeoutS: 120,                                              // Worker job timeout (seconds)
-    requestCount: 0,                                               // Request worker processes; restart to apply
-    dispatch: "",                                                  // Handled in a request worker; restart to apply
+    startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
+    requestCount: 1,                                               // Request worker threads; restart to apply
+    heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply
+    startConcurrency: 1,                                           // Request workers starting at once; restart to apply
+    dispatch: "*",                                                 // Handled in a request worker; restart to apply
     fanout: "/scim,/xacml,/admin-api",                             // Dispatched paths with no session affinity; restart to apply
     surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply
     surfaces: "/admin,/portal",                                    // Paths handled by the hosted-surface workers; restart to apply
@@ -267,7 +275,7 @@ var config = {
     batchQueueLimit: 5000,                                         // Batch requests waiting
     batchQueueTimeoutS: 60,                                        // Longest a batch request waits (seconds)
     maxSockets: 64,                                                // Connections per request worker; restart to apply
-    readYourWrite: false,                                          // Read-your-write across request workers
+    readYourWrite: true,                                           // Read-your-write across request workers
     socketDir: ""                                                  // Request worker socket directory; restart to apply
   },
 
@@ -314,7 +322,7 @@ var config = {
     dpopNonceRequired: false,                    // Require a DPoP server nonce
     dpopIatSkewS: 300,                           // DPoP proof iat window (s)
     dpopNonceTtlS: 300,                          // DPoP server nonce lifetime (s)
-    dpopReplayCacheSize: 100000,                 // DPoP proof replay history size (per realm)
+    dpopReplayCacheSize: 10000,                  // DPoP proof replay history size (per realm)
     dpopNonceCacheSize: 10000,                   // DPoP server nonces held (per realm)
     refreshTokenRotation: false,                 // Rotate refresh tokens
     refreshTokenRequireDpop: false,              // Require DPoP on refresh tokens
@@ -388,6 +396,7 @@ var config = {
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
     expiredTokenRetentionS: 86400,               // Keep an expired token on /admin/tokens for (seconds)
+    maxRevokedJtis: 100000,                      // Most revoked token ids kept per realm
     clockSkewS: 30,                              // Token clock skew (s)
     redirectUris: "",                            // Registered redirect URIs
     loopbackPortWildcard: true,                  // Loopback port wildcard
@@ -517,6 +526,7 @@ var config = {
     attemptsPerIdentity: 30,                                                                                                                       // Failed requests per account a window
     attemptsPerAddress: 120,                                                                                                                       // Failed requests per address a window
     nonceLifetimeS: 300,                                                                                                                           // Replay nonce lifetime (seconds)
+    maxSpentNonces: 10000,                                                                                                                         // Spent nonce history size (per realm)
     orderLifetimeS: 86400,                                                                                                                         // Order lifetime (seconds)
     eabLifetimeS: 604800                                                                                                                           // External account binding key lifetime (seconds)
   },
@@ -742,7 +752,7 @@ var config = {
     claims: "given_name,family_name",                  // Requested claims
     presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
     maxTransactions: 5000,                             // Presentation requests waiting (per realm)
-    signInRegisterMaxEntries: 100000,                  // Wallet sign-in register size (per realm)
+    signInRegisterMaxEntries: 10000,                   // Wallet sign-in register size (per realm)
     walletPresentationPath: "/vc-presentation-1.html", // Wallet presentation page
     allowedWalletUrls: "",                             // Other wallet URLs a request link may name (product)
     trustedIssuerCertificates: "",                     // Other trusted credential issuers (PEM)
@@ -754,6 +764,7 @@ var config = {
     signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
     signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
     signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
+    responseEncryptionKeyAlgs: "HPKE-10-KE,ECDH-ES",   // Encrypted response: key algorithms offered
     statusListMaxCacheS: 3600,                         // Longest a fetched status list is kept (s)
     requireStatusReference: "all",                     // Require a status reference on every presented credential
     statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference
@@ -837,6 +848,9 @@ var config = {
     tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
     autocreateUsers: true,                                                                                                                      // Auto-create users
     maxEntries: 2000,                                                                                                                           // Maximum entries
+    workerDirectory: "memory",                                                                                                                  // Directory in request workers; restart to apply
+    workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
+    workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
     sizeLimit: 500,                                                                                                                             // Search size limit
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
     selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
@@ -1171,34 +1185,66 @@ var config = {
 
   // --- Persistence -----------------------------------------------------
   persistence: {
-    mode: "memory",                                       // Persistence mode; restart to apply
-    metricsTimeoutMs: 5000,                               // Database metrics statement timeout (ms)
-    dataDir: "./data",                                    // Data directory; restart to apply
-    databaseUrl: "postgres://sts:sts@localhost:5432/sts", // Database connection string; restart to apply
-    databasePasswordProvider: "none",                     // Where the database password is read from; restart to apply
-    databasePasswordRef: "",                              // The database password's location; restart to apply
-    databasePasswordField: "databasePassword",            // The field the password is in; restart to apply
-    databasePasswordVault: "",                            // Vault or Key Vault URL for the database password; restart to apply
-    databasePasswordRegion: "",                           // AWS region for the database password; restart to apply
-    databasePasswordToken: "",                            // Vault token for the database password; restart to apply
-    databaseTlsRejectUnauthorized: false,                 // Verify the database certificate; restart to apply
-    writeDelay: 1500,                                     // Write delay (ms)
-    realms: true,                                         // Persist the realm registry; restart to apply
-    appconfig: true,                                      // Persist runtime setting changes; restart to apply
-    minted: true,                                         // Persist sessions, tokens and the audit log; restart to apply
-    mintedRetention: 604800000,                           // Minted state retention (ms)
-    coordinate: true,                                     // Coordinate with other processes; restart to apply
-    pollInterval: 5000,                                   // Change poll interval (ms)
-    changeLogRetentionS: 3600                             // Change log retention (s)
+    mode: "memory",                                        // Persistence mode; restart to apply
+    metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
+    dataDir: "./data",                                     // Data directory; restart to apply
+    databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
+    databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
+    databasePasswordRef: "",                               // The database password's location; restart to apply
+    databasePasswordField: "databasePassword",             // The field the password is in; restart to apply
+    databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
+    databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
+    databasePasswordToken: "",                             // Vault token for the database password; restart to apply
+    databaseTlsRejectUnauthorized: false,                  // Verify the database certificate; restart to apply
+    globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
+    globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
+    globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply
+    globalDatabasePasswordRef: "",                         // The global database password's location; restart to apply
+    globalDatabasePasswordField: "globalDatabasePassword", // The field the global database password is in; restart to apply
+    globalDatabasePasswordRegion: "",                      // AWS region of the global database password; restart to apply
+    writeDelay: 1500,                                      // Write delay (ms)
+    realms: true,                                          // Persist the realm registry; restart to apply
+    appconfig: true,                                       // Persist runtime setting changes; restart to apply
+    minted: true,                                          // Persist sessions, tokens and the audit log; restart to apply
+    mintedRetention: 604800000,                            // Minted state retention (ms)
+    coordinate: true,                                      // Coordinate with other processes; restart to apply
+    pollInterval: 5000,                                    // Change poll interval (ms)
+    changeLogRetentionS: 3600                              // Change log retention (s)
   },
 
   // --- Cluster ---------------------------------------------------------
   cluster: {
-    mode: "auto",                  // Cluster mode; restart to apply
-    nodeName: "",                  // Node name; restart to apply
-    heartbeatMs: 2000,             // Heartbeat interval (ms); restart to apply
-    nodeTtlMs: 30000,              // Node lifetime (ms); restart to apply
-    acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
+    mode: "auto",                   // Cluster mode; restart to apply
+    nodeName: "",                   // Node name; restart to apply
+    nodeSnapshotRetentionHours: 24, // Keep a gone node's snapshot (hours)
+    heartbeatMs: 2000,              // Heartbeat interval (ms); restart to apply
+    nodeTtlMs: 30000,               // Node lifetime (ms); restart to apply
+    acceptMissingCapabilities: ""   // Capabilities accepted as missing; restart to apply
+  },
+
+  // --- Cells -----------------------------------------------------------
+  cells: {
+    id: "",                         // This cell; restart to apply
+    jurisdiction: "",               // This cell's jurisdiction; restart to apply
+    peers: "",                      // The other cells; restart to apply
+    port: 8446,                     // Inter-cell port; restart to apply
+    hostname: "",                   // This cell's inter-cell host name; restart to apply
+    consoleUrl: "",                 // This cell's own console address; restart to apply
+    relayTimeoutMs: 10000,          // Inter-cell request timeout (ms)
+    deliveryAttempts: 12,           // Inter-cell delivery attempts
+    deliveryBackoffMs: 2000,        // Inter-cell delivery backoff (ms)
+    deliveryRetentionS: 86400,      // Inter-cell delivery retention (s)
+    deliveryMaxRows: 100000,        // Inter-cell deliveries held
+    deliveryConcurrency: 8,         // Inter-cell deliveries at once
+    deliverySummaryS: 300,          // Inter-cell delivery summary interval (s)
+    deliverySweepS: 30,             // Inter-cell delivery sweep interval (s)
+    homeUnreachable: "fail-closed", // When a person's home cell cannot be reached
+    failOpenGraceS: 900,            // Fail-open grace (s)
+    subjectCheckS: 60,              // Subject state check interval (s)
+    homeCell: "",                   // Default home cell for new people
+    jurisdictions: "",              // Jurisdictions people may be homed in
+    permittedTransfers: "",         // Transfers this realm permits
+    hardGeofence: false             // Refuse rather than relay
   },
 
   // --- Signing keys ----------------------------------------------------
@@ -1212,11 +1258,17 @@ var config = {
   scheduler: {
     enabled: true,        // Run scheduled jobs
     tickS: 15,            // How often the leader looks for due jobs (seconds)
-    historyDays: 30,      // How long a finished run is kept (days)
-    maxRuns: 5000,        // Most runs kept per realm
+    runHistoryCount: 100, // Runs kept per job
+    runHistoryHours: 24,  // Runs kept for (hours)
     disabledJobs: "",     // Jobs switched off
     runTimeoutS: 600,     // The longest a run may take (seconds)
     maxConcurrentRuns: 2  // Most runs going at once
+  },
+
+  // --- Attribute sources -----------------------------------------------
+  attributeSources: {
+    hostPatterns: "",  // Hosts an attribute source may name
+    refreshBatch: 200  // People per scheduled refresh
   },
 
   // --- Mail ------------------------------------------------------------

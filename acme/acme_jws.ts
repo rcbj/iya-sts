@@ -56,15 +56,24 @@ import stsCrypto = require('../common/crypto');
 // The secrets every node shares (2026-09-14, #46). A LIBRARY; see
 // nonceSecret().
 import clusterSecrets = require('../cluster/cluster_secrets');
+// Which cell this process serves (#98): a Replay-Nonce is bound to it. A leaf.
+import cells = require('../common/cells');
 import validation = require('../common/validation');
 import InstanceSlot = require('../common/instance_slot');
 
 const vz = validation.z;
 
 // The media type RFC 8555 section 6.2 requires of every POST body.
+/**
+ * The media type RFC 8555 section 6.2 requires of every POST body:
+ * `application/jose+json`.
+ */
 const MEDIA_TYPE = 'application/jose+json';
 
 // What every error type is prefixed with (section 6.7).
+/**
+ * The prefix of every ACME error type (section 6.7).
+ */
 const ERROR_PREFIX = 'urn:ietf:params:acme:error:';
 
 // ---------------------------------------------------------------------------
@@ -83,17 +92,27 @@ const ERROR_PREFIX = 'urn:ietf:params:acme:error:';
 // answered `badSignatureAlgorithm` with this list in `algorithms`, as the
 // section asks.
 // ---------------------------------------------------------------------------
+/**
+ * The signature algorithms an account key may use: the asymmetric ones with an
+ * RFC 7638 thumbprint, since an account is its key's thumbprint.
+ */
 const ACCOUNT_ALGS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
                       'ES256', 'ES384', 'ES512', 'EdDSA'];
 
 // The MACs an External Account Binding may be made with (section 7.3.4 names
 // HS256 as the one a CA "MUST" support; the other two are the same
 // construction with a longer hash and cost nothing to accept).
+/**
+ * The MACs an External Account Binding may be made with.
+ */
 const EAB_ALGS = ['HS256', 'HS384', 'HS512'];
 
 // The smallest RSA account key accepted. RFC 8555 names no floor; 2048 is the
 // floor every public CA applies and the one the CA/Browser Forum requires of a
 // subscriber key, and an account key is a longer-lived credential than one.
+/**
+ * The smallest RSA account key accepted, in bits.
+ */
 const MIN_RSA_BITS = 2048;
 
 // Protected-header members this service refuses rather than ignores. `crit`
@@ -115,6 +134,9 @@ const EC_CURVE_FOR = { ES256: 'P-256', ES384: 'P-384', ES512: 'P-521' };
 // `aACompromise` (10) are about an AUTHORITY's key; `certificateHold` (6) is
 // the one reversible reason and nothing here un-holds; 7 is unassigned; and
 // `removeFromCRL` (8) exists only inside a delta CRL.
+/**
+ * The RFC 5280 revocation reasons a subscriber may give, by code.
+ */
 const REVOCATION_REASONS = {
   0: 'unspecified',
   1: 'keyCompromise',
@@ -142,9 +164,26 @@ interface AcmeJwsDeps {
   stsCrypto: typeof stsCrypto;
   clusterSecrets: typeof clusterSecrets;
   validation: typeof validation;
+  cells: typeof cells;
 }
 
+/**
+ * What an ACME request is on the wire, read strictly (RFC 8555 section 6): the
+ * flattened JWS, its header and key, the signature, the Replay-Nonce, the
+ * External Account Binding, the payload schemas, contacts and RFC 9773's
+ * certificate identifier.
+ *
+ * A library holding no state. Every parse answers a refusal rather than
+ * throwing; every signature and MAC is checked by `common/crypto.js` with the
+ * one algorithm the header named.
+ */
 class AcmeJws {
+  /**
+   * Creates the reader.
+   *
+   * @param deps - node's crypto and net, asn1js, pkijs, the logger,
+   * `common/crypto.js`, the cluster secrets and validation
+   */
   constructor(private readonly deps: AcmeJwsDeps) {
     deps.log.debug("Entering AcmeJws.constructor().");
     deps.log.debug("Leaving AcmeJws.constructor().");
@@ -152,6 +191,11 @@ class AcmeJws {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AcmeJwsDeps {
     log.debug("Entering AcmeJws.defaultDeps().");
     log.debug("Leaving AcmeJws.defaultDeps().");
@@ -163,7 +207,8 @@ class AcmeJws {
       log: log,
       stsCrypto: stsCrypto,
       clusterSecrets: clusterSecrets,
-      validation: validation
+      validation: validation,
+      cells: cells
     };
   }
 
@@ -179,6 +224,12 @@ class AcmeJws {
   // each would generate a secret of its own: a nonce issued by one worker
   // refused as forged by the next, in exactly the `dispatch` mode the
   // self-describing nonce exists for.
+  /**
+   * Makes the Replay-Nonce secret at load, before request workers fork, so
+   * every process shares it.
+   *
+   * @param instance - the instance installed
+   */
   static wire(instance: AcmeJws): void {
     log.debug("Entering AcmeJws.wire().");
     instance.nonceSecret();
@@ -188,6 +239,16 @@ class AcmeJws {
   // ---------------------------------------------------------------------------
   // REFUSALS.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds an ACME refusal.
+   *
+   * @param type - the ACME error type, without its prefix
+   * @param status - the HTTP status
+   * @param code - the error code
+   * @param detail - the problem's detail
+   * @param extra - further members, such as `algorithms`
+   * @returns `{ ok: false, type, status, code, detail, ... }`
+   */
   refusal(type, status, code, detail, extra?) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.refusal(). type=" + type + " code=" + code);
@@ -197,6 +258,13 @@ class AcmeJws {
   }
 
   // The first issue zod reported, as a sentence.
+  /**
+   * Turns the first issue zod reported into a sentence.
+   *
+   * @param error - zod's error
+   * @param what - what was being read
+   * @returns the sentence
+   */
   zodSentence(error, what) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.zodSentence().");
@@ -215,6 +283,13 @@ class AcmeJws {
   // THE MEDIA TYPE. Parameters are compared away (a `charset` on a JSON type is
   // meaningless but harmless); the type itself must be exactly this one.
   // ---------------------------------------------------------------------------
+  /**
+   * Tells whether a Content-Type is `application/jose+json`, parameters
+   * ignored.
+   *
+   * @param contentType - the header's value
+   * @returns true when it is
+   */
   isJoseJson(contentType) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.isJoseJson().");
@@ -230,6 +305,14 @@ class AcmeJws {
   // cannot both be accepted — which matters for a nonce, whose spelling is its
   // identity.
   // ---------------------------------------------------------------------------
+  /**
+   * Decodes strict, canonical base64url: the URL-safe alphabet, no padding, and
+   * bytes that encode back to exactly what was sent.
+   *
+   * @param text - the text
+   * @param allowEmpty - true to accept the empty string
+   * @returns the bytes, or null when not strict base64url
+   */
   decodeB64url(text, allowEmpty) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.decodeB64url().");
@@ -251,6 +334,12 @@ class AcmeJws {
     return bytes;
   }
 
+  /**
+   * Encodes bytes as base64url.
+   *
+   * @param bytes - the bytes
+   * @returns the text
+   */
   b64u(bytes) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.b64u().");
@@ -260,6 +349,14 @@ class AcmeJws {
 
   // JSON out of attacker bytes: parsed in a try, walked for polluting keys and
   // depth by `common/validation.js`, and required to be an OBJECT.
+  /**
+   * Parses attacker bytes as a JSON object, walked for polluting keys and
+   * depth.
+   *
+   * @param bytes - the bytes
+   * @param what - what is being read, for the message
+   * @returns `{ ok, value }` or `{ ok: false, detail }`
+   */
   readJsonObject(bytes, what) {
     const { log, validation } = this.deps;
     log.debug("Entering AcmeJws.readJsonObject(). what=" + what);
@@ -286,6 +383,14 @@ class AcmeJws {
     return { ok: true, value: value };
   }
 
+  /**
+   * Checks a parsed value is a flattened JWS JSON object of exactly
+   * `protected`, `payload` and `signature`, each strict base64url.
+   *
+   * @param value - the parsed value
+   * @param what - what it is, for the message
+   * @returns the three members encoded and decoded, or a refusal
+   */
   parseFlattenedObject(value, what) {
     const { log, validation } = this.deps;
     log.debug("Entering AcmeJws.parseFlattenedObject(). what=" + what);
@@ -335,6 +440,12 @@ class AcmeJws {
 
   // The body of a POST, which arrives as the TEXT the parser in common/app.js
   // left on `req.body`.
+  /**
+   * Parses the text of an ACME POST body as a flattened JWS.
+   *
+   * @param text - the body
+   * @returns as `parseFlattenedObject()`
+   */
   parseBody(text) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.parseBody().");
@@ -351,6 +462,14 @@ class AcmeJws {
     return this.parseFlattenedObject(read.value, 'request body');
   }
 
+  /**
+   * Parses and checks a JWS's protected header: `alg`, `nonce`, `url` and
+   * exactly one of `jwk` and `kid`, refusing the members that point at another
+   * key.
+   *
+   * @param parts - what `parseFlattenedObject()` returned
+   * @returns `{ ok, header }` or a refusal
+   */
   parseProtectedHeader(parts) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.parseProtectedHeader().");
@@ -385,6 +504,13 @@ class AcmeJws {
     return { ok: true, header: parsed.data };
   }
 
+  /**
+   * Checks an algorithm is one an account key may use; `badSignatureAlgorithm`
+   * otherwise.
+   *
+   * @param alg - the header's `alg`
+   * @returns `{ ok }` or a refusal listing the algorithms
+   */
   checkAlgorithm(alg) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.checkAlgorithm(). alg=" + alg);
@@ -409,6 +535,15 @@ class AcmeJws {
   // JWK rebuilt from the required members only, so nothing a client added to
   // its key is ever stored.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks an account key: its shape, no private members, agreement with `alg`,
+   * a loadable key and an RFC 7638 thumbprint.
+   *
+   * @param jwk - the header's `jwk`
+   * @param alg - the header's `alg`
+   * @returns `{ ok, jwk, thumbprint, key }`, the JWK rebuilt from its required
+   * public members, or a refusal
+   */
   checkAccountKey(jwk, alg) {
     const { log, nodeCrypto, stsCrypto } = this.deps;
     const self = this;
@@ -499,6 +634,13 @@ class AcmeJws {
 
   // Whether a stored account key can have signed with `alg` at all — a `kid`
   // request names the key by account, and the header's `alg` must still fit it.
+  /**
+   * Tells whether a stored account key can have signed with an algorithm.
+   *
+   * @param alg - the header's `alg`
+   * @param jwk - the account's key
+   * @returns true when it fits
+   */
   algorithmFitsKey(alg, jwk) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.algorithmFitsKey().");
@@ -521,6 +663,15 @@ class AcmeJws {
   // verified by `common/crypto.js` with the one algorithm the header named. An
   // empty payload is POST-as-GET (section 6.3) and verifies like any other.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies a flattened JWS's signature with the one algorithm the header
+   * named; an empty payload (POST-as-GET) verifies like any other.
+   *
+   * @param parts - what `parseFlattenedObject()` returned
+   * @param key - the public key
+   * @param alg - the algorithm
+   * @returns `{ ok }` or a refusal
+   */
   verifyFlattened(parts, key, alg) {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering AcmeJws.verifyFlattened(). alg=" + alg);
@@ -542,6 +693,13 @@ class AcmeJws {
   }
 
   // The payload: `null` for POST-as-GET, an object otherwise.
+  /**
+   * Reads a JWS's payload.
+   *
+   * @param parts - what `parseFlattenedObject()` returned
+   * @returns `{ ok, value }`, null for POST-as-GET and an object otherwise, or
+   * a refusal
+   */
   readPayload(parts) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.readPayload().");
@@ -560,6 +718,14 @@ class AcmeJws {
   }
 
   // A payload against one resource's schema.
+  /**
+   * Checks a payload against one resource's schema.
+   *
+   * @param value - the payload
+   * @param schema - one of the exported schemas
+   * @param what - the resource, for the message
+   * @returns `{ ok, value }` or a refusal
+   */
   checkPayload(value, schema, what) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.checkPayload(). what=" + what);
@@ -581,6 +747,11 @@ class AcmeJws {
   // now owns the value — the store's, sealed, where one can be shared; this
   // environment variable, per run, where none can — and keeps the environment
   // channel below working, which is why `NONCE_SECRET_VAR` is still named here.
+  /**
+   * Returns the secret every process shares for Replay-Nonce MACs.
+   *
+   * @returns the secret
+   */
   nonceSecret() {
     const { log, clusterSecrets } = this.deps;
     log.debug("Entering AcmeJws.nonceSecret().");
@@ -589,18 +760,49 @@ class AcmeJws {
     return held;
   }
 
+  /**
+   * Computes a nonce's MAC over the realm, its expiry and its random part.
+   *
+   * @param realmId - the realm
+   * @param expiresS - the expiry, in seconds
+   * @param random - the random bytes
+   * @returns the 16-byte MAC
+   */
   nonceMac(realmId, expiresS, random) {
-    const { log, stsCrypto } = this.deps;
+    const { log, stsCrypto, cells } = this.deps;
     log.debug("Entering AcmeJws.nonceMac().");
+    // **BOUND TO THE CELL THAT ISSUED IT (#98), IN A SERVICE DEPLOYED AS
+    // CELLS.** The secret is the global tier's, so every cell would verify
+    // every other cell's nonce — while the spent set is each cell's own
+    // (`acme.usedNonces`, and the claim beside it), so one nonce could be
+    // spent once PER CELL. Folding the cell into the MAC makes a nonce valid
+    // only where it was issued, which is what `persistence/tiers.js` says a
+    // nonce this service issued is. A request relayed to the cell that owns
+    // its account (`Acme.placeRequest()`) is then answered `badNonce` there
+    // with a Replay-Nonce of that cell, carried back through the relay; the
+    // client retries with it (RFC 8555 section 6.5), and the retry is placed
+    // on the same cell and accepted. One extra round trip each time a client
+    // moves between cells — never for a client that stays on one. A
+    // single-cell service folds in nothing, so its nonces are unchanged.
+    const scope = String(realmId || '') +
+                  (cells.isMulti() ? '\ncell:' + cells.id() : '');
     const mac = stsCrypto.deriveSharedCredential(this.nonceSecret(),
                                                  'acme-nonce',
-                                                 String(realmId || ''),
+                                                 scope,
                                                  String(expiresS),
                                                  this.b64u(random));
     log.debug("Leaving AcmeJws.nonceMac().");
     return Buffer.from(mac, 'base64url').subarray(0, 16);
   }
 
+  /**
+   * Mints a self-describing Replay-Nonce: a version, an expiry, sixteen random
+   * bytes and a MAC, checkable by any process with no lookup.
+   *
+   * @param realmId - the realm it is issued in
+   * @param lifetimeS - how long it lives, in seconds; 300 when absent
+   * @returns the nonce
+   */
   mintNonce(realmId, lifetimeS) {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering AcmeJws.mintNonce().");
@@ -619,6 +821,15 @@ class AcmeJws {
 
   // -> { ok, id, expiresS }
   //  | { ok: false, reason: 'malformed' | 'forged' | 'expired' }
+  /**
+   * Checks a Replay-Nonce was issued here, for this realm, and has not expired.
+   * Single use is the store's.
+   *
+   * @param nonce - the header's `nonce`
+   * @param realmId - the realm
+   * @returns `{ ok, id, expiresS }`, or `{ ok: false, reason }` with
+   * `malformed`, `forged` or `expired`
+   */
   checkNonce(nonce, realmId) {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering AcmeJws.checkNonce().");
@@ -644,6 +855,16 @@ class AcmeJws {
     return { ok: true, id: this.b64u(random), expiresS: expiresS };
   }
 
+  /**
+   * Checks everything about an External Account Binding but its MAC: the
+   * flattened JWS, a MAC algorithm, the `kid`, the `url`, and a payload that is
+   * the account's own key.
+   *
+   * @param eab - the `externalAccountBinding` member
+   * @param expectedUrl - the newAccount URL
+   * @param accountThumbprint - the outer JWS key's thumbprint
+   * @returns `{ ok, kid, alg, parts }` or a refusal
+   */
   parseEab(eab, expectedUrl, accountThumbprint) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.parseEab().");
@@ -707,6 +928,13 @@ class AcmeJws {
              parts: parts };
   }
 
+  /**
+   * Verifies an External Account Binding's MAC with the EAB key.
+   *
+   * @param parsed - what `parseEab()` returned
+   * @param hmacKey - the EAB MAC key
+   * @returns true when it verifies
+   */
   verifyEabMac(parsed, hmacKey) {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering AcmeJws.verifyEabMac().");
@@ -731,6 +959,13 @@ class AcmeJws {
   // more than one address is refused — RFC 8555 section 7.3 says so of
   // `hfields` and a list of recipients is not "a contact".
   // ---------------------------------------------------------------------------
+  /**
+   * Checks an account's contacts: `mailto:` URIs of one address each, without
+   * header fields.
+   *
+   * @param list - the contact URIs
+   * @returns `{ ok, contacts }` or a refusal
+   */
   checkContacts(list) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.checkContacts().");
@@ -765,6 +1000,13 @@ class AcmeJws {
   // Identifier's keyIdentifier, a dot, base64url of the serial number's DER
   // INTEGER content (with its leading zero octet when the high bit is set).
   // ---------------------------------------------------------------------------
+  /**
+   * Returns a serial number's DER INTEGER content, with a leading zero octet
+   * when the high bit is set.
+   *
+   * @param serialHex - the serial in hex
+   * @returns the bytes
+   */
   serialContentBytes(serialHex) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.serialContentBytes().");
@@ -781,6 +1023,14 @@ class AcmeJws {
     return bytes;
   }
 
+  /**
+   * Builds RFC 9773's certificate identifier: the Authority Key Identifier and
+   * the serial, each base64url, joined by a dot.
+   *
+   * @param akiBytes - the AKI keyIdentifier
+   * @param serialHex - the serial in hex
+   * @returns the certID
+   */
   certIdOf(akiBytes, serialHex) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.certIdOf().");
@@ -789,6 +1039,12 @@ class AcmeJws {
            this.b64u(this.serialContentBytes(serialHex));
   }
 
+  /**
+   * Parses an RFC 9773 certificate identifier.
+   *
+   * @param text - the certID
+   * @returns `{ aki, serialHex, certId }`, or null when malformed
+   */
   parseCertId(text) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.parseCertId().");
@@ -816,6 +1072,12 @@ class AcmeJws {
   // revokeCert (whose
   // `certificate` member is attacker bytes) and for the renewal index.
   // ---------------------------------------------------------------------------
+  /**
+   * Copies bytes into an ArrayBuffer, for asn1js.
+   *
+   * @param bytes - the bytes
+   * @returns the ArrayBuffer
+   */
   asArrayBuffer(bytes) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.asArrayBuffer().");
@@ -824,6 +1086,14 @@ class AcmeJws {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   }
 
+  /**
+   * Reads what a certificate says: serial, AKI keyIdentifier,
+   * SubjectPublicKeyInfo and validity.
+   *
+   * @param der - the certificate's DER, attacker bytes on revokeCert
+   * @returns `{ der, serialHex, aki, spkiDer, notBefore, notAfter }`, or null
+   * when it is not one certificate
+   */
   certificateFacts(der) {
     const { log, asn1js, pkijs } = this.deps;
     log.debug("Entering AcmeJws.certificateFacts().");
@@ -867,6 +1137,12 @@ class AcmeJws {
   }
 
   // The DER of a PEM certificate (the first one in it).
+  /**
+   * Returns the DER of the first certificate in a PEM text.
+   *
+   * @param pem - the PEM text
+   * @returns the DER, or null
+   */
   pemToDer(pem) {
     const { log } = this.deps;
     log.debug("Entering AcmeJws.pemToDer().");
@@ -877,6 +1153,12 @@ class AcmeJws {
   }
 
   // A JWK's SubjectPublicKeyInfo DER, for "is this the certificate's own key".
+  /**
+   * Returns a JWK's SubjectPublicKeyInfo DER.
+   *
+   * @param jwk - the public key
+   * @returns the DER, or null when the key does not load
+   */
   spkiOfJwk(jwk) {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering AcmeJws.spkiOfJwk().");
@@ -896,6 +1178,14 @@ class AcmeJws {
   // IDENTIFIER VALUES (section 7.1.4 and the three documents that add types).
   // Returns the value normalised, or '' when it is not a value of that type.
   // ---------------------------------------------------------------------------
+  /**
+   * Normalises an order identifier of a type: `dns`, `ip` (RFC 8738), `email`
+   * (RFC 8823) or `permanent-identifier`.
+   *
+   * @param type - the identifier's type
+   * @param value - its value
+   * @returns the normalised value, or '' when it is not a value of that type
+   */
   normalIdentifier(type, value) {
     const { log, net } = this.deps;
     log.debug("Entering AcmeJws.normalIdentifier(). type=" + type);
@@ -968,6 +1258,9 @@ const HEADER = vz.looseObject({
 // ---------------------------------------------------------------------------
 const CONTACTS = vz.array(vz.string().min(1).max(320)).max(10);
 
+/**
+ * The payload schema of `newAccount`.
+ */
 const NEW_ACCOUNT = vz.looseObject({
   contact: CONTACTS.optional(),
   termsOfServiceAgreed: vz.boolean().optional(),
@@ -975,6 +1268,9 @@ const NEW_ACCOUNT = vz.looseObject({
   externalAccountBinding: vz.looseObject({}).optional()
 });
 
+/**
+ * The payload schema of an account update.
+ */
 const ACCOUNT_UPDATE = vz.looseObject({
   contact: CONTACTS.optional(),
   status: vz.string().max(32).optional(),
@@ -986,6 +1282,9 @@ const IDENTIFIER = vz.strictObject({
   value: vz.string().min(1).max(1024)
 });
 
+/**
+ * The payload schema of `newOrder`.
+ */
 const NEW_ORDER = vz.looseObject({
   identifiers: vz.array(IDENTIFIER).min(1).max(100),
   notBefore: vz.string().max(64).optional(),
@@ -994,19 +1293,31 @@ const NEW_ORDER = vz.looseObject({
   replaces: vz.string().min(1).max(1024).optional()
 });
 
+/**
+ * The payload schema of an order's finalize.
+ */
 const FINALIZE = vz.looseObject({
   csr: vz.string().min(1).max(MAX_MEMBER)
 });
 
+/**
+ * The payload schema of `revokeCert`.
+ */
 const REVOKE = vz.looseObject({
   certificate: vz.string().min(1).max(MAX_MEMBER),
   reason: vz.number().int().min(-1000).max(1000).optional()
 });
 
+/**
+ * The payload schema of an authorization's deactivation.
+ */
 const AUTHZ_UPDATE = vz.looseObject({
   status: vz.literal('deactivated')
 });
 
+/**
+ * The payload schema of `keyChange`'s inner JWS.
+ */
 const KEY_CHANGE_INNER = vz.looseObject({
   account: vz.string().min(1).max(2048),
   oldKey: vz.looseObject({ kty: vz.string().min(1).max(8) })
@@ -1014,6 +1325,9 @@ const KEY_CHANGE_INNER = vz.looseObject({
 
 // A challenge response is `{}` (section 7.5.1); a challenge type that needed
 // fields would define them, and `sts-entry-binding-01` needs none.
+/**
+ * The payload schema of a challenge response: any object.
+ */
 const CHALLENGE_RESPONSE = vz.looseObject({});
 
 // ---------------------------------------------------------------------------
@@ -1045,6 +1359,10 @@ const CHALLENGE_RESPONSE = vz.looseObject({});
 // 2026-09-14 the spend is also claimed atomically (`spendNonceOnce()`).
 // ---------------------------------------------------------------------------
 const NONCE_VERSION = 1;
+/**
+ * The environment variable the Replay-Nonce secret reaches forked workers
+ * through.
+ */
 const NONCE_SECRET_VAR = 'STS_ACME_NONCE_SECRET';
 
 // The secret is made AT REQUIRE TIME — see `AcmeJws.wire()`.
@@ -1066,6 +1384,15 @@ const EAB_HEADER = vz.strictObject({
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The ACME request envelope, read strictly: flattened JWS, Replay-Nonce,
+ * External Account Binding and the payload schemas.
+ *
+ * Exports the class, the constants, the schemas and facades forwarding to the
+ * instance the composition root built.
+ *
+ * @namespace
+ */
 export = {
   AcmeJws: AcmeJws,
   installInstance: (instance: AcmeJws): void => slot.install(instance),

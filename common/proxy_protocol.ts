@@ -321,10 +321,28 @@ const lastAudited = new Map();
 // module, as before, and set through `setThisHostCheck()`.
 let thisHostCheck: ((peer: string, local: string) => unknown) | null = null;
 
+/**
+ * The PROXY protocol version 2 on this service's TCP listeners: parses the
+ * header an L4 load balancer writes at the front of a connection, refuses
+ * untrusted senders, and adopts the header's source as the peer's address.
+ */
 class ProxyProtocol {
+  /**
+   * The twelve bytes every v2 header begins with.
+   */
   static readonly SIGNATURE = SIGNATURE;
+  /**
+   * The longest address-and-TLV block accepted; a header declaring more is
+   * refused before it is buffered.
+   */
   static readonly MAX_BLOCK_LENGTH = MAX_BLOCK_LENGTH;
 
+  /**
+   * Builds an instance over its dependencies.
+   *
+   * @param deps - the logger, settings, client-address helpers, error codes and
+   *   a lazy audit loader
+   */
   constructor(private readonly deps: ProxyProtocolDeps) {
     deps.log.debug("Entering ProxyProtocol.constructor().");
     deps.log.debug("Leaving ProxyProtocol.constructor().");
@@ -332,6 +350,11 @@ class ProxyProtocol {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Answers the dependencies built from the real modules.
+   *
+   * @returns the dependencies the composition root passes
+   */
   static defaultDeps(): ProxyProtocolDeps {
     log.debug("Entering ProxyProtocol.defaultDeps().");
     log.debug("Leaving ProxyProtocol.defaultDeps().");
@@ -349,6 +372,12 @@ class ProxyProtocol {
   // No Entering/Leaving pair: it is called once per byte-run of a header and
   // its loop body is the whole function — a log line here says nothing the
   // caller's does not.
+  /**
+   * Computes the CRC32C (Castagnoli) checksum of `bytes`.
+   *
+   * @param bytes - the bytes to checksum
+   * @returns the checksum as an unsigned 32-bit number
+   */
   static crc32c(bytes: Uint8Array): number {
     let crc = -1;
     for (let i = 0; i < bytes.length; i++) {
@@ -434,6 +463,17 @@ class ProxyProtocol {
   // answered at once, so a plain HTTP request from a trusted address is closed
   // on its first segment rather than at the timeout.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses the v2 header at the front of `bytes`, which may be only a prefix
+   * of the stream.
+   *
+   * Never waits to refuse: a first byte that cannot begin the signature is
+   * answered `invalid` at once.
+   * @param bytes - the bytes read so far
+   * @returns `{ state: 'incomplete' }` to read more, `{ state: 'invalid',
+   *   code, reason }` to close the connection, or `{ state: 'complete',
+   *   length, header }`, where `length` bytes are the header
+   */
   parse(bytes?: Buffer | null): ParseResult {
     const { log } = this.deps;
     const self = this;
@@ -595,6 +635,15 @@ class ProxyProtocol {
   // of parse() over what this service reads: IPv4 or IPv6 PROXY, LOCAL, extra
   // TLVs, and a CRC32C when asked.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a v2 header, for the tests and the live probe: IPv4 or IPv6 PROXY
+   * or LOCAL, extra TLVs, and a CRC32C when asked.
+   *
+   * @param options - `command` ('LOCAL' for a LOCAL header), `source` and
+   *   `destination` addresses and ports, `tlvs`, `crc32c`, and
+   *   `declaredLength` to write a length other than the true one
+   * @returns the header's bytes
+   */
   build(options?: BuildOptions | null): Buffer {
     const { log } = this.deps;
     const self = this;
@@ -676,6 +725,11 @@ class ProxyProtocol {
   // ---------------------------------------------------------------------------
   // THE SETTING, AND THE STARTUP REFUSAL.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers whether `global.proxyProtocol` is `v2`.
+   *
+   * @returns true when the protocol is on
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering ProxyProtocol.enabled().");
@@ -696,6 +750,13 @@ class ProxyProtocol {
   // host or — if an empty list meant "anybody", as it does for forwarded
   // headers — let any caller that reaches a node name any client address it
   // likes. Neither is a service, so `server.js` does not start it.
+  /**
+   * Answers why the service must not start: `v2` is on and
+   * `global.trustedProxies` holds no usable address or range.
+   *
+   * @returns the sentence to report, or an empty string when there is no
+   *   problem
+   */
   startupProblem(): string {
     const { log, clientAddress } = this.deps;
     const self = this;
@@ -723,6 +784,12 @@ class ProxyProtocol {
            'global.proxyProtocol back to off.';
   }
 
+  /**
+   * Reports the mode, the header timeout, the listeners installed on, and the
+   * counts of proxied, LOCAL, same-host, empty and refused connections.
+   *
+   * @returns the report
+   */
   report(): Record<string, any> {
     const { log } = this.deps;
     const self = this;
@@ -743,6 +810,13 @@ class ProxyProtocol {
 
   // What the header said about the connection `socket` — or the TLS socket
   // built over it — or null when none was read.
+  /**
+   * Answers what the header said about a connection, on the raw socket or a TLS
+   * socket built over it.
+   *
+   * @param socket - the socket
+   * @returns the parsed header, or null when none was read
+   */
   describe(socket: any): any {
     const { log } = this.deps;
     log.debug("Entering ProxyProtocol.describe().");
@@ -795,6 +869,12 @@ class ProxyProtocol {
     log.debug("Leaving ProxyProtocol.recordRefusal().");
   }
 
+  /**
+   * Replaces the check of which peers count as this host, for tests; anything
+   * but a function restores the real check.
+   *
+   * @param fn - a function of the peer and local addresses, or null
+   */
   setThisHostCheck(fn: unknown): void {
     const { log } = this.deps;
     log.debug("Entering ProxyProtocol.setThisHostCheck().");
@@ -853,6 +933,17 @@ class ProxyProtocol {
   // taken off*. A no-op returning false when `global.proxyProtocol` is off, so
   // a listener module calls it unconditionally. Idempotent per server.
   // ---------------------------------------------------------------------------
+  /**
+   * Installs the header gate on a listening server, so each connection's header
+   * is read and taken off before the listener sees the connection.
+   *
+   * A no-op when `global.proxyProtocol` is off, so a listener module calls it
+   * unconditionally; idempotent per server.
+   * @param server - the net, tls or http server
+   * @param options - `label`, the listener's name in logs and audit rows, and
+   *   `channel`, the audit row's channel (`tcp` when absent)
+   * @returns true when the gate is installed, false when the protocol is off
+   */
   install(server: any, options?: InstallOptions | null): boolean {
     const { log, clientAddress } = this.deps;
     const self = this;
@@ -1077,6 +1168,9 @@ class ProxyProtocol {
   }
 
   // For tests: forget the counters and the audit window.
+  /**
+   * Forgets the counters, the audit window and any test host check, for tests.
+   */
   reset(): void {
     const { log } = this.deps;
     log.debug("Entering ProxyProtocol.reset().");
@@ -1109,9 +1203,20 @@ const slot = new InstanceSlot<ProxyProtocol>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The HAProxy PROXY protocol version 2 on every TCP listener this service
+ * owns, so a client's address survives an L4 load balancer with TLS
+ * passthrough (#46).
+ *
+ * Off unless `global.proxyProtocol` is `v2`. The functions forward to the
+ * instance the composition root installs.
+ * @namespace
+ */
 export = {
   ProxyProtocol: ProxyProtocol,
+  /** Installs the instance the composition root built. */
   installInstance: (instance: ProxyProtocol): void => slot.install(instance),
+  /** Answers where the installed instance came from (`root` or `default`). */
   instanceOrigin: (): string => slot.origin(),
   SIGNATURE: ProxyProtocol.SIGNATURE,
   MAX_BLOCK_LENGTH: ProxyProtocol.MAX_BLOCK_LENGTH,

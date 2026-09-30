@@ -39,8 +39,17 @@ import forge = require('node-forge');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
-import bbs2023 = require('../common/vendored/bbs2023.js');
 import helpers = require('../common/helpers');
+import LazyModule = require('../common/lazy_module');
+// THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
+// at its top, and together they are resident memory in every request worker
+// that never issues or verifies a BBS credential. `common/lazy_module.ts`
+// argues it; `common/helpers.js` defers the same file by hand.
+type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+  function () {
+    return require('../common/vendored/bbs2023.js') as Bbs2023;
+  }, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 // The identity registry, for ONE call at the generator endpoint below: a DID
 // this service mints is an identity it has created, and this is the funnel the
@@ -127,11 +136,32 @@ const LDP_VC_ISSUER_DID = config.value('oid4vci.ldpVcIssuerDid');
 const DID_CONFIGURATION_CONTEXT =
     'https://identity.foundation/.well-known/did-configuration/v1';
 
+/**
+ * This issuer's decentralized identifier (W3C DID Core 1.0) and the two
+ * documents that make it discoverable and believable: the `did:web` document
+ * and the DIF Well Known DID Configuration linking it to this origin.
+ */
 class VcDid {
+  /**
+   * The `@context` of a DIF Well Known DID Configuration.
+   */
   static readonly DID_CONFIGURATION_CONTEXT = DID_CONFIGURATION_CONTEXT;
+  /**
+   * Whether the plain SD-JWT VC configuration names the issuer by DID
+   * (`oid4vci.sdJwtIssuerDid`), read once at load.
+   */
   static readonly SD_JWT_ISSUER_DID = SD_JWT_ISSUER_DID;
+  /**
+   * Whether the plain `ldp_vc` configuration names the issuer by DID
+   * (`oid4vci.ldpVcIssuerDid`), read once at load.
+   */
   static readonly LDP_VC_ISSUER_DID = LDP_VC_ISSUER_DID;
 
+  /**
+   * Builds the DID surface from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcDidDeps) {
     deps.log.debug("Entering VcDid.constructor().");
     deps.log.debug("Leaving VcDid.constructor().");
@@ -139,6 +169,11 @@ class VcDid {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcDidDeps {
     helpers.log.debug("Entering VcDid.defaultDeps().");
     helpers.log.debug("Leaving VcDid.defaultDeps().");
@@ -191,6 +226,13 @@ class VcDid {
   // line every existing caller rests on. The document for a path-ful DID is
   // served at `<base>/did.json` below.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns this realm's `did:web`, built from the realm's base URL: its host,
+   * and each path segment as a component.
+   *
+   * @param req - the request, whose realm and base URL name the DID
+   * @returns the DID
+   */
   stsDid(req?: any): string {
     const { log, PORT, baseUrlOf } = this.deps;
     log.debug("Entering VcDid.stsDid().");
@@ -210,6 +252,13 @@ class VcDid {
   // A base URL as did:web sees it: the authority, and the path segments.
   // Parsed by hand rather than through `new URL()`, which would drop a default
   // port the Host header carried and change the DID for a caller who sent one.
+  /**
+   * Splits a base URL as `did:web` sees it: its authority and its path
+   * segments, parsed by hand so a port the Host header carried is kept.
+   *
+   * @param base - the base URL
+   * @returns `{ host, segments }`
+   */
   didWebPartsOf(base: unknown): { host: string; segments: string[] } {
     const { log } = this.deps;
     log.debug("Entering VcDid.didWebPartsOf().");
@@ -241,9 +290,9 @@ class VcDid {
     return { alg: alg, key: signer.key, kid: signer.kid };
   }
 
-  // The same answer, with a post-quantum key set generated in the worker pool
-  // rather than on this thread (#38's follow-ups: credentials may be signed
-  // with ML-DSA, and the DID document must publish that key).
+  // The same answer, with a post-quantum key set generated on libuv's thread
+  // pool rather than on this thread (#38's follow-ups: credentials may be
+  // signed with ML-DSA, and the DID document must publish that key).
   private async didSignerAsync(): Promise<{ alg: string; key: any;
                                             kid: string }> {
     const { log, config, STS, signingKeyForAsync } = this.deps;
@@ -266,6 +315,14 @@ class VcDid {
   // (the ldp_vc credentials). A BBS key has no
   // registered JOSE kty, so it appears as a Multikey exactly as it does at
   // /bbs/keys/1 rather than being forced into a publicKeyJwk it does not fit.
+  /**
+   * Builds the realm's DID document: a verification method for the JWT signing
+   * key, one for the bbs-2023 key as a Multikey, and a third when SD-JWT VCs
+   * are signed with another key.
+   *
+   * @param req - the request
+   * @returns the DID document
+   */
   async stsDidDocument(req?: any): Promise<any> {
     const { log, errorCodes, STS, stsKeysFor, bbsKeyPair } = this.deps;
     log.debug("Entering VcDid.stsDidDocument().");
@@ -454,6 +511,13 @@ class VcDid {
   // but one run with `STS_HTTPS=false` has no TLS, and the same deviation is
   // already taken by did:web resolution over http.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the Domain Linkage Credential, JWT form, in which the DID names this
+   * origin under its own signature.
+   *
+   * @param req - the request
+   * @returns the signed JWT
+   */
   async domainLinkageCredential(req?: any): Promise<string> {
     const { log, logArtifact, baseUrlOf, config, stsCrypto } = this.deps;
     log.debug("Entering VcDid.domainLinkageCredential().");
@@ -622,6 +686,15 @@ class VcDid {
   // look like. Off by default, because for dc+sd-jwt this is an extension and
   // for ldp_vc it changes a verificationMethod that existing tests dereference
   // as an https URL.
+  /**
+   * Returns the DID the issuer is named by for a configuration: always for a
+   * configuration declared with `issuerDid`, and for a plain one when the
+   * start-up flag says so.
+   *
+   * @param configId - the configuration's id
+   * @param req - the request
+   * @returns the DID, or '' to keep the https identifier
+   */
   issuerDidFor(configId: string, req?: any): string {
     const { log, VCI_CONFIGS } = this.deps;
     log.debug("Entering VcDid.issuerDidFor().");
@@ -640,6 +713,14 @@ class VcDid {
 
   // The four routes, in the order they were registered at load before
   // #50's R1. Called by `common/protocol_stack.ts`.
+  /**
+   * Registers the four routes — the two DID documents, the DID configuration
+   * and `/did/generate` — in the order they were always registered.
+   *
+   * Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: any): void {
     const { log, errorCodes, logArtifact, baseUrlOf, stats } = this.deps;
     log.debug("Entering VcDid.registerRoutes().");
@@ -819,10 +900,26 @@ const slot = new InstanceSlot<VcDid>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * This issuer's DID and the documents that make it discoverable: the `did:web`
+ * document and the DIF Well Known DID Configuration.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   VcDid: VcDid,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcDid): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   stsDid: slot.forward('stsDid'),
   didWebPartsOf: slot.forward('didWebPartsOf'),

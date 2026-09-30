@@ -325,6 +325,11 @@ const IDENTITY_CLAIMS: SchemaRow[] = [
 // the union of three object classes learns it from the headings, which is
 // worth more on an account page than a flat alphabetical list would be.
 // ---------------------------------------------------------------------------
+/**
+ * The schema classes a person here carries, in inheritance order: person,
+ * organizationalPerson, inetOrgPerson, then the Identity Assurance claims, each
+ * with its attribute rows.
+ */
 const CLASSES: SchemaClass[] = [
   { id: 'person', name: 'person', rfc: 'RFC 4519 3.12', oid: '2.5.6.6',
     what: 'The base class. The only one of the three with attributes the ' +
@@ -371,15 +376,37 @@ ALL.forEach(function (row) {
 // own table through `learnName()`. The same shape `oid4vc/vc_claims.ts` offers
 // and for the same reason — see the header: two lists of spellings that
 // disagree are REPORTED rather than resolved by whichever was merged first.
+/**
+ * Each attribute's canonical spelling, keyed by its lower-cased name, for the
+ * directory to merge into its own table of names.
+ */
 const CANONICAL_NAMES: Record<string, string> = {};
 ALL.forEach(function (row) {
   CANONICAL_NAMES[row.ldap.toLowerCase()] = row.ldap;
 });
 
+/**
+ * The fixed list of attributes a person's entry is drawn from, and the refusals
+ * that apply when one is drawn.
+ *
+ * A page draws this list and looks each name up, so an attribute the service
+ * invents, a secret credential among them, cannot appear by accident.
+ */
 class InetOrgPerson {
+  /**
+   * The schema classes, as the module-level `CLASSES`.
+   */
   static readonly CLASSES = CLASSES;
+  /**
+   * The canonical spellings, as the module-level `CANONICAL_NAMES`.
+   */
   static readonly CANONICAL_NAMES = CANONICAL_NAMES;
 
+  /**
+   * Creates the schema reader.
+   *
+   * @param deps - its dependencies: the logger
+   */
   constructor(private readonly deps: InetOrgPersonDeps) {
     deps.log.debug("Entering InetOrgPerson.constructor().");
     deps.log.debug("Leaving InetOrgPerson.constructor().");
@@ -387,6 +414,11 @@ class InetOrgPerson {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): InetOrgPersonDeps {
     helpers.log.debug("Entering InetOrgPerson.defaultDeps().");
     helpers.log.debug("Leaving InetOrgPerson.defaultDeps().");
@@ -396,6 +428,11 @@ class InetOrgPerson {
   // The classes, for a caller that is going to draw them. A shallow copy of
   // the list and of each class's row array, so that a caller sorting or
   // splicing cannot reorder the schema for everybody else.
+  /**
+   * Returns the schema classes, as copies a caller may sort or splice.
+   *
+   * @returns each class with a copy of its attribute rows
+   */
   classes(): SchemaClass[] {
     const { log } = this.deps;
     log.debug("Entering InetOrgPerson.classes().");
@@ -406,6 +443,11 @@ class InetOrgPerson {
     });
   }
 
+  /**
+   * Returns every attribute row, flat, in class order.
+   *
+   * @returns a copy of the list
+   */
   attributes(): SchemaRow[] {
     const { log } = this.deps;
     log.debug("Entering InetOrgPerson.attributes().");
@@ -413,6 +455,12 @@ class InetOrgPerson {
     return ALL.slice(0);
   }
 
+  /**
+   * Finds an attribute row by name, case-insensitively.
+   *
+   * @param name - the attribute's name
+   * @returns its row, or null when it is not in the list
+   */
   attribute(name: unknown): SchemaRow | null {
     const { log } = this.deps;
     log.debug("Entering InetOrgPerson.attribute().");
@@ -434,6 +482,16 @@ class InetOrgPerson {
   // `entry` is the stored attribute map — lower-cased names, array values,
   // which is exactly what `ldap/ldap_server.js` holds and hands over.
   // -------------------------------------------------------------------------
+  /**
+   * Joins one schema row to what an entry holds for it, ready to draw.
+   *
+   * A `secret` row never returns a value, and a `binary` row returns its size
+   * in `bytes` rather than its octets.
+   *
+   * @param row - the schema row
+   * @param entry - the stored attribute map: lower-cased names, array values
+   * @returns the row with `present`, `count` and `values` (or `bytes`)
+   */
   rowFor(row: SchemaRow, entry: StoredEntry): DrawnRow {
     const { log } = this.deps;
     log.debug("Entering InetOrgPerson.rowFor().");
@@ -491,6 +549,13 @@ class InetOrgPerson {
   // a section, and computing it here means the page does not walk the rows
   // twice.
   // -------------------------------------------------------------------------
+  /**
+   * Draws every row for one entry, grouped by class, with how many of each
+   * class's attributes the entry carries.
+   *
+   * @param entry - the stored attribute map
+   * @returns `{ classes, held, total }`
+   */
   describe(entry: StoredEntry) {
     const { log } = this.deps;
     const self = this;
@@ -537,6 +602,15 @@ const slot = new InstanceSlot<InetOrgPerson>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The attributes of a person in the schema this directory's people carry:
+ * person, organizationalPerson and inetOrgPerson, as a fixed list.
+ *
+ * Exports the class and facades forwarding to the instance the composition root
+ * built.
+ *
+ * @namespace
+ */
 export = {
   InetOrgPerson: InetOrgPerson,
   installInstance: (instance: InetOrgPerson): void => slot.install(instance),

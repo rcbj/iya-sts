@@ -71,6 +71,7 @@ import capabilities = require('../cluster/cluster_capabilities');
 import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
 import config = require('../common/config');
+import cellLocator = require('../common/cell_locator');
 
 // The parts of a `realms.map()` store this module uses. Rows are JSON
 // (header), so `any`.
@@ -115,7 +116,25 @@ interface GnapStoreDeps {
   replayBound: () => number;
 }
 
-const grants = realms.map({ persist: 'gnap.grants' });
+// `expiresAt` (#333): prune()'s rule, in epoch SECONDS — a FINALIZED grant
+// a day after it last moved, a grant neither approved nor finalized an hour
+// past its interaction's expiry. An APPROVED grant never expires here.
+const grants = realms.map({
+  persist: 'gnap.grants',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (grant: any): number | null {
+    if (!grant || typeof grant !== 'object') {
+      return null;
+    }
+    if (grant.state === STATE.FINALIZED) {
+      const moved = Number(grant.updatedAt);
+      return moved > 0 ? (moved + 86400) * 1000 : null;
+    }
+    const until = Number(grant.expiresAt);
+    return grant.state !== STATE.APPROVED && until > 0
+      ? (until + 3600) * 1000 : null;
+  }
+});
 const continuations = realms.map({ persist: 'gnap.continuations',
                                    retain: 'age' });
 const interactions = realms.map({ persist: 'gnap.interactions',
@@ -133,7 +152,9 @@ const resources = realms.map({ persist: 'gnap.resources' });
 // reasonably short time period"). Persisted for the reason the DPoP replay
 // cache is: across request workers a proof refused by one and accepted by
 // another is the replay the cache exists to stop.
-const replay = realms.map({ persist: 'gnap.replay', retain: 'age' });
+const replay = realms.map({ persist: 'gnap.replay', retain: 'age',
+                            // #333: its `until`, epoch seconds.
+                            expiresAt: realms.expiryField('until', 1000) });
 
 // Described to `/admin/caches` (#74, rule 3ap). The key is already a digest
 // of the signature; `until` is in seconds.
@@ -185,14 +206,38 @@ const STATE = { PROCESSING: 'processing', PENDING: 'pending',
 const CLAIM_SKEW_S = 60;
 const UNBOUNDED_LIFETIME_S = 24 * 60 * 60;
 
+/**
+ * Everything GNAP mints, per trust realm, in one place: the grant as the
+ * record, and the continuation tokens, interaction handles, user codes, access
+ * and management tokens, instances, user references, resource sets and replay
+ * history as indexes onto it.
+ *
+ * Each store is per realm at its declaration.
+ */
 class GnapStore {
+  /**
+   * The grant states of RFC 9635 section 1.5: processing, pending, approved and
+   * finalized.
+   */
   static readonly STATE = STATE;
 
+  /**
+   * Builds the store over the per-realm maps it is given.
+   *
+   * @param deps - the modules and stores the composition root passes
+   */
   constructor(private readonly deps: GnapStoreDeps) {
     deps.log.debug("Entering GnapStore.constructor().");
     deps.log.debug("Leaving GnapStore.constructor().");
   }
 
+  /**
+   * Returns the SHA-256 of a value, base64url-encoded — how every secret a
+   * client holds is indexed.
+   *
+   * @param value - the value
+   * @returns the digest
+   */
   digest(value: unknown): string {
     const { log } = this.deps;
     log.debug("Entering GnapStore.digest().");
@@ -206,6 +251,12 @@ class GnapStore {
   // section 2.3). base64url is exactly that alphabet, which is why every GNAP
   // artifact here is one: section 4.2 requires it of the interaction reference
   // and section 3.2.1's token68 is satisfied by it for every token.
+  /**
+   * Mints a random base64url value, the alphabet every GNAP artifact here uses.
+   *
+   * @param bytes - how many random bytes (24 by default)
+   * @returns the value
+   */
   mint(bytes?: number): string {
     const { log, randomId } = this.deps;
     log.debug("Entering GnapStore.mint().");
@@ -213,16 +264,54 @@ class GnapStore {
     return randomId(bytes || 24);
   }
 
+  // A HANDLE SOMEBODY PRESENTS LATER, POSSIBLY TO ANOTHER CELL (#98 D10):
+  // `mint()` with the minting cell's keyed tag appended
+  // (`common/cell_locator.ts`), so whichever cell it reaches can send the
+  // request to the one that holds it. Still base64url — twelve characters
+  // longer — so section 4.2's unreserved alphabet and every `vt.base64url`
+  // path check hold. In single-cell mode it is `mint()` exactly.
+  //
+  // Stamped: the grant id (the continuation URI's last segment), the
+  // interaction start and approval handles (the `redirect` / `app` URIs and
+  // `/gnap/approve/…`), the management handle (the management URI), an
+  // access token's `jti` (read at the edge from a `jwt-signed` token), and an
+  // instance identifier (a later request's `client` or `resource_server`).
+  // NOT stamped: a user code (a person types it; `gnap_cells.ts` asks the
+  // other cells), an opaque user reference (deterministic per person by
+  // design), a continuation token and the finish nonces and interaction
+  // reference (each travels with a URI that is stamped already), and a
+  // resource set reference (the global tier's — `persistence/tiers.js`).
+  /**
+   * Mints a random base64url handle stamped with this cell's locator.
+   *
+   * @param bytes - how many random bytes (24 by default)
+   * @returns the value, with the cell's twelve-character tag in multi-cell
+   *   mode
+   */
+  handle(bytes?: number): string {
+    const { log } = this.deps;
+    log.debug("Entering GnapStore.handle().");
+    log.debug("Leaving GnapStore.handle().");
+    return cellLocator.stamp(this.mint(bytes));
+  }
+
   // -------------------------------------------------------------------------
   // GRANTS.
   // -------------------------------------------------------------------------
+  /**
+   * Creates a grant in the processing state, with the given fields over the
+   * defaults, and stores it.
+   *
+   * @param fields - the grant's fields
+   * @returns the grant
+   */
   newGrant(fields?: object): any {
     const { log, nowSec } = this.deps;
     const { grants } = this.deps.stores;
     log.debug("Entering GnapStore.newGrant().");
     const now = nowSec();
     const grant = Object.assign({
-      id: this.mint(18),
+      id: this.handle(18),
       state: STATE.PROCESSING,
       createdAt: now,
       updatedAt: now,
@@ -236,6 +325,12 @@ class GnapStore {
     return grant;
   }
 
+  /**
+   * Returns a grant by its identifier.
+   *
+   * @param id - the grant's identifier
+   * @returns the grant, or null
+   */
   getGrant(id: string): any {
     const { log } = this.deps;
     const { grants } = this.deps.stores;
@@ -252,6 +347,14 @@ class GnapStore {
   // sees a set (header). `note` goes onto the grant's own history, which the
   // console shows: a grant is a state machine and a reader debugging a client
   // wants the transitions, not the final state.
+  /**
+   * Saves a changed grant — every change to one passes through here — and
+   * appends `note` to its history.
+   *
+   * @param grant - the grant
+   * @param note - the transition to record
+   * @returns the grant
+   */
   saveGrant(grant: any, note?: unknown): any {
     const { log, nowSec } = this.deps;
     const { grants } = this.deps.stores;
@@ -268,6 +371,11 @@ class GnapStore {
     return grant;
   }
 
+  /**
+   * Lists the realm's grants, most recently updated first.
+   *
+   * @returns the grants
+   */
   listGrants(): any[] {
     const { log } = this.deps;
     const { grants } = this.deps.stores;
@@ -282,6 +390,11 @@ class GnapStore {
     });
   }
 
+  /**
+   * Deletes a grant.
+   *
+   * @param id - the grant's identifier
+   */
   deleteGrant(id: string): void {
     const { log } = this.deps;
     const { grants } = this.deps.stores;
@@ -291,11 +404,136 @@ class GnapStore {
   }
 
   // -------------------------------------------------------------------------
+  // A GRANT MOVED BETWEEN CELLS (#98 D9, `gnap_cells.ts`). A grant still
+  // waiting for its resource owner is handed to the cell the browser is
+  // pinned to, with the rows that find it — its continuation token, its
+  // interaction handles and its user codes — and forgotten here. Only a grant
+  // that has issued nothing moves: tokens, management handles and the
+  // consent they rest on stay in the cell that minted them.
+  // -------------------------------------------------------------------------
+  /**
+   * Gathers a grant and the rows that find it, for another cell to adopt.
+   *
+   * @param grant - the grant
+   * @returns `{ grant, continuation, interactions, userCodes }`
+   */
+  exportGrant(grant: any): any {
+    const { log } = this.deps;
+    const { continuations, interactions, userCodes } = this.deps.stores;
+    log.debug("Entering GnapStore.exportGrant(). grant=" + grant.id);
+    const out: any = { grant: grant, continuation: null, interactions: {},
+                       userCodes: {} };
+    if (grant.continuationHash && continuations.has(grant.continuationHash)) {
+      out.continuation = { hash: grant.continuationHash,
+                           row: continuations.get(grant.continuationHash) };
+    }
+    interactions.forEach(function (row, key) {
+      if (row && row.grantId === grant.id) {
+        out.interactions[key] = row;
+      }
+    });
+    userCodes.forEach(function (row, key) {
+      if (row && row.grantId === grant.id) {
+        out.userCodes[key] = row;
+      }
+    });
+    log.debug("Leaving GnapStore.exportGrant().");
+    return out;
+  }
+
+  /**
+   * Stores a grant another cell handed over, with the rows that find it.
+   *
+   * @param bundle - what `exportGrant()` gathered
+   * @returns the grant
+   */
+  importGrant(bundle: any): any {
+    const { log } = this.deps;
+    const { grants, continuations, interactions,
+            userCodes } = this.deps.stores;
+    log.debug("Entering GnapStore.importGrant().");
+    const grant = bundle.grant;
+    grants.set(grant.id, grant);
+    if (bundle.continuation && bundle.continuation.hash) {
+      continuations.set(String(bundle.continuation.hash),
+                        bundle.continuation.row);
+    }
+    Object.keys(bundle.interactions || {}).forEach(function (key) {
+      interactions.set(key, bundle.interactions[key]);
+    });
+    Object.keys(bundle.userCodes || {}).forEach(function (key) {
+      userCodes.set(key, bundle.userCodes[key]);
+    });
+    log.debug("Leaving GnapStore.importGrant(). grant=" + grant.id);
+    return grant;
+  }
+
+  /**
+   * Forgets a grant handed to another cell, and every row that found it.
+   *
+   * @param bundle - what `exportGrant()` gathered for it
+   */
+  forgetGrant(bundle: any): void {
+    const { log } = this.deps;
+    const { grants, continuations, interactions,
+            userCodes } = this.deps.stores;
+    log.debug("Entering GnapStore.forgetGrant().");
+    if (bundle.continuation && bundle.continuation.hash) {
+      continuations.delete(String(bundle.continuation.hash));
+    }
+    Object.keys(bundle.interactions || {}).forEach(function (key) {
+      interactions.delete(key);
+    });
+    Object.keys(bundle.userCodes || {}).forEach(function (key) {
+      userCodes.delete(key);
+    });
+    grants.delete(bundle.grant.id);
+    log.debug("Leaving GnapStore.forgetGrant().");
+  }
+
+  /**
+   * Tells whether this cell holds an access token, by the digest of its
+   * value — what another cell asks (`gnap_cells.ts`).
+   *
+   * @param valueDigest - `digest()` of the token's value
+   * @returns true when it is held here
+   */
+  holdsTokenDigest(valueDigest: string): boolean {
+    const { log } = this.deps;
+    const { tokenValues } = this.deps.stores;
+    log.debug("Entering GnapStore.holdsTokenDigest().");
+    log.debug("Leaving GnapStore.holdsTokenDigest().");
+    return !!valueDigest && tokenValues.has(String(valueDigest));
+  }
+
+  /**
+   * Tells whether this cell holds a user reference, by its digest — what
+   * another cell asks (`gnap_cells.ts`); the references are indexed so.
+   *
+   * @param referenceDigest - `digest()` of the reference
+   * @returns true when it is held here
+   */
+  holdsUserRefDigest(referenceDigest: string): boolean {
+    const { log } = this.deps;
+    const { userRefs } = this.deps.stores;
+    log.debug("Entering GnapStore.holdsUserRefDigest().");
+    log.debug("Leaving GnapStore.holdsUserRefDigest().");
+    return !!referenceDigest && userRefs.has(String(referenceDigest));
+  }
+
+  // -------------------------------------------------------------------------
   // CONTINUATION ACCESS TOKENS (section 3.1). One live value per grant:
   // section 5 says the new token SHOULD invalidate the previous one, and this
   // service always does, so an old continuation token read from a log cannot
   // be replayed after the client has used its successor.
   // -------------------------------------------------------------------------
+  /**
+   * Issues a grant's continuation access token (section 3.1), invalidating the
+   * previous one: one live value per grant.
+   *
+   * @param grant - the grant
+   * @returns the new token's value
+   */
   issueContinuation(grant: any): string {
     const { log, nowSec } = this.deps;
     const { continuations } = this.deps.stores;
@@ -311,6 +549,12 @@ class GnapStore {
     return value;
   }
 
+  /**
+   * Returns the grant a continuation access token belongs to.
+   *
+   * @param value - the presented token
+   * @returns the grant, or null
+   */
   grantByContinuation(value: unknown): any {
     const { log } = this.deps;
     const { continuations } = this.deps.stores;
@@ -320,6 +564,11 @@ class GnapStore {
     return row ? this.getGrant(row.grantId) : null;
   }
 
+  /**
+   * Invalidates a grant's continuation access token.
+   *
+   * @param grant - the grant
+   */
   dropContinuation(grant: any): void {
     const { log } = this.deps;
     const { continuations } = this.deps.stores;
@@ -337,6 +586,13 @@ class GnapStore {
   // the grant holds the expiry and the "which mode was used" state, and these
   // rows are only the lookup.
   // -------------------------------------------------------------------------
+  /**
+   * Records an interaction start handle — the unique path segment of a redirect
+   * or app URI — for a grant.
+   *
+   * @param id - the handle
+   * @param grantId - the grant's identifier
+   */
   putInteraction(id: string, grantId: string): void {
     const { log, nowSec } = this.deps;
     const { interactions } = this.deps.stores;
@@ -345,6 +601,12 @@ class GnapStore {
     log.debug("Leaving GnapStore.putInteraction().");
   }
 
+  /**
+   * Returns the grant an interaction start handle belongs to.
+   *
+   * @param id - the handle
+   * @returns the grant, or null
+   */
   grantByInteraction(id: string): any {
     const { log } = this.deps;
     const { interactions } = this.deps.stores;
@@ -354,6 +616,11 @@ class GnapStore {
     return row ? this.getGrant(row.grantId) : null;
   }
 
+  /**
+   * Removes an interaction start handle; each is one-time-use.
+   *
+   * @param id - the handle
+   */
   dropInteraction(id: string): void {
     const { log } = this.deps;
     const { interactions } = this.deps.stores;
@@ -362,6 +629,12 @@ class GnapStore {
     log.debug("Leaving GnapStore.dropInteraction().");
   }
 
+  /**
+   * Records a user code for a grant.
+   *
+   * @param code - the user code
+   * @param grantId - the grant's identifier
+   */
   putUserCode(code: string, grantId: string): void {
     const { log, nowSec } = this.deps;
     const { userCodes } = this.deps.stores;
@@ -370,6 +643,12 @@ class GnapStore {
     log.debug("Leaving GnapStore.putUserCode().");
   }
 
+  /**
+   * Returns the grant a user code belongs to.
+   *
+   * @param code - the user code
+   * @returns the grant, or null
+   */
   grantByUserCode(code: string): any {
     const { log } = this.deps;
     const { userCodes } = this.deps.stores;
@@ -379,6 +658,11 @@ class GnapStore {
     return row ? this.getGrant(row.grantId) : null;
   }
 
+  /**
+   * Removes a user code; each is one-time-use.
+   *
+   * @param code - the user code
+   */
   dropUserCode(code: string): void {
     const { log } = this.deps;
     const { userCodes } = this.deps.stores;
@@ -387,6 +671,12 @@ class GnapStore {
     log.debug("Leaving GnapStore.dropUserCode().");
   }
 
+  /**
+   * Says whether a user code is already in use.
+   *
+   * @param code - the user code
+   * @returns true when taken
+   */
   userCodeTaken(code: string): boolean {
     const { log } = this.deps;
     const { userCodes } = this.deps.stores;
@@ -405,6 +695,14 @@ class GnapStore {
   // — including the three whose value a self-contained verifier could also
   // read.
   // -------------------------------------------------------------------------
+  /**
+   * Stores an access token's record, keyed by `jti` and indexed by the digest
+   * of its value, so introspection of any format is one lookup.
+   *
+   * @param record - the token record
+   * @param value - the token's value
+   * @returns the record
+   */
   putToken(record: any, value: unknown): any {
     const { log } = this.deps;
     const { tokens, tokenValues } = this.deps.stores;
@@ -416,6 +714,12 @@ class GnapStore {
     return record;
   }
 
+  /**
+   * Saves a changed access token record.
+   *
+   * @param record - the token record
+   * @returns the record
+   */
   saveToken(record: any): any {
     const { log } = this.deps;
     const { tokens } = this.deps.stores;
@@ -425,6 +729,12 @@ class GnapStore {
     return record;
   }
 
+  /**
+   * Returns an access token's record by its identifier.
+   *
+   * @param jti - the token identifier
+   * @returns the record, or nothing when there is none
+   */
   tokenByJti(jti: string): any {
     const { log } = this.deps;
     const { tokens } = this.deps.stores;
@@ -433,6 +743,12 @@ class GnapStore {
     return jti ? (tokens.get(jti) || null) : null;
   }
 
+  /**
+   * Returns an access token's record by its value.
+   *
+   * @param value - the presented token value
+   * @returns the record, or null
+   */
   tokenByValue(value: unknown): any {
     const { log } = this.deps;
     const { tokenValues } = this.deps.stores;
@@ -442,6 +758,11 @@ class GnapStore {
     return row ? this.tokenByJti(row.jti) : null;
   }
 
+  /**
+   * Lists the realm's access token records.
+   *
+   * @returns the records
+   */
   listTokens(): any[] {
     const { log } = this.deps;
     const { tokens } = this.deps.stores;
@@ -458,6 +779,14 @@ class GnapStore {
   // handle is NOT the token (the URI "MUST NOT include the value of the access
   // token being managed or the value of the access token used to protect the
   // URI").
+  /**
+   * Issues an access token's management handle and management token (section
+   * 3.2.1), replacing any previous management token. The handle is not the
+   * token.
+   *
+   * @param record - the access token's record
+   * @returns the management token's value
+   */
   issueManagement(record: any): string {
     const { log } = this.deps;
     const { manageValues, manageHandles } = this.deps.stores;
@@ -466,7 +795,7 @@ class GnapStore {
       manageValues.delete(record.manageHash);
     }
     if (!record.manageHandle) {
-      record.manageHandle = this.mint(12);
+      record.manageHandle = this.handle(12);
       manageHandles.set(record.manageHandle, { jti: record.jti });
     }
     const value = this.mint(24);
@@ -480,6 +809,13 @@ class GnapStore {
   // value of this URI MAY be different from the URI used by the client
   // instance". This service keeps the URI and moves the handle onto the new
   // record, which is the arrangement a client can least get wrong.
+  /**
+   * Moves a management handle from a rotated token's record onto its successor,
+   * so the management URI stays the same (section 6.1).
+   *
+   * @param from - the old record
+   * @param to - the new record
+   */
   moveManagement(from: any, to: any): void {
     const { log } = this.deps;
     const { manageValues, manageHandles } = this.deps.stores;
@@ -496,6 +832,14 @@ class GnapStore {
     log.debug("Leaving GnapStore.moveManagement().");
   }
 
+  /**
+   * Returns the access token record a management handle and management token
+   * name, when both agree.
+   *
+   * @param handle - the handle from the management URI
+   * @param value - the presented management token
+   * @returns the record, or null
+   */
   tokenByManagement(handle: string, value: unknown): any {
     const { log } = this.deps;
     const { manageValues, manageHandles } = this.deps.stores;
@@ -514,6 +858,11 @@ class GnapStore {
     return this.tokenByJti(byHandle.jti);
   }
 
+  /**
+   * Removes an access token's management handle and token.
+   *
+   * @param record - the access token's record
+   */
   dropManagement(record: any): void {
     const { log } = this.deps;
     const { manageValues, manageHandles } = this.deps.stores;
@@ -533,6 +882,12 @@ class GnapStore {
   // DYNAMIC INSTANCE IDENTIFIERS (section 3.5) and USER REFERENCES (section
   // 2.4.1). Both are secrets the client holds, so both are indexed by digest.
   // -------------------------------------------------------------------------
+  /**
+   * Records a dynamic instance identifier (section 3.5), indexed by digest.
+   *
+   * @param instanceId - the instance identifier
+   * @param fields - what is recorded against it
+   */
   putInstance(instanceId: unknown, fields?: object): void {
     const { log, nowSec } = this.deps;
     const { instances } = this.deps.stores;
@@ -542,6 +897,12 @@ class GnapStore {
     log.debug("Leaving GnapStore.putInstance().");
   }
 
+  /**
+   * Returns what is recorded against a dynamic instance identifier.
+   *
+   * @param instanceId - the instance identifier
+   * @returns the record, or null
+   */
   instanceById(instanceId: unknown): any {
     const { log } = this.deps;
     const { instances } = this.deps.stores;
@@ -551,6 +912,12 @@ class GnapStore {
       (instances.get(this.digest(instanceId)) || null) : null;
   }
 
+  /**
+   * Records a user reference (section 2.4.1), indexed by digest.
+   *
+   * @param reference - the reference
+   * @param fields - what is recorded against it
+   */
   putUserRef(reference: unknown, fields?: object): void {
     const { log, nowSec } = this.deps;
     const { userRefs } = this.deps.stores;
@@ -560,6 +927,12 @@ class GnapStore {
     log.debug("Leaving GnapStore.putUserRef().");
   }
 
+  /**
+   * Returns what is recorded against a user reference.
+   *
+   * @param reference - the reference
+   * @returns the record, or null
+   */
   userByRef(reference: unknown): any {
     const { log } = this.deps;
     const { userRefs } = this.deps.stores;
@@ -574,6 +947,14 @@ class GnapStore {
   // the AS hands back; section 3.4 lets the AS return the SAME reference for a
   // set registered again, which is what `canonical` makes possible.
   // -------------------------------------------------------------------------
+  /**
+   * Records a registered resource set (RFC 9767 section 3.4) under its
+   * reference.
+   *
+   * @param reference - the reference handed back
+   * @param fields - the set's fields, including its `canonical` form
+   * @returns the stored row
+   */
   putResource(reference: string, fields?: object): any {
     const { log, nowSec } = this.deps;
     const { resources } = this.deps.stores;
@@ -585,6 +966,12 @@ class GnapStore {
     return resources.get(reference);
   }
 
+  /**
+   * Returns a registered resource set by its reference.
+   *
+   * @param reference - the reference
+   * @returns the row, or null
+   */
   resourceByReference(reference: string): any {
     const { log } = this.deps;
     const { resources } = this.deps.stores;
@@ -593,6 +980,14 @@ class GnapStore {
     return reference ? (resources.get(reference) || null) : null;
   }
 
+  /**
+   * Returns the resource set a resource server already registered with the same
+   * canonical form, so the same reference can be handed back.
+   *
+   * @param canonical - the set's canonical form
+   * @param rsIdentity - the resource server
+   * @returns the row, or null
+   */
   resourceByCanonical(canonical: unknown, rsIdentity: unknown): any {
     const { log } = this.deps;
     const { resources } = this.deps.stores;
@@ -608,6 +1003,11 @@ class GnapStore {
     return found;
   }
 
+  /**
+   * Lists the realm's registered resource sets, newest first.
+   *
+   * @returns the rows
+   */
   listResources(): any[] {
     const { log } = this.deps;
     const { resources } = this.deps.stores;
@@ -622,6 +1022,12 @@ class GnapStore {
     });
   }
 
+  /**
+   * Deletes a registered resource set.
+   *
+   * @param reference - the reference
+   * @returns true when there was one to delete
+   */
   deleteResource(reference: string): boolean {
     const { log } = this.deps;
     const { resources } = this.deps.stores;
@@ -640,6 +1046,14 @@ class GnapStore {
   // `gnap_proof.ts` ask for the outcome so the refusal is named for what it
   // is (STS-GNAP-0718).
   // -------------------------------------------------------------------------
+  /**
+   * Records a replay key: true the first time, false for a repeat within the
+   * window, or when the bounded history is full.
+   *
+   * @param key - the value to remember
+   * @param lifetimeS - how long, in seconds
+   * @returns true when new
+   */
   remember(key: unknown, lifetimeS?: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering GnapStore.remember().");
@@ -647,6 +1061,14 @@ class GnapStore {
     return this.rememberOutcome(key, lifetimeS) === 'new';
   }
 
+  /**
+   * Records a replay key and names the outcome: `new`, `seen`, or `full` when
+   * the bounded history refuses rather than forget one.
+   *
+   * @param key - the value to remember
+   * @param lifetimeS - how long, in seconds
+   * @returns the outcome
+   */
   rememberOutcome(key: unknown, lifetimeS?: unknown): 'new' | 'seen' | 'full' {
     const { log, nowSec, replayBound } = this.deps;
     const { replay } = this.deps.stores;
@@ -709,6 +1131,19 @@ class GnapStore {
   // where `reason` is `used` (the caller refuses with the protocol's own error
   // and `usedCode`) or `store` (STS-GNAP-0716, fail closed). It never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Claims a value once across the cluster before acting on it (`gnap.<kind>`
+   * scope), for the value's lifetime plus a skew.
+   *
+   * Never rejects.
+   *
+   * @param kind - what the value is
+   * @param value - the value
+   * @param lifetimeS - its lifetime, in seconds; unbounded values get a day
+   * @param usedCode - the error code of a value already spent
+   * @returns `{ ok: true, handle }`, or `{ ok: false, reason, errorCode }` with
+   *   `reason` `used` or `store`
+   */
   spend(kind: string, value: unknown, lifetimeS?: unknown,
         usedCode?: string): Promise<any> {
     const { log, clusterClaims, errorCodes } = this.deps;
@@ -744,6 +1179,12 @@ class GnapStore {
 
   // Gives a claim back when what it guarded did not happen — see the callers,
   // which release only where the value is still live in this process's map.
+  /**
+   * Gives a claim back when what it guarded did not happen.
+   *
+   * @param handle - the claim's handle
+   * @returns the release's result
+   */
   unspend(handle: unknown): any {
     const { log, clusterClaims } = this.deps;
     log.debug("Entering GnapStore.unspend().");
@@ -756,6 +1197,9 @@ class GnapStore {
   // call, so a store with a large backlog is cleaned over several writes
   // rather than stalling one.
   // -------------------------------------------------------------------------
+  /**
+   * Prunes rows that can no longer be used, with bounded work per call.
+   */
   prune(): void {
     const { log, nowSec } = this.deps;
     const { replay, grants, continuations } = this.deps.stores;
@@ -793,6 +1237,12 @@ class GnapStore {
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before. The stores are the module-scope
   // ones.
+  /**
+   * Returns the real modules and the module-scope stores the instance was built
+   * from before the composition root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapStoreDeps {
     helpers.log.debug("Entering GnapStore.defaultDeps().");
     helpers.log.debug("Leaving GnapStore.defaultDeps().");
@@ -845,15 +1295,37 @@ capabilities.provide('gnap.once');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Everything GNAP mints, per trust realm, in one place: grants and every index
+ * onto them.
+ *
+ * @namespace
+ */
 export = {
   GnapStore: GnapStore,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapStore): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   STATE: GnapStore.STATE,
   spend: slot.forward('spend'),
   unspend: slot.forward('unspend'),
   digest: slot.forward('digest'),
   mint: slot.forward('mint'),
+  handle: slot.forward('handle'),
+  exportGrant: slot.forward('exportGrant'),
+  importGrant: slot.forward('importGrant'),
+  forgetGrant: slot.forward('forgetGrant'),
+  holdsTokenDigest: slot.forward('holdsTokenDigest'),
+  holdsUserRefDigest: slot.forward('holdsUserRefDigest'),
   newGrant: slot.forward('newGrant'),
   getGrant: slot.forward('getGrant'),
   saveGrant: slot.forward('saveGrant'),

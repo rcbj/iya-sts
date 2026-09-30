@@ -48,6 +48,9 @@ import store = require('./xacml_store');
 import pdp = require('./xacml_pdp');
 import pip = require('./xacml_pip');
 import templates = require('./xacml_templates');
+// THE ONE REQUEST BUILDER (#306).
+import xacmlRequest = require('./xacml_request');
+const { AuthorizationRequest } = xacmlRequest;
 
 type Json = any;
 
@@ -81,14 +84,33 @@ interface XacmlSignalPepDeps {
 const SIGNAL = templates.SIGNAL_ATTRIBUTE;
 const RESPONSE = templates.SIGNAL_RESPONSE;
 
+/**
+ * The embedded PEP that decides what a verified CAEP or RISC event received
+ * by this service's own console or portal leads to: one XACML question per
+ * reaction, a Permit meaning take it.
+ */
 class XacmlSignalPep {
+  /**
+   * The reactions asked about, each an action-id of the signal-response
+   * policy (`xacml_templates.ts`'s `SIGNAL_RESPONSE`).
+   */
   static readonly RESPONSE = RESPONSE;
 
+  /**
+   * Builds the PEP over the given dependencies.
+   * @param deps - the logger, settings, error codes, model, policy store,
+   * PDP, PIP and templates
+   */
   constructor(private readonly deps: XacmlSignalPepDeps) {
     deps.log.debug("Entering XacmlSignalPep.constructor().");
     deps.log.debug("Leaving XacmlSignalPep.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules, for the default
+   * instance.
+   * @returns the PEP's dependencies
+   */
   static defaultDeps(): XacmlSignalPepDeps {
     helpers.log.debug("Entering XacmlSignalPep.defaultDeps().");
     helpers.log.debug("Leaving XacmlSignalPep.defaultDeps().");
@@ -97,6 +119,11 @@ class XacmlSignalPep {
              templates: templates };
   }
 
+  /**
+   * Returns the name of the policy that decides, from
+   * `xacml.signalResponsePolicy`; `signal-response` when unset.
+   * @returns the policy name
+   */
   policyName(): string {
     const { log, config } = this.deps;
     log.debug("Entering XacmlSignalPep.policyName().");
@@ -107,6 +134,14 @@ class XacmlSignalPep {
 
   // The document that decides: the realm's own entry, or the built-in one;
   // `why` when neither can.
+  /**
+   * Loads the deciding policy: the realm's own entry in `ou=policies`, or the
+   * built-in template when there is none.
+   *
+   * A disabled entry does not fall back to the built-in one.
+   * @returns `{ policy, name, builtIn }`, or `{ why }` when no policy can
+   * decide
+   */
   responsePolicy(): LoadedPolicy {
     const { log, store, templates } = this.deps;
     log.debug("Entering XacmlSignalPep.responsePolicy().");
@@ -138,46 +173,52 @@ class XacmlSignalPep {
     }
   }
 
-  private attribute(attributeId: string, values: unknown[]): Json {
-    const { log, model } = this.deps;
-    log.debug("Entering XacmlSignalPep.attribute().");
-    log.debug("Leaving XacmlSignalPep.attribute().");
-    return { attributeId: attributeId, issuer: null, includeInResult: false,
-             values: values.map(function (one) {
-               return { type: model.TYPE.STRING, lexical: String(one) };
-             }) };
-  }
-
   // The question: the reaction, and what arrived. An absent value is an
   // empty bag, so a rule about a level never matches an event without one.
+  /**
+   * Builds the decision request for one reaction: the reaction as the
+   * action-id and the event's name, family, receiving surface and level as
+   * environment attributes, an absent value an empty bag. No subject.
+   * @param signal - what arrived, as the receiver states it
+   * @param action - the reaction asked about, a `RESPONSE` value
+   * @returns the request, in the model's request shape
+   */
   buildRequest(signal: ReceivedSignal, action: string): Json {
-    const { log, model } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering XacmlSignalPep.buildRequest(). " + action);
     const present = function (value: string): string[] {
       log.debug("Entering present().");
       log.debug("Leaving present().");
       return value ? [value] : [];
     };
+    // THROUGH THE ONE BUILDER (#306). No subject: a received signal is about
+    // an event, not a principal the policy decides for.
+    const req = new AuthorizationRequest({ includeInResult: false,
+                                           returnPolicyIdList: false })
+      .requestedAction(action)
+      .environment(SIGNAL.EVENT, present(signal.event))
+      .environment(SIGNAL.FAMILY, present(signal.family))
+      .environment(SIGNAL.SURFACE, present(signal.surface))
+      .environment(SIGNAL.LEVEL, present(signal.level));
     log.debug("Leaving XacmlSignalPep.buildRequest().");
-    return {
-      returnPolicyIdList: false, combinedDecision: false,
-      categories: [
-        { category: model.CATEGORY.ACTION, id: null, content: null,
-          attributes: [this.attribute(model.ATTRIBUTE.ACTION_ID, [action])] },
-        { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-          attributes: [
-            this.attribute(SIGNAL.EVENT, present(signal.event)),
-            this.attribute(SIGNAL.FAMILY, present(signal.family)),
-            this.attribute(SIGNAL.SURFACE, present(signal.surface)),
-            this.attribute(SIGNAL.LEVEL, present(signal.level))] }
-      ]
-    };
+    return req.build();
   }
+
 
   // -------------------------------------------------------------------------
   // THE DECISION: which reactions the policy permits for this event.
   // Answers `{ reactions, policy, builtIn, why }`.
   // -------------------------------------------------------------------------
+  /**
+   * Asks the policy about every reaction and returns those permitted.
+   *
+   * It never throws: with no policy nothing is permitted and the reason is
+   * logged (STS-SSF-0110), and an evaluation that throws permits nothing.
+   * Whether the event verified is the receiver's check, made before this.
+   * @param signal - what arrived, as the receiver states it
+   * @returns `{ reactions, policy, builtIn, why }`, `reactions` the permitted
+   * `RESPONSE` values
+   */
   decide(signal: ReceivedSignal): Json {
     const { log, pdp, pip, store, model, errorCodes } = this.deps;
     log.debug("Entering XacmlSignalPep.decide(). " + signal.event);
@@ -227,6 +268,13 @@ const slot = new InstanceSlot<XacmlSignalPep>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The embedded XACML PEP for what a received Shared Signals event leads to.
+ *
+ * A library: it registers no route, and the receivers reach it lazily. The
+ * functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   XacmlSignalPep: XacmlSignalPep,
   installInstance: (instance: XacmlSignalPep): void => slot.install(instance),

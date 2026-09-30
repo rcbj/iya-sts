@@ -21,6 +21,8 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+# The HOME region: the state bucket is here whatever region a multi-cell
+# environment's cells are in (#98), and one bucket holds every state.
 AWS_REGION="${AWS_REGION:-us-west-2}"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 STATE_BUCKET="${STATE_BUCKET:-mock-sts-terraform-state-${ACCOUNT_ID}}"

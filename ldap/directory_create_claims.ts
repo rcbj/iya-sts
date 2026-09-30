@@ -156,9 +156,20 @@ interface DirectoryCreateClaimsDeps {
   loadedDirectory(): ClaimingDirectory | null;
 }
 
+/**
+ * One create of a directory name at a time across every node: a door that
+ * creates an entry claims its DN (and a person's username) through the
+ * cluster's claim store before it asks the directory, and releases the claim
+ * once the write is flushed.
+ *
+ * It is active only where several processes write one store.
+ */
 class DirectoryCreateClaims {
   // The ceiling on a claim a process died holding. A create's flush commits
   // in milliseconds; two minutes is long past every barrier and every retry.
+  /**
+   * The ceiling on a claim a process died holding: two minutes.
+   */
   static readonly CLAIM_TTL_MS = 2 * 60 * 1000;
 
   // -------------------------------------------------------------------------
@@ -183,9 +194,22 @@ class DirectoryCreateClaims {
   // when the wait runs out is refused as in progress. A store that cannot be
   // asked is not waited on.
   // -------------------------------------------------------------------------
+  /**
+   * How long a create that finds its name claimed waits and asks again before
+   * it is refused as in progress: five seconds.
+   */
   static readonly CLAIM_WAIT_MS = 5000;
+  /**
+   * How long a waiting create sleeps between attempts: 50 ms.
+   */
   static readonly CLAIM_RETRY_MS = 50;
 
+  /**
+   * Builds the claimer from its dependencies.
+   *
+   * @param deps - the modules and loaders it reads, from
+   * `DirectoryCreateClaims.defaultDeps()` or the composition root
+   */
   constructor(private readonly deps: DirectoryCreateClaimsDeps) {
     deps.log.debug("Entering DirectoryCreateClaims.constructor().");
     deps.log.debug("Leaving DirectoryCreateClaims.constructor().");
@@ -193,6 +217,12 @@ class DirectoryCreateClaims {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the real modules and loaders the claimer depends on, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): DirectoryCreateClaimsDeps {
     log.debug("Entering DirectoryCreateClaims.defaultDeps().");
     log.debug("Leaving DirectoryCreateClaims.defaultDeps().");
@@ -210,6 +240,12 @@ class DirectoryCreateClaims {
   }
 
   // The default `loadPersistence`, passed by `defaultDeps()`.
+  /**
+   * Returns the persistence module, required lazily; the default
+   * `loadPersistence`.
+   *
+   * @returns the persistence module
+   */
   static persistenceModule(): ClaimsPersistence {
     log.debug("Entering DirectoryCreateClaims.persistenceModule().");
     log.debug("Leaving DirectoryCreateClaims.persistenceModule().");
@@ -222,6 +258,12 @@ class DirectoryCreateClaims {
   // The default `loadedDirectory`, passed by `defaultDeps()`: the
   // directory module from the require CACHE, never required from here (see
   // `claimFor()`).
+  /**
+   * Returns `ldap_server.js` from the require cache without loading it; the
+   * default `loadedDirectory`.
+   *
+   * @returns the directory module, or null when it is not loaded
+   */
   static cachedDirectory(): ClaimingDirectory | null {
     log.debug("Entering DirectoryCreateClaims.cachedDirectory().");
     let directory: ClaimingDirectory | null = null;
@@ -244,6 +286,12 @@ class DirectoryCreateClaims {
   }
 
   // Whether a create has anything to race here. See the header.
+  /**
+   * Says whether a create has anything to race here: a shared store, and an
+   * active-active cluster or dispatched request workers.
+   *
+   * @returns true when creates are claimed
+   */
   active(): boolean {
     const { log, config, isActiveActive } = this.deps;
     log.debug("Entering DirectoryCreateClaims.active().");
@@ -252,7 +300,9 @@ class DirectoryCreateClaims {
       return false;
     }
     const dispatched =
-      (Number(config.value('workers.requestCount')) || 0) > 0 &&
+      // The #364 rule: the default of one worker is none without a store
+      // that coordinates.
+      require('../common/process_memory').requestWorkers() > 0 &&
       String(config.value('workers.dispatch') || '').trim() !== '';
     log.debug("Leaving DirectoryCreateClaims.active().");
     return isActiveActive() || dispatched;
@@ -271,6 +321,16 @@ class DirectoryCreateClaims {
   // another request holds is waited for — `waitMs`, `CLAIM_WAIT_MS` by
   // default, which only a test passes — before `used` is answered.
   // -------------------------------------------------------------------------
+  /**
+   * Claims every DN and username a create is about to write, all or none,
+   * waiting up to `waitMs` for a value another request holds.
+   *
+   * @param spec - `realm`, `dns` (normalised), `usernames` (lower-cased) and
+   * `waitMs` (default `CLAIM_WAIT_MS`, for tests)
+   * @returns a promise of `{ ok: true, settle(succeeded) }`, where
+   * `settle(true)` releases after the flush and `settle(false)` at once, or `{
+   * ok: false, reason: 'used' | 'store', code, what }`
+   */
   claim(spec?: ClaimSpec): Promise<HeldClaim> {
     const self = this;
     const { log, errorCodes } = this.deps;
@@ -427,6 +487,14 @@ class DirectoryCreateClaims {
   // is above it in the route order — and a process that never loaded it has
   // no directory to race for.
   // -------------------------------------------------------------------------
+  /**
+   * Claims a create for a door that does not hold the directory module, through
+   * `ldap_server.js`'s `claimCreate()`; where the directory is not loaded,
+   * answers a claim that holds nothing.
+   *
+   * @param what - `{ username }` or `{ group }`
+   * @returns a promise of the claim, as `claim()` answers it
+   */
   claimFor(what: unknown): Promise<HeldClaim> {
     const { log, loadedDirectory } = this.deps;
     log.debug("Entering DirectoryCreateClaims.claimFor().");
@@ -449,6 +517,18 @@ class DirectoryCreateClaims {
   // with the outcome. A throw out of `run` settles it as failed and is handed
   // on to `onThrow(e)`, which the caller answers in its own shape.
   // -------------------------------------------------------------------------
+  /**
+   * Runs a create with its name claimed. Where nothing can race, `run` is
+   * called synchronously with an idle claim; otherwise the claim is awaited, a
+   * refusal goes to `refuse`, and `run` must settle the claim.
+   *
+   * @param what - `{ username }` or `{ group }`, or null for no claim
+   * @param run - the create, handed the claim
+   * @param refuse - answers a refused claim
+   * @param onThrow - answers a throw out of `run`, after the claim is settled
+   * as failed
+   * @returns what `run` or `refuse` returns, or a promise of it
+   */
   runClaimed(what: unknown, run: (held: HeldClaim) => any,
              refuse: (held: HeldClaim) => any,
              onThrow: (e: any) => any): any {
@@ -478,6 +558,12 @@ class DirectoryCreateClaims {
 
   // The sentence a refusal carries to a client, for the doors that are not
   // LDAP.
+  /**
+   * Returns the sentence a refused claim carries to a client that is not LDAP.
+   *
+   * @param refusal - the refused claim's `reason` and `what`
+   * @returns the sentence
+   */
   refusalMessage(refusal: { reason?: string; what?: string }): string {
     const { log } = this.deps;
     log.debug("Entering DirectoryCreateClaims.refusalMessage().");
@@ -509,10 +595,24 @@ const slot = new InstanceSlot<DirectoryCreateClaims>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * One create of a directory name at a time across every node.
+ *
+ * Exports the `DirectoryCreateClaims` class, its constants, and facades that
+ * forward to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   DirectoryCreateClaims: DirectoryCreateClaims,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: DirectoryCreateClaims): void =>
     slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   active: slot.forward('active'),
   claim: slot.forward('claim'),

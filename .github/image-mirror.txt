@@ -49,6 +49,7 @@ php:8.3-apache                                               php:8.3-apache
 rockylinux/rockylinux:9                                      rockylinux/rockylinux:9
 quay.io/keycloak/keycloak:26.6.4                             keycloak/keycloak:26.6.4
 postgres:18                                                  postgres:18
+mariadb:11.8                                                 mariadb:11.8
 openbao/openbao:latest                                       openbao/openbao:latest
 axllent/mailpit:latest                                       axllent/mailpit:latest
 haproxy:3.2.23-alpine                                        haproxy:3.2.23-alpine

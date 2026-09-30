@@ -260,7 +260,16 @@ const applicationPermissionsState = adminViews.applicationPermissionsState;
 const federationRow = adminViews.federationRow;
 const peopleRows = adminViews.peopleRows;
 const mergeFactors = adminViews.mergeFactors;
+/**
+ * Builds a query string from the current parameters plus overrides, empty
+ * values omitted; admin_views.ts's queryWith(), re-exported for the pages
+ * drawn outside this file.
+ */
 const queryWith = adminViews.queryWith;
+/**
+ * How many session blocks a drill-down page shows by default, from
+ * admin_views.ts; `?per=` overrides it.
+ */
 const DEFAULT_BLOCKS_PER_PAGE = adminViews.DEFAULT_BLOCKS_PER_PAGE;
 const sessionRowsFor = adminViews.sessionRowsFor;
 const tokensBySession = adminViews.tokensBySession;
@@ -318,6 +327,10 @@ const SAML11_RP_KIND = adminActions.SAML11_RP_KIND;
 const SAML2_SP_KIND = adminActions.SAML2_SP_KIND;
 const SAML_ASSERTION_KEYS = adminActions.SAML_ASSERTION_KEYS;
 const SAML_ASSERTION_SETTINGS = adminActions.SAML_ASSERTION_SETTINGS;
+/**
+ * The actions the console's own Shared Signals inbox takes, from
+ * admin_actions.ts.
+ */
 const SIGNALS_CONSOLE_ACTIONS = adminActions.SIGNALS_CONSOLE_ACTIONS;
 const SPIFFE_AGENT_ACTIONS = adminActions.SPIFFE_AGENT_ACTIONS;
 const SPIFFE_ENTRY_ACTIONS = adminActions.SPIFFE_ENTRY_ACTIONS;
@@ -337,6 +350,10 @@ const consentAction = adminActions.consentAction;
 const federationAction = adminActions.federationAction;
 const fieldToAttribute = adminActions.fieldToAttribute;
 const groupsAction = adminActions.groupsAction;
+/**
+ * Reads the `jti` out of a pasted token, or takes the text as a jti;
+ * admin_actions.ts's jtiFrom(). The token's signature is not verified.
+ */
 const jtiFrom = adminActions.jtiFrom;
 const logoutAction = adminActions.logoutAction;
 const mfaAction = adminActions.mfaAction;
@@ -791,6 +808,9 @@ import validation = require('../common/validation');
 // require in the ordinary direction, not a slot: neither calls the other.
 import closedSets = require('../common/closed_sets');
 import InstanceSlot = require('../common/instance_slot');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -1827,6 +1847,15 @@ const SECTIONS = [
                'compliance, and when it was last used. Click one to edit ' +
                'it, add or remove a key, give it to another owner or remove ' +
                'it; register one by hand at the foot of the list.' },
+      // ATTRIBUTE SOURCES (#94): in Directory because what they write is
+      // on people's directory entries, and the register is `ou=
+      // attributesources` in this realm's directory.
+      { path: '/admin/attribute-sources', label: 'Attribute sources',
+        blurb: 'The SQL databases this realm reads people\'s attributes ' +
+               'from, onto their entries: each source\'s database, the row ' +
+               'it reads and the columns it writes, when it reads (at ' +
+               'sign-in, once, on a schedule, on demand) and what a ' +
+               'failure does, with its status, a test and a read-now.' },
       // -------------------------------------------------------------------
       // POLICIES (2026-09-12), asked for by rcbj as *Directory → Policies*,
       // with the password policy as the first kind of policy it configures.
@@ -2526,6 +2555,34 @@ const SECTIONS = [
                'and no control: a cache is emptied by the settings that ' +
                'bound it, not by a button. The figures are the answering ' +
                'process\'s own.' },
+      // THE WORKER POOLS (#327, 2026-09-28), after the caches and before the
+      // scheduler: one more page whose subject is the process itself — what
+      // it has forked to do its work, and how that is going. Drawn by
+      // `admin-ui/worker_pools_admin.ts` out of the two pool modules.
+      { path: '/admin/worker-pools', label: 'Worker pools',
+        blurb: 'The three pools of child processes this node runs &mdash; ' +
+               'the request workers, the console and portal\'s own ' +
+               'workers, and the post-quantum workers every process forks ' +
+               'on its first post-quantum job &mdash; each with its workers ' +
+               'now, busy and free, its maximum and initial size, how many ' +
+               'crashed or never started against how many were stopped, ' +
+               'and its average response time. A pool that is off says ' +
+               'so. <strong>The figures are this node\'s</strong>, drawn ' +
+               'by its front process; no control.' },
+      // NODE HEALTH (#329, 2026-09-28), beside the worker pools: the
+      // container they all run in — its CPU and memory from the cgroup — and
+      // the memory of every one of those processes. Drawn by
+      // `admin-ui/node_health_admin.ts`.
+      { path: '/admin/node-health', label: 'Node health',
+        blurb: 'The container this node runs in &mdash; its CPU ' +
+               'utilisation against its quota and its memory against its ' +
+               'limit, from its cgroup &mdash; and the Node.js memory of ' +
+               'every process in it: the front process, each request and ' +
+               'console worker, each post-quantum child, with the total. ' +
+               'The ECS task metadata endpoint beside them where there is ' +
+               'one. A source that is not there says so. <strong>The ' +
+               'figures are this node\'s</strong>, drawn by its front ' +
+               'process; no control.' },
       // THE SCHEDULER (2026-09-22, #49), after the caches and before the
       // audit log: the last page whose subject is the process itself, and the
       // one that says whether the background work is being DONE. Drawn by
@@ -2684,6 +2741,16 @@ const SECTIONS = [
                'which lease, and what active-active mode still refuses to ' +
                'start without. Every clustered write is fenced by the ' +
                'node\'s membership, and a node that loses it exits.' },
+      // CELLS (#98, 2026-09-28), beside Cluster: one service deployed as
+      // several cells in several jurisdictions. Drawn by
+      // `admin-ui/cells_admin.ts`.
+      { path: '/admin/cells', label: 'Cells',
+        blurb: 'One service deployed as several cells, each a copy of the ' +
+               'whole stack in one legal jurisdiction: which cell this is, ' +
+               'which others there are and whether they answer, the global ' +
+               'tier\'s replica lag, how many people each cell holds, the ' +
+               'sessions held away from home, and another cell\'s residents ' +
+               'where its release policy permits.' },
       // MAIL (#63, 2026-09-22), beside Cluster: how this service SENDS
       // mail — the transport, where a link points, the realm's wording of
       // each message, a test message, and the Mail settings group. Drawn by
@@ -2973,7 +3040,24 @@ interface AdminConsoleDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The admin console at `/admin`: every page, the shell they are drawn in,
+ * and the form handlers behind them.
+ *
+ * It renders and decides nothing; the actions live in admin-core. Every GET
+ * also answers `?format=json`. The gate is unconditional: a console session
+ * of its own and one of two roles.
+ */
 class AdminConsole {
+  // What the Cluster page's `prepare` step last read from the other cells
+  // (#361): `{ at, rows, error? }`, or null in single-cell mode.
+  peerClustersNow: any = null;
+
+  /**
+   * Builds the console over the given modules.
+   *
+   * @param deps - the modules and helpers the console reads
+   */
   constructor(private readonly deps: AdminConsoleDeps) {
     deps.log.debug("Entering AdminConsole.constructor().");
     deps.log.debug("Leaving AdminConsole.constructor().");
@@ -2981,6 +3065,11 @@ class AdminConsole {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Returns the dependencies the composition root builds the console from.
+   *
+   * @returns the real modules
+   */
   static defaultDeps(): AdminConsoleDeps {
     log.debug("Entering AdminConsole.defaultDeps().");
     log.debug("Leaving AdminConsole.defaultDeps().");
@@ -3160,6 +3249,11 @@ class AdminConsole {
   // The work loading this module did with its instance (#50, R2): the
   // `WIRE_STEPS` below the class, in the order they are written. Run once by
   // the slot, for whichever instance is installed.
+  /**
+   * Runs the module's wire steps, in order, for the installed instance.
+   *
+   * @param instance - the console instance that was installed
+   */
   static wire(instance: AdminConsole): void {
     log.debug("Entering AdminConsole.wire(). " + WIRE_STEPS.length +
               " step(s).");
@@ -3173,6 +3267,12 @@ class AdminConsole {
   // predicate, used by both the flattening and the sidebar, so the two cannot
   // disagree about what they are looking at. A group has `items`; a page has a
   // `path` and never has `items`.
+  /**
+   * Tells whether a row of a section's items is a group of pages.
+   *
+   * @param item - a row of a section's `items`
+   * @returns true when the row has an `items` array
+   */
   isNavGroup(item) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.isNavGroup().");
@@ -3182,6 +3282,12 @@ class AdminConsole {
 
   // Every PAGE in one section, in sidebar order, with a group's pages spliced
   // in where the group sits. One level only — see the note above SECTIONS.
+  /**
+   * Lists every page in one section, in sidebar order, groups flattened.
+   *
+   * @param section - a row of SECTIONS
+   * @returns the section's pages
+   */
   sectionPages(section) {
     const { log } = this.deps;
     const self = this;
@@ -3207,6 +3313,11 @@ class AdminConsole {
   // describes every setting — the group NAME is all that is being checked, and
   // asking for a hundred and fifty-four descriptions to get twenty-two strings
   // would also drag a realm lookup into module load.
+  /**
+   * Lists every setting group config.js declares, in its order.
+   *
+   * @returns the group names
+   */
   declaredSettingGroups() {
     const { log, config } = this.deps;
     log.debug("Entering AdminConsole.declaredSettingGroups().");
@@ -3224,6 +3335,13 @@ class AdminConsole {
   // instance is installed, since #50's R2). Each would otherwise be found by a
   // person who could not find a setting, which is the slowest way to find any
   // of them.
+  /**
+   * Checks SETTING_HOMES against config.js's groups and the console's pages.
+   *
+   * Each problem is logged as an error under STS-ADMIN-0015.
+   *
+   * @returns the problems found, as sentences; empty when there are none
+   */
   checkSettingHomes() {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AdminConsole.checkSettingHomes().");
@@ -3271,6 +3389,12 @@ class AdminConsole {
     return problems;
   }
 
+  /**
+   * Escapes a value for HTML, drawing null and undefined as empty.
+   *
+   * @param v - the value to escape
+   * @returns the escaped text
+   */
   esc(v) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering AdminConsole.esc().");
@@ -3282,6 +3406,12 @@ class AdminConsole {
   // obvious one-liner — join with the markup and escape the result — escapes
   // the markup too, and the page then shows the tags it was supposed to render.
   // It did.
+  /**
+   * Draws a list of names, each in its own `<code>`, joined with commas.
+   *
+   * @param names - the names to draw
+   * @returns the list as HTML
+   */
   codeList(names) {
     const { log } = this.deps;
     const self = this;
@@ -3300,6 +3430,16 @@ class AdminConsole {
   // query through), and the trail's section crumb spends it. Nothing on the
   // drill-down reads these keys for anything else: their names belong to the
   // list's filter form, and a page showing one application has no `q`.
+  /**
+   * Picks a list page's filter and page parameters out of a query.
+   *
+   * Only the keys LIST_PARAMS names for the section are kept; the first of a
+   * repeated parameter wins.
+   *
+   * @param section - the list page's path
+   * @param query - the request's query object
+   * @returns the list view, as parameter names to strings
+   */
   listViewOf(section, query) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.listViewOf(). section=" + section);
@@ -3329,6 +3469,16 @@ class AdminConsole {
   // for the same reason — a redirect target taken out of a request body is an
   // open redirect, and one carrying a newline is a header injection. The worst
   // a hand-written `back` can now reach is another page of the same list.
+  /**
+   * Rebuilds a list view from a form's `back` query string.
+   *
+   * It is rebuilt through listViewOf() and never echoed, so it cannot carry
+   * an open redirect or a header injection.
+   *
+   * @param section - the list page's path
+   * @param raw - the `back` field's value
+   * @returns the list view; empty when the field cannot be parsed
+   */
   listViewFromBack(section, raw) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.listViewFromBack(). section=" + section);
@@ -3366,6 +3516,14 @@ class AdminConsole {
   // reader goes back to page 3 of the filter they were looking at rather than
   // to the top of everything. `leaf` is the thing drilled into, for the last
   // crumb.
+  /**
+   * Describes the section a drill-down hangs under, for the trail and nav.
+   *
+   * @param path - the section's path
+   * @param leaf - the thing drilled into, for the last crumb
+   * @param listView - optional; listViewOf()'s answer, carried on the href
+   * @returns the section's href, label, the leaf, and whether it is filtered
+   */
   upTo(path, leaf, listView?) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.upTo(). path=" + path);
@@ -3404,6 +3562,16 @@ class AdminConsole {
   // where the group began. Its heading is plain text for the same reason the
   // section's is, and the marker on the group holding the current page is a
   // rule down the left like the section's, one level in.
+  /**
+   * Draws the console's navigation: the realm chooser and every section.
+   *
+   * A realm administrator sees only the pages of their realm and no chooser.
+   *
+   * @param active - the path of the page being drawn
+   * @param up - upTo()'s answer on a drill-down, or nothing
+   * @param req - the request, or nothing
+   * @returns the `<nav>` as HTML
+   */
   navBar(active, up, req) {
     const { log, gateStateFor } = this.deps;
     const self = this;
@@ -3439,6 +3607,15 @@ class AdminConsole {
   // SECTIONS as one state may see it: service pages dropped for a realm
   // administrator, a group with nothing left dropped with them, and a section
   // with nothing left dropped too. The table itself is never edited.
+  /**
+   * Returns SECTIONS as one gate state may see them.
+   *
+   * For a realm administrator, service pages and any group or section left
+   * empty are dropped; the table itself is not changed.
+   *
+   * @param state - the gate state, or null
+   * @returns the sections to draw
+   */
   visibleSections(state): any[] {
     const { log, adminScope } = this.deps;
     const self = this;
@@ -3470,6 +3647,14 @@ class AdminConsole {
   }
 
   // One row of a section's list: a page, or a group holding pages.
+  /**
+   * Draws one row of a section's list: a page, or a group holding pages.
+   *
+   * @param item - the row
+   * @param active - the path of the page being drawn
+   * @param up - upTo()'s answer on a drill-down, or nothing
+   * @returns the `<li>` as HTML
+   */
   navItem(item, active, up) {
     const { log } = this.deps;
     const self = this;
@@ -3495,6 +3680,16 @@ class AdminConsole {
     return html;
   }
 
+  /**
+   * Draws one page's nav entry.
+   *
+   * The active page is plain text, or a link back up on a drill-down.
+   *
+   * @param item - the page's NAV row
+   * @param active - the path of the page being drawn
+   * @param up - upTo()'s answer on a drill-down, or nothing
+   * @returns the `<li>` as HTML
+   */
   navLink(item, active, up) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.navLink(). path=" + item.path);
@@ -3516,6 +3711,12 @@ class AdminConsole {
            '</a></li>';
   }
 
+  /**
+   * Shortens a crumb's text to MAX_CRUMB characters with an ellipsis.
+   *
+   * @param text - the crumb's text
+   * @returns the text, cut if it was longer
+   */
   shortCrumb(text) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.shortCrumb().");
@@ -3550,6 +3751,17 @@ class AdminConsole {
   // The root crumb is `Admin console` on every page including `/admin` itself,
   // where it is the only crumb and is not a link. A trail that appeared on some
   // pages and not others would be a trail nobody looks for.
+  /**
+   * Draws the breadcrumb trail from `Admin console` to the current page.
+   *
+   * On a drill-down the section crumb goes back to the filter and page the
+   * reader came from. The last crumb is never a link.
+   *
+   * @param active - the path of the page being drawn, or empty
+   * @param up - upTo()'s answer on a drill-down, or nothing
+   * @param title - the page's title, used where the page has no NAV row
+   * @returns the trail as HTML
+   */
   trailBar(active, up, title) {
     const { log } = this.deps;
     const self = this;
@@ -3619,6 +3831,14 @@ class AdminConsole {
   // So the banner names the realm the session is held by, and says the one
   // thing that is easy to get wrong about it. It is empty in every other case,
   // including every service that has defined no realm.
+  /**
+   * Draws the sentence saying the session belongs to another realm.
+   *
+   * It is empty in practice: a console session is never foreign now.
+   *
+   * @param info - the gate state
+   * @returns the sentence as HTML, or an empty string
+   */
   foreignSessionNote(info) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.foreignSessionNote().");
@@ -3638,6 +3858,15 @@ class AdminConsole {
       'href="/admin/realms">What a realm separates</a>.';
   }
 
+  /**
+   * Draws the banner saying what the gate makes of this reader.
+   *
+   * It covers the gate off, nobody signed in, the open and bootstrap windows,
+   * an unclaimed product console, a closed console and the roles held.
+   *
+   * @param gate - the gate state
+   * @returns the banner as HTML
+   */
   gateBanner(gate) {
     const { log, rbac } = this.deps;
     const self = this;
@@ -3769,6 +3998,14 @@ class AdminConsole {
       'view of the same lists, for somebody else.' + elsewhere + '</div>';
   }
 
+  /**
+   * Builds the address of the reader's own user portal.
+   *
+   * @param req - the request
+   * @param gate - the gate state, whose realm the person signed in through
+   *   chooses the portal
+   * @returns the portal's absolute URL
+   */
   portalHref(req, gate) {
     const { log, realms } = this.deps;
     log.debug("Entering AdminConsole.portalHref().");
@@ -3784,9 +4021,30 @@ class AdminConsole {
   // design — this and the switch route below are the two callers in this
   // service that do not want it, and they say so here rather than working
   // around it somewhere else.
+  /**
+   * Returns the base URL with the current realm's prefix taken off.
+   *
+   * @param req - the request
+   * @returns the base URL at the root
+   */
   realmRoot(req) {
     const { log, baseUrlOf, realms } = this.deps;
     log.debug("Entering AdminConsole.realmRoot().");
+    // AT A CELL'S OWN CONSOLE ADDRESS, THAT ADDRESS (#361, 2026-09-30).
+    // baseUrlOf() is the pinned public name, so the realm switcher, the
+    // portal link and every other absolute URL built here sent a console
+    // opened at `https://cac1.<public name>` back to the shared name —
+    // another host, no session, a second sign-in, and (rcbj found) a
+    // passkey then refused for the wrong origin. The address is one the
+    // service is configured with (`cells.consoleUrl`), never the Host's say.
+    const cells = require('../common/cells');
+    const hit = cells.consoleOfHost(String((req && req.headers &&
+                                            req.headers.host) || ''));
+    if (hit) {
+      log.debug("Leaving AdminConsole.realmRoot(). The cell's own console " +
+                "address.");
+      return hit.consoleUrl;
+    }
     const withRealm = baseUrlOf(req);
     log.debug("Leaving AdminConsole.realmRoot().");
     return withRealm.slice(0, withRealm.length - realms.currentPrefix().length);
@@ -3796,6 +4054,12 @@ class AdminConsole {
   // stripped by the time any route sees it, which is the whole trick, and is
   // also what makes this the path to re-enter in the other realm — so switching
   // lands on the same page with the same filter rather than back at /admin.
+  /**
+   * Returns the request's path and query without the realm prefix.
+   *
+   * @param req - the request
+   * @returns the path inside the realm; `/admin` when there is none
+   */
   realmRelativePath(req) {
     const { log, realms } = this.deps;
     log.debug("Entering AdminConsole.realmRelativePath().");
@@ -3821,6 +4085,12 @@ class AdminConsole {
   // else survives — the filter, the page number, the search — because that is
   // what the reader is looking at, which is why this is a subtraction and not a
   // bare path.
+  /**
+   * Returns where Refresh points: this page without `notice` and `error`.
+   *
+   * @param req - the request
+   * @returns the root-relative path and query, without the realm prefix
+   */
   refreshHref(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.refreshHref().");
@@ -3872,6 +4142,14 @@ class AdminConsole {
   // is not true of that page either: what it describes is a session that has
   // ENDED, which is the one thing on this console that will not have changed
   // since it was drawn.
+  /**
+   * Draws the Refresh link at the top of a page.
+   *
+   * @param req - the request
+   * @param gate - the gate state
+   * @returns the link as HTML; empty when the gate is on and nobody is
+   *   signed in
+   */
   refreshLink(req, gate) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.refreshLink().");
@@ -3904,6 +4182,12 @@ class AdminConsole {
   // `/admin/applications/new`'s conditional fields off a form that cannot use
   // them, and `newUserPage()`'s whole form off a process with no directory.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the Sign out button, a POST form to the console's sign-out path.
+   *
+   * @param gate - the gate state
+   * @returns the form as HTML; empty when there is no session
+   */
   signOutControl(gate) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.signOutControl().");
@@ -3958,6 +4242,15 @@ class AdminConsole {
   // signed in as here" is on every page of this console without opening
   // anything — which the bare button never gave.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the account menu: the reader's portal link and Sign out.
+   *
+   * It is a `<details>`, so it needs no script.
+   *
+   * @param req - the request
+   * @param gate - the gate state
+   * @returns the menu as HTML; empty when there is no session
+   */
   userMenu(req, gate) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.userMenu().");
@@ -3990,6 +4283,12 @@ class AdminConsole {
     return html;
   }
 
+  /**
+   * Draws the trust realm switcher, a GET form to the realm switch route.
+   *
+   * @param req - the request
+   * @returns the form as HTML; empty when no realm is defined
+   */
   realmChooser(req) {
     const { log, realms } = this.deps;
     const self = this;
@@ -4054,6 +4353,15 @@ class AdminConsole {
   // markup and those are the two shapes it generates. Anything with an
   // attribute already is either hand-tooltipped or doing something this pass
   // should not guess about.
+  /**
+   * Adds tooltips to headings and labels from the prose beside them.
+   *
+   * A heading takes the first note after it, a label the nearest note above
+   * it. An element that already has a `title` is left as it was.
+   *
+   * @param inner - the page body as HTML
+   * @returns the body with the tooltips added
+   */
   withDerivedTips(inner) {
     const { log } = this.deps;
     const self = this;
@@ -4160,6 +4468,16 @@ class AdminConsole {
   // and what those lines say is which REALM the pages are about, which is a
   // sentence about pages that are not there.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the sidebar: the realm being shown and the navigation.
+   *
+   * @param active - the path of the page being drawn
+   * @param up - upTo()'s answer on a drill-down, or nothing
+   * @param req - the request
+   * @param gate - the gate state
+   * @returns the `<aside>` as HTML; empty when the gate is on and nobody is
+   *   signed in
+   */
   sideColumn(active, up, req, gate) {
     const { log, realms, config } = this.deps;
     log.debug("Entering AdminConsole.sideColumn().");
@@ -4245,12 +4563,22 @@ class AdminConsole {
   // a fact that throws is drawn as `unknown`: a footer that took the console
   // down would cost every page for one line of information.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads what this process is running as, for the page footer.
+   *
+   * The process arrangement, the mode, the open store and where the two
+   * secrets come from; a fact that throws is `unknown`.
+   *
+   * @returns the facts, by name
+   */
   runtimeFacts(): Record<string, any> {
     const { log, config, mode, persistence, secrets, keystore } = this.deps;
     log.debug("Entering AdminConsole.runtimeFacts().");
     const facts: Record<string, any> = {};
     try {
-      const count = parseInt(config.value('workers.requestCount'), 10) || 0;
+      // The #364 rule: the default of one worker is none without a store
+      // that coordinates.
+      const count = require('../common/process_memory').requestWorkers();
       const rawDispatch = config.value('workers.dispatch');
       const dispatch = (Array.isArray(rawDispatch) ? rawDispatch
                                                    : String(rawDispatch || '')
@@ -4269,7 +4597,8 @@ class AdminConsole {
           (surfaceCount
             ? ' + ' + surfaceCount + ' for the console and portal' : '') +
           (process.env.STS_REQUEST_WORKER
-            ? '; this page from ' + pool + 'worker ' + process.pid : '') + ')'
+            ? '; this page from ' + pool + 'worker ' + WorkerChannel.id()
+            : '') + ')'
         : 'single process';
     } catch (e) {
       log.debug("Caught in AdminConsole.runtimeFacts(): " +
@@ -4353,6 +4682,15 @@ class AdminConsole {
   // a database host and the paths secrets are read from. Those belong to people
   // who may read `/admin/persistence` and `/admin/secrets`, not to anybody who
   // can reach the sign-out page.
+  /**
+   * Draws the footer line of runtime facts.
+   *
+   * A realm administrator sees only the mode.
+   *
+   * @param gate - the gate state
+   * @returns the line as HTML; empty when the gate is on and nobody is
+   *   signed in
+   */
   runtimeFooter(gate) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.runtimeFooter().");
@@ -4383,6 +4721,20 @@ class AdminConsole {
     return html;
   }
 
+  /**
+   * Draws a whole console page around a body.
+   *
+   * The shell adds the styles, sidebar, heading, Refresh and account menu,
+   * trail, gate banner, derived tooltips and the footer.
+   *
+   * @param title - the page's title
+   * @param active - the path of the page, which marks the nav
+   * @param inner - the page body as HTML
+   * @param up - upTo()'s answer on a drill-down, or nothing
+   * @param gate - the gate state
+   * @param req - the request
+   * @returns the whole document as HTML
+   */
   page(title, active, inner, up, gate, req) {
     const { log, applications, persistence } = this.deps;
     log.debug("Entering AdminConsole.page(). title=" + title + ", up=" +
@@ -5223,6 +5575,14 @@ class AdminConsole {
   // own session, and a page that fell back to the provider's would be a relying
   // party reading the provider's cookie — which is the arrangement this
   // replaced.
+  /**
+   * Returns the sign-on session behind the console's own, for reporting.
+   *
+   * The gate does not read it.
+   *
+   * @param req - the request
+   * @returns what consoleSession() answers for the request
+   */
   consoleSignOn(req) {
     const { log, consoleSession } = this.deps;
     log.debug("Entering AdminConsole.consoleSignOn().");
@@ -5252,6 +5612,13 @@ class AdminConsole {
   // `checkCsrf()` passes a request with no session, because there is nothing to
   // forge on behalf of an anonymous caller. See common/websecurity.ts.
   // ---------------------------------------------------------------------------
+  /**
+   * Puts the session's CSRF token into every POST form in a page.
+   *
+   * @param req - the request
+   * @param html - the page as HTML
+   * @returns the page with the token added; unchanged with no session
+   */
   withCsrf(req, html) {
     const { log, consoleRpSession, websecurity } = this.deps;
     log.debug("Entering AdminConsole.withCsrf().");
@@ -5287,6 +5654,12 @@ class AdminConsole {
   // the lead notes and warnings that say what the page is, before the first
   // section of what it holds. A page with no heading gets it at the foot.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the Endpoints section of a Protocols page.
+   *
+   * @param rows - the endpoint rows protocol_endpoints.ts lists
+   * @returns the heading and table as HTML
+   */
   endpointsSection(rows) {
     const { log } = this.deps;
     const self = this;
@@ -5309,6 +5682,19 @@ class AdminConsole {
     return '<h2>Endpoints</h2><table class="kv">' + body + '</table>';
   }
 
+  /**
+   * Adds this realm's endpoints to a Protocols page's answer.
+   *
+   * Only where the request is for that page: the JSON gains
+   * `protocolEndpoints`, and the HTML the section, unless it is a drill-down.
+   *
+   * @param req - the request
+   * @param json - the page's JSON answer
+   * @param active - the path of the page
+   * @param html - the page body as HTML
+   * @param up - upTo()'s answer on a drill-down, a path string, or nothing
+   * @returns the `json` and `html` to send
+   */
   withProtocolEndpoints(req, json, active, html, up) {
     const { log, protocolEndpoints } = this.deps;
     log.debug("Entering AdminConsole.withProtocolEndpoints().");
@@ -5341,6 +5727,11 @@ class AdminConsole {
   // a page that is not under Protocols (what a rename or a move leaves behind).
   // `tests/protocol_endpoints.js` fails on either; nothing else can see a page
   // appear.
+  /**
+   * Compares the Protocols pages with the endpoints table and exemptions.
+   *
+   * @returns `unlisted` (pages with no row) and `stray` (rows for no page)
+   */
   protocolEndpointDrift() {
     const { log, protocolEndpoints } = this.deps;
     log.debug("Entering AdminConsole.protocolEndpointDrift().");
@@ -5371,6 +5762,20 @@ class AdminConsole {
   // not, and the JSON answer ignores it either way — a way back up is a
   // property of a page a person is reading, and a caller of ?format=json has
   // the URL it asked for.
+  /**
+   * Answers a console page as JSON for `?format=json`, as HTML otherwise.
+   *
+   * Every answer is `no-store`; the HTML is drawn by page() with the CSRF
+   * token added.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param json - the page's JSON answer
+   * @param title - the page's title
+   * @param active - the path of the page
+   * @param html - the page body as HTML
+   * @param up - optional; upTo()'s answer on a drill-down
+   */
   respond(req, res, json, title, active, html, up?) {
     const { log, gateStateFor } = this.deps;
     log.debug("Entering AdminConsole.respond(). title=" + title);
@@ -5397,6 +5802,17 @@ class AdminConsole {
   // is a 303 so that the reload after it is a GET — a 302 here leaves the
   // browser able to repeat the POST on refresh, which for "revoke everything"
   // is a surprise.
+  /**
+   * Answers a console form's POST.
+   *
+   * A JSON request gets 200 or 400 with the result, its `errorCode` removed;
+   * a form gets a 303 to `target` carrying `notice` or `error`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param target - the page to send a browser back to
+   * @param result - the action's result, with `ok` and a message or errors
+   */
   respondToAction(req, res, target, result) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AdminConsole.respondToAction(). ok=" + result.ok);
@@ -5529,6 +5945,13 @@ class AdminConsole {
   // last and is checked for JSON BEFORE html deliberately: a browser sends
   // `text/html,...,*/*` and would match a naive "does it mention json" test on
   // the wildcard alone, so the html half is what decides when both are present.
+  /**
+   * Tells whether the caller wants JSON rather than a page.
+   *
+   * @param req - the request
+   * @returns true for `?format=json`, a JSON body, or an Accept asking for
+   *   JSON and not HTML
+   */
   wantsJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.wantsJson().");
@@ -5553,6 +5976,13 @@ class AdminConsole {
   // unclaimed console (#103): a flag on the session's own row, so a browser
   // that keeps clicking is one event, and a new sign-in is a new one. The
   // response itself is marked with the same code by the caller.
+  /**
+   * Logs a refusal of the unclaimed product console once per session.
+   *
+   * @param state - the gate state, whose session is flagged
+   * @param code - the error code
+   * @param what - what was refused, for the log line
+   */
   noteBootstrapRefusal(state, code, what) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AdminConsole.noteBootstrapRefusal(). " + code);
@@ -5568,6 +5998,19 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.noteBootstrapRefusal().");
   }
 
+  /**
+   * Answers a refusal as JSON or as a console page, whichever the caller
+   * reads.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param code - the `error` value of the JSON answer
+   * @param title - the refusal's headline
+   * @param message - the sentence saying why
+   * @param detail - what is needed, the group, the sign-in URL, the roles
+   *   and any extra HTML
+   */
   // error-code: none — the helper's definition, not a call to it.
   refuse(req, res, status, code, title, message, detail) {
     const { log, gateStateFor } = this.deps;
@@ -5624,10 +6067,24 @@ class AdminConsole {
   // somebody who has been sitting on a form for longer than one.
   // `portal/portal.ts` fixed the same mistake the same way on the same day and
   // its comment carries the rest.
+  /**
+   * Returns the default realm's console as an absolute URL.
+   *
+   * @param req - the request
+   * @returns the URL of `/admin` in the default realm
+   */
   defaultRealmSignInUrl(req) {
     const { log, realms, baseUrlOf } = this.deps;
     log.debug("Entering AdminConsole.defaultRealmSignInUrl().");
     log.debug("Leaving AdminConsole.defaultRealmSignInUrl().");
+    // At a cell's own console address, that address (#361): realmRoot()'s
+    // reason. The default realm's console is at its root.
+    const cells = require('../common/cells');
+    const hit = cells.consoleOfHost(String((req && req.headers &&
+                                            req.headers.host) || ''));
+    if (hit) {
+      return hit.consoleUrl + '/admin';
+    }
     return realms.run(realms.DEFAULT_REALM, function () {
       return baseUrlOf(req) + '/admin';
     });
@@ -5692,6 +6149,12 @@ class AdminConsole {
   // holding no role names both groups and the realm, which is the page they
   // actually reach, and it is the page where that sentence is ACTIONABLE. The
   // two that were context are gone on purpose.
+  /**
+   * Starts the console's OIDC sign-in, returning to the page asked for.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   sendToConsoleSignIn(req, res) {
     const { log, oidcRp } = this.deps;
     log.debug("Entering AdminConsole.sendToConsoleSignIn().");
@@ -5714,6 +6177,15 @@ class AdminConsole {
   }
 
   // What `sendToConsoleSignIn()` does with the answer.
+  /**
+   * Finishes sendToConsoleSignIn() with the relying party's answer.
+   *
+   * A flow that could not start is refused with a 503 saying why.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param started - oidc_rp's answer, with `ok`, `reason` and `why`
+   */
   startedConsoleSignIn(req, res, started) {
     const { log, mode, errorCodes, realms } = this.deps;
     log.debug("Entering AdminConsole.startedConsoleSignIn().");
@@ -5751,6 +6223,12 @@ class AdminConsole {
   // The message a redirect brought back, if any. Escaped where it is rendered;
   // capped where it is read, so a hand-written URL cannot make the page
   // arbitrarily long.
+  /**
+   * Draws the notice and error a redirect brought back, each capped.
+   *
+   * @param req - the request
+   * @returns the messages as HTML; empty when there are none
+   */
   messagesOf(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.messagesOf().");
@@ -5761,6 +6239,13 @@ class AdminConsole {
            (error ? '<div class="err">' + this.esc(error) + '</div>' : '');
   }
 
+  /**
+   * Draws one statistics tile.
+   *
+   * @param n - the number
+   * @param label - what it counts
+   * @returns the tile as HTML
+   */
   tile(n, label) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.tile().");
@@ -5838,6 +6323,14 @@ class AdminConsole {
   // into a <summary> UNESCAPED. A caller that hands this an unescaped `<` loses
   // it to the tag stripper either way, which is the same thing escaping would
   // have done to it.
+  /**
+   * Returns a fragment's visible text: tags removed, whitespace collapsed.
+   *
+   * Entities are left as they were, so the result is still valid HTML text.
+   *
+   * @param html - an HTML fragment
+   * @returns the text
+   */
   plainTextOf(html) {
     return String(html == null ? '' : html)
       .replace(/<[^>]*>/g, '')
@@ -5848,6 +6341,12 @@ class AdminConsole {
   // How long that text READS, which is not its length: `&mdash;` is one dash
   // and seven characters. Only the two measurements use this — what goes on the
   // page is always plainTextOf()'s own output.
+  /**
+   * Measures how long text reads, counting each entity as one character.
+   *
+   * @param text - plainTextOf()'s output
+   * @returns the length
+   */
   visibleLength(text) {
     return text.replace(/&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g,
                         '-').length;
@@ -5870,6 +6369,14 @@ class AdminConsole {
   // out of it: an abbreviation's stop is followed by a letter, not a space. The
   // thirty-character minimum is what keeps a leading "e.g. " — or any other
   // short opener — from becoming the whole summary.
+  /**
+   * Finds where the opening sentence ends, as an offset into the markup.
+   *
+   * Only at element depth zero and at least thirty characters in.
+   *
+   * @param html - an HTML fragment
+   * @returns the offset after the sentence's stop, or -1
+   */
   sentenceEnd(html) {
     let depth = 0;
     for (let i = 0; i < html.length; i++) {
@@ -5908,6 +6415,13 @@ class AdminConsole {
   // that the words in the summary are the words the body opens with, so that
   // the repetition below reads as *read more* rather than as the same sentence
   // printed twice.
+  /**
+   * Cuts text to a summary line at a word boundary, ending in an ellipsis.
+   *
+   * @param text - the text
+   * @param max - optional; the length, SUMMARY_CHARS by default
+   * @returns the text, cut if it was longer
+   */
   teaserOf(text, max?) {
     const limit = max || SUMMARY_CHARS;
     if (this.visibleLength(text) <= limit) {
@@ -5941,6 +6455,12 @@ class AdminConsole {
   // The entities a title attribute cannot show, resolved. Only tip() needs it —
   // see the comment in there. `&amp;` is resolved LAST so that `&amp;lt;` comes
   // out as the four characters somebody wrote rather than as a `<`.
+  /**
+   * Resolves the entities a title attribute cannot show.
+   *
+   * @param text - the text
+   * @returns the text with those entities resolved, `&amp;` last
+   */
   unescapeText(text) {
     return String(text)
       .replace(/&mdash;|&ndash;/g, '\u2014')
@@ -5987,6 +6507,14 @@ class AdminConsole {
   // whole text. Browsers wrap a long title perfectly well; the reason the
   // default is short is that a teaser competes with the fold under it, and
   // where there is no fold there is nothing to compete with.
+  /**
+   * Builds a `title` attribute, with its leading space, from prose.
+   *
+   * @param text - the prose, as markup or plain text
+   * @param max - optional; the length, TIP_CHARS by default; `Infinity`
+   *   keeps the whole text
+   * @returns the attribute; empty when there is no text
+   */
   tip(text, max?) {
     const plain = this.plainTextOf(text);
     if (!plain) {
@@ -6006,6 +6534,13 @@ class AdminConsole {
   // could be cut out of the markup cleanly it becomes the summary and the body
   // is what is left, so nothing is said twice; where it could not, the summary
   // is a truncation and the body is the whole note.
+  /**
+   * Splits a note into the summary and the body of a fold.
+   *
+   * @param html - the note as HTML
+   * @param label - a summary to use instead of the derived one, or nothing
+   * @returns the `summary` and `body`, both as HTML
+   */
   foldOf(html, label) {
     if (label) {
       // A LABEL IS THE ONE THING THAT IS ESCAPED. Everything else here is text
@@ -6045,6 +6580,13 @@ class AdminConsole {
   // A paragraph of explanation. Short ones are the paragraph they always were;
   // long ones fold. `label` overrides the derived summary and forces the fold,
   // because a caller that bothered to name a block wanted the block.
+  /**
+   * Draws a paragraph of explanation, folded when longer than a line.
+   *
+   * @param html - the paragraph as HTML
+   * @param label - optional; a summary, which also forces the fold
+   * @returns the note as HTML
+   */
   note(html, label?) {
     // Coerced once, here: a caller may hand this a number of rows or a
     // fragment built by a .map(), and everything below slices and measures.
@@ -6064,6 +6606,13 @@ class AdminConsole {
   // looks like a page with a caveat on it. Folding a warning into something
   // that looks like body text would be the one case where this change hid a
   // fact rather than tidying it.
+  /**
+   * Draws a warning box, folded when longer than a line.
+   *
+   * @param html - the warning as HTML
+   * @param label - optional; a summary, which also forces the fold
+   * @returns the warning as HTML
+   */
   warn(html, label?) {
     // Coerced once, here: a caller may hand this a number of rows or a
     // fragment built by a .map(), and everything below slices and measures.
@@ -6091,6 +6640,13 @@ class AdminConsole {
   // `aria-label` names WHICH table, because a page with two of these otherwise
   // announces two identical regions and the label is the only thing telling a
   // reader arriving in one of them which it is.
+  /**
+   * Wraps a wide table in a focusable box that scrolls sideways.
+   *
+   * @param label - the region's accessible name
+   * @param html - the whole table as HTML
+   * @returns the wrapped table as HTML
+   */
   wideTable(label, html) {
     return '<div class="wide" tabindex="0" role="region" aria-label="' +
       this.esc(label) + '">' + html + '</div>';
@@ -6101,6 +6657,16 @@ class AdminConsole {
   // and then argues it for a paragraph, which is exactly the shape a fold
   // suits: the list stays a list of claims, and the argument for each is under
   // it.
+  /**
+   * Draws one item of a prose list, folded when longer than a line.
+   *
+   * An item opening with a link is never folded; one opening with `<code>`
+   * keeps it in the summary.
+   *
+   * @param html - the item as HTML
+   * @param label - optional; a summary, which also forces the fold
+   * @returns the `<li>` as HTML
+   */
   bullet(html, label?) {
     const { log } = this.deps;
     // Coerced once, here: a caller may hand this a number of rows or a
@@ -6150,11 +6716,23 @@ class AdminConsole {
   // The three formatters below are deliberately without entering/leaving logs:
   // they are called once per table cell and would drown everything else in the
   // log.
+  /**
+   * Formats an instant as a UTC date and time without milliseconds.
+   *
+   * @param ms - milliseconds since the epoch
+   * @returns the text; a dash when there is none
+   */
   whenText(ms) {
     if (!ms) return '—';
     return new Date(ms).toISOString().replace('T', ' ').replace(/\.\d+Z$/, 'Z');
   }
 
+  /**
+   * Formats a duration as days, hours, minutes and seconds.
+   *
+   * @param ms - the duration in milliseconds
+   * @returns the text, such as `1d 2h 3m 4s`
+   */
   durationText(ms) {
     const s = Math.floor((ms || 0) / 1000);
     const days = Math.floor(s / 86400);
@@ -6168,6 +6746,12 @@ class AdminConsole {
     return parts.join(' ');
   }
 
+  /**
+   * Returns the CSS class for a certificate's state.
+   *
+   * @param state - `valid`, `expired`, `not yet valid`, `revoked` or other
+   * @returns the class name
+   */
   stateClass(state) {
     if (state === 'valid') return 'state-valid';
     if (state === 'expired' ||
@@ -6180,6 +6764,13 @@ class AdminConsole {
   // string is the title attribute, so it can be hovered and read. Truncating
   // with no way back would make the jti column decorative, and the jti is the
   // thing every button on the tokens page acts on.
+  /**
+   * Draws a long opaque value shortened, with the whole value in the title.
+   *
+   * @param value - the value to draw; a dash when empty
+   * @param keep - how many characters to keep (18 when not given)
+   * @returns a <code> element as HTML
+   */
   shortened(value, keep) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.shortened().");
@@ -6195,6 +6786,15 @@ class AdminConsole {
            '&hellip;</code>';
   }
 
+  /**
+   * Draws a value clipped to a limit, with the whole of it on focus.
+   *
+   * A value over the limit gets a hover/focus panel holding the full text.
+   *
+   * @param value - the value to draw; a dash when null or empty
+   * @param keep - the character limit (CLIP_CHARS when not given)
+   * @returns the clipped value as HTML
+   */
   clipped(value, keep) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.clipped().");
@@ -6219,6 +6819,13 @@ class AdminConsole {
   // One attribute's values, clipped, one per line. Written once because four
   // directory pages draw exactly this cell and a fifth written by hand is the
   // one that goes back to printing the raw value.
+  /**
+   * Draws an attribute's values, each clipped, one per line.
+   *
+   * @param values - one value or an array of them
+   * @param keep - optional; the character limit passed to clipped()
+   * @returns the values as one inline-block column of HTML
+   */
   clippedValues(values, keep?) {
     const { log } = this.deps;
     const self = this;
@@ -6270,6 +6877,15 @@ class AdminConsole {
   // tell those two apart. A SAML NameID and a Kerberos client principal are ONE
   // name each, so they fill the Subject column and leave this one empty rather
   // than being printed twice to avoid an empty cell.
+  /**
+   * Draws the tokens table's User cell for one issued record.
+   *
+   * Only a JWT carries a username beside its sub; the other families get a
+   * dash with a tooltip saying why.
+   *
+   * @param record - an issued-credential row from admin_stats
+   * @returns the cell's content as HTML
+   */
   userCell(record) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.userCell().");
@@ -6286,6 +6902,12 @@ class AdminConsole {
       '">—</span>';
   }
 
+  /**
+   * Draws the tokens table's Subject cell: a JWT's sub, else its subject.
+   *
+   * @param record - an issued-credential row from admin_stats
+   * @returns the shortened subject as HTML
+   */
   subjectCell(record) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.subjectCell().");
@@ -6298,6 +6920,15 @@ class AdminConsole {
   }
 
   // Who it was issued FOR: the party meant to accept it.
+  /**
+   * Draws the party a credential was issued for.
+   *
+   * The audience of an assertion (or "unrestricted"), the service of a
+   * ticket, or the client_id of a token.
+   *
+   * @param record - an issued-credential row from admin_stats
+   * @returns the cell's content as HTML
+   */
   partyCell(record) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.partyCell().");
@@ -6336,6 +6967,15 @@ class AdminConsole {
   // same question — a scope says what an access token authorises, an enc-type
   // says which cipher sealed a ticket — and a header naming one of them would
   // make the other two rows look like answers to it.
+  /**
+   * Draws the one family-specific fact for a row.
+   *
+   * Signed or unsigned for an assertion, the enc-type for a ticket, and
+   * the scope for a token.
+   *
+   * @param record - an issued-credential row from admin_stats
+   * @returns the cell's content as HTML
+   */
   detailCell(record) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.detailCell().");
@@ -6366,6 +7006,15 @@ class AdminConsole {
 
   // How the holder gets to use it, which is the question the DPoP column was
   // already asking and which the other two families have their own answers to.
+  /**
+   * Draws how the holder presents the credential.
+   *
+   * bearer for an assertion, TGS-REQ or AP-REQ for a ticket, and DPoP or
+   * Bearer for a token.
+   *
+   * @param record - an issued-credential row from admin_stats
+   * @returns the cell's content as HTML
+   */
   presentedCell(record) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.presentedCell().");
@@ -6417,6 +7066,16 @@ class AdminConsole {
   //
   // `listView` is the tokens page as the reader left it, carried into the query
   // so the drill-down's trail comes back to the same filter and the same page.
+  /**
+   * Draws a credential's identifier as a link to its lineage page.
+   *
+   * A Kerberos ticket, or a record with no identifier, gets a dash with a
+   * tooltip instead of a link.
+   *
+   * @param record - an issued-credential row from admin_stats
+   * @param listView - the tokens page's list state, carried into the link
+   * @returns the cell's content as HTML
+   */
   identifierCell(record, listView) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.identifierCell().");
@@ -6471,6 +7130,17 @@ class AdminConsole {
   // what pressing it changes, and **the second is what the tooltip is built
   // from** — a `record-only` button that read like a `protocol` one would be
   // exactly the lie the old cell was avoiding.
+  /**
+   * Draws the Revoke or Restore form for one issued credential.
+   *
+   * A record-only credential (an assertion, a ticket, an SVID) is marked
+   * in this service's own record and nothing else; a record with no jti
+   * gets a dash instead of a form.
+   *
+   * @param record - an issued-credential row from admin_stats
+   * @param backRow - the list state to return to, posted as `back`
+   * @returns the form, or the dash, as HTML
+   */
   actionCell(record, backRow) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.actionCell().");
@@ -6524,6 +7194,14 @@ class AdminConsole {
       (recordOnly ? ' (record only)' : '') + '</button></form>';
   }
 
+  /**
+   * Draws one row of the tokens table for a single credential.
+   *
+   * @param record - an issued-credential row from admin_stats
+   * @param backRow - the list state its form posts as `back`
+   * @param listView - the list state carried into its identifier link
+   * @returns a <tr> as HTML
+   */
   issuedRow(record, backRow, listView) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.issuedRow().");
@@ -6576,6 +7254,12 @@ class AdminConsole {
   // one prints exactly what that column printed, so three families out of four
   // are untouched; a group prints its kinds in the order they were issued,
   // which for a code redemption is access token, refresh token, ID Token.
+  /**
+   * Draws what an issued set contains, in the order it was issued.
+   *
+   * @param set - a set from stats.issuedSets()
+   * @returns the set's kinds, and its size when grouped, as HTML
+   */
   contentsCell(set) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.contentsCell().");
@@ -6599,6 +7283,15 @@ class AdminConsole {
   // either would be this column choosing which member matters. `mixed` says so
   // and the tooltip counts them, which is the same refusal-to-average the
   // sessions page's expiry column makes.
+  /**
+   * Draws the state cell of an issued set.
+   *
+   * A set whose members disagree reads `mixed`, with the counts per state
+   * in its tooltip.
+   *
+   * @param set - a set from stats.issuedSets()
+   * @returns a <td> as HTML
+   */
   setStateCell(set) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.setStateCell().");
@@ -6627,6 +7320,12 @@ class AdminConsole {
   // members have two, and the earlier one first because it is the one somebody
   // debugging a refused call has arrived to find: the access token died at
   // 12:19 and the refresh token that could mint another is good until tomorrow.
+  /**
+   * Draws when a set's first member expires, and its last if different.
+   *
+   * @param set - a set from stats.issuedSets()
+   * @returns the expiry text or range as HTML, or a dash
+   */
   setExpiryCell(set) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.setExpiryCell().");
@@ -6656,6 +7355,15 @@ class AdminConsole {
   // why the two cases are here rather than in identifierCell(): that function
   // answers "what is this credential called", and this one answers "where does
   // this row go".
+  /**
+   * Draws a set's identifier: a link to the set page for a group.
+   *
+   * A set of one draws its member's identifier cell instead.
+   *
+   * @param set - a set from stats.issuedSets()
+   * @param listView - the tokens page's list state, carried into the link
+   * @returns the cell's content as HTML
+   */
   setIdentifierCell(set, listView) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.setIdentifierCell().");
@@ -6690,6 +7398,16 @@ class AdminConsole {
   // offers Revoke, because the useful act there is finishing the job — the way
   // back for the one member somebody wants un-revoked is its own button on the
   // set page.
+  /**
+   * Draws the Revoke set or Restore set form for a grouped set.
+   *
+   * A set of one draws its member's action cell; a set with nothing
+   * revocable gets a dash.
+   *
+   * @param set - a set from stats.issuedSets()
+   * @param backRow - the list state to return to, posted as `back`
+   * @returns the form, or the dash, as HTML
+   */
   setActionCell(set, backRow) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.setActionCell().");
@@ -6723,6 +7441,16 @@ class AdminConsole {
       (allRevoked ? 'Restore set' : 'Revoke set') + '</button></form>';
   }
 
+  /**
+   * Draws one row of the tokens table for an issued set.
+   *
+   * Most cells are drawn from the set's first member.
+   *
+   * @param set - a set from stats.issuedSets()
+   * @param backRow - the list state its form posts as `back`
+   * @param listView - the list state carried into its identifier link
+   * @returns a <tr> as HTML
+   */
   issuedSetRow(set, backRow, listView) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.issuedSetRow().");
@@ -6775,6 +7503,16 @@ class AdminConsole {
   // would be clamped by pagingOf() and read as the box ignoring what was typed.
   //
   // `spec`: { path, query, param, pageParam, label, placeholder, what }
+  /**
+   * Draws a one-box search form over one section of a multi-table page.
+   *
+   * The form submits to a fragment naming itself, carries every other page
+   * parameter, and drops the search term and the section's page number.
+   *
+   * @param spec - the path, query, param, pageParam, label, placeholder
+   *   and what of the search
+   * @returns the form, and the optional note under it, as HTML
+   */
   sectionSearchForm(spec) {
     const { log, queryOne, pageParamsOf, queryWith } = this.deps;
     const self = this;
@@ -6826,6 +7564,14 @@ class AdminConsole {
   // select would show a size that is not the one being used and would silently
   // change it on the next Filter — which is a control that lies about the page
   // it is on.
+  /**
+   * Draws the options of the rows-per-page select.
+   *
+   * A size that is not one of the offered choices is added to the list.
+   *
+   * @param perPage - the page size in use, which is marked selected
+   * @returns the <option> elements as HTML
+   */
   perPageOptions(perPage) {
     const { log, DEFAULT_PER_PAGE, MAX_ROWS } = this.deps;
     log.debug("Entering AdminConsole.perPageOptions().");
@@ -6859,6 +7605,19 @@ class AdminConsole {
   // the thing this form changes, and page 4 of fifty-row pages is not page 4 of
   // anything afterwards, which is the same sentence as the paragraph above
   // about the tables below.
+  /**
+   * Draws a stand-alone rows-per-table form for a drill-down page.
+   *
+   * Submitting it resets every table's page to the first.
+   *
+   * @param path - the page the form submits to
+   * @param key - the name of the hidden parameter that selects the drill-down
+   * @param value - that parameter's value
+   * @param perPage - the page size in use
+   * @param extraNote - optional; a sentence added to the form's note
+   * @param carry - optional; the list filter to carry as hidden inputs
+   * @returns the form as HTML
+   */
   perPageForm(path, key, value, perPage, extraNote?, carry?) {
     const { log } = this.deps;
     const self = this;
@@ -6887,6 +7646,12 @@ class AdminConsole {
   // both of the controls that need it need the same half: a form that changes
   // the page size, and anything else that lands the reader at the top of a list
   // rather than where they were in it.
+  /**
+   * Returns a list view without its `page` and `per` parameters.
+   *
+   * @param view - the list view's parameters
+   * @returns a new object holding every other parameter
+   */
   filterOnly(view) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.filterOnly().");
@@ -6934,6 +7699,17 @@ class AdminConsole {
   // on a page for the reason pagingOf() gives — a drill-down draws five of
   // these and each must send its reader back to its own table, not to the first
   // one.
+  /**
+   * Builds the paging control for one list, as a head and a foot copy.
+   *
+   * Only the head copy carries the id its links' fragment names; both are
+   * empty when the list fits on one page.
+   *
+   * @param path - the page the links point at
+   * @param params - the page parameters every link carries
+   * @param pg - the list's paging object from pagingOf()
+   * @returns an object whose head and foot are each the control as HTML
+   */
   pageNavPair(path, params, pg) {
     const { log, queryWith } = this.deps;
     const self = this;
@@ -7028,6 +7804,12 @@ class AdminConsole {
   // `usersJson()` and `groupsJson()` in `admin-core/admin_views.ts`, which
   // choose between the same answers without drawing a page.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the JSON answer of the console's index page.
+   *
+   * @returns the issuer, uptime, counts of calls, tokens, artifacts,
+   *   sessions and users, and the path of every page
+   */
   consoleJson() {
     const { log, stats, config, sessions } = this.deps;
     log.debug("Entering AdminConsole.consoleJson().");
@@ -7080,6 +7862,14 @@ class AdminConsole {
   // The blurbs are prose in `SECTIONS` beside each page's `path` and `label`.
   // This function knows nothing about any particular page, which is what stops
   // it becoming a second place a page has to be described.
+  /**
+   * Draws one page's entry in the overview's list of pages.
+   *
+   * A page with no blurb in SECTIONS is drawn and marked as undescribed.
+   *
+   * @param page - a page row from SECTIONS
+   * @returns an <li> as HTML
+   */
   guideItem(page) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.guideItem().");
@@ -7116,6 +7906,15 @@ class AdminConsole {
            this.note(page.blurb) + '</li>';
   }
 
+  /**
+   * Draws the overview's list of every page, grouped as the sidebar is.
+   *
+   * The page being drawn on is left out, and so is a section left empty.
+   *
+   * @param activePath - the path of the page the list is drawn on
+   * @param state - the gate state that decides which sections are visible
+   * @returns the guide as HTML
+   */
   consoleGuide(activePath, state) {
     const { log } = this.deps;
     const self = this;
@@ -7165,6 +7964,15 @@ class AdminConsole {
   // ---------------------------------------------------------------------------
 
 
+  /**
+   * Draws the metrics page's table of calls per route.
+   *
+   * At most MAX_ROWS routes are drawn, busiest first; notes say how many
+   * were left out and how many unmatched paths were collapsed.
+   *
+   * @param snap - a snapshot from stats.snapshot()
+   * @returns the table and its notes as HTML
+   */
   callTable(snap) {
     const { log, MAX_ROWS } = this.deps;
     const self = this;
@@ -7207,6 +8015,12 @@ class AdminConsole {
         : '');
   }
 
+  /**
+   * Draws the metrics page's table of tokens by kind and state.
+   *
+   * @param snap - a snapshot from stats.snapshot()
+   * @returns the table as HTML
+   */
   tokenKindTable(snap) {
     const { log } = this.deps;
     const self = this;
@@ -7232,6 +8046,12 @@ class AdminConsole {
       '</table>';
   }
 
+  /**
+   * Draws the metrics page's table of assertions, tickets and SVIDs.
+   *
+   * @param snap - a snapshot from stats.snapshot()
+   * @returns the table as HTML
+   */
   artifactKindTable(snap) {
     const { log } = this.deps;
     const self = this;
@@ -7300,6 +8120,15 @@ class AdminConsole {
   // from page three of a session's table used to answer with page one of
   // everything, so the row you had just acted on was no longer on screen and
   // neither was its neighbour.
+  /**
+   * Picks the per-table page parameters out of a posted `back` field.
+   *
+   * Only keys ending in `Page` whose value is a positive integer survive,
+   * and each value is rebuilt from parseInt.
+   *
+   * @param params - the URLSearchParams parsed from `back`
+   * @returns an object of page parameter names to number strings
+   */
   drillDownPages(params) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.drillDownPages().");
@@ -7319,6 +8148,16 @@ class AdminConsole {
     return out;
   }
 
+  /**
+   * Rebuilds where a tokens form POST redirects the browser afterwards.
+   *
+   * `from` is read as a name (`users`, `set`, else the tokens page) and
+   * only whitelisted parameters of `back` are carried, so the target is
+   * never a path taken from the body.
+   *
+   * @param body - the posted form body, with `from` and `back`
+   * @returns a path on /admin/users, /admin/tokens/set or /admin/tokens
+   */
   backTo(body) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.backTo().");
@@ -7426,6 +8265,15 @@ class AdminConsole {
   // showed only a timestamp would be read as one rule with several values. The
   // rule is the row's `expiryRule`, which `logout.ts`'s SESSION_EXPIRY_RULES
   // writes.
+  /**
+   * Draws when a session ends, with the rule for its kind as the title.
+   *
+   * A session with no expiry says so; one under five minutes is marked.
+   *
+   * @param row - a live-session row from logout.ts
+   * @param nowMs - the current time in milliseconds
+   * @returns a <td> as HTML
+   */
   sessionExpiryCell(row, nowMs) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.sessionExpiryCell().");
@@ -7462,6 +8310,15 @@ class AdminConsole {
   // keeps no handle on one, which is a fact about Kerberos rather than a gap —
   // and an LDAP connection links nowhere at all, because a bind issues no
   // credential.
+  /**
+   * Draws where to find what a session issued.
+   *
+   * A browser session links to its tokens, a Kerberos row to the ticket
+   * table, and an LDAP connection to nothing.
+   *
+   * @param row - a live-session row from logout.ts
+   * @returns a <td> as HTML
+   */
   sessionCredentialsCell(row) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.sessionCredentialsCell().");
@@ -7486,6 +8343,18 @@ class AdminConsole {
       'state of a connection, and that state is this row.') + '">none</td>';
   }
 
+  /**
+   * Draws one row of the sessions page, with its Revoke form.
+   *
+   * The form is drawn only for a terminable row and a holder of Admin
+   * Write; otherwise the cell says why not.
+   *
+   * @param row - a live-session row from logout.ts
+   * @param nowMs - the current time in milliseconds
+   * @param canWrite - whether the reader holds Admin Write
+   * @param back - the list state the form posts as `back`
+   * @returns a <tr> as HTML
+   */
   sessionRow(row, nowMs, canWrite, back) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.sessionRow(). " + row.id);
@@ -7582,6 +8451,12 @@ class AdminConsole {
   // is amber rather than red on purpose: it is this service working correctly
   // and saying no, which is most of what a debugger of a protocol client wants
   // to see, and painting it as a failure would bury the 5xx rows that are one.
+  /**
+   * Draws an audit outcome in the state colours.
+   *
+   * @param outcome - `success`, `refused` or another outcome
+   * @returns a <span> as HTML
+   */
   outcomeCell(outcome) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.outcomeCell().");
@@ -7595,6 +8470,12 @@ class AdminConsole {
   // JSON because the column is narrow and a reader is scanning for one fact,
   // not parsing a document; `?format=json` has the object itself for anything
   // that is not a person.
+  /**
+   * Draws an audit row's detail object as key=value pairs.
+   *
+   * @param detail - the row's detail object
+   * @returns the pairs as HTML, or a dash when there are none
+   */
   auditDetailCell(detail) {
     const { log } = this.deps;
     const self = this;
@@ -7616,6 +8497,16 @@ class AdminConsole {
   // no name at all. The PRESENTED form is shown underneath when it differs,
   // because the collapse from `uid=alice,ou=users,dc=example,dc=com` to `alice`
   // is a thing an auditor has to be able to see rather than take on trust.
+  /**
+   * Draws who did an audited act.
+   *
+   * The actor links to their user page when the console knows them, and
+   * the presented form is shown underneath when it differs.
+   *
+   * @param row - an audit row
+   * @param known - the usernames this console has seen, as object keys
+   * @returns the cell's content as HTML
+   */
   auditActorCell(row, known) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.auditActorCell().");
@@ -7649,6 +8540,12 @@ class AdminConsole {
   // every row from it. A dash where nobody sent it — a timer, an expiry, a
   // background delivery, a seed at start-up — or where it came over a Unix
   // socket, which has no address; the tooltip says which that can be.
+  /**
+   * Draws an audit row's client address as a link to its other rows.
+   *
+   * @param row - an audit row
+   * @returns the link as HTML, or a dash when no address was recorded
+   */
   auditAddressCell(row) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.auditAddressCell().");
@@ -7665,6 +8562,13 @@ class AdminConsole {
            this.esc(row.address) + '</code></a>';
   }
 
+  /**
+   * Draws one row of the audit log table.
+   *
+   * @param row - an audit row
+   * @param known - the usernames this console has seen, as object keys
+   * @returns a <tr> as HTML
+   */
   auditRow(row, known) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.auditRow().");
@@ -7725,6 +8629,11 @@ class AdminConsole {
 
 
 
+  /**
+   * Draws the error shown when the logout module has not filled its slot.
+   *
+   * @returns the note as HTML
+   */
   logoutNoReaderNote() {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.logoutNoReaderNote().");
@@ -7748,6 +8657,12 @@ class AdminConsole {
   // REBUILT by listViewFromBack() on the way in and never echoed — the
   // guarantee that keeps a hand-written `back` from reaching anything but
   // another page of this same list.
+  /**
+   * Draws the hidden `back` input every form on the sign-out page carries.
+   *
+   * @param back - the list state, as a query string
+   * @returns an <input> as HTML
+   */
   logoutBackField(back) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.logoutBackField().");
@@ -7755,6 +8670,14 @@ class AdminConsole {
     return '<input type="hidden" name="back" value="' + this.esc(back) + '">';
   }
 
+  /**
+   * Draws one row of the sign-out page's table, with its End form.
+   *
+   * @param row - an inventory row from logout.ts
+   * @param canWrite - whether the reader holds Admin Write
+   * @param back - the list state the form posts as `back`
+   * @returns a <tr> as HTML
+   */
   logoutRowHtml(row, canWrite, back) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.logoutRowHtml().");
@@ -7799,6 +8722,18 @@ class AdminConsole {
   // for a holder of Admin Write, which posts `retry-backchannel` — the same
   // action `POST /admin-api/logout/retry-backchannel` calls.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the back-channel Logout Token deliveries section.
+   *
+   * Counts, a state and search filter, and a paged table; a dead letter
+   * gets a Retry form for a holder of Admin Write.
+   *
+   * @param view - the view from adminViews.logoutJson()
+   * @param canWrite - optional; whether the reader holds Admin Write
+   * @param back - optional; the list state the Retry form posts as `back`
+   * @param wantedUser - optional; the identity the page is about
+   * @returns the section as HTML
+   */
   backchannelDeliveriesSection(view, canWrite?, back?, wantedUser?) {
     const { log, queryWith, pageParamsOf } = this.deps;
     const self = this;
@@ -7891,6 +8826,17 @@ class AdminConsole {
   // One route, two answers, and the choice is here rather than in the route so
   // that /admin-api/logout makes the same one — the rule every view in this
   // file follows.
+  /**
+   * Builds the sign-out page for the console and for /admin-api/logout.
+   *
+   * With no `user` it is a lookup page listing the session families;
+   * with one, it is that identity's live items and the controls that end
+   * or undo them.
+   *
+   * @param req - the request
+   * @returns an object of json, inner and title, and for one identity
+   *   the `up` trail
+   */
   logoutView(req) {
     const { log, adminViews, gateStateFor, pageParamsOf, queryWith,
             logoutFamilies, krb5Principals } = this.deps;
@@ -8119,6 +9065,16 @@ class AdminConsole {
   // for an RFC 8693 `audience` and is worth seeing rather than hiding — the
   // registry holds what this service was ASKED ABOUT, and a delegation naming
   // something nobody has otherwise mentioned is exactly the row to notice.
+  /**
+   * Draws one party of a delegation chain, as up to two links.
+   *
+   * The party can be a person, an application, or both; a name neither
+   * store holds is drawn marked rather than left out.
+   *
+   * @param party - a party of a delegation row
+   * @param known - the usernames this console has seen, as object keys
+   * @returns the cell's content as HTML, or a dash
+   */
   delegationPartyCell(party, known) {
     const { log, applications, queryWith } = this.deps;
     log.debug("Entering AdminConsole.delegationPartyCell().");
@@ -8170,6 +9126,13 @@ class AdminConsole {
   // so the cell drew "unknown" for every delegation instead of what it
   // consumed and produced. The TypeScript conversion (#50) kept that
   // behaviour and surfaced it; the calls now reach this method.
+  /**
+   * Draws the credentials one direction of a delegation carried.
+   *
+   * @param list - the consumed or produced credentials
+   * @param label - the direction's label, as HTML
+   * @returns the list as HTML, or an empty string when there is none
+   */
   delegationCredentialCell(list, label) {
     const { log } = this.deps;
     const self = this;
@@ -8208,6 +9171,12 @@ class AdminConsole {
   // that a middle tier was involved, so this table is the only place it will
   // ever be seen. A delegation carries its own chain and can be read off the
   // token later.
+  /**
+   * Draws a delegation act's mode: impersonation or delegation.
+   *
+   * @param mode - `impersonation`, `delegation` or anything else
+   * @returns a <span> as HTML, a dash for any other mode
+   */
   modeCell(mode) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.modeCell().");
@@ -8229,6 +9198,12 @@ class AdminConsole {
     return '<span class="state-none">&mdash;</span>';
   }
 
+  /**
+   * Draws whether a delegation act was issued or refused.
+   *
+   * @param row - a delegation row
+   * @returns a <span> as HTML
+   */
   delegationOutcomeCell(row) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.delegationOutcomeCell().");
@@ -8260,6 +9235,15 @@ class AdminConsole {
   // unfiltered list — the rule listViewOf() states. `options.chainLink` is
   // false on the chain page itself, where every row belongs to the chain being
   // drawn and the link would point at the page it is on.
+  /**
+   * Draws one row of the delegation acts table.
+   *
+   * @param row - a delegation row from common/delegation.js
+   * @param known - the usernames this console has seen, as object keys
+   * @param options - `listView` for the chain link, and `chainLink`
+   *   (default true), false on the chain page itself
+   * @returns a <tr> as HTML
+   */
   delegationRow(row, known, options) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.delegationRow().");
@@ -8325,6 +9309,12 @@ class AdminConsole {
   // columns that DO differ per row into unreadable shreds. It is said once
   // above the table instead. The API keeps it on every pair, because a caller
   // reading one pair should not have to know that.
+  /**
+   * Draws one configured Kerberos delegation pair.
+   *
+   * @param pair - a pair from the Kerberos delegation policy
+   * @returns a <tr> as HTML
+   */
   policyPairRow(pair) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.policyPairRow().");
@@ -8350,6 +9340,12 @@ class AdminConsole {
       '</tr>';
   }
 
+  /**
+   * Draws one Kerberos account's delegation flags and their effects.
+   *
+   * @param account - an account row from the Kerberos delegation policy
+   * @returns a <tr> as HTML
+   */
   policyAccountRow(account) {
     const { log } = this.deps;
     const self = this;
@@ -8384,6 +9380,16 @@ class AdminConsole {
   // would be a second door onto the same attribute, which this console
   // refuses everywhere else.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws who may act for whom at WS-Trust and RFC 8693, read only.
+   *
+   * Three paged tables: the pairs, the intermediaries and the people who
+   * carry either flag.
+   *
+   * @param req - the request, for the page parameters
+   * @param view - the view from adminViews.delegationPolicyView()
+   * @returns the section as HTML
+   */
   delegationPolicySection(req, view) {
     const { log } = this.deps;
     const self = this;
@@ -8575,6 +9581,14 @@ class AdminConsole {
   // picture pages list what they draw and change nothing, and one row function
   // is what stops two tables coming to disagree about what a permission
   // identifier is.
+  /**
+   * Draws one permission a resource application exposes.
+   *
+   * @param one - a permission from the configured register
+   * @param listView - the list state carried into links and the form
+   * @param options - optional; `readOnly` swaps the Remove form for a link
+   * @returns a <tr> as HTML
+   */
   permissionDefinitionRow(one, listView, options?) {
     const { log, queryWith } = this.deps;
     const self = this;
@@ -8653,6 +9667,12 @@ class AdminConsole {
   // rebuilds a query from it through listViewOf()'s whitelist rather than
   // echoing it, which is what keeps a hand-written `back` from becoming a
   // redirect somewhere this file did not write.
+  /**
+   * Draws the hidden `back` input the permission forms carry.
+   *
+   * @param listView - the list state to return to
+   * @returns an <input> as HTML
+   */
   permissionsBack(listView) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.permissionsBack().");
@@ -8675,6 +9695,16 @@ class AdminConsole {
   // page whose text says it has none, and it would answer by throwing the
   // reader back to a table three screens up on a different page, because
   // permissionsReturnTo() has nowhere else to send it.
+  /**
+   * Draws one grant of a permission to a client application.
+   *
+   * A grant whose permission no application defines is marked dangling.
+   *
+   * @param one - a grant from the configured register
+   * @param listView - the list state carried into links and the form
+   * @param options - optional; `readOnly` swaps the Revoke form for a link
+   * @returns a <tr> as HTML
+   */
   permissionGrantRow(one, listView, options?) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.permissionGrantRow().");
@@ -8754,6 +9784,13 @@ class AdminConsole {
   //
   // It takes the QUERY and the register rather than the request, so it can be
   // called twice with the same arguments and cannot answer differently.
+  /**
+   * Works out the searched and paged rows of the permissions register.
+   *
+   * @param query - the request's query
+   * @param register - the configured permissions register
+   * @returns an object of permWanted, grantWanted, permPage and grantPage
+   */
   permissionsListState(query, register) {
     const { log, queryOne, chooserMatches, pagedRows,
             DELEGATION_PER_PAGE } = this.deps;
@@ -8789,6 +9826,17 @@ class AdminConsole {
   // longest expression in this console and a fourth screen of string
   // concatenation inside it would be unreadable — not because anything else
   // draws it.
+  /**
+   * Draws the delegated permissions section of /admin/delegation.
+   *
+   * The paged permissions and grants tables, and the Expose an API and
+   * Define a permission forms.
+   *
+   * @param req - the request
+   * @param view - the delegation view holding the register
+   * @param listView - the list state carried into links and forms
+   * @returns the section as HTML
+   */
   permissionsSection(req, view, listView) {
     const { log, applications, pageParamsOf } = this.deps;
     const self = this;
@@ -9149,6 +10197,15 @@ class AdminConsole {
   // the top of the longest page in this console; on an application's page the
   // section has its own `#permissions` for exactly the same reason.
   // ---------------------------------------------------------------------------
+  /**
+   * Works out where a permission write redirects the browser.
+   *
+   * An application page when `from` names it and a client is given,
+   * else /admin/delegation; the query is rebuilt, never echoed.
+   *
+   * @param body - the posted form body
+   * @returns the path, with its query and fragment
+   */
   permissionsReturnTo(body) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.permissionsReturnTo(). from=" +
@@ -9199,6 +10256,17 @@ class AdminConsole {
   // page's own two pairs are split to prevent, made once more between two pages
   // instead of twice on one.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the search over the applications the permissions register touches.
+   *
+   * Each result opens that application's group at /admin/delegation/cluster.
+   *
+   * @param view - the view holding the register and its clusters
+   * @param selectedKey - the application currently selected, if any
+   * @param carry - the parameters carried into each result's link
+   * @param here - the page the search submits to
+   * @returns the chooser, or a note when there is nothing, as HTML
+   */
   allowedApplicationChooser(view, selectedKey, carry, here) {
     const { log, applications, queryWith } = this.deps;
     log.debug("Entering AdminConsole.allowedApplicationChooser().");
@@ -9309,6 +10377,12 @@ class AdminConsole {
   // table's header says a row is for. So the way BACK to the allowed picture
   // carries them and the way UP to the acts table does not, and each link says
   // which it is.
+  /**
+   * Picks the application chooser's two parameters out of a query.
+   *
+   * @param query - the request's query
+   * @returns `permappq` and `permappfrom`, where set
+   */
   allowedChooserState(query) {
     const { log, queryOne } = this.deps;
     log.debug("Entering AdminConsole.allowedChooserState().");
@@ -9330,6 +10404,14 @@ class AdminConsole {
   // because the size of a group is not what makes it interesting, its MEMBERS
   // are, and a table of counts with no names in it would send a reader into
   // every picture in turn to find the one they meant.
+  /**
+   * Draws the table of groups of applications joined by permissions.
+   *
+   * @param groups - the clusters view, for its counts
+   * @param shown - the groups on this page
+   * @param carry - the parameters carried into each link
+   * @returns the table as HTML
+   */
   allowedClusterTable(groups, shown, carry) {
     const { log, applications, queryWith } = this.deps;
     const self = this;
@@ -9473,6 +10555,17 @@ class AdminConsole {
   // worth more than the second, and the second is one line below it and in the
   // tooltip. Where there is no entry there is no cn, and the identifier is all
   // there is.
+  /**
+   * Works out how the delegation picture draws one node.
+   *
+   * The shape comes from whether the directory and the registry know the
+   * party, and the label is its cn or application name where there is one.
+   *
+   * @param node - a node of the delegation graph
+   * @param known - the usernames this console has seen, as object keys
+   * @returns an object of shape, label, sublabel, identifier, title, href
+   *   and dashed; the service's own node has no identifier
+   */
   delegationNodeLook(node, known) {
     const { log, applications, queryWith } = this.deps;
     log.debug("Entering AdminConsole.delegationNodeLook().");
@@ -9687,6 +10780,13 @@ class AdminConsole {
   // One attribute off an entry the directory reader handed back, canonically
   // spelled or not. `objectFor()` returns them canonically spelled and a caller
   // asking for `cn` should not have to know that.
+  /**
+   * Returns an entry's first value of an attribute, matched case-insensitively.
+   *
+   * @param entry - a directory entry with an `attributes` object
+   * @param name - the attribute name
+   * @returns the first value as a string, or an empty string
+   */
   firstAttributeValue(entry, name) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.firstAttributeValue().");
@@ -9712,6 +10812,14 @@ class AdminConsole {
   // beside it: a reader of /admin/delegation/map looking for a dotted `signed
   // in` line would never find one, and a key that lists shapes a page does not
   // draw teaches a reader to stop trusting it.
+  /**
+   * Draws the key to the delegation pictures, one row per shape or line,
+   * using delegation_map.js's own glyphs and palette.
+   *
+   * @param options - optional; `issuance` adds the lines only the person's
+   *   picture draws (signed in, ordinary grant, addressed to)
+   * @returns the key as an HTML table
+   */
   delegationMapKey(options?) {
     const { log, delegationMap } = this.deps;
     log.debug("Entering AdminConsole.delegationMapKey().");
@@ -9906,6 +11014,15 @@ class AdminConsole {
   // One node, as a row of the party index under the picture. The party cell is
   // `delegationPartyCell()`'s, so a box that links to one page in the diagram
   // still offers BOTH links here — see the note in delegationNodeLook().
+  /**
+   * Draws one box of the delegation picture as a row of the party index:
+   * label, shape, links, roles, acts and protocols.
+   *
+   * @param node - a graph node from delegation.graph()
+   * @param known - the identities and applications the console knows
+   * @param look - the node's look (label, identifier, shape, dashed)
+   * @returns the row as HTML, or '' for the service's own node
+   */
   delegationNodeRow(node, known, look) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.delegationNodeRow().");
@@ -9968,6 +11085,17 @@ class AdminConsole {
   // read as a sentence — who, to whom, meaning what, over what, how it came out
   // — so that everything the diagram says in colour is also said in words. A
   // picture nobody can read as text is one nobody can quote in a bug report.
+  /**
+   * Draws one line of the delegation picture as a row of the relationship
+   * index, saying in words what the picture says in colour.
+   *
+   * An unpoliced act collapses to "nothing checks this" with the reason in
+   * the tooltip; a refusal prints in full.
+   *
+   * @param edge - a graph edge from delegation.graph()
+   * @param lookOf - function giving a node id's label
+   * @returns the row as HTML
+   */
   delegationEdgeRow(edge, lookOf) {
     const { log } = this.deps;
     const self = this;
@@ -10071,6 +11199,14 @@ class AdminConsole {
   // called chooserCarry() because sixteen call sites and one name is cheaper
   // than a rename that says nothing new — what it carries is "every search on
   // this page that is not the form asking".
+  /**
+   * Re-emits the page's section searches (`appq`, `appfrom`, `userq`,
+   * `userfrom`, `permq`, `grantq`) as hidden inputs, so a form that is none
+   * of them does not clear them.
+   *
+   * @param query - the request's query
+   * @returns hidden inputs as HTML, one per non-empty search
+   */
   chooserCarry(query) {
     const { log, queryOne } = this.deps;
     const self = this;
@@ -10105,6 +11241,18 @@ class AdminConsole {
   //   entries     the catalogue, each { key, names, label, detail, href }
   //   selectedKey the entry this page is already showing, marked in the pane
   //   nothing     what to say when the search matched none of them
+  /**
+   * Draws a search box and a paged, scrolling pane of matching entries,
+   * shared by every chooser on the console.
+   *
+   * The form submits back to the page it is drawn on, carrying the rest of
+   * the query, with a fragment that returns the reader to the pane; a
+   * stale offset is clamped to the first page.
+   *
+   * @param spec - here, param, fromParam, label, placeholder, entries,
+   *   selectedKey and nothing, as the comment above describes
+   * @returns the form, the pane and its paging note as HTML
+   */
   chooserPane(spec) {
     const { log, queryOne, chooserMatches, pageParamsOf,
             queryWith } = this.deps;
@@ -10285,6 +11433,17 @@ class AdminConsole {
   // Paging is CHOOSER_HITS — the same twenty every other chooser here uses, and
   // the same clamping of a stale offset, because it is the same function.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the CAEP page's session chooser: a search by person over the
+   * sessions still live, each result linking to /admin/caep with it chosen.
+   *
+   * Revoked sessions are left out, since an event about one is refused.
+   *
+   * @param here - the page this is drawn on, as path and query
+   * @param sessions - the CAEP session register's rows
+   * @param selectedId - the session already chosen, marked in the pane
+   * @returns the chooser as HTML
+   */
   caepSessionChooser(here, sessions, selectedId) {
     const { log, pageParamsOf, queryWith } = this.deps;
     log.debug("Entering AdminConsole.caepSessionChooser().");
@@ -10352,6 +11511,16 @@ class AdminConsole {
   // does: the address a reader is holding is routinely the one the account no
   // longer has, because `identifier-changed` is an event about the key itself.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the RISC page's account chooser: a search over every tracked
+   * account, purged ones and former identifiers included, each result
+   * linking to /admin/risc with it chosen.
+   *
+   * @param here - the page this is drawn on, as path and query
+   * @param accounts - the RISC account register's rows
+   * @param selectedId - the account already chosen, marked in the pane
+   * @returns the chooser as HTML
+   */
   riscAccountChooser(here, accounts, selectedId) {
     const { log, pageParamsOf, queryWith } = this.deps;
     log.debug("Entering AdminConsole.riscAccountChooser().");
@@ -10420,6 +11589,16 @@ class AdminConsole {
   // came from. `here` is the page this control is DRAWN on, which is where its
   // own form submits — a different page from the one a result opens, and
   // conflating the two is what a search added to a chooser gets wrong.
+  /**
+   * Draws the search over every application a delegation act named, each
+   * result linking to /admin/delegation/application by its identifier.
+   *
+   * @param catalogue - the delegation register's application list
+   * @param selectedKey - the application already chosen, marked in the pane
+   * @param carry - the delegation table's filter, kept in every result link
+   * @param here - the page this is drawn on, as path and query
+   * @returns the chooser as HTML, or a note when there is none to choose
+   */
   delegationApplicationChooser(catalogue, selectedKey, carry, here) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.delegationApplicationChooser().");
@@ -10476,6 +11655,15 @@ class AdminConsole {
   // page says so — that page is the REGISTRY, which holds what this service has
   // been asked about; this is what has actually delegated, which can name
   // something the registry has never seen.
+  /**
+   * Draws every application some delegation act named, with its roles,
+   * acts, credentials, relationships and when it was last seen.
+   *
+   * @param catalogue - the delegation register's application list
+   * @param known - the identities the console knows, for the users link
+   * @param carry - the delegation table's filter, kept in each link
+   * @returns the table as HTML
+   */
   delegationApplicationTable(catalogue, known, carry) {
     const { log, applications, queryWith } = this.deps;
     const self = this;
@@ -10559,6 +11747,15 @@ class AdminConsole {
   // `labelOf` is separate because a `reaches` line names a party that is
   // NEITHER of its ends — see the map route's call — and the renderer has no
   // `resolve()` answer for it.
+  /**
+   * Works out every box's look (label, shape, identifier) once for a
+   * picture page.
+   *
+   * @param graph - the graph from delegation.graph()
+   * @param known - the identities and applications the console knows
+   * @returns an object of looks (by node id), resolve (for the renderer)
+   *   and labelOf (an id's label)
+   */
   delegationLooks(graph, known) {
     const { log } = this.deps;
     const self = this;
@@ -10589,6 +11786,15 @@ class AdminConsole {
   // application played in the act that produced this, which is the whole
   // question that page answers and is a fact about the act rather than about
   // the credential.
+  /**
+   * Draws one credential that came out of a delegation act as a table row.
+   *
+   * @param token - the credential row from the delegation graph
+   * @param labelOf - function giving a node id's label
+   * @param extra - optional; HTML for a leading cell, such as the role the
+   *   application played
+   * @returns the row as HTML
+   */
   delegationTokenRow(token, labelOf, extra?) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.delegationTokenRow().");
@@ -10632,6 +11838,18 @@ class AdminConsole {
   // of a `text/html` response only, so a link inside an `image/svg+xml` body
   // would silently leave the realm, and in a saved file it would point at
   // somebody's own machine).
+  /**
+   * Renders the delegation picture as linked SVG, with a note under it
+   * linking the standalone SVG and the graph as JSON.
+   *
+   * @param graph - the graph from delegation.graph()
+   * @param look - the page's looks from delegationLooks()
+   * @param path - the route's own path, for the two links
+   * @param params - the route's query, carried into the two links
+   * @param label - the drawing's accessible label
+   * @returns an object of drawn (the renderer's result) and html (the
+   *   page markup)
+   */
   delegationDrawing(graph, look, path, params, label) {
     const { log, delegationMap, queryWith } = this.deps;
     log.debug("Entering AdminConsole.delegationDrawing().");
@@ -10657,6 +11875,15 @@ class AdminConsole {
   // way, so the answer is one function: a fourth copy of "render it again
   // without links, set no-store, send it as image/svg+xml" is a fourth chance
   // for one of them to keep the links.
+  /**
+   * Answers `?format=svg`: renders the picture again without links and
+   * sends it as image/svg+xml with Cache-Control: no-store.
+   *
+   * @param res - the express response
+   * @param graph - the graph from delegation.graph()
+   * @param look - the page's looks from delegationLooks()
+   * @param label - the drawing's accessible label
+   */
   sendDelegationSvg(res, graph, look, label) {
     const { log, delegationMap } = this.deps;
     log.debug("Entering AdminConsole.sendDelegationSvg().");
@@ -10672,6 +11899,12 @@ class AdminConsole {
   // What a ROLE is called on this console, off `delegation.ROLES` rather than
   // out of a list here — the same rule the mechanism filter follows. A role
   // that existed in the store and was unnamed on a page would be a blank cell.
+  /**
+   * Names a delegation role as the console shows it, from delegation.ROLES.
+   *
+   * @param role - the role's key
+   * @returns the role's label, or the key itself when none is defined
+   */
   delegationRoleLabel(role) {
     const { log, delegation } = this.deps;
     log.debug("Entering AdminConsole.delegationRoleLabel().");
@@ -10685,6 +11918,13 @@ class AdminConsole {
   // The roles an application played in one act, as cells. Two is possible and
   // is S4U2Self — the requester asks for a ticket to ITSELF, so it is the
   // intermediary and the target of the same act.
+  /**
+   * Draws the roles an application played in one act, one per line, each
+   * with its description as a tooltip.
+   *
+   * @param roles - the role keys
+   * @returns the cell's HTML, or a dash when there are none
+   */
   delegationRoleCell(roles) {
     const { log, delegation } = this.deps;
     const self = this;
@@ -10732,6 +11972,17 @@ class AdminConsole {
   // S4U2Self or an OnBehalfOf named them — which is the case worth finding, and
   // exactly the case a chooser built from /admin/users alone would hide.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the search over every identity the identity and delegation
+   * registers know, each result linking to /admin/delegation/user by its
+   * normalised key.
+   *
+   * @param catalogue - the union of the two registers' identities
+   * @param selectedKey - the identity already chosen, marked in the pane
+   * @param carry - the delegation table's filter, kept in every result link
+   * @param here - the page this is drawn on, as path and query
+   * @returns the chooser as HTML, or a note when there is nobody to choose
+   */
   delegationUserChooser(catalogue, selectedKey, carry, here) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.delegationUserChooser().");
@@ -10787,6 +12038,15 @@ class AdminConsole {
   // knows PLUS everybody a delegation named who has never been near this
   // service. The `Where from` column is the only reason to draw it rather than
   // link to the users page, and it is the column worth reading.
+  /**
+   * Draws every identity the identity and delegation registers know, with
+   * where it came from, sign-ins, tokens, artifacts, acts and protocols.
+   *
+   * @param catalogue - the union of the two registers' identities
+   * @param known - the identities the console knows, for the users link
+   * @param carry - the delegation table's filter, kept in each link
+   * @returns the table as HTML
+   */
   delegationUserTable(catalogue, known, carry) {
     const { log, queryWith } = this.deps;
     const self = this;
@@ -10868,6 +12128,14 @@ class AdminConsole {
   // reached from outside the token endpoint by WS-Trust's JWT token type and by
   // the credential issuer, and an empty cell there would read as a recording
   // failure.
+  /**
+   * Draws what issued one credential: the grant it states (with the OIDC
+   * name where there is one), an artifact's own mechanism, or "no grant
+   * stated".
+   *
+   * @param credential - a row of the issued-credential register
+   * @returns the cell's HTML
+   */
   userFlowCell(credential) {
     const { log, userGraph } = this.deps;
     log.debug("Entering AdminConsole.userFlowCell().");
@@ -10908,6 +12176,14 @@ class AdminConsole {
   // One credential from the ISSUED register, as a row. `back` carries the list
   // the reader came from, so the revoke button on a token returns them to it —
   // the same `carryBack` rule every form on a drill-down follows.
+  /**
+   * Draws one credential from the issued register as a row: when, what,
+   * the flow that issued it, its holder, its state and its session.
+   *
+   * @param credential - a row of the issued-credential register
+   * @param known - the identities and applications the console knows
+   * @returns the row as HTML
+   */
   userCredentialRow(credential, known) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.userCredentialRow().");
@@ -10952,6 +12228,15 @@ class AdminConsole {
   // are about ACTS, and a box that received four tokens and took part in no
   // delegation would otherwise be a row of zeroes with the interesting number
   // nowhere on it.
+  /**
+   * Draws one box of a person's picture as a row, adding the credentials
+   * and flows columns to what delegationNodeRow() draws.
+   *
+   * @param node - a node from the person's graph
+   * @param known - the identities and applications the console knows
+   * @param look - the node's look (label, identifier, shape, dashed)
+   * @returns the row as HTML, or '' for the service's own node
+   */
   userNodeRow(node, known, look) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.userNodeRow().");
@@ -11020,6 +12305,14 @@ class AdminConsole {
   // argument applied to five relations instead of three: everything the diagram
   // says in colour is said here in text, because a picture nobody can quote is
   // a picture nobody can put in a bug report.
+  /**
+   * Draws one line of a person's picture as a row, in words, over its five
+   * relations (issued to, signed in, issued for, acts for, reaches).
+   *
+   * @param edge - an edge from the person's graph
+   * @param lookOf - function giving a node id's label
+   * @returns the row as HTML
+   */
   userEdgeRow(edge, lookOf) {
     const { log } = this.deps;
     const self = this;
@@ -11128,6 +12421,15 @@ class AdminConsole {
   // can connect" while LDAPS was answering would be wrong in the direction that
   // costs somebody an afternoon looking for a directory that was there all
   // along.
+  /**
+   * Draws a warning when either of the directory's listeners (plain LDAP
+   * and LDAPS) is not up, saying which.
+   *
+   * @param info - the LDAP server's listener state
+   * @param subject - the wording for what the page shows (upper, lower,
+   *   verb, pronoun)
+   * @returns the warning as HTML, or '' when both are listening
+   */
   directoryListenerWarning(info, subject) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.directoryListenerWarning().");
@@ -11171,6 +12473,13 @@ class AdminConsole {
   // the user page and the group page draw. `entry` is what the directory's
   // readers return: canonically spelled names, values already arrays, and
   // `operational` naming which of them a search would have withheld.
+  /**
+   * Draws every attribute of one directory entry, operational ones marked,
+   * with each value.
+   *
+   * @param entry - the entry as the directory's readers return it
+   * @returns the table as HTML
+   */
   attributeTable(entry) {
     const { log } = this.deps;
     const self = this;
@@ -11196,6 +12505,13 @@ class AdminConsole {
       rows + '</table>';
   }
 
+  /**
+   * Installs the reader that returns one person's LDAP entry, here and in
+   * the read layer (admin-core/admin_views.ts). Filled by
+   * ldap/ldap_server.js.
+   *
+   * @param fn - the directory reader
+   */
   setDirectoryReader(fn) {
     const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setDirectoryReader().");
@@ -11207,6 +12523,12 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.setDirectoryReader().");
   }
 
+  /**
+   * Installs the reader of the directory's groups, here and in the read
+   * layer. Filled by ldap/ldap_server.js.
+   *
+   * @param fn - the group reader
+   */
   setGroupReader(fn) {
     const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setGroupReader().");
@@ -11218,6 +12540,12 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.setGroupReader().");
   }
 
+  /**
+   * Installs the SPIFFE reader the console's SPIFFE reports are drawn from,
+   * here and in the read layer.
+   *
+   * @param fn - the SPIFFE reader
+   */
   setSpiffeReader(fn) {
     const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setSpiffeReader().");
@@ -11230,6 +12558,15 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.setSpiffeReader().");
   }
 
+  /**
+   * Installs the crypto reporter behind /admin/keys and the /admin-api
+   * crypto resources, here and in the read layer.
+   *
+   * A reporter missing `report`, `keys` or `exportKey` is refused whole and
+   * logged as STS-ADMIN-0014.
+   *
+   * @param reporter - the object carrying report(), keys() and exportKey()
+   */
   setCryptoReporter(reporter) {
     const { log, errorCodes, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setCryptoReporter().");
@@ -11263,6 +12600,13 @@ class AdminConsole {
   // `crypto_metadata.js`'s key export, which is the one act in this console
   // that hands over a private key — and it goes through `gateStateFor()` so
   // that the answer is the same one every page's banner is drawn from.
+  /**
+   * Tells whether the request holds Admin Write, from the same gate state
+   * every page's banner is drawn from.
+   *
+   * @param req - the express request
+   * @returns true when the caller holds Admin Write
+   */
   mayWrite(req) {
     const { log, gateStateFor } = this.deps;
     log.debug("Entering AdminConsole.mayWrite().");
@@ -11271,6 +12615,15 @@ class AdminConsole {
     return !!state.write;
   }
 
+  /**
+   * Installs the logout reader behind /admin/logout and /admin/sessions,
+   * here and in the action and read layers.
+   *
+   * A reader missing inventoryFor(), terminate(), liveSessions() or
+   * FAMILIES is refused whole with a warning (STS-ADMIN-0014).
+   *
+   * @param reader - the logout module's reader
+   */
   setLogoutReader(reader) {
     const { log, errorCodes, adminActions, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setLogoutReader().");
@@ -11312,6 +12665,14 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.setLogoutReader().");
   }
 
+  /**
+   * Installs the XACML page views, here and in the read and action layers.
+   *
+   * A set missing any of XACML_PAGE_PARTS is refused whole with a warning
+   * (STS-ADMIN-0014).
+   *
+   * @param parts - the XACML family's page functions
+   */
   setXacmlPages(parts) {
     const { log, errorCodes, adminViews, adminActions } = this.deps;
     log.debug("Entering AdminConsole.setXacmlPages().");
@@ -11342,6 +12703,11 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.setXacmlPages().");
   }
 
+  /**
+   * Lists the actions the installed XACML pages accept.
+   *
+   * @returns the action names, or an empty array when none are installed
+   */
   xacmlActionNames() {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.xacmlActionNames().");
@@ -11350,6 +12716,14 @@ class AdminConsole {
       ? xacmlPages.actionNames() : [];
   }
 
+  /**
+   * Installs the directory's page views, here and in the read layer.
+   *
+   * A set missing any of DIRECTORY_PAGE_NAMES is refused whole with a
+   * warning (STS-ADMIN-0014).
+   *
+   * @param views - the directory's page functions
+   */
   setDirectoryPages(views) {
     const { log, errorCodes, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setDirectoryPages().");
@@ -11377,6 +12751,12 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.setDirectoryPages().");
   }
 
+  /**
+   * Installs the SCIM reader the console's SCIM reports are drawn from,
+   * here and in the read layer.
+   *
+   * @param fn - the SCIM reader
+   */
   setScimReader(fn) {
     const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setScimReader().");
@@ -11389,6 +12769,12 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.setScimReader().");
   }
 
+  /**
+   * Installs the writer that creates a person in the directory, here and
+   * in the read and action layers.
+   *
+   * @param fn - the directory writer
+   */
   setDirectoryWriter(fn) {
     const { log, adminViews, adminActions } = this.deps;
     log.debug("Entering AdminConsole.setDirectoryWriter().");
@@ -11405,6 +12791,15 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.setDirectoryWriter().");
   }
 
+  /**
+   * Installs the directory's group writers, here and in the read and
+   * action layers.
+   *
+   * An object missing any of GROUP_WRITER_MEMBERS is not installed, and
+   * the missing names are logged as STS-ADMIN-0014.
+   *
+   * @param fns - the group writer functions
+   */
   setGroupWriter(fns) {
     const { log, errorCodes, adminViews, adminActions } = this.deps;
     log.debug("Entering AdminConsole.setGroupWriter().");
@@ -11450,6 +12845,15 @@ class AdminConsole {
   // identity that only ever appeared as the subject of something never
   // authenticated at all — and a section that said only "not found" would send
   // a reader to look for a bug in the directory.
+  /**
+   * Draws the user page's section on this person's LDAP entry, or why
+   * there is none, with the directory listeners' state.
+   *
+   * @param row - the person's record in the identity register
+   * @param key - the person's key
+   * @returns an object of html (the section) and json (its ?format=json
+   *   object, null when no directory is loaded)
+   */
   ldapObjectSection(row, key) {
     const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.ldapObjectSection(). key=" + key);
@@ -11587,6 +12991,15 @@ class AdminConsole {
   // One user's tokens as a table. The columns are the ones that differ WITHIN a
   // user: their name and subject are the same on every row by construction and
   // are stated once above the table instead of repeated down it.
+  /**
+   * Draws one person's tokens as a table, with a Revoke or Restore button
+   * on each token that can be revoked.
+   *
+   * @param records - the token records
+   * @param back - the list to return to after a revoke
+   * @param empty - the text of the row drawn when there are none
+   * @returns the table as HTML
+   */
   userTokenTable(records, back, empty) {
     const { log } = this.deps;
     const self = this;
@@ -11630,6 +13043,13 @@ class AdminConsole {
   // and enc-type and a credential's configuration id are each the one thing
   // worth reading about that row and giving each its own column would leave two
   // thirds of the table empty.
+  /**
+   * Draws one person's artifacts that are not JWTs (assertions, tickets,
+   * credentials) as one table with a single Detail column.
+   *
+   * @param records - the artifact records
+   * @returns the table as HTML
+   */
   userArtifactTable(records) {
     const { log } = this.deps;
     const self = this;
@@ -11668,6 +13088,13 @@ class AdminConsole {
   // the Method column: "sign-in screen (password)" and "AS-REQ with
   // PA-ENC-TIMESTAMP" are both authentications and only one of them checked
   // anything.
+  /**
+   * Draws how a person authenticated, most recent first, with a note when
+   * older events have been forgotten past the per-user cap.
+   *
+   * @param row - the person's record in the identity register
+   * @returns the table as HTML
+   */
   authenticationTable(row) {
     const { log, stats } = this.deps;
     const self = this;
@@ -11726,6 +13153,16 @@ class AdminConsole {
   // id: it names the block it moves, so a bookmark still moves the same session
   // after the list around it has changed, which an index into the session list
   // would not.
+  /**
+   * Draws one sign-on session's facts and a paged table of the tokens
+   * issued on it.
+   *
+   * @param session - the session
+   * @param tokenPage - the page of its tokens, with its paging
+   * @param back - the list to return to after a revoke
+   * @param params - the page's query, for the pager's links
+   * @returns the block as HTML
+   */
   sessionBlock(session, tokenPage, back, params) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.sessionBlock(). id=" + session.id);
@@ -11802,6 +13239,19 @@ class AdminConsole {
   // Beside it, the ADDRESS (#64 P2): what `mail` holds, whether it is
   // verified and by whom, and — for Admin Write — a form to set it, which
   // marks it verified because an administrator is a trusted source.
+  /**
+   * Draws a person's email address and emailed second factor, with the
+   * Admin Write forms to turn the factor off, set an `aud_sub` and set the
+   * address.
+   *
+   * An address set here is marked verified.
+   *
+   * @param key - the person's key
+   * @param mech - the person's mechanisms from credentials.mechanismsFor()
+   * @param state - the gate state; `write` draws the forms
+   * @param carryBack - hidden inputs carrying the way back
+   * @returns the block as HTML
+   */
   emailFactorBlock(key, mech, state, carryBack) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.emailFactorBlock().");
@@ -11869,6 +13319,20 @@ class AdminConsole {
     return out;
   }
 
+  /**
+   * Draws the user page's section on what a person can sign in with and
+   * their second factors: authenticator app, security keys, recovery code
+   * counts, app passwords, devices, self-issued IDs and verifications.
+   *
+   * Recovery codes are shown as counts, never as codes.
+   *
+   * @param row - the person's record in the identity register
+   * @param key - the person's key
+   * @param state - the gate state; `write` draws the controls
+   * @param back - the list to return to after an action
+   * @returns an object of html (the section) and json (its ?format=json
+   *   object, null when no credential store is installed)
+   */
   mfaSection(row, key, state, back) {
     const { log, credentials, totp, webauthnPolicy, backupCodes,
             adminViews, mode } = this.deps;
@@ -12579,6 +14043,18 @@ class AdminConsole {
   // second-factor section's rule beside it: a button whose only outcome is the
   // gate's refusal is a control that can only fail.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's RFC 7523 and RFC 7522 key pairs, one per profile, with
+   * the Admin Write forms that issue, upload or take one off through
+   * /admin/pki.
+   *
+   * @param key - the person's key
+   * @param state - the person's credential state (storable, found,
+   *   username, ca, purposes)
+   * @param gate - the gate state; `write` draws the forms
+   * @param back - the list to return to after an action
+   * @returns the section as HTML
+   */
   userCredentialsSection(key, state, gate, back) {
     const { log } = this.deps;
     const self = this;
@@ -12787,6 +14263,17 @@ class AdminConsole {
   // `admin-core/admin_actions.ts`'s federationLinkAction(). Paged, like every
   // list on this page.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's federation links, paged, with a Remove per link and a
+   * form to add one for Admin Write.
+   *
+   * @param key - the person's key
+   * @param page - the page of links, with its paging
+   * @param gate - the gate state; `write` draws the forms
+   * @param back - the list to return to after an action
+   * @param params - the page's query, for the pager's links
+   * @returns the section as HTML
+   */
   userFederationLinksSection(key, page, gate, back, params) {
     const { log, federation } = this.deps;
     const self = this;
@@ -12873,6 +14360,16 @@ class AdminConsole {
   // page every other Kerberos key act goes through, and whose answer is the
   // shown-once keytab page.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's Kerberos account (principal and key facts, never a
+   * key) and, for Admin Write on an enabled account, the form that resets
+   * their password and downloads a keytab.
+   *
+   * @param key - the person's key
+   * @param kerberos - the realm's KDC and this person's key state
+   * @param gate - the gate state; `write` draws the form
+   * @returns the section as HTML
+   */
   userKerberosSection(key, kerberos, gate) {
     const { log } = this.deps;
     const self = this;
@@ -12985,6 +14482,16 @@ class AdminConsole {
   // ones, and Remove from only those that hold a value — so a form cannot
   // offer what the action would refuse for the plainest reason.
   // -------------------------------------------------------------------------
+  /**
+   * Draws the forms that set, add to and remove from a person's editable
+   * attributes, and set their address, from ldap/person_editor.ts's answer.
+   *
+   * @param key - the person's key
+   * @param editor - the person editor's answer, or null with no entry
+   * @param gate - the gate state; `write` draws the forms
+   * @param back - the list to return to after an action
+   * @returns the section as HTML
+   */
   userAttributesSection(key, editor, gate, back) {
     const { log } = this.deps;
     const self = this;
@@ -13099,6 +14606,19 @@ class AdminConsole {
       mailForm + listing;
   }
 
+  /**
+   * Draws the controls over a person's password, passkeys, second factors,
+   * account and delegation: reset, reset link, disable or require MFA,
+   * disable or enable, and who may act for them.
+   *
+   * Every control is drawn for Admin Write only and posts to /admin/users.
+   *
+   * @param key - the person's key
+   * @param factors - the person's credential facts, or null with no store
+   * @param gate - the gate state; `write` draws the forms
+   * @param back - the list to return to after an action
+   * @returns the section as HTML
+   */
   userCredentialControlsSection(key, factors, gate, back) {
     const { log } = this.deps;
     const self = this;
@@ -13358,6 +14878,18 @@ class AdminConsole {
 
   // `risk` as `userDetailJson()` takes it; undefined draws no badge, because
   // nobody read the standing.
+  /**
+   * Draws one person's page on /admin/users: tiles, the ways they arrived,
+   * authentications, sessions and their tokens, artifacts, the directory
+   * entry, every credential section and the two sign-out controls.
+   *
+   * @param req - the express request
+   * @param key - the person's key
+   * @param risk - optional; their risk standing as userDetailJson() takes
+   *   it, undefined to draw no badge
+   * @returns an object of inner (the page body as HTML) and json, or null
+   *   when the identity is not one this service knows
+   */
   userDetailPage(req, key, risk?: any) {
     const { log, adminViews, gateStateFor, queryWith, DEFAULT_BLOCKS_PER_PAGE,
             DEFAULT_PER_PAGE } = this.deps;
@@ -13687,6 +15219,13 @@ class AdminConsole {
   // `stats.MAX_USERS` and the directory is not), and SEEN alone is an identity
   // with no entry — a client, an LDAP bind DN, or a subject something was
   // issued for without anybody being present.
+  /**
+   * Draws where a users-list row came from: both, the directory alone, or
+   * seen by this service alone.
+   *
+   * @param row - a row of the users list
+   * @returns the cell's HTML
+   */
   sourceCell(row) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminConsole.sourceCell().");
@@ -13725,6 +15264,13 @@ class AdminConsole {
   // state is the ordinary one for somebody provisioned and not yet activated,
   // and saying "none" plainly is what sends the reader to the activation link
   // on their row.
+  /**
+   * Draws what a person can sign in with (a password and primary security
+   * keys), or "nothing yet" when they hold neither.
+   *
+   * @param factors - the person's credential facts, or null when unknown
+   * @returns the cell's HTML
+   */
   credentialCell(factors) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.credentialCell().");
@@ -13758,6 +15304,13 @@ class AdminConsole {
   // is a function rather than two pieces of markup for the reason every other
   // shared cell here is one: this one carries the `unreadable` state, and a
   // second copy of that branch would be the copy that forgot it.
+  /**
+   * Draws a person's second factors (security keys and authenticator app),
+   * marking an enrolment this process cannot read.
+   *
+   * @param factors - the person's credential facts, or null when unknown
+   * @returns the cell's HTML, "none" when no second factor is required
+   */
   secondFactorCell(factors) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.secondFactorCell().");
@@ -13790,6 +15343,14 @@ class AdminConsole {
     return parts.join(' + ');
   }
 
+  /**
+   * Draws the /admin/users list: the filtered, paged table of identities
+   * seen here or held in the directory, with their sessions, credentials
+   * and second factors.
+   *
+   * @param req - the express request
+   * @returns an object of inner (the page body as HTML) and json
+   */
   usersListPage(req) {
     const { log, adminViews, signOnSessionRows, stats, queryWith, vcClaims,
             newUserContainer } = this.deps;
@@ -13886,9 +15447,10 @@ class AdminConsole {
     const perOptions = this.perPageOptions(paging.perPage);
 
     // THE SECOND-FACTOR COUNTS (2026-09-10), over the WHOLE population rather
-    // than the page — which is why peopleRows() scans rather than reading the
-    // rows being shown. A tile that counted one page of twenty would answer a
-    // question nobody asked.
+    // than the page. A tile that counted one page of twenty would answer a
+    // question nobody asked. Since #352 they come from `peopleCensus()`, one
+    // pass over the directory, and only the rows drawn below are decorated —
+    // `admin-core/CLAUDE.md`, *The users list pages before it decorates*.
     const inner = this.messagesOf(req) +
       '<div class="tiles">' +
         this.tile(all.length, 'people') +
@@ -14103,6 +15665,16 @@ class AdminConsole {
     };
   }
 
+  /**
+   * Answers /admin/users: one person's page when `?user=` names somebody,
+   * a page saying they are unknown when it names nobody known, and the
+   * list otherwise.
+   *
+   * @param req - the express request
+   * @param risk - optional; the person's risk standing, passed on to
+   *   userDetailPage()
+   * @returns an object of json, inner, title and up: the view the console draws
+   */
   usersView(req, risk?: any) {
     const { log, stats, queryWith } = this.deps;
     log.debug("Entering AdminConsole.usersView().");
@@ -14144,6 +15716,19 @@ class AdminConsole {
     return { json: list.json, inner: list.inner, title: 'Users' };
   }
 
+  /**
+   * Handles a POST to /admin/users through usersAction(), naming the signed
+   * in administrator as the actor, and returns to the list or the person's
+   * page at the section the control was on.
+   *
+   * A one-time secret (a password, reset link or app password) is answered
+   * with a page rather than a redirect, unless the caller sent JSON.
+   *
+   * @param req - the express request
+   * @param res - the express response
+   * @param body - the parsed form or JSON body
+   * @param held - the held write, settled with whether the action succeeded
+   */
   usersPost(req, res, body, held) {
     const { log, gateStateFor, usersAction, baseUrlOf, queryWith } = this.deps;
     log.debug("Entering AdminConsole.usersPost().");
@@ -14193,6 +15778,14 @@ class AdminConsole {
 
   // THE PAGE A RESET ANSWERS WITH (2026-09-13): the generated password or the
   // reset link, once, and what else the reset did.
+  /**
+   * Draws the page a reset answers with: the generated password, reset link
+   * or app password shown once, and what else the reset did.
+   *
+   * @param result - usersAction()'s result
+   * @param back - where the Back button returns to
+   * @returns the page body as HTML
+   */
   credentialResetPage(result, back) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.credentialResetPage().");
@@ -14346,6 +15939,13 @@ class AdminConsole {
   // The rows with no `from` produce nothing, and there is exactly one:
   // `description`, which this service writes itself to say why the entry
   // exists.
+  /**
+   * Gives the invented persona createUser() would write for a username, as
+   * form values keyed by LDAP attribute name.
+   *
+   * @param username - the username the persona is seeded from
+   * @returns an object of attribute name to value
+   */
   inventedFieldValues(username) {
     const { log, vcClaims } = this.deps;
     log.debug("Entering AdminConsole.inventedFieldValues(). username=" +
@@ -14386,6 +15986,14 @@ class AdminConsole {
   // it more than a string somebody chose. Three of them are this service's own
   // or SCHAC's rather than an RFC's, and those say so rather than being left to
   // look like the others.
+  /**
+   * Draws one directory attribute as a row of the new-user form, its input
+   * named `field.<attribute>`, with the claim it reaches and its schema.
+   *
+   * @param row - the attribute's catalogue row
+   * @param values - the values to put in the boxes, by attribute
+   * @returns the row as HTML
+   */
   personFieldRow(row, values) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.personFieldRow().");
@@ -14411,6 +16019,13 @@ class AdminConsole {
   // the activation link, TICKED when the realm has a mail transport — an
   // administrator who never sees a person's link cannot be the one who used
   // it — and absent, with the reason, when it has none.
+  /**
+   * Draws the ticked "mail it to them" checkbox (`deliver=mail`) for a
+   * link, or a note that the realm has no mail transport.
+   *
+   * @param what - what is mailed, as the sentence names it
+   * @returns the box or the note as HTML
+   */
   mailLinkBox(what) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.mailLinkBox().");
@@ -14428,6 +16043,13 @@ class AdminConsole {
       '</div>';
   }
 
+  /**
+   * Draws one way in a new person can be given as a radio-button row.
+   *
+   * @param choice - the credential choice (id, label, what)
+   * @param chosen - the id of the choice already selected
+   * @returns the row as HTML
+   */
   credentialChoiceRow(choice, chosen) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.credentialChoiceRow().");
@@ -14447,6 +16069,17 @@ class AdminConsole {
   // THE PAGE. `prefill` is what to put back in the boxes — absent on a first
   // visit, and on a refusal it is what was posted, so nobody retypes
   // twenty-five fields because of one bad username.
+  /**
+   * Draws /admin/users/new, the form that creates a person in this realm's
+   * directory, or a warning in its place when no directory is loaded.
+   *
+   * "Fill with example data" is offered in development mode only.
+   *
+   * @param req - the express request
+   * @param prefill - optional; what was posted and refused, put back in the
+   *   boxes
+   * @returns an object of inner (the page body as HTML) and json
+   */
   newUserPage(req, prefill?) {
     const { log, adminViews, realms, newUserContainer, vcClaims, mode,
             CREDENTIAL_CHOICES, persistence } = this.deps;
@@ -14700,6 +16333,12 @@ class AdminConsole {
     };
   }
 
+  /**
+   * Answers GET /admin/users/new with the new-user form.
+   *
+   * @param req - the express request
+   * @returns an object of json, inner and title: the view the console draws
+   */
   newUserView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.newUserView().");
@@ -14724,6 +16363,15 @@ class AdminConsole {
   // So it is in the BODY of a response this console already marks `no-store`,
   // in a block that says outright that it will not be shown again.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the page a successful create answers with: the generated password
+   * or activation link shown once (or where it was mailed), and the entry
+   * as the store holds it, secrets withheld.
+   *
+   * @param req - the express request, for the link's base URL
+   * @param result - createUser()'s result
+   * @returns the page body as HTML
+   */
   createdUserPage(req, result) {
     const { log, baseUrlOf, queryWith } = this.deps;
     const self = this;
@@ -14871,6 +16519,13 @@ class AdminConsole {
   // is nothing to carry — and `upTo()` handed an empty view reports
   // `filtered:false`, which is what makes the crumb's tooltip say `Back to
   // Users` rather than promising a filter that was never here.
+  /**
+   * Builds the "up" link that makes the new-user page a drill-down of
+   * `/admin/users`, carrying no list view.
+   *
+   * @param leaf - optional; the trail's last crumb, `New user` when omitted
+   * @returns the up link for `respond()`
+   */
   newUserUp(leaf?) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.newUserUp().");
@@ -14879,6 +16534,21 @@ class AdminConsole {
   }
 
   // The create half of `POST /admin/users/new`, run with its name claimed.
+  /**
+   * Runs the create half of `POST /admin/users/new`, with the name already
+   * claimed, and answers the request.
+   *
+   * A refusal redraws the form with everything posted still in it and an
+   * error code marked; success draws the `User created` page. A JSON caller
+   * gets the action's result as JSON.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the parsed form body
+   * @param posted - the posted values, to redraw the form with
+   * @param wantsJson - whether the caller asked for JSON
+   * @param held - the claim on the name, settled with the outcome
+   */
   newUserCreate(req, res, body, posted, wantsJson, held) {
     const { log, gateStateFor, usersAction, errorCodes } = this.deps;
     log.debug("Entering AdminConsole.newUserCreate().");
@@ -14948,6 +16618,12 @@ class AdminConsole {
   // The heading a group's link carries, and the fallback when it has no cn — an
   // entry can be a group by placement alone, and `(no cn)` is a truer label
   // than an empty cell that reads as a rendering fault.
+  /**
+   * Returns the label a group's link carries: its cn, or `(no cn)`.
+   *
+   * @param group - the group as the directory reader returns it
+   * @returns the label as plain text
+   */
   groupLabel(group) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.groupLabel().");
@@ -14955,6 +16631,12 @@ class AdminConsole {
     return group.cn || '(no cn)';
   }
 
+  /**
+   * Draws the cell saying which rule made an entry count as a group.
+   *
+   * @param rule - the rule's key in GROUP_RULES
+   * @returns the cell's HTML, with the rule's explanation as a tooltip
+   */
   groupRuleCell(rule) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.groupRuleCell().");
@@ -14974,6 +16656,14 @@ class AdminConsole {
   // nesting can be walked; to the users page when this console has actually
   // seen that person authenticate. Neither, and the DN stands on its own —
   // which is the commonest case in a directory nobody has signed in to yet.
+  /**
+   * Draws a group member's DN, linked to its group page when it is a group
+   * or to the users page when that person has authenticated here.
+   *
+   * @param member - the member row from the group view
+   * @param known - the user keys this console has seen authenticate
+   * @returns the member's HTML
+   */
   memberLink(member, known) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.memberLink().");
@@ -14998,6 +16688,14 @@ class AdminConsole {
   // alike. Three states and they are all worth telling apart: a name this
   // console has seen authenticate, a name it could file somebody under but
   // never has, and an entry named in a way that yields no user name at all.
+  /**
+   * Draws the "On the users page" cell for a member or a memberOf claimant:
+   * a link, a name marked never here, or a dash when there is no name.
+   *
+   * @param userKey - the user name derived from the entry, or empty
+   * @param known - the user keys this console has seen authenticate
+   * @returns the cell's HTML
+   */
   usersPageCell(userKey, known) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.usersPageCell().");
@@ -15026,6 +16724,11 @@ class AdminConsole {
       this.esc(userKey) + '</a>';
   }
 
+  /**
+   * Draws the note shown when no LDAP directory is loaded in this process.
+   *
+   * @returns the note as HTML
+   */
   noGroupDirectorySection() {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.noGroupDirectorySection().");
@@ -15037,6 +16740,13 @@ class AdminConsole {
   }
 
   // The list.
+  /**
+   * Draws `/admin/groups`: every group in the directory, filtered and paged,
+   * with the create form when this process has a group writer.
+   *
+   * @param req - the request, whose query carries the filter and paging
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
   groupsListPage(req) {
     const { log, adminViews, queryWith } = this.deps;
     const self = this;
@@ -15213,6 +16923,17 @@ class AdminConsole {
   }
 
   // One group: every attribute it has, and everybody in it.
+  /**
+   * Draws one group: its members, the entries that claim it back through
+   * memberOf, the add-member form and every attribute it has.
+   *
+   * A DN that is gone or is not a group is answered with a note saying
+   * which, not a 404.
+   *
+   * @param req - the request
+   * @param wantedDn - the group's DN
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
   groupDetailPage(req, wantedDn) {
     const { log, adminViews, queryWith } = this.deps;
     const self = this;
@@ -15453,6 +17174,13 @@ class AdminConsole {
     return { inner: inner, json: view.json };
   }
 
+  /**
+   * Chooses the groups list or one group's page from the query, or the
+   * no-directory note when no group reader is installed.
+   *
+   * @param req - the request; `group` in its query names one group
+   * @returns the view: `json`, `inner`, `title`, and `up` for a drill-down
+   */
   groupsView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.groupsView().");
@@ -15490,6 +17218,12 @@ class AdminConsole {
   // wtrealm handed a SAML 2.0 assertion in one request and the 1.1 default in
   // the next is both of those. The registry accumulates rather than choosing,
   // so the cell has to.
+  /**
+   * Draws an application's kinds as one cell, one per line, or `unstated`.
+   *
+   * @param kinds - the kinds to draw
+   * @returns the cell's HTML
+   */
   kindCells(kinds) {
     const { log } = this.deps;
     const self = this;
@@ -15509,6 +17243,13 @@ class AdminConsole {
   // application declared on /admin/applications/new for OAuth 2.0 and SAML
   // 2.0 showed "unstated" beside that declaration. It is known; the entry just
   // keeps the two apart (see `declaredKinds` in applications.js's view()).
+  /**
+   * Draws an application's recorded and declared kinds together as one
+   * cell.
+   *
+   * @param row - the application's registry view
+   * @returns the cell's HTML
+   */
   applicationKindCells(row) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationKindCells().");
@@ -15528,6 +17269,13 @@ class AdminConsole {
   // two lines that looked like they disagreed. A declared application now
   // shows its families by name, with what has been seen (or that nothing has
   // yet) under them; one that was never declared shows what was seen.
+  /**
+   * Draws the Protocols cell: the declared families by name with what has
+   * been seen under them, or only what was seen when nothing was declared.
+   *
+   * @param row - the application's registry view
+   * @returns the cell's HTML
+   */
   applicationProtocolCell(row) {
     const { log, applications } = this.deps;
     const self = this;
@@ -15558,6 +17306,13 @@ class AdminConsole {
   // 7591's flag, and so said "no" about an application just created on
   // /admin/applications/new. The flag itself is unchanged: it is what RFC
   // 9700 mode and RFC 7592 turn on (see appRegisteredBy's schema row).
+  /**
+   * Draws the Registered cell: yes and by whom (an administrator, RFC 7591
+   * or startup), or no for an identifier that merely turned up.
+   *
+   * @param row - the application's registry view
+   * @returns the cell's HTML
+   */
   applicationRegisteredCell(row) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationRegisteredCell().");
@@ -15580,6 +17335,19 @@ class AdminConsole {
   // answer from a callback — two copies of this would be two opinions about
   // where a form goes back to, and the one added later would be the one that
   // forgot the list state.
+  /**
+   * Answers a finished application action, sending the reader back to the
+   * application's page (and the section the form was in) with the list
+   * state its `back` field carried.
+   *
+   * A create lands on the entry named in the result, so a refused create
+   * cannot point at an entry that was never made.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the posted form body
+   * @param result - the action's result
+   */
   respondToApplicationAction(req, res, body, result) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.respondToApplicationAction().");
@@ -15631,6 +17399,18 @@ class AdminConsole {
   // it at the token endpoint with `token_endpoint_auth_method=tls_client_auth`,
   // and every access token it is issued is bound to it.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers an issued RFC 8705 TLS client certificate with a page of three
+   * one-time downloads (PKCS#12, encrypted PEM key, chain) and how to use
+   * them, served `no-store`.
+   *
+   * The private key is not kept, so this page is the only copy.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the posted form body, for the application and `back`
+   * @param answer - the issue's result: files, certificate and application
+   */
   answerIssuedTlsClientCertificate(req, res, body, answer) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.answerIssuedTlsClientCertificate().");
@@ -15705,6 +17485,14 @@ class AdminConsole {
   // One value off an application view's fields, whichever shape it is in. The
   // registry hands `multi` attributes back as arrays and `single` ones as
   // strings, and a page that assumed either would be wrong for half the schema.
+  /**
+   * Returns the first value of one attribute of an application view,
+   * whether the registry holds it as an array or a string.
+   *
+   * @param row - the application's registry view
+   * @param attribute - the attribute name
+   * @returns the value trimmed, or an empty string
+   */
   firstFieldValue(row, attribute) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.firstFieldValue().");
@@ -15731,6 +17519,17 @@ class AdminConsole {
   // The entry is optional: `editableOptions(mode, selected)` with no entry
   // offers everything, which is what a caller with no application in hand
   // should get.
+  /**
+   * Draws the options of an edit form's attribute select from the
+   * registry's EDITABLE table, leaving out family-scoped attributes the
+   * entry is not declared for.
+   *
+   * @param mode - which editable set to offer
+   * @param selected - the attribute to mark selected
+   * @param row - optional; the entry being edited, without which every
+   *   attribute is offered
+   * @returns the option elements as HTML
+   */
   editableOptions(mode, selected, row?) {
     const { log, applications } = this.deps;
     const self = this;
@@ -15769,6 +17568,14 @@ class AdminConsole {
   // No description is invented for an attribute nothing here knows. Saying
   // something confident about a name written by hand is how a page starts
   // lying.
+  /**
+   * Says what one attribute of an application entry is: from the published
+   * schema, an operational attribute, an object class, or written by hand.
+   *
+   * @param name - the attribute name
+   * @param operational - whether the directory marks it operational
+   * @returns an object with `text` and, for a schema attribute, `sensitive`
+   */
   applicationAttributeNote(name, operational) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminConsole.applicationAttributeNote().");
@@ -15835,6 +17642,13 @@ class AdminConsole {
   // THE LIST'S EXPIRING-SECRET MARK (#49 P5): a client secret that has
   // expired, or expires within oauth2.clientSecretExpiryWarningDays — the
   // same two the daily job oauth2.client-secret-expiry warns about.
+  /**
+   * Draws the list's mark for a client secret that has expired or expires
+   * within `oauth2.clientSecretExpiryWarningDays`.
+   *
+   * @param row - the application's registry view
+   * @returns the mark as HTML, or an empty string
+   */
   secretExpiryMark(row) {
     const { log, applications, config } = this.deps;
     log.debug("Entering AdminConsole.secretExpiryMark().");
@@ -15859,6 +17673,14 @@ class AdminConsole {
         : '';
   }
 
+  /**
+   * Draws `/admin/applications`: every application in the registry,
+   * filtered by text and kind and paged, with the button to the fuller
+   * form, the short create row and the page's settings.
+   *
+   * @param req - the request, whose query carries the filter and paging
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
   applicationsListPage(req) {
     const { log, adminViews, queryWith, applications } = this.deps;
     const self = this;
@@ -16112,6 +17934,14 @@ class AdminConsole {
   // (`STS-REG-0150`) and the normalisation are there, and
   // `POST /admin-api/applications/add|remove` reaches the same function.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's CORS origins (`appCorsOrigin`), one row each with
+   * a Remove button that posts the value as stored, and a form to add one.
+   *
+   * @param row - the application's registry view
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
   applicationCorsSection(row, carryBack) {
     const { log, applications } = this.deps;
     const self = this;
@@ -16180,6 +18010,13 @@ class AdminConsole {
       'is refused with the reason (<code>STS-REG-0150</code>).');
   }
 
+  /**
+   * Draws the protocol families an application is declared for beside the
+   * ones recorded from its kinds, listing only families that are either.
+   *
+   * @param row - the application's registry view
+   * @returns the section as HTML
+   */
   protocolFamilySection(row) {
     const { log, applications } = this.deps;
     const self = this;
@@ -16241,6 +18078,101 @@ class AdminConsole {
       '</table>';
   }
 
+  // ---------------------------------------------------------------------------
+  // APPLICATION PERMISSIONS (#93): the roles this application holds AS
+  // ITSELF, which its client_credentials tokens carry — beside the delegated
+  // permissions above, which it holds on a PERSON's behalf. One store, the
+  // role entry: the forms post to /admin/roles as add-member and
+  // remove-member with `kind=application`, the same act as on that page and
+  // audited the same (`roles.grant`, `roles.revoke`); granting here is the
+  // administrator's consent, and there is no second step. `from` and `client`
+  // bring the browser back to this section.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's application permissions: the roles it holds as
+   * itself, each with Remove, and a form to grant another.
+   *
+   * The forms post to `/admin/roles`.
+   *
+   * @param row - the application's registry view
+   * @param state - `adminViews.applicationRolesState()`
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
+  applicationRolesSection(row, state, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationRolesSection(). " +
+              "identifier=" + row.identifier);
+    const identifier = row.identifier;
+    const hidden = function (action, role) {
+      return carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="from" value="/admin/applications">' +
+        '<input type="hidden" name="client" value="' + self.esc(identifier) +
+        '"><input type="hidden" name="kind" value="application">' +
+        '<input type="hidden" name="member" value="' + self.esc(identifier) +
+        '">' + (role === null ? '' : '<input type="hidden" name="role" ' +
+        'value="' + self.esc(role) + '">');
+    };
+    const rows = (state.held || []).map(function (one) {
+      return '<tr><td><a href="/admin/roles#roles"><code>' +
+        self.esc(one.name) + '</code></a>' +
+        (one.displayName ? '<br><span class="sub">' +
+          self.esc(one.displayName) + '</span>' : '') + '</td>' +
+        '<td>' + (one.application
+          ? 'a token for <code>' + self.esc(one.application) + '</code>, as ' +
+            '<code>' + self.esc(one.carriedAs) + '</code>'
+          : 'every token, as <code>' + self.esc(one.carriedAs) + '</code>') +
+        '</td><td>' + (one.permissions.length
+          ? one.permissions.map(function (permission) {
+              return '<div><code>' + self.esc(permission) + '</code></div>';
+            }).join('')
+          : '<span class="state-none">none</span>') + '</td>' +
+        '<td><form method="post" action="/admin/roles">' +
+        hidden('remove-member', one.name) +
+        '<button type="submit" class="danger">Remove</button></form></td>' +
+        '</tr>';
+    }).join('');
+    const options = (state.offerable || []).map(function (name) {
+      return '<option value="' + self.esc(name) + '">' + self.esc(name) +
+             '</option>';
+    }).join('');
+    log.debug("Leaving AdminConsole.applicationRolesSection().");
+    return '<h3 id="app-roles">Application permissions</h3>' +
+      this.note('The roles <code>' + this.esc(identifier) + '</code> holds ' +
+        '<strong>as itself</strong>, which its client_credentials tokens ' +
+        'carry in the roles claim: a realm-wide role in every token, and an ' +
+        'application\'s own role only in a token for that application. ' +
+        'Delegated permissions, above, are what it holds on a person\'s ' +
+        'behalf. Granting a role here is the administrator\'s consent; it ' +
+        'is the same act as adding this application to the role on ' +
+        '<a href="/admin/roles">Roles</a>.') +
+      '<table><thead><tr><th>Role</th><th>Carried in</th><th>Authorizes' +
+      '</th><th></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="4"><span class="state-none">It holds no ' +
+               'role.</span></td></tr>') + '</tbody></table>' +
+      (options
+        ? '<form method="post" action="/admin/roles"><div class="formrow">' +
+          hidden('add-member', null) +
+          '<label>Grant <select name="role">' + options + '</select>' +
+          '</label><button type="submit">Grant</button></div></form>'
+        : '<p class="sub">No role admits an application that it does not ' +
+          'already hold. Make one on <a href="/admin/roles#create">Roles' +
+          '</a>.</p>');
+  }
+
+  /**
+   * Draws an application's delegated permissions: those it holds, with
+   * Revoke; a form to grant another; and those it exposes, read-only.
+   *
+   * The forms post to `/admin/delegation`.
+   *
+   * @param req - the request, whose query carries the paging
+   * @param row - the application's registry view
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
   applicationPermissionsSection(req, row, carryBack) {
     const { log, applicationPermissionsState, pageParamsOf,
             queryWith } = this.deps;
@@ -16464,6 +18396,16 @@ class AdminConsole {
   // `adminViews.applicationDetailJson()`'s, so the table and
   // `GET /admin-api/applications?application=` are one computation.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the return addresses a development-mode request put on the entry,
+   * each with Confirm and Discard; product mode refuses them until
+   * confirmed.
+   *
+   * @param req - the request, whose query carries the paging
+   * @param view - the application's detail view model
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
   applicationObservedAddressesSection(req, view, carryBack) {
     const { log, pageParamsOf, mode } = this.deps;
     const self = this;
@@ -16538,6 +18480,15 @@ class AdminConsole {
   // identifier and the list state `back` carries, never echoed, for
   // `permissionsReturnTo()`'s reason one section up.
   // ---------------------------------------------------------------------------
+  /**
+   * Rebuilds the path back to an application's page, with the list state
+   * from `back`, for a form posted from it to another handler.
+   *
+   * @param body - the posted form body
+   * @param identifier - the application's identifier
+   * @param anchor - kept only when it is `#credentials`
+   * @returns the path to redirect to
+   */
   applicationReturnTo(body, identifier, anchor) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.applicationReturnTo(). identifier=" +
@@ -16554,6 +18505,15 @@ class AdminConsole {
   // `/admin/pki` controls for that person's RFC 7523 and RFC 7522 key pairs.
   // The same rule, the same shape: the name arrives in the body and the
   // destination is rebuilt around it, never echoed.
+  /**
+   * Rebuilds the path back to a person's page, with the list state from
+   * `back`, for a form posted from it to another handler.
+   *
+   * @param body - the posted form body
+   * @param key - the person's user key
+   * @param anchor - kept only when it is one of the page's known sections
+   * @returns the path to redirect to
+   */
   userReturnTo(body, key, anchor) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.userReturnTo(). key=" + key);
@@ -16565,6 +18525,13 @@ class AdminConsole {
              ? anchor : '');
   }
 
+  /**
+   * Draws a certificate summary: subject, issuer, serial, expiry and key
+   * type, or `none` or `unreadable`.
+   *
+   * @param summary - the certificate summary, or nothing
+   * @returns the cell's HTML
+   */
   certificateCells(summary) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.certificateCells().");
@@ -16614,6 +18581,19 @@ class AdminConsole {
   // **NO SCRIPT.** The secret is behind a `<details>`, which is how this
   // console folds everything, and the upload is two textareas.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's Credentials section: the client secret with its
+   * regenerate and rotate forms, the assertion profiles' key pairs with
+   * their issue, upload and take-off controls, and mutual TLS.
+   *
+   * The key-pair and mutual TLS parts are drawn only for an application
+   * declared for OAuth 2.0 or OpenID Connect.
+   *
+   * @param req - the request
+   * @param view - the application's detail view model
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
   applicationCredentialsSection(req, view, carryBack) {
     const { log } = this.deps;
     const self = this;
@@ -16894,6 +18874,16 @@ class AdminConsole {
   // **NO SCRIPT**: a form per certificate to revoke it, and two password
   // fields.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's RFC 8705 mutual TLS subsection: the certificates
+   * issued to it with a revoke form each, the issue form, and the subject
+   * parameters for a certificate from another authority.
+   *
+   * @param state - the mutual TLS model from `applicationMtlsState()`
+   * @param id - the application's identifier
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the subsection as HTML
+   */
   applicationMtlsSection(state, id, carryBack) {
     const { log } = this.deps;
     const self = this;
@@ -17044,6 +19034,16 @@ class AdminConsole {
   // **NO SCRIPT.** The statement is behind a `<details>`, and the metadata a
   // new one fixes is a textarea of JSON.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's RFC 7591 software statements: the issuers it
+   * vouches for, the statement this realm issued with the issue form, and
+   * how a statement let it register.
+   *
+   * @param req - the request
+   * @param view - the application's detail view model
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
   applicationSoftwareStatementSection(req, view, carryBack) {
     const { log } = this.deps;
     const self = this;
@@ -17202,6 +19202,18 @@ class AdminConsole {
   // convention pagingOf()'s header describes for a view that holds more than
   // the list views do, and the shape to grow into when this page gains a second
   // list.
+  /**
+   * Draws one application's page: its summary, every attribute of its
+   * directory entry, and the sections and forms that change it.
+   *
+   * An identifier not in the registry is answered with a note and
+   * `missing: true`.
+   *
+   * @param req - the request
+   * @param identifier - the application's identifier
+   * @returns `inner` (the page body as HTML), `json`, and `missing` when
+   *   not found
+   */
   applicationDetailPage(req, identifier) {
     const { log, adminViews, queryWith, pageParamsOf } = this.deps;
     const self = this;
@@ -17427,6 +19439,8 @@ class AdminConsole {
       // will say, whether it has ever been asked for) is something only the
       // register can answer.
       this.applicationPermissionsSection(req, row, carryBack) +
+      // AND WHAT IT MAY DO AS ITSELF (#93): the roles it holds.
+      this.applicationRolesSection(row, view.rolesState, carryBack) +
 
 
       // THE METADATA REFRESH, and the only control on this page that reaches
@@ -17510,6 +19524,14 @@ class AdminConsole {
     return { inner: inner, json: view.json };
   }
 
+  /**
+   * Chooses the applications list or one application's page from the
+   * query.
+   *
+   * @param req - the request; `application` in its query names one
+   * @returns the view: `json`, `inner`, `title`, and `missing` and `up` for
+   *   a drill-down
+   */
   applicationsView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationsView().");
@@ -17603,6 +19625,14 @@ class AdminConsole {
   // and a refused create redraws the boxes the reader had ticked. It is a
   // separate argument and not `Array.prototype.map`'s index, which a bare
   // `.map(protocolChoiceRow)` would have passed as a truthy number.
+  /**
+   * Draws one protocol family as a checkbox row of the new-application
+   * form, with the kind it would be recorded as.
+   *
+   * @param row - the family's row from the PROTOCOLS table
+   * @param checked - true to draw the box ticked
+   * @returns the table row as HTML
+   */
   protocolChoiceRow(row, checked) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.protocolChoiceRow().");
@@ -17664,6 +19694,13 @@ class AdminConsole {
   //
   // A block with NO families is not given `pf` at all: it is unconditional, and
   // tagging it would hide it forever.
+  /**
+   * Returns the CSS classes that show a block only while one of its
+   * families is ticked.
+   *
+   * @param ids - the family ids the block serves
+   * @returns `pf pf-<id> ...`, or an empty string for an unconditional block
+   */
   familyClasses(ids) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.familyClasses().");
@@ -17676,6 +19713,14 @@ class AdminConsole {
     return 'pf ' + list.map(function (id) { return 'pf-' + id; }).join(' ');
   }
 
+  /**
+   * Draws one declared attribute as a form row named `field.<attribute>`:
+   * a textarea for a multi-valued attribute, an input otherwise.
+   *
+   * @param row - the attribute's row from `declarationAttributes()`
+   * @param draft - optional; the posted form, to redraw its value
+   * @returns the table row as HTML
+   */
   declarationFieldRow(row, draft?) {
     const { log } = this.deps;
     const self = this;
@@ -17776,6 +19821,14 @@ class AdminConsole {
   // A `select` for a bool rather than a checkbox, for `configRow()`'s reason —
   // an unticked checkbox posts NOTHING, which here is indistinguishable from
   // "leave it alone". The empty option is what makes "inherit" expressible.
+  /**
+   * Draws one per-application setting override as a form row. Nothing calls
+   * it; `samlOverrideFieldRow()` is the live copy.
+   *
+   * @param row - the overridable setting's row
+   * @returns the table row as HTML, or an empty string for an unknown
+   *   setting
+   */
   unreachedSamlOverrideFieldRow(row) {
     const { log, configSettingFor, config } = this.deps;
     const self = this;
@@ -17860,6 +19913,15 @@ class AdminConsole {
   // A `select` for a bool rather than a checkbox, for `configRow()`'s reason —
   // an unticked checkbox posts NOTHING, which here cannot be told from "leave
   // it alone". The empty option is what makes "inherit" expressible.
+  /**
+   * Draws one per-application setting override as a form row, empty by
+   * default (inherit) with the inherited value as its placeholder.
+   *
+   * @param row - the overridable setting's row
+   * @param draft - optional; the posted form, to redraw its value
+   * @returns the table row as HTML, or an empty string for an unknown
+   *   setting
+   */
   samlOverrideFieldRow(row, draft?) {
     const { log, configSettingFor, config } = this.deps;
     const self = this;
@@ -17926,6 +19988,13 @@ class AdminConsole {
       '</td></tr>';
   }
 
+  /**
+   * Draws the fields saying where SAML 2.0 encryption gets the service
+   * provider's key, shown only while SAML 2.0 is ticked.
+   *
+   * @param draft - optional; the posted form, to redraw its values
+   * @returns the section as HTML
+   */
   samlKeySourceSection(draft?) {
     const { log } = this.deps;
     const self = this;
@@ -17969,6 +20038,13 @@ class AdminConsole {
       rows + '</table></div>';
   }
 
+  /**
+   * Draws every per-application setting override, grouped by
+   * OVERRIDE_SECTIONS, with unmatched settings in a section of their own.
+   *
+   * @param draft - optional; the posted form, to redraw its values
+   * @returns the section as HTML, or an empty string when there are none
+   */
   samlOverrideFieldsSection(draft?) {
     const { log, applications } = this.deps;
     const self = this;
@@ -18064,6 +20140,17 @@ class AdminConsole {
   // pane draws `oauthClientId` — because two fields with one name in one form
   // post the name twice and `parseBody()` keeps whichever came LAST, which
   // would be the empty box below the one the reader filled in.
+  /**
+   * Draws the declared attributes of one role as a table, shown while any
+   * of its families is ticked.
+   *
+   * @param role - the role to draw (`identifier`, `redirect`, and so on)
+   * @param heading - the section's heading, as HTML
+   * @param intro - the section's introduction, as HTML
+   * @param omit - optional; attributes another part of the form draws
+   * @param draft - optional; the posted form, to redraw its values
+   * @returns the section as HTML, or an empty string when it has no rows
+   */
   declarationFieldsSection(role, heading, intro, omit?, draft?) {
     const { log, applications } = this.deps;
     const self = this;
@@ -18108,6 +20195,13 @@ class AdminConsole {
   // has no name, so it is never posted, and it is ticked whenever a document is
   // on the page or was just refused, so the reader is not left hunting for the
   // form their error is about.
+  /**
+   * Draws the form that loads OAuth 2.0 Protected Resource Metadata
+   * (RFC 9728) to configure the new application from.
+   *
+   * @param state - the page state, for the last input and any load error
+   * @returns the section as HTML
+   */
   resourceMetadataLoadSection(state) {
     const { log, resourceMetadata, mode } = this.deps;
     log.debug("Entering AdminConsole.resourceMetadataLoadSection().");
@@ -18166,6 +20260,14 @@ class AdminConsole {
   // What the third tab's boxes hold: the plan's defaults, or — on a redraw
   // after a refused create — what the reader had typed. A key present in the
   // posted body is what they typed, including an emptied box.
+  /**
+   * Returns what the imported metadata's editable fields hold: the plan's
+   * defaults, or what was typed when a refused create is redrawn.
+   *
+   * @param loaded - the loaded document and its plan
+   * @param draft - the posted form, or nothing
+   * @returns the field values, with the document's members under `members`
+   */
   resourceMetadataValues(loaded, draft) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.resourceMetadataValues().");
@@ -18203,6 +20305,12 @@ class AdminConsole {
   }
 
   // One JSON value, readable in a table cell.
+  /**
+   * Draws one JSON value readably in a table cell.
+   *
+   * @param value - the value
+   * @returns the cell's HTML
+   */
   resourceMetadataValueCell(value) {
     const { log } = this.deps;
     const self = this;
@@ -18222,6 +20330,13 @@ class AdminConsole {
   // 3.3, and every warning the reading produced. ABOVE the tabs rather than on
   // one of them, because a reader on the raw JSON tab must not miss that none
   // of the authorization servers is this realm's.
+  /**
+   * Draws the banners above the metadata tabs: how the authorization servers
+   * compare with this realm's, section 3.3, and every reading warning.
+   *
+   * @param loaded - the loaded document and what it was read as
+   * @returns the banners as HTML
+   */
   resourceMetadataBanners(loaded) {
     const { log } = this.deps;
     const self = this;
@@ -18284,6 +20399,15 @@ class AdminConsole {
   // THE THREE TABS. `tab` picks which one is open: the raw JSON on a fresh
   // load, and the editable fields when a refused create is redrawn, because
   // those are what the refusal is about.
+  /**
+   * Draws the loaded metadata as three tabs (the raw JSON, its members and
+   * the editable fields), without a script.
+   *
+   * @param loaded - the loaded document and what it was read as
+   * @param draft - the posted form, or nothing
+   * @param tab - the tab to open; the raw JSON when empty
+   * @returns the pane as HTML
+   */
   resourceMetadataPane(loaded, draft, tab) {
     const { log } = this.deps;
     const self = this;
@@ -18500,6 +20624,16 @@ class AdminConsole {
     return html;
   }
 
+  /**
+   * Draws `/admin/applications/new`: the identifier, the protocol families,
+   * the per-protocol fields, the settings overrides and the RFC 9728 import.
+   *
+   * With no directory loaded it draws a note instead of the form.
+   *
+   * @param req - the request
+   * @param state - the page state: a loaded document, an error, the draft
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
   newApplicationPage(req, state) {
     const { log, adminViews, realms, applications } = this.deps;
     const self = this;
@@ -18713,6 +20847,13 @@ class AdminConsole {
     };
   }
 
+  /**
+   * Builds the new-application view for the console shell.
+   *
+   * @param req - the request
+   * @param state - optional; the page state, as `newApplicationPage()` takes
+   * @returns the view: `json`, `inner` and `title`
+   */
   newApplicationView(req, state?) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.newApplicationView().");
@@ -18734,6 +20875,15 @@ class AdminConsole {
   //
   // A JSON caller gets JSON throughout, as everywhere on this console.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers with the new-application page redrawn from a round trip of its
+   * own form, marking an error code when one is given.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param state - the page state to draw
+   * @param code - optional; the error code to mark on the response
+   */
   newApplicationRedraw(req, res, state, code?) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AdminConsole.newApplicationRedraw().");
@@ -18747,6 +20897,13 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.newApplicationRedraw().");
   }
 
+  /**
+   * Draws the authorization server metadata members as options grouped by
+   * their group.
+   *
+   * @param selected - the member to mark selected
+   * @returns the optgroup elements as HTML
+   */
   asMemberOptions(selected) {
     const { log, authorizationServers } = this.deps;
     const self = this;
@@ -18766,6 +20923,13 @@ class AdminConsole {
     }).join('');
   }
 
+  /**
+   * Draws `/admin/authorization-servers`: every authorization server
+   * profile, paged, and the form to add one.
+   *
+   * @param req - the request, whose query carries the paging
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
   asListPage(req) {
     const { log, adminViews, asDriftRows, queryWith } = this.deps;
     const self = this;
@@ -18865,6 +21029,18 @@ class AdminConsole {
     };
   }
 
+  /**
+   * Draws one authorization server profile: what it does, its overridden
+   * and removed members, and the forms to publish, stop publishing or
+   * delete.
+   *
+   * An unknown profile is answered with a note and `missing: true`.
+   *
+   * @param req - the request
+   * @param id - the profile's id
+   * @returns `inner` (the page body as HTML), `json`, and `missing` when
+   *   not found
+   */
   asDetailPage(req, id) {
     const { log, adminViews, queryWith, authorizationServers } = this.deps;
     const self = this;
@@ -19039,6 +21215,14 @@ class AdminConsole {
     return { inner: inner, json: view.json };
   }
 
+  /**
+   * Chooses the authorization server list or one profile's page from the
+   * query.
+   *
+   * @param req - the request; `profile` in its query names one
+   * @returns the view: `json`, `inner`, `title`, and `missing` and `up` for
+   *   a drill-down
+   */
   authorizationServersView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.authorizationServersView().");
@@ -19075,6 +21259,14 @@ class AdminConsole {
   // it is drawn on the SAML 1.1 page as well and configFormsFor() says so on
   // both.
 
+  /**
+   * Draws `/admin/saml2`: the SAML 2.0 service providers, filtered and
+   * paged, with the register and Metadata Query import forms and the
+   * page's settings.
+   *
+   * @param req - the request, whose query carries the filter and paging
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
   saml2ListPage(req) {
     const { log, adminViews, saml2Facts, queryWith, SAML2_SP_KIND } = this.deps;
     const self = this;
@@ -19236,6 +21428,15 @@ class AdminConsole {
     };
   }
 
+  /**
+   * Draws one SAML 2.0 service provider: the endpoints it is configured
+   * from, its registered addresses, its signing certificates and its
+   * metadata.
+   *
+   * @param req - the request
+   * @param identifier - the service provider's identifier
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
   saml2DetailPage(req, identifier) {
     const { log, adminViews, queryWith, config, valuesFor } = this.deps;
     const self = this;
@@ -19397,6 +21598,16 @@ class AdminConsole {
   // metadata document registered, so the list is drawn whole — the same as
   // the endpoint lists above it.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the certificates a service provider's signatures are verified
+   * against, each with Remove, and an observed one with Confirm and
+   * Discard.
+   *
+   * @param identifier - the service provider's identifier
+   * @param json - the detail page's JSON view
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
   saml2SigningCertificatesSection(identifier, json, carryBack) {
     const { log } = this.deps;
     const self = this;
@@ -19465,6 +21676,15 @@ class AdminConsole {
   // beside the URL it dials, and this links there rather than drawing a second
   // copy of it.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws what a service provider's consumed metadata registered, and the
+   * form to upload a metadata document.
+   *
+   * @param identifier - the service provider's identifier
+   * @param json - the detail page's JSON view
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
   saml2MetadataSection(identifier, json, carryBack) {
     const { log } = this.deps;
     const self = this;
@@ -19624,6 +21844,13 @@ class AdminConsole {
     return html;
   }
 
+  /**
+   * Chooses the SAML 2.0 list or one service provider's page from the
+   * query.
+   *
+   * @param req - the request; `sp` in its query names one
+   * @returns the view: `json`, `inner`, `title`, and `up` for a drill-down
+   */
   saml2View(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.saml2View().");
@@ -19646,6 +21873,12 @@ class AdminConsole {
   // The registry holds the profile URI, which is what the metadata publishes
   // and what a person reading a table does not want to compare character by
   // character.
+  /**
+   * Names the SAML 1.1 browser profile a profile URI stands for.
+   *
+   * @param value - the recorded profile URI
+   * @returns `Browser/POST`, `Browser/Artifact`, or the value unchanged
+   */
   saml11ProfileLabel(value) {
     const { log, saml11 } = this.deps;
     log.debug("Entering AdminConsole.saml11ProfileLabel().");
@@ -19668,6 +21901,13 @@ class AdminConsole {
   // draws it, so a reader who sets it here is told it is the same value the 2.0
   // page shows.
 
+  /**
+   * Draws `/admin/saml11`: the SAML 1.1 relying parties, filtered and
+   * paged, with the register form and the page's settings.
+   *
+   * @param req - the request, whose query carries the filter and paging
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
   saml11ListPage(req) {
     const { log, adminViews, saml11Facts, queryWith, valuesFor, saml11,
             SAML11_RP_KIND } = this.deps;
@@ -19790,6 +22030,14 @@ class AdminConsole {
     };
   }
 
+  /**
+   * Draws one SAML 1.1 relying party: the endpoints it is configured from,
+   * its registered addresses and profiles, and what is not here.
+   *
+   * @param req - the request
+   * @param identifier - the relying party's identifier
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
   saml11DetailPage(req, identifier) {
     const { log, adminViews, config, valuesFor } = this.deps;
     const self = this;
@@ -19914,6 +22162,12 @@ class AdminConsole {
     };
   }
 
+  /**
+   * Chooses the SAML 1.1 list or one relying party's page from the query.
+   *
+   * @param req - the request; `rp` in its query names one
+   * @returns the view: `json`, `inner`, `title`, and `up` for a drill-down
+   */
   saml11View(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.saml11View().");
@@ -19932,6 +22186,18 @@ class AdminConsole {
                                                         'provider' };
   }
 
+  /**
+   * Handles a POST to /admin/groups: runs the groups action, settles the
+   * held write, and redirects.
+   *
+   * A successful create lands on the group it made; a refusal goes back to
+   * the page that asked, so the message sits beside its form.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the parsed form body
+   * @param held - the held write, settled with the action's outcome
+   */
   groupsPost(req, res, body, held) {
     const { log, groupsAction, queryWith } = this.deps;
     log.debug("Entering AdminConsole.groupsPost().");
@@ -19956,6 +22222,16 @@ class AdminConsole {
   // A membership value that names an entry which is not there. It is a normal
   // state here rather than a fault — see the grant form's note — so it is
   // marked and explained rather than hidden or repaired.
+  /**
+   * Draws the person cell of one admin-role grant row.
+   *
+   * A known person links to their Users page; one in the directory but never
+   * seen is marked "never here", and a DN with no entry is marked "dangling".
+   *
+   * @param row - the grant row
+   * @param knownKeys - the user keys that have a page on Users
+   * @returns the cell's contents as HTML
+   */
   rbacMemberCell(row, knownKeys) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.rbacMemberCell().");
@@ -19991,6 +22267,13 @@ class AdminConsole {
   // list at all; and it cannot be taken away from here, so the row says that
   // too rather than offering a button that would report success and change
   // nothing.
+  /**
+   * Draws the mark on a grant held through the person's own memberOf rather
+   * than the group's member list.
+   *
+   * @param row - the grant row
+   * @returns the "via their own memberOf" mark as HTML, or an empty string
+   */
   rbacClaimedMark(row) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.rbacClaimedMark().");
@@ -20007,6 +22290,16 @@ class AdminConsole {
            'console writes only to groups.">via their own memberOf</span>';
   }
 
+  /**
+   * Builds /admin/rbac: who holds each console role, the grant and revoke
+   * forms, and the settings of the console gate.
+   *
+   * Drawn from adminViews.rbacListJson(), the same model GET /admin-api/rbac
+   * answers with; the forms appear only for Admin Write.
+   *
+   * @param req - the request
+   * @returns the page body as HTML (inner) and the model (json)
+   */
   rbacListPage(req) {
     const { log, adminViews, queryWith, pageParamsOf, rbac,
             queryOne } = this.deps;
@@ -20368,6 +22661,12 @@ class AdminConsole {
   // worth breaking to tidy a table.
   // ===========================================================================
 
+  /**
+   * Builds the Admin roles page for the console's page shell.
+   *
+   * @param req - the request
+   * @returns the page's json, inner HTML and title
+   */
   rbacView(req): Record<string, any> {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.rbacView().");
@@ -20417,6 +22716,12 @@ class AdminConsole {
 
 
 
+  /**
+   * Draws the hidden "back" field the consent page's forms carry.
+   *
+   * @param listView - the list view to return to, or nothing
+   * @returns a hidden input as HTML
+   */
   consentBack(listView) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.consentBack().");
@@ -20426,6 +22731,14 @@ class AdminConsole {
   }
 
   // One row of the overrides table.
+  /**
+   * Draws one row of the global consent table: the application, the scope,
+   * what the scope is, and a Remove form.
+   *
+   * @param one - the global consent row
+   * @param listView - the list view the links and form carry
+   * @returns the table row as HTML
+   */
   globalConsentRow(one, listView) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.globalConsentRow().");
@@ -20464,6 +22777,17 @@ class AdminConsole {
   }
 
   // One row of the recorded table.
+  /**
+   * Draws one row of the recorded consent table: the person, the
+   * application, the scope and a Revoke form.
+   *
+   * A value not in the shape this service writes is shown as it is, with no
+   * form, rather than dropped.
+   *
+   * @param one - the recorded consent row
+   * @param listView - the list view the links and form carry
+   * @returns the table row as HTML
+   */
   recordedConsentRow(one, listView) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.recordedConsentRow().");
@@ -20509,6 +22833,16 @@ class AdminConsole {
       '</form></td></tr>';
   }
 
+  /**
+   * Installs the hooks /admin/roles uses to preview an issuance decision,
+   * here and in the read layer.
+   *
+   * Refused whole, with STS-ADMIN-0014 logged, unless both preview() and
+   * policy() are functions.
+   *
+   * @param hooks - an object with preview() and policy()
+   * @returns true if installed, false if refused
+   */
   setRolePreviewer(hooks) {
     const { log, errorCodes, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setRolePreviewer().");
@@ -20534,6 +22868,12 @@ class AdminConsole {
     return true;
   }
 
+  /**
+   * Draws the hidden "back" field the roles page's forms carry.
+   *
+   * @param listView - the list view to return to, or nothing
+   * @returns a hidden input as HTML
+   */
   rolesBack(listView) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.rolesBack().");
@@ -20546,6 +22886,17 @@ class AdminConsole {
   // one column each rather than one list of "members", because the three are
   // looked up in three different places and a reader tracking down why somebody
   // holds a role needs to know which one to look in.
+  /**
+   * Draws one row of the configured roles table: a column per member kind,
+   * the permissions, and a Delete form.
+   *
+   * A console role's people and groups link to Admin roles instead of
+   * carrying Remove buttons, and a console role cannot be deleted.
+   *
+   * @param one - the configured role
+   * @param listView - the list view the forms carry
+   * @returns the table row as HTML
+   */
   roleRow(one, listView) {
     const { log, ROLE_MEMBER_KINDS } = this.deps;
     const self = this;
@@ -20554,6 +22905,14 @@ class AdminConsole {
       const list = one[kindRow.field];
       if (!list.length) {
         return '<td><span class="state-none">none</span></td>';
+      }
+      // A CONSOLE ROLE'S PEOPLE AND GROUPS ARE THE ROSTER'S (#303): drawn,
+      // with the door that changes them, and no Remove button here.
+      if (one.console && kindRow.kind !== 'application') {
+        return '<td>' + list.map(function (member) {
+          return '<div><code>' + self.esc(member) + '</code></div>';
+        }).join('') + '<span class="sub">set on <a href="/admin/rbac">Admin ' +
+          'roles</a></span></td>';
       }
       return '<td>' + list.map(function (member) {
         return '<div><code>' + self.esc(member) + '</code> ' +
@@ -20567,17 +22926,106 @@ class AdminConsole {
           '"><button type="submit" class="danger">Remove</button></form></div>';
       }).join('') + '</td>';
     }).join('');
+    // WHAT THE ROLE AUTHORIZES (#303), each removable unless the role is a
+    // console role, whose permission is fixed.
+    const permissions = (one.permissions || []).length
+      ? '<td>' + one.permissions.map(function (permission) {
+          return '<div><code>' + self.esc(permission) + '</code>' +
+            (one.native ? '' :
+              ' <form method="post" action="/admin/roles" class="inline">' +
+              self.rolesBack(listView) +
+              '<input type="hidden" name="action" value="remove-permission">' +
+              '<input type="hidden" name="role" value="' +
+              self.esc(one.name) + '"><input type="hidden" ' +
+              'name="permission" value="' + self.esc(permission) + '">' +
+              '<button type="submit" class="danger">Remove</button>' +
+              '</form>') + '</div>';
+        }).join('') + '</td>'
+      : '<td><span class="state-none">none</span></td>';
     log.debug("Leaving AdminConsole.roleRow().");
     return '<tr><td class="who"><code>' + this.esc(one.name) + '</code>' +
+      (one.console ? ' <span class="sub">console role</span>'
+        : (one.native ? ' <span class="sub">native role</span>' : '')) +
+      // AN APPLICATION'S ROLE (#310): whose it is, and the name its tokens
+      // carry.
+      (one.application ? '<br><span class="sub">role of <code>' +
+        this.esc(one.application) + '</code>, carried as <code>' +
+        this.esc(one.localName) + '</code></span>' : '') +
       (one.description ? '<br><span class="sub">' + this.esc(one.description) +
                          '</span>' : '') +
-      '</td>' + members +
-      '<td class="act"><form method="post" action="/admin/roles">' +
-        this.rolesBack(listView) +
-        '<input type="hidden" name="action" value="delete-role">' +
-        '<input type="hidden" name="role" value="' + this.esc(one.name) + '">' +
-        '<button type="submit" class="danger">Delete</button>' +
-      '</form></td></tr>';
+      // ITS LABEL, WHO MAY HOLD IT AND ITS STABLE ID (#93).
+      (one.displayName ? '<br><span class="sub">shown as <b>' +
+        this.esc(one.displayName) + '</b></span>' : '') +
+      ((one.memberTypes || []).length ? '<br><span class="sub">held by ' +
+        this.esc(this.roleMemberTypesLabel(one.memberTypes)) + ' only</span>'
+        : '') +
+      (one.id ? '<br><span class="sub">id <code>' + this.esc(one.id) +
+        '</code></span>' : '') +
+      '</td>' + members + permissions +
+      '<td class="act">' + this.roleEditFold(one, listView) + (one.native
+        ? '<span class="sub">kept in every realm</span>'
+        : '<form method="post" action="/admin/roles">' +
+          this.rolesBack(listView) +
+          '<input type="hidden" name="action" value="delete-role">' +
+          '<input type="hidden" name="role" value="' + this.esc(one.name) +
+          '">' +
+          '<button type="submit" class="danger">Delete</button>' +
+          '</form>') + '</td></tr>';
+  }
+
+  // Who a role's member types let hold it, in words (#93).
+  /**
+   * Names a role's member types for people: "people", "applications".
+   *
+   * @param types - the role's `memberTypes`
+   * @returns the words
+   */
+  roleMemberTypesLabel(types) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.roleMemberTypesLabel().");
+    log.debug("Leaving AdminConsole.roleMemberTypesLabel().");
+    return (types || []).map(function (one) {
+      return one === 'user' ? 'people' : 'applications';
+    }).join(' and ');
+  }
+
+  // THE EDIT FOLD (#93): describe-role's form — the description, the display
+  // name and, for any role but a console role, who may hold it. Every field
+  // is posted, filled with what the role has, so saving one change keeps the
+  // others. A `<details>`, which needs no script (the policy's rule).
+  /**
+   * Draws a role's Edit fold: its description, display name and member
+   * types, posted as describe-role.
+   *
+   * @param one - the configured role
+   * @param listView - the list view the form carries
+   * @returns the fold as HTML
+   */
+  roleEditFold(one, listView) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.roleEditFold().");
+    const current = (one.memberTypes || []).length === 1
+      ? one.memberTypes[0] : '';
+    const typeField = one.console ? ''
+      : '<label>May be held by <select name="memberTypes">' +
+        [['', 'people and applications'], ['user', 'people only'],
+         ['application', 'applications only']].map(function (option) {
+          return '<option value="' + option[0] + '"' +
+                 (option[0] === current ? ' selected' : '') + '>' +
+                 self.esc(option[1]) + '</option>';
+        }).join('') + '</select></label>';
+    log.debug("Leaving AdminConsole.roleEditFold().");
+    return '<details><summary>Edit</summary>' +
+      '<form method="post" action="/admin/roles">' +
+      this.rolesBack(listView) +
+      '<input type="hidden" name="action" value="describe-role">' +
+      '<input type="hidden" name="role" value="' + this.esc(one.name) + '">' +
+      '<label>Display name <input name="displayName" value="' +
+      this.esc(one.displayName || '') + '"></label>' +
+      '<label>Description <input name="description" value="' +
+      this.esc(one.description || '') + '"></label>' + typeField +
+      '<button type="submit">Save</button></form></details>';
   }
 
   // ---------------------------------------------------------------------------
@@ -20607,6 +23055,16 @@ class AdminConsole {
   // mail — is drawn DISABLED WITH THE REASON BESIDE IT, `configRow()`'s
   // pattern, rather than left out: a control that vanished would read as a
   // mechanism this service does not have.
+  /**
+   * Draws one field of a policy profile form as a table row: its control,
+   * attribute, built-in default and source.
+   *
+   * A field the view marks disabled is drawn disabled with its reason.
+   *
+   * @param field - the field from the policies view
+   * @param prefix - the id prefix of the form (defaults to "pp-")
+   * @returns the table row as HTML
+   */
   policyFieldRow(field, prefix) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.policyFieldRow().");
@@ -20739,6 +23197,14 @@ class AdminConsole {
       : '';
   }
 
+  /**
+   * Draws the password policy section of /admin/policies: enforcement, the
+   * save and reset forms, the current rules, the doors that enforce it, the
+   * history cost, the generator and the schema.
+   *
+   * @param view - the policies view from adminViews.policiesView()
+   * @returns the section as HTML
+   */
   passwordPolicySection(view) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.passwordPolicySection().");
@@ -20850,6 +23316,14 @@ class AdminConsole {
     return out;
   }
 
+  /**
+   * Draws the authentication policy section of /admin/policies: the mail and
+   * NIST warnings, where the profile comes from, the forms, and which
+   * mechanisms are accepted as a first and a second factor.
+   *
+   * @param view - the policies view from adminViews.policiesView()
+   * @returns the section as HTML
+   */
   authnPolicySection(view) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.authnPolicySection().");
@@ -20931,6 +23405,14 @@ class AdminConsole {
 
   // A kind this console has nothing particular to say about: its fields,
   // its rules and its schema, from its module.
+  /**
+   * Draws the section of /admin/policies for a kind of policy with nothing
+   * particular to say: its forms, rules and schema, from its module.
+   *
+   * @param view - the policies view from adminViews.policiesView()
+   * @param kind - the policy kind
+   * @returns the section as HTML
+   */
   genericPolicySection(view, kind) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.genericPolicySection(). " + kind.id);
@@ -20955,6 +23437,13 @@ class AdminConsole {
   // lands back on the person the reader was looking at. A form that dropped the
   // parameter would answer "what did that do?" with somebody else's values,
   // which reads as the action having done something it did not.
+  /**
+   * Builds the /admin/claims URL carrying the preview user, which every form
+   * on that page posts to.
+   *
+   * @param query - the request's query
+   * @returns the page's path and query
+   */
   claimsPageUrl(query) {
     const { log, claimsPreviewUser } = this.deps;
     log.debug("Entering AdminConsole.claimsPageUrl().");
@@ -20969,6 +23458,13 @@ class AdminConsole {
   // The preview user is read by the same function for both, deliberately: the
   // two pages preview the same person unless somebody says otherwise, exactly
   // as /admin/vc already does.
+  /**
+   * Builds the /admin/saml-attributes URL carrying the preview user, which
+   * every form on that page posts to.
+   *
+   * @param query - the request's query
+   * @returns the page's path and query
+   */
   samlAttributesPageUrl(query) {
     const { log, claimsPreviewUser } = this.deps;
     log.debug("Entering AdminConsole.samlAttributesPageUrl().");
@@ -20998,6 +23494,17 @@ class AdminConsole {
   // direction nobody notices — it would clear the three sets whose tables were
   // rendered before the reader ticked anything.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the directory attribute half of one claim set: a checkbox per
+   * catalogue attribute with its value for the preview user, and the
+   * Update, Select all and Delete all forms.
+   *
+   * @param setId - the claim set's id
+   * @param previewUser - the username being previewed
+   * @param values - the preview user's attribute values
+   * @param pageUrl - the URL the forms post to
+   * @returns the section as HTML
+   */
   claimAttributeSection(setId, previewUser, values, pageUrl) {
     const { log, claimAttributes } = this.deps;
     const self = this;
@@ -21068,6 +23575,19 @@ class AdminConsole {
   // the thing it is about to put in an assertion. Everything else — the two
   // halves, the three buttons, the precedence — is one behaviour and is drawn
   // once.
+  /**
+   * Draws one claim set: its typed claims or attributes with Remove, Add and
+   * Clear forms, followed by its directory attribute half.
+   *
+   * Shared by the claims and SAML attribute pages; the noun and the SAML
+   * NameFormat or namespace column follow the set.
+   *
+   * @param setId - the claim set's id
+   * @param previewUser - the username being previewed
+   * @param values - the preview user's attribute values
+   * @param pageUrl - the URL the forms post to
+   * @returns the section as HTML
+   */
   claimSetSection(setId, previewUser, values, pageUrl) {
     const { log, stats } = this.deps;
     const self = this;
@@ -21088,6 +23608,15 @@ class AdminConsole {
                     (isUserinfo ? 'UserInfo responses' : 'tokens');
     const extraHeader = isSaml2 ? '<th>NameFormat</th>' :
                         (isSaml11 ? '<th>AttributeNamespace</th>' : '');
+    // ATTRIBUTE CLAIMS' THREE HELPS (#94), from the model the /admin-api
+    // replies carry too: what each attribute row would carry for the
+    // previewed person, which partners' release lists withhold a claim, and
+    // the attributes worth offering in the form's pick-list.
+    const who = previewUser || 'alice';
+    const previewRows = adminViews.attributeClaimPreview(setId, who);
+    const lists = adminViews.releaseWithholding();
+    const withheld = adminViews.withheldFor(claims, lists);
+    const choices = adminViews.attributeClaimChoices();
 
     const rows = claims.map(function (claim) {
       const extraCell = isSaml2 ? '<td>' + self.esc(claim.nameFormat || '—') +
@@ -21097,7 +23626,33 @@ class AdminConsole {
                          '</td>' : '');
       return '<tr><td><code>' + self.esc(claim.name) + '</code></td>' +
              extraCell +
-        '<td><code>' + self.esc(claim.value) + '</code></td>' +
+        // AN ATTRIBUTE CLAIM (#94) shows where its value comes from.
+        '<td>' + (claim.attribute
+          ? '&larr; <code>' + self.esc(claim.attribute) + '</code>' +
+            '<span class="sub"> directory attribute' +
+            (claim.multi ? ', every value' : '') +
+            (claim.type && claim.type !== 'string'
+              ? ', as ' + self.esc(claim.type) : '') + '</span>'
+          : '<code>' + self.esc(claim.value) + '</code>') +
+        // WHAT IT WOULD CARRY FOR THE PREVIEWED PERSON (#94).
+        (claim.attribute ? (function () {
+          const seen = previewRows.filter(function (one) {
+            return one.name === claim.name;
+          })[0];
+          return '<br><span class="sub">for <code>' + self.esc(who) +
+            '</code>: ' + (seen && seen.carried
+              ? '<code>' + self.esc(JSON.stringify(seen.value)) + '</code>'
+              : 'nothing &mdash; their entry has no ' +
+                self.esc(claim.attribute)) + '</span>';
+        })() : '') +
+        // WHO WOULD NOT GET IT (#94): a partner whose release list does not
+        // name it.
+        (withheld[claim.name] ? '<br><span class="state-revoked">withheld ' +
+          'from ' + withheld[claim.name].map(function (id) {
+            return '<a href="/admin/federation?relationship=' +
+                   encodeURIComponent(id) + '">' + self.esc(id) + '</a>';
+          }).join(', ') + '</span><span class="sub"> &mdash; not on ' +
+          'their release list</span>' : '') + '</td>' +
         '<td><form method="post" action="' + self.esc(pageUrl) +
         '" class="inline">' +
         '<input type="hidden" name="action" value="remove">' +
@@ -21148,6 +23703,53 @@ class AdminConsole {
         '<input type="text" id="v-' + setId + '" name="value" size="28">' +
         '<button>Add</button>' +
         '</div></form>' +
+      // AN ATTRIBUTE CLAIM (#94): any directory attribute, under a name of
+      // the administrator's choosing — where the half below offers only the
+      // catalogue, under the names the catalogue fixes.
+      '<form method="post" action="' + this.esc(pageUrl) + '"><div ' +
+        'class="formrow">' +
+        '<input type="hidden" name="action" value="add-attribute-claim">' +
+        '<input type="hidden" name="set" value="' + this.esc(setId) + '">' +
+        '<label for="an-' + setId + '">Name</label>' +
+        '<input type="text" id="an-' + setId + '" name="name" size="20">' +
+        '<label for="aa-' + setId + '">from the attribute</label>' +
+        '<input type="text" id="aa-' + setId + '" name="attribute" ' +
+        'size="20" placeholder="e.g. costCenter" list="ac-' + setId + '">' +
+        // THE PICK-LIST (#94): what this realm's attribute sources and
+        // federation mappings write, so a name is chosen rather than
+        // guessed; any other name may still be typed.
+        '<datalist id="ac-' + setId + '">' + choices.map(function (one) {
+          return '<option value="' + self.esc(one.attribute) + '" label="' +
+                 self.esc(one.attribute + ' (' + one.from.join(', ') + ')') +
+                 '">';
+        }).join('') + '</datalist>' +
+        '<label><input type="checkbox" name="multi" value="true"> every ' +
+        'value</label>' +
+        (isSaml ? '' : '<label for="at-' + setId + '">as</label><select ' +
+          'id="at-' + setId + '" name="type">' +
+          ['string', 'number', 'boolean', 'json'].map(function (type) {
+            return '<option value="' + type + '">' + type + '</option>';
+          }).join('') + '</select>') +
+        '<button>Add</button></div></form>' +
+      '<p class="sub">A ' + noun + ' from a directory attribute carries ' +
+      'the value on the entry of the person the ' +
+      (isSaml ? 'assertion' : (isUserinfo ? 'response' : 'token')) +
+      ' is about &mdash; any attribute, not only the catalogue below. Only ' +
+      'the directory: a person whose entry lacks it gets none. A secret, a ' +
+      'binary value or an attribute this service keeps is refused.' +
+      (choices.length ? ' The attribute field offers the ' + choices.length +
+        ' this realm\'s attribute sources and federation mappings write.'
+                      : '') + '</p>' +
+      // THE RELEASE WARNING (#94), where it applies: a claim added here does
+      // not reach a partner whose release list does not name it.
+      (lists.length ? this.warn('<strong>' + lists.length + ' federation ' +
+        'partner(s) have a release list</strong> (' +
+        lists.map(function (one) {
+          return '<a href="/admin/federation?relationship=' +
+                 encodeURIComponent(one.id) + '">' + self.esc(one.id) +
+                 '</a>';
+        }).join(', ') + '): a ' + noun + ' added here reaches them only ' +
+        'once its name is added to their <code>fedRelease</code>.') : '') +
       (claims.length
         ? '<form method="post" action="' + this.esc(pageUrl) +
           '" class="inline">' +
@@ -21177,6 +23779,13 @@ class AdminConsole {
   // function the issuance path calls — so a preview that agreed with the page
   // and disagreed with the token is not possible.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the read-only groups claim section: whether the claim is on, and
+   * what it would carry for the preview user, built by groupsOf().
+   *
+   * @param previewUser - the username being previewed
+   * @returns the section as HTML
+   */
   groupClaimSection(previewUser) {
     const { log, groupClaims } = this.deps;
     const self = this;
@@ -21288,6 +23897,13 @@ class AdminConsole {
   // generalised away, because that pair of facts is exactly what somebody
   // comparing an ID Token with an assertion has come here to find.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the note explaining a set's two halves, typed entries and
+   * directory attributes, in the vocabulary of the family.
+   *
+   * @param family - "jwt", "saml" or "userinfo"
+   * @returns the note as HTML
+   */
   claimHalvesNote(family) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.claimHalvesNote().");
@@ -21311,6 +23927,15 @@ class AdminConsole {
   // The "show me somebody" form. It is a GET form posting to the page's own
   // path, so the preview user survives in the URL and every action form on the
   // page can carry it into its redirect — see claimsPageUrl().
+  /**
+   * Draws the GET form that chooses whose values the page previews, with a
+   * note on whether they come from a directory entry or are generated.
+   *
+   * @param path - the page's path
+   * @param previewUser - the username being previewed
+   * @param values - the preview user's attribute values
+   * @returns the form as HTML
+   */
   claimPreviewForm(path, previewUser, values) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.claimPreviewForm().");
@@ -21330,6 +23955,14 @@ class AdminConsole {
           'invented person is seeded from the username.')) + '</div></form>';
   }
 
+  /**
+   * Draws the notes on where a directory attribute's value comes from and
+   * what it does not do: one catalogue, independent selections, nesting,
+   * which name wins, and that nothing here is verified.
+   *
+   * @param family - "jwt", "saml" or "userinfo"
+   * @returns the heading and notes as HTML
+   */
   attributeCatalogueNotes(family) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.attributeCatalogueNotes().");
@@ -21445,6 +24078,13 @@ class AdminConsole {
       'href="/admin/groups">the groups page</a>.');
   }
 
+  /**
+   * Draws the Values section: which placeholders a value may carry, and
+   * whether a value is typed (JWT, UserInfo) or always text (SAML).
+   *
+   * @param family - "jwt", "saml" or "userinfo"
+   * @returns the heading and notes as HTML
+   */
   claimValueNotes(family) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminConsole.claimValueNotes().");
@@ -21501,6 +24141,15 @@ class AdminConsole {
   // cannot offer an assertion one — the same restriction claimsAction()'s
   // `allowed` enforces on the way in, said in the markup so it is not only a
   // refusal.
+  /**
+   * Draws the "Replace a whole set" form, which replaces a set's typed
+   * entries from a JSON list and leaves its directory attributes alone.
+   *
+   * @param ids - the claim set ids the page may offer
+   * @param pageUrl - the URL the form posts to
+   * @param family - "saml" for attributes, anything else for claims
+   * @returns the heading, note and form as HTML
+   */
   replaceSetForm(ids, pageUrl, family) {
     const { log, stats } = this.deps;
     const self = this;
@@ -21571,6 +24220,13 @@ class AdminConsole {
   // THIS, so the 303 after an action lands back on what the reader was looking
   // at. Dropping the request would answer "what did that do?" with a page that
   // had forgotten the question.
+  /**
+   * Builds the /admin/userinfo-claims URL carrying the preview user and any
+   * claims request, which every form on that page posts to.
+   *
+   * @param query - the request's query
+   * @returns the page's path and query
+   */
   userinfoClaimsPageUrl(query) {
     const { log, claimsRequestParameter, claimsPreviewUser } = this.deps;
     log.debug("Entering AdminConsole.userinfoClaimsPageUrl().");
@@ -21586,6 +24242,19 @@ class AdminConsole {
   // reason: the request survives in the URL, so every action form on the page
   // carries it into its redirect and a reader who ticks a box does not lose
   // what they typed.
+  /**
+   * Draws the claims request form and what that request's userinfo member
+   * would return for the preview user.
+   *
+   * A request that would be refused is shown with the client's error rather
+   * than corrected; ignored members, absent and essential claims and value
+   * mismatches are each reported.
+   *
+   * @param previewUser - the username being previewed
+   * @param raw - the claims request as typed
+   * @param preview - the computed preview of that request
+   * @returns the form and its answer as HTML
+   */
   claimsRequestSection(previewUser, raw, preview) {
     const { log, oauth2 } = this.deps;
     const self = this;
@@ -21692,6 +24361,12 @@ class AdminConsole {
   }
 
   // The vocabulary table: every name a client may put in a claims request.
+  /**
+   * Draws the table of every claim name a client may put in a claims
+   * request, with the attribute each is answered from.
+   *
+   * @returns the heading, note and table as HTML
+   */
   requestableClaimsSection() {
     const { log, claimAttributes, oauth2 } = this.deps;
     const self = this;
@@ -21750,6 +24425,15 @@ class AdminConsole {
   // form on this console has scalar fields, and changing the shape of that
   // function would change what eight other handlers see — so the repetition is
   // read here, from the raw body, beside the parsed one.
+  /**
+   * Reads every value of a field that may repeat in the body, such as a
+   * list of checkboxes, from a JSON body or the raw form body.
+   *
+   * @param req - the request
+   * @param body - the parsed body
+   * @param name - the field's name
+   * @returns the field's values as strings
+   */
   listField(req, body, name) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.listField(). name=" + name);
@@ -21772,6 +24456,15 @@ class AdminConsole {
 
   // The one preview row: what this attribute would put in a credential for the
   // person the page is previewing, and where that value came from.
+  /**
+   * Draws the value and source cells of one credential attribute row for
+   * the person being previewed.
+   *
+   * @param row - the catalogue row
+   * @param persona - the invented person for the preview user
+   * @param byLdap - the built claims, keyed by lower-case attribute name
+   * @returns two table cells as HTML
+   */
   vcExampleCell(row, persona, byLdap) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.vcExampleCell().");
@@ -21800,6 +24493,17 @@ class AdminConsole {
            '</code></td><td>would be generated</td>';
   }
 
+  /**
+   * Draws the /admin/vc selection form: a checkbox per credential attribute
+   * with its value for the preview user, and the defaults and populate
+   * forms.
+   *
+   * Saving the selection also fills in missing attributes on every person
+   * under ou=users.
+   *
+   * @param previewUser - the username being previewed
+   * @returns the forms as HTML
+   */
   vcAttributeTable(previewUser) {
     const { log, vcClaims } = this.deps;
     const self = this;
@@ -21852,6 +24556,13 @@ class AdminConsole {
   // is built by the same function the issuer calls, not by a second walk of the
   // catalogue — a preview that agreed with the page and disagreed with the
   // credential would be worse than no preview.
+  /**
+   * Draws what a credential for the preview user would assert, claim by
+   * claim, built by the function the issuer calls.
+   *
+   * @param previewUser - the username being previewed
+   * @returns the preview form, notes and table as HTML
+   */
   vcPreviewSection(previewUser) {
     const { log, vcClaims } = this.deps;
     const self = this;
@@ -21906,6 +24617,13 @@ class AdminConsole {
   // disagreement is a state to report rather than one to prevent — and
   // reporting it is what stops "the wallet disclosed nothing" being
   // investigated as a wallet bug.
+  /**
+   * Draws the "Issued now" cell: whether this service's issuer currently
+   * mints the claim the Verifier asks for, wholly, partly or not at all.
+   *
+   * @param claimName - the requested claim's name
+   * @returns the table cell as HTML
+   */
   vpIssuedCell(claimName) {
     const { log, vpConfig } = this.deps;
     log.debug("Entering AdminConsole.vpIssuedCell().");
@@ -21936,6 +24654,14 @@ class AdminConsole {
   // or ["credentialSubject","birthDate"] depending on what is being asked for,
   // and a column that picked one silently would be wrong two-thirds of the
   // time.
+  /**
+   * Draws one Verifier catalogue row: its checkbox, attributes, DCQL paths
+   * for the format, ldp_vc terms and whether the issuer carries it.
+   *
+   * @param row - the requestable claim row
+   * @param format - the credential format the DCQL paths are shown for
+   * @returns the table row as HTML
+   */
   vpClaimRow(row, format) {
     const { log, vpConfig } = this.deps;
     const self = this;
@@ -21973,6 +24699,13 @@ class AdminConsole {
   // ticked checkboxes in the same form rather than as a separate list with its
   // own Save, because a form that dropped them the moment somebody saved the
   // table above would silently undo a deliberate configuration.
+  /**
+   * Draws the claims asked for that are not in the catalogue, as ticked
+   * checkboxes inside the selection form so a save keeps them.
+   *
+   * @param format - the credential format the DCQL paths are shown for
+   * @returns the heading, note and table as HTML, or an empty string
+   */
   vpExtraRows(format) {
     const { log, vpConfig } = this.deps;
     const self = this;
@@ -22003,6 +24736,16 @@ class AdminConsole {
       }).join('') + '</table>';
   }
 
+  /**
+   * Draws the Verifier's claim selection form, the extra claims, the note on
+   * claims dropped from an ldp_vc query, and the add and defaults forms.
+   *
+   * A saved selection applies to the next Authorization Request, not to one
+   * already in flight.
+   *
+   * @param format - the credential format the DCQL paths are shown for
+   * @returns the forms and notes as HTML
+   */
   vpClaimsSection(format) {
     const { log, vpConfig } = this.deps;
     const self = this;
@@ -22053,6 +24796,13 @@ class AdminConsole {
   // convert between formats, so a wallet holding a jwt_vc_json credential has
   // nothing to answer a dc+sd-jwt query with — and the honest outcome is that
   // it says so rather than that this page pretends the choice does not matter.
+  /**
+   * Draws the form that chooses which credential format an unqualified
+   * presentation request asks for, with what each format is.
+   *
+   * @param format - the current default format
+   * @returns the form and notes as HTML
+   */
   vpFormatsSection(format) {
     const { log, vpConfig } = this.deps;
     const self = this;
@@ -22111,6 +24861,12 @@ class AdminConsole {
   // DN — a subtree per realm inside one naming context — and a table that
   // called that "by path" would be describing the one family whose separation
   // is NOT a path segment as though it were.
+  /**
+   * Words how a protocol family is separated between realms.
+   *
+   * @param by - the separation from the realm support row; defaults to path
+   * @returns "by DN" for "dn", otherwise "by " and the value
+   */
   separatedBy(by) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.separatedBy().");
@@ -22119,6 +24875,12 @@ class AdminConsole {
     return 'by ' + (how === 'dn' ? 'DN' : how);
   }
 
+  /**
+   * Draws the table of what trust realms separate and what they share, one
+   * row per family, from realms.realmSupport().
+   *
+   * @returns the table as HTML
+   */
   realmSupportTable() {
     const { log, realms } = this.deps;
     const self = this;
@@ -22144,6 +24906,15 @@ class AdminConsole {
            rows + '</table>';
   }
 
+  /**
+   * Builds the /admin/realms list: the realms (paged), any realm being
+   * removed, whether realms are active, the define form, the realm support
+   * table and the realms.* settings.
+   *
+   * @param req - the request
+   * @returns the page body as HTML (inner) and the model with its settings
+   *   (json)
+   */
   realmsListPage(req) {
     const { log, realmsJson, pagedRows, queryWith, realms, config,
             pageParamsOf } = this.deps;
@@ -22293,6 +25064,17 @@ class AdminConsole {
     return { json: json, inner: inner };
   }
 
+  /**
+   * Builds one realm's drill-down: its domain, where it answers, the
+   * settings it overrides, the name form, and the Remove form.
+   *
+   * The built-in realm has no Remove form.
+   *
+   * @param req - the request
+   * @param wanted - the realm id asked for
+   * @returns the page body as HTML (inner) and the model (json), with
+   *   missing set when no such realm is defined
+   */
   realmDetailPage(req, wanted) {
     const { log, realms, realmJson, queryWith } = this.deps;
     const self = this;
@@ -22438,6 +25220,17 @@ class AdminConsole {
   // there is no other). `row` is `realmJson()`'s shape. Drawn on
   // /admin/realms and on the realm's own drill-down; `retiringBanner()` is
   // the line on every other page of the realm.
+  /**
+   * Draws the notice for a realm being removed: why, what it refuses, and
+   * how to finish.
+   *
+   * An interrupted removal viewed from another realm also gets the button
+   * that finishes it.
+   *
+   * @param row - the realm, in realmJson()'s shape
+   * @param carryBack - the hidden back field the form carries, as HTML
+   * @returns the notice as HTML
+   */
   retiringNotice(row, carryBack) {
     const { log, realms } = this.deps;
     log.debug("Entering AdminConsole.retiringNotice(). realm=" + row.id);
@@ -22467,6 +25260,13 @@ class AdminConsole {
 
   // The one line every console page of a realm being removed carries (#294),
   // pointing at the page that says the rest.
+  /**
+   * Draws the line every console page of a realm being removed carries,
+   * linking to the realm's own page.
+   *
+   * @returns the banner as HTML, or an empty string when the realm is not
+   *   being removed or no realm registry answers
+   */
   retiringBanner() {
     const { log, realms } = this.deps;
     log.debug("Entering AdminConsole.retiringBanner().");
@@ -22493,6 +25293,14 @@ class AdminConsole {
       'is refused and how to finish.');
   }
 
+  /**
+   * Builds the Trust realms page for the console's page shell: one realm's
+   * drill-down when the query names a realm, otherwise the list.
+   *
+   * @param req - the request
+   * @returns the page's json, inner HTML and title, with missing and up for
+   *   a drill-down
+   */
   realmsView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.realmsView().");
@@ -22593,6 +25401,14 @@ class AdminConsole {
   // either file and no environment variable. It stays because the three derived
   // ones DO resolve through their `dflt`, which is a function of a neighbour
   // rather than a literal anybody could have written in a file.
+  /**
+   * Words where a setting's value came from: a runtime override, an
+   * environment variable, the legacy variable, the appconfig file, the
+   * default appconfig file, or another setting.
+   *
+   * @param setting - the described setting
+   * @returns the phrase as plain text
+   */
   sourceNote(setting) {
     const { log, config } = this.deps;
     log.debug("Entering AdminConsole.sourceNote().");
@@ -22648,6 +25464,12 @@ class AdminConsole {
 
   // The row for a group, or null. A page asks the other way round; both are
   // looked up in the same table.
+  /**
+   * Finds a settings group's row in SETTING_HOMES.
+   *
+   * @param group - the group's name
+   * @returns the row, or null
+   */
   settingHomeRowOf(group) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.settingHomeRowOf().");
@@ -22661,6 +25483,13 @@ class AdminConsole {
   // declaration order rather than SETTING_HOMES's. Two orders would be two
   // answers to "which comes first" and the table that already decides it is the
   // one that also carries the reasoning for what sits beside what.
+  /**
+   * Lists the settings groups a console page owns, in config.js's
+   * declaration order.
+   *
+   * @param path - the page's path
+   * @returns the described groups from config.groups()
+   */
   settingsGroupsFor(path) {
     const { log, config } = this.deps;
     log.debug("Entering AdminConsole.settingsGroupsFor(). path=" + path);
@@ -22680,6 +25509,14 @@ class AdminConsole {
   // `editable` and `restartReason` — so a caller can see WHY a value is what it
   // is without fetching the whole table from /admin-api/config and filtering it
   // themselves.
+  /**
+   * Builds the JSON a page and the management API answer for that page's
+   * settings: the groups, the counts, the overridden keys and where to POST
+   * a change.
+   *
+   * @param path - the page's path
+   * @returns the settings model
+   */
   configSettingsJson(path) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.configSettingsJson(). path=" + path);
@@ -22710,6 +25547,15 @@ class AdminConsole {
   // or '' when there are none. Only `SAML` has any today; the sentence is
   // derived so that a second shared group cannot arrive without being
   // announced.
+  /**
+   * Words the note that a settings group is also drawn on other pages,
+   * linking to each.
+   *
+   * @param groupName - the group's name
+   * @param path - the page it is being drawn on
+   * @returns the sentence as HTML, or an empty string when no other page
+   *   draws the group
+   */
   sharedSettingNote(groupName, path) {
     const { log } = this.deps;
     const self = this;
@@ -22735,6 +25581,12 @@ class AdminConsole {
   // A page's own label, off NAV, so a cross-reference cannot name a tab that
   // has been renamed. `upTo()` does the same thing for a breadcrumb and for the
   // same reason; this one answers with the label alone.
+  /**
+   * Looks up a console page's label in NAV.
+   *
+   * @param path - the page's path
+   * @returns the label, or the path when NAV has no such page
+   */
   labelOfPath(path) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.labelOfPath().");
@@ -22744,6 +25596,15 @@ class AdminConsole {
   }
 
   // The block itself.
+  /**
+   * Draws the Settings block a console page carries: the lead notes on
+   * persistence, restart-only rows and overrides, then one section form per
+   * group the page owns.
+   *
+   * @param path - the page's path
+   * @returns the block as HTML, or an empty string when the page owns no
+   *   settings group
+   */
   configFormsFor(path) {
     const { log, persistence } = this.deps;
     const self = this;
@@ -22877,6 +25738,13 @@ class AdminConsole {
   // so the set of values has to be one this file wrote. An unknown `from` is
   // not an error — it is the configuration page, which is where the form used
   // to send everybody.
+  /**
+   * Chooses where a settings save redirects to: the posted "from" page when
+   * SETTING_HOMES names it, otherwise /admin/config.
+   *
+   * @param body - the parsed form body
+   * @returns the path to return to
+   */
   configReturnTo(body) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.configReturnTo().");
@@ -22888,6 +25756,17 @@ class AdminConsole {
     return known ? asked : '/admin/config';
   }
 
+  /**
+   * Draws one setting as a table row: its key with the description as a
+   * tooltip, its control, its source and, when overridden, a Reset button.
+   *
+   * A restart-only setting is drawn with its control disabled and the
+   * reason beside it.
+   *
+   * @param setting - the described setting
+   * @param from - the page the row is drawn on; not read by the row itself
+   * @returns the table row as HTML
+   */
   configRow(setting, from) {
     const { log } = this.deps;
     const self = this;
@@ -23000,6 +25879,15 @@ class AdminConsole {
       '<td>' + reset + '</td></tr>';
   }
 
+  /**
+   * Draws one settings group as a form that posts every row at once
+   * (set-many) to /admin/config, with a Save button when any row is
+   * editable.
+   *
+   * @param group - the described settings group
+   * @param from - optional; the page to return to after a save
+   * @returns the heading and form as HTML
+   */
   configSection(group, from) {
     const { log } = this.deps;
     const self = this;
@@ -23034,6 +25922,12 @@ class AdminConsole {
   // asking the API for the configuration should not have to visit twenty-one
   // pages to assemble it — and `homes` is what a caller needs to send a person
   // to the right console page, or to notice that a group has none.
+  /**
+   * Builds the whole configuration snapshot with, for each settings group,
+   * the pages that edit it, and any SETTING_HOMES problems.
+   *
+   * @returns the configuration model
+   */
   configJson() {
     const { log, config } = this.deps;
     const self = this;
@@ -23057,6 +25951,13 @@ class AdminConsole {
   // and "90 minutes" is the answer somebody wants for 5400 while "1.04 days" is
   // nobody's answer for 90000. The exact number is always beside it in its own
   // column, so this is a gloss rather than the value.
+  /**
+   * Words a number of seconds as a person reads it: exact below a minute,
+   * to one decimal place in minutes, hours or days above.
+   *
+   * @param seconds - the number of seconds
+   * @returns the phrase, or "no allowance at all" for zero
+   */
   humanSeconds(seconds) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.humanSeconds().");
@@ -23093,6 +25994,15 @@ class AdminConsole {
   // than repeated, so the browser's own refusal and the server's are the same
   // three numbers. The server still checks: an input attribute is a convenience
   // for a person and no constraint at all on a JSON body or a curl.
+  /**
+   * Draws one row of the token lifetimes form: the control, the value in
+   * words, the per-client attribute that overrides it, its source, and how
+   * many tokens of its kind are valid, expired and revoked.
+   *
+   * @param setting - the described setting
+   * @param snapshot - the statistics snapshot the token counts come from
+   * @returns the table row as HTML
+   */
   tokenLifetimeRow(setting, snapshot) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminConsole.tokenLifetimeRow().");
@@ -23173,6 +26083,13 @@ class AdminConsole {
   // deployment can get into — but a page that showed the numbers and not the
   // consequence would leave the consequence to be discovered from a client that
   // stopped working.
+  /**
+   * Draws a warning for each legal but surprising combination of the token
+   * lifetimes: an access token outliving its refresh token, or a clock skew
+   * at least as long as the access token's life.
+   *
+   * @returns the warnings as HTML, or an empty string
+   */
   tokenLifetimeWarnings() {
     const { log, config } = this.deps;
     const self = this;
@@ -23280,6 +26197,15 @@ class AdminConsole {
   // three numbers — differing only in that the unit is per row here rather than
   // seconds throughout, and that what sits in the last column is a count of
   // assertions rather than of tokens.
+  /**
+   * Draws one row of the SAML assertion settings form: the control by type,
+   * the value in words, the per-application attribute, its source, and how
+   * many assertions of its kind are valid and expired.
+   *
+   * @param setting - the described setting
+   * @param snapshot - the statistics snapshot the assertion counts come from
+   * @returns the table row as HTML
+   */
   samlAssertionSettingRow(setting, snapshot) {
     const { log, samlAssertionRowFor, samlAssertionSeconds } = this.deps;
     const self = this;
@@ -23374,6 +26300,13 @@ class AdminConsole {
   // relying party and made to misbehave on purpose — but a page that showed
   // three numbers and not their consequence would leave the consequence to be
   // found from a relying party that stopped working.
+  /**
+   * Draws a warning for each legal but surprising state of the SAML
+   * assertion settings: a clock skew at least as long as an assertion's
+   * lifetime, or a skew of zero.
+   *
+   * @returns the warnings as HTML, or an empty string
+   */
   samlAssertionWarnings() {
     const { log, samlAssertionSeconds, SAML_ASSERTION_SETTINGS } = this.deps;
     const self = this;
@@ -23437,6 +26370,15 @@ class AdminConsole {
   // posts to /admin/config — and POST /admin-api/config/set already has the
   // operation. A second form here would be a second door to one setting.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the Authentication section of /admin/scim: every scheme with its
+   * state, scope and request count, the anonymous and refused counts, and
+   * the access control policy.
+   *
+   * @param auth - the authentication description from scim.js
+   * @param counters - the SCIM counters, with byAuthScheme
+   * @returns the section as HTML
+   */
   authenticationSection(auth, counters) {
     const { log } = this.deps;
     const self = this;
@@ -23506,6 +26448,16 @@ class AdminConsole {
   // same rows are wanted in two orders — the schemes the surface declares, then
   // anything counted under a name it does not declare — and a second copy of
   // the markup is how the two come to be formatted differently.
+  /**
+   * Draws one row of the SCIM by-scheme table.
+   *
+   * @param id - the scheme's id
+   * @param name - optional; the scheme's name
+   * @param enabled - true, false, or null when the state does not apply
+   * @param count - the number of requests counted under it
+   * @param note - optional; a note for the last cell, as HTML
+   * @returns the table row as HTML
+   */
   scimSchemeRow(id, name, enabled, count, note) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.scimSchemeRow().");
@@ -23521,6 +26473,13 @@ class AdminConsole {
 
   // A round step for the value axis: 1, 2 or 5 times a power of ten, never
   // below one letter, so the ticks read 0 / 5 / 10 rather than 0 / 3.25 / 6.5.
+  /**
+   * Chooses a round step for the dead-letter timeline's value axis: 1, 2 or
+   * 5 times a power of ten, never below one.
+   *
+   * @param peak - the largest column count on the timeline
+   * @returns the step between gridlines
+   */
   deadLetterAxisStep(peak) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.deadLetterAxisStep(). " + peak);
@@ -23536,6 +26495,12 @@ class AdminConsole {
   }
 
   // A window length for an axis label: `60m`, `12h`, `30d`.
+  /**
+   * Formats a window length for an axis label, as `60m`, `12h` or `30d`.
+   *
+   * @param seconds - the length in seconds
+   * @returns the short label
+   */
   deadLetterSpan(seconds) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.deadLetterSpan().");
@@ -23549,6 +26514,12 @@ class AdminConsole {
     return out;
   }
 
+  /**
+   * Draws a 12px rounded square of one colour, the swatch beside a cause.
+   *
+   * @param colour - the fill colour
+   * @returns the swatch as inline SVG markup
+   */
   deadLetterSwatch(colour) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.deadLetterSwatch().");
@@ -23562,6 +26533,15 @@ class AdminConsole {
   // a 2px gap of the card's white between touching segments and the top one
   // rounded. `geometry` is the column's x, width, baseline and pixels per
   // letter.
+  /**
+   * Draws one stacked column of the dead-letter timeline, a segment per
+   * cause present, bottom up in the report's cause order, the top rounded.
+   *
+   * @param bucket - the time bucket, with its counts per cause id
+   * @param causes - the report's causes, in order
+   * @param geometry - the column's x, width, baseline and pixels per letter
+   * @returns the column's segments as SVG markup
+   */
   deadLetterColumn(bucket, causes, geometry) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.deadLetterColumn().");
@@ -23601,6 +26581,15 @@ class AdminConsole {
 
   // The whole timeline: axes, gridlines, one column per bucket, and the text a
   // reader who cannot see the colours still gets.
+  /**
+   * Draws the whole dead-letter timeline: axes, gridlines, a column per
+   * bucket, a title per column and an aria-label for a reader who cannot
+   * see the colours.
+   *
+   * @param timeline - the buckets, peak, bucket length and window length
+   * @param causes - the report's causes, in order
+   * @returns the chart as HTML wrapping an SVG
+   */
   deadLetterTimeline(timeline, causes) {
     const { log } = this.deps;
     const self = this;
@@ -23689,6 +26678,14 @@ class AdminConsole {
   }
 
   // The letters list's rows. Called once per page load over at most one page.
+  /**
+   * Draws the rows of the dead-letter list for one page of letters.
+   *
+   * @param json - the report, whose `letters` are drawn
+   * @param causeById - each cause's description, keyed by its id
+   * @param listView - the list's query, carried into each stream link
+   * @returns the table rows as HTML
+   */
   deadLetterRows(json, causeById, listView) {
     const { log, queryWith } = this.deps;
     const self = this;
@@ -23736,6 +26733,15 @@ class AdminConsole {
     return rows;
   }
 
+  /**
+   * Installs the Shared Signals reporter and forwards it to the action and
+   * read layers; one of the console's inverted hooks (root rule 3e).
+   *
+   * A reporter missing any required member is ignored whole and logged
+   * under STS-ADMIN-0014, so the pages say it is not installed.
+   *
+   * @param reporter - the SSF reporter object from ssf/ssf.ts
+   */
   setSignalsReporter(reporter) {
     const { log, errorCodes, adminActions, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setSignalsReporter().");
@@ -23766,6 +26772,14 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.setSignalsReporter(). Installed.");
   }
 
+  /**
+   * Installs the client-certificate truststore and forwards it to the action
+   * and read layers; filled by common/protocol_stack.ts.
+   *
+   * @param value - an object with `list`, `add` and `remove` functions
+   * @returns true when installed; false, logged under STS-ADMIN-0014, when a
+   *   function is missing and nothing was installed
+   */
   setTruststore(value) {
     const { log, errorCodes, adminActions, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setTruststore().");
@@ -23793,6 +26807,13 @@ class AdminConsole {
     return true;
   }
 
+  /**
+   * Draws one Shared Signals stream as a card: its facts, subjects, queue,
+   * dead letters, history, and the forms that act on it.
+   *
+   * @param row - the stream as the SSF reporter describes it
+   * @returns the card as HTML
+   */
   ssfStreamCard(row) {
     const { log, queryWith } = this.deps;
     const self = this;
@@ -23974,6 +26995,15 @@ class AdminConsole {
       '</div></form>';
   }
 
+  /**
+   * Installs the CAEP reporter and forwards it to the action and read
+   * layers; one of the console's inverted hooks (root rule 3e).
+   *
+   * A reporter missing any required member is ignored whole and logged
+   * under STS-ADMIN-0014.
+   *
+   * @param reporter - the CAEP reporter object
+   */
   setCaepReporter(reporter) {
     const { log, errorCodes, adminActions, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setCaepReporter().");
@@ -24007,6 +27037,12 @@ class AdminConsole {
   // count columns on the monitoring table are in the same order as the emit
   // form's menu. Derived from the reporter rather than written out, because a
   // list typed here would be the one place RISC's arrival is forgotten.
+  /**
+   * Lists the short name of every CAEP event type, in catalogue order.
+   *
+   * @param json - the CAEP report, whose `eventTypes` are read
+   * @returns the short names
+   */
   caepShortNames(json) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.caepShortNames().");
@@ -24020,6 +27056,12 @@ class AdminConsole {
   // What a session's CAEP state is called on the screen, with the class that
   // colours it. `revoked` is the one that must not read as ordinary: it is the
   // whole point of the profile.
+  /**
+   * Draws a session's CAEP state as a table cell, `revoked` marked invalid.
+   *
+   * @param state - the session's state
+   * @returns the cell as HTML
+   */
   caepStateCell(state) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.caepStateCell(). " + state);
@@ -24040,6 +27082,17 @@ class AdminConsole {
   // `back` is the same query as a POSTable field, for the Reset button in the
   // last cell: resetting a row on page three used to answer with page one, so
   // the row somebody had just acted on was off screen and so was its neighbour.
+  /**
+   * Draws one row of the CAEP sessions table, its first cell linking to the
+   * session's page and its last a Reset form posting to /admin/caep.
+   *
+   * @param row - the session as the reporter describes it
+   * @param shorts - the event types' short names, in column order
+   * @param prefix - what each short name is prefixed with to key `counts`
+   * @param listView - the list's query, carried into the drill-down link
+   * @param back - the same query as a field, so Reset returns to this page
+   * @returns the row as HTML
+   */
   caepSessionRow(row, shorts, prefix, listView, back) {
     const { log, queryWith } = this.deps;
     const self = this;
@@ -24102,6 +27155,12 @@ class AdminConsole {
   // table itself was then off the top of the screen for the whole of it. One
   // session at a time, reached by clicking the identifier, is the arrangement
   // /admin/tokens and its credential drill-down already have.
+  /**
+   * Draws one event sent about a CAEP session as a table row.
+   *
+   * @param one - the event: when, name, jti, stream and warnings
+   * @returns the row as HTML
+   */
   caepEventRow(one) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.caepEventRow().");
@@ -24119,6 +27178,13 @@ class AdminConsole {
   // a table rather than as the run of `<div class="sub">` lines the card used,
   // because on a page of its own this is the summary somebody reads first and a
   // paragraph of eight facts is not read at all.
+  /**
+   * Draws the facts about one CAEP session that are not events — who, state,
+   * assurance, compliance, risk and the rest — as a table.
+   *
+   * @param row - the session as the reporter describes it
+   * @returns the table as HTML
+   */
   caepSessionFacts(row) {
     const { log } = this.deps;
     const self = this;
@@ -24181,6 +27247,14 @@ class AdminConsole {
   // not only there because the eight columns of that table are headed by an
   // abbreviation — `revoked`, `established`, `credential` — and this is the one
   // place there is room for the type's whole name and its URI.
+  /**
+   * Draws how many events of each CAEP type were sent about one session,
+   * with each type's whole name.
+   *
+   * @param row - the session, whose `counts` are keyed by type URI
+   * @param types - the CAEP event types
+   * @returns the table as HTML
+   */
   caepSessionCounts(row, types) {
     const { log } = this.deps;
     const self = this;
@@ -24203,6 +27277,15 @@ class AdminConsole {
   // sessions table's, off the same `caepShortNames()`, because a reader moving
   // between the two tables is reading one vocabulary — and a column that moved
   // between them would be worse than a column too many.
+  /**
+   * Draws one receiver application's row of the CAEP table: who, streams,
+   * audience, the types it takes, a count per type and its deliveries.
+   *
+   * @param row - the application as the reporter describes it
+   * @param shorts - the event types' short names, in column order
+   * @param prefix - what each short name is prefixed with to key `counts`
+   * @returns the row as HTML
+   */
   caepApplicationRow(row, shorts, prefix) {
     const { log, queryWith } = this.deps;
     const self = this;
@@ -24292,6 +27375,13 @@ class AdminConsole {
   // reachable from this field. The list view is REBUILT out of `back` by
   // listViewFromBack(), from the whitelist in LIST_PARAMS, so the worst a
   // hand-written field can produce is another page of the same table.
+  /**
+   * Decides where a CAEP action redirects to, reading `from` as an enum and
+   * rebuilding the list view from `back`, so no path is taken from the form.
+   *
+   * @param body - the posted form
+   * @returns the path to redirect to; /admin/caep by default
+   */
   caepSessionsBackTo(body) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.caepSessionsBackTo().");
@@ -24313,6 +27403,15 @@ class AdminConsole {
     return '/admin/caep';
   }
 
+  /**
+   * Installs the RISC reporter and forwards it to the action and read
+   * layers; one of the console's inverted hooks (root rule 3e).
+   *
+   * A reporter missing any required member is ignored whole and logged
+   * under STS-ADMIN-0014.
+   *
+   * @param reporter - the RISC reporter object
+   */
   setRiscReporter(reporter) {
     const { log, errorCodes, adminActions, adminViews } = this.deps;
     log.debug("Entering AdminConsole.setRiscReporter().");
@@ -24345,6 +27444,12 @@ class AdminConsole {
   // The short name of every RISC event type, in catalogue order, so that the
   // count columns on the monitoring table are in the same order as the emit
   // form's menu. Derived from the reporter rather than written out.
+  /**
+   * Lists the short name of every RISC event type, in catalogue order.
+   *
+   * @param json - the RISC report, whose `eventTypes` are read
+   * @returns the short names
+   */
   riscShortNames(json) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.riscShortNames().");
@@ -24362,6 +27467,13 @@ class AdminConsole {
   // `session-` would leave three columns headed `-in`, `-initiated` and
   // `-cancelled`. The rule is therefore: drop `account-`, which leaves four
   // distinct words, and keep everything else whole. The whole URI is the title.
+  /**
+   * Makes a RISC event type's column heading by dropping a leading
+   * `account-` and keeping the rest whole.
+   *
+   * @param short - the type's short name
+   * @returns the heading text
+   */
   riscColumnLabel(short) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.riscColumnLabel(). " + short);
@@ -24374,6 +27486,13 @@ class AdminConsole {
   // that colours it. `purged` is the one that must not read as ordinary: RISC
   // defines it as permanently deleted and it is the only terminal state in the
   // vocabulary.
+  /**
+   * Draws an account's RISC lifecycle as a table cell, `purged` and
+   * `disabled` marked invalid.
+   *
+   * @param state - the lifecycle state
+   * @returns the cell as HTML
+   */
   riscLifecycleCell(state) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.riscLifecycleCell(). " + state);
@@ -24388,6 +27507,13 @@ class AdminConsole {
   // first. An account can be opted out and perfectly healthy, or compromised
   // and still exchanging — so the two are two columns, and folding them into
   // one word would mean choosing which of the two questions this page answers.
+  /**
+   * Draws an account's RISC opt-out state as a table cell with a title
+   * saying what the state means.
+   *
+   * @param state - the opt-out state
+   * @returns the cell as HTML
+   */
   riscOptCell(state) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.riscOptCell(). " + state);
@@ -24411,6 +27537,17 @@ class AdminConsole {
 
   // ONE ROW OF THE ACCOUNTS TABLE, and its first cell is the way in — the
   // arrangement /admin/caep-sessions has, for its reason.
+  /**
+   * Draws one row of the RISC accounts table, its first cell linking to the
+   * account's page and its last a Reset form posting to /admin/risc.
+   *
+   * @param row - the account as the reporter describes it
+   * @param shorts - the event types' short names, in column order
+   * @param prefix - what each short name is prefixed with to key `counts`
+   * @param listView - the list's query, carried into the drill-down link
+   * @param back - the same query as a field, so Reset returns to this page
+   * @returns the row as HTML
+   */
   riscAccountRow(row, shorts, prefix, listView, back) {
     const { log, queryWith } = this.deps;
     const self = this;
@@ -24458,6 +27595,12 @@ class AdminConsole {
     return out;
   }
 
+  /**
+   * Draws one event sent about a RISC account as a table row.
+   *
+   * @param one - the event: when, name, jti, stream and warnings
+   * @returns the row as HTML
+   */
   riscEventRow(one) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.riscEventRow().");
@@ -24475,6 +27618,13 @@ class AdminConsole {
   // state and an account has three that move independently, and the identifiers
   // it has been known by are a list rather than a value — because
   // `identifier-changed` is an event about the key itself.
+  /**
+   * Draws the facts about one RISC account that are not events — its three
+   * states, contact details, former identifiers and the rest — as a table.
+   *
+   * @param row - the account as the reporter describes it
+   * @returns the table as HTML
+   */
   riscAccountFacts(row) {
     const { log } = this.deps;
     const self = this;
@@ -24549,6 +27699,14 @@ class AdminConsole {
   // of RISC's fourteen is deprecated by its own specification in favour of a
   // CAEP event, and a count in that row is a fact about the receiver's future
   // rather than about this account.
+  /**
+   * Draws how many events of each RISC type were sent about one account,
+   * marking the type its specification deprecates.
+   *
+   * @param row - the account, whose `counts` are keyed by type URI
+   * @param types - the RISC event types
+   * @returns the table as HTML
+   */
   riscAccountCounts(row, types) {
     const { log } = this.deps;
     const self = this;
@@ -24573,6 +27731,13 @@ class AdminConsole {
 
   // WHERE A RISC ACTION ANSWERS BACK TO. The same enum-not-a-path rule
   // caepSessionsBackTo() follows, for its reason.
+  /**
+   * Decides where a RISC action redirects to, reading `from` as an enum and
+   * rebuilding the list view from `back`, so no path is taken from the form.
+   *
+   * @param body - the posted form
+   * @returns the path to redirect to; /admin/risc by default
+   */
   riscAccountsBackTo(body) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.riscAccountsBackTo().");
@@ -24594,6 +27759,15 @@ class AdminConsole {
     return '/admin/risc';
   }
 
+  /**
+   * Draws one receiver application's row of the RISC table: who, streams,
+   * audience, the types it takes, a count per type and its deliveries.
+   *
+   * @param row - the application as the reporter describes it
+   * @param shorts - the event types' short names, in column order
+   * @param prefix - what each short name is prefixed with to key `counts`
+   * @returns the row as HTML
+   */
   riscApplicationRow(row, shorts, prefix) {
     const { log, queryWith } = this.deps;
     const self = this;
@@ -24654,6 +27828,15 @@ class AdminConsole {
   // together, which is what makes a group with no home visible here rather than
   // merely absent — see checkSettingHomes(), whose findings the page prints
   // above this table.
+  /**
+   * Draws one settings group's row of the configuration index: its size,
+   * how many are fixed and overridden, and the pages that edit it.
+   *
+   * A group with no SETTING_HOMES row is drawn as homeless, in red.
+   *
+   * @param group - the group, as `config.groups()` describes it
+   * @returns the row as HTML
+   */
   configHomeRow(group) {
     const { log } = this.deps;
     const self = this;
@@ -24743,6 +27926,13 @@ class AdminConsole {
   // what to SHOW and how to phrase it; it does not decide anything, so there is
   // no second opinion here to go stale.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes what the persistent store is doing right now, from
+   * `persistence.status()`; it computes nothing of its own.
+   *
+   * @returns `html`, the block for /admin/persistence, and `json`, the
+   *   status it was drawn from
+   */
   persistenceStatusBlock() {
     const { log, persistence } = this.deps;
     const self = this;
@@ -24897,10 +28087,35 @@ class AdminConsole {
         : info.lastError
           ? '<strong>THE LAST WRITE FAILED</strong> — ' +
             this.esc(info.lastError) +
-            '. This service is unaffected and is still answering everything ' +
-            'out of memory. The next change will recompute the same ' +
-            'difference and try again, so nothing has been lost yet.'
+            '. Reads are still answered out of memory, and the write is ' +
+            'retried on its own' + (info.retryArmed ? ' (a retry is armed)'
+              : '') + '. ' + (info.answersAfterCommit
+              ? 'A request whose change was in it was answered 503 (LDAP: ' +
+                'unavailable), never its success (#351).'
+              : 'The request that made the change was answered before it.')
           : 'writing normally'],
+      // ANSWER AFTER COMMIT AND THE EVENT LOOP (#351): what
+      // persistence.status() carries for them, drawn so an operator does not
+      // need the API to see a refused write waiting or a blocked loop.
+      ['Answered after commit', off ? '—'
+        : (info.answersAfterCommit
+          ? 'yes — a request that changed the store is answered once that ' +
+            'change has committed, and 503 (LDAP: unavailable) when it has ' +
+            'not'
+          : 'no — this store is written after the answer') +
+          (info.commitBacklog
+            ? '. <strong class="bad">A REFUSED WRITE IS WAITING FOR ITS ' +
+              'RETRY</strong>; writing requests are held for it.'
+            : '.')],
+      ['Event loop', !info.eventLoop ? '—'
+        : 'worst delay ' +
+          this.esc(String((info.eventLoop.sinceReport || {}).maxMs)) +
+          ' ms since the last report' +
+          (info.eventLoop.lastReport
+            ? ', ' + this.esc(String(info.eventLoop.lastReport.maxMs)) +
+              ' ms in the window before it'
+            : '') + ' (a warning is logged over ' +
+          this.esc(String(info.eventLoop.warnAboveMs)) + ' ms).'],
       ['Written so far', off ? '—'
         : this.esc(String(info.writes)) + ' flush(es), ' +
           this.esc(String(info.failures)) +
@@ -24969,6 +28184,140 @@ class AdminConsole {
   // query, and a page that silently showed an hour-old membership would be
   // worse than one that says "as of two seconds ago".
   // ===========================================================================
+  /**
+   * The Cluster page's section on every OTHER cell's cluster (#361), from
+   * what `prepareClusterPage()` read: each cell's running members (folded
+   * by name, with their restarts), its leases and each node's worker
+   * pools; a cell that did not answer is drawn as unreachable, with why.
+   * Times are the answering cell's database clock, shown relative to the
+   * moment it answered.
+   *
+   * @returns `{ html, json }`; both empty in single-cell mode
+   */
+  otherCellsBlock() {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.otherCellsBlock().");
+    const held = this.peerClustersNow;
+    if (!held) {
+      log.debug("Leaving AdminConsole.otherCellsBlock(). Single cell.");
+      return { html: '', json: null };
+    }
+    const agoFrom = function (at, t) {
+      if (!t) {
+        return '—';
+      }
+      const ms = at - t;
+      return ms >= 0 ? self.esc(self.durationText(ms)) + ' ago'
+                     : 'in ' + self.esc(self.durationText(-ms));
+    };
+    const sections = (held.rows || []).map(function (row) {
+      const head = '<h3>Cell <code>' + self.esc(row.cell) + '</code> (' +
+        self.esc(row.jurisdiction || '?') + ')</h3>';
+      if (!row.reachable) {
+        return head + self.warn('<strong>This cell did not answer.</strong> ' +
+          self.esc(row.error || '') + ' Its members may be running; the ' +
+          'inter-cell channel could not ask them.');
+      }
+      const sum = row.summary || {};
+      const at = Number(sum.at) || 0;
+      if (!sum.clustered) {
+        return head + self.note('Answered in ' +
+          self.esc(String(row.answeredMs)) + 'ms; it is not clustered ' +
+          '(<code>cluster.mode</code> ' + self.esc(sum.mode || 'off') +
+          ').');
+      }
+      const members = sum.members || { live: [], restarts: {}, gone: [] };
+      const restarts = members.restarts || {};
+      const live = (members.live || []).map(function (n) {
+        const r = restarts[n.name] || null;
+        return '<tr><td><strong>' + self.esc(n.name) + '</strong></td><td>' +
+          self.esc(n.mode) + '</td><td>' + self.esc(n.version || 'unknown') +
+          '</td><td>' + (n.uptimeMs
+            ? self.esc(self.durationText(n.uptimeMs)) : '—') +
+          (r ? '<br><span class="sub">restarted ' + self.esc(String(r.count)) +
+               ' time(s), the last life ended ' + agoFrom(at, r.lastEndedAt) +
+               '</span>' : '') +
+          '</td><td>' + agoFrom(at, n.heartbeatAt) +
+          (n.lastStallMs ? '<br><strong>last stall ' +
+            self.esc(String(Math.round(n.lastStallMs / 100) / 10)) +
+            's</strong>' : '') +
+          '</td><td>' + self.esc(String(n.workers || 0)) + '</td><td>' +
+          ((n.leases || []).map(function (l) {
+            return '<code>' + self.esc(l) + '</code>';
+          }).join('<br>') || 'none') + '</td><td>' +
+          (n.agrees === null ? 'not known there'
+            : n.agrees ? 'yes' : '<strong>NO</strong>') + '</td></tr>';
+      }).join('');
+      const gone = (members.gone || []).map(function (n) {
+        return '<tr><td>' + self.esc(n.name || '(no name)') + '</td><td>' +
+          self.esc(n.version || 'unknown') + '</td><td>' +
+          (n.how === 'left' ? 'left cleanly ' : '<strong>expired</strong> ') +
+          agoFrom(at, n.endedAt) + (n.earlierLives
+            ? '<br><span class="sub">and ' + self.esc(String(n.earlierLives)) +
+              ' earlier life/lives</span>' : '') + '</td></tr>';
+      }).join('');
+      const pools = (sum.pools || []).map(function (node) {
+        return (node.pools || []).map(function (p) {
+          return '<tr><td>' + self.esc(node.name) +
+            (node.state && node.state !== 'live'
+              ? ' <em>(' + self.esc(node.state) + ')</em>' : '') +
+            '</td><td>' + self.esc(p.title || p.id) + '</td><td>' +
+            self.esc(p.state || '') + '</td><td>' +
+            self.esc(String(p.currentWorkers)) + '</td><td>' +
+            self.esc(String(p.busyWorkers)) + '</td><td>' +
+            self.esc(String(p.freeWorkers)) + '</td><td>' +
+            self.esc(String(p.crashed)) + '</td><td>' +
+            self.esc(String(p.failedStarts)) + '</td></tr>';
+        }).join('');
+      }).join('');
+      return head + '<div class="tiles">' +
+        self.tile((members.live || []).length, 'running') +
+        self.tile((sum.leases || []).length, 'leases held') +
+        self.tile((members.gone || []).length, 'left or expired') +
+        '</div><p class="sub">Mode ' + self.esc(sum.mode) +
+        '; answered in ' + self.esc(String(row.answeredMs)) + 'ms. Times ' +
+        'are that cell\'s database clock, relative to when it answered.</p>' +
+        self.wideTable('Running members of cell ' + row.cell,
+          '<table><tr><th>Node</th><th>Mode</th><th>Version</th><th>Up</th>' +
+          '<th>Last seen</th><th>Request workers</th><th>Leases</th>' +
+          '<th>Settings agree</th></tr>' +
+          (live || '<tr><td colspan="8">no running members</td></tr>') +
+          '</table>') +
+        (gone ? '<details class="fold"><summary>' +
+          self.esc(String((members.gone || []).length)) + ' node name(s) ' +
+          'that have left or expired</summary><div class="foldbody">' +
+          self.wideTable('Left or expired in cell ' + row.cell,
+            '<table><tr><th>Node</th><th>Version</th><th>Ended</th></tr>' +
+            gone + '</table>') + '</div></details>' : '') +
+        (pools ? self.wideTable('Worker pools of cell ' + row.cell,
+          '<table><tr><th>Node</th><th>Pool</th><th>State</th>' +
+          '<th>Workers</th><th>Busy</th><th>Free</th><th>Crashed</th>' +
+          '<th>Failed starts</th></tr>' + pools + '</table>')
+          : (sum.poolsError ? self.note('Its worker pools could not be ' +
+              'read: ' + self.esc(sum.poolsError)) : ''));
+    }).join('');
+    const html = '<h2>The other cells</h2>' +
+      self.note('This service runs as several cells, each its own cluster ' +
+        'against its own database; the list above is this cell\'s. Each ' +
+        'other cell was asked over the inter-cell channel for its members ' +
+        'and pools when this page was drawn — names and counts only, never ' +
+        'an address.') +
+      (held.error ? self.warn(self.esc(held.error)) : '') +
+      (sections || self.note('No other cell is configured.'));
+    log.debug("Leaving AdminConsole.otherCellsBlock().");
+    return { html: html, json: { askedAt: held.at, cells: held.rows || [],
+                                 error: held.error || null } };
+  }
+
+  /**
+   * Describes this node, the cluster's members and leases, what
+   * active-active still waits for and the shared secrets, for
+   * /admin/cluster. The member tables are a snapshot, and say how old.
+   *
+   * @returns `html`, the block, and `json`, the status, snapshot and
+   *   secrets it was drawn from
+   */
   clusterStatusBlock() {
     const { log, cluster, clusterSecrets, clusterBarrier } = this.deps;
     const consoleSelf = this;
@@ -25071,13 +28420,16 @@ class AdminConsole {
     // =======================================================================
     const nodes = state ? state.nodes : [];
     const now = state ? state.now : 0;
-    const isLive = function (node) {
-      return !node.leftAt && node.expiresAt > now;
-    };
-    const live = nodes.filter(isLive);
-    const gone = nodes.filter(function (node) {
-      return !isLive(node);
-    });
+    // FOLDED BY NAME (2026-09-30, `cluster.foldMembers()`): a dead row whose
+    // name has a live row is that node's restart history and is counted on
+    // its live row; only a name with no live row has left or expired, drawn
+    // once. A snapshot from an older build carries no `members`, so it is
+    // folded here from the rows.
+    const folded = (state && state.members) ||
+                   cluster.foldMembers(nodes, now);
+    const live = folded.live;
+    const gone = folded.gone;
+    const restarts = folded.restarts || {};
 
     // WHICH LEASES EACH NODE STILL HOLDS, by holder. A lapsed row is left out:
     // a released lease is expired and never deleted (the fencing token must
@@ -25140,10 +28492,17 @@ class AdminConsole {
     // only used where the node said nothing.
     const upOf = function (node) {
       const info = node.info || {};
+      const r = restarts[node.name || ''];
+      const history = r
+        ? '<br><span class="sub">restarted ' +
+          consoleSelf.esc(String(r.count)) + ' time(s), the last life ended ' +
+          ago(r.lastEndedAt) + '</span>'
+        : '';
       if (info.uptimeMs) {
-        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs));
+        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs)) +
+               history;
       }
-      return 'joined ' + ago(node.startedAt);
+      return 'joined ' + ago(node.startedAt) + history;
     };
 
     // WHEN ANYTHING LAST HEARD FROM IT, and — where the node reported one —
@@ -25206,12 +28565,21 @@ class AdminConsole {
         '</td><td>' + (node.leftAt
           ? 'left cleanly ' + ago(node.leftAt)
           : '<strong>expired</strong> ' + ago(node.expiresAt)) +
+        (node.earlierLives
+          ? '<br><span class="sub">and ' +
+            consoleSelf.esc(String(node.earlierLives)) +
+            ' earlier life/lives under this name</span>'
+          : '') +
         '</td></tr>';
     }).join('');
 
     const goneTable = !gone.length ? ''
       : '<details class="fold"><summary>' + this.esc(String(gone.length)) +
         ' node(s) that have left or expired</summary><div class="foldbody">' +
+        '<p>One row per NODE NAME with no running member: a name that is ' +
+        'running again is that node restarted, counted on its running row ' +
+        'above rather than listed here, and a name that ended several ' +
+        'times is shown once, as its latest life.</p>' +
         '<p>A node that stopped cleanly released its leases on the way out, ' +
         'so another member took them over within one heartbeat. A node that ' +
         'EXPIRED did not, and its leases waited out their lifetime — and it ' +
@@ -25319,6 +28687,7 @@ class AdminConsole {
           consoleSelf.esc(one.what) + '</td></tr>';
       }).join('') + '</table>';
 
+    const otherCells = this.otherCellsBlock();
     const html = '<h2>Right now</h2>' +
       (off ? this.note('This process is not clustered: ' +
                        '<code>cluster.mode</code> resolved to ' +
@@ -25329,15 +28698,28 @@ class AdminConsole {
       rows.map(function (row) {
         return '<tr><th>' + consoleSelf.esc(row[0]) + '</th><td>' + row[1] +
                '</td></tr>';
-      }).join('') + '</table>' + nodeTable + capabilityTable + secretTable;
+      }).join('') + '</table>' + nodeTable + otherCells.html + capabilityTable +
+      secretTable;
 
     log.debug("Leaving AdminConsole.clusterStatusBlock(). mode=" + self.mode);
     return {
       html: html,
       json: { self: self, snapshotAgeMs: snap.ageMs,
               nodes: state ? state.nodes : [],
+              // The page's reading of `nodes`, folded by name (rule 7).
+              members: state ? {
+                running: live.map(function (node) {
+                  return node.nodeId;
+                }),
+                restarts: restarts,
+                leftOrExpired: gone.map(function (node) {
+                  return { nodeId: node.nodeId, name: node.name,
+                           earlierLives: node.earlierLives || 0 };
+                })
+              } : null,
               leases: state ? state.leases : [],
               databaseNow: state ? state.now : null,
+              otherCells: otherCells.json,
               secrets: secrets, barrier: barrier }
     };
   }
@@ -25357,6 +28739,12 @@ class AdminConsole {
   // is built on, one layer down. A page that wrote the list out would describe
   // something this service does not do the first time one was added.
   // ===========================================================================
+  /**
+   * Describes the TOTP mechanism, read from `totp.report()`, for the TOTP
+   * settings page.
+   *
+   * @returns `html`, the block, and `json`, the report
+   */
   totpMechanismBlock() {
     const { log, totp } = this.deps;
     const self = this;
@@ -25510,6 +28898,14 @@ class AdminConsole {
   // A key's attestation, for its row (#105): what the statement proved, or
   // "claimed" where nothing was verified — the AAGUID then is only what the
   // authenticator data said.
+  /**
+   * Describes a WebAuthn key's attestation for its row: verified and
+   * trusted or untrusted, or only claimed when nothing was verified.
+   *
+   * @param att - the key's recorded attestation, if any
+   * @param aaguid - the authenticator's AAGUID, if any
+   * @returns the description as HTML
+   */
   attestationCell(att, aaguid) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.attestationCell().");
@@ -25535,6 +28931,12 @@ class AdminConsole {
       ' <code>' + this.esc(att.format) + '</code>';
   }
 
+  /**
+   * Describes the WebAuthn ceremony, read from `webauthnPolicy.report()`,
+   * for the WebAuthn settings page.
+   *
+   * @returns `html`, the block, and `json`, the report
+   */
   webauthnMechanismBlock() {
     const { log, webauthnPolicy } = this.deps;
     const self = this;
@@ -25705,6 +29107,13 @@ class AdminConsole {
   // through the principal database's key source; a process without the
   // directory has none, and says so.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes what the KDC does about pre-authentication in this realm:
+   * whether a password alone gets a two-factor account a ticket, the FAST
+   * provider's policy and the krbtgt keys.
+   *
+   * @returns `html`, the block for /admin/kerberos, and `json`, the facts
+   */
   kerberosPreauthStatusBlock() {
     const { log, mode } = this.deps;
     log.debug("Entering AdminConsole.kerberosPreauthStatusBlock().");
@@ -25792,6 +29201,12 @@ class AdminConsole {
     return { html: html, json: json };
   }
 
+  /**
+   * Describes the recovery code mechanism, read from
+   * `backupCodes.report()`, for /admin/backup-codes. It never shows a code.
+   *
+   * @returns `html`, the block, and `json`, the report
+   */
   backupCodesMechanismBlock() {
     const { log, backupCodes } = this.deps;
     log.debug("Entering AdminConsole.backupCodesMechanismBlock().");
@@ -25871,6 +29286,14 @@ class AdminConsole {
   // in the text it says it in: a caller driving this console without a browser
   // should be able to read the caveats too, since on these pages the caveats
   // are most of the content.
+  /**
+   * Builds what a protocol settings page answers as JSON: its prose as
+   * plain text, its links, its settings, and its status block's JSON when
+   * the row has one.
+   *
+   * @param row - the page's row of PROTOCOL_SETTINGS_PAGES
+   * @returns the page's JSON
+   */
   protocolSettingsJson(row) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.protocolSettingsJson(). path=" + row.path);
@@ -25905,6 +29328,14 @@ class AdminConsole {
 
   // The page, written once. `configFormsFor()` is the whole of the second half;
   // everything above it is the row.
+  /**
+   * Draws a protocol settings page: its prose, its status block when it has
+   * one, its settings forms and a row of links.
+   *
+   * @param req - the request
+   * @param row - the page's row of PROTOCOL_SETTINGS_PAGES
+   * @returns the page body as HTML
+   */
   protocolSettingsPage(req, row) {
     const { log } = this.deps;
     const self = this;
@@ -25941,6 +29372,14 @@ class AdminConsole {
   // What `mgmt-api/admin_api.ts` calls for each of these. It takes the PATH
   // rather than an index or a title, because that is what SETTING_HOMES and NAV
   // are keyed by and it is what the API's own route already carries.
+  /**
+   * Builds the JSON of the protocol settings page at a path, for
+   * mgmt-api/admin_api.ts.
+   *
+   * @param path - the page's console path
+   * @returns the page's JSON
+   * @throws Error when no protocol settings page has that path
+   */
   protocolSettingsJsonFor(path) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.protocolSettingsJsonFor().");
@@ -25956,6 +29395,67 @@ class AdminConsole {
     }
     log.debug("Leaving AdminConsole.protocolSettingsJsonFor().");
     return this.protocolSettingsJson(row);
+  }
+
+  /**
+   * `protocolSettingsJsonFor()` after the row's `prepare` step, for a page
+   * whose status block draws something asynchronous (the Cluster page's
+   * other cells, #361). A failed step is the block's to report.
+   *
+   * @param path - the page's console path
+   * @returns a promise of the page's JSON
+   */
+  preparedSettingsJsonFor(path) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.preparedSettingsJsonFor().");
+    const row = PROTOCOL_SETTINGS_PAGES.filter(function (item) {
+      return item.path === path;
+    })[0];
+    const ready = row && typeof row.prepare === 'function'
+      ? Promise.resolve().then(function () {
+        return row.prepare();
+      }).catch(function (e) {
+        log.debug("Caught in AdminConsole.preparedSettingsJsonFor(): " +
+                  ((e && e.message) || e));
+      })
+      : Promise.resolve();
+    log.debug("Leaving AdminConsole.preparedSettingsJsonFor().");
+    return ready.then(function () {
+      return self.protocolSettingsJsonFor(path);
+    });
+  }
+
+  /**
+   * The Cluster page's `prepare` (#361): asks every other cell for its
+   * cluster summary, for `clusterStatusBlock()` to draw. Single-cell
+   * mode asks nothing.
+   *
+   * @returns a promise settled when the answers (or failures) are held
+   */
+  prepareClusterPage() {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.prepareClusterPage().");
+    const cells = require('../common/cells');
+    if (!cells.isMulti()) {
+      self.peerClustersNow = null;
+      log.debug("Leaving AdminConsole.prepareClusterPage(). Single cell.");
+      return Promise.resolve();
+    }
+    // A LAZY require: cells_admin draws with this module's shell, so it is
+    // loaded by the time any page is asked for, and a load-time require
+    // would close that cycle.
+    const cellsAdmin = require('./cells_admin');
+    log.debug("Leaving AdminConsole.prepareClusterPage().");
+    return Promise.resolve(cellsAdmin.peerClusters()).then(function (rows) {
+      self.peerClustersNow = { at: Date.now(), rows: rows || [] };
+    }, function (e) {
+      log.debug("Caught in AdminConsole.prepareClusterPage(): " +
+                ((e && e.message) || e));
+      self.peerClustersNow = { at: Date.now(), rows: [],
+                               error: String((e && e.message) || e) };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -26009,6 +29509,12 @@ class AdminConsole {
   // authenticated differently because their specifications say opposite things,
   // and a single sentence covering both was what made the old note wrong in one
   // direction as soon as one of them changed.
+  /**
+   * Draws the banner every SPIFFE page carries: that a Workload API caller
+   * is not attested, and whether the SPIRE Server API requires mutual TLS.
+   *
+   * @returns the two notes as HTML
+   */
   spiffePostureNote() {
     const { log, spiffeAuth } = this.deps;
     log.debug("Entering AdminConsole.spiffePostureNote().");
@@ -26050,6 +29556,13 @@ class AdminConsole {
   // WORKLOAD ATTESTATION ON THE UNIX SOCKET (#40 phase four): whether the
   // kernel can be asked at all, which attestors run, and each connection
   // open now with what it was attested as.
+  /**
+   * Draws the Workload API's attestation state: whether the native module
+   * is loaded, the TCP port's posture, the attestors and open connections.
+   *
+   * @param state - the attestation state; optional in effect
+   * @returns the section as HTML, or an empty string when there is no state
+   */
   spiffeWorkloadAttestation(state) {
     const { log } = this.deps;
     const self = this;
@@ -26121,6 +29634,14 @@ class AdminConsole {
   // than one surface on two transports. A table without it would report four
   // Workload API rows and leave the reader to work out which service they
   // belong to from the port.
+  /**
+   * Draws one SPIFFE surface's listeners as table rows: realm, address,
+   * whether it bound, and what a caller must present.
+   *
+   * @param bindings - the surface's listener bindings
+   * @param what - the surface's name, for the first column
+   * @returns the rows as HTML, or one row saying nothing is bound
+   */
   spiffeListenerRows(bindings, what) {
     const { log } = this.deps;
     const self = this;
@@ -26145,6 +29666,13 @@ class AdminConsole {
     }).join('');
   }
 
+  /**
+   * Builds /admin/spiffe: the trust domain's authorities, bundle,
+   * listeners, federated bundles and settings.
+   *
+   * @param req - the request
+   * @returns `json`, `inner` (the page body as HTML) and `title`
+   */
   spiffePage(req) {
     const { log, spiffeJson, spiffeCa } = this.deps;
     const self = this;
@@ -26435,6 +29963,13 @@ class AdminConsole {
     return { json: json, inner: inner, title: 'SPIFFE' };
   }
 
+  /**
+   * Builds the list of SPIFFE registration entries, with its filter and
+   * paging.
+   *
+   * @param req - the request, whose query holds the filter and page
+   * @returns `json` and `inner`, the page body as HTML
+   */
   spiffeEntriesListPage(req) {
     const { log, spiffeEntriesJson, queryWith, spiffeSelectorText } = this.deps;
     const self = this;
@@ -26499,6 +30034,11 @@ class AdminConsole {
     return { json: json, inner: inner };
   }
 
+  /**
+   * Draws the form that creates a SPIFFE registration entry.
+   *
+   * @returns the form as HTML
+   */
   spiffeCreateEntryForm() {
     const { log, spiffeCa } = this.deps;
     log.debug("Entering AdminConsole.spiffeCreateEntryForm().");
@@ -26534,6 +30074,14 @@ class AdminConsole {
       '<code>docker</code>.') + '</div></form>';
   }
 
+  /**
+   * Builds one SPIFFE registration entry's page: its fields, the forms that
+   * change or delete it, and its directory entry.
+   *
+   * @param req - the request
+   * @param id - the entry's id
+   * @returns `json` and `inner`; an `error` in `json` when no entry has it
+   */
   spiffeEntryDetailPage(req, id) {
     const { log, spiffeRegistry, queryWith, spiffeSelectorText,
             config } = this.deps;
@@ -26650,6 +30198,13 @@ class AdminConsole {
     return { json: json, inner: inner };
   }
 
+  /**
+   * Builds /admin/spiffe/entries: one entry's page when `entry` is in the
+   * query, the list otherwise.
+   *
+   * @param req - the request
+   * @returns `json`, `inner`, `title`, and `up` for an entry's page
+   */
   spiffeEntriesView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.spiffeEntriesView().");
@@ -26669,6 +30224,12 @@ class AdminConsole {
              title: 'Registration entries' };
   }
 
+  /**
+   * Builds the list of attested SPIFFE agents, with its filter and paging.
+   *
+   * @param req - the request, whose query holds the filter and page
+   * @returns `json` and `inner`, the page body as HTML
+   */
   spiffeAgentsListPage(req) {
     const { log, spiffeAgentsJson, queryWith } = this.deps;
     const self = this;
@@ -26713,6 +30274,14 @@ class AdminConsole {
     return { json: json, inner: inner };
   }
 
+  /**
+   * Builds one attested agent's page: its fields, the ban, unban and delete
+   * forms, and its directory entry.
+   *
+   * @param req - the request
+   * @param id - the agent's SPIFFE ID
+   * @returns `json` and `inner`; an `error` in `json` when no agent has it
+   */
   spiffeAgentDetailPage(req, id) {
     const { log, spiffeRegistry, queryWith, spiffeSelectorText } = this.deps;
     const self = this;
@@ -26803,6 +30372,13 @@ class AdminConsole {
 
   // THE SPIFFE BROKER API'S BROKERS (#170): the list, a remove per row, and
   // the form that adds a broker or replaces what it may reference.
+  /**
+   * Builds /admin/spiffe/brokers: the SPIFFE Broker API's brokers, a remove
+   * form per row, and the form that adds or changes one.
+   *
+   * @param req - the request
+   * @returns `json`, `inner` (the page body as HTML) and `title`
+   */
   spiffeBrokersPage(req) {
     const { log, spiffeBrokersJson, queryWith, spiffeCa } = this.deps;
     const self = this;
@@ -26870,6 +30446,13 @@ class AdminConsole {
     return { json: json, inner: inner, title: 'SPIFFE brokers' };
   }
 
+  /**
+   * Builds /admin/spiffe/agents: one agent's page when `agent` is in the
+   * query, the list otherwise.
+   *
+   * @param req - the request
+   * @returns `json`, `inner`, `title`, and `up` for an agent's page
+   */
   spiffeAgentsView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.spiffeAgentsView().");
@@ -26890,6 +30473,13 @@ class AdminConsole {
   // THE STATE CELL, and it is the most important thing on the page. Four states
   // and each is a different instruction to the reader, which is why they are
   // four sentences rather than a boolean and a tooltip.
+  /**
+   * Draws a federation relationship's state as a table cell: ready,
+   * disabled, or enabled and not configured with what is still missing.
+   *
+   * @param row - the relationship's row
+   * @returns the cell as HTML
+   */
   federationStateCell(row) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.federationStateCell().");
@@ -26909,6 +30499,13 @@ class AdminConsole {
       'than half-working.</span></td>';
   }
 
+  /**
+   * Builds the list of federation relationships, with its filter, paging,
+   * the form that adds one and the explanation of roles and protocols.
+   *
+   * @param req - the request, whose query holds the filter and page
+   * @returns `inner`, the page body as HTML, and `json`
+   */
   federationListPage(req) {
     const { log, adminViews, pageParamsOf, queryWith, federation } = this.deps;
     const self = this;
@@ -27044,6 +30641,11 @@ class AdminConsole {
     };
   }
 
+  /**
+   * Draws the form that adds a federation relationship.
+   *
+   * @returns the form as HTML
+   */
   federationCreateForm() {
     const { log, federation } = this.deps;
     const self = this;
@@ -27088,11 +30690,67 @@ class AdminConsole {
       'verifies.');
   }
 
+  // WHAT THE PARTNER SENT AND NOTHING WROTE (#94), under the mapping it
+  // would take to keep one: a name no mapping names, or a name mapped onto an
+  // attribute no partner may write (with why). Each row carries a Map form
+  // with the name filled in, so keeping one is naming its attribute.
+  /**
+   * Draws the names a relationship's partner sent that were not written,
+   * each with a form to map it.
+   *
+   * @param row - the relationship's view
+   * @param unmapped - `federation.unmappedOf()`
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML, or '' when there is nothing to show
+   */
+  federationUnmappedSection(row, unmapped, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationUnmappedSection(). id=" +
+              row.id);
+    if (!unmapped.length) {
+      log.debug("Leaving AdminConsole.federationUnmappedSection(). None.");
+      return '';
+    }
+    log.debug("Leaving AdminConsole.federationUnmappedSection().");
+    return '<h3 id="unmapped">Sent and not written</h3>' +
+      this.note('Names this partner sent at a sign-in that were NOT ' +
+        'written to the directory: nothing maps them, or a mapping sends ' +
+        'them onto an attribute no partner may write. The newest first; a ' +
+        'name is kept for ' + 'as long as minted state is (' +
+        '<code>persistence.mintedRetention</code>).') +
+      '<table><tr><th>Name</th><th>Why</th><th>Last sent</th><th>Map it' +
+      '</th></tr>' +
+      unmapped.map(function (one) {
+        return '<tr><td class="who"><code>' + self.esc(one.name) +
+          '</code></td><td class="sub">' +
+          (one.refused ? self.esc(one.refused) : 'nothing maps it') +
+          '</td><td class="sub">' + self.esc(one.last) + '</td><td><form ' +
+          'method="post" action="/admin/federation"><div class="formrow">' +
+          carryBack +
+          '<input type="hidden" name="action" value="add-value">' +
+          '<input type="hidden" name="id" value="' + self.esc(row.id) +
+          '"><input type="hidden" name="field" value="fedAttributeMap">' +
+          '<input type="text" name="value" size="30" value="' +
+          self.esc(one.name + '=') + '"><button type="submit">Map' +
+          '</button></div></form></td></tr>';
+      }).join('') + '</table>';
+  }
+
   // The drill-down. It is the page that actually does the work, because a
   // relationship is configured field by field and the fields differ by role and
   // by protocol — which is why the form is BUILT from the schema rather than
   // typed out: `fieldsForRole()` is the same call the action validates against,
   // so this page cannot offer a field the action would refuse.
+  /**
+   * Builds one federation relationship's page, its form built from the
+   * fields the action validates against for its role and protocol.
+   *
+   * @param req - the request
+   * @param id - the relationship's id
+   * @returns `inner` and `json`; `missing` is true when no relationship has
+   *   the id
+   */
   federationDetailPage(req, id) {
     const { log, adminViews, queryWith, federation } = this.deps;
     const self = this;
@@ -27269,7 +30927,11 @@ class AdminConsole {
         (field.name === 'fedAttributeMap' ? 'incoming name=ldapAttribute'
           : (field.name === 'fedRelease' ? 'a claim or attribute name' :
              'a value')) + '"><button ' +
-        'type="submit">Add</button></div></form>';
+        'type="submit">Add</button></div></form>' +
+        (field.name === 'fedAttributeMap'
+          ? self.federationUnmappedSection(row, view.unmapped || [],
+                                           carryBack)
+          : '');
     }).join('');
 
     const inner = this.messagesOf(req) +
@@ -27473,6 +31135,15 @@ class AdminConsole {
   // key table — never a private key — and the Rotate button, whose API twin
   // is `POST /admin-api/federation/rotate-key` (rule 7).
   // ---------------------------------------------------------------------------
+  /**
+   * Draws a relationship's encryption section: whether plaintext is
+   * refused, its keys (never a private key) and the Rotate button.
+   *
+   * @param row - the relationship's row
+   * @param encryption - the relationship's encryption state and keys
+   * @param carryBack - the hidden `back` field carried into the form
+   * @returns the section as HTML
+   */
   federationEncryptionSection(row, encryption, carryBack) {
     const { log } = this.deps;
     const self = this;
@@ -27514,6 +31185,13 @@ class AdminConsole {
       '(federation.encryptionKeyGraceS).</span></div></form>';
   }
 
+  /**
+   * Builds /admin/federation: one relationship's page when `relationship`
+   * is in the query, the list otherwise.
+   *
+   * @param req - the request
+   * @returns `json`, `inner`, `title`; `missing` and `up` for a detail page
+   */
   federationView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.federationView().");
@@ -27577,6 +31255,13 @@ class AdminConsole {
   // shape is `federation_diagram.js`'s and is decided from the node's kind,
   // which is the one thing a caller must not be able to override. See lookOf()
   // there.
+  /**
+   * Decides where each box of the federation picture links: an application
+   * to the applications register, a partner to its first relationship.
+   *
+   * @param graph - the federation graph
+   * @returns `looks`, keyed by node id, and `resolve`, a node's look
+   */
   federationMapLooks(graph) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.federationMapLooks().");
@@ -27629,6 +31314,15 @@ class AdminConsole {
   // hrefs into the current realm on the way out of a `text/html` response ONLY
   // — so a link inside an `image/svg+xml` body would silently leave the realm,
   // and in a saved file it would point at somebody's own machine.
+  /**
+   * Draws the federation picture with the links to its SVG and JSON forms.
+   *
+   * @param graph - the federation graph
+   * @param look - what federationMapLooks() returned
+   * @param params - the page's query, carried into the two links
+   * @param label - the picture's accessible label
+   * @returns `drawn`, the render result, and `html`, the drawing and links
+   */
   federationDrawing(graph, look, params, label) {
     const { log, federationDiagram, queryWith } = this.deps;
     log.debug("Entering AdminConsole.federationDrawing().");
@@ -27660,6 +31354,12 @@ class AdminConsole {
   // delegation page's rule and is worth the few extra bytes: a legend
   // hand-drawn out of the same colour constants would still go stale the day a
   // shape changed.
+  /**
+   * Draws the federation picture's key, each swatch rendered by the same
+   * code as the picture so the legend cannot drift from it.
+   *
+   * @returns the key's boxes and lines tables as HTML
+   */
   federationMapKey() {
     const { log, federationDiagram } = this.deps;
     const self = this;
@@ -27783,6 +31483,13 @@ class AdminConsole {
   // that narrowed the drawing and left the rows standing looks exactly like a
   // filter working.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the federation map's filter from the query and builds the graph
+   * once, for the page, its tables and `?format=json` alike.
+   *
+   * @param req - the request, whose query may hold role, protocol and q
+   * @returns `wanted`, the filter, and `graph`
+   */
   federationMapView(req) {
     const { log, federationGraph } = this.deps;
     log.debug("Entering AdminConsole.federationMapView().");
@@ -27801,6 +31508,13 @@ class AdminConsole {
   // One relationship's row in the table under the picture. It carries the two
   // numbers the picture was asked for and the ones a label had no room for, and
   // its first cell links back to the drill-down that configures it.
+  /**
+   * Draws one relationship's row of the table under the federation picture:
+   * its state, application count, sign-in counts and how it authenticates.
+   *
+   * @param row - the relationship's row in the graph
+   * @returns the row as HTML
+   */
   federationMapRow(row) {
     const { log, queryWith } = this.deps;
     log.debug("Entering AdminConsole.federationMapRow().");
@@ -27898,6 +31612,12 @@ class AdminConsole {
   // them (#50, R1) — the file header says why the transitional call sat where
   // the LAST of them was rather than the first — so the route order is
   // unchanged (rule 1).
+  /**
+   * Registers the console's routes and middleware on the shared app; called
+   * by common/protocol_stack.ts, where the route order is kept (rule 1).
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, oidcRp, mode, gateStateFor, rbac, realms, errorCodes,
             LOGIN_PATH, loginRealmChooser, websecurity, parseBody, adminScope,
@@ -34308,7 +38028,12 @@ class AdminConsole {
         'make, they live in <code>' +
         self.esc(register.container || 'ou=roles') + '</code>, and what they ' +
         'grant is being issued something. <strong>It is not <a ' +
-        'href="/admin/groups">Groups</a> either</strong>: a group still ' +
+        'href="/admin/groups">Groups</a> either</strong>. <strong>The two ' +
+        'meet in one place since #303</strong>: <code>ADMIN_READ</code> and ' +
+        '<code>ADMIN_WRITE</code> below are roles over those two groups, ' +
+        'authorizing the management API\'s <code>admin:read</code> and ' +
+        '<code>admin:write</code>. People hold them through Admin roles; an ' +
+        'application is added to them here. And a group still ' +
         'grants nothing on its own, and that sentence is still true ' +
         'everywhere it is written. What changed is that a role may NAME a ' +
         'group &mdash; so adding somebody to <code>cn=developers</code> can ' +
@@ -34341,7 +38066,8 @@ class AdminConsole {
           'and it is what <code>npm test</code> and the parent project\'s ' +
           'in-process Kerberos jobs run as.')) +
 
-        '<h3 id="built-in">The six built-in roles</h3>' +
+        '<h3 id="built-in">The ' + register.builtIn.length +
+        ' built-in roles</h3>' +
         self.note('<strong>Computed, in no container, and not ' +
         'editable.</strong> Every one of them is answered from the CONTEXT ' +
         'of the decision being made rather than from a store, so they have ' +
@@ -34386,12 +38112,12 @@ class AdminConsole {
         ROLE_MEMBER_KINDS.map(function (one) {
           return '<th>Held by ' + self.esc(one.label) + '</th>';
         }).join('') +
-        '<th></th></tr></thead><tbody>' +
+        '<th>Authorizes</th><th></th></tr></thead><tbody>' +
         (rolePage.shown.length
           ? rolePage.shown.map(function (one) { return self.roleRow(one,
               listView); })
                           .join('')
-          : '<tr><td colspan="5"><span class="state-none">' +
+          : '<tr><td colspan="6"><span class="state-none">' +
             (q ? 'No role matches &ldquo;' + self.esc(q) + '&rdquo;.'
                : 'No role has been made. Every application therefore ' +
                  'requires ' +
@@ -34411,8 +38137,22 @@ class AdminConsole {
         '<input type="hidden" name="action" value="create-role"><div ' +
         'class="formrow"><label>Name <input type="text" name="role" ' +
         'required></label><label>Description <input type="text" ' +
-        'name="description" size="50"></label><button ' +
-        'type="submit">Create</button></div></form>' +
+        'name="description" size="50"></label>' +
+        // FOR ONE APPLICATION (#310), or for the realm when left empty.
+        '<label title="' + self.esc('Leave empty for a realm-wide role. ' +
+          'Name an application to make a role that belongs to it alone: ' +
+          'it is registered as <role>@<application>, and only a token for ' +
+          'that application carries it.') + '">For application ' +
+        '<input type="text" name="application" list="role-create-apps" ' +
+        'placeholder="realm-wide"></label><datalist id="role-create-apps">' +
+        applicationOptions + '</datalist>' +
+        // ITS LABEL AND WHO MAY HOLD IT (#93).
+        '<label>Display name <input type="text" name="displayName" ' +
+        'placeholder="optional"></label><label>May be held by <select ' +
+        'name="memberTypes"><option value="">people and applications' +
+        '</option><option value="user">people only</option><option ' +
+        'value="application">applications only</option></select></label>' +
+        '<button type="submit">Create</button></div></form>' +
 
         // "SOMEBODY" IS THREE KINDS AND THE HEADING USED TO HIDE TWO OF THEM.
         //
@@ -34479,6 +38219,45 @@ class AdminConsole {
         '<datalist id="role-member-apps">' + applicationOptions +
         '</datalist><button type="submit"' +
           (register.roles.length ? '' : ' disabled') + '>Add</button>' +
+        '</div></form>' +
+
+        // WHAT A ROLE AUTHORIZES (#303, part B of #88).
+        '<h3 id="authorizes">Let a role authorize a permission</h3>' +
+        self.note('<strong>A scope is a request; a role is what authorizes ' +
+        'it.</strong> A permission its resource application GATES ' +
+        '(<code>oauthRoleGatedPermission</code> on the application\'s page) ' +
+        'is issued only to a person or an application holding a role that ' +
+        'names it here, and is left off the token otherwise &mdash; and a ' +
+        'request asking for nothing else is refused ' +
+        '<code>invalid_scope</code>. Name the permission as a client asks ' +
+        'for it: the resource\'s <code>oauthPermissionBaseUri</code> ' +
+        'followed by the name. It must be defined first. ' +
+        '<code>admin:read</code> and <code>admin:write</code> are this ' +
+        'service\'s own and are authorized by the console roles ' +
+        '<code>ADMIN_READ</code> and <code>ADMIN_WRITE</code> alone: a person ' +
+        'holds those through <a href="/admin/rbac">Admin roles</a>, and an ' +
+        'application by being added to them above.') +
+        '<form method="post" action="/admin/roles">' +
+        self.rolesBack(listView) +
+        '<input type="hidden" name="from" value="authorizes">' +
+        '<input type="hidden" name="action" value="add-permission">' +
+        '<div class="formrow">' +
+        '<label>Role <select name="role" required>' +
+        register.roles.filter(function (one) {
+          return !one.native;
+        }).map(function (one) {
+          return '<option value="' + self.esc(one.name) + '">' +
+                 self.esc(one.name) + '</option>';
+        }).join('') + '</select></label>' +
+        '<label>Permission <input type="text" name="permission" size="50" ' +
+        'list="role-permission-ids" required></label>' +
+        '<datalist id="role-permission-ids">' + register.permissionIds
+          .map(function (id) {
+            return '<option value="' + self.esc(id) + '">';
+          }).join('') + '</datalist>' +
+        '<button type="submit"' +
+          (register.roles.some(function (one) { return !one.native; })
+            ? '' : ' disabled') + '>Authorize</button>' +
         '</div></form>' +
 
         '<h3 id="requiring">What requires a role</h3>' +
@@ -34687,6 +38466,22 @@ class AdminConsole {
       const state = gateStateFor(req);
       const result = rolesAction(body, { actor: (state && state.username) || '',
                                          via: 'console' });
+      // FROM AN APPLICATION'S PAGE (#93): its Application permissions section
+      // grants and removes the roles the application holds, and comes back
+      // there. The path is fixed and `client` only a query value, rebuilt by
+      // queryWith() — permissionsReturnTo()'s arrangement — and it must be
+      // the member acted on, so a form cannot land anywhere it did not act.
+      const client = String(body.client || '').trim();
+      if (String(body.from || '') === '/admin/applications' && client &&
+          client === String(body.member || '').trim() &&
+          String(body.kind || '') === 'application') {
+        self.respondToAction(req, res, '/admin/applications' +
+          queryWith(self.listViewFromBack('/admin/applications', body.back),
+                    { application: client }) + '#app-roles', result);
+        log.debug("Leaving the admin roles action endpoint. Back to the " +
+                  "application.");
+        return;
+      }
       const back = '/admin/roles' +
         queryWith(self.listViewFromBack('/admin/roles', body.back), {}) +
         // WHICH HEADING THE READER WAS ON. `from` is a NAME and never a URL,
@@ -34694,8 +38489,8 @@ class AdminConsole {
         // request body is an open redirect and one carrying a newline is a
         // header injection. The worst a hand-written value can reach is another
         // heading on this same page.
-        (['built-in', 'roles', 'create', 'member', 'requiring', 'preview',
-          'policy', 'claim'].indexOf(String(body.from || '')) >= 0
+        (['built-in', 'roles', 'create', 'member', 'authorizes', 'requiring',
+          'preview', 'policy', 'claim'].indexOf(String(body.from || '')) >= 0
            ? '#' + String(body.from) : '#roles');
       self.respondToAction(req, res, back, result);
       log.debug("Leaving the admin roles action endpoint.");
@@ -37966,10 +41761,10 @@ class AdminConsole {
       log.debug("Entering the admin Shared Signals action endpoint.");
       const body = parseBody(req);
       // The one action handler in this console that awaits. Signing a Security
-      // Event Token may be an ML-DSA or SLH-DSA signature on the worker pool,
-      // and delivering it is a POST to somebody else's endpoint; answering
-      // before either had happened would be this page reporting "sent" about
-      // nothing.
+      // Event Token may be an ML-DSA or SLH-DSA signature on libuv's thread
+      // pool, and delivering it is a POST to somebody else's endpoint;
+      // answering before either had happened would be this page reporting
+      // "sent" about nothing.
       ssfAction(body).then(function (result) {
         self.respondToAction(req, res, '/admin/ssf', result);
         log.debug("Leaving the admin Shared Signals action endpoint.");
@@ -39475,10 +43270,23 @@ class AdminConsole {
     PROTOCOL_SETTINGS_PAGES.forEach(function (row) {
       app.get(row.path, function (req, res) {
         log.debug("Entering the admin " + row.title + " page.");
-        self.respond(req, res, self.protocolSettingsJson(row), row.title,
-                     row.path,
-                     self.protocolSettingsPage(req, row));
-        log.debug("Leaving the admin " + row.title + " page.");
+        // A row with a `prepare` (the Cluster page, #361) is asked for what
+        // its synchronous status block draws first; a failure there is the
+        // block's to draw, never a page that does not answer.
+        const ready = typeof row.prepare === 'function'
+          ? Promise.resolve().then(function () {
+            return row.prepare();
+          }).catch(function (e) {
+            log.debug("Caught in the admin " + row.title + " page: " +
+                      ((e && e.message) || e));
+          })
+          : Promise.resolve();
+        ready.then(function () {
+          self.respond(req, res, self.protocolSettingsJson(row), row.title,
+                       row.path,
+                       self.protocolSettingsPage(req, row));
+          log.debug("Leaving the admin " + row.title + " page.");
+        });
       });
     });
 
@@ -40094,6 +43902,9 @@ const SETTING_HOMES = [
   // `cluster.acceptMissingCapabilities` read anywhere but beside the list of
   // what is missing would be a list of ids with no meaning.
   { group: 'Cluster', pages: ['/admin/cluster'] },
+  // THE CELLS' SETTINGS (#98), on the page that shows the cell map they
+  // configure and the realm's transfer choices they decide about.
+  { group: 'Cells', pages: ['/admin/cells'] },
   // SIGNER ROTATION (2026-09-22, #42/#48), on /admin/keys — the page that
   // shows every unit's current, next and retired keys and carries the
   // Rotate controls (rcbj's D5).
@@ -40102,6 +43913,7 @@ const SETTING_HOMES = [
   // jobs they switch and the ticks they time.
   { group: 'Scheduler', pages: ['/admin/scheduler'] },
   { group: 'Mail', pages: ['/admin/mail'] },
+  { group: 'Attribute sources', pages: ['/admin/attribute-sources'] },
   // THE DEVICE REGISTER'S BOUNDS (#218): on the page that says how a device
   // arrives, beside the enrolment methods those bounds limit.
   { group: 'Devices', pages: ['/admin/device-registration'] },
@@ -42110,7 +45922,7 @@ let truststore = null;
 // refuses a partial filler in order to avoid.
 //
 // `action` RETURNS A PROMISE, like the eighth's: emitting a CAEP event signs a
-// JWS — possibly on the worker pool — and then POSTs it to somebody else's
+// JWS — possibly on libuv's thread pool — and then POSTs it to somebody else's
 // endpoint.
 // ---------------------------------------------------------------------------
 let caepReporter = null;
@@ -42716,6 +46528,9 @@ const PROTOCOL_SETTINGS_PAGES = [
            'that differs does not start, because two nodes with different ' +
            'krbtgt keys seal tickets neither can open for the other.'],
     status: slot.forward('clusterStatusBlock'),
+    // EVERY OTHER CELL'S CLUSTER (#361): asked before the page is drawn,
+    // because the status block is synchronous and the other cells are not.
+    prepare: slot.forward('prepareClusterPage'),
     links: [['/admin/persistence', 'the store the cluster is built on'],
             ['/admin/database', 'the database itself'],
             ['/admin/secrets', 'where the key-encryption key comes from'],
@@ -42918,11 +46733,22 @@ const FEDERATION_LINKS =
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The admin console: its pages, its shell and furniture for pages drawn in
+ * other modules, the views `/admin-api` answers from, and the slots other
+ * modules fill.
+ *
+ * The functions forward to the AdminConsole instance the composition root
+ * installs; `registerRoutes` is called by `common/protocol_stack.ts`.
+ * @namespace
+ */
 const consoleExports = {
   registerRoutes: slot.forward('registerRoutes'),
   AdminConsole: AdminConsole,
+  /** Installs the instance the composition root built. */
   installInstance: (instance: AdminConsole): void =>
     slot.install(instance),
+  /** Says where the installed instance came from. */
   instanceOrigin: (): string => slot.origin(),
   // THE SHELL, written for the first module outside this file that drew a
   // console page (many do now — `crypto_metadata.js`, `pki_admin.js`, the
@@ -42979,6 +46805,8 @@ const consoleExports = {
   // second way is the one that goes stale.
   // ---------------------------------------------------------------------
   respondToAction: slot.forward('respondToAction'),
+  // A claim set's section, for tests/attribute_claims.js (#94).
+  claimSetSection: slot.forward('claimSetSection'),
   // For `admin-ui/pki_admin.ts`, whose key-pair controls are drawn on an
   // application's page too — see applicationReturnTo().
   applicationReturnTo: slot.forward('applicationReturnTo'),
@@ -43062,6 +46890,12 @@ const consoleExports = {
   // is the only action function in this console that does, because
   // transmitting a Security Event Token signs a JWS and POSTs it to somebody
   // else's endpoint.
+  /**
+   * Returns the Shared Signals page's action names, or none while the SSF
+   * reporter slot is empty.
+   *
+   * @returns the action names
+   */
   ssfActionNames: function () {
     log.debug("Entering ssfActionNames().");
     log.debug("Leaving ssfActionNames().");
@@ -43088,6 +46922,12 @@ const consoleExports = {
   // The sessions register as /admin/caep-sessions draws it — the list, or one
   // session with `?session=`. Rule 7: that page is a page of this console and
   // owed an operation of its own.
+  /**
+   * Returns the CAEP page's action names, or none while the CAEP reporter
+   * slot is empty.
+   *
+   * @returns the action names
+   */
   caepActionNames: function () {
     log.debug("Entering caepActionNames().");
     log.debug("Leaving caepActionNames().");
@@ -43098,6 +46938,12 @@ const consoleExports = {
   // JWS and POSTs it.
   // The account register as /admin/risc-accounts draws it — the list, or one
   // account with `?account=`.
+  /**
+   * Returns the RISC page's action names, or none while the RISC reporter
+   * slot is empty.
+   *
+   * @returns the action names
+   */
   riscActionNames: function () {
     log.debug("Entering riscActionNames().");
     log.debug("Leaving riscActionNames().");
@@ -43153,8 +46999,15 @@ const consoleExports = {
   // `POST /admin-api/config/set-many` already mirrors. A second POST per page
   // would be that many more doors onto one function.
   protocolSettingsJsonFor: slot.forward('protocolSettingsJsonFor'),
+  preparedSettingsJsonFor: slot.forward('preparedSettingsJsonFor'),
   // Where each group of settings is drawn, for the API's own /config resource
   // and for anything that wants to send a person to the right page.
+  /**
+   * Lists where each group of settings is drawn: the group, its pages and
+   * their labels.
+   *
+   * @returns one `{ group, pages, labels }` per settings group
+   */
   settingHomes: function () {
     log.debug("Entering settingHomes().");
     const instance = slot.get();
@@ -43185,6 +47038,11 @@ const consoleExports = {
   // admin_api.js so that its operations and this console's switch cannot come
   // to name different things. Built from the same constant the refusal sentence
   // is built from.
+  /**
+   * Returns the delegated permission register's action names.
+   *
+   * @returns a copy of PERMISSION_ACTIONS
+   */
   permissionActionNames: function () {
     log.debug("Entering permissionActionNames().");
     log.debug("Leaving permissionActionNames().");
@@ -43193,6 +47051,11 @@ const consoleExports = {
   // The consent register, its four actions and their names — the same three
   // exports the delegated permission register has, for rule 7's reason: the
   // management API mirrors the page and reads the action list to check it.
+  /**
+   * Returns the consent register's action names.
+   *
+   * @returns a copy of CONSENT_ACTIONS
+   */
   consentActionNames: function () {
     log.debug("Entering consentActionNames().");
     log.debug("Leaving consentActionNames().");
@@ -43203,11 +47066,21 @@ const consoleExports = {
   // for rule 7's reason: the management API mirrors the page and reads the
   // action list to check it. `rolesPreview` is exported too, because the dry
   // run is a control on that page and rule 7 gives every control an operation.
+  /**
+   * Returns the role register's action names.
+   *
+   * @returns a copy of ROLE_ACTIONS
+   */
   rolesActionNames: function () {
     log.debug("Entering rolesActionNames().");
     log.debug("Leaving rolesActionNames().");
     return ROLE_ACTIONS.slice();
   },
+  /**
+   * Returns the kinds of member a role may have.
+   *
+   * @returns a copy of ROLE_MEMBER_KINDS
+   */
   roleMemberKinds: function () {
     log.debug("Entering roleMemberKinds().");
     log.debug("Leaving roleMemberKinds().");

@@ -69,7 +69,18 @@ interface ScepApiDeps {
   loadScepConsole(): typeof import('./scep_console');
 }
 
+/**
+ * The SCEP operations of `/admin-api`: three route rows spread into the
+ * management API's table, each answering out of the same view model as the
+ * console pages.
+ */
 class ScepApi {
+  /**
+   * Builds the operations' owner.
+   *
+   * @param deps - the logger, the body parser, the error-code table and a lazy
+   *   loader of `scep_console`
+   */
   constructor(private readonly deps: ScepApiDeps) {
     deps.log.debug("Entering ScepApi.constructor().");
     deps.log.debug("Leaving ScepApi.constructor().");
@@ -77,6 +88,11 @@ class ScepApi {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time instance is built from
+   */
   static defaultDeps(): ScepApiDeps {
     helpers.log.debug("Entering ScepApi.defaultDeps().");
     helpers.log.debug("Leaving ScepApi.defaultDeps().");
@@ -92,12 +108,26 @@ class ScepApi {
 
   // What loading this module did with its instance before R2, run once
   // for whichever instance is installed (#50, R2).
+  /**
+   * Builds the installed instance's route table, which the `ROUTES` getter
+   * answers.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: ScepApi): void {
     helpers.log.debug("Entering ScepApi.wire().");
     routes = instance.buildRoutes();
     helpers.log.debug("Leaving ScepApi.wire().");
   }
 
+  /**
+   * Sends a JSON reply, uncached, adding the protocol endpoints the
+   * registration loop computed to a successful object reply.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the reply
+   */
   send(res, status, body) {
     const { log } = this.deps;
     log.debug("Entering ScepApi.send(). status=" + status);
@@ -112,6 +142,12 @@ class ScepApi {
     log.debug("Leaving ScepApi.send().");
   }
 
+  /**
+   * Returns an OpenAPI schema for an object whose members are not listed.
+   *
+   * @param description - the schema's description
+   * @returns the schema
+   */
   openObject(description) {
     const { log } = this.deps;
     log.debug("Entering ScepApi.openObject().");
@@ -120,6 +156,13 @@ class ScepApi {
              description: description };
   }
 
+  /**
+   * Builds the three route rows: `GET /admin-api/scep`, `GET
+   * /admin-api/scep/monitor` and `POST /admin-api/scep/:action`, each with its
+   * OpenAPI description and handler.
+   *
+   * @returns the rows
+   */
   buildRoutes() {
     const { log, loadScepConsole, errorCodes, parseBody } = this.deps;
     const self = this;
@@ -390,13 +433,30 @@ const ENTRY_PROPERTIES = {
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The SCEP operations of `/admin-api`, mirroring the two SCEP console pages
+ * (rule 7).
+ *
+ * It registers no route; `mgmt-api/admin_api.ts` reads `ROUTES`.
+ *
+ * @namespace
+ */
 export = {
   ScepApi: ScepApi,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: ScepApi): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   // A GETTER, so the table is the installed instance's: under the root it is
   // built when the root installs that instance, and `mgmt-api/admin_api.ts`
   // reads it after that.
+  /**
+   * The route rows of the installed instance.
+   */
   get ROUTES(): Routes {
     log.debug("Entering ROUTES().");
     slot.get();

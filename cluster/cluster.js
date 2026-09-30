@@ -61,6 +61,8 @@ const capabilities = require('./cluster_capabilities');
 // A leaf requiring only `config` and `error_codes` (rule 3ap), so this adds
 // nothing to what loads before the store's gate.
 const cacheRegistry = require('../common/cache_registry');
+// This thread's identity (#364); see common/worker_channel.ts.
+const WorkerChannel = require('../common/worker_channel');
 
 const log = bunyan.createLogger({ name: 'sts-cluster' });
 config.registerLogger(log);
@@ -73,11 +75,18 @@ const ENV_SERVICE_TOKEN = 'STS_CLUSTER_INTERNAL_SERVICE_TOKEN';
 const ENV_MODE = 'STS_CLUSTER_INTERNAL_MODE';
 
 // The one lease active-passive mode is about.
+/**
+ * The name of the service lease, the one lease active-passive mode is about.
+ */
 const SERVICE_LEASE = 'service';
 
 // The settings every node must hold the same value of, or two nodes answer the
 // same request two ways. Keyed-digested under the KEK — several are passwords.
 // `cluster/CLAUDE.md` says why each is here.
+/**
+ * The settings every node must hold the same value of; agree() compares a
+ * keyed digest of them across live nodes.
+ */
 const AGREEMENT_SETTINGS = [
   'global.mode', 'global.https', 'global.publicBaseUrl',
   'persistence.mode', 'keys.source', 'keys.kidFormat',
@@ -135,6 +144,11 @@ function ttlMs() {
                   Number(config.value('cluster.nodeTtlMs')));
 }
 
+/**
+ * Returns this node's stable name: `cluster.nodeName`, or the host name.
+ *
+ * @returns the name
+ */
 function nodeName() {
   log.debug("Entering nodeName().");
   const configured = String(config.value('cluster.nodeName') || '').trim();
@@ -146,6 +160,13 @@ function nodeName() {
 // WHAT MODE THIS NODE IS IN, and the refusals that are about configuration
 // rather than about other nodes. Pure: reads settings and answers.
 // ---------------------------------------------------------------------------
+/**
+ * Resolves the cluster mode from the settings, without contacting the store.
+ *
+ * A request worker inherits its node's mode from the fork environment.
+ * @returns `mode` with `why`, or `mode` with `refused`, a message carrying its
+ *   error code, when the configuration cannot cluster
+ */
 function resolve() {
   log.debug("Entering resolve().");
   // A worker is whatever its node is. Reading the setting again could only
@@ -235,18 +256,35 @@ function resolve() {
   return { mode: configured, why: 'cluster.mode is ' + configured };
 }
 
+/**
+ * Returns this node's cluster mode: 'off', 'active-passive' or
+ * 'active-active'.
+ *
+ * @returns the mode
+ */
 function mode() {
   log.debug("Entering mode().");
   log.debug("Leaving mode().");
   return resolved ? resolved.mode : resolve().mode;
 }
 
+/**
+ * Says whether this process is clustered: a mode other than off, a driver
+ * and a node id.
+ *
+ * @returns true when clustered
+ */
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
   return mode() !== 'off' && !!driver && !!nodeId;
 }
 
+/**
+ * Says whether the cluster mode is active-active.
+ *
+ * @returns true in active-active mode
+ */
 function isActiveActive() {
   log.debug("Entering isActiveActive().");
   log.debug("Leaving isActiveActive().");
@@ -354,6 +392,16 @@ function install(theDriver) {
 // is restored. Resolves when this node may proceed; rejects with a refusal
 // the service turns into a non-zero exit.
 // ---------------------------------------------------------------------------
+/**
+ * Decides, before anything is restored, whether this node may proceed:
+ * refuses a configuration that cannot cluster, refuses active-active while a
+ * capability is missing, joins, and in active-passive mode waits for the
+ * service lease. A request worker attaches to its node instead.
+ *
+ * @param theDriver - the open store driver
+ * @returns a promise of `{ mode, nodeId }`, or `{ mode: 'off' }`; it rejects
+ *   with a refusal the service turns into a non-zero exit
+ */
 function gate(theDriver) {
   log.debug("Entering gate().");
   resolved = resolve();
@@ -543,6 +591,12 @@ function nodeInfo() {
 // ---------------------------------------------------------------------------
 let listenerCertificates = [];
 
+/**
+ * Sets the main port's listener certificates this node publishes on its
+ * membership row.
+ *
+ * @param pems - the certificates, PEM
+ */
 function setListenerCertificates(pems) {
   log.debug("Entering setListenerCertificates().");
   listenerCertificates = (Array.isArray(pems) ? pems : []).map(function (pem) {
@@ -558,6 +612,11 @@ function setListenerCertificates(pems) {
 // Every live node's leaves, as base64 DER, this node's own among them once
 // its row has been read; empty with no cluster. A node that left, or whose
 // heartbeat lapsed, is not presenting anything a balancer sends traffic to.
+/**
+ * Returns every live node's listener certificates from the last state read.
+ *
+ * @returns the certificates as base64 DER; empty when not clustered
+ */
 function listenerCertificatesOfLiveNodes() {
   log.debug("Entering listenerCertificatesOfLiveNodes().");
   if (!enabled()) {
@@ -677,7 +736,8 @@ function attach(theDriver) {
       'cluster: a request worker of an active-passive node was forked ' +
       'without the service lease\'s token.'));
   }
-  log.info('cluster: request worker ' + process.pid + ' attached to node ' +
+  log.info('cluster: request worker ' + WorkerChannel.processTag() +
+           ' attached to node ' +
            nodeId + ' (' + resolved.mode + ').');
   // READ THE MEMBERSHIP NOW, NOT ON THE FIRST PAGE THAT ASKS (2026-09-18).
   // A worker has no heartbeat, so the only thing that ever read the member
@@ -771,6 +831,13 @@ function stallClause() {
          'lifetime, so no heartbeat could run.';
 }
 
+/**
+ * Renews this node's membership and leases once; exits the process when the
+ * membership has lapsed or the service lease is lost in active-passive mode,
+ * then campaigns for any role it does not hold.
+ *
+ * @returns a promise that settles when the beat is done
+ */
 function beat() {
   log.debug("Entering beat().");
   if (stopping || role !== 'front') {
@@ -868,6 +935,13 @@ function campaign() {
 // ---------------------------------------------------------------------------
 // LEASES.
 // ---------------------------------------------------------------------------
+/**
+ * Asks for a lease. Unclustered, every lease is held (token 0).
+ *
+ * @param name - the lease's name
+ * @returns a promise of `{ held, token }`, with `holder` or `error` when not
+ *   held; it never rejects
+ */
 function acquire(name) {
   log.debug("Entering acquire(). name=" + name);
   if (!enabled()) {
@@ -932,6 +1006,13 @@ function waitForServiceLease() {
 // A module that wants a role led by exactly one node. The role is campaigned
 // for on every heartbeat; `onGain(token)` and `onLose()` say when this node
 // starts and stops holding it.
+/**
+ * Registers a role to be led by exactly one node, campaigned for on every
+ * heartbeat. Unclustered, `onGain(0)` is called at once.
+ *
+ * @param name - the role's lease name
+ * @param handlers - `onGain(token)` and `onLose()`
+ */
 function lead(name, handlers) {
   log.debug("Entering lead(). name=" + name);
   roles.set(name, handlers || {});
@@ -945,6 +1026,12 @@ function lead(name, handlers) {
   campaign();
 }
 
+/**
+ * Says whether this node holds a lease; always true when unclustered.
+ *
+ * @param name - the lease's name
+ * @returns true when held
+ */
 function holds(name) {
   log.debug("Entering holds().");
   log.debug("Leaving holds().");
@@ -968,6 +1055,15 @@ function holds(name) {
 // ---------------------------------------------------------------------------
 const standingDownUntil = new Map();
 
+/**
+ * Hands a held role over: expires its lease at this node's token, calls
+ * `onLose()`, and does not campaign for it again for the hold-off.
+ *
+ * @param name - the lease's name
+ * @param holdOffMs - how long not to ask again; three heartbeats by default
+ * @returns a promise of `{ ok: true, token, released, holdOffMs }` or
+ *   `{ ok: false, reason }`; it never rejects
+ */
 function stepDown(name, holdOffMs) {
   log.debug("Entering stepDown(). name=" + name);
   if (!enabled()) {
@@ -1010,6 +1106,15 @@ function stepDown(name, holdOffMs) {
 // Runs `fn` with `name` held, and every transaction it opens fenced by that
 // lease's token. Resolves `{ held: false, holder }` without running it when
 // another node holds the lease.
+/**
+ * Runs `fn` with a lease held, every transaction it opens fenced by the
+ * lease's token.
+ *
+ * @param name - the lease's name
+ * @param fn - the work to run
+ * @returns a promise of `{ held: true, result }`, or `{ held: false, holder }`
+ *   without running `fn` when another node holds the lease
+ */
 function withLease(name, fn) {
   log.debug("Entering withLease(). name=" + name);
   log.debug("Leaving withLease().");
@@ -1031,6 +1136,14 @@ function withLease(name, fn) {
 // ---------------------------------------------------------------------------
 // AGREEMENT: the fingerprint, once the key-encryption key is open.
 // ---------------------------------------------------------------------------
+/**
+ * Compares this node's digest of AGREEMENT_SETTINGS with every live node's.
+ *
+ * @param keystore - the open keystore, whose key-encryption key keys the
+ *   digest
+ * @returns a promise of `{ agreed: true }`; it rejects when a live node's
+ *   settings differ
+ */
 function agree(keystore) {
   log.debug("Entering agree().");
   if (!enabled() || role !== 'front') {
@@ -1074,6 +1187,12 @@ function agree(keystore) {
 // LEAVING, on SIGTERM/SIGINT. The leases expire now so a standby takes over in
 // one heartbeat rather than a whole lifetime.
 // ---------------------------------------------------------------------------
+/**
+ * Leaves the cluster on shutdown, releasing this node's leases so a standby
+ * takes over within one heartbeat.
+ *
+ * @returns a promise that settles when done; a failure is logged
+ */
 function leave() {
   log.debug("Entering leave().");
   if (!enabled() || role !== 'front') {
@@ -1101,6 +1220,12 @@ function leave() {
 // WHAT THIS NODE SAYS ABOUT ITSELF, synchronously, and what the store says
 // about every node, asynchronously. `/admin/cluster` and the API draw both.
 // ---------------------------------------------------------------------------
+/**
+ * Reports what this node says about itself, synchronously: its mode, role,
+ * heartbeat, leases and the capability verdict.
+ *
+ * @returns the status
+ */
 function status() {
   log.debug("Entering status().");
   const r = resolved || resolve();
@@ -1124,6 +1249,12 @@ function status() {
   };
 }
 
+/**
+ * Reads every node's membership and leases from the store, with whether each
+ * node's settings agree with this one's (the fingerprint itself is removed).
+ *
+ * @returns a promise of the state, `available: false` when not clustered
+ */
 function state() {
   log.debug("Entering state().");
   if (!driver || typeof driver.clusterState !== 'function' ||
@@ -1146,8 +1277,75 @@ function state() {
       delete copy.fingerprint;
       return copy;
     });
+    // The rows folded by name, beside the whole list (foldMembers()).
+    answer.members = foldMembers(answer.nodes, answer.now);
     return answer;
   });
+}
+
+// THE MEMBERS FOLDED BY NAME (2026-09-30). A node restarted under the same
+// name joins under a fresh node id, so every restart leaves a dead membership
+// row until the 24-hour sweep — and the Cluster page drew each as one more
+// node "that left or expired": testidpna showed 24 beside three healthy
+// members. The name is what an operator means by a node (the persistence
+// origin and the Worker Pools and Node Health pages already key by it), so a
+// dead row whose name has a LIVE row is that node's RESTART HISTORY, counted
+// on the live row, and only a name with no live row at all has left or
+// expired — drawn once, as its latest row, with its earlier lives counted.
+// The rows themselves are untouched: this is a reading of them, and the API
+// carries the whole list beside it.
+/**
+ * Folds membership rows by node name.
+ *
+ * @param nodes - the member rows, as `state()` answers them
+ * @param now - the database clock, in milliseconds
+ * @returns `{ live, restarts, gone }`: the live rows; for each live name, how
+ *   many earlier rows it has and when the latest of them ended; and one row
+ *   per name with no live row (its latest), with `earlierLives`
+ */
+function foldMembers(nodes, now) {
+  log.debug("Entering foldMembers().");
+  const isLive = function (node) {
+    return !node.leftAt && node.expiresAt > now;
+  };
+  const endOf = function (node) {
+    return node.leftAt || node.expiresAt || 0;
+  };
+  const live = (nodes || []).filter(isLive);
+  const liveNames = new Set(live.map(function (node) {
+    return node.name || '';
+  }));
+  const restarts = {};
+  const goneByName = new Map();
+  (nodes || []).forEach(function (node) {
+    if (isLive(node)) {
+      return;
+    }
+    const name = node.name || '';
+    // A row with no name cannot be anybody's earlier life: it stands alone.
+    if (name && liveNames.has(name)) {
+      const r = restarts[name] || { count: 0, lastEndedAt: 0 };
+      r.count += 1;
+      r.lastEndedAt = Math.max(r.lastEndedAt, endOf(node));
+      restarts[name] = r;
+      return;
+    }
+    const key = name || ('id:' + node.nodeId);
+    const held = goneByName.get(key);
+    if (!held) {
+      goneByName.set(key, Object.assign({}, node, { earlierLives: 0 }));
+    } else if (endOf(node) > endOf(held)) {
+      goneByName.set(key, Object.assign({}, node,
+                                        { earlierLives: held.earlierLives + 1 }));
+    } else {
+      held.earlierLives += 1;
+    }
+  });
+  const gone = Array.from(goneByName.values()).sort(function (a, b) {
+    return endOf(b) - endOf(a);
+  });
+  log.debug("Leaving foldMembers().");
+  return { live: live, restarts: restarts, gone: gone };
 }
 
 // THE LAST STATE READ, for a console page that is drawn synchronously. Read on
@@ -1158,6 +1356,11 @@ let lastState = null;
 let lastStateAt = 0;
 let refreshing = null;
 
+/**
+ * Rereads the cluster state for snapshot(); concurrent calls share one read.
+ *
+ * @returns a promise of the new state, or the last one on failure
+ */
 function refreshState() {
   log.debug("Entering refreshState().");
   if (refreshing) {
@@ -1178,6 +1381,12 @@ function refreshState() {
   return refreshing;
 }
 
+/**
+ * Returns the last cluster state read, for a page drawn synchronously, and
+ * starts a reread when it is older than a heartbeat.
+ *
+ * @returns `state` and its `ageMs`
+ */
 function snapshot() {
   log.debug("Entering snapshot().");
   if (enabled() && Date.now() - lastStateAt > heartbeatMs()) {
@@ -1189,6 +1398,12 @@ function snapshot() {
 }
 
 // The environment a request worker is forked with. See the header.
+/**
+ * Returns the environment a request worker is forked with: the node id, the
+ * mode and the service lease's token.
+ *
+ * @returns the environment variables
+ */
 function forkEnvironment() {
   log.debug("Entering forkEnvironment().");
   const env = {};
@@ -1203,6 +1418,11 @@ function forkEnvironment() {
   return env;
 }
 
+/**
+ * Returns this node's id, '' when not clustered. Exported as `nodeId`.
+ *
+ * @returns the node id
+ */
 function currentNodeId() {
   log.debug("Entering currentNodeId().");
   log.debug("Leaving currentNodeId().");
@@ -1210,6 +1430,12 @@ function currentNodeId() {
 }
 
 // For tests.
+/**
+ * Resets every piece of state. For tests.
+ *
+ * @param options - optional; `exit` replaces the function that exits the
+ *   process
+ */
 function reset(options) {
   log.debug("Entering reset().");
   if (heartbeatTimer) {
@@ -1250,6 +1476,14 @@ function reset(options) {
 capabilities.provide('cluster.membership');
 capabilities.provide('cluster.settings-agreement');
 
+/**
+ * Several containers against one store (#46): a node's membership, the leases
+ * it holds, and the fence every write it makes is held to.
+ *
+ * `persistence.js` calls gate() when the store opens, before anything is
+ * restored; a node that loses its right to write exits.
+ * @namespace
+ */
 module.exports = {
   SERVICE_LEASE: SERVICE_LEASE,
   AGREEMENT_SETTINGS: AGREEMENT_SETTINGS,
@@ -1270,6 +1504,7 @@ module.exports = {
   state: state,
   refreshState: refreshState,
   snapshot: snapshot,
+  foldMembers: foldMembers,
   // The main port's leaves, on this node's row and read off every live one's
   // (#248, the SAML metadata's back-channel key).
   setListenerCertificates: setListenerCertificates,

@@ -43,6 +43,9 @@ import bunyan = require('bunyan');
 import net = require('net');
 import config = require('../common/config');
 import InstanceSlot = require('../common/instance_slot');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 const log = bunyan.createLogger({ name: 'sts-risk-store' });
 config.registerLogger(log);
@@ -50,6 +53,7 @@ config.registerLogger(log);
 type Json = any;
 
 // The driver methods that make a store the risk database.
+/** The driver methods that make a store the risk database. */
 const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskInsertRows', 'riskFinishVersion', 'riskActivate',
                     'riskDeleteRows', 'riskMarkRowsDeleted', 'riskLookupRange',
@@ -94,7 +98,16 @@ interface HeldRange {
   row: Json;
 }
 
+/**
+ * Where risk scoring keeps what it keeps: the external datasets by version,
+ * the attributable failure history, the model's counts, the assessments
+ * and each person's standing.
+ *
+ * Rows in the database when the store has the risk tables (and, for
+ * personal data, a key to seal under); this process's own maps otherwise.
+ */
 class RiskStore {
+  /** The driver methods that make a store the risk database. */
   static readonly RISK_GROUP = RISK_GROUP;
 
   private driver: Json = null;
@@ -119,11 +132,21 @@ class RiskStore {
   private readonly listeners: Array<(realm: string, dataset: string) => void> =
     [];
 
+  /**
+   * Builds the store over the given dependencies.
+   *
+   * @param deps - the logger
+   */
   constructor(private readonly deps: RiskStoreDeps) {
     deps.log.debug("Entering RiskStore.constructor().");
     deps.log.debug("Leaving RiskStore.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): RiskStoreDeps {
     log.debug("Entering RiskStore.defaultDeps().");
     log.debug("Leaving RiskStore.defaultDeps().");
@@ -136,6 +159,14 @@ class RiskStore {
   // an address. `::ffff:a.b.c.d` is read as the IPv4 address it carries,
   // which is how `client_address.js` normalises a dual-stack socket's.
   // -------------------------------------------------------------------------
+  /**
+   * Returns an address as a number for the in-memory search: IPv4 as its 32
+   * bits, IPv6 as its 128 lifted above every IPv4. `::ffff:a.b.c.d` is read
+   * as the IPv4 address it carries.
+   *
+   * @param text - the address
+   * @returns the number, or null for a string that is not an address
+   */
   static addressNumber(text: string): bigint | null {
     log.debug("Entering RiskStore.addressNumber().");
     let address = String(text || '').trim();
@@ -180,6 +211,13 @@ class RiskStore {
   // A number from addressNumber() back to the address it is, in the form
   // `inet` prints: dotted IPv4, or IPv6 with its longest run of zero groups
   // written `::`.
+  /**
+   * Turns a number from `addressNumber()` back into the address, in the form
+   * `inet` prints.
+   *
+   * @param value - the number
+   * @returns dotted IPv4, or IPv6 with its longest run of zero groups as `::`
+   */
   static addressText(value: bigint): string {
     log.debug("Entering RiskStore.addressText().");
     if (value < V6_OFFSET) {
@@ -224,6 +262,13 @@ class RiskStore {
   // that is none of the three — a CIDR whose host bits are set is read as the
   // block it names, which is how every list this service reads writes them.
   // -------------------------------------------------------------------------
+  /**
+   * Reads a range as a list or dataset writes one: an address, a CIDR block,
+   * or `first - last`.
+   *
+   * @param text - the range
+   * @returns `{ start, end }` in `inet`'s form, or null for anything else
+   */
   static rangeOf(text: string): { start: string; end: string } | null {
     log.debug("Entering RiskStore.rangeOf().");
     const raw = String(text || '').trim();
@@ -268,6 +313,13 @@ class RiskStore {
   // than a person, and still what SQL groups a spray by. '' for a string
   // that is not an address.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the network prefix an address is kept as: its /24 for IPv4, its
+   * /48 for IPv6.
+   *
+   * @param text - the address
+   * @returns the prefix, or empty for a string that is not an address
+   */
   static prefixOf(text: string): string {
     log.debug("Entering RiskStore.prefixOf().");
     const value = RiskStore.addressNumber(text);
@@ -292,6 +344,13 @@ class RiskStore {
   // back when it closes. A driver without every RISK_GROUP method leaves this
   // process answering from its own maps.
   // -------------------------------------------------------------------------
+  /**
+   * Takes the store `persistence.js` opened. A driver without every
+   * `RISK_GROUP` method leaves this process answering from its own maps.
+   *
+   * @param theDriver - the store's driver
+   * @param activeMode - the store's mode
+   */
   setDriver(theDriver: Json, activeMode: string): void {
     const { log } = this.deps;
     log.debug("Entering RiskStore.setDriver(). mode=" + activeMode);
@@ -307,6 +366,10 @@ class RiskStore {
     log.debug("Leaving RiskStore.setDriver().");
   }
 
+  /**
+   * Gives the store back when `persistence.js` closes it; this process
+   * answers from its own maps.
+   */
   clearDriver(): void {
     const { log } = this.deps;
     log.debug("Entering RiskStore.clearDriver().");
@@ -316,6 +379,11 @@ class RiskStore {
   }
 
   // Whether the datasets are rows in a database every node reads.
+  /**
+   * Says whether the datasets are rows in a database every node reads.
+   *
+   * @returns true when a risk-capable driver is set
+   */
   inDatabase(): boolean {
     const { log } = this.deps;
     log.debug("Entering RiskStore.inDatabase().");
@@ -323,6 +391,11 @@ class RiskStore {
     return !!this.driver;
   }
 
+  /**
+   * Says where the datasets and failure history are held, and why.
+   *
+   * @returns `{ mode, database, why }`
+   */
   describe(): Json {
     const { log } = this.deps;
     log.debug("Entering RiskStore.describe().");
@@ -342,6 +415,12 @@ class RiskStore {
 
   // A version activated anywhere — here, or by another process through the
   // change log — so a reader can drop what it cached.
+  /**
+   * Adds a listener told when a version is activated anywhere, so a reader
+   * can drop what it cached.
+   *
+   * @param fn - called with the realm and dataset
+   */
   onActivated(fn: (realm: string, dataset: string) => void): void {
     const { log } = this.deps;
     log.debug("Entering RiskStore.onActivated().");
@@ -349,6 +428,13 @@ class RiskStore {
     log.debug("Leaving RiskStore.onActivated().");
   }
 
+  /**
+   * Tells every listener a version was activated; a listener that throws is
+   * logged and the others still run.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   */
   noteActivated(realm: string, dataset: string): void {
     const { log } = this.deps;
     log.debug("Entering RiskStore.noteActivated(). " + dataset);
@@ -376,6 +462,11 @@ class RiskStore {
 
   // ===== DATASETS ==========================================================
 
+  /**
+   * Lists every dataset row the store holds.
+   *
+   * @returns the dataset rows
+   */
   listDatasets(): Promise<Json[]> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.listDatasets().");
@@ -391,6 +482,13 @@ class RiskStore {
     return Promise.resolve(out);
   }
 
+  /**
+   * Lists a realm's versions of a dataset, newest first.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset; every dataset when empty
+   * @returns the version rows
+   */
   listVersions(realm: string, dataset: string): Promise<Json[]> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.listVersions(). " + dataset);
@@ -413,6 +511,12 @@ class RiskStore {
     return Promise.resolve(out);
   }
 
+  /**
+   * Records a new version as `loading`.
+   *
+   * @param v - the version's realm, dataset, version and provenance
+   * @returns false when that version already exists
+   */
   beginVersion(v: Json): Promise<boolean> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.beginVersion(). " + v.dataset + " " +
@@ -430,12 +534,23 @@ class RiskStore {
       realm: String(v.realm || ''), attribution: '', sourceUri: '',
       rowCount: 0, parameters: {}, nextUpdateAt: 0, loadedAt: 0,
       activatedAt: 0, supersededAt: 0, rowsDeletedAt: 0, refusal: '',
-      errorCode: '', origin: String(process.pid)
+      errorCode: '', origin: WorkerChannel.processTag()
     }, v, { realm: String(v.realm || ''), state: 'loading' }));
     log.debug("Leaving RiskStore.beginVersion(). Begun.");
     return Promise.resolve(true);
   }
 
+  /**
+   * Inserts a batch of a version's rows: ranges, or FIDO authenticator
+   * models by key.
+   *
+   * @param kind - the kind of row (`fido`, `iplist`, …)
+   * @param realm - the realm, which only an IP list is per
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param rows - the rows
+   * @returns the number inserted
+   */
   insertRows(kind: string, realm: string, dataset: string, version: string,
              rows: Json[]): Promise<number> {
     const { log } = this.deps;
@@ -477,6 +592,17 @@ class RiskStore {
     return Promise.resolve(added);
   }
 
+  /**
+   * Records how a version's load ended: its state, row count, load time,
+   * refusal and parameters.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param patch - `state`, `rowCount`, `loadedAt`, `refusal`, `errorCode`
+   *   and `parameters`
+   * @returns false when there is no such version
+   */
   finishVersion(realm: string, dataset: string, version: string,
                 patch: Json): Promise<boolean> {
     const { log } = this.deps;
@@ -510,6 +636,18 @@ class RiskStore {
   // the stalled-import job refused it — which is the importer's signal to
   // stop.
   // -------------------------------------------------------------------------
+  /**
+   * Records an import's progress, only while the version is still
+   * `loading`.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param at - when
+   * @param rows - rows so far
+   * @returns false when it is no longer loading, which tells the importer
+   *   to stop
+   */
   touchVersion(realm: string, dataset: string, version: string, at: number,
                rows: number): Promise<boolean> {
     const { log } = this.deps;
@@ -539,6 +677,16 @@ class RiskStore {
   // conditional write per store; answers the versions it refused, as
   // `{ realm, dataset, version }`.
   // -------------------------------------------------------------------------
+  /**
+   * Marks refused every version still `loading` whose start and last
+   * progress are both older than `before`.
+   *
+   * @param before - the cutoff, epoch milliseconds
+   * @param at - when
+   * @param why - the refusal
+   * @param code - its error code
+   * @returns the versions refused, as `{ realm, dataset, version }`
+   */
   abandonStalled(before: number, at: number, why: string,
                  code: string): Promise<Json[]> {
     const { log } = this.deps;
@@ -565,6 +713,17 @@ class RiskStore {
     return Promise.resolve(out);
   }
 
+  /**
+   * Makes a version the dataset's active one, and tells the listeners.
+   *
+   * Only a `ready`, `superseded` or `active` version can be activated.
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param kind - the kind of row
+   * @param version - the version
+   * @param now - when
+   * @returns `{ activated, previous, … }`, or `{ activated: false, state }`
+   */
   activate(realm: string, dataset: string, kind: string, version: string,
            now: number): Promise<Json> {
     const { log } = this.deps;
@@ -614,6 +773,16 @@ class RiskStore {
     return Promise.resolve(done({ activated: true, previous: previous }));
   }
 
+  /**
+   * Deletes a version's rows.
+   *
+   * @param kind - the kind of row
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param limit - the most to delete at once, where the database asks
+   * @returns the number deleted
+   */
   deleteRows(kind: string, realm: string, dataset: string, version: string,
              limit: number): Promise<number> {
     const { log } = this.deps;
@@ -638,6 +807,15 @@ class RiskStore {
     return Promise.resolve(held.length);
   }
 
+  /**
+   * Marks a version `deleted` once its rows are gone; never the active one.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param now - when
+   * @returns false for no such version or the active one
+   */
   markRowsDeleted(realm: string, dataset: string, version: string,
                   now: number): Promise<boolean> {
     const { log } = this.deps;
@@ -664,6 +842,15 @@ class RiskStore {
   // if its end is not below it. The ranges are sorted once after a load.
   // -------------------------------------------------------------------------
   // One authenticator model of a FIDO MDS3 version (#62 P5), or null.
+  /**
+   * Returns one authenticator model of a FIDO MDS3 version.
+   *
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param keyKind - what the key is (an AAGUID, a key identifier, …)
+   * @param key - the key
+   * @returns the model, or null
+   */
   lookupFido(dataset: string, version: string, keyKind: string,
              key: string): Promise<Json | null> {
     const { log } = this.deps;
@@ -681,6 +868,17 @@ class RiskStore {
     return Promise.resolve(hit ? Object.assign({}, hit) : null);
   }
 
+  /**
+   * Returns the range of one version that holds an address: the greatest
+   * start not above it, kept only if its end is not below it.
+   *
+   * @param kind - the kind of row
+   * @param realm - the realm, which only an IP list is per
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param address - the address
+   * @returns the range's row, or null
+   */
   lookupRange(kind: string, realm: string, dataset: string, version: string,
               address: string): Promise<Json | null> {
     const { log } = this.deps;
@@ -726,6 +924,13 @@ class RiskStore {
 
   // Whether failure rows go to the database: a database store AND a
   // key-encryption key to seal the address under. See the header.
+  /**
+   * Says whether personal rows go to the database: a database store and a
+   * key-encryption key to seal the address under.
+   *
+   * @param sealing - whether there is a key to seal under
+   * @returns true when they go to the database
+   */
   failuresInDatabase(sealing: boolean): boolean {
     const { log } = this.deps;
     log.debug("Entering RiskStore.failuresInDatabase().");
@@ -733,6 +938,13 @@ class RiskStore {
     return !!this.driver && !!sealing;
   }
 
+  /**
+   * Records one refused password.
+   *
+   * @param row - the failure row
+   * @param sealing - whether there is a key to seal under
+   * @returns the row's id
+   */
   recordFailure(row: Json, sealing: boolean): Promise<string> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.recordFailure(). door=" + row.door);
@@ -744,7 +956,7 @@ class RiskStore {
     const held = this.failures.get(realm) || [];
     this.failureSeq += 1;
     held.push(Object.assign({ id: String(this.failureSeq),
-                              origin: String(process.pid) }, row,
+                              origin: WorkerChannel.processTag() }, row,
                             { realm: realm }));
     if (held.length > MAX_MEMORY_FAILURES) {
       held.splice(0, held.length - MAX_MEMORY_FAILURES);
@@ -754,6 +966,15 @@ class RiskStore {
     return Promise.resolve(String(this.failureSeq));
   }
 
+  /**
+   * Returns a page of a realm's failures, newest first.
+   *
+   * @param realm - the realm
+   * @param opts - `since`, `subject`, `nameHmac`, `prefix`, `door`,
+   *   `excludeDoor`, `offset` and `limit`
+   * @param sealing - whether there is a key to seal under
+   * @returns `{ total, rows }`
+   */
   listFailures(realm: string, opts: Json, sealing: boolean): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.listFailures(). realm=" + realm);
@@ -781,6 +1002,14 @@ class RiskStore {
                              total: matched.length });
   }
 
+  /**
+   * Deletes failures older than a cutoff.
+   *
+   * @param beforeMs - the cutoff, epoch milliseconds
+   * @param limit - the most to delete at once, where the database asks
+   * @param sealing - whether there is a key to seal under
+   * @returns the number deleted
+   */
   purgeFailures(beforeMs: number, limit: number,
                 sealing: boolean): Promise<number> {
     const { log } = this.deps;
@@ -822,6 +1051,15 @@ class RiskStore {
     return bySubject.get(subject);
   }
 
+  /**
+   * Returns how often a subject was seen with each feature value asked.
+   *
+   * @param realm - the realm
+   * @param subject - the subject whose history is asked
+   * @param pairs - `{ feature, value }` per value asked
+   * @param sealing - whether there is a key to seal under
+   * @returns `{ feature, value, count }` per value seen
+   */
   featureCounts(realm: string, subject: string, pairs: Json[],
                 sealing: boolean): Promise<Json[]> {
     const { log } = this.deps;
@@ -843,6 +1081,17 @@ class RiskStore {
     return Promise.resolve(out);
   }
 
+  /**
+   * Counts the distinct values of a feature a subject has, optionally under
+   * a prefix.
+   *
+   * @param realm - the realm
+   * @param subject - the subject
+   * @param feature - the feature
+   * @param prefix - the values' prefix, or empty
+   * @param sealing - whether there is a key to seal under
+   * @returns the count
+   */
   distinctValues(realm: string, subject: string, feature: string,
                  prefix: string, sealing: boolean): Promise<number> {
     const { log } = this.deps;
@@ -866,6 +1115,15 @@ class RiskStore {
     return Promise.resolve(n);
   }
 
+  /**
+   * Counts one sign-in's feature values into the history.
+   *
+   * @param realm - the realm
+   * @param rows - `{ subject, feature, value }` per value
+   * @param at - when
+   * @param sealing - whether there is a key to seal under
+   * @returns the number of rows counted
+   */
   incrementCounts(realm: string, rows: Json[], at: number,
                   sealing: boolean): Promise<number> {
     const { log } = this.deps;
@@ -891,6 +1149,13 @@ class RiskStore {
     return Promise.resolve(rows.length);
   }
 
+  /**
+   * Records one assessment of a sign-in.
+   *
+   * @param a - the assessment
+   * @param sealing - whether there is a key to seal under
+   * @returns true once recorded
+   */
   recordAssessment(a: Json, sealing: boolean): Promise<boolean> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.recordAssessment().");
@@ -909,6 +1174,15 @@ class RiskStore {
     return Promise.resolve(true);
   }
 
+  /**
+   * Returns a page of a realm's assessments, newest first, without the
+   * sealed address.
+   *
+   * @param realm - the realm
+   * @param opts - `since`, `subject`, `level`, `offset` and `limit`
+   * @param sealing - whether there is a key to seal under
+   * @returns `{ total, rows }`
+   */
   listAssessments(realm: string, opts: Json,
                   sealing: boolean): Promise<Json> {
     const { log } = this.deps;
@@ -944,6 +1218,16 @@ class RiskStore {
   // and both hand `metricsOf()` the same grouped rows, so the two stores
   // cannot answer in different shapes.
   // -------------------------------------------------------------------------
+  /**
+   * Counts a window's assessments for Monitoring → Risk Scoring: by level,
+   * door, decision, phase, signal, country and score band, the feedback
+   * given, and a series of levels per `bucketMs`.
+   *
+   * @param realm - the realm
+   * @param opts - the window and `bucketMs`
+   * @param sealing - whether there is a key to seal under
+   * @returns the metrics, in `metricsOf()`'s shape
+   */
   assessmentMetrics(realm: string, opts: Json,
                     sealing: boolean): Promise<Json> {
     const { log } = this.deps;
@@ -1060,6 +1344,17 @@ class RiskStore {
   // rows; both answer `{ rows: [{ level, continent, country, subdivision,
   // city, people, signIns, assessments, latitude, longitude, lastAt }] }`.
   // -------------------------------------------------------------------------
+  /**
+   * Counts where a window's people were, for Monitoring → Geolocation: the
+   * world, each continent, country, subdivision and city.
+   *
+   * @param realm - the realm
+   * @param opts - `since`, and `sessionIds` for live sessions only (each
+   *   session's latest assessment)
+   * @param sealing - whether there is a key to seal under
+   * @returns `{ rows }`, each with `level`, the place, `people`, `signIns`,
+   *   `assessments`, coordinates and `lastAt`
+   */
   geography(realm: string, opts: Json, sealing: boolean): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.geography().");
@@ -1142,6 +1437,12 @@ class RiskStore {
   // levels begin at 1 (MEDIUM) and 10 (HIGH) by default, so those are two
   // of the edges. A hot path — once per assessment
   // counted — so no Entering or Leaving pair would add anything but volume.
+  /**
+   * Returns a score's band, a decade each, for the histogram.
+   *
+   * @param score - the likelihood ratio
+   * @returns the band's label
+   */
   static bandOf(score: number): string {
     if (score < 0.01) {
       return '< 0.01';
@@ -1162,10 +1463,18 @@ class RiskStore {
   }
 
   // The bands, lowest first, for a page that draws them in order.
+  /** The score bands, lowest first. */
   static readonly BANDS = ['< 0.01', '0.01 – 0.1', '0.1 – 1', '1 – 10',
                            '10 – 100', '≥ 100'];
 
   // The grouped rows, from either store, as the page and the API read them.
+  /**
+   * Shapes grouped rows, from either store, as the page and the API read
+   * them.
+   *
+   * @param grouped - the grouped counts
+   * @returns the metrics
+   */
   static metricsOf(grouped: Json): Json {
     log.debug("Entering RiskStore.metricsOf().");
     const g = grouped || {};
@@ -1220,6 +1529,14 @@ class RiskStore {
 
   // How many people stand at each level now, and the reactions their
   // standings record as taken.
+  /**
+   * Counts how many people stand at each level now, and the reactions their
+   * standings record as taken.
+   *
+   * @param realm - the realm
+   * @param sealing - whether there is a key to seal under
+   * @returns the counts
+   */
   subjectLevels(realm: string, sealing: boolean): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.subjectLevels().");
@@ -1241,6 +1558,13 @@ class RiskStore {
 
   // What was decided on an assessment (#62 P3) — see the driver's
   // `riskSettleAssessment()`. In memory the row is found and amended.
+  /**
+   * Records what was decided on an assessment.
+   *
+   * @param a - the assessment's id, realm and decision
+   * @param sealing - whether there is a key to seal under
+   * @returns whether it was found and amended
+   */
   settleAssessment(a: Json, sealing: boolean): Promise<boolean> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.settleAssessment(). " + a.id);
@@ -1267,6 +1591,16 @@ class RiskStore {
 
   // A reaction to a change of risk, claimed once per assessment (#62 P4) —
   // see the driver's `riskClaimAction()`. True when this caller may take it.
+  /**
+   * Claims a reaction to a change of risk, once per assessment.
+   *
+   * @param realm - the realm
+   * @param subject - the person
+   * @param reaction - the reaction
+   * @param assessmentId - the assessment
+   * @param sealing - whether there is a key to seal under
+   * @returns true when this caller may take it
+   */
   claimAction(realm: string, subject: string, reaction: string,
               assessmentId: string, sealing: boolean): Promise<boolean> {
     const { log } = this.deps;
@@ -1295,6 +1629,18 @@ class RiskStore {
 
   // What the person said about one of their own sign-ins (#62 P6): only an
   // assessment of that subject, and only once. True when it was recorded.
+  /**
+   * Records what a person said about one of their own sign-ins, only for an
+   * assessment of that subject and only once.
+   *
+   * @param realm - the realm
+   * @param id - the assessment
+   * @param subject - the person
+   * @param feedback - what they said
+   * @param at - when
+   * @param sealing - whether there is a key to seal under
+   * @returns true when it was recorded
+   */
   setFeedback(realm: string, id: string, subject: string, feedback: string,
               at: number, sealing: boolean): Promise<boolean> {
     const { log } = this.deps;
@@ -1319,6 +1665,14 @@ class RiskStore {
   }
 
   // One person's standing, or null.
+  /**
+   * Returns one person's standing.
+   *
+   * @param realm - the realm
+   * @param subject - the person
+   * @param sealing - whether there is a key to seal under
+   * @returns the standing, or null
+   */
   subjectOf(realm: string, subject: string,
             sealing: boolean): Promise<Json | null> {
     const { log } = this.deps;
@@ -1333,6 +1687,14 @@ class RiskStore {
     return Promise.resolve(row ? Object.assign({}, row) : null);
   }
 
+  /**
+   * Writes a person's current standing, keeping the reactions already taken
+   * and noting when the level last crossed.
+   *
+   * @param s - the standing
+   * @param sealing - whether there is a key to seal under
+   * @returns true once written
+   */
   upsertSubject(s: Json, sealing: boolean): Promise<boolean> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.upsertSubject().");
@@ -1362,6 +1724,14 @@ class RiskStore {
 
   // A page of the realm's people by current standing, with the count of
   // them all (`{ total, rows }`, as `listAssessments()` answers).
+  /**
+   * Returns a page of the realm's people by current standing.
+   *
+   * @param realm - the realm
+   * @param opts - the page and filters
+   * @param sealing - whether there is a key to seal under
+   * @returns `{ total, rows }`
+   */
   listSubjects(realm: string, opts: Json, sealing: boolean): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.listSubjects().");
@@ -1385,6 +1755,13 @@ class RiskStore {
                              rows: out.slice(offset, offset + limit) });
   }
 
+  /**
+   * Writes the risk context of a session.
+   *
+   * @param c - the context, with its realm and `sessionId`
+   * @param sealing - whether there is a key to seal under
+   * @returns true once written
+   */
   upsertSessionContext(c: Json, sealing: boolean): Promise<boolean> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.upsertSessionContext().");
@@ -1403,6 +1780,13 @@ class RiskStore {
 
   // The session context held in this process, for the tests; the database
   // one is read by P4.
+  /**
+   * Returns the session context held in this process, for the tests.
+   *
+   * @param realm - the realm
+   * @param sessionId - the session
+   * @returns the context, or null
+   */
   sessionContextOf(realm: string, sessionId: string): Json | null {
     const { log } = this.deps;
     log.debug("Entering RiskStore.sessionContextOf().");
@@ -1412,6 +1796,15 @@ class RiskStore {
       ? Object.assign({}, held.get(sessionId)) : null;
   }
 
+  /**
+   * Deletes history older than a cutoff from one table.
+   *
+   * @param table - `assessments`, `counts`, `sessions`, …
+   * @param beforeMs - the cutoff, epoch milliseconds
+   * @param limit - the most to delete at once, where the database asks
+   * @param sealing - whether there is a key to seal under
+   * @returns the number deleted
+   */
   purgeHistory(table: string, beforeMs: number, limit: number,
                sealing: boolean): Promise<number> {
     const { log } = this.deps;
@@ -1462,6 +1855,12 @@ class RiskStore {
   // for their own act — so in the database whenever there is one, sealing or
   // not.
 
+  /**
+   * Records an acceptance of a provider's terms.
+   *
+   * @param a - the acceptance
+   * @returns its id
+   */
   recordAcceptance(a: Json): Promise<string> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.recordAcceptance(). " + a.provider);
@@ -1475,6 +1874,11 @@ class RiskStore {
     return Promise.resolve(id);
   }
 
+  /**
+   * Lists every acceptance of a provider's terms, newest first.
+   *
+   * @returns the acceptances
+   */
   listAcceptances(): Promise<Json[]> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.listAcceptances().");
@@ -1489,6 +1893,9 @@ class RiskStore {
   }
 
   // For tests: forget everything held in this process.
+  /**
+   * Forgets everything held in this process. Tests only.
+   */
   reset(): void {
     const { log } = this.deps;
     log.debug("Entering RiskStore.reset().");
@@ -1519,9 +1926,27 @@ const slot = new InstanceSlot<RiskStore>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Where risk scoring keeps what it keeps: datasets by version, failures,
+ * the model's history, assessments and standings.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   RiskStore: RiskStore,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: RiskStore): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   RISK_GROUP: RiskStore.RISK_GROUP,
   addressNumber: RiskStore.addressNumber,

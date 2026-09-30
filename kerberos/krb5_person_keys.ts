@@ -298,18 +298,56 @@ const krbtgtUnreadableSaid: Set<string> = new Set();
 // How long a node holds the right to make a realm's first krbtgt key.
 const KRBTGT_CREATE_CLAIM_MS = 60000;
 
+/**
+ * The Kerberos keys this service stores on directory entries: a person's,
+ * derived from their password at the moments it is in hand; a service
+ * principal's, random, handed over once as a keytab; and each realm's random
+ * krbtgt key. All sealed, and never read back out.
+ *
+ * It is the KDC's key source, installed into `krb5_principals.js`.
+ */
 class Krb5PersonKeys {
+  /**
+   * The keystore label the sealed keys are counted under.
+   */
   static readonly SEAL_LABEL = SEAL_LABEL;
+  /**
+   * The person attribute holding the sealed keys.
+   */
   static readonly PERSON_KEYS_ATTRIBUTE = PERSON_KEYS_ATTRIBUTE;
+  /**
+   * The person attribute holding the keys' public description.
+   */
   static readonly PERSON_INFO_ATTRIBUTE = PERSON_INFO_ATTRIBUTE;
+  /**
+   * The application attribute holding a service principal's sealed keys.
+   */
   static readonly SERVICE_KEYS_ATTRIBUTE = SERVICE_KEYS_ATTRIBUTE;
+  /**
+   * The application attribute holding the service keys' public description.
+   */
   static readonly SERVICE_INFO_ATTRIBUTE = SERVICE_INFO_ATTRIBUTE;
+  /**
+   * The two person attributes.
+   */
   static readonly ATTRIBUTES = [PERSON_KEYS_ATTRIBUTE, PERSON_INFO_ATTRIBUTE];
+  /**
+   * The two attributes never drawn anywhere, ciphertext included.
+   */
   static readonly WITHHELD_ATTRIBUTES = WITHHELD_ATTRIBUTES;
+  /**
+   * The sealed record's format version.
+   */
   static readonly RECORD_VERSION = RECORD_VERSION;
 
   private directory: DirectoryHooks | null = null;
 
+  /**
+   * Builds the register over the given dependencies.
+   *
+   * @param deps - the modules it uses, the FAST handler, and the cluster claims
+   *   and persistence as loaders
+   */
   constructor(private readonly deps: Krb5PersonKeysDeps) {
     deps.log.debug("Entering Krb5PersonKeys.constructor().");
     deps.log.debug("Leaving Krb5PersonKeys.constructor().");
@@ -317,6 +355,12 @@ class Krb5PersonKeys {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): Krb5PersonKeysDeps {
     helpers.log.debug("Entering Krb5PersonKeys.defaultDeps().");
     helpers.log.debug("Leaving Krb5PersonKeys.defaultDeps().");
@@ -346,12 +390,26 @@ class Krb5PersonKeys {
 
   // What loading this module did with its instance before #50's R2, now
   // done by the slot for whichever instance is installed: its two slot fills.
+  /**
+   * Fills the password observer and the KDC's key source for the installed
+   * instance.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: Krb5PersonKeys): void {
     helpers.log.debug("Entering Krb5PersonKeys.wire().");
     instance.installSlots();
     helpers.log.debug("Leaving Krb5PersonKeys.wire().");
   }
 
+  /**
+   * Installs the directory hooks the keys are read and written through, from
+   * `ldap/ldap_server.js`; validated whole. Null clears them.
+   *
+   * @param hooks - `readPerson`, `writePerson`, `personKeyInfos`,
+   *   `readService`, `writeService` and `serviceKeyInfos`, or null
+   * @returns whether they were installed
+   */
   setDirectory(hooks: DirectoryHooks | null): boolean {
     const { log, errorCodes } = this.deps;
     log.debug('Entering Krb5PersonKeys.setDirectory().');
@@ -385,6 +443,11 @@ class Krb5PersonKeys {
     return true;
   }
 
+  /**
+   * Says whether the directory hooks are installed.
+   *
+   * @returns whether they are
+   */
   installed(): boolean {
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.installed().");
@@ -394,6 +457,12 @@ class Krb5PersonKeys {
 
   // What is installed, so a test that stubs the slot can put back exactly
   // that.
+  /**
+   * Returns the installed directory hooks, so a test that stubs them can put
+   * them back.
+   *
+   * @returns the hooks, or null
+   */
   currentDirectory(): DirectoryHooks | null {
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.currentDirectory().");
@@ -404,6 +473,11 @@ class Krb5PersonKeys {
   // Whether the AMBIENT trust realm's KDC is a product one — decided when that
   // realm's principal database was built, which is the only mode its KDC
   // answers in.
+  /**
+   * Says whether the ambient trust realm's KDC is a product one.
+   *
+   * @returns whether it is
+   */
   productKdc(): boolean {
     const { log, principals } = this.deps;
     log.debug("Entering Krb5PersonKeys.productKdc().");
@@ -411,6 +485,11 @@ class Krb5PersonKeys {
     return !principals.seedsDemoPrincipals;
   }
 
+  /**
+   * Says whether directory people get Kerberos keys (`krb5.personKeys`).
+   *
+   * @returns whether they do
+   */
   personKeysEnabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering Krb5PersonKeys.personKeysEnabled().");
@@ -424,6 +503,13 @@ class Krb5PersonKeys {
   // is a key made from a password the person no longer has. Not a secret — it
   // is a digest of a digest — but it is only ever TRUSTED from inside the
   // seal.
+  /**
+   * Returns the one-way fingerprint of a stored password hash that binds a set
+   * of keys to the password they were derived beside.
+   *
+   * @param storedHash - the stored password hash
+   * @returns the stamp
+   */
   stampOf(storedHash: unknown): string {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering Krb5PersonKeys.stampOf().");
@@ -546,6 +632,16 @@ class Krb5PersonKeys {
   // parameter only so that the RFC 3962 Appendix B vectors can be run through
   // this same function.
   // -------------------------------------------------------------------------
+  /**
+   * Derives a Kerberos key with RFC 3961 string-to-key.
+   *
+   * @param etype - the enctype
+   * @param password - the password
+   * @param salt - the salt
+   * @param s2kparams - the string-to-key parameters; the enctype's default when
+   *   omitted
+   * @returns a promise of the key
+   */
   async deriveKey(etype: number, password: unknown, salt: unknown,
                   s2kparams?: unknown): Promise<Uint8Array> {
     const { log, kcrypto, prim } = this.deps;
@@ -603,6 +699,12 @@ class Krb5PersonKeys {
   // What is past either bound is never used and never listed, and the next
   // write of that key removes it from storage.
   // -------------------------------------------------------------------------
+  /**
+   * Returns how many previous key versions are kept
+   * (`krb5.retainedKeyVersions`).
+   *
+   * @returns the count, 0 for none
+   */
   retainedVersionsLimit(): number {
     const { log, config } = this.deps;
     log.debug("Entering Krb5PersonKeys.retainedVersionsLimit().");
@@ -613,6 +715,12 @@ class Krb5PersonKeys {
 
   // Seconds a retired version is kept. Zero in the setting means the longest
   // a ticket issued under it can still be presented — see the settings row.
+  /**
+   * Returns how long a retired key version is kept, in seconds; a zero setting
+   * means the longest a ticket issued under it can still be presented.
+   *
+   * @returns the seconds
+   */
   retainedTtlSeconds(): number {
     const { log, config } = this.deps;
     log.debug("Entering Krb5PersonKeys.retainedTtlSeconds().");
@@ -772,6 +880,16 @@ class Krb5PersonKeys {
   // takes. Synchronous, because the principal lookup is: a directory read and
   // a seal opened, no derivation.
   // -------------------------------------------------------------------------
+  /**
+   * Returns a person's current keys for the KDC, from the sealed record on
+   * their entry; keys whose stamp is not the entry's current password hash are
+   * stale.
+   *
+   * @param name - the username
+   * @returns `{ state: 'ok', kvno, salt, keys, ... }`, or `{ state, detail }`
+   *   with a state of `no-source`, `off`, `unknown`, `none`, `stale` or
+   *   `unreadable`
+   */
   personKeys(name: string): Json {
     const { log, principals } = this.deps;
     const directory = this.directory;
@@ -839,6 +957,12 @@ class Krb5PersonKeys {
   // entry, which the KDC refuses with KDC_ERR_CLIENT_REVOKED (18) in EVERY
   // mode — so it is asked whether or not this directory holds the person's
   // keys, and before a development-mode KDC would create the principal.
+  /**
+   * Says whether a person's account is disabled, in every mode.
+   *
+   * @param name - the username
+   * @returns whether it is
+   */
   personDisabled(name: string): boolean {
     const { log } = this.deps;
     const directory = this.directory;
@@ -864,6 +988,13 @@ class Krb5PersonKeys {
   // byUser, needed }`. Nobody by that name, or no directory, answers
   // `needed: false`.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether a person holds, or owes, a second factor, from
+   * `credentials.secondFactorDemand()`.
+   *
+   * @param name - the username
+   * @returns `{ person, totp, key, holds, required, byUser, needed }`
+   */
   personSecondFactor(name: string): Json {
     const { log, credentials } = this.deps;
     log.debug('Entering Krb5PersonKeys.personSecondFactor(). name=' + name);
@@ -883,6 +1014,12 @@ class Krb5PersonKeys {
 
   // What the KDC does about pre-authentication in the AMBIENT realm, for the
   // console and the management API (rule 7). See `Krb5Fast.policy()`.
+  /**
+   * Describes what the KDC does about pre-authentication in the ambient realm,
+   * for the console and the management API.
+   *
+   * @returns `Krb5Fast.policy()`'s description
+   */
   preauthPolicy(): Json {
     const { log, fast } = this.deps;
     log.debug('Entering Krb5PersonKeys.preauthPolicy().');
@@ -890,6 +1027,13 @@ class Krb5PersonKeys {
     return fast.policy();
   }
 
+  /**
+   * Returns a service principal's stored keys for the KDC; a record bound to
+   * another principal or that will not open is treated as none, with a warning.
+   *
+   * @param spn - the service principal name, without the realm
+   * @returns `{ kvno, keys, retained }`, or null
+   */
   serviceKeys(spn: string): Json {
     const { log, principals } = this.deps;
     const directory = this.directory;
@@ -945,6 +1089,18 @@ class Krb5PersonKeys {
     return realms.currentId() + '|' + String(name);
   }
 
+  /**
+   * The password observer: after a password is set or verified, derives and
+   * stores the person's keys, one derivation at a time per person, when a
+   * product KDC needs them.
+   *
+   * A failure is logged and audited (`STS-KRB-0107`) and changes nothing about
+   * the act observed.
+   *
+   * @param name - the username
+   * @param password - the plaintext password
+   * @param info - `event` (`set` or `verified`) and `hash`, the stored hash
+   */
   observePassword(name: string, password: string, info?: Json): void {
     const self = this;
     const { log, principals, realms, errorCodes, audit } = this.deps;
@@ -995,6 +1151,12 @@ class Krb5PersonKeys {
   // caller of this wants: a test, or a console action that clears keys and
   // must not race a derivation writing them back, cares that nothing is still
   // in flight rather than that one realm's queue is empty.
+  /**
+   * Returns a promise that settles when every derivation now running, in every
+   * realm, has.
+   *
+   * @returns the promise
+   */
   idle(): Promise<unknown[]> {
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.idle().");
@@ -1223,6 +1385,14 @@ class Krb5PersonKeys {
   // otherwise with a sentence. The realm, when given, must be this KDC's: a
   // key stored for another realm's principal is a key nothing here would ask
   // for.
+  /**
+   * Normalises a service principal name, `HTTP/web.example.com` with or without
+   * this KDC's realm; krbtgt and other realms are refused.
+   *
+   * @param raw - the name as given
+   * @returns `{ ok: true, components, spn, identifier, ... }`, or `{ ok: false,
+   *   error }`
+   */
   normaliseSpn(raw: unknown): Json {
     const { log, principals } = this.deps;
     log.debug('Entering Krb5PersonKeys.normaliseSpn().');
@@ -1421,6 +1591,15 @@ class Krb5PersonKeys {
     };
   }
 
+  /**
+   * Creates a service principal with a random key and hands its keytab over
+   * once; the key is stored sealed and never read back out.
+   *
+   * @param raw - the service principal name
+   * @param context - who acted and through which door
+   * @returns `{ ok: true, spn, principal, kvno, etypes, keytab (base64),
+   *   keytabFilename, message, ... }`, or a refusal with its code marked
+   */
   createServicePrincipal(raw: unknown, context?: ActContext): Json {
     const { log, applications, config } = this.deps;
     const directory = this.directory;
@@ -1482,6 +1661,14 @@ class Krb5PersonKeys {
     return result;
   }
 
+  /**
+   * Replaces a service principal's key with a new random one at the next kvno,
+   * keeping the old for the retention window, and hands the keytab over once.
+   *
+   * @param raw - the service principal name
+   * @param context - who acted and through which door
+   * @returns the same answer as `createServicePrincipal()`, or a refusal
+   */
   rotateServicePrincipal(raw: unknown, context?: ActContext): Json {
     const { log, config } = this.deps;
     const directory = this.directory;
@@ -1526,6 +1713,13 @@ class Krb5PersonKeys {
     return result;
   }
 
+  /**
+   * Deletes a service principal's stored key.
+   *
+   * @param raw - the service principal name
+   * @param context - who acted and through which door
+   * @returns `{ ok: true, spn, principal, ... }`, or a refusal
+   */
   deleteServicePrincipal(raw: unknown, context?: ActContext): Json {
     const { log, audit } = this.deps;
     const directory = this.directory;
@@ -1584,6 +1778,14 @@ class Krb5PersonKeys {
                       'name, and not at all in product mode otherwise.' };
   }
 
+  /**
+   * Clears a person's stored Kerberos keys; the next password set or sign-in
+   * derives them again.
+   *
+   * @param name - the username
+   * @param context - who acted and through which door
+   * @returns `{ ok: true, cleared, username, ... }`, or a refusal
+   */
   clearPersonKeys(name: unknown, context?: ActContext): Json {
     const { log, audit, principals } = this.deps;
     const directory = this.directory;
@@ -1738,6 +1940,13 @@ class Krb5PersonKeys {
                  'window; they are removed from storage now.' };
   }
 
+  /**
+   * Drops a person's previous key versions, leaving the current keys.
+   *
+   * @param name - the username
+   * @param context - who acted and through which door
+   * @returns the directory write's result, or a refusal
+   */
   dropPreviousPersonKeys(name: unknown, context?: ActContext): Json {
     const { log, principals } = this.deps;
     const directory = this.directory;
@@ -1787,6 +1996,14 @@ class Krb5PersonKeys {
     return result;
   }
 
+  /**
+   * Drops a service principal's previous key versions, leaving the current key;
+   * for this realm's krbtgt, `dropPreviousKrbtgtKeys()`.
+   *
+   * @param raw - the service principal name
+   * @param context - who acted and through which door
+   * @returns the directory write's result, or a refusal
+   */
   dropPreviousServiceKeys(raw: unknown, context?: ActContext): Json {
     const { log } = this.deps;
     const directory = this.directory;
@@ -1871,6 +2088,11 @@ class Krb5PersonKeys {
   // asynchronous only where a development rotation derives the key it
   // replaces from the password.
   // =========================================================================
+  /**
+   * Returns this realm's krbtgt entry name, `krbtgt/<REALM>@<REALM>`.
+   *
+   * @returns the identifier
+   */
   krbtgtIdentifier(): string {
     const { log, principals } = this.deps;
     log.debug("Entering Krb5PersonKeys.krbtgtIdentifier().");
@@ -1894,6 +2116,13 @@ class Krb5PersonKeys {
   // clock skew the KDC allows. A renewal re-seals under the CURRENT key, so
   // the ticket lifetime alone would do for a TGT renewed on time; the renew
   // bound is the one that cannot be wrong, and is the sign-out horizon's.
+  /**
+   * Returns how long a retired krbtgt version is kept, in seconds: the setting
+   * when it names a number, otherwise the longer of the ticket and renew
+   * lifetimes plus the clock skew.
+   *
+   * @returns the seconds
+   */
   krbtgtTtlSeconds(): number {
     const { log, config } = this.deps;
     log.debug("Entering Krb5PersonKeys.krbtgtTtlSeconds().");
@@ -1967,6 +2196,13 @@ class Krb5PersonKeys {
   // claim, and this answers null until it lands — the KDC refuses in the
   // meantime rather than make a key another node might be making too.
   // -------------------------------------------------------------------------
+  /**
+   * The KDC's key source for this realm's krbtgt: the stored random key, made
+   * here in product when this process is the store's only writer.
+   *
+   * @returns `{ kvno, keys, retained }`, or null (development until a rotation
+   *   by hand, or while another node makes the first key)
+   */
   krbtgtKeys(): Json {
     const { log, principals, realms, errorCodes } = this.deps;
     log.debug("Entering Krb5PersonKeys.krbtgtKeys().");
@@ -2025,6 +2261,14 @@ class Krb5PersonKeys {
   // nothing) where a key, readable or not, is already stored — a creation
   // never replaces anything.
   // -------------------------------------------------------------------------
+  /**
+   * Makes this realm's first krbtgt key at `krb5.kvno`, keeping nothing; never
+   * replaces a stored record.
+   *
+   * @param context - who acted and through which door
+   * @returns `{ ok: true, ... }` (with `existing` when one was already stored),
+   *   or a refusal
+   */
   createKrbtgtKey(context?: ActContext): Json {
     const { log, config } = this.deps;
     log.debug("Entering Krb5PersonKeys.createKrbtgtKey().");
@@ -2058,6 +2302,13 @@ class Krb5PersonKeys {
   // (`credentials.bootstrapOnce()`'s shape). Without a shared store it is
   // `createKrbtgtKey()`. One in flight per realm. Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Makes a product realm's first krbtgt key once for the cluster, under a
+   * claim, one in flight per realm. Never rejects.
+   *
+   * @param realmId - the trust realm id; the ambient realm when omitted
+   * @returns a promise of `{ ok, made, ... }`
+   */
   ensureKrbtgtKey(realmId?: string): Promise<Json> {
     const self = this;
     const { log, realms, principals, claims, persistence,
@@ -2152,6 +2403,14 @@ class Krb5PersonKeys {
   // stored one, or in development the key derived from the password, so a
   // TGT sealed under the published key an instant before still opens.
   // -------------------------------------------------------------------------
+  /**
+   * Rotates this realm's krbtgt key to a new random one, keeping the one it
+   * replaces for `krbtgtTtlSeconds()` unless `invalidate` keeps nothing.
+   *
+   * @param options - `invalidate`, `reason` and `context`
+   * @returns a promise of `{ ok: true, kvno, previousKvno, invalidated,
+   *   retained, ... }`, or a refusal
+   */
   async rotateKrbtgt(options?: Json): Promise<Json> {
     const { log, principals } = this.deps;
     const o = options || {};
@@ -2339,6 +2598,12 @@ class Krb5PersonKeys {
   // the rotation job: where the key comes from, its kvno, when it was made
   // and last rotated, and the versions kept. The record is opened only to
   // tell a readable one from an unreadable one; nothing of it is answered.
+  /**
+   * Returns the public state of this realm's krbtgt: where the key comes from,
+   * its kvno, when it was made and last rotated, and the versions kept.
+   *
+   * @returns the state
+   */
   krbtgtState(): Json {
     const { log, principals, kcrypto } = this.deps;
     log.debug("Entering Krb5PersonKeys.krbtgtState().");
@@ -2383,6 +2648,13 @@ class Krb5PersonKeys {
 
   // "Drop previous versions" for the krbtgt: the rotation's window ended now,
   // the current key untouched.
+  /**
+   * Drops the krbtgt's previous versions, ending the last rotation's window
+   * now.
+   *
+   * @param context - who acted and through which door
+   * @returns the directory write's result, or a refusal
+   */
   dropPreviousKrbtgtKeys(context?: ActContext): Json {
     const { log } = this.deps;
     const directory = this.directory;
@@ -2418,6 +2690,13 @@ class Krb5PersonKeys {
   // password, so an administrator is never left having reset a password for a
   // keytab that was then refused. A refusal, or null.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether a keytab can be made for a person at all, asked before
+   * anything is derived or a password reset.
+   *
+   * @param name - the username
+   * @returns a refusal, or null
+   */
   personKeytabRefusal(name: unknown): Json {
     const { log } = this.deps;
     const directory = this.directory;
@@ -2513,6 +2792,17 @@ class Krb5PersonKeys {
   // — and the answer says so. The typed password is then not what the keytab
   // is made from, and nothing pretends otherwise.
   // -------------------------------------------------------------------------
+  /**
+   * Derives a keytab for a person from a password in hand, at the current kvno
+   * only, and compares the derived key with the one the KDC holds before
+   * handing it over; a stored key is never read back out.
+   *
+   * @param name - the username
+   * @param password - the password the keytab is derived from
+   * @param context - who acted and through which door
+   * @returns a promise of `{ ok: true, username, principal, kvno, etypes,
+   *   keytab (base64), keytabFilename, ... }`, or a refusal
+   */
   async personKeytab(name: unknown, password: unknown,
                      context?: ActContext): Promise<Json> {
     const { log, principals, kcrypto, keytab, audit, nodeCrypto,
@@ -2697,6 +2987,13 @@ class Krb5PersonKeys {
   // What one person's Kerberos account IS, for their page on the console and
   // their own in the portal: the principal, whether this realm has a KDC,
   // which kind, and the PUBLIC half of their keys. Nothing is opened.
+  /**
+   * Describes one person's Kerberos account: the principal, whether this realm
+   * has a KDC and which kind, and the public half of their keys.
+   *
+   * @param name - the username
+   * @returns the description
+   */
   personKerberosState(name: unknown): Json {
     const { log, principals, kcrypto } = this.deps;
     const directory = this.directory;
@@ -2746,16 +3043,52 @@ class Krb5PersonKeys {
   // its operation. Built from the PUBLIC info attributes only; nothing is
   // opened.
   // -------------------------------------------------------------------------
-  listPeople(): Json[] {
-    const self = this;
-    const { log, principals, kcrypto } = this.deps;
-    log.debug('Entering Krb5PersonKeys.listPeople().');
+  // PAGED BEFORE IT IS DESCRIBED (#352, 2026-09-29). `listPeople()` parsed
+  // every person's info attribute, hashed their stored password for the
+  // `current` stamp and built their retained versions, then sorted — for a
+  // page that shows twenty-five. The work is split so the console can page
+  // between the halves: `listPeopleKeys()` is the population, sorted by
+  // username exactly as the described rows were (the sort reads nothing the
+  // description adds), and `describePeople()` is the per-row half, for the
+  // rows shown. `listPeople()` is the two together and answers as it did.
+  /**
+   * Lists the people holding Kerberos keys as undescribed rows, sorted by
+   * username; nothing is parsed or hashed.
+   *
+   * @returns the rows, by username
+   */
+  listPeopleKeys(): Json[] {
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.listPeopleKeys().');
     if (!this.directory) {
-      log.debug('Leaving Krb5PersonKeys.listPeople(). No directory.');
+      log.debug('Leaving Krb5PersonKeys.listPeopleKeys(). No directory.');
       return [];
     }
+    const collator = new Intl.Collator();
+    const rows = this.directory.personKeyInfos().slice(0);
+    // `a.username.localeCompare(b.username)`, which this collator's compare
+    // is by definition, built once rather than per comparison.
+    rows.sort(function (a, b) {
+      return collator.compare(String(a.username), String(b.username));
+    });
+    log.debug('Leaving Krb5PersonKeys.listPeopleKeys(). ' + rows.length +
+              ' person(s).');
+    return rows;
+  }
+
+  /**
+   * Describes rows `listPeopleKeys()` answered, from the public info
+   * attributes only; nothing is opened.
+   *
+   * @param keyRows - the rows to describe
+   * @returns the described rows, in the same order
+   */
+  describePeople(keyRows: Json[]): Json[] {
+    const self = this;
+    const { log, principals, kcrypto } = this.deps;
+    log.debug('Entering Krb5PersonKeys.describePeople().');
     const nowMs = Date.now();
-    const rows = this.directory.personKeyInfos().map(function (one) {
+    const rows = (keyRows || []).map(function (one) {
       const info = self.parseInfo(one.info) || {};
       return {
         // THE PREVIOUS VERSIONS STILL ACCEPTED for tickets issued under them —
@@ -2779,14 +3112,32 @@ class Krb5PersonKeys {
                  info.stamp === self.stampOf(one.passwordHash)
       };
     });
-    rows.sort(function (a, b) {
-      return a.username.localeCompare(b.username);
-    });
+    log.debug('Leaving Krb5PersonKeys.describePeople(). ' + rows.length +
+              ' person(s).');
+    return rows;
+  }
+
+  /**
+   * Lists the people holding Kerberos keys, from the public info attributes
+   * only.
+   *
+   * @returns the rows, by username
+   */
+  listPeople(): Json[] {
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.listPeople().');
+    const rows = this.describePeople(this.listPeopleKeys());
     log.debug('Leaving Krb5PersonKeys.listPeople(). ' + rows.length +
               ' person(s).');
     return rows;
   }
 
+  /**
+   * Lists the stored service principals, krbtgt excepted, from the public info
+   * attributes only.
+   *
+   * @returns the rows, by principal
+   */
   listServices(): Json[] {
     const self = this;
     const { log, kcrypto } = this.deps;
@@ -2829,6 +3180,13 @@ class Krb5PersonKeys {
 
   // Replace the value of a withheld attribute for display. `ldap_server.js`
   // calls it with the LOWER-CASED names the store uses.
+  /**
+   * Replaces a withheld attribute's values for display.
+   *
+   * @param attribute - the attribute name, lower-cased
+   * @param values - the stored values
+   * @returns the values to show
+   */
   withheldValues(attribute: unknown, values: unknown[]): unknown[] {
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.withheldValues().");
@@ -2851,6 +3209,11 @@ class Krb5PersonKeys {
   // installed; standalone, that is at require time, where the original filled
   // them.
   // -------------------------------------------------------------------------
+  /**
+   * Fills the two slots: the credential store's password observer and the
+   * principal database's key source (with the krbtgt key, the person checks and
+   * the FAST provider).
+   */
   installSlots(): void {
     const { log, credentials, principals } = this.deps;
     log.debug("Entering Krb5PersonKeys.installSlots().");
@@ -2907,9 +3270,28 @@ const slot = new InstanceSlot<Krb5PersonKeys>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Kerberos keys stored on directory entries: people's, service principals'
+ * and each realm's krbtgt, and the key source the KDC reads them through. Each
+ * other member forwards to the same-named `Krb5PersonKeys` method on the
+ * installed instance.
+ *
+ * @namespace
+ */
 export = {
   Krb5PersonKeys: Krb5PersonKeys,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: Krb5PersonKeys): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   SEAL_LABEL: Krb5PersonKeys.SEAL_LABEL,
   PERSON_KEYS_ATTRIBUTE: Krb5PersonKeys.PERSON_KEYS_ATTRIBUTE,
@@ -2945,6 +3327,8 @@ export = {
   retainedVersionsLimit: slot.forward('retainedVersionsLimit'),
   retainedTtlSeconds: slot.forward('retainedTtlSeconds'),
   listPeople: slot.forward('listPeople'),
+  listPeopleKeys: slot.forward('listPeopleKeys'),
+  describePeople: slot.forward('describePeople'),
   listServices: slot.forward('listServices'),
   withheldValues: slot.forward('withheldValues'),
   // THE KRBTGT KEY (#169).

@@ -131,7 +131,19 @@ const CA_FILE_CODE = 'STS-CORE-0104';
 
 const CERTIFICATE = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
 
+/**
+ * The transport policy of every outbound request to an address somebody else
+ * answers: whether it may be plain http, and whether the certificate of whoever
+ * answers is verified.
+ *
+ * Each family has three settings (allow http, skip verification, a CA file);
+ * product mode refuses plain http and ignores a switch that skips verification.
+ */
 class OutboundTls {
+  /**
+   * The error code of a CA file setting that names an unusable file:
+   * `STS-CORE-0104`.
+   */
   static readonly CA_FILE_CODE = CA_FILE_CODE;
 
   // Settings whose ignored value has already been logged in this process.
@@ -139,6 +151,13 @@ class OutboundTls {
 
   // localhost, 127.0.0.0/8 and ::1 — the addresses a request to which does
   // not leave this host.
+  /**
+   * Tells whether a host name is a loopback address: localhost, 127.0.0.0/8 or
+   * ::1.
+   *
+   * @param hostname - the host name, IPv6 brackets allowed
+   * @returns true for a loopback address
+   */
   static isLoopbackHost(hostname: unknown): boolean {
     helpers.log.debug("Entering OutboundTls.isLoopbackHost().");
     const host = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
@@ -152,6 +171,16 @@ class OutboundTls {
   // MAY THIS http:// URL BE DIALLED? Asked only for a URL whose scheme is
   // http; https never reaches it.
   // -------------------------------------------------------------------------
+  /**
+   * Decides whether an http:// URL may be dialled for a family.
+   *
+   * Development allows any host while the family's setting is on; product
+   * refuses, except a loopback host for a family that allows one.
+   *
+   * @param family - the family's settings and error codes
+   * @param hostname - the URL's host
+   * @returns `{ ok, why, errorCode }`
+   */
   static httpVerdict(family: OutboundFamily, hostname: unknown): HttpVerdict {
     const log = helpers.log;
     log.debug("Entering OutboundTls.httpVerdict(). " + family.allowHttpKey);
@@ -185,6 +214,18 @@ class OutboundTls {
   // said ONCE, with the code the caller names. Exported separately from
   // `tlsVerdict()` for SPIRE's kubelet, whose setting is not a family's.
   // -------------------------------------------------------------------------
+  /**
+   * Tells whether certificate verification is to be skipped: only when the
+   * setting is on and the mode allows it.
+   *
+   * In product a setting that is on is ignored, and said once per process with
+   * the code given.
+   *
+   * @param settingKey - the setting that asks to skip verification
+   * @param ignoredCode - the error code logged when product ignores it
+   * @param what - what is being sent, for the log line
+   * @returns true when verification is skipped
+   */
   static skipsVerification(settingKey: string, ignoredCode: string,
                            what: string): boolean {
     const log = helpers.log;
@@ -213,6 +254,17 @@ class OutboundTls {
   // THE TLS OPTIONS FOR ONE REQUEST to `origin` (for the log line). Never
   // throws; a CA file that cannot be used is `ok: false` with a sentence.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the TLS options for one request of a family: verification skipped,
+   * node's store, or node's store plus the family's CA file.
+   *
+   * Never throws; an unusable CA file is `ok: false` with a sentence.
+   *
+   * @param family - the family's settings and error codes
+   * @param origin - where the request goes, for the log line
+   * @returns `{ ok, why, errorCode, rejectUnauthorized, skipped }`, with `ca`
+   * and `checkServerIdentity` where verifying
+   */
   static tlsVerdict(family: OutboundFamily, origin: string): TlsVerdict {
     const log = helpers.log;
     log.debug("Entering OutboundTls.tlsVerdict(). " + origin);
@@ -257,6 +309,14 @@ class OutboundTls {
   // kubelet with its own CA (`chainOnly`). The chain OpenSSL verified is
   // still held to `pki.pathRuleProblem()`.
   // -------------------------------------------------------------------------
+  /**
+   * Holds a verified peer chain to the path rules without checking the host
+   * name, for a request that deliberately names no host (SPIRE's kubelet).
+   *
+   * @param host - the host dialled, for the message
+   * @param cert - the peer certificate node verified
+   * @returns an Error when the chain breaks the rules, otherwise undefined
+   */
   static checkChainOnly(host: string, cert: any): Error | undefined {
     const log = helpers.log;
     log.debug("Entering OutboundTls.checkChainOnly(). " + host);
@@ -272,7 +332,19 @@ class OutboundTls {
   // BESIDE node's store when given, and the host check above. The one helper
   // every such dialer asks, so none of them carries a copy.
   // -------------------------------------------------------------------------
-  static verifiedOptions(ca?: string | string[] | null):
+  /**
+   * Builds the options for a verified outbound connection that is not one of
+   * the families: verification on, the RFC 9525 host check, and any CA given
+   * beside node's store.
+   *
+   * @param ca - extra CA certificates, as PEM text or a list
+   * @param options - `systemRoots: false` trusts `ca` ALONE, without node's
+   *   store (#94: a connection whose operator named its own chain); ignored
+   *   when no `ca` is given, which would trust nothing
+   * @returns the TLS options
+   */
+  static verifiedOptions(ca?: string | string[] | null,
+                         options?: { systemRoots?: boolean }):
       { rejectUnauthorized: true; ca?: string[];
         checkServerIdentity: (host: string, cert: any) => Error | undefined } {
     helpers.log.debug("Entering OutboundTls.verifiedOptions().");
@@ -281,7 +353,8 @@ class OutboundTls {
     const out: any = { rejectUnauthorized: true,
                        checkServerIdentity: OutboundTls.checkServerIdentity };
     if (extra.length) {
-      out.ca = tls.rootCertificates.concat(extra);
+      out.ca = options && options.systemRoots === false
+        ? extra.slice() : tls.rootCertificates.concat(extra);
     }
     helpers.log.debug("Leaving OutboundTls.verifiedOptions().");
     return out;
@@ -302,6 +375,10 @@ class OutboundTls {
   // -------------------------------------------------------------------------
   private static installed = false;
 
+  /**
+   * Makes the RFC 9525 host check and the path rules node's default
+   * `checkServerIdentity` for every TLS client in this process. Idempotent.
+   */
   static installProcessWide(): void {
     const log = helpers.log;
     log.debug("Entering OutboundTls.installProcessWide().");
@@ -343,6 +420,16 @@ class OutboundTls {
   // DNS-ID only as `*.` in front of at least two labels, and an IP address
   // compared as an address, not as a spelling.
   // -------------------------------------------------------------------------
+  /**
+   * Checks a host against a certificate's names as RFC 9525 reads them:
+   * subjectAltName DNS-IDs and IP-IDs only, a wildcard only as a whole
+   * left-most label, never the common name.
+   *
+   * @param host - the host name or IP address dialled
+   * @param cert - the peer certificate, as node describes it
+   * @returns '' when the certificate names the host, otherwise a sentence
+   * saying why not
+   */
   static hostNameProblem(host: string, cert: any): string {
     const log = helpers.log;
     log.debug("Entering OutboundTls.hostNameProblem(). " + host);
@@ -402,6 +489,14 @@ class OutboundTls {
   // to node as `checkServerIdentity` by every caller of `tlsVerdict()` that
   // verifies, so a refusal is a TLS error on the request like any other.
   // -------------------------------------------------------------------------
+  /**
+   * The host check every verified outbound request makes: the host against the
+   * certificate's names, then the verified chain against the path rules.
+   *
+   * @param host - the host dialled
+   * @param cert - the peer certificate node verified
+   * @returns an Error when either check fails, otherwise undefined
+   */
   static checkServerIdentity(host: string, cert: any): Error | undefined {
     const log = helpers.log;
     log.debug("Entering OutboundTls.checkServerIdentity(). " + host);
@@ -423,6 +518,12 @@ class OutboundTls {
   }
 
   // The certificates in a PEM file, or a sentence saying why there are none.
+  /**
+   * Reads the certificates in a PEM file.
+   *
+   * @param file - the file's path
+   * @returns the PEM certificates, or a sentence saying why there are none
+   */
   static caFilePems(file: string): string[] | string {
     const log = helpers.log;
     log.debug("Entering OutboundTls.caFilePems(). " + file);
@@ -446,6 +547,14 @@ class OutboundTls {
 
   // What the console and `/admin-api` show for a family: the three settings
   // as they are IN FORCE here, which in product is not what is stored.
+  /**
+   * Describes a family's three settings as they are in force here, which in
+   * product is not what is stored.
+   *
+   * @param family - the family's settings
+   * @returns `{ allowHttp, skipTlsVerification, skipTlsVerificationSet, caFile
+   * }`
+   */
   static describe(family: OutboundFamily): { allowHttp: boolean;
       skipTlsVerification: boolean; skipTlsVerificationSet: boolean;
       caFile: string } {

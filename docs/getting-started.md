@@ -138,6 +138,17 @@ so that adding a protocol directory cannot be forgotten, installs with
 `--omit=dev`, and defaults `CONFIG_FILE` to `./env/local.js`. `EXPOSE` documents
 every port above; publishing them is the caller's decision.
 
+**The image's JavaScript carries no comments.** The build takes them out of
+every `.js` it ships, compiled from TypeScript or not, because Node keeps the
+source text of every module in memory for as long as the process runs, and
+this repository's comments were about 80 MB of every process's heap. Nothing
+else is changed: no name is shortened and no module is bundled. Every line
+break is kept, so **a line number in a stack trace from the image is the line
+number in the repository** — read the comments there. A column number can
+differ on a line that had a comment in the middle of it. The copyright and
+licence headers go with the other comments; `LICENSES/` and `REUSE.toml` are
+still in the image.
+
 The Workload API's Unix socket is inside the container. To reach it from the host
 or another container, mount its directory as a volume — publishing 8092 is the
 alternative and needs the client pointed at `tcp://host:8092` explicitly.

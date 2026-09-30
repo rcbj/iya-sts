@@ -119,10 +119,12 @@ services:
 
   tests:
     environment:
-      # tools/fresh-connections.js and sts_cluster_alternation.js — the mode
-      # names both (modes.sh); the base file has no line to carry them.
+      # tools/fresh-connections.js, sts_cluster_alternation.js and
+      # run-report.js's bulk lane — the mode names all three (modes.sh); the
+      # base file has no line to carry them.
       - STS_TEST_FRESH_CONNECTIONS=${STS_TEST_FRESH_CONNECTIONS:-1}
       - STS_TEST_CLUSTER_NODES=${STS_TEST_CLUSTER_NODES:-2}
+      - STS_TEST_BULK_LAST=${STS_TEST_BULK_LAST:-1}
       # THE DEFAULT REALM'S SPIFFE SOCKETS ARE NODE A'S (2026-09-21), for the
       # reason in this file's header — node B adds no SPIFFE address, so the
       # balancer carries neither port and sts_spiffe_grpc.js dialled

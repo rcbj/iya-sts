@@ -231,7 +231,18 @@ interface HomeDeps {
   errorCodes: typeof errorCodes;
 }
 
+/**
+ * The front door: `GET /`, the realm directory at `GET /realms`, and the logo
+ * the front page draws.
+ *
+ * It lists no endpoints; `/admin/sts-metadata` does that from the router.
+ */
 class Home {
+  /**
+   * Builds the front door from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: HomeDeps) {
     deps.helpers.log.debug("Entering Home.constructor().");
     deps.helpers.log.debug("Leaving Home.constructor().");
@@ -239,6 +250,12 @@ class Home {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the modules this class was built from before the composition root
+   * (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): HomeDeps {
     helpers.log.debug("Entering Home.defaultDeps().");
     helpers.log.debug("Leaving Home.defaultDeps().");
@@ -257,6 +274,15 @@ class Home {
 
   // The front page, the realm directory and the logo, in the order they were
   // always registered.
+  /**
+   * Registers `GET /`, `GET /realms` and the logo route, in the order they were
+   * always registered.
+   *
+   * Called by `common/protocol_stack.ts`; requiring this module registers
+   * nothing.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: typeof import('../common/app')): void {
     const { config, errorCodes, realms } = this.deps;
     const { baseUrlOf, log } = this.deps.helpers;
@@ -528,9 +554,27 @@ const slot = new InstanceSlot<Home>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The front door of the service: the page at `GET /` and its logo.
+ *
+ * A signpost to the repository, the documentation, the console and the portal,
+ * deliberately short and never a list of endpoints.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   Home: Home,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: Home): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin()
 };

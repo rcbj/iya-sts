@@ -56,12 +56,28 @@ const PROVIDER_PROPERTIES = {
   delivery: { type: 'string', enum: ['aggregated', 'distributed'] }
 };
 
+/**
+ * The `/admin-api/claim-providers` operations: the Claims Provider register,
+ * every person's link and the four acts, each the console's own.
+ */
 class ClaimsProvidersApi {
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, body parser, base URL reader, error codes and a
+   *   loader of the Claims Provider register
+   */
   constructor(private readonly deps: ClaimsProvidersApiDeps) {
     deps.log.debug("Entering ClaimsProvidersApi.constructor().");
     deps.log.debug("Leaving ClaimsProvidersApi.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports, with the
+   * module it serves loaded lazily.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): ClaimsProvidersApiDeps {
     helpers.log.debug("Entering ClaimsProvidersApi.defaultDeps().");
     helpers.log.debug("Leaving ClaimsProvidersApi.defaultDeps().");
@@ -76,12 +92,24 @@ class ClaimsProvidersApi {
     };
   }
 
+  /**
+   * Builds the route table for the installed instance.
+   *
+   * @param instance - the instance installed
+   */
   static wire(instance: ClaimsProvidersApi): void {
     helpers.log.debug("Entering ClaimsProvidersApi.wire().");
     routes = instance.buildRoutes();
     helpers.log.debug("Leaving ClaimsProvidersApi.wire().");
   }
 
+  /**
+   * Sends a JSON body with `Cache-Control: no-store`.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the body, serialised with indentation
+   */
   sendJson(res: Res, status: number, body: Json): void {
     const { log } = this.deps;
     log.debug("Entering ClaimsProvidersApi.sendJson(). status=" + status);
@@ -91,6 +119,12 @@ class ClaimsProvidersApi {
     log.debug("Leaving ClaimsProvidersApi.sendJson().");
   }
 
+  /**
+   * Builds the operations' route table, each row carrying its OpenAPI
+   * description and its handler.
+   *
+   * @returns the route rows
+   */
   buildRoutes(): Json[] {
     const { log, parseBody, errorCodes, loadProviders,
             baseUrlOf } = this.deps;
@@ -225,11 +259,34 @@ const slot = new InstanceSlot<ClaimsProvidersApi>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Claims Provider operations of `/admin-api` (#147), mirroring
+ * `/admin/claim-providers`.
+ *
+ * It registers no route: the management API spreads `ROUTES` into its table.
+ *
+ * @namespace
+ */
 export = {
   ClaimsProvidersApi: ClaimsProvidersApi,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: ClaimsProvidersApi): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
+  /**
+   * The installed instance's route table, which `mgmt-api/admin_api.ts` spreads
+   * into its own.
+   */
   get ROUTES(): Json[] {
     helpers.log.debug("Entering ROUTES().");
     slot.get();

@@ -3920,9 +3920,16 @@ async function theTruststoreRoundTrips() {
 // no more — `tests/kerberos_person_keys.js` reads the whole file with an
 // independent parser, in process.
 // ---------------------------------------------------------------------------
+// EVERY PAGE OF BOTH LISTS (#311). The resource pages `people` and
+// `services` (`per`, at most 300; `peoplePage`, `servicesPage`), and a
+// default realm a few suite runs old holds hundreds of people with keys — the
+// bulk loads leave theirs on purpose — so a person made a moment ago was on a
+// later page and the read-back found nothing ("READ BACK AFTER THE KEYTAB …:
+// null", the in-AWS runs 5 and 6). The first reply is returned with both
+// lists replaced by all of their pages.
 async function kerberosPrincipalsHeld(scopeRoot) {
   log.debug("Entering kerberosPrincipalsHeld().");
-  const reply = await get("/kerberos/principals?per=100", scopeRoot);
+  const reply = await get("/kerberos/principals?per=300", scopeRoot);
   assert.strictEqual(reply.status, 200,
     "GET /admin-api/kerberos/principals should answer 200; it answered " +
     reply.status + " " + String(reply.raw).slice(0, 300));
@@ -3930,6 +3937,19 @@ async function kerberosPrincipalsHeld(scopeRoot) {
             Array.isArray(reply.body.people),
     "the resource should list `services` and `people`: " +
     String(reply.raw).slice(0, 300));
+  const lists = [["people", "peoplePage", "peoplePaging"],
+                 ["services", "servicesPage", "servicesPaging"]];
+  for (const list of lists) {
+    const pages = Number((reply.body[list[2]] || {}).pages) || 1;
+    for (let page = 2; page <= pages; page++) {
+      const more = await get("/kerberos/principals?per=300&" + list[1] +
+                             "=" + page, scopeRoot);
+      assert.strictEqual(more.status, 200,
+        "page " + page + " of " + list[0] + " answered " + more.status);
+      reply.body[list[0]] = reply.body[list[0]].concat(
+        more.body[list[0]] || []);
+    }
+  }
   log.debug("Leaving kerberosPrincipalsHeld().");
   return reply;
 }

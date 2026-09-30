@@ -181,8 +181,14 @@ const TRUST_2005_02 = 'http://schemas.xmlsoap.org/ws/2005/02/trust';
 
 const TRUST_1_3 = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
 
+/**
+ * The token type URI of a SAML 1.1 assertion.
+ */
 const SAML11_TOKEN_TYPE = 'urn:oasis:names:tc:SAML:1.0:assertion';
 
+/**
+ * The token type URI of a SAML 2.0 assertion.
+ */
 const SAML2_TOKEN_TYPE = 'urn:oasis:names:tc:SAML:2.0:assertion';
 
 // The claim URIs a WS-Federation relying party keys off. They are the Microsoft
@@ -284,7 +290,9 @@ const RP_PATH = '/wsfed/rp';
 // minted by the one in `acme` being recognised by the one in the default realm
 // would make the check this map exists for — did my own value come back? —
 // answer yes across a boundary the rest of the profile does not cross.
-const rpContexts = realms.map({ persist: 'wsfed.rpContexts', retain: 'age' });
+const rpContexts = realms.map({ persist: 'wsfed.rpContexts', retain: 'age',
+                                // #333: the context's `expires`, ms.
+                                expiresAt: realms.expiryField('expires', 1) });
 
 // Written with no regular expressions and nothing to escape, for the reason
 // oauth2.js's ceremony script records: a backslash in a script that passes
@@ -333,7 +341,21 @@ interface WsFederationDeps {
   stepUpMarker: string;
 }
 
+/**
+ * WS-Federation 1.2's Web (Passive) Requestor Profile (section 13): the passive
+ * requestor endpoint at `/wsfed`, the signed federation metadata, and a mock
+ * relying party.
+ *
+ * Signs people in to `authn/`'s session and answers with a signed SAML 1.1 or
+ * 2.0 assertion in an RSTR, posted to the relying party.
+ */
 class WsFederation {
+  /**
+   * Creates the profile.
+   *
+   * @param deps - the modules and functions it uses: crypto, the assertion
+   * builders, the sign-in service, config, the issuance gate and the rest
+   */
   constructor(private readonly deps: WsFederationDeps) {
     deps.log.debug("Entering WsFederation.constructor().");
     deps.log.debug("Leaving WsFederation.constructor().");
@@ -341,6 +363,11 @@ class WsFederation {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): WsFederationDeps {
     helpers.log.debug("Entering WsFederation.defaultDeps().");
     helpers.log.debug("Leaving WsFederation.defaultDeps().");
@@ -380,6 +407,12 @@ class WsFederation {
 
   // The work loading this module did with its own instance before R2,
   // run once for whichever instance is installed.
+  /**
+   * Logs, once, whether the metadata's entityID and the assertions' Issuer
+   * disagree: the work loading this module did before R2.
+   *
+   * @param instance - the instance installed
+   */
   static wire(instance: WsFederation): void {
     helpers.log.debug("Entering WsFederation.wire().");
     instance.warnAtStartup();
@@ -1414,6 +1447,16 @@ class WsFederation {
   // dropped: "this relying party was signed into and there is nowhere to tell
   // it" is the sentence a reader needs, and a filtered list says nothing at
   // all.
+  /**
+   * Lists the WS-Federation cleanup requests a session is owed on sign-out, one
+   * per relying party it signed in to; `/logout` sends exactly these.
+   *
+   * A relying party with no `wreply` is reported with an empty URL rather than
+   * dropped.
+   *
+   * @param session - the session
+   * @returns one `{ realm, wreply, url }` per relying party
+   */
   cleanupTargetsFor(session) {
     const { log } = this.deps;
     log.debug("Entering WsFederation.cleanupTargetsFor().");
@@ -1620,6 +1663,12 @@ class WsFederation {
   // — would take away the split the settings exist for. Returns '' when they
   // agree.
   // ---------------------------------------------------------------------------
+  /**
+   * Tells whether `wsfed.entityId` (the metadata's entityID) and `saml.issuer`
+   * (every assertion's Issuer) disagree in the ambient realm.
+   *
+   * @returns '' when they agree, otherwise a sentence saying how
+   */
   issuerDisagreement() {
     const { config, log } = this.deps;
     log.debug("Entering WsFederation.issuerDisagreement().");
@@ -1746,6 +1795,15 @@ class WsFederation {
   // advertising one would have been a relying party's first 404; the profile
   // now exists (`saml/saml2_sso.ts`) and publishes its own metadata, with its
   // own SingleSignOnService endpoints, at its own path.
+  /**
+   * Builds the federation metadata (section 3.1), signed with the signature
+   * first in the EntityDescriptor.
+   *
+   * Served unsigned, and logged (STS-WSFED-0015), when it cannot be signed.
+   *
+   * @param base - the base URL the request reached
+   * @returns the XML document
+   */
   federationMetadata(base) {
     const { STS, config, documentSettings, errorCodes, genId, log, logArtifact,
             mode, stsCrypto, xmlEscape } = this.deps;
@@ -1920,6 +1978,14 @@ class WsFederation {
   //     with it. Symmetry between the two call sites is what produced it: SAML
   //     1.1 needed the argument, so SAML 2.0 looked like it needed the
   //     equivalent one, and it had to have none.
+  /**
+   * Checks an assertion's signature is this service's, resolved against the
+   * document it arrived in.
+   *
+   * @param xml - the document
+   * @param element - the assertion element
+   * @returns `{ ok, why, signatureMethod, canonicalization }`
+   */
   verifyAssertionSignature(xml, element) {
     const { STS, log, stsCrypto } = this.deps;
     log.debug("Entering WsFederation.verifyAssertionSignature(). element=" +
@@ -1944,6 +2010,14 @@ class WsFederation {
   // own verdict. One boolean for the whole response would say "it failed" and
   // nothing a person could act on, which is the same argument the OID4VP
   // verifier makes.
+  /**
+   * Checks a sign-in response as the mock relying party: each check a relying
+   * party would apply, in order, with its own verdict.
+   *
+   * @param params - the posted `wa`, `wresult` and `wctx`
+   * @param realm - the relying party's realm, the expected audience
+   * @returns `{ checks, subject, claims, tokenType, assertionVersion, ok }`
+   */
   verifySignInResponse(params, realm) {
     const { config, firstByLocal, log, textByLocal } = this.deps;
     log.debug("Entering WsFederation.verifySignInResponse().");
@@ -2091,6 +2165,13 @@ class WsFederation {
   // THE ROUTES, in the order this module registered them at load
   // (rule 1). Called once, by `common/protocol_stack.ts` through the
   // module's `registerRoutes(app)` (#50, R1).
+  /**
+   * Registers `/wsfed`, `/wsfed/autopost.js`, the federation metadata and the
+   * mock relying party; called by the composition root at this module's place
+   * in the route order.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { baseUrlOf, errorCodes, iso, log, logArtifact, parseBody, randomId,
             xmlEscape } = this.deps;
@@ -2285,6 +2366,9 @@ class WsFederation {
   // THE STARTUP HALF OF issuerDisagreement(): once, at require time, for the
   // process-wide values. A realm's own overrides are reported on its
   // description page, because at require time no realm is ambient.
+  /**
+   * Logs `issuerDisagreement()` once, for the process-wide values.
+   */
   warnAtStartup(): void {
     const { log } = this.deps;
     log.debug("Entering WsFederation.warnAtStartup().");
@@ -2319,6 +2403,14 @@ const slot = new InstanceSlot<WsFederation>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * WS-Federation 1.2's passive requestor profile and a mock relying party.
+ *
+ * Exports `registerRoutes`, the class, the token types and facades forwarding
+ * to the instance the composition root built.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   WsFederation: WsFederation,

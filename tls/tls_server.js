@@ -235,6 +235,11 @@ const identityAssurance = require('../common/identity_assurance');
 // the ambient realm. A LEAF this module's closure already holds (`app.js` and
 // `helpers.js` both require it).
 const realms = require('../common/realms');
+// WHICH CELL SIGNS A CERTIFICATE'S HOLDER IN (#98): the cell map and the
+// placement helper. Libraries that register nothing; their own requires of
+// the channel and the routing index are lazy.
+const cells = require('../common/cells');
+const cellPlacement = require('../common/cell_placement');
 
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE IS THE PROCESS'S, SO THE MODE THAT GUARDS IT IS TOO.
@@ -284,6 +289,13 @@ function truststoreOpenToAnybody() {
 // `setSecureContext()` on a truststore change — a listener that silently keeps
 // its old context while the page says the new one is in force.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the TLS protocol options every listener this process owns uses:
+ * `tls.minVersion`, `tls.ciphers` (BCP 195's list by default), `tls.groups` and
+ * `tls.signatureAlgorithms`, with the server's cipher order honoured.
+ *
+ * @returns the options, for a TLS server or secure context
+ */
 function protocolOptions() {
   log.debug("Entering protocolOptions().");
   // `any`: the setting is a string, and the TLS types want a version literal.
@@ -417,6 +429,11 @@ function handedExtraCertPems() {
   });
 }
 
+/**
+ * Returns every leaf certificate the main port presents, in PEM.
+ *
+ * @returns the PEM certificates
+ */
 function presentedCertificatePems() {
   log.debug("Entering presentedCertificatePems().");
   if (SERVER_CERTIFICATE.handedIn) {
@@ -632,6 +649,13 @@ function bootstrapNote() {
 // and telling a reader to re-trust a certificate that never changed sends them
 // to look for a problem that is not there. Six modules used to assert the
 // first outright.
+/**
+ * Describes where this service's listener certificate comes from, as a phrase
+ * another module can put in a sentence: supplied from disk, issued under this
+ * service's Root, or self-signed per start.
+ *
+ * @returns the phrase
+ */
 function certificateProvenance() {
   log.debug('Entering certificateProvenance().');
   if (SERVER_CERTIFICATE && SERVER_CERTIFICATE.algorithm === 'supplied') {
@@ -1221,6 +1245,14 @@ function rememberAnnounced(record) {
 // remembered and not announced: nothing was announced for it to differ from
 // (a first start, or a store that keeps nothing across a restart). Remembers
 // every certificate it is shown, so asking twice announces once.
+/**
+ * Returns the listener certificates that differ from what the service last
+ * announced, as the key-changed event's `rotated` rows, and remembers every
+ * certificate it is shown.
+ *
+ * @param records - the listener certificates this process owns
+ * @returns `{ unit, from, to }` for each one that changed
+ */
 function listenerChangesSinceAnnounced(records) {
   log.debug("Entering listenerChangesSinceAnnounced().");
   const rotated = [];
@@ -1269,6 +1301,11 @@ function announceSinceLastStart(records) {
 }
 
 // What the store says was last announced, for a page and for the tests.
+/**
+ * Returns what the store says was last announced of each listener certificate.
+ *
+ * @returns the records, keyed by unit
+ */
 function lastAnnouncedListenerCertificates() {
   log.debug("Entering lastAnnouncedListenerCertificates().");
   const out = {};
@@ -1293,6 +1330,12 @@ function lastAnnouncedListenerCertificates() {
 // ---------------------------------------------------------------------------
 const certificateObservers = [];
 
+/**
+ * Registers an observer told whenever the listener certificate is re-issued, so
+ * the other sockets presenting it (LDAPS, the SPIRE Server API) re-key.
+ *
+ * @param fn - called with the algorithm of the certificate that changed
+ */
 function onServerCertificateChange(fn) {
   log.debug("Entering onServerCertificateChange().");
   if (typeof fn === 'function') {
@@ -1466,6 +1509,12 @@ function notifyCertificateObservers(algorithm) {
 // takes an array — handing it the bundle as one string works on some node
 // versions and silently uses only the first certificate on others, which reads
 // as "the root I added is not trusted".
+/**
+ * Splits a PEM bundle into its certificates.
+ *
+ * @param text - the bundle
+ * @returns the PEM certificates, in order
+ */
 function splitPemCertificates(text) {
   log.debug("Entering splitPemCertificates().");
   const matches = String(text || '').match(
@@ -1622,6 +1671,13 @@ function inCertificateRealm(identity, fn) {
 // EXPLICITLY as an empty array, because omitting `ca` selects node's bundled
 // root store — which would mean a client certificate chaining to a public CA
 // verified here, a chain nobody asked about.
+/**
+ * Returns the secure-context options a TLS listener needs: the certificates
+ * this service presents with their chains and keys, and the client truststore
+ * (an explicit empty list when there are no anchors).
+ *
+ * @returns the options
+ */
 function secureContextOptions() {
   log.debug('Entering secureContextOptions(). anchors=' + anchors.length);
   log.debug('Leaving secureContextOptions().');
@@ -1740,6 +1796,12 @@ function anchorSigns(anchorPem, record) {
   }
 }
 
+/**
+ * Returns the anchors a client verifies this service's listener certificates
+ * against, each checked to sign the chain it is offered for.
+ *
+ * @returns the PEM anchors; empty where there is no honest anchor to give
+ */
 function trustAnchorPems() {
   log.debug('Entering trustAnchorPems().');
   const out = [];
@@ -2048,6 +2110,13 @@ function currentRootPem() {
 // a reconcile that declined to build (`buildBranch: false`) and arms the
 // fallback that does build, for the case where that branch never arrives.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether the listener is waiting for a process branch another process is
+ * building: a certificate it serves is not current and its branch does not
+ * chain to the Root.
+ *
+ * @returns true when it is waiting
+ */
 function listenerAwaitsBranch() {
   log.debug("Entering listenerAwaitsBranch().");
   const rootPem = currentRootPem();
@@ -2074,6 +2143,14 @@ function listenerAwaitsBranch() {
 // that worker is rebuilding the branch — and omits it on the fallback it arms
 // in case the branch never arrives. Omitted, this is the repair it always was,
 // which is what an in-process caller wants.
+/**
+ * Re-issues the listener certificate under the current certificate hierarchy
+ * when it no longer chains to the Root, in the process that owns the socket.
+ *
+ * @param options - `buildBranch: false` to wait for a process branch another
+ * process is building rather than rebuild it here
+ * @returns a promise of whether the certificate was re-issued
+ */
 async function reconcileWithHierarchy(options) {
   log.debug('Entering reconcileWithHierarchy().');
   const buildBranch = !(options && options.buildBranch === false);
@@ -2167,6 +2244,13 @@ async function reconcileWithHierarchy(options) {
 // does with this material is PIN it and report it, never present it — the
 // socket is the front process's. The key it was handed at fork is left alone.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the public material a request worker needs to pin and report the
+ * listener certificate: the certificate, its chain, its anchor and the other
+ * leaves the socket presents. No private key.
+ *
+ * @returns `{ certPem, chainPem, anchorPem, extraCertPems }`
+ */
 function serverCertificateBundle() {
   log.debug("Entering serverCertificateBundle().");
   log.debug("Leaving serverCertificateBundle().");
@@ -2181,6 +2265,13 @@ function serverCertificateBundle() {
   };
 }
 
+/**
+ * In a request worker, adopts a re-issued listener certificate bundle from the
+ * front process, to pin and report it.
+ *
+ * @param bundle - what `serverCertificateBundle()` answered
+ * @returns true when it was adopted
+ */
 function adoptServerCertificate(bundle) {
   log.debug('Entering adoptServerCertificate().');
   if (!bundle || !bundle.certPem) {
@@ -2409,6 +2500,13 @@ function readPeerChain(socket) {
 }
 
 // Kept for callers that only want the verdict.
+/**
+ * Describes the first certificate of a peer's chain on a curve outside the NIST
+ * set.
+ *
+ * @param socket - the TLS socket
+ * @returns the description, or an empty string when there is none
+ */
 function nonNistCurvePeerCertificate(socket) {
   log.debug("Entering nonNistCurvePeerCertificate().");
   const read = readPeerChain(socket);
@@ -2416,6 +2514,13 @@ function nonNistCurvePeerCertificate(socket) {
   return read ? read.problem : '';
 }
 
+/**
+ * Closes, on a TLS listener, every connection whose client certificate chain
+ * uses a curve outside the NIST set, audited under `STS-TLS-0035`.
+ *
+ * @param server - the TLS listener
+ * @param label - its name, for the log and the audit row
+ */
 function refuseNonNistCurveCertificatesOn(server, label) {
   log.debug('Entering refuseNonNistCurveCertificatesOn(). label=' + label);
   server.prependListener('secureConnection', function (socket) {
@@ -2465,6 +2570,15 @@ function refuseNonNistCurveCertificatesOn(server, label) {
   log.debug('Leaving refuseNonNistCurveCertificatesOn().');
 }
 
+/**
+ * Registers a TLS listener created elsewhere so that the client truststore, and
+ * every change to it, applies to it too.
+ *
+ * @param server - the TLS listener
+ * @param label - its name, for the log
+ * @returns true when it was registered; false (logged) when `server` is not a
+ * TLS server
+ */
 function trustClientCertificatesOn(server, label) {
   log.debug('Entering trustClientCertificatesOn(). label=' + label);
   if (!server || typeof server.setSecureContext !== 'function') {
@@ -2532,6 +2646,17 @@ function applyAnchors() {
 // loader below pushes directly and marks its own rows `file` — and
 // `options.strict` is the management door's: see the block above `truststore`
 // at the foot of this section for why `/tls/trust` does not pass it.
+/**
+ * Adds the certificates in a PEM bundle to the client truststore, storing
+ * runtime anchors so they survive a restart, and applies it to every registered
+ * listener.
+ *
+ * @param text - the PEM bundle
+ * @param options - `source` (default `runtime`), `strict` (refuse the whole
+ * bundle if any block cannot be read) and `addedBy`
+ * @returns `{ added, duplicates, total }`, or with `error` and `errorCode` when
+ * nothing was added
+ */
 function addAnchors(text, options) {
   log.debug('Entering addAnchors().');
   const opts = options || {};
@@ -2627,6 +2752,12 @@ function normalisedFingerprint(value) {
   return String(value || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
 }
 
+/**
+ * Removes one anchor from the client truststore by its SHA-256 fingerprint.
+ *
+ * @param fingerprint - 64 hex digits, with or without colons
+ * @returns `{ removed, total }`, or with `error` and `errorCode`
+ */
 function removeAnchor(fingerprint) {
   log.debug('Entering removeAnchor().');
   const wanted = normalisedFingerprint(fingerprint);
@@ -2731,6 +2862,13 @@ function listAnchors() {
 // ---------------------------------------------------------------------------
 let trustAnchorStore = null;
 
+/**
+ * Installs the durable store for runtime trust anchors (`ou=trustAnchors`); a
+ * store without `list`, `write` and `remove` is refused whole.
+ *
+ * @param store - the store
+ * @returns true when it was installed
+ */
 function setTrustAnchorStore(store) {
   log.debug('Entering setTrustAnchorStore().');
   const needed = ['list', 'write', 'remove'];
@@ -2816,6 +2954,13 @@ function unstoreAnchor(fingerprint) {
 // It WRITES nothing, so calling it from inside an applier cannot echo a change
 // back to the process that made it.
 // ---------------------------------------------------------------------------
+/**
+ * Rebuilds the runtime half of the client truststore from the store: adds a
+ * stored anchor it lacks, removes one another process removed, and leaves the
+ * rest. It writes nothing.
+ *
+ * @returns `{ added, removed }`
+ */
 function reloadStoredAnchors() {
   log.debug('Entering reloadStoredAnchors().');
   if (!trustAnchorStore) {
@@ -2873,6 +3018,12 @@ function reloadStoredAnchors() {
   return { added: added, removed: removed };
 }
 
+/**
+ * Empties the client truststore, removing stored anchors from the store as
+ * well.
+ *
+ * @returns `{ removed, total }`
+ */
 function clearAnchors() {
   log.debug('Entering clearAnchors(). anchors=' + anchors.length);
   const removed = anchors.length;
@@ -2929,6 +3080,10 @@ function dnToString(dn) {
 // needs the same spelling for a certificate it has just MINTED. The header in
 // `helpers.js` carries the whole argument, including the second shape of DN it
 // learnt in order to serve that caller.
+/**
+ * Formats a subject as an RFC 4514 string; `common/helpers.js`'s, re-exported
+ * for the modules that have always required it from here.
+ */
 const dnRfc4514 = helpers.dnRfc4514;
 
 // The address in a certificate, if it carries one: the emailAddress RDN, or the
@@ -3624,6 +3779,15 @@ let anchorsFileReport = { file: '', loaded: 0 };
 // section 3 binds to the certificate, not to a CA), exactly as a chain
 // OpenSSL refused is. Required lazily: `pki` is loaded after this module.
 // ---------------------------------------------------------------------------
+/**
+ * Holds a chain OpenSSL verified to this service's path rules, marking a
+ * connection whose chain breaks one as unverified before any request on it is
+ * read.
+ *
+ * @param socket - the TLS socket
+ * @param label - the listener's name, for the log
+ * @returns the rule broken, or null
+ */
 function holdToPathRules(socket, label) {
   log.debug('Entering holdToPathRules().');
   if (!socket || socket.authorized !== true ||
@@ -3685,6 +3849,14 @@ const CERTIFICATE_ALERTS = {
   48: 'unknown_ca'
 };
 
+/**
+ * Classifies a failed TLS handshake: the peer refused this service's
+ * certificate (a certificate alert it sent), or another failure.
+ *
+ * @param error - the handshake's error
+ * @returns `{ kind, alert, alertName }`, `kind` being
+ * `peer-refused-certificate` or `handshake`
+ */
 function handshakeFailureOf(error) {
   log.debug('Entering handshakeFailureOf().');
   const message = String((error && error.message) || '');
@@ -3714,6 +3886,15 @@ function handshakeFailureOf(error) {
            alertName: null };
 }
 
+/**
+ * Records every client certificate presented on a TLS listener this module did
+ * not create, after holding it to the path rules and consulting revocation.
+ *
+ * @param server - the TLS listener
+ * @param label - its name, for the log and the record
+ * @returns true when it is observed; false (logged) when `server` is not a TLS
+ * server
+ */
 function observeConnectionsOn(server, label) {
   log.debug('Entering observeConnectionsOn(). label=' + label);
   if (!server || typeof server.on !== 'function') {
@@ -4081,6 +4262,95 @@ app.get('/tls', function (req, res) {
 // ---------------------------------------------------------------------------
 app.get('/tls/sign-in', function (req, res) {
   log.debug('Entering GET /tls/sign-in.');
+  // WHICH CELL SIGNS THE HOLDER IN (#98 D10), BEFORE the revocation check,
+  // the identity gate and the session: a session is started where its person
+  // is homed. `placeCertificateSignIn()` argues it; single-cell mode answers
+  // at once and the rest runs exactly as it did.
+  placeCertificateSignIn(req, res).then(function (relayed) {
+    if (relayed) {
+      log.debug('Leaving GET /tls/sign-in. Relayed to the home cell.');
+      return;
+    }
+    answerCertificateSignIn(req, res);
+    log.debug('Leaving GET /tls/sign-in.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A CERTIFICATE SIGN-IN IS ANSWERED IN ITS PERSON'S HOME CELL (#98 D10,
+// 2026-09-28).
+//
+// The certificate names its holder — the `urn:sts:person:` name this
+// service's own authority wrote (`tls_client_certificates.js`), else the
+// common name, else the subject, exactly as `startCertificateSessionIn()`
+// reads it — and a session for somebody is started where their entry is. So
+// a holder homed in another cell is sent there WHOLE, in the realm the
+// certificate names. THE CERTIFICATE GOES WITH IT: the channel forwards the
+// client's certificate and its chain as the front process hands one to a
+// request worker, and the receiving cell shims the socket so
+// `getPeerCertificate()` answers with the CLIENT's and `authorized` with this
+// handshake's verdict (`cell_channel.ts`, *what a relayed request carries*).
+// The home cell then runs the whole door — the revocation check
+// (`revocation_status.fromSocket()` reads the forwarded `issuerChain`, as it
+// does in a worker), the identity gate, the issuance policy — and starts the
+// session, which pins the browser to it (`authn.startSession()`).
+//
+// **A BROWSER ALREADY HOLDING A SESSION HERE IS ANSWERED HERE**: this route's
+// rule is one session per browser, and sending it home would start a second
+// one there for somebody this cell already signed in. The placement table
+// honours a pinned browser's cell before this handler runs (`browser: true`).
+//
+// **ONLY A VERIFIED CERTIFICATE IS PLACED.** Nothing else starts a session,
+// so anything else is answered here with what it is, as it always was.
+// ---------------------------------------------------------------------------
+function placeCertificateSignIn(req, res) {
+  log.debug('Entering placeCertificateSignIn().');
+  if (!cells.isMulti() || req.stsCellRelay || !req.socket ||
+      req.socket.authorized !== true) {
+    log.debug('Leaving placeCertificateSignIn(). Here.');
+    return Promise.resolve(false);
+  }
+  const identity = issuedIdentityOf(req.socket);
+  let name = '';
+  let held = false;
+  try {
+    const cert = req.socket.getPeerCertificate();
+    const common = cert && cert.subject && cert.subject.CN
+      ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
+               cert.subject.CN)
+      : '';
+    name = (identity && identity.accepted && identity.username) || common ||
+           (cert && cert.subject ? dnRfc4514(cert.subject) : '');
+    held = !!inCertificateRealm(identity, function () {
+      return authn.sessionOf(req);
+    });
+  } catch (e) {
+    log.debug('Caught in placeCertificateSignIn(): ' +
+              ((e && e.message) || e));
+    name = '';
+  }
+  // An application's certificate signs nobody in; it is answered here.
+  if (!name || held || (identity && identity.kind === 'application')) {
+    log.debug('Leaving placeCertificateSignIn(). Here.');
+    return Promise.resolve(false);
+  }
+  const realmId = identity && identity.accepted && identity.realm
+    ? String(identity.realm) : realms.currentId();
+  log.debug('Leaving placeCertificateSignIn(). Asking where ' + name +
+            ' is homed.');
+  return cellPlacement.relayToHome(req, res, realmId, 'name', name,
+                                   'tls-sign-in')
+    .catch(function (e) {
+      // A lookup that failed is served here, as an unknown holder is.
+      log.debug('Caught in placeCertificateSignIn(): ' +
+                ((e && e.message) || e));
+      return false;
+    });
+}
+
+// The certificate sign-in, once it is known to be answered here.
+function answerCertificateSignIn(req, res) {
+  log.debug('Entering answerCertificateSignIn().');
   clusterBarrier.middleware()(req, res, function () {
     checkedSocket(req.socket).then(function (revocation) {
       const identity = issuedIdentityOf(req.socket);
@@ -4131,16 +4401,41 @@ app.get('/tls/sign-in', function (req, res) {
         return;
       }
       const persistence = require('../persistence/persistence');
-      Promise.all([persistence.flush(), persistence.flushMinted()])
-        .then(send, function (e) {
-          // The store's own failure is reported by persistence.js; the answer
-          // goes out, and a worker catches up on the change log's own clock.
-          log.debug('Caught in GET /tls/sign-in: ' + ((e && e.message) || e));
-          send();
+      const flushAndSend = function () {
+        Promise.all([persistence.flush(), persistence.flushMinted()])
+          .then(send, function (e) {
+            // The store's own failure is reported by persistence.js; the
+            // answer goes out, and a worker catches up on the change log's
+            // own clock.
+            log.debug('Caught in GET /tls/sign-in: ' +
+                      ((e && e.message) || e));
+            send();
+          });
+      };
+      // THE ATTRIBUTE SOURCES A SIGN-IN READS (#94), in the realm the session
+      // is in — the certificate's, which need not be this request's — before
+      // the answer goes. A refusing source that failed ended the session:
+      // the answer says so, with the refusal's status.
+      const sessionRealm = realms.get(session.realm);
+      const settle = function () {
+        authn.afterSignIn(res, flushAndSend, function (why) {
+          answer.signedIn = false;
+          answer.session = { started: false, why: why };
+          // error-code: none — afterSignIn() marked STS-ATTR-0012 on `res`
+          res.status(403).type('application/json')
+             .send(JSON.stringify(answer));
+          log.debug('Leaving GET /tls/sign-in. An attribute source refused.');
         });
+      };
+      if (sessionRealm) {
+        realms.run(sessionRealm, settle);
+      } else {
+        settle();
+      }
     });
   });
-});
+  log.debug('Leaving answerCertificateSignIn().');
+}
 
 app.get('/tls/server-certificate', function (req, res) {
   log.debug('Entering GET /tls/server-certificate.');
@@ -4279,6 +4574,10 @@ function refuseTruststoreChange(req, res, route) {
 // the same store. What did NOT change: an anchor from `tls.trustAnchorsFile`
 // is not stored, and removing one lasts until the next start. The doors say so.
 // ---------------------------------------------------------------------------
+/**
+ * The client truststore as the console and the management API reach it: `list`,
+ * `add` (strict, and stored) and `remove`.
+ */
 const truststore = {
   list: listAnchors,
   add: function (text, meta) {
@@ -4559,6 +4858,13 @@ app.get('/tls/forwarded', function (req, res) {
 // is a no-op; `listen()` binds nothing and reports no ports, and still does
 // the two truststore steps below.
 // ---------------------------------------------------------------------------
+/**
+ * Runs this module's startup step: reloads the stored trust anchors, applies
+ * the truststore, and announces a listener certificate that changed since the
+ * last start. It binds nothing.
+ *
+ * @returns `{ whenReady }`, a promise that is already resolved
+ */
 function listen() {
   log.debug('Entering listen().');
   // ---------------------------------------------------------------------
@@ -4597,11 +4903,21 @@ function listen() {
   return { whenReady: Promise.resolve({}) };
 }
 
+/**
+ * Does nothing: this module owns no listener.
+ */
 function close() {
   log.debug('Entering close().');
   log.debug('Leaving close(). Nothing to close.');
 }
 
+/**
+ * The certificate this service presents, the client certificates it is
+ * presented with, and the client truststore: a library plus a few routes on the
+ * main app, owning no listener of its own.
+ *
+ * @namespace
+ */
 module.exports = {
   listen: listen,
   close: close,
@@ -4647,6 +4963,11 @@ module.exports = {
   // `tls.signatureAlgorithms` for a TLS listener this module does not
   // create — LDAPS, which ldapjs builds, and the main port at creation.
   protocolOptions: protocolOptions,
+  /**
+   * Reports what `tls.trustAnchorsFile` loaded.
+   *
+   * @returns the report
+   */
   trustAnchorsFileLoaded: function () {
     log.debug("Entering trustAnchorsFileLoaded().");
     log.debug("Leaving trustAnchorsFileLoaded().");
@@ -4655,6 +4976,11 @@ module.exports = {
   // See the note above it: the modules that describe this certificate to a
   // reader ask here rather than each asserting it is self-signed.
   certificateProvenance: certificateProvenance,
+  /**
+   * Returns the listener certificate, in PEM.
+   *
+   * @returns the certificate
+   */
   serverCertificatePem: function () {
     log.debug("Entering serverCertificatePem().");
     log.debug("Leaving serverCertificatePem().");
@@ -4666,6 +4992,14 @@ module.exports = {
   // key is generated per start, exists only in memory and dies with the
   // process. Nothing here writes it to a response; GET
   // /tls/server-certificate publishes the CERTIFICATE alone.
+  /**
+   * Returns the listener certificate with its private key, chain and trust
+   * anchor, for another socket in this process to present. The key is never
+   * written to a response.
+   *
+   * @returns `{ certPem, privateKeyPem, chainPem, trustAnchorPem, subject,
+   * names, fingerprint256, notAfter }`
+   */
   serverCertificate: function () {
     log.debug("Entering serverCertificate().");
     log.debug("Leaving serverCertificate().");
@@ -4705,6 +5039,13 @@ module.exports = {
   // leaf of the same TLS Issuing CA now, and this is where that is visible.
   // Every leaf the main port presents, as the socket presents it (#248).
   presentedCertificatePems: presentedCertificatePems,
+  /**
+   * Returns every certificate the TLS sockets present, with its chain and
+   * nothing private.
+   *
+   * @returns one `{ algorithm, certPem, chainPem, fingerprint256, certified }`
+   * per certificate
+   */
   serverCertificateChains: function () {
     log.debug("Entering serverCertificateChains().");
     log.debug("Leaving serverCertificateChains().");
@@ -4728,6 +5069,11 @@ module.exports = {
   listenerAwaitsBranch: listenerAwaitsBranch,
   serverCertificateBundle: serverCertificateBundle,
   adoptServerCertificate: adoptServerCertificate,
+  /**
+   * Returns how many anchors the client truststore holds.
+   *
+   * @returns the count
+   */
   anchorCount: function () {
     log.debug("Entering anchorCount().");
     log.debug("Leaving anchorCount().");
@@ -4737,6 +5083,11 @@ module.exports = {
   // It answered `{ tls, mtls }` — 8443 and 9443 — until both were deleted on
   // 2026-09-16, and every caller wanted the same thing from it: where do I
   // send one.
+  /**
+   * Returns the port a client certificate is presented to.
+   *
+   * @returns `{ main }`
+   */
   ports: function () {
     log.debug("Entering ports().");
     log.debug("Leaving ports().");

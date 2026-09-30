@@ -67,7 +67,7 @@ async function test() {
                              "vc-api:verify", both)]
   }, { enableInteropTests: true });
   log.info("=== 1. the suite ===");
-  const run = kit.runMocha(dir, ctx);
+  const run = await kit.runMocha(dir, ctx);
   kit.judge(SUITE, run.tests, EXCEPTIONS, {});
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

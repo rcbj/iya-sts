@@ -24,6 +24,7 @@ and the nudge.
 | File | What it is |
 |---|---|
 | `xacml_model.js` | The vocabulary: the identifiers the specification fixes, the shape of a policy tree, and the seven decision values. **No I/O.** |
+| `xacml_request.js` | **The one request builder (#306, part E of #88).** #88 section 7's AuthorizationRequest — principal and its type, roles, client, target, audience, requested action and scopes, protocol, grant type, intermediary — spelt from ONE vocabulary and grouped into XACML's categories. Every PEP builds through it: the issuance, access, risk and signal PEPs, the demonstration PEP at `/xacml/protected`, `/admin/xacml/decide`, and the remote PEP, which copies it beside the engine. It decides nothing; the shared identifiers (`ROLE`, `SUBJECT_KIND`) live here because a remote PEP cannot load `xacml_templates.ts`. `tests/xacml_request.js` fails on a module that goes back to building its own. **No I/O.** |
 | `xacml_datatypes.js` | The seventeen datatypes — parse, write, equality, ordering. The table every function is generated over. **No I/O.** |
 | `xacml_functions.js` | The standard function library: 275 identifiers, about thirty implementations. **No I/O.** |
 | `xacml_validate.js` | Static type checking. What a policy is REFUSED for at load, before any request. **No I/O.** |
@@ -988,6 +989,33 @@ asserting NOTHING, and a Permit that can only have come from her entry under
 has never heard of, refused at both ends. **That section used to assert the
 opposite**, in both directions, and the inversion is recorded where it happens.
 
+### It answers ROLES as well as directory attributes (#303, 2026-09-27)
+
+A designator for `urn:sts:xacml:role` — the issuance PEP's own attribute —
+is answered with the subject's CONFIGURED roles in the realm, through
+`common/role_permissions.ts`'s `configuredRolesOf()`: held directly, through a
+group or as an application, and ADMIN_READ / ADMIN_WRITE for a person from the
+console roster. **The same answer token issuance gets**, which is the point:
+a subject that arrived with no scopes — a person named in a SAML assertion, a
+Kerberos principal, a `client_id` — is decided on the roles this service
+would issue for, and the remote PEP (which asks `POST /xacml/pip`) decides on
+the same roles as the embedded one. rcbj asked for it on #303: "a SAML
+assertion won't have scopes".
+
+* **A role is not a directory attribute**, so it is a designator of its own
+  rather than an `urn:sts:xacml:attribute:` name: membership lives on the
+  role entry, and group-held and console roles are resolved at decision time.
+* **`urn:sts:xacml:subject-kind` says person or application** (`user`, the
+  default, or `application`): a name alone cannot, and the two hold roles
+  through different relations. The issuance PEP sends it; the remote PEP
+  asserts it from `subjectKind` and `pip.js` forwards it in the query.
+* **The built-in roles are not answered.** They describe the REQUEST — who
+  authenticated, over what — which a PIP naming a subject cannot know; the PEP
+  asserts them where it can. The subject is taken as authenticated: a PEP
+  asking about a named subject is deciding for somebody it already accepted.
+* An empty answer's `<Unresolved>` reason says the subject holds no configured
+  role, as a person or an application.
+
 ### What it does not do yet
 
 **Nothing caches.** A PIP query is made per decision, so a busy PEP asks the
@@ -1258,6 +1286,67 @@ routing an internal decision through a policy engine that is already here.
 | resource | `resource-id` | the application |
 | | `urn:sts:xacml:required-role` | what it demands |
 | action | `action-id` | `issue-access-token`, `start-session`, and the rest of `issuance_gate`'s `ISSUANCE` |
+| | `urn:sts:xacml:requested-scope` | the scope values asked for (#304) |
+| access-subject | `urn:sts:xacml:client-id` | the client the request came through (#304) |
+| environment | `urn:sts:xacml:grant-type`, `urn:sts:xacml:protocol` | the OAuth grant and the protocol family (#304; the protocol filled from the kind where the caller names none) |
+| access-subject | `urn:sts:xacml:home-jurisdiction` | the jurisdiction the subject is homed in — a transfer question only (#98) |
+| environment | `urn:sts:xacml:serving-jurisdiction`, `urn:sts:xacml:client-country`, `urn:sts:xacml:transfer-listed`, `urn:sts:xacml:realm`, `urn:sts:xacml:purpose`, `urn:sts:xacml:setting:cells.hardGeofence` | the serving cell's jurisdiction, the client's country when known, whether the realm lists the transfer, the realm, a release's purpose, the hard geofence — a transfer question only (#98) |
+| resource | `urn:sts:xacml:data-category` | `session`, `request` or `attributes` — a transfer question only (#98) |
+
+**AND ONE QUESTION PER REQUESTED SCOPE (#304, part C of #88).** Which scopes
+are issued is the policy's decision too, not code's: `issuance_gate`'s
+`checkScopes()` asks, action-id `issue-scope` with the scope as the
+resource-id, `urn:sts:xacml:scope-gated` (does its resource gate it by role,
+#303) and `urn:sts:xacml:authorizing-role` (which roles' `rolePermission`
+names it) on the resource, and the subject's ROLE bag. The answer carries
+`urn:sts:xacml:obligation:scope` — `keep`, `drop` or `refuse`, and a code —
+on a Permit as well as a Deny. The built-in `role-issuance` has two rules for
+it (`scope-not-authorized`, `scope-kept`, parameter `decideScopes`), and an
+operator's rule may drop any scope with its own code. **No verdict is not a
+verdict (rcbj's decision on #304)**: `xacml.enabled` off, no loadable policy,
+or an override built without the scope rules — the PEP asks the BUILT-IN
+policy instead, so role gating never switches off; a process with no XACML
+family drops a gated scope (`STS-XACML-0079`). The code that gathers the
+facts is `common/role_permissions.ts`; nothing in it decides.
+
+**AND SINCE #305 (part D) THE OTHER SCOPE RULES ARE HERE TOO.** The #110 scope
+rules (`scope_policy.ts`), delegated permissions (`permissionRefusal()`),
+consent (`consent.outstanding()`, verdict `consent`) and the two RFC 9396 type
+questions (action-id `issue-authorization-detail`, the type as the
+resource-id) ask the same question, each with only ITS facts — a rule tests
+its facts with `boolean-is-in`, false over an empty bag, so one subsystem's
+question never trips another's rule. The environment carries the realm's
+MODE, the settings a rule reads (`urn:sts:xacml:setting:<key>`) and the STAGE
+(`request` refuses, `mint` narrows, `consent`), by rcbj's decision that the
+mode and the settings are facts and the policy decides what differs. **With no
+decider the gate evaluates the built-in policy itself** (rcbj's decision on
+#305): `xacml_scope_verdicts.js` is a library — engine, builder and templates,
+no route and no slot — which the issuance PEP and `issuance_gate.js` both ask
+through, so the rules hold in every process.
+
+**AND SINCE #98 (D4, D11) WHERE A PERSON'S DATA MAY GO.** When the service is
+deployed as cells, three questions go to the same policy from
+`common/cell_transfer.ts` through `issuance_gate.checkTransfer()`:
+`hold-session` (may a traveller's session be HELD by the serving cell),
+`serve-request` (may a request about them be served there at all, even by
+relaying) and `release-attributes` (may a cell's residents be released to a
+reader at another). The facts are the attributes above; the answer carries
+`urn:sts:xacml:obligation:transfer` with `urn:sts:xacml:transfer-verdict` —
+`hold`/`relay`, `serve`/`refuse`, `release`/`withhold` — on a Permit as well
+as a Deny. The built-in `role-issuance` has six rules for them, targeted at
+the three action-ids (parameter `decideTransfers`): relay and withhold unless
+the jurisdictions are the same or the realm lists the transfer, refuse to
+serve only under `cells.hardGeofence` for an unlisted one, and keep
+everything else. Every untargeted rule of the document reads a fact a
+transfer question never carries, so none fires on one. **The scope
+question's arrangement exactly**: `xacml_transfer_verdicts.js` is the one
+library both the PEP and the gate ask through; a realm's own policy decides
+where it carries the obligation (an operator's rule "`us` subjects may hold
+sessions in `eu`" is one targeted Permit), and where it does not — an
+override built without the rules, `xacml.enabled` off, no decider — the
+built-in document decides, so the strict default never switches off. A
+verdict that is not one of the two for its question reads as the strict one.
+The three are not members of `ISSUANCE` (`common/CLAUDE.md`, 3bu).
 
 **The subject is the party being authenticated and not always a person.** In a
 browser flow it is whoever signed in; in a `client_credentials` grant there is
@@ -1754,3 +1843,16 @@ Beside it, `xacml.issuance.refused` had never been in `audit.js`'s `ACTIONS`
 table, so every one of them landed in the `protocol` category — findable by name
 and invisible to anybody filtering the audit log for AUTHORIZATION, which is the
 one filter somebody investigating a refusal reaches for. Both are registered now.
+
+## CELLS: `POST /xacml/pip` IS ANSWERED WHERE ITS SUBJECT IS HOMED (#98, 2026-09-28)
+
+What the PIP hands out is a named person's directory attributes, and a person's
+entry exists only in their home cell. So the handler reads the query's
+`subject-id` leniently (`pipSubjectKey()`: a `urn:uuid:` subject by its
+entryUUID, a DN by its RDN value, anything else as a login name) and relays a
+query about somebody homed elsewhere WHOLE — **before** the identity is read,
+the rate limit counted and the access policy asked, so the home cell counts it,
+checks the PEP's certificate (the channel forwards the client certificate and
+shims the socket, `common/cell_channel.ts`) and writes the `xacml.pip.query`
+audit row. A query that does not parse, or names nobody the routing index
+knows, is answered where it arrived, as before. Single-cell mode does not look.

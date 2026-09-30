@@ -138,15 +138,18 @@ import helpers = require('../common/helpers');
 const { log, parseBody, baseUrlOf, STS } = helpers;
 // BOTH ARE LIBRARIES (rule 3): they register no route, so requiring them here
 // cannot move one or join a cycle. `crypto.js` is THE one place this service
-// verifies a signature, and `roles.js` is what turns an access token's scopes
-// into the roles the access policy asks for — see the gate below.
+// verifies a signature. (`roles.js` turned an access token's scopes into the
+// roles the access policy asks for until #303; `role_permissions.ts` answers
+// the roles the token's subject holds now — see the gate below.)
 import stsCrypto = require('../common/crypto');
-import roles = require('../common/roles');
 // WHICH CLIENTS MAY HOLD `admin:*` (#110) — the gate asks it of every token.
 import scopePolicy = require('../common/scope_policy');
-// WHICH PEOPLE MAY STILL USE `admin:*` (#302) — the gate asks it of every
-// person's token, against the roster as it is now. A library (rule 3).
-import adminScopeAccess = require('./admin_scope_access');
+// THE ROLES A TOKEN'S SUBJECT HOLDS NOW, LESS THOSE ITS SCOPES DO NOT CARRY
+// (#302, #303) — what the gate hands the access-control policy. A library
+// (rule 3).
+import rolePermissions = require('../common/role_permissions');
+// The member types a role may be restricted to (#93), for the enum below.
+import roles = require('../common/roles');
 // The password policy's FIELD TABLE, which the request schema of
 // `save-password-policy` is generated from — for `narrowDoorProperties()`'s
 // reason: a hand-written list of what an operation accepts is a second
@@ -217,6 +220,11 @@ import cachesAdmin = require('../admin-ui/caches_admin');
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // Server configuration → Mode (#181): its one view, rule 7.
 import modeAdmin = require('../admin-ui/mode_admin');
+import workerPoolsAdmin = require('../admin-ui/worker_pools_admin');
+// Monitoring → Node Health (#329): its one view, rule 7.
+import nodeHealthAdmin = require('../admin-ui/node_health_admin');
+// Server configuration → Cells (#98): `cellsView()` and `peopleOf()`.
+import cellsAdmin = require('../admin-ui/cells_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The mail channel's two pages (#63), mirrored below (rule 7).
@@ -432,9 +440,8 @@ interface AdminApiDeps {
   baseUrlOf: typeof baseUrlOf;
   STS: typeof STS;
   stsCrypto: typeof stsCrypto;
-  roles: typeof roles;
   scopePolicy: typeof scopePolicy;
-  adminScopeAccess: typeof adminScopeAccess;
+  rolePermissions: typeof rolePermissions;
   passwordPolicy: typeof passwordPolicy;
   admin: typeof admin;
   adminScope: typeof adminScope;
@@ -486,13 +493,26 @@ interface AdminApiDeps {
   loadOauth2MonitorApi(): typeof import('../oauth-oidc/oauth2_monitor_api');
   loadGrantManagementApi(): typeof import('../oauth-oidc/grant_management_api');
   loadClaimsProvidersApi(): typeof import('../oauth-oidc/claims_providers_api');
+  // The attribute source operations (#94).
+  loadAttributeSourcesApi():
+    typeof import('../attribute-sources/attribute_sources_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
   loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
 
 type RouteApp = typeof app;
 
+/**
+ * The management API at `/admin-api`: every console control as a JSON
+ * operation, over the same action functions and views the console uses, behind
+ * an OAuth 2.0 access-token gate.
+ */
 class AdminApi {
+  /**
+   * Builds the management API over the given dependencies.
+   *
+   * @param deps - the modules it uses, and loaders for the lazily required ones
+   */
   constructor(private readonly deps: AdminApiDeps) {
     deps.log.debug("Entering AdminApi.constructor().");
     deps.log.debug("Leaving AdminApi.constructor().");
@@ -500,6 +520,12 @@ class AdminApi {
 
   // What the composition root passes, from the real modules, with the lazy
   // requires as loaders.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules, with the lazy requires as loaders.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AdminApiDeps {
     log.debug("Entering AdminApi.defaultDeps().");
     log.debug("Leaving AdminApi.defaultDeps().");
@@ -512,9 +538,8 @@ class AdminApi {
       baseUrlOf: baseUrlOf,
       STS: STS,
       stsCrypto: stsCrypto,
-      roles: roles,
       scopePolicy: scopePolicy,
-      adminScopeAccess: adminScopeAccess,
+      rolePermissions: rolePermissions,
       passwordPolicy: passwordPolicy,
       admin: admin,
       adminScope: adminScope,
@@ -578,6 +603,9 @@ class AdminApi {
       loadOauth2MonitorApi: function () {
         return require('../oauth-oidc/oauth2_monitor_api');
       },
+      loadAttributeSourcesApi: function () {
+        return require('../attribute-sources/attribute_sources_api');
+      },
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
       },
@@ -596,6 +624,13 @@ class AdminApi {
   // THE LOAD-TIME WORK, run once for the installed instance (#50, R2): the
   // two tables, the request schemas and the startup banner, in the order
   // this module ran them at load.
+  /**
+   * Runs the load-time work once for the installed instance: builds the two
+   * route tables, compiles the request schemas, registers the console's closed
+   * sets and logs the startup banner.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: AdminApi): void {
     log.debug("Entering AdminApi.wire().");
     PROTOCOL_SETTINGS_OPERATIONS = instance.buildProtocolSettingsOperations();
@@ -606,6 +641,14 @@ class AdminApi {
     log.debug("Leaving AdminApi.wire().");
   }
 
+  /**
+   * Returns a copy of a JSON Schema with what this API does not enforce at the
+   * door taken out: `required`, an enum the handler refuses in its own words,
+   * and with `""` added to every other enum.
+   *
+   * @param node - the schema, or any node inside it
+   * @returns the copy
+   */
   structureOnly(node) {
     const { log } = this.deps;
     const self = this;
@@ -639,15 +682,40 @@ class AdminApi {
     return out;
   }
 
-  compilable(schema) {
-    const { log, spec } = this.deps;
+  /**
+   * Returns a request schema ready for ajv: `structureOnly()` of it, with the
+   * document's named schemas as `components`.
+   *
+   * **`components` IS PASSED IN, AND EVERY CALLER PASSES THE SAME ONE (#365,
+   * 2026-09-30).** It used to be `structureOnly(spec.SCHEMAS)` made here, a
+   * fresh deep copy of the whole components table (about 170 KB) for each of
+   * the 363 validators — and ajv keeps every root it compiled in its cache
+   * for the life of the process, so the copies were never collected: about
+   * 60 MB of every process's heap. The copy is made once, in
+   * `compileRequestSchemas()`, and each root points at it. ajv reads a schema
+   * and never writes to it, so a shared subtree is exactly what the copies
+   * were, 363 times fewer; what each validator accepts and refuses, and the
+   * words it refuses in, are unchanged.
+   *
+   * @param schema - an operation's request schema
+   * @param components - the one `{ schemas: structureOnly(spec.SCHEMAS) }`
+   * @returns the schema to compile
+   */
+  compilable(schema, components) {
+    const { log } = this.deps;
     log.debug("Entering AdminApi.compilable().");
     log.debug("Leaving AdminApi.compilable().");
     return Object.assign({}, this.structureOnly(schema),
-                         { components: { schemas: this.structureOnly(
-                             spec.SCHEMAS) } });
+                         { components: components });
   }
 
+  /**
+   * Returns the key a compiled request validator is held under.
+   *
+   * @param route - the route pattern or path
+   * @param action - the action name, or empty for a plain route
+   * @returns the key
+   */
   validatorKeyOf(route, action) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.validatorKeyOf().");
@@ -655,11 +723,22 @@ class AdminApi {
     return route + '\u0000' + (action || '');
   }
 
+  /**
+   * Compiles every request schema in the route table into a validator.
+   *
+   * A schema that will not compile is logged under `STS-API-0010` and its
+   * operation goes on unvalidated.
+   *
+   * @returns how many validators were built
+   */
   compileRequestSchemas() {
-    const { log, errorCodes } = this.deps;
+    const { log, errorCodes, spec } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.compileRequestSchemas().");
     let built = 0;
+    // ONE copy of the enforced components for every root below (#365; see
+    // `compilable()`).
+    const components = { schemas: self.structureOnly(spec.SCHEMAS) };
     ROUTES.forEach(function (entry) {
       const route = entry.route || entry.path;
       const rows = entry.actions || [];
@@ -669,7 +748,8 @@ class AdminApi {
         }
         try {
           validators.set(self.validatorKeyOf(route, action.action),
-                         ajv.compile(self.compilable(action.requestBody)));
+                         ajv.compile(self.compilable(action.requestBody,
+                                                     components)));
           built = built + 1;
         } catch (e) {
           // A schema this repository wrote that ajv will not compile. Logged by
@@ -685,7 +765,8 @@ class AdminApi {
       if (entry.requestBody) {
         try {
           validators.set(self.validatorKeyOf(route, ''),
-                         ajv.compile(self.compilable(entry.requestBody)));
+                         ajv.compile(self.compilable(entry.requestBody,
+                                                     components)));
           built = built + 1;
         } catch (e) {
           log.error(errorCodes.tag('STS-API-0010') +
@@ -719,6 +800,13 @@ class AdminApi {
   // not matched, and is the handler's to refuse. Returns how many controls
   // hold at least one field.
   // ---------------------------------------------------------------------------
+  /**
+   * Registers the enums each action's request schema declares in
+   * `common/closed_sets.ts` under every console page its route mirrors, so the
+   * console gate holds a form POST to the same sets.
+   *
+   * @returns how many controls hold at least one closed field
+   */
   registerConsoleClosedSets() {
     const { log, spec, closedSets } = this.deps;
     log.debug("Entering AdminApi.registerConsoleClosedSets().");
@@ -772,6 +860,14 @@ class AdminApi {
   // filter spelt wrong answered 200 with every row — the answer to a question
   // nobody asked. Both the route's parameters and its action's are held.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks the request's query parameters against the enums the operation's
+   * route and action declare `in: query`.
+   *
+   * @param entry - the route table entry
+   * @param req - the request
+   * @returns `closedSets.checkQuery()`'s result, `{ ok, ... }`
+   */
   checkQueryEnums(entry, req) {
     const { log, closedSets } = this.deps;
     log.debug("Entering AdminApi.checkQueryEnums().");
@@ -795,6 +891,13 @@ class AdminApi {
   // dropped and the rest is written with dots, because a caller is reading it
   // beside a body they typed rather than resolving a pointer.
   // ---------------------------------------------------------------------------
+  /**
+   * Turns ajv's errors into the refusal sentences this API answers with, paths
+   * written with dots.
+   *
+   * @param errors - ajv's `errors`
+   * @returns one message per error, or one generic message
+   */
   errorsFromAjv(errors) {
     const { log, closedSets } = this.deps;
     log.debug("Entering AdminApi.errorsFromAjv().");
@@ -838,6 +941,15 @@ class AdminApi {
   // exactly as it was before: `withAction()` takes the path parameter and
   // overwrites.
   // ---------------------------------------------------------------------------
+  /**
+   * Validates a request's body against its operation's compiled schema, with
+   * `action` removed first because it is a path segment.
+   *
+   * A handler that owns its body, or an operation with no schema, is accepted.
+   *
+   * @param req - the request
+   * @returns `{ ok: true }`, or `{ ok: false, errors }`
+   */
   checkRequestBody(req) {
     const { log, parseBody } = this.deps;
     log.debug("Entering AdminApi.checkRequestBody().");
@@ -877,6 +989,15 @@ class AdminApi {
   // of those is not decoration: the caller of a mock's admin API is usually a
   // person at a terminal or a test whose failure message is the body, and a 40
   // KB single line is unreadable in both.
+  /**
+   * Sends a JSON reply, pretty-printed and `Cache-Control: no-store`, adding
+   * `protocolEndpoints` to a successful object reply to a GET that mirrors a
+   * Protocols page.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the reply
+   */
   sendJson(res, status, body) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.sendJson(). status=" + status);
@@ -907,6 +1028,14 @@ class AdminApi {
   // it has no directory to race for (the action refuses on its own).
   // Resolves to `{ ok, settle }` or the refusal; inert where nothing can race.
   // ---------------------------------------------------------------------------
+  /**
+   * Claims a name across cluster nodes before a create, through the directory
+   * module if this process has loaded it.
+   *
+   * @param what - the name to claim
+   * @returns a promise of `{ ok, settle }` or the claim's refusal; an inert
+   *   claim when there is no directory in this process
+   */
   claimForCreate(what) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.claimForCreate().");
@@ -936,6 +1065,19 @@ class AdminApi {
   // this API's shape (409, or 503 when the store could not be asked), and `run`
   // handed the claim to settle with the action's outcome.
   // ---------------------------------------------------------------------------
+  /**
+   * Runs an action, claiming its name first when there is one to claim and a
+   * create can race.
+   *
+   * Without a claim `run` is called synchronously. A refused claim is answered
+   * 409 (or 503 when the store could not be asked); a throw after the claim
+   * settles it as failed and answers 500.
+   *
+   * @param res - the response
+   * @param what - the name to claim, or null
+   * @param run - the action, handed the claim to settle
+   * @returns what `run` returns, or a promise when a claim was awaited
+   */
   runClaimed(res, what, run) {
     const { log, createClaims, errorCodes } = this.deps;
     const self = this;
@@ -968,6 +1110,14 @@ class AdminApi {
     });
   }
 
+  /**
+   * Returns the body with `action` set from the path parameter, over whatever
+   * the body carried.
+   *
+   * @param req - the request
+   * @param body - the parsed body
+   * @returns the new body
+   */
   withAction(req, body) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.withAction().");
@@ -978,6 +1128,16 @@ class AdminApi {
   // The two spellings of a list, joined. A JSON body carries one `attributes`
   // array; a form body copied from the console carries `attribute` repeated.
   // Both are accepted for the same reason the console accepts both.
+  /**
+   * Returns a list field in both its spellings joined: a repeated form field
+   * and a JSON array.
+   *
+   * @param req - the request
+   * @param body - the parsed body
+   * @param one - the singular field name
+   * @param many - the plural field name
+   * @returns the names
+   */
   namesOf(req, body, one, many) {
     const { log, admin } = this.deps;
     log.debug("Entering AdminApi.namesOf(). " + one + "/" + many);
@@ -994,6 +1154,12 @@ class AdminApi {
   // the kind's own FIELDS. The prose of the two kinds this service defines is
   // written out; a kind registered later gets the generic sentences, which
   // are true of every kind because every kind implements the same interface.
+  /**
+   * Returns the policies resource's action rows, two per policy kind in
+   * `admin-core/policy_kinds.ts`, their bodies built from each kind's fields.
+   *
+   * @returns the action rows
+   */
   policyKindActions() {
     const { log } = this.deps;
     log.debug("Entering AdminApi.policyKindActions().");
@@ -1115,6 +1281,11 @@ class AdminApi {
   // The two numbers are `admin_views`' — they moved there from the console,
   // which never exported them, so until #70 this read both off `admin` and
   // the document said "maximum: undefined" and "Defaults to undefined".
+  /**
+   * Returns the `page` and `per` query parameters every paged list takes.
+   *
+   * @returns the two parameter objects
+   */
   pagingParameters() {
     const { log, adminViews } = this.deps;
     log.debug("Entering AdminApi.pagingParameters().");
@@ -1149,6 +1320,13 @@ class AdminApi {
   // object answering it is that name with `Paging` on the end. A caller that
   // can read the reply can therefore write the request without a table mapping
   // one set of names onto the other.
+  /**
+   * Returns a drill-down's page parameters: `<name>Page` for each of its lists,
+   * answered by `<name>Paging`.
+   *
+   * @param lists - the lists, each `{ name, description }`
+   * @returns one parameter object per list
+   */
   detailPagingParameters(lists) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.detailPagingParameters().");
@@ -1162,6 +1340,14 @@ class AdminApi {
     });
   }
 
+  /**
+   * Returns the action rows of one claim-set family (custom claims, SAML
+   * attributes or UserInfo claims), from the family's parameters.
+   *
+   * @param family - `sets`, `noun`, `carrier`, `example`, `reserved` and the
+   *   operationIds in `ids`
+   * @returns the action rows
+   */
   claimSetActions(family) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.claimSetActions(). " + family.sets.length +
@@ -1210,6 +1396,48 @@ class AdminApi {
           required: ['set', 'name'],
           examples: [{ set: family.example, name: 'dept',
                        value: 'engineering' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The set as it now stands, in `claims`.' },
+
+      { action: 'add-attribute-claim', operationId: family.ids.addAttribute,
+        summary: 'Add one ' + noun + ' carrying a directory attribute',
+        description: 'The ' + noun + '\'s value is `attribute` on the ' +
+                     'entry of the person the ' + family.carrier + ' is ' +
+                     'about (#94) — any attribute, where the directory-' +
+                     'attribute half of a set offers only the fixed ' +
+                     'catalogue, under the name given here. Only the ' +
+                     'directory, never an invented value: a person whose ' +
+                     'entry lacks it gets no such ' + noun + ', and a lower ' +
+                     'layer of the same name still answers. `multi` ' +
+                     'carries every value. A secret, a binary value or an ' +
+                     'attribute this service keeps (sts*, hoba*, app*, ' +
+                     'pwd*) is refused. Removed by `remove`, by name. The ' +
+                     'same reserved names are refused as for `add`, and a ' +
+                     'directory write that moves the attribute sends CAEP ' +
+                     'token-claims-change to holders of live tokens.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            set: setField,
+            name: { type: 'string' },
+            attribute: { type: 'string',
+                         description: 'The directory attribute.' },
+            multi: { type: 'boolean',
+                     description: 'Every value rather than the first.' },
+            type: { type: 'string',
+                    enum: ['string', 'number', 'boolean', 'json'],
+                    description: 'The JSON type of each value, in a JWT or ' +
+                                 'UserInfo set. Ignored by the SAML sets.' },
+            nameFormat: { type: 'string',
+                          description: 'The SAML 2.0 set only.' },
+            namespace: { type: 'string',
+                         description: 'The SAML 1.1 set only.' }
+          },
+          required: ['set', 'name', 'attribute'],
+          examples: [{ set: family.example, name: 'cost_center',
+                       attribute: 'costCenter' }],
           additionalProperties: false
         },
         responseDescription: 'The set as it now stands, in `claims`.' },
@@ -1411,6 +1639,12 @@ class AdminApi {
   // document cannot tell the difference — `admin_api_spec.ts` reads this array
   // and nothing else.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the read-only GET operations for the protocol pages' settings, one
+   * per page, built from a table.
+   *
+   * @returns the operations
+   */
   buildProtocolSettingsOperations(): any[] {
     const { log, admin } = this.deps;
     const self = this;
@@ -1711,7 +1945,12 @@ class AdminApi {
                      'count of processes answering requests there, and ' +
                      '`lastStallMs`, the event-loop stall that explains a ' +
                      'late heartbeat), which is what the console draws its ' +
-                     'member list from; the capability ' +
+                     'member list from, and `status.members`, the same rows ' +
+                     'folded BY NAME as the console draws them (`running` ' +
+                     'node ids; `restarts`, per running name, how many ' +
+                     'earlier rows it left and when the last ended; ' +
+                     '`leftOrExpired`, one row per name with no running ' +
+                     'member, with `earlierLives`); the capability ' +
                      'table active-active mode is held to ' +
                      '(`status.self.capabilities`, with `missing` and ' +
                      '`acceptedMissing`); where each shared secret\'s value ' +
@@ -1797,10 +2036,14 @@ class AdminApi {
                handler: function (req, res) {
                  log.debug("Entering the management API " + row.console + " " +
                      "endpoint.");
-                 self.sendJson(res, 200,
-                               admin.protocolSettingsJsonFor(row.console));
-                 log.debug("Leaving the management API " + row.console + " " +
-                     "endpoint.");
+                 // Through the row's `prepare` step, which the Cluster page
+                 // has (#361): the same answer the console draws.
+                 admin.preparedSettingsJsonFor(row.console).then(
+                   function (json) {
+                     self.sendJson(res, 200, json);
+                     log.debug("Leaving the management API " + row.console +
+                               " endpoint.");
+                   });
                } };
     });
     log.debug("Leaving AdminApi.buildProtocolSettingsOperations().");
@@ -1822,6 +2065,13 @@ class AdminApi {
   //
   // The TYPE comes from config.js's own row for the setting, so a boolean does
   // not arrive in the document as an integer.
+  /**
+   * Returns the request-body properties of a narrow settings door, built from
+   * `config.js`'s row for each key (type, label, and enum set).
+   *
+   * @param keys - the setting keys the door accepts
+   * @returns the properties object
+   */
   narrowDoorProperties(keys) {
     const { log, config } = this.deps;
     log.debug("Entering AdminApi.narrowDoorProperties(). " + keys.length +
@@ -1863,6 +2113,12 @@ class AdminApi {
   // document a caller trusts most. It answers with the empty string when
   // nothing is family-scoped, so removing the last such row removes the
   // paragraph.
+  /**
+   * Returns the paragraph naming the application attributes scoped to a
+   * protocol family, generated from `applications.SCHEMA`.
+   *
+   * @returns the paragraph, or the empty string when none is family-scoped
+   */
   familyScopeNote() {
     const { log, applications } = this.deps;
     log.debug("Entering AdminApi.familyScopeNote().");
@@ -1907,6 +2163,12 @@ class AdminApi {
   // application `kind` filter missing three kinds, `revoke-kind` missing
   // `gnap_access_token`, `add-value` missing two multi-valued fields).
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the closed sets the route table declares that are held in other
+   * modules' tables, read from those tables once per build.
+   *
+   * @returns the sets, keyed by name
+   */
   closedLists() {
     const { log, riskDatasets, mailTemplates, identityAssurance, federation,
             applications, stats, audit, delegation, usedAssertions,
@@ -2001,6 +2263,12 @@ class AdminApi {
     return out;
   }
 
+  /**
+   * Builds the route table: every operation of this API, including the rows the
+   * family modules declare.
+   *
+   * @returns the table
+   */
   buildRoutes(): any[] {
     const { log, baseUrlOf, config, spec, adminViews, errorCodes,
             encryptionAdmin, databaseAdmin, secretsAdmin, debuggerAdmin,
@@ -2009,6 +2277,7 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
+            loadAttributeSourcesApi,
             loadProviderCommandsApi, loadSsfTransmittersApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
@@ -2240,6 +2509,154 @@ class AdminApi {
           self.sendJson(res, 200, encryptionAdmin.encryptionView());
           log.debug("Leaving the management API encryption report endpoint.");
         } },
+
+      // ---------------------------------------------------------------------
+      // CELLS (#98). `cellsAdmin.cellsView()` — the function `/admin/cells`
+      // draws — and `peopleOf()`, another cell's residents under its release
+      // policy. Neither changes anything; the Cells settings are written
+      // through `POST /admin-api/config/set`. A call naming `?cell=` on any
+      // operation is relayed to that cell whole (common/cell_placement.ts).
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/cells', tag: 'Service',
+        operationId: 'getCells',
+        summary: 'The cells of this service, the store\'s tiers and the ' +
+                 'channel between cells',
+        description: 'What this cell knows about the deployment (#98): ' +
+                     '`multi` (false in single-cell mode), `cell`, ' +
+                     '`jurisdiction`, `peers` (each `id`, `jurisdiction`, ' +
+                     '`reachable` and `answeredMs` or `error` — never an ' +
+                     'address), `store` (`tiered`, `globalReplicaLagMs`, ' +
+                     'the global change-log follower, the routing index\'s ' +
+                     'counters and `peoplePerCell`), `channel` (the ' +
+                     'listener, this process\'s certificate, the operations ' +
+                     'and the counters), `placement` (requests relayed and ' +
+                     'served here), `sessions` (projections held here and ' +
+                     'exports made from here) and `settings`.',
+        mirrors: 'GET /admin/cells',
+        responseDescription: 'The cell map.',
+        responseSchema: { type: 'object',
+          description: 'As described above.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API cells endpoint.");
+          cellsAdmin.cellsView().then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API cells endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API cells endpoint: " +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-CELL-0191');
+            self.sendJson(res, 500, { error: 'server_error',
+                                      error_description: String(
+                                        (e && e.message) || e) });
+          });
+        } },
+      { method: 'GET', path: BASE + '/cells/people', tag: 'Service',
+        operationId: 'getCellPeople',
+        summary: 'A page of another cell\'s residents, where its release ' +
+                 'policy permits',
+        description: 'Asks cell `cell` for a page of the people homed ' +
+                     'there in the realm of the call (#98 D11), after the ' +
+                     'login name `after`. The answering cell releases them ' +
+                     'only when its release policy permits its people to be ' +
+                     'listed from this cell\'s jurisdiction; otherwise ' +
+                     '`refused` says why. Each person is `name`, `uuid` ' +
+                     'and `displayName` and nothing else.',
+        mirrors: 'GET /admin/cells?people=',
+        parameters: [
+          { name: 'cell', in: 'query', required: true,
+            schema: { type: 'string', minLength: 1, maxLength: 16 },
+            description: 'The other cell\'s id.' },
+          { name: 'after', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'The last login name of the previous page.' }
+        ],
+        responseDescription: '`{ cell, people, next }` or `{ cell, ' +
+                             'refused }`.',
+        responseSchema: { type: 'object',
+          description: 'A page of people, or a refusal.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API cell people endpoint.");
+          // The cell that relayed this call here, when it did (`?cell=`
+          // naming this one, D11): this cell then answers its own residents.
+          cellsAdmin.peopleOf(String((req.query && req.query.cell) || ''),
+                              String((req.query && req.query.after) || ''),
+                              String((req.stsCellRelay &&
+                                      req.stsCellRelay.from) || ''))
+            .then(function (view) {
+              self.sendJson(res, 200, view);
+              log.debug("Leaving the management API cell people endpoint.");
+            });
+        } },
+
+      // AN ACTION RESOURCE RATHER THAN A BARE POST (2026-09-28), for
+      // `/keys/:action`'s reason: `sts_admin_api_operations.js` probes every
+      // POST resource with an action nobody has heard of and requires a 400
+      // naming the ones that exist, and a literal `/cells/rehome` answered
+      // Express's 404. One action today.
+      { method: 'POST', route: BASE + '/cells/:action', tag: 'Service',
+        mirrors: 'POST /admin/cells (action=rehome)',
+        handler: function (req, res) {
+          log.debug("Entering the management API rehome endpoint.");
+          const body = self.withAction(req, parseBody(req));
+          if (body.action !== 'rehome') {
+            // The sentence the suite reads — `/keys/:action`'s shape.
+            errorCodes.mark(res, 'STS-API-0014');
+            self.sendJson(res, 400, { ok: false, errors: [
+              'Unknown action "' + body.action + '". The actions here are: ' +
+              'rehome.'] });
+            log.debug("Leaving the management API rehome endpoint. " +
+                      "Unknown action.");
+            return;
+          }
+          cellsAdmin.rehomeAction(String((body && body.username) || ''),
+                                  String((body && body.target) || ''),
+                                  'the management API')
+            .then(function (result) {
+              if (!result.ok) {
+                // The refusal's own code, from cell_rehome.ts.
+                errorCodes.mark(res, result.code || 'STS-CELL-0192');
+                self.sendJson(res, 400, result);
+                log.debug("Leaving the management API rehome endpoint. " +
+                          "Refused.");
+                return;
+              }
+              self.sendJson(res, 200, result);
+              log.debug("Leaving the management API rehome endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API rehome endpoint: " +
+                        ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-CELL-0192');
+              self.sendJson(res, 500, { ok: false, errors: [String(
+                (e && e.message) || e)] });
+            });
+        },
+        actions: [
+          { action: 'rehome', operationId: 'rehomePerson',
+            summary: 'Move a person homed in this cell to another cell',
+            description: 'Re-homing (#98): everything the person holds is ' +
+                         'ended first — here and in every cell holding an ' +
+                         'export of their session — then their entry, ' +
+                         'devices and group memberships are sent to ' +
+                         '`target` with their entryUUID kept and their ' +
+                         'credentials sealed again under that cell\'s key, ' +
+                         'the routing index is moved, and they are taken ' +
+                         'out of this cell. Call it at the cell that holds ' +
+                         'them (name it with `?cell=` from anywhere). ' +
+                         '`target` must be in a jurisdiction the realm may ' +
+                         'place people in.',
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string', minLength: 1, maxLength: 256 },
+                target: { type: 'string', minLength: 1, maxLength: 16 }
+              },
+              required: ['username', 'target'],
+              examples: [{ username: 'alice', target: 'cac1' }],
+              additionalProperties: false
+            },
+            responseDescription: '`{ ok: true, target }`, or a refusal ' +
+                                 'naming why.' }
+        ] },
 
       // ---------------------------------------------------------------------
       // THE MODE (#181). `modeAdmin.modeView()` — `common/mode.js`'s
@@ -3365,7 +3782,9 @@ class AdminApi {
                      '(STS-DEVICE-0007) and the rest still apply. **The ' +
                      'access token must carry `device:compliance`**, which ' +
                      'the token endpoint issues only to a client whose ' +
-                     'oauthAllowedScope declares it, in both modes; an ' +
+                     'oauthAllowedScope declares it, in both modes, and ' +
+                     'that HOLDS the DEVICE_COMPLIANCE role (#309, seeded ' +
+                     'with no member — add the feed on /admin/roles); an ' +
                      '`admin:write` token is refused here, so a feed\'s ' +
                      'reports are always a feed\'s.',
         // NO CONSOLE FORM POSTS AS A FEED, and saying it mirrored the device
@@ -3677,6 +4096,212 @@ class AdminApi {
           log.debug("Entering the management API caches endpoint.");
           self.sendJson(res, 200, cachesAdmin.cachesView(req.query));
           log.debug("Leaving the management API caches endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // THE WORKER POOLS (#327). `workerPoolsAdmin.workerPoolsView()` — the
+      // function `/admin/worker-pools?format=json` answers — and nothing
+      // else. Pinned to the front process with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED), because only it holds the
+      // pools.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/worker-pools', tag: 'Service',
+        operationId: 'getWorkerPools',
+        summary: 'The request and hosted-surface worker pools of this node',
+        description: 'Always `generatedAt`, `node`, `pid` (the front ' +
+                     'process that answered), `mainThread` (true: drawn ' +
+                     'on its main thread, which holds the pools), ' +
+                     '`scope` (`node`) and `scopeText`; then `pools`, ' +
+                     'two of them, `id` ' +
+                     '`request` and `surface`, each with `title`, ' +
+                     '`module`, `setting`, `state` (`off`, ' +
+                     '`not-started`, `not-dispatching`, `running` or ' +
+                     '`given-up`) and `stateText` saying it in a ' +
+                     'sentence, `maxWorkers` (the configured count), ' +
+                     '`initialWorkers` (what the pool started with), ' +
+                     '`currentWorkers`, `busyWorkers`, `freeWorkers`, ' +
+                     '`restarts` (`forked`, `crashed` — an exit nobody ' +
+                     'asked for — `failedStarts` among them, `replaced` ' +
+                     'and `stopped`) and `responseTime` (`answered`, ' +
+                     '`averageMs`, `recentAverageMs`, `maxMs`, dispatch to ' +
+                     'answer), and its `workers` — each a worker THREAD ' +
+                     'of the front process since #364 — (`threadId`, ' +
+                     '`slot`, `ready`, `busy`, `inFlight`, `served`, ' +
+                     '`upSeconds`). `restarts.forked` counts the threads ' +
+                     'started. A request pool at the default ' +
+                     '`workers.requestCount` of 1 is `off` where the ' +
+                     'store cannot coordinate, and `stateText` says so. ' +
+                     'There is ' +
+                     'no post-quantum pool since #363: post-quantum ' +
+                     'signing and scrypt run on libuv\'s thread pool ' +
+                     'inside each process. Every count is ' +
+                     'since the process started. THE FIGURES ARE THIS ' +
+                     'NODE\'S at the top level (`node` names it; never a ' +
+                     'host or an address). In a cluster, `nodes` has a ' +
+                     'section per node — this one live, every other from ' +
+                     'the snapshot it writes every 15 s, each with ' +
+                     '`name`, `self`, `state` (`live`, `stale` past 45 s, ' +
+                     '`gone` from cluster membership, `no-snapshot`), ' +
+                     '`stateText`, `ageSeconds` and `view` — and `totals` ' +
+                     'sums each pool over the nodes not gone; `cluster` ' +
+                     'says whether there is one. `answeredBy` names the ' +
+                     'node that answered (#332). A service operation: a ' +
+                     'realm\'s own administrator is refused it.',
+        mirrors: 'GET /admin/worker-pools',
+        parameters: [
+          { name: 'node', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
+                         'node-a, node-b, …), to answer about that node ' +
+                         'alone: its view at the top, `nodes` holding its ' +
+                         'one section. An unknown name is 404 with the ' +
+                         'names there are (#332).' }
+        ],
+        responseDescription: 'The two pools.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `node`, `pid`, `scope`, `scopeText`, ' +
+                       '`pools`, `answeredBy`, `state`, `cluster`, `nodes` ' +
+                       'and `totals`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API worker pools endpoint.");
+          workerPoolsAdmin.workerPoolsView({ node: req.query && req.query.node
+            ? String(req.query.node) : '' }).then(function (view) {
+            if (view.notFound) {
+              errorCodes.mark(res, 'STS-CORE-0126');
+              self.sendJson(res, 404, { ok: false, errors: [
+                'There is no node named ' + view.notFound + '.'],
+                nodes: view.nodeNames });
+              return;
+            }
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API worker pools " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-WORKER-0044') + 'The worker ' +
+                      'pools report could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-WORKER-0044');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The worker pools report could not be built.'] });
+          });
+          log.debug("Leaving the management API worker pools endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // NODE HEALTH (#329). `nodeHealthAdmin.nodeHealthView()` — the
+      // function `/admin/node-health?format=json` answers — and nothing
+      // else. Pinned to the front process with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED), because only it knows every
+      // process of the node.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/node-health', tag: 'Service',
+        operationId: 'getNodeHealth',
+        summary: 'The CPU and memory of this node\'s container, and the ' +
+                 'Node.js memory of each of its processes and worker ' +
+                 'threads',
+        description: 'Always `generatedAt`, `node`, `pid` (the front ' +
+                     'process that answered), `scope` (`node`), ' +
+                     '`scopeText` and `cgroup` (the cgroup v2 directory ' +
+                     'read, or null). `cpu`: `available`, and either ' +
+                     '`unavailableText` or `utilisationPercent` — CPU time ' +
+                     'from `cpu.stat` over `windowSeconds` (`sampled` ' +
+                     '`since-previous-sample` or `fresh-sample`), as a ' +
+                     'share of `percentOfVcpus` — `coresUsed`, ' +
+                     '`limitVcpus` (from `cpu.max`; null for no quota, ' +
+                     'when the share is of `os.availableParallelism()`, ' +
+                     'which `limitText` says), `usageSeconds`, ' +
+                     '`userSeconds`, `systemSeconds` and `throttling`. ' +
+                     'Both say which cgroup they came from ' +
+                     '(`cgroupVersion`, 2 or 1); a limit that means none ' +
+                     'is the ECS task\'s where the agent answers ' +
+                     '(`limitSource` `ecs-task`), and with no cgroup at ' +
+                     'all the figures are the agent\'s (`fromEcs`). ' +
+                     '`memory`: `available`, and either `unavailableText` ' +
+                     'or `currentBytes` (`memory.current`), `limitBytes` ' +
+                     '(`memory.max`; null for none), ' +
+                     '`utilisationPercent`, `peakBytes`, `anonBytes`, ' +
+                     '`fileBytes`, `kernelBytes` and `oomKills`. ' +
+                     '`processes`: `rows`, each with `kind` (`process` or ' +
+                     '`thread`), `pid` and `threadId` — the front process ' +
+                     '(`process.memoryUsage()`: `rssBytes`, ' +
+                     '`heapUsedBytes`, `heapTotalBytes`, `externalBytes`, ' +
+                     '`arrayBuffersBytes`, and CPU time; its resident ' +
+                     'size and CPU time are the whole process\'s, every ' +
+                     'thread\'s included, `processWide` says so); each ' +
+                     'request and hosted-surface worker THREAD of it ' +
+                     '(#364) that answered within a second, with its own ' +
+                     'heap figures and `rssBytes` and CPU time null, ' +
+                     'because in a thread those are the process\'s; and ' +
+                     'the debugger\'s api child, the five figures ' +
+                     'when it answered within half ' +
+                     'a second, and otherwise `rssBytes` and ' +
+                     '`peakRssBytes` from `/proc/<pid>/status`, the heap ' +
+                     'figures null and `notReported` saying why — ' +
+                     '`unanswered` (worker threads that did not answer, by ' +
+                     '`threadId`; a thread has no /proc entry to fall ' +
+                     'back on), and `totals` (`rows`, `processes`, ' +
+                     '`workerThreads`, `rssBytes` over processes only, ' +
+                     '`processesWithRss`, the heap sums over every ' +
+                     'isolate and `isolatesWithHeap`). `ecs`: the ECS task ' +
+                     'metadata endpoint\'s `taskLimits` and `stats` where ' +
+                     '`ECS_CONTAINER_METADATA_URI_V4` is set, and ' +
+                     '`available: false` with a sentence where it is not. ' +
+                     '`machine`: `os.loadavg()`, `os.totalmem()`, ' +
+                     '`os.freemem()` and the CPU count, which describe the ' +
+                     'machine (on Fargate the micro-VM) and NOT the ' +
+                     'container. THE TOP-LEVEL FIGURES ARE THIS NODE\'S ' +
+                     '(`node` names it; never a host or an address). In a ' +
+                     'cluster, `nodes` has a section per node — this one ' +
+                     'live, every other from the snapshot it writes every ' +
+                     '15 s, each with `name`, `self`, `state` (`live`, ' +
+                     '`stale` past 45 s, `gone` from cluster membership, ' +
+                     '`no-snapshot`), `stateText`, `ageSeconds` and `view` ' +
+                     '— and `totals` sums container memory and its limit, ' +
+                     'CPU, the processes and the worker threads over the ' +
+                     'nodes not gone; ' +
+                     '`cluster` says whether there is one. `answeredBy` ' +
+                     'names the node that answered (#332). A service ' +
+                     'operation: a realm\'s own administrator is refused ' +
+                     'it.',
+        mirrors: 'GET /admin/node-health',
+        parameters: [
+          { name: 'node', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
+                         'node-a, node-b, …), to answer about that node ' +
+                         'alone: its view at the top, `nodes` holding its ' +
+                         'one section. An unknown name is 404 with the ' +
+                         'names there are (#332).' }
+        ],
+        responseDescription: 'The container and its processes.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `node`, `pid`, `scope`, `scopeText`, ' +
+                       '`cgroup`, `cpu`, `memory`, `processes`, `ecs`, ' +
+                       '`machine`, `answeredBy`, `state`, `cluster`, ' +
+                       '`nodes` and `totals`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API node health endpoint.");
+          nodeHealthAdmin.nodeHealthView({ node: req.query && req.query.node
+            ? String(req.query.node) : '' }).then(function (view) {
+            if (view.notFound) {
+              errorCodes.mark(res, 'STS-CORE-0126');
+              self.sendJson(res, 404, { ok: false, errors: [
+                'There is no node named ' + view.notFound + '.'],
+                nodes: view.nodeNames });
+              return;
+            }
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API node health " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-CORE-0124') + 'The node health ' +
+                      'report could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-CORE-0124');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The node health report could not be built.'] });
+          });
+          log.debug("Leaving the management API node health endpoint.");
         } },
 
       // ---------------------------------------------------------------------
@@ -4835,7 +5460,27 @@ class AdminApi {
                                         'it cannot be mailed the link is ' +
                                         'returned as with `show` (the ' +
                                         'default), with `mailError` saying ' +
-                                        'why.' }
+                                        'why.' },
+                // THE HOME CELL (#98 D1), which `cell_placement.ts`'s
+                // creation claim reads before this operation runs: a cell
+                // other than the serving one is relayed there whole. It was
+                // read there and refused HERE — not a member of this schema —
+                // at the cell it was relayed to, so no creation naming
+                // another cell could succeed until the `cells` mode's first
+                // run (2026-09-28, tests/vendored/sts_cells_routing.js).
+                homeCell: { type: 'string', maxLength: 16,
+                            description: 'Only when this service is ' +
+                                         'deployed as cells (#98): the id ' +
+                                         'of the cell the person is homed ' +
+                                         'in. Empty means the realm\'s ' +
+                                         '`cells.homeCell`, or the cell ' +
+                                         'that answers. Another cell\'s ' +
+                                         'id makes the creation THERE; a ' +
+                                         'cell the service does not have, ' +
+                                         'or one in a jurisdiction the ' +
+                                         'realm does not allow, is ' +
+                                         'refused 400. Ignored in ' +
+                                         'single-cell mode.' }
               },
               required: ['username'],
               examples: [{ username: 'rcbj' },
@@ -17533,11 +18178,46 @@ class AdminApi {
                 role: { type: 'string', description: 'The role\'s name.' },
                 description: { type: 'string',
                                description:
-                                 'What it is for, for the next person.' }
+                                 'What it is for, for the next person.' },
+                application: { type: 'string',
+                               description: 'The ONE application this role ' +
+                                            'belongs to (#310), by its ' +
+                                            'identifier. The role is ' +
+                                            'registered as `<role>@' +
+                                            '<application>` — two ' +
+                                            'applications may each have a ' +
+                                            '`reader` — and a token or ' +
+                                            'assertion for that ' +
+                                            'application carries it as ' +
+                                            '`<role>`, no other ' +
+                                            'application\'s at all. Omit it ' +
+                                            'for a realm-wide role, whose ' +
+                                            'name may not contain `@`.' },
+                displayName: { type: 'string',
+                               description: 'A name for people to read ' +
+                                            '(#93). The role\'s name is ' +
+                                            'still what a token carries; ' +
+                                            'this is its label. Optional.' },
+                memberTypes: { type: 'array',
+                               items: { type: 'string',
+                                        enum: roles.MEMBER_TYPES },
+                               description: 'Who may hold it (#93): `user` ' +
+                                            '(people, directly or through a ' +
+                                            'group) and `application` (an ' +
+                                            'application as itself). Empty ' +
+                                            'is both. A member of an ' +
+                                            'excluded kind is refused, ' +
+                                            'already held or added later; ' +
+                                            'the two console roles cannot ' +
+                                            'be restricted. Omitted, both.' }
               },
               required: ['role'],
               examples: [{ role: 'staff',
-                           description: 'People who work here' }],
+                           description: 'People who work here' },
+                         { role: 'reader', application: 'payroll',
+                           description: 'May read payroll',
+                           displayName: 'Payroll reader',
+                           memberTypes: ['application'] }],
               additionalProperties: false
             },
             responseDescription: 'The role that was made.' },
@@ -17572,9 +18252,11 @@ class AdminApi {
                                  'now require something nobody can hold.' },
 
           { action: 'describe-role', operationId: 'describeRole',
-            summary: 'Change what a role says it is for',
-            description: 'Replaces the `description` and leaves the ' +
-                         'membership exactly as it was. It is an action of ' +
+            summary: 'Change what a role says it is for, and who may hold it',
+            description: 'Replaces the `description` — and, where given, the ' +
+                         '`displayName` and `memberTypes` (#93) — and ' +
+                         'leaves the membership exactly as it was. It is an ' +
+                         'action of ' +
                          'its own rather than a field on ' +
                          '`create-role` because creating an ' +
                          'existing role is refused: roles are edited in place.',
@@ -17585,7 +18267,27 @@ class AdminApi {
                 role: { type: 'string', description: 'The role.' },
                 description: { type: 'string',
                                description: 'The new description. An empty ' +
-                                            'string clears it.' }
+                                            'string clears it.' },
+                displayName: { type: 'string',
+                               description: 'A name for people to read ' +
+                                            '(#93). The role\'s name is ' +
+                                            'still what a token carries; ' +
+                                            'this is its label. Omitted, ' +
+                                            'it is kept; an empty string ' +
+                                            'clears it.' },
+                memberTypes: { type: 'array',
+                               items: { type: 'string',
+                                        enum: roles.MEMBER_TYPES },
+                               description: 'Who may hold it (#93): `user` ' +
+                                            '(people, directly or through a ' +
+                                            'group) and `application` (an ' +
+                                            'application as itself). Empty ' +
+                                            'is both. A member of an ' +
+                                            'excluded kind is refused, ' +
+                                            'already held or added later; ' +
+                                            'the two console roles cannot ' +
+                                            'be restricted. Omitted, they ' +
+                                            'are kept.' }
               },
               required: ['role'],
               examples: [{ role: 'staff',
@@ -17669,7 +18371,67 @@ class AdminApi {
               examples: [{ role: 'staff', kind: 'user', member: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Who no longer holds what.' }
+            responseDescription: 'Who no longer holds what.' },
+
+          { action: 'add-permission', operationId: 'addRolePermission',
+            summary: 'Let a role authorize a permission',
+            description: 'Adds one value to the role\'s `rolePermission` ' +
+                         '(#303). **A scope is a request and a role is what ' +
+                         'authorizes it**: a permission its resource ' +
+                         'application GATES (`oauthRoleGatedPermission`) is ' +
+                         'issued only to a subject — a person, or an ' +
+                         'application on `client_credentials` — holding a ' +
+                         'role that names it, and left off the token ' +
+                         'otherwise.\n\n`permission` is the full ' +
+                         'identifier a client asks for: the resource\'s ' +
+                         '`oauthPermissionBaseUri` followed by the name. It ' +
+                         'must be DEFINED by an application in this realm ' +
+                         'first. `gated: false` in the reply means the ' +
+                         'resource does not gate it yet, so the role changes ' +
+                         'nothing until it does.\n\n**The native ' +
+                         'permissions `admin:read` and `admin:write` are ' +
+                         'refused**: they are authorized by the console ' +
+                         'roles ADMIN_READ and ADMIN_WRITE alone, whose ' +
+                         'permissions are fixed. Put an application in one ' +
+                         'of those with `add-member`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                permission: { type: 'string',
+                              description: 'The permission identifier, ' +
+                                           'base + name.' }
+              },
+              required: ['role', 'permission'],
+              examples: [{ role: 'payroll-reader',
+                           permission: 'https://payroll.example/read' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What the role now authorizes, and whether ' +
+                                 'its resource gates it.' },
+
+          { action: 'remove-permission', operationId: 'removeRolePermission',
+            summary: 'Stop a role authorizing a permission',
+            description: 'Removes one value from the role\'s ' +
+                         '`rolePermission` (#303). The next issuance is ' +
+                         'decided without it; a token already issued keeps ' +
+                         'what it carries, except at `/admin-api`, whose ' +
+                         'gate asks the roles again on every call.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                permission: { type: 'string',
+                              description: 'The permission identifier.' }
+              },
+              required: ['role', 'permission'],
+              examples: [{ role: 'payroll-reader',
+                           permission: 'https://payroll.example/read' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What the role no longer authorizes.' }
         ] },
 
       // -----------------------------------------------------------------------
@@ -18750,6 +19512,9 @@ class AdminApi {
       // CLAIMS PROVIDERS (#147): /admin/claim-providers' twin, in the same
       // shape.
       ...loadClaimsProvidersApi().ROUTES,
+      // THE ATTRIBUTE SOURCES (#94): the register and its six acts, the
+      // console's own (`attribute-sources/attribute_sources_api.ts`).
+      ...loadAttributeSourcesApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,
@@ -18763,6 +19528,12 @@ class AdminApi {
   // Every operation, flattened, for the index. The same walk buildSpec() does,
   // and deliberately not a second list: an index that could disagree with the
   // document would be the first thing to go stale.
+  /**
+   * Returns every operation flattened, for the index: method, path,
+   * operationId, summary and the console control it mirrors.
+   *
+   * @returns the operations
+   */
   operationSummaries() {
     const { log } = this.deps;
     log.debug("Entering AdminApi.operationSummaries().");
@@ -18845,17 +19616,22 @@ class AdminApi {
   //     replayable here; that is the whole purpose of `aud` and it is the check
   //     most often left out.
   //   * A TOKEN WITHOUT THE SCOPE THE OPERATION NEEDS — 403 from the POLICY,
-  //     not from this code. The scopes become the built-in ADMIN_READ and
-  //     ADMIN_WRITE roles (see `common/roles.js`) and the XACML access-control
-  //     document asks for the one the action requires, so what this surface
-  //     demands is stated where every other access decision in this service is
-  //     stated rather than in an `if` here.
+  //     not from this code. ADMIN_READ and ADMIN_WRITE are CONFIGURED roles
+  //     since #303, authorizing admin:read and admin:write; the gate hands the
+  //     policy the roles the token's subject holds now less those whose
+  //     permissions the token does not carry (held ∩ carried,
+  //     `common/role_permissions.ts`), and the XACML access-control document
+  //     asks for the one the action requires — so what this surface demands
+  //     is stated where every other access decision in this service is stated
+  //     rather than in an `if` here.
   //
-  // THE SCOPE IS NOT THE ROLE AND THE MAPPING IS DELIBERATE. A scope is what a
-  // client asked for and the authorization server granted; a role is what a
-  // policy names. Keeping them apart is what lets a deployment write "a read of
-  // the management API needs ADMIN_READ" without the document knowing that
-  // OAuth exists.
+  // THE SCOPE IS NOT THE ROLE, AND SINCE #303 NEITHER IS MADE FROM THE OTHER.
+  // A scope is what a client asked for and the authorization server granted;
+  // a role is what a subject holds and a policy names. Until #303 the role
+  // was READ OFF the scope, which made the scope the authorization — the
+  // pattern #88 removes. Keeping them apart is still what lets a deployment
+  // write "a read of the management API needs ADMIN_READ" without the
+  // document knowing that OAuth exists.
   // ---------------------------------------------------------------------------
   // BOTH SCHEMES SINCE #34 (2026-09-15). It read `Bearer` alone until then, so
   // a DPoP-bound token presented here — with `Authorization: DPoP` — counted as
@@ -18864,6 +19640,13 @@ class AdminApi {
   // thing. `scheme` is returned with the value because the gate below has to
   // refuse a BOUND token presented as Bearer, and that is a different refusal
   // from a token that does not verify.
+  /**
+   * Returns the access token the request presents in `Authorization`, and
+   * whether as `Bearer` or `DPoP`.
+   *
+   * @param req - the request
+   * @returns `{ token, scheme }`, both empty when none is presented
+   */
   presentedTokenOf(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.presentedTokenOf().");
@@ -18877,6 +19660,12 @@ class AdminApi {
     return { token: matched[2].trim(), scheme: matched[1].toLowerCase() };
   }
 
+  /**
+   * Returns the access token the request presents, of either scheme.
+   *
+   * @param req - the request
+   * @returns the token, or the empty string
+   */
   bearerOf(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.bearerOf().");
@@ -18893,6 +19682,14 @@ class AdminApi {
   // see a request, so taking it as the only answer would refuse every token
   // minted under another name for this same process. An operator who sets a
   // value pins that one value, as before.
+  /**
+   * Returns the audiences a token here may name: the pinned
+   * `adminApi.audience`, or, while that is at its default, the configured base
+   * and `/admin-api` under the host the request arrived on.
+   *
+   * @param req - the request
+   * @returns the accepted audiences
+   */
   wantedAudiences(req) {
     const { log, config, realms, baseUrlOf } = this.deps;
     log.debug("Entering AdminApi.wantedAudiences().");
@@ -18924,6 +19721,13 @@ class AdminApi {
   // The one audience a refusal or a 401 names: the request-relative one where
   // it is accepted, because that is the `resource` the caller reading the
   // message can actually ask for under the name it used.
+  /**
+   * Returns the one audience a refusal names: the request-relative one where it
+   * is accepted.
+   *
+   * @param req - the request
+   * @returns the audience
+   */
   wantedAudience(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.wantedAudience().");
@@ -18932,6 +19736,13 @@ class AdminApi {
     return wanted[wanted.length - 1];
   }
 
+  /**
+   * Says whether a token's `aud` names one of the accepted audiences.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns whether it does
+   */
   audienceAccepted(claims, req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.audienceAccepted().");
@@ -18966,6 +19777,15 @@ class AdminApi {
   // ASKED IN THE DEFAULT REALM, because that realm's key verified the token and
   // a pinned `oauth2.issuer` is read per realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a token's `iss` is an issuer one of this service's
+   * authorization servers publishes at one of the addresses this API answers
+   * under (RFC 9068 section 4), asked in the default realm.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns whether it is
+   */
   issuerAccepted(claims, req) {
     const { log, realms, baseUrlOf, config, jwtAccessToken } = this.deps;
     const self = this;
@@ -18997,6 +19817,14 @@ class AdminApi {
   // ---------------------------------------------------------------------------
 
   // Its issuer is THIS realm's: a hosted issuer under the realm's own base.
+  /**
+   * Says whether a realm token's `iss` is a hosted issuer under the realm's own
+   * base.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns whether it is
+   */
   realmIssuerAccepted(claims, req) {
     const { log, jwtAccessToken, baseUrlOf } = this.deps;
     log.debug("Entering AdminApi.realmIssuerAccepted().");
@@ -19009,6 +19837,13 @@ class AdminApi {
   // the realm prefix, which is what `resource=<base>/realm/<id>/admin-api` at
   // that realm's token endpoint gives. `adminApi.audience` pins the SERVICE's
   // audience and is not consulted: it names the unprefixed API.
+  /**
+   * Says whether a realm token's `aud` names this realm's management API.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns whether it does
+   */
   realmAudienceAccepted(claims, req) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminApi.realmAudienceAccepted().");
@@ -19022,6 +19857,13 @@ class AdminApi {
 
   // Whether this request is the MDM feed (#164 phase 3), `POST
   // /admin-api/device-compliance` — `req.path` is below BASE inside the gate.
+  /**
+   * Says whether the request is the MDM feed, `POST
+   * /admin-api/device-compliance`.
+   *
+   * @param req - the request
+   * @returns whether it is
+   */
   isDeviceComplianceFeed(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.isDeviceComplianceFeed().");
@@ -19036,6 +19878,13 @@ class AdminApi {
   // `/admin/pki`, `/admin-api/config/set-many` one of `set-many` to
   // `/admin/config`. An action route is recognised off ROUTES, so a path
   // segment is only ever an action where this API declares one.
+  /**
+   * Returns the console operation a request mirrors: the `/admin` path and the
+   * action it names.
+   *
+   * @param req - the request
+   * @returns `{ path, action }`
+   */
   consoleOperationOf(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleOperationOf().");
@@ -19076,6 +19925,16 @@ class AdminApi {
   // already holds. The seeded `sts-management-api` and `sts-admin-console`
   // declare both in every realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Splits a token's scopes into those its client still declares and the
+   * `admin:*` and `device:compliance` scopes it no longer does, asked in the
+   * realm that issued the token.
+   *
+   * @param claims - the token's claims
+   * @param tokenRealm - the id of the realm that issued the token
+   * @param scopes - the token's scopes
+   * @returns `{ kept, undeclared }`
+   */
   declaredAdminScopes(claims, tokenRealm, scopes) {
     const { log, realms, scopePolicy } = this.deps;
     log.debug("Entering AdminApi.declaredAdminScopes().");
@@ -19100,6 +19959,14 @@ class AdminApi {
   // `{ code, detail }`. Which CLIENT it was issued to is
   // declaredAdminScopes()'s question, asked for both realms (#110); this is
   // the realm's confinement.
+  /**
+   * Returns why a realm's own token may not perform this operation, from the
+   * realm administrator's confinement.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns null when allowed, or `{ code, detail }`
+   */
   realmTokenRefusal(claims, req) {
     const { log, parseBody, adminScope, realms } = this.deps;
     log.debug("Entering AdminApi.realmTokenRefusal().");
@@ -19141,6 +20008,13 @@ class AdminApi {
   // asking rather than by remembering. `tests/admin_api_document_security.js`
   // asserts that every call site goes through this function.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the facts the OpenAPI document is built from: the base URL, the
+   * version and whether the gate is on.
+   *
+   * @param req - the request
+   * @returns `{ baseUrl, version, authRequired }`
+   */
   specOptions(req) {
     const { log, baseUrlOf, config } = this.deps;
     log.debug("Entering AdminApi.specOptions().");
@@ -19162,10 +20036,19 @@ class AdminApi {
   // `registerRoutes(app)` calls this first, and `common/protocol_stack.ts`
   // calls that at the point the gate used to be registered, so the route
   // order is unchanged (rule 1; #50, R1).
+  /**
+   * Registers the access-token gate on the base path, ahead of every operation.
+   *
+   * With `adminApi.authRequired` on it refuses a missing or unverifiable token
+   * with 401 and a token for another audience, issuer or without the needed
+   * permission with 403; the permission is decided by the XACML access policy.
+   *
+   * @param app - the express app
+   */
   registerGate(app: RouteApp): void {
     const { log, config, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
-            mtls, dpop, senderConstraints, roles, accessGate, mode, adminViews,
-            parseBody, adminScope, adminScopeAccess } = this.deps;
+            mtls, dpop, senderConstraints, accessGate, mode, adminViews,
+            parseBody, adminScope, rolePermissions } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.registerGate().");
     app.use(BASE, function (req, res, next) {
@@ -19436,15 +20319,19 @@ class AdminApi {
         // one the client does not declare; an undeclared scope the operation
         // does not need is dropped and the call goes on.
         const declared = self.declaredAdminScopes(claims, tokenRealm, carried);
-        // A PERSON MUST STILL HOLD THE CONSOLE ROLE THE SCOPE GOES WITH
-        // (#302), asked of the roster as it is now, in the realm that issued
-        // the token — so a role revoked after the token was minted stops
-        // working at once rather than when the token expires. A client's
-        // own token passes through; the declaration above is its question.
-        // See `mgmt-api/admin_scope_access.ts`.
-        const rechecked = adminScopeAccess.recheck(claims, declared.kept,
-                                                   tokenRealm);
-        const scopes = rechecked.kept;
+        // HELD ∩ CARRIED (#302, #303 — rcbj's decision 4 on #303). The roles
+        // the token's subject — a person, or a client on client_credentials —
+        // holds NOW, in the realm that issued the token, less any role whose
+        // permissions the token does not carry. So a role revoked after the
+        // token was minted stops working at once rather than when the token
+        // expires, and a token carrying only admin:read is not Admin Write
+        // because its subject happens to hold that too. The access-control
+        // policy is unchanged: it still asks for ADMIN_READ or ADMIN_WRITE,
+        // which are configured roles authorizing those scopes now rather
+        // than the scopes themselves. See `common/role_permissions.ts`.
+        const scopes = declared.kept;
+        const effective = rolePermissions.effectiveRoles(claims, scopes,
+                                                         tokenRealm);
         const neededScope = scopesWanted;
         if (declared.undeclared.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0123');
@@ -19459,15 +20346,27 @@ class AdminApi {
                 'scopes. Declare it on the application (POST ' +
                 '/admin-api/applications/add) or use that client.')] });
         }
-        if (rechecked.withdrawn.indexOf(neededScope) >= 0) {
+        if (effective.withdrawn.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0125');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
-            'This access token carries "' + neededScope + '", and it was ' +
-            'issued for a person who no longer holds the console role that ' +
-            'scope goes with: ' + rechecked.why + '. A person\'s token is ' +
-            'honoured here only while their console roles authorize the ' +
-            'scope it uses. Grant the role on /admin/rbac (or POST ' +
-            '/admin-api/rbac/grant) and ask for a new token.'] });
+            'This access token carries "' + neededScope + '", and its ' +
+            'subject no longer holds a role authorizing it: ' +
+            effective.why + '. A token is honoured here only while its ' +
+            'subject\'s roles authorize the scope it uses. ' +
+            // THE ROLE THAT AUTHORIZES IT, and where it is granted: a
+            // person's console role on the roster, anything else on the
+            // role itself (#309: device:compliance is DEVICE_COMPLIANCE's).
+            (effective.subject.kind !== 'application' &&
+             neededScope !== 'device:compliance'
+              ? 'Grant the console role on /admin/rbac (or POST ' +
+                '/admin-api/rbac/grant)'
+              : 'Add the ' + (effective.subject.kind === 'application'
+                  ? 'application' : 'person') + ' to ' +
+                (neededScope === 'device:compliance' ? 'DEVICE_COMPLIANCE'
+                  : (neededScope === 'admin:read' ? 'ADMIN_READ'
+                                                  : 'ADMIN_WRITE')) +
+                ' on /admin/roles (or POST /admin-api/roles/add-member)') +
+            ' and ask for a new token.'] });
         }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
@@ -19483,8 +20382,7 @@ class AdminApi {
           // administrator's console session.
           res.locals.realmTokenOf = tokenRealm;
         }
-        const held = roles.rolesOf({ kind: 'application', name: who,
-                                     authenticated: true, scopes: scopes });
+        const held = effective.roles;
         const policy = accessGate.check({
           resource: accessGate.RESOURCE.MANAGEMENT_API,
           action: req.method === 'GET' ? accessGate.ACTION.READ
@@ -19648,6 +20546,12 @@ class AdminApi {
   // THE TABLE'S ROUTES, registered by the exported `registerRoutes(app)`
   // straight after the gate, which `common/protocol_stack.ts` calls at 19
   // (#50, R1). `compileRequestSchemas()` has already run, in `wire()`.
+  /**
+   * Registers the route table's operations, one express route per row, with the
+   * request body and query checks in front of each handler.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, errorCodes, protocolEndpoints } = this.deps;
     const self = this;
@@ -19774,6 +20678,9 @@ import version = require('../common/version');
 const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;
 
+/**
+ * The management API's base path.
+ */
 const BASE = '/admin-api';
 // The device compliance feed's path below BASE (#164 phase 3): the one
 // operation whose token carries device:compliance rather than an admin scope.
@@ -19823,7 +20730,8 @@ const JWT_CLAIM_FAMILY = {
   carrier: 'token',
   example: 'id_token',
   reserved: true,
-  ids: { add: 'addClaim', remove: 'removeClaim', clear: 'clearClaims',
+  ids: { add: 'addClaim', addAttribute: 'addAttributeClaim',
+         remove: 'removeClaim', clear: 'clearClaims',
          replace: 'replaceClaims', attributes: 'setClaimAttributes',
          all: 'selectAllClaimAttributes', none: 'clearClaimAttributes' }
 };
@@ -19847,7 +20755,9 @@ const USERINFO_CLAIM_FAMILY = {
   carrier: 'UserInfo response',
   example: 'userinfo',
   reserved: true,
-  ids: { add: 'addUserInfoClaim', remove: 'removeUserInfoClaim',
+  ids: { add: 'addUserInfoClaim',
+         addAttribute: 'addUserInfoAttributeClaim',
+         remove: 'removeUserInfoClaim',
          clear: 'clearUserInfoClaims', replace: 'replaceUserInfoClaims',
          attributes: 'setUserInfoClaimAttributes',
          all: 'selectAllUserInfoClaimAttributes',
@@ -19860,7 +20770,9 @@ const SAML_CLAIM_FAMILY = {
   carrier: 'assertion',
   example: 'saml11',
   reserved: false,
-  ids: { add: 'addSamlAttribute', remove: 'removeSamlAttribute',
+  ids: { add: 'addSamlAttribute',
+         addAttribute: 'addSamlDirectoryAttributeClaim',
+         remove: 'removeSamlAttribute',
          clear: 'clearSamlAttributes', replace: 'replaceSamlAttributes',
          attributes: 'setSamlDirectoryAttributes',
          all: 'selectAllSamlDirectoryAttributes',
@@ -19945,26 +20857,61 @@ const slot = new InstanceSlot<AdminApi>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The management API: every `/admin` console control as a JSON operation at
+ * `/admin-api`, gated by an OAuth 2.0 access token.
+ *
+ * Every POST calls the console's own action function and every GET its JSON
+ * view; the OpenAPI document is built from the same route table.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Registers the gate and then every operation on the given app; called by
+   * `common/protocol_stack.ts`.
+   *
+   * @param target - the express app
+   */
   registerRoutes: (target: any): void => {
     const managementApi = slot.get();
     managementApi.registerGate(target);
     managementApi.registerRoutes(target);
   },
   AdminApi: AdminApi,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: AdminApi): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   BASE: BASE,
   // The three facts the OpenAPI document is built from, gathered in one place
   // so that this file's document and the console explorer's cannot disagree
   // about what this API requires. See specOptions().
+  /**
+   * Forwards to `AdminApi.specOptions()` on the installed instance.
+   */
   specOptions: slot.forward('specOptions'),
   // The table, so that the parent project's tests can assert what this file
   // covers against what the console offers rather than against a list somebody
   // typed into a test.
+  /**
+   * The route table, built on first use.
+   */
   get ROUTES(): any[] {
     slot.get();
     return ROUTES;
   },
+  /**
+   * Forwards to `AdminApi.operationSummaries()` on the installed instance.
+   */
   operationSummaries: slot.forward('operationSummaries')
 };

@@ -66,6 +66,17 @@ const EFFECT = model.EFFECT;
 // carried, which is the pure-XACML behaviour the conformance suite expects and
 // is why the suite can drive this with no directory anywhere.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the evaluation context for one decision.
+ *
+ * The context carries the request, the optional PIP resolver, a clock
+ * fixed for the whole evaluation, and the lists of included attributes
+ * and applicable policies collected while evaluating. XPath is not
+ * supported: its `countNodes()` throws a processing error.
+ * @param request - the request, in the shapes of `xacml_model.js`
+ * @param options - optional; `resolver` (the PIP) and `now` (a Date)
+ * @returns the context
+ */
 function makeContext(request, options) {
   log.debug('Entering makeContext().');
   const settings = options || {};
@@ -108,6 +119,19 @@ function makeContext(request, options) {
 // `current-time` uses the one it carried, because a PEP that supplied it is
 // asserting the time the decision is ABOUT, which is not necessarily now.
 // ---------------------------------------------------------------------------
+/**
+ * Resolves an AttributeDesignator to a bag of values.
+ *
+ * Looks in the request first, then asks the PIP, then — for the three
+ * environment attributes only — supplies them from the context's clock.
+ * A designator that finds nothing yields an empty bag unless
+ * `MustBePresent` is set.
+ * @param designator - the designator expression
+ * @param context - the evaluation context from `makeContext()`
+ * @returns a bag of values
+ * @throws a processing error carrying a missing-attribute status when a
+ *   required attribute is absent
+ */
 function resolveDesignator(designator, context) {
   log.debug('Entering resolveDesignator(). id=' + designator.attributeId);
   const values = [];
@@ -202,6 +226,18 @@ function environmentAttribute(designator, context) {
 // ---------------------------------------------------------------------------
 // EXPRESSION EVALUATION. Always returns a BAG — see `xacml_functions.js`.
 // ---------------------------------------------------------------------------
+/**
+ * Evaluates an expression and returns its result as a bag.
+ *
+ * A literal, a designator, a selector, a variable reference, an Apply or
+ * a function reference; a failure is thrown as an XACML error rather
+ * than returned.
+ * @param expression - the expression, in the shapes of `xacml_model.js`
+ * @param context - the evaluation context from `makeContext()`
+ * @param variables - the policy's variable table from `makeVariables()`,
+ *   or null
+ * @returns a bag
+ */
 function evaluateExpression(expression, context, variables) {
   log.debug('Entering evaluateExpression(). kind=' + expression.kind);
   if (expression.kind === 'value') {
@@ -316,6 +352,13 @@ function resolveVariable(id, context, variables) {
   }
 }
 
+/**
+ * Builds the variable table for one policy's VariableDefinitions.
+ *
+ * Each variable is evaluated once, on first reference, and cached.
+ * @param definitions - the definitions keyed by VariableId, or nothing
+ * @returns the variable table
+ */
 function makeVariables(definitions) {
   log.debug("Entering makeVariables().");
   log.debug("Leaving makeVariables().");
@@ -375,6 +418,16 @@ function evaluateMatch(match, context, variables) {
   return MATCH.NO_MATCH;
 }
 
+/**
+ * Matches a Target against the request (section 7.6).
+ *
+ * An absent Target matches everything. An Indeterminate is thrown rather
+ * than turned into a No-match.
+ * @param target - the Target, or null
+ * @param context - the evaluation context from `makeContext()`
+ * @param variables - the variable table, or null
+ * @returns one of `MATCH`'s values
+ */
 function evaluateTarget(target, context, variables) {
   log.debug('Entering evaluateTarget().');
   if (!target) {
@@ -449,6 +502,16 @@ function evaluateAllOf(allOf, context, variables) {
 // ---------------------------------------------------------------------------
 // RULE EVALUATION. Section 7.11.
 // ---------------------------------------------------------------------------
+/**
+ * Evaluates one Rule (section 7.11).
+ *
+ * A Target or Condition that cannot be evaluated gives
+ * `Indeterminate{Effect}` with the error's status, never NotApplicable.
+ * @param rule - the Rule
+ * @param context - the evaluation context from `makeContext()`
+ * @param variables - the enclosing policy's variable table
+ * @returns an object with `decision` and, where there was one, `status`
+ */
 function evaluateRule(rule, context, variables) {
   log.debug('Entering evaluateRule(). id=' + rule.id);
   let targetResult;
@@ -554,6 +617,13 @@ function withStatus(decision, error) {
 // THE COMBINING ALGORITHMS. Twelve identifiers; the block below says how they
 // are written and why.
 // ---------------------------------------------------------------------------
+/**
+ * The combining algorithms, keyed by rule- and policy-combining algorithm
+ * identifier.
+ *
+ * Each entry controls evaluation of its children rather than being handed
+ * their results, so it can stop as soon as the outcome is settled.
+ */
 const COMBINERS = {};
 
 // ---------------------------------------------------------------------------
@@ -918,6 +988,12 @@ combiner([model.POLICY_ALG.ONLY_ONE_APPLICABLE], function () {
     'the ordinary combiner path. Reaching here is a bug in this file.');
 });
 
+/**
+ * Returns the combining algorithm registered for an identifier.
+ *
+ * @param uri - the rule- or policy-combining algorithm identifier
+ * @returns the combiner, or null when the identifier is unknown
+ */
 function lookupCombiner(uri) {
   log.debug("Entering lookupCombiner().");
   log.debug("Leaving lookupCombiner().");
@@ -927,6 +1003,17 @@ function lookupCombiner(uri) {
 // ---------------------------------------------------------------------------
 // POLICY AND POLICY SET EVALUATION. Sections 7.12 and 7.13.
 // ---------------------------------------------------------------------------
+/**
+ * Evaluates one Policy (section 7.12).
+ *
+ * An unknown rule-combining algorithm is an Indeterminate with a
+ * syntax-error status. Obligations and advice are attached from the rules'
+ * results, and an applicable policy is recorded on the context.
+ * @param policy - the Policy
+ * @param context - the evaluation context from `makeContext()`
+ * @returns an object with `decision`, `status` and any obligations and
+ *   advice
+ */
 function evaluatePolicy(policy, context) {
   log.debug('Entering evaluatePolicy(). id=' + policy.id);
   const variables = makeVariables(policy.variables);
@@ -970,6 +1057,16 @@ function evaluatePolicy(policy, context) {
   return combined;
 }
 
+/**
+ * Evaluates one PolicySet (section 7.13), including only-one-applicable.
+ *
+ * Policy and policy set references are resolved through the repository.
+ * @param policySet - the PolicySet
+ * @param context - the evaluation context from `makeContext()`
+ * @param repository - resolves references to other policies, or null
+ * @returns an object with `decision`, `status` and any obligations and
+ *   advice
+ */
 function evaluatePolicySet(policySet, context, repository) {
   log.debug('Entering evaluatePolicySet(). id=' + policySet.id);
   let targetResult;
@@ -1206,6 +1303,19 @@ function firstStatus(results) {
 // `externalDecision()` is called HERE and nowhere else — the one place the
 // extended Indeterminate values are folded back to the four a caller sees.
 // ---------------------------------------------------------------------------
+/**
+ * Evaluates a request against a policy or policy set and returns the
+ * decision a caller sees.
+ *
+ * This is the one place the extended Indeterminate values are folded into
+ * the four external decisions. An error escaping the evaluation becomes
+ * an Indeterminate with its message rather than a throw.
+ * @param policy - the root Policy or PolicySet
+ * @param request - the request
+ * @param options - optional; `resolver`, `now` and `repository`
+ * @returns the response: `decision`, `status`, `obligations`, `advice`
+ *   and `policyIdentifiers`
+ */
 function evaluate(policy, request, options) {
   log.debug('Entering evaluate().');
   const settings = options || {};
@@ -1236,6 +1346,15 @@ function evaluate(policy, request, options) {
   return response;
 }
 
+/**
+ * The XACML 3.0 policy decision point: a request and a policy in, a
+ * decision out.
+ *
+ * It knows nothing of XML, JSON, ALFA, HTTP or the directory; the only
+ * thing it reaches outside itself for is an attribute, through the
+ * context's resolver.
+ * @namespace
+ */
 module.exports = {
   evaluate: evaluate,
   evaluatePolicy: evaluatePolicy,

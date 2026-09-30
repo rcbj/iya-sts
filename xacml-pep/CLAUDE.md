@@ -22,7 +22,7 @@ curl "http://localhost:9090/protected?subject=alice&employeeType=staff&action=GE
 
 | File | What it is |
 |---|---|
-| `engine.js` | Loads the seven engine modules and holds the ONE list of what "the engine" is. Pins `../common/helpers` to the shim. |
+| `engine.js` | Loads the seven engine modules — and, since #306, the one request builder `xacml_request.js` — and holds the ONE list of what "the engine" is. Pins `../common/helpers` to the shim. |
 | `common/helpers.js` | **THE SHIM, AND THE POINT OF THE CONTAINER.** `log` and `xmlEscape`, thirty lines. |
 | `sync.js` | The PDP client: register, pull, heartbeat. Holds what this PEP is enforcing. |
 | `pip.js` | **The PDP's Policy Information Point, over HTTP (2026-09-06).** Walks the policy for every access-subject designator, asks `POST /xacml/pip` for all of them in ONE query, and hands `pep.js` a SYNCHRONOUS resolver over what came back — because the engine's resolver is synchronous and an HTTP request is not. It never rejects: every failure is a resolver answering empty bags, which is what this container did before it existed. |
@@ -242,6 +242,24 @@ what this container did before that file existed. So the failure mode of a
 remote PIP is *no PIP*, reported on `GET /`, rather than a PEP that stops
 deciding. Same rule `sync.js` follows about a failed pull: this component
 enforces with what it has.
+
+**IT BUILDS ITS REQUESTS WITH THE SERVICE'S BUILDER (#306).**
+`xacml/xacml_request.js` is copied beside the engine (an eighth entry in
+`MODULES`, a COPY line in the Dockerfile) and `pep.js` makes its request
+through it, so this container asks in the shape and spelling the service's
+own PEPs do; `pip.js` takes the subject-kind id from its vocabulary. It is
+engine-side on purpose: it requires the model and the shim and nothing else,
+which `tests/xacml_pep.js`'s no-mock-module check holds.
+
+**ROLES COME FROM THE PIP TOO (#303).** A policy naming `urn:sts:xacml:role`
+gets the subject's configured roles from the PDP — the roles this service
+would issue for — so a request about a subject with no scopes (a SAML
+assertion's person, a Kerberos principal) is decided on roles without the
+caller asserting any. `/protected?subject=payroll-worker&subjectKind=application`
+says the subject is an APPLICATION: `pep.js` asserts
+`urn:sts:xacml:subject-kind` (once — it is not a directory attribute, so not
+under both spellings) and `pip.js` forwards it in the PIP query, because the
+same name could be a person holding different roles.
 
 **`PEP_PIP=false` reaches the same state on purpose**, and so does a container
 with no client certificate — the endpoint requires a verified one whose subject

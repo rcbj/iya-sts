@@ -265,6 +265,12 @@ import clusterClaims = require('../cluster/cluster_claims');
 // Both libraries; neither requires anything reaching back here.
 import requestSignature = require('./request_signature');
 import mtls = require('../oauth-oidc/mtls');
+// WHERE THE RESPONDER'S REQUEST IS ANSWERED IN A SERVICE DEPLOYED AS CELLS
+// (#98 D10): the artifact's tag, the cell holding a query's session, and the
+// relay. Libraries that register no route.
+import samlCells = require('./saml_cells');
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
 
 // --- the vocabulary --------------------------------------------------------
 // SAML 1.1's namespaces carry `1.0` and that is not a typo anywhere in this
@@ -285,15 +291,27 @@ const NS_SOAP = 'http://schemas.xmlsoap.org/soap/envelope/';
 // The two browser profiles, by the URIs metadata names them with. Both carry
 // `1.0` for the reason the namespaces do, and `artifact-01` is the real
 // spelling rather than a truncation of something.
+/**
+ * The SAML 1.1 Browser/POST profile's URI.
+ */
 const PROFILE_POST = 'urn:oasis:names:tc:SAML:1.0:profiles:browser-post';
 
+/**
+ * The SAML 1.1 Browser/Artifact profile's URI.
+ */
 const PROFILE_ARTIFACT = 'urn:oasis:names:tc:SAML:1.0:profiles:artifact-01';
 
 // The SOAP binding the responder speaks.
+/**
+ * The SAML 1.1 SOAP binding's URI, which the responder speaks.
+ */
 const BINDING_SOAP = 'urn:oasis:names:tc:SAML:1.0:bindings:SOAP-binding';
 
 // Shibboleth's request profile — decision 1. Advertised so that a service
 // provider building its endpoint list from the metadata offers it.
+/**
+ * Shibboleth's AuthnRequest profile's URI, advertised in the metadata.
+ */
 const PROFILE_SHIB_AUTHN_REQUEST =
     'urn:mace:shibboleth:1.0:profiles:AuthnRequest';
 
@@ -345,6 +363,9 @@ const TRANSFORM_ENVELOPED =
 // deployment used. As in 2.0, the list is what goes in the metadata and is NOT
 // a list of what will be accepted: the non-spec `format` parameter is answered
 // with whatever it says.
+/**
+ * The NameIdentifier formats this identity provider advertises in its metadata.
+ */
 const NAMEID_FORMATS = [
   saml11.NAMEID_FORMAT_UNSPECIFIED,
   'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
@@ -382,7 +403,10 @@ const RP_PATH = BASE_PATH + '/rp';
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const pendingFlows = realms.map({ persist: 'saml11_sso.pendingFlows',
-                                  retain: 'age' });
+                                  retain: 'age',
+                                  // #333: the flow's `expires`, ms.
+                                  expiresAt: realms.expiryField('expires',
+                                                                1) });
 
 // Artifact -> the ASSERTION it stands for (decision 3), and the context needed
 // to build a Response around it later. Resolving one deletes it, so this map is
@@ -393,7 +417,9 @@ const pendingFlows = realms.map({ persist: 'saml11_sso.pendingFlows',
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const artifacts = realms.map({ persist: 'saml11_sso.artifacts',
-                               retain: 'age' });
+                               retain: 'age',
+                               // #333: the artifact's `expires`, ms.
+                               expiresAt: realms.expiryField('expires', 1) });
 // How much longer than an artifact's own remaining lifetime its cluster claim
 // lives: two nodes' clocks may disagree about when it expired (#46). See
 // respond().
@@ -457,6 +483,9 @@ const assertionsCount = cacheRegistry.register({
 // split one application into two entries. `note` says which door it came
 // through.
 // ---------------------------------------------------------------------------
+/**
+ * The application kind a SAML 1.1 relying party is recorded as.
+ */
 const RP_KIND = 'saml11-relying-party';
 
 // --- what goes in the assertion --------------------------------------------
@@ -548,7 +577,18 @@ interface Saml11SsoDeps {
   mtls: typeof mtls;
 }
 
+/**
+ * The SAML 1.1 identity provider: the Browser/POST and Browser/Artifact
+ * profiles, the SOAP responder behind the second, the metadata, and a mock
+ * relying party.
+ */
 class Saml11Sso {
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the helpers, settings, the assertion builder, the sign-on
+   * session, the registers and the SAML libraries this profile reads
+   */
   constructor(private readonly deps: Saml11SsoDeps) {
     deps.log.debug("Entering Saml11Sso.constructor().");
     deps.log.debug("Leaving Saml11Sso.constructor().");
@@ -556,6 +596,11 @@ class Saml11Sso {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): Saml11SsoDeps {
     helpers.log.debug("Entering Saml11Sso.defaultDeps().");
     helpers.log.debug("Leaving Saml11Sso.defaultDeps().");
@@ -787,6 +832,15 @@ class Saml11Sso {
   // product mode (2026-09-12), for the reason saml2_sso.ts's idpEntityIdFor()
   // gives; `providerIdProblem()` is what the inter-site transfer service, the
   // responder and the metadata endpoint ask before issuing anything.
+  /**
+   * Answers this identity provider's own providerID for a relying party, from
+   * `saml11.providerId`.
+   *
+   * An empty setting falls back to `urn:sts:idp:saml11` in development and
+   * answers '' in product.
+   * @param rpId - the relying party's identifier
+   * @returns the providerID, or ''
+   */
   providerIdFor(rpId) {
     const { config, log, mode, slugOf } = this.deps;
     log.debug("Entering Saml11Sso.providerIdFor().");
@@ -824,6 +878,14 @@ class Saml11Sso {
   // failure that produces is a service provider configured from a document,
   // posting to a path nothing serves, and a 404 that looks like the identity
   // provider is down.
+  /**
+   * Answers where a relying party's endpoints live, for the metadata and the
+   * handlers alike.
+   *
+   * @param base - the realm's base URL
+   * @param rpId - the relying party's identifier
+   * @returns the `sso`, `responder` and `metadata` URLs
+   */
   endpointsFor(base, rpId) {
     const { log, slugOf } = this.deps;
     log.debug("Entering Saml11Sso.endpointsFor().");
@@ -1352,6 +1414,10 @@ class Saml11Sso {
   //                   providers can tell whose artifact it is holding without
   //                   asking anybody
   //   AssertionHandle twenty random bytes, and the only part that is a secret
+  //                   — in a service deployed as cells (#98 D10) its last
+  //                   four are the minting cell's keyed tag, which is how
+  //                   the responder at another cell finds it
+  //                   (`saml_cells.ts`)
   //
   // FORTY-TWO BYTES, where a SAML 2.0 artifact is forty-four: 2.0 added a
   // two-byte EndpointIndex after the type code so that an identity provider
@@ -1369,7 +1435,7 @@ class Saml11Sso {
     const sourceId = crypto.createHash('sha1')
                            .update(String(providerId), 'utf8')
                            .digest();
-    const handle = crypto.randomBytes(20);
+    const handle = samlCells.stampHandle(crypto.randomBytes(20));
     const artifact = Buffer.concat([header, sourceId,
                                     handle]).toString('base64');
     log.debug("Leaving Saml11Sso.mintArtifact(). " + artifact.length +
@@ -2177,9 +2243,8 @@ class Saml11Sso {
   }
 
   private respond(req, res) {
-    const { CONFIRMATION_BEARER, baseUrlOf, buildSaml11Assertion, clusterClaims,
-            errorCodes, firstByLocal, iso, log, logArtifact, mode, sessionsOf,
-            userFor } = this.deps;
+    const { baseUrlOf, clusterClaims, errorCodes, firstByLocal, log,
+            logArtifact, mode } = this.deps;
     log.debug("Entering Saml11Sso.respond().");
     const base = baseUrlOf(req);
     const scoped = this.relyingPartyFromSegment(req.params.rp);
@@ -2251,6 +2316,16 @@ class Saml11Sso {
     const artifactEl = firstByLocal(request, 'AssertionArtifact');
     if (artifactEl) {
       const artifact = (artifactEl.textContent || '').trim();
+      // MINTED IN ANOTHER CELL (#98 D10): the whole Request goes to the cell
+      // whose tag the AssertionHandle carries, before the caller is
+      // authenticated or the artifact is spent.
+      if (cellPlacement.relayToCell(req, res,
+                                    samlCells.artifactCell(artifact, 42),
+                                    'a SAML 1.1 artifact')) {
+        log.debug("Leaving Saml11Sso.respond(). Relayed to the cell that " +
+                  "minted the artifact.");
+        return undefined;
+      }
       const held = artifacts.get(artifact);
       if (held) {
         // WHO IS ASKING, before the artifact is spent (#37 follow-up) — see
@@ -2353,6 +2428,14 @@ class Saml11Sso {
     const referenceEl = firstByLocal(request, 'AssertionIDReference');
     if (referenceEl) {
       const wanted = (referenceEl.textContent || '').trim();
+      // AN AssertionID IS STAMPED WHERE IT IS MINTED (#98 D10, `saml11.ts`),
+      // and the assertion is kept only in that cell's store.
+      if (cellPlacement.relayIfElsewhere(req, res, wanted,
+                                         'a SAML 1.1 AssertionIDReference')) {
+        log.debug("Leaving Saml11Sso.respond(). Relayed to the cell that " +
+                  "issued the assertion.");
+        return undefined;
+      }
       const assertion = assertionsById.get(wanted);
       if (assertion) {
         assertionsCount.hit();
@@ -2383,195 +2466,37 @@ class Saml11Sso {
     const authnQuery = firstByLocal(request, 'AuthenticationQuery');
     const query = attributeQuery || authnQuery;
     if (query) {
-      // -----------------------------------------------------------------------
-      // PRODUCT MODE DOES NOT ANSWER A QUERY FROM NOBODY (2026-09-12).
-      //
-      // In development this responder is an attribute authority anybody who can
-      // reach the port may ask about anybody, by name, with no credential — the
-      // posture this file has always stated, and a TEST CONTROL in exactly the
-      // sense `mode.opensTestControls()` names: it exists so a relying party's
-      // query half can be exercised. In product it is refused, and the choice
-      // of how is worth stating: **refused entirely, rather than gated on a
-      // client certificate.** The SAML 1.1 SOAP binding's own answer to caller
-      // authentication is mutual TLS (saml-bindings-1.1 section 3.1.2), and the
-      // piece that would make that a lock rather than a turnstile — a register
-      // of which certificate may ask about which attributes, i.e. an attribute
-      // release policy for SAML 1.1 relying parties — does not exist here. A
-      // query gated on "presented some verified certificate" would answer any
-      // holder of any certificate this service trusts about anybody, which is
-      // the same hole with a handshake in front of it. Artifact resolution is
-      // authenticated separately (`authenticateArtifactCaller()`), and it and
-      // AssertionIDReference are protected by twenty random bytes nobody can
-      // name without having been handed them.
-      // -----------------------------------------------------------------------
-      //
-      // **AND SINCE #189 IT IS GATED, BECAUSE THE RELEASE POLICY NOW EXISTS**
-      // — the one the paragraph above said was missing, and the SAML 2.0
-      // attribute authority's (`saml2_sso.ts`, attributeQuery()): the query
-      // names a REGISTERED relying party (`Resource`, or the path segment);
-      // the caller AUTHENTICATES as it (a signed Request, or its registered
-      // certificate at the TLS handshake — mutual TLS being the SOAP
-      // binding's own answer); and the subject is somebody that relying party
-      // holds a live session for FROM THIS SERVICE, under the NameIdentifier
-      // it was given. Anything else is refused as before (STS-SAML-0039, and
-      // STS-SAML-0096 for a subject no live session gave it). The Shibboleth
-      // SP's Query resolver asks exactly this after a SAML 1.1 sign-in.
-      let released = null;
-      if (!mode.opensTestControls()) {
-        const policy = this.queryReleasePolicy(req, request, query,
-                                               attributeQuery, scoped);
-        if (policy.refuse) {
-          log.info('saml11: refused an ' +
-                   (attributeQuery ? 'AttributeQuery'
-                                   : 'AuthenticationQuery') +
-                   ' in product mode — ' + policy.why);
-          errorCodes.mark(res, policy.errorCode);
-          log.debug("Leaving Saml11Sso.respond(). A query was refused in " +
-                    "product mode.");
-          // error-code: none — marked above: STS-SAML-0039, 0096 or 0077.
-          return answer(STATUS_REQUESTER, 'this realm is in PRODUCT mode, ' +
-                        'which answers a query only for a registered, ' +
-                        'authenticated relying party about a subject it ' +
-                        'holds a live session for: ' + policy.why, '',
-                        requestId, '');
+      // THE CELL THAT ANSWERS (#98 D10), before the caller is authenticated:
+      // in product, the cell holding the live session that gave the asking
+      // relying party this NameIdentifier (`saml_cells.ts` argues why that
+      // and not the person's home); in development, where the query names a
+      // person by username, that person's home. Single-cell mode goes
+      // straight on, as it always did.
+      if (!cells.isMulti() || req.stsCellRelay) {
+        log.debug("Leaving Saml11Sso.respond(). A query, answered here.");
+        return this.answerQuery(req, res, request, query, attributeQuery,
+                                authnQuery, scoped, requestId, answer);
+      }
+      const named = this.subjectOf(query);
+      const party = String((attributeQuery &&
+                            attributeQuery.getAttribute('Resource')) ||
+                           scoped.id || '');
+      const placed: Promise<boolean> = mode.opensTestControls()
+        ? cellPlacement.relayToHome(req, res, realms.currentId(), 'name',
+                                    named, 'a SAML 1.1 query')
+        : samlCells.sessionHolder(req, 'saml11', party, named)
+          .then(function (holder: string) {
+            return cellPlacement.relayToCell(req, res, holder,
+                                             'a SAML 1.1 query');
+          });
+      log.debug("Leaving Saml11Sso.respond(). A query, being placed.");
+      return placed.then((relayed) => {
+        if (relayed) {
+          return undefined;
         }
-        released = policy.session;
-      }
-      const username = released
-        ? String((released.user && released.user.username) || '')
-        : this.subjectOf(query);
-      if (!username) {
-        log.debug("Leaving Saml11Sso.respond(). The query names no subject.");
-        errorCodes.mark(res, 'STS-SAML-0040');
-        log.debug("Leaving Saml11Sso.respond().");
-        return answer(STATUS_REQUESTER, 'the query carries no <saml:Subject> ' +
-                      'with a <saml:NameIdentifier> in it, so there is ' +
-                      'nobody to answer about.',
-                      '', requestId, '');
-      }
-      const issuerProblem = this.providerIdProblem();
-      if (issuerProblem) {
-        log.debug("Leaving Saml11Sso.respond(). There is no providerID to " +
-                  "issue under.");
-        errorCodes.mark(res, 'STS-SAML-0027');
-        log.debug("Leaving Saml11Sso.respond().");
-        return answer(STATUS_RESPONDER, issuerProblem, '', requestId, '');
-      }
-      // The `Resource` attribute is the relying party the query is on behalf
-      // of, and it is the only thing in a SAML 1.1 query that names one.
-      // Falling back to the path segment keeps a scoped responder's audience
-      // right.
-      const resource = attributeQuery ?
-                       (attributeQuery.getAttribute('Resource') || '') : '';
-      const rpId = resource || scoped.id || '';
-      const providerId = this.providerIdFor(rpId);
-      const user = userFor(username);
-      // **NO CREDENTIAL WAS CHECKED TO GET HERE**, and this is the line that
-      // says so. A real attribute authority authenticates the caller over
-      // mutual TLS and applies an attribute release policy; this one answers
-      // anybody about anybody in development, which is what makes it useful for
-      // exercising a relying party and is why product mode refuses it above.
-      log.info('saml11: answering an ' +
-               (attributeQuery ? 'AttributeQuery' : 'AuthenticationQuery') +
-               ' about "' + username + '" for "' + (rpId ||
-                                                    '(nobody named)') + '" ' +
-               'with no credential presented and no attribute release policy ' +
-               'applied. That is what this mock is for; it is not what an ' +
-               'attribute authority does.');
-
-      if (authnQuery) {
-        // ---------------------------------------------------------------------
-        // AN AUTHENTICATION QUERY IS ANSWERED FROM A SESSION THAT EXISTS, IN
-        // BOTH MODES (2026-09-12).
-        //
-        // It used to be answered for ANYBODY, with `am:password` and an
-        // AuthenticationInstant of the moment of the query — a signed statement
-        // that the named person had just typed a password here, about somebody
-        // who may never have been near this service. The old comment called
-        // that a mock breaking a relying party's assumption; it is this service
-        // SIGNING a falsehood, which no mode should do. So the answer is the
-        // newest AUTHENTICATED, unexpired session this realm holds for that
-        // name: its method from `saml/authn_context.ts` and its real authTime.
-        // With none, the answer is Success with NO assertion and a message
-        // saying so — saml-core-1.1 section 3.4.1 lets a Response carry zero
-        // assertions, and "nothing is recorded" is the true answer to "how did
-        // they sign in".
-        // ---------------------------------------------------------------------
-        const now = Date.now();
-        const live = (typeof sessionsOf === 'function' ? sessionsOf(username) :
-                      [])
-          .filter((one) => {
-            return one && one.authenticated !== false && !one.rpSurface &&
-                   (!one.expires || one.expires > now);
-          })[0];
-        if (!live) {
-          log.debug("Leaving Saml11Sso.respond(). No recorded authentication " +
-                    "for " +
-                    username + ".");
-          return answer(STATUS_SUCCESS,
-                        'no authentication is recorded here for "' + username +
-                        '", ' +
-                        'so there is no AuthenticationStatement to ' +
-                        'return', '', requestId, rpId, rpId);
-        }
-        const how = this.authnMethodFor(live);
-        const assertion = buildSaml11Assertion({
-          subject: username,
-          audience: rpId,
-          lifetimeMin: Number(this.settingFor(rpId,
-                                              'saml11.assertionLifetimeMin')) ||
-                       60,
-          authnMethod: how.method,
-          authnInstant: new Date((live.authTime || 0) * 1000).toISOString(),
-          issuer: providerId,
-          nameQualifier: providerId,
-          // A query's answer is confirmed by neither browser profile: it did
-          // not travel through a browser and it is not an artifact. The bearer
-          // method is the honest one — whoever holds it, holds it.
-          confirmationMethod: CONFIRMATION_BEARER,
-          // An AuthenticationQuery asks for the AuthenticationStatement alone;
-          // passing no attributes is what leaves the attribute statement out.
-          attributes: [],
-          sign: this.settingFor(rpId, 'saml11.signAssertion')
-        });
-        this.rememberAssertion(assertion);
-        log.debug("Leaving Saml11Sso.respond(). An AuthenticationQuery was " +
-                  "answered from session " +
-                  live.id + ".");
-        return answer(STATUS_SUCCESS, '', assertion, requestId, rpId, rpId);
-      }
-
-      // AN ATTRIBUTE QUERY IS A STATEMENT ABOUT ATTRIBUTES AND NOTHING ELSE
-      // (2026-09-12). It carried an AuthenticationStatement too — `am:password`
-      // at the instant of the query — because the builder always wrote one,
-      // which said the person had just signed in. `authenticationStatement:
-      // false` leaves it out; what is left is the attribute statement the query
-      // asked for, in both modes.
-      const now = iso(0);
-      const assertion = buildSaml11Assertion({
-        subject: username,
-        audience: rpId,
-        lifetimeMin: Number(this.settingFor(rpId,
-                                            'saml11.assertionLifetimeMin')) ||
-                     60,
-        issuer: providerId,
-        nameQualifier: providerId,
-        confirmationMethod: CONFIRMATION_BEARER,
-        authenticationStatement: false,
-        // The attribute list names an authentication method and instant as two
-        // of its claims (Microsoft's), and there was no authentication — so
-        // both are left out rather than invented.
-        attributes: this.attributesFor(user, '', now).filter((a) => {
-          return a.name !== 'authenticationmethod' &&
-                 a.name !== 'authenticationinstant';
-        }),
-        sign: this.settingFor(rpId, 'saml11.signAssertion')
+        return this.answerQuery(req, res, request, query, attributeQuery,
+                                authnQuery, scoped, requestId, answer);
       });
-      this.rememberAssertion(assertion);
-      log.debug("Leaving Saml11Sso.respond(). A query was answered about " +
-                username +
-                ".");
-      return answer(STATUS_SUCCESS, '', assertion, requestId, rpId, rpId);
     }
 
     log.debug("Leaving Saml11Sso.respond(). The request asked for nothing " +
@@ -2586,6 +2511,205 @@ class Saml11Sso {
                   'AuthorizationDecisionQuery ' +
                   'is the fifth SAML 1.1 request type and this service does ' +
                   'not make authorization decisions.', '', requestId, '');
+  }
+
+  // A query, once it is known to be answered HERE (see respond()): the
+  // product release policy, then an AuthenticationQuery or an AttributeQuery.
+  private answerQuery(req, res, request, query, attributeQuery, authnQuery,
+                      scoped, requestId, answer) {
+    const { CONFIRMATION_BEARER, buildSaml11Assertion, errorCodes, iso, log,
+            mode, sessionsOf, userFor } = this.deps;
+    log.debug("Entering Saml11Sso.answerQuery().");
+    // -----------------------------------------------------------------------
+    // PRODUCT MODE DOES NOT ANSWER A QUERY FROM NOBODY (2026-09-12).
+    //
+    // In development this responder is an attribute authority anybody who can
+    // reach the port may ask about anybody, by name, with no credential — the
+    // posture this file has always stated, and a TEST CONTROL in exactly the
+    // sense `mode.opensTestControls()` names: it exists so a relying party's
+    // query half can be exercised. In product it is refused, and the choice
+    // of how is worth stating: **refused entirely, rather than gated on a
+    // client certificate.** The SAML 1.1 SOAP binding's own answer to caller
+    // authentication is mutual TLS (saml-bindings-1.1 section 3.1.2), and the
+    // piece that would make that a lock rather than a turnstile — a register
+    // of which certificate may ask about which attributes, i.e. an attribute
+    // release policy for SAML 1.1 relying parties — does not exist here. A
+    // query gated on "presented some verified certificate" would answer any
+    // holder of any certificate this service trusts about anybody, which is
+    // the same hole with a handshake in front of it. Artifact resolution is
+    // authenticated separately (`authenticateArtifactCaller()`), and it and
+    // AssertionIDReference are protected by twenty random bytes nobody can
+    // name without having been handed them.
+    // -----------------------------------------------------------------------
+    //
+    // **AND SINCE #189 IT IS GATED, BECAUSE THE RELEASE POLICY NOW EXISTS**
+    // — the one the paragraph above said was missing, and the SAML 2.0
+    // attribute authority's (`saml2_sso.ts`, attributeQuery()): the query
+    // names a REGISTERED relying party (`Resource`, or the path segment);
+    // the caller AUTHENTICATES as it (a signed Request, or its registered
+    // certificate at the TLS handshake — mutual TLS being the SOAP
+    // binding's own answer); and the subject is somebody that relying party
+    // holds a live session for FROM THIS SERVICE, under the NameIdentifier
+    // it was given. Anything else is refused as before (STS-SAML-0039, and
+    // STS-SAML-0096 for a subject no live session gave it). The Shibboleth
+    // SP's Query resolver asks exactly this after a SAML 1.1 sign-in.
+    let released = null;
+    if (!mode.opensTestControls()) {
+      const policy = this.queryReleasePolicy(req, request, query,
+                                             attributeQuery, scoped);
+      if (policy.refuse) {
+        log.info('saml11: refused an ' +
+                 (attributeQuery ? 'AttributeQuery'
+                                 : 'AuthenticationQuery') +
+                 ' in product mode — ' + policy.why);
+        errorCodes.mark(res, policy.errorCode);
+        log.debug("Leaving Saml11Sso.answerQuery(). A query was refused in " +
+                  "product mode.");
+        // error-code: none — marked above: STS-SAML-0039, 0096 or 0077.
+        return answer(STATUS_REQUESTER, 'this realm is in PRODUCT mode, ' +
+                      'which answers a query only for a registered, ' +
+                      'authenticated relying party about a subject it ' +
+                      'holds a live session for: ' + policy.why, '',
+                      requestId, '');
+      }
+      released = policy.session;
+    }
+    const username = released
+      ? String((released.user && released.user.username) || '')
+      : this.subjectOf(query);
+    if (!username) {
+      log.debug("Leaving Saml11Sso.answerQuery(). The query names no subject.");
+      errorCodes.mark(res, 'STS-SAML-0040');
+      log.debug("Leaving Saml11Sso.answerQuery().");
+      return answer(STATUS_REQUESTER, 'the query carries no <saml:Subject> ' +
+                    'with a <saml:NameIdentifier> in it, so there is ' +
+                    'nobody to answer about.',
+                    '', requestId, '');
+    }
+    const issuerProblem = this.providerIdProblem();
+    if (issuerProblem) {
+      log.debug("Leaving Saml11Sso.answerQuery(). There is no providerID to " +
+                "issue under.");
+      errorCodes.mark(res, 'STS-SAML-0027');
+      log.debug("Leaving Saml11Sso.answerQuery().");
+      return answer(STATUS_RESPONDER, issuerProblem, '', requestId, '');
+    }
+    // The `Resource` attribute is the relying party the query is on behalf
+    // of, and it is the only thing in a SAML 1.1 query that names one.
+    // Falling back to the path segment keeps a scoped responder's audience
+    // right.
+    const resource = attributeQuery ?
+                     (attributeQuery.getAttribute('Resource') || '') : '';
+    const rpId = resource || scoped.id || '';
+    const providerId = this.providerIdFor(rpId);
+    const user = userFor(username);
+    // **NO CREDENTIAL WAS CHECKED TO GET HERE**, and this is the line that
+    // says so. A real attribute authority authenticates the caller over
+    // mutual TLS and applies an attribute release policy; this one answers
+    // anybody about anybody in development, which is what makes it useful for
+    // exercising a relying party and is why product mode refuses it above.
+    log.info('saml11: answering an ' +
+             (attributeQuery ? 'AttributeQuery' : 'AuthenticationQuery') +
+             ' about "' + username + '" for "' + (rpId ||
+                                                  '(nobody named)') + '" ' +
+             'with no credential presented and no attribute release policy ' +
+             'applied. That is what this mock is for; it is not what an ' +
+             'attribute authority does.');
+
+    if (authnQuery) {
+      // ---------------------------------------------------------------------
+      // AN AUTHENTICATION QUERY IS ANSWERED FROM A SESSION THAT EXISTS, IN
+      // BOTH MODES (2026-09-12).
+      //
+      // It used to be answered for ANYBODY, with `am:password` and an
+      // AuthenticationInstant of the moment of the query — a signed statement
+      // that the named person had just typed a password here, about somebody
+      // who may never have been near this service. The old comment called
+      // that a mock breaking a relying party's assumption; it is this service
+      // SIGNING a falsehood, which no mode should do. So the answer is the
+      // newest AUTHENTICATED, unexpired session this realm holds for that
+      // name: its method from `saml/authn_context.ts` and its real authTime.
+      // With none, the answer is Success with NO assertion and a message
+      // saying so — saml-core-1.1 section 3.4.1 lets a Response carry zero
+      // assertions, and "nothing is recorded" is the true answer to "how did
+      // they sign in".
+      // ---------------------------------------------------------------------
+      const now = Date.now();
+      const live = (typeof sessionsOf === 'function' ? sessionsOf(username) :
+                    [])
+        .filter((one) => {
+          return one && one.authenticated !== false && !one.rpSurface &&
+                 (!one.expires || one.expires > now);
+        })[0];
+      if (!live) {
+        log.debug("Leaving Saml11Sso.answerQuery(). No recorded " +
+                  "authentication " +
+                  "for " +
+                  username + ".");
+        return answer(STATUS_SUCCESS,
+                      'no authentication is recorded here for "' + username +
+                      '", ' +
+                      'so there is no AuthenticationStatement to ' +
+                      'return', '', requestId, rpId, rpId);
+      }
+      const how = this.authnMethodFor(live);
+      const assertion = buildSaml11Assertion({
+        subject: username,
+        audience: rpId,
+        lifetimeMin: Number(this.settingFor(rpId,
+                                            'saml11.assertionLifetimeMin')) ||
+                     60,
+        authnMethod: how.method,
+        authnInstant: new Date((live.authTime || 0) * 1000).toISOString(),
+        issuer: providerId,
+        nameQualifier: providerId,
+        // A query's answer is confirmed by neither browser profile: it did
+        // not travel through a browser and it is not an artifact. The bearer
+        // method is the honest one — whoever holds it, holds it.
+        confirmationMethod: CONFIRMATION_BEARER,
+        // An AuthenticationQuery asks for the AuthenticationStatement alone;
+        // passing no attributes is what leaves the attribute statement out.
+        attributes: [],
+        sign: this.settingFor(rpId, 'saml11.signAssertion')
+      });
+      this.rememberAssertion(assertion);
+      log.debug("Leaving Saml11Sso.answerQuery(). An AuthenticationQuery was " +
+                "answered from session " +
+                live.id + ".");
+      return answer(STATUS_SUCCESS, '', assertion, requestId, rpId, rpId);
+    }
+
+    // AN ATTRIBUTE QUERY IS A STATEMENT ABOUT ATTRIBUTES AND NOTHING ELSE
+    // (2026-09-12). It carried an AuthenticationStatement too — `am:password`
+    // at the instant of the query — because the builder always wrote one,
+    // which said the person had just signed in. `authenticationStatement:
+    // false` leaves it out; what is left is the attribute statement the query
+    // asked for, in both modes.
+    const now = iso(0);
+    const assertion = buildSaml11Assertion({
+      subject: username,
+      audience: rpId,
+      lifetimeMin: Number(this.settingFor(rpId,
+                                          'saml11.assertionLifetimeMin')) ||
+                   60,
+      issuer: providerId,
+      nameQualifier: providerId,
+      confirmationMethod: CONFIRMATION_BEARER,
+      authenticationStatement: false,
+      // The attribute list names an authentication method and instant as two
+      // of its claims (Microsoft's), and there was no authentication — so
+      // both are left out rather than invented.
+      attributes: this.attributesFor(user, '', now).filter((a) => {
+        return a.name !== 'authenticationmethod' &&
+               a.name !== 'authenticationinstant';
+      }),
+      sign: this.settingFor(rpId, 'saml11.signAssertion')
+    });
+    this.rememberAssertion(assertion);
+    log.debug("Leaving Saml11Sso.answerQuery(). A query was answered about " +
+              username +
+              ".");
+    return answer(STATUS_SUCCESS, '', assertion, requestId, rpId, rpId);
   }
 
   // Resolve an artifact IN PROCESS, for the mock relying party below. It is a
@@ -2618,6 +2742,14 @@ class Saml11Sso {
   // it even though both are 'prepend'. They agree by coincidence rather than by
   // rule, and the rule is in each schema separately.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the SAML 2.0 metadata document describing this SAML 1.1 identity
+   * provider, signed with the signature first inside the EntityDescriptor.
+   *
+   * @param base - the realm's base URL
+   * @param rpId - the relying party's identifier
+   * @returns the metadata document
+   */
   metadataFor(base, rpId) {
     const { STS, documentSettings, errorCodes, genId, listenerKeys, log,
             logArtifact, xmlEscape } = this.deps;
@@ -2948,6 +3080,16 @@ class Saml11Sso {
   // own verdict. One boolean for the whole response would say "it failed" and
   // nothing anybody could act on — the same argument /wsfed/rp, /saml2/sp and
   // the OID4VP verifier all make.
+  /**
+   * Verifies a SAML 1.1 Response as a relying party would, each check with its
+   * own verdict; the mock relying party's reading.
+   *
+   * @param xml - the Response
+   * @param rpId - the relying party's identifier
+   * @param acsUrl - the assertion consumer service URL it was sent to
+   * @param profile - `post` or `artifact`
+   * @returns `ok`, every check, and what the assertion said
+   */
   verifyResponse(xml, rpId, acsUrl, profile) {
     const { CONFIRMATION_ARTIFACT, CONFIRMATION_BEARER, firstByLocal, log,
             textByLocal } = this.deps;
@@ -3368,6 +3510,12 @@ class Saml11Sso {
   // THE ROUTES, in the order this module registered them at load
   // (rule 1). Called once, by `common/protocol_stack.ts` through the
   // module's `registerRoutes(app)` (#50, R1).
+  /**
+   * Registers every route under `/saml11`: the inter-site transfer service, the
+   * responder, the metadata and the mock relying party.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: RouteApp): void {
     const { baseUrlOf, log, xmlEscape } = this.deps;
     log.debug("Entering Saml11Sso.registerRoutes().");
@@ -3494,6 +3642,11 @@ class Saml11Sso {
 
   // How many artifacts, cached assertions and interrupted sign-ins this realm
   // holds, for the console.
+  /**
+   * Answers how many artifacts the realm holds, for the console.
+   *
+   * @returns the count
+   */
   artifactCount(): number {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.artifactCount().");
@@ -3501,6 +3654,12 @@ class Saml11Sso {
     return artifacts.size;
   }
 
+  /**
+   * Answers how many assertions the realm holds for artifact resolution, for
+   * the console.
+   *
+   * @returns the count
+   */
   cachedAssertionCount(): number {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.cachedAssertionCount().");
@@ -3508,6 +3667,11 @@ class Saml11Sso {
     return assertionsById.size;
   }
 
+  /**
+   * Answers how many interrupted sign-ins the realm holds, for the console.
+   *
+   * @returns the count
+   */
   pendingFlowCount(): number {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.pendingFlowCount().");
@@ -3543,10 +3707,23 @@ slot.buildNowUnlessDeferred();
 // name the same endpoints and the same slug this file does — a console that
 // derived a URL of its own would be a console that tells somebody to configure
 // a path nothing serves.
+/**
+ * SAML 1.1: the Browser/POST and Browser/Artifact profiles and the SAML
+ * responder behind the second, with the functions the console reads.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   Saml11Sso: Saml11Sso,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: Saml11Sso): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   PROFILE_POST: PROFILE_POST,
   PROFILE_ARTIFACT: PROFILE_ARTIFACT,

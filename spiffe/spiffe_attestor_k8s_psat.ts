@@ -66,17 +66,43 @@ interface K8sPsatDeps {
   outbound: { requestConfigured(url: string, options?: any): Promise<any> };
 }
 
+/**
+ * The `k8s_psat` node attestor: a Kubernetes projected service account token
+ * that the cluster's own TokenReview authenticates.
+ *
+ * It follows SPIRE's `k8spsat`: the service account must be allowed and the
+ * bound pod must still exist with the same UID. The cluster's credential is
+ * read from files, never from a setting.
+ */
 class K8sPsatAttestor {
+  /**
+   * The attestation type an agent names in `params.data.type`.
+   */
   readonly type = 'k8s_psat';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'A projected service account token the cluster\'s ' +
     'own TokenReview authenticates, for an allowed service account, bound ' +
     'to a pod that still exists.';
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, file system, environment, configuration, error
+   *   codes, SPIFFE and gRPC helpers and the outbound HTTP client
+   */
   constructor(private readonly deps: K8sPsatDeps) {
     deps.log.debug("Entering K8sPsatAttestor.constructor().");
     deps.log.debug("Leaving K8sPsatAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): K8sPsatDeps {
     helpers.log.debug("Entering K8sPsatAttestor.defaultDeps().");
     helpers.log.debug("Leaving K8sPsatAttestor.defaultDeps().");
@@ -85,6 +111,15 @@ class K8sPsatAttestor {
              outbound: outbound };
   }
 
+  /**
+   * Marks an error code on the call and returns the gRPC status error to throw.
+   *
+   * @param call - the gRPC call the refusal is for
+   * @param code - the `STS-SPIFFE-…` error code to record
+   * @param grpcCode - the gRPC status code
+   * @param message - the message the client is sent
+   * @returns the status error
+   */
   refuse(call: any, code: string, grpcCode: number, message: string): Error {
     const { log, errorCodes, rpc } = this.deps;
     log.debug("Entering K8sPsatAttestor.refuse(). " + code);
@@ -96,6 +131,11 @@ class K8sPsatAttestor {
   }
 
   // The realm's clusters, or a sentence saying why they cannot be read.
+  /**
+   * Reads the realm's clusters from `spiffe.k8sPsatClusters`.
+   *
+   * @returns the clusters by name, and `problem`: '' or why they cannot be read
+   */
   clusters(): { clusters: Record<string, any>; problem: string } {
     const { log, config } = this.deps;
     log.debug("Entering K8sPsatAttestor.clusters().");
@@ -137,6 +177,15 @@ class K8sPsatAttestor {
 
   // How to reach one cluster's API server: its URL, its CA and its bearer
   // token, the last two read from FILES. Throws a sentence.
+  /**
+   * Works out how to reach one cluster's API server: its URL, and its CA and
+   * bearer token read from files (the in-cluster service account when no
+   * `apiServer` is named).
+   *
+   * @param cluster - the cluster's configuration
+   * @returns the base URL, the CA and the token
+   * @throws an Error carrying a sentence when a file cannot be read
+   */
   reach(cluster: any): { base: string; ca: string; token: string } {
     const { log, fs, env } = this.deps;
     log.debug("Entering K8sPsatAttestor.reach().");
@@ -167,6 +216,16 @@ class K8sPsatAttestor {
 
   // One JSON request to the API server; resolves the parsed body or throws a
   // sentence.
+  /**
+   * Makes one JSON request to a cluster's API server.
+   *
+   * @param reach - how to reach the API server, from `reach()`
+   * @param method - the HTTP method
+   * @param path - the request path
+   * @param body - the JSON body, if any
+   * @returns the parsed response body
+   * @throws an Error carrying a sentence when the request fails
+   */
   async api(reach: any, method: string, path: string, body?: any):
       Promise<any> {
     const { log, outbound } = this.deps;
@@ -196,12 +255,22 @@ class K8sPsatAttestor {
     }
   }
 
+  /**
+   * Has the cluster review the token, checks the service account and the bound
+   * pod, and derives the agent's ID and selectors.
+   *
+   * @param context - the attestation context; the payload names the cluster and
+   *   carries the token
+   * @returns the agent `/spire/agent/k8s_psat/<cluster>/<node UID>` (or the pod
+   *   form) with SPIRE's cluster, agent and node selectors; re-attestable
+   * @throws a gRPC status error when the cluster, token or pod is refused
+   */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
     const { log, spiffeId, rpc } = this.deps;
     log.debug("Entering K8sPsatAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const configured = this.clusters();
     if (configured.problem) {
       log.debug("Leaving K8sPsatAttestor.attest(). Not configured.");
@@ -397,6 +466,11 @@ class K8sPsatAttestor {
   }
 }
 
+/**
+ * The `k8s_psat` node attestor (#40): a Kubernetes projected service account
+ * token, decided by the cluster's own TokenReview.
+ * @namespace
+ */
 export = {
   K8sPsatAttestor: K8sPsatAttestor
 };

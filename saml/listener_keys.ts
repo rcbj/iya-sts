@@ -82,12 +82,27 @@ interface ListenerKeysDeps {
   cluster: { listenerCertificatesOfLiveNodes(): string[] };
 }
 
+/**
+ * The TLS certificate the SAML back channel presents, published in the identity
+ * provider's metadata as a signing key descriptor.
+ */
 class ListenerKeys {
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, settings, the error-code table, the PEM stripper
+   * and the TLS listener's loader
+   */
   constructor(private readonly deps: ListenerKeysDeps) {
     deps.log.debug("Entering ListenerKeys.constructor().");
     deps.log.debug("Leaving ListenerKeys.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): ListenerKeysDeps {
     helpers.log.debug("Entering ListenerKeys.defaultDeps().");
     helpers.log.debug("Leaving ListenerKeys.defaultDeps().");
@@ -106,6 +121,14 @@ class ListenerKeys {
   // The certificates, base64 DER, this process's own first; empty when the
   // main port is not TLS. A certificate that cannot be read is a document
   // without it, logged under STS-SAML-0097 — never a document refused.
+  /**
+   * Answers the certificates the main port presents, base64 DER, this process's
+   * own first.
+   *
+   * A certificate that cannot be read is left out and logged under
+   * `STS-SAML-0097`; the document is never refused.
+   * @returns the certificates, or none when the main port is not TLS
+   */
   certificates(): string[] {
     const { log, config, errorCodes, stripPem } = this.deps;
     log.debug("Entering ListenerKeys.certificates().");
@@ -150,6 +173,12 @@ class ListenerKeys {
 
   // One `<md:KeyDescriptor use="signing">` per certificate, for the end of a
   // role descriptor's KeyDescriptor list (see the header for why there).
+  /**
+   * Draws one `<md:KeyDescriptor use="signing">` per certificate, for the end
+   * of a role descriptor's KeyDescriptor list.
+   *
+   * @returns the descriptors' XML, or ''
+   */
   keyDescriptors(): string {
     const { log } = this.deps;
     log.debug("Entering ListenerKeys.keyDescriptors().");
@@ -172,9 +201,23 @@ const slot = new InstanceSlot<ListenerKeys>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The certificate the SAML back channel presents, as a metadata key, so a
+ * service provider that authenticates the back-channel peer from metadata can
+ * do so.
+ * @namespace
+ */
 export = {
   ListenerKeys: ListenerKeys,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: ListenerKeys): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   certificates: slot.forward('certificates'),
   keyDescriptors: slot.forward('keyDescriptors')

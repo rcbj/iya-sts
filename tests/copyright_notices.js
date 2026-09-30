@@ -65,8 +65,9 @@ const HEADER_WINDOW = 8;
 // Directories never walked: somebody else's, generated, or not source.
 const SKIP_DIRS = new Set(['node_modules', '.git', '.terraform', 'coverage',
                            '__pycache__']);
+// `apidocs` is ./run-jsdoc.sh's output (2026-09-27), generated like coverage/.
 const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded',
-                    'tests/report', 'tests/vectors', 'data'];
+                    'tests/report', 'tests/vectors', 'data', 'apidocs'];
 
 // Trees this repository may not edit, and which therefore carry no header of
 // their own: REUSE.toml declares them.
@@ -96,8 +97,19 @@ function foreignVendoredJobs() {
   return out;
 }
 
+// This service's OWN files inside `common/vendored/` (#363, 2026-09-30):
+// they stopped being copies of the parent's, so they carry a header like
+// every other file this repository writes (`common/vendored/CLAUDE.md`).
+const OWNED_IN_VENDORED = ['common/vendored/pqc.js',
+                           'common/vendored/pqc_x509.js',
+                           'common/vendored/xmldsig.js'];
+
 function notEditedHere(rel, foreign) {
   log.debug("Entering notEditedHere().");
+  if (OWNED_IN_VENDORED.indexOf(rel) >= 0) {
+    log.debug("Leaving notEditedHere(). Owned since #363.");
+    return false;
+  }
   const answer = NOT_EDITED_HERE.some(function (d) {
     return rel.indexOf(d) === 0;
   }) || KERBEROS_COPIES.indexOf(rel) >= 0 || foreign.has(rel);

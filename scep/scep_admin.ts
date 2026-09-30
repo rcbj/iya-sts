@@ -68,7 +68,20 @@ interface ScepAdminDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The two SCEP console pages, Protocols > SCEP and Monitoring > SCEP
+ * enrollments, drawn in the console's shell from one call to `scep_console`.
+ *
+ * A created challenge password is answered with a page showing it once, never
+ * with a redirect.
+ */
 class ScepAdmin {
+  /**
+   * Builds the pages' owner.
+   *
+   * @param deps - the logger, body parser, error codes, the console shell, the
+   *   enrollment core, the SCEP view model and the HTML escaper
+   */
   constructor(private readonly deps: ScepAdminDeps) {
     deps.log.debug("Entering ScepAdmin.constructor().");
     deps.log.debug("Leaving ScepAdmin.constructor().");
@@ -76,6 +89,11 @@ class ScepAdmin {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time instance is built from
+   */
   static defaultDeps(): ScepAdminDeps {
     helpers.log.debug("Entering ScepAdmin.defaultDeps().");
     helpers.log.debug("Leaving ScepAdmin.defaultDeps().");
@@ -90,6 +108,14 @@ class ScepAdmin {
     };
   }
 
+  /**
+   * Refuses a page request whose query string the view model does not accept,
+   * with a 400 (STS-SCEP-0060).
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns true when it refused
+   */
   queryRefused(req, res) {
     const { log, consoleModel, errorCodes } = this.deps;
     log.debug("Entering ScepAdmin.queryRefused().");
@@ -107,6 +133,12 @@ class ScepAdmin {
     return false;
   }
 
+  /**
+   * Draws a value as escaped `<code>`.
+   *
+   * @param value - the value
+   * @returns the markup
+   */
   code(value) {
     const { log, esc } = this.deps;
     log.debug("Entering ScepAdmin.code().");
@@ -114,6 +146,12 @@ class ScepAdmin {
     return '<code>' + esc(value == null ? '' : value) + '</code>';
   }
 
+  /**
+   * Draws a muted placeholder for an empty cell.
+   *
+   * @param text - the text; `none` when omitted
+   * @returns the markup
+   */
   none(text) {
     const { log, esc } = this.deps;
     log.debug("Entering ScepAdmin.none().");
@@ -121,6 +159,13 @@ class ScepAdmin {
     return '<span class="sub">' + esc(text || 'none') + '</span>';
   }
 
+  /**
+   * Draws a hidden form field.
+   *
+   * @param name - the field's name
+   * @param value - its value
+   * @returns the markup
+   */
   hidden(name, value) {
     const { log, esc } = this.deps;
     log.debug("Entering ScepAdmin.hidden().");
@@ -129,6 +174,12 @@ class ScepAdmin {
            esc(value) + '">';
   }
 
+  /**
+   * Draws an entry's URN as a link to its person or application page.
+   *
+   * @param entry - the entry's `kind` and `id`, or null
+   * @returns the markup
+   */
   entryLink(entry) {
     const { log, esc, core } = this.deps;
     log.debug("Entering ScepAdmin.entryLink().");
@@ -144,6 +195,11 @@ class ScepAdmin {
            '</a>';
   }
 
+  /**
+   * Draws the select choosing a person or an application.
+   *
+   * @returns the markup
+   */
   kindSelect() {
     const { log } = this.deps;
     log.debug("Entering ScepAdmin.kindSelect().");
@@ -152,6 +208,12 @@ class ScepAdmin {
            '<option value="application">application</option></select>';
   }
 
+  /**
+   * Draws the endpoints section.
+   *
+   * @param json - the view
+   * @returns the markup
+   */
   sectionEndpoints(json) {
     const { log, esc } = this.deps;
     const self = this;
@@ -172,6 +234,12 @@ class ScepAdmin {
       }).join(' ') + '</td></tr></table>';
   }
 
+  /**
+   * Draws the Issuing CA and RA certificate section.
+   *
+   * @param json - the view
+   * @returns the markup
+   */
   sectionAuthority(json) {
     const { log, esc, admin } = this.deps;
     log.debug("Entering ScepAdmin.sectionAuthority().");
@@ -211,6 +279,13 @@ class ScepAdmin {
       '<button type="submit">Re-issue the RA certificate</button></form>';
   }
 
+  /**
+   * Draws the profiles section: each profile, whether it is allowed and what it
+   * needs.
+   *
+   * @param json - the view
+   * @returns the markup
+   */
   sectionProfiles(json) {
     const { log, esc } = this.deps;
     const self = this;
@@ -235,6 +310,14 @@ class ScepAdmin {
       '</tbody></table>';
   }
 
+  /**
+   * Draws the challenge passwords section with its create and delete forms,
+   * paged.
+   *
+   * @param req - the request, for paging
+   * @param json - the view
+   * @returns the markup
+   */
   sectionChallenges(req, json) {
     const { log, admin, esc } = this.deps;
     const self = this;
@@ -279,6 +362,12 @@ class ScepAdmin {
       '</thead><tbody>' + rows + '</tbody></table>' + nav.foot;
   }
 
+  /**
+   * Draws the registered host names section with its add and remove forms.
+   *
+   * @param json - the view
+   * @returns the markup
+   */
   sectionHostNames(json) {
     const { log, admin } = this.deps;
     const self = this;
@@ -313,6 +402,13 @@ class ScepAdmin {
       '<tbody>' + rows + '</tbody></table>';
   }
 
+  /**
+   * Draws the enrolled certificates section with its revoke forms, paged.
+   *
+   * @param req - the request, for paging
+   * @param json - the view
+   * @returns the markup
+   */
   sectionCertificates(req, json) {
     const { log, admin, esc } = this.deps;
     const self = this;
@@ -347,6 +443,12 @@ class ScepAdmin {
       '<tbody>' + rows + '</tbody></table>' + nav.foot;
   }
 
+  /**
+   * Draws what SCEP here does not do, and the mode's note.
+   *
+   * @param json - the view
+   * @returns the markup
+   */
   sectionExceptions(json) {
     const { log, esc, admin } = this.deps;
     log.debug("Entering ScepAdmin.sectionExceptions().");
@@ -367,6 +469,14 @@ class ScepAdmin {
   // ---------------------------------------------------------------------------
   // GET /admin/scep
   // ---------------------------------------------------------------------------
+  /**
+   * Draws `GET /admin/scep`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param extraTop - markup to put first, such as a created challenge shown
+   *   once
+   */
   drawScep(req, res, extraTop) {
     const { log, consoleModel, admin } = this.deps;
     log.debug("Entering ScepAdmin.drawScep().");
@@ -395,6 +505,13 @@ class ScepAdmin {
   // ---------------------------------------------------------------------------
   // GET /admin/scep/monitor
   // ---------------------------------------------------------------------------
+  /**
+   * Draws a table of counts, largest first, for the monitor page.
+   *
+   * @param title - the table's heading
+   * @param counts - the counts, by name
+   * @returns the markup
+   */
   table(title, counts) {
     const { log, esc } = this.deps;
     const self = this;
@@ -415,6 +532,12 @@ class ScepAdmin {
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order
   // is unchanged (rule 1). Nothing calls it at load.
+  /**
+   * Registers `GET /admin/scep`, `POST /admin/scep` and `GET
+   * /admin/scep/monitor`; called by `common/protocol_stack.ts`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, parseBody, consoleModel, admin, esc, errorCodes } = this.deps;
     const self = this;
@@ -546,9 +669,25 @@ const slot = new InstanceSlot<ScepAdmin>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The two SCEP console pages.
+ *
+ * The exports forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Registers the SCEP console pages on the installed instance.
+   */
   registerRoutes: slot.forward('registerRoutes'),
   ScepAdmin: ScepAdmin,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: ScepAdmin): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin()
 };

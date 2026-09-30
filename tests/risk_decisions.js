@@ -184,18 +184,29 @@ function childMain() {
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
          'device-required,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-protected-key,' +
-         'risk-protected-second-factor,risk-protected-alarm,' +
-         'holds-a-required-role' &&
+         'risk-protected-second-factor,' +
+         'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
+         'protected-undeclared-refused,protected-undeclared-dropped,' +
+         'undeclared-refused,undeclared-dropped,permission-not-granted,' +
+         'scope-not-authorized,consent-outstanding,scope-kept,' +
+         'detail-type-not-registered,detail-type-not-published,detail-kept,' +
+         'transfer-hold-relayed,transfer-hold-kept,' +
+         'transfer-serve-geofenced,transfer-serve-kept,' +
+         'transfer-release-withheld,transfer-release-kept,' +
+         'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
          '(#164), the three risk rules, the console\'s two step-ups and ' +
          'its alarm ahead of the role rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
-      { decideRisk: 'no', decideDevices: 'no' }, { name: 'role-issuance' });
+      { decideRisk: 'no', decideDevices: 'no', decideScopes: 'no',
+        decideTransfers: 'no' },
+      { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
-         'A2. decideRisk: no (and decideDevices: no, #164) builds the ' +
+         'A2. decideRisk: no (and decideDevices, decideScopes and ' +
+         'decideTransfers: no, #164, #304 and #98) builds the ' +
          'roles-only document it was');
     const request = rolePep.buildRequest({
       application: CLIENT, kind: 'start-session',
@@ -496,9 +507,10 @@ function childMain() {
               enforced: true } }, ['EVERYBODY'], [], ['EVERYBODY']);
     const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
-         // The three risk rules, the role rule, and #164's two device
-         // rules.
-         unprotectedPolicy.policy.rules.length === 6,
+         // The three risk rules, the role rule, #164's two device rules,
+         // the thirteen scope and detail rules of #304 and #305, and the
+         // six transfer rules of #98.
+         unprotectedPolicy.policy.rules.length === 25,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 
@@ -671,6 +683,37 @@ function childMain() {
     note(riskEngine.riskOf(known).knownContext === true,
          'K2. the session carries the known context, so the rescore job ' +
          'caps what a list gained later can raise it to');
+
+    // --- L. an allow-listed network is not counted as hostile (#311) -------
+    // `network-failures` is refused passwords from anybody behind the
+    // address; an operator who allow-listed it declared it trusted.
+    const riskStore = require(ROOT + '/risk/risk_store');
+    config.setOverride('risk.networkFailureThreshold', 1);
+    await riskStore.recordFailure({ realm: 'default', at: Date.now(),
+      door: 'a test', subject: '', nameHmac: 'rd-l', addressSealed: '',
+      addressPrefix: riskStore.prefixOf('127.0.0.1'),
+      asn: 0, errorCode: 'STS-AUTHN-0054' }, false);
+    ldap.createUser('rd-ian', { invent: false });
+    const before = await riskEngine.assess(contextOf('rd-ian'));
+    const allowed = await riskDatasets.importVersion({
+      dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+      content: '127.0.0.1\n', version: 'rd-allow-1', source: 'upload' });
+    ldap.createUser('rd-jon', { invent: false });
+    const after = await riskEngine.assess(contextOf('rd-jon'));
+    const named = function (a, id) {
+      return !!a && (a.signals || []).some(function (one) {
+        return one.signal === id;
+      });
+    };
+    note(named(before, 'network-failures') && allowed && allowed.ok &&
+         named(after, 'operator-allow') &&
+         !named(after, 'network-failures'),
+         'L1. refused passwords from the network count against a newcomer ' +
+         'until the operator allow-lists it, and not after',
+         JSON.stringify({ before: before && before.signals.map(function (x) {
+           return x.signal; }), after: after && after.signals.map(function (x) {
+           return x.signal; }), allowed: allowed && allowed.errors }));
+    config.clearOverride('risk.networkFailureThreshold');
     config.setOverride('risk.minimumHistory', 5);
 
     server.close();

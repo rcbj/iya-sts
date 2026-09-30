@@ -72,17 +72,45 @@ const ENCRYPTION_ALGS = applications.ID_TOKEN_ENCRYPTION_ALGS;
 const ENCRYPTION_ENCS = applications.ID_TOKEN_ENCRYPTION_ENCS;
 const ENC_MEMBER = 'authorization_encrypted_response_alg';
 
+/**
+ * JWT Secured Authorization Response Mode (JARM, #143): an authorization
+ * response's parameters as one signed, and optionally encrypted, JWT.
+ */
 class Jarm {
+  /**
+   * The four JARM response modes (section 2.3).
+   */
   static readonly MODES = MODES;
+  /**
+   * The signing algorithms a client may register for its responses.
+   */
   static readonly SIGNING_ALGS = SIGNING_ALGS;
+  /**
+   * The key-management algorithms a client may register for its responses.
+   */
   static readonly ENCRYPTION_ALGS = ENCRYPTION_ALGS;
+  /**
+   * The content encryptions a client may register for its responses.
+   */
   static readonly ENCRYPTION_ENCS = ENCRYPTION_ENCS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, helpers, crypto module, settings, application
+   *   registry, FAPI module, introspection module and error codes this class
+   *   reads
+   */
   constructor(private readonly deps: JarmDeps) {
     deps.log.debug("Entering Jarm.constructor().");
     deps.log.debug("Leaving Jarm.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): JarmDeps {
     helpers.log.debug("Entering Jarm.defaultDeps().");
     helpers.log.debug("Leaving Jarm.defaultDeps().");
@@ -99,6 +127,12 @@ class Jarm {
   }
 
   // Whether `mode` is one of JARM's.
+  /**
+   * Tells whether a response mode is one of JARM's.
+   *
+   * @param mode - the `response_mode`
+   * @returns true for a JARM mode
+   */
   isJarm(mode: Json): boolean {
     const { log } = this.deps;
     log.debug("Entering Jarm.isJarm().");
@@ -108,6 +142,14 @@ class Jarm {
 
   // How the `response` parameter travels: 'query', 'fragment' or
   // 'form_post'. `types` is the response_type, as a string or a list.
+  /**
+   * Tells how the `response` parameter travels for a mode and response type;
+   * `jwt` is a query for `code` and `none`, and a fragment otherwise.
+   *
+   * @param mode - the JARM response mode
+   * @param types - the response_type, as a string or a list
+   * @returns `query`, `fragment` or `form_post`
+   */
   transportOf(mode: Json, types: Json): string {
     const { log } = this.deps;
     log.debug("Entering Jarm.transportOf(). " + mode);
@@ -135,6 +177,13 @@ class Jarm {
   }
 
   // What this client's responses are signed and encrypted with, or a refusal.
+  /**
+   * Works out what a client's responses are signed and encrypted with, from its
+   * registration with the defaults applied.
+   *
+   * @param registered - the client's registration
+   * @returns `{ ok: true, signAlg, alg, enc }`, or `{ ok: false, description }`
+   */
   protectionFor(registered: Json): Json {
     const { log, applications, fapi } = this.deps;
     log.debug("Entering Jarm.protectionFor().");
@@ -166,6 +215,15 @@ class Jarm {
   }
 
   // JARM section 2.3.1: `query.jwt` carries no token in clear.
+  /**
+   * Refuses `query.jwt` with a response type carrying a token, unless the
+   * response is encrypted (section 2.3.1).
+   *
+   * @param mode - the JARM response mode
+   * @param types - the response_type
+   * @param registered - the client's registration
+   * @returns null, or a refusal carrying its error code
+   */
   modeProblem(mode: Json, types: Json, registered: Json): Json {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Jarm.modeProblem().");
@@ -195,6 +253,13 @@ class Jarm {
 
   // Whether the client's `jwks` holds a key its responses can be encrypted
   // to — asked at registration, as the ID Token's is.
+  /**
+   * Tells whether a registration that asks for encrypted responses has a key to
+   * encrypt to.
+   *
+   * @param metadata - the registration metadata
+   * @returns null, or a refusal carrying its error code
+   */
   registrationKeyProblem(metadata: Json): Json {
     const { log, introspectionJwt, errorCodes } = this.deps;
     log.debug("Entering Jarm.registrationKeyProblem().");
@@ -227,6 +292,17 @@ class Jarm {
   // registered — encrypted. `expires_in` stays a number; everything else is a
   // string, as it would have been in a URL.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the `response` JWT: the response fields with `iss`, `aud` and `exp`,
+   * signed and, where registered, encrypted (section 2.1).
+   *
+   * @param fields - the parameters the response would have carried
+   * @param context - `registered` (the client's registration), `issuer` and
+   *   `clientId`
+   * @returns a promise of the compact JWT or JWE
+   * @throws an Error with its code marked when the registration cannot be
+   *   honoured or encryption fails
+   */
   async respond(fields: Json, context: Json): Promise<string> {
     const { log, helpers, stsCrypto, config, introspectionJwt,
             errorCodes } = this.deps;
@@ -292,9 +368,29 @@ const slot = new InstanceSlot<Jarm>(
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * JWT Secured Authorization Response Mode (JARM), in every mode and profile.
+ *
+ * A library that registers no route; `redirectBack()` in `oauth2.ts` is its one
+ * caller. The composition root builds the instance; each function here forwards
+ * to it.
+ *
+ * @namespace
+ */
 export = {
   Jarm: Jarm,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: Jarm): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   MODES: Jarm.MODES,
   SIGNING_ALGS: Jarm.SIGNING_ALGS,

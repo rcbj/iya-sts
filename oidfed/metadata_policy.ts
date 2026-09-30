@@ -102,7 +102,16 @@ interface Outcome {
   metadata?: Json;
 }
 
+/**
+ * OpenID Federation 1.1 section 6: the seven standard metadata policy
+ * operators, validating, merging and applying policies down a chain, and the
+ * three constraints. A pure library of static methods: it fetches, signs and
+ * reads nothing.
+ */
 class MetadataPolicy {
+  /**
+   * The standard operators, in their order of application.
+   */
   static readonly OPERATORS = OPERATORS;
 
   // -------------------------------------------------------------------------
@@ -111,6 +120,13 @@ class MetadataPolicy {
   // 6.1.3.1.8 warns libraries get wrong. Not canonicalisation for a
   // signature (that is `crypto.js`'s); only a stable key for equality.
   // -------------------------------------------------------------------------
+  /**
+   * Serialises a value with its keys sorted, as a stable key for equality; not
+   * a canonicalisation for a signature.
+   *
+   * @param value - the value
+   * @returns the serialisation
+   */
   static stable(value: Json): string {
     log.debug("Entering MetadataPolicy.stable().");
     // A HOT PATH: called once per JSON value, recursively, for every value
@@ -132,6 +148,13 @@ class MetadataPolicy {
     return out;
   }
 
+  /**
+   * Answers whether two values are equal, whatever the order of their members.
+   *
+   * @param a - one value
+   * @param b - the other
+   * @returns true when they are equal
+   */
   static same(a: Json, b: Json): boolean {
     log.debug("Entering MetadataPolicy.same().");
     log.debug("Leaving MetadataPolicy.same().");
@@ -139,6 +162,13 @@ class MetadataPolicy {
   }
 
   // Is every member of `small` in `big`? (Arrays; values compared stably.)
+  /**
+   * Answers whether every member of one array is in another, compared stably.
+   *
+   * @param small - the array that may be the subset
+   * @param big - the array that may hold it
+   * @returns true when every member is held
+   */
   static subsetOf(small: Json[], big: Json[]): boolean {
     log.debug("Entering MetadataPolicy.subsetOf().");
     const keys = big.map(MetadataPolicy.stable);
@@ -151,6 +181,13 @@ class MetadataPolicy {
 
   // The union and the intersection, keeping the FIRST array's order and
   // never repeating a value — the arrays these operators produce are sets.
+  /**
+   * Answers the union of two arrays as a set, in the first array's order.
+   *
+   * @param a - the first array
+   * @param b - the second
+   * @returns the union
+   */
   static union(a: Json[], b: Json[]): Json[] {
     log.debug("Entering MetadataPolicy.union().");
     const seen: string[] = [];
@@ -166,6 +203,14 @@ class MetadataPolicy {
     return out;
   }
 
+  /**
+   * Answers the intersection of two arrays as a set, in the first array's
+   * order.
+   *
+   * @param a - the first array
+   * @param b - the second
+   * @returns the intersection
+   */
   static intersection(a: Json[], b: Json[]): Json[] {
     log.debug("Entering MetadataPolicy.intersection().");
     const keys = b.map(MetadataPolicy.stable);
@@ -193,6 +238,13 @@ class MetadataPolicy {
   // operator is configured with a JSON value type that is not supported,
   // the operator MUST produce a policy error"). '' when it is acceptable.
   // -------------------------------------------------------------------------
+  /**
+   * Checks one operator's configured value for its type (6.1.3).
+   *
+   * @param op - the operator
+   * @param v - its value
+   * @returns the problem, or '' when it is acceptable
+   */
   static operatorValueProblem(op: string, v: Json): string {
     log.debug("Entering MetadataPolicy.operatorValueProblem(). " + op);
     let problem = '';
@@ -224,6 +276,13 @@ class MetadataPolicy {
   // `value: ["a"]` and an Intermediate's `subset_of: ["b"]`), and 6.1.4.1
   // says that too is a policy error. '' when the combination is allowed.
   // -------------------------------------------------------------------------
+  /**
+   * Checks the combination rules of one parameter policy (6.1.3.1), for a
+   * single statement's policy and a merged one alike.
+   *
+   * @param ops - the parameter policy's operators and their values
+   * @returns the problem, or '' when the combination is allowed
+   */
   static combinationProblem(ops: Json): string {
     log.debug("Entering MetadataPolicy.combinationProblem().");
     const has = function (name: string): boolean {
@@ -303,6 +362,16 @@ class MetadataPolicy {
   // (and nobody made critical) DROPPED — so the merge below sees only what
   // it can reason about.
   // -------------------------------------------------------------------------
+  /**
+   * Validates one statement's `metadata_policy` (6.1.2, 6.1.4.1).
+   *
+   * Operators this service does not understand, and nobody made critical, are
+   * dropped from the answer; a critical one it does not understand is a policy
+   * error.
+   * @param policy - the statement's `metadata_policy`
+   * @param critical - the operators the chain declared critical
+   * @returns `{ ok, policy }`, or a policy error with its code
+   */
   static validate(policy: Json, critical: string[]): Outcome {
     log.debug("Entering MetadataPolicy.validate().");
     if (!MetadataPolicy.plainObject(policy)) {
@@ -380,6 +449,14 @@ class MetadataPolicy {
   // rule; and the merged parameter policy is checked for its combinations
   // again. Neither argument is changed.
   // -------------------------------------------------------------------------
+  /**
+   * Merges a subordinate's validated policy into the current one (6.1.4.1),
+   * checking the merged combinations again. Neither argument is changed.
+   *
+   * @param current - the policy merged so far
+   * @param next - the next statement's validated policy
+   * @returns `{ ok, policy }`, or a policy error with its code
+   */
   static merge(current: Json, next: Json): Outcome {
     log.debug("Entering MetadataPolicy.merge().");
     const out: Json = JSON.parse(JSON.stringify(current || {}));
@@ -430,6 +507,14 @@ class MetadataPolicy {
   }
 
   // One operator's value merge, by that operator's rule.
+  /**
+   * Merges one operator's values by that operator's own rule.
+   *
+   * @param op - the operator
+   * @param a - the current value
+   * @param b - the subordinate's value
+   * @returns `{ ok, value }`, or `{ ok: false, why }`
+   */
   static mergeOperator(op: string, a: Json, b: Json): { ok: boolean;
       value?: Json; why?: string } {
     log.debug("Entering MetadataPolicy.mergeOperator(). " + op);
@@ -463,6 +548,13 @@ class MetadataPolicy {
   // merged in that order. `{ ok, policy }`; an empty policy when none of
   // them carries one.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves a chain's policy (6.1.4.1): the critical operators gathered from
+   * every statement, then each policy validated and merged in order.
+   *
+   * @param statements - the Subordinate Statements' claims, most superior first
+   * @returns `{ ok, policy }`, empty when none carries one, or a policy error
+   */
   static resolve(statements: Json[]): Outcome {
     log.debug("Entering MetadataPolicy.resolve(). " + statements.length +
               " statement(s).");
@@ -504,6 +596,15 @@ class MetadataPolicy {
   // its values and joined again (6.1.3.1.8). Answers `{ ok, metadata }`
   // with a NEW object; the argument is not changed.
   // -------------------------------------------------------------------------
+  /**
+   * Applies a resolved policy to one entity type's metadata (6.1.4.2), each
+   * parameter's operators in their order of application.
+   *
+   * @param type - the entity type
+   * @param metadata - that type's metadata
+   * @param policy - the resolved policy for the type
+   * @returns `{ ok, metadata }` as a new object, or a policy error
+   */
   static applyToType(type: string, metadata: Json, policy: Json): Outcome {
     log.debug("Entering MetadataPolicy.applyToType(). " + type);
     const out: Json = JSON.parse(JSON.stringify(metadata || {}));
@@ -632,6 +733,15 @@ class MetadataPolicy {
   // every Entity Type metadata ... for which a corresponding metadata
   // parameter policy is present").
   // -------------------------------------------------------------------------
+  /**
+   * Applies a resolved policy to the whole `metadata` claim: every entity type
+   * the metadata holds and the policy names. A type the metadata lacks is not
+   * created.
+   *
+   * @param metadata - the subject's metadata
+   * @param policy - the resolved policy
+   * @returns `{ ok, metadata }`, or a policy error
+   */
   static apply(metadata: Json, policy: Json): Outcome {
     log.debug("Entering MetadataPolicy.apply().");
     const out: Json = JSON.parse(JSON.stringify(metadata || {}));
@@ -659,6 +769,14 @@ class MetadataPolicy {
   // is applied BEFORE any policy (6.1.4.2). It has no effect on the
   // subject's subordinates, which is why only the last statement's is used.
   // -------------------------------------------------------------------------
+  /**
+   * Overlays the Immediate Superior's `metadata` (3.1.1) on the subject's, for
+   * the entity types the subject declares only.
+   *
+   * @param metadata - the subject's metadata
+   * @param superior - the superior's `metadata` claim about it
+   * @returns the overlaid metadata
+   */
   static overlay(metadata: Json, superior: Json): Json {
     log.debug("Entering MetadataPolicy.overlay().");
     const out: Json = JSON.parse(JSON.stringify(metadata || {}));
@@ -680,6 +798,12 @@ class MetadataPolicy {
   // =========================================================================
 
   // The host of an Entity Identifier, lower-cased, or '' when it has none.
+  /**
+   * Answers the host of an Entity Identifier, lower-cased.
+   *
+   * @param entityId - the Entity Identifier
+   * @returns the host, or '' when it has none
+   */
   static hostOf(entityId: string): string {
     log.debug("Entering MetadataPolicy.hostOf().");
     try {
@@ -698,6 +822,15 @@ class MetadataPolicy {
   // constraint beginning with a period matches any host BELOW it (".example
   // .com" matches "a.example.com" and not "example.com"); any other matches
   // that host exactly. Compared case-insensitively, as DNS names are.
+  /**
+   * Matches a host against a naming constraint by RFC 5280 section 4.2.1.10's
+   * domain-name rule: a leading period matches any host below it, anything else
+   * that host exactly.
+   *
+   * @param host - the host
+   * @param constraint - the constraint
+   * @returns true when it matches
+   */
   static hostMatches(host: string, constraint: string): boolean {
     log.debug("Entering MetadataPolicy.hostMatches().");
     const c = String(constraint || '').toLowerCase();
@@ -712,6 +845,13 @@ class MetadataPolicy {
   // Is a constraints object well formed? '' when it is. Members this service
   // does not understand are ignored (6.2: "If they are not understood, they
   // MUST be ignored").
+  /**
+   * Checks that a constraints object is well formed; members this service does
+   * not understand are ignored (6.2).
+   *
+   * @param constraints - the constraints
+   * @returns the problem, or '' when it is well formed
+   */
   static constraintsProblem(constraints: Json): string {
     log.debug("Entering MetadataPolicy.constraintsProblem().");
     let problem = '';
@@ -768,6 +908,14 @@ class MetadataPolicy {
   // Entity that is the subject of this Subordinate Statement as well as ...
   // all Entities that are Subordinate to it").
   // -------------------------------------------------------------------------
+  /**
+   * Checks a chain's `max_path_length` and naming constraints (6.2).
+   *
+   * @param chain - the claim sets in chain order: the subject's Entity
+   * Configuration, then the Subordinate Statements up to the Trust Anchor's,
+   * optionally the Trust Anchor's Entity Configuration last
+   * @returns `{ ok }`, or a policy error with its code
+   */
   static checkConstraints(chain: Json[]): Outcome {
     log.debug("Entering MetadataPolicy.checkConstraints(). " + chain.length +
               " statement(s).");
@@ -822,6 +970,14 @@ class MetadataPolicy {
   // Subordinate Statements applies, so a type survives only if every one
   // that is present names it. `federation_entity` always survives.
   // -------------------------------------------------------------------------
+  /**
+   * Removes the entity types the chain's `allowed_entity_types` do not allow
+   * (6.2.3); `federation_entity` always survives.
+   *
+   * @param metadata - the subject's metadata
+   * @param chain - the claim sets in chain order
+   * @returns the metadata with only the allowed types
+   */
   static stripEntityTypes(metadata: Json, chain: Json[]): Json {
     log.debug("Entering MetadataPolicy.stripEntityTypes().");
     const out: Json = JSON.parse(JSON.stringify(metadata || {}));
@@ -850,6 +1006,14 @@ class MetadataPolicy {
   // Policies"), then the resolved policy (6.1.4). The other two constraints
   // are checked beforehand by `checkConstraints()`.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves the subject's metadata from a verified chain, in the order the
+   * specification fixes: the superior's `metadata`, the entity-type constraint,
+   * then the resolved policy.
+   *
+   * @param chain - the claim sets in chain order
+   * @returns `{ ok, metadata }`, or a policy error with its code
+   */
   static resolvedMetadata(chain: Json[]): Outcome {
     log.debug("Entering MetadataPolicy.resolvedMetadata().");
     const subordinates = chain.slice(1).filter(function (one: Json) {

@@ -72,7 +72,20 @@ interface EstApiDeps {
   loadEstConsole(): typeof import('./est_console');
 }
 
+/**
+ * The management API's operations for EST: `GET /admin-api/est`, `GET
+ * /admin-api/est/monitor` and `POST /admin-api/est/:action`, as rows
+ * `mgmt-api/admin_api.ts` spreads into its table. It registers no route.
+ *
+ * `issue-server-key` returns a private key once, in the JSON.
+ */
 class EstApi {
+  /**
+   * Builds the API from its dependencies.
+   *
+   * @param deps - the modules it reads, from `EstApi.defaultDeps()` or the
+   * composition root
+   */
   constructor(private readonly deps: EstApiDeps) {
     deps.log.debug("Entering EstApi.constructor().");
     deps.log.debug("Leaving EstApi.constructor().");
@@ -80,6 +93,12 @@ class EstApi {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the real modules the API depends on, as the composition root passes
+   * them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): EstApiDeps {
     helpers.log.debug("Entering EstApi.defaultDeps().");
     helpers.log.debug("Leaving EstApi.defaultDeps().");
@@ -95,6 +114,11 @@ class EstApi {
 
   // What loading this module did with its instance before R2, run once
   // for whichever instance is installed (#50, R2).
+  /**
+   * Builds the installed instance's route table into the module's `ROUTES`.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: EstApi): void {
     helpers.log.debug("Entering EstApi.wire().");
     routes = instance.buildRoutes();
@@ -104,6 +128,14 @@ class EstApi {
   // `admin_api.js`'s `sendJson()`, which is not exported: the same answer, and
   // the same `protocolEndpoints` member for the GET that mirrors a Protocols
   // page (the registration loop computes it onto `res.locals`).
+  /**
+   * Sends a JSON answer with `Cache-Control: no-store`, adding the Protocols
+   * page's endpoints to a successful GET that mirrors one.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the body
+   */
   sendJson(res, status, body) {
     const { log } = this.deps;
     log.debug("Entering EstApi.sendJson(). status=" + status);
@@ -118,6 +150,11 @@ class EstApi {
     log.debug("Leaving EstApi.sendJson().");
   }
 
+  /**
+   * Returns the JSON schema of the `kind` property: `person` or `application`.
+   *
+   * @returns the schema
+   */
   kindProperty() {
     const { log } = this.deps;
     log.debug("Entering EstApi.kindProperty().");
@@ -127,6 +164,13 @@ class EstApi {
                           'or an application (its identifier).' };
   }
 
+  /**
+   * Builds the route table: the EST report, the monitor, and the actions
+   * `issue-server-key`, `revoke-certificate`, `add-host-name` and
+   * `remove-host-name`.
+   *
+   * @returns the routes
+   */
   buildRoutes() {
     const { log, loadEstConsole, parseBody, errorCodes } = this.deps;
     const self = this;
@@ -356,13 +400,30 @@ const slot = new InstanceSlot<EstApi>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The management API's EST operations.
+ *
+ * Exports the `EstApi` class, the route table, and facades for the installed
+ * instance.
+ *
+ * @namespace
+ */
 export = {
   EstApi: EstApi,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: EstApi): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   // A GETTER, so the table is the installed instance's: under the root it is
   // built when the root installs that instance, and `mgmt-api/admin_api.ts`
   // reads it after that.
+  /**
+   * The route table `mgmt-api/admin_api.ts` spreads into its own.
+   */
   get ROUTES(): Routes {
     log.debug("Entering ROUTES().");
     slot.get();

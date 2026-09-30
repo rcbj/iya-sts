@@ -114,6 +114,10 @@ interface DatabaseAdminDeps {
 // collected on every render and shown to nobody, and a heading with no probe
 // is an empty section that looks like a broken feature. Neither is an error
 // anywhere — which is `pki_authoring.js`'s field-table argument, one layer out.
+/**
+ * The page's sections in the order they are drawn; every metrics probe names
+ * one of these groups.
+ */
 const SECTIONS = [
   { group: 'Server',
     heading: 'The server',
@@ -142,9 +146,22 @@ const SECTIONS = [
            'named handful that matter whether or not anybody touched them.' }
 ];
 
+/**
+ * Monitoring → Database: everything PostgreSQL will tell this service about
+ * itself, and the state of the schema this service owns in it.
+ */
 class DatabaseAdmin {
+  /**
+   * See the module's `SECTIONS`.
+   */
   static readonly SECTIONS = SECTIONS;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the console shell, settings and the persistence
+   * store
+   */
   constructor(private readonly deps: DatabaseAdminDeps) {
     deps.log.debug("Entering DatabaseAdmin.constructor().");
     deps.log.debug("Leaving DatabaseAdmin.constructor().");
@@ -152,6 +169,11 @@ class DatabaseAdmin {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): DatabaseAdminDeps {
     helpers.log.debug("Entering DatabaseAdmin.defaultDeps().");
     helpers.log.debug("Leaving DatabaseAdmin.defaultDeps().");
@@ -442,6 +464,15 @@ class DatabaseAdmin {
   // `respond()`'s contract and why `/admin-api/database` cannot disagree with
   // the page (rule 7).
   // =========================================================================
+  /**
+   * Collects the database's metrics and builds the page's model, the one object
+   * behind the page, its `?format=json` and `/admin-api/database` (rule 7).
+   *
+   * Without a PostgreSQL store it answers `available: false` and why; a failed
+   * collection answers `ok: false` and the error.
+   * @returns a promise of the model: the target, the pool, every probe, derived
+   * figures, the schema and its drift from what this service expects
+   */
   databaseJson(): Promise<Json> {
     const { log, config, persistence } = this.deps;
     const self = this;
@@ -495,6 +526,12 @@ class DatabaseAdmin {
   // For `tests/database_metrics.js`, which checks every probe's group against
   // a heading this page actually draws. A probe in a group with no section is
   // collected on every render and shown to nobody.
+  /**
+   * Answers the section table, for the test that checks every probe's group
+   * against a heading the page draws.
+   *
+   * @returns the page's sections
+   */
   sections(): typeof SECTIONS {
     const { log } = this.deps;
     log.debug("Entering DatabaseAdmin.sections().");
@@ -859,6 +896,11 @@ class DatabaseAdmin {
       json.failed.length + ' probe(s) unavailable');
   }
 
+  /**
+   * Registers `GET /admin/database`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function }): void {
     const { log } = this.deps;
     const self = this;
@@ -899,10 +941,24 @@ helpers.log.info('The database report is at /admin/database: everything ' +
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Monitoring → Database, `/admin/database`: everything PostgreSQL will tell
+ * this service about itself, and the state of the schema this service owns in
+ * it. Empty unless `persistence.mode` is `postgres`, and says so.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   DatabaseAdmin: DatabaseAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: DatabaseAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts`. Rule 7 — one function behind the page and
   // the operation, so the two cannot report different numbers.

@@ -320,12 +320,29 @@ class PortalCibaPage {
   }
 }
 
+/**
+ * The portal page at /portal/ciba: where a person approves or denies a CIBA
+ * backchannel sign-in request, as strongly as the request asks (#131).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalCiba {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalCibaDeps) {
     deps.log.debug("Entering PortalCiba.constructor().");
     deps.log.debug("Leaving PortalCiba.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalCibaDeps {
     helpers.log.debug("Entering PortalCiba.defaultDeps().");
     helpers.log.debug("Leaving PortalCiba.defaultDeps().");
@@ -333,6 +350,13 @@ class PortalCiba {
              stepUp: stepUp };
   }
 
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalCiba.register().");
     const page = new PortalCibaPage(this.deps, context);
@@ -352,6 +376,10 @@ const slot = new InstanceSlot<PortalCiba>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/ciba, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalCiba: PortalCiba,
   installInstance: (instance: PortalCiba): void => slot.install(instance),

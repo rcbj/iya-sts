@@ -114,6 +114,9 @@ type Json = any;
 type Req = any;
 
 const ENDPOINT = 'collection';
+/**
+ * The scheduler job that crawls the realm's subtree.
+ */
 const CRAWL_JOB = 'oidfed.collection-crawl';
 
 // 5.2.2's informational metadata — what the draft's UI Info carries.
@@ -214,16 +217,41 @@ interface Outcome {
   [key: string]: Json;
 }
 
+/**
+ * The Entity Collection (draft 01) at `/oidfed/collection`: every entity
+ * beneath the realm whose Trust Chain to it validates, with its UI infos and
+ * Trust Marks, filterable and paged, answered from a bounded crawl.
+ */
 class EntityCollection {
+  /**
+   * See the module's `CRAWL_JOB`.
+   */
   static readonly CRAWL_JOB = CRAWL_JOB;
+  /**
+   * The informational metadata claims of 5.2.2 a UI Info carries.
+   */
   static readonly UI_CLAIMS = UI_CLAIMS;
+  /**
+   * The Entity Info claims of draft 01.
+   */
   static readonly ENTITY_CLAIMS = ENTITY_CLAIMS;
 
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - settings, realms and the modules the crawl reaches, some
+   * lazily
+   */
   constructor(private readonly deps: EntityCollectionDeps) {
     deps.log.debug("Entering EntityCollection.constructor().");
     deps.log.debug("Leaving EntityCollection.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): EntityCollectionDeps {
     helpers.log.debug("Entering EntityCollection.defaultDeps().");
     helpers.log.debug("Leaving EntityCollection.defaultDeps().");
@@ -271,6 +299,14 @@ class EntityCollection {
   // forms (`display_name#de`) — and `display_name` from the type's own name
   // where it has none.
   // -------------------------------------------------------------------------
+  /**
+   * Answers the UI infos of one resolved entity: per entity type, the
+   * informational claims its metadata holds with their language-tagged forms,
+   * and `display_name` from the type's own name where it has none.
+   *
+   * @param metadata - the entity's resolved metadata
+   * @returns the UI infos by entity type
+   */
   static uiInfosOf(metadata: Json): Json {
     helpers.log.debug("Entering EntityCollection.uiInfosOf().");
     const out: Json = {};
@@ -375,6 +411,16 @@ class EntityCollection {
   // list is asked for. `dial` lets the walk fetch; without it only what this
   // process can answer in process is collected.
   // -------------------------------------------------------------------------
+  /**
+   * Collects everything beneath the realm, breadth first, each entity resolved
+   * to the realm before it is kept and before its own list is asked for.
+   *
+   * @param entity - the `Oidfed` instance serving the realm
+   * @param req - the request, for the realm's Entity Identifier
+   * @param dial - whether the walk may fetch; without it only what this process
+   * answers in process is collected
+   * @returns a promise of the entities collected and the problems found
+   */
   async collect(entity: Json, req: Req, dial: boolean): Promise<Collected> {
     const { log, keys, now } = this.deps;
     log.debug("Entering EntityCollection.collect(). dial=" + dial);
@@ -466,6 +512,14 @@ class EntityCollection {
   // CRAWL NOW (the act, and the job): collect with fetching allowed, and keep
   // the result for every node. `{ ok, entities, problems, view }`.
   // -------------------------------------------------------------------------
+  /**
+   * Crawls now, fetching allowed, and keeps the result for every node: the act
+   * and the job alike.
+   *
+   * @param entity - the `Oidfed` instance serving the realm
+   * @param req - the request, for the realm's Entity Identifier
+   * @returns a promise of `{ ok, entities, problems, view }`, or of a refusal
+   */
   async crawlNow(entity: Json, req: Req): Promise<Outcome> {
     const { log, store, errorCodes } = this.deps;
     log.debug("Entering EntityCollection.crawlNow().");
@@ -499,6 +553,12 @@ class EntityCollection {
 
   // The job's crawl: a request that is only a base, which is what
   // `global.publicBaseUrl` makes of every request (`helpers.baseUrlOf()`).
+  /**
+   * Runs the job's crawl, with a request that is only a base.
+   *
+   * @returns a promise of the run's summary
+   * @throws Error when the crawl fails
+   */
   async scheduledCrawl(): Promise<Json> {
     const { log, entity } = this.deps;
     log.debug("Entering EntityCollection.scheduledCrawl().");
@@ -518,6 +578,11 @@ class EntityCollection {
   }
 
   // Why the job cannot run now, or ''.
+  /**
+   * Answers why the crawl job cannot run now: it needs `global.publicBaseUrl`.
+   *
+   * @returns the reason, or '' when it can run
+   */
   jobOff(): string {
     const { log, config } = this.deps;
     log.debug("Entering EntityCollection.jobOff().");
@@ -529,6 +594,9 @@ class EntityCollection {
         'the administrator\'s';
   }
 
+  /**
+   * Registers the `oidfed.collection-crawl` scheduler job.
+   */
   scheduleJobs(): void {
     const { log, scheduler } = this.deps;
     const self = this;
@@ -614,6 +682,15 @@ class EntityCollection {
   // identifier and young enough — what the crawl reached through a
   // subordinate that is still active.
   // -------------------------------------------------------------------------
+  /**
+   * Answers the collection to serve: what this process collects in process,
+   * and, from the kept crawl while it is for this identifier and young enough,
+   * what the crawl reached through a subordinate still active.
+   *
+   * @param entity - the `Oidfed` instance serving the realm
+   * @param req - the request
+   * @returns a promise of the entities and problems
+   */
   async current(entity: Json, req: Req): Promise<Collected> {
     const { log, store, now } = this.deps;
     log.debug("Entering EntityCollection.current().");
@@ -655,6 +732,14 @@ class EntityCollection {
 
   // Whether `info` matches the free-text query: its identifier, or any
   // display name, description or keyword it carries, case folded.
+  /**
+   * Answers whether an entity matches a free-text query: its identifier, or any
+   * display name, description or keyword, case folded.
+   *
+   * @param info - the Entity Info
+   * @param query - the query
+   * @returns true when it matches
+   */
   static matches(info: EntityInfo, query: string): boolean {
     helpers.log.debug("Entering EntityCollection.matches().");
     const needle = query.toLowerCase();
@@ -726,6 +811,15 @@ class EntityCollection {
   // THE ANSWER to one request, `{ ok, body }` or a refusal (draft 01's
   // error format). `entity` is the `Oidfed` instance serving the realm.
   // -------------------------------------------------------------------------
+  /**
+   * Answers one request to the endpoint.
+   *
+   * @param entity - the `Oidfed` instance serving the realm
+   * @param req - the request
+   * @param params - the request's parameters
+   * @returns a promise of `{ ok, body }`, or of a refusal in draft 01's error
+   * format
+   */
   async answer(entity: Json, req: Req, params: Json): Promise<Outcome> {
     const { log, config, realms, now } = this.deps;
     log.debug("Entering EntityCollection.answer().");
@@ -824,6 +918,13 @@ class EntityCollection {
   }
 
   // What the console page and the API show of the kept crawl.
+  /**
+   * Describes the kept crawl for the console page and the API.
+   *
+   * @param entity - the `Oidfed` instance serving the realm
+   * @param req - the request
+   * @returns the view
+   */
   view(entity: Json, req: Req): Json {
     const { log, store, config } = this.deps;
     log.debug("Entering EntityCollection.view().");
@@ -859,10 +960,23 @@ const slot = new InstanceSlot<EntityCollection>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Entity Collection: every entity beneath the realm, verified, at
+ * `/oidfed/collection`, and the crawl that finds them.
+ * @namespace
+ */
 export = {
   EntityCollection: EntityCollection,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: EntityCollection): void =>
     slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   CRAWL_JOB: CRAWL_JOB,
   uiInfosOf: EntityCollection.uiInfosOf,

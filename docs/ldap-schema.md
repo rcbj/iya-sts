@@ -238,13 +238,34 @@ draws it with a description of every field.
 | Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAttributeMap`, `fedRelease` |
 | Observation | `fedFirstSeen`, `fedLastSeen`, `fedLastUser`, `fedUsers`, `fedAuthentications`, `fedLastError`, `fedLastErrorAt` |
 
+## Attribute sources: `ou=attributesources`
+
+`objectClass: top, stsAttributeSource`, named `cn=<source id>`, with the source's whole definition as
+one JSON value, `stsAttributeSourceData`. It holds the database, the row it reads, the column map, when it reads
+and what a failure does, and never a password (#94). On a **person**, `stsAttributeSourced` names each attribute a
+source wrote (`<source>:<attribute>`), and `stsAttributeSourceSeen` records when each source last read them
+(`<source>=<time>`). See [Attribute sources](attribute-sources.md).
+
 ## Roles: `ou=roles`
 
-`objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description` and the three kinds of
-holder: `roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`. A role saved by an earlier version was written with
+`objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description`, the three kinds of
+holder (`roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`), and `rolePermission`: the permissions a
+holder may be issued (#303), named as a client asks for them, and `roleApplication`: the one application a role
+belongs to (#310). Such a role is named `<role>@<application>`, and only a token for that application carries it,
+as `<role>`. `roleAllowedMemberType` (`user`, `application`, or both when absent) says who may hold the
+role, and a member of another kind is refused (#93); the two console roles cannot be restricted. `displayName`
+is an optional label for the console and the API, and is never what a token carries. The entry's `entryUUID`
+is the role's stable id. A role saved by an earlier version was written with
 no object class and gains one on its next save.
 `common/roles.js` keeps apart who **holds** a role and what **requires** one
-(`appRequiredRole` on an application). It also computes ten built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS, ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIONS, ADMIN_READ, ADMIN_WRITE, REMOTE_PEPS and XACML_USER.
+(`appRequiredRole` on an application). Which of an application's permissions need a role at all is
+`oauthRoleGatedPermission` on the resource application. Every realm is seeded with two roles, `ADMIN_READ` and
+`ADMIN_WRITE`, which authorize `admin:read` and `admin:write`. Their groups come from `admin.readGroup` and
+`admin.writeGroup` and are not stored on the entry; `sts-management-api` is a member of both. A third seeded role,
+`DEVICE_COMPLIANCE`, authorizes `device:compliance` and has no members until the MDM feed's application is added
+(#309). None of the three can be deleted, and their permissions are fixed. The service also computes eight
+built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS,
+ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIONS, REMOTE_PEPS and XACML_USER.
 
 ## XACML: `ou=policies` and `ou=peps`
 

@@ -73,7 +73,21 @@ interface PolicyKind {
 
 const KINDS: PolicyKind[] = [];
 
+/**
+ * The kinds of policy on Directory → Policies: the one list the page, its JSON
+ * and the `/admin-api/policies` operations are drawn from.
+ *
+ * Each kind is a separate module owning its own entry, container, schema and
+ * rules, implementing `password_policy.ts`'s interface; a future policy costs a
+ * module and a row here. A library that registers no route.
+ */
 class PolicyKinds {
+  /**
+   * Adds a kind to the list; a second registration of the same id is ignored.
+   *
+   * @param kind - the kind: its id, label, container, module and the sentences
+   *   the page draws
+   */
   static register(kind: PolicyKind): void {
     log.debug("Entering PolicyKinds.register(). " + kind.id);
     if (KINDS.some(function (k) {
@@ -88,6 +102,11 @@ class PolicyKinds {
   }
 
   // For a test that registers a stub kind: take it away again.
+  /**
+   * Removes a kind, for a test that registered a stub.
+   *
+   * @param id - the kind's id
+   */
   static unregister(id: string): void {
     log.debug("Entering PolicyKinds.unregister(). " + id);
     const at = KINDS.findIndex(function (k) {
@@ -99,12 +118,23 @@ class PolicyKinds {
     log.debug("Leaving PolicyKinds.unregister().");
   }
 
+  /**
+   * Returns every kind, in the order the page draws them.
+   *
+   * @returns a copy of the list
+   */
   static list(): PolicyKind[] {
     log.debug("Entering PolicyKinds.list().");
     log.debug("Leaving PolicyKinds.list().");
     return KINDS.slice();
   }
 
+  /**
+   * Returns one kind by id.
+   *
+   * @param id - the kind's id
+   * @returns the kind, or null
+   */
   static byId(id: string): PolicyKind | null {
     log.debug("Entering PolicyKinds.byId().");
     log.debug("Leaving PolicyKinds.byId().");
@@ -113,12 +143,24 @@ class PolicyKinds {
     })[0] || null;
   }
 
+  /**
+   * Returns the name of a kind's save action, `save-<id>-policy`.
+   *
+   * @param kind - the kind
+   * @returns the action
+   */
   static saveAction(kind: PolicyKind): string {
     log.debug("Entering PolicyKinds.saveAction().");
     log.debug("Leaving PolicyKinds.saveAction().");
     return 'save-' + kind.id + '-policy';
   }
 
+  /**
+   * Returns the name of a kind's reset action, `reset-<id>-policy`.
+   *
+   * @param kind - the kind
+   * @returns the action
+   */
   static resetAction(kind: PolicyKind): string {
     log.debug("Entering PolicyKinds.resetAction().");
     log.debug("Leaving PolicyKinds.resetAction().");
@@ -126,6 +168,11 @@ class PolicyKinds {
   }
 
   // Every action every kind answers, in kind order: save then reset.
+  /**
+   * Returns every action every kind answers, in kind order: save then reset.
+   *
+   * @returns the actions
+   */
   static actions(): string[] {
     log.debug("Entering PolicyKinds.actions().");
     const out: string[] = [];
@@ -137,6 +184,13 @@ class PolicyKinds {
   }
 
   // Which kind answers an action, and whether it is its save or its reset.
+  /**
+   * Returns which kind answers an action, and whether it is its save or its
+   * reset.
+   *
+   * @param action - the action's name
+   * @returns the kind and verb, or null
+   */
   static forAction(action: string):
       { kind: PolicyKind; verb: 'save' | 'reset' } | null {
     log.debug("Entering PolicyKinds.forAction(). " + action);

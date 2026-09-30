@@ -110,14 +110,34 @@ interface ChooserRequest {
   query?: Record<string, unknown>;
 }
 
+/**
+ * The two surfaces that ask which realm to sign in through, `admin` and
+ * `portal`, each with its root path and the words the button uses.
+ */
 const SURFACES: Readonly<Record<SurfaceId, Surface>> = Object.freeze({
   admin: { root: '/admin', label: 'the admin console' },
   portal: { root: '/portal', label: 'your account' }
 });
 
+/**
+ * Asks a person who opens the plain `/admin` or `/portal` of a service with
+ * realms defined which realm they sign in through.
+ *
+ * In development it lists every realm; in product it asks for the realm's id
+ * in a text box (`mode.listsRealmsBeforeSignIn()`).
+ */
 class RealmChooser {
+  /**
+   * The surfaces the chooser serves; the same object as the module's
+   * `SURFACES`.
+   */
   static readonly SURFACES = SURFACES;
 
+  /**
+   * Builds a chooser over its dependencies.
+   *
+   * @param deps - the realm registry, `mode`, the base-URL reader and a logger
+   */
   constructor(private readonly deps: RealmChooserDeps) {
     deps.log.debug("Entering RealmChooser.constructor().");
     deps.log.debug("Leaving RealmChooser.constructor().");
@@ -125,6 +145,12 @@ class RealmChooser {
 
   // What the composition root passes, from the real modules; `helpers`
   // supplies both the logger and the base-URL reader, as it always did.
+  /**
+   * Returns the dependencies the composition root builds the chooser with.
+   *
+   * @returns the real `realms` and `mode`, and `helpers`' base-URL reader and
+   *   logger
+   */
   static defaultDeps(): RealmChooserDeps {
     helpers.log.debug("Entering RealmChooser.defaultDeps().");
     helpers.log.debug("Leaving RealmChooser.defaultDeps().");
@@ -161,6 +187,19 @@ class RealmChooser {
   //                                     the id asked for is not a realm)
   //   { kind: 'redirect', location }    the realm chosen, under its own prefix
   // -------------------------------------------------------------------------
+  /**
+   * Decides whether a request for a surface's root must first choose a realm.
+   *
+   * It asks only for a GET or HEAD of exactly the surface's root in the default
+   * realm, with realms defined; the caller has already found no session. A
+   * choice is a redirect built from the registry's own prefix, never an echo of
+   * the request.
+   * @param req - the express request
+   * @param surfaceId - 'admin' or 'portal'
+   * @returns null to sign in here; `{ kind: 'page', error }` to draw the
+   *   chooser (with a sentence when the id asked for is no realm); or
+   *   `{ kind: 'redirect', location }` to the chosen realm's surface
+   */
   decide(req: ChooserRequest | null | undefined,
          surfaceId: string): Decision | null {
     const { log, realms } = this.deps;
@@ -201,6 +240,15 @@ class RealmChooser {
   // The form, as a fragment for the surface's own page. No script: a list or a
   // text box and a real submit button, posting nothing — a GET of the surface's
   // root carrying `realm`, which `decide()` answers.
+  /**
+   * Draws the chooser as an HTML fragment for the surface's own page: a list or
+   * a text box and a submit button, a GET of the surface's root with `realm`.
+   *
+   * @param req - the express request
+   * @param surfaceId - 'admin' or 'portal'
+   * @param error - optional sentence to show above the form
+   * @returns the HTML fragment
+   */
   form(req: ChooserRequest, surfaceId: string, error?: string): string {
     const { log, realms, mode } = this.deps;
     log.debug("Entering RealmChooser.form(). surface=" + surfaceId);
@@ -252,10 +300,24 @@ const slot = new InstanceSlot<RealmChooser>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Which realm to sign in through, asked for both the admin console and the
+ * user portal so the two cannot ask it differently.
+ *
+ * A library: no route. `decide` and `form` forward to the instance the
+ * composition root installs.
+ * @namespace
+ */
 export = {
   RealmChooser: RealmChooser,
   SURFACES: SURFACES,
+  /**
+   * Installs the chooser the composition root built.
+   */
   installInstance: (instance: RealmChooser): void => slot.install(instance),
+  /**
+   * Names where the installed chooser came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   decide: slot.forward('decide'),
   form: slot.forward('form')

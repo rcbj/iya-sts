@@ -122,6 +122,11 @@
 //   node tests/tools/run-report.js [options]
 //
 //   --only=<substr>[,...]  only these test files / job names
+//   --conformance-only     only the protocol jobs MANIFEST.js marks
+//                          `conformance: true` (the OpenID conformance
+//                          suite's) and no in-process file. By the FLAG and
+//                          not by name: `--only=conformance` is a substring,
+//                          and also picked up sts_scim_conformance.
 //   --list                 name the jobs that would run; run none
 //   --protocol[=on|off|only]
 //                          also (or only) run the protocol jobs under
@@ -150,6 +155,12 @@
 //   --timeout=<ms>         per-job watchdog (default 300000; 0 disables). A
 //                          job may RAISE it for itself with `timeoutMs` in
 //                          MANIFEST.js and may never lower it; see runJob().
+//   --timeout-scale=<n>    multiplies a job's OWN `timeoutMs` (default 1).
+//                          `./run-coverage.sh` passes 3 (2026-09-27): under
+//                          instrumentation a job that already needed a
+//                          longer leash (acvp_pqc, the distribution points)
+//                          needs it three times over, and the launcher is
+//                          what knows the run is instrumented.
 //                          `./run-coverage.sh` passes one of its own —
 //                          see STS_COVERAGE_JOB_TIMEOUT_MS there — because
 //                          instrumentation is what makes a job slow and
@@ -225,6 +236,14 @@ const service = require('./service');
 const trust = require('./trust');
 const manifest = require('../vendored/MANIFEST.js');
 const coverage = require('./coverage-report');
+
+// A JOB THAT DECLINES TO RUN says so on a line of its own and exits with
+// this code: `tests/vendored/expectation.js`'s declineToRun(), whose two
+// constants these must match (it is a vendored helper, so it is read rather
+// than required here: a require would run nothing, but the rule for that
+// directory is to take nothing from it that a job does not).
+const SELF_SKIP_EXIT = 42;
+const SELF_SKIP_MARKER = '===== SELF-SKIP: ';
 const adminApiToken = require('./admin-api-token');
 
 const { testFiles } = require('../run');
@@ -245,8 +264,10 @@ const RUN_ID = new Date().toISOString().replace(/:/g, '-').replace(/\..+$/, '');
 function parseArgs(argv) {
   log.debug('Entering parseArgs().');
   const opts = { only: [], list: false, protocol: 'on', parent: '',
+                 conformanceOnly: false,
                  reportDir: path.join(TESTS_DIR, 'report'),
-                 timeoutMs: 300000, quiet: false, help: false,
+                 timeoutMs: 300000, timeoutScale: 1, quiet: false,
+                 help: false,
                  browser: true, serial: false,
                  unitConcurrency:
                    Number(process.env.STS_TEST_UNIT_CONCURRENCY) ||
@@ -259,6 +280,8 @@ function parseArgs(argv) {
   argv.forEach(function (a) {
     if (a === '--list') {
       opts.list = true;
+    } else if (a === '--conformance-only') {
+      opts.conformanceOnly = true;
     } else if (a === '--help' || a === '-h') {
       opts.help = true;
     } else if (a === '--quiet') {
@@ -288,6 +311,8 @@ function parseArgs(argv) {
       opts.reportDir = path.resolve(a.slice('--report-dir='.length));
     } else if (a.indexOf('--timeout=') === 0) {
       opts.timeoutMs = Number(a.slice('--timeout='.length));
+    } else if (a.indexOf('--timeout-scale=') === 0) {
+      opts.timeoutScale = Number(a.slice('--timeout-scale='.length)) || 1;
     } else if (a.indexOf('--only=') === 0) {
       a.slice('--only='.length).split(',').forEach(function (p) {
         if (p.trim()) {
@@ -642,6 +667,9 @@ function runJob(job, opts) {
     // parse. Each job's own log file gets its bytes exactly as they came.
     let echoed = '';
     const assertions = [];
+    // The reason a job gave for declining to run, off its SELF_SKIP_MARKER
+    // line; see where the status is decided.
+    let selfSkip = null;
     function onData(chunk) {
       log.debug("Entering onData().");
       const text = chunk.toString();
@@ -663,6 +691,9 @@ function runJob(job, opts) {
         const a = assertionOf(line);
         if (a) {
           assertions.push(a);
+        }
+        if (line.indexOf(SELF_SKIP_MARKER) === 0) {
+          selfSkip = line.slice(SELF_SKIP_MARKER.length).trim();
         }
       });
       log.debug("Leaving onData().");
@@ -688,7 +719,8 @@ function runJob(job, opts) {
     // run — is still zero here, because the branch below tests the option and
     // not this number.
     const jobTimeoutMs = opts.timeoutMs > 0
-      ? Math.max(opts.timeoutMs, Number(job.timeoutMs) || 0)
+      ? Math.max(opts.timeoutMs,
+                 (Number(job.timeoutMs) || 0) * opts.timeoutScale)
       : 0;
     if (opts.timeoutMs > 0) {
       timer = setTimeout(function () {
@@ -735,6 +767,16 @@ function runJob(job, opts) {
       if (timedOut) {
         failures.push('the job did not finish within ' + jobTimeoutMs +
                       'ms and was killed');
+      } else if (code === SELF_SKIP_EXIT && selfSkip !== null &&
+                 !failures.length) {
+        // A JOB THAT DECLINED TO RUN (2026-09-28): the parent project's
+        // convention, `expectation.js`'s declineToRun() — a marker line
+        // with the reason, then exit 42 — which the jobs copied from there
+        // use for a prerequisite this run does not have (Samba's raw tests
+        // need the KDC on port 88; the coverage run's is on a port of its
+        // own). It was counted as a failure here, which it is not. Both the
+        // marker AND the code are required, so neither alone can hide one.
+        log.warn(job.name + ' declined to run: ' + selfSkip);
       } else if (code !== 0 && !failures.length) {
         // The exit code is the only evidence there is: a parent-project job
         // reports through `assert` rather than through this repository's
@@ -745,12 +787,15 @@ function runJob(job, opts) {
       stream.end('\n# exit code ' + code + (signal ? ' (' + signal + ')' : '') +
                  ' after ' + ms + 'ms\n');
       log.debug('Leaving runJob(). ' + job.name + ' exited ' + code + '.');
+      const declined = !timedOut && code === SELF_SKIP_EXIT &&
+        selfSkip !== null && !failures.length;
       resolve(Object.assign({}, job, {
-        status: (code === 0 && !timedOut && !failures.length) ? 'passed'
-                                                             : 'failed',
+        status: declined ? 'skipped'
+          : (code === 0 && !timedOut && !failures.length) ? 'passed'
+                                                          : 'failed',
         ms: ms, code: code, signal: signal || null,
         assertions: assertions, failures: failures
-      }));
+      }, declined ? { why: selfSkip } : {}));
     });
   });
 }
@@ -1477,6 +1522,17 @@ const UNIT_WATCHDOG_MS = {
   wycheproof: 600000
 };
 
+// LEFT OUT OF THE COVERAGE RUN, FOR NOW (#314, 2026-09-28): reported SKIPPED
+// with the reason there, and run as usual everywhere else. acvp_pqc's
+// SLH-DSA vectors cannot finish under V8 coverage inside even a thirty-minute
+// watchdog (CI runs 36382542145 and 36394938951). The ticket carries the
+// options; take the row out when one is chosen.
+const COVERAGE_LEFT_OUT = {
+  acvp_pqc: 'the NIST ACVP SLH-DSA vectors cannot finish under coverage ' +
+            'instrumentation (#314); the file runs in full in every ' +
+            './run-tests.sh mode and in ./docker-npm-test.sh'
+};
+
 // ---------------------------------------------------------------------------
 // THE SCHEDULE (2026-09-26). This runner ran every job one at a time until
 // then, and a mode took 4650s: 1170s of in-process files, 3475s of protocol
@@ -1504,7 +1560,7 @@ const UNIT_WATCHDOG_MS = {
 // so the report reads as it always did. `--serial` is the old behaviour.
 // ---------------------------------------------------------------------------
 const UNIT_ALONE = new Set([
-  'worker_pool', 'request_barrier', 'request_proxy_replay',
+  'request_barrier', 'request_proxy_replay',
   'request_worker_replacement', 'key_residency'
 ]);
 
@@ -1567,8 +1623,18 @@ async function runScheduled(jobs, runOne, opts) {
 
   async function protocolHalf() {
     log.debug('Entering protocolHalf().');
+    // THE `bulk` LANE LAST, WHERE THE MODE SAYS SO (STS_TEST_BULK_LAST,
+    // tests/tools/modes.sh — the cluster mode only, 2026-09-27). The three
+    // bulk loads then run after every other protocol job has ended, one
+    // after another as their lane always ran them, rather than beside the
+    // sign-ins whose back-channel calls they slowed past their bound.
+    const bulkLast = process.env.STS_TEST_BULK_LAST === '1';
     const protocol = indexed.filter(function (i) {
-      return i.job.suite !== 'unit';
+      return i.job.suite !== 'unit' &&
+        !(bulkLast && i.job.lane === 'bulk');
+    });
+    const deferred = indexed.filter(function (i) {
+      return i.job.suite !== 'unit' && bulkLast && i.job.lane === 'bulk';
     });
     let segment = [];
     async function runSegment() {
@@ -1596,6 +1662,11 @@ async function runScheduled(jobs, runOne, opts) {
       }
     }
     await runSegment();
+    if (deferred.length) {
+      log.info(deferred.length + ' bulk-lane job(s) run now, after every ' +
+               'other protocol job (STS_TEST_BULK_LAST).');
+      await inOrder(deferred);
+    }
     log.debug('Leaving protocolHalf().');
   }
 
@@ -1615,7 +1686,7 @@ async function main() {
     process.stdout.write(USAGE + '\n');
     process.exit(opts.unknown.length ? 2 : 0);
   }
-  const wantUnit = opts.protocol !== 'only';
+  const wantUnit = opts.protocol !== 'only' && !opts.conformanceOnly;
   const wantProtocol = opts.protocol === 'on' || opts.protocol === 'only';
 
   // ---- the jobs ---------------------------------------------------------
@@ -1638,6 +1709,11 @@ async function main() {
     if (opts.only.length) {
       theirs = theirs.filter(function (j) {
         return opts.only.some(function (p) { return j.file.indexOf(p) >= 0; });
+      });
+    }
+    if (opts.conformanceOnly) {
+      theirs = theirs.filter(function (j) {
+        return j.conformance;
       });
     }
     jobs.push.apply(jobs, theirs);
@@ -1875,6 +1951,18 @@ async function main() {
     // --only); an intended job that did not run is a failure, because the
     // thing it was going to check is unchecked either way and only one of
     // those two words makes somebody look.
+    if (wantCoverage && job.suite === 'unit' &&
+        Object.prototype.hasOwnProperty.call(COVERAGE_LEFT_OUT, job.name)) {
+      // A DELIBERATE EXCLUSION, named and reasoned: see COVERAGE_LEFT_OUT.
+      const why = COVERAGE_LEFT_OUT[job.name];
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      log.debug('Leaving runOne(). Left out of coverage.');
+      return Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      });
+    }
     if (job.docker && !dockerHere.ok) {
       // A DELIBERATE EXCLUSION — see haveDocker() above for why this one is a
       // skip where everything else here is a failure. The reason travels with
@@ -2005,7 +2093,8 @@ async function main() {
           }
         }
         await refreshAdminApiToken(instance,
-          Math.max(opts.timeoutMs, Number(job.timeoutMs) || 0));
+          Math.max(opts.timeoutMs,
+                   (Number(job.timeoutMs) || 0) * opts.timeoutScale));
         log.debug('Leaving refreshForJob().');
       });
       job.cwd = job.dir;
@@ -2087,6 +2176,16 @@ async function main() {
         STS_LDAP_PORT: process.env.STS_LDAP_PORT ||
           (instance.ports && instance.ports.LDAP_PORT
             ? String(instance.ports.LDAP_PORT)
+            : ''),
+        // AND LDAPS THE SAME WAY (2026-09-27): the service takes
+        // `LDAPS_PORT`, the jobs that dial it (sts_second_factor_doors,
+        // sts_credential_signals, sts_ldap_read_authorization,
+        // sts_global_logout) read `STS_LDAPS_PORT` and fall back to 636 —
+        // where nothing listens on this path, so the coverage run's
+        // second_factor_doors failed with "ldap undefined Error".
+        STS_LDAPS_PORT: process.env.STS_LDAPS_PORT ||
+          (instance.ports && instance.ports.LDAPS_PORT
+            ? String(instance.ports.LDAPS_PORT)
             : '')
       // AND THE REST OF THE BLOCK, under the names they already share. See
       // chosenPorts(): a job that dials a DEFAULT port on the throwaway path
@@ -2211,8 +2310,12 @@ async function main() {
     log.info('[' + n + '/' + jobs.length + '] ' + job.suite + ' — ' + job.name);
     const result = await runJob(job, opts);
     // The name is on the result line because, with jobs running side by
-    // side, the line above it is often another job's.
-    log.info('    ' + (result.status === 'passed' ? 'passed' : 'FAILED') +
+    // side, the line above it is often another job's. A job that declined
+    // to run is SKIPPED here as in the report: this line said FAILED for
+    // one, which read as a failure the summary did not count (CI run
+    // 36394938951, sts_kerberos_samba under coverage).
+    log.info('    ' + (result.status === 'passed' ? 'passed'
+      : (result.status === 'skipped' ? 'SKIPPED' : 'FAILED')) +
              ' in ' + result.ms + 'ms' +
              (result.assertions.length ? ', ' + result.assertions.length +
               ' assertion(s)' : '') + ' — ' + job.name);

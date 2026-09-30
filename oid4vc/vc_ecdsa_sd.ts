@@ -64,6 +64,9 @@ interface VcEcdsaSdDeps {
   randomUuid: () => string;
 }
 
+/**
+ * The cryptosuite's name, `ecdsa-sd-2023`.
+ */
 const CRYPTOSUITE = 'ecdsa-sd-2023';
 const BASE_HEADER = Buffer.from([0xd9, 0x5d, 0x00]);
 const DERIVED_HEADER = Buffer.from([0xd9, 0x5d, 0x01]);
@@ -75,14 +78,33 @@ const SKOLEM_PREFIX = 'urn:bnid:';
 type LabelMapFactory = (canonicalIdMap: Map<string, string>) =>
   Map<string, string>;
 
+/**
+ * ecdsa-sd-2023, the selective disclosure ECDSA cryptosuite (W3C Data Integrity
+ * ECDSA Cryptosuites v1.0 sections 3.4 to 3.6): the issuer's base proof, the
+ * holder's derived proof, and the verifier's check of a derived proof. Each
+ * method is a step of the specification, named by section.
+ */
 class VcEcdsaSd {
+  /**
+   * The cryptosuite's name, `ecdsa-sd-2023`.
+   */
   static readonly CRYPTOSUITE = CRYPTOSUITE;
 
+  /**
+   * Builds the cryptosuite from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcEcdsaSdDeps) {
     deps.log.debug("Entering VcEcdsaSd.constructor().");
     deps.log.debug("Leaving VcEcdsaSd.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcEcdsaSdDeps {
     helpers.log.debug("Entering VcEcdsaSd.defaultDeps().");
     helpers.log.debug("Leaving VcEcdsaSd.defaultDeps().");
@@ -113,6 +135,13 @@ class VcEcdsaSd {
   // varint), then the compressed point. Written here rather than asked of
   // `vc_data_integrity.ts`, which requires this module.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns a P-256 public key as Multikey bytes: the p256-pub multicodec
+   * prefix and the compressed point.
+   *
+   * @param jwk - the public JWK
+   * @returns the bytes
+   */
   p256MultikeyBytes(jwk: any): Buffer {
     const { log } = this.deps;
     log.debug("Entering VcEcdsaSd.p256MultikeyBytes().");
@@ -129,6 +158,12 @@ class VcEcdsaSd {
   }
 
   // Its inverse: a public JWK, the point decompressed by OpenSSL on import.
+  /**
+   * Returns the public JWK of P-256 Multikey bytes.
+   *
+   * @param bytes - the Multikey bytes
+   * @returns the JWK
+   */
   p256JwkOfMultikeyBytes(bytes: Buffer): any {
     const { log } = this.deps;
     log.debug("Entering VcEcdsaSd.p256JwkOfMultikeyBytes().");
@@ -150,6 +185,13 @@ class VcEcdsaSd {
   // ---------------------------------------------------------------------------
   // 3.4.3, 3.4.4: the label map factories.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the label map factory that relabels each blank node with an HMAC of
+   * its canonical label (section 3.4.3).
+   *
+   * @param hmacKey - the HMAC key
+   * @returns the factory
+   */
   hmacLabelMapFactory(hmacKey: Buffer): LabelMapFactory {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcEcdsaSd.hmacLabelMapFactory().");
@@ -168,6 +210,13 @@ class VcEcdsaSd {
     return factory;
   }
 
+  /**
+   * Returns the label map factory that applies a given label map (section
+   * 3.4.4).
+   *
+   * @param labelMap - canonical label to new label
+   * @returns the factory
+   */
   labelMapFactory(labelMap: Map<string, string>): LabelMapFactory {
     const { log } = this.deps;
     log.debug("Entering VcEcdsaSd.labelMapFactory().");
@@ -242,6 +291,14 @@ class VcEcdsaSd {
   }
 
   // 3.4.1.
+  /**
+   * Canonicalizes N-Quads and replaces their blank node labels through the
+   * factory (section 3.4.1).
+   *
+   * @param nquads - the N-Quads
+   * @param factory - the label map factory
+   * @returns the relabelled canonical N-Quads and the label map
+   */
   async labelReplacementCanonicalizeNQuads(nquads: string[],
                                            factory: LabelMapFactory):
     Promise<any> {
@@ -256,6 +313,14 @@ class VcEcdsaSd {
   }
 
   // 3.4.2.
+  /**
+   * Canonicalizes a JSON-LD document and replaces its blank node labels through
+   * the factory (section 3.4.2).
+   *
+   * @param document - the JSON-LD document
+   * @param factory - the label map factory
+   * @returns the relabelled canonical N-Quads and the label map
+   */
   async labelReplacementCanonicalizeJsonLd(document: any,
                                            factory: LabelMapFactory):
     Promise<any> {
@@ -272,6 +337,14 @@ class VcEcdsaSd {
   // 3.4.5-3.4.9: skolemization — every blank node given a URN so that it
   // survives a JSON selection and comes back as the same blank node.
   // ---------------------------------------------------------------------------
+  /**
+   * Gives every blank node of an expanded document a URN, so it survives a JSON
+   * selection (sections 3.4.5 to 3.4.9).
+   *
+   * @param expanded - the expanded document
+   * @param labeler - the random prefix and counter the URNs are made from
+   * @returns the skolemized expanded document
+   */
   skolemizeExpanded(expanded: any[], labeler: { random: string;
                                                 count: number }): any[] {
     const { log } = this.deps;
@@ -306,6 +379,14 @@ class VcEcdsaSd {
     return out;
   }
 
+  /**
+   * Skolemizes a compact JSON-LD document.
+   *
+   * @param document - the document, with an `@context`
+   * @returns `{ expanded, compact }`
+   * @throws Error when the document is not a compact document with an
+   *   `@context`
+   */
   async skolemizeCompact(document: any): Promise<any> {
     const { log, jsonld, randomUuid } = this.deps;
     log.debug("Entering VcEcdsaSd.skolemizeCompact().");
@@ -323,6 +404,13 @@ class VcEcdsaSd {
     return { expanded: skolemized, compact: compact };
   }
 
+  /**
+   * Converts a skolemized document to N-Quads with its URNs turned back into
+   * blank nodes.
+   *
+   * @param document - the skolemized document
+   * @returns the N-Quads
+   */
   async toDeskolemizedNQuads(document: any): Promise<string[]> {
     const { log, jsonld } = this.deps;
     log.debug("Entering VcEcdsaSd.toDeskolemizedNQuads().");
@@ -339,6 +427,13 @@ class VcEcdsaSd {
   // ---------------------------------------------------------------------------
   // 3.4.10-3.4.15: JSON pointers and selection.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses a JSON pointer into its path segments.
+   *
+   * @param pointer - the pointer
+   * @returns the segments
+   * @throws Error for a pointer that is not valid
+   */
   parsePointer(pointer: unknown): (string | number)[] {
     const { log } = this.deps;
     log.debug("Entering VcEcdsaSd.parsePointer().");
@@ -383,6 +478,15 @@ class VcEcdsaSd {
   }
 
   // 3.4.13 (and 3.4.12 inside it).
+  /**
+   * Selects the parts of a document the JSON pointers name (sections 3.4.12 and
+   * 3.4.13).
+   *
+   * @param document - the document
+   * @param pointers - the JSON pointers
+   * @returns the selection
+   * @throws Error when a pointer names nothing in the document
+   */
   selectJsonLd(document: any, pointers: string[]): any {
     const { log } = this.deps;
     log.debug("Entering VcEcdsaSd.selectJsonLd(). " + pointers.length +
@@ -450,6 +554,13 @@ class VcEcdsaSd {
   }
 
   // 3.4.14.
+  /**
+   * Relabels the blank nodes of N-Quads through a label map (section 3.4.14).
+   *
+   * @param nquads - the N-Quads
+   * @param labelMap - old label to new label
+   * @returns the relabelled N-Quads
+   */
   relabelBlankNodes(nquads: string[], labelMap: Map<string, string>):
     string[] {
     const { log } = this.deps;
@@ -465,6 +576,14 @@ class VcEcdsaSd {
   }
 
   // 3.4.15.
+  /**
+   * Selects the canonical N-Quads the JSON pointers name (section 3.4.15).
+   *
+   * @param document - the skolemized document
+   * @param pointers - the JSON pointers
+   * @param labelMap - the label map to relabel with
+   * @returns `{ selection, deskolemizedNQuads, nquads }`
+   */
   async selectCanonicalNQuads(document: any, pointers: string[],
                               labelMap: Map<string, string>): Promise<any> {
     const { log } = this.deps;
@@ -479,6 +598,15 @@ class VcEcdsaSd {
   }
 
   // 3.4.16.
+  /**
+   * Canonicalizes a document and groups its N-Quads by the pointer groups given
+   * (section 3.4.16).
+   *
+   * @param document - the document
+   * @param factory - the label map factory
+   * @param groups - group name to JSON pointers
+   * @returns `{ groups, skolemized, labelMap, nquads }`
+   */
   async canonicalizeAndGroup(document: any, factory: LabelMapFactory,
                              groups: Record<string, string[]>):
     Promise<any> {
@@ -546,6 +674,14 @@ class VcEcdsaSd {
   // privateKey, verificationMethod, mandatoryPointers, created,
   // proofPurpose. Answers the secured document.
   // ---------------------------------------------------------------------------
+  /**
+   * Creates the issuer's base proof (sections 3.6.1 to 3.6.5).
+   *
+   * @param unsecured - the unsecured credential
+   * @param options - `publicJwk` (P-256), `privateKey`, `verificationMethod`,
+   *   `mandatoryPointers`, `created`, `proofPurpose`
+   * @returns the secured document
+   */
   async createBaseProof(unsecured: any, options: any): Promise<any> {
     const { log, cborEncode, stsCrypto } = this.deps;
     log.debug("Entering VcEcdsaSd.createBaseProof().");
@@ -595,6 +731,14 @@ class VcEcdsaSd {
   }
 
   // 3.5.3.
+  /**
+   * Parses a base proof value (section 3.5.3).
+   *
+   * @param proofValue - the multibase proof value
+   * @returns `{ baseSignature, publicKey, hmacKey, signatures,
+   *   mandatoryPointers }`
+   * @throws Error when it is not a base proof value
+   */
   parseBaseProofValue(proofValue: unknown): any {
     const { log, cborDecode } = this.deps;
     log.debug("Entering VcEcdsaSd.parseBaseProofValue().");
@@ -635,6 +779,15 @@ class VcEcdsaSd {
   // 3.5.4 and 3.6.6: A DERIVED PROOF, revealing the mandatory statements and
   // those `selectivePointers` name.
   // ---------------------------------------------------------------------------
+  /**
+   * Derives a proof revealing the mandatory statements and those the selective
+   * pointers name (sections 3.5.4 and 3.6.6).
+   *
+   * @param secured - the credential with its base proof
+   * @param selectivePointers - the JSON pointers to reveal
+   * @returns the revealed document with its derived proof
+   * @throws Error when the credential carries no ecdsa-sd-2023 proof
+   */
   async deriveProof(secured: any, selectivePointers: string[]):
     Promise<any> {
     const { log, jsonld, cborEncode } = this.deps;
@@ -697,6 +850,14 @@ class VcEcdsaSd {
   }
 
   // 3.5.8.
+  /**
+   * Parses a derived proof value (section 3.5.8).
+   *
+   * @param proofValue - the multibase proof value
+   * @returns `{ baseSignature, publicKey, signatures, labelMap,
+   *   mandatoryIndexes }`
+   * @throws Error when it is not a derived proof value
+   */
   parseDerivedProofValue(proofValue: unknown): any {
     const { log, cborDecode } = this.deps;
     log.debug("Entering VcEcdsaSd.parseDerivedProofValue().");
@@ -748,6 +909,14 @@ class VcEcdsaSd {
   // verification method's key, resolved by the caller. Answers `{ ok,
   // detail }`; throws for nothing.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies a derived proof (sections 3.5.9 and 3.6.7). Never throws.
+   *
+   * @param secured - the revealed document with its derived proof
+   * @param issuerJwk - the base proof verification method's key, resolved by
+   *   the caller
+   * @returns `{ ok, detail }`
+   */
   async verifyDerivedProof(secured: any, issuerJwk: any): Promise<any> {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcEcdsaSd.verifyDerivedProof().");
@@ -818,9 +987,24 @@ const slot = new InstanceSlot<VcEcdsaSd>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * ecdsa-sd-2023, the selective disclosure ECDSA Data Integrity cryptosuite.
+ *
+ * @namespace
+ */
 export = {
   VcEcdsaSd: VcEcdsaSd,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcEcdsaSd): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   CRYPTOSUITE: CRYPTOSUITE,
   p256MultikeyBytes: slot.forward('p256MultikeyBytes'),

@@ -91,24 +91,55 @@ type Json = any;
 type Req = any;
 type Res = any;
 
+/**
+ * The three grant management actions an authorization request may ask for.
+ */
 const ACTIONS = Object.freeze(['create', 'merge', 'replace']);
 // What `grant_management_actions_supported` lists: the three request actions
 // and the API's two.
+/**
+ * What `grant_management_actions_supported` lists: the three request actions
+ * and the API's two.
+ */
 const SUPPORTED = Object.freeze(['create', 'merge', 'replace', 'query',
                                  'revoke']);
+/**
+ * The scope the Grant Management API's GET requires.
+ */
 const QUERY_SCOPE = 'grant_management_query';
+/**
+ * The scope the Grant Management API's DELETE requires.
+ */
 const REVOKE_SCOPE = 'grant_management_revoke';
+/**
+ * The Grant Management API's path; a grant is at `PATH/{grant_id}`.
+ */
 const PATH = '/oauth2/grants';
+/**
+ * The scheduler job id that purges expired grants and token rows.
+ */
 const PURGE_JOB = 'oauth2.grant-management-purge';
 
 // grant_id -> the grant (see `apply()` for its shape). PERSISTED: every node
 // must answer the same grant, and a refresh refused on one node must be
 // refused on all.
-const grants = realms.map({ persist: 'oauth2.grants' });
+// `expiresAt` (#333): the purge's own rule — the grant's `expiresAt` (epoch
+// SECONDS, the latest exp of its tokens; 0 is none) plus the clock skew.
+const grants = realms.map({
+  persist: 'oauth2.grants',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (grant: Json): number | null {
+    const at = Number(grant && grant.expiresAt);
+    const skew = Number(config.value('oauth2.clockSkewS'));
+    return at > 0 && isFinite(skew) && skew >= 0 ? (at + skew) * 1000 : null;
+  }
+});
 // jti -> { grant, gen, kind, forget } — one row per token minted under a
 // grant, so a DELETE can revoke each. TOMBSTONED, so a row the purge removed
 // is not written back by a node that had not heard.
-const issued = realms.map({ persist: 'oauth2.grantIssued', tombstone: true });
+const issued = realms.map({ persist: 'oauth2.grantIssued', tombstone: true,
+                            // #333: the purge's `forget`, in ms.
+                            expiresAt: realms.expiryField('forget', 1) });
 
 interface GrantManagementDeps {
   log: typeof helpers.log;
@@ -132,19 +163,54 @@ interface Refusal {
   status?: number;
 }
 
+/**
+ * Grant Management for OAuth 2.0 (#142): the register of grants, written when
+ * their tokens are claimed, the create, merge and replace actions, and the
+ * Grant Management API.
+ */
 class GrantManagement {
+  /**
+   * The three grant management actions an authorization request may ask for.
+   */
   static readonly ACTIONS = ACTIONS;
+  /**
+   * What `grant_management_actions_supported` lists.
+   */
   static readonly SUPPORTED = SUPPORTED;
+  /**
+   * The scope the Grant Management API's GET requires.
+   */
   static readonly QUERY_SCOPE = QUERY_SCOPE;
+  /**
+   * The scope the Grant Management API's DELETE requires.
+   */
   static readonly REVOKE_SCOPE = REVOKE_SCOPE;
+  /**
+   * The Grant Management API's path.
+   */
   static readonly PATH = PATH;
+  /**
+   * The scheduler job id that purges expired grants and token rows.
+   */
   static readonly PURGE_JOB = PURGE_JOB;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, settings, error codes, statistics, a base URL
+   *   reader, the clock, and lazy loaders of the audit log, scheduler, DPoP
+   *   check and scope policy
+   */
   constructor(private readonly deps: GrantManagementDeps) {
     deps.log.debug("Entering GrantManagement.constructor().");
     deps.log.debug("Leaving GrantManagement.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): GrantManagementDeps {
     helpers.log.debug("Entering GrantManagement.defaultDeps().");
     helpers.log.debug("Leaving GrantManagement.defaultDeps().");
@@ -178,6 +244,12 @@ class GrantManagement {
   }
 
   // Space-separated values, each once, in the order first seen.
+  /**
+   * Joins space-separated values, each once, in the order first seen.
+   *
+   * @param lists - space-separated strings or arrays of values
+   * @returns the joined string
+   */
   static words(...lists: Json[]): string {
     helpers.log.debug("Entering GrantManagement.words().");
     const out: string[] = [];
@@ -194,6 +266,13 @@ class GrantManagement {
 
   // Values of two arrays, each once — by their canonical JSON, so two
   // authorization_details objects saying the same thing are one.
+  /**
+   * Returns the values of two arrays, each once by its canonical JSON.
+   *
+   * @param a - the first array
+   * @param b - the second array
+   * @returns the union
+   */
   static union(a: Json, b: Json): Json[] {
     helpers.log.debug("Entering GrantManagement.union().");
     const out: Json[] = [];
@@ -212,6 +291,14 @@ class GrantManagement {
 
   // Two OIDC Core 5.5 claims requests as one: each member's claims, the
   // later request's wording winning for a claim both name.
+  /**
+   * Merges two OpenID Connect Core 5.5 claims requests, the later wording
+   * winning for a claim both name.
+   *
+   * @param a - the earlier claims request
+   * @param b - the later claims request
+   * @returns the merged claims request
+   */
   static mergeClaims(a: Json, b: Json): Json {
     helpers.log.debug("Entering GrantManagement.mergeClaims().");
     if (!a && !b) {
@@ -238,6 +325,15 @@ class GrantManagement {
   // vocabulary. A request naming neither parameter is no business of this
   // file's.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks an authorization request's grant management parameters before anyone
+   * signs in: their own rules, a confidential client, and a response type that
+   * ends at the token endpoint.
+   *
+   * @param params - the authorization request's parameters
+   * @param opts - `responseTypes`, the request's response types
+   * @returns null, or a refusal in the authorization endpoint's vocabulary
+   */
   requestRefusal(params: Json, opts: Json): Refusal | null {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.requestRefusal().");
@@ -305,6 +401,16 @@ class GrantManagement {
   // (those the person has not withdrawn). `{ ok, plan }` or a refusal; `plan`
   // is null for a request that asked for no grant management.
   // ---------------------------------------------------------------------------
+  /**
+   * Plans what the grant will be once its tokens are claimed, after the person
+   * is known and has agreed.
+   *
+   * @param asked - `params`, `clientId`, `sub`, `scope`, `resources`,
+   *   `authorizationDetails`, `claims` and `stillConsented`, a function keeping
+   *   the earlier scopes a merge may carry forward
+   * @returns `{ ok: true, plan }` (plan null when no grant management was asked
+   *   for), or a refusal
+   */
   planFor(asked: Json): Json {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.planFor().");
@@ -368,6 +474,13 @@ class GrantManagement {
   // At the token endpoint, just before the mint: a merge or replace whose
   // grant was revoked since the code was issued is refused. Null, or a
   // refusal in the token endpoint's vocabulary.
+  /**
+   * Refuses, at the token endpoint, a merge or replace whose grant was revoked
+   * since the code was issued.
+   *
+   * @param plan - the plan the code carries
+   * @returns null, or a refusal in the token endpoint's vocabulary
+   */
   redemptionRefusal(plan: Json): Refusal | null {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.redemptionRefusal().");
@@ -392,6 +505,13 @@ class GrantManagement {
   // `noteIssued()` wrote while they were minted — and a merge keeps the
   // later of that and what the grant already had.
   // ---------------------------------------------------------------------------
+  /**
+   * Writes the grant once its tokens were claimed, expiring with the latest of
+   * what was minted under it.
+   *
+   * @param plan - the plan from `planFor()`
+   * @returns the grant record, or null when there was no plan
+   */
   apply(plan: Json): Json {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.apply(). " + (plan && plan.action));
@@ -439,6 +559,16 @@ class GrantManagement {
 
   // One token minted under a grant, for a DELETE to reach. Kept until the
   // token expires (`expSec`).
+  /**
+   * Records one token minted under a grant, for a DELETE to reach, until the
+   * token expires.
+   *
+   * @param grantId - the grant
+   * @param gen - the grant's generation
+   * @param jti - the token's id
+   * @param kind - the token's kind
+   * @param expSec - the token's expiry, in seconds
+   */
   noteIssued(grantId: string, gen: number, jti: string, kind: string,
              expSec: number): void {
     const { log } = this.deps;
@@ -457,6 +587,15 @@ class GrantManagement {
 
   // The refresh grant's question: may a refresh token carrying
   // `grant_id` / `grant_gen` still be redeemed? Null, or a refusal.
+  /**
+   * Tells whether a refresh token carrying a grant id and generation may still
+   * be redeemed.
+   *
+   * @param grantId - the token's `grant_id`
+   * @param gen - the token's grant generation
+   * @param clientId - the client redeeming it
+   * @returns null, or a refusal
+   */
   refreshRefusal(grantId: Json, gen: Json, clientId: Json): Refusal | null {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.refreshRefusal().");
@@ -486,6 +625,12 @@ class GrantManagement {
 
   // The grant a refresh extends: its generation, for the tokens the refresh
   // mints. Null when there is none.
+  /**
+   * Returns the grant a refresh extends.
+   *
+   * @param grantId - the grant id
+   * @returns the grant record, or null
+   */
   current(grantId: Json): Json {
     this.deps.log.debug("Entering GrantManagement.current().");
     const held = grantId ? grants.get(String(grantId)) : null;
@@ -495,6 +640,13 @@ class GrantManagement {
 
   // Refresh tokens also move the grant's expiry out: a grant lives while
   // anything minted under it does.
+  /**
+   * Moves a grant's expiry out to a refresh token's, so a grant lives while
+   * anything minted under it does.
+   *
+   * @param grantId - the grant id
+   * @param expSec - the new token's expiry, in seconds
+   */
   extend(grantId: Json, expSec: number): void {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.extend().");
@@ -512,15 +664,16 @@ class GrantManagement {
                        via: string, how?: Json): number {
     const { log, stats } = this.deps;
     log.debug("Entering GrantManagement.revokeIssued().");
-    const jtis: string[] = [];
+    const jtis: Array<[string, number]> = [];
     issued.forEach(function (row: Json, jti: string): void {
       if (row && row.grant === grantId && which(row)) {
-        jtis.push(jti);
+        jtis.push([jti, Number(row.exp) || 0]);
       }
     });
     let count = 0;
-    jtis.forEach(function (jti: string): void {
-      if (stats.revoke(jti, via, how)) {
+    // Each with its token's `exp` (#345), which this row recorded at issue.
+    jtis.forEach(function (pair: [string, number]): void {
+      if (stats.revoke(pair[0], via, how, pair[1])) {
         count += 1;
       }
     });
@@ -534,6 +687,16 @@ class GrantManagement {
   // every token this realm recorded under it revoked. `{ ok, revoked }`, or
   // `{ ok: false }` for a grant this realm does not hold.
   // ---------------------------------------------------------------------------
+  /**
+   * Revokes a grant: it leaves the register, and every token this realm
+   * recorded under it is revoked.
+   *
+   * @param grantId - the grant id
+   * @param actor - who revoked it
+   * @param via - the door it was revoked through
+   * @returns `{ ok: true, revoked }`, or `{ ok: false }` for a grant this realm
+   *   does not hold
+   */
   revoke(grantId: string, actor: string, via: string): Json {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.revoke().");
@@ -575,6 +738,15 @@ class GrantManagement {
   // client's DELETE does it, recorded as the administrator's. `{ ok, message,
   // revoked }` or `{ ok: false, errors }` carrying its code.
   // ---------------------------------------------------------------------------
+  /**
+   * Performs the console's and `/admin-api`'s one act, `revoke-grant`, recorded
+   * as the administrator's.
+   *
+   * @param body - the posted body, naming the action and the grant
+   * @param ctx - `via` and `actor`
+   * @returns `{ ok: true, message, revoked }`, or `{ ok: false, errors }`
+   *   carrying its code
+   */
   act(body: Json, ctx: Json): Json {
     const { log, errorCodes } = this.deps;
     const b = body || {};
@@ -601,6 +773,12 @@ class GrantManagement {
   }
 
   // The grant resource (draft "Query Status of a Grant").
+  /**
+   * Builds the grant resource the Grant Management API answers.
+   *
+   * @param record - the grant record
+   * @returns the grant resource
+   */
   resourceOf(record: Json): Json {
     this.deps.log.debug("Entering GrantManagement.resourceOf().");
     const scopes: Json = { scope: String(record.scope || '') };
@@ -636,6 +814,13 @@ class GrantManagement {
   }
 
   // The metadata members (draft "Authorization server's metadata").
+  /**
+   * Returns the authorization server metadata members for grant management: the
+   * actions supported and the endpoint.
+   *
+   * @param base - the authorization server's base URL
+   * @returns the metadata members
+   */
   metadata(base: string): Json {
     this.deps.log.debug("Entering GrantManagement.metadata().");
     this.deps.log.debug("Leaving GrantManagement.metadata().");
@@ -645,6 +830,12 @@ class GrantManagement {
 
   // What the console and `/admin-api` list: every grant in the realm, the
   // newest first, optionally one client's. Never a token.
+  /**
+   * Lists every grant in the realm, newest first, never with a token.
+   *
+   * @param clientId - only this client's grants
+   * @returns the grant rows
+   */
   list(clientId?: string): Json[] {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.list().");
@@ -676,6 +867,12 @@ class GrantManagement {
   // THE PURGE (#49's rule: ejecting what expired is a job): rows of tokens
   // past their exp, and grants past their last token's.
   // ---------------------------------------------------------------------------
+  /**
+   * Purges token rows past their expiry and grants past their last token's. The
+   * scheduler job's body.
+   *
+   * @returns `{ summary }` for the scheduler
+   */
   purge(): Json {
     const { log, now } = this.deps;
     log.debug("Entering GrantManagement.purge().");
@@ -707,6 +904,9 @@ class GrantManagement {
              ' expired grant(s) removed' };
   }
 
+  /**
+   * Registers the purge job on the scheduler, once.
+   */
   scheduleJobs(): void {
     const { log, scheduler } = this.deps;
     const self = this;
@@ -756,6 +956,13 @@ class GrantManagement {
   }
 
   // One API call: the token checked, then the grant, then the act.
+  /**
+   * Answers one Grant Management API call: the access token checked, then the
+   * grant, then the GET or DELETE.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   handle(req: Req, res: Res): void {
     const { log, errorCodes, stats } = this.deps;
     log.debug("Entering GrantManagement.handle(). " + req.method);
@@ -841,6 +1048,11 @@ class GrantManagement {
     log.debug("Leaving GrantManagement.handle(). Answered.");
   }
 
+  /**
+   * Registers `GET` and `DELETE /oauth2/grants/{grant_id}`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: Json): void {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -879,10 +1091,28 @@ const slot = new InstanceSlot<GrantManagement>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Grant Management for OAuth 2.0: the grant register and its API.
+ *
+ * The composition root builds the instance and calls `registerRoutes()`.
+ *
+ * @namespace
+ */
 export = {
   GrantManagement: GrantManagement,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: GrantManagement): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   ACTIONS: ACTIONS,
   SUPPORTED: SUPPORTED,

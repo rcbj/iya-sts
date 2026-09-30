@@ -16,6 +16,7 @@
     "acme/*.js", "acme/*.ts",
     "admin-core/*.js", "admin-core/*.ts",
     "admin-ui/*.js", "admin-ui/*.ts",
+    "attribute-sources/*.js", "attribute-sources/*.ts",
     "authn/*.js", "authn/*.ts",
     "cluster/*.js", "cluster/*.ts",
     "common/*.js", "common/*.ts",

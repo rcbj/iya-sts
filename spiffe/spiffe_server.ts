@@ -133,6 +133,9 @@ import admin = require('../admin-ui/admin');
 // `spiffe.bundlePath` restart-only in config.js. `sts_metadata.js` reads
 // the same setting for its row, so the description cannot name a path the
 // router does not have.
+/**
+ * The bundle endpoint's path, `spiffe.bundlePath`, read once at require time.
+ */
 const BUNDLE_PATH = config.value('spiffe.bundlePath') || '/spiffe/bundle';
 
 // Listener state. Declared HERE, beside the other module state rather than
@@ -145,6 +148,16 @@ const BUNDLE_PATH = config.value('spiffe.bundlePath') || '/spiffe/bundle';
 // this service uses, so `''` is a realm here rather than a missing value.
 const listeners = new Map();
 let started = false;
+// WHAT THE FRONT PROCESS HOLDS, IN A PROCESS THAT HOLDS NONE (#337). A socket
+// is held by one process and reachable from no other, so a request worker —
+// which answers `/admin/spiffe` and `/admin-api/spiffe`, both dispatched on
+// purpose (tests/request_routing.js) — has no listeners of its own and
+// reported none. The front process hands its bindings down as a snapshot, at
+// fork and on every reconcile (common/request_pool.js), the way it hands down
+// the directory's connections; `bindingsNow()` answers from it in a process
+// that never started listening.
+let handedBindings: any = null;
+let bindingsWatcher: any = null;
 
 // What `SpiffeServer` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -179,13 +192,33 @@ const WORKLOAD_ATTESTATION: { table: any } = { table: null };
 // `handlersInRealm()` like the other two surfaces.
 const BROKER_HANDLERS: { table: Record<string, any> | null } = { table: null };
 
+/**
+ * The SPIFFE family's socket owner: the bundle endpoint, the `/spiffe` page,
+ * and the gRPC listeners of every realm with SPIFFE turned on.
+ *
+ * Its routes are registered by `registerRoutes()`; its listeners are started by
+ * `listen()`, never at require time, and a failure to bind is recorded and
+ * published on `GET /spiffe` rather than thrown.
+ */
 class SpiffeServer {
+  /**
+   * Builds the server over its dependencies.
+   *
+   * @param deps - the logger, configuration, realms, the SPIFFE CA, registry,
+   *   gRPC, Workload API, SPIRE Server API, authentication, peer and mode
+   *   modules, and the workload attestation table's builder
+   */
   constructor(private readonly deps: SpiffeServerDeps) {
     deps.log.debug("Entering SpiffeServer.constructor().");
     deps.log.debug("Leaving SpiffeServer.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SpiffeServerDeps {
     helpers.log.debug("Entering SpiffeServer.defaultDeps().");
     helpers.log.debug("Leaving SpiffeServer.defaultDeps().");
@@ -249,6 +282,13 @@ class SpiffeServer {
   // `/admin-api`; this predicate is what makes a realm that has no such row
   // behave the same way.
   // ---------------------------------------------------------------------------
+  /**
+   * Asks whether SPIFFE is turned on in a realm; a realm other than the default
+   * opts in with its own `spiffe.enabled`.
+   *
+   * @param realm - the realm's record
+   * @returns whether it is
+   */
   enabledIn(realm) {
     const { log, realms, config } = this.deps;
     log.debug("Entering SpiffeServer.enabledIn().");
@@ -263,6 +303,11 @@ class SpiffeServer {
     return own === true || String(own).toLowerCase() === 'true';
   }
 
+  /**
+   * Asks whether SPIFFE is turned on in the ambient realm.
+   *
+   * @returns whether it is
+   */
   enabled() {
     const { log, realms } = this.deps;
     log.debug("Entering SpiffeServer.enabled().");
@@ -280,6 +325,13 @@ class SpiffeServer {
   // identities to anybody would teach a client author something false about
   // every SPIFFE deployment they will ever meet.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the three SPIFFE surfaces — where they are, whether the sockets
+   * bound, and at length what is not checked — for `GET /spiffe`.
+   *
+   * @param req - the request, for the base URL
+   * @returns the description document
+   */
   description(req) {
     const { log, baseUrlOf, ca, config, rpc, workload, serverApi, registry,
             auth, mode } = this.deps;
@@ -568,6 +620,12 @@ class SpiffeServer {
   // handlers camelCase names and the wire path carries the real one, so the
   // path is what these pages report: a reader comparing this page with the
   // `.proto` should see the same spelling.
+  /**
+   * Returns a method's name as the `.proto` spells it, from its wire path.
+   *
+   * @param methodPath - such as `/SpiffeWorkloadAPI/FetchX509SVID`
+   * @returns such as `FetchX509SVID`
+   */
   protoNameOf(methodPath) {
     const { log } = this.deps;
     log.debug("Entering SpiffeServer.protoNameOf().");
@@ -576,6 +634,12 @@ class SpiffeServer {
     return parts[parts.length - 1] || '';
   }
 
+  /**
+   * Escapes a value for HTML.
+   *
+   * @param value - the value
+   * @returns the escaped text
+   */
   esc(value) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering SpiffeServer.esc().");
@@ -588,6 +652,13 @@ class SpiffeServer {
   // and trusted as `local`, and mutual TLS — and a reader who cannot see which
   // is which meets the difference as a handshake failure. Same reason
   // `tls_server.js` says on the page which port needs verification turned off.
+  /**
+   * Draws the listener table's rows, each with what a caller has to present on
+   * it.
+   *
+   * @param bindings - the bindings
+   * @returns the rows' HTML
+   */
   listenerRows(bindings) {
     const { log } = this.deps;
     const self = this;
@@ -612,6 +683,12 @@ class SpiffeServer {
     }).join('');
   }
 
+  /**
+   * Draws the method table's rows.
+   *
+   * @param methods - the methods
+   * @returns the rows' HTML
+   */
   methodRows(methods) {
     const { log } = this.deps;
     const self = this;
@@ -625,6 +702,12 @@ class SpiffeServer {
     }).join('');
   }
 
+  /**
+   * Draws the `/spiffe` page from the description document.
+   *
+   * @param document - what `description()` returned
+   * @returns the page's HTML
+   */
   page(document) {
     const { log, ca, config } = this.deps;
     const self = this;
@@ -910,6 +993,14 @@ class SpiffeServer {
   // that does it, and rcbj's instruction was *for the SPIFFE service, a unique
   // IP will be used* — which is this.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the addresses a realm's surface listens on: its own Unix socket
+   * path and bind address, with the ports unchanged.
+   *
+   * @param surface - `workload`, `server` or `broker`
+   * @param realmId - the realm's id, '' for the default
+   * @returns the addresses
+   */
   addressesFor(surface, realmId) {
     const { log, config, realms } = this.deps;
     log.debug('Entering SpiffeServer.addressesFor(). surface=' + surface +
@@ -967,6 +1058,12 @@ class SpiffeServer {
   // realm for realms that will never use them. There is nothing for a client to
   // be confused by, because there was never an endpoint to connect to.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the realms that get sockets: the default realm always, and every
+   * other realm with SPIFFE turned on.
+   *
+   * @returns the realms' records
+   */
   realmsWithSockets() {
     const { log, realms } = this.deps;
     const self = this;
@@ -985,6 +1082,15 @@ class SpiffeServer {
     return out;
   }
 
+  /**
+   * Binds a surface's server on every address of a realm, refusing an address
+   * another realm already holds; a failure is recorded, not thrown.
+   *
+   * @param server - the gRPC server
+   * @param surface - `workload` or `server`
+   * @param realmId - the realm's id
+   * @returns one result row per address
+   */
   async bindAll(server, surface, realmId) {
     const { log, auth, rpc, errorCodes } = this.deps;
     log.debug('Entering SpiffeServer.bindAll(). surface=' + surface +
@@ -1236,6 +1342,13 @@ class SpiffeServer {
   // Null when nobody is — not the realm id, because the default realm's id is
   // the empty string and `'' || 'nobody'` is the kind of bug this whole file is
   // written to avoid.
+  /**
+   * Returns which other realm in this process already listens on an address.
+   *
+   * @param address - the address
+   * @param realmId - the realm asking
+   * @returns the realm's id, or null when nobody does
+   */
   claimedBy(address, realmId) {
     const { log } = this.deps;
     const self = this;
@@ -1275,6 +1388,14 @@ class SpiffeServer {
   //
   // A Unix socket path is compared literally: there is no wildcard for one.
   // ---------------------------------------------------------------------------
+  /**
+   * Asks whether a bound address overlaps a wanted one, a wildcard host
+   * included; a Unix socket path is compared literally.
+   *
+   * @param bound - the bound address
+   * @param wanted - the wanted address
+   * @returns whether they overlap
+   */
   overlaps(bound, wanted) {
     const { log } = this.deps;
     log.debug("Entering SpiffeServer.overlaps().");
@@ -1307,6 +1428,13 @@ class SpiffeServer {
   // WHICH of that realm's addresses is in the way, for the message. It is
   // usually the same string; it is not when a wildcard is what overlaps, and
   // that is exactly the case a reader needs told.
+  /**
+   * Returns which of a realm's bound addresses is in the way of a wanted one.
+   *
+   * @param realmId - the realm holding it
+   * @param wanted - the wanted address
+   * @returns the address; the wanted one when nothing bound overlaps it
+   */
   addressHeldBy(realmId, wanted) {
     const { log } = this.deps;
     const self = this;
@@ -1327,6 +1455,13 @@ class SpiffeServer {
   // Run something inside a realm. The realm registry takes a RECORD rather than
   // an id, and `realms.get('')` is the default realm's record, so this is the
   // one place that conversion happens.
+  /**
+   * Runs a function inside a realm, given its id.
+   *
+   * @param realmId - the realm's id, '' for the default
+   * @param fn - the function
+   * @returns what it returns
+   */
   inRealm(realmId, fn) {
     const { log, realms } = this.deps;
     log.debug("Entering SpiffeServer.inRealm().");
@@ -1354,6 +1489,14 @@ class SpiffeServer {
   // through the handlers would have had to be remembered at each of those
   // points.
   // ---------------------------------------------------------------------------
+  /**
+   * Wraps a handler table so that every call runs inside the realm whose socket
+   * it arrived on.
+   *
+   * @param realmId - the realm's id
+   * @param table - the handlers
+   * @returns the wrapped handlers
+   */
   handlersInRealm(realmId, table) {
     const { log, realms } = this.deps;
     log.debug("Entering SpiffeServer.handlersInRealm().");
@@ -1372,6 +1515,13 @@ class SpiffeServer {
     return out;
   }
 
+  /**
+   * Builds and binds a realm's Workload API, SPIRE Server API and Broker API
+   * servers, once its authority is ready.
+   *
+   * @param realm - the realm's record
+   * @returns the realm's listener entry
+   */
   async startRealm(realm) {
     const { log, realms, rpc, workload, serverApi, ca, errorCodes,
             registry } = this.deps;
@@ -1448,6 +1598,14 @@ class SpiffeServer {
   // four): the kernel's facts, then the realm's workload attestors. Resolves
   // the facts — with `error` set when attestation failed, which the
   // connection's every call is then refused with.
+  /**
+   * Attests one Workload API connection in the listener's realm: the kernel's
+   * facts, then the realm's workload attestors.
+   *
+   * @param realmId - the realm's id
+   * @param socket - the accepted socket
+   * @returns the facts, with `error` set when attestation failed
+   */
   async attestConnection(realmId, socket) {
     const { log, peer } = this.deps;
     log.debug('Entering SpiffeServer.attestConnection(). realm=' +
@@ -1483,6 +1641,14 @@ class SpiffeServer {
   // attestor runs — this is not the Workload API — and nothing is refused
   // here: an unreadable peer is `facts.error`, which `localTrust()` reads as
   // "not local" in a product realm and a development realm never asks.
+  /**
+   * Records a SPIRE Server API socket connection's kernel facts and whether the
+   * socket is private, for `localTrust()`.
+   *
+   * @param socketPath - the socket's path
+   * @param socket - the accepted socket
+   * @returns the facts
+   */
   async observeLocalCaller(socketPath, socket) {
     const { log, peer, rpc } = this.deps;
     log.debug('Entering SpiffeServer.observeLocalCaller().');
@@ -1495,6 +1661,13 @@ class SpiffeServer {
 
   // What GET /spiffe, the console and /admin-api draw about workload
   // attestation.
+  /**
+   * Describes workload attestation for `GET /spiffe`, the console and
+   * `/admin-api`: the TCP posture, the native module, the attestors and the
+   * open connections.
+   *
+   * @returns the state
+   */
   workloadAttestationState() {
     const { log, peer, mode, auth, realms } = this.deps;
     log.debug('Entering SpiffeServer.workloadAttestationState().');
@@ -1531,6 +1704,11 @@ class SpiffeServer {
   }
 
   // The workload attestation table, built once.
+  /**
+   * Returns the workload attestation table, built once.
+   *
+   * @returns the table
+   */
   workloadAttestation() {
     const { log, buildWorkloadAttestation } = this.deps;
     log.debug('Entering SpiffeServer.workloadAttestation().');
@@ -1542,6 +1720,11 @@ class SpiffeServer {
   }
 
   // The Broker API's handlers, wrapped once (#170).
+  /**
+   * Returns the Broker API's handlers, wrapped once (#170).
+   *
+   * @returns the handlers
+   */
   brokerHandlers(): Record<string, any> {
     const { log } = this.deps;
     const self = this;
@@ -1575,6 +1758,14 @@ class SpiffeServer {
   // An address another realm holds is refused exactly as `bindAll()` refuses
   // it, naming the realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Binds a realm's Broker API on `spiffe.brokerPort`, over mutual TLS only; no
+   * certificate is no listener.
+   *
+   * @param server - the gRPC server
+   * @param realmId - the realm's id
+   * @returns one result row per address
+   */
   async bindBroker(server, realmId) {
     const { log, rpc, errorCodes } = this.deps;
     log.debug('Entering SpiffeServer.bindBroker(). realm=' +
@@ -1634,6 +1825,12 @@ class SpiffeServer {
     return results;
   }
 
+  /**
+   * Closes a realm's SPIFFE listeners; its entries and authorities are
+   * untouched.
+   *
+   * @param realmId - the realm's id
+   */
   stopRealm(realmId) {
     const { log } = this.deps;
     log.debug('Entering SpiffeServer.stopRealm(). realm=' +
@@ -1666,6 +1863,12 @@ class SpiffeServer {
     log.debug('Leaving SpiffeServer.stopRealm().');
   }
 
+  /**
+   * Brings the listeners in line with the realms that want sockets, serialized
+   * behind any reconcile already running.
+   *
+   * @returns the listener entries started; [] when this process binds nothing
+   */
   reconcile() {
     const { log } = this.deps;
     log.debug('Entering SpiffeServer.reconcile().');
@@ -1674,12 +1877,70 @@ class SpiffeServer {
                 'SPIFFE socket.');
       return Promise.resolve([]);
     }
+    const self = this;
     pending = pending.then(this.reconcileNow.bind(this),
-                           this.reconcileNow.bind(this));
+                           this.reconcileNow.bind(this))
+      .then(function (entries) {
+        self.tellBindingsWatcher();
+        return entries;
+      });
     log.debug('Leaving SpiffeServer.reconcile(). Queued.');
     return pending;
   }
 
+  /**
+   * Hands the current bindings to whoever asked to be told (the request
+   * pool, which passes them to its workers — #337). A watcher that throws
+   * costs a snapshot, never a reconcile.
+   */
+  tellBindingsWatcher() {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.tellBindingsWatcher().');
+    if (typeof bindingsWatcher === 'function') {
+      try {
+        bindingsWatcher(this.bindingsNow());
+      } catch (e) {
+        log.debug('Caught in SpiffeServer.tellBindingsWatcher(): ' +
+                  ((e && e.message) || e));
+      }
+    }
+    log.debug('Leaving SpiffeServer.tellBindingsWatcher().');
+  }
+
+  /**
+   * Installs the function told the bindings after every reconcile.
+   *
+   * @param fn - called with `{ workload, api, broker }`
+   */
+  setBindingsWatcher(fn) {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.setBindingsWatcher().');
+    bindingsWatcher = typeof fn === 'function' ? fn : null;
+    log.debug('Leaving SpiffeServer.setBindingsWatcher().');
+  }
+
+  /**
+   * Takes the front process's bindings, in a process that binds none (#337).
+   *
+   * @param snapshot - `{ workload, api, broker }` as `bindingsNow()` answers
+   */
+  adoptBindings(snapshot) {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.adoptBindings().');
+    handedBindings = snapshot && typeof snapshot === 'object'
+      ? { workload: Array.isArray(snapshot.workload) ? snapshot.workload : [],
+          api: Array.isArray(snapshot.api) ? snapshot.api : [],
+          broker: Array.isArray(snapshot.broker) ? snapshot.broker : [] }
+      : null;
+    log.debug('Leaving SpiffeServer.adoptBindings().');
+  }
+
+  /**
+   * Stops the listeners of realms that no longer want them and starts those of
+   * realms that do, one realm at a time.
+   *
+   * @returns the listener entries started
+   */
   reconcileNow() {
     const { log, realms } = this.deps;
     const self = this;
@@ -1713,8 +1974,14 @@ class SpiffeServer {
     }, Promise.resolve([]));
   }
 
+  /**
+   * Starts the listeners, once; called from `server.js`.
+   *
+   * @returns `whenReady`, which resolves the bindings once every realm has
+   *   bound
+   */
   listen() {
-    const { log } = this.deps;
+    const { log, rpc } = this.deps;
     const self = this;
     log.debug('Entering SpiffeServer.listen().');
     if (started) {
@@ -1722,6 +1989,13 @@ class SpiffeServer {
       return { whenReady: Promise.resolve(this.bindingsNow()) };
     }
     started = true;
+    // THE PROTOS, LOADED HERE AND SYNCHRONOUSLY (#348). `spiffe_grpc.ts`
+    // loads them at first use so that a request worker never does; this is
+    // the front process's first use, and it is made before anything binds
+    // so that a proto missing from the image throws out of `listen()` — a
+    // service that does not start, as it was when they loaded at require —
+    // rather than rejecting inside a realm's asynchronous start.
+    rpc.services();
     const whenReady = this.reconcile().then(function () {
       return self.bindingsNow();
     });
@@ -1733,9 +2007,19 @@ class SpiffeServer {
   // READS. `/spiffe`, `/admin/spiffe` and `/admin-api` all take
   // `{ workload, api }`, and each row now says which realm it belongs to — the
   // alternative was a second shape everywhere and two things to keep in step.
+  /**
+   * Returns every realm's bindings in the two lists the pages read, each row
+   * naming its realm.
+   *
+   * @returns `{ workload, api }`
+   */
   bindingsNow() {
     const { log } = this.deps;
     log.debug("Entering SpiffeServer.bindingsNow().");
+    if (!started && handedBindings) {
+      log.debug("Leaving SpiffeServer.bindingsNow(). The front process's.");
+      return handedBindings;
+    }
     const workloadAll = [];
     const apiAll = [];
     const brokerAll = [];
@@ -1748,6 +2032,9 @@ class SpiffeServer {
     return { workload: workloadAll, api: apiAll, broker: brokerAll };
   }
 
+  /**
+   * Closes every realm's listeners.
+   */
   close() {
     const { log } = this.deps;
     log.debug('Entering SpiffeServer.close().');
@@ -1760,6 +2047,12 @@ class SpiffeServer {
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order
   // is unchanged (rule 1). Nothing calls it at load.
+  /**
+   * Registers the bundle endpoint and the `/spiffe` views on the app;
+   * `common/protocol_stack.ts` calls it (#50, R1).
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, errorCodes, ca, audit } = this.deps;
     const self = this;
@@ -1878,6 +2171,11 @@ class SpiffeServer {
   // Per realm and never thrown: one realm that could not be re-keyed is
   // reported and the others still are.
   // -------------------------------------------------------------------------
+  /**
+   * Re-keys every realm's mutual-TLS listeners with the current listener
+   * certificate and trust bundle; `tls_server.js` calls it when it adopts a
+   * re-issued certificate.
+   */
   refreshServerCredentials() {
     const { log, rpc, errorCodes } = this.deps;
     const self = this;
@@ -1955,6 +2253,13 @@ class SpiffeServer {
   // run by `common/instance_slot.ts` once for whichever instance is
   // installed, in the order the module used to do it: the realm-change
   // subscription that reconciles the listeners, then the console's reader.
+  /**
+   * Subscribes the installed instance to realm changes, so that turning a
+   * realm's SPIFFE on binds its sockets, and to listener certificate changes,
+   * and fills the console's reader (#50, R2).
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: SpiffeServer): void {
     helpers.log.debug("Entering SpiffeServer.wire().");
     // A realm created, changed or removed. `realms.setOverride()` fires this,
@@ -2046,6 +2351,11 @@ let pending = Promise.resolve([]);
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The SPIFFE family's socket owner: the bundle endpoint, the `/spiffe` page and
+ * every realm's gRPC listeners.
+ * @namespace
+ */
 export = {
   registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   SpiffeServer: SpiffeServer,
@@ -2053,12 +2363,18 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   listen: slot.forward('listen'),
   close: slot.forward('close'),
+  // The front process's bindings, handed to a request worker (#337).
+  setBindingsWatcher: slot.forward('setBindingsWatcher'),
+  adoptBindings: slot.forward('adoptBindings'),
   description: slot.forward('description'),
   // What is attested on the Workload API, for `server.js`'s startup line as
   // well as `/spiffe` (#40): a banner that ASSERTS what this service checks
   // goes stale the day the answer changes, and this one did.
   workloadAttestationState: slot.forward('workloadAttestationState'),
   BUNDLE_PATH: BUNDLE_PATH,
+  /**
+   * Returns every realm's bindings.
+   */
   bindings: function () {
     log.debug("Entering bindings().");
     log.debug("Leaving bindings().");
@@ -2068,6 +2384,9 @@ export = {
   // realms have sockets at all. Exported rather than derived from the rows
   // because a realm whose every binding FAILED is still a realm with SPIFFE
   // turned on, and the two states need telling apart.
+  /**
+   * Returns the ids of the realms that have listeners.
+   */
   realmsListening: function () {
     log.debug("Entering realmsListening().");
     log.debug("Leaving realmsListening().");

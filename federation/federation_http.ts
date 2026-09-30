@@ -297,6 +297,11 @@ interface FederationHttpDeps {
 // THE OUTBOUND TRANSPORT POLICY, as `common/outbound_tls.ts` takes it (#171).
 // No plain http in product: a client secret travels on these requests, and
 // no specification a partner speaks names a loopback exception.
+/**
+ * The outbound transport policy federation requests are held to, as
+ * `common/outbound_tls.ts` takes it: no plain http in product, and the settings
+ * that allow http, skip TLS verification or name a CA file.
+ */
 const OUTBOUND_TRANSPORT = {
   what: 'a federation back-channel request',
   allowHttpKey: 'federation.outboundAllowHttp',
@@ -307,10 +312,34 @@ const OUTBOUND_TRANSPORT = {
   skipIgnoredCode: 'STS-FED-0113'
 };
 
+/**
+ * This service's outbound requests: the back-channel of a federation
+ * relationship, deliveries to registered addresses, and the bounded fetches
+ * other families borrow.
+ *
+ * Every request is held to the kill switch (`federation.outbound`), the
+ * transport policy, a body cap and a timeout, follows no redirect and, in
+ * product mode, refuses an internal address with the connection pinned to the
+ * one checked.
+ */
 class FederationHttp {
+  /**
+   * The three relationship attributes that may hold a URL this service will
+   * fetch from.
+   */
   static readonly DIALLABLE = DIALLABLE;
+  /**
+   * The application attributes that may hold an address this service sends a
+   * delivery to.
+   */
   static readonly SENDABLE = SENDABLE;
 
+  /**
+   * Builds the requester over the given dependencies.
+   *
+   * @param deps - the logger, settings, error codes, the http and https
+   *   modules, the User-Agent, and optionally dns, net and the mode predicates
+   */
   constructor(private readonly deps: FederationHttpDeps) {
     deps.log.debug("Entering FederationHttp.constructor().");
     deps.log.debug("Leaving FederationHttp.constructor().");
@@ -318,6 +347,12 @@ class FederationHttp {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): FederationHttpDeps {
     helpers.log.debug("Entering FederationHttp.defaultDeps().");
     helpers.log.debug("Leaving FederationHttp.defaultDeps().");
@@ -341,6 +376,11 @@ class FederationHttp {
   // `federation.maxResponseBytes` since 2026-09-12; it was the constant
   // MAX_BODY_BYTES. Read once per REQUEST, so a change reaches the next one
   // and a response already being read keeps the cap it started under.
+  /**
+   * Returns the largest response body read, `federation.maxResponseBytes`.
+   *
+   * @returns the cap in bytes
+   */
   maxBodyBytes(): number {
     const { log, config } = this.deps;
     log.debug("Entering FederationHttp.maxBodyBytes().");
@@ -348,6 +388,11 @@ class FederationHttp {
     return Number(config.value('federation.maxResponseBytes'));
   }
 
+  /**
+   * Says whether any outbound request may be made (`federation.outbound`).
+   *
+   * @returns whether it may
+   */
   outboundAllowed(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering FederationHttp.outboundAllowed().");
@@ -359,6 +404,14 @@ class FederationHttp {
   // for every requester that borrows its policy: `{ ok, why, errorCode,
   // rejectUnauthorized, ca, skipped }`. `ok: false` is a CA file that cannot
   // be used, and the request is not to be made.
+  /**
+   * Returns the TLS options for one request to an origin under the outbound
+   * transport policy.
+   *
+   * @param origin - the origin to be dialled
+   * @returns `{ ok, why, errorCode, rejectUnauthorized, ca, skipped }`; `ok:
+   *   false` means a CA file cannot be used and the request is not made
+   */
   tlsFor(origin: string): ReturnType<typeof OutboundTls.tlsVerdict> {
     const { log } = this.deps;
     log.debug("Entering FederationHttp.tlsFor().");
@@ -367,6 +420,11 @@ class FederationHttp {
   }
 
   // The three transport settings as they are IN FORCE in this realm.
+  /**
+   * Returns the three transport settings as they are in force in this realm.
+   *
+   * @returns the description
+   */
   transportSettings(): ReturnType<typeof OutboundTls.describe> {
     const { log } = this.deps;
     log.debug("Entering FederationHttp.transportSettings().");
@@ -377,6 +435,14 @@ class FederationHttp {
   // Node's request options for the policy's answer: `ca` only when a CA file
   // named one, because node reads that option by value and an explicit list
   // REPLACES its store.
+  /**
+   * Applies the policy's answer to node's request options:
+   * `rejectUnauthorized`, `ca` only when a CA file named one, and
+   * `checkServerIdentity` when present.
+   *
+   * @param requestOptions - node's request options, changed in place
+   * @param policy - `tlsFor()`'s answer
+   */
   applyTls(requestOptions: any,
            policy: ReturnType<typeof OutboundTls.tlsVerdict>): void {
     const { log } = this.deps;
@@ -408,6 +474,13 @@ class FederationHttp {
   // `/admin/federation`, so each one has to name what is wrong and what to do
   // about it — "refused" would send somebody to read this file.
   // -------------------------------------------------------------------------
+  /**
+   * Says why a URL may not be dialled at all, as a sentence for the
+   * relationship's last error.
+   *
+   * @param raw - the URL
+   * @returns the problem, or the empty string when it may be dialled
+   */
   urlProblem(raw: unknown): string {
     const { log } = this.deps;
     log.debug("Entering FederationHttp.urlProblem().");
@@ -417,6 +490,14 @@ class FederationHttp {
 
   // The same answer, with `STS-FED-0112` when the refusal is plain http in
   // product mode and '' for every other, whose code is the caller's.
+  /**
+   * Says why a URL may not be dialled: only https, or http where the policy
+   * allows it.
+   *
+   * @param raw - the URL
+   * @returns `{ why, errorCode }`; `errorCode` is `STS-FED-0112` for plain http
+   *   refused in product mode and empty otherwise
+   */
   urlVerdict(raw: unknown): { why: string; errorCode: string } {
     const { log } = this.deps;
     log.debug("Entering FederationHttp.urlVerdict().");
@@ -466,6 +547,14 @@ class FederationHttp {
   // two spellings arrived, because `::ffff:127.0.0.1` reaches loopback
   // exactly as `127.0.0.1` does. Moved from the RFC 9728 import, unchanged.
   // -------------------------------------------------------------------------
+  /**
+   * Says why an IP address may not be dialled in product mode: a loopback,
+   * private, link-local or reserved address, an IPv4-mapped IPv6 address judged
+   * as the IPv4 inside it.
+   *
+   * @param address - the IP address
+   * @returns the problem, or the empty string when it may be dialled
+   */
   internalAddressProblem(address: unknown): string {
     const { log } = this.deps;
     const netModule = this.deps.net || net;
@@ -505,6 +594,16 @@ class FederationHttp {
   // address to the check answers a private one to the connection. Never
   // rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves a host once and says which address the connection may use.
+   *
+   * In development nothing is checked or pinned; in product every address the
+   * name resolves to is checked and the first is pinned. Never rejects.
+   *
+   * @param hostname - the host name or IP literal
+   * @returns a promise of `{ ok, address, family }`, or `{ ok: false, kind, why
+   *   }` with `kind` `internal` or `unresolved`
+   */
   vetHost(hostname: unknown): Promise<VettedHost> {
     const { log } = this.deps;
     const self = this;
@@ -575,6 +674,20 @@ class FederationHttp {
   // rather than a fetch. The status and the `Cache-Control` header are the
   // whole result. It NEVER rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Sends a form to an address somebody registered to be sent it at; the
+   * answer's body is drained and discarded unless `keepBody` is asked for.
+   *
+   * Never rejects.
+   *
+   * @param record - the entry carrying the address under `attribute`, and `id`
+   *   for the log
+   * @param attribute - the attribute holding the address, one of `SENDABLE`
+   * @param form - the name and value pairs, sent form-urlencoded
+   * @param options - `timeoutMs`, and `keepBody` to keep the answer's body
+   * @returns a promise of `{ ok, status, kind, why, url, cacheControl }`, with
+   *   `body` and `contentType` when kept
+   */
   deliverForm(record: any, attribute: string, form: Record<string, string>,
               options?: DeliverOptions): Promise<DeliveryResult> {
     this.deps.log.debug("Entering FederationHttp.deliverForm().");
@@ -589,6 +702,19 @@ class FederationHttp {
   // a Bearer. Everything above applies unchanged — the attribute list, the
   // kill switch, the transport policy, the internal-address refusal with the
   // connection pinned, no redirect, the cap.
+  /**
+   * Sends a JSON body with the caller's headers to a registered address, as
+   * `deliverForm()` sends a form.
+   *
+   * Never rejects.
+   *
+   * @param record - the entry carrying the address under `attribute`
+   * @param attribute - the attribute holding the address, one of `SENDABLE`
+   * @param payload - the value sent as JSON
+   * @param headers - extra request headers, e.g. a Bearer token
+   * @param options - `timeoutMs` and `keepBody`
+   * @returns a promise of the delivery result
+   */
   deliverJson(record: any, attribute: string, payload: any,
               headers: Record<string, string>,
               options?: DeliverOptions): Promise<DeliveryResult> {
@@ -797,6 +923,22 @@ class FederationHttp {
   // url, events, lastEventId, ended, body, contentType }` — `ended` true
   // when the peer closed the stream itself.
   // -------------------------------------------------------------------------
+  /**
+   * Posts a form to a registered address and reads the answer as server-sent
+   * events, calling `onEvent` for each; used for OpenID Provider Commands'
+   * tenant commands.
+   *
+   * The timeout is an idle timeout; an answer that is not `text/event-stream`
+   * is read whole and returned as `body`. Never rejects.
+   *
+   * @param record - the entry carrying the address under `attribute`
+   * @param attribute - the attribute holding the address, one of `SENDABLE`
+   * @param form - the form body
+   * @param options - `idleMs`, `maxBytes`, `maxEvents`, `lastEventId` and
+   *   `onEvent({ id, event, data })`
+   * @returns a promise of `{ ok, status, kind, why, url, events, lastEventId,
+   *   ended, body, contentType }`
+   */
   streamEvents(record: any, attribute: string, form: Record<string, string>,
                options?: any): Promise<any> {
     const { log } = this.deps;
@@ -1082,6 +1224,19 @@ class FederationHttp {
   // `headers` (the transmitter's access token) and `body` (JSON, sent as
   // `contentType`). Every rule above still applies: the internal-address
   // refusal in product mode, the pinned connection, no redirect, the cap.
+  /**
+   * Fetches a document a trusted party published at an address the request did
+   * not choose: a status list, a registered `jwks_uri`, a discovered endpoint,
+   * and the like.
+   *
+   * Kill switch, transport policy, internal-address refusal in product mode
+   * with the connection pinned, body cap, timeout, no redirect. Never rejects.
+   *
+   * @param raw - the URL
+   * @param options - `accept`, `timeoutMs`, `maxBytes`, and for a request with
+   *   a body `method`, `headers`, `body` and `contentType`
+   * @returns a promise of `{ ok, status, body, contentType, kind, why, url }`
+   */
   fetchPublished(raw: string, options?: { accept?: string;
                                           timeoutMs?: number;
                                           maxBytes?: number;
@@ -1372,6 +1527,22 @@ class FederationHttp {
   // every request and honoured in DEVELOPMENT MODE ONLY (#171); and `loopbackPlainHttp` admits http to 127.0.0.1 or ::1
   // ONLY, which is the kubelet's read-only port. It NEVER rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Makes a request to a URL an administrator configured, such as a SPIFFE node
+   * attestor's source; internal addresses are not refused, since a Kubernetes
+   * API server lives on one.
+   *
+   * Kill switch, transport policy, no redirect, body cap and timeout still
+   * apply. Never rejects.
+   *
+   * @param raw - the URL
+   * @param options - `method`, `headers`, `body`, `ca` (a PEM bundle to verify
+   *   against instead of the default roots), `timeoutMs`, `signedArtifact`
+   *   (plain http for a document whose own signature the caller verifies),
+   *   `cert` and `key` (a client certificate), `chainOnly`, `skipVerify`
+   *   (development only) and `loopbackPlainHttp`
+   * @returns a promise of `{ ok, status, body, headers, kind, why, url }`
+   */
   requestConfigured(raw: string, options?: {
     method?: string; headers?: Record<string, string>; body?: Buffer | string;
     ca?: string; timeoutMs?: number; signedArtifact?: boolean;
@@ -1478,6 +1649,17 @@ class FederationHttp {
   // the caller from a container ID read out of the kernel's cgroup file.
   // It NEVER rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Makes a request over a local Unix socket an administrator named, such as
+   * the Docker Engine API, under the kill switch, body cap and timeout.
+   *
+   * Never rejects.
+   *
+   * @param socketPath - the socket's path
+   * @param path - the request path
+   * @param options - `method` and `timeoutMs`
+   * @returns a promise of `{ ok, status, body, headers, kind, why, url }`
+   */
   requestLocalSocket(socketPath: string, path: string, options?: {
     method?: string; timeoutMs?: number }):
       Promise<{ ok: boolean; status: number; body: Buffer; headers: any;
@@ -1536,6 +1718,20 @@ class FederationHttp {
   // to — which is exactly as strong as this network's DNS, and no stronger.
   // It NEVER rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Fetches a SPIRE `http_challenge` over plain http from the address an
+   * attesting agent named, after the caller matched the host name against the
+   * allowed patterns.
+   *
+   * Kill switch, internal-address refusal in product mode with the connection
+   * pinned, no redirect, 64 bytes of body and a 10-second timeout. Never
+   * rejects.
+   *
+   * @param hostname - the host the agent named
+   * @param port - the port it serves on
+   * @param path - the challenge path
+   * @returns a promise of `{ ok, status, body, headers, kind, why, url }`
+   */
   fetchHttpChallenge(hostname: string, port: number, path: string):
       Promise<{ ok: boolean; status: number; body: Buffer; headers: any;
                 kind: string; why: string; url: string }> {
@@ -1585,6 +1781,13 @@ class FederationHttp {
   // single-node, the Pwned Passwords screen resolving to an IPv6 address).
   // node's own dns.lookup is never synchronous; this now behaves like it.
   // -------------------------------------------------------------------------
+  /**
+   * Returns a `lookup` function for node's request options that answers the
+   * vetted address, asynchronously, whatever name is asked.
+   *
+   * @param vetted - `vetHost()`'s answer
+   * @returns the lookup function
+   */
   pinnedLookup(vetted: any): (hostname: string, lookupOptions: any,
                                callback: Function) => void {
     const { log } = this.deps;
@@ -1618,6 +1821,18 @@ class FederationHttp {
   // would not be — which is the same reasoning `audit.audit()` and the user
   // observer are written under. `ok` is false and `why` is a sentence.
   // -------------------------------------------------------------------------
+  /**
+   * Makes a federation relationship's back-channel request to the URL in one of
+   * its `DIALLABLE` attributes and reads the answer as JSON.
+   *
+   * Another attribute is refused and logged under `STS-FED-0046`. Never
+   * rejects.
+   *
+   * @param record - the federation relationship
+   * @param attribute - the attribute holding the URL, one of `DIALLABLE`
+   * @param options - `method`, `form`, `bearer`, `basic` and `headers`
+   * @returns a promise of `{ ok, status, json, text, url, errorCode, why }`
+   */
   fetchJson(record: any, attribute: string,
             options?: FetchOptions): Promise<FetchResult> {
     const { log, errorCodes } = this.deps;
@@ -1872,28 +2087,97 @@ const slot = new InstanceSlot<FederationHttp>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * This service's outbound HTTP requests: a federation relationship's
+ * back-channel, deliveries to registered addresses, and the bounded fetches
+ * other families borrow, each held to one policy.
+ *
+ * @namespace
+ */
 export = {
   FederationHttp: FederationHttp,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: FederationHttp): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   DIALLABLE: FederationHttp.DIALLABLE,
   SENDABLE: FederationHttp.SENDABLE,
+  /**
+   * Forwards to `FederationHttp.internalAddressProblem()`.
+   */
   internalAddressProblem: slot.forward('internalAddressProblem'),
+  /**
+   * Forwards to `FederationHttp.vetHost()`.
+   */
   vetHost: slot.forward('vetHost'),
+  /**
+   * Forwards to `FederationHttp.pinnedLookup()`.
+   */
   pinnedLookup: slot.forward('pinnedLookup'),
+  /**
+   * Forwards to `FederationHttp.deliverForm()`.
+   */
   deliverForm: slot.forward('deliverForm'),
+  /**
+   * Forwards to `FederationHttp.deliverJson()`.
+   */
   deliverJson: slot.forward('deliverJson'),
+  /**
+   * Forwards to `FederationHttp.streamEvents()`.
+   */
   streamEvents: slot.forward('streamEvents'),
+  /**
+   * Forwards to `FederationHttp.fetchPublished()`.
+   */
   fetchPublished: slot.forward('fetchPublished'),
+  /**
+   * Forwards to `FederationHttp.requestConfigured()`.
+   */
   requestConfigured: slot.forward('requestConfigured'),
+  /**
+   * Forwards to `FederationHttp.fetchHttpChallenge()`.
+   */
   fetchHttpChallenge: slot.forward('fetchHttpChallenge'),
+  /**
+   * Forwards to `FederationHttp.requestLocalSocket()`.
+   */
   requestLocalSocket: slot.forward('requestLocalSocket'),
+  /**
+   * Forwards to `FederationHttp.maxBodyBytes()`.
+   */
   maxBodyBytes: slot.forward('maxBodyBytes'),
+  /**
+   * Forwards to `FederationHttp.urlProblem()`.
+   */
   urlProblem: slot.forward('urlProblem'),
+  /**
+   * Forwards to `FederationHttp.fetchJson()`.
+   */
   fetchJson: slot.forward('fetchJson'),
+  /**
+   * Forwards to `FederationHttp.outboundAllowed()`.
+   */
   outboundAllowed: slot.forward('outboundAllowed'),
+  /**
+   * Forwards to `FederationHttp.urlVerdict()`.
+   */
   urlVerdict: slot.forward('urlVerdict'),
+  /**
+   * Forwards to `FederationHttp.tlsFor()`.
+   */
   tlsFor: slot.forward('tlsFor'),
+  /**
+   * Forwards to `FederationHttp.transportSettings()`.
+   */
   transportSettings: slot.forward('transportSettings'),
   OUTBOUND_TRANSPORT: OUTBOUND_TRANSPORT
 };

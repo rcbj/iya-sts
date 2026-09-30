@@ -132,6 +132,10 @@
 // ---------------------------------------------------------------------------
 
 const bunyan = require('bunyan');
+/**
+ * zod itself, exported so every schema in this service is written against
+ * one copy of the library.
+ */
 const { z } = require('zod');
 const config = require('./config');
 const { DOMParser } = require('@xmldom/xmldom');
@@ -165,6 +169,10 @@ const log = bunyan.createLogger({
 // DEFAULT would refuse ordinary traffic, which is the failure mode that gets a
 // control switched off rather than fixed.
 // ---------------------------------------------------------------------------
+/**
+ * The length caps, in characters, for each kind of field: IDENTIFIER, NAME,
+ * TOKEN, URI, SCOPE, DEFAULT, TEXT and LARGE.
+ */
 const CAP = {
   IDENTIFIER: 256,      // a client_id, a realm id, an application id, a kid
   NAME: 256,            // a username, a group name, a principal name
@@ -227,6 +235,16 @@ const POLLUTING_KEYS = ['__proto__', 'constructor', 'prototype'];
 // human. They are separate because an OAuth error_description and an HTML page
 // want different amounts of it.
 // ---------------------------------------------------------------------------
+/**
+ * Builds a refusal: the object every check in this module returns instead of
+ * throwing.
+ *
+ * @param code - a short code for the caller to switch on, such as `missing`
+ *   or `repeated`
+ * @param field - the parameter the refusal is about
+ * @param detail - a sentence for a human
+ * @returns `{ ok: false, code, field, detail }`
+ */
 function refusal(code, field, detail) {
   log.debug("Entering refusal().");
   log.debug("Leaving refusal().");
@@ -250,6 +268,17 @@ function refusal(code, field, detail) {
 //
 // Note what this does NOT do: it does not choose. See the header.
 // ---------------------------------------------------------------------------
+/**
+ * Reduces one input value to a single string, refusing an array, an object
+ * or a control character.
+ *
+ * A number or boolean is converted to a string. Undefined and null pass as
+ * undefined.
+ * @param value - the value as express or a JSON body delivered it
+ * @param field - the parameter's name, for the refusal
+ * @param allowText - true to allow tab, newline and carriage return
+ * @returns `{ ok: true, value }` or a refusal
+ */
 function scalar(value, field, allowText) {
   log.debug("Entering scalar().");
   if (value === undefined || value === null) {
@@ -441,6 +470,17 @@ function fromZod(error, where) {
 // programming error in this repository rather than something a caller did, and
 // should fail loudly at the first test that touches the endpoint.
 // ---------------------------------------------------------------------------
+/**
+ * Validates one input group of a request against a zod object schema.
+ *
+ * Every field must be a scalar unless the schema declares it repeatable, no
+ * polluting key is accepted, and unknown keys are stripped. A line break is
+ * allowed only in the body. Never throws for a bad request.
+ * @param req - the express request
+ * @param where - `query`, `body`, `params` or `headers`
+ * @param schema - the zod object schema
+ * @returns `{ ok: true, value }` with the parsed data, or a refusal
+ */
 function check(req, where, schema) {
   log.debug("Entering check(). where=" + where);
   const allowText = (where === 'body');
@@ -483,6 +523,17 @@ function check(req, where, schema) {
 // allowed (see the header) and because it is the word that appears in the
 // refusal a caller reads.
 // ---------------------------------------------------------------------------
+/**
+ * Validates an object already parsed from the request, as check() does.
+ *
+ * This is what a body check uses, because `req.body` is a string here and
+ * `helpers.parseBody()` is what makes an object of it.
+ * @param value - the parsed object
+ * @param where - the input group's name, which decides whether a line break
+ *   is allowed and appears in the refusal
+ * @param schema - the zod object schema
+ * @returns `{ ok: true, value }` with the parsed data, or a refusal
+ */
 function checkParsed(value, where, schema) {
   log.debug("Entering checkParsed(). where=" + where);
   const shape = schema && schema.shape ? schema.shape : undefined;
@@ -507,6 +558,14 @@ function checkParsed(value, where, schema) {
 // and nothing may be a polluting key. This is what an endpoint uses while its
 // schema is still being written, so that the type-confusion class is closed
 // everywhere before the per-endpoint work is finished.
+/**
+ * Validates one input group with no schema: every value must be a scalar and
+ * no key may be a polluting one.
+ *
+ * @param req - the express request
+ * @param where - `query`, `body`, `params` or `headers`
+ * @returns `{ ok: true, value }` or a refusal
+ */
 function scalars(req, where) {
   log.debug("Entering scalars().");
   log.debug("Leaving scalars().");
@@ -547,6 +606,17 @@ function scalars(req, where) {
 const JSON_MAX_DEPTH = 12;
 const JSON_MAX_KEYS = 4096;
 
+/**
+ * Checks an arbitrary JSON document without a schema: no polluting key at
+ * any depth, a bounded depth and a bounded key count.
+ *
+ * The value is returned unchanged on success; it is a check, never a
+ * transform.
+ * @param value - the parsed document
+ * @param where - what the document is, for the refusal and the log
+ * @param opts - optional `maxDepth` (12 by default) and `maxKeys` (4096)
+ * @returns `{ ok: true, value }` or a refusal
+ */
 function checkDocument(value, where, opts) {
   log.debug("Entering checkDocument(). where=" + where);
   const maxDepth = (opts && opts.maxDepth) || JSON_MAX_DEPTH;
@@ -677,6 +747,14 @@ function checkDocument(value, where, opts) {
 // and the body at this point is raw text that `helpers.parseBody()` has not yet
 // parsed. Both are covered by the per-endpoint schemas.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the express middleware that refuses, on every endpoint, a query
+ * parameter named `__proto__`, `constructor` or `prototype` and a query value
+ * holding a control character.
+ *
+ * A refused request is answered 400 in plain text, in both modes.
+ * @returns the middleware
+ */
 function guard() {
   log.debug("Entering guard().");
   log.debug("Leaving guard().");
@@ -782,6 +860,17 @@ function guard() {
 // If this service ever moves to a parser that DOES resolve entities, this is
 // the function that has to refuse a DOCTYPE, and it is the only one.
 // ---------------------------------------------------------------------------
+/**
+ * Parses an XML document with xmldom, never throwing.
+ *
+ * Refuses an empty document, one over the size cap, one xmldom reports an
+ * error or fatal error for, and one with no root element. Warnings do not
+ * refuse.
+ * @param xml - the document text
+ * @param what - what the document is, for the refusal; `document` if omitted
+ * @param opts - optional `max`, the size cap (CAP.LARGE by default)
+ * @returns `{ ok: true, value }` with the DOM document, or a refusal
+ */
 function parseXml(xml, what, opts) {
   log.debug("Entering parseXml(). what=" + what);
   const label = what || 'document';
@@ -855,14 +944,14 @@ function parseXml(xml, what, opts) {
 // 5mb, so ten times that payload is half a minute of a service that answers
 // nobody.
 //
-// **AND "ANSWERS NOBODY" IS LITERAL HERE.** This process runs every listener
-// it owns on ONE THREAD — the express app, the KDC on TCP and UDP 88, the
-// Kerberos service, the LDAP directory and the SPIFFE gRPC surfaces among
-// them. That is the argument `common/CLAUDE.md` makes about post-quantum
-// signing, and the whole reason `common/worker_pool.js` exists:
-// a synchronous computation here does not slow this service down, it STOPS it,
-// and a KDC that does not answer looks from the outside exactly like a KDC that
-// is not there.
+// **AND "ANSWERS NOBODY" IS LITERAL HERE.** This process runs every listener it
+// owns on ONE THREAD — the express app, the KDC on TCP and UDP 88, the Kerberos
+// service, the LDAP directory and the SPIFFE gRPC surfaces among them. That is
+// the argument `common/CLAUDE.md` makes about post-quantum signing, and the
+// reason post-quantum signing runs on libuv's thread pool
+// (`common/pq_native.js`): a synchronous computation here does not slow this
+// service down, it STOPS it, and a KDC that does not answer looks from the
+// outside exactly like a KDC that is not there.
 //
 // The GET binding turned out to be bounded already, by accident: node's own
 // 16 KB header limit answers 431 to a URL long enough to carry a useful bomb.
@@ -870,6 +959,16 @@ function parseXml(xml, what, opts) {
 // comes from — which is worth remembering before trusting any bound that was
 // not asked for on purpose.
 // ---------------------------------------------------------------------------
+/**
+ * Inflates raw DEFLATE data with a ceiling on the output, so a decompression
+ * bomb is refused rather than expanded.
+ *
+ * @param buf - the compressed bytes
+ * @param what - what the message is, for the refusal; `message` if omitted
+ * @param opts - optional `max`, the output ceiling (CAP.LARGE by default)
+ * @returns `{ ok: true, value }` with the inflated Buffer, or a refusal whose
+ *   code is `too-large` or `not-deflated`
+ */
 function inflate(buf, what, opts) {
   log.debug("Entering inflate(). what=" + what);
   const label = what || 'message';
@@ -911,6 +1010,9 @@ function inflate(buf, what, opts) {
 // Printable ASCII with no space, because every one of these ends up in a URL,
 // a JSON key, a log line or a DN, and a space in it is ambiguous in at least
 // two of those.
+/**
+ * A protocol identifier: printable ASCII with no space.
+ */
 const identifier = z.string().min(1).max(CAP.IDENTIFIER)
   .regex(/^[\x21-\x7E]+$/, 'must be printable ASCII with no spaces');
 
@@ -918,15 +1020,24 @@ const identifier = z.string().min(1).max(CAP.IDENTIFIER)
 // identifier because people legitimately have spaces and non-ASCII in their
 // names, and this service has always accepted any name at all. The control
 // characters are already gone by the time a schema sees the value.
+/**
+ * A name a person has, such as a username, a group or a principal.
+ */
 const name = z.string().min(1).max(CAP.NAME);
 
 // An opaque credential this service minted and is being handed back: an
 // authorization code, an access or refresh token, a SAML artifact, a device
 // code, a CSRF token. base64url plus the punctuation JWTs and this service's
 // own composite ids use.
+/**
+ * An opaque credential this service minted and is handed back.
+ */
 const token = z.string().min(1).max(CAP.TOKEN)
   .regex(/^[A-Za-z0-9._~+/=-]+$/, 'must be an opaque credential');
 
+/**
+ * A base64url value with no padding.
+ */
 const base64url = z.string().min(1).max(CAP.TOKEN)
   .regex(/^[A-Za-z0-9_-]+$/, 'must be base64url with no padding');
 
@@ -947,6 +1058,10 @@ const base64url = z.string().min(1).max(CAP.TOKEN)
 const DANGEROUS_SCHEMES = ['javascript:', 'data:', 'vbscript:', 'file:',
                            'blob:'];
 
+/**
+ * An absolute URI whose scheme does not execute (not `javascript:`,
+ * `data:`, `vbscript:`, `file:` or `blob:`).
+ */
 const uri = z.string().min(1).max(CAP.URI).refine(function (value) {
   let parsed = null;
   try {
@@ -1000,6 +1115,15 @@ const PRIVATE_USE_SCHEME = /^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+$/;
 // read back out of the directory, where an `ldapmodify` put it without passing
 // any of the other two. `privateUse: false` is the http(s)-only reading, which
 // is what a sign-out return address gets while no client vouches for it.
+/**
+ * Says why a value may not be a redirection endpoint, or null if it may.
+ *
+ * Allowed: an http or https URL with a host, or a private-use scheme
+ * containing a period (RFC 8252 section 7.1); never a fragment.
+ * @param value - the candidate URI
+ * @param options - optional; `privateUse: false` allows http(s) only
+ * @returns the reason as a clause, or null
+ */
 function redirectUriProblem(value, options) {
   log.debug("Entering redirectUriProblem().");
   const opts = options || {};
@@ -1057,6 +1181,13 @@ function redirectUriProblem(value, options) {
 // `response_mode=form_post` cannot deliver to a protocol handler, which is
 // handed a URL and never a request body — and the sign-out endpoint for
 // another, so it is answered here rather than re-parsed at two call sites.
+/**
+ * Says whether a redirect URI uses a private-use scheme rather than http or
+ * https.
+ *
+ * @param value - a URI that already passed redirectUriProblem()
+ * @returns true for a private-use scheme; false otherwise or if unparseable
+ */
 function isPrivateUseRedirect(value) {
   log.debug("Entering isPrivateUseRedirect().");
   let parsed = null;
@@ -1078,6 +1209,13 @@ function isPrivateUseRedirect(value) {
 // `frame-src`, so http(s) is not a preference here: a browser will not frame a
 // protocol handler, and a value that is not an origin makes the header itself
 // malformed.
+/**
+ * Says why a value may not be a Front-Channel Logout `frontchannel_logout_uri`
+ * (http or https only, no fragment), or null if it may.
+ *
+ * @param value - the candidate URI
+ * @returns the reason, or null
+ */
 function frontchannelUriProblem(value) {
   log.debug("Entering frontchannelUriProblem().");
   const problem = redirectUriProblem(value, { privateUse: false });
@@ -1092,6 +1230,14 @@ function frontchannelUriProblem(value) {
 // http(s) is required is a different one from the front-channel URI's: the
 // outbound policy dials nothing else. `redirectUriProblem()` already refuses a
 // fragment, which is the other half of section 2.2.
+/**
+ * Says why a value may not be a Back-Channel Logout `backchannel_logout_uri`
+ * (http or https only, no fragment), or null if it may.
+ *
+ * Whether http is allowed for the client is decided elsewhere.
+ * @param value - the candidate URI
+ * @returns the reason, or null
+ */
 function backchannelUriProblem(value) {
   log.debug("Entering backchannelUriProblem().");
   const problem = redirectUriProblem(value, { privateUse: false });
@@ -1197,6 +1343,14 @@ function readOrigin(value) {
 }
 
 // The reason a value may not be held as a CORS origin, or null.
+/**
+ * Says why a value may not be held as a CORS origin, or null if it may.
+ *
+ * Refused: a wildcard, `null`, a path, query, fragment or user name, and
+ * anything that is not scheme://host[:port].
+ * @param value - the candidate origin
+ * @returns the reason, or null
+ */
 function originProblem(value) {
   log.debug("Entering originProblem().");
   const read = readOrigin(value);
@@ -1206,6 +1360,13 @@ function originProblem(value) {
 
 // The value in the serialisation a browser sends, or '' if it is not an
 // origin. What a write stores and what `common/cors.js` compares.
+/**
+ * Serialises an origin as a browser sends it (RFC 6454 section 6.1), which is
+ * what a write stores and what CORS compares.
+ *
+ * @param value - the origin as written
+ * @returns the serialised origin, or an empty string if it is not one
+ */
 function normaliseOrigin(value) {
   log.debug("Entering normaliseOrigin().");
   const read = readOrigin(value);
@@ -1227,12 +1388,19 @@ function redirectType(options) {
   });
 }
 
+/**
+ * A redirection endpoint, as redirectUriProblem() allows it, private-use
+ * schemes included.
+ */
 const redirectUri = redirectType({ privateUse: true });
 
 // An http(s) URL this service will DIAL. Narrower than `uri` on purpose: the
 // outbound requests in this repository (a federation partner, an SSF push
 // endpoint, a XACML PEP's notify URL among them) each take an address somebody
 // configured, and none of them has any business being a non-HTTP scheme.
+/**
+ * An http or https URL this service will dial.
+ */
 const httpUri = z.string().min(1).max(CAP.URI).refine(function (value) {
   let parsed = null;
   try {
@@ -1248,6 +1416,9 @@ const httpUri = z.string().min(1).max(CAP.URI).refine(function (value) {
 
 // RFC 6749 section 3.3: a space-delimited, case-sensitive list. The character
 // set is that section's own production, which is deliberately narrow.
+/**
+ * A space-delimited scope list in RFC 6749 section 3.3's character set.
+ */
 const scope = z.string().max(CAP.SCOPE)
   .regex(/^[\x21\x23-\x5B\x5D-\x7E]+(?: +[\x21\x23-\x5B\x5D-\x7E]+)*$/,
          'must be a space-delimited scope list (RFC 6749 section 3.3)');
@@ -1255,6 +1426,10 @@ const scope = z.string().max(CAP.SCOPE)
 // Opaque round-trip values: state, nonce, a PKCE challenge or verifier. The
 // client chose them and this service only echoes them, so the rule is a bound
 // and no control characters rather than a grammar.
+/**
+ * An opaque round-trip value such as state, nonce or a PKCE value: bounded,
+ * with no grammar.
+ */
 const opaque = z.string().min(1).max(CAP.TOKEN);
 
 // An LDAP distinguished name. The full RFC 4514 grammar is not written out
@@ -1262,24 +1437,43 @@ const opaque = z.string().min(1).max(CAP.TOKEN);
 // value concatenated into a DN without being escaped, turning one RDN into two.
 // `helpers.escapeRdnValue()` is what prevents that; this refuses the result if
 // it was skipped.
+/**
+ * An LDAP distinguished name, bounded and without a NUL.
+ */
 const dn = z.string().min(1).max(CAP.DEFAULT)
   .regex(/^[^\x00]+$/, 'must be a distinguished name');
 
 // Free text a person typed into the console: a description, a policy, a PEM
 // block. Bounded, and free of the control characters that are not line breaks.
+/**
+ * Free text a person typed into the console, bounded by CAP.TEXT.
+ */
 const text = z.string().max(CAP.TEXT);
 
 // A protocol message that arrived encoded and large: SAMLRequest, SAMLResponse,
 // wresult, an XACML request document, a SOAP envelope.
+/**
+ * A large encoded protocol message, such as a SAMLRequest or SOAP envelope.
+ */
 const message = z.string().min(1).max(CAP.LARGE);
 
 // A checkbox or a flag from a form, and the spellings this service's own pages
 // and the RFCs between them actually send.
+/**
+ * A checkbox or flag value, in the spellings forms and the RFCs send.
+ */
 const flag = z.enum(['true', 'false', 'on', 'off', '1', '0', 'yes', 'no']);
 
 // A bounded integer that arrived as a string, which is what every query
 // parameter is. Coercion is right here and wrong for most things: the value is
 // unambiguously meant to be a number and there is no second reading of "300".
+/**
+ * Builds a type for a bounded integer that arrives as a string.
+ *
+ * @param min - the smallest value allowed
+ * @param max - the largest value allowed
+ * @returns the zod type, which coerces to a number
+ */
 function integer(min, max) {
   log.debug("Entering integer().");
   log.debug("Leaving integer().");
@@ -1288,6 +1482,12 @@ function integer(min, max) {
 
 // A value from a closed set this service defines. A thin wrapper so that call
 // sites read as declarations rather than as zod.
+/**
+ * Builds a type for a value from a closed set.
+ *
+ * @param values - the allowed values
+ * @returns the zod enum
+ */
 function oneOf(values) {
   log.debug("Entering oneOf().");
   log.debug("Leaving oneOf().");
@@ -1298,6 +1498,14 @@ function oneOf(values) {
 // rather than writing `z.array()` at the call site is what makes the intent
 // greppable: every repeatable parameter in this service is one call to this,
 // and `flatten()` above keys its whole behaviour off the array-ness this makes.
+/**
+ * Declares a parameter that may appear more than once.
+ *
+ * check() keeps such a parameter as an array and wraps a single occurrence
+ * into a list of one.
+ * @param inner - the type of each element
+ * @returns the zod array type
+ */
 function repeatable(inner) {
   log.debug("Entering repeatable().");
   log.debug("Leaving repeatable().");
@@ -1331,6 +1539,13 @@ function repeatable(inner) {
 // parameter may be left out but must be well-formed if it is written down at
 // all, which is true of very little that arrives from a browser.
 // ---------------------------------------------------------------------------
+/**
+ * Makes a type optional in the way an HTML form needs: absent or an empty
+ * string is accepted, and any other value must match the type.
+ *
+ * @param inner - the type of a present value
+ * @returns the zod type
+ */
 function opt(inner) {
   log.debug("Entering opt().");
   log.debug("Leaving opt().");
@@ -1342,6 +1557,11 @@ function opt(inner) {
 // answered from the code that validates rather than from a paragraph that will
 // drift — the argument `sts_metadata.js` and `crypto_metadata.js` both make.
 // ---------------------------------------------------------------------------
+/**
+ * Describes what this module validates, for the metadata pages.
+ *
+ * @returns the rules, the polluting keys, the dangerous schemes and the caps
+ */
 function report() {
   log.debug("Entering report().");
   const out = {
@@ -1361,6 +1581,14 @@ function report() {
   return out;
 }
 
+/**
+ * The one place a value from outside becomes a value this service will use.
+ *
+ * Shape is checked here in both modes, with zod schemas over shared types;
+ * existence and credentials remain with the handlers and mode.js. A refusal
+ * is an object, never an exception.
+ * @namespace
+ */
 module.exports = {
   // The engine.
   check: check,

@@ -120,6 +120,10 @@ const bcp = require('../oauth-oidc/oauth2_bcp');
 // nonce (RFC 9449 section 8 — a browser client that cannot read it can never
 // retry), an ACME nonce and its links (RFC 8555 sections 6.5 and 7.1), and
 // where a created resource is.
+/**
+ * The response headers a page on an allowed origin may read beyond the
+ * CORS-safelisted ones.
+ */
 const EXPOSED_HEADERS = ['WWW-Authenticate', 'DPoP-Nonce', 'Location', 'Link',
                          'Replay-Nonce', 'Retry-After'];
 
@@ -202,6 +206,15 @@ function configuredOrigins() {
 
 // Every origin this request may come from and still be this service talking to
 // itself. See rule 2 in the header.
+/**
+ * Lists every origin a request may come from and still be this service
+ * talking to itself.
+ *
+ * The address the request was made to, `global.publicBaseUrl`, the embedded
+ * debugger's listener and whatever `global.corsOrigins` names.
+ * @param req - the express request
+ * @returns the normalised origins
+ */
 function ownOrigins(req) {
   log.debug("Entering ownOrigins().");
   const out = [];
@@ -323,6 +336,17 @@ function stringsOf(value) {
 
 // `[{ name, attributes, where, optional }]`. `optional` marks the one kind of
 // name that counts only when it resolves: a Basic user name off an OAuth path.
+/**
+ * Lists every client a request names, in each of the ways the module header
+ * counts as naming one.
+ *
+ * An access token's `client_id` or `azp` is read without verifying the
+ * token.
+ * @param req - the express request
+ * @returns one `{ name, attributes, where, optional }` per name found;
+ *   `optional` marks a Basic user name off an OAuth path, which counts only
+ *   when it resolves
+ */
 function namedClients(req) {
   log.debug("Entering namedClients().");
   const path = String(req.path || '');
@@ -404,6 +428,17 @@ function namedClients(req) {
 
 // `{ allowed, origin, code, why }`. `code` is set on a withheld decision about
 // a cross-origin request, and is what the log line carries.
+/**
+ * Decides whether a page on the request's origin may read the answer.
+ *
+ * Applies the module's four rules in order. It never refuses the request
+ * itself; it decides only whether CORS headers are sent.
+ * @param req - the express request
+ * @param options - `preflight: true` for an OPTIONS preflight, which is
+ *   judged against the realm because it names no client
+ * @returns `{ allowed, origin, code, why }`, where `code` is the error code
+ *   of a withheld decision about a cross-origin request, or empty
+ */
 function decide(req, options) {
   log.debug("Entering decide().");
   const opts = options || {};
@@ -511,6 +546,14 @@ function continuesToRoute(req) {
 // twice for one request.
 const PREFLIGHT_DECIDED = Symbol('cors.preflightDecided');
 
+/**
+ * Builds the middleware that answers every OPTIONS request.
+ *
+ * An allowed origin gets the CORS headers; every preflight is answered 204
+ * here, except on a GNAP grant endpoint, where OPTIONS continues to the
+ * route because RFC 9635 section 9 makes it the discovery request.
+ * @returns the express middleware
+ */
 function preflight() {
   log.debug("Entering preflight().");
   // A hot path — every OPTIONS request in the service passes through it, and
@@ -556,6 +599,13 @@ function preflight() {
 // Every other request, BELOW the body parsers. It never refuses anything: an
 // endpoint answers exactly as before, and the header decides whether a page on
 // another origin may read the answer.
+/**
+ * Builds the middleware that sets CORS headers on every other response.
+ *
+ * It never refuses anything: the endpoint answers exactly as before, and the
+ * header decides whether a page on another origin may read the answer.
+ * @returns the express middleware
+ */
 function response() {
   log.debug("Entering response().");
   // A hot path — every request in the service passes through it — so no
@@ -587,6 +637,14 @@ function response() {
   return handler;
 }
 
+/**
+ * Which browser pages may read what this service answers.
+ *
+ * An allowlist on every path: this service's own origins, then the named
+ * client's `appCorsOrigin`, or the realm's union when no client is named.
+ * The whole of the CORS decision is here.
+ * @namespace
+ */
 module.exports = {
   preflight: preflight,
   response: response,

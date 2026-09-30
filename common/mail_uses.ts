@@ -81,15 +81,41 @@ interface MailUsesDeps {
   accountSignals: () => Json;
 }
 
+/**
+ * What the mail channel is for: self-service password reset, address
+ * verification, an administrator's links mailed to the person, and security
+ * notices.
+ *
+ * Each use is a caller of `common/mail.ts`'s `send()`. The forgot-password
+ * form's answer is the same whatever happened.
+ */
 class MailUses {
+  /**
+   * The one sentence the forgot-password form answers, whatever happened.
+   */
   static readonly RESET_ANSWER = RESET_ANSWER;
+  /**
+   * The path an address verification link names: `/portal/verify-email`.
+   */
   static readonly VERIFY_PATH = VERIFY_PATH;
 
+  /**
+   * Creates the mail uses.
+   *
+   * @param deps - its dependencies: the logger, config, realms, mode, the
+   * error-code table, the audit log, the crypto module, the mail channel, a
+   * clock, and lazy readers of the credential store and account signals
+   */
   constructor(private readonly deps: MailUsesDeps) {
     deps.log.debug("Entering MailUses.constructor().");
     deps.log.debug("Leaving MailUses.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): MailUsesDeps {
     helpers.log.debug("Entering MailUses.defaultDeps().");
     helpers.log.debug("Leaving MailUses.defaultDeps().");
@@ -127,6 +153,12 @@ class MailUses {
   // 1. SELF-SERVICE RESET — is it offered here at all? The sign-in screen and
   // the portal ask before drawing the link.
   // -------------------------------------------------------------------------
+  /**
+   * Tells whether self-service password reset is offered in the ambient realm,
+   * for the sign-in screen and the portal to ask before drawing the link.
+   *
+   * @returns true when offered
+   */
   resetOffered(): boolean {
     const { log, config, mode, mail } = this.deps;
     log.debug("Entering MailUses.resetOffered().");
@@ -151,6 +183,12 @@ class MailUses {
   // send a stream of reset mail. A wrong code, with the right name and
   // address, tells the address owner somebody tried; nothing else does. The
   // answer to the browser is the same sentence whatever happened.
+  /**
+   * Tells whether a reset request must carry the account's address and one of
+   * its recovery codes (`mail.resetRequiresBackupCode`, on by default).
+   *
+   * @returns true when a recovery code is required
+   */
   resetNeedsRecoveryCode(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering MailUses.resetNeedsRecoveryCode().");
@@ -158,6 +196,21 @@ class MailUses {
     return config.value('mail.resetRequiresBackupCode') !== false;
   }
 
+  /**
+   * Handles a person asking for a reset link: mails a single-use link to the
+   * address on the entry when everything checks out, and fires RISC
+   * recovery-activated.
+   *
+   * With a recovery code required, all three of username, address and code must
+   * be right, and the code is spent. The answer is the same sentence whatever
+   * happened; `outcome` must never be shown.
+   *
+   * @param identifier - the username, or the address on the entry when no
+   * recovery code is required
+   * @param via - the surface it came through
+   * @param extra - `address` and `code` when a recovery code is required
+   * @returns a promise of `{ ok: true, message, outcome }`
+   */
   async requestReset(identifier: string, via: string,
                      extra?: { address?: string; code?: string }):
       Promise<Json> {
@@ -300,6 +353,16 @@ class MailUses {
   // 2. ADDRESS VERIFICATION — mail a link to the address on the entry now.
   // `{ ok, message }` or a coded refusal.
   // -------------------------------------------------------------------------
+  /**
+   * Mails a single-use verification link, bound to the address the account has
+   * now, to that address.
+   *
+   * @param username - the person
+   * @param via - the surface it came through
+   * @param actor - who asked, when not the person
+   * @returns `{ ok, message }` (with `verified` when already verified), or a
+   * coded refusal
+   */
   startVerification(username: string, via: string, actor?: string): Json {
     const { log, config, mail, crypto, errorCodes, now } = this.deps;
     log.debug("Entering MailUses.startVerification(). " + username);
@@ -350,6 +413,15 @@ class MailUses {
 
   // Is this link good? `{ ok, address }`, or a coded refusal whose one
   // sentence is the same for every reason.
+  /**
+   * Checks a verification link: the token, bound to the address it was sent
+   * for, still unspent.
+   *
+   * @param username - the person
+   * @param token - the link's token
+   * @returns `{ ok, address }`, or a coded refusal whose sentence is the same
+   * for every reason
+   */
   checkVerification(username: string, token: string): Json {
     const { log, mail, crypto, errorCodes, now } = this.deps;
     log.debug("Entering MailUses.checkVerification(). " + username);
@@ -391,6 +463,14 @@ class MailUses {
   }
 
   // Follow the link: the address is recorded as verified and the link spent.
+  /**
+   * Follows a verification link: the address is recorded as verified and the
+   * link spent; a new address becomes `mail` now.
+   *
+   * @param username - the person
+   * @param token - the link's token
+   * @returns `{ ok, address, changed }`, or a coded refusal
+   */
   completeVerification(username: string, token: string): Json {
     const { log, mail, audit } = this.deps;
     log.debug("Entering MailUses.completeVerification(). " + username);
@@ -441,6 +521,17 @@ class MailUses {
   // keeps the address it had — resets and codes go on going there — so an
   // address nobody proved is never where a credential is sent.
   // -------------------------------------------------------------------------
+  /**
+   * Starts a person's change of their own address: the new address is held
+   * aside and mailed a verification link, and becomes `mail` only when that
+   * link is followed.
+   *
+   * @param username - the person
+   * @param address - the new address
+   * @param via - the surface it came through
+   * @param actor - who asked, when not the person
+   * @returns `{ ok, message }`, or a coded refusal
+   */
   startAddressChange(username: string, address: string, via: string,
                      actor?: string): Json {
     const { log, config, mail, crypto, errorCodes, now } = this.deps;
@@ -497,6 +588,18 @@ class MailUses {
   // `token` the one just issued. `{ ok, mailedTo, message }` or a coded
   // refusal; the caller then shows the link only if this failed.
   // -------------------------------------------------------------------------
+  /**
+   * Mails a reset or activation link an administrator just issued to the
+   * person, instead of showing it to the administrator.
+   *
+   * @param kind - `reset` or `activation`
+   * @param username - the person
+   * @param token - the link's token
+   * @param actor - the administrator
+   * @param via - the surface it came through
+   * @returns `{ ok, mailedTo, message }`, or a coded refusal after which the
+   * caller shows the link
+   */
   mailAdministratorLink(kind: string, username: string, token: string,
                         actor: string, via: string): Json {
     const { log, config, mail, errorCodes } = this.deps;
@@ -534,6 +637,17 @@ class MailUses {
   // and never refuses loudly: a notice is sent from the middle of an act that
   // has already happened. `bySystem` also tells the realm's administrators.
   // -------------------------------------------------------------------------
+  /**
+   * Sends a security notice a person cannot decline, and tells the realm's
+   * administrators too when the service itself acted.
+   *
+   * Never throws; a failure is logged (STS-MAIL-0031).
+   *
+   * @param kind - the security template's id
+   * @param username - the person
+   * @param facts - `values`, `dedupKey`, `via`, `actor`, `bySystem` and `act`
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
   notice(kind: string, username: string, facts?: Json): Json {
     const { log, config, mail, realms } = this.deps;
     log.debug("Entering MailUses.notice(). " + kind + " " + username);
@@ -575,6 +689,14 @@ class MailUses {
 
   // THE CAEP / RISC acts `ssf/account_signals.ts` sees, turned into notices.
   // `act` is the account-signals method's name; `n` its notice.
+  /**
+   * Turns a CAEP or RISC act `ssf/account_signals.ts` sees into the matching
+   * security notice.
+   *
+   * @param act - the account-signals method's name
+   * @param n - its notice
+   * @returns what `notice()` answered, or a skip
+   */
   fromAccountSignal(act: string, n: Json): Json {
     const { log } = this.deps;
     log.debug("Entering MailUses.fromAccountSignal(). " + act);
@@ -608,6 +730,15 @@ class MailUses {
   }
 
   // An account was disabled (`common/account_state.ts`), by `by`.
+  /**
+   * Sends the account-disabled notice.
+   *
+   * @param username - the person
+   * @param why - the reason
+   * @param bySystem - true when the service disabled it, which also tells
+   * administrators
+   * @returns what `notice()` answered
+   */
   accountDisabled(username: string, why: string, bySystem: boolean): Json {
     const { log } = this.deps;
     log.debug("Entering MailUses.accountDisabled(). " + username);
@@ -618,6 +749,14 @@ class MailUses {
   }
 
   // An administrator ended a person's sessions.
+  /**
+   * Sends the notice that an administrator ended a person's sessions.
+   *
+   * @param username - the person
+   * @param count - how many were ended
+   * @param by - who ended them
+   * @returns what `notice()` answered
+   */
   sessionsEnded(username: string, count: number, by: string): Json {
     const { log } = this.deps;
     log.debug("Entering MailUses.sessionsEnded(). " + username);
@@ -630,6 +769,14 @@ class MailUses {
   // The `mail` attribute of an entry changed: the OLD address is told, and
   // only it — the entry's own record of where it could be reached, which is
   // the directory's value as it was, never an address from a request.
+  /**
+   * Tells the former address that an entry's `mail` changed, and only it.
+   *
+   * @param username - the person
+   * @param formerAddress - the address as it was on the entry
+   * @param newAddress - the address now
+   * @returns what the send answered, or `{ ok: false, skipped }`
+   */
   addressChanged(username: string, formerAddress: string,
                  newAddress: string): Json {
     const { log, mail, config } = this.deps;
@@ -659,6 +806,15 @@ const slot = new InstanceSlot<MailUses>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The four uses of the mail channel: password reset, address verification, an
+ * administrator's links and security notices.
+ *
+ * Exports the class and facades forwarding to the instance the composition root
+ * built.
+ *
+ * @namespace
+ */
 export = {
   MailUses: MailUses,
   installInstance: (instance: MailUses): void => slot.install(instance),

@@ -746,7 +746,29 @@ async function fillAndPress(driver, formIndex, values, options) {
 
   const from = mark();
   const button = await submitButtonOf(driver, formIndex, opts.buttonText);
+  // THE OLD DOCUMENT HAS TO GO BEFORE ANYTHING IS READ (#311). The settle
+  // below waits for `readyState === "complete"`, which the page being left
+  // already is, and then for a response of the form's method since `from` —
+  // and the network events that count those arrive late, so one from just
+  // before the click can satisfy it. On testidp's run 8 the Kerberos create
+  // was read 0.2 s after its press, from the list page it was pressed on,
+  // and failed as "the answer did not say the keytab is shown once". A press
+  // that answers with a FILE replaces no document, so this wait is bounded
+  // and running out of it is not an error.
+  const leaving = await driver.findElement(By.css("html")).catch(
+    function (e) {
+      log.debug("Caught finding the page being left: " +
+                ((e && e.message) || e));
+      return null;
+    });
   await button.click();
+  if (leaving) {
+    await driver.wait(until.stalenessOf(leaving), 20000).catch(function (e) {
+      log.debug("Caught waiting for the page to be replaced (a download " +
+                "replaces none): " + ((e && e.message) || e));
+      return null;
+    });
+  }
   await settleAfterSubmit(driver, from, typed.method);
   log.debug("Leaving fillAndPress().");
   return { from: from, responses: since(from) };

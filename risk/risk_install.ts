@@ -129,8 +129,21 @@ const DEFAULT_TERMS_LOG = 'risk-terms-acceptance.log';
 // The most of a terms page read for its digest.
 const MAX_TERMS_PAGE_BYTES = 2 * 1024 * 1024;
 
+/**
+ * The operator's tool that pulls the risk datasets into the database at
+ * install time, not a part of the running service.
+ *
+ * Each provider's terms are accepted by name and recorded before anything
+ * is imported; downloads are HTTPS only.
+ */
 class RiskInstall {
   // The command line, or null with the reason printed.
+  /**
+   * Reads the command line.
+   *
+   * @param argv - the arguments after the script's name
+   * @returns the options, or null with the reason printed
+   */
   static optionsOf(argv: string[]): Options | null {
     log.debug("Entering RiskInstall.optionsOf().");
     const out: Options = { manifest: '', accepted: [], dryRun: false,
@@ -172,6 +185,13 @@ class RiskInstall {
 
   // Which provider an entry's data comes from: what it names, its
   // dataset's, or its format's — the importer's own rule.
+  /**
+   * Says which provider a manifest entry's data comes from: what it names,
+   * its dataset's, or its format's.
+   *
+   * @param entry - the manifest entry
+   * @returns the provider's id
+   */
   static providerOf(entry: Json): string {
     log.debug("Entering RiskInstall.providerOf().");
     const dataset = riskDatasets.CATALOGUE[entry.dataset] || {};
@@ -186,6 +206,15 @@ class RiskInstall {
   // another https address, at most MAX_REDIRECTS times. Rejects with the
   // reason.
   // -------------------------------------------------------------------------
+  /**
+   * Downloads one file over HTTPS, byte for byte, following a redirect only
+   * to another https address, at most `MAX_REDIRECTS` times.
+   *
+   * @param url - the https address
+   * @param target - the file to write
+   * @param hops - redirects still allowed
+   * @returns a promise that rejects with the reason on failure
+   */
   static download(url: string, target: string, hops?: number): Promise<void> {
     log.debug("Entering RiskInstall.download(). " + url);
     const left = hops === undefined ? MAX_REDIRECTS : hops;
@@ -235,6 +264,14 @@ class RiskInstall {
   }
 
   // A page's text over HTTPS, for its digest: one redirect at most, bounded.
+  /**
+   * Fetches a page's text over HTTPS, for its digest: one redirect at most,
+   * bounded.
+   *
+   * @param url - the https address
+   * @param hops - redirects still allowed
+   * @returns the text
+   */
   static fetchText(url: string, hops?: number): Promise<string> {
     log.debug("Entering RiskInstall.fetchText(). " + url);
     const left = hops === undefined ? 1 : hops;
@@ -285,6 +322,16 @@ class RiskInstall {
   // acceptance, with a warning when it differs from the last one seen.
   // Answers how many could not be recorded.
   // -------------------------------------------------------------------------
+  /**
+   * Accepts each provider named in `--accept-terms` in the operator's name,
+   * recorded through `risk_terms.ts` and appended to the terms log, before
+   * anything is imported.
+   *
+   * With `--check-terms` each provider's terms page is fetched and its digest
+   * recorded, with a warning (`STS-RISK-0015`) when it changed.
+   * @param options - the command line's options
+   * @returns how many acceptances could not be recorded
+   */
   static async acceptNamed(options: Options): Promise<number> {
     log.debug("Entering RiskInstall.acceptNamed().");
     const operator = options.operator ||
@@ -372,6 +419,15 @@ class RiskInstall {
   // loading this file for `optionsOf()` or `providerOf()` does not load the
   // service's settings graph.
   // -------------------------------------------------------------------------
+  /**
+   * Returns what the database driver is given: the connection the service
+   * itself would make.
+   *
+   * Rejects with a tagged error for the operator: `STS-RISK-0012` when no
+   * database is named, `STS-RISK-0040` when the password provider cannot be
+   * used.
+   * @returns the driver's options
+   */
   static async driverOptions(): Promise<Json> {
     log.debug("Entering RiskInstall.driverOptions().");
     const config = require('../common/config');
@@ -409,6 +465,13 @@ class RiskInstall {
   // fetched or read, and imported into the database. Answers the number of
   // entries that failed.
   // -------------------------------------------------------------------------
+  /**
+   * Runs the loader: each manifest entry checked against the accepted terms,
+   * fetched or read, and imported into the database.
+   *
+   * @param options - the command line's options
+   * @returns the number of entries that failed
+   */
   static async run(options: Options): Promise<number> {
     log.debug("Entering RiskInstall.run().");
     const manifest = JSON.parse(fs.readFileSync(options.manifest, 'utf8'));
@@ -538,4 +601,10 @@ if (require.main === module) {
   });
 }
 
+/**
+ * The install-time loader of the risk datasets.
+ *
+ * Exported for the tests; run as a script, it loads the manifest's datasets.
+ * @namespace
+ */
 export = { RiskInstall: RiskInstall };

@@ -114,7 +114,20 @@ interface GnapSfDeps {
 //         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA        (RFC 9110 5.6.2)
 const TCHAR_PUNCT = "!#$%&'*+-.^_`|~";
 
+/**
+ * RFC 8941 Structured Field Values for HTTP, parsed and serialized exactly as
+ * section 4 writes the algorithms down — most of the signature code of RFC
+ * 9421.
+ *
+ * Parameters and Dictionaries are ordered arrays of `[key, value]` pairs,
+ * because order is signed. A failure throws an Error naming the rule broken.
+ */
 class GnapSf {
+  /**
+   * Builds the parser and serializer around a logger.
+   *
+   * @param deps - the logger the composition root passes
+   */
   constructor(private readonly deps: GnapSfDeps) {
     deps.log.debug("Entering GnapSf.constructor().");
     deps.log.debug("Leaving GnapSf.constructor().");
@@ -717,6 +730,13 @@ class GnapSf {
   // line of that name joined with ", " — because section 4.2 says the parser is
   // handed that and not the lines one at a time.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses a List (section 4.2.1).
+   *
+   * @param input - the combined field value
+   * @returns the members, each an item or an inner list
+   * @throws Error when the value is not a valid List
+   */
   parseList(input: unknown): SfValue[] {
     const { log } = this.deps;
     log.debug("Entering GnapSf.parseList().");
@@ -730,6 +750,16 @@ class GnapSf {
   // section 4 says a signature label MUST be unique, and last-wins there would
   // let a second member silently replace the signature a verifier was about to
   // check.
+  /**
+   * Parses a Dictionary (section 4.2.2), the last value of a repeated key
+   * winning.
+   *
+   * @param input - the combined field value
+   * @param options - `onDuplicate(key)`, told about a key that appeared twice,
+   *   for a caller whose own specification forbids it
+   * @returns the members, each `[key, value]`
+   * @throws Error when the value is not a valid Dictionary
+   */
   parseDictionary(input: unknown, options?: ParseOptions): SfValue[] {
     const { log } = this.deps;
     log.debug("Entering GnapSf.parseDictionary().");
@@ -737,6 +767,13 @@ class GnapSf {
     return this.parseTop(input, 'dictionary', options);
   }
 
+  /**
+   * Parses an Item (section 4.2.3).
+   *
+   * @param input - the field value
+   * @returns the item: a bare item with its `params`
+   * @throws Error when the value is not a valid Item
+   */
   parseItem(input: unknown): SfValue {
     const { log } = this.deps;
     log.debug("Entering GnapSf.parseItem().");
@@ -752,6 +789,13 @@ class GnapSf {
   // ===========================================================================
 
   // Section 4.1.1.
+  /**
+   * Serializes a List (section 4.1.1).
+   *
+   * @param list - the members
+   * @returns the serialization
+   * @throws Error when the value cannot be serialized
+   */
   serializeList(list: SfValue[]): string {
     const { log } = this.deps;
     log.debug("Entering GnapSf.serializeList().");
@@ -769,6 +813,13 @@ class GnapSf {
   }
 
   // Section 4.1.1.1.
+  /**
+   * Serializes an Inner List (section 4.1.1.1).
+   *
+   * @param innerList - the inner list and its parameters
+   * @returns the serialization
+   * @throws Error when the value cannot be serialized
+   */
   serializeInnerList(innerList: SfValue): string {
     const { log } = this.deps;
     log.debug("Entering GnapSf.serializeInnerList().");
@@ -786,6 +837,14 @@ class GnapSf {
 
   // Section 4.1.1.2. A Boolean-true parameter is written as its key alone —
   // "MUST omit that value when serialized" (section 3.1.2).
+  /**
+   * Serializes Parameters (section 4.1.1.2); a Boolean-true parameter is
+   * written as its key alone.
+   *
+   * @param params - the `[key, bareItem]` pairs
+   * @returns the serialization
+   * @throws Error when the value cannot be serialized
+   */
   serializeParams(params: SfValue[] | null | undefined): string {
     const { log } = this.deps;
     log.debug("Entering GnapSf.serializeParams().");
@@ -814,6 +873,13 @@ class GnapSf {
   }
 
   // Section 4.1.1.3.
+  /**
+   * Serializes a key (section 4.1.1.3).
+   *
+   * @param key - the key
+   * @returns the serialization
+   * @throws Error when the key is not a valid key
+   */
   serializeKey(key: unknown): string {
     const { log } = this.deps;
     log.debug("Entering GnapSf.serializeKey().");
@@ -840,6 +906,14 @@ class GnapSf {
 
   // Section 4.1.2. A member whose value is Boolean true is written as its key
   // and its parameters, with no "=?1".
+  /**
+   * Serializes a Dictionary (section 4.1.2); a member whose value is Boolean
+   * true is written as its key and parameters.
+   *
+   * @param dictionary - the `[key, value]` members
+   * @returns the serialization
+   * @throws Error when the value cannot be serialized
+   */
   serializeDictionary(dictionary: SfValue[]): string {
     const { log } = this.deps;
     log.debug("Entering GnapSf.serializeDictionary().");
@@ -868,6 +942,13 @@ class GnapSf {
   }
 
   // Section 4.1.3.
+  /**
+   * Serializes an Item (section 4.1.3).
+   *
+   * @param item - the item: a bare item with its `params`
+   * @returns the serialization
+   * @throws Error when the value cannot be serialized
+   */
   serializeItem(item: SfValue): string {
     const { log } = this.deps;
     log.debug("Entering GnapSf.serializeItem().");
@@ -880,6 +961,14 @@ class GnapSf {
   }
 
   // Section 4.1.3.1 and the six type serializers it dispatches to.
+  /**
+   * Serializes a bare item (section 4.1.3.1) through the serializer for its
+   * type.
+   *
+   * @param item - the bare item
+   * @returns the serialization
+   * @throws Error when the value cannot be serialized
+   */
   serializeBareItem(item: SfValue): string {
     const { log } = this.deps;
     log.debug("Entering GnapSf.serializeBareItem().");
@@ -1043,6 +1132,14 @@ class GnapSf {
   // `paramValue` answers the bare item's VALUE for a key, or undefined; `param`
   // answers the bare item itself, for a caller that has to know the type.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the bare item a parameter key names, for a caller that has to know
+   * its type.
+   *
+   * @param params - the parameters
+   * @param key - the key
+   * @returns the bare item, or undefined
+   */
   param(params: SfValue, key: string): SfValue {
     const { log } = this.deps;
     log.debug("Entering GnapSf.param().");
@@ -1055,6 +1152,13 @@ class GnapSf {
     return at < 0 ? undefined : params[at][1];
   }
 
+  /**
+   * Returns the value of the bare item a parameter key names.
+   *
+   * @param params - the parameters
+   * @param key - the key
+   * @returns the value, or undefined
+   */
   paramValue(params: SfValue, key: string): any {
     const { log } = this.deps;
     log.debug("Entering GnapSf.paramValue().");
@@ -1063,6 +1167,13 @@ class GnapSf {
     return bare === undefined ? undefined : bare.value;
   }
 
+  /**
+   * Returns a Dictionary member's value by key.
+   *
+   * @param dictionary - the parsed Dictionary
+   * @param key - the key
+   * @returns the member's value, or undefined
+   */
   member(dictionary: SfValue, key: string): SfValue {
     const { log } = this.deps;
     log.debug("Entering GnapSf.member().");
@@ -1077,6 +1188,12 @@ class GnapSf {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real logger the instance was built with before the composition
+   * root (#50, R2) passed it.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapSfDeps {
     helpers.log.debug("Entering GnapSf.defaultDeps().");
     helpers.log.debug("Leaving GnapSf.defaultDeps().");
@@ -1103,9 +1220,28 @@ const slot = new InstanceSlot<GnapSf>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 8941 Structured Field Values for HTTP, parsed and serialized as section 4
+ * writes the algorithms.
+ *
+ * A library that registers no route; the signature code of GNAP's key proofing
+ * is built on it.
+ *
+ * @namespace
+ */
 export = {
   GnapSf: GnapSf,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapSf): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   parseList: slot.forward('parseList'),
   parseDictionary: slot.forward('parseDictionary'),

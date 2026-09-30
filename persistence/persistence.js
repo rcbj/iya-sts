@@ -133,14 +133,23 @@
 // what that costs in postgres mode is nothing, and in ldif mode it is up to
 // `writeDelay` milliseconds of writes.
 //
-// A FAILED WRITE IS LOGGED AND REPORTED AND NEVER THROWN. The service keeps
+// A FAILED WRITE IS LOGGED AND REPORTED AND NEVER THROWN — and, since
+// 2026-09-29 (#351), in postgres mode NEVER ACKNOWLEDGED. The service keeps
 // answering out of memory, `GET /admin/ldap/service` and `/admin/persistence`
-// both carry the error, and the next flush tries again with the same diff (the
-// shadow is only advanced on success, so nothing is lost by a failure). The
-// alternative — refusing the LDAP operation whose write failed — was considered
-// and rejected: it would make a database outage take down sixteen protocol
-// families that do not need a database, and no other refusal in this service is
-// that expensive.
+// both carry the error, and the write is retried on its own with a backoff
+// (`retryAfterFailure()`), its journal put back (the shadow is only advanced
+// on success). What changed is the request whose change was in the failed
+// write: it was answered with its success before the flush ran, so a process
+// that died before the retry lost a change its client had been told was
+// done — ~600 deleted people came back on testidp. A request that changed the
+// store is now answered only once that change has COMMITTED, and 503 (an LDAP
+// operation `unavailable`) when it did not: `cluster/cluster_barrier.js`'s
+// rule 2, which `answersAfterCommit()` turns on for every postgres process.
+// This file's old argument against refusing — "a database outage would take
+// down sixteen protocol families that do not need a database" — is answered
+// by what is refused: a request that WROTE, which a database outage cannot
+// make durable; a read is still answered from memory. ldif keeps the old
+// behaviour, because its write is a file on a debounce.
 //
 // ---------------------------------------------------------------------------
 // TWO INVERTED HOOKS, AND EACH PASSES RULE 3e's TEST INDEPENDENTLY.
@@ -187,6 +196,10 @@
 // ---------------------------------------------------------------------------
 
 const path = require('path');
+// Node's event-loop delay sampler and its monotonic clock (#351): see
+// startLagMonitor() and checkRenewalTiming().
+const perfHooks = require('perf_hooks');
+const performance = perfHooks.performance;
 const bunyan = require('bunyan');
 const config = require('../common/config');
 // The keystore, so this module can hand it the driver the moment one is open.
@@ -231,6 +244,17 @@ const cluster = require('../cluster/cluster');
 // the postgres driver applies inside its transaction and this module applies
 // again to a local write that raced a flush or a replicated row (#46 sec. 3).
 const directoryMerge = require('./directory_merge');
+// WHICH CELL THIS IS (#98). A LEAF (config, error codes, a logger), so a
+// require from here closes nothing; it is how start() knows the store is two
+// databases.
+const cells = require('../common/cells');
+// The store over those two databases, and the second change-log follower it
+// needs. Both LIBRARIES that register nothing.
+const tiered = require('./persistence_tiered');
+// The GLOBAL tier's change-log follower (#98): built by coordinate() when the
+// store is tiered, null otherwise. The module's own `replication` follows the
+// cell's log, which is the only log a single-cell store has.
+let globalReplication = null;
 
 const log = bunyan.createLogger({ name: 'sts-persistence' });
 config.registerLogger(log);
@@ -239,6 +263,9 @@ config.registerLogger(log);
 // the same list in its `enumValues`, which is the copy a caller is validated
 // against; this one is what the code branches on, and the two are checked
 // against each other at start() rather than trusted.
+/**
+ * The persistence modes this module knows: `memory`, `ldif` and `postgres`.
+ */
 const MODES = ['memory', 'ldif', 'postgres'];
 
 // ---------------------------------------------------------------------------
@@ -253,6 +280,15 @@ const MODES = ['memory', 'ldif', 'postgres'];
 // ---------------------------------------------------------------------------
 let directory = null;
 
+/**
+ * Installs the directory hooks `ldap/ldap_server.js` fills this module with.
+ *
+ * A slot rather than a require, because a require would move routes. The
+ * hooks are validated whole: `realmEntries` and `replaceRealm` are required,
+ * and `applyEntry` and `removeEntry` are what coordination needs.
+ * @param hooks - the directory's functions
+ * @throws when a required hook is missing
+ */
 function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
   // `applyEntry` and `removeEntry` are NOT on this list, deliberately: they
@@ -286,6 +322,8 @@ function setDirectory(hooks) {
 
 // The chosen driver, or null in memory mode and before start().
 let driver = null;
+// The directory bridge of a windowed worker (#349), or null.
+let bridge = null;
 // Which mode start() actually ran in. Read rather than re-derived, so that
 // "what is this process doing" and "what is the setting set to" cannot
 // disagree after a start that fell back.
@@ -421,12 +459,21 @@ let restoredCounts = { realms: 0, entries: 0, overrides: 0 };
 // read is a consistency habit rather than something that can change under us.
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns the configured persistence mode (`persistence.mode`).
+ * @returns 'memory', 'ldif' or 'postgres'
+ */
 function mode() {
   log.debug("Entering mode().");
   log.debug("Leaving mode().");
   return config.value('persistence.mode');
 }
 
+/**
+ * Returns the ldif store's data directory, resolved against the package root
+ * when the setting is relative.
+ * @returns the absolute path
+ */
 function dataDir() {
   log.debug("Entering dataDir().");
   // Resolved against the PACKAGE ROOT rather than the working directory, for
@@ -472,6 +519,10 @@ function persistsRealms() {
 // Is anything being written down at all? Every caller in this file asks this
 // rather than comparing the mode to 'memory', so that a mode added later is one
 // edit here instead of a search for string comparisons.
+/**
+ * Tells whether anything is being written down at all.
+ * @returns true when a store other than memory is open and not stopped
+ */
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
@@ -525,6 +576,37 @@ let dirtyEverything = false;
 let dirGeneration = 0;
 let dirCommittedAt = 0;
 let flushingTakenAt = 0;
+// The highest generation a FAILED flush had taken (#351). While it is above
+// `dirCommittedAt` the store is behind this process's memory by a write that
+// was tried and refused — `commitBacklog()` below.
+let dirFailedAt = 0;
+
+// ---------------------------------------------------------------------------
+// A FAILED WRITE IS RETRIED ON ITS OWN, NOT BY "THE NEXT CHANGE" (2026-09-29,
+// #351).
+//
+// A failed flush put its dirty bits back and said "the next change will try
+// again", and nothing else did. That was harmless while every response went
+// out before its write anyway; once a response waits for its commit
+// (`cluster/cluster_barrier.js`, rule 2) and is answered 503 when it fails,
+// the client's retry is the natural next change — and a retry that finds its
+// change already made in memory (a DELETE answering 404, a create answering
+// 409) writes nothing, so nothing would ever write the change the first
+// attempt left in memory. On testidp that was ~600 people deleted, answered,
+// and back from the database after the worker exited (#351).
+//
+// So a failure arms ONE retry of the whole flush — directory, realms,
+// settings, minted rows, and the keystore rows whose write failed — after
+// RETRY_FIRST_MS, doubling on each consecutive failure to RETRY_MAX_MS, and
+// the first success disarms it. It is the retry of one failed write, not
+// periodic work: it exists only while a write is failing, which is the
+// "retry delay inside one operation" the scheduler directive leaves out
+// (root CLAUDE.md, *Anything periodic is a scheduler job*).
+// ---------------------------------------------------------------------------
+const RETRY_FIRST_MS = 1000;
+const RETRY_MAX_MS = 30000;
+let retryTimer = null;
+let retryFailures = 0;
 // { gen, resolve } for each caller of directoryThrough() still waiting.
 let dirWaiters = [];
 
@@ -542,6 +624,71 @@ function settleDirWaiters(error) {
   });
   dirWaiters = still;
   log.debug("Leaving settleDirWaiters().");
+}
+
+/**
+ * Arms the one retry of a failed write, if none is armed; see RETRY_FIRST_MS.
+ * @param why - what failed, for the debug line
+ */
+function retryAfterFailure(why) {
+  log.debug("Entering retryAfterFailure(). " + why);
+  if (retryTimer || stopped || !enabled()) {
+    log.debug("Leaving retryAfterFailure(). Armed already, or stopped.");
+    return;
+  }
+  const delay = Math.min(RETRY_MAX_MS,
+                         RETRY_FIRST_MS * Math.pow(2, Math.min(retryFailures,
+                                                               5)));
+  retryFailures += 1;
+  retryTimer = setTimeout(function () {
+    retryTimer = null;
+    // A keystore row whose write failed has no generation and no journal: it
+    // is queued again here, whole, with what it held when it failed.
+    if (typeof keystore.retryFailed === 'function') {
+      keystore.retryFailed();
+    }
+    flush().catch(function (err) {
+      log.error(errorCodes.tag('STS-STORE-0001') +
+                'persistence: a retried flush failed: ' + err.message);
+    });
+  }, delay);
+  if (retryTimer.unref) {
+    retryTimer.unref();
+  }
+  log.debug("Leaving retryAfterFailure(). In " + delay + " ms.");
+}
+
+// The first success after a failure: the backoff starts again from the top.
+function retrySucceeded() {
+  log.debug("Entering retrySucceeded().");
+  retryFailures = 0;
+  log.debug("Leaving retrySucceeded().");
+}
+
+/**
+ * Tells whether a response that wrote waits for its commit: a postgres
+ * store, open and not restoring. See the exports' note.
+ * @returns true in postgres mode once started
+ */
+function answersAfterCommit() {
+  log.debug("Entering answersAfterCommit().");
+  log.debug("Leaving answersAfterCommit().");
+  return enabled() && activeMode === 'postgres' && !restoring && !stopped &&
+    !!driver;
+}
+
+/**
+ * Tells whether a failed write is still waiting for its retry to land. See
+ * the exports' note.
+ * @returns true while the store is behind memory by a refused write
+ */
+function commitBacklog() {
+  log.debug("Entering commitBacklog().");
+  log.debug("Leaving commitBacklog().");
+  return enabled() && !restoring &&
+    (dirFailedAt > dirCommittedAt ||
+     (typeof minted.failing === 'function' && minted.failing()) ||
+     (typeof keystore.failing === 'function' && keystore.failing()));
 }
 
 // Resolves once everything dirtied up to generation `target` has committed,
@@ -571,6 +718,10 @@ function directoryThrough(target) {
   return waiting;
 }
 
+/**
+ * Reports that a directory entry changed, and schedules a flush.
+ * @param dn - the entry's DN; empty or undefined marks the whole directory
+ */
 function directoryChanged(dn) {
   log.debug("Entering directoryChanged().");
   if (!enabled() || restoring) {
@@ -605,6 +756,14 @@ function directoryChanged(dn) {
 // `note()` calls it now, once per flush, through `setScheduler()` below; that
 // file's block above `scheduler` has the measurement. It answers whether it
 // scheduled, so a write made while this answers no asks again.
+/**
+ * Schedules a flush for a minted write, marking nothing itself.
+ *
+ * `persistence_minted.js` keeps its own journal and calls this through
+ * `setScheduler()`.
+ * @returns true when a flush was scheduled, false when persistence is off or
+ * restoring
+ */
 function mintedChanged() {
   log.debug("Entering mintedChanged().");
   if (!enabled() || restoring) {
@@ -616,6 +775,33 @@ function mintedChanged() {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// A FIFTH DOOR, FOR THE DIRECTORY WINDOW (#349): an entry was HANDED OUT, so
+// the next flush must look at it — an entry edited in place is found by
+// comparing it with what it was, and the window holds what it handed out
+// only until a flush has looked. It marks nothing and moves no generation (a
+// read is not a write, and the barrier must not wait on one); the flush
+// decides whether anything changed.
+// ---------------------------------------------------------------------------
+/**
+ * Schedules a flush because a windowed worker handed out directory entries,
+ * marking nothing.
+ * @returns true when a flush was scheduled, false before the store is open
+ */
+function directoryTouched() {
+  log.debug("Entering directoryTouched().");
+  if (!enabled() || restoring) {
+    log.debug("Leaving directoryTouched(). Not yet.");
+    return false;
+  }
+  schedule();
+  log.debug("Leaving directoryTouched().");
+  return true;
+}
+
+/**
+ * Reports that the realm registry changed, and schedules a flush.
+ */
 function realmsChanged() {
   log.debug("Entering realmsChanged().");
   if (!enabled() || restoring || !persistsRealms()) {
@@ -633,6 +819,11 @@ function realmsChanged() {
 // told rather than asked: a realm's overrides live on the realm row and a
 // process-wide one lives in the appconfig store, and those are two different
 // files and two different tables.
+/**
+ * Reports that a runtime appconfig override changed, and schedules a flush.
+ * @param realmId - the realm the override landed in (written on the realm's
+ * row), or null for a process-wide one
+ */
 function configChanged(realmId) {
   log.debug("Entering configChanged().");
   if (!enabled() || restoring) {
@@ -1103,6 +1294,10 @@ function applyDirectoryOutcomes(changes, outcomes) {
     sentJson.set(row.realm + '\n' + row.key, row.json);
   });
   outcomes.forEach(function (one) {
+    // A windowed key's outcome is the window's (#349): `committed()` took it.
+    if (directory.window && directory.window.isWindowed(one.realm, one.key)) {
+      return;
+    }
     const sent = sentJson.get(one.realm + '\n' + one.key);
     const live = entryAt(one.realm, one.key);
     const moved = !!live && JSON.stringify(live) !== sent;
@@ -1155,6 +1350,14 @@ function applyDirectoryOutcomes(changes, outcomes) {
 // starting a competing write — two transactions computing their diff against
 // the same shadow would each think they had to write everything.
 // ---------------------------------------------------------------------------
+/**
+ * Writes the directory, realm and appconfig changes, then the minted rows.
+ *
+ * One flush at a time; a second caller shares the one queued behind the
+ * running flush. A failure is logged and the changes stay dirty for the next
+ * flush; the service keeps answering from memory.
+ * @returns a promise of `{ written }`, with `error` when the write failed
+ */
 function flush() {
   log.debug('Entering flush().');
   if (!enabled()) {
@@ -1204,6 +1407,23 @@ function flush() {
     log.debug('Leaving flush(). One is already running; waiting for it.');
     return flushQueued;
   }
+  // ---------------------------------------------------------------------
+  // THE WINDOW'S OWN CHANGES (#349), asked for before anything else decides
+  // whether there is work: an entry edited in place is found only by
+  // comparing it with what it was, and `collect()` is that comparison. It
+  // also lets go of every entry handed out and left unchanged, which is why
+  // it runs on a flush scheduled by a read alone.
+  // ---------------------------------------------------------------------
+  const win = directory && directory.window ? directory.window : null;
+  const windowed = win && activeMode === 'postgres'
+    ? win.collect(dirtyEverything ? null : dirtyDns) : null;
+  const windowWrites = !!windowed &&
+    (windowed.upserts.length > 0 || windowed.deletes.length > 0);
+  if (windowWrites && !directoryDirty) {
+    // An edit no writer reported: a write all the same.
+    directoryDirty = true;
+    dirGeneration += 1;
+  }
   if (!directoryDirty && !realmsDirty && !configDirty && !minted.dirty()) {
     // Nothing in flight and nothing dirty: every generation has committed, or
     // its failure put a dirty bit back.
@@ -1227,8 +1447,11 @@ function flush() {
   // THE JOURNAL, TAKEN AND CLEARED BEFORE THE WRITE for the same reason the
   // dirty bits above are: a change made while this flush is in flight has to
   // start a new journal and get its own flush, not be swallowed by this one.
+  // In a windowed worker a journal that names only windowed keys is still a
+  // journal: the resident half has nothing to walk (#349).
   const wanted = (wantDirectory && !dirtyEverything && dirtyDns.size)
-    ? dirtyDns : null;
+    ? dirtyDns
+    : (wantDirectory && !dirtyEverything && windowWrites ? new Set() : null);
   if (wantDirectory) {
     dirtyDns = new Set();
     dirtyEverything = false;
@@ -1254,7 +1477,7 @@ function flush() {
       return null;
     }
     if (!changes.upserts.length && !changes.deletes.length &&
-        !changes.removedRealms.length) {
+        !changes.removedRealms.length && !windowWrites) {
       return null;
     }
     // ---------------------------------------------------------------------
@@ -1289,14 +1512,31 @@ function flush() {
     changes.upserts.forEach(function (row) {
       inFlightDirectory.set(row.realm + '\n' + row.key, row.json);
     });
+    // THE WINDOW'S ROWS GO IN THE SAME TRANSACTION (#349), each with the base
+    // the window kept — the store merges against it exactly as against the
+    // shadow's — and the shadow is never advanced by them.
+    const sentUpserts = windowWrites
+      ? changes.upserts.concat(windowed.upserts) : changes.upserts;
+    const sentDeletes = windowWrites
+      ? changes.deletes.concat(windowed.deletes.map(function (row) {
+        return { realm: row.realm, key: row.key };
+      })) : changes.deletes;
+    const sentTouched = windowWrites
+      ? Array.from(new Set(changes.touched.concat(
+        windowed.upserts.concat(windowed.deletes).map(function (row) {
+          return row.realm;
+        })))) : changes.touched;
     return driver.saveDirectory({
-      upserts: changes.upserts,
-      deletes: changes.deletes,
-      touched: changes.touched,
+      upserts: sentUpserts,
+      deletes: sentDeletes,
+      touched: sentTouched,
       removedRealms: changes.removedRealms,
       all: live
     }).then(function (result) {
       advanceShadow(changes, changes.removedRealms);
+      if (windowWrites) {
+        win.committed(windowed, result && result.outcomes);
+      }
       applyDirectoryOutcomes(changes, result && result.outcomes);
     });
   }).then(function () {
@@ -1347,7 +1587,14 @@ function flush() {
       return null;
     }
     return minted.flush();
-  }).then(function () {
+  }).then(function (mintedAnswer) {
+    // The minted write reports its own failure and keeps its journal; what
+    // it cannot do is retry, so a failure here arms the retry (#351).
+    if (mintedAnswer && mintedAnswer.error) {
+      retryAfterFailure('the minted write failed');
+    } else {
+      retrySucceeded();
+    }
     writes++;
     lastWriteAt = new Date().toISOString();
     lastError = '';
@@ -1361,17 +1608,43 @@ function flush() {
     // NOT rethrown, and the header argues why at length: the service keeps
     // answering out of memory. The dirty bits go back on so the next flush
     // retries, and the shadow was not advanced, so the same diff is recomputed
-    // and nothing is lost.
+    // and nothing is lost. Logged below as STS-STORE-0002.
     failures++;
     lastError = err.message;
+    if (windowWrites) {
+      // The window's keys are still changed; the next flush takes them.
+      win.failed(windowed);
+    }
     directoryDirty = directoryDirty || wantDirectory;
     realmsDirty = realmsDirty || wantRealms;
     configDirty = configDirty || wantConfig;
+    // ---------------------------------------------------------------------
+    // AND THE JOURNAL GOES BACK TOO (2026-09-29, #351). The dirty bit alone
+    // was put back, and the DNs this flush had taken were not: the next
+    // flush compared only the DNs dirtied AFTER this one, found the failed
+    // ones equal to nothing it was asked about, advanced `dirCommittedAt`
+    // past them, and they reached the store only if a full walk ever ran —
+    // "the shadow is only advanced on success" was true, and the journal
+    // made it irrelevant. So the taken DNs rejoin the journal, and a flush
+    // that had walked everything marks everything again.
+    // ---------------------------------------------------------------------
+    if (wantDirectory) {
+      if (wanted && !dirtyEverything) {
+        wanted.forEach(function (dn) {
+          dirtyDns.add(dn);
+        });
+      } else if (!wanted) {
+        dirtyEverything = true;
+      }
+    }
+    dirFailedAt = Math.max(dirFailedAt, takenAt);
     settleDirWaiters(err.message);
+    retryAfterFailure('the directory write failed');
     log.error(errorCodes.tag('STS-STORE-0002') +
               'persistence: could not write to the ' + activeMode +
-              ' store: ' + err.message + '. The service is unaffected and is ' +
-              'still answering from memory; the next change will try again.');
+              ' store: ' + err.message + '. It is retried shortly; a ' +
+              'request whose change was in it is answered 503 in postgres ' +
+              'mode (#351), and the change stays in memory until it lands.');
     log.debug('Leaving flush(). It failed.');
     return { written: false, error: err.message };
   }).then(function (result) {
@@ -1454,6 +1727,16 @@ function flush() {
 // without the password somebody configured — the same direction every other
 // refusal in this file takes.
 // ===========================================================================
+/**
+ * Returns the database connection string with the configured provider's
+ * password put into it.
+ *
+ * Returns `persistence.databaseUrl` as it is when no password provider is
+ * configured. A password already in the string is replaced.
+ * @returns a promise of the connection string
+ * @throws a rejected promise (STS-STORE-0005) when the string is not a URL
+ * that can be edited, or the provider's error when the secret cannot be read
+ */
 function resolveDatabaseUrl() {
   log.debug('Entering resolveDatabaseUrl().');
   const raw = databaseUrl();
@@ -1501,6 +1784,11 @@ function resolveDatabaseUrl() {
 // `persistence.databaseTlsRejectUnauthorized`, shared by the pool this
 // process opens, `status()`'s report of it, and `databaseConnection()` below.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether the database server's certificate is verified
+ * (`persistence.databaseTlsRejectUnauthorized`).
+ * @returns true when it is verified
+ */
 function verifiesDatabaseTls() {
   log.debug("Entering verifiesDatabaseTls().");
   log.debug("Leaving verifiesDatabaseTls().");
@@ -1528,6 +1816,15 @@ function verifiesDatabaseTls() {
 // tagged error when a configured secret cannot be read, and STS-STORE-0005
 // for a string it cannot edit.
 // ---------------------------------------------------------------------------
+/**
+ * Returns what a process needs to dial the database the way this service
+ * does.
+ *
+ * For an out-of-process tool such as the risk dataset loader, so the two
+ * cannot disagree about how a connection is made.
+ * @returns a promise of `{ url, verifyTls }`; rejects as `resolveDatabaseUrl()`
+ * does
+ */
 function databaseConnection() {
   log.debug("Entering databaseConnection().");
   log.debug("Leaving databaseConnection().");
@@ -1540,14 +1837,28 @@ function databaseConnection() {
 // postgres pool is sized from (`persistence_postgres.js`, poolMax()).
 function workerCount() {
   log.debug("Entering workerCount().");
-  const n = Math.max(0, Number(config.value('workers.requestCount')) || 0) +
+  // The #364 rule for the request pool; see common/process_memory.ts.
+  const n = require('../common/process_memory').requestWorkers() +
             Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
   log.debug("Leaving workerCount().");
   return n;
 }
 
+/**
+ * Opens the configured store and restores the directory, realms and
+ * overrides from it.
+ *
+ * Called before any listener binds. Memory mode opens nothing. A store that
+ * cannot be opened or read is fatal: the promise rejects.
+ * @returns a promise of `{ mode, restored }`
+ * @throws a rejected promise when no directory is installed or the store
+ * cannot be opened or read
+ */
 function start() {
   log.debug('Entering start().');
+  // In every mode, a store or none: a blocked loop is worth measuring in a
+  // process with nothing to renew, and costs a histogram (#351).
+  startLagMonitor();
   const chosen = mode();
   if (MODES.indexOf(chosen) < 0) {
     // Unreachable through config.value(), whose enum type refuses anything
@@ -1560,6 +1871,24 @@ function start() {
     activeMode = 'memory';
     log.debug('Leaving start(). The mode was not recognised.');
     return Promise.resolve({ mode: 'memory' });
+  }
+  // THE DIRECTORY WINDOW NEEDS A POSTGRES STORE AND ONE CELL (#349). Refused
+  // in every process, the front included, so a misconfigured deployment
+  // fails at once and not only when a worker starts.
+  if (String(config.value('ldap.workerDirectory')) === 'postgres-lru' &&
+      (chosen !== 'postgres' || cells.isMulti())) {
+    activeMode = 'memory';
+    lastError = 'ldap.workerDirectory=postgres-lru cannot work here';
+    log.debug('Leaving start(). The directory window was refused.');
+    return Promise.reject(new Error(errorCodes.tag('STS-LDAP-0133') +
+      'ldap.workerDirectory is "postgres-lru" and ' +
+      (chosen !== 'postgres'
+        ? 'persistence.mode is "' + chosen + '": a request worker\'s window ' +
+          'onto the directory reads the rest from PostgreSQL, and there is ' +
+          'none. Set persistence.mode=postgres, or ldap.workerDirectory=memory.'
+        : 'this service is deployed as cells: a person\'s entry may be in ' +
+          'another cell\'s database, which a window cannot read. Set ' +
+          'ldap.workerDirectory=memory.')));
   }
   if (chosen === 'memory') {
     activeMode = 'memory';
@@ -1606,11 +1935,182 @@ function start() {
   //
   // Only postgres has a password to resolve; ldif has a directory.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // A CELL KEEPS ITS STORE IN TWO DATABASES (#98), and every way that cannot
+  // work is refused here, before anything is dialled: see checkCells().
+  // -------------------------------------------------------------------------
+  if (cells.isMulti()) {
+    try {
+      checkCells(chosen);
+    } catch (err) {
+      activeMode = 'memory';
+      lastError = err.message;
+      log.debug('Leaving start(). The cell settings were refused.');
+      return Promise.reject(err);
+    }
+  }
   return chosen === 'postgres'
     ? resolveDatabaseUrl().then(function (url) {
-      return openStore(chosen, url);
+      if (!cells.isMulti()) {
+        return openStore(chosen, url, null);
+      }
+      return resolveGlobalUrls().then(function (globalUrls) {
+        return openStore(chosen, url, globalUrls);
+      });
     })
-    : openStore(chosen, '');
+    : openStore(chosen, '', null);
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A CELL NEEDS BEFORE IT OPENS ANYTHING (#98). Four refusals, each for
+// a deployment that would run and be wrong:
+//
+//   * inconsistent cell settings (`cells.validate()`, STS-CELL-0001);
+//   * a store that is not postgres, or no global database (STS-CELL-0002) —
+//     a cell that kept its global rows in its own database would be a second
+//     service with the same name;
+//   * keys that are not persisted, or no operator key-encryption key
+//     (STS-CELL-0004) — every cell must sign with the SAME realm keys (#98
+//     D8) and open the same global rows, which a key generated per start or
+//     per process cannot do; active-active refuses the same thing for the
+//     same reason (STS-CLUSTER-0008);
+//   * no cell key where `mode.requiresCellKek()` says one is required
+//     (STS-CELL-0003) — product mode, where a copy of one cell's rows must
+//     open in no other.
+// ---------------------------------------------------------------------------
+function checkCells(chosen) {
+  log.debug("Entering checkCells().");
+  cells.validate();
+  if (chosen !== 'postgres') {
+    throw new Error(errorCodes.tag('STS-CELL-0002') + 'cells.id is "' +
+                    cells.id() + '" and persistence.mode is "' + chosen +
+                    '". A cell keeps its store in two postgres databases — ' +
+                    'its own and the global tier\'s — and no other store ' +
+                    'can.');
+  }
+  if (!String(config.value('persistence.globalDatabaseUrl') || '').trim()) {
+    throw new Error(errorCodes.tag('STS-CELL-0002') + 'cells.id is "' +
+                    cells.id() + '" and persistence.globalDatabaseUrl is ' +
+                    'empty. Every cell reads and writes the global tier ' +
+                    '(realms, settings, applications, keys, the routing ' +
+                    'index) in one shared database; set it, and ' +
+                    'persistence.globalDatabaseReadUrl to this cell\'s ' +
+                    'replica.');
+  }
+  // EVERY ADDRESS THE SERVICE PUBLISHES IS THE SERVICE'S (STS-CELL-0005):
+  // a relayed request reaches the owning cell under the peer's private name,
+  // so an address built from the request would name a cell — which nothing
+  // here may ever publish.
+  if (!String(config.value('global.publicBaseUrl') || '').trim()) {
+    throw new Error(errorCodes.tag('STS-CELL-0005') + 'cells.id is "' +
+                    cells.id() + '" and global.publicBaseUrl is empty. Every ' +
+                    'issuer and address a cell publishes must be the ' +
+                    'service\'s public name, whichever cell built it.');
+  }
+  if (!keystore.persists() || !secrets.configuredFor(secrets.KEK)) {
+    throw new Error(errorCodes.tag('STS-CELL-0004') + 'cells.id is "' +
+                    cells.id() + '" and ' + (!keystore.persists()
+                      ? 'the signing keys are not persisted (keys.source)'
+                      : 'no operator key-encryption key is configured ' +
+                        '(keys.kekProvider)') + '. Every cell signs with ' +
+                    'the same realm keys and opens the same global rows, ' +
+                    'which a key made per start or per process cannot do.');
+  }
+  if (require('../common/mode').requiresCellKek() &&
+      !secrets.configuredFor(secrets.CELL_KEK)) {
+    throw new Error(errorCodes.tag('STS-CELL-0003') + 'cells.id is "' +
+                    cells.id() + '" and keys.cellKekProvider is "none". ' +
+                    'What a cell stores of its own is sealed under a key ' +
+                    'that lives only in the cell, so a copy of its rows ' +
+                    'opens in no other; without one it would open in every ' +
+                    'cell. Configure keys.cellKekProvider and ' +
+                    'keys.cellKekRef.');
+  }
+  log.debug("Leaving checkCells().");
+}
+
+// ---------------------------------------------------------------------------
+// THE GLOBAL TIER'S TWO CONNECTION STRINGS (#98), with the global password
+// put into both the way `resolveDatabaseUrl()` puts the cell's into its one.
+// The read URL defaults to the writer's.
+// ---------------------------------------------------------------------------
+function resolveGlobalUrls() {
+  log.debug("Entering resolveGlobalUrls().");
+  const writer = String(config.value('persistence.globalDatabaseUrl') || '')
+    .trim();
+  const reader = String(config.value('persistence.globalDatabaseReadUrl') ||
+                        '').trim() || writer;
+  log.debug("Leaving resolveGlobalUrls().");
+  return secrets.readGlobalDatabasePassword().then(function (password) {
+    const inject = function (raw) {
+      if (!password) {
+        return raw;
+      }
+      let parsed = null;
+      try {
+        parsed = new URL(raw);
+      } catch (e) {
+        log.debug("Caught in resolveGlobalUrls(): " + ((e && e.message) || e));
+        throw new Error(errorCodes.tag('STS-STORE-0005') +
+                        'persistence.globalDatabasePasswordProvider is set, ' +
+                        'so the password has to be put into the global ' +
+                        'database URLs, and one of them is not a URL this ' +
+                        'service can edit. Write them as ' +
+                        'postgres://user@host:5432/database.');
+      }
+      parsed.password = encodeURIComponent(password);
+      return parsed.toString();
+    };
+    return { url: inject(writer), readUrl: inject(reader) };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE GLOBAL TIER, DIALLED THE WAY A CELL DIALS IT (#98), for a process that
+// is not the service: `databaseConnection()`'s arrangement for the global
+// database. `persistence/cell_convert.js`, the one-time conversion of a
+// single-cell store into a cell, writes the global tier through the writer
+// URL this answers, so the two cannot disagree about how the connection is
+// made. Rejects as `resolveGlobalUrls()` does.
+// ---------------------------------------------------------------------------
+/**
+ * Returns what a process needs to dial the global tier's database the way a
+ * cell does.
+ *
+ * @returns a promise of `{ url, readUrl, verifyTls }`
+ */
+function globalDatabaseConnection() {
+  log.debug("Entering globalDatabaseConnection().");
+  log.debug("Leaving globalDatabaseConnection().");
+  return resolveGlobalUrls().then(function (urls) {
+    return { url: urls.url, readUrl: urls.readUrl,
+             verifyTls: verifiesDatabaseTls() };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE ROUTING INDEX'S DIGEST (#98), ONE DEFINITION: the keyed digest under
+// the service key that `persistence_tiered.js` claims a person's name and
+// entryUUID with at the flush, and that `persistence/cell_convert.js`
+// backfills the index with for a converted store — so a backfilled row is
+// the row the flush would have written. `common/cell_routing.ts`' own
+// `digest()` makes the same value for a lookup (it lower-cases and trims
+// the value, which the flush's callers have already done). Null without a
+// key-encryption key.
+// ---------------------------------------------------------------------------
+/**
+ * The keyed digest a routing index row is keyed by.
+ *
+ * @param realmId - the realm
+ * @param kind - 'name' or 'uuid'
+ * @param value - the login name or entryUUID, already lower-cased
+ * @returns the digest, or null without a key-encryption key
+ */
+function routingDigest(realmId, kind, value) {
+  log.debug("Entering routingDigest().");
+  log.debug("Leaving routingDigest().");
+  return keystore.keyedDigest('cell-routing', String(realmId) + '\n' +
+                              String(kind) + '\n' + String(value));
 }
 
 // The half of `start()` that runs once the connection string is final. Split
@@ -1640,6 +2140,164 @@ const ORIGIN_RENEW_MS = 10 * 1000;
 const ORIGIN_WAIT_MS = ORIGIN_TTL_MS + 5 * 1000;
 let originTimer = null;
 let originAdoption = null;
+// When the last renewal STARTED, on the monotonic clock, for the lateness
+// check below; 0 before the first.
+let originRenewStartedAt = 0;
+
+// ---------------------------------------------------------------------------
+// HOW LONG THE EVENT LOOP WAS BLOCKED, MEASURED (2026-09-29, #351).
+//
+// The incident that lost the origin had one worker log nothing for about a
+// minute while a SCIM Bulk request deleted a hundred people in a row, and the
+// renewal due every ten seconds did not run. That the loop was blocked was
+// INFERRED from the cadence of the lines around the gap; nothing measured it,
+// so the log said "could not be renewed" and not why. Two things now say
+// why:
+//
+//   * `perf_hooks.monitorEventLoopDelay()` — node's own sampler, a histogram
+//     of how late the loop ran, kept by libuv rather than by a timer of this
+//     module's — read and reset by the PER-PROCESS scheduler job
+//     `persistence.event-loop-lag` every LAG_REPORT_MS. A maximum above
+//     LAG_WARN_MS is a coded warning naming it (STS-STORE-0068); every
+//     sample is in `status().eventLoop` for `/admin/persistence` and the API.
+//     Per process, because each process has its own loop: a worker's stall
+//     is invisible from the front process.
+//   * THE ORIGIN RENEWAL CHECKS ITS OWN TIMING: a renewal that started more
+//     than half the claim's lifetime later than its interval said, or took
+//     more than half of it to answer, logs STS-STORE-0069 with the lateness
+//     and the loop's worst delay since the last report — so the next lost
+//     origin says whether the loop, the pool or the database was the cause.
+//
+// LAG_WARN_MS is five seconds and a constant, not a setting: it is a
+// diagnostic threshold on a log line, far below every lease and claim
+// lifetime here (the smallest is the origin's 30 s), and nothing decides on
+// it.
+// ---------------------------------------------------------------------------
+const LAG_JOB = 'persistence.event-loop-lag';
+const LAG_REPORT_MS = 10 * 1000;
+const LAG_WARN_MS = 5 * 1000;
+let lagHistogram = null;
+let lagReport = null;
+
+// The histogram, read in milliseconds; `reset` starts the next window.
+function lagSample(reset) {
+  log.debug("Entering lagSample().");
+  if (!lagHistogram) {
+    log.debug("Leaving lagSample(). Not measuring.");
+    return null;
+  }
+  const h = lagHistogram;
+  const toMs = function (ns) {
+    return Math.round((Number(ns) || 0) / 1e6);
+  };
+  const sample = { maxMs: toMs(h.max), p99Ms: toMs(h.percentile(99)),
+                   meanMs: toMs(h.mean), at: new Date().toISOString() };
+  if (reset) {
+    h.reset();
+  }
+  log.debug("Leaving lagSample().");
+  return sample;
+}
+
+/**
+ * Starts measuring the event loop's delay and registers the per-process job
+ * that reports it. Idempotent.
+ */
+function startLagMonitor() {
+  log.debug("Entering startLagMonitor().");
+  if (lagHistogram) {
+    log.debug("Leaving startLagMonitor(). Already measuring.");
+    return;
+  }
+  lagHistogram = perfHooks.monitorEventLoopDelay({ resolution: 20 });
+  lagHistogram.enable();
+  const scheduler = require('../cluster/scheduler');
+  if (!scheduler.job(LAG_JOB)) {
+    scheduler.register({
+      id: LAG_JOB,
+      title: 'Event-loop delay report',
+      describe: 'Reads, in this process, how late its event loop ran since ' +
+                'the last report, and warns when it was blocked for more ' +
+                'than ' + (LAG_WARN_MS / 1000) + ' s — the cause a late ' +
+                'lease or claim renewal otherwise leaves unsaid.',
+      owner: 'persistence/persistence.js',
+      kind: 'per-process', quiet: true,
+      everyMs: function () {
+        return LAG_REPORT_MS;
+      },
+      off: function () {
+        return lagHistogram ? '' : 'this process is not measuring its ' +
+          'event loop';
+      },
+      run: function () {
+        return reportLag();
+      }
+    });
+  }
+  log.debug("Leaving startLagMonitor().");
+}
+
+// One run of the job: the window's sample, kept for status(), and the
+// warning when the loop was blocked past LAG_WARN_MS.
+function reportLag() {
+  log.debug("Entering reportLag().");
+  const sample = lagSample(true);
+  if (!sample) {
+    log.debug("Leaving reportLag(). Not measuring.");
+    return { measuring: false };
+  }
+  lagReport = sample;
+  if (sample.maxMs > LAG_WARN_MS) {
+    log.warn(errorCodes.tag('STS-STORE-0068') + 'persistence: this ' +
+             'process\'s event loop was blocked for up to ' + sample.maxMs +
+             ' ms in the last ' + (LAG_REPORT_MS / 1000) + ' s (p99 ' +
+             sample.p99Ms + ' ms). Timers — the origin-claim renewal, the ' +
+             'cluster heartbeat — ran that late too.');
+  }
+  log.debug("Leaving reportLag().");
+  return sample;
+}
+
+function stopLagMonitor() {
+  log.debug("Entering stopLagMonitor().");
+  if (lagHistogram) {
+    lagHistogram.disable();
+    lagHistogram = null;
+  }
+  log.debug("Leaving stopLagMonitor().");
+}
+
+// A renewal's timing, checked: late to start or slow to answer by more than
+// half the claim's lifetime is STS-STORE-0069, naming the loop's delay.
+/**
+ * Warns when an origin-claim renewal started or answered late.
+ * @param previous - when the renewal before it started, or 0
+ * @param startedAt - when this one started
+ * @param answeredAt - when it answered
+ * @returns true when it warned
+ */
+function checkRenewalTiming(previous, startedAt, answeredAt) {
+  log.debug("Entering checkRenewalTiming().");
+  const half = ORIGIN_TTL_MS / 2;
+  const late = previous ? Math.round(startedAt - previous -
+                                     ORIGIN_RENEW_MS) : 0;
+  const slow = Math.round(answeredAt - startedAt);
+  if (late > half || slow > half) {
+    const lag = lagSample(false);
+    log.warn(errorCodes.tag('STS-STORE-0069') + 'persistence: the renewal ' +
+             'of this process\'s origin claim started ' + Math.max(0, late) +
+             ' ms late and took ' + slow + ' ms to answer, against a ' +
+             ORIGIN_TTL_MS + ' ms claim. The event loop\'s worst delay ' +
+             'since the last report was ' + (lag ? lag.maxMs + ' ms' :
+             'not measured') + (lag && lag.maxMs > half ? ' — the loop ' +
+             'was blocked' : ' — the loop was not the cause; the ' +
+             'renewal waited on its connection or the database') + '.');
+    log.debug("Leaving checkRenewalTiming(). Late.");
+    return true;
+  }
+  log.debug("Leaving checkRenewalTiming().");
+  return false;
+}
 
 function originSlot() {
   log.debug("Entering originSlot().");
@@ -1689,13 +2347,19 @@ function adoptStableOrigin() {
               Math.round(a.waitedMs / 1000) + ' s for the previous ' +
               'holder\'s claim to lapse' : '') + '; what that origin wrote ' +
              'before a restart is restored as this process\'s own.');
+    originRenewStartedAt = 0;
     originTimer = setInterval(function () {
+      const startedAt = performance.now();
+      const previous = originRenewStartedAt;
+      originRenewStartedAt = startedAt;
       driver.renewOrigin(ORIGIN_TTL_MS).then(function (still) {
+        checkRenewalTiming(previous, startedAt, performance.now());
         if (!still) {
           originLost(new Error('the claim on ' + a.origin + ' could not ' +
                                'be renewed'));
         }
       }, function (err) {
+        checkRenewalTiming(previous, startedAt, performance.now());
         // The store being unreachable is not losing the origin: the claim
         // outlives a short outage, and every write checks it anyway.
         log.warn(errorCodes.tag('STS-STORE-0062') + 'persistence: the ' +
@@ -1719,7 +2383,7 @@ function originStatus() {
     : null;
 }
 
-function openStore(chosen, resolvedUrl) {
+function openStore(chosen, resolvedUrl, globalUrls) {
   log.debug('Entering openStore(). mode=' + chosen);
   try {
     driver = chosen === 'postgres'
@@ -1732,6 +2396,45 @@ function openStore(chosen, resolvedUrl) {
           poolMax: require('./persistence_postgres').poolMax(workerCount())
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
+    // A CELL'S STORE IS TWO DATABASES (#98): the one just made is the cell's
+    // own, and the global tier's is made beside it — its writer, and this
+    // cell's replica for every read — and the two are one driver from here
+    // on. The routing index's digest is made under the service key, which
+    // every cell holds, so every cell computes the same one.
+    if (globalUrls) {
+      const globalDriver = require('./persistence_postgres').create({
+        url: globalUrls.url, readUrl: globalUrls.readUrl, log: log,
+        verifyTls: verifiesDatabaseTls(),
+        poolMax: require('./persistence_postgres').poolMax(workerCount())
+      });
+      driver = tiered.create({
+        global: globalDriver, cell: driver, cellId: cells.id(),
+        digest: routingDigest
+      });
+      // WHAT A CELL'S SESSIONS MODULE IS TOLD (#98 D4): reached lazily at
+      // each call, because `common/cell_sessions.ts` is built with the
+      // protocol stack, long after this store is opened.
+      driver.setCellHooks({
+        projectionWrite: function (realmId, key, entry, base) {
+          log.debug("Entering projectionWrite().");
+          require('../common/cell_sessions').onProjectionWrite(realmId, key,
+                                                               entry, base);
+          log.debug("Leaving projectionWrite().");
+        },
+        personWritten: function (realmId, key, entry) {
+          log.debug("Entering personWritten().");
+          require('../common/cell_sessions').onPersonWritten(realmId, key,
+                                                             entry);
+          log.debug("Leaving personWritten().");
+        }
+      });
+      log.info('persistence: this is cell "' + cells.id() + '" (' +
+               cells.jurisdiction() + '). Its store is two databases: its ' +
+               'own, for the people homed here and what it mints, and the ' +
+               'global tier\'s, read from ' +
+               (globalUrls.readUrl !== globalUrls.url ? 'this cell\'s replica'
+                                                      : 'the writer') + '.');
+    }
   } catch (err) {
     // The postgres driver's `require('pg')` is the realistic way to get here —
     // an image built without the dependency. Named, because "cannot find
@@ -1862,6 +2565,23 @@ function openStore(chosen, resolvedUrl) {
     // And the schedule: a minted write alone is a reason to flush. See
     // mintedChanged().
     minted.setScheduler(mintedChanged);
+    // AND A WINDOWED WORKER'S DIRECTORY ITS BRIDGE (#349), before anything is
+    // restored: from here a key the window does not hold is asked of this
+    // store, through a thread with a connection of its own.
+    if (directory && directory.window && chosen === 'postgres' &&
+        typeof driver.bridgeConnection === 'function') {
+      const SyncQuery = require('../common/sync_query');
+      bridge = new SyncQuery({
+        connection: driver.bridgeConnection(),
+        timeoutMs: function () {
+          return Number(config.value('ldap.workerDirectoryTimeoutMs'));
+        }
+      });
+      directory.window.attach(bridge);
+      log.info('persistence: this worker reads the people and devices it ' +
+               'does not hold from the store, through the directory bridge ' +
+               '(ldap.workerDirectory=postgres-lru).');
+    }
     // -------------------------------------------------------------------
     // AND THE USED-ASSERTION HISTORY ITS STORE, BEFORE ANYTHING IS SERVED.
     // A file store is READ here: a token request answered from an empty copy
@@ -1909,7 +2629,7 @@ function openStore(chosen, resolvedUrl) {
         }
       });
     }
-    return driver.loadDirectory();
+    return loadDirectoryRows();
   }).then(function (byRealm) {
     let loaded = [];
     if (byRealm) {
@@ -2124,6 +2844,46 @@ function shadowRowOf(row) {
                             ? Number(row.retiringSince) : null });
 }
 
+// ---------------------------------------------------------------------------
+// WHAT A WINDOWED WORKER READS BACK AT START (#349 phase 6): the RESIDENT
+// entries only. The people and devices are read when first asked for, which
+// is the whole point — a worker used to read, parse and hold every one of
+// them before it could serve (#333 measured the directory at a fifth of a
+// sixty-eight-second start). Every other process reads the whole table as it
+// always did.
+// ---------------------------------------------------------------------------
+function loadDirectoryRows() {
+  log.debug("Entering loadDirectoryRows().");
+  if (!directory || !directory.window ||
+      typeof directory.windowedContainers !== 'function' ||
+      typeof driver.directoryQuery !== 'function') {
+    log.debug("Leaving loadDirectoryRows(). The whole directory.");
+    return driver.loadDirectory();
+  }
+  const windowed = [];
+  realms.list().forEach(function (realm) {
+    directory.windowedContainers(realm.id).forEach(function (baseKey) {
+      windowed.push({ realm: realm.id, baseKey: baseKey });
+    });
+  });
+  log.debug("Leaving loadDirectoryRows(). The resident entries.");
+  return driver.directoryQuery('residentOnly', [windowed])
+    .then(function (rows) {
+      if (!rows.length) {
+        return null;
+      }
+      const byRealm = {};
+      rows.forEach(function (row) {
+        (byRealm[row.realm] = byRealm[row.realm] || []).push(row.entry);
+      });
+      log.info('persistence: this worker read ' + rows.length + ' resident ' +
+               'directory entry/entries; the people and devices are read ' +
+               'from the store when first asked for ' +
+               '(ldap.workerDirectory=postgres-lru).');
+      return byRealm;
+    });
+}
+
 // The entries, per realm, replacing what was seeded. A realm the store has
 // nothing for keeps its seed — that is a realm created since the last write,
 // or a first run.
@@ -2217,6 +2977,11 @@ function primeShadow(loadedRealmIds) {
 // and from nowhere else. `kill -9` cannot be trapped and is what `writeDelay`
 // is measured against in ldif mode.
 // ---------------------------------------------------------------------------
+/**
+ * Stops coordination, writes what is pending (the minted rows included) and
+ * closes the store, for a clean shutdown.
+ * @returns a promise that resolves when the store is closed
+ */
 function stop() {
   log.debug('Entering stop().');
   if (!enabled()) {
@@ -2228,8 +2993,17 @@ function stop() {
     clearTimeout(timer);
     timer = null;
   }
+  // The retry of a failed write is not wanted either: the flush below is the
+  // last attempt, and its failure is STS-STORE-0008's to report.
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  stopLagMonitor();
   log.debug("Leaving stop().");
   return replication.stop().then(function () {
+    return globalReplication ? globalReplication.stop() : null;
+  }).then(function () {
     return flush();
   }).then(function () {
     // AFTER the flush above rather than inside it, because that one returns
@@ -2264,6 +3038,10 @@ function stop() {
         return false;
       })
       : false;
+  }).then(function () {
+    // The directory bridge's thread (#349), after the last flush that could
+    // have read through it.
+    return bridge ? bridge.stop() : null;
   }).then(function () {
     stopped = true;
     return driver.close();
@@ -2301,6 +3079,39 @@ function applyDirectoryChange(change) {
       typeof driver.readEntry !== 'function') {
     log.debug("Leaving applyDirectoryChange().");
     return Promise.resolve(false);
+  }
+  // -------------------------------------------------------------------------
+  // A WINDOWED KEY (#349). Nothing is merged here: a key this process has
+  // changed, is writing or handed out since the last flush is left alone —
+  // its own flush writes it against the base it kept, and the store merges
+  // (`saveDirectory()`), after which the window lets it go — and any other
+  // is forgotten and read again when next asked for.
+  // -------------------------------------------------------------------------
+  if (directory.window && directory.window.isWindowed(change.realm,
+                                                      change.key)) {
+    // The row is READ, as a whole directory's applier reads it: nothing of
+    // it is kept, but a person another process made is noted in this
+    // worker's identity register from it (`forgetEntry()`), which is what
+    // `applyEntry()` does in a process holding the whole directory.
+    log.debug("Leaving applyDirectoryChange(). A windowed key.");
+    return driver.readEntry(change.realm, change.key).then(function (row) {
+      const busy = directory.window.busy(change.realm, change.key);
+      if (busy) {
+        // Dropped once this process's own flush has let it go.
+        directory.window.markStale(change.realm, change.key);
+      }
+      if (typeof directory.forgetEntry === 'function') {
+        const was = restoring;
+        restoring = true;
+        try {
+          directory.forgetEntry(change.realm, change.key,
+                                row ? row.entry : null, busy);
+        } finally {
+          restoring = was;
+        }
+      }
+      return true;
+    });
   }
   log.debug("Leaving applyDirectoryChange().");
   // The stored key is the NORMALISED DN, which is what `sts_ldap_entries` is
@@ -2615,6 +3426,14 @@ function applyKeysChange(change) {
 // because the change log's high-water mark only means "I am up to date" if
 // this process actually is.
 // ---------------------------------------------------------------------------
+/**
+ * Starts following the change log that several processes share.
+ *
+ * Called last at startup, after every store has been restored, with the
+ * appliers for each kind of change row.
+ * @returns a promise of `persistence_replication.start()`'s answer, or
+ * `{ coordinating: false }` when nothing is persisted
+ */
 function coordinate() {
   log.debug('Entering coordinate().');
   if (!enabled()) {
@@ -2622,7 +3441,7 @@ function coordinate() {
     return Promise.resolve({ coordinating: false });
   }
   log.debug("Leaving coordinate().");
-  return replication.start(driver, {
+  const appliers = {
     directory: applyDirectoryChange,
     realms: applyRealmsChange,
     appconfig: applyAppconfigChange,
@@ -2671,6 +3490,34 @@ function coordinate() {
           log.debug("Leaving done().");
           return minted.endPrefetch();
         } })
+  };
+  // -------------------------------------------------------------------------
+  // THE GLOBAL TIER'S LOG, FOLLOWED BY AN INSTANCE OF ITS OWN (#98), on the
+  // global driver itself so its origin — the one it skips — is the one the
+  // global driver stamps. The appliers are the same functions: each reads
+  // the row back through the tiered driver, which asks the right database.
+  //
+  // THE TWO FOLLOWERS MAY PULL AT ONCE, and the one thing they share is
+  // `persistence_minted.js`'s page prefetch, which each replaces. That is
+  // correct only because the two logs never name the same minted row — a
+  // handle is in exactly one tier (`tiers.js`) — so one page's prefetch never
+  // answers for the other's rows, and a row missing from it is read alone.
+  //
+  // THE CELL'S LOG IS THE ONE THE BARRIER WAITS ON. A global change made in
+  // another cell arrives here after the replica's lag; a read barrier on it
+  // would put a cross-region round trip on every request, which is the cost
+  // #98 D3 declined. /admin/cells shows the lag.
+  // -------------------------------------------------------------------------
+  const started = replication.start(driver, appliers);
+  if (!driver || !driver.tiered) {
+    return started;
+  }
+  globalReplication = replication.createReplication('global');
+  return started.then(function (fromCell) {
+    return globalReplication.start(driver.globalDriver(), appliers)
+      .then(function (fromGlobal) {
+        return Object.assign({}, fromCell, { global: fromGlobal });
+      });
   });
 }
 
@@ -2681,6 +3528,12 @@ function coordinate() {
 // that compute the same answer twice are a console and an API that will
 // disagree about it.
 // ---------------------------------------------------------------------------
+/**
+ * Describes the persistence store for the console and the management API.
+ *
+ * The database is described without its password.
+ * @returns the mode, health, what is persisted, and the write counters
+ */
 function status() {
   log.debug('Entering status().');
   const out = {
@@ -2720,9 +3573,32 @@ function status() {
     // AND WHAT IT SHARES WITH OTHER PROCESSES. One report from the module that
     // does the work, for the same reason as the line above.
     replication: replication.status(),
+    // THE CELL'S VIEW OF ITS TWO DATABASES (#98), null in single-cell mode.
+    cells: driver && driver.tiered ? {
+      cell: cells.id(),
+      jurisdiction: cells.jurisdiction(),
+      globalReplication: globalReplication ? globalReplication.status()
+                                           : null,
+      routing: driver.routingStatus()
+    } : null,
     // This process's persistence origin, and whether it is the stable one
     // its node name and slot give it (2026-09-18, adoptStableOrigin()).
     origin: originStatus(),
+    // ANSWER AFTER COMMIT AND ITS RETRY (#351): whether a writing response
+    // waits for its commit here, whether a refused write is still waiting to
+    // land, and the retry's backoff.
+    answersAfterCommit: answersAfterCommit(),
+    commitBacklog: commitBacklog(),
+    retryArmed: !!retryTimer,
+    // The postgres driver's liveness connection (#351): the origin renewal,
+    // the heartbeat and the leases, apart from the pool the writes use.
+    liveness: driver && typeof driver.livenessStatus === 'function'
+      ? driver.livenessStatus() : null,
+    // THE EVENT LOOP (#351): the last report of `persistence.event-loop-lag`
+    // and the window since it.
+    eventLoop: lagHistogram ? { lastReport: lagReport,
+                                sinceReport: lagSample(false),
+                                warnAboveMs: LAG_WARN_MS } : null,
     note: (replication.status().coordinating
             ? 'Processes against this store COORDINATE: every change is ' +
               'written to a monotonic log inside the transaction that made ' +
@@ -2902,7 +3778,97 @@ realms.onRetire({
   }
 });
 
+/**
+ * The one place this service writes anything down: the directory, the realm
+ * registry and the runtime appconfig overrides, and — through
+ * `persistence_minted.js` — what it minted.
+ *
+ * Selects the memory, ldif or postgres driver, flushes changes to it, and
+ * coordinates several processes through its change log.
+ * @namespace
+ */
+// ---------------------------------------------------------------------------
+// A PROJECTED ENTRY (#98 D4, D9): a credential-free copy of a person homed in
+// another cell, held here for as long as a session of theirs is, and put into
+// the in-memory directory WITHOUT becoming something this store writes. It
+// goes in as a replicated entry does — `restoring` set, so no journal entry —
+// and the shadow is set to it, so no flush diffs it into a row. A later
+// LOCAL write to it (a consent recorded, say) does diff, and the tiered
+// driver sends that home instead of writing it here (`projectionWrite`).
+// `common/cell_sessions.ts` is the one caller.
+// ---------------------------------------------------------------------------
+/**
+ * Puts a projected entry into the directory without persisting it.
+ *
+ * @param realmId - the realm
+ * @param key - the entry's normalised DN
+ * @param row - `{ dn, attributes, origin }`
+ * @returns true when it was applied
+ */
+function materializeEntry(realmId, key, row) {
+  log.debug("Entering materializeEntry().");
+  if (!directory || typeof directory.applyEntry !== 'function') {
+    log.debug("Leaving materializeEntry(). No directory.");
+    return false;
+  }
+  const was = restoring;
+  restoring = true;
+  try {
+    directory.applyEntry(realmId, key, row);
+  } finally {
+    restoring = was;
+  }
+  const rows = shadow.get(realmId) || new Map();
+  const stored = entryAt(realmId, key);
+  if (stored) {
+    rows.set(key, JSON.stringify(stored));
+  }
+  shadow.set(realmId, rows);
+  log.debug("Leaving materializeEntry().");
+  return true;
+}
+
+/**
+ * Takes a projected entry out of the directory without writing a delete.
+ *
+ * @param realmId - the realm
+ * @param key - the entry's normalised DN
+ * @returns true when it was removed
+ */
+function dematerializeEntry(realmId, key) {
+  log.debug("Entering dematerializeEntry().");
+  if (!directory || typeof directory.removeEntry !== 'function') {
+    log.debug("Leaving dematerializeEntry(). No directory.");
+    return false;
+  }
+  const was = restoring;
+  restoring = true;
+  try {
+    directory.removeEntry(realmId, key);
+  } finally {
+    restoring = was;
+  }
+  const rows = shadow.get(realmId);
+  if (rows) {
+    rows.delete(key);
+  }
+  log.debug("Leaving dematerializeEntry().");
+  return true;
+}
+
+// THE STORE ITSELF, for a module that asks a question of a driver method no
+// wrapper here exposes — the routing index (`common/cell_routing.ts`) and
+// `/admin/cells` (#98). Null until `start()` has opened one.
+function currentDriver() {
+  log.debug("Entering currentDriver().");
+  log.debug("Leaving currentDriver().");
+  return enabled() ? driver : null;
+}
+
 module.exports = {
+  currentDriver: currentDriver,
+  materializeEntry: materializeEntry,
+  dematerializeEntry: dematerializeEntry,
   // FOR `tests/database_password.js` ONLY, and it is worth saying why a
   // private function is exported at all. The claim this feature makes is that
   // a password read from a secret store REACHES THE CONNECTION STRING — and
@@ -2914,9 +3880,17 @@ module.exports = {
   // The connection an out-of-process tool dials the database with, made the
   // way this service makes its own (#213) — see databaseConnection().
   databaseConnection: databaseConnection,
+  // The same for the global tier, and the routing index's one digest (#98):
+  // what `persistence/cell_convert.js` converts a single-cell store with.
+  globalDatabaseConnection: globalDatabaseConnection,
+  routingDigest: routingDigest,
   verifiesDatabaseTls: verifiesDatabaseTls,
   MODES: MODES,
   mode: mode,
+  /**
+   * Returns the mode `start()` actually ran in.
+   * @returns 'memory', 'ldif' or 'postgres'
+   */
   activeMode: function () {
     log.debug("Entering activeMode().");
     log.debug("Leaving activeMode().");
@@ -2925,6 +3899,18 @@ module.exports = {
   enabled: enabled,
   dataDir: dataDir,
   setDirectory: setDirectory,
+  // A windowed worker handed out directory entries (#349): see the block
+  // above directoryTouched().
+  directoryTouched: directoryTouched,
+  /**
+   * The directory bridge's figures in a windowed worker (#349), or null.
+   * @returns `SyncQuery.stats()`, or null
+   */
+  directoryBridgeStats: function () {
+    log.debug("Entering directoryBridgeStats().");
+    log.debug("Leaving directoryBridgeStats().");
+    return bridge ? bridge.stats() : null;
+  },
   start: start,
   stop: stop,
   flush: flush,
@@ -2935,6 +3921,10 @@ module.exports = {
   // The minted half, for `server.js`'s third startup step. It is re-exported
   // rather than required over there directly so that `server.js` has ONE
   // persistence module to talk to, which is what it has always had.
+  /**
+   * Restores the minted rows from the store, the third startup step.
+   * @returns `persistence_minted.restore()`'s promise
+   */
   restoreMinted: function () {
     log.debug("Entering restoreMinted().");
     log.debug("Leaving restoreMinted().");
@@ -2944,6 +3934,10 @@ module.exports = {
   // The store's flush and this one are two schedulers, and a caller that
   // awaited only the first would leave everything this service MINTS exactly
   // as racy as it was — which is most of what a browser flow writes.
+  /**
+   * Flushes the minted rows and waits for the keystore's queued writes.
+   * @returns a promise of the minted flush's answer
+   */
   flushMinted: function () {
     log.debug("Entering flushMinted().");
     log.debug("Leaving flushMinted().");
@@ -2965,6 +3959,10 @@ module.exports = {
   // claim and a shared secret — postgres — and null otherwise, which those
   // modules answer from this process's memory. Handed over rather than
   // reached for, so that neither module needs to know which drivers exist.
+  /**
+   * Returns the open driver when it can hold atomic claims and shared secrets.
+   * @returns the postgres driver, or null
+   */
   clusterStore: function () {
     log.debug("Entering clusterStore().");
     if (!enabled() || !driver || typeof driver.claimOnce !== 'function') {
@@ -2984,6 +3982,10 @@ module.exports = {
   // `error`. The keystore's queued rows have no generation, so a request that
   // answers while any are queued waits for all of them, as it always did.
   // ---------------------------------------------------------------------
+  /**
+   * Returns how far this process's writes have got, as a position.
+   * @returns `{ directory, minted, observed }` generation counters
+   */
   writeGeneration: function () {
     log.debug("Entering writeGeneration().");
     log.debug("Leaving writeGeneration().");
@@ -2994,31 +3996,101 @@ module.exports = {
              observed: typeof minted.observedGeneration === 'function'
                ? minted.observedGeneration() : 0 };
   },
+  /**
+   * Tells whether the keystore has queued writes not yet in the store.
+   * @returns true when keys are pending
+   */
   keysPending: function () {
     log.debug("Entering keysPending().");
     log.debug("Leaving keysPending().");
     return enabled() && typeof keystore.pendingWrites === 'function' &&
       !!keystore.pendingWrites();
   },
+  /**
+   * Waits until every write up to a position is committed to the store.
+   * @param target - a `writeGeneration()` answer; defaults to the current one
+   * @returns a promise of an array of the flush answers, any of which may carry
+   * `error`
+   */
   commitThrough: function (target) {
     log.debug("Entering commitThrough().");
     const wanted = target || { directory: dirGeneration,
                                minted: minted.generation() };
     const waits = [
       directoryThrough(Number(wanted.directory) || 0),
-      minted.flushThrough(Number(wanted.minted) || 0)
+      // A minted flush started HERE is not inside flush(), whose tail arms
+      // the retry, so its failure arms it here (#351).
+      Promise.resolve(minted.flushThrough(Number(wanted.minted) || 0))
+        .then(function (answer) {
+          if (answer && answer.error) {
+            retryAfterFailure('a minted write a response waited for failed');
+          }
+          return answer;
+        })
     ];
+    // A KEY ROW WHOSE LAST WRITE FAILED is tried again now rather than at the
+    // retry's backoff: a request held for the backlog (the barrier's rule for
+    // a writing method) must wait for THAT write too, and the wait below only
+    // sees rows that are queued.
+    if (typeof keystore.failing === 'function' && keystore.failing() &&
+        typeof keystore.retryFailed === 'function') {
+      keystore.retryFailed();
+    }
     if (typeof keystore.pendingWrites === 'function' &&
         keystore.pendingWrites() && typeof keystore.settleAll === 'function') {
-      waits.push(Promise.resolve(keystore.settleAll()).then(function () {
-        return null;
+      // AND A KEY ROW THAT FAILED IS A FAILURE (#351). The outcomes were
+      // dropped — "the keystore reports its own failures" — so a realm whose
+      // signing keys never reached the store was answered as created, and
+      // generated different keys at the next restart. Now the outcome's
+      // `error` is this wait's answer, like the two flushes'.
+      waits.push(Promise.resolve(keystore.settleAll()).then(function (all) {
+        const failed = (all || []).filter(function (one) {
+          return one && one.ok === false && one.error;
+        });
+        if (!failed.length) {
+          return null;
+        }
+        retryAfterFailure('a key row a response waited for failed');
+        return { written: false, error: 'the key store could not write ' +
+                 failed.length + ' row(s): ' + failed.map(function (one) {
+                   return one.error;
+                 }).join('; ') };
       }));
     }
     log.debug("Leaving commitThrough().");
     return Promise.all(waits);
   },
+  // ---------------------------------------------------------------------
+  // ANSWER AFTER COMMIT (2026-09-29, #351) — whether this process's store is
+  // one a response waits for. A DATABASE: its transaction is the durable
+  // moment, a commit is milliseconds, and a response sent before it is an
+  // acknowledgement the process can lose (a SIGKILL, an OOM kill, a worker
+  // that exits on a lost origin — testidp lost ~600 acknowledged deletes
+  // that way). NOT `ldif`: its unit of writing is a whole file on a
+  // `persistence.writeDelay` debounce, and waiting for it would put 1.5 s on
+  // every write for a store that is a development convenience. NOT memory,
+  // which has nothing to wait for. Nor while restoring or stopped.
+  // `cluster/cluster_barrier.js` and its LDAP wrapper ask it.
+  // ---------------------------------------------------------------------
+  answersAfterCommit: answersAfterCommit,
+  // ---------------------------------------------------------------------
+  // A WRITE THAT WAS TRIED AND REFUSED AND HAS NOT LANDED SINCE (#351): a
+  // directory flush that failed and nothing after it committed, a minted
+  // journal holding keys a failed write put back, a key row whose write
+  // failed. The barrier holds a WRITING request (by method or operation)
+  // for it even when that request changed nothing itself — the retry of a
+  // DELETE answered 503 finds the entry gone from memory and writes nothing,
+  // and answering its 404 at once would report as done a delete the store
+  // does not hold yet.
+  // ---------------------------------------------------------------------
+  commitBacklog: commitBacklog,
+
   // Whether anything this process has changed is not yet committed, for the
   // cluster barrier's commit-before-respond. See cluster/cluster_barrier.js.
+  /**
+   * Tells whether anything this process changed is not yet committed.
+   * @returns true when writes are pending
+   */
   pendingWrites: function () {
     log.debug("Entering pendingWrites().");
     log.debug("Leaving pendingWrites().");
@@ -3051,6 +4123,15 @@ module.exports = {
   // build of the driver has no metrics* are three different things to do
   // something about, and only the second is a fault.
   // ---------------------------------------------------------------------
+  /**
+   * Collects the database metrics `/admin/database` draws.
+   *
+   * Answers with `available: false` and a reason when the mode has no
+   * database, no store is open, or the driver has no metrics.
+   * @param options - unused
+   * @returns a promise of the driver's metrics report, with the declared schema
+   * version and objects added
+   */
   databaseMetrics: function (options) {
     log.debug('Entering databaseMetrics().');
     const configured = mode();
@@ -3127,6 +4208,10 @@ module.exports = {
     });
   },
 
+  /**
+   * Returns how many change-log rows this process has written.
+   * @returns the count, or 0 when the driver keeps none
+   */
   changeRowsWritten: function () {
     log.debug("Entering changeRowsWritten().");
     if (!driver || typeof driver.changeRowsWritten !== 'function') {
@@ -3137,6 +4222,10 @@ module.exports = {
     return driver.changeRowsWritten();
   },
 
+  /**
+   * Returns the change log's latest sequence number.
+   * @returns a promise of the sequence, or 0 when nothing is persisted
+   */
   latestChangeSeq: function () {
     log.debug("Entering latestChangeSeq().");
     if (!enabled() || !driver || typeof driver.latestChangeSeq !== 'function') {
@@ -3148,12 +4237,20 @@ module.exports = {
       return Number(seq) || 0;
     });
   },
+  /**
+   * Returns `persistence_minted.status()`.
+   * @returns the minted persistence report
+   */
   mintedStatus: function () {
     log.debug("Entering mintedStatus().");
     log.debug("Leaving mintedStatus().");
     return minted.status();
   },
   coordinate: coordinate,
+  /**
+   * Returns `persistence_replication.status()`.
+   * @returns the coordination report
+   */
   replicationStatus: function () {
     log.debug("Entering replicationStatus().");
     log.debug("Leaving replicationStatus().");
@@ -3162,6 +4259,10 @@ module.exports = {
   // THE READ BARRIER, for `common/request_pool.js`. Re-exported here rather
   // than reached for directly so that a caller has ONE persistence module to
   // talk to — the same reason restoreMinted() is re-exported above.
+  /**
+   * Waits until everything committed before the call is applied here.
+   * @returns `persistence_replication.syncNow()`'s promise
+   */
   syncNow: function () {
     log.debug("Entering syncNow().");
     log.debug("Leaving syncNow().");

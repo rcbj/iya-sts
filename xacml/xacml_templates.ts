@@ -82,6 +82,10 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import model = require('./xacml_model');
+// THE SHARED VOCABULARY (#306): the identifiers a remote PEP must spell the
+// same way live with the one request builder, which that container copies;
+// the ones below that it needs are taken from there.
+import xacmlRequest = require('./xacml_request');
 
 const { log } = helpers;
 
@@ -146,10 +150,61 @@ const TYPE = model.TYPE;
 // and quietly answer with whatever it found there instead of with what the PEP
 // asserted. A colon in the name is what keeps these out of that path.
 // ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers of an issuance decision: the one spelling the
+ * PEP that asserts them and the policies that read them share.
+ *
+ * URI-shaped so the PIP never takes one for a directory attribute name.
+ */
 const ISSUANCE_ATTRIBUTE = {
   // On the SUBJECT: the roles the party being authenticated holds, from the
   // register and from the six built-in ones.
-  ROLE: 'urn:sts:xacml:role',
+  ROLE: xacmlRequest.VOCABULARY.ROLE,
+  // On the SUBJECT: whether it is a PERSON (`user`) or an APPLICATION acting
+  // as itself (`application`) — #303. A name alone cannot say: `payroll-
+  // worker` could be either, and the two hold roles through different
+  // relations. Sent by the issuance PEP, and read by the PIP when it
+  // resolves ROLE for a request that did not carry it (a remote PEP's); a
+  // request without it is about a person.
+  SUBJECT_KIND: xacmlRequest.VOCABULARY.SUBJECT_KIND,
+  // THE SCOPE QUESTION (#304, part C of #88). On the RESOURCE, whose
+  // resource-id is the one scope value being judged: whether its resource
+  // application GATES it by role (#303, a boolean), and which configured
+  // roles AUTHORIZE it (`rolePermission`). The subject's ROLE bag is what it
+  // holds; the policy decides by intersecting the two — code supplies the
+  // facts and never the verdict.
+  SCOPE_GATED: 'urn:sts:xacml:scope-gated',
+  AUTHORIZING_ROLE: 'urn:sts:xacml:authorizing-role',
+  // THE FACTS OF #305 (part D of #88), each a boolean on the RESOURCE (the
+  // scope), sent only by the subsystem that knows it — a rule requires its
+  // facts to be PRESENT, so one subsystem's question never trips another's
+  // rule.
+  //   scope policy (#110)      protected, declared, in-defaults,
+  //                            names-party, device-sso; and on the SUBJECT
+  //                            (the client) has-declaration and
+  //                            native-sso-enabled
+  //   delegated permissions    delegated, granted
+  //   consent                  consented, and consent-required in the
+  //                            environment
+  SCOPE_PROTECTED: 'urn:sts:xacml:scope-protected',
+  SCOPE_DECLARED: 'urn:sts:xacml:scope-declared',
+  SCOPE_IN_DEFAULTS: 'urn:sts:xacml:scope-in-defaults',
+  SCOPE_NAMES_PARTY: 'urn:sts:xacml:scope-names-party',
+  SCOPE_DEVICE_SSO: 'urn:sts:xacml:scope-device-sso',
+  CLIENT_HAS_DECLARATION: 'urn:sts:xacml:client-has-declaration',
+  CLIENT_NATIVE_SSO: 'urn:sts:xacml:client-native-sso',
+  SCOPE_DELEGATED: 'urn:sts:xacml:scope-delegated',
+  SCOPE_GRANTED: 'urn:sts:xacml:scope-granted',
+  SCOPE_CONSENTED: 'urn:sts:xacml:scope-consented',
+  CONSENT_REQUIRED: 'urn:sts:xacml:consent-required',
+  // RFC 9396 AUTHORIZATION DETAILS (#305): one question per detail, action-id
+  // `issue-authorization-detail`, the detail's TYPE as the resource-id; on
+  // the resource, whether the client registered types at all and this one,
+  // and whether the authorization server publishes a list and this type.
+  CLIENT_HAS_DETAIL_TYPES: 'urn:sts:xacml:client-has-detail-types',
+  DETAIL_TYPE_REGISTERED: 'urn:sts:xacml:detail-type-registered',
+  SERVER_HAS_DETAIL_TYPES: 'urn:sts:xacml:server-has-detail-types',
+  DETAIL_TYPE_PUBLISHED: 'urn:sts:xacml:detail-type-published',
   // On the SUBJECT: the roles found in a token the caller PRESENTED, read out
   // of the claim `roles.claimName` names. Separate from the above rather than
   // unioned into it, and that separation is the whole reason it is visible in
@@ -199,6 +254,90 @@ const ISSUANCE_ATTRIBUTE = {
 // Sent at the session's start; an issuance later in the session's life sends
 // none, because the session was decided on them already.
 // ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers describing the authentication a session stands
+ * on (#64), sent as environment attributes at the session's start.
+ */
+// ---------------------------------------------------------------------------
+// THE PER-SCOPE VERDICT (#304, part C of #88; rcbj's decision 1 on #88's
+// C/D/E). The issuance PEP asks one question per requested scope, action-id
+// `issue-scope` and the scope as the resource-id, and the answer carries this
+// obligation: KEEP it, DROP it (narrow, RFC 6749 section 3.3) or REFUSE the
+// request, with the error code the PEP records. On a Permit as well as a
+// Deny, so the PEP can tell a document that decided the scope from one that
+// has no scope rules at all — an operator's override built from an older
+// template — and ask the BUILT-IN policy instead (rcbj's decision on #304):
+// gating never silently switches off.
+// ---------------------------------------------------------------------------
+const SCOPE_ATTRIBUTE = {
+  ACTION: 'issue-scope',
+  // #305: the same verdict, for one RFC 9396 authorization detail.
+  DETAIL_ACTION: 'issue-authorization-detail',
+  OBLIGATION: 'urn:sts:xacml:obligation:scope',
+  VERDICT: 'urn:sts:xacml:scope-verdict',
+  CODE: 'urn:sts:xacml:scope-code',
+  // `consent` (#305): not issued until the person agrees — the consent
+  // screen asks.
+  VERDICTS: ['keep', 'drop', 'refuse', 'consent']
+};
+
+// ---------------------------------------------------------------------------
+// THE TRANSFER QUESTIONS (#98 D4, the design's section 6: "geofencing is
+// policy, not code"). When the service is deployed as CELLS — each in one
+// legal jurisdiction, each person homed in one — three questions go to the
+// issuance policy, asked by `common/cell_transfer.ts` through
+// `issuance_gate.checkTransfer()`:
+//
+//   * `hold-session` — may a session of a subject homed in one
+//     jurisdiction, with the credential-free projection of their entry it
+//     stands on, be HELD by a cell in another (#98 D9)? A Deny is not a
+//     refusal: the session stays at home and the visiting cell relays.
+//   * `serve-request` — may a request about that subject be served from
+//     this cell AT ALL, even by relaying it home? A Deny is a refusal, the
+//     hard geofence a realm asks for when its law forbids even carrying
+//     the traffic.
+//   * `release-attributes` — may personal data of people homed in one
+//     jurisdiction be RELEASED to a reader at a cell in another (#98 D11):
+//     an administrator listing another cell's residents, a management-API
+//     call relayed with ?cell=? Asked by the cell that HOLDS the people,
+//     before it answers; a Deny withholds them.
+//
+// The facts are `xacml_request.js`'s (home and serving jurisdiction, client
+// country, whether the realm LISTS the transfer, the data category, the
+// realm, the purpose of a release) and `cells.hardGeofence` as a setting
+// fact. The answer carries `OBLIGATION` with one of `VERDICTS` on a Permit
+// as well as a Deny, for the
+// scope question's reason: a document that answers WITHOUT it — an
+// operator's override built from a template older than these rules — has
+// not decided the transfer, and the BUILT-IN rule is asked instead, so the
+// strict default never silently switches off (the same decision rcbj made
+// on #304).
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids, attribute identifiers and obligation of the two transfer
+ * questions a cell asks the issuance policy (#98 D4).
+ */
+const TRANSFER_ATTRIBUTE = {
+  HOLD_ACTION: 'hold-session',
+  SERVE_ACTION: 'serve-request',
+  RELEASE_ACTION: 'release-attributes',
+  HOME_JURISDICTION: xacmlRequest.VOCABULARY.HOME_JURISDICTION,
+  SERVING_JURISDICTION: xacmlRequest.VOCABULARY.SERVING_JURISDICTION,
+  CLIENT_COUNTRY: xacmlRequest.VOCABULARY.CLIENT_COUNTRY,
+  TRANSFER_LISTED: xacmlRequest.VOCABULARY.TRANSFER_LISTED,
+  DATA_CATEGORY: xacmlRequest.VOCABULARY.DATA_CATEGORY,
+  REALM: xacmlRequest.VOCABULARY.REALM,
+  PURPOSE: xacmlRequest.VOCABULARY.PURPOSE,
+  // The realm's `cells.hardGeofence`, as a setting fact.
+  HARD_GEOFENCE: xacmlRequest.VOCABULARY.SETTING_PREFIX + 'cells.hardGeofence',
+  OBLIGATION: 'urn:sts:xacml:obligation:transfer',
+  VERDICT: 'urn:sts:xacml:transfer-verdict',
+  // `hold` / `relay` answer `hold-session`; `serve` / `refuse` answer
+  // `serve-request`; `release` / `withhold` answer `release-attributes`. A
+  // verdict outside these is read as the strict one.
+  VERDICTS: ['hold', 'relay', 'serve', 'refuse', 'release', 'withhold']
+};
+
 const AUTHN_ATTRIBUTE = {
   // A BAG: RFC 8176 `amr` values of every factor the session was started
   // with — `pwd`, `otp`, `hwk`, `pop`...
@@ -227,6 +366,10 @@ const AUTHN_ATTRIBUTE = {
 // (false), so a rule can ask for a device and a rule about one is
 // inapplicable.
 // ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers describing the registered device an issuance
+ * came from (#164), sent as environment attributes.
+ */
 const DEVICE_ATTRIBUTE = {
   // A BOOLEAN: a registered device was recognised by one of its keys.
   RECOGNIZED: 'urn:sts:xacml:device-recognized',
@@ -264,6 +407,12 @@ const DEVICE_ATTRIBUTE = {
   REFUSAL: 'urn:sts:xacml:device-refusal'
 };
 
+/**
+ * The attribute identifiers describing a sign-in's risk assessment (#62).
+ *
+ * An absent level makes every risk rule inapplicable, so unknown never
+ * denies.
+ */
 const RISK_ATTRIBUTE = {
   // LOW, MEDIUM, HIGH or UNSCORED — CAEP's own words, plus the one for a
   // first sign-in with nothing to compare it to.
@@ -314,6 +463,10 @@ const RISK_ATTRIBUTE = {
 // fail. One question per reaction also reads in the policy as what it is: a
 // rule per thing that happens.
 // ---------------------------------------------------------------------------
+/**
+ * The action-ids the `risk-response` policy is asked about, one question
+ * per reaction to a change of risk; a Permit means do it.
+ */
 const RISK_RESPONSE = {
   // CAEP risk-level-change, to every stream that takes it — this service's
   // own console and portal among them (their signal inboxes).
@@ -333,6 +486,10 @@ const RISK_RESPONSE = {
 // the `signal-response` policy is asked about when this service's own console
 // or portal RECEIVES a Security Event Token on its stream and it verified.
 // ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers describing a received, verified Security Event
+ * Token to the `signal-response` policy.
+ */
 const SIGNAL_ATTRIBUTE = {
   // The event's short name — `session-revoked`, `account-disabled`,
   // `risk-level-change` — which is how CAEP and RISC name them after their
@@ -351,6 +508,10 @@ const SIGNAL_ATTRIBUTE = {
 
 // What a received signal can lead to, one question per reaction as
 // RISK_RESPONSE's header argues.
+/**
+ * The action-ids the `signal-response` policy is asked about, one question
+ * per reaction to a received signal.
+ */
 const SIGNAL_RESPONSE = {
   // End the receiving surface's OWN sessions for the person the event names:
   // the console's or the portal's relying-party sessions. Never the
@@ -376,13 +537,34 @@ const SIGNAL_RESPONSE = {
 // the point of building the model is that a template author does not have to
 // know the element names — that is the writer's problem.
 // ---------------------------------------------------------------------------
+/**
+ * Small builders of the policy model the templates are written in.
+ *
+ * Each takes only its arguments and returns a model node for
+ * `xacml_xml.js`'s writer.
+ */
 class PolicyBuilders {
+  /**
+   * Builds an attribute value node.
+   *
+   * @param type - the datatype URI
+   * @param lexical - the value, turned to a string
+   * @returns the value node
+   */
   static value(type: string, lexical: unknown): any {
     log.debug("Entering PolicyBuilders.value().");
     log.debug("Leaving PolicyBuilders.value().");
     return { kind: 'value', type: type, lexical: String(lexical) };
   }
 
+  /**
+   * Builds an attribute designator node that need not be present.
+   *
+   * @param category - the category URI
+   * @param attributeId - the attribute identifier
+   * @param type - the datatype URI
+   * @returns the designator node
+   */
   static designator(category: string, attributeId: string,
                     type: string): any {
     log.debug("Entering PolicyBuilders.designator().");
@@ -392,6 +574,14 @@ class PolicyBuilders {
              mustBePresent: false };
   }
 
+  /**
+   * Builds a Match node.
+   *
+   * @param matchId - the match function identifier
+   * @param literal - the value node matched against
+   * @param reference - the designator or selector node
+   * @returns the match node
+   */
   static match(matchId: string, literal: any, reference: any): any {
     log.debug("Entering PolicyBuilders.match().");
     log.debug("Leaving PolicyBuilders.match().");
@@ -401,6 +591,13 @@ class PolicyBuilders {
   // A Target that is satisfied when ALL of the given match-groups are — one
   // `AnyOf` per group, since a Target ANDs its AnyOf children. Each group is a
   // list of alternatives, ORed, since an AnyOf ORs its AllOf children.
+  /**
+   * Builds a Target satisfied when all the groups are, each group a list of
+   * alternatives.
+   *
+   * @param groups - lists of match nodes; each list becomes one AnyOf
+   * @returns the target node, or null when every group is empty
+   */
   static targetOf(groups: any[][]): any {
     log.debug("Entering PolicyBuilders.targetOf().");
     const anyOf = groups.filter(function (group) {
@@ -414,6 +611,13 @@ class PolicyBuilders {
     return anyOf.length ? { anyOf: anyOf } : null;
   }
 
+  /**
+   * Builds an Apply node.
+   *
+   * @param functionId - the function identifier
+   * @param args - the argument expression nodes
+   * @returns the apply node
+   */
   static apply(functionId: string, args: any[]): any {
     log.debug("Entering PolicyBuilders.apply().");
     log.debug("Leaving PolicyBuilders.apply().");
@@ -423,6 +627,12 @@ class PolicyBuilders {
   // A list typed into a form: commas or newlines, blanks dropped. One reader
   // for every template parameter of list type, so that "a, b" and "a\nb"
   // cannot mean different things on two different templates.
+  /**
+   * Splits a list typed into a form on commas or newlines, dropping blanks.
+   *
+   * @param raw - the text as typed
+   * @returns the trimmed, non-empty items
+   */
   static listOf(raw: unknown): string[] {
     log.debug("Entering PolicyBuilders.listOf().");
     log.debug("Leaving PolicyBuilders.listOf().");
@@ -439,6 +649,13 @@ class PolicyBuilders {
   // yes is a policy that permits slightly more than intended — while
   // misreading one as a no builds the issuance policy without an arm and
   // refuses people.
+  /**
+   * Reads a yes/no template parameter; anything not plainly a no is a yes.
+   *
+   * @param answer - the text as typed
+   * @param dflt - the answer for an empty field; yes unless false
+   * @returns the answer
+   */
   static yes(answer: unknown, dflt?: boolean): boolean {
     log.debug("Entering PolicyBuilders.yes().");
     const text = String(answer === undefined || answer === null ? '' : answer)
@@ -452,6 +669,12 @@ class PolicyBuilders {
              text === '0' || text === 'n');
   }
 
+  /**
+   * Turns text into a lower-case, hyphen-separated identifier fragment.
+   *
+   * @param text - the text to turn
+   * @returns the slug, or `x` when nothing is left
+   */
   static slug(text: unknown): string {
     log.debug("Entering PolicyBuilders.slug().");
     log.debug("Leaving PolicyBuilders.slug().");
@@ -470,6 +693,11 @@ const B = PolicyBuilders;
 // person reads and its `dflt` is what they get if they say nothing. `build`
 // receives the answers already coerced and returns a MODEL.
 // ---------------------------------------------------------------------------
+/**
+ * The template table. A row is the whole of a template: its id, label,
+ * description, parameters (which drive the form) and a `build()` that
+ * returns a policy model.
+ */
 const TEMPLATES: TemplateRow[] = [
   {
     // -----------------------------------------------------------------------
@@ -521,6 +749,33 @@ const TEMPLATES: TemplateRow[] = [
           'narrowing an application is editing its entry rather than editing ' +
           'a policy.',
     parameters: [
+      { name: 'decideScopes',
+        label: 'Decide which requested scopes are issued (#304)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the policy answers the embedded PEP\'s ' +
+              'per-scope question (action-id issue-scope): a scope its ' +
+              'resource application gates by role is DROPPED unless the ' +
+              'subject holds a role that authorizes it, and every other ' +
+              'scope is kept. No leaves the rules out — and the PEP then ' +
+              'asks the BUILT-IN policy about scopes instead, so role ' +
+              'gating is never switched off by rebuilding this document.' },
+      { name: 'decideTransfers',
+        label: 'Decide where a traveller\'s session may be held (#98)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the policy answers the two questions a ' +
+              'cell asks when the service is deployed as cells: ' +
+              'hold-session (a session of a person homed in another ' +
+              'jurisdiction is HELD here only when it is the same ' +
+              'jurisdiction or the realm lists the transfer in ' +
+              'cells.permittedTransfers — otherwise every request is ' +
+              'relayed to their home cell) and serve-request (refused only ' +
+              'while cells.hardGeofence is on, for a transfer the realm ' +
+              'does not list), and release-attributes (another cell\'s ' +
+              'residents are released to a reader here only on the same ' +
+              'terms as hold-session). No leaves the rules out — and ' +
+              'the cell then asks the BUILT-IN policy instead, so the ' +
+              'strict default is never switched off by rebuilding this ' +
+              'document.' },
       { name: 'allowTokenRoles',
         label: 'Also accept roles found in a presented token',
         dflt: 'yes', type: 'string',
@@ -612,6 +867,8 @@ const TEMPLATES: TemplateRow[] = [
       const decideRisk = B.yes(given.decideRisk, true);
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
       const decideDevices = B.yes(given.decideDevices, true);
+      const decideScopes = B.yes(given.decideScopes, true);
+      const decideTransfers = B.yes(given.decideTransfers, true);
       const deviceExempt = B.listOf(given.deviceExempt === undefined
         ? 'sts-admin-console, sts-user-portal' : given.deviceExempt)
         .filter(function (one: string): boolean {
@@ -945,6 +1202,315 @@ const TEMPLATES: TemplateRow[] = [
         });
       }
 
+      // -------------------------------------------------------------------
+      // THE SCOPE RULES (#304). Targeted at action-id `issue-scope`, so no
+      // other question reaches them and they reach no other question. A
+      // Deny DROPS a scope its resource gates when none of the roles the
+      // subject holds is one that authorizes it; a Permit KEEPS everything
+      // else. Both carry the verdict obligation (see SCOPE_ATTRIBUTE). The
+      // role rule below has no target and would also Permit a scope
+      // question that names no required role — which is why this document
+      // is ordered-deny-overrides whenever these rules are in it.
+      // -------------------------------------------------------------------
+      const scopeTarget = B.targetOf([[
+        B.match(F1 + 'string-equal', B.value(TYPE.STRING,
+                                             SCOPE_ATTRIBUTE.ACTION),
+                B.designator(model.CATEGORY.ACTION,
+                             model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]);
+      const verdict = function (on: string, value: string,
+                                code: string): any[] {
+        log.debug("Entering verdict().");
+        const assignments = [{ attributeId: SCOPE_ATTRIBUTE.VERDICT,
+          category: null, issuer: null,
+          expression: B.value(TYPE.STRING, value) }];
+        if (code) {
+          assignments.push({ attributeId: SCOPE_ATTRIBUTE.CODE,
+            category: null, issuer: null,
+            expression: B.value(TYPE.STRING, code) });
+        }
+        log.debug("Leaving verdict().");
+        return [{ id: SCOPE_ATTRIBUTE.OBLIGATION, on: on,
+                  assignments: assignments }];
+      };
+      // THE FACT TESTS. `fact()` is true only when the fact is PRESENT with
+      // that value — `boolean-is-in` over an empty bag is false — so a rule
+      // never fires on a question that did not carry its facts.
+      const fact = function (category: string, id: string,
+                             value: boolean): any {
+        log.debug("Entering fact().");
+        log.debug("Leaving fact().");
+        return B.apply(F1 + 'boolean-is-in', [
+          B.value(TYPE.BOOLEAN, value ? 'true' : 'false'),
+          B.designator(category, id, TYPE.BOOLEAN)]);
+      };
+      const R = model.CATEGORY.RESOURCE;
+      const stringIs = function (category: string, id: string,
+                                 value: string): any {
+        log.debug("Entering stringIs().");
+        log.debug("Leaving stringIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, value),
+          B.designator(category, id, TYPE.STRING)]);
+      };
+      const inProduct = stringIs(model.CATEGORY.ENVIRONMENT,
+                                 xacmlRequest.VOCABULARY.MODE, 'product');
+      const atStage = function (stage: string): any {
+        log.debug("Entering atStage().");
+        log.debug("Leaving atStage().");
+        return stringIs(model.CATEGORY.ENVIRONMENT,
+                        xacmlRequest.VOCABULARY.SCOPE_STAGE, stage);
+      };
+      const settingOn = function (key: string): any {
+        log.debug("Entering settingOn().");
+        log.debug("Leaving settingOn().");
+        return fact(model.CATEGORY.ENVIRONMENT,
+                    xacmlRequest.VOCABULARY.SETTING_PREFIX + key, true);
+      };
+      const and = function (args: any[]): any {
+        log.debug("Entering and().");
+        log.debug("Leaving and().");
+        return B.apply(F1 + 'and', args);
+      };
+      // ONE RULE PER STAGE for the refusals #110 makes: an endpoint still
+      // talking to the client REFUSES (`request`), and the backstop every
+      // grant mints through DROPS (`mint`) — today's two answers, now each
+      // written as a rule. The same code at both: the narrowing's own audit
+      // code (STS-OAUTH-0579) is the caller's.
+      const staged = function (id: string, description: string,
+                               condition: any, code: string): any[] {
+        log.debug("Entering staged().");
+        log.debug("Leaving staged().");
+        return [
+          { id: options.idBase + ':rule:' + id + '-refused',
+            effect: model.EFFECT.DENY,
+            description: description + ' Refused where the request is ' +
+                         'still being answered.',
+            target: scopeTarget,
+            condition: and([atStage('request'), condition]),
+            obligations: verdict(model.EFFECT.DENY, 'refuse', code),
+            advice: [] },
+          { id: options.idBase + ':rule:' + id + '-dropped',
+            effect: model.EFFECT.DENY,
+            description: description + ' Dropped at the backstop every ' +
+                         'grant mints through.',
+            target: scopeTarget,
+            condition: and([atStage('mint'), condition]),
+            obligations: verdict(model.EFFECT.DENY, 'drop', code),
+            advice: [] }];
+      };
+      const detailTarget = B.targetOf([[
+        B.match(F1 + 'string-equal', B.value(TYPE.STRING,
+                                             SCOPE_ATTRIBUTE.DETAIL_ACTION),
+                B.designator(model.CATEGORY.ACTION,
+                             model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]);
+      const IA = ISSUANCE_ATTRIBUTE;
+      const scopeRules: any[] = decideScopes ? [].concat(
+        // device_sso (#130): only a client whose Native SSO is enabled.
+        staged('native-sso-not-enabled', 'The device_sso scope, for a ' +
+               'client whose Native SSO is not enabled (#130).',
+               and([fact(R, IA.SCOPE_DEVICE_SSO, true),
+                    fact(model.CATEGORY.ACCESS_SUBJECT, IA.CLIENT_NATIVE_SSO,
+                         false)]), 'STS-OAUTH-0624'),
+        // #110: this service's protected scopes, in BOTH modes.
+        staged('protected-undeclared', 'One of this service\'s protected ' +
+               'scopes the client does not declare (#110), in both modes.',
+               and([fact(R, IA.SCOPE_PROTECTED, true),
+                    fact(R, IA.SCOPE_DECLARED, false)]), 'STS-OAUTH-0577'),
+        // #110: every other scope, in PRODUCT, unless declared, naming
+        // another party, or in the default set of a client declaring none.
+        staged('undeclared', 'Any other scope the client does not declare, ' +
+               'in product mode — unless it names another application or ' +
+               'permission, or the client declares nothing and it is in ' +
+               'the default set (#110).',
+               and([inProduct,
+                    fact(R, IA.SCOPE_PROTECTED, false),
+                    fact(R, IA.SCOPE_DEVICE_SSO, false),
+                    fact(R, IA.SCOPE_NAMES_PARTY, false),
+                    fact(R, IA.SCOPE_DECLARED, false),
+                    B.apply(F1 + 'not', [and([
+                      fact(model.CATEGORY.ACCESS_SUBJECT,
+                           IA.CLIENT_HAS_DECLARATION, false),
+                      fact(R, IA.SCOPE_IN_DEFAULTS, true)])])]),
+               'STS-OAUTH-0578'),
+        // A delegated permission the client was not granted: refused where
+        // enforced — product always, development with the setting (#110).
+        [{ id: options.idBase + ':rule:permission-not-granted',
+           effect: model.EFFECT.DENY,
+           description: 'A delegated permission the client has not been ' +
+                        'granted (oauthDelegatedPermission), in product ' +
+                        'mode or with oauth2.delegatedPermissionsEnforced.',
+           target: scopeTarget,
+           condition: and([atStage('request'),
+             fact(R, IA.SCOPE_DELEGATED, true),
+             fact(R, IA.SCOPE_GRANTED, false),
+             B.apply(F1 + 'or', [inProduct,
+               settingOn('oauth2.delegatedPermissionsEnforced')])]),
+           obligations: verdict(model.EFFECT.DENY, 'refuse',
+                                'STS-OAUTH-0155'),
+           advice: [] }],
+        // #303/#304: a scope its resource gates by role.
+        [{
+          id: options.idBase + ':rule:scope-not-authorized',
+          effect: model.EFFECT.DENY,
+          description: 'Drop a requested scope its resource application ' +
+                       'gates by role (#303) when no role the subject holds ' +
+                       'authorizes it.',
+          target: scopeTarget,
+          condition: and([
+            fact(R, IA.SCOPE_GATED, true),
+            B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+              { kind: 'function', functionId: F1 + 'string-equal' },
+              B.designator(model.CATEGORY.ACCESS_SUBJECT, IA.ROLE,
+                           TYPE.STRING),
+              B.designator(R, IA.AUTHORIZING_ROLE, TYPE.STRING)])])]),
+          obligations: verdict(model.EFFECT.DENY, 'drop', 'STS-ADMIN-0821'),
+          advice: []
+        }],
+        // Consent (#305): a scope the person has not agreed to, where the
+        // realm requires consent — the screen asks.
+        [{ id: options.idBase + ':rule:consent-outstanding',
+           effect: model.EFFECT.DENY,
+           description: 'A scope the person has not consented to (and no ' +
+                        'global consent covers), while consent is required.',
+           target: scopeTarget,
+           condition: and([atStage('consent'),
+             fact(R, IA.SCOPE_CONSENTED, false),
+             fact(model.CATEGORY.ENVIRONMENT, IA.CONSENT_REQUIRED, true)]),
+           obligations: verdict(model.EFFECT.DENY, 'consent', ''),
+           advice: [] }],
+        [{
+          id: options.idBase + ':rule:scope-kept',
+          effect: model.EFFECT.PERMIT,
+          description: 'Keep every other requested scope.',
+          target: scopeTarget,
+          condition: null,
+          obligations: verdict(model.EFFECT.PERMIT, 'keep', ''),
+          advice: []
+        }],
+        // RFC 9396 (#305): the two authorization questions about a detail's
+        // type — the client registered types and not this one (section 10),
+        // or this authorization server publishes a list without it.
+        [{ id: options.idBase + ':rule:detail-type-not-registered',
+           effect: model.EFFECT.DENY,
+           description: 'An authorization detail of a type the client did ' +
+                        'not register (RFC 9396 section 10).',
+           target: detailTarget,
+           condition: and([fact(R, IA.CLIENT_HAS_DETAIL_TYPES, true),
+                           fact(R, IA.DETAIL_TYPE_REGISTERED, false)]),
+           obligations: verdict(model.EFFECT.DENY, 'refuse',
+                                'STS-OAUTH-0454'),
+           advice: [] },
+         { id: options.idBase + ':rule:detail-type-not-published',
+           effect: model.EFFECT.DENY,
+           description: 'An authorization detail of a type this ' +
+                        'authorization server does not publish.',
+           target: detailTarget,
+           condition: and([fact(R, IA.SERVER_HAS_DETAIL_TYPES, true),
+                           fact(R, IA.DETAIL_TYPE_PUBLISHED, false)]),
+           obligations: verdict(model.EFFECT.DENY, 'refuse',
+                                'STS-OAUTH-0455'),
+           advice: [] },
+         { id: options.idBase + ':rule:detail-kept',
+           effect: model.EFFECT.PERMIT,
+           description: 'Keep every other authorization detail.',
+           target: detailTarget,
+           condition: null,
+           obligations: verdict(model.EFFECT.PERMIT, 'keep', ''),
+           advice: [] }]) : [];
+
+      // -------------------------------------------------------------------
+      // THE TRANSFER RULES (#98 D4). Targeted at the two action-ids, so no
+      // issuance question reaches them and they reach no other question —
+      // and every rule above that has no target reads a fact a transfer
+      // question never carries (a device requirement, a risk level, a
+      // credential kind), so none of them fires on one. THE STRICT DEFAULT:
+      // a session is held away from home only in the same jurisdiction or
+      // where the realm LISTS the transfer; a request is refused only under
+      // a hard geofence, for a transfer the realm does not list. "The same
+      // jurisdiction" is the two bags sharing a member, which is false when
+      // either fact is absent — an unknown jurisdiction is never home.
+      // -------------------------------------------------------------------
+      const TA = TRANSFER_ATTRIBUTE;
+      const actionIs = function (action: string): any {
+        log.debug("Entering actionIs().");
+        log.debug("Leaving actionIs().");
+        return B.targetOf([[
+          B.match(F1 + 'string-equal', B.value(TYPE.STRING, action),
+                  B.designator(model.CATEGORY.ACTION,
+                               model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]);
+      };
+      const transferVerdict = function (on: string, value: string): any[] {
+        log.debug("Entering transferVerdict().");
+        log.debug("Leaving transferVerdict().");
+        return [{ id: TA.OBLIGATION, on: on,
+                  assignments: [{ attributeId: TA.VERDICT, category: null,
+                                  issuer: null,
+                                  expression: B.value(TYPE.STRING, value) }] }];
+      };
+      const sameJurisdiction = B.apply(F3 + 'any-of-any', [
+        { kind: 'function', functionId: F1 + 'string-equal' },
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, TA.HOME_JURISDICTION,
+                     TYPE.STRING),
+        B.designator(env, TA.SERVING_JURISDICTION, TYPE.STRING)]);
+      const unlistedTransfer = and([
+        not(sameJurisdiction),
+        not(fact(env, TA.TRANSFER_LISTED, true))]);
+      const transferRules: any[] = decideTransfers ? [
+        { id: options.idBase + ':rule:transfer-hold-relayed',
+          effect: model.EFFECT.DENY,
+          description: 'Do not hold a session away from its subject\'s ' +
+                       'home jurisdiction unless the realm lists the ' +
+                       'transfer (cells.permittedTransfers): the visiting ' +
+                       'cell relays every request home instead (#98 D4).',
+          target: actionIs(TA.HOLD_ACTION),
+          condition: unlistedTransfer,
+          obligations: transferVerdict(model.EFFECT.DENY, 'relay'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-hold-kept',
+          effect: model.EFFECT.PERMIT,
+          description: 'Hold the session here: the same jurisdiction, or a ' +
+                       'transfer the realm lists.',
+          target: actionIs(TA.HOLD_ACTION),
+          condition: null,
+          obligations: transferVerdict(model.EFFECT.PERMIT, 'hold'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-serve-geofenced',
+          effect: model.EFFECT.DENY,
+          description: 'Under a hard geofence (cells.hardGeofence), refuse ' +
+                       'to serve — even by relaying — a request about a ' +
+                       'subject homed in another jurisdiction, unless the ' +
+                       'realm lists the transfer.',
+          target: actionIs(TA.SERVE_ACTION),
+          condition: and([fact(env, TA.HARD_GEOFENCE, true),
+                          unlistedTransfer]),
+          obligations: transferVerdict(model.EFFECT.DENY, 'refuse'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-serve-kept',
+          effect: model.EFFECT.PERMIT,
+          description: 'Serve every other request, relaying it home where ' +
+                       'the subject is homed elsewhere.',
+          target: actionIs(TA.SERVE_ACTION),
+          condition: null,
+          obligations: transferVerdict(model.EFFECT.PERMIT, 'serve'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-release-withheld',
+          effect: model.EFFECT.DENY,
+          description: 'Do not release personal data of people homed in ' +
+                       'one jurisdiction to a reader at a cell in another ' +
+                       'unless the realm lists the transfer — the same list ' +
+                       'a held session is decided on (#98 D11).',
+          target: actionIs(TA.RELEASE_ACTION),
+          condition: unlistedTransfer,
+          obligations: transferVerdict(model.EFFECT.DENY, 'withhold'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-release-kept',
+          effect: model.EFFECT.PERMIT,
+          description: 'Release them: the same jurisdiction, or a transfer ' +
+                       'the realm lists.',
+          target: actionIs(TA.RELEASE_ACTION),
+          condition: null,
+          obligations: transferVerdict(model.EFFECT.PERMIT, 'release'),
+          advice: [] }] : [];
+
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
                 ' device rule(s).');
@@ -994,8 +1560,29 @@ const TEMPLATES: TemplateRow[] = [
                           'device' + (deviceExempt.length
                             ? ' (never for ' + deviceExempt.join(', ') + ')'
                             : '') + '.'
+                        : '') +
+                     (decideScopes
+                        ? ' AND ON EACH REQUESTED SCOPE (#304, #305): the ' +
+                          'client\'s declared scopes (#110) — refused where ' +
+                          'the request is answered, dropped where a grant ' +
+                          'is minted — delegated permissions not granted, a ' +
+                          'scope its resource gates by role that no held ' +
+                          'role authorizes, and the scopes still needing ' +
+                          'consent; and on each RFC 9396 authorization ' +
+                          'detail\'s type.'
+                        : '') +
+                     (decideTransfers
+                        ? ' AND, WHERE THE SERVICE IS DEPLOYED AS CELLS ' +
+                          '(#98), WHERE A PERSON\'S DATA MAY GO: a session ' +
+                          'is held away from its subject\'s home ' +
+                          'jurisdiction only where the realm lists the ' +
+                          'transfer, and is otherwise relayed home; a ' +
+                          'request is refused only under a hard geofence; ' +
+                          'and another cell\'s residents are released to a ' +
+                          'reader here only on the same terms.'
                         : ''),
-        combiningAlgId: decideRisk || refuseEmail || decideDevices
+        combiningAlgId: decideRisk || refuseEmail || decideDevices ||
+                        decideScopes || decideTransfers
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
@@ -1006,7 +1593,9 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: deviceRules.concat(riskRules).concat(decideRisk &&
+        rules: deviceRules.concat(riskRules).concat(scopeRules)
+          .concat(transferRules)
+          .concat(decideRisk &&
                                                      protectedApp ? [{
           // THE ALARM (#226): a protected application, an elevated risk, and
           // no factor to ask for. The role rule still decides — this rule
@@ -1946,22 +2535,67 @@ const TEMPLATES: TemplateRow[] = [
   }
 ];
 
+/**
+ * The catalogue of policy templates and the builder that fills one in.
+ *
+ * Adding a template is a row in `TEMPLATES` and nothing else; the console
+ * and the management API list what is there.
+ */
 class XacmlTemplates {
+  /**
+   * The issuance attribute identifiers.
+   */
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
+  static readonly SCOPE_ATTRIBUTE = SCOPE_ATTRIBUTE;
+  /**
+   * The risk attribute identifiers.
+   */
   static readonly RISK_ATTRIBUTE = RISK_ATTRIBUTE;
+  /**
+   * The authentication attribute identifiers.
+   */
   static readonly AUTHN_ATTRIBUTE = AUTHN_ATTRIBUTE;
+  /**
+   * The device attribute identifiers.
+   */
   static readonly DEVICE_ATTRIBUTE = DEVICE_ATTRIBUTE;
+  /**
+   * The transfer questions' action-ids and attribute identifiers (#98).
+   */
+  static readonly TRANSFER_ATTRIBUTE = TRANSFER_ATTRIBUTE;
+  /**
+   * The risk-response action-ids.
+   */
   static readonly RISK_RESPONSE = RISK_RESPONSE;
+  /**
+   * The received-signal attribute identifiers.
+   */
   static readonly SIGNAL_ATTRIBUTE = SIGNAL_ATTRIBUTE;
+  /**
+   * The signal-response action-ids.
+   */
   static readonly SIGNAL_RESPONSE = SIGNAL_RESPONSE;
+  /**
+   * The template table.
+   */
   static readonly TEMPLATES = TEMPLATES;
 
+  /**
+   * Builds the catalogue over the dependencies given.
+   *
+   * @param deps - the logger and the template table
+   */
   constructor(private readonly deps: XacmlTemplatesDeps) {
     deps.log.debug("Entering XacmlTemplates.constructor().");
     deps.log.debug("Leaving XacmlTemplates.constructor().");
   }
 
   // What the composition root passes: the real table and logger.
+  /**
+   * Returns the real table and logger, as the composition root passes them.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): XacmlTemplatesDeps {
     helpers.log.debug("Entering XacmlTemplates.defaultDeps().");
     helpers.log.debug("Leaving XacmlTemplates.defaultDeps().");
@@ -1971,6 +2605,12 @@ class XacmlTemplates {
     };
   }
 
+  /**
+   * Finds a template by its id.
+   *
+   * @param id - the template id
+   * @returns the template row, or null when there is none
+   */
   lookup(id: string): TemplateRow | null {
     const { log, templates } = this.deps;
     log.debug("Entering XacmlTemplates.lookup().");
@@ -1989,6 +2629,18 @@ class XacmlTemplates {
   // "create from template" with an empty body should produce something,
   // because the first thing anybody does with an API is call it with nothing.
   // -------------------------------------------------------------------------
+  /**
+   * Builds a policy model from a template and the answers given.
+   *
+   * A missing or blank answer takes the parameter's default, so a caller
+   * that sends nothing gets the documented example.
+   * @param id - the template id
+   * @param answers - the parameter answers by name
+   * @param options - an optional `name` for the policy and `idBase` for its
+   * identifiers
+   * @returns `{ ok: true, policy, answers, template }`, or `{ ok: false, why }`
+   * for an unknown template
+   */
   build(id: string, answers?: Record<string, unknown> | null,
         options?: { name?: string; idBase?: string } | null): BuildResult {
     const { log, templates } = this.deps;
@@ -2026,6 +2678,12 @@ class XacmlTemplates {
 
   // What the console and the management API list. Derived, so a template
   // added to the table above appears in both with no second edit.
+  /**
+   * Lists every template with its parameters, for the console and the
+   * management API.
+   *
+   * @returns one summary object per template
+   */
   catalogue(): object[] {
     const { log, templates } = this.deps;
     log.debug("Entering XacmlTemplates.catalogue().");
@@ -2059,15 +2717,25 @@ const slot = new InstanceSlot<XacmlTemplates>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Policy templates: working XACML policies to start editing from, built as
+ * the policy model rather than as XML text.
+ *
+ * Exports both classes, the attribute vocabularies the PEPs and policies
+ * share, and facades that forward to the installed instance.
+ * @namespace
+ */
 export = {
   XacmlTemplates: XacmlTemplates,
   installInstance: (instance: XacmlTemplates): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   PolicyBuilders: PolicyBuilders,
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
+  SCOPE_ATTRIBUTE: XacmlTemplates.SCOPE_ATTRIBUTE,
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
+  TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,
   SIGNAL_RESPONSE: XacmlTemplates.SIGNAL_RESPONSE,

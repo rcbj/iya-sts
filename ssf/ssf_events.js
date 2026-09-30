@@ -104,6 +104,9 @@ const subjects = require('./ssf_subjects');
 // The URI prefix every SSF-defined event type shares. Written once because the
 // two rows below and the two vocabularies that come after it all hang off it,
 // and a typo in one of them produces an event a receiver silently ignores.
+/**
+ * The URI prefix every SSF-defined event type shares.
+ */
 const SSF_PREFIX = 'https://schemas.openid.net/secevent/ssf/event-type/';
 
 // The two VOCABULARY prefixes. Both have rows in the table below now — CAEP's
@@ -112,11 +115,20 @@ const SSF_PREFIX = 'https://schemas.openid.net/secevent/ssf/event-type/';
 // from memory and got subtly wrong: there is no "unknown event type" error in
 // this protocol, so a receiver silently ignores a type it does not recognise
 // and nobody finds out.
+/**
+ * The URI prefix of CAEP's event types.
+ */
 const CAEP_PREFIX = 'https://schemas.openid.net/secevent/caep/event-type/';
+/**
+ * The URI prefix of RISC's event types.
+ */
 const RISC_PREFIX = 'https://schemas.openid.net/secevent/risc/event-type/';
 
 // The `typ` of a Security Event Token (RFC 8417 section 2.3). It is the media
 // type without the `application/` prefix, which is what a JWT header carries.
+/**
+ * The `typ` of a Security Event Token (RFC 8417 section 2.3), `secevent+jwt`.
+ */
 const SET_MEDIA_TYPE = 'secevent+jwt';
 
 // ---------------------------------------------------------------------------
@@ -147,6 +159,10 @@ const SET_MEDIA_TYPE = 'secevent+jwt';
 //              is one call from the console, the management API and the
 //              debugger alike.
 // ---------------------------------------------------------------------------
+/**
+ * SSF 1.0's own two event types, `verification` and `stream-updated`, as
+ * catalogue rows (`uri`, `family`, `subject`, `members`, `generate`).
+ */
 const SSF_EVENTS = [
   {
     uri: SSF_PREFIX + 'verification',
@@ -249,6 +265,10 @@ const SSF_EVENTS = [
 // CAEP is the specification that defines it. A transmitter may legitimately
 // send both, and a receiver that reads only one of them from a transmitter
 // that sends only the other reads nothing at all.
+/**
+ * The four members CAEP section 2 gives every CAEP event type:
+ * `event_timestamp`, `initiating_entity`, `reason_admin` and `reason_user`.
+ */
 const CAEP_COMMON_MEMBERS = [
   { name: 'event_timestamp', required: false, type: 'number',
     what: 'When the thing described actually happened, in seconds since the ' +
@@ -299,10 +319,17 @@ function withCommon(members) {
 // It is OPEN in both places: the specification allows types two parties agree
 // between themselves, so a value outside it is carried with a warning.
 // ---------------------------------------------------------------------------
+/**
+ * The credential types CAEP's `credential-change` registers; the list is open,
+ * and another value is carried with a warning.
+ */
 const CREDENTIAL_TYPES = ['password', 'pin', 'x509', 'fido2-platform',
   'fido2-roaming', 'fido-u2f', 'verifiable-credential', 'phone-voice',
   'phone-sms', 'app'];
 
+/**
+ * CAEP's eight event types, about a session, as catalogue rows.
+ */
 const CAEP_EVENTS = [
   {
     uri: CAEP_PREFIX + 'session-revoked',
@@ -713,6 +740,10 @@ const CAEP_EVENTS = [
 // A named list of three rather than four inlined members, because the COUNT is
 // the fact worth being able to check: `tests/risc_register.js` asserts that it
 // is three and that `initiating_entity` is not among them.
+/**
+ * The three members RISC gives the event types that define them:
+ * `event_timestamp`, `reason_admin` and `reason_user`.
+ */
 const RISC_COMMON_MEMBERS = [
   { name: 'event_timestamp', required: false, type: 'number',
     what: 'When the transmitter DISCOVERED the compromise, in seconds since ' +
@@ -732,6 +763,9 @@ const RISC_COMMON_MEMBERS = [
     what: 'The same, in words meant for the person it happened to.' }
 ];
 
+/**
+ * RISC's fourteen event types, about an account, as catalogue rows.
+ */
 const RISC_EVENTS = [
   {
     uri: RISC_PREFIX + 'account-credential-change-required',
@@ -1065,8 +1099,15 @@ const RISC_EVENTS = [
 // `family: 'sts'` keeps it off the CAEP and RISC pages, which read theirs by
 // family. It has NO SUBJECT: it is about the ISSUER's keys, not anybody.
 // ---------------------------------------------------------------------------
+/**
+ * The URN prefix of this service's own event types.
+ */
 const STS_PREFIX = 'urn:iya:sts:secevent:event-type:';
 
+/**
+ * This service's own event types, about its keys and authorities; none has a
+ * subject.
+ */
 const STS_EVENTS = [
   {
     uri: STS_PREFIX + 'signing-key-rotated',
@@ -1311,13 +1352,23 @@ function keyEventRow(spec) {
 // THE FOUR VOCABULARIES IN ONE TABLE. SSF's own first, because they are about
 // the pipe every one of the others travels on; then CAEP's eight about a
 // SESSION, then RISC's fourteen about an ACCOUNT, then this service's own.
+/**
+ * Every event type this service knows, SSF's first, then CAEP's, RISC's and
+ * this service's own.
+ */
 const EVENTS = /** @type {any[]} */ (SSF_EVENTS).concat(CAEP_EVENTS)
   .concat(RISC_EVENTS).concat(STS_EVENTS);
 
+/**
+ * The URIs of CAEP's event types.
+ */
 const CAEP_EVENT_URIS = CAEP_EVENTS.map(function (row) {
   return row.uri;
 });
 
+/**
+ * The URIs of RISC's event types.
+ */
 const RISC_EVENT_URIS = RISC_EVENTS.map(function (row) {
   return row.uri;
 });
@@ -1326,13 +1377,23 @@ const RISC_EVENT_URIS = RISC_EVENTS.map(function (row) {
 // The three stream statuses of SSF 1.0 section 7.1.2, in the order a stream
 // moves through them. Exported because the status endpoint, the console and
 // the stream-updated event above all have to agree on the spelling.
+/**
+ * The three stream statuses of SSF 1.0 section 7.1.2: `enabled`, `paused` and
+ * `disabled`.
+ */
 const STATUSES = ['enabled', 'paused', 'disabled'];
 
+/**
+ * Every catalogue row, keyed by its event type URI.
+ */
 const EVENT_BY_URI = {};
 EVENTS.forEach(function (row) {
   EVENT_BY_URI[row.uri] = row;
 });
 
+/**
+ * The URIs of every event type, in catalogue order.
+ */
 const EVENT_URIS = EVENTS.map(function (row) {
   return row.uri;
 });
@@ -1348,6 +1409,14 @@ const EVENT_URIS = EVENTS.map(function (row) {
 // advertised — advertising one would produce a stream whose `events_delivered`
 // promises something nothing can send.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the event types this transmitter supports: the configured SSF types,
+ * CAEP's and RISC's when each is on, and this service's own, which are always
+ * offered. A configured type this service does not implement is dropped with a
+ * warning.
+ *
+ * @returns the URIs
+ */
 function supportedEventUris() {
   log.debug('Entering supportedEventUris().');
   const chosen = chooseFrom('ssf.eventsSupported', SSF_EVENTS,
@@ -1552,6 +1621,14 @@ function nearestMember(name, members) {
   return found;
 }
 
+/**
+ * Validates an event's payload against its catalogue row: the members it
+ * requires and each member's value, collecting errors and warnings.
+ *
+ * @param uri - the event type URI
+ * @param payload - the event's payload
+ * @returns `{ ok, errors, warnings }`
+ */
 function validateEvent(uri, payload) {
   log.debug('Entering validateEvent(). ' + uri);
   const errors = [];
@@ -1649,6 +1726,14 @@ function validateEvent(uri, payload) {
 // It is driven by `row.subjectFormats` rather than by the URI, so it is a
 // property of the table and not a branch naming a vocabulary.
 // ---------------------------------------------------------------------------
+/**
+ * Warns when an event's subject is not in a format its row narrows it to
+ * (RISC's identifier events want an email address or a phone number).
+ *
+ * @param uri - the event type URI
+ * @param subject - the event's subject
+ * @returns the warnings; empty when there is nothing to say
+ */
 function subjectAdvice(uri, subject) {
   log.debug('Entering subjectAdvice(). ' + uri);
   const warnings = [];
@@ -1694,6 +1779,14 @@ function subjectAdvice(uri, subject) {
 // let somebody choose one could be made to overwrite an event a receiver had
 // not read.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the claim set of one Security Event Token, unsigned, with a fresh
+ * `jti`.
+ *
+ * @param options - `uri` and `payload` (the event), `issuer`, `audience`,
+ * and optionally `subject` (the `sub_id`) and `txn`
+ * @returns the claims
+ */
 function buildSet(options) {
   log.debug('Entering buildSet().');
   const asked = options || {};
@@ -1735,6 +1828,12 @@ function buildSet(options) {
 // Which algorithm a SET is signed with. It is a setting rather than a
 // constant because this is the document in this service most worth signing
 // post-quantum: a SET is a durable record read long after it was written.
+/**
+ * Returns the algorithm SETs are signed with (`ssf.signingAlgorithm`, default
+ * RS256).
+ *
+ * @returns the JWS algorithm
+ */
 function signingAlgorithm() {
   log.debug('Entering signingAlgorithm().');
   const alg = String(config.value('ssf.signingAlgorithm') || 'RS256');
@@ -1748,8 +1847,9 @@ function signingAlgorithm() {
 // **IT IS ASYNCHRONOUS AND MUST STAY THAT WAY.** `ssf.signingAlgorithm` can
 // name SLH-DSA, and an SLH-DSA-SHAKE-128s signature measured 14.6 seconds on
 // this service's own thread — during which it answers nobody. `signJwtAsAsync`
-// routes a post-quantum signature to the worker pool and resolves an RS256 one
-// in place, so the cost is paid only where it is real. See common/worker.js.
+// routes a post-quantum signature to libuv's thread pool and resolves an RS256
+// one in place, so the cost is paid only where it is real. See
+// common/pq_native.js.
 //
 // `ssf.breakSetSignature` is the deliberate defect for this family, the same
 // device as `oauth2.breakIdTokenNonce`: it flips one byte of the signature
@@ -1760,12 +1860,23 @@ function signingAlgorithm() {
 // token is signed, so a realm switched to product stops breaking signatures
 // at once, whatever is still stored.
 // ---------------------------------------------------------------------------
+/**
+ * Signs a SET with `typ: secevent+jwt`, asynchronously so that a post-quantum
+ * signature runs on libuv's thread pool.
+ *
+ * In development mode `ssf.breakSetSignature` flips a byte of the signature
+ * after signing.
+ *
+ * @param claims - the SET's claims
+ * @param options - `algorithm` (default `signingAlgorithm()`)
+ * @returns a promise of the compact JWS
+ */
 function signSet(claims, options) {
   log.debug('Entering signSet().');
   const settings = options || {};
   const alg = settings.algorithm || signingAlgorithm();
   log.debug("Leaving signSet().");
-  return signJwtAsAsync(claims, alg, null, { session: settings.session,
+  return signJwtAsAsync(claims, alg, null, {
     // RFC 8417 section 2.2's media type, and it is a SHOULD that behaves
     // like a MUST: a receiver that dispatches on `typ` — and several do —
     // drops a token without it with no error anybody sees. It is asked for
@@ -1819,6 +1930,14 @@ function breakSignature(token) {
 // preview and a test fixture. It refuses a post-quantum algorithm by name
 // rather than blocking the thread for fifteen seconds, and says which call to
 // use instead.
+/**
+ * Signs a SET synchronously, for the console's preview and test fixtures.
+ *
+ * @param claims - the SET's claims
+ * @param options - `algorithm` (default `signingAlgorithm()`)
+ * @returns the compact JWS
+ * @throws when the algorithm is post-quantum; use `signSet()` for that
+ */
 function signSetSync(claims, options) {
   log.debug('Entering signSetSync().');
   const settings = options || {};
@@ -1832,6 +1951,14 @@ function signSetSync(claims, options) {
 
 // What a SET this service signed says about itself, for the pages that show
 // one. It parses rather than verifies — the token was made here.
+/**
+ * Summarizes a SET this service signed for the pages that show one: `jti`,
+ * `iat`, issuer, audience, event types, name and subject. It parses rather than
+ * verifies.
+ *
+ * @param claims - the SET's claims
+ * @returns the summary
+ */
 function describeSet(claims) {
   log.debug('Entering describeSet().');
   const uris = Object.keys((claims && claims.events) || {});
@@ -1890,6 +2017,14 @@ function describeSet(claims) {
 // conflating them would be a receiver blaming a transmitter for its own
 // missing key.
 // ---------------------------------------------------------------------------
+/**
+ * Finds the public key a SET was signed with among the ambient realm's own
+ * signing keys, by `kid` first and by algorithm only where there is no `kid`.
+ * It fetches nothing.
+ *
+ * @param header - the SET's protected header
+ * @returns `{ key, pq }`, or null when this service holds no such key
+ */
 function publicKeyForHeader(header) {
   log.debug('Entering publicKeyForHeader().');
   const kid = String((header || {}).kid || '');
@@ -1958,6 +2093,15 @@ function publicKeyForHeader(header) {
 // Whether the signature holds, as `{ verified, note }`. It NEVER throws: the
 // whole point of a receiver endpoint is to say what arrived, and "it did not
 // verify" IS what arrived.
+/**
+ * Verifies a SET's signature against this service's own keys. It never throws:
+ * a SET signed with a key held nowhere here is reported as not verifiable here
+ * rather than invalid.
+ *
+ * @param token - the compact JWS
+ * @param header - its decoded protected header
+ * @returns `{ verified, note }`
+ */
 function verifySet(token, header) {
   log.debug('Entering verifySet().');
   if (!header) {
@@ -1997,6 +2141,13 @@ function verifySet(token, header) {
 
 // The header and the claims of a compact JWS, for display. It reports what is
 // wrong rather than throwing, for `verifySet()`'s reason.
+/**
+ * Decodes a compact JWS's header and claims for display, reporting what is
+ * wrong rather than throwing.
+ *
+ * @param token - the compact JWS
+ * @returns `{ header, claims, problem }`
+ */
 function readSet(token) {
   log.debug('Entering readSet().');
   const parts = String(token || '').split('.');
@@ -2022,6 +2173,13 @@ function readSet(token) {
   return out;
 }
 
+/**
+ * The Shared Signals event catalogue (SSF, CAEP, RISC and this service's own)
+ * and the Security Event Token (RFC 8417) they travel in: building, signing,
+ * reading and verifying one.
+ *
+ * @namespace
+ */
 module.exports = {
   SSF_PREFIX: SSF_PREFIX,
   CAEP_PREFIX: CAEP_PREFIX,
@@ -2040,10 +2198,27 @@ module.exports = {
   EVENT_BY_URI: EVENT_BY_URI,
   STS_PREFIX: STS_PREFIX,
   STS_EVENTS: STS_EVENTS,
+  /**
+   * This service's event type for a rotation of a realm's signing keys.
+   */
   SIGNING_KEY_ROTATED: STS_PREFIX + 'signing-key-rotated',
+  /**
+   * This service's event type for a krbtgt key rotated with nothing kept, which
+   * invalidates every ticket-granting ticket the realm issued.
+   */
   KERBEROS_TICKETS_INVALIDATED: STS_PREFIX + 'kerberos-tickets-invalidated',
+  /**
+   * This service's event type for a rotation of an OpenID Federation entity
+   * key.
+   */
   FEDERATION_KEY_ROTATED: STS_PREFIX + 'federation-key-rotated',
+  /**
+   * This service's event type for a rotation of a SPIFFE authority.
+   */
   SPIFFE_AUTHORITY_ROTATED: STS_PREFIX + 'spiffe-authority-rotated',
+  /**
+   * This service's event type for a change of the listener certificate.
+   */
   TLS_CERTIFICATE_CHANGED: STS_PREFIX + 'tls-certificate-changed',
   STATUSES: STATUSES,
   supportedEventUris: supportedEventUris,

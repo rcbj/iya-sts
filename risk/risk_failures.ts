@@ -70,6 +70,10 @@ const NO_ADDRESS = '0.0.0.0/0';
 // when. So it is a row here, kept, sealed and purged as every other, and
 // `risk/risk_engine.ts` counts rows under this door as the `totp-replay`
 // signal and leaves them OUT of `account-failures` and `network-failures`.
+/**
+ * The door a replayed one-time code is recorded under, which risk scoring
+ * counts as its own signal.
+ */
 const TOTP_REPLAY_DOOR = 'a replayed one-time code';
 
 interface RiskFailuresDeps {
@@ -86,12 +90,30 @@ interface RiskFailuresDeps {
   asnOf(address: string, realm: string): Promise<number>;
 }
 
+/**
+ * Every refused password, attributed: to a person's `sub` or a keyed digest
+ * of the name, and to a network prefix and ASN.
+ *
+ * Held in the database only where the address can be sealed under the
+ * key-encryption key; otherwise in this process.
+ */
 class RiskFailures {
+  /**
+   * Builds the failure recorder over the given dependencies.
+   *
+   * @param deps - the logger, settings, the risk store, a clock, and lazy
+   *   readers of the keystore, audit log, realms, subjects and ASNs
+   */
   constructor(private readonly deps: RiskFailuresDeps) {
     deps.log.debug("Entering RiskFailures.constructor().");
     deps.log.debug("Leaving RiskFailures.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): RiskFailuresDeps {
     log.debug("Entering RiskFailures.defaultDeps().");
     log.debug("Leaving RiskFailures.defaultDeps().");
@@ -141,6 +163,12 @@ class RiskFailures {
 
   // Whether rows go to the database: a database store AND a key to seal
   // under. See the header.
+  /**
+   * Says whether rows go to the database: a database store and a key to seal
+   * under.
+   *
+   * @returns true when rows are written to the database
+   */
   sealing(): boolean {
     const { log, keystore } = this.deps;
     log.debug("Entering RiskFailures.sealing().");
@@ -162,6 +190,15 @@ class RiskFailures {
   // `verify()`'s `via`, `code` is the refusal's. Returns a promise nobody has
   // to wait for; it never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Records one refused password. Nobody has to wait for it, and it never
+   * rejects; a store failure is logged under `STS-RISK-0010`.
+   *
+   * @param name - the name as typed
+   * @param door - `verify()`'s `via`, the door it came through
+   * @param code - the refusal's error code
+   * @returns a promise of the recorded row's id, or empty
+   */
   recordFailure(name: string, door: string, code: string): Promise<string> {
     const { log, config, store, now, keystore, audit, realms, subjectOf,
             asnOf } = this.deps;
@@ -220,6 +257,14 @@ class RiskFailures {
   // A page of this realm's failures, newest first, for Monitoring → Risk
   // and GET /admin-api/risk/failures. Rows carry the prefix and never the
   // sealed address.
+  /**
+   * Returns a page of a realm's failures, newest first; a row carries the
+   * network prefix and never the sealed address.
+   *
+   * @param realm - the realm's id
+   * @param opts - the page and filters
+   * @returns `{ total, rows }`
+   */
   list(realm: string, opts: Json): Promise<Json> {
     const { log, store } = this.deps;
     log.debug("Entering RiskFailures.list(). realm=" + realm);
@@ -241,6 +286,11 @@ class RiskFailures {
   }
 
   // Failures past `risk.failureRetentionDays`, deleted a batch at a time.
+  /**
+   * Deletes failures past `risk.failureRetentionDays`, a batch at a time.
+   *
+   * @returns the number deleted
+   */
   async purge(): Promise<number> {
     const { log, config, store, now } = this.deps;
     log.debug("Entering RiskFailures.purge().");
@@ -259,6 +309,12 @@ class RiskFailures {
     return total;
   }
 
+  /**
+   * Says whether failures are being recorded and where they are held, and
+   * why.
+   *
+   * @returns `{ recording, database, why }`
+   */
   describe(): Json {
     const { log, store } = this.deps;
     log.debug("Entering RiskFailures.describe().");
@@ -286,9 +342,27 @@ const slot = new InstanceSlot<RiskFailures>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Every refused password, attributed, for risk scoring.
+ *
+ * A library with no route; the functions forward to the instance the
+ * composition root installs.
+ * @namespace
+ */
 export = {
   RiskFailures: RiskFailures,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: RiskFailures): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   recordFailure: slot.forward('recordFailure'),
   TOTP_REPLAY_DOOR: TOTP_REPLAY_DOOR,

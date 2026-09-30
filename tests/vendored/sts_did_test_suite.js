@@ -258,6 +258,36 @@ function runJest(dir, suite, config) {
   return tests;
 }
 
+// THE REALM'S DID DOCUMENT MUST STOP CHANGING BEFORE THE FIXTURES ARE BUILT
+// (2026-09-30). A new realm's signing.rotate job mints its next keys about a
+// second after the realm is created, and in the cluster mode the other node
+// adopts them some tens of milliseconds later — so fixture fetches spread over
+// that moment disagree about the document's verification methods, and the
+// suite compares them. Wait until five fetches in a row return the same
+// document, bounded at 30 seconds, and use that one.
+async function settledDocument(ctx, first) {
+  log.debug("Entering settledDocument().");
+  const deadline = Date.now() + 30000;
+  let last = JSON.stringify(first.json);
+  let same = 0;
+  while (same < 5 && Date.now() < deadline) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 400);
+    });
+    const again = await kit.call("GET", ctx.realmBase + "/did.json");
+    const text = again.status === 200 ? JSON.stringify(again.json) : "";
+    if (text === last) {
+      same += 1;
+    } else {
+      same = 0;
+      last = text;
+    }
+  }
+  assert.ok(same >= 5, "the realm's DID document kept changing for 30 s");
+  log.debug("Leaving settledDocument().");
+  return JSON.parse(last);
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway development realm and a VC-API token ===");
@@ -281,6 +311,7 @@ async function test() {
   const didJwk = generated.json.did;
   log.info("  " + didWeb + ", " + didKeys.length + " did:key, " +
            didJwk.slice(0, 40) + "…");
+  own.json = await settledDocument(ctx, own);
 
   log.info("=== 2. the fixtures ===");
   const methods = [await methodFixture(ctx, "did:web", [didWeb]),

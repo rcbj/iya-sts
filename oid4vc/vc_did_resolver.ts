@@ -59,21 +59,50 @@ interface VcDidResolverDeps {
 const DID_V1 = 'https://www.w3.org/ns/did/v1';
 const MULTIKEY_V1 = 'https://w3id.org/security/multikey/v1';
 const JWS_2020_V1 = 'https://w3id.org/security/suites/jws-2020/v1';
+/**
+ * The JSON representation of a DID document, `application/did+json`.
+ */
 const JSON_TYPE = 'application/did+json';
+/**
+ * The JSON-LD representation of a DID document, `application/did+ld+json`.
+ */
 const JSONLD_TYPE = 'application/did+ld+json';
 
 // DID Core section 3.1's ABNF, and section 3.2's DID URL.
 const DID = /^did:[a-z0-9]+:(?:(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})*:)*(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+$/;
 
+/**
+ * DID resolution and DID URL dereferencing as DID Core 1.0 section 7 defines
+ * them, for `did:key`, `did:jwk` and this realm's own `did:web`.
+ *
+ * Any other `did:web` is `notFound`: resolving it would fetch a URL a caller
+ * chose. A library the VC-API adapter serves.
+ */
 class VcDidResolver {
+  /**
+   * The JSON representation of a DID document, `application/did+json`.
+   */
   static readonly JSON_TYPE = JSON_TYPE;
+  /**
+   * The JSON-LD representation of a DID document, `application/did+ld+json`.
+   */
   static readonly JSONLD_TYPE = JSONLD_TYPE;
 
+  /**
+   * Builds the resolver from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcDidResolverDeps) {
     deps.log.debug("Entering VcDidResolver.constructor().");
     deps.log.debug("Leaving VcDidResolver.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcDidResolverDeps {
     helpers.log.debug("Entering VcDidResolver.defaultDeps().");
     helpers.log.debug("Leaving VcDidResolver.defaultDeps().");
@@ -94,6 +123,12 @@ class VcDidResolver {
   }
 
   // Is this a DID (section 3.1)?
+  /**
+   * Says whether a value is a DID (section 3.1's syntax).
+   *
+   * @param value - the value
+   * @returns true when it is
+   */
   isDid(value: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering VcDidResolver.isDid().");
@@ -210,6 +245,15 @@ class VcDidResolver {
   // ---------------------------------------------------------------------------
   // resolve() (section 7.1): the document as a data model.
   // ---------------------------------------------------------------------------
+  /**
+   * Resolves a DID to its document as a data model (section 7.1).
+   *
+   * @param did - the DID
+   * @param options - the resolution options; `accept` must not be used here
+   * @param req - the request, for this realm's own `did:web`
+   * @returns `{ didDocument, didResolutionMetadata, ... }`, the metadata
+   *   carrying an `error` on a failure
+   */
   async resolve(did: string, options: any, req: any): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcDidResolver.resolve().");
@@ -231,6 +275,16 @@ class VcDidResolver {
 
   // resolveRepresentation() (section 7.1): the document as bytes in a
   // representation — JSON, or JSON-LD (the default).
+  /**
+   * Resolves a DID to its document as bytes in a representation (section 7.1):
+   * JSON, or JSON-LD by default.
+   *
+   * @param did - the DID
+   * @param options - the resolution options, `accept` among them
+   * @param req - the request, for this realm's own `did:web`
+   * @returns `{ didDocumentStream, ... }`, the metadata carrying an `error` on
+   *   a failure
+   */
   async resolveRepresentation(did: string, options: any, req: any):
     Promise<any> {
     const { log } = this.deps;
@@ -263,6 +317,16 @@ class VcDidResolver {
   // ---------------------------------------------------------------------------
   // dereference() (section 7.2).
   // ---------------------------------------------------------------------------
+  /**
+   * Dereferences a DID URL (section 7.2): the document without a fragment, the
+   * verification method a fragment names.
+   *
+   * @param didUrl - the DID URL
+   * @param options - the dereferencing options, `accept` among them
+   * @param req - the request, for this realm's own `did:web`
+   * @returns `{ dereferencingMetadata, contentStream, ... }`, the metadata
+   *   carrying an `error` on a failure
+   */
   async dereference(didUrl: string, options: any, req: any): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcDidResolver.dereference().");
@@ -339,9 +403,25 @@ const slot = new InstanceSlot<VcDidResolver>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * DID resolution and DID URL dereferencing (DID Core 1.0 section 7), for the
+ * DIDs this service resolves.
+ *
+ * @namespace
+ */
 export = {
   VcDidResolver: VcDidResolver,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcDidResolver): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   JSON_TYPE: JSON_TYPE,
   JSONLD_TYPE: JSONLD_TYPE,

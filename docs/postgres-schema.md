@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 10**: 26 tables in a schema of their own, `sts`.
+**Schema version 12**: 27 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -47,6 +47,9 @@ which shape is on disk.
 | 8 | `sts_risk_terms_acceptances` |
 | 9 | the columns `sts_risk_assessments.feedback` and `.feedback_at` |
 | 10 | the column `sts_realms.retiring_at` (#262) |
+| 11 | `sts_node_snapshots`: each cluster node's latest Worker Pools and Node Health views (#332); on develop the same number is #98's `sts_cell_routing` — both tables are created by name |
+| 12 | the column `sts_minted.expires_at` and its partial index `sts_minted_expires` (#333) |
+| 13 | six generated lookup columns on `sts_ldap_entries` and seven indexes over them (#349) |
 
 ### The application role
 
@@ -92,7 +95,7 @@ unqualified table names.
  sts_keys          (sealed)     change log              sts_cluster_secrets (sealed)
                                 ──────────              sts_cluster_counters
  bookkeeping                    sts_changes             sts_cluster_windows
- ───────────                    sts_change_readers
+ ───────────                    sts_change_readers      sts_node_snapshots
  sts_schema                                             risk scoring: 14 × sts_risk_*
 ```
 
@@ -116,8 +119,26 @@ The [LDAP directory](ldap.md) has one row per entry, for every realm. The
 | `attrs` | jsonb | `{ "attributeName": ["value", …] }`: every value is an array, as in LDAP, and operational attributes are included |
 | `origin` | text | how the entry came to exist: `seed`, `console`, `ldap add`, `scim`, … (the `# sts-origin:` comment in an LDIF export) |
 | `created_at`, `modified_at` | text | RFC 4517 generalized time (`20260827192200Z`), **byte-identical** to `createTimestamp` / `modifyTimestamp` in `attrs` |
+| `parent_key` | text, generated | the parent's key: everything after the first comma of `dn_key` |
+| `rdn_value` | text, generated | the first RDN's value (lower-case, as `dn_key` is) |
+| `name_keys` | jsonb, generated | the `uid` values, lower-cased, as a JSON array |
+| `mail_keys` | jsonb, generated | the `mail` values, lower-cased |
+| `uuid_keys` | jsonb, generated | the `entryUUID` and `stsEntryUuidAlias` values, lower-cased |
+| `class_keys` | jsonb, generated | the `objectClass` values, lower-cased — how a group placed under `ou=users` is found |
 
 Primary key `(realm, dn_key)`, with an index on `realm`.
+
+**The six generated columns (schema version 13, #349)** are computed by the
+database from `dn_key` and `attrs`, so nothing writes them. They exist for a
+request worker with `ldap.workerDirectory=postgres-lru`, which holds the
+people and devices as a bounded window and asks the store instead of keeping
+an index in memory. They are indexed: `(realm, parent_key, dn_key)` for a
+container's children, `(realm, parent_key, rdn_value)` for a login name, GIN
+(`jsonb_path_ops`) over `name_keys`, `mail_keys` and `uuid_keys`, GIN over
+`attrs` for a value as written (a DID, a SPIFFE ID), and GIN (the default
+operator class, for `?|`) over `class_keys`. Adding the columns to a
+table that already has rows rewrites it once; running `postgres/schema.sql`
+again as the owner does it.
 
 **It is the one table you can query with SQL, and that is deliberate.** An
 entry is a document without a fixed schema, and JSONB lets Postgres index into
@@ -191,10 +212,16 @@ only, and `persistence.minted` turns it off.
 | `realm` | text | the realm id, or `''` for a store shared by the whole process (`realms.sharedMap()`) |
 | `key` | text | the key within that store |
 | `body` | text | **always ciphertext**, `$aesgcm$1$…` |
-| `written_at` | timestamptz | used by retention: a row older than `persistence.mintedRetention` (7 days) is neither restored nor kept |
+| `written_at` | timestamptz | when the row was last written. A short-lived store's row with no `expires_at` that is older than `persistence.mintedRetention` (7 days) is neither restored nor kept |
+| `expires_at` | bigint | **the record's own expiry**, in epoch milliseconds, as the store computed it when it wrote the row, or NULL for a record that does not expire (and for a tombstone). A start reads no row whose expiry has passed, and the `persistence.minted-expiry-purge` job deletes such rows in batches (schema version 12, #333) |
 
-Primary key `(handle, realm, key)`, with indexes on `(handle, realm)` and
-`written_at`.
+Primary key `(handle, realm, key)`, with indexes on `(handle, realm)`,
+`written_at`, and `expires_at` where it is not NULL.
+
+A start reads only the rows of the realms that exist: `''` (the shared
+stores), the default realm, and every realm in `sts_realms`. Rows of a realm
+that is no longer defined are deleted by the same job once they are an hour
+old.
 
 **There is one table rather than one per family**, so that persisting a new
 store costs one word at its declaration and no DDL. The price is that nothing
@@ -209,15 +236,16 @@ tests):
 |---|---|
 | Sign-in | `authn.sessions`, `authn.pending`, `authn.pendingMfa`, `authn.pendingPasswordChange`, `authn.webauthnCredentials`, `credentials.pendingBackupCodes`, `credentials.pendingKeys`, `credentials.pendingTotp`, `spnego.pending`, `oidc_rp.flows` |
 | OAuth / OIDC | `oauth2.authzCodes`, `oauth2.redeemedCodes`, `oauth2.pushedRequests`, `oauth2.attestationChallenges`, `oauth2.backchannelDeliveries`, `oauth2.cibaRequests`, `oauth2.cibaDeliveries`, `oauth2_bcp.refreshTokens`, `oauth2_bcp.refreshFamilies`, `oauth2_bcp.grantTokens`, `oauth2_bcp.transactions`, `oauth2.grants`, `oauth2.grantIssued`, `oauth2_monitor.counters`, `consent_screen.pending`, `authorization_details.consented`, `authorization_servers.profiles`, `dpop.issuedNonces`, `dpop.seenJtis` |
-| SAML, WS-* and federation | `saml2_sso.artifacts`, `saml2_sso.pendingRequests`, `saml2_sso.spContexts`, `saml2.mdqRefusals`, `saml11_sso.artifacts`, `saml11_sso.assertionsById`, `saml11_sso.pendingFlows`, `wsfed.rpContexts`, `federation_sp.contexts`, `delegation.acts` |
+| SAML, WS-* and federation | `saml2_sso.artifacts`, `saml2_sso.pendingRequests`, `saml2_sso.spContexts`, `saml2.mdqRefusals`, `saml11_sso.artifacts`, `saml11_sso.assertionsById`, `saml11_sso.pendingFlows`, `wsfed.rpContexts`, `federation_sp.contexts`, `federation.unmapped`, `delegation.acts` |
 | Verifiable credentials | `vc_offers.credentialOffers`, `vc_offers.preAuthorizedCodes`, `vc_offers.issuerStates`, `vc_offers.deferredAccessTokens`, `vc_offers.deferredTransactions`, `vc_issuer.vciNonces`, `vc_issuer.notificationIds`, `vc_issuer.lastCredentialRequest`, `vc_issued.credentials`, `vc_status.entries`, `vc_claims.state`, `vc_verifier.vpRequests`, `vc_verifier.vpTransactions`, `vc_verifier_config.state` |
-| GNAP | `gnap.grants`, `gnap.continuations`, `gnap.interactions`, `gnap.tokens`, `gnap.tokenValues`, `gnap.instances`, `gnap.approvers`, `gnap.resources`, `gnap.manageHandles`, `gnap.manageValues`, `gnap.userCodes`, `gnap.userRefs`, `gnap.replay`, `gnap_monitor.counters` |
+| GNAP | `gnap.grants`, `gnap.continuations`, `gnap.interactions`, `gnap.tokens`, `gnap.tokenValues`, `gnap.instances`, `gnap.approvers`, `gnap.resources`, `gnap.manageHandles`, `gnap.manageValues`, `gnap.userCodes`, `gnap.userRefs`, `gnap.replay`, `gnap.movedGrants`, `gnap_monitor.counters` |
 | Kerberos | `krb5.principals`, `krb5.replayCache` |
 | Certificate enrollment | `acme.accounts`, `acme.accountKeys`, `acme.orders`, `acme.authorizations`, `acme.certificates`, `acme.renewalInfo`, `acme.usedNonces`, `scep.transactions`, `enrollment_monitor.*` |
 | SPIFFE | `spiffe.authorities`, `spiffe.federatedBundles`, `spiffe.joinTokens`, `spiffe.recordedConnections`, `spiffe.sigstoreTuf` |
 | SCIM | `scim.digestNonces`, `scim.digestCounts`, `scim.hobaChallenges`, `scim.hobaSeen` |
 | Shared Signals | `ssf_streams.streams`, `ssf_streams.queued`, `ssf_streams.received`, `ssf_streams.deadLetters`, `ssf_receivers.inbox`, `ssf_dead_letter_report.sweeps`, `caep.register`, `risc.register` |
 | Mail | `mail.outbox`, `mail.preferences`, `mail.templates` |
+| Attribute sources | `attribute_sources.status` |
 | Devices | `devices.events` |
 | OpenID Federation | `oidfed.registerGeneration` |
 | Console statistics and audit | `admin_stats.tokens`, `admin_stats.artifacts`, `admin_stats.revokedArtifacts`, `admin_stats.revokedJtis`, `admin_stats.claimSets`, `admin_stats.users`, `admin_stats.calls`, `admin_stats.nums`, `admin_stats.scimCounts`, `claim_attributes.selections`, `xacml_monitor.counters`, `audit.events`, `audit.nums` |
@@ -295,6 +323,7 @@ Every time is the database clock in milliseconds.
 | `sts_cluster_secrets` | `name` | a secret every node must agree on. **The first writer wins**, and `material` is sealed before it is inserted. The names are `csrf`, `acme-nonce`, `ssf-receiver`, `oidc-pairwise` and `oidfed-page` (`cluster/cluster_secrets.ts`). Each can instead come from its `STS_*_SECRET` environment variable |
 | `sts_cluster_counters` | `(scope, realm, key)` | **a value that only goes up**, advanced by one conditional upsert, so a lower value never overwrites a higher one. Used for a WebAuthn signature counter and the last RFC 6238 time step spent |
 | `sts_cluster_windows` | `(scope, realm, key)` | **a count inside a fixed window**: the rate limiter's buckets, one budget shared by every node. Holds `count` and `window_ends_at` (indexed) |
+| `sts_node_snapshots` | `name` | **what each node last said about itself** (#332): the node's own Monitoring → Worker Pools and → Node Health views as `body` (JSONB), written every 15 s by its front process, with the `node_id` that wrote it and `taken_at`. One row per node NAME, overwritten, so it never grows with time; a node that left keeps its row, drawn as gone, until the hourly `cluster.node-snapshot-purge` deletes it once it is older than `cluster.nodeSnapshotRetentionHours` (24). A live member's row is never deleted |
 
 `cluster/CLAUDE.md` explains why each of these is a separate table and why a
 row in `sts_minted` would not do.

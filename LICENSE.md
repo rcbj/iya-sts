@@ -67,15 +67,17 @@ directory:
 
 | Licence | Packages |
 |---|---|
-| MIT | @dagrejs/dagre, @fingerprintjs/fingerprintjs, @noble/curves, @noble/hashes, @noble/post-quantum, @xmldom/xmldom, ajv, ajv-formats, body-parser, bowser, bunyan, busboy, cors, croner, express, jsonwebtoken, ldapjs (the `node-ldapjs` submodule, fork `rcbj/node-ldapjs`), pg, qrcode, scimmy, xml-crypto, yauzl, zod |
+| MIT | @dagrejs/dagre, @fingerprintjs/fingerprintjs, @noble/curves, @noble/hashes, @noble/post-quantum, @xmldom/xmldom, ajv, ajv-formats, body-parser, bowser, bunyan, busboy, cors, croner, express, jsonwebtoken, knex, ldapjs (the `node-ldapjs` submodule, fork `rcbj/node-ldapjs`), pg, qrcode, scimmy, xml-crypto, yauzl, zod |
 | MIT-0 | nodemailer |
 | BSD-3-Clause | @digitalbazaar/bbs-signatures, @digitalbazaar/ed25519-signature-2020, @digitalbazaar/ed25519-verification-key-2020, @digitalbazaar/security-context, @digitalbazaar/zcap, asn1js, jsonld, jsonld-signatures, macaroon, pkijs |
 | Apache-2.0 | @biscuit-auth/biscuit-wasm, @grpc/grpc-js, @grpc/proto-loader |
 | BSD-3-Clause OR GPL-2.0 | node-forge, used under BSD-3-Clause |
 | Unlicense | isbot |
 
-Their transitive dependencies, and the optional cloud SDKs under
-`peerDependencies`, carry their licences the same way. The test suite's
+Their transitive dependencies, and the optional packages under
+`peerDependencies` — the cloud SDKs, and the attribute sources' database
+drivers `mysql2` and `tedious` (MIT) and `oracledb` (Apache-2.0 OR UPL-1.0) —
+carry their licences the same way. The test suite's
 tools, corpora and conformance suites are fetched or built into the TESTS
 image only. None of them is in the service image or committed here, and
 `tests/CLAUDE.md` names each one's pin and licence.

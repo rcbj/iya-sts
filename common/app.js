@@ -141,6 +141,18 @@ const app = express();
 // function and applies it once more after catching up, to a request it had not
 // placed in a realm. It wraps `res.location` and `res.send` only on a match, so
 // asking twice cannot wrap them twice.
+/**
+ * Enters the realm a request's path names: strips the `/realm/<id>` prefix,
+ * runs the rest of the request in that realm, and puts the prefix back on
+ * redirects and root-relative links.
+ *
+ * A no-op in the default realm. On an active-active node it catches up with the
+ * cluster before deciding a realm is unknown.
+ *
+ * @param req - the request
+ * @param res - the response
+ * @param next - the next middleware
+ */
 function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
   const pathname = String(req.url || '').split('?')[0];
@@ -304,6 +316,14 @@ app.use(function (req, res, next) {
 // carrying one posted to the DEFAULT realm from inside any other: the export
 // on /admin/pki, the reset on /admin/config, and Generate Secret on
 // /admin/applications/new, which is where it was noticed.
+/**
+ * Prefixes every root-relative `href`, `action`, `formaction` and `src` in a
+ * page with a realm's path prefix.
+ *
+ * @param html - the page
+ * @param prefix - the realm's prefix, or '' for the default realm
+ * @returns the page, rewritten
+ */
 function withRealmLinks(html, prefix) {
   log.debug("Entering withRealmLinks().");
   if (!prefix) {
@@ -375,6 +395,21 @@ realms.reserve(function () {
 // With `workers.dispatch` empty — the default — this calls next() for
 // everything and the service behaves exactly as it did.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND JUST ABOVE IT, WHICH CELL SERVES THE REQUEST (#98, 2026-09-28).
+//
+// In a service deployed as cells a request that belongs to another cell — a
+// browser pinned to its home, an artifact another cell minted, a token its
+// minting cell must check — is relayed there WHOLE, before this process reads
+// its body or hands it to a worker, which is why this is the one position
+// that works: below the realm middleware (the placement is per realm) and
+// above the pool and the body parsers (a relay pipes the request untouched).
+// `common/cell_placement.ts` argues the table; single-cell mode calls next()
+// for everything. Required HERE rather than at the top of this file for the
+// reason the pool is: it is a library of the front process's edge.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').middleware());
+
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------
@@ -384,10 +419,28 @@ app.use(requestPool.middleware({ enterRealm: enterRealm }));
 // request — a worker, or this process for a request it keeps — and never in a
 // front process that only proxies. Above everything else, because every
 // middleware below here may read a store: the arrival session, the CSRF check,
-// the rate limiter. It does nothing unless the node is active-active.
-// cluster/cluster_barrier.js argues both of its rules.
+// the rate limiter. Its first rule (catch up with other nodes) runs only
+// when the node is active-active; its second (answer a write after its
+// commit, 503 when the commit fails) wherever the store is a database, one
+// node or many (#351). cluster/cluster_barrier.js argues both rules.
+//
+// **WHY A WRAPPED `res.end()` AND NOT A HOOK IN EVERY HANDLER**: it is
+// installed here, above every route, so every route is covered, including
+// the ones written after it — the only way nobody can forget it. Express's
+// `res.send()`, `res.json()` and `res.redirect()` all finish through
+// `res.end()`, so a redirect is held (and its `Location` discarded on a
+// refusal) like any other answer.
 // ---------------------------------------------------------------------------
 app.use(clusterBarrier.middleware());
+
+// ---------------------------------------------------------------------------
+// A SESSION EXPORTED TO THE CELL A TRAVELLER IS REACHING (#98 D4), where the
+// transfer policy permits holding it there. Below the barrier, in the process
+// that serves the request, because it reads the session store; a no-op for
+// everything but a request another cell relayed here.
+// `common/cell_sessions.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_sessions').middleware());
 
 // ---------------------------------------------------------------------------
 // AND THE REQUEST'S REALM'S KEY SET, MADE OFF THE EVENT LOOP BEFORE A HANDLER
@@ -516,6 +569,17 @@ const CSP_DIRECTIVES = {
 // ---------------------------------------------------------------------------
 const UNDROPPABLE = ['frame-ancestors', 'base-uri'];
 
+/**
+ * Builds a Content-Security-Policy header value from the base policy with some
+ * directives relaxed.
+ *
+ * `frame-ancestors` and `base-uri` are always the base policy's, whatever the
+ * caller asks for.
+ *
+ * @param overrides - directive names to values; null or undefined drops a
+ *   directive
+ * @returns the header value
+ */
 function contentSecurityPolicy(overrides) {
   log.debug("Entering contentSecurityPolicy().");
   const merged = Object.assign({}, CSP_DIRECTIVES, overrides || {});
@@ -530,6 +594,9 @@ function contentSecurityPolicy(overrides) {
   }).join('; ');
 }
 
+/**
+ * The base Content-Security-Policy every response carries.
+ */
 const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 
 // ---------------------------------------------------------------------------
@@ -546,6 +613,19 @@ const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 // named door, so that a relaxation cannot grow into a framing permission by
 // accident.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the policy for the one page that may be framed (the OpenID Connect
+ * Session Management OP iframe), with `frame-ancestors` narrowed to named
+ * origins.
+ *
+ * Anything that is not an http or https origin is dropped, and an empty list is
+ * `'none'`.
+ *
+ * @param origins - the origins that may frame the page
+ * @param overrides - directive names to values, as for
+ *   `contentSecurityPolicy()`
+ * @returns the header value
+ */
 function framedContentSecurityPolicy(origins, overrides) {
   log.debug("Entering framedContentSecurityPolicy().");
   const allowed = (Array.isArray(origins) ? origins : [])
@@ -728,6 +808,13 @@ const STREAMED_UPLOAD_PATH = /^\/admin(?:-api)?\/risk\/upload\/?$/i;
 // asks it, twice — so no Entering/Leaving pair. `baseUrl` as well as `path`,
 // because the console's gate asks from inside `app.use('/admin', …)`, where
 // express has taken the mount off `req.path`.
+/**
+ * Says whether a request is one of the two risk dataset uploads the body
+ * parsers leave unread.
+ *
+ * @param req - the request
+ * @returns true for a POST to `/admin/risk/upload` or `/admin-api/risk/upload`
+ */
 function isStreamedUpload(req) {
   return req.method === 'POST' &&
     STREAMED_UPLOAD_PATH.test(String(req.baseUrl || '') +
@@ -930,6 +1017,20 @@ app.use(function (req, res, next) {
     });
   });
 
+  // A RESPONSE WHOSE COMMIT FAILED IS RECORDED AGAIN, AS WHAT WAS SENT (#351).
+  // The row above is written before the barrier decides, with the handler's
+  // status; when the commit then fails the client is answered 503 instead
+  // (cluster/cluster_barrier.js, rule 2), and this second row — the 503 and
+  // STS-STORE-0066 — is the one an operator needs beside it.
+  clusterBarrier.onCommitRefused(res, realms.bind(req.realm, function () {
+    const matchedPath = (req.route && req.route.path) || '';
+    audit.recordHttp(req, res, {
+      route: matchedPath,
+      matched: !!matchedPath,
+      durationMs: Date.now() - started
+    });
+  }));
+
   res.end = function (chunk) {
     log.debug("Entering end().");
     if (!responseBody && chunk) {
@@ -997,6 +1098,17 @@ app.use(function (req, res, next) {
 app.use(validation.guard());
 
 // ---------------------------------------------------------------------------
+// A PERSON CREATED IN A SERVICE DEPLOYED AS CELLS (#98 D1): the console's
+// new-user form and `POST /admin-api/users/create` claim the login name in the
+// global routing index before anything is created, and a creation naming a
+// home cell other than this one is relayed there. Here, below the body
+// parsers and above every route, because both doors' handlers are
+// synchronous past this point. SCIM claims in its own ingress. A no-op in
+// single-cell mode. `common/cell_placement.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').creationClaim());
+
+// ---------------------------------------------------------------------------
 // THE REVOCATION STATUS OF A PRESENTED CLIENT CERTIFICATE (2026-09-12).
 //
 // The doors on this port that accept a certificate — `mtls.peerVerified()`,
@@ -1044,6 +1156,13 @@ app.get('/healthcheck', function (req, res) {
 // The app, with its members hung off it. One `Object.assign` rather than an
 // assignment followed by four more (#50, 2026-09-16): the same object either
 // way, and the type checker accepts only this form.
+/**
+ * The express application, with the security headers, realm entry, CORS, body
+ * parsers and call log installed before any route is registered.
+ *
+ * Every route is registered against it; middleware applies only to routes added
+ * after it.
+ */
 module.exports = Object.assign(app, {
   // The policy builder, for the routes that relax it. Exported off the app
   // object rather than as a second module because every one of them already

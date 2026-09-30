@@ -221,18 +221,42 @@ class PortalDelegatePage {
   }
 }
 
+/**
+ * The portal page at /portal/delegate: where a person names the one party who
+ * may act for them, RFC 8693's `may_act` (#108).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalDelegate {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalDelegateDeps) {
     deps.log.debug("Entering PortalDelegate.constructor().");
     deps.log.debug("Leaving PortalDelegate.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalDelegateDeps {
     helpers.log.debug("Entering PortalDelegate.defaultDeps().");
     helpers.log.debug("Leaving PortalDelegate.defaultDeps().");
     return { log: helpers.log, credentials: credentials };
   }
 
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalDelegate.register().");
     const page = new PortalDelegatePage(this.deps, context);
@@ -252,6 +276,10 @@ const slot = new InstanceSlot<PortalDelegate>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/delegate, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalDelegate: PortalDelegate,
   installInstance: (instance: PortalDelegate): void => slot.install(instance),

@@ -128,7 +128,13 @@ const INDIGO = PALETTE.indigo;
 const QUIET = PALETTE.quiet;
 const PAPER = PALETTE.paper;
 const WASH = PALETTE.wash;
+/**
+ * The five fills of the count scale, lightest to darkest.
+ */
 const RAMP = ['#a7a2dc', '#857fcb', '#6159b6', '#3b3598', '#12107c'];
+/**
+ * The fill of a country that counts nobody: a neutral grey with no hue.
+ */
 const NO_DATA = '#e4e4ea';
 // Land outside the country a country view is about: there to say where it
 // is, and quieter than anything that counts.
@@ -156,6 +162,10 @@ const CITY_LABEL_SIZE = 11;
 // not computed — Russia is filed under Europe and a box around Europe's
 // countries would reach the Bering Strait — and a country view is always
 // computed, so nothing is cut off where it matters.
+/**
+ * The continents by the slug a URL carries: the name Natural Earth files each
+ * country under, and the view each is drawn in.
+ */
 const CONTINENTS: Record<string, Json> = {
   'africa': { name: 'Africa',
     view: { lon0: 17, west: -38, east: 38, south: -36, north: 38 } },
@@ -182,19 +192,44 @@ const A4 = 0.003796;
 const M = Math.sqrt(3) / 2;
 const RAD = Math.PI / 180;
 
+/**
+ * The geolocation picture: the world, a continent or a country in the Equal
+ * Earth projection, each country filled by its count and, on a country, its
+ * cities as circles. A library that registers no route.
+ */
 class GeoMap {
+  /**
+   * See the module's `RAMP`.
+   */
   static readonly RAMP = RAMP;
+  /**
+   * See the module's `NO_DATA`.
+   */
   static readonly NO_DATA = NO_DATA;
+  /**
+   * See the module's `CONTINENTS`.
+   */
   static readonly CONTINENTS = CONTINENTS;
 
   private held: { list: Country[]; byIso: Map<string, Country>;
                   source: Json } | null = null;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the XML escaper, the text metric and the reader
+   * of the country outlines
+   */
   constructor(private readonly deps: GeoMapDeps) {
     deps.log.debug("Entering GeoMap.constructor().");
     deps.log.debug("Leaving GeoMap.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): GeoMapDeps {
     helpers.log.debug("Entering GeoMap.defaultDeps().");
     helpers.log.debug("Leaving GeoMap.defaultDeps().");
@@ -211,6 +246,12 @@ class GeoMap {
 
   // Every country, read once. `source` is the file's provenance, which the
   // page credits.
+  /**
+   * Reads every country's outline once and holds it.
+   *
+   * @returns the countries, the same indexed by ISO code, and the file's
+   * provenance, which the page credits
+   */
   countries(): { list: Country[]; byIso: Map<string, Country>;
                  source: Json } {
     const { log, readOutlines } = this.deps;
@@ -231,6 +272,12 @@ class GeoMap {
   }
 
   // The continent slug a continent name is filed under ('' for none).
+  /**
+   * Answers the slug a continent name is filed under.
+   *
+   * @param continent - the continent's name
+   * @returns its slug, or '' for none
+   */
   static slugOf(continent: string): string {
     helpers.log.debug("Entering GeoMap.slugOf().");
     const found = Object.keys(CONTINENTS).filter(function (s: string): boolean {
@@ -242,6 +289,11 @@ class GeoMap {
 
   // ISO code -> continent name, for the store's count (`risk_store.ts`'s
   // `geography()`, which holds a country and no continent).
+  /**
+   * Maps each country's ISO code to its continent's name.
+   *
+   * @returns ISO code to continent name
+   */
   continentTable(): Record<string, string> {
     const { log } = this.deps;
     log.debug("Entering GeoMap.continentTable().");
@@ -257,6 +309,14 @@ class GeoMap {
   // 0 for none. Logarithmic, because sign-ins are: one capital city with a
   // thousand people and forty countries with three would otherwise be one
   // dark country and forty that look empty.
+  /**
+   * Answers a count's step on the logarithmic scale against the largest count
+   * drawn.
+   *
+   * @param n - the count
+   * @param max - the largest count drawn
+   * @returns the step, 1 to 5, or 0 for none
+   */
   static bucketOf(n: number, max: number): number {
     helpers.log.debug("Entering GeoMap.bucketOf().");
     helpers.log.debug("Leaving GeoMap.bucketOf().");
@@ -272,6 +332,12 @@ class GeoMap {
 
   // The range of counts each step stands for, for the legend: step i holds
   // the n with bucketOf(n, max) === i + 1.
+  /**
+   * Answers the range of counts each step stands for, for the legend.
+   *
+   * @param max - the largest count drawn
+   * @returns one row per step: its colour and the counts it runs from and to
+   */
   static legendOf(max: number): Json[] {
     helpers.log.debug("Entering GeoMap.legendOf().");
     const out: Json[] = [];
@@ -294,6 +360,14 @@ class GeoMap {
   // Equal Earth, of a longitude already relative to the view's meridian.
   // A hot path — every point of every ring drawn — so no Entering or
   // Leaving pair, which would be two log lines per coordinate.
+  /**
+   * Projects a point with Equal Earth, its longitude already relative to the
+   * view's meridian. A hot path, with no Entering or Leaving log lines.
+   *
+   * @param lon - the relative longitude in degrees
+   * @param lat - the latitude in degrees
+   * @returns the projected x and y
+   */
   static project(lon: number, lat: number): number[] {
     const lambda = lon * RAD;
     const theta = Math.asin(M * Math.sin(lat * RAD));
@@ -308,12 +382,27 @@ class GeoMap {
   // the side it came from, because Natural Earth cuts its rings AT ±180 and
   // a point on the cut folded to the other edge would break every ring that
   // touches it. A hot path, as above.
+  /**
+   * Answers a longitude relative to a meridian, in [-180, 180], keeping a point
+   * on the ±180 cut on the side it came from. A hot path.
+   *
+   * @param lon - the longitude
+   * @param lon0 - the view's meridian
+   * @returns the relative longitude
+   */
   static relative(lon: number, lon0: number): number {
     const r = ((lon - lon0 + 540) % 360) - 180;
     return r === -180 && lon > lon0 ? 180 : r;
   }
 
   // THE VIEW OF ONE COUNTRY: see the header. `cities` widen it.
+  /**
+   * Computes the view one country is drawn in, widened by its cities.
+   *
+   * @param country - the country's outline
+   * @param cities - the cities drawn on it
+   * @returns the view: its meridian and its west, east, south and north bounds
+   */
   countryView(country: Country, cities: Json[]): View {
     const { log } = this.deps;
     log.debug("Entering GeoMap.countryView(). " + country.iso);
@@ -409,6 +498,14 @@ class GeoMap {
   }
 
   // A longitude and latitude on the screen. A hot path, as `project()`.
+  /**
+   * Places a longitude and latitude on the screen in a frame. A hot path.
+   *
+   * @param frame - the view's frame: scale, offsets and meridian
+   * @param lon - the longitude
+   * @param lat - the latitude
+   * @returns the screen x and y
+   */
   static toScreen(frame: Json, lon: number, lat: number): number[] {
     const p = GeoMap.project(GeoMap.relative(lon, frame.lon0), lat);
     return [frame.offsetX + p[0] * frame.scale,
@@ -419,6 +516,15 @@ class GeoMap {
   // longitude jumps by more than half the globe between two points crossed
   // the view's far side: the stroke is broken there. A hot path — once per
   // polygon of every country drawn — so no Entering or Leaving pair.
+  /**
+   * Draws one polygon as thinned SVG path data, with its screen box, breaking
+   * the stroke where a ring crosses the view's far side. A hot path.
+   *
+   * @param frame - the view's frame
+   * @param polygon - the polygon's rings, each flat longitude and latitude
+   * pairs
+   * @returns the path data and its screen box
+   */
   static polygonPath(frame: Json, polygon: number[][]): Json {
     let d = '';
     const box = [Infinity, -Infinity, Infinity, -Infinity];
@@ -527,6 +633,15 @@ class GeoMap {
   // rewrites them into the realm on the way out of a text/html response,
   // which is the only way this picture is served.
   // -------------------------------------------------------------------------
+  /**
+   * Draws the map at the world, continent or country level.
+   *
+   * Links are root-relative; `app.js` rewrites them into the realm on the way
+   * out of an HTML response.
+   * @param spec - `level`, `continent`, `iso`, `areas` (ISO code to bucket,
+   * title and link), `linkFor`, `labels` and `cities`
+   * @returns the SVG, its width and height
+   */
   render(spec: Json): Json {
     const { log, xmlEscape, textWidth } = this.deps;
     const self = this;
@@ -678,9 +793,23 @@ const slot = new InstanceSlot<GeoMap>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The geolocation picture: where a realm's people signed in from, drawn as a
+ * map of the world, a continent or a country, for
+ * `admin-ui/geolocation_admin.ts`, which counts.
+ * @namespace
+ */
 export = {
   GeoMap: GeoMap,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: GeoMap): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   render: slot.forward('render'),
   countries: slot.forward('countries'),

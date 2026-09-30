@@ -112,6 +112,14 @@ let held = {
   // latency, and a latency stops meaning that the moment the PDP is busy.
   lastChangeCause: '',
   lastChangeAt: '',
+  // THE LAST PULL A NUDGE CAUSED, WHATEVER IT FOUND (2026-09-30): when it ran
+  // and `changed`, `unchanged` or `failed`. `lastChangeCause` alone cannot
+  // tell a nudge that was acted on from one that was ignored when the poll
+  // it races got there first — the poll brings the change and the nudge's
+  // pull, a moment later, finds nothing new. A test that saw `poll` there
+  // failed about one run in four under load for a PEP working correctly.
+  lastNudgeAt: '',
+  lastNudgeResult: '',
   refused: []
 };
 
@@ -141,6 +149,8 @@ function state() {
       lastPullWhy: held.lastPullWhy,
       lastChangeCause: held.lastChangeCause,
       lastChangeAt: held.lastChangeAt,
+      lastNudgeAt: held.lastNudgeAt,
+      lastNudgeResult: held.lastNudgeResult,
       refused: held.refused.slice(0)
     },
     registration: Object.assign({}, registration),
@@ -394,13 +404,26 @@ async function registerIfNeeded(options) {
 // `heartbeat` — and is recorded only by a pull that LOADS a change.
 async function pull(options, cause) {
   log.debug('Entering pull().');
+  const changedBefore = held.lastChangeAt;
+  const result = await pullOnce(options, cause);
+  if (cause === 'nudge') {
+    held.lastNudgeAt = new Date().toISOString();
+    held.lastNudgeResult = !held.lastPullOk ? 'failed'
+      : held.lastChangeAt !== changedBefore ? 'changed' : 'unchanged';
+  }
+  log.debug('Leaving pull().');
+  return cause === 'nudge' ? state().held : result;
+}
+
+async function pullOnce(options, cause) {
+  log.debug('Entering pullOnce().');
   const since = held.syncToken
     ? '?since=' + encodeURIComponent(held.syncToken) +
       '&pep=' + encodeURIComponent(options.name)
     : '?pep=' + encodeURIComponent(options.name);
   const answer = await call(options, 'GET', '/xacml/pep/policies' + since);
   if (answer.error) {
-    log.debug("Leaving pull().");
+    log.debug("Leaving pullOnce().");
     return keep('Could not reach the PDP: ' + answer.error,
                 tag(options, 'STS-XPEP-0017'));
   }
@@ -412,11 +435,11 @@ async function pull(options, cause) {
     held.lastPullOk = true;
     lastKeptWhy = '';
     held.lastPullWhy = 'Unchanged; this copy is current.';
-    log.debug('Leaving pull(). Unchanged.');
+    log.debug('Leaving pullOnce(). Unchanged.');
     return state().held;
   }
   if (answer.status !== 200) {
-    log.debug("Leaving pull().");
+    log.debug("Leaving pullOnce().");
     return keep('The PDP answered ' + answer.status +
                 ((answer.body && answer.body.error_description)
                   ? ': ' + answer.body.error_description : '') + '.',
@@ -424,7 +447,7 @@ async function pull(options, cause) {
   }
   const said = answer.body;
   if (!said || !Array.isArray(said.policies)) {
-    log.debug("Leaving pull().");
+    log.debug("Leaving pullOnce().");
     return keep('The PDP answered 200 with something that is not a policy ' +
                 'set. Keeping the previous one.',
                 tag(options, 'STS-XPEP-0019'));
@@ -488,6 +511,8 @@ async function pull(options, cause) {
     lastPullOk: true,
     lastChangeCause: String(cause || 'unnamed'),
     lastChangeAt: new Date().toISOString(),
+    lastNudgeAt: held.lastNudgeAt,
+    lastNudgeResult: held.lastNudgeResult,
     lastPullWhy: root
       ? 'Pulled ' + said.policies.length + ' policy(ies).'
       : 'Pulled ' + said.policies.length + ' policy(ies) and NONE IS THE ' +
@@ -509,7 +534,7 @@ async function pull(options, cause) {
   log.info((root ? '' : tag(options, 'STS-XPEP-0021')) +
            'xacml-pep: pulled ' + said.policies.length + ' policy(ies), ' +
            'token ' + held.syncToken + '. ' + held.lastPullWhy);
-  log.debug('Leaving pull(). Loaded.');
+  log.debug('Leaving pullOnce(). Loaded.');
   return state().held;
 }
 

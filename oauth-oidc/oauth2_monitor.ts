@@ -156,10 +156,27 @@ const counters = realms.map({ persist: 'oauth2_monitor.counters',
 
 const startedAt = new Date().toISOString();
 
+/**
+ * Per-client counters of what the authorization server did, per realm, behind
+ * `/admin/oauth2/monitor`.
+ */
 class OAuth2Monitor {
+  /**
+   * The sections of the monitoring page, in the order it draws them.
+   */
   static readonly SECTIONS = SECTIONS;
+  /**
+   * The closed vocabulary of events: each maps to its counter, its label and
+   * its page section.
+   */
   static readonly EVENTS = EVENTS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, error codes, the per-realm counter store and the
+   *   replication reader
+   */
   constructor(private readonly deps: OAuth2MonitorDeps) {
     deps.log.debug("Entering OAuth2Monitor.constructor().");
     deps.log.debug("Leaving OAuth2Monitor.constructor().");
@@ -167,6 +184,11 @@ class OAuth2Monitor {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): OAuth2MonitorDeps {
     helpers.log.debug("Entering OAuth2Monitor.defaultDeps().");
     helpers.log.debug("Leaving OAuth2Monitor.defaultDeps().");
@@ -178,6 +200,11 @@ class OAuth2Monitor {
     };
   }
 
+  /**
+   * Returns a counter row with every event's counter at zero.
+   *
+   * @returns the empty row
+   */
   emptyRow(): CounterRow {
     const { log } = this.deps;
     log.debug("Entering OAuth2Monitor.emptyRow().");
@@ -191,6 +218,14 @@ class OAuth2Monitor {
 
   // `detail.error` counts the OAuth error a refusal returned, which is the
   // column a client developer reads first.
+  /**
+   * Counts one event against a client. An unknown event is logged and not
+   * counted, and nothing here throws into the caller.
+   *
+   * @param clientId - the client the event is about
+   * @param event - an event name from `EVENTS`
+   * @param detail - `error`, the OAuth error word a refusal returned
+   */
   record(clientId: unknown, event: string, detail?: EventDetail): void {
     const { log, errorCodes, counters } = this.deps;
     log.debug("Entering OAuth2Monitor.record(). event=" + event);
@@ -284,6 +319,11 @@ class OAuth2Monitor {
   }
 
   // Every row merged, and the totals across them.
+  /**
+   * Returns every client's row, merged across processes, and the totals.
+   *
+   * @returns `{ startedAt, sections, events, rows, totals }`
+   */
   snapshot(): any {
     const { log } = this.deps;
     const self = this;
@@ -321,6 +361,9 @@ class OAuth2Monitor {
 
   // Forget this realm's counts — for a test. The console deliberately has no
   // Reset (`oauth2_monitor_console.ts` says why), so nothing else calls this.
+  /**
+   * Forgets this realm's counts. For tests; the console has no Reset.
+   */
   reset(): void {
     const { log, counters } = this.deps;
     log.debug("Entering OAuth2Monitor.reset().");
@@ -347,9 +390,28 @@ const slot = new InstanceSlot<OAuth2Monitor>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Per-client counters of the OAuth 2.0 authorization server's activity.
+ *
+ * A leaf that never throws into its caller. The composition root builds the
+ * instance; each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   OAuth2Monitor: OAuth2Monitor,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: OAuth2Monitor): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   SECTIONS: OAuth2Monitor.SECTIONS,
   EVENTS: OAuth2Monitor.EVENTS,

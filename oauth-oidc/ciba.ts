@@ -60,6 +60,9 @@
 // ===========================================================================
 
 import nodeCrypto = require('crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -76,15 +79,34 @@ import outbound = require('./outbound_delivery');
 type Json = any;
 
 // The two stores. PER TRUST REALM, persisted where minted rows are.
-const requests = realms.map({ persist: 'oauth2.cibaRequests',
-                              retain: 'age' });
+// `expiresAt` (#333): the sweep's rule for a FINISHED request — kept
+// RETENTION_MS past its end so a late poll is answered. A PENDING one has
+// none: the sweep has to expire it first, which in push mode sends the
+// client its `expired_token`, and a row a restart skipped would never be.
+const requests = realms.map({
+  persist: 'oauth2.cibaRequests',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (record: Json): number | null {
+    const ended = Number(record && (record.finishedAt || record.redeemedAt ||
+                                     record.expiresAt));
+    return record && record.state !== 'pending' && ended > 0
+      ? ended + RETENTION_MS : null;
+  }
+});
 // A notification is a row of `outbound_delivery.ts`'s shared queue (#151):
 // tombstoned and merged by rank, as every kind's store is.
 const deliveries = realms.map({ persist: 'oauth2.cibaDeliveries',
                                 tombstone: true,
                                 mergeRow: outbound.mergeRow });
 
+/**
+ * The CIBA grant type the token endpoint accepts (section 10).
+ */
 const GRANT_TYPE = 'urn:openid:params:grant-type:ciba';
+/**
+ * The three token delivery modes: poll, ping and push.
+ */
 const MODES = Object.freeze(['poll', 'ping', 'push']);
 const SWEEP_JOB = 'oauth2.ciba-sweep';
 const ATTEMPT_SCOPE = 'oauth.ciba-notify';
@@ -109,14 +131,33 @@ interface CibaDeps {
   later?: (fn: () => void, ms: number) => void;
 }
 
+/**
+ * OpenID Connect CIBA Core 1.0 (#131): the backchannel authentication requests,
+ * the person's approval on the portal, and the ping and push notifications. The
+ * two endpoints are `oauth2.ts`'s.
+ */
 class Ciba {
+  /**
+   * The CIBA grant type the token endpoint accepts (section 10).
+   */
   static readonly GRANT_TYPE = GRANT_TYPE;
+  /**
+   * The three token delivery modes: poll, ping and push.
+   */
   static readonly MODES = MODES;
   // PING AND PUSH ARE A KIND OF THE SHARED OUTBOUND QUEUE (#151): the fence,
   // the merge, retention, the summary line, the audit row and the retry by
   // hand CIBA's own copy of the pattern did not have.
   private readonly outbox: InstanceType<typeof outbound.OutboundDelivery>;
 
+  /**
+   * Builds the module from its dependencies, with its notifications as a kind
+   * of the shared outbound queue.
+   *
+   * @param deps - the logger, settings, realms, error codes, audit log, cluster
+   *   claims, outbound HTTP, credentials, crypto module, clock and an optional
+   *   retry timer
+   */
   constructor(private readonly deps: CibaDeps) {
     deps.log.debug("Entering Ciba.constructor().");
     const self = this;
@@ -194,6 +235,11 @@ class Ciba {
     deps.log.debug("Leaving Ciba.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): CibaDeps {
     helpers.log.debug("Entering Ciba.defaultDeps().");
     helpers.log.debug("Leaving Ciba.defaultDeps().");
@@ -203,6 +249,11 @@ class Ciba {
              stsCrypto: stsCrypto, now: Date.now };
   }
 
+  /**
+   * Tells whether CIBA is on (`oauth2.ciba`).
+   *
+   * @returns true when it is on
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering Ciba.enabled().");
@@ -223,6 +274,13 @@ class Ciba {
   // registered `backchannel_user_code_parameter` must carry. 4 to 64
   // characters; '' clears it.
   // -------------------------------------------------------------------------
+  /**
+   * Sets or clears a person's CIBA user code (section 7.1), stored hashed.
+   *
+   * @param username - the person
+   * @param code - 4 to 64 characters, or '' to clear it
+   * @returns `{ ok: true, set }`, or `{ ok: false, error }`
+   */
   setUserCode(username: unknown, code: unknown): Json {
     const { log, credentials, stsCrypto } = this.deps;
     log.debug("Entering Ciba.setUserCode().");
@@ -262,6 +320,12 @@ class Ciba {
       { ok: false, error: 'the directory did not store it.' };
   }
 
+  /**
+   * Tells whether a person has set a user code.
+   *
+   * @param username - the person
+   * @returns true when one is set
+   */
   hasUserCode(username: unknown): boolean {
     const { log, credentials } = this.deps;
     log.debug("Entering Ciba.hasUserCode().");
@@ -269,6 +333,13 @@ class Ciba {
     return !!credentials.readCibaUserCode(String(username || ''));
   }
 
+  /**
+   * Checks a presented user code against the person's hash.
+   *
+   * @param username - the person
+   * @param code - the presented user code
+   * @returns true when it matches
+   */
   userCodeMatches(username: unknown, code: unknown): boolean {
     const { log, credentials, stsCrypto } = this.deps;
     log.debug("Entering Ciba.userCodeMatches().");
@@ -289,6 +360,12 @@ class Ciba {
   // THE REQUESTS
   // -------------------------------------------------------------------------
 
+  /**
+   * Returns one request by its `auth_req_id`.
+   *
+   * @param id - the `auth_req_id`
+   * @returns the request row, or undefined
+   */
   get(id: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering Ciba.get().");
@@ -297,6 +374,12 @@ class Ciba {
     return found;
   }
 
+  /**
+   * Writes a request row back to the realm's store.
+   *
+   * @param record - the request row
+   * @returns the row
+   */
   save(record: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Ciba.save(). " + record.state);
@@ -307,6 +390,13 @@ class Ciba {
 
   // Every request in the realm that is still waiting for `username`,
   // oldest first; an expired one is marked so on the way past.
+  /**
+   * Lists every request still waiting for a person, oldest first; an expired
+   * one is marked so on the way past.
+   *
+   * @param username - the hinted person
+   * @returns the pending request rows
+   */
   pendingFor(username: unknown): Json[] {
     const { log, now } = this.deps;
     log.debug("Entering Ciba.pendingFor(). user=" + username);
@@ -333,6 +423,14 @@ class Ciba {
   // THE ACKNOWLEDGEMENT'S ROW (section 7.3). `spec` carries what the
   // endpoint checked; the id, the expiry and the interval are made here.
   // Returns { ok, record } or { ok: false, error, code, description }.
+  /**
+   * Creates the request row an acknowledgement answers (section 7.3), with its
+   * id, expiry and interval, within the person's pending limit.
+   *
+   * @param spec - what the endpoint checked of the request
+   * @returns `{ ok: true, record }`, or `{ ok: false, error, code, description
+   *   }`
+   */
   create(spec: Json): Json {
     const { log, now } = this.deps;
     log.debug("Entering Ciba.create(). client=" + spec.clientId);
@@ -350,7 +448,9 @@ class Ciba {
     const expiresIn = asked > 0 ? Math.min(Math.floor(asked), maxExpiry) :
       Math.min(this.setting('oauth2.cibaDefaultExpiryS'), maxExpiry);
     const record = {
-      id: nodeCrypto.randomBytes(32).toString('base64url'),
+      // Stamped with the minting cell (#98 D10): the client polls the cell
+      // nearest it, which relays here.
+      id: cellLocator.stamp(nodeCrypto.randomBytes(32).toString('base64url')),
       state: 'pending',
       clientId: String(spec.clientId),
       clientName: String(spec.clientName || spec.clientId),
@@ -405,6 +505,17 @@ class Ciba {
   // token as it does every other grant's. Empty for the management API's
   // test control, which approves with no browser.
   // -------------------------------------------------------------------------
+  /**
+   * Records the person's approval or denial of a pending request (section 8).
+   * Only the hinted person may answer.
+   *
+   * @param id - the `auth_req_id`
+   * @param username - the person answering
+   * @param approve - true to approve, false to deny
+   * @param facts - what the approving session proved: `acr`, `amr`, `authTime`
+   *   and `sessionId`
+   * @returns `{ ok: true, record }`, or `{ ok: false, why }`
+   */
   answer(id: unknown, username: unknown, approve: boolean,
          facts?: Json): Json {
     const { log, now } = this.deps;
@@ -455,6 +566,16 @@ class Ciba {
   // whose tokens cannot be minted (the issuance policy refused, the person
   // gone) is sent `transaction_failed`. The portal and the management API's
   // test control both answer through this.
+  /**
+   * Records the answer and sends what it calls for: a ping, or a push carrying
+   * tokens minted now (or `transaction_failed` when they cannot be).
+   *
+   * @param id - the `auth_req_id`
+   * @param username - the person answering
+   * @param approve - true to approve, false to deny
+   * @param facts - what the approving session proved
+   * @returns a promise of `answer()`'s result
+   */
   async answerAndNotify(id: unknown, username: unknown, approve: boolean,
                         facts?: Json): Promise<Json> {
     const { log } = this.deps;
@@ -468,6 +589,13 @@ class Ciba {
   }
 
   // What an answered request sends, by its mode. Never rejects.
+  /**
+   * Queues the notification an answered request's mode calls for. Never
+   * rejects.
+   *
+   * @param record - the answered request
+   * @returns a promise that settles when it is queued
+   */
   async notifyAnswered(record: Json): Promise<void> {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Ciba.notifyAnswered(). " + record.mode);
@@ -501,6 +629,15 @@ class Ciba {
   // What a poll finds (section 10.1 / 11): the state, with the interval
   // enforced. Returns { state, record } where state is `pending`,
   // `slow_down`, `approved`, `denied`, `expired`, `redeemed` or `unknown`.
+  /**
+   * Tells a polling client the state of its request, with the interval enforced
+   * (sections 10.1 and 11).
+   *
+   * @param id - the `auth_req_id`
+   * @param clientId - the client polling
+   * @returns `{ state, record }`, where state is `pending`, `slow_down`,
+   *   `approved`, `denied`, `expired`, `redeemed` or `unknown`
+   */
   poll(id: unknown, clientId: unknown): Json {
     const { log, now } = this.deps;
     log.debug("Entering Ciba.poll().");
@@ -531,6 +668,13 @@ class Ciba {
   }
 
   // One token response per approval, cluster-wide.
+  /**
+   * Claims an approved request's one token response, cluster-wide, and marks it
+   * redeemed.
+   *
+   * @param record - the approved request
+   * @returns a promise of true when this caller won the claim
+   */
   async redeem(record: Json): Promise<boolean> {
     const { log, claims } = this.deps;
     log.debug("Entering Ciba.redeem().");
@@ -553,6 +697,14 @@ class Ciba {
   // the shared queue, attempted at once and by the sweep until it lands or
   // is a dead letter.
   // -------------------------------------------------------------------------
+  /**
+   * Queues a ping or push notification on the shared outbound queue and
+   * attempts it at once.
+   *
+   * @param record - the request it is about
+   * @param body - the notification body
+   * @returns the delivery row's view
+   */
   queue(record: Json, body: Json): Json {
     const { log } = this.deps;
     const self = this;
@@ -595,6 +747,12 @@ class Ciba {
   }
 
   // One attempt of one notification, through the shared queue.
+  /**
+   * Makes one attempt of one notification, through the shared queue.
+   *
+   * @param id - the delivery id
+   * @returns a promise of the attempt's outcome
+   */
   attempt(id: string): Promise<string> {
     const { log, realms } = this.deps;
     log.debug("Entering Ciba.attempt(). " + id);
@@ -603,6 +761,13 @@ class Ciba {
   }
 
   // An operator's retry of a dead notification (a new generation).
+  /**
+   * Queues a dead notification again, for an operator, as a new generation.
+   *
+   * @param id - the delivery id
+   * @param actor - who retried it
+   * @returns `{ ok: true, row, message }`, or the queue's refusal
+   */
   retryDelivery(id: string, actor?: string): Json {
     const { log } = this.deps;
     log.debug("Entering Ciba.retryDelivery(). " + id);
@@ -617,6 +782,13 @@ class Ciba {
   // THE SWEEP (the `oauth2.ciba-sweep` job, #49): the shared queue's sweep
   // — due notifications attempted, stale ones dead-lettered, finished ones
   // past retention dropped — and, per realm, `sweepRequests()`.
+  /**
+   * Runs the `oauth2.ciba-sweep` job: attempts due notifications, dead-letters
+   * stale ones, drops finished ones past retention, and expires and drops
+   * requests.
+   *
+   * @returns a promise of the sweep's summary
+   */
   sweep(): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering Ciba.sweep().");
@@ -651,6 +823,9 @@ class Ciba {
     return counts;
   }
 
+  /**
+   * Registers the sweep job on the scheduler.
+   */
   scheduleSweep(): void {
     const { log } = this.deps;
     log.debug("Entering Ciba.scheduleSweep().");
@@ -660,6 +835,12 @@ class Ciba {
 
   // The deliveries, for the console and the tests: never the token or the
   // body.
+  /**
+   * Lists the notification deliveries, never with the token or the body.
+   *
+   * @param authReqId - only this request's deliveries
+   * @returns the delivery views
+   */
   deliveryViews(authReqId?: unknown): Json[] {
     const { log } = this.deps;
     const self = this;
@@ -676,6 +857,12 @@ class Ciba {
   }
 
   // The shared queue's list and counts, for `/admin/deliveries` (#151).
+  /**
+   * Lists the shared queue's CIBA rows, for `/admin/deliveries`.
+   *
+   * @param options - the queue's list options
+   * @returns the delivery views
+   */
   deliveryRows(options?: Json): Json[] {
     const { log } = this.deps;
     const self = this;
@@ -686,6 +873,11 @@ class Ciba {
     });
   }
 
+  /**
+   * Counts the shared queue's CIBA rows by state.
+   *
+   * @returns the counts
+   */
   deliveryCounts(): Json {
     const { log } = this.deps;
     log.debug("Entering Ciba.deliveryCounts().");
@@ -694,6 +886,12 @@ class Ciba {
   }
 
   // A request as a page or the API shows it: never the notification token.
+  /**
+   * Shows a request as a page or the API does, without the notification token.
+   *
+   * @param record - the request row
+   * @returns the view
+   */
   static view(record: Json): Json {
     helpers.log.debug("Entering Ciba.view().");
     helpers.log.debug("Leaving Ciba.view().");
@@ -719,9 +917,29 @@ const slot = new InstanceSlot<Ciba>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * OpenID Connect Client-Initiated Backchannel Authentication (CIBA): the
+ * requests, their approval and the notifications.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   Ciba: Ciba,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: Ciba): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   GRANT_TYPE: GRANT_TYPE,
   MODES: MODES,

@@ -119,6 +119,11 @@ let allowListProblems = [];
 // at once rather than after a backoff.
 let replacing = false;
 let anchorReplacements = 0;
+// Monitoring → Node Health's question to the child (#329), and who is
+// waiting for an answer to it.
+const MEMORY_STATUS = 'sts-memory-status';
+let nextMemoryStatusId = 1;
+const memoryStatusWaiters = new Map();
 
 // What `DebuggerApiProcess` needs from the rest of the service: the modules
 // this file used to reach for itself, passed in so that the composition root
@@ -136,7 +141,20 @@ interface DebuggerApiProcessDeps {
   errorCodes: typeof errorCodes;
 }
 
+/**
+ * The debugger's api as one child process of the front process: forked,
+ * never required, restarted with backoff, and told what it may dial.
+ *
+ * The child's environment is built rather than inherited. In product mode it
+ * is given an allow-list of addresses; in development it is given none.
+ */
 class DebuggerApiProcess {
+  /**
+   * Builds the manager over the given modules.
+   *
+   * @param deps - node's child_process, dns, fs, net, os and path, and the
+   *   logger, config, mode and error codes
+   */
   constructor(private readonly deps: DebuggerApiProcessDeps) {
     deps.log.debug("Entering DebuggerApiProcess.constructor().");
     deps.log.debug("Leaving DebuggerApiProcess.constructor().");
@@ -144,6 +162,11 @@ class DebuggerApiProcess {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the load-time default instance is built from.
+   *
+   * @returns the real modules
+   */
   static defaultDeps(): DebuggerApiProcessDeps {
     helpers.log.debug("Entering DebuggerApiProcess.defaultDeps().");
     helpers.log.debug("Leaving DebuggerApiProcess.defaultDeps().");
@@ -163,6 +186,12 @@ class DebuggerApiProcess {
 
   // What loading this module did with its instance before #50's R2, now
   // done by the slot for whichever instance is installed: the exit handler.
+  /**
+   * Installs the process exit handler that kills an orphaned child and
+   * removes its socket directory.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: DebuggerApiProcess): void {
     helpers.log.debug("Entering DebuggerApiProcess.wire().");
     // A last resort for an exit that did not go through stop(): an orphaned
@@ -181,6 +210,13 @@ class DebuggerApiProcess {
     helpers.log.debug("Leaving DebuggerApiProcess.wire().");
   }
 
+  /**
+   * Reads a directory setting, resolved against the package root when it is
+   * relative.
+   *
+   * @param key - the setting's key
+   * @returns the absolute path
+   */
   directorySetting(key) {
     const { log, config, path } = this.deps;
     log.debug("Entering DebuggerApiProcess.directorySetting(). key=" + key);
@@ -189,6 +225,11 @@ class DebuggerApiProcess {
     return path.isAbsolute(raw) ? raw : path.join(PACKAGE_ROOT, raw);
   }
 
+  /**
+   * Returns the directory the built api is in, `debugger.apiDirectory`.
+   *
+   * @returns the absolute path
+   */
   apiDirectory() {
     const { log } = this.deps;
     log.debug("Entering DebuggerApiProcess.apiDirectory().");
@@ -197,6 +238,12 @@ class DebuggerApiProcess {
   }
 
   // Whether the built api is where the setting says, and the sentence if not.
+  /**
+   * Says whether the built api is where the setting says: its server.js and
+   * its env/embedded.js must both exist.
+   *
+   * @returns the problem as a sentence, or an empty string if installed
+   */
   installedProblem() {
     const { log, path, fs } = this.deps;
     log.debug("Entering DebuggerApiProcess.installedProblem().");
@@ -229,6 +276,12 @@ class DebuggerApiProcess {
   // A CIDR range, or null. Bare addresses are refused rather than widened to a
   // /32, which is the api's own rule — a typo in a range is a hole, and it is
   // better named than guessed at.
+  /**
+   * Normalises a CIDR range, refusing a bare address rather than widening it.
+   *
+   * @param value - the candidate range
+   * @returns the range as `address/bits`, or null
+   */
   cidrOrNull(value) {
     const { log, net } = this.deps;
     log.debug("Entering DebuggerApiProcess.cidrOrNull().");
@@ -248,6 +301,12 @@ class DebuggerApiProcess {
     return match[1] + '/' + bits;
   }
 
+  /**
+   * Turns one IP address into a single-host range, /32 or /128.
+   *
+   * @param address - the IP address
+   * @returns the range, or null if it is not an IP address
+   */
   hostRange(address) {
     const { log, net } = this.deps;
     log.debug("Entering DebuggerApiProcess.hostRange().");
@@ -256,6 +315,13 @@ class DebuggerApiProcess {
     return family ? address + (family === 4 ? '/32' : '/128') : null;
   }
 
+  /**
+   * Returns the host name of a URL, without IPv6 brackets.
+   *
+   * @param url - the URL
+   * @returns the host, or an empty string when there is none or it does not
+   *   parse
+   */
   hostOf(url) {
     const { log } = this.deps;
     log.debug("Entering DebuggerApiProcess.hostOf().");
@@ -275,6 +341,12 @@ class DebuggerApiProcess {
     }
   }
 
+  /**
+   * Resolves a host name to every address it has.
+   *
+   * @param host - the host name or IP address
+   * @returns a promise of the addresses, empty when the lookup fails
+   */
   lookupAll(host): Record<string, any> {
     const { log, net, dns } = this.deps;
     log.debug("Entering DebuggerApiProcess.lookupAll(). host=" + host);
@@ -304,6 +376,15 @@ class DebuggerApiProcess {
   // The allow-list for product mode, or [] in development. Asynchronous because
   // a public base URL is a NAME and what the api is allowed to reach is what
   // that name resolves to.
+  /**
+   * Computes the addresses the api may dial.
+   *
+   * In development it is empty (no allow-list). In product it is loopback,
+   * every network interface's address, what the two public base URLs resolve
+   * to, and `debugger.allowedDestinations`; an entry that is not a CIDR range
+   * is left out and logged.
+   * @returns a promise of the CIDR ranges
+   */
   async computeAllowedRanges() {
     const { log, mode, os, config, errorCodes } = this.deps;
     const self = this;
@@ -363,6 +444,12 @@ class DebuggerApiProcess {
 
   // A private directory for the socket and the anchor file: 0700, so nothing
   // else on the machine can connect to the api past the gate.
+  /**
+   * Creates the private 0700 directory for the socket and the anchor file,
+   * if it does not exist.
+   *
+   * @returns the directory
+   */
   ensureSocketDir() {
     const { log, fs, path, os } = this.deps;
     log.debug("Entering DebuggerApiProcess.ensureSocketDir().");
@@ -375,6 +462,12 @@ class DebuggerApiProcess {
     return socketDir;
   }
 
+  /**
+   * Builds the child's environment: PATH, HOME, LANG and TZ, and the
+   * embedded contract's variables, with the trust anchor written to a file.
+   *
+   * @returns the environment
+   */
   childEnvironment() {
     const { log, path, config, mode, fs } = this.deps;
     log.debug("Entering DebuggerApiProcess.childEnvironment().");
@@ -401,6 +494,9 @@ class DebuggerApiProcess {
     return env;
   }
 
+  /**
+   * Cancels the start timeout and any pending restart.
+   */
   clearTimers() {
     const { log } = this.deps;
     log.debug("Entering DebuggerApiProcess.clearTimers().");
@@ -415,6 +511,10 @@ class DebuggerApiProcess {
     log.debug("Leaving DebuggerApiProcess.clearTimers().");
   }
 
+  /**
+   * Schedules a restart with exponential backoff, or gives up once
+   * `debugger.restartLimit` failures in a row are reached.
+   */
   scheduleRestart() {
     const { log, config, errorCodes } = this.deps;
     const self = this;
@@ -448,6 +548,13 @@ class DebuggerApiProcess {
               "ms.");
   }
 
+  /**
+   * Forks the api process, arms its start timeout, and watches it for the
+   * listening message and its exit.
+   *
+   * An exit that was not asked for counts as a failure and schedules a
+   * restart; a replacement for a new trust anchor forks again at once.
+   */
   fork() {
     const { log, fs, childProcess, path, errorCodes, config } = this.deps;
     const self = this;
@@ -467,10 +574,19 @@ class DebuggerApiProcess {
     listeningAt = 0;
     state = 'starting';
     let spawned = null;
+    // THE MEMORY PRELOAD (#329): `debugger_api_status.js`, which answers
+    // Monitoring → Node Health's `sts-memory-status` over this channel — see
+    // its header. Only where it is there (compiled beside this file), so a
+    // tree without it forks the api exactly as before rather than one that
+    // fails at `--require`; Node Health then reads the child from /proc.
+    const preload = path.join(__dirname, 'debugger_api_status.js');
+    const execArgv = fs.existsSync(preload)
+      ? process.execArgv.concat(['--require', preload]) : process.execArgv;
     try {
       spawned = childProcess.fork(path.join(dir, 'server.js'), [], {
         cwd: dir,
         env: this.childEnvironment(),
+        execArgv: execArgv,
         stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
         serialization: 'json'
       });
@@ -498,6 +614,10 @@ class DebuggerApiProcess {
     }, timeoutMs);
     startTimer.unref();
     spawned.on('message', function (message) {
+      if (message && message.type === MEMORY_STATUS) {
+        self.receiveMemoryStatus(message);
+        return;
+      }
       if (message && message.type === 'debugger-api-listening' &&
           child === spawned) {
         listeningAt = Date.now();
@@ -554,6 +674,14 @@ class DebuggerApiProcess {
   // lookups; it resolves once the first fork has been made, not once the api is
   // listening, because a slow api must not hold the rest of the service back.
   // ---------------------------------------------------------------------------
+  /**
+   * Starts the api process, unless this is a request worker or the api is
+   * not installed.
+   *
+   * Resolves once the first fork is made, not once the api listens.
+   * @param options - `{ uiUrl, anchorPem }`
+   * @returns a promise of `{ started, why? }`
+   */
   async start(options) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering DebuggerApiProcess.start().");
@@ -582,6 +710,9 @@ class DebuggerApiProcess {
   // The private directory goes with the child: it holds the socket and a copy
   // of the trust anchor, and a directory per start left in the temporary
   // directory is how a machine running test stacks all day fills it.
+  /**
+   * Removes the private socket directory and forgets the socket path.
+   */
   removeSocketDir() {
     const { log, fs } = this.deps;
     log.debug("Entering DebuggerApiProcess.removeSocketDir().");
@@ -617,6 +748,14 @@ class DebuggerApiProcess {
   // the 502 a dead child always gives; an anchor change is an operator's act
   // and rare. Answers whether a replacement was started.
   // ---------------------------------------------------------------------------
+  /**
+   * Replaces the running child so it trusts a new trust anchor, which node
+   * reads only at process start.
+   *
+   * @param pem - the new anchor, PEM
+   * @returns true when a replacement was started; false when the anchor is
+   *   unchanged, nothing is wanted, or there is no child to replace
+   */
   updateAnchor(pem) {
     const { log } = this.deps;
     log.debug("Entering DebuggerApiProcess.updateAnchor().");
@@ -657,6 +796,11 @@ class DebuggerApiProcess {
   }
 
   // Stop it, for a shutdown. SIGTERM, then SIGKILL after a grace period.
+  /**
+   * Stops the api for a shutdown: SIGTERM, then SIGKILL after a grace period.
+   *
+   * @returns a promise of `{ stopped }`
+   */
   stop() {
     const { log } = this.deps;
     const self = this;
@@ -684,6 +828,79 @@ class DebuggerApiProcess {
     });
   }
 
+  // One answer to `askMemory()`, from the preload in the child.
+  receiveMemoryStatus(message) {
+    const { log } = this.deps;
+    log.debug("Entering DebuggerApiProcess.receiveMemoryStatus().");
+    const waiter = memoryStatusWaiters.get(message.id);
+    if (waiter) {
+      waiter({ pid: message.pid, memory: message.memory || null,
+               cpu: message.cpu || null,
+               uptimeS: message.uptimeS === undefined ? null
+                                                      : message.uptimeS });
+    }
+    log.debug("Leaving DebuggerApiProcess.receiveMemoryStatus().");
+  }
+
+  /**
+   * Asks the api child for its own `process.memoryUsage()`,
+   * `process.cpuUsage()` and uptime over the fork's IPC channel, answered by
+   * `debugger_api_status.ts` preloaded into it (#329). Nothing is opened on
+   * the debugger's listener.
+   *
+   * @param timeoutMs - how long to wait; 500 when omitted
+   * @returns a promise of `{ pid, memory, cpu, uptimeS }`, or null when there
+   *   is no child or it did not answer in time
+   */
+  askMemory(timeoutMs?: number): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering DebuggerApiProcess.askMemory().");
+    const running = child;
+    if (!running || !running.connected) {
+      log.debug("Leaving DebuggerApiProcess.askMemory(). No child.");
+      return Promise.resolve(null);
+    }
+    const id = nextMemoryStatusId++;
+    const limit = timeoutMs === undefined ? 500 : timeoutMs;
+    log.debug("Leaving DebuggerApiProcess.askMemory(). Asked " +
+              running.pid + ".");
+    return new Promise(function (resolve) {
+      const finish = function (value) {
+        log.debug("Entering finish().");
+        clearTimeout(timer);
+        memoryStatusWaiters.delete(id);
+        resolve(value);
+        log.debug("Leaving finish().");
+      };
+      // Unreferenced: a page nobody is waiting on may not hold the process.
+      const timer = setTimeout(function () {
+        finish(null);
+      }, limit);
+      timer.unref();
+      memoryStatusWaiters.set(id, finish);
+      try {
+        running.send({ type: MEMORY_STATUS, id: id }, function (err) {
+          if (err) {
+            log.debug("Caught in DebuggerApiProcess.askMemory(): " +
+                      ((err && err.message) || err));
+            // The child is going; there is no answer to wait for.
+            finish(null);
+          }
+        });
+      } catch (e) {
+        log.debug("Caught in DebuggerApiProcess.askMemory(): " +
+                  ((e && e.message) || e));
+        // The channel closed between the check and the send.
+        finish(null);
+      }
+    });
+  }
+
+  /**
+   * Says whether the api is running and has reported listening.
+   *
+   * @returns true when a call may be forwarded
+   */
   ready() {
     const { log } = this.deps;
     log.debug("Entering DebuggerApiProcess.ready().");
@@ -691,6 +908,11 @@ class DebuggerApiProcess {
     return !!(child && listeningAt);
   }
 
+  /**
+   * Returns the unix socket the api listens on.
+   *
+   * @returns the path, or an empty string before the first start
+   */
   socketPath() {
     const { log } = this.deps;
     log.debug("Entering DebuggerApiProcess.socketPath().");
@@ -698,6 +920,12 @@ class DebuggerApiProcess {
     return socketFile;
   }
 
+  /**
+   * Reports the api process for the console: its state, pid, socket, starts,
+   * failures, last exit and error, and the allow-list.
+   *
+   * @returns the status
+   */
   status() {
     const { log, mode } = this.deps;
     log.debug("Entering DebuggerApiProcess.status().");
@@ -743,16 +971,27 @@ const slot = new InstanceSlot<DebuggerApiProcess>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The debugger's api, as a child process of this one.
+ *
+ * The functions forward to the DebuggerApiProcess instance the composition
+ * root installs.
+ * @namespace
+ */
 export = {
   DebuggerApiProcess: DebuggerApiProcess,
+  /** Installs the instance the composition root built. */
   installInstance: (instance: DebuggerApiProcess): void =>
     slot.install(instance),
+  /** Says where the installed instance came from. */
   instanceOrigin: (): string => slot.origin(),
   start: slot.forward('start'),
   stop: slot.forward('stop'),
   ready: slot.forward('ready'),
   socketPath: slot.forward('socketPath'),
   status: slot.forward('status'),
+  // Monitoring → Node Health (#329): the child's own memory.
+  askMemory: slot.forward('askMemory'),
   updateAnchor: slot.forward('updateAnchor'),
   installedProblem: slot.forward('installedProblem'),
   // For tests/debugger_api_process.js: the two pure pieces of the allow-list.

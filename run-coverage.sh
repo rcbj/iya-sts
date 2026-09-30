@@ -317,6 +317,13 @@ case " ${ARGS[*]-} ${STS_COVERAGE_EXTRA_ARGS-} " in
   *--timeout=*) ;;
   *) ARGS+=("--timeout=${STS_COVERAGE_JOB_TIMEOUT_MS:-900000}") ;;
 esac
+# AND A JOB'S OWN LONGER LEASH, TRIPLED (2026-09-27): acvp_pqc (600s) and
+# sts_pki_distribution_points (900s) were both killed at 900s in CI's
+# coverage job, the flat watchdog above being no longer than their own.
+case " ${ARGS[*]-} ${STS_COVERAGE_EXTRA_ARGS-} " in
+  *--timeout-scale=*) ;;
+  *) ARGS+=("--timeout-scale=${STS_COVERAGE_JOB_TIMEOUT_SCALE:-3}") ;;
+esac
 
 # The check is against "off" and not against an empty string, because the
 # default is "on" now: an unset PROTOCOL is no longer how somebody says they
@@ -351,8 +358,22 @@ else
   # would otherwise be spliced in front of them by the image's entrypoint —
   # which this run does not use anyway, but the variable is substituted before
   # anything decides that.
+  # THE NETWORK'S SUBNET, CHOSEN FREE (2026-09-27), as ./run-tests.sh
+  # chooses its own: the compose file's default is 172.30.0.0/24, and another
+  # stack on this machine holding it made `docker compose run` fail with
+  # "Pool overlaps" before the runner started. freeSubnet() is
+  # tests/tools/compose.sh's; the runner pins no address, so the subnet is all
+  # that is named.
+  subnet="${STS_NETWORK_SUBNET:-$(freeSubnet 172.30)}"
+  if [ -z "${subnet}" ];
+  then
+    echo "No free /24 in 172.30.0.0/16 for the coverage run's network;" >&2
+    echo "STS_NETWORK_SUBNET names one explicitly." >&2
+    exit 1
+  fi
   COMPOSE_ENV=(
     "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
+    "STS_NETWORK_SUBNET=${subnet}"
     "STS_TESTS_CONTAINER_NAME=mock-sts-coverage-runner"
     "STS_CONTAINER_NAME=sts-coverage-unused"
     "CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
@@ -435,6 +456,15 @@ else
     # run that cannot start one. A skip is honest here; a timeout against a
     # container nobody started is not.
     -e XACML_PEP_URL=
+    # AND THE MAIL CATCHER'S, THE FOURTH OF THE SAME KIND (2026-09-28): the
+    # compose file defaults `MAILPIT_API_URL=http://mailpit:8025` for
+    # ./run-tests.sh, which starts that container; `--no-deps` starts none,
+    # so sts_mail, sts_email_factor and sts_email_verification fetched a host
+    # that does not exist and failed with `fetch failed` in every coverage
+    # run. Emptied, each takes the path it already has for a stack with no
+    # catcher: the sections that read a delivered message are SKIPPED and
+    # say so, and the rest still run.
+    -e MAILPIT_API_URL=
     # AND THE DIRECTORY'S SOCKET, WHICH IS THE THIRD OF EXACTLY THE SAME KIND
     # AND WAS FOUND THE SAME WAY — two red jobs in a run that had never got
     # this far before.
@@ -464,6 +494,16 @@ else
     # certificate there and names the same path in a `…CaFile` setting.
     -e OUTBOUND_TEST_CA_DIR=/tmp/sts-test-ca
     -e OUTBOUND_TEST_CA_FILE=/tmp/sts-test-ca/outbound-test-ca.crt
+    # AND THE ATTRIBUTE SOURCES' DATABASE (#94): the compose file names the
+    # stack's postgres, which this run does not start; empty, the job skips.
+    -e STS_TEST_ATTRIBUTE_DB_URL=
+    # THE MEMORY MODE'S KEYS (2026-09-27): the throwaway service is a
+    # development process with no key-encryption key, and `keys.source` left
+    # at `auto` follows the AMBIENT realm's mode — so in a product-mode realm a
+    # job creates, keystore.persists() said yes and the seal found no key:
+    # sts_credential_signals' EAB key was refused "could not be sealed". The
+    # `memory` mode sets this for the same service (tests/tools/modes.sh).
+    -e STS_KEYS_SOURCE=generated
     -e "STS_TEST_CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     -e "LOG_LEVEL=${LOG_LEVEL:-info}"
   )

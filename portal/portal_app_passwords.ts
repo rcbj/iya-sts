@@ -473,12 +473,29 @@ class PortalAppPasswordsPage {
   }
 }
 
+/**
+ * The portal page at /portal/app-passwords: where a person makes the app
+ * passwords a client that cannot do a second factor sends (#101).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalAppPasswords {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalAppPasswordsDeps) {
     deps.log.debug("Entering PortalAppPasswords.constructor().");
     deps.log.debug("Leaving PortalAppPasswords.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalAppPasswordsDeps {
     helpers.log.debug("Entering PortalAppPasswords.defaultDeps().");
     helpers.log.debug("Leaving PortalAppPasswords.defaultDeps().");
@@ -492,6 +509,13 @@ class PortalAppPasswords {
 
   // The portal's call, at the point in its body where the route order is
   // right. Answers the page's path.
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalAppPasswords.register().");
     const page = new PortalAppPasswordsPage(this.deps, context);
@@ -511,6 +535,10 @@ const slot = new InstanceSlot<PortalAppPasswords>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/app-passwords, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalAppPasswords: PortalAppPasswords,
   installInstance: (instance: PortalAppPasswords): void =>

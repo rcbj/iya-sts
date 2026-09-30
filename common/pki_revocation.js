@@ -101,6 +101,12 @@ const x509 = require('./vendored/x509');
 // specification's way of saying "no reason given", and writing one out would be
 // a CRL that disagrees with the standard about its own default.
 // ---------------------------------------------------------------------------
+/**
+ * The RFC 5280 section 5.3.1 revocation reasons, each `{ id, code, what }`.
+ *
+ * Value 7 is unused by the standard and `removeFromCRL` (8) is offered
+ * nowhere, since this service publishes no delta CRL.
+ */
 const REASONS = [
   { id: 'unspecified', code: 0,
     what: 'No reason given. RFC 5280 section 5.3.1 says the reason code ' +
@@ -137,8 +143,17 @@ const REASONS = [
           'completeness: this service issues no attribute certificates.' }
 ];
 
+/**
+ * The ids of `REASONS`, in order.
+ */
 const REASON_IDS = REASONS.map(function (one) { return one.id; });
 
+/**
+ * Looks up one revocation reason by its id.
+ *
+ * @param id - the reason id, such as `keyCompromise`
+ * @returns the `REASONS` entry, or null when there is none
+ */
 function reason(id) {
   log.debug("Entering reason().");
   log.debug("Leaving reason().");
@@ -156,6 +171,14 @@ function reason(id) {
 // not. So the endpoint outlives the key, which is what a CRL distribution
 // point has to do.
 // ---------------------------------------------------------------------------
+/**
+ * Lists every certificate authority that has a CRL: the service Root and,
+ * for each built scope, its Intermediate and its Issuing CAs.
+ *
+ * @param scopeIds - the scopes (realm ids) to include
+ * @returns entries `{ scope, ca, tier, label }`; `tier` holds the signing
+ *   material
+ */
 function authorities(scopeIds) {
   log.debug('Entering authorities().');
   const out = [];
@@ -187,6 +210,13 @@ function authorities(scopeIds) {
 
 // One authority by (scope, ca), with the signing material. Internal: what
 // leaves this module is a CRL or an OCSP response, never a key.
+/**
+ * Finds one authority by scope and CA id, with its signing material.
+ *
+ * @param scopeId - the scope, ignored for the Root
+ * @param caId - `root`, `intermediate` or an Issuing CA's use case id
+ * @returns `{ scope, ca, tier }`, or null when there is no such authority
+ */
 function authorityFor(scopeId, caId) {
   log.debug("Entering authorityFor().");
   const id = String(caId || '');
@@ -224,6 +254,14 @@ function rowFor(scopeId) {
   return pki.rawRowFor(scopeId) || null;
 }
 
+/**
+ * Returns a copy of one authority's revocation list.
+ *
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @returns the entries `{ serialHex, revokedAt, reason, reasonCode, subject,
+ *   note }`, empty when there are none
+ */
 function listFor(scopeId, caId) {
   log.debug("Entering listFor().");
   const row = rowFor(scopeId);
@@ -237,6 +275,15 @@ function listFor(scopeId, caId) {
 // serial** — one carries the DER integer and the other a hex string somebody
 // typed — so every comparison in this file goes through here. Two spellings of
 // one serial is a certificate that is revoked and reports as good.
+/**
+ * Normalises a serial for comparison: lower case, no separators, no leading
+ * zeros.
+ *
+ * A CRL and an OCSP request spell a serial differently, so every comparison
+ * goes through here.
+ * @param text - a serial in any spelling
+ * @returns the normalised hex serial, `0` when empty
+ */
 function normalSerial(text) {
   log.debug("Entering normalSerial().");
   const hex = String(text || '').toLowerCase().replace(/[^0-9a-f]/g, '');
@@ -245,6 +292,14 @@ function normalSerial(text) {
   return trimmed || '0';
 }
 
+/**
+ * Finds a serial on one authority's revocation list.
+ *
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @param serialHex - the serial, in any spelling
+ * @returns the revocation entry, or null when it is not revoked
+ */
 function isRevoked(scopeId, caId, serialHex) {
   log.debug("Entering isRevoked().");
   const wanted = normalSerial(serialHex);
@@ -262,6 +317,19 @@ function isRevoked(scopeId, caId, serialHex) {
 // about, and a second entry that pushed the date forward would be this service
 // quietly saying the certificate was valid for longer than it claimed.
 // ---------------------------------------------------------------------------
+/**
+ * Revokes one certificate issued by one authority, bumps that authority's
+ * CRL number, saves the row and publishes the CRL to the directory soon.
+ *
+ * Idempotent: revoking again keeps the earlier entry and answers
+ * `already: true`. A refusal is `{ ok: false, errors }` carrying an error
+ * code.
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @param spec - `{ serialHex, reason, subject, note }`; the reason defaults
+ *   to `superseded`
+ * @returns `{ ok: true, entry, why }` on success, or a refusal
+ */
 function revoke(scopeId, caId, spec) {
   log.debug('Entering revoke(). scope=' + scopeId + ' ca=' + caId +
             ' serial=' + (spec && spec.serialHex));
@@ -350,6 +418,17 @@ function revoke(scopeId, caId, spec) {
 // validator is entitled to cache a permanent revocation for as long as the
 // CRL it read says it is fresh, so "unrevoking" one would produce a
 // certificate this service calls good and half the world still calls revoked.
+/**
+ * Releases a `certificateHold`, taking the serial off the list and bumping
+ * the CRL number.
+ *
+ * Any other reason is permanent under RFC 5280 and is refused, as is a
+ * serial that is not revoked.
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @param serialHex - the held certificate's serial
+ * @returns `{ ok: true, why }`, or `{ ok: false, errors }` with an error code
+ */
 function release(scopeId, caId, serialHex) {
   log.debug('Entering release(). serial=' + serialHex);
   const id = String(scopeId);
@@ -392,6 +471,13 @@ function release(scopeId, caId, serialHex) {
                 'one.' };
 }
 
+/**
+ * Describes a revocation entry for display, adding the reason's prose.
+ *
+ * @param one - a revocation entry
+ * @returns `{ serialHex, revokedAt, reason, reasonCode, reasonWhat, subject,
+ *   note }`, or null when given nothing
+ */
 function describeEntry(one) {
   log.debug("Entering describeEntry().");
   if (!one) {
@@ -442,6 +528,15 @@ function describeEntry(one) {
 // `pki.distributionPort` beside the derived host. Every compose file here
 // passes one of those.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the http base address written into certificates for CRLs, OCSP
+ * and caIssuers.
+ *
+ * Built from configuration, never from a request: `pki.distributionBaseUrl`
+ * when set, else the plain revocation listener (`pki.httpPort`), else the
+ * main port in its own scheme.
+ * @returns the base URL, with no trailing slash
+ */
 function httpBase() {
   log.debug("Entering httpBase().");
   const set = String(config.value('pki.distributionBaseUrl') || '').trim();
@@ -468,6 +563,11 @@ function httpBase() {
 // The plain-HTTP base in the AMBIENT realm (#210): what `httpBase()` names,
 // with the realm's path prefix. SCEP is answered on that listener too, and
 // the console, the API and the portal each hand a device this address.
+/**
+ * Returns `httpBase()` with the ambient realm's path prefix.
+ *
+ * @returns the base URL in the current realm
+ */
 function httpBaseInRealm() {
   log.debug("Entering httpBaseInRealm().");
   log.debug("Leaving httpBaseInRealm().");
@@ -499,6 +599,13 @@ function ldapHost() {
 // The path segment a scope goes in. `*service` and `*process` cannot go in a
 // URL as they are — a `*` is legal in a path and reads as a wildcard to
 // everything that logs one — so they are spelled out.
+/**
+ * Returns the URL path segment for a scope: `service`, `process`, the realm
+ * id, or `default` for the default realm.
+ *
+ * @param scopeId - the scope
+ * @returns the path segment
+ */
 function scopeSegment(scopeId) {
   log.debug("Entering scopeSegment().");
   const id = String(scopeId);
@@ -514,6 +621,13 @@ function scopeSegment(scopeId) {
   return id || 'default';
 }
 
+/**
+ * Turns a URL path segment back into a scope; the inverse of
+ * `scopeSegment()`.
+ *
+ * @param segment - the path segment
+ * @returns the scope id, `''` for `default`
+ */
 function scopeFromSegment(segment) {
   log.debug("Entering scopeFromSegment().");
   const one = String(segment || '');
@@ -538,6 +652,14 @@ function scopeFromSegment(segment) {
 // what tells the server to send DER rather than a string. An LDAP URI without
 // it fetches nothing usable, and the failure is an empty attribute rather than
 // an error.
+/**
+ * Returns every published address of one authority: the http and ldap CRL
+ * addresses, the OCSP responder, caIssuers and the directory DN.
+ *
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @returns `{ http, ldap, ocsp, caIssuers, dn }`
+ */
 function distributionPoints(scopeId, caId) {
   log.debug("Entering distributionPoints().");
   const segment = scopeSegment(scopeId);
@@ -575,6 +697,15 @@ function distributionPoints(scopeId, caId) {
 // to the DN this function answers rather than composing its own, because two
 // builders is how the certificate's address and the entry's address came to
 // agree while both being wrong.
+/**
+ * Returns the directory DN where one authority's CRL is published.
+ *
+ * The one DN builder; `ldap_server.js`'s `publishCrl()` writes to it. The
+ * service and process scopes each get an `ou` of their own.
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @returns the DN
+ */
 function crlDn(scopeId, caId) {
   log.debug("Entering crlDn().");
   const base = directoryBaseFor(scopeId);
@@ -596,6 +727,13 @@ function crlDn(scopeId, caId) {
 // this file is a LEAF that anything may require.
 let directory = null;
 
+/**
+ * Installs the directory slot, which `ldap/ldap_server.js` fills.
+ *
+ * Refused whole, with an error logged, unless both hooks are functions.
+ * @param hooks - `{ publishCrl(scope, ca, der), baseDnFor(scope) }`
+ * @returns true when installed, false when refused
+ */
 function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
   if (!hooks || typeof hooks.publishCrl !== 'function' ||
@@ -616,6 +754,11 @@ function setDirectory(hooks) {
 
 // The directory installed now, or null — for a test that installs its own and
 // must put back what was there (tests/CLAUDE.md, process-wide state).
+/**
+ * Returns the directory installed now, for a test that must restore it.
+ *
+ * @returns the installed hooks, or null
+ */
 function currentDirectory() {
   log.debug('Entering currentDirectory().');
   log.debug('Leaving currentDirectory().');
@@ -624,12 +767,25 @@ function currentDirectory() {
 
 // Puts back what currentDirectory() answered, null included — which
 // setDirectory() refuses, and which a test that found none must restore.
+/**
+ * Puts back what `currentDirectory()` answered, null included.
+ *
+ * @param hooks - the hooks to restore, or null
+ */
 function restoreDirectory(hooks) {
   log.debug('Entering restoreDirectory().');
   directory = hooks || null;
   log.debug('Leaving restoreDirectory().');
 }
 
+/**
+ * Returns the directory base DN a scope's CRLs live under.
+ *
+ * Asks the installed directory; without one (or when it throws) the DN is
+ * built from the realm's domain so that it stays stable across processes.
+ * @param scopeId - the scope
+ * @returns the base DN
+ */
 function directoryBaseFor(scopeId) {
   log.debug("Entering directoryBaseFor().");
   if (directory) {
@@ -668,6 +824,15 @@ function directoryBaseFor(scopeId) {
     realms.baseDnOfDomain(id + '.' + realms.domainOf(realms.DEFAULT_ID));
 }
 
+/**
+ * Revocation for the certificate authority: the register, the CRL and the
+ * OCSP responder, per CA.
+ *
+ * A library: it registers no route. A certificate issued here can be
+ * revoked and a relying party that checks will see it; nothing makes one
+ * check.
+ * @namespace
+ */
 module.exports = {
   REASONS: REASONS,
   REASON_IDS: REASON_IDS,
@@ -882,6 +1047,17 @@ function crlNumberAt(scopeId, caId, whenMs) {
 // is built, and an in-process test of this module that never opened a store
 // must not have one opened underneath it by requiring the store module.
 // ---------------------------------------------------------------------------
+/**
+ * Agrees a CRL number no node has used for this authority.
+ *
+ * Where a store is shared, the number is advanced in it through
+ * `cluster_counters.js`; otherwise the candidate is used as it is.
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @param candidate - this process's clock-based number
+ * @returns the number to sign with, or null when the store refused or eight
+ *   attempts were overtaken, in which case nothing should be signed
+ */
 async function agreedCrlNumber(scopeId, caId, candidate) {
   log.debug("Entering agreedCrlNumber().");
   const loaded = require.cache[require.resolve('../persistence/persistence')];
@@ -921,6 +1097,16 @@ async function agreedCrlNumber(scopeId, caId, candidate) {
   return null;
 }
 
+/**
+ * Builds and signs one authority's CRL (RFC 5280 section 5).
+ *
+ * Built on demand and never cached, so `thisUpdate` and `nextUpdate` are
+ * always true.
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @returns `{ ok: true, der, count, crlNumber, thisUpdate, nextUpdate }`, or
+ *   `{ ok: false, errors }` with an error code
+ */
 async function buildCrl(scopeId, caId) {
   log.debug('Entering buildCrl(). scope=' + scopeId + ' ca=' + caId);
   const authority = authorityFor(scopeId, caId);
@@ -1059,6 +1245,13 @@ async function buildCrl(scopeId, caId) {
 // IS SET**, because a DER INTEGER is signed and a serial with its high bit set
 // would otherwise encode as a negative number — which is a different serial,
 // and the certificate would be revoked in name only.
+/**
+ * Encodes a serial as DER INTEGER bytes, prefixing a zero byte when the top
+ * bit is set so that it is not read as negative.
+ *
+ * @param serialHex - the serial, in any spelling
+ * @returns an ArrayBuffer holding exactly the integer's bytes
+ */
 function serialBytes(serialHex) {
   log.debug("Entering serialBytes().");
   let hex = normalSerial(serialHex);
@@ -1094,6 +1287,15 @@ function serialBytes(serialHex) {
 // write-behind in this service: a directory that could not take the entry must
 // not be able to fail a revocation, and the register is the truth either way.
 // ---------------------------------------------------------------------------
+/**
+ * Publishes one authority's CRL into the directory on the next turn, not
+ * awaited.
+ *
+ * Does nothing when no directory is installed; a failure is logged and never
+ * fails the caller.
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ */
 function publishSoon(scopeId, caId) {
   log.debug("Entering publishSoon().");
   if (!directory) {
@@ -1114,6 +1316,13 @@ function publishSoon(scopeId, caId) {
   log.debug("Leaving publishSoon().");
 }
 
+/**
+ * Builds and publishes the CRL of every authority in the given scopes, and
+ * the Root's, into the directory.
+ *
+ * @param scopeIds - the scopes to publish
+ * @returns how many CRLs were published; 0 when there is no directory
+ */
 async function publishAll(scopeIds) {
   log.debug('Entering publishAll().');
   if (!directory) {
@@ -1179,6 +1388,13 @@ async function publishAll(scopeIds) {
 // ---------------------------------------------------------------------------
 const scopesToPublish = new Map();
 
+/**
+ * Publishes every CRL of one scope shortly, coalescing repeated calls.
+ *
+ * Called by `pki.js`'s `saveRow()`, so a branch built or reissued is in the
+ * directory before a certificate naming it can be read.
+ * @param scopeId - the scope; the service scope publishes the Root only
+ */
 function publishScopeSoon(scopeId) {
   log.debug("Entering publishScopeSoon().");
   const id = String(scopeId === undefined || scopeId === null ? '' : scopeId);
@@ -1220,6 +1436,12 @@ function refreshIntervalMs() {
 // and `tests/crl_directory_publication.js` holds it to that. Requires the
 // scheduler LAZILY, for `revocationExtensionsFor()`'s reason: this file is
 // loaded from inside `pki.js`, and `cluster/scheduler.ts` requires `helpers`.
+/**
+ * Registers the `pki.crl-directory-refresh` scheduler job, which re-signs
+ * and republishes every CRL at half a list's lifetime.
+ *
+ * @returns true the first time in a process, false afterwards
+ */
 function keepDirectoryCurrent() {
   log.debug("Entering keepDirectoryCurrent().");
   if (refreshRegistered) {
@@ -1353,6 +1575,19 @@ function nonceSize(extension) {
   return bytes.byteLength;
 }
 
+/**
+ * Answers an OCSP request (RFC 6960) for one authority, signed by the CA
+ * itself.
+ *
+ * `good` only for a serial this authority issued and has not revoked,
+ * `revoked` for one on its list, `unknown` otherwise. A request that cannot
+ * be answered gets a bare OCSP error status rather than a thrown error.
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @param requestDer - the DER-encoded OCSPRequest, as a Buffer
+ * @returns `{ ok: true, der, status }`, with `answers`, `thisUpdate` and
+ *   `nextUpdate` when the status is `successful`
+ */
 async function answerOcsp(scopeId, caId, requestDer) {
   log.debug('Entering answerOcsp(). scope=' + scopeId + ' ca=' + caId);
   const authority = authorityFor(scopeId, caId);
@@ -1575,6 +1810,17 @@ async function answerOcsp(scopeId, caId, requestDer) {
 // pane's leaves live rather than in the certificate register, and the fifth
 // (2026-09-12) is the issued-serial record — see item 5 below.
 // ---------------------------------------------------------------------------
+/**
+ * Lists what one authority has signed: leaves, Issuing CAs, Intermediates,
+ * the configuration pane's objects and issued key pairs.
+ *
+ * The one definition of "issued here"; `issuedHere()` is a predicate over
+ * it.
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @returns rows `{ serialHex, subject, notAfter, kind, label, expired }`,
+ *   sorted by subject
+ */
 function issuedList(scopeId, caId) {
   log.debug('Entering issuedList(). scope=' + scopeId + ' ca=' + caId);
   const id = String(caId);
@@ -1660,6 +1906,14 @@ function issuedList(scopeId, caId) {
   return out;
 }
 
+/**
+ * Tells whether one authority signed a serial.
+ *
+ * @param scopeId - the scope holding the authority
+ * @param caId - the authority's CA id
+ * @param serialHex - the serial, in any spelling
+ * @returns true when the serial is in `issuedList()`
+ */
 function issuedHere(scopeId, caId, serialHex) {
   log.debug("Entering issuedHere().");
   const wanted = normalSerial(serialHex);

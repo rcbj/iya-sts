@@ -66,6 +66,10 @@ const datatypes = require('./xacml_datatypes');
 // ---------------------------------------------------------------------------
 // THE SHORTHAND CATEGORY NAMES (section 4.2.1).
 // ---------------------------------------------------------------------------
+/**
+ * The JSON Profile's shorthand category names (section 4.2.1), each mapped
+ * to its category URI.
+ */
 const SHORTHAND_CATEGORY = {
   AccessSubject: model.CATEGORY.ACCESS_SUBJECT,
   RecipientSubject: model.CATEGORY.RECIPIENT_SUBJECT,
@@ -86,11 +90,21 @@ const SHORTHAND_CATEGORY = {
 // hand-written list here would be a second chance to disagree with
 // `xacml_datatypes.js` about what `dayTimeDuration` is called.
 // ---------------------------------------------------------------------------
+/**
+ * The JSON Profile's short datatype names (section 3.3.2), each mapped to its
+ * datatype URI; built from `xacml_datatypes.js`'s table.
+ */
 const SHORT_TYPE = {};
 Object.keys(datatypes.TYPES).forEach(function (uri) {
   SHORT_TYPE[datatypes.TYPES[uri].name] = uri;
 });
 
+/**
+ * Resolves a `DataType` member, given as a datatype URI or a short name, to
+ * a canonical datatype URI.
+ * @param name - a datatype URI or short name
+ * @returns the datatype URI, or null when absent or unknown
+ */
 function resolveType(name) {
   log.debug("Entering resolveType().");
   if (!name) {
@@ -117,6 +131,16 @@ function resolveType(name) {
 // source text for it where the caller could recover one. See trap 1: the text
 // is the only place the difference between `5` and `5.0` survives.
 // ---------------------------------------------------------------------------
+/**
+ * Infers the datatype of a value that declared none, from its JSON type.
+ *
+ * A number is a double only when its source text has a fractional part or
+ * an exponent, so `5.0` needs `text` to be told from `5`. A string is never
+ * sniffed for anything but a string.
+ * @param raw - the value as `JSON.parse` produced it
+ * @param text - the value's original source text, where recoverable
+ * @returns a datatype URI, or null for a value of no inferable type
+ */
 function inferType(raw, text) {
   log.debug('Entering inferType(). typeof=' + typeof raw);
   if (typeof raw === 'boolean') {
@@ -237,6 +261,15 @@ function lexicalOf(raw, type) {
 // distinction survives. A caller with only the object gets the profile's
 // documented behaviour minus trap 1, which is why `parseRequest()` takes text.
 // ---------------------------------------------------------------------------
+/**
+ * Reads a JSON Profile request into the model's request shape.
+ * @param body - the raw request text (preferred, since only the text keeps
+ * the integer/double distinction) or an already parsed object
+ * @returns `{ returnPolicyIdList, combinedDecision, categories }`, each
+ * category `{ category, id, content, attributes }`
+ * @throws an IndeterminateError with the syntax-error status when the body
+ * is not JSON, has no `Request` member or holds a malformed category
+ */
 function parseRequest(body) {
   log.debug('Entering parseRequest().');
   let parsed;
@@ -326,6 +359,15 @@ function parseRequest(body) {
 // and this file must never see `Indeterminate{D}`. If it ever does, the single
 // `externalDecision()` call site rule in `xacml_model.js` has been broken.
 // ---------------------------------------------------------------------------
+/**
+ * Writes a PDP decision as a JSON Profile response.
+ *
+ * The status message is carried only on a non-ok status; obligations,
+ * advice and the policy identifier list are written when present.
+ * @param decision - the PDP's result, whose decision is one of the four
+ * external values
+ * @returns an object of the shape `{ Response: [result] }`
+ */
 function writeResponse(decision) {
   log.debug('Entering writeResponse(). ' + decision.decision);
   const result = { Decision: decision.decision };
@@ -400,6 +442,14 @@ function shortNameOf(uri) {
   return row ? row.name : uri;
 }
 
+/**
+ * The JSON Profile of XACML 3.0 (v1.1): reads a decision request and writes
+ * a decision response over the policy model.
+ *
+ * The profile defines no policy syntax, so this file reads and writes no
+ * policies.
+ * @namespace
+ */
 module.exports = {
   parseRequest: parseRequest,
   writeResponse: writeResponse,

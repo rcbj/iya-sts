@@ -179,6 +179,16 @@
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import LazyModule = require('../common/lazy_module');
+// THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
+// at its top, and together they are resident memory in every request worker
+// that never issues or verifies a BBS credential. `common/lazy_module.ts`
+// argues it; `common/helpers.js` defers the same file by hand.
+type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+  function () {
+    return require('../common/vendored/bbs2023.js') as Bbs2023;
+  }, helpers.log);
 import config = require('../common/config');
 // The signer groups' table (#68), a leaf: the model and the group ids.
 import signerGroups = require('../common/signer_groups');
@@ -208,7 +218,6 @@ import adminViews = require('../admin-core/admin_views');
 // again so that there stays exactly one spelling of it in the process.
 import stsCrypto = require('../common/crypto');
 import pqJose = require('../common/pq_jose');
-import bbs2023 = require('../common/vendored/bbs2023.js');
 import krb5crypto = require('../kerberos/krb5_crypto');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import webauthn = require('../authn/webauthn');
@@ -319,6 +328,11 @@ import InstanceSlot = require('../common/instance_slot');
 // `<wsse:Security>` signature — `signSoapMessage()` is in it, and the debugger
 // uses it — and nothing here calls it.
 // ---------------------------------------------------------------------------
+/**
+ * The cryptographic standards the page describes (JWS, JWE, XMLDSIG, XML
+ * Encryption, WS-Security, COSE, X.509 and the rest), each with what this
+ * service does and does not do with it.
+ */
 const STANDARDS = [
   { key: 'jws', name: 'JWS — JSON Web Signature',
     specs: ['RFC 7515', 'RFC 7518 (JWA)', 'RFC 8037 (EdDSA)',
@@ -716,13 +730,30 @@ interface CryptoMetadataDeps {
 // ---------------------------------------------------------------------------
 let advertisedFamilies = null;
 
+/**
+ * `/admin/crypto-metadata` and `/admin/keys`: what this service does with
+ * cryptography for every identity service it advertises, with every algorithm
+ * table read from the module that performs the algorithm.
+ */
 class CryptoMetadata {
+  /**
+   * See the module's `STANDARDS`.
+   */
   static readonly STANDARDS = STANDARDS;
 
   // THE IDENTITY SERVICES, built once when the instance is — at load, for the
   // transitional instance, which is when the table was built before.
+  /**
+   * The identity services and each one's cryptographic profile, built once with
+   * the instance.
+   */
   readonly families: Family[];
 
+  /**
+   * Builds an instance and its table of identity services.
+   *
+   * @param deps - the modules whose algorithm tables and keys the page reads
+   */
   constructor(private readonly deps: CryptoMetadataDeps) {
     deps.log.debug("Entering CryptoMetadata.constructor().");
     this.families = this.buildFamilies();
@@ -731,6 +762,11 @@ class CryptoMetadata {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): CryptoMetadataDeps {
     helpers.log.debug("Entering CryptoMetadata.defaultDeps().");
     helpers.log.debug("Leaving CryptoMetadata.defaultDeps().");
@@ -825,6 +861,12 @@ class CryptoMetadata {
   // It was load-time work with this module's own instance until #50's R2; the
   // slot runs it now, once, for whichever instance is installed.
   // -------------------------------------------------------------------------
+  /**
+   * Fills the console's crypto reporter slot with the installed instance's
+   * report, key list and export, so `/admin-api` can mirror the page.
+   *
+   * @param instance - the instance being installed
+   */
   static wire(instance: CryptoMetadata): void {
     helpers.log.debug("Entering CryptoMetadata.wire().");
     if (typeof admin.setCryptoReporter === 'function') {
@@ -1410,12 +1452,17 @@ class CryptoMetadata {
             ['UserInfo response', oauth2.USERINFO_SIGNING_ALGS],
             ['JWT introspection response (RFC 9701)',
              introspectionJwt.SIGNING_ALGS],
+            // Narrowed to what the realm OFFERS (`keys.offerKemEncryption`,
+            // 2026-09-28), as discovery is.
             ['JWT introspection response encryption (RFC 9701)',
-             introspectionJwt.ENCRYPTION_ALGS],
+             helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS)],
             ['Request object signature (RFC 9101)',
              applicationRegistry.REQUEST_OBJECT_SIGNING_ALGS],
+            // Narrowed to the ML-KEM and HPKE algs the realm holds a key
+            // for (#82), as discovery is.
             ['Request object decryption (RFC 9101)',
-             applicationRegistry.REQUEST_OBJECT_ENCRYPTION_ALGS],
+             helpers.decryptableJweAlgs(
+               applicationRegistry.REQUEST_OBJECT_ENCRYPTION_ALGS)],
             ['DPoP proof', dpop.SIGNING_ALGS],
             ['Client assertion', clientAuth.SYMMETRIC_METHODS
               .concat(clientAuth.ASYMMETRIC_METHODS)],
@@ -1431,8 +1478,9 @@ class CryptoMetadata {
             // `JWE_ASYMMETRIC_ALGS` exists to carry. `userinfo_encryption_alg_
             // values_supported` never moved, and `tests/vendored/admin_api.js`
             // is what compared the two.
-            ['JWE key management (out)', stsCrypto.JWE_ASYMMETRIC_ALGS],
-            ['JWE key management (in)', stsCrypto.JWE_DECRYPT_ALGS],
+            ['JWE key management (out)', helpers.offeredJweAlgs()],
+            ['JWE key management (in)',
+             helpers.decryptableJweAlgs(stsCrypto.JWE_DECRYPT_ALGS)],
             ['JWE content encryption', Object.keys(stsCrypto.JWE_ENCS)],
             // THE REFRESH-TOKEN ENVELOPE (2026-09-12). The WHOLE table rather
             // than the asymmetric half, because this is the one JWE here
@@ -1814,8 +1862,9 @@ class CryptoMetadata {
                'default, the PS and ES families, EdDSA, and the post-quantum ' +
                'ones — ML-DSA at three sizes, SLH-DSA at two, and the six ' +
                'composite ML-DSA + traditional algorithms. An SLH-DSA ' +
-               'signature takes seconds and runs on the worker pool, so this ' +
-               'service answers throughout and the receiver waits.',
+               'signature takes up to a second and runs on libuv\'s thread ' +
+               'pool, so this service answers throughout and the receiver ' +
+               'waits.',
         verifies: 'A Security Event Token pushed AT this service at `POST ' +
                   '/ssf/receive` — the roles reversed — against its own ' +
                   'JWKS, which is the only key it has. A SET signed by ' +
@@ -2139,8 +2188,8 @@ class CryptoMetadata {
                'from the TOTP row above where the "code" is a truncated HMAC.',
         verifies: 'A presented code, against EVERY entry in the person\'s ' +
                   'set — each a scrypt hash checked with ' +
-                  'crypto.verifySecret(), in parallel on the worker pool at ' +
-                  'the sign-in screen — and all of them are checked even ' +
+                  'crypto.verifySecret(), in parallel on libuv\'s thread ' +
+                  'pool at the sign-in screen — and all of them are checked even ' +
                   'after a match, so the time taken does not depend on WHICH ' +
                   'code matched. The shape is checked first, so a password ' +
                   'typed into the box is refused on its characters and costs ' +
@@ -2426,6 +2475,13 @@ class CryptoMetadata {
     ];
   }
 
+  /**
+   * Receives the protocol families `sts_metadata.ts` advertises, for the drift
+   * check between the two metadata pages.
+   *
+   * Anything but an array is ignored and logged under `STS-ADMIN-0595`.
+   * @param protocols - the `PROTOCOLS` cards of `sts_metadata.ts`
+   */
   setProtocolFamilies(protocols) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering CryptoMetadata.setProtocolFamilies().");
@@ -2458,6 +2514,13 @@ class CryptoMetadata {
   // directions of endpoint drift. `checked: false` means the slot was never
   // filled — which the page says out loud rather than rendering two empty lists
   // that look like a clean bill of health.
+  /**
+   * Reports drift in both directions: an advertised family with no crypto
+   * profile here, and a profile naming a family nobody advertises.
+   *
+   * @returns `checked` (false when the slot was never filled), the undescribed
+   * and stale families, and the envelopes no standard row names
+   */
   driftReport() {
     const { log } = this.deps;
     const self = this;
@@ -2577,6 +2640,14 @@ class CryptoMetadata {
   // report one on every version this runs on, and a guess would be the
   // literal again.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the TLS listener certificate in one line, read off the
+   * certificate: the key's type and size, the issuer or "self-signed", and when
+   * it expires.
+   *
+   * @param cert - the certificate PEM, its chain and its expiry
+   * @returns the one-line summary
+   */
   listenerCertificateSummary(cert: { certPem?: string; chainPem?: string[];
                                      notAfter?: string }): string {
     const { log, nodeCrypto } = this.deps;
@@ -2624,6 +2695,13 @@ class CryptoMetadata {
     return key + ', ' + issuer + validTo;
   }
 
+  /**
+   * Describes the key material the ambient realm holds: the signing key, the
+   * post-quantum keys, the TLS listener certificate, the SPIFFE authority and
+   * the rest.
+   *
+   * @returns the key material section of the report
+   */
   keyMaterial() {
     const { log, stsKeysFor, config, realms, pqJose, bbs2023, spiffeCa,
             tlsServer } = this.deps;
@@ -2776,6 +2854,12 @@ class CryptoMetadata {
   // of lives; a number outside it simply produces no row, which is the honest
   // answer for an etype nothing here can name.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the Kerberos encryption types, 1 to 26, the codec can name, split
+   * into those it performs and those it only decodes.
+   *
+   * @returns `performed`, `decodeOnly` and the default etype preference
+   */
   kerberosEtypes() {
     const { log, krb5crypto } = this.deps;
     log.debug("Entering CryptoMetadata.kerberosEtypes().");
@@ -2816,6 +2900,12 @@ class CryptoMetadata {
   // the unsafe one does — which is this service's whole argument, made once
   // here rather than four times below.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the digests this service uses and accepts on each surface, weak ones
+   * included where deployed clients still send them.
+   *
+   * @returns the hashing section of the report
+   */
   hashing() {
     const { log, stsCrypto, xmldsig, scimAuth } = this.deps;
     log.debug("Entering CryptoMetadata.hashing().");
@@ -2917,6 +3007,12 @@ class CryptoMetadata {
   // is what the section further down is built on. Both are computed from the
   // shared table rather than listed, so neither can fall behind it.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the signature algorithms each surface offers and accepts, computed
+   * from the shared tables, with the asymmetric-only and post-quantum splits.
+   *
+   * @returns the signatures section of the report
+   */
   signatures() {
     const { log, stsCrypto, pqJose, bbs2023, webauthn, dpop, xmldsig,
             scimAuth } = this.deps;
@@ -3003,6 +3099,12 @@ class CryptoMetadata {
   // what is possible would not answer "what will the next assertion actually
   // use".
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the ciphers and key transports each surface offers, the configured
+   * XML choice beside the offered list.
+   *
+   * @returns the encryption section of the report
+   */
   encryption() {
     const { log, config, stsCrypto } = this.deps;
     const self = this;
@@ -3012,8 +3114,13 @@ class CryptoMetadata {
         // The asymmetric half, on the row above's argument: what this service
         // may use when IT encrypts is decided by holding the recipient's public
         // key, and what it will open is the whole table.
-        keyManagementOut: stsCrypto.JWE_ASYMMETRIC_ALGS.slice(0),
-        keyManagementIn: stsCrypto.JWE_DECRYPT_ALGS.slice(0),
+        // And the ML-KEM and HPKE ones only where the realm offers them
+        // (`keys.offerKemEncryption`, 2026-09-28).
+        keyManagementOut: helpers.offeredJweAlgs(),
+        // What THIS realm will open (#82): the ML-KEM and HPKE algs only
+        // where it holds a key (`keys.encryptionKemAlgs`).
+        keyManagementIn: helpers.decryptableJweAlgs(
+          stsCrypto.JWE_DECRYPT_ALGS),
         contentEncryption: Object.keys(stsCrypto.JWE_ENCS).map(function (enc) {
           const spec = stsCrypto.JWE_ENCS[enc];
           return { enc: enc, bits: spec.bits, mode: spec.mode,
@@ -3093,10 +3200,14 @@ class CryptoMetadata {
   // to a quantum computer in 2035 is a problem in 2035. A KEY AGREEMENT is not:
   // ciphertext captured today can be kept and opened when the machine arrives,
   // which is what "harvest now, decrypt later" names. So the surface that most
-  // needs a post-quantum answer here is the one that has none — no ML-KEM key
-  // establishment happens in this process, in JWE, in XML Encryption or in TLS.
-  // (EST's `/serverkeygen` can GENERATE an ML-KEM key pair for a client since
-  // 2026-09-13; that hands a key over, it agrees none.)
+  // needs a post-quantum answer here is key establishment — and since #82
+  // (2026-09-27) it has one in JWE: ML-KEM (draft-ietf-jose-pqc-kem-05) and
+  // HPKE over ML-KEM and the PQ/T hybrids, X-Wing among them
+  // (draft-reddy-cose-jose-pqc-hybrid-hpke-11), as well as on TLS, whose
+  // hybrid groups `tls.groups` has put first since #212. XML Encryption is
+  // the one that stays classical, because no post-quantum key transport is
+  // defined for it. `keyEstablishment.surfaces` says which, surface by
+  // surface, from the settings in force in the ambient realm.
   //
   // THE THIRD CATEGORY IS THE ONE PEOPLE GET WRONG. Symmetric ciphers and
   // hashes are not broken by Shor's algorithm; Grover's costs a square root,
@@ -3114,6 +3225,170 @@ class CryptoMetadata {
   //   `symmetric`  no public-key cryptography is involved; Grover applies and
   //                the margin is what the key length says
   // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // KEY ESTABLISHMENT, SURFACE BY SURFACE (#82) — read from what is in force
+  // in the ambient realm rather than written down, so the row cannot say
+  // "post-quantum" about a surface an administrator has left classical, or
+  // the reverse. `state` is 'pq' where a post-quantum or PQ/T hybrid key
+  // establishment is IN USE or selectable by a client today, 'optional'
+  // where it is an administrator's opt-in not taken, 'classical' where
+  // there is none to have.
+  // -------------------------------------------------------------------------
+  /**
+   * Classifies each key establishment surface (#82) as `pq`, `optional` or
+   * `classical`, read from the settings in force in the ambient realm.
+   *
+   * @returns the key establishment part of the post-quantum section
+   */
+  keyEstablishment() {
+    const { log, stsCrypto, config } = this.deps;
+    log.debug("Entering CryptoMetadata.keyEstablishment().");
+    const pqAlgs = stsCrypto.JWE_POST_QUANTUM_ALGS;
+    const isPq = function (alg: string): boolean {
+      return pqAlgs.indexOf(alg) >= 0;
+    };
+    const held = helpers.kemAlgsConfigured();
+    const heldPq = held.filter(isPq);
+    const vp = [].concat(config.value('oid4vp.responseEncryptionKeyAlgs') ||
+                         []).map(String).filter(isPq);
+    const refreshAlg = String(
+      config.value('oauth2.refreshTokenEncryptionAlg') || '');
+    const groups = String(config.value('tls.groups') || '');
+    const tlsPq = /MLKEM/i.test(groups);
+    const surfaces = [
+      { surface: 'JWE this service encrypts TO a client — ID Token, Logout ' +
+                 'Token, UserInfo, JARM, JWT introspection, OID4VCI ' +
+                 'Credential Response',
+        state: config.value('keys.offerKemEncryption') === true
+          ? 'pq' : 'optional',
+        how: config.value('keys.offerKemEncryption') === true
+          ? 'A client registers an ML-KEM or HPKE-8 to HPKE-16 `alg` ' +
+            '(`id_token_encrypted_response_alg` and its siblings) and ' +
+            'publishes a matching AKP key — HPKE-10-KE is X-Wing — and ' +
+            'every one of these is encrypted with it ' +
+            '(`keys.offerKemEncryption` is on).'
+          : 'OFF by default: `keys.offerKemEncryption` is off, so no ML-KEM ' +
+            'or HPKE alg is advertised or accepted at registration. The ' +
+            'OpenID conformance suite and some client libraries reject a ' +
+            'discovery list naming algorithms they do not know.' },
+      { surface: 'JWE sent TO this realm — encrypted request objects, RFC ' +
+                 '7523 / 7522 assertions, OID4VCI Credential Requests',
+        state: heldPq.length ? 'pq' : 'optional',
+        how: heldPq.length
+          ? 'This realm holds decryption keys for ' + heldPq.join(', ') +
+            ' (`keys.encryptionKemAlgs`), published in its JWKS and ' +
+            'advertised in the decryption lists.'
+          : 'OFF, and by design: `keys.encryptionKemAlgs` is empty, so no ' +
+            'AKP key is in this realm\'s JWKS and no ML-KEM or HPKE alg is ' +
+            'advertised for decryption. An AKP key is a key type many ' +
+            'clients\' JOSE libraries do not parse yet, so publishing one ' +
+            'is an administrator\'s choice (rcbj, #82).' },
+      (function () {
+        // A federation relationship's own key (#82): read lazily — the
+        // register is loaded long before this page, and a require here at
+        // the top would say nothing the require order does not.
+        const fed = require('../federation/federation');
+        const pqRels = fed.inRole('service-provider').filter(function (r) {
+          return fed.JOSE_ONLY_KEY_TYPES.indexOf(
+            fed.encryptionPolicyOf(r).keyType) >= 0;
+        }).map(function (r) {
+          return r.fedId;
+        });
+        return {
+          surface: 'Federation — an OpenID Connect partner\'s ID Token ' +
+                   'encrypted to a relationship\'s key',
+          state: pqRels.length ? 'pq' : 'optional',
+          how: pqRels.length
+            ? pqRels.join(', ') + ' hold an x-wing or ml-kem-768 key ' +
+              '(fedEncryptionKeyType), published in the relationship\'s ' +
+              'JWKS.'
+            : 'Per relationship: fedEncryptionKeyType x-wing (HPKE-10-KE) ' +
+              'or ml-kem-768 on an OpenID Connect relationship. None has ' +
+              'one; SAML 2.0 and WS-Federation cannot (XML Encryption).'
+        };
+      })(),
+      { surface: 'OID4VP encrypted responses (direct_post.jwt, dc_api.jwt)',
+        state: vp.length ? 'pq' : 'classical',
+        how: vp.length
+          ? 'Each request offers ' + vp.join(', ') + ' (a key made for the ' +
+            'one transaction) ahead of or beside the P-256 ECDH-ES key HAIP ' +
+            'requires, so a wallet that can use it does ' +
+            '(`oid4vp.responseEncryptionKeyAlgs`).'
+          : 'Only ECDH-ES is offered (`oid4vp.responseEncryptionKeyAlgs`).' },
+      { surface: 'Refresh tokens (sealed to this realm itself)',
+        state: isPq(refreshAlg) ? 'pq' : 'optional',
+        how: isPq(refreshAlg)
+          ? 'Sealed with ' + refreshAlg + ' to a key pair derived from the ' +
+            'realm\'s refresh-token secret.'
+          : 'Sealed with ' + refreshAlg + '; any ML-KEM or HPKE-8 to 16 ' +
+            'alg may be chosen in `oauth2.refreshTokenEncryptionAlg`, which ' +
+            'needs no key and changes nothing a client sees.' },
+      { surface: 'TLS — the main port, LDAPS and the debugger\'s listener',
+        state: tlsPq ? 'pq' : 'classical',
+        how: tlsPq
+          ? 'The hybrid groups (X25519MLKEM768, SecP256r1MLKEM768, ' +
+            'SecP384r1MLKEM1024) come first in `tls.groups` (#212), and ' +
+            'the node in the service image — OpenSSL 3.5 — negotiates ' +
+            'them with any client that offers one.'
+          : '`tls.groups` names no ML-KEM hybrid group.' },
+      { surface: 'XML Encryption — SAML assertions, WS-Federation, WS-Trust',
+        state: 'classical',
+        how: 'RSA-OAEP key transport or ECDH-ES key agreement. XML ' +
+             'Encryption 1.1 defines no KEM and no post-quantum key ' +
+             'transport, and no W3C or IETF document has added one — the ' +
+             'CMS answer, RFC 9629\'s KEMRecipientInfo, has no XML ' +
+             'counterpart. This is a gap in the specification stack, not a ' +
+             'setting left off.' }
+    ];
+    const out = {
+      state: 'pq',
+      surfaces: surfaces,
+      mechanisms: stsCrypto.JWE_ALGS
+        .concat(Object.keys(stsCrypto.KEY_TRANSPORTS).map(function (name) {
+          return stsCrypto.KEY_TRANSPORTS[name].scheme + ' (XML ' + name +
+            ')';
+        }))
+        .concat(['TLS key exchange — tls.groups']),
+      postQuantum: pqAlgs.slice(0),
+      hybrid: stsCrypto.JWE_HYBRID_ALGS.slice(0),
+      drafts: {
+        mlKem: 'draft-ietf-jose-pqc-kem-05 — the last revision with JOSE ' +
+               'text; -06 (2026-07-06) is COSE-only. The AKP `priv` is the ' +
+               '64-octet d||z seed -06 corrected -05\'s 32 octets to.',
+        hpke: 'draft-ietf-jose-hpke-encrypt-22 (HPKE-0 to HPKE-7), over ' +
+              'draft-ietf-hpke-hpke; the KEMs of draft-ietf-hpke-pq-05',
+        hybrid: 'draft-reddy-cose-jose-pqc-hybrid-hpke-11 (HPKE-8 to ' +
+                'HPKE-16), an INDIVIDUAL draft that expired on 2026-08-20 ' +
+                'and the only document that names a hybrid JWE alg'
+      },
+      what: 'THIS IS THE HALF THAT MATTERS SOONEST: a signature is checked ' +
+            'when it is presented, so a signature algorithm that falls in ' +
+            '2035 is a problem in 2035, while ciphertext captured today can ' +
+            'be kept and opened when the machine arrives. JWE here has ' +
+            'post-quantum and PQ/T hybrid key establishment — ML-KEM, and ' +
+            'HPKE over ML-KEM or a hybrid (X-Wing is HPKE-10) — and TLS ' +
+            'puts the hybrid groups first. What stays classical is listed ' +
+            'below with its reason, and every one of these JWE algorithms ' +
+            'is from an Internet-Draft.',
+      whatWouldClose: 'XML Encryption needs a specification before it can ' +
+                      'have an implementation. The JWE algorithms become ' +
+                      'standard when their drafts do; until then an ' +
+                      'administrator opts a realm in to publishing a key ' +
+                      'for them, and a client opts in by registering one.'
+    };
+    log.debug("Leaving CryptoMetadata.keyEstablishment(). " +
+              surfaces.filter(function (row) {
+                return row.state === 'pq';
+              }).length + " surface(s) post-quantum.");
+    return out;
+  }
+
+  /**
+   * Classifies each surface as `pq`, `classical` or `symmetric`: whether a
+   * post-quantum algorithm can be selected on it today.
+   *
+   * @returns the post-quantum section of the report
+   */
   postQuantum() {
     const { log, stsCrypto, pqJose } = this.deps;
     log.debug("Entering CryptoMetadata.postQuantum().");
@@ -3142,13 +3417,14 @@ class CryptoMetadata {
               'half. Each carries a DOMAIN SEPARATOR into both the composite ' +
               'message and the ML-DSA context string, which is what stops a ' +
               'signature made for one composite being replayed as another.',
-        independence: 'The lattice PRIMITIVE is @noble/post-quantum, shared ' +
-                      'with the debugger because there is no second ' +
-                      'implementation of ML-DSA to be had — node has none. ' +
-                      'EVERYTHING AROUND IT is written here from the ' +
-                      'specifications, and the traditional half of every ' +
-                      'composite runs on node\'s OpenSSL rather than on the ' +
-                      'curve library the far end uses. That is where the ' +
+        independence: 'The lattice PRIMITIVE is node\'s OpenSSL 3.5 ' +
+                      '(#363), where the debugger uses @noble/post-quantum, ' +
+                      'so ML-DSA itself is cross-checked between two ' +
+                      'implementations. EVERYTHING AROUND IT is written here ' +
+                      'from the specifications, and the traditional half of ' +
+                      'every composite runs on node\'s OpenSSL rather than ' +
+                      'on the curve library the far end uses. That is where ' +
+                      'the ' +
                       'cross-check has any value: a shared misunderstanding ' +
                       'about the framing would agree with itself perfectly ' +
                       'and interoperate with nothing.'
@@ -3197,29 +3473,7 @@ class CryptoMetadata {
                'the AUTHENTICATOR signs, and COSE registers no post-quantum ' +
                'algorithm that a platform authenticator produces.' }
       ],
-      keyEstablishment: {
-        state: 'classical',
-        mechanisms: stsCrypto.JWE_ALGS
-          .concat(Object.keys(stsCrypto.KEY_TRANSPORTS).map(function (name) {
-            return stsCrypto.KEY_TRANSPORTS[name].scheme + ' (XML ' + name +
-              ')';
-          }))
-          .concat(['TLS key exchange — node\'s OpenSSL defaults']),
-        what: 'EVERY ONE OF THEM IS BROKEN BY SHOR\'S ALGORITHM, and there ' +
-              'is no ML-KEM anywhere in this process — not in JWE, not in ' +
-              'XML Encryption, not on any of the five TLS sockets. THIS IS ' +
-              'THE HALF THAT MATTERS SOONEST: a signature is checked when it ' +
-              'is presented, so a signature algorithm that falls in 2035 is ' +
-              'a problem in 2035, while ciphertext captured today can be ' +
-              'kept and opened when the machine arrives. Nothing this ' +
-              'service encrypts is a real secret, which is why this is a ' +
-              'fidelity gap here and would be a serious one anywhere else.',
-        whatWouldClose: 'draft-ietf-jose-pq-kem would add `ML-KEM` as a JWE ' +
-                        '`alg`, and a hybrid TLS group (X25519MLKEM768) ' +
-                        'needs only an OpenSSL that offers it. Neither is ' +
-                        'here, and this row says so rather than leaving the ' +
-                        'post-quantum signatures above to imply otherwise.'
-      },
+      keyEstablishment: this.keyEstablishment(),
       symmetric: {
         state: 'symmetric',
         what: 'Grover\'s algorithm costs a square root rather than breaking ' +
@@ -3248,6 +3502,13 @@ class CryptoMetadata {
   // answer, which is rule 7 and is why the parity check is a property of the
   // code rather than a promise in a comment.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the whole report once, for the page and `GET /admin-api/crypto`
+   * (rule 7).
+   *
+   * @param base - the realm's issuer base URL
+   * @returns the report
+   */
   cryptoJson(base) {
     const { log, realms } = this.deps;
     const self = this;
@@ -3883,13 +4144,35 @@ class CryptoMetadata {
           '</td><td>' + self.prose(row.how) + '</td></tr>';
       }).join('') + '</tbody></table>';
 
-    html += '<h3>Key establishment</h3>' +
-      admin.warn('<strong>Every key establishment mechanism in this process ' +
-                 'is ' +
-        'classical.</strong> ' + self.prose(pq.keyEstablishment.what)) +
-      '<table><tbody><tr><th class="n">Mechanisms</th><td>' +
+    html += '<h3>Key establishment, surface by surface</h3>' +
+      admin.note('<strong>Post-quantum and hybrid key establishment ' +
+                 '(#82).</strong> ' + self.prose(pq.keyEstablishment.what)) +
+      '<table><thead><tr><th class="n">Surface</th><th>State</th><th>How' +
+      '</th></tr></thead><tbody>' +
+      pq.keyEstablishment.surfaces.map(function (row) {
+        return '<tr><td class="n">' + esc(row.surface) + '</td><td>' +
+          (row.state === 'pq'
+            ? '<strong>post-quantum available</strong> ' +
+              pqcBadge.badge({ kind: 'kem', label: 'ML-KEM / HPKE',
+                               standard: 'draft-ietf-jose-pqc-kem-05, ' +
+                                 'draft-reddy-cose-jose-pqc-hybrid-hpke-11' })
+            : row.state === 'optional'
+              ? '<span class="why">post-quantum available, not enabled' +
+                '</span>'
+              : '<span class="why">classical only</span>') +
+          '</td><td>' + self.prose(row.how) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<table><tbody><tr><th class="n">Post-quantum JWE algorithms</th><td>' +
+      self.chips(pq.keyEstablishment.postQuantum) + '</td></tr>' +
+      '<tr><th class="n">Of which PQ/T hybrid</th><td>' +
+      self.chips(pq.keyEstablishment.hybrid) + '</td></tr>' +
+      '<tr><th class="n">Every mechanism</th><td>' +
       self.chips(pq.keyEstablishment.mechanisms) + '</td></tr>' +
-      '<tr><th class="n">What would close it</th><td>' +
+      '<tr><th class="n">Drafts implemented</th><td>' +
+      self.prose(pq.keyEstablishment.drafts.mlKem) + '<br>' +
+      self.prose(pq.keyEstablishment.drafts.hpke) + '<br>' +
+      self.prose(pq.keyEstablishment.drafts.hybrid) + '</td></tr>' +
+      '<tr><th class="n">What remains</th><td>' +
       self.prose(pq.keyEstablishment.whatWouldClose) +
       '</td></tr></tbody></table>';
     log.debug("Leaving CryptoMetadata.renderPostQuantum().");
@@ -3986,6 +4269,12 @@ class CryptoMetadata {
     return html;
   }
 
+  /**
+   * Registers `/admin/crypto-metadata`, `/admin/keys`, the signing-key history
+   * and its certificate download, and the rotate and export actions.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, baseUrlOf, parseBody, errorCodes, admin, certificateDialog,
             certificateViews, esc } = this.deps;
@@ -4305,6 +4594,12 @@ class CryptoMetadata {
     }
   }
 
+  /**
+   * Lists every key the ambient realm holds, each with its algorithm, kid,
+   * scope, certifying authority, export formats and what it is used for.
+   *
+   * @returns one row per key
+   */
   keyInventory() {
     const { log, stsKeysFor, realms, pqJose, tlsServer,
             pqcSupport } = this.deps;
@@ -4397,6 +4692,36 @@ class CryptoMetadata {
           'Published at /oauth2/jwks as an AKP JWK.',
           'NOT usable for DPoP: RFC 7638 registers no thumbprint for AKP, so ' +
           'a proof signed with one would verify and bind to nothing.'
+        ]
+      });
+    });
+
+    // THE REALM'S ML-KEM AND HPKE DECRYPTION KEYS (#82), one row per alg
+    // `keys.encryptionKemAlgs` names — none by default. Read off the set, not
+    // made: `/oauth2/jwks` makes them, as it makes the post-quantum signing
+    // keys. No download format: the private half is a seed that has no
+    // PKCS#8 encoding here, and the public half is in the JWKS.
+    const kemHeld = Array.isArray(keys.kemEncKeys) ? keys.kemEncKeys : [];
+    helpers.kemAlgsConfigured().forEach(function (alg) {
+      const made = kemHeld.filter(function (k) {
+        return k.alg === alg;
+      })[0];
+      const described: any = stsCrypto.describeJweKemAlg(alg) || {};
+      rows.push({
+        id: 'sts-kem-' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        label: alg + ' decryption key',
+        alg: alg, kty: made ? made.publicJwk.kty : described.keyType, crv: '',
+        bits: 0,
+        kid: made ? String(made.publicJwk.kid || '') : '',
+        scope: 'realm', realm: realms.currentId(),
+        certifiedBy: null, hasCertificate: false, generated: !!made,
+        formats: [],
+        usedFor: [
+          'Decrypting a request object, an RFC 7523 / 7522 assertion or an ' +
+          'OID4VCI Credential Request a client encrypted with ' + alg + ' (' +
+          described.kem + ', ' + described.spec + ').',
+          'Published at /oauth2/jwks with use "enc" and alg "' + alg + '" ' +
+          '(keys.encryptionKemAlgs).'
         ]
       });
     });
@@ -4521,6 +4846,18 @@ class CryptoMetadata {
   // a key that has not been generated yet — and an exception would reach the
   // browser as a 500 with none of that in it.
   // ---------------------------------------------------------------------------
+  /**
+   * Exports one key from the inventory in a format it offers.
+   *
+   * Answers rather than throws: a refusal carries its error code and a sentence
+   * a person can act on. A post-quantum key is exported as its public half
+   * only.
+   * @param id - the key's inventory id
+   * @param format - `pem`, `der`, `jwk` or `pkcs12`, as the key offers
+   * @param password - the PKCS#12 password
+   * @returns `ok` with the files and a status line, or `ok: false` with
+   * `errors`
+   */
   async exportKey(id, format, password) {
     const { log, stsKeysFor, realms, keystore, stsPki } = this.deps;
     const self = this;
@@ -4681,6 +5018,15 @@ class CryptoMetadata {
   // row only where one is missing or has changed, so in the steady state this
   // GET writes nothing at all.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/keys/history`'s view: the index of signing units, or one
+   * unit's generations, newest first and paged.
+   *
+   * It observes the key set before it reads, so this GET may write the history
+   * rows it lacks.
+   * @param req - the console request
+   * @returns the history view
+   */
   historyJson(req) {
     const { log, adminViews } = this.deps;
     log.debug("Entering CryptoMetadata.historyJson().");
@@ -4693,6 +5039,12 @@ class CryptoMetadata {
     return view;
   }
 
+  /**
+   * Reads the signing-key rotation state of a realm.
+   *
+   * @param realmId - the realm id
+   * @returns the rotation view, or null when no rotation module is loaded
+   */
   rotationViewOf(realmId) {
     const { log } = this.deps;
     log.debug("Entering CryptoMetadata.rotationViewOf().");
@@ -4716,6 +5068,16 @@ class CryptoMetadata {
   // queues a run of `signing.rotate-now` on the scheduler and answers its id:
   // the rotation happens on the leader, once, wherever it was asked.
   // ---------------------------------------------------------------------------
+  /**
+   * Queues a rotation, or an emergency rotation, of the realm's signing keys on
+   * the scheduler; the one action both the console and `POST
+   * /admin-api/keys/rotate|emergency` call.
+   *
+   * @param req - the request, for the actor
+   * @param body - `action` (`rotate` or `emergency`), the units and `confirm`
+   * @param via - how the action was asked for, for the audit record
+   * @returns `ok` with the run's id and a link to it, or a refusal
+   */
   keysAction(req, body, via) {
     const { log, realms } = this.deps;
     log.debug("Entering CryptoMetadata.keysAction().");
@@ -4772,6 +5134,14 @@ class CryptoMetadata {
   // makes every other column unreadable, and the whole point of keeping one
   // is that somebody takes it away to check a signature with.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the history sub-page: a table per unit, newest first, each
+   * certificate offered as a download.
+   *
+   * @param view - `historyJson()`'s answer
+   * @param req - the console request
+   * @returns the markup
+   */
   renderHistory(view, req) {
     const { log, esc, admin, adminViews } = this.deps;
     log.debug("Entering CryptoMetadata.renderHistory().");
@@ -4849,6 +5219,15 @@ class CryptoMetadata {
   // the JWKS and the metadata documents published while the key was live — so
   // unlike `/admin/keys/export` this needs only Admin Read, which the console
   // gate has already asked for by the time a handler runs.
+  /**
+   * Answers one generation's certificate, observing the key set first so a link
+   * the console just drew never answers 404.
+   *
+   * @param realmId - the realm id
+   * @param unit - the signing unit
+   * @param kid - the generation's key id
+   * @returns the certificate PEM, or null
+   */
   historyCertificate(realmId, unit, kid) {
     const { log } = this.deps;
     log.debug("Entering CryptoMetadata.historyCertificate().");
@@ -4879,6 +5258,14 @@ class CryptoMetadata {
     return row && row.certificate ? row.certificate : null;
   }
 
+  /**
+   * Draws the rotation section above the key list: each unit's generations and
+   * the Rotate and Emergency forms.
+   *
+   * @param view - `rotationViewOf()`'s answer
+   * @param canWrite - whether the reader holds Admin Write
+   * @returns the markup, or an empty string without a view
+   */
   renderRotation(view, canWrite) {
     const { log, esc } = this.deps;
     log.debug("Entering CryptoMetadata.renderRotation().");
@@ -4957,6 +5344,12 @@ class CryptoMetadata {
     return out;
   }
 
+  /**
+   * Builds `/admin/keys`' view: the key inventory and what the keystore holds.
+   *
+   * @param base - the realm's issuer base URL
+   * @returns the keys view
+   */
   keysJson(base) {
     const { log, realms, keystore, stsKeystore } = this.deps;
     const self = this;
@@ -5246,11 +5639,27 @@ const log = helpers.log;
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * `/admin/crypto-metadata`: what this service does with cryptography, for every
+ * identity service it advertises, and with which algorithms; and the signing
+ * keys at `/admin/keys`.
+ *
+ * Every table is read from the module that performs the algorithm.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   CryptoMetadata: CryptoMetadata,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: CryptoMetadata): void =>
     slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   // The instance's table, read when asked (#50, R2): the same array the
   // installed instance holds.

@@ -354,7 +354,7 @@ function checkTheJobTimeoutIsAboveOurs(t) {
     (/STS_SAML_PEERS_TIMEOUT="\$\{STS_SAML_PEERS_TIMEOUT:-(\d+)\}"/
       .exec(launcher) || [])[1]) || 0;
   // Unless the `tests` job empties STS_TEST_CONFORMANCE_MODES (#187): the
-  // plans are the `conformance` job's then, whose arithmetic is below.
+  // plans are the `openid-conformance` job's then, whose arithmetic is below.
   const testsJob = workflow.slice(workflow.indexOf('\n  tests:'),
                                   workflow.indexOf('\n  coverage:'));
   const testsRunConformance =
@@ -365,6 +365,14 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const teardownBound = Number(
     /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-(\d+)\}"/
       .exec(launcher)[1]);
+  // THE IMAGE BUILD, WHICH NO MODE BOUND COVERS (2026-09-27). The launcher
+  // builds before the first mode starts, and a runner with no layer cache
+  // took nineteen minutes for it (the Samba and Heimdal stages, the
+  // enrollment clients, tlsfuzzer): the `cluster` job's 115 minutes were
+  // above its mode's bound plus teardowns and were still spent before the
+  // mode's own bound could fire, so the run was cancelled with no verdict.
+  // Every job running the launcher sits above this as well.
+  const buildAllowance = 1800;
 
   // How many modes a full run does. Read from the file that defines them
   // rather than written down here, for the reason that file gives about
@@ -387,32 +395,35 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   // One wedged mode is the case worth surviving: the run reaches its bound,
   // says so, and the remaining modes still run. Every mode wedging is a
   // wedged machine, which is what the job timeout is for.
-  const worstSeconds = modeBound + teardownBound * (modeCount + 1);
+  const worstSeconds = buildAllowance + modeBound +
+    teardownBound * (modeCount + 1);
   t.check(jobMinutes * 60 > worstSeconds,
-          'the job timeout (' + jobMinutes + 'm) is above one wedged mode ' +
-            'plus every teardown (' + Math.ceil(worstSeconds / 60) + 'm)',
+          'the job timeout (' + jobMinutes + 'm) is above the image ' +
+            'build, one wedged mode plus every teardown (' + Math.ceil(worstSeconds / 60) + 'm)',
           'if the job\'s number is the smaller one then the bound that ' +
           'fires is the one that cannot explain itself, which is exactly ' +
           'the 2026-09-10 outcome with extra machinery in front of it');
 
   // And it must not be so large that a genuinely wedged runner is held for a
   // shift. The workflow's own header makes this argument about six hours.
-  t.check(jobMinutes <= 120,
+  t.check(jobMinutes <= 180,
           'and it is still an outer bound rather than a licence (' +
             jobMinutes + 'm)',
           'without a number here a stuck job holds a runner for six hours, ' +
           'which is what the workflow header says this setting is for');
 
-  // THE `conformance` JOB (#187) runs the same launcher for ONE mode with
+  // THE `openid-conformance` JOB (#187; `conformance` until 2026-09-27) runs
+  // the same launcher for ONE mode with
   // the suite's plans in it: its number sits above that mode's bound plus
   // a teardown for the mode and one for the stack before it, and under the
   // six hours GitHub gives any job. Its absence is a failure only while the
   // `tests` job leaves the plans out, since then nothing else runs them.
-  const conformanceAt = workflow.indexOf('\n  conformance:');
+  const conformanceAt = workflow.indexOf('\n  openid-conformance:');
   t.check(testsRunConformance || conformanceAt !== -1,
           'the conformance plans run in some job',
           'the `tests` job empties STS_TEST_CONFORMANCE_MODES, so without a ' +
-          '`conformance` job CI would run none of the OpenID Foundation plans');
+          '`openid-conformance` job CI would run none of the OpenID ' +
+          'Foundation plans');
   if (conformanceAt !== -1) {
     const conformanceJob = workflow.slice(
       conformanceAt, workflow.indexOf('\n  cluster:', conformanceAt));
@@ -421,17 +432,19 @@ function checkTheJobTimeoutIsAboveOurs(t) {
     // The SAML peers' bound too, unless the job empties their modes.
     const conformancePeers =
       /STS_TEST_SAML_PEERS_MODES:\s*""/.test(conformanceJob) ? 0 : peersBound;
-    const conformanceWorst = sharedBound + conformanceBound +
-      conformancePeers + teardownBound * 2;
+    const conformanceWorst = buildAllowance + sharedBound +
+      conformanceBound + conformancePeers + teardownBound * 2;
     t.check(/--modes=memory\b/.test(conformanceJob) &&
-            /--only=conformance\b/.test(conformanceJob),
-            'the `conformance` job runs the memory mode\'s conformance jobs',
+            /--conformance-only\b/.test(conformanceJob),
+            'the `openid-conformance` job runs the memory mode\'s ' +
+            'conformance jobs, by the manifest flag',
             'the launcher runs the suite only in the modes ' +
             'STS_TEST_CONFORMANCE_MODES names, `memory` by default');
     t.check(conformanceMinutes * 60 > conformanceWorst &&
             conformanceMinutes <= 360,
-            'the `conformance` job timeout (' + conformanceMinutes +
-              'm) is above its mode\'s bound plus two teardowns (' +
+            'the `openid-conformance` job timeout (' + conformanceMinutes +
+              'm) is above the image build, its mode\'s bound and two ' +
+              'teardowns (' +
               Math.ceil(conformanceWorst / 60) + 'm) and within six hours',
             'the launcher\'s bound must be the one that fires, and GitHub ' +
             'cancels any job at six hours whatever it says');
@@ -465,14 +478,15 @@ function checkTheJobTimeoutIsAboveOurs(t) {
               clusterBound + 's)',
             'the arithmetic below would otherwise be about a number the ' +
             'cluster mode does not use');
-    const clusterWorst = (clusterBound || modeBound) + teardownBound * 2;
+    const clusterWorst = buildAllowance + (clusterBound || modeBound) +
+      teardownBound * 2;
     t.check(clusterMinutes * 60 > clusterWorst,
             'the `cluster` job timeout (' + clusterMinutes + 'm) is above ' +
-              'its one mode plus its teardowns (' +
+              'the image build, its one mode and its teardowns (' +
               Math.ceil(clusterWorst / 60) + 'm)',
             'the tests job\'s argument for one mode: the bound that fires ' +
             'must be the one that can explain itself');
-    t.check(clusterMinutes <= 120,
+    t.check(clusterMinutes <= 180,
             'and the `cluster` job\'s is still an outer bound (' +
               clusterMinutes + 'm)',
             'the six-hour argument again, for the second job running this ' +

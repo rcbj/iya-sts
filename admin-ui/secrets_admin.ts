@@ -133,6 +133,10 @@ interface SecretsAdminDeps {
 // both directions — a secret with no row here is drawn with no explanation,
 // and a row for a secret that no longer exists is prose about nothing.
 // ---------------------------------------------------------------------------
+/**
+ * What the page says about each secret, keyed by the descriptor ids
+ * `common/secrets.js` exports.
+ */
 const SECRET_NOTES = {
   'kek': {
     heading: 'The key-encryption key',
@@ -167,6 +171,38 @@ const SECRET_NOTES = {
     rotating: 'Rotating it is ordinary: change it in the store and in ' +
               'PostgreSQL, and restart. Nothing this service has written ' +
               'depends on its value.'
+  },
+  // THE CELLS' TWO (#98). Neither is asked for without `cells.id`.
+  'global-database-password': {
+    heading: 'The global database password',
+    what: 'The password this cell dials the GLOBAL tier with &mdash; the ' +
+          'one writable database every cell shares for realms, settings, ' +
+          'applications, policies, signing keys and the routing index, and ' +
+          'its replica in this cell ' +
+          '(<code>persistence.globalDatabaseUrl</code>, ' +
+          '<code>persistence.globalDatabaseReadUrl</code>).',
+    without: 'Nothing in single-cell mode. A cell (<code>cells.id</code> ' +
+             'set) cannot open the global tier without it where the URL ' +
+             'carries none, and a cell with no global tier does not start.',
+    rotating: 'Ordinary: change it in the store and in PostgreSQL, then ' +
+              'restart every cell. Nothing written depends on its value.'
+  },
+  'cell-kek': {
+    heading: 'This cell\'s key-encryption key',
+    what: 'The AES-256 key the rows RESIDENT in this cell are sealed under ' +
+          '&mdash; a person\'s credentials, devices, sessions and everything ' +
+          'else minted about the people homed here. It lives only in this ' +
+          'cell\'s region, so another jurisdiction holding a copy of the ' +
+          'database still cannot read them. It must not be the service ' +
+          'key-encryption key, and is refused if it is.',
+    without: 'In PRODUCT mode a cell does not start without it, and there ' +
+             'is no fallback to the service key: that would put the ' +
+             'people of every jurisdiction under one key. In development ' +
+             'mode, and in single-cell mode, it is never asked for.',
+    rotating: 'Written once and never replaced, for the same reason as the ' +
+              'service key: this service has no re-sealing pass. A person ' +
+              're-homed to another cell is sealed again under THAT cell\'s ' +
+              'key as they move.'
   },
   // THE MAIL CHANNEL'S FOUR (#63). Each is optional and unconfigured by
   // default; each is read when `common/mail.ts` builds the transport that
@@ -243,9 +279,22 @@ const SECRET_NOTES = {
 // ---------------------------------------------------------------------------
 const ISO_LIKE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 
+/**
+ * Monitoring → Secret store: where the key-encryption key and the database
+ * password come from, whether this process read them, and what the store at the
+ * other end is doing. No secret value appears on it.
+ */
 class SecretsAdmin {
+  /**
+   * See the module's `SECRET_NOTES`.
+   */
   static readonly SECRET_NOTES = SECRET_NOTES;
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the console, the secret reader, the keystore and the mode
+   */
   constructor(private readonly deps: SecretsAdminDeps) {
     deps.log.debug("Entering SecretsAdmin.constructor().");
     deps.log.debug("Leaving SecretsAdmin.constructor().");
@@ -253,6 +302,11 @@ class SecretsAdmin {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): SecretsAdminDeps {
     helpers.log.debug("Entering SecretsAdmin.defaultDeps().");
     helpers.log.debug("Leaving SecretsAdmin.defaultDeps().");
@@ -490,6 +544,14 @@ class SecretsAdmin {
   // requires it (and `helpers.js` requires `keystore.js`), so a require back
   // would close a cycle (rule 2).
   // ===========================================================================
+  /**
+   * Builds the page's model, the one object behind the page, its `?format=json`
+   * and `/admin-api/secrets` (rule 7): the store half from `common/secrets.js`,
+   * and whether the mode requires the key-encryption key and whether this
+   * process persists keys.
+   *
+   * @returns a promise of the model
+   */
   secretsJson(): Promise<Json> {
     const { log, secrets, keystore, mode } = this.deps;
     log.debug('Entering SecretsAdmin.secretsJson().');
@@ -782,6 +844,12 @@ class SecretsAdmin {
   // descriptors `secrets.js` exports in both directions. A secret with no
   // note is drawn with no explanation; a note for a secret that no longer
   // exists is prose about nothing. Neither is an error anywhere else.
+  /**
+   * Answers the notes table, for the test that checks it against the secret
+   * descriptors in both directions.
+   *
+   * @returns the notes
+   */
   secretNotes(): typeof SECRET_NOTES {
     const { log } = this.deps;
     log.debug("Entering SecretsAdmin.secretNotes().");
@@ -789,6 +857,11 @@ class SecretsAdmin {
     return Object.assign({}, SECRET_NOTES);
   }
 
+  /**
+   * Registers `GET /admin/secrets`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function }): void {
     const { log } = this.deps;
     const self = this;
@@ -830,10 +903,24 @@ helpers.log.info('The secret store report is at /admin/secrets: where the ' +
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Monitoring → Secret store, `/admin/secrets`: where this service's two
+ * primordial secrets come from, whether it got them, and what the store at the
+ * other end is doing. It has no control.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   SecretsAdmin: SecretsAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: SecretsAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts`. Rule 7 — one function behind the page and
   // the operation, so the two cannot report a different state of the same

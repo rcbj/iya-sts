@@ -78,6 +78,10 @@ type Json = any;
 type Req = import('express').Request;
 type Res = import('express').Response;
 
+/**
+ * The scheduler job that polls every foreign transmitter with a poll stream,
+ * `ssf.foreign-poll`.
+ */
 const POLL_JOB = 'ssf.foreign-poll';
 const PUSH = 'urn:ietf:rfc:8935';
 const POLL = 'urn:ietf:rfc:8936';
@@ -116,14 +120,39 @@ interface TransmittersDeps {
   devices: () => Json;
 }
 
+/**
+ * This realm as the receiver of foreign Shared Signals transmitters that an
+ * administrator registered: discovery, the stream at the transmitter, poll and
+ * push delivery, verification, and what a verified SET leads to.
+ *
+ * A SET is acted on only when it verified, and then only as the
+ * `signal-response` policy permits, on the one local person the named
+ * federation relationship links; development mode only records what it would do
+ * unless `ssf.actOnSignalsInDevelopment` is on.
+ */
 class SsfTransmitters {
+  /**
+   * The poll job's id; the module's `POLL_JOB`.
+   */
   static readonly POLL_JOB = POLL_JOB;
 
+  /**
+   * Builds the receiver from its dependencies.
+   *
+   * @param deps - the modules it reads, from `SsfTransmitters.defaultDeps()`
+   * or the composition root
+   */
   constructor(private readonly deps: TransmittersDeps) {
     deps.log.debug("Entering SsfTransmitters.constructor().");
     deps.log.debug("Leaving SsfTransmitters.constructor().");
   }
 
+  /**
+   * Returns the real modules the receiver depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): TransmittersDeps {
     helpers.log.debug("Entering SsfTransmitters.defaultDeps().");
     helpers.log.debug("Leaving SsfTransmitters.defaultDeps().");
@@ -168,6 +197,13 @@ class SsfTransmitters {
     return Number(config.value(key));
   }
 
+  /**
+   * Returns the SHA-256 digest of a text, base64url, as a push authorization
+   * header is kept.
+   *
+   * @param text - the text
+   * @returns the digest
+   */
   static digest(text: string): string {
     helpers.log.debug("Entering SsfTransmitters.digest().");
     helpers.log.debug("Leaving SsfTransmitters.digest().");
@@ -177,6 +213,14 @@ class SsfTransmitters {
 
   // SSF 1.0 section 7: the configuration document's address for an issuer —
   // `/.well-known/ssf-configuration` inserted before the issuer's path.
+  /**
+   * Returns an issuer's SSF configuration address (SSF 1.0 section 7):
+   * `/.well-known/ssf-configuration` inserted before the issuer's path.
+   *
+   * @param issuer - the issuer
+   * @returns the URL
+   * @throws when the issuer is not a URL
+   */
   static discoveryUrlFor(issuer: string): string {
     helpers.log.debug("Entering SsfTransmitters.discoveryUrlFor().");
     const u = new URL(String(issuer));
@@ -186,6 +230,12 @@ class SsfTransmitters {
       (path && path !== '/' ? path : '');
   }
 
+  /**
+   * Returns a copy of a registered transmitter in the ambient realm.
+   *
+   * @param id - the transmitter's id
+   * @returns the record, or null
+   */
   get(id: string): Json {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.get(). " + id);
@@ -291,6 +341,17 @@ class SsfTransmitters {
   // -------------------------------------------------------------------------
   // REGISTER: discover the issuer's configuration and keys, and keep them.
   // -------------------------------------------------------------------------
+  /**
+   * Registers a transmitter: discovers its configuration (which must name the
+   * issuer) and its keys, checks the federation relationship, and keeps the
+   * credential sealed. Audited.
+   *
+   * @param body - `id`, `issuer`, `discoveryUrl`, `federationId`, `delivery`,
+   * `eventsRequested`, and `tokenEndpoint`, `clientId`, `clientSecret` and
+   * `scope`, or `bearer`
+   * @param ctx - `via`, `actor` and `base`
+   * @returns a promise of `{ ok, ... }` or `{ ok: false, errors }`
+   */
   async add(body: Json, ctx: Json): Promise<Json> {
     const { log, fedHttp, errorCodes, now } = this.deps;
     log.debug("Entering SsfTransmitters.add().");
@@ -436,6 +497,15 @@ class SsfTransmitters {
   // -------------------------------------------------------------------------
   // THE STREAM AT THE TRANSMITTER (section 8.1.1).
   // -------------------------------------------------------------------------
+  /**
+   * Creates this realm's stream at the transmitter (SSF 1.0 section 8.1.1): a
+   * poll stream, or a push stream to `/ssf/transmitters/{id}/push` with an
+   * authorization header only this realm and the transmitter know. Audited.
+   *
+   * @param record - the transmitter
+   * @param ctx - `via`, `actor` and `base`
+   * @returns a promise of the outcome
+   */
   async createStream(record: Json, ctx: Json): Promise<Json> {
     const { log, errorCodes } = this.deps;
     log.debug("Entering SsfTransmitters.createStream(). " + record.id);
@@ -518,6 +588,17 @@ class SsfTransmitters {
     return u.toString();
   }
 
+  /**
+   * Performs an act on the stream at the transmitter: `read-stream`,
+   * `update-stream`, `delete-stream`, `set-status`, `add-subject`,
+   * `remove-subject` or `verify`.
+   *
+   * @param record - the transmitter
+   * @param action - the act
+   * @param body - its fields
+   * @param ctx - `via` and `actor`
+   * @returns a promise of the outcome
+   */
   async streamAct(record: Json, action: string, body: Json,
                   ctx: Json): Promise<Json> {
     const { log, errorCodes } = this.deps;
@@ -623,6 +704,13 @@ class SsfTransmitters {
   // -------------------------------------------------------------------------
   // POLL (RFC 8936): ask, act, acknowledge on the next request.
   // -------------------------------------------------------------------------
+  /**
+   * Polls a transmitter (RFC 8936) for up to `ssf.foreignPollMaxRounds` rounds,
+   * receiving each SET and acknowledging it on the next request.
+   *
+   * @param record - the transmitter
+   * @returns a promise of `{ received, acted, refused, rounds, why }`
+   */
   async pollOnce(record: Json): Promise<Json> {
     const { log, now } = this.deps;
     log.debug("Entering SsfTransmitters.pollOnce(). " + record.id);
@@ -689,6 +777,12 @@ class SsfTransmitters {
   }
 
   // The scheduler job: every realm, every poll stream that is streaming.
+  /**
+   * Polls every streaming poll transmitter in every realm; the scheduler job's
+   * body.
+   *
+   * @returns a promise of the totals
+   */
   async pollAll(): Promise<Json> {
     const { log, realms, errorCodes } = this.deps;
     const self = this;
@@ -722,6 +816,9 @@ class SsfTransmitters {
     return total;
   }
 
+  /**
+   * Registers the `ssf.foreign-poll` scheduler job, once.
+   */
   scheduleJobs(): void {
     const { log } = this.deps;
     const self = this;
@@ -748,6 +845,15 @@ class SsfTransmitters {
   // -------------------------------------------------------------------------
   // PUSH (RFC 8935): the authorization header this realm gave, then a SET.
   // -------------------------------------------------------------------------
+  /**
+   * Answers `POST /ssf/transmitters/:id/push` (RFC 8935): checks the
+   * authorization header this realm gave the transmitter, then receives the
+   * SET, answering 202 or an RFC 8935 error.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns a promise of the answer sent
+   */
   async pushRoute(req: Req, res: Res): Promise<unknown> {
     const { log, errorCodes } = this.deps;
     log.debug("Entering SsfTransmitters.pushRoute().");
@@ -789,6 +895,11 @@ class SsfTransmitters {
     return undefined;
   }
 
+  /**
+   * Registers the push endpoint, `POST /ssf/transmitters/:id/push`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: Json): void {
     const { log } = this.deps;
     const self = this;
@@ -808,6 +919,17 @@ class SsfTransmitters {
   // ONE SET: verified, then acted on, then recorded. `{ ok, acted } |
   // { ok: false, err, description, code }` — RFC 8935 / 8936 error codes.
   // -------------------------------------------------------------------------
+  /**
+   * Takes one SET from a transmitter: verifies it (signature, `typ`, `iss`,
+   * `aud`, a fresh `jti`), acts on a verified one as policy permits, and
+   * records it. Product mode refuses an unverified SET.
+   *
+   * @param record - the transmitter
+   * @param token - the SET, as a compact JWS
+   * @param via - `poll` or `push`
+   * @returns a promise of `{ ok, acted }` or `{ ok: false, err, description,
+   * code }`
+   */
   async receive(record: Json, token: string, via: string): Promise<Json> {
     const { log, mode, now } = this.deps;
     log.debug("Entering SsfTransmitters.receive(). " + record.id + " " + via);
@@ -980,6 +1102,15 @@ class SsfTransmitters {
   // -------------------------------------------------------------------------
   // THE PERSON A FOREIGN SUBJECT NAMES (header point 4), or why nobody.
   // -------------------------------------------------------------------------
+  /**
+   * Finds the one local person a foreign subject names, through the
+   * transmitter's federation relationship: an `iss_sub` by its federation link,
+   * an `email` only where the relationship allows it.
+   *
+   * @param record - the transmitter
+   * @param subject - the SET's subject
+   * @returns `{ username, ... }`, with `why` when it names nobody
+   */
   personFor(record: Json, subject: Json): Json {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.personFor().");
@@ -1197,6 +1328,14 @@ class SsfTransmitters {
              done: true };
   }
 
+  /**
+   * Removes a transmitter, deleting its stream at the transmitter first.
+   * Audited.
+   *
+   * @param record - the transmitter
+   * @param ctx - `via` and `actor`
+   * @returns a promise of `{ ok, message }`
+   */
   async remove(record: Json, ctx: Json): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.remove(). " + record.id);
@@ -1213,6 +1352,16 @@ class SsfTransmitters {
   // -------------------------------------------------------------------------
   // THE CONSOLE'S AND THE API'S ACTS (rule 7).
   // -------------------------------------------------------------------------
+  /**
+   * Performs one of the console's and the management API's acts: `add`,
+   * `create-stream`, `read-stream`, `update-stream`, `delete-stream`,
+   * `set-status`, `add-subject`, `remove-subject`, `verify`, `poll-now` or
+   * `remove`.
+   *
+   * @param body - `action`, `id` and the act's fields
+   * @param ctx - `via`, `actor` and `base`
+   * @returns a promise of the outcome
+   */
   async act(body: Json, ctx: Json): Promise<Json> {
     const { log, errorCodes } = this.deps;
     log.debug("Entering SsfTransmitters.act().");
@@ -1260,6 +1409,12 @@ class SsfTransmitters {
   }
 
   // A registration as a caller sees it: never a secret or a token.
+  /**
+   * Returns a registration as a caller sees it, never with a secret or a token.
+   *
+   * @param record - the transmitter
+   * @returns the view
+   */
   view(record: Json): Json {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.view().");
@@ -1287,6 +1442,15 @@ class SsfTransmitters {
     };
   }
 
+  /**
+   * Builds the report the console page and the management API answer: every
+   * transmitter, what arrived newest first, the account locks transmitters put
+   * on people here, and whether this realm only observes.
+   *
+   * @param options - `transmitter`, which narrows what arrived, and `limit`
+   * (default 200)
+   * @returns `{ transmitters, received, locks, observeOnly }`
+   */
   report(options?: Json): Json {
     const { log } = this.deps;
     const self = this;
@@ -1330,9 +1494,23 @@ const slot = new InstanceSlot<SsfTransmitters>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * This realm as the receiver of foreign Shared Signals transmitters.
+ *
+ * Exports the `SsfTransmitters` class, `POLL_JOB`, and facades that forward to
+ * the installed instance.
+ *
+ * @namespace
+ */
 export = {
   SsfTransmitters: SsfTransmitters,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SsfTransmitters): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   POLL_JOB: POLL_JOB,
   discoveryUrlFor: SsfTransmitters.discoveryUrlFor,

@@ -79,6 +79,24 @@ import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import model = require('./xacml_model');
 import datatypes = require('./xacml_datatypes');
+// THE ROLE DESIGNATOR (#303): a subject's configured roles, from the register
+// and — for the console roles and a person — the console roster, the same
+// answer token issuance gets. A library (rule 3). Not copied into the remote
+// PEP either: that container asks `POST /xacml/pip`, which asks this.
+import rolePermissions = require('../common/role_permissions');
+import templates = require('./xacml_templates');
+
+// The two issuance-vocabulary attributes this PIP answers or reads (#303).
+/**
+ * The attribute identifier of the role designator, answered with the
+ * subject's configured roles (#303).
+ */
+const ROLE_ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE.ROLE;
+/**
+ * The access-subject attribute that says whether the subject is a person
+ * (`user`) or an application acting as itself.
+ */
+const SUBJECT_KIND_ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE.SUBJECT_KIND;
 
 // The directory functions this module calls. Installed by
 // `ldap/ldap_server.js`.
@@ -92,6 +110,7 @@ interface XacmlPipDeps {
   errorCodes: { tag(code: string): string };
   model: typeof model;
   datatypes: { parseValue(type: string, lexical: string): any };
+  rolePermissions: { configuredRolesOf(subject: any): string[] };
 }
 
 // Installed by `ldap/ldap_server.js` at require time, the way every other
@@ -119,17 +138,43 @@ let warnedAboutNoDirectory = false;
 // carries it, and inventing a directory lookup for it would let a policy
 // silently read a different subject-id from the one being decided about.
 // ---------------------------------------------------------------------------
+/**
+ * The prefix of an attribute identifier naming a directory attribute
+ * explicitly: `urn:sts:xacml:attribute:<name>`.
+ */
 const ATTRIBUTE_PREFIX = 'urn:sts:xacml:attribute:';
 
+/**
+ * The Policy Information Point: answers a PDP's subject designators out of
+ * the embedded directory.
+ *
+ * An attribute the directory does not hold is an empty bag, never false or
+ * a default; whether that ends the decision is the policy's business.
+ */
 class XacmlPip {
+  /**
+   * The directory-attribute identifier prefix, as a static member.
+   */
   static readonly ATTRIBUTE_PREFIX = ATTRIBUTE_PREFIX;
 
+  /**
+   * Builds a PIP over the dependencies given.
+   *
+   * @param deps - the logger, error-code registry, engine vocabulary,
+   * datatypes and role register
+   */
   constructor(private readonly deps: XacmlPipDeps) {
     deps.log.debug("Entering XacmlPip.constructor().");
     deps.log.debug("Leaving XacmlPip.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, as the composition
+   * root passes them.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): XacmlPipDeps {
     helpers.log.debug("Entering XacmlPip.defaultDeps().");
     helpers.log.debug("Leaving XacmlPip.defaultDeps().");
@@ -137,7 +182,8 @@ class XacmlPip {
       log: helpers.log,
       errorCodes: errorCodes,
       model: model,
-      datatypes: datatypes
+      datatypes: datatypes,
+      rolePermissions: rolePermissions
     };
   }
 
@@ -147,6 +193,13 @@ class XacmlPip {
   // `common/protocol_stack.ts` reaches this module's build line; a facade
   // there would build a default instance and the root's install would be
   // refused. What it installs is module-level, so it needs no instance.
+  /**
+   * Installs the directory lookup the PIP reads entries through.
+   *
+   * Static because `ldap/ldap_server.js` fills it before the composition root
+   * builds the instance.
+   * @param fns - an object with `locateEntry()`, or null to remove it
+   */
   static setDirectory(fns: PipDirectory | null | undefined): void {
     const { log } = helpers;
     log.debug('Entering XacmlPip.setDirectory().');
@@ -155,6 +208,12 @@ class XacmlPip {
               (directory ? 'has the directory.' : 'has none.'));
   }
 
+  /**
+   * Tells whether a directory has been installed.
+   *
+   * Logs one warning the first time it answers no.
+   * @returns true when the PIP can look entries up
+   */
   available(): boolean {
     const { log } = this.deps;
     log.debug("Entering XacmlPip.available().");
@@ -174,6 +233,14 @@ class XacmlPip {
     return false;
   }
 
+  /**
+   * Maps an attribute identifier to the directory attribute it names.
+   *
+   * A prefixed identifier gives the name after the prefix; a bare LDAP-style
+   * name is taken as itself; a standard XACML URI is never mapped.
+   * @param attributeId - the designator's attribute identifier
+   * @returns the directory attribute name, or null when it names none
+   */
   directoryAttributeFor(attributeId: unknown): string | null {
     const { log } = this.deps;
     log.debug('Entering XacmlPip.directoryAttributeFor(). id=' + attributeId);
@@ -196,6 +263,12 @@ class XacmlPip {
   // than out of any session: a PDP decides about the subject the PEP named,
   // and this service's own sign-on session is a different thing that has no
   // business influencing somebody else's authorization question.
+  /**
+   * Reads the first access-subject `subject-id` value out of a request.
+   *
+   * @param request - a parsed XACML request
+   * @returns the subject's lexical value, or null when the request names none
+   */
   subjectOf(request: any): string | null {
     const { log, model } = this.deps;
     log.debug('Entering XacmlPip.subjectOf().');
@@ -217,6 +290,76 @@ class XacmlPip {
     return found;
   }
 
+  // Whether the request is about a person (`user`, the default) or an
+  // application acting as itself (#303) — `SUBJECT_KIND_ATTRIBUTE` in the
+  // access-subject category. Anything but `application` is a person, which
+  // is what a request that never heard of the attribute meant.
+  /**
+   * Tells whether a request is about a person or an application.
+   *
+   * @param request - a parsed XACML request
+   * @returns `application` when the request says so, otherwise `user`
+   */
+  subjectKindOf(request: any): string {
+    const { log, model } = this.deps;
+    log.debug('Entering XacmlPip.subjectKindOf().');
+    let kind = 'user';
+    request.categories.forEach(function (category) {
+      if (category.category !== model.CATEGORY.ACCESS_SUBJECT) {
+        return;
+      }
+      category.attributes.forEach(function (attribute) {
+        if (attribute.attributeId === SUBJECT_KIND_ATTRIBUTE &&
+            attribute.values.length &&
+            String(attribute.values[0].lexical) === 'application') {
+          kind = 'application';
+        }
+      });
+    });
+    log.debug('Leaving XacmlPip.subjectKindOf(). ' + kind);
+    return kind;
+  }
+
+  // THE ROLE DESIGNATOR (#303). The subject's CONFIGURED roles, as strings
+  // parsed at the designator's datatype. The built-in ones are not answered:
+  // they are facts about the request — who authenticated, over what — that
+  // a PIP naming a subject cannot know, and a PEP asserts them where it can.
+  // The subject is taken as authenticated: a PEP asking about a named
+  // subject is deciding for somebody it already accepted.
+  private rolesFor(request: any, designator: any): any[] {
+    const { log, datatypes, rolePermissions } = this.deps;
+    log.debug('Entering XacmlPip.rolesFor().');
+    const name = this.subjectOf(request);
+    if (!name) {
+      log.debug('Leaving XacmlPip.rolesFor(). No subject.');
+      return [];
+    }
+    let held = [];
+    try {
+      held = rolePermissions.configuredRolesOf({
+        kind: this.subjectKindOf(request), name: name, authenticated: true });
+    } catch (e) {
+      // A register that cannot be read answers an empty bag, which is what
+      // this PIP answers for every failure (see the header): the PDP decides
+      // on less rather than not at all.
+      log.debug('Caught in XacmlPip.rolesFor(): ' + ((e && e.message) || e));
+      held = [];
+    }
+    const out = [];
+    held.forEach(function (role) {
+      try {
+        out.push(datatypes.parseValue(designator.dataType, String(role)));
+      } catch (e) {
+        // A role name that is not a value of the designator's type — a
+        // policy asking for roles as integers — is dropped, as a directory
+        // value would be.
+        log.debug('Caught in XacmlPip.rolesFor(): ' + ((e && e.message) || e));
+      }
+    });
+    log.debug('Leaving XacmlPip.rolesFor(). ' + out.length + ' role(s).');
+    return out;
+  }
+
   // An attribute off a directory entry, matched without regard to case. See
   // the call site for why this is not `attributes[name]`.
   //
@@ -227,6 +370,16 @@ class XacmlPip {
   // cannot distinguish them and deliberately must not — a PDP has to see one
   // empty bag — but the warning it logs about the second is the only trace of
   // it, and a caller in another container cannot read this service's log.
+  /**
+   * Reads an attribute off a directory entry, matching its name without
+   * regard to case.
+   *
+   * Exported as `rawAttribute()` for `POST /xacml/pip`, which must tell an
+   * absent attribute from one whose values do not parse.
+   * @param attributes - the entry's attribute map
+   * @param name - the attribute name
+   * @returns the stored value or values, or null when the entry lacks it
+   */
   attributeOf(attributes: Record<string, any> | null | undefined,
               name: string): any {
     const { log } = this.deps;
@@ -261,6 +414,12 @@ class XacmlPip {
   // second lookup, so "resolves" means one thing here — the fourth-lookup
   // mistake this file's header refuses to make, met from the other direction.
   // -------------------------------------------------------------------------
+  /**
+   * Looks a subject up in the directory through the resolver's own lookup.
+   *
+   * @param subject - a name, a DN or a certificate subject
+   * @returns the stored entry, or null when there is none or no directory
+   */
   locateSubject(subject: unknown): any {
     const { log } = this.deps;
     log.debug('Entering XacmlPip.locateSubject().');
@@ -283,6 +442,16 @@ class XacmlPip {
   // PDP owns the bag's type and a resolver that built one could disagree with
   // the designator about what type it just returned.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the attribute resolver a PDP is handed for one request.
+   *
+   * The subject's entry is looked up once per decision. The resolver answers
+   * only access-subject designators, as an array of values parsed at the
+   * designator's datatype; a value that does not parse is dropped with a
+   * warning.
+   * @param request - the parsed XACML request being decided
+   * @returns a function from a designator to an array of parsed values
+   */
   resolverFor(request: any): (designator: any) => any[] {
     const self = this;
     const { log, errorCodes, model, datatypes } = this.deps;
@@ -331,6 +500,11 @@ class XacmlPip {
         log.debug('Leaving XacmlPip.resolverFor().resolve(). Not a subject ' +
                   'attribute.');
         return [];
+      }
+      if (designator.attributeId === ROLE_ATTRIBUTE) {
+        log.debug('Leaving XacmlPip.resolverFor().resolve(). The role ' +
+                  'designator.');
+        return self.rolesFor(request, designator);
       }
       const name = self.directoryAttributeFor(designator.attributeId);
       if (!name) {
@@ -408,6 +582,13 @@ const slot = new InstanceSlot<XacmlPip>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The XACML Policy Information Point over the embedded directory.
+ *
+ * Exports the `XacmlPip` class for the composition root and facades that
+ * forward to the installed instance.
+ * @namespace
+ */
 export = {
   XacmlPip: XacmlPip,
   installInstance: (instance: XacmlPip): void => slot.install(instance),
@@ -418,6 +599,9 @@ export = {
   rawAttribute: slot.forward('attributeOf'),
   directoryAttributeFor: slot.forward('directoryAttributeFor'),
   subjectOf: slot.forward('subjectOf'),
+  subjectKindOf: slot.forward('subjectKindOf'),
+  ROLE_ATTRIBUTE: ROLE_ATTRIBUTE,
+  SUBJECT_KIND_ATTRIBUTE: SUBJECT_KIND_ATTRIBUTE,
   available: slot.forward('available'),
   ATTRIBUTE_PREFIX: XacmlPip.ATTRIBUTE_PREFIX
 };

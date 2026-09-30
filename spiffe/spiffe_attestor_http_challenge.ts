@@ -70,16 +70,41 @@ interface HttpChallengeDeps {
                                  path: string): Promise<any> };
 }
 
+/**
+ * The `http_challenge` node attestor: the agent serves a nonce over HTTP from a
+ * host name the realm allows, and this server fetches it.
+ *
+ * It proves exactly as much as the network's DNS; an empty
+ * `spiffe.httpChallengeAllowedDnsPatterns` refuses every agent.
+ */
 class HttpChallengeAttestor {
+  /**
+   * The attestation type an agent names in `params.data.type`.
+   */
   readonly type = 'http_challenge';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'A nonce served over HTTP from a host name the realm ' +
     'allows, fetched by this server — as strong as the network\'s DNS.';
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, crypto, DNS lookup, configuration, error codes,
+   *   SPIFFE and gRPC helpers and the outbound challenge fetcher
+   */
   constructor(private readonly deps: HttpChallengeDeps) {
     deps.log.debug("Entering HttpChallengeAttestor.constructor().");
     deps.log.debug("Leaving HttpChallengeAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): HttpChallengeDeps {
     helpers.log.debug("Entering HttpChallengeAttestor.defaultDeps().");
     helpers.log.debug("Leaving HttpChallengeAttestor.defaultDeps().");
@@ -96,6 +121,15 @@ class HttpChallengeAttestor {
     };
   }
 
+  /**
+   * Marks an error code on the call and returns the gRPC status error to throw.
+   *
+   * @param call - the gRPC call the refusal is for
+   * @param code - the `STS-SPIFFE-…` error code to record
+   * @param grpcCode - the gRPC status code
+   * @param message - the message the client is sent
+   * @returns the status error
+   */
   refuse(call: any, code: string, grpcCode: number, message: string): Error {
     const { log, errorCodes, rpc } = this.deps;
     log.debug("Entering HttpChallengeAttestor.refuse(). " + code);
@@ -107,6 +141,14 @@ class HttpChallengeAttestor {
   }
 
   // The configuration, checked as SPIRE checks it at Configure, or why not.
+  /**
+   * Reads the attestor's configuration and checks it as SPIRE checks it at
+   * Configure.
+   *
+   * @returns the compiled DNS patterns, the port rules, the trust-on-first-use
+   *   and client-IP switches, and `problem`: '' or why the configuration is
+   *   unusable
+   */
   settings(): any {
     const { log, config } = this.deps;
     log.debug("Entering HttpChallengeAttestor.settings().");
@@ -149,12 +191,23 @@ class HttpChallengeAttestor {
     return out;
   }
 
+  /**
+   * Checks the claimed host name and port, challenges the agent with a nonce
+   * and fetches it back from `http://<host>:<port>/.well-known/...`.
+   *
+   * @param context - the attestation context; the payload names the host name,
+   *   agent name and port
+   * @returns the agent `/spire/agent/http_challenge/<host>` with the selector
+   *   `hostname:<host>`
+   * @throws a gRPC status error when the claim, the configuration or the
+   *   fetched nonce is refused
+   */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
     const { log, crypto, spiffeId, rpc, outbound, lookup } = this.deps;
     log.debug("Entering HttpChallengeAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const s = this.settings();
     if (s.problem) {
       log.debug("Leaving HttpChallengeAttestor.attest(). Not configured.");
@@ -273,6 +326,11 @@ class HttpChallengeAttestor {
   }
 }
 
+/**
+ * The `http_challenge` node attestor (#40): the one attestor that has this
+ * server dial an address the caller named, within stated bounds.
+ * @namespace
+ */
 export = {
   HttpChallengeAttestor: HttpChallengeAttestor
 };

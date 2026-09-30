@@ -372,7 +372,7 @@ load with `Cannot find module` naming a file nobody edited. See
 
 **AND IT IS OWED AGAIN AS OF 2026-09-12: `common/error_codes.js`.** The error
 code registry is required by `common/audit.js`, `config.js`, `helpers.js`,
-`realms.js`, `crypto.js`, `worker_pool.js`, `worker.js`, `krb5_kdc.js`,
+`realms.js`, `crypto.js`, `krb5_kdc.js`,
 `krb5_service.js` and `spnego_exchange.js` — all inside that closure — so the
 commit that bumps the `sts/` pin across it needs `COPY
 sts/common/error_codes.js ./sts/common/` in the parent's `tests/Dockerfile`, or
@@ -412,6 +412,17 @@ now reads `socket.remoteAddress` once per connection for its debug line and its
 two refusal warnings, which is the header's source when one was read. The UDP
 socket is not covered — a datagram has no stream to put a header in front of —
 so behind a load balancer Kerberos clients use TCP.
+
+**AND OWED AGAIN AS OF 2026-09-30, BOTH WAYS: `common/pq_native.js` IN,
+`common/worker.js` AND `common/worker_pool.js` OUT** (#363). `crypto.js` no
+longer requires the post-quantum pool (it was deleted), and `pq_jose.js` and
+`vendored/pqc.js` now require `pq_native.js`. So the commit that bumps the
+`sts/` pin across #363 must change the parent's `tests/Dockerfile` line
+`COPY sts/common/pq_jose.js sts/common/worker.js sts/common/worker_pool.js
+./sts/common/` to copy `pq_jose.js` and `pq_native.js` — a COPY of a file that
+no longer exists fails the image build, and a missing `pq_native.js` fails
+four Kerberos jobs at load with `Cannot find module './pq_native'`. The
+parent's closure also no longer needs `@noble/post-quantum` for this tree.
 
 **AND OWED AGAIN AS OF 2026-09-17: `common/cache_registry.js`** (#74).
 `common/helpers.js`, `keystore.js`, `revocation_status.js`, `jose_kid.js`,
@@ -1514,3 +1525,55 @@ need a computer, server or managed-service account — a sAMAccountName and SPNs
 sharing ONE key, which this KDC keys apart. They are thousands of tests (the etype
 permutations, as_canonicalization, claims, PKINIT, RODC, authentication policies),
 skipped by the driver naming what each needed; the job logs the count per reason.
+
+## CELLS: A KERBEROS REQUEST IS ANSWERED AT HOME (#98, 2026-09-28)
+
+In a service deployed as cells a person is homed in one cell, and everything a
+KDC consults about them is there: the long-term keys sealed on their entry, the
+disabled flag, the second factor, the PAC's facts, and the sign-out instant —
+`signedOutAt` is a field of the `krb5.principals` row, which is CELL-tier
+(`persistence/tiers.js`). So a Kerberos request is answered in its client's home
+cell, and the request travels rather than the data (#98 §5, D2).
+
+**`krb5_home.ts` does it for MS-KKDCP**, as a `POST /KdcProxy` of its own
+registered just before `krb5_kdc.js` is required (require order 14c): it
+unframes the KDC-PROXY-MESSAGE, finds the client, relays the whole request to
+its home over the inter-cell channel, and calls `next()` for everything else —
+after which the KDC's own handler runs unchanged. The KDC is one of the parent
+project's locked files, so this is the only way to put a check in front of it
+here. It requires the vendored codec and `krb5_principals.js` and edits none of
+them; nothing in the COPY closure requires it, so **the closure is unchanged**.
+
+* **AS-REQ**: the body's `cname`, one component, in the realm's own Kerberos
+  realm. A FAST-armored AS-REQ is routed by its OUTER body — the inner cannot be
+  read before the armor key — which every client this KDC is tested against
+  copies.
+* **TGS-REQ: SERVED AT HOME, NOT WHEREVER IT ARRIVES.** The krbtgt key lives on
+  an APPLICATION entry (`krbtgt/<REALM>`, #169), the global tier, so every cell
+  CAN open a TGT, and `krb5_home.ts` does — only to read its `cname`. It is not
+  answered where it arrives because the sign-out instant, the disabled account
+  and the PAC's person are the home cell's: a TGT stamped signed out at home
+  would be honoured by a cell that never saw the stamp. An S4U2Self request is
+  routed by the PA-FOR-USER user rather than by the service asking.
+* A cross-realm ticket, a multi-component name, a service's own ticket, or a
+  message that does not decode is the KDC's to answer, where it arrived.
+
+**THE EXCEPTION: THE RAW SOCKETS ON TCP AND UDP 88 ARE NOT PLACED.** `listen()`
+in `krb5_kdc.js` starts them and hands each message to the module-private
+`handleMessage()` with no hook between the socket and the answer, and the file
+is locked. So a traveller whose `krb5.conf` names port 88 and whose packets reach
+a visiting cell is answered THERE: an unknown principal in product (their keys
+are at home), a freshly made one in development. MS-KKDCP is placed; port 88 is
+not. **What the parent project would need to add** to close it, in
+`common/krb5`'s copy of the KDC, is one exported seam — a
+`setMessageRouter(fn)` whose `fn(bytes, { transport, peer })` is awaited by
+`startTcp()` and `startUdp()` before `handleMessage()` and may answer the reply
+bytes itself (relayed, here, as an inter-cell operation that runs
+`handleMessage()` at home) or `null` to go on. `krb5_home.ts`'s `clientOf()`
+is already the decision such a router would make; the operation it would call
+does not exist yet, because nothing could reach it. **Filed as
+rcbj/id-proto-debugger#317 (2026-09-28, rcbj's decision)**, which also asks
+for an exported `answerMessage(bytes, transport)` — the home cell needs to run
+what `handleMessage()` does on bytes that arrived without a socket.
+
+Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`.

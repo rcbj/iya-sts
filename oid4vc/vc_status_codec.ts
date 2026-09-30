@@ -66,18 +66,39 @@ import pqJose = require('../common/pq_jose');
 import InstanceSlot = require('../common/instance_slot');
 
 // Section 7.1's registered values.
+/**
+ * The Token Status List's registered status values (section 7.1): VALID 0,
+ * INVALID 1, SUSPENDED 2.
+ */
 const TSL_STATUS = { VALID: 0, INVALID: 1, SUSPENDED: 2 };
 
 // Section 4.1: the only permitted widths.
+/**
+ * The only permitted Token Status List widths, in bits per token (section 4.1).
+ */
 const TSL_BITS = [1, 2, 4, 8];
 
 // Section 5.2's type, and the section 14.7 media types.
+/**
+ * The media type of a Status List Token in CWT form.
+ */
 const CWT_TYPE = 'application/statuslist+cwt';
+/**
+ * The `typ` of a Status List Token in JWT form.
+ */
 const JWT_TYPE = 'statuslist+jwt';
 
 // W3C Bitstring Status List section 2.2 and 3.2: the smallest list a
 // verifier accepts, in ENTRIES.
+/**
+ * The smallest Bitstring Status List a verifier accepts, in entries (W3C
+ * sections 2.2 and 3.2).
+ */
 const BITSTRING_MIN_ENTRIES = 131072;
+/**
+ * The Bitstring Status List purposes: `refresh`, `revocation`, `suspension` and
+ * `message`.
+ */
 const BITSTRING_PURPOSES = ['refresh', 'revocation', 'suspension', 'message'];
 
 // A status list is small; one that inflates past this is refused. 2^20
@@ -91,6 +112,10 @@ const CBOR_MAX_DEPTH = 64;
 
 // COSE algorithm identifiers (IANA "COSE Algorithms"), by JOSE name. The
 // ML-DSA rows are draft-ietf-cose-dilithium's.
+/**
+ * COSE algorithm identifiers by JOSE name, the ML-DSA rows from
+ * draft-ietf-cose-dilithium.
+ */
 const COSE_ALGS: Record<string, number> = {
   ES256: -7, ES384: -35, ES512: -36, EdDSA: -8, ES256K: -47,
   PS256: -37, PS384: -38, PS512: -39,
@@ -103,7 +128,16 @@ Object.keys(COSE_ALGS).forEach(function (name) {
 });
 
 // A CBOR tag (RFC 8949 section 3.4): a number and the item it qualifies.
+/**
+ * A CBOR tag (RFC 8949 section 3.4): a number and the item it qualifies.
+ */
 class Tagged {
+  /**
+   * Builds a tagged item.
+   *
+   * @param tag - the tag number
+   * @param value - the item it qualifies
+   */
   constructor(readonly tag: number, readonly value: unknown) {
   }
 }
@@ -141,21 +175,63 @@ interface CwtInput {
   kid?: string;
 }
 
+/**
+ * The encoding half of two status mechanisms: the IETF Token Status List
+ * (draft-ietf-oauth-status-list-21) in JWT and CWT form, and the W3C Bitstring
+ * Status List v1.0.
+ *
+ * It keeps no list and decides nothing; the status module calls it. It also
+ * carries the CBOR and COSE_Sign1 codecs those forms need.
+ */
 class VcStatusCodec {
+  /**
+   * The Token Status List's registered status values.
+   */
   static readonly TSL_STATUS = TSL_STATUS;
+  /**
+   * The only permitted Token Status List widths.
+   */
   static readonly TSL_BITS = TSL_BITS;
+  /**
+   * COSE algorithm identifiers by JOSE name.
+   */
   static readonly COSE_ALGS = COSE_ALGS;
+  /**
+   * The media type of a Status List Token in CWT form.
+   */
   static readonly CWT_TYPE = CWT_TYPE;
+  /**
+   * The `typ` of a Status List Token in JWT form.
+   */
   static readonly JWT_TYPE = JWT_TYPE;
+  /**
+   * The smallest Bitstring Status List a verifier accepts, in entries.
+   */
   static readonly BITSTRING_MIN_ENTRIES = BITSTRING_MIN_ENTRIES;
+  /**
+   * The Bitstring Status List purposes.
+   */
   static readonly BITSTRING_PURPOSES = BITSTRING_PURPOSES;
+  /**
+   * The CBOR tag class.
+   */
   static readonly Tagged = Tagged;
 
+  /**
+   * Builds the codec from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcStatusCodecDeps) {
     deps.log.debug("Entering VcStatusCodec.constructor().");
     deps.log.debug("Leaving VcStatusCodec.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcStatusCodecDeps {
     helpers.log.debug("Entering VcStatusCodec.defaultDeps().");
     helpers.log.debug("Leaving VcStatusCodec.defaultDeps().");
@@ -192,6 +268,15 @@ class VcStatusCodec {
   // status, as a (possibly sparse) array or a Map; `size` is how many tokens
   // the list covers. Index 0 is the least significant bit(s) of byte 0.
   // ---------------------------------------------------------------------------
+  /**
+   * Packs a Token Status List's byte array (section 4.1); index 0 is the least
+   * significant bits of byte 0.
+   *
+   * @param values - index to status, as a possibly sparse array or a Map
+   * @param bits - the width, 1, 2, 4 or 8
+   * @param size - how many tokens the list covers
+   * @returns the bytes
+   */
   packTsl(values: number[] | Map<number, number>, bits: number,
           size: number): Buffer {
     const { log } = this.deps;
@@ -229,6 +314,14 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Reads one token's status from a Token Status List's byte array.
+   *
+   * @param bytes - the byte array
+   * @param bits - the width
+   * @param idx - the token's index
+   * @returns the status
+   */
   unpackTslValue(bytes: Buffer, bits: number, idx: number): number {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.unpackTslValue(). idx=" + idx);
@@ -248,6 +341,12 @@ class VcStatusCodec {
   }
 
   // ZLIB, at the highest level (section 4.1 step 4).
+  /**
+   * Compresses with ZLIB at the highest level (section 4.1 step 4).
+   *
+   * @param bytes - the bytes
+   * @returns the compressed bytes
+   */
   compress(bytes: Buffer): Buffer {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.compress().");
@@ -256,6 +355,14 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Inflates a ZLIB stream, bounded in size.
+   *
+   * @param bytes - the compressed bytes
+   * @param maxOutputLength - the most it may inflate to
+   * @returns the bytes
+   * @throws Error when it is not a ZLIB stream this service will inflate
+   */
   decompress(bytes: Buffer, maxOutputLength?: number): Buffer {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.decompress().");
@@ -276,6 +383,12 @@ class VcStatusCodec {
   }
 
   // Section 4.2.
+  /**
+   * Returns a status list's JSON form (section 4.2).
+   *
+   * @param parts - `{ bits, bytes, aggregationUri }`
+   * @returns `{ bits, lst, aggregation_uri }`
+   */
   tslJson(parts: StatusListParts): any {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.tslJson().");
@@ -290,6 +403,14 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Reads a status list's JSON form (section 4.2).
+   *
+   * @param obj - the `status_list` object
+   * @param maxOutputLength - the most `lst` may inflate to
+   * @returns `{ bits, bytes, aggregationUri }`
+   * @throws Error for a malformed object
+   */
   tslFromJson(obj: any, maxOutputLength?: number): StatusListParts {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.tslFromJson().");
@@ -313,6 +434,12 @@ class VcStatusCodec {
   }
 
   // Section 4.3.
+  /**
+   * Returns a status list's CBOR form as a Map (section 4.3).
+   *
+   * @param parts - `{ bits, bytes, aggregationUri }`
+   * @returns the Map
+   */
   tslCborMap(parts: StatusListParts): Map<string, unknown> {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.tslCborMap().");
@@ -326,6 +453,12 @@ class VcStatusCodec {
     return map;
   }
 
+  /**
+   * Returns a status list's CBOR form, encoded.
+   *
+   * @param parts - `{ bits, bytes, aggregationUri }`
+   * @returns the CBOR bytes
+   */
   tslCbor(parts: StatusListParts): Buffer {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.tslCbor().");
@@ -334,6 +467,14 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Reads a status list's CBOR form (section 4.3).
+   *
+   * @param map - the decoded Map
+   * @param maxOutputLength - the most `lst` may inflate to
+   * @returns `{ bits, bytes, aggregationUri }`
+   * @throws Error for a malformed map
+   */
   tslFromCborMap(map: unknown, maxOutputLength?: number): StatusListParts {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.tslFromCborMap().");
@@ -387,6 +528,13 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Encodes a value as CBOR (RFC 8949): the shortest head for every length
+   * and integer, and maps in the order they were given.
+   *
+   * @param value - the value; a Map, a Buffer or a `Tagged` among them
+   * @returns the CBOR bytes
+   */
   cborEncode(value: unknown): Buffer {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.cborEncode().");
@@ -458,6 +606,13 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Decodes one CBOR item that is the whole input.
+   *
+   * @param input - the CBOR bytes
+   * @returns the item
+   * @throws Error for malformed CBOR or bytes after the item
+   */
   cborDecode(input: Buffer | Uint8Array): any {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.cborDecode(). " + input.length +
@@ -718,6 +873,12 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Signs a COSE_Sign1 (RFC 9052).
+   *
+   * @param input - `{ protectedHeader, unprotectedHeader, payload, key, alg }`
+   * @returns the COSE_Sign1 bytes
+   */
   coseSign1Sign(input: CoseSignInput): Buffer {
     const { log, pqJose } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1Sign(). alg=" + input.alg);
@@ -733,7 +894,14 @@ class VcStatusCodec {
     return out;
   }
 
-  // The same, with a post-quantum signature made in the worker pool.
+  // The same, with a post-quantum signature made on libuv's thread pool.
+  /**
+   * Signs a COSE_Sign1, with a post-quantum signature made on libuv's thread
+   * pool.
+   *
+   * @param input - `{ protectedHeader, unprotectedHeader, payload, key, alg }`
+   * @returns the COSE_Sign1 bytes
+   */
   async coseSign1SignAsync(input: CoseSignInput): Promise<Buffer> {
     const { log, pqJose } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1SignAsync(). alg=" +
@@ -744,8 +912,8 @@ class VcStatusCodec {
       return this.coseSign1Sign(input);
     }
     const signature = await pqJose.signAsync(setup.alg.name,
-      this.pqPrivate(input.key), setup.toBeSigned, {});
-    log.debug("Leaving VcStatusCodec.coseSign1SignAsync(). Pooled.");
+      this.pqPrivate(input.key), setup.toBeSigned);
+    log.debug("Leaving VcStatusCodec.coseSign1SignAsync(). On libuv.");
     return this.coseAssemble(input, setup.protectedBytes,
                              Buffer.from(signature));
   }
@@ -821,6 +989,15 @@ class VcStatusCodec {
              payload: parsed.payload };
   }
 
+  /**
+   * Verifies a COSE_Sign1.
+   *
+   * @param buf - the COSE_Sign1 bytes
+   * @param key - the public key
+   * @param opts - `algorithms`, those accepted
+   * @returns `{ alg, protectedHeader, unprotectedHeader, payload }`
+   * @throws Error when it does not parse or verify
+   */
   coseSign1Verify(buf: Buffer, key: any,
                   opts: { algorithms: string[] }): any {
     const { log, pqJose } = this.deps;
@@ -838,6 +1015,15 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Verifies a COSE_Sign1, with a post-quantum check made on libuv's thread
+   * pool.
+   *
+   * @param buf - the COSE_Sign1 bytes
+   * @param key - the public key
+   * @param opts - `algorithms`, those accepted
+   * @returns `{ alg, protectedHeader, unprotectedHeader, payload }`
+   */
   async coseSign1VerifyAsync(buf: Buffer, key: any,
                              opts: { algorithms: string[] }): Promise<any> {
     const { log, pqJose } = this.deps;
@@ -848,8 +1034,8 @@ class VcStatusCodec {
       return this.coseSign1Verify(buf, key, opts);
     }
     const ok = await pqJose.verifyAsync(parsed.alg.name, this.pqPublic(key),
-      parsed.toBeSigned, parsed.signature, {});
-    log.debug("Leaving VcStatusCodec.coseSign1VerifyAsync(). Pooled.");
+      parsed.toBeSigned, parsed.signature);
+    log.debug("Leaving VcStatusCodec.coseSign1VerifyAsync(). On libuv.");
     return this.coseFinish(parsed, !!ok);
   }
 
@@ -891,6 +1077,13 @@ class VcStatusCodec {
     };
   }
 
+  /**
+   * Builds and signs a Status List Token in CWT form (section 5.2).
+   *
+   * @param input - `{ sub, iat, exp, ttl, bits, bytes, aggregationUri, key, ...
+   *   }`
+   * @returns the CWT bytes
+   */
   statusListCwt(input: CwtInput): Buffer {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.statusListCwt().");
@@ -899,6 +1092,13 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Builds and signs a Status List Token in CWT form, a post-quantum signature
+   * made on libuv's thread pool.
+   *
+   * @param input - as `statusListCwt()` takes it
+   * @returns the CWT bytes
+   */
   async statusListCwtAsync(input: CwtInput): Promise<Buffer> {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.statusListCwtAsync().");
@@ -954,6 +1154,15 @@ class VcStatusCodec {
              alg: verified.alg };
   }
 
+  /**
+   * Verifies and reads a Status List Token in CWT form.
+   *
+   * @param buf - the CWT bytes
+   * @param key - the public key
+   * @param opts - `algorithms`, and `now` and `maxOutputLength`
+   * @returns `{ sub, iat, exp, ttl, bits, bytes, aggregationUri, alg }`
+   * @throws Error when it does not verify or is expired or malformed
+   */
   readStatusListCwt(buf: Buffer, key: any,
                     opts: { algorithms: string[]; now?: number;
                             maxOutputLength?: number }): any {
@@ -964,6 +1173,15 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Verifies and reads a Status List Token in CWT form, a post-quantum check
+   * made on libuv's thread pool.
+   *
+   * @param buf - the CWT bytes
+   * @param key - the public key
+   * @param opts - `algorithms`, and `now` and `maxOutputLength`
+   * @returns `{ sub, iat, exp, ttl, bits, bytes, aggregationUri, alg }`
+   */
   async readStatusListCwtAsync(buf: Buffer, key: any,
                                opts: { algorithms: string[]; now?: number;
                                        maxOutputLength?: number }):
@@ -980,6 +1198,12 @@ class VcStatusCodec {
   // `typ: statuslist+jwt`, through `common/crypto.js`, and hands the verified
   // header and claims back here.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a Status List Token's JWT claims (section 5.1); the caller signs.
+   *
+   * @param input - `{ sub, iat, exp, ttl, bits, bytes, aggregationUri }`
+   * @returns the claims
+   */
   statusListJwtPayload(input: { sub: string; iat: number; exp?: number;
                                 ttl?: number; bits: number; bytes: Buffer;
                                 aggregationUri?: string }): any {
@@ -1004,6 +1228,15 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Reads a verified Status List Token JWT's header and claims (section 5.1).
+   *
+   * @param header - the verified header
+   * @param claims - the verified claims
+   * @param opts - `now` and `maxOutputLength`
+   * @returns `{ sub, iat, exp, ttl, bits, bytes, ... }`
+   * @throws Error when it is expired or malformed
+   */
   readStatusListJwtPayload(header: any, claims: any,
                            opts?: { now?: number;
                                     maxOutputLength?: number }): any {
@@ -1060,6 +1293,12 @@ class VcStatusCodec {
     return { idx: Number(idx), uri: uri };
   }
 
+  /**
+   * Reads a referenced token's `status.status_list` reference.
+   *
+   * @param payload - the token's claims
+   * @returns `{ idx, uri }`, or null when it carries none
+   */
   referenceOf(payload: any): { idx: number; uri: string } | null {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.referenceOf().");
@@ -1084,6 +1323,12 @@ class VcStatusCodec {
 
   // A COSE referenced token's Status structure (claim 65535 of a CWT, or
   // the equivalent element of an mdoc), as decoded here: a Map.
+  /**
+   * Reads a COSE referenced token's Status structure.
+   *
+   * @param status - the decoded Status Map
+   * @returns `{ idx, uri }`, or null when there is none
+   */
   referenceOfCose(status: unknown): { idx: number; uri: string } | null {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.referenceOfCose().");
@@ -1111,6 +1356,12 @@ class VcStatusCodec {
   }
 
   // The Status structure for a COSE referenced token.
+  /**
+   * Builds the Status structure for a COSE referenced token.
+   *
+   * @param ref - `{ idx, uri }`
+   * @returns the Status Map
+   */
   coseStatus(ref: { idx: number; uri: string }): Map<string, unknown> {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.coseStatus().");
@@ -1127,6 +1378,15 @@ class VcStatusCodec {
   // `values` is a list of indexes whose status is 1, or a Map index -> value
   // for a `statusSize` above one.
   // ---------------------------------------------------------------------------
+  /**
+   * Packs a W3C Bitstring Status List; index 0 is the left-most bit.
+   *
+   * @param values - the indexes whose status is 1, or a Map index to value for
+   *   a status size above one
+   * @param size - the entries, at least 131,072
+   * @param statusSize - bits per entry (1 by default)
+   * @returns the bytes
+   */
   packBitstring(values: number[] | Map<number, number>, size: number,
                 statusSize?: number): Buffer {
     const { log } = this.deps;
@@ -1179,6 +1439,14 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Reads one entry's status from a Bitstring Status List.
+   *
+   * @param bytes - the bitstring
+   * @param idx - the entry's index
+   * @param statusSize - bits per entry (1 by default)
+   * @returns the status
+   */
   bitstringValue(bytes: Buffer, idx: number, statusSize?: number): number {
     const { log } = this.deps;
     const width = statusSize === undefined ? 1 : Number(statusSize);
@@ -1201,6 +1469,13 @@ class VcStatusCodec {
   }
 
   // Multibase base64url, no padding, of the GZIP stream (section 2.2).
+  /**
+   * Encodes a bitstring as `encodedList`: multibase base64url, no padding, of
+   * its GZIP stream (section 2.2).
+   *
+   * @param bytes - the bitstring
+   * @returns the encoded list
+   */
   encodedList(bytes: Buffer): string {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.encodedList().");
@@ -1210,6 +1485,14 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Decodes an `encodedList`, bounded in size.
+   *
+   * @param text - the encoded list
+   * @param maxOutputLength - the most it may inflate to
+   * @returns the bitstring
+   * @throws Error when it is not multibase base64url of a GZIP stream
+   */
   decodeEncodedList(text: unknown, maxOutputLength?: number): Buffer {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.decodeEncodedList().");
@@ -1235,6 +1518,14 @@ class VcStatusCodec {
     return out;
   }
 
+  /**
+   * Builds a credential's `BitstringStatusListEntry`, validated as a presented
+   * one would be.
+   *
+   * @param input - `{ id, statusPurpose, statusListIndex, statusListCredential,
+   *   statusSize, ... }`
+   * @returns the entry
+   */
   bitstringEntry(input: { id?: string; statusPurpose: string;
                           statusListIndex: number;
                           statusListCredential: string;
@@ -1260,6 +1551,12 @@ class VcStatusCodec {
     return this.readBitstringEntry(entry) && entry;
   }
 
+  /**
+   * Builds a status list credential's `credentialSubject`.
+   *
+   * @param input - `{ id, statusPurpose, encodedList, ttl }`
+   * @returns the subject
+   */
   bitstringStatusListSubject(input: { id: string; statusPurpose: string;
                                       encodedList: string;
                                       ttl?: number }): any {
@@ -1281,6 +1578,14 @@ class VcStatusCodec {
 
   // A presented credential's entry, validated per section 2.1 — a
   // MALFORMED_VALUE_ERROR throws.
+  /**
+   * Reads a presented credential's `BitstringStatusListEntry`, validated per
+   * section 2.1.
+   *
+   * @param entry - the entry
+   * @returns `{ statusPurpose, index, credential, statusSize, statusMessage }`
+   * @throws Error (MALFORMED_VALUE_ERROR) for a malformed entry
+   */
   readBitstringEntry(entry: any): { statusPurpose: string; index: number;
                                     credential: string; statusSize: number;
                                     statusMessage: any[] | null } {
@@ -1341,9 +1646,25 @@ const slot = new InstanceSlot<VcStatusCodec>(
 // Standalone, build the default now, as loading any module on the pattern does.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The encoding half of the IETF Token Status List and the W3C Bitstring Status
+ * List, with the CBOR and COSE codecs they need.
+ *
+ * @namespace
+ */
 export = {
   VcStatusCodec: VcStatusCodec,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcStatusCodec): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   Tagged: Tagged,
   TSL_STATUS: TSL_STATUS,

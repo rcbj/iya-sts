@@ -20,20 +20,34 @@
 //
 // WHAT THIS SERVICE HAS, which decides what applies:
 //
-//   ML-DSA-44/65/87   signs JWS (pure, EMPTY context, DETERMINISTIC — noble's
-//                     default with no randomness), holding the private key as
-//                     the 32-byte seed; verifies JWS, COSE (WebAuthn), XML
+//   ML-DSA-44/65/87   signs JWS (pure, EMPTY context, HEDGED — node's
+//                     OpenSSL since #363, which has no deterministic switch),
+//                     holding the private key as the 32-byte seed; so a
+//                     sigGen case is held as: the service's own signature
+//                     from NIST's seed verifies under NIST's public key and
+//                     differs from NIST's deterministic one, and NIST's
+//                     signature verifies at every door. It verifies JWS,
+//                     COSE (WebAuthn), XML
 //                     (node's OpenSSL) and raw proofs (the vendored engine).
 //                     Composites use the ML-DSA label as a context internally
 //                     and are not an ACVP algorithm.
 //   SLH-DSA           JWS signs and verifies SHA2-128s and SHAKE-128s,
-//                     deterministic, pure, empty context, the private key
-//                     being sk itself; XML and raw proofs verify all twelve
-//                     parameter sets.
-//   ML-KEM-512/768/1024  KEY GENERATION only (EST /serverkeygen, through the
-//                     vendored engine from a 64-octet d || z seed). Nothing
-//                     here encapsulates or decapsulates: no protocol this
-//                     service speaks has an ML-KEM method.
+//                     hedged, pure, empty context, the private key being sk
+//                     itself; XML and raw proofs verify all twelve parameter
+//                     sets. No door derives a key from given seeds (node's
+//                     OpenSSL generates from its own), so keyGen is held as
+//                     sk -> pk and a signature by sk verifying under pk.
+//   ML-KEM-512/768/1024  key generation (EST /serverkeygen, through the
+//                     vendored engine from a 64-octet d || z seed) and, since
+//                     #82, DECAPSULATION (and encapsulation, which node's
+//                     OpenSSL does only with its own randomness, so the
+//                     encapsulation vectors, made with a given m, do not
+//                     apply since #363) through
+//                     common/crypto.js's JWE key establishment (section 4a):
+//                     the ML-KEM JWE algs and HPKE's ML-KEM and hybrid KEMs.
+//                     Its keys are the d || z seed only, so an EXPANDED
+//                     decapsulation key has no door; the encapsulation key
+//                     check (FIPS 203 section 7.2) is crypto.js's own.
 //
 // SO: no door takes a context string, the pre-hash (HashML-DSA,
 // HashSLH-DSA) variants, the internal interface or an external mu; ML-DSA
@@ -121,9 +135,10 @@ function nodeVerifies(alg, pk, msg, sig) {
 }
 
 // hedgedDiffersAndVerifies() is a hot path: once per deterministic case.
-// What the service ACTUALLY signs with (#203): with no internal parameter
-// the signature is FIPS 204/205's hedged variant, so it is not NIST's
-// deterministic one, and it still verifies under NIST's public key.
+// What the service ACTUALLY signs with (#203, #363): FIPS 204/205's hedged
+// variant, so it is not NIST's deterministic signature, and it verifies
+// under NIST's public key — which also shows the key the service derives
+// from NIST's seed is NIST's.
 function hedgedDiffersAndVerifies(tl, alg, priv, pk, msg, deterministic,
                                   what) {
   const hedged = crypto.jwsSignatureOver(alg, priv, msg);
@@ -237,16 +252,12 @@ async function mlDsaSigGen(t, set) {
       }
       const what = alg + ' tg' + g.tgId + ' tc' + v.tcId;
       if (g.deterministic && v.seed && g.keyFormat === 'seed') {
-        // crypto.js signs deterministically from the seed: the bytes must be
-        // NIST's.
-        // The DETERMINISTIC variant, asked for through the internal
-        // parameter that exists for this comparison; what the service
-        // signs with is the hedged one, held just below.
-        const sig = crypto.jwsSignatureOver(alg, hex(v.seed), hex(v.message),
-                                            { deterministic: true });
-        record(tl, sig.equals(hex(v.signature)), what + ' JWS signer bytes');
+        // The service signs hedged from the seed (#363: node's OpenSSL has
+        // no deterministic switch), so NIST's bytes cannot be reproduced;
+        // the signature must verify under NIST's key and differ from
+        // NIST's deterministic one.
         hedgedDiffersAndVerifies(tl, alg, hex(v.seed), hex(v.pk),
-                                 hex(v.message), sig, what);
+                                 hex(v.message), hex(v.signature), what);
       } else {
         notApplicable(tl, (g.deterministic ? 'expanded-key' : 'hedged') +
           ' signing (checked below as verification instead)', 1);
@@ -289,18 +300,20 @@ async function slhDsaKeyGen(t) {
   for (const g of json.testGroups) {
     const alg = g.parameterSet;
     for (const v of g.tests) {
-      // No crypto.js door derives an SLH-DSA key from caller-chosen seeds;
-      // the one keygen every path reaches (pq_jose.generate(), the vendored
-      // engine's generateAkpKeyPair()) is noble's, which is called here WITH
-      // NIST's three seeds. And the public key the engine pairs with a
-      // private one (FIPS 205 section 9.1) must be NIST's.
-      const kp = pqc.signatureAlg(alg).prim.keygen(Buffer.concat(
-        [hex(v.skSeed), hex(v.skPrf), hex(v.pkSeed)]));
-      record(tl, Buffer.from(kp.secretKey).equals(hex(v.sk)) &&
-        Buffer.from(kp.publicKey).equals(hex(v.pk)),
-        alg + ' tc' + v.tcId + ' keygen');
+      // No door derives an SLH-DSA key from caller-chosen seeds: every
+      // path (pq_jose.generate(), the engine's generateAkpKeyPair()) is
+      // node's OpenSSL generating from its own randomness since #363. What
+      // is held: the public key the engine pairs with NIST's private key
+      // (FIPS 205 section 9.1) is NIST's, and a signature by that private
+      // key, through the engine, verifies under NIST's public key.
       record(tl, Buffer.from(pqcX509.publicFromPrivate(alg, hex(v.sk)))
         .equals(hex(v.pk)), alg + ' tc' + v.tcId + ' publicFromPrivate');
+      const probe = Buffer.from('acvp ' + alg + ' tc' + v.tcId);
+      record(tl, nodeVerifies(alg, hex(v.pk), probe, Buffer.from(
+        pqc.signWithPriv(alg, probe, hex(v.sk)))),
+        alg + ' tc' + v.tcId + ' sk signs for pk');
+      notApplicable(tl, 'key generation from given seeds (no door takes ' +
+        'them; node\'s OpenSSL generates from its own)', 1);
     }
   }
   report(t, set, tl);
@@ -322,15 +335,13 @@ async function slhDsaSigGen(t) {
       }
       const what = alg + ' tg' + g.tgId + ' tc' + v.tcId;
       if (g.deterministic && crypto.JWS_SIGNING_ALGS.indexOf(alg) >= 0) {
-        const sig = crypto.jwsSignatureOver(alg, hex(v.sk), hex(v.message),
-                                            { deterministic: true });
-        record(tl, sig.equals(hex(v.signature)), what + ' JWS signer bytes');
+        // Hedged since #363, as ML-DSA's sigGen above says.
         hedgedDiffersAndVerifies(tl, alg, hex(v.sk), hex(v.pk),
-                                 hex(v.message), sig, what);
+                                 hex(v.message), hex(v.signature), what);
       } else {
         notApplicable(tl, g.deterministic ? 'signing with a set no JWS ' +
           'algorithm names (checked below as verification)' : 'hedged ' +
-          'signing — crypto.js signs deterministically (checked below as ' +
+          'signing with NIST\'s randomness (checked below as ' +
           'verification)', 1);
       }
       await verifyEverywhere(tl, alg, v, true, what);
@@ -364,22 +375,55 @@ async function mlKemKeyGen(t) {
   log.debug('Leaving mlKemKeyGen().');
 }
 
+// THE HPKE ML-KEM KEM IDS (draft-ietf-hpke-pq-05 Table 2), the door
+// common/crypto.js encapsulates and decapsulates through.
+const MLKEM_KEM_ID = { 'ML-KEM-512': 0x0040, 'ML-KEM-768': 0x0041,
+                       'ML-KEM-1024': 0x0042 };
+
+// Decapsulation from the seed and the encapsulation key check — through
+// crypto.js since #82. Encapsulation vectors are made with FIPS 203
+// Encaps_internal and a given m, which node's OpenSSL does not take (#363), so
+// they are counted and named; the decapsulation groups hold the same arithmetic
+// from the receiving side. Decapsulation from an EXPANDED key, and the
+// decapsulation key check (which is of an expanded key), have no door: this
+// service holds an ML-KEM key as its 64-octet seed only
+// (draft-ietf-jose-pqc-kem-06 section 8, draft-ietf-hpke-pq section 3), so
+// those groups are counted and named.
 function mlKemEncapDecap(t, set) {
   log.debug('Entering mlKemEncapDecap(). ' + set);
+  const tl = tally();
   const json = load(set);
-  let cases = 0;
-  const functions = {};
   json.testGroups.forEach(function (g) {
-    cases += g.tests.length;
-    functions[g.function] = true;
+    const alg = g.parameterSet;
+    const kemId = MLKEM_KEM_ID[alg];
+    if (g.function === 'encapsulation') {
+      notApplicable(tl, 'encapsulation with a given m (Encaps_internal) — ' +
+        'node\'s OpenSSL takes no randomness', g.tests.length);
+    } else if (g.function === 'encapsulationKeyCheck') {
+      g.tests.forEach(function (v) {
+        let passed = true;
+        try {
+          crypto.hpke.mlkemCheckEncapsulationKey(alg, hex(v.ek));
+        } catch (e) {
+          log.debug('Caught in mlKemEncapDecap(): ' + ((e && e.message) || e));
+          passed = false;
+        }
+        record(tl, passed === v.testPassed,
+               alg + ' tc' + v.tcId + ' encapsulationKeyCheck');
+      });
+    } else if (g.function === 'decapsulation' && g.keyFormat === 'seed') {
+      g.tests.forEach(function (v) {
+        const seed = Buffer.concat([hex(v.d), hex(v.z)]);
+        record(tl, crypto.hpke.decap(kemId, hex(v.c), seed).equals(hex(v.k)),
+               alg + ' tc' + v.tcId + ' decapsulation (seed)');
+      });
+    } else {
+      notApplicable(tl, g.function + (g.keyFormat ? ' (' + g.keyFormat +
+        ' key)' : ' (expanded key)') + ' — keys here are the d || z seed ' +
+        'only', g.tests.length);
+    }
   });
-  // Read, counted and named: this is the honest answer rather than a
-  // silent omission.
-  t.check(cases > 0, set + ': ' + cases + ' cases (' +
-    Object.keys(functions).join(', ') + ') not applicable — nothing in this ' +
-    'service encapsulates or decapsulates, and no key it accepts from ' +
-    'outside is an ML-KEM encapsulation key (a CSR carrying one is refused, ' +
-    'STS-ENROLL-0032)', cases ? '' : 'the vector set is empty');
+  report(t, set, tl);
   log.debug('Leaving mlKemEncapDecap().');
 }
 

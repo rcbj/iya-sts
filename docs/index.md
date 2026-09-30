@@ -60,6 +60,7 @@ configuration recipes, in the console and through the API, for each
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·
 [Mail](mail.md) ·
+[Attribute sources](attribute-sources.md) ·
 [CAEP events](caep-events.md) ·
 [Signals received](signals-received.md)
 
@@ -69,7 +70,9 @@ configuration recipes, in the console and through the API, for each
 [LDAP schema](ldap-schema.md) ·
 [Encryption at rest](encryption-at-rest.md) ·
 [Caches](caches.md) ·
-[A cluster in AWS](aws-cluster.md)
+[A cluster in AWS](aws-cluster.md) ·
+[Several regions (cells)](cells.md) ·
+[How cells work](cells-concepts.md)
 
 **For contributors** —
 [Repository layout](layout.md) ·
@@ -160,6 +163,7 @@ the diagram and a walk through each layer.
 | DPoP (RFC 9449) and certificate-bound tokens (RFC 8705) | the token endpoint and the four protected endpoints | [oauth-security](oauth-security.md) |
 | RFC 9700, the Security BCP, as an optional MODE | `GET /oauth2/rfc9700` | [oauth-security](oauth-security.md) |
 | OAuth 2.1 (draft-16) as an optional MODE, which turns the one above on | `GET /oauth2/oauth21` | [oauth-security](oauth-security.md) |
+| Post-quantum and hybrid JWE key establishment — ML-KEM, and HPKE over ML-KEM or X-Wing (drafts) | every encrypted token and response; a realm's own keys by opt-in | [post-quantum-encryption](post-quantum-encryption.md) |
 | WS-Trust 1.0 – 1.4 | `/sts` | [ws-trust](ws-trust.md) |
 | WS-Federation 1.2, passive requestor, with a mock relying party | `/wsfed`, `/wsfed/rp` | [ws-federation](ws-federation.md) |
 | SAML 2.0 Web Browser SSO — a full identity provider, all three bindings | `/saml2`, `/saml2/metadata/{sp}`, `/saml2/sp` | [saml2-sso](saml2-sso.md) |

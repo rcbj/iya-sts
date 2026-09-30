@@ -64,14 +64,23 @@
 
 import os = require('os');
 import helpers = require('../common/helpers');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 type Json = any;
 
 // The states a delivery passes through.
+/**
+ * The states a delivery passes through: `pending`, `sent` and `dead`.
+ */
 const STATES = ['pending', 'sent', 'dead'];
 
 // This process's name on a row it is sending, for the console.
-const HOLDER = os.hostname() + ':' + process.pid;
+/**
+ * This process's name, written on a row it is sending.
+ */
+const HOLDER = os.hostname() + ':' + WorkerChannel.processTag();
 
 // The configuration keys a kind's numbers are read from.
 interface DeliverySettings {
@@ -136,6 +145,13 @@ interface DeliveryKind {
   // Where dead letters are listed, for the summary line.
   deadLetterHint: string;
   prepare(row: Json): Promise<Prepared>;
+  // HOW IT IS SENT, when it is not an HTTP POST to a registered address
+  // through the outbound policy (#98): the inter-cell kind sends over the
+  // mutual-TLS channel between cells, which is not a public address and must
+  // not be held to the internal-address refusal. Answers what
+  // `federation_http` would — `{ ok, status, kind, why }`.
+  send?(row: Json, prepared: Prepared,
+        options: { timeoutMs: number }): Promise<Json>;
   judge?(result: Json, row: Json): Judgement | null;
   onFinish?(row: Json, state: string, code: string, why: string): void;
   // Before an operator's retry: a refusal, or fields to refresh.
@@ -183,6 +199,14 @@ function rankOf(row: Json): number[] {
           r.state === 'pending' ? 0 : 1, Number(r.updatedAt) || 0];
 }
 
+/**
+ * Orders two copies of a delivery row by generation, attempt, fence, final over
+ * pending, and last update: a total order, so the merge converges.
+ *
+ * @param a - one copy
+ * @param b - the other copy
+ * @returns -1, 0 or 1
+ */
 function compareRows(a: Json, b: Json): number {
   helpers.log.debug("Entering compareRows().");
   const x = rankOf(a);
@@ -198,6 +222,14 @@ function compareRows(a: Json, b: Json): number {
 }
 
 // For a kind's store declaration: `realms.map({ ..., mergeRow })`.
+/**
+ * Merges two copies of a row by keeping the newer, for a kind's store
+ * declaration; a tie keeps the stored copy.
+ *
+ * @param mine - the stored copy
+ * @param theirs - the incoming copy
+ * @returns the copy that stands
+ */
 function mergeRow(mine: Json, theirs: Json): Json {
   helpers.log.debug("Entering mergeRow().");
   helpers.log.debug("Leaving mergeRow().");
@@ -205,6 +237,13 @@ function mergeRow(mine: Json, theirs: Json): Json {
 }
 
 // The fields every delivery row carries, fresh.
+/**
+ * Returns the generic fields every new delivery row carries, pending and due at
+ * the given time.
+ *
+ * @param at - the time, in milliseconds
+ * @returns the fields
+ */
 function freshFields(at: number): Json {
   helpers.log.debug("Entering freshFields().");
   helpers.log.debug("Leaving freshFields().");
@@ -214,7 +253,20 @@ function freshFields(at: number): Json {
            updatedAt: at };
 }
 
+/**
+ * One durable, coordinated queue of deliveries to relying parties' registered
+ * addresses (#151), used by Back-Channel Logout, CIBA and OpenID Provider
+ * Commands, each as a kind.
+ *
+ * A delivery is a row; exactly one process sends each attempt, under a claim
+ * whose time is the fence; it goes out through the outbound policy; only what
+ * is worth repeating is retried, and a final failure is a dead letter until an
+ * operator retries it.
+ */
 class OutboundDelivery {
+  /**
+   * The states a delivery passes through.
+   */
   static readonly STATES = STATES;
   // Per realm, what this process did since its last summary line.
   private readonly tallies = new Map<string, Json>();
@@ -222,6 +274,14 @@ class OutboundDelivery {
   // Attempts in flight in this process for this kind.
   private inFlightHere = 0;
 
+  /**
+   * Builds a queue for one kind of delivery.
+   *
+   * @param kind - the kind: its label, per-realm store, claim scope, body
+   *   format, settings, error codes, sweep job and hooks
+   * @param deps - the logger, settings, realms, error codes, cluster claims,
+   *   outbound HTTP, clock and other modules the queue uses
+   */
   constructor(private readonly kind: DeliveryKind,
               private readonly deps: DeliveryDeps) {
     deps.log.debug("Entering OutboundDelivery.constructor(). " + kind.label);
@@ -232,12 +292,23 @@ class OutboundDelivery {
   // Rule 2 of cluster/cluster_barrier.js for a message: resolves once this
   // process's writes so far have committed (at once outside active-active).
   // The barrier is required LAZILY, as the rest of the store is from here.
+  /**
+   * Resolves once this process's writes so far have committed, before a message
+   * is sent (at once outside active-active).
+   *
+   * @returns a promise that settles when they have
+   */
   static commitBeforeSending(): Promise<Json> {
     helpers.log.debug("Entering OutboundDelivery.commitBeforeSending().");
     helpers.log.debug("Leaving OutboundDelivery.commitBeforeSending().");
     return require('../cluster/cluster_barrier').commitBeforeSending();
   }
 
+  /**
+   * Returns the real modules, less the kind's own.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): DeliveryDeps {
     helpers.log.debug("Entering OutboundDelivery.defaultDeps().");
     helpers.log.debug("Leaving OutboundDelivery.defaultDeps().");
@@ -258,6 +329,12 @@ class OutboundDelivery {
 
   // A retry of this process's own at a row's due time: a delay inside one
   // operation, which root CLAUDE.md's scheduler rule leaves where it is.
+  /**
+   * Schedules this process's own retry of a row at its due time.
+   *
+   * @param fn - what to run
+   * @param ms - the delay, in milliseconds
+   */
   static later(fn: () => void, ms: number): void {
     helpers.log.debug("Entering OutboundDelivery.later().");
     const timer = setTimeout(fn, Math.max(0, ms));
@@ -277,6 +354,12 @@ class OutboundDelivery {
 
   // How long an attempt's claim lasts: the setting where the kind has one,
   // and never less than one request's timeout and a second.
+  /**
+   * Returns how long an attempt's claim lasts: the kind's setting, never less
+   * than one request's timeout and a second.
+   *
+   * @returns the lease, in milliseconds
+   */
   leaseMs(): number {
     const { log } = this.deps;
     log.debug("Entering OutboundDelivery.leaseMs().");
@@ -289,6 +372,13 @@ class OutboundDelivery {
   }
 
   // A row as the store holds it NOW, in its own realm.
+  /**
+   * Returns a row as the store holds it now, in its own realm.
+   *
+   * @param realmId - the realm
+   * @param id - the delivery id
+   * @returns the row, or null
+   */
   liveRow(realmId: string, id: string): Json | null {
     const { log } = this.deps;
     log.debug("Entering OutboundDelivery.liveRow().");
@@ -300,6 +390,12 @@ class OutboundDelivery {
 
   // WRITE A ROW, unless the store holds a newer copy; answers the copy that
   // stands.
+  /**
+   * Writes a row unless the store holds a newer copy.
+   *
+   * @param row - the row
+   * @returns the copy that stands
+   */
   writeRow(row: Json): Json {
     const { log, now } = this.deps;
     log.debug("Entering OutboundDelivery.writeRow(). " + row.id + " " +
@@ -319,6 +415,13 @@ class OutboundDelivery {
   // A NEW DELIVERY: the kind's fields over the generic ones, pending and due
   // now, written in the ambient realm. An id already in the store is LEFT
   // ALONE and answered as it stands (`existing: true`).
+  /**
+   * Queues a new delivery in the ambient realm, pending and due now; an id
+   * already in the store is left alone and answered with `existing: true`.
+   *
+   * @param fields - the kind's fields, including the id
+   * @returns the outcome, with the row
+   */
   queue(fields: Json): Json {
     const { log, realms, now } = this.deps;
     log.debug("Entering OutboundDelivery.queue(). " + this.kind.label);
@@ -353,6 +456,15 @@ class OutboundDelivery {
 
   // A delivery reaches its final state: the row changes and the kind's
   // `onFinish` writes its one audit row. Answers the row as written.
+  /**
+   * Moves a delivery to its final state and lets the kind write its audit row.
+   *
+   * @param row - the row
+   * @param state - `sent` or `dead`
+   * @param code - the error code, for a dead letter
+   * @param why - the reason, for a dead letter
+   * @returns the row as written
+   */
   finish(row: Json, state: string, code: string, why: string): Json {
     const { log, now } = this.deps;
     log.debug("Entering OutboundDelivery.finish(). " + row.id + " -> " +
@@ -383,6 +495,13 @@ class OutboundDelivery {
   }
 
   // How a failed attempt is coded, and whether it is worth another.
+  /**
+   * Classifies a failed attempt: its error code, and whether it is worth
+   * another (a timeout, a connection failure, 5xx, 408 or 429).
+   *
+   * @param result - the outbound HTTP result
+   * @returns `{ code, retry }`
+   */
   classify(result: Json): Json {
     const { log } = this.deps;
     const c = this.kind.codes;
@@ -436,6 +555,14 @@ class OutboundDelivery {
   // or why nothing was done (`not-due`, `claimed-elsewhere`, `deferred`,
   // `gone`). Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Makes one claimed attempt of one delivery. Never rejects.
+   *
+   * @param realmId - the realm
+   * @param id - the delivery id
+   * @returns a promise of `sent`, `retry` or `dead`, or why nothing was done:
+   *   `not-due`, `claimed-elsewhere`, `deferred` or `gone`
+   */
   async attempt(realmId: string, id: string): Promise<string> {
     const { log, claims, fedHttp, now, errorCodes } = this.deps;
     const kind = this.kind;
@@ -527,11 +654,13 @@ class OutboundDelivery {
                       keepBody: !!kind.keepBody };
     let result: Json = null;
     try {
-      result = kind.body === 'json'
-        ? await fedHttp.deliverJson(record, kind.attribute, prepared.body,
-                                    prepared.headers || {}, options)
-        : await fedHttp.deliverForm(record, kind.attribute, prepared.body,
-                                    options);
+      result = kind.send
+        ? await kind.send(row, prepared, options)
+        : kind.body === 'json'
+          ? await fedHttp.deliverJson(record, kind.attribute, prepared.body,
+                                      prepared.headers || {}, options)
+          : await fedHttp.deliverForm(record, kind.attribute, prepared.body,
+                                      options);
     } catch (e) {
       log.debug("Caught in OutboundDelivery.attempt(): " +
                 ((e && e.message) || e));
@@ -586,6 +715,12 @@ class OutboundDelivery {
 
   // Attempt every given row still pending, now. Settles when each has been
   // attempted once; never rejects.
+  /**
+   * Attempts every given row still pending, now. Never rejects.
+   *
+   * @param rows - the rows
+   * @returns a promise that settles when each has been attempted once
+   */
   dispatch(rows: Json[] | null | undefined): Promise<void> {
     const { log, realms } = this.deps;
     const self = this;
@@ -619,6 +754,18 @@ class OutboundDelivery {
   // row }`, a refusal carrying the kind's retry code. `reset` names the
   // kind's fields cleared for the new generation (a signed token).
   // -------------------------------------------------------------------------
+  /**
+   * Queues a dead letter again, for an operator: a new generation and a fresh
+   * attempt budget, after the kind's `onRetry` has refreshed what it must or
+   * refused.
+   *
+   * @param id - the delivery id
+   * @param actor - who retried it
+   * @param noun - what the kind calls a delivery, for messages
+   * @param reset - the kind's fields cleared for the new generation
+   * @returns `{ ok, message, row }`, or a refusal carrying the kind's retry
+   *   code
+   */
   retry(id: string, actor: string, noun: string, reset?: Json): Json {
     const { log, realms, errorCodes, now } = this.deps;
     log.debug("Entering OutboundDelivery.retry(). " + id);
@@ -659,6 +806,13 @@ class OutboundDelivery {
   // concurrency in this process; retention; the kind's own per-realm work;
   // the summary line. Resolves the totals; never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Sweeps every realm: attempts due rows within the kind's concurrency,
+   * applies retention, runs the kind's per-realm work and writes the summary
+   * line. Never rejects.
+   *
+   * @returns a promise of the totals
+   */
   sweep(): Promise<Json> {
     const { log, realms, errorCodes } = this.deps;
     const self = this;
@@ -770,6 +924,14 @@ class OutboundDelivery {
   }
 
   // At most one line per realm per summary interval, when something happened.
+  /**
+   * Writes at most one summary line per realm per interval, when something
+   * happened.
+   *
+   * @param realmId - the realm
+   * @param force - true to write it regardless of the interval
+   * @returns the line, or ''
+   */
   summarise(realmId: string, force?: boolean): string {
     const { log, errorCodes, now } = this.deps;
     log.debug("Entering OutboundDelivery.summarise(). " + realmId);
@@ -803,6 +965,9 @@ class OutboundDelivery {
   }
 
   // The kind's sweep, as a CLUSTER scheduler job (#49): once, on the leader.
+  /**
+   * Registers the kind's sweep as a cluster scheduler job.
+   */
   scheduleSweep(): void {
     const { log } = this.deps;
     const self = this;
@@ -825,6 +990,13 @@ class OutboundDelivery {
 
   // A row as a caller sees it: the generic fields, and what the kind adds.
   // Never a token or a body, unless the kind puts it there.
+  /**
+   * Returns a row as a caller sees it: the generic fields and what the kind
+   * adds, never a token or a body unless the kind puts it there.
+   *
+   * @param row - the row
+   * @returns the view
+   */
   view(row: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OutboundDelivery.view().");
@@ -849,6 +1021,12 @@ class OutboundDelivery {
   // The rows of the ambient realm, newest first, as stored (the caller
   // views them). `state`, `since`, `q` (a substring of the kind's search
   // text) and `where` narrow.
+  /**
+   * Lists the ambient realm's rows, newest first, as stored.
+   *
+   * @param options - `state`, `since`, `q` and `where`
+   * @returns the rows
+   */
   rows(options?: ListOptions): Json[] {
     const { log, realms } = this.deps;
     const self = this;
@@ -882,6 +1060,11 @@ class OutboundDelivery {
   }
 
   // How many rows are in each state, in the ambient realm.
+  /**
+   * Counts the ambient realm's rows by state.
+   *
+   * @returns the counts
+   */
   counts(): Json {
     const { log, realms } = this.deps;
     log.debug("Entering OutboundDelivery.counts().");
@@ -925,6 +1108,20 @@ const KINDS = [
     retry: function (m: Json, id: string, actor: string): Json {
       return m.retryDelivery(id, actor);
     } },
+  // #98: what one cell must tell another and may not lose — a revocation
+  // pushed from a person's home, a changed projection. Its rows name a
+  // cell, never an address.
+  { id: 'cell-ops', title: 'Inter-cell deliveries',
+    module: '../common/cell_deliveries', page: '/admin/cells',
+    rows: function (m: Json, o: Json): Json[] {
+      return m.rows(o);
+    },
+    counts: function (m: Json): Json {
+      return m.counts();
+    },
+    retry: function (m: Json, id: string, actor: string): Json {
+      return m.retry(id, actor);
+    } },
   { id: 'provider-commands', title: 'OpenID Provider Commands',
     module: './provider_commands', page: '/admin/commands',
     rows: function (m: Json, o: Json): Json[] {
@@ -938,6 +1135,13 @@ const KINDS = [
     } }
 ];
 
+/**
+ * Reports every kind's counts and rows, newest first, for `/admin/deliveries`
+ * and `GET /admin-api/deliveries`.
+ *
+ * @param options - `kind`, `state`, `q` and `limit`
+ * @returns `{ kinds, states }`
+ */
 function kindReport(options?: Json): Json {
   helpers.log.debug("Entering kindReport().");
   const o = options || {};
@@ -954,6 +1158,14 @@ function kindReport(options?: Json): Json {
   return { kinds: out, states: STATES.slice(0) };
 }
 
+/**
+ * Retries a dead letter of the named kind.
+ *
+ * @param kind - the kind's id
+ * @param id - the delivery id
+ * @param actor - who retried it
+ * @returns the kind's retry result, or a refusal naming the kinds
+ */
 function kindRetry(kind: string, id: string, actor: string): Json {
   helpers.log.debug("Entering kindRetry(). " + kind);
   const found = KINDS.filter(function (k) {
@@ -977,6 +1189,12 @@ function kindRetry(kind: string, id: string, actor: string): Json {
   return result;
 }
 
+/**
+ * One durable, coordinated outbound delivery queue for every kind of thing this
+ * service posts to a relying party's registered address.
+ *
+ * @namespace
+ */
 export = {
   OutboundDelivery: OutboundDelivery,
   STATES: STATES,
@@ -984,6 +1202,9 @@ export = {
   compareRows: compareRows,
   mergeRow: mergeRow,
   freshFields: freshFields,
+  /**
+   * The ids of the delivery kinds.
+   */
   KINDS: KINDS.map(function (k) {
     return k.id;
   }),

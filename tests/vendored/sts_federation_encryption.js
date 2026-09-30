@@ -121,6 +121,10 @@ const SAMLP = "urn:oasis:names:tc:SAML:2.0:protocol";
 const MAIL_OID = "urn:oid:0.9.2342.19200300.100.1.3";
 
 let isProduct = false;
+// Whether the IdP realm's own OpenID Provider is driven (section 5's first
+// half): development only, and not where the service answers on a loopback
+// address — see where it is decided, in the setup.
+let idpRealmOidc = false;
 let checks = 0;
 const failures = [];
 
@@ -874,7 +878,25 @@ async function setUp() {
   // RFC 7591 refuses response_types [id_token] beside authorization_code.
   // The encrypted ID Token itself is covered in both modes by this file's
   // own OpenID Provider above.
-  if (!isProduct) {
+  //
+  // AND NOT ON A LOOPBACK ADDRESS (2026-09-27, CI run 36369109378): OpenID
+  // Connect Registration section 2 says a web client using the implicit
+  // grant MUST NOT register a localhost redirect URI, and the service
+  // refuses one in every mode. Only the coverage run serves on localhost
+  // (its service is a child of the runner), and there this half is left
+  // out, saying so, rather than failing the file on a refusal that is right.
+  const acsHost = new URL(oidcView.endpoints.assertionConsumerService)
+    .hostname;
+  const loopback = acsHost === "localhost" || /^127\./.test(acsHost) ||
+    acsHost === "[::1]" || acsHost === "::1";
+  idpRealmOidc = !isProduct && !loopback;
+  if (!isProduct && loopback) {
+    log.info("The service answers on " + acsHost + ", a loopback address, " +
+             "where an implicit-grant client may not register its redirect " +
+             "URI (OpenID Connect Registration section 2): the IdP realm's " +
+             "own encrypting OpenID Provider is not driven in this run.");
+  }
+  if (idpRealmOidc) {
     const reg = await fetch(realmBase(IDP) + "/oauth2/register", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1174,7 +1196,7 @@ async function wsfed(world) {
 async function oidc(world) {
   log.debug("Entering oidc().");
   log.info("=== 5. OpenID Connect: an encrypted ID Token ===");
-  if (!isProduct) {
+  if (idpRealmOidc) {
     const cookies = jar();
     const door = await toTheDoor(cookies, realmBase(SP) +
                                  "/federation/login/" + REL.oidc, PERSON);

@@ -121,8 +121,15 @@ config.registerLogger(log);
 // operator who could delete it could delete the service. It is a constant here
 // and the registry below holds only what somebody defined.
 // ---------------------------------------------------------------------------
+/**
+ * The id of the default realm, which has an empty path prefix.
+ */
 const DEFAULT_ID = 'default';
 
+/**
+ * The default realm's record: built in, never stored, and never removed or
+ * re-prefixed. Its `domain` is `global.domain`, read when asked.
+ */
 const DEFAULT_REALM = {
   id: DEFAULT_ID,
   name: 'Default',
@@ -184,6 +191,13 @@ const DOMAIN_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 // (A-label) form, which is the only form a DN, a principal name or a SPIFFE ID
 // can carry. `domainToASCII()` answers '' for something that is not a domain,
 // and that empty string is what validateDomain() then refuses.
+/**
+ * Normalises a DNS domain: trimmed, lower case, no trailing dot, and an
+ * internationalised name in its A-label form.
+ *
+ * @param raw - the domain as given
+ * @returns the normalised domain, or `''`
+ */
 function normalizeDomain(raw) {
   log.debug("Entering normalizeDomain().");
   const text = String(raw == null ? '' : raw).trim().replace(/\.$/, '');
@@ -198,6 +212,14 @@ function normalizeDomain(raw) {
   return String(ascii || text).toLowerCase();
 }
 
+/**
+ * Checks a realm's domain: a DNS name of at least two labels, not already
+ * another realm's. A domain nested inside another realm's is allowed.
+ *
+ * @param domain - the normalised domain
+ * @param id - the realm it is for, which may already hold it
+ * @returns the error sentences, empty when it is acceptable
+ */
 function validateDomain(domain, id) {
   log.debug("Entering validateDomain(). " + domain);
   const errors = [];
@@ -236,6 +258,12 @@ function validateDomain(domain, id) {
 
 // The domain of a realm, by record or by id. The default realm's is
 // `global.domain`; an unknown id answers ''.
+/**
+ * Returns a realm's DNS domain; the default realm's is `global.domain`.
+ *
+ * @param realmOrId - a realm record or id; the default realm when empty
+ * @returns the domain, or `''` for an unknown id
+ */
 function domainOf(realmOrId) {
   log.debug("Entering domainOf().");
   const realm = typeof realmOrId === 'string' || !realmOrId
@@ -252,6 +280,13 @@ function domainOf(realmOrId) {
 // matcher reading two domains is a receiver that never recognises anybody.
 // It was `@sts.example` in two of them and `@example.com` in three until
 // 2026-09-18. A name that is already an address is returned as it is.
+/**
+ * Invents a development-mode mail address in the ambient realm's domain.
+ *
+ * @param name - a user name; one that is already an address is returned
+ *   as it is
+ * @returns the address
+ */
 function inventedMailOf(name) {
   log.debug("Entering inventedMailOf().");
   const text = String(name == null ? '' : name);
@@ -260,6 +295,12 @@ function inventedMailOf(name) {
 }
 
 // RFC 2247 section 2: one `dc=` RDN per label, in the domain's own order.
+/**
+ * Turns a DNS domain into a base DN, one `dc=` RDN per label (RFC 2247).
+ *
+ * @param domain - the domain
+ * @returns the DN
+ */
 function baseDnOfDomain(domain) {
   log.debug("Entering baseDnOfDomain().");
   log.debug("Leaving baseDnOfDomain().");
@@ -274,6 +315,12 @@ function baseDnOfDomain(domain) {
 // every reader that has no directory in its process (`pki_revocation.js`'s
 // distribution points above all, whose DN is inside a certificate and must be
 // the same whether or not this process holds the tree).
+/**
+ * Returns the base DN of a realm's directory, from its domain.
+ *
+ * @param realmOrId - a realm record or id
+ * @returns the DN
+ */
 function baseDnOf(realmOrId) {
   log.debug("Entering baseDnOf().");
   log.debug("Leaving baseDnOf().");
@@ -292,18 +339,34 @@ const realms = new Map();
 // ---------------------------------------------------------------------------
 const als = new AsyncLocalStorage();
 
+/**
+ * Returns the ambient realm, or the default realm outside any.
+ *
+ * @returns the realm record
+ */
 function current() {
   log.debug("Entering current().");
   log.debug("Leaving current().");
   return als.getStore() || DEFAULT_REALM;
 }
 
+/**
+ * Returns the ambient realm's id.
+ *
+ * @returns the id; `default` outside any realm
+ */
 function currentId() {
   log.debug("Entering currentId().");
   log.debug("Leaving currentId().");
   return current().id;
 }
 
+/**
+ * Tells whether a realm is the default one.
+ *
+ * @param realm - the realm record; the ambient realm when omitted
+ * @returns true for the default realm
+ */
 function isDefault(realm) {
   log.debug("Entering isDefault().");
   log.debug("Leaving isDefault().");
@@ -312,6 +375,14 @@ function isDefault(realm) {
 
 // Run `fn` with `realm` as the ambient realm, for `fn` and for everything it
 // awaits, schedules or calls back into. The return value is fn's.
+/**
+ * Runs a function with a realm ambient, for it and everything it awaits or
+ * schedules.
+ *
+ * @param realm - the realm record; the default realm when omitted
+ * @param fn - the function to run
+ * @returns what `fn` returns
+ */
 function run(realm, fn) {
   log.debug("Entering run().");
   log.debug("Leaving run().");
@@ -321,6 +392,13 @@ function run(realm, fn) {
 // The same thing as a wrapper, for the callback-shaped surfaces — an LDAP
 // handler, a gRPC method, a datagram listener — that are handed a function
 // rather than being called inside one.
+/**
+ * Wraps a callback so that it always runs with a realm ambient.
+ *
+ * @param realm - the realm record; the default realm when omitted
+ * @param fn - the callback
+ * @returns the wrapped callback
+ */
 function bind(realm, fn) {
   log.debug("Entering bind().");
   const captured = realm || DEFAULT_REALM;
@@ -348,6 +426,12 @@ function bind(realm, fn) {
 // definitions stay, the paths stop working, and nothing has to be deleted to
 // find out whether a realm is the reason for something.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether realms are switched on: some realm is defined and
+ * `realms.enabled` is set.
+ *
+ * @returns true when active; when false nothing is stripped or partitioned
+ */
 function active() {
   log.debug("Entering active().");
   log.debug("Leaving active().");
@@ -367,6 +451,12 @@ function active() {
 // refuses those names in either form, so the collision cannot be created; the
 // segment is still what makes it impossible rather than merely refused.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the path segment realms are found under (`realms.pathSegment`),
+ * without slashes.
+ *
+ * @returns the segment, possibly empty
+ */
 function pathSegment() {
   log.debug("Entering pathSegment().");
   log.debug("Leaving pathSegment().");
@@ -374,6 +464,12 @@ function pathSegment() {
                                                                   '');
 }
 
+/**
+ * Returns a realm's path prefix, such as `/realm/acme`.
+ *
+ * @param realm - the realm record; the ambient realm when omitted
+ * @returns the prefix; `''` for the default realm or when realms are off
+ */
 function prefixOf(realm) {
   log.debug("Entering prefixOf().");
   const r = realm || current();
@@ -388,6 +484,11 @@ function prefixOf(realm) {
 
 // The prefix of whatever realm is ambient. THE function every URL builder
 // wants, and the reason `baseUrlOf()` could absorb this for eighty callers.
+/**
+ * Returns the ambient realm's path prefix.
+ *
+ * @returns the prefix, `''` in the default realm
+ */
 function currentPrefix() {
   log.debug("Entering currentPrefix().");
   log.debug("Leaving currentPrefix().");
@@ -397,6 +498,13 @@ function currentPrefix() {
 // A root-relative path, in the current realm. Root-relative and absolute URLs
 // alike pass through untouched — an absolute one names a host, and this service
 // is not entitled to put its own realm into somebody else's URL.
+/**
+ * Puts a root-relative path in the ambient realm.
+ *
+ * An absolute URL, or a path already prefixed, is returned unchanged.
+ * @param path - the path
+ * @returns the path with the realm's prefix
+ */
 function href(path) {
   log.debug("Entering href().");
   const prefix = currentPrefix();
@@ -428,6 +536,16 @@ function href(path) {
 // the segment. `GET /realms` is where somebody finds out what the realms
 // actually are.
 // ---------------------------------------------------------------------------
+/**
+ * Finds the realm a path opens with, by its prefix or in the EST label
+ * position.
+ *
+ * An undefined realm answers null, so the path falls through to express's
+ * 404.
+ * @param pathname - the request path
+ * @returns `{ realm, rest }` (with `form: 'est-label'` for the EST form), or
+ *   null
+ */
 function matchPath(pathname) {
   log.debug("Entering matchPath().");
   if (!active()) {
@@ -517,6 +635,13 @@ function estLabelOf(pathname) {
   return { label: after.slice(0, slash), rest: after.slice(slash) };
 }
 
+/**
+ * Tells whether a name is an EST enrollment label, which a realm may not
+ * be called.
+ *
+ * @param name - the name
+ * @returns true when it is a label
+ */
 function isEstLabel(name) {
   log.debug("Entering isEstLabel().");
   log.debug("Leaving isEstLabel().");
@@ -543,6 +668,14 @@ function matchEstLabel(pathname) {
 // The label-form address of the ambient realm's EST server, for the pages
 // and documents that show one: `/.well-known/est/<id>`, or null in the
 // default realm (which has no other form) and in a realm whose id is a label.
+/**
+ * Returns the label-form address of a realm's EST server,
+ * `/.well-known/est/<id>`.
+ *
+ * @param realm - the realm record; the ambient realm when omitted
+ * @returns the path, or null for the default realm or a realm whose id is a
+ *   label
+ */
 function estLabelPath(realm) {
   log.debug("Entering estLabelPath().");
   const r = realm || current();
@@ -578,6 +711,13 @@ function estLabelPath(realm) {
 // ---------------------------------------------------------------------------
 let routePrefixes = null;
 
+/**
+ * Tells whether a path could name a realm this process has not heard of
+ * yet, so that the caller catches up before answering 404.
+ *
+ * @param pathname - the request path
+ * @returns true when it opens with a valid, undefined realm id
+ */
 function unknownRealmPath(pathname) {
   log.debug("Entering unknownRealmPath().");
   if (!config.value('realms.enabled')) {
@@ -626,6 +766,12 @@ function unknownRealmPath(pathname) {
 // ---------------------------------------------------------------------------
 // READING THE REGISTRY.
 // ---------------------------------------------------------------------------
+/**
+ * Looks up a realm by id.
+ *
+ * @param id - the id; the default realm when empty or `default`
+ * @returns the realm record, or null
+ */
 function get(id) {
   log.debug("Entering get().");
   if (!id || id === DEFAULT_ID) {
@@ -638,12 +784,22 @@ function get(id) {
 
 // Every realm, the default one first. It is prepended rather than stored so
 // that it cannot be edited out of the table by anything that iterates.
+/**
+ * Lists every realm, the default one first.
+ *
+ * @returns the realm records
+ */
 function list() {
   log.debug("Entering list().");
   log.debug("Leaving list().");
   return [DEFAULT_REALM].concat(Array.from(realms.values()));
 }
 
+/**
+ * Counts the realms, the default one included.
+ *
+ * @returns the count
+ */
 function count() {
   log.debug("Entering count().");
   log.debug("Leaving count().");
@@ -686,6 +842,12 @@ let reservedProvider = function () {
   return [];
 };
 
+/**
+ * Installs what reports the first segment of every route, which a realm id
+ * may not be; `app.js` installs it.
+ *
+ * @param provider - a function answering the segments, or an array of them
+ */
 function reserve(provider) {
   log.debug("Entering reserve().");
   reservedProvider = typeof provider === 'function'
@@ -694,6 +856,11 @@ function reserve(provider) {
   log.debug("Leaving reserve().");
 }
 
+/**
+ * Returns the route segments a realm id may not be.
+ *
+ * @returns the segments; empty when the router could not be read
+ */
 function reserved() {
   log.debug("Entering reserved().");
   let paths = [];
@@ -712,6 +879,13 @@ function reserved() {
   return paths;
 }
 
+/**
+ * Checks a realm id: its shape, and that it names no route, EST label or
+ * the default realm.
+ *
+ * @param id - the proposed id
+ * @returns the error sentences, empty when it is acceptable
+ */
 function validateId(id) {
   log.debug("Entering validateId().");
   const errors = [];
@@ -1028,6 +1202,15 @@ function seededNames(id, domain) {
   return out;
 }
 
+/**
+ * Defines a realm, builds its stores and announces it.
+ *
+ * Its domain defaults to `<id>.<default realm's domain>`. A refusal is
+ * `{ ok: false, errors }` carrying an error code.
+ * @param spec - `{ id, name, description, domain, overrides, restored }`;
+ *   `restored` marks a realm read back from the store or another process
+ * @returns `{ ok: true, errors: [], realm }`, or a refusal
+ */
 function create(spec) {
   log.debug("Entering create(). id=" + (spec || {}).id);
   const id = String((spec || {}).id || '').trim().toLowerCase();
@@ -1102,6 +1285,16 @@ function create(spec) {
   return { ok: true, errors: [], realm: realm };
 }
 
+/**
+ * Changes a realm's name, description or whole override object.
+ *
+ * The domain is fixed at creation and cannot change.
+ * @param id - the realm id
+ * @param changes - `{ name, description, overrides, domain, replicated,
+ *   retiringSince }`; `replicated` marks another process's change
+ * @returns `{ ok: true, errors: [], realm }`, or `{ ok: false, errors }` with
+ *   an error code
+ */
 function update(id, changes) {
   log.debug("Entering update(). id=" + id);
   const realm = realms.get(String(id || ''));
@@ -1207,8 +1400,8 @@ function update(id, changes) {
 //
 // THE SECOND REFUSAL IS `perProcess`, AND IT IS A DIFFERENT RULE. A setting
 // carrying that flag is a property of the OS PROCESS rather than of the
-// service's behaviour — `workers.count`, the size of the child-process pool the
-// post-quantum signing is handed to, is the first — so one realm's value would
+// service's behaviour — `workers.requestCount`, the size of the request pool,
+// is one — so one realm's value would
 // silently be every realm's. The predicate is config.js's own
 // `isPerProcess()` and not a copy of it, for the reason this whole function
 // exists: the reading end and the writing end of one rule, written separately,
@@ -1265,6 +1458,17 @@ function checkRealmOverrideCode(key, raw) {
 // console's configuration page edits a section at a time and the management API
 // edits a key at a time, and neither wants to send the whole override object
 // back to change one row of it.
+/**
+ * Sets one setting on one realm.
+ *
+ * Refuses a `realms.*` or per-process setting, one the realm's mode forbids,
+ * and a Kerberos change that is not allowed.
+ * @param id - the realm id
+ * @param key - the setting
+ * @param raw - the value
+ * @returns `{ ok: true, errors: [], key }`, or `{ ok: false, errors }` with an
+ *   error code
+ */
 function setOverride(id, key, raw) {
   log.debug("Entering setOverride(). id=" + id + ", key=" + key);
   const realm = realms.get(String(id || ''));
@@ -1305,6 +1509,14 @@ function setOverride(id, key, raw) {
   return { ok: true, errors: [], key: key };
 }
 
+/**
+ * Clears one setting on one realm, so it comes from the service again.
+ *
+ * @param id - the realm id
+ * @param key - the setting
+ * @returns `{ ok: true, errors: [], key }`, or `{ ok: false, errors }` with an
+ *   error code
+ */
 function clearOverride(id, key) {
   log.debug("Entering clearOverride(). id=" + id + ", key=" + key);
   const realm = realms.get(String(id || ''));
@@ -1580,6 +1792,14 @@ function refusedForKerberos(id, after, before) {
 // ---------------------------------------------------------------------------
 const watchers = [];
 
+/**
+ * Subscribes to every change of a realm row.
+ *
+ * The listener runs after the change; one that throws is logged and does
+ * not fail it.
+ * @param fn - called with `(id, what, info)`, `what` being `create`,
+ *   `update`, `set-override`, `clear-override`, `retire` or `remove`
+ */
 function onChange(fn) {
   log.debug("Entering onChange().");
   watchers.push(fn);
@@ -1617,6 +1837,11 @@ const purges = [];
 // The ids removed in this process and not defined again. See acceptsRows().
 const retired = new Set();
 
+/**
+ * Registers a purge that runs when a realm is removed.
+ *
+ * @param fn - called with the removed realm's id
+ */
 function onRemove(fn) {
   log.debug("Entering onRemove().");
   purges.push(fn);
@@ -1650,6 +1875,11 @@ function onRemove(fn) {
 // ---------------------------------------------------------------------------
 const builders = [];
 
+/**
+ * Registers a builder that runs when a realm is created.
+ *
+ * @param fn - called with `(id, realm)`
+ */
 function onCreate(fn) {
   log.debug("Entering onCreate().");
   builders.push(fn);
@@ -1795,6 +2025,13 @@ function removalBoundMs() {
 // Null, or what a console page and the API say about a realm being removed:
 // `{ since, sinceIso, inProgress, interrupted, finishesBy, refusing, why,
 // finish }`. `realmOrId` defaults to the ambient realm.
+/**
+ * Describes a realm being removed, for a console page and the API.
+ *
+ * @param realmOrId - a realm record or id; the ambient realm when omitted
+ * @returns null when it is not being removed, else `{ since, sinceIso,
+ *   inProgress, interrupted, finishesBy, refusing, why, finish }`
+ */
 function retiringState(realmOrId) {
   log.debug("Entering retiringState().");
   const id = realmOrId === undefined || realmOrId === null
@@ -1844,6 +2081,12 @@ function retiringState(realmOrId) {
 // Whether `realmOrId` (default: the ambient realm) is being retired. Read from
 // the REGISTRY rather than from the ambient object, so a request that entered
 // the realm before the mark still sees it.
+/**
+ * Tells whether a realm is being removed, read from the registry.
+ *
+ * @param realmOrId - a realm record or id; the ambient realm when omitted
+ * @returns true when it is being removed
+ */
 function isRetiring(realmOrId) {
   log.debug("Entering isRetiring().");
   const id = realmOrId === undefined || realmOrId === null
@@ -1858,6 +2101,13 @@ function isRetiring(realmOrId) {
 
 // Null, or the refusal an issuer sends when the realm (default: the ambient
 // realm) is being retired: `{ realm, since, why }`, marked `STS-CORE-0121`.
+/**
+ * Returns the refusal an issuer sends while a realm is being removed.
+ *
+ * @param realmOrId - a realm record or id; the ambient realm when omitted
+ * @returns null, or `{ realm, since, interrupted, why }` marked
+ *   `STS-CORE-0121`
+ */
 function retiringRefusal(realmOrId) {
   log.debug("Entering retiringRefusal().");
   if (!isRetiring(realmOrId)) {
@@ -1904,6 +2154,13 @@ const retirers = [];
 // carries
 // `deadline` (an epoch millisecond), `via` and `initiatingEntity`, and
 // `undelivered`, an array a hook pushes `{ what, count }` onto.
+/**
+ * Registers a hook that runs while a realm is being retired.
+ *
+ * @param hook - `{ name, mark, announce, deliver }`, each phase optional and
+ *   called with `(id, ctx)`; `ctx` carries `deadline`, `via`,
+ *   `initiatingEntity` and `undelivered`
+ */
 function onRetire(hook) {
   log.debug("Entering onRetire().");
   if (hook && typeof hook === 'object' && hook.name) {
@@ -1930,6 +2187,17 @@ function waitMs(ms) {
 // Tell everybody, wait (bounded) for it to be delivered, then `remove()`.
 // Resolves `remove()`'s answer with a `retirement` member saying what was
 // announced and what was not delivered; never rejects.
+/**
+ * Removes a realm after telling everybody: marks it retiring, runs the
+ * retire hooks, waits (bounded by `realms.removalDeliveryTimeoutS`) for
+ * delivery, then calls `remove()`.
+ *
+ * A removal already in progress is refused; an interrupted one is finished.
+ * Never rejects.
+ * @param id - the realm id
+ * @param options - optional; `via` and `initiatingEntity` describe who asked
+ * @returns `remove()`'s answer with a `retirement` member, or a refusal
+ */
 async function retire(id, options) {
   log.debug("Entering retire(). id=" + id);
   const o = options || {};
@@ -2066,6 +2334,13 @@ async function retireMarked(realm, o) {
   return result;
 }
 
+/**
+ * Removes a realm at once and purges every store of it.
+ *
+ * @param id - the realm id
+ * @returns `{ ok: true, errors: [], realm }`, or `{ ok: false, errors }` with
+ *   an error code
+ */
 function remove(id) {
   log.debug("Entering remove(). id=" + id);
   const realm = realms.get(String(id || ''));
@@ -2166,6 +2441,13 @@ function remove(id) {
 // ---------------------------------------------------------------------------
 let persistObserver = null;
 
+/**
+ * Installs the observer every declared store reports its writes to, so
+ * that minted state is written down.
+ *
+ * @param fn - called with `(handle, realmId, key)`
+ * @returns true when installed, false when `fn` is not a function
+ */
 function setPersistObserver(fn) {
   log.debug("Entering setPersistObserver().");
   if (typeof fn !== 'function') {
@@ -2313,6 +2595,28 @@ function declareHandle(options, shape, accessors) {
     // ---------------------------------------------------------------------
     retain: retainOf(options, handle),
     // ---------------------------------------------------------------------
+    // WHEN ONE ROW STOPS BEING WORTH ANYTHING (2026-09-28, #333).
+    //
+    // `expiresAt(value, key)` answers the instant, in epoch milliseconds on
+    // this process's clock, after which the record under `key` is dead — a
+    // code past its expiry, a nonce past its window, a pending flow past its
+    // lifetime — or null for a record that does not expire.
+    // `persistence_minted.js` calls it when it writes the row and stores the
+    // answer in `sts_minted.expires_at`; a restore then never reads a row
+    // whose instant has passed, and the `persistence.minted-expiry-purge`
+    // job deletes it from the table. Without it the only bound on what a
+    // start reads back was `retain: 'age'`'s seven days of WRITE age — and
+    // testidp restored 127,131 rows in 31 s, in every process.
+    //
+    // **IT MUST BE THE RECORD'S OWN EXPIRY AND NEVER EARLIER**: a row it
+    // declares dead is gone from every node's next start. A record whose
+    // life is extended on use answers the latest instant it could still be
+    // live, which the write that extended it recomputes. Pure and cheap — it
+    // runs in the flush, for every row written.
+    // ---------------------------------------------------------------------
+    expiresAt: typeof options.expiresAt === 'function' ? options.expiresAt
+      : null,
+    // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
     // Proxies over a real Array and a real Object, and a `persistRead` member
@@ -2331,6 +2635,34 @@ function declareHandle(options, shape, accessors) {
             '.');
   log.debug("Leaving declareHandle().");
   return handle;
+}
+
+// ---------------------------------------------------------------------------
+// THE COMMON SHAPE OF AN `expiresAt` HOOK (#333): the record's own expiry is
+// one field of it — or the value itself, when the value is a bare number —
+// in milliseconds (`scale` 1) or seconds (`scale` 1000). Anything that is not
+// a positive number is "does not expire".
+// ---------------------------------------------------------------------------
+/**
+ * Builds an `expiresAt` hook that reads one field of the record.
+ *
+ * @param field - the field holding the expiry; null for the value itself
+ * @param scale - what one unit of it is in milliseconds (1000 for seconds)
+ * @returns the hook, `(value) => epoch milliseconds | null`
+ */
+function expiryField(field, scale) {
+  log.debug("Entering expiryField().");
+  const factor = Number(scale) > 0 ? Number(scale) : 1;
+  log.debug("Leaving expiryField().");
+  // A HOT PATH: it runs for every row a minted flush writes, so no
+  // Entering/Leaving pair — one would drown the log.
+  return function expiryOfField(value) {
+    const raw = field === null || field === undefined ? value
+      : (value && typeof value === 'object' ? value[field] : null);
+    const n = typeof raw === 'string' && isNaN(Number(raw))
+      ? Date.parse(raw) / factor : Number(raw);
+    return Number.isFinite(n) && n > 0 ? n * factor : null;
+  };
 }
 
 // What a store calls when something in it moved. `key` is null for a
@@ -2370,6 +2702,12 @@ function noteWriteIn(handle, realmId, key) {
 // The handles, for the readers named above. The rows themselves rather than
 // copies of them, because they carry the three accessor functions and a copy
 // would be a second object claiming to be the same store.
+/**
+ * Returns every declared persistable store's handle row, in declaration
+ * order.
+ *
+ * @returns the rows, each with its accessors
+ */
 function handles() {
   log.debug("Entering handles().");
   log.debug("Leaving handles().");
@@ -2380,6 +2718,12 @@ function handles() {
 // handle belongs to — a handle in the store that nothing declares is an older
 // build's row, and answering null is what lets the restore say so and move on
 // rather than throwing on somebody else's data.
+/**
+ * Finds one declared store's handle row by name.
+ *
+ * @param name - the handle
+ * @returns the row, or null when nothing declares it
+ */
 function handleFor(name) {
   log.debug("Entering handleFor().");
   log.debug("Leaving handleFor().");
@@ -2445,6 +2789,14 @@ function acceptsRows(realmId) {
   return !retired.has(partitionId(realmId));
 }
 
+/**
+ * Builds a per-realm value lazily, one per realm, purged with the realm.
+ *
+ * @param factory - called with the realm record to make its value
+ * @param onLookup - optional; called with whether each lookup found a value
+ * @returns a function answering the ambient realm's value, with `of(id)`
+ *   for a named realm and `existing()` for the underlying Map
+ */
 function keyed(factory, onLookup) {
   log.debug("Entering keyed().");
   const per = new Map();
@@ -2494,6 +2846,8 @@ function keyed(factory, onLookup) {
 // facade is built as a plain object with the iterator attached afterwards,
 // which the checker cannot see as a Map, so the return is cast.
 /**
+ * Makes a Map partitioned by realm, answering the ambient realm's Map.
+ *
  * @param {any} [options]
  * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any> }}
  */
@@ -2717,6 +3071,13 @@ function map(options) {
 // INDEX and by `length` as much as by method, and no list of delegated methods
 // would cover `rows[0]`, `rows.length = 0` or a spread. The proxy target is a
 // real array so that `Array.isArray()` — which several callers use — is true.
+/**
+ * Makes an Array partitioned by realm: a Proxy over the ambient realm's
+ * array.
+ *
+ * @param options - optional; `persist` names the store to write down
+ * @returns the proxied array
+ */
 function arr(options) {
   log.debug("Entering arr().");
   const per = keyed(function () { return []; });
@@ -3127,6 +3488,9 @@ function segmentedArr(options, per, size) {
 // The JSDoc is for the type checker (#50): the proxy answers with the shape
 // the factory builds, so a reader of `nums.seq` is checked against it.
 /**
+ * Makes a plain object partitioned by realm: a Proxy over the ambient
+ * realm's object, built by `factory`.
+ *
  * @template T
  * @param {(realm?: any) => T} [factory]
  * @param {any} [options]
@@ -3348,6 +3712,14 @@ function reconciledRemove(handleName, reconcile, target, k, realmId) {
   log.debug("Leaving reconciledRemove().");
 }
 
+/**
+ * Makes a Map shared by every realm, declared so that it can be persisted.
+ *
+ * A plain Map to its callers; only the mutators are wrapped.
+ * @param options - optional; `persist` names the store, and `reconcile`
+ *   limits what a stored row may change
+ * @returns the Map
+ */
 function sharedMap(options) {
   log.debug("Entering sharedMap().");
   const real = new Map();
@@ -3482,6 +3854,13 @@ function sharedMap(options) {
 // first realm a service creates is created while `active()` is still false,
 // and without this that one realm's `global.mode` was not seen.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the realm whose overrides `config.value()` consults; the slot
+ * `config.js` offers.
+ *
+ * @returns the ambient realm record, or null in the default realm, outside
+ *   any, or when realms are off (a creation candidate excepted)
+ */
 function realmContext() {
   log.debug("Entering realmContext().");
   const realm = als.getStore();
@@ -3522,6 +3901,12 @@ config.setRealmContext(realmContext);
 // the store were all missing until 2026-09-18, with nothing to say so, which
 // left a table that called itself the whole list short by ten.
 // ---------------------------------------------------------------------------
+/**
+ * Describes which protocol families are realm-aware and what tells one
+ * realm's traffic from another's on each.
+ *
+ * @returns the rows `/admin/realms` and `GET /realms` render
+ */
 function realmSupport() {
   log.debug("Entering realmSupport().");
   log.debug("Leaving realmSupport().");
@@ -3815,6 +4200,14 @@ function realmSupport() {
   ];
 }
 
+/**
+ * Trust realms: several logical copies of this service in one process,
+ * told apart by a path prefix.
+ *
+ * The realm is ambient (AsyncLocalStorage), so settings, URLs and stores
+ * declared with `map()`, `arr()` or `obj()` follow it without being edited.
+ * @namespace
+ */
 module.exports = {
   DEFAULT_ID: DEFAULT_ID,
   DEFAULT_REALM: DEFAULT_REALM,
@@ -3862,6 +4255,7 @@ module.exports = {
   arr: arr,
   obj: obj,
   sharedMap: sharedMap,
+  expiryField: expiryField,
   setPersistObserver: setPersistObserver,
   unknownRealmPath: unknownRealmPath,
   handles: handles,

@@ -41,7 +41,12 @@
 # ---------------------------------------------------------------------------
 
 locals {
-  prefix     = "${var.name}-${var.environment}"
+  # A cell's names carry the cell (#98, ../environment/locals.tf).
+  prefix = var.cell != "" ? "${var.name}-${var.environment}-${var.cell}" : "${var.name}-${var.environment}"
+  # A target group name is limited to 32 characters and a cell's prefix is up
+  # to 27 (../environment/nlb.tf), so a cell's are `<prefix>-s<port>`; a
+  # single-cell environment's keep `-sp-`.
+  tg_prefix  = var.cell != "" ? "${local.prefix}-s" : "${local.prefix}-sp-"
   is_default = var.realm == "default"
 
   # The two ports, by name. Same number on both sides.
@@ -84,9 +89,11 @@ locals {
 data "terraform_remote_state" "environment" {
   backend = "s3"
   config = {
-    region = var.aws_region
+    # The BUCKET's region, and the cell's own state in a multi-cell
+    # environment (#98).
+    region = var.state_region
     bucket = "${var.name}-terraform-state-${data.aws_caller_identity.current.account_id}"
-    key    = "environment/${var.environment}.tfstate"
+    key    = var.cell != "" ? "environment/${var.environment}/${var.cell}.tfstate" : "environment/${var.environment}.tfstate"
   }
 }
 
@@ -173,7 +180,7 @@ resource "aws_lb_target_group" "spiffe" {
   # scope. Named by PORT rather than realm because a realm id can be 31
   # characters and a port is unique in an environment anyway — the Realm tag
   # says whose it is.
-  name                   = "${local.prefix}-sp-${each.value}"
+  name                   = "${local.tg_prefix}${each.value}"
   port                   = each.value
   protocol               = "TCP"
   target_type            = "ip"
@@ -197,6 +204,14 @@ resource "aws_lb_target_group" "spiffe" {
     precondition {
       condition     = local.port_problem == ""
       error_message = local.port_problem
+    }
+    # THE DEFAULT REALM'S PORTS ARE THE ENVIRONMENT'S (#311, rcbj
+    # 2026-09-28): environment/spiffe_default.tf publishes 8092 and 8181 for
+    # it on every build. This stack is for ADDITIONAL realms. A precondition
+    # on a resource, so an old REALM=default state can still be destroyed.
+    precondition {
+      condition     = !local.is_default
+      error_message = "The default realm's SPIFFE ports are part of environment/ (spiffe_default.tf) and always published; this stack is for additional realms only."
     }
     precondition {
       condition     = length(local.node_ips) > 0

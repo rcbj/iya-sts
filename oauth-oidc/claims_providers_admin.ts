@@ -24,6 +24,9 @@ import claimsProviders = require('./claims_providers');
 type Json = any;
 
 const esc = admin.esc;
+/**
+ * The page's path.
+ */
 const PAGE = '/admin/claim-providers';
 
 interface ClaimsProvidersAdminDeps {
@@ -38,12 +41,28 @@ interface ClaimsProvidersAdminDeps {
   adminViews: () => Json;
 }
 
+/**
+ * The console page `/admin/claim-providers`: the Claims Provider register and
+ * every person's link, with add, update, remove and revoke.
+ */
 class ClaimsProvidersAdmin {
+  /**
+   * Builds the page from its dependencies.
+   *
+   * @param deps - the logger, body parser, base URL reader, error codes,
+   *   console shell, Claims Provider register and a lazy loader of the gate
+   *   state
+   */
   constructor(private readonly deps: ClaimsProvidersAdminDeps) {
     deps.log.debug("Entering ClaimsProvidersAdmin.constructor().");
     deps.log.debug("Leaving ClaimsProvidersAdmin.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): ClaimsProvidersAdminDeps {
     helpers.log.debug("Entering ClaimsProvidersAdmin.defaultDeps().");
     helpers.log.debug("Leaving ClaimsProvidersAdmin.defaultDeps().");
@@ -58,6 +77,12 @@ class ClaimsProvidersAdmin {
   }
 
   // Who is acting, for the audit row: the console's signed-in operator.
+  /**
+   * Returns the signed-in console operator, for the audit row.
+   *
+   * @param req - the console request
+   * @returns the operator's username, or ''
+   */
   actorOf(req: Json): string {
     const { log, adminViews } = this.deps;
     log.debug("Entering ClaimsProvidersAdmin.actorOf().");
@@ -75,6 +100,13 @@ class ClaimsProvidersAdmin {
 
   // The page body for `json`, the view `GET /admin-api/claim-providers`
   // answers; `callback` is the redirect URI to register at a provider.
+  /**
+   * Draws the page body.
+   *
+   * @param json - the view `GET /admin-api/claim-providers` answers
+   * @param callback - the redirect URI to register at a provider
+   * @returns the HTML
+   */
   body(json: Json, callback: string): string {
     const { log, admin } = this.deps;
     log.debug("Entering ClaimsProvidersAdmin.body().");
@@ -176,6 +208,11 @@ class ClaimsProvidersAdmin {
       '<code>GET /admin-api/claim-providers</code></p>';
   }
 
+  /**
+   * Registers `GET` and `POST /admin/claim-providers`: the page, and its acts.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: Json): void {
     const { log, parseBody, admin, providers, errorCodes,
             baseUrlOf } = this.deps;
@@ -219,11 +256,30 @@ const slot = new InstanceSlot<ClaimsProvidersAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The console page `/admin/claim-providers` (#147), the Claims Provider
+ * register.
+ *
+ * The composition root builds the instance and calls `registerRoutes()`.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   ClaimsProvidersAdmin: ClaimsProvidersAdmin,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: ClaimsProvidersAdmin): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE
 };

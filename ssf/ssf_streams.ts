@@ -151,7 +151,19 @@ const queued = realms.map({ persist: 'ssf_streams.queued' });
 // went in, the oldest past `ssf.deadLetterMaxPerStream`, a probe that
 // delivered it, and everything when its stream is deleted.
 // ---------------------------------------------------------------------------
-const deadLetters = realms.map({ persist: 'ssf_streams.deadLetters' });
+// `expiresAt` (#333): the sweep keeps a dead letter
+// `ssf.deadLetterRetentionS` (3600 when not a positive number) past
+// `deadAtMs`.
+const deadLetters = realms.map({
+  persist: 'ssf_streams.deadLetters',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (letter: any): number | null {
+    const at = Number(letter && letter.deadAtMs);
+    const keepS = Number(config.value('ssf.deadLetterRetentionS'));
+    const keep = Number.isFinite(keepS) && keepS > 0 ? keepS : 3600;
+    return at > 0 ? at + keep * 1000 : null;
+  }
+});
 
 // What this service has RECEIVED, when the debugger is the transmitter and
 // this service is the receiver. Also per realm, and capped the same way.
@@ -160,9 +172,18 @@ const received = realms.arr({ persist: 'ssf_streams.received', merge: 'own' });
 // The two delivery method URNs of SSF 1.0 section 7.1.1. They are the RFC
 // numbers as URNs rather than names, which catches everybody once: a stream
 // asking for "push" is asking for nothing this specification defines.
+/**
+ * The push delivery method of SSF 1.0 section 7.1.1, `urn:ietf:rfc:8935`.
+ */
 const DELIVERY_PUSH = 'urn:ietf:rfc:8935';
+/**
+ * The poll delivery method of SSF 1.0 section 7.1.1, `urn:ietf:rfc:8936`.
+ */
 const DELIVERY_POLL = 'urn:ietf:rfc:8936';
 
+/**
+ * The two delivery methods, each with its URN, a name and a description.
+ */
 const DELIVERY_METHODS = [
   { method: DELIVERY_PUSH, name: 'Push (RFC 8935)',
     what: 'The transmitter POSTs each SET to a URL the receiver gave it. ' +
@@ -295,7 +316,21 @@ interface SsfStreamsDeps {
   loadPersistence: () => PersistenceReader;
 }
 
+/**
+ * The Shared Signals streams of each trust realm: their configuration, owners,
+ * subjects, event queues and dead letters, and what this service has received
+ * as a receiver.
+ *
+ * Stores are per realm and replicated; a record edited in place is written back
+ * through `touch()`.
+ */
 class SsfStreams {
+  /**
+   * Builds the stream store from its dependencies.
+   *
+   * @param deps - the modules and loaders it reads, from
+   * `SsfStreams.defaultDeps()` or the composition root
+   */
   constructor(private readonly deps: SsfStreamsDeps) {
     deps.log.debug("Entering SsfStreams.constructor().");
     deps.log.debug("Leaving SsfStreams.constructor().");
@@ -329,6 +364,20 @@ class SsfStreams {
   //     the first back as the second believes it will get event types nothing
   //     will send.
   // ---------------------------------------------------------------------------
+  /**
+   * Creates a stream from a receiver's Stream Configuration.
+   *
+   * This service fills every transmitter-owned member: it mints `stream_id`,
+   * sets `iss`, assigns `aud` from the receiver's associated identifiers, and
+   * agrees `events_delivered` as the intersection of what was requested, what
+   * is supported and what the owner's entry allows.
+   *
+   * @param asked - the Stream Configuration the receiver posted
+   * @param context - `principal` (the authenticated receiver, recorded as the
+   * owner), `issuer`, and, for this service's own receivers, `internalSurface`,
+   * `streamId` and `audience`
+   * @returns `{ ok, stream, errors }`
+   */
   createStream(asked?, context?) {
     const { log, config, events, iso, randomId, subjects } = this.deps;
     log.debug("Entering SsfStreams.createStream().");
@@ -548,6 +597,15 @@ class SsfStreams {
     return applications.ssfAllowedEventsFor(name);
   }
 
+  /**
+   * Returns the event types a stream owner's application entry allows
+   * (`ssfAllowedEvents`), always including SSF's own two and this service's
+   * own.
+   *
+   * @param principal - the owner's authenticated identifier
+   * @returns `{ application, values, allowed }`, or null when nothing is
+   * restricted
+   */
   allowedEventsFor(principal?) {
     const { log, events } = this.deps;
     log.debug("Entering SsfStreams.allowedEventsFor().");
@@ -590,6 +648,13 @@ class SsfStreams {
 
   // The event types this stream would actually be sent right now: what was
   // agreed, less anything its owner's entry has since stopped allowing.
+  /**
+   * Returns the event types a stream would be sent right now: what was agreed,
+   * less what its owner's entry has since stopped allowing.
+   *
+   * @param record - the stream
+   * @returns the URIs
+   */
   effectiveDelivered(record?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.effectiveDelivered().");
@@ -602,6 +667,14 @@ class SsfStreams {
 
   // THE question every delivery path asks. A stream takes an event when it
   // agreed to and its owner is still allowed it.
+  /**
+   * Says whether a stream takes an event type: it agreed to it and its owner is
+   * still allowed it.
+   *
+   * @param record - the stream
+   * @param uri - the event type URI
+   * @returns true when it does
+   */
   deliversEvent(record?, uri?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.deliversEvent().");
@@ -642,6 +715,12 @@ class SsfStreams {
     });
   }
 
+  /**
+   * Returns a delivery method's name for display.
+   *
+   * @param method - the method URN
+   * @returns the name, or the URN when it is not one this service knows
+   */
   deliveryName(method?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.deliveryName().");
@@ -710,6 +789,12 @@ class SsfStreams {
   // Which delivery methods this deployment offers. A list, so that a client's
   // "you do not do push" path is reachable by configuration rather than by a
   // second service.
+  /**
+   * Returns the delivery methods this deployment offers (`ssf.deliveryMethods`,
+   * which accepts `push`, `poll` or the URNs).
+   *
+   * @returns the method URNs
+   */
   offeredDeliveryMethods() {
     const { log, config } = this.deps;
     log.debug("Entering SsfStreams.offeredDeliveryMethods().");
@@ -771,6 +856,14 @@ class SsfStreams {
   // THIS SERVICE'S OWN TWO RECEIVERS pass their audience on the CONTEXT
   // (`ctx.audience`), which only in-process code can build.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the audiences a receiver is associated with: the identifier it
+   * authenticated as and, for a registered application, its identifier and
+   * every `ssfReceiverId` on its entry.
+   *
+   * @param principal - the receiver's authenticated identifier
+   * @returns the audiences; empty for an unauthenticated caller
+   */
   audiencesFor(principal?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.audiencesFor().");
@@ -894,6 +987,12 @@ class SsfStreams {
     return out;
   }
 
+  /**
+   * Returns a stream of the ambient realm by id.
+   *
+   * @param id - the `stream_id`
+   * @returns the record, or null
+   */
   getStream(id?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.getStream(). " + id);
@@ -903,6 +1002,11 @@ class SsfStreams {
     return record;
   }
 
+  /**
+   * Lists every stream of the ambient realm, oldest first.
+   *
+   * @returns the records
+   */
   listStreams() {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.listStreams().");
@@ -940,6 +1044,13 @@ class SsfStreams {
   // "no Event Stream with the given stream_id FOR THIS EVENT RECEIVER", and a
   // different answer would let a caller learn which ids exist.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a stream is one this service seeded for its own console or
+   * portal, which no remote caller owns.
+   *
+   * @param record - the stream
+   * @returns true when it is
+   */
   isInternal(record?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.isInternal().");
@@ -947,6 +1058,14 @@ class SsfStreams {
     return !!(record && record.internalSurface);
   }
 
+  /**
+   * Says whether a stream is owned by a remote caller: it is not internal and
+   * its `createdBy` is the caller's authenticated identifier.
+   *
+   * @param record - the stream
+   * @param principal - the caller's authenticated identifier
+   * @returns true when the caller owns it
+   */
   ownedBy(record?, principal?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.ownedBy().");
@@ -960,6 +1079,14 @@ class SsfStreams {
 
   // The stream `id`, if it is `principal`'s; otherwise null, exactly as for a
   // stream that does not exist.
+  /**
+   * Returns a stream if it is the caller's, and null otherwise, exactly as for
+   * a stream that does not exist.
+   *
+   * @param id - the `stream_id`
+   * @param principal - the caller's authenticated identifier
+   * @returns the record, or null
+   */
   streamOwnedBy(id?, principal?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.streamOwnedBy(). " + id);
@@ -970,6 +1097,12 @@ class SsfStreams {
     return out;
   }
 
+  /**
+   * Lists the streams a caller owns.
+   *
+   * @param principal - the caller's authenticated identifier
+   * @returns the records
+   */
   streamsOwnedBy(principal?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.streamsOwnedBy().");
@@ -982,6 +1115,12 @@ class SsfStreams {
 
   // Eligible receiver activity (SSF 1.0 section 8.1.1): restarts the
   // inactivity timeout. Written through `touch()` so every process sees it.
+  /**
+   * Records eligible receiver activity, which restarts the stream's inactivity
+   * timeout.
+   *
+   * @param record - the stream
+   */
   noteActivity(record?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.noteActivity().");
@@ -995,6 +1134,12 @@ class SsfStreams {
   }
 
   // The inactivity timeout this transmitter publishes, in seconds; 0 is none.
+  /**
+   * Returns the inactivity timeout this transmitter publishes
+   * (`ssf.inactivityTimeoutS`).
+   *
+   * @returns the timeout, in seconds; 0 for none
+   */
   inactivityTimeout() {
     const { log, config } = this.deps;
     log.debug("Entering SsfStreams.inactivityTimeout().");
@@ -1016,6 +1161,14 @@ class SsfStreams {
   // something asynchronous asks `liveRecord()` first and edits what that
   // answers.
   // ---------------------------------------------------------------------------
+  /**
+   * Writes a record edited in place back to the store so every process sees the
+   * change, but only while it is still the record held.
+   *
+   * @param record - the stream
+   * @returns true when it was written; false for a record another write has
+   * replaced
+   */
   touch(record?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.touch().");
@@ -1045,6 +1198,13 @@ class SsfStreams {
   // The record held NOW for the stream `record` was read as, or `record` itself
   // when the stream has gone. What a caller that crossed an `await` edits: see
   // touch() above.
+  /**
+   * Returns the record held now for a stream, for a caller that crossed an
+   * `await` since it read one.
+   *
+   * @param record - the stream as it was read
+   * @returns the held record, or `record` itself when the stream has gone
+   */
   liveRecord(record?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.liveRecord().");
@@ -1058,6 +1218,12 @@ class SsfStreams {
     return held || record;
   }
 
+  /**
+   * Deletes a stream with its queued SETs and its dead letters.
+   *
+   * @param id - the `stream_id`
+   * @returns true when a stream was deleted
+   */
   removeStream(id?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.removeStream(). " + id);
@@ -1085,6 +1251,20 @@ class SsfStreams {
   // a receiver believe it had cleared `events_requested` when it had not, and
   // the symptom is event types still arriving after they were "removed".
   // ---------------------------------------------------------------------------
+  /**
+   * Updates a stream's configuration: `replace` (PUT) takes every
+   * receiver-settable member from the body and resets the omitted ones; `merge`
+   * (PATCH) changes only the members present.
+   *
+   * A transmitter-supplied member may be sent only with the value it already
+   * has.
+   *
+   * @param id - the `stream_id`
+   * @param asked - the Stream Configuration sent
+   * @param mode - `replace` or `merge`
+   * @param context - the caller's context, as `createStream()` takes it
+   * @returns `{ ok, stream, errors }`
+   */
   updateStream(id?, asked?, mode?, context?) {
     const { log, events, iso, subjects } = this.deps;
     log.debug("Entering SsfStreams.updateStream(). " + id + ' ' + mode);
@@ -1174,6 +1354,15 @@ class SsfStreams {
   // difference between "I was not listening" and "it did not happen" — which is
   // the whole reason a Shared Signals receiver has a pause at all.
   // ---------------------------------------------------------------------------
+  /**
+   * Sets a stream's status: `enabled`, `paused` (it keeps queueing and delivers
+   * nothing) or `disabled` (it drops what is queued).
+   *
+   * @param id - the `stream_id`
+   * @param status - the new status
+   * @param reason - why, for the stream's log and the stream-updated event
+   * @returns `{ ok, stream, errors }`
+   */
   setStatus(id?, status?, reason?) {
     const { log, events, iso } = this.deps;
     log.debug("Entering SsfStreams.setStatus(). " + id + ' -> ' + status);
@@ -1235,6 +1424,18 @@ class SsfStreams {
   // because a receiver that guesses wrong either gets every event in the estate
   // or gets none, and both look like a broken transmitter.
   // ---------------------------------------------------------------------------
+  /**
+   * Adds a subject to a stream, after validating it.
+   *
+   * @param id - the `stream_id`
+   * @param subject - the subject
+   * @param verified - the Add Subject request's `verified` (true unless
+   * false)
+   * @param options - `criticalMembers`, the transmitter's
+   * `critical_subject_members`
+   * @returns `{ ok, errors, added, subject }`; `added` is false when it was
+   * already there
+   */
   addSubject(id?, subject?, verified?, options?) {
     const { log, iso, subjects } = this.deps;
     log.debug("Entering SsfStreams.addSubject(). " + id);
@@ -1290,6 +1491,13 @@ class SsfStreams {
     return { ok: true, errors: [], added: true, subject: entry };
   }
 
+  /**
+   * Removes a subject from a stream.
+   *
+   * @param id - the `stream_id`
+   * @param subject - the subject
+   * @returns `{ ok, errors, removed }`
+   */
   removeSubject(id?, subject?) {
     const { log, iso, subjects } = this.deps;
     log.debug("Entering SsfStreams.removeSubject(). " + id);
@@ -1320,6 +1528,15 @@ class SsfStreams {
     return { ok: true, errors: [], removed: removed };
   }
 
+  /**
+   * Registers, or with no function removes, a protocol family's narrowing of
+   * the subjects its own applications' streams may carry. A scope can only take
+   * events away.
+   *
+   * @param family - the family's name
+   * @param fn - `(record, subject)` answering true, false, or undefined for
+   * a stream that is not the family's
+   */
   setSubjectScope(family?, fn?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.setSubjectScope().");
@@ -1355,6 +1572,14 @@ class SsfStreams {
   // SSF 1.0 section 8.1.3.1 for two complex subjects: every member both
   // define is identical, and at least one is defined by both
   // (streamCoversSubject() argues the second condition).
+  /**
+   * Says whether two complex subjects match (SSF 1.0 section 8.1.3.1): every
+   * member both define is identical, and at least one is defined by both.
+   *
+   * @param added - the subject on the stream
+   * @param sent - the event's subject
+   * @returns true when they match
+   */
   complexSubjectsMatch(added?, sent?) {
     const { log, subjects } = this.deps;
     log.debug("Entering SsfStreams.complexSubjectsMatch().");
@@ -1374,6 +1599,16 @@ class SsfStreams {
     return match;
   }
 
+  /**
+   * Says whether an event about a subject belongs on a stream: always for an
+   * event with no subject; otherwise not when a subject scope refuses it, and
+   * then by `ssf.defaultSubjects` for an empty list, or by the list, where a
+   * complex subject is covered by a stream naming any one of its members.
+   *
+   * @param record - the stream
+   * @param subject - the event's subject
+   * @returns true when the stream takes it
+   */
   streamCoversSubject(record?, subject?) {
     const { log, config, subjects } = this.deps;
     log.debug("Entering SsfStreams.streamCoversSubject().");
@@ -1502,6 +1737,12 @@ class SsfStreams {
   // rather than an index, because an index would be a second copy of this store
   // that a row applied from another process has to remember to update — and the
   // scan is bounded: `ssf.maxStreams` streams of `ssf.maxQueuedEvents` each.
+  /**
+   * Returns what is waiting on a stream, oldest first.
+   *
+   * @param record - the stream
+   * @returns the queued entries
+   */
   queueOf(record?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.queueOf().");
@@ -1535,6 +1776,13 @@ class SsfStreams {
   // `realms.map()`'s reason: a row this process never learnt of may still be in
   // the store, and an acknowledgement that only removed the rows it could see
   // would leave that one to be delivered again.
+  /**
+   * Removes one SET from a stream's queue.
+   *
+   * @param record - the stream
+   * @param jti - the SET's `jti`
+   * @returns true when it was there
+   */
   dequeue(record?, jti?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.dequeue(). " + (record && record.stream_id));
@@ -1551,6 +1799,13 @@ class SsfStreams {
   // how many went.
   // Whether a queued SET is SSF's stream-updated event — the one a stopped
   // stream still carries. See setStatus() and poll().
+  /**
+   * Says whether a queued SET is SSF's stream-updated event, the one a stopped
+   * stream still carries.
+   *
+   * @param entry - the queued entry
+   * @returns true when it is
+   */
   isStreamUpdated(entry?) {
     const { log, events } = this.deps;
     log.debug("Entering SsfStreams.isStreamUpdated().");
@@ -1579,6 +1834,15 @@ class SsfStreams {
     return keys.length;
   }
 
+  /**
+   * Queues a SET on a stream, dropping the oldest when the queue is at
+   * `ssf.maxQueuedEvents`.
+   *
+   * @param record - the stream
+   * @param entry - the queued entry: `jti`, `token`, `claims` and when it was
+   * queued
+   * @returns `{ ok, reason }`; a disabled stream refuses it
+   */
   enqueue(record?, entry?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.enqueue(). " + record.stream_id);
@@ -1612,6 +1876,12 @@ class SsfStreams {
     return { ok: true, reason: '' };
   }
 
+  /**
+   * Returns a stream's dead letters.
+   *
+   * @param record - the stream
+   * @returns the letters
+   */
   deadLettersOf(record?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.deadLettersOf().");
@@ -1645,6 +1915,12 @@ class SsfStreams {
   // here, they are in a different Map. The caller sorts and aggregates; this
   // hands back the rows exactly as they are held, token included, so a caller
   // drawing them must drop it (`ssf_dead_letter_report.ts` does).
+  /**
+   * Returns every dead letter in the ambient realm, token included, each with
+   * its `stream_id`; a caller that draws them must drop the token.
+   *
+   * @returns the letters, in no particular order
+   */
   allDeadLetters() {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.allDeadLetters().");
@@ -1676,6 +1952,15 @@ class SsfStreams {
     return dropped;
   }
 
+  /**
+   * Moves a SET that could not be delivered to the stream's dead-letter queue,
+   * keeping it within `ssf.deadLetterMaxPerStream`.
+   *
+   * @param record - the stream
+   * @param entry - the queued entry
+   * @param why - the failure: `why`, `errorCode` and `status`
+   * @returns true when it was added
+   */
   addDeadLetter(record?, entry?, why?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.addDeadLetter(). " + (record &&
@@ -1745,6 +2030,13 @@ class SsfStreams {
     return waiting.length;
   }
 
+  /**
+   * Removes one dead letter from a stream.
+   *
+   * @param record - the stream
+   * @param jti - the SET's `jti`
+   * @returns true when it was there
+   */
   removeDeadLetter(record?, jti?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.removeDeadLetter().");
@@ -1758,6 +2050,12 @@ class SsfStreams {
     return gone;
   }
 
+  /**
+   * Drops every dead letter of a stream.
+   *
+   * @param streamId - the `stream_id`
+   * @returns the number dropped
+   */
   clearDeadLettersFor(streamId?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.clearDeadLettersFor(). " + streamId);
@@ -1783,6 +2081,16 @@ class SsfStreams {
   // cap exactly, rebuild the counts, and hand back — and reset — what was
   // dead-lettered since the last sweep, for the caller's one summary line.
   // ---------------------------------------------------------------------------
+  /**
+   * Sweeps the ambient realm's dead letters: deletes those older than
+   * `ssf.deadLetterRetentionS` or belonging to no stream, enforces the
+   * per-stream cap, rebuilds the counts, and hands back and resets what was
+   * dead-lettered since the last sweep.
+   *
+   * @param nowMs - the current time, for tests
+   * @returns the sweep's summary: held, letters, expired, orphaned, trimmed
+   * and the counts by error code
+   */
   sweepDeadLetters(nowMs?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.sweepDeadLetters().");
@@ -1852,6 +2160,12 @@ class SsfStreams {
   // would tell the receiver it had been paused by somebody. A dead stream is
   // still `enabled`; it is this transmitter that has stopped dialling it.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns how long a push stream's pushes may all fail before it is declared
+   * dead (`ssf.deadStreamTimeoutS`).
+   *
+   * @returns the timeout, in milliseconds; 0 for never
+   */
   deadTimeoutMs() {
     const { log, config } = this.deps;
     log.debug("Entering SsfStreams.deadTimeoutMs().");
@@ -1860,6 +2174,12 @@ class SsfStreams {
     return Number.isFinite(raw) && raw > 0 ? raw * 1000 : 0;
   }
 
+  /**
+   * Says whether a stream has been declared dead.
+   *
+   * @param record - the stream
+   * @returns true when it is dead
+   */
   isDead(record?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.isDead().");
@@ -1870,6 +2190,15 @@ class SsfStreams {
   // A push failed. Answers `{ declaredDead, moved }`: whether this failure is
   // the one that declared the stream dead, and how many waiting SETs that moved
   // to the dead-letter queue.
+  /**
+   * Records a failed push, declaring the stream dead (and moving its queue to
+   * the dead letters) when nothing has been delivered for the timeout.
+   *
+   * @param record - the stream
+   * @param why - the failure
+   * @param nowMs - the current time, for tests
+   * @returns `{ declaredDead, moved }`
+   */
   notePushFailure(record?, why?, nowMs?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.notePushFailure(). " + record.stream_id);
@@ -1910,6 +2239,13 @@ class SsfStreams {
   }
 
   // A push succeeded. Answers whether that revived a dead stream.
+  /**
+   * Records a successful push, which ends a run of failures and revives a dead
+   * stream.
+   *
+   * @param record - the stream
+   * @returns true when it revived a dead stream
+   */
   notePushSuccess(record?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.notePushSuccess(). " + record.stream_id);
@@ -1936,6 +2272,13 @@ class SsfStreams {
   // An operator reviving a stream by hand. It is alive at once; one more
   // failure before a success does not declare it dead again until the timeout
   // has run out afresh.
+  /**
+   * Revives a dead stream by hand; it is pushed to again at once.
+   *
+   * @param record - the stream
+   * @param reason - why, for the stream's log
+   * @returns true when it was dead
+   */
   revive(record?, reason?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.revive(). " + record.stream_id);
@@ -1956,6 +2299,13 @@ class SsfStreams {
   // A sweep found no dead letter to probe with. HALF-OPEN: the stream is tried
   // again with its next SET, and failingSinceMs is set so that one failure
   // declares it dead again at once rather than after a fresh timeout.
+  /**
+   * Puts a dead stream with nothing to probe with into half-open: the next SET
+   * is pushed, and one failure declares it dead again at once.
+   *
+   * @param record - the stream
+   * @param nowMs - the current time, for tests
+   */
   halfOpen(record?, nowMs?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.halfOpen(). " + record.stream_id);
@@ -1981,6 +2331,12 @@ class SsfStreams {
   // It counts EVERY type rather than only CAEP's eight — the record belongs to
   // this module and SSF's own two travel on the same streams — and the CAEP
   // report picks out the ones it is about.
+  /**
+   * Counts one more SET of a type said to a stream, when it is queued.
+   *
+   * @param record - the stream
+   * @param uri - the event type URI
+   */
   countEvent(record?, uri?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.countEvent(). " + uri);
@@ -2020,6 +2376,15 @@ class SsfStreams {
   // — a receiver that cannot process an event will not process it next time
   // either, and a transmitter that kept redelivering would poll-loop forever.
   // The error is recorded on the stream so the refusal is visible to a person.
+  /**
+   * Answers an RFC 8936 poll: removes what the receiver acknowledged (`ack`) or
+   * refused (`setErrs`, recorded on the stream's log), and returns what is
+   * waiting.
+   *
+   * @param record - the stream
+   * @param request - the poll request: `ack`, `setErrs` and `maxEvents`
+   * @returns `{ sets, moreAvailable, status }`
+   */
   poll(record?, request?) {
     const { log, iso } = this.deps;
     log.debug("Entering SsfStreams.poll(). " + record.stream_id);
@@ -2097,6 +2462,13 @@ class SsfStreams {
   // One line on a stream's own log, which is what the console draws. Capped for
   // the reason the queue is: a stream nobody deletes would otherwise grow
   // without bound in a process that never restarts.
+  /**
+   * Adds a line to a stream's own log, capped at `ssf.maxStreamLogEntries`.
+   *
+   * @param record - the stream
+   * @param kind - the kind of line
+   * @param text - the line
+   */
   note(record?, kind?, text?) {
     const { log, iso } = this.deps;
     log.debug("Entering SsfStreams.note(). " + kind);
@@ -2119,6 +2491,13 @@ class SsfStreams {
   // nothing is delivered onwards, and treating it as one would invite the
   // question of which stream a bare SET belongs to, which has no answer.
   // ---------------------------------------------------------------------------
+  /**
+   * Keeps a SET that arrived at `POST /ssf/receive`, capped at
+   * `ssf.maxReceivedEvents`.
+   *
+   * @param entry - what arrived
+   * @returns the entry
+   */
   recordReceived(entry?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.recordReceived().");
@@ -2138,6 +2517,12 @@ class SsfStreams {
   // this process as a contribution, and a list of this process's alone showed
   // a push that landed on the other node as never having arrived. Oldest
   // first, as the list always was, and bounded by the same setting.
+  /**
+   * Lists what every process has received at `POST /ssf/receive`, oldest first,
+   * bounded by `ssf.maxReceivedEvents`.
+   *
+   * @returns the entries
+   */
   listReceived() {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.listReceived().");
@@ -2160,6 +2545,11 @@ class SsfStreams {
   // THIS PROCESS'S list only: another process's contribution is its row in
   // the store, and it clears its own when asked there. A clear answered by one
   // node of several therefore leaves what the others received on the page.
+  /**
+   * Clears this process's list of received SETs; another process's stays.
+   *
+   * @returns the number cleared
+   */
   clearReceived() {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.clearReceived().");
@@ -2175,6 +2565,15 @@ class SsfStreams {
   // and the counters are this service's own bookkeeping and no member of SSF
   // 1.0's Stream Configuration, so sending them would be inventing members a
   // receiver might come to depend on.
+  /**
+   * Returns a stream's wire form, as the management API answers it, without
+   * this service's own bookkeeping.
+   *
+   * @param record - the stream
+   * @param options - `includeSecrets`, to include the delivery's
+   * `authorization_header` (only for the receiver that set it)
+   * @returns the Stream Configuration
+   */
   streamConfiguration(record?, options?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.streamConfiguration(). " + record.stream_id);
@@ -2230,6 +2629,12 @@ class SsfStreams {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules and loaders the store depends on, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): SsfStreamsDeps {
     helpers.log.debug("Entering SsfStreams.defaultDeps().");
     helpers.log.debug("Leaving SsfStreams.defaultDeps().");
@@ -2269,9 +2674,23 @@ const slot = new InstanceSlot<SsfStreams>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Shared Signals streams, their subjects, queues and dead letters.
+ *
+ * Exports the `SsfStreams` class, the delivery method constants, and facades
+ * that forward to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   SsfStreams: SsfStreams,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SsfStreams): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   setSubjectScope: slot.forward('setSubjectScope'),
   DELIVERY_PUSH: DELIVERY_PUSH,

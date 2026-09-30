@@ -446,11 +446,29 @@ async function decide(query) {
   const resource = String(query.resource || options.resource ||
                           'urn:xacml-pep:protected');
   const action = String(query.action || 'GET');
-  const subjectAttributes = subject
-    ? [{ attributeId: model.ATTRIBUTE.SUBJECT_ID, issuer: null,
-         includeInResult: true,
-         values: [{ type: model.TYPE.STRING, lexical: subject }] }]
-    : [];
+  // THROUGH THE ONE BUILDER (#306) — `xacml_request.js`, which this
+  // container copies beside the engine, so it asks in the shape and the
+  // spelling the service's own PEPs do. The four categories are named in
+  // order first, so an empty subject (no `subject=`) is still sent as the
+  // empty category it always was.
+  const req = new engine.request.AuthorizationRequest({ includeInResult: true });
+  [model.CATEGORY.ACCESS_SUBJECT, model.CATEGORY.RESOURCE,
+   model.CATEGORY.ACTION, model.CATEGORY.ENVIRONMENT].forEach(function (id) {
+    req.category(id);
+  });
+  if (subject) {
+    req.subject(model.ATTRIBUTE.SUBJECT_ID, [subject]);
+  }
+  // WHETHER THE SUBJECT IS A PERSON OR AN APPLICATION (#303), from
+  // `subjectKind`. It is not a directory attribute, so it is asserted once,
+  // under the builder's own id, and `pip.js` forwards it, so the PDP resolves
+  // the ROLES of the right kind of subject: a name like `payroll-worker`
+  // could be either, and the two hold roles through different relations.
+  if (query.subjectKind !== undefined) {
+    req.subject(engine.request.VOCABULARY.SUBJECT_KIND,
+                [String(query.subjectKind) === 'application' ? 'application'
+                                                             : 'user']);
+  }
   // EVERY OTHER QUERY PARAMETER BECOMES A SUBJECT ATTRIBUTE, ASSERTED UNDER
   // BOTH SPELLINGS — the bare name and the mock's own
   // `urn:sts:xacml:attribute:` form.
@@ -473,35 +491,15 @@ async function decide(query) {
   // that has no directory.
   const PIP_PREFIX = 'urn:sts:xacml:attribute:';
   Object.keys(query).forEach(function (key) {
-    if (key === 'subject' || key === 'resource' || key === 'action') {
+    if (key === 'subject' || key === 'resource' || key === 'action' ||
+        key === 'subjectKind') {
       return;
     }
-    const values = [{ type: model.TYPE.STRING, lexical: String(query[key]) }];
-    subjectAttributes.push({ attributeId: key, issuer: null,
-                             includeInResult: true, values: values });
-    subjectAttributes.push({ attributeId: PIP_PREFIX + key, issuer: null,
-                             includeInResult: true, values: values });
+    req.subject(key, [String(query[key])])
+      .subject(PIP_PREFIX + key, [String(query[key])]);
   });
-  const request = {
-    returnPolicyIdList: true,
-    combinedDecision: false,
-    categories: [
-      { category: model.CATEGORY.ACCESS_SUBJECT, id: null, content: null,
-        attributes: subjectAttributes },
-      { category: model.CATEGORY.RESOURCE, id: null, content: null,
-        attributes: [{ attributeId: model.ATTRIBUTE.RESOURCE_ID, issuer: null,
-                       includeInResult: true,
-                       values: [{ type: model.TYPE.ANYURI,
-                                  lexical: resource }] }] },
-      { category: model.CATEGORY.ACTION, id: null, content: null,
-        attributes: [{ attributeId: model.ATTRIBUTE.ACTION_ID, issuer: null,
-                       includeInResult: true,
-                       values: [{ type: model.TYPE.STRING,
-                                  lexical: action }] }] },
-      { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-        attributes: [] }
-    ]
-  };
+  req.target(resource, model.TYPE.ANYURI).requestedAction(action);
+  const request = req.build();
   // ---------------------------------------------------------------------
   // THE PIP, FETCHED BEFORE EVALUATION RATHER THAN DURING IT.
   //
@@ -1169,7 +1167,7 @@ async function start() {
 
 // Guarded so that `tests/xacml_pep.js` can require this file for `enforce()`
 // and `decide()` without starting a listener or a timer — the same guard
-// `common/worker.js` carries, for the same reason.
+// `common/request_worker.ts` carries, for the same reason.
 if (require.main === module) {
   start().catch(function (error) {
     log.error(tag('STS-XPEP-0013') + 'xacml-pep: could not start: ' +

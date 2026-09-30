@@ -107,13 +107,26 @@ function defaultLog() {
 }
 
 // ---------------------------------------------------------------------------
-// Every raw V8 file in a directory, keyed by the pid that wrote it. The name
-// is `coverage-<pid>-<timestamp>-<n>.json`; a file that does not carry one is
-// given a key of its own so it is never merged with anything.
+// Every raw V8 file in a directory, FOLDED AS IT IS READ into the pid that
+// wrote it: `pid -> url -> function key -> range -> count`, the maximum of
+// that pid's counts. The name is `coverage-<pid>-<timestamp>-<n>.json`; a file
+// that does not carry one is given a key of its own so it is never merged with
+// anything.
+//
+// **FOLDED ONE FILE AT A TIME, AND ONLY WHAT `keep` WANTS (2026-09-27, CI run
+// 36369109378).** It parsed every file and held them all until the merge, and
+// a raw file carries every script its process compiled — node's internals and
+// all of node_modules as well as this tree. On the full coverage run that was
+// past the runner's four-gigabyte heap: it died in the render, after two hours
+// of jobs, and wrote no report. Folding each file into its pid's maximum as it
+// is parsed, and skipping at once the scripts the report would drop anyway
+// (`keep`, `fileOf()` in `render()`), holds one parsed file at a time and the
+// folded counts of this tree's scripts — and gives the same numbers, because
+// a maximum taken file by file is the maximum of them all.
 // ---------------------------------------------------------------------------
-function readRaw(dir, log) {
+function readRaw(dir, log, keep) {
   log.debug('Entering readRaw(). dir=' + dir);
-  const byPid = {};
+  const perPid = {};
   let files = [];
   try {
     files = fs.readdirSync(dir).filter(function (f) {
@@ -121,7 +134,7 @@ function readRaw(dir, log) {
     });
   } catch (e) {
     log.debug('Leaving readRaw(). No such directory: ' + e.message);
-    return byPid;
+    return perPid;
   }
   files.forEach(function (f) {
     let parsed;
@@ -135,11 +148,16 @@ function readRaw(dir, log) {
     }
     const m = /^coverage-(\d+)-/.exec(f);
     const pid = m ? m[1] : f;
-    byPid[pid] = byPid[pid] || [];
-    byPid[pid].push(parsed.result || []);
+    const one = perPid[pid] = perPid[pid] || {};
+    (parsed.result || []).forEach(function (script) {
+      if (keep && !keep(String(script.url || ''))) {
+        return;
+      }
+      foldScript(one, script, Math.max);
+    });
   });
   log.debug('Leaving readRaw(). ' + files.length + ' file(s).');
-  return byPid;
+  return perPid;
 }
 
 // One script's functions, as a map from a stable key to its ranges. `merge` is
@@ -165,21 +183,11 @@ function foldScript(into, script, merge) {
 }
 
 // ---------------------------------------------------------------------------
-// All of one label's data, merged: max within a pid, sum across pids. Returns
-// url -> [{start,end,count}].
+// All of one label's data, merged: max within a pid (done by `readRaw()` as
+// it read), sum across pids. Returns url -> function key -> range -> count.
 // ---------------------------------------------------------------------------
-function mergeLabel(byPid, log) {
+function mergeLabel(perPid, log) {
   log.debug('Entering mergeLabel().');
-  const perPid = {};
-  Object.keys(byPid).forEach(function (pid) {
-    const one = {};
-    byPid[pid].forEach(function (result) {
-      result.forEach(function (script) {
-        foldScript(one, script, Math.max);
-      });
-    });
-    perPid[pid] = one;
-  });
   const all = {};
   Object.keys(perPid).forEach(function (pid) {
     const one = perPid[pid];
@@ -594,7 +602,9 @@ function render(opts) {
   let combined = {};
   const labels = [];
   opts.inputs.forEach(function (input) {
-    const merged = mergeLabel(readRaw(input.dir, log), log);
+    const merged = mergeLabel(readRaw(input.dir, log, function (url) {
+      return !!fileOf(url, root);
+    }), log);
     sets[input.label] = merged;
     combined = addSets(combined, merged);
     labels.push(input.label);

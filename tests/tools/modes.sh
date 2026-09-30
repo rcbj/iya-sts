@@ -65,7 +65,8 @@
 # THE ORDER IS DELIBERATE: cheapest and most fundamental first.
 # ===========================================================================
 
-# The mode names a bare run runs, in the order they run.
+# The mode names a bare run runs, in the order they run. `cells` (#98) is a
+# fourth mode that is NOT here: it runs only when named, `--modes=cells`.
 STS_ALL_MODES=(memory single-node cluster)
 
 
@@ -119,6 +120,10 @@ STS_CLUSTER_MODE=off
 STS_PROXY_PROTOCOL=off
 STS_TEST_FRESH_CONNECTIONS=0
 STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
 EOF
       ;;
     single-node)
@@ -158,6 +163,10 @@ STS_CLUSTER_MODE=off
 STS_PROXY_PROTOCOL=off
 STS_TEST_FRESH_CONNECTIONS=0
 STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
 EOF
       ;;
     cluster)
@@ -191,9 +200,26 @@ EOF
       # NOTHING IS ACCEPTED AS MISSING: no STS_CLUSTER_ACCEPT_MISSING_CAPABILITIES.
       # The gate must pass on its own, and a node that refuses is a finding.
       #
-      # THE TWO `STS_TEST_*` NAMES ARE THE RUNNER'S, not the service's:
-      # a new connection per request (tools/fresh-connections.js), and how many
-      # nodes `sts_cluster_alternation.js` must see answer.
+      # THE THREE `STS_TEST_*` NAMES ARE THE RUNNER'S, not the service's:
+      # a new connection per request (tools/fresh-connections.js), how many
+      # nodes `sts_cluster_alternation.js` must see answer, and whether the
+      # `bulk` lane waits for every other protocol job to finish
+      # (tools/run-report.js, runScheduled()). The last is on HERE ONLY
+      # (2026-09-27, CI run 36369109378): beside the protocol jobs, 5000 SCIM
+      # creates and their RISC signals on two nodes held the one postgres
+      # store long enough that three sign-ins' back-channel fetch of the
+      # realm's own JWKS missed its 10 s, and the load itself was killed at
+      # its watchdog. The bound was right and stays; the overlap goes.
+      #
+      # THE BULK SIZES ARE THE SAME IN EVERY MODE (2026-09-27, rcbj's
+      # decision after the same run): 1000 people, 10 groups of 100, about a
+      # fifth of the library's 5000 / 50 / 100. On the single-node mode the
+      # three loads took 38 minutes beside the protocol jobs, and all four of
+      # that mode's failures fell inside them; a fifth of the writes is still
+      # a thousand of each kind, which is what the loads measure — a cost per
+      # write that stays flat — and one size in every mode keeps their
+      # numbers comparable between modes as well as between doors. The
+      # coverage run reads no mode and keeps the library's sizes.
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
@@ -207,6 +233,52 @@ STS_CLUSTER_MODE=active-active
 STS_PROXY_PROTOCOL=v2
 STS_TEST_FRESH_CONNECTIONS=1
 STS_TEST_CLUSTER_NODES=2
+STS_TEST_BULK_LAST=1
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
+    cells)
+      # TWO CELLS OF ONE SERVICE (#98, 2026-09-28) — ASKED FOR BY NAME ONLY:
+      # `--modes=cells`. It is NOT in STS_ALL_MODES, so a bare run does not
+      # grow by a fourth stack; the mode exists for the `sts_cells_*.js`
+      # jobs, which prove #98 end to end, and every other job in it asserts
+      # what it always did against cell A (`sts`).
+      #
+      # The stack is tests/docker-compose-run-tests-cells.yml over the usual
+      # one: cell `cella` (jurisdiction `us`) is `sts` on the `postgres` it
+      # always had, cell `cellb` (`ca`) is `sts2` on a database of its own,
+      # and the GLOBAL tier both read is a third postgres. Each cell seals
+      # its rows under a key-encryption key of its own, generated per run
+      # into a volume only that cell mounts. What follows is what each CELL
+      # is, and both get it: `sts2` extends `sts`.
+      #
+      # PRODUCT MODE ON POSTGRES, AS IN `single-node` — a cell refuses to
+      # start without a persisted keystore and the operator's
+      # key-encryption key (STS-CELL-0004) and, in product mode, without a
+      # cell key (STS-CELL-0003). NO REQUEST WORKERS: what this mode tests
+      # is BETWEEN cells, and one process per cell keeps the stack small
+      # and its failures about cells; the workers are `single-node`'s axis.
+      # CLUSTER OFF: each cell is one node, and a cell's membership is the
+      # cell's own (persistence/CLAUDE.md, *Tiers*).
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=postgres
+STS_PERSISTENCE_COORDINATE=true
+STS_WORKERS_REQUEST_COUNT=0
+STS_WORKERS_SURFACE_COUNT=0
+STS_WORKERS_DISPATCH=
+STS_WORKERS_READ_YOUR_WRITE=false
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
 EOF
       ;;
     *)
@@ -225,6 +297,7 @@ stsModeDescription()
     memory)   echo "one process, nothing persisted, nothing coordinated — the baseline" ;;
     single-node) echo "a single-node production deployment: product mode, postgres, 3 request workers + 1 surface worker, read-your-write" ;;
     cluster)  echo "a multi-node production deployment: 2 such nodes active-active on one postgres, behind an L4 load balancer, a new connection per request" ;;
+    cells)    echo "two cells of one service (#98): cella (us) and cellb (ca), product mode, each on its own postgres over a shared global-tier postgres, the inter-cell channel between them — by name only (--modes=cells)" ;;
     *)        echo "unknown" ;;
   esac
 }
@@ -283,5 +356,22 @@ stsModeIsCluster()
   case "$1" in
     cluster) return 0 ;;
     *)       return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Whether a mode is the TWO-CELL stack (#98, 2026-09-28): two cells of one
+# service, each a single node on a database of its own, over a shared
+# global-tier database. Asked by the launcher wherever it asks
+# stsModeIsCluster(), for the same reasons: which compose files are layered,
+# which containers come up and are logged. Unlike `cluster` there is no
+# balancer, so the runner is handed cell A (`sts`) as the service and each
+# cell by name besides (the overlay's STS_TEST_CELL_*_URL).
+# ---------------------------------------------------------------------------
+stsModeIsCells()
+{
+  case "$1" in
+    cells) return 0 ;;
+    *)     return 1 ;;
   esac
 }

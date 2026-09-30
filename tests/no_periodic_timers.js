@@ -72,6 +72,10 @@ const ALLOWED = {
     'a reconnect retry within one attempt to reach the database' },
   'ldap/ldap_cluster_connections.ts|noteLocalChange|timeout': { permanent:
     'a debounce: one publish for a burst of connection changes' },
+  'attribute-sources/attribute_sources.ts|lookup|timeout': { permanent:
+    'not periodic: one lookup\'s timeout, cleared when it settles (#94), ' +
+    'caught by the recursion rule because lookup() calls the driver\'s ' +
+    'lookup()' },
   'common/request_worker.ts|start|timeout': { permanent:
     'not periodic: a one-shot start-up timeout, caught by the recursion rule ' +
     'because start() is also a method name it calls' },
@@ -111,7 +115,22 @@ function walk(dir, out) {
   return out;
 }
 
-// Comments and string contents blanked, same length, so offsets still match.
+// The last character of `text` that is not white space, or ''.
+// Walked backwards, so a long file costs a few characters per `/`.
+function lastSignificant(text) {
+  log.debug('Entering lastSignificant().');
+  for (let j = text.length - 1; j >= 0; j--) {
+    if (!/\s/.test(text[j])) {
+      log.debug('Leaving lastSignificant().');
+      return text[j];
+    }
+  }
+  log.debug('Leaving lastSignificant(). Nothing.');
+  return '';
+}
+
+// Comments, string contents and regex literals blanked, same length, so
+// offsets still match.
 function blank(src) {
   log.debug('Entering blank().');
   let out = '';
@@ -134,6 +153,35 @@ function blank(src) {
       }
       out += '  ';
       i += 2;
+      continue;
+    }
+    // A REGEX LITERAL (2026-09-27): `/'/g` read as the start of a string
+    // paired every quote after it wrongly, and the file's timers were then
+    // charged to the wrong function whenever a comment below it gained an
+    // apostrophe. A `/` where an expression may start is a regex; the rule
+    // is the usual one, the previous non-blank character being an operator,
+    // an opening bracket, or nothing.
+    if (c === '/' && /^[(,=:[!&|?{};+\-*%<>~^]?$/.test(lastSignificant(out))) {
+      out += c;
+      i++;
+      let inClass = false;
+      while (i < n && src[i] !== '\n' &&
+             !(src[i] === '/' && !inClass)) {
+        if (src[i] === '\\') {
+          out += '  ';
+          i += 2;
+          continue;
+        }
+        if (src[i] === '[') {
+          inClass = true;
+        } else if (src[i] === ']') {
+          inClass = false;
+        }
+        out += ' ';
+        i++;
+      }
+      out += '/';
+      i++;
       continue;
     }
     if (c === '"' || c === '\'' || c === '`') {

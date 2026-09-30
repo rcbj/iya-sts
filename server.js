@@ -78,6 +78,19 @@
 // from the first converted module. See `common/compiled_tree.js`.
 require('./common/compiled_tree').refuseUncompiledTree('node server.js');
 require('./common/config_file').resolveConfigFile();
+// ---------------------------------------------------------------------------
+// THE HEAP LIMIT, BEFORE ANYTHING ELSE IS LOADED (#341, 2026-09-29). V8 reads
+// --max-old-space-size when it starts, so when a limit is due — derived from
+// the container, or workers.heapLimitMb — and not yet in force, this process
+// REPLACES ITSELF with the same command and the flag (`process.execve()`: the
+// same pid and descriptors) and never returns from this line. It runs where
+// every way of starting this service meets: the image's CMD, the compose
+// files' `exec node server.js`, `docker run` and ECS. Here, after the
+// appconfig file is resolved and before the service is loaded, so the second
+// start repeats as little as possible. `common/process_memory.ts` argues it
+// against NODE_OPTIONS and a launcher.
+// ---------------------------------------------------------------------------
+require('./common/process_memory').reexecWithHeapLimit();
 
 const http = require('http');
 const https = require('https');
@@ -90,20 +103,14 @@ const { log, PORT, HOST, warmPqKeys,
         warmSignerGroups } = require('./common/helpers');
 const realms = require('./common/realms');
 const config = require('./common/config');
-// A LIBRARY, rule 3's shape: it registers no route and its position in the
-// require order is not a position at all. It is named here for one thing — the
-// drain in shutdown() below — and it is already loaded by then, because
-// common/crypto.js requires it. See common/worker_pool.js.
-const workerPool = require('./common/worker_pool');
 // ---------------------------------------------------------------------------
-// AND THE SECOND POOL, WHICH IS A DIFFERENT KIND OF WORKER.
-//
-// `worker_pool.js` above forks children that run a JOB TABLE — four leaf
-// computations. `request_pool.js` forks children that run THE SERVICE: each
-// loads the same protocol stack in the same order, binds no protocol port, and
-// answers HTTP on a unix socket this process proxies to. It is required here
-// for its lifecycle only; the middleware that uses it is installed in app.js,
-// because that is where the order it has to sit in is decided.
+// THE REQUEST POOL. Its workers run THE SERVICE: each loads the same protocol
+// stack in the same order, binds no protocol port, and answers HTTP on a unix
+// socket this process proxies to. It is required here for its lifecycle only;
+// the middleware that uses it is installed in app.js, because that is where
+// the order it has to sit in is decided. (There was a second pool until #363,
+// `common/worker_pool.js`, of processes that computed post-quantum signatures
+// and scrypt; those run on libuv's thread pool now — `common/pq_native.js`.)
 // ---------------------------------------------------------------------------
 const requestPool = require('./common/request_pool');
 // THE VERSION, M.N.O. A LIBRARY and a LEAF: it registers no route and requires
@@ -234,14 +241,11 @@ function announce() {
   // intermittently, in about half of the coverage runs on `main`. The
   // service was never wrong; the work was simply in the wrong place.
   //
-  // IT IS HERE AND NOT AT REQUIRE TIME, which matters: `workers.count`'s own
-  // description promises that nothing is forked until the first post-quantum
-  // job, so that the parent project's in-process Kerberos jobs, this
-  // repository's own `npm test` and `node env/generate_defaults.js` never pay
-  // for a pool they will not use. Warming from `helpers.js` would have broken
-  // that for every one of them. A process that has bound a socket is a
-  // SERVICE, and a service is exactly the thing that will be asked for a
-  // JWKS.
+  // IT IS HERE AND NOT AT REQUIRE TIME, so that the parent project's
+  // in-process Kerberos jobs, this repository's own `npm test` and
+  // `node env/generate_defaults.js` never pay for eleven key generations they
+  // will not use. A process that has bound a socket is a SERVICE, and a
+  // service is exactly the thing that will be asked for a JWKS.
   //
   // NOT AWAITED, and failure is not fatal. The port is already open; this is
   // work moved off the first request's path, not a precondition for
@@ -482,6 +486,22 @@ function announce() {
               'Every http:// CRL and OCSP address in this service\'s ' +
               'certificates will answer nothing.');
   });
+  // THE CHANNEL BETWEEN CELLS (#98, 2026-09-28): mutual TLS on cells.port,
+  // bound only when this service is deployed as cells, in this process only
+  // (a request worker dials and never listens). A relayed request it takes
+  // is served by the same app as the public port. Recorded rather than
+  // thrown, as every socket here is: without it this cell still answers
+  // what it owns, and the other cells fail closed on what they relay here.
+  require('./common/cell_channel').listen(app).whenReady.then(
+    function (ready) {
+      if (ready.port) {
+        log.info('cells: the inter-cell channel is on port ' + ready.port +
+                 ', mutual TLS, for the other cells of this service only.');
+      }
+    }).catch(function (err) {
+    log.error(errorCodes.tag('STS-CELL-0033') + 'cells: the inter-cell ' +
+              'listener could not start: ' + err.message);
+  });
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13): its own listener, then its
   // api child. Recorded rather than thrown like every socket here — and a
   // debugger that is not embedded, or not installed, says why on
@@ -540,6 +560,33 @@ function announce() {
 // ---------------------------------------------------------------------------
 let stopping = false;
 
+// ---------------------------------------------------------------------------
+// THE BOOTSTRAP ADMINISTRATOR IS THE SERVICE'S, NOT EACH CELL'S (#98,
+// 2026-09-28; found by tests/tools/rehearse-cell-conversion.sh). The
+// bootstrap asks "does anybody in THIS directory hold a credential", and a
+// cell's directory holds only the people homed in it — so every cell but the
+// first found nobody and created a second `admin.bootstrapUsername` of its
+// own beside the one homed in the first cell: an entry the routing index
+// refused by name (STS-CELL-0020), indexed by its entryUUID, with a password
+// printed that sign-in routing never reaches. A cell now asks the index
+// first, and a realm whose bootstrap account is homed in another cell is not
+// bootstrapped here. Single-cell mode never asks.
+// ---------------------------------------------------------------------------
+function bootstrapHomedElsewhere(realmId, username) {
+  log.debug('Entering bootstrapHomedElsewhere(). realm=' + realmId);
+  const cells = require('./common/cells');
+  if (!cells.isMulti() || !username) {
+    log.debug('Leaving bootstrapHomedElsewhere(). Single-cell.');
+    return Promise.resolve('');
+  }
+  log.debug('Leaving bootstrapHomedElsewhere(). Asking the index.');
+  return require('./common/cell_routing')
+    .homeOf(realmId, 'name', String(username))
+    .then(function (home) {
+      return home && home !== cells.id() ? String(home) : '';
+    });
+}
+
 function shutdown(signal) {
   log.debug('Entering shutdown(). signal=' + signal);
   if (stopping) {
@@ -553,20 +600,9 @@ function shutdown(signal) {
            'down, then exiting. Sessions, tokens, codes, artifacts and ' +
            'tickets are not persisted and are going with this process, which ' +
            'is what they have always done.');
-  // THE COMPUTATION POOL IS DRAINED rather than killed: a child
-  // part way through an SLH-DSA signature is answering a request this process
-  // still has open, and thirteen seconds of computation thrown away is a
-  // request that gets nothing back. It gives them five seconds and kills what
-  // is left, which costs nothing — a worker holds no state. It resolves rather
-  // than rejects for the same reason persistence.stop() does: the only move
-  // left here is to exit, and a rejection would replace the sentence that says
-  // what was flushed with a stack trace. See common/worker_pool.js.
-  // ---------------------------------------------------------------------
-  // THE REQUEST WORKERS GO FIRST, AND THE ORDER IS A DEPENDENCY RATHER THAN A
-  // PREFERENCE: a request worker that is still finishing a response may be
-  // waiting on a post-quantum signature from the COMPUTATION pool, so draining
-  // that pool first would fail the job the request is blocked on and turn a
-  // clean shutdown into a truncated answer.
+  // THE REQUEST WORKERS ARE DRAINED BEFORE THE STORE IS FLUSHED: a worker
+  // still finishing a response may write, and its write has to be in the
+  // store before persistence.stop() closes it.
   // ---------------------------------------------------------------------
   // The debugger's api child first: it is not a worker of either pool and
   // holds nothing worth draining, and an orphan would keep its socket.
@@ -574,6 +610,11 @@ function shutdown(signal) {
   // A run in progress is left to finish or be fenced out; its claim lapses
   // and the next leader takes it over.
   require('./cluster/scheduler').stop();
+  // The inter-cell listener (#98): nothing drains through it that the
+  // request pool below does not already finish.
+  require('./common/cell_channel').close().catch(function (e) {
+    log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
+  });
   debuggerServer.close().catch(function (e) {
     log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
   }).then(function () {
@@ -581,12 +622,6 @@ function shutdown(signal) {
   }).then(function (drained) {
     if (drained.stopped || drained.killed) {
       log.info('sts: ' + drained.stopped + ' request worker(s) finished and ' +
-               drained.killed + ' had to be killed.');
-    }
-    return workerPool.stop();
-  }).then(function (drained) {
-    if (drained.stopped || drained.killed) {
-      log.info('sts: ' + drained.stopped + ' worker process(es) finished and ' +
                drained.killed + ' had to be killed.');
     }
     return persistence.stop();
@@ -754,15 +789,32 @@ serviceState.start().then(function (both) {
   const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
   });
-  const bootstrapped = realms.run(realms.DEFAULT_REALM, function () {
-    return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
-      adminRbac.seedBootstrapAdministrator();
-      // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
-      // never opens it to whoever signs in, so a realm left with no bootstrap
-      // administrator and an empty roster is logged under STS-ADMIN-0798
-      // rather than discovered by being refused.
-      adminRbac.reportClosedConsole();
-      return credentials.bootstrap({ username: bootstrapUsername });
+  // In a service of several cells, a realm whose bootstrap account is homed
+  // in another cell is not bootstrapped here: see bootstrapHomedElsewhere().
+  const unlessHomedElsewhere = function (realmId, bootstrap) {
+    return bootstrapHomedElsewhere(realmId, bootstrapUsername)
+      .then(function (home) {
+        if (home) {
+          log.info('credentials: the "' + realmId + '" realm\'s bootstrap ' +
+                   'account "' + bootstrapUsername + '" is homed in cell "' +
+                   home + '"; this cell bootstraps no administrator of its ' +
+                   'own.');
+          return { ran: false, why: 'homed in cell ' + home };
+        }
+        return bootstrap();
+      });
+  };
+  const bootstrapped = unlessHomedElsewhere(realms.DEFAULT_ID, function () {
+    return realms.run(realms.DEFAULT_REALM, function () {
+      return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
+        adminRbac.seedBootstrapAdministrator();
+        // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
+        // never opens it to whoever signs in, so a realm left with no
+        // bootstrap administrator and an empty roster is logged under
+        // STS-ADMIN-0798 rather than discovered by being refused.
+        adminRbac.reportClosedConsole();
+        return credentials.bootstrap({ username: bootstrapUsername });
+      });
     });
   }).then(function () {
     // AND EVERY TRUST REALM THIS PROCESS STARTED WITH (2026-09-14, #32): each
@@ -773,11 +825,13 @@ serviceState.start().then(function (both) {
     // realm above — and one realm at a time, each under its own claim.
     return otherRealms.reduce(function (chain, realm) {
       return chain.then(function () {
-        return realms.run(realm, function () {
-          return credentials.bootstrapOnce(realm.id, function () {
-            adminRbac.seedBootstrapAdministrator(realm.id);
-            adminRbac.reportClosedConsole(realm.id);
-            return credentials.bootstrap({ username: bootstrapUsername });
+        return unlessHomedElsewhere(realm.id, function () {
+          return realms.run(realm, function () {
+            return credentials.bootstrapOnce(realm.id, function () {
+              adminRbac.seedBootstrapAdministrator(realm.id);
+              adminRbac.reportClosedConsole(realm.id);
+              return credentials.bootstrap({ username: bootstrapUsername });
+            });
           });
         });
       });
@@ -876,6 +930,12 @@ serviceState.start().then(function (both) {
                    ? ' (' + pool.pools.map(function (one) {
                      return one.started + ' of ' + one.wanted + ' ' + one.pool;
                    }).join(', ') + ')'
+                   : '') +
+                 // THE REST START BEHIND THE LISTENER, one at a time (#342):
+                 // start() resolves once each pool's first worker settled.
+                 (pool.pending
+                   ? ', and ' + pool.pending + ' more are starting behind ' +
+                     'the listener (workers.startConcurrency)'
                    : '') +
                  (requestPool.dispatchPrefixes().length
                    ? '; dispatching ' +

@@ -91,6 +91,11 @@ interface StackSockets {
   debuggerServer: any;
 }
 
+/**
+ * The composition root: requires every module in the require order, builds
+ * the instances of the modules on #50's R2 pattern, and registers each
+ * converted module's routes in the route order.
+ */
 class ProtocolStack {
   private registered: string[] = [];
   private installed: Array<{ what: string; mod: InstalledModule }> = [];
@@ -118,6 +123,13 @@ class ProtocolStack {
   // Every module this root builds, and where its instance came from now.
   // After `load()` each must say `root`: a `default` means something in the
   // service built its own, which R2 exists to rule out.
+  /**
+   * Lists every module this root builds and where its instance came from now.
+   *
+   * After `load()` each should say `root`; `default` means something in the
+   * service built its own.
+   * @returns one row per built module: its path and its instance's origin
+   */
   instanceOrigins(): Array<{ what: string; origin: string }> {
     helpers.log.debug("Entering ProtocolStack.instanceOrigins().");
     const out = this.installed.map(function (row) {
@@ -169,12 +181,28 @@ class ProtocolStack {
   }
 
   // The modules whose routes this root registered, in order.
+  /**
+   * Lists the modules whose routes this root registered, in order.
+   *
+   * @returns a copy of the list of module paths
+   */
   registeredModules(): string[] {
     helpers.log.debug("Entering ProtocolStack.registeredModules().");
     helpers.log.debug("Leaving ProtocolStack.registeredModules().");
     return this.registered.slice();
   }
 
+  /**
+   * Requires, builds and registers the whole protocol stack against `app`.
+   *
+   * Starts no listener; the socket owners are returned for `server.js` to
+   * start from `listen()`.
+   * @param app - the shared express app from `common/app`
+   * @returns the six socket-owning modules: the KDC, the Kerberos service, the
+   *   TLS server, the LDAP server, the SPIFFE server and the debugger server
+   * @throws an Error when a module this root builds holds an instance it did
+   *   not build
+   */
   load(app: any): StackSockets {
     helpers.log.debug("Entering ProtocolStack.load().");
     // Every module loaded from here on waits for `installInstance()` instead of
@@ -508,12 +536,11 @@ class ProtocolStack {
     this.build('debugger/debugger_access',
                require('../debugger/debugger_access'),
                'DebuggerAccess');
-    // Who may be issued admin:read and admin:write (#302): the person's
-    // console roles. A library `oauth2` reads, built before it for the
-    // debugger permission's reason.
-    this.build('mgmt-api/admin_scope_access',
-               require('../mgmt-api/admin_scope_access'),
-               'AdminScopeAccess');
+    // A gated permission goes with the subject's roles (#302, #303). A
+    // library `oauth2`, the management API's gate and the XACML PIP read,
+    // built before the first of them for the debugger permission's reason.
+    this.build('common/role_permissions',
+               require('./role_permissions'), 'RolePermissions');
     this.build('oauth-oidc/oauth2', require('../oauth-oidc/oauth2'),
                'OAuth2Server');
     // The Credential Offer pages BEFORE the authorization server's own routes,
@@ -719,6 +746,18 @@ class ProtocolStack {
     this.build('oidfed/entity_collection',
                require('../oidfed/entity_collection'), 'EntityCollection');
     this.register(app, require('../oidfed/oidfed'), 'oidfed/oidfed');
+    // -------------------------------------------------------------------------
+    // 14c. WHICH CELL ANSWERS A KERBEROS REQUEST OVER MS-KKDCP (#98): a
+    // `POST /KdcProxy` of its own, registered JUST BEFORE the KDC is
+    // required so it runs first — it relays a request whose client is homed
+    // in another cell and calls next() for everything else, after which the
+    // KDC's own handler answers exactly as it did. The KDC is one of the
+    // parent project's locked files and cannot be given the check itself.
+    // It requires only the vendored codec (a leaf set) at load and the
+    // principal database lazily, so nothing moves and no cycle closes.
+    // -------------------------------------------------------------------------
+    require('../kerberos/krb5_home');
+    this.register(app, require('../kerberos/krb5_home'), 'kerberos/krb5_home');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
     // — it is one of the parent project's locked JavaScript files, which still
     // register at require (rule 1) — but NOT the raw TCP/UDP listeners on port
@@ -1048,6 +1087,26 @@ class ProtocolStack {
                require('../admin-ui/scheduler_admin'), 'SchedulerAdmin');
     this.register(app, require('../admin-ui/scheduler_admin'),
                   'admin-ui/scheduler_admin');
+    // AND THE TWO CLUSTER JOBS THAT WERE REGISTERED ONLY ON FIRST USE
+    // (2026-09-28): the tracked-token purge (`common/admin_stats.js`) and the
+    // tombstone sweep (`persistence/persistence_minted.js`). Both owners
+    // load before the scheduler and register lazily; here, with the
+    // scheduler in hand, every process — the front and each worker, which
+    // both build this stack — registers them at start-up, so every node can
+    // run them and every door lists them. `cluster/scheduler.ts` does the
+    // same for its three sweeps at its own load; these two are called from
+    // here because requiring them from there could close a load cycle.
+    const jobScheduler = require('../cluster/scheduler');
+    require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
+    require('../persistence/persistence_minted')
+      .ensureTombstoneJob(jobScheduler);
+    // And the expired-row purge (#333), for the same reason.
+    require('../persistence/persistence_minted')
+      .ensureExpiryPurgeJob(jobScheduler);
+    // AND THE MEMORY REPORT (#341): `process.memory-report`, a per-process
+    // job every process registers here for the same reason, whose owner is
+    // a leaf `server.js` loads before the stack.
+    require('./process_memory').ensureReportJob(jobScheduler);
     // 18j. RISK SCORING (#62 P1, 2026-09-22): the store, the datasets and
     // the failure history are LIBRARIES (rule 3) that register no route, and
     // then Monitoring → Risk, for 18a's reason — the console's shell and the
@@ -1098,6 +1157,17 @@ class ProtocolStack {
                'ModeAdmin');
     this.register(app, require('../admin-ui/mode_admin'),
                   'admin-ui/mode_admin');
+    // 18k-ii. CELLS (#98, 2026-09-28). `/admin/cells` — the cell map, the
+    // store's tiers, the channel, the Cells settings and another cell's
+    // residents. 18a's placement and 18a's reason: the console's shell and
+    // the cell libraries (loaded by `app.js` and persistence far above) are
+    // here, and `mgmt-api/admin_api` requires it in the ordinary direction.
+    // Its registerRoutes() also registers its two inter-cell operations.
+    require('../admin-ui/cells_admin');
+    this.build('admin-ui/cells_admin', require('../admin-ui/cells_admin'),
+               'CellsAdmin');
+    this.register(app, require('../admin-ui/cells_admin'),
+                  'admin-ui/cells_admin');
     // 18l. MAIL (#63, 2026-09-22): Server configuration → Mail and
     // Monitoring → Mail outbox, one module for both. 18a's placement and 18a's
     // reason: the console's shell and the channel (built with the portal,
@@ -1160,6 +1230,48 @@ class ProtocolStack {
                'DevicesAdmin');
     this.register(app, require('../admin-ui/devices_admin'),
                   'admin-ui/devices_admin');
+    // 18r. ATTRIBUTE SOURCES (#94): Directory → Attribute sources. The
+    // library first — a register whose wire step puts the
+    // `attribute-sources.refresh` job on the scheduler (built at 18i), and
+    // whose directory slot `ldap/ldap_server.js` fills at 21 into a holder of
+    // its own, so that order cannot matter — then the page, 18a's placement
+    // and 18a's reason. `mgmt-api/admin_api` spreads `attribute_sources_api`'s
+    // routes, built below with the other API modules.
+    this.build('attribute-sources/attribute_sources',
+               require('../attribute-sources/attribute_sources'),
+               'AttributeSources');
+    require('../attribute-sources/attribute_sources_admin');
+    this.build('attribute-sources/attribute_sources_admin',
+               require('../attribute-sources/attribute_sources_admin'),
+               'AttributeSourcesAdmin');
+    this.register(app, require('../attribute-sources/attribute_sources_admin'),
+                  'attribute-sources/attribute_sources_admin');
+    // THE NODE SNAPSHOTS (#332, 2026-09-28), a library the two pages below
+    // hand their views to: built here, before them, so the instance they
+    // reach is the root's. It registers its scheduler job when the first
+    // page hands over its view, in 18s's register().
+    this.build('cluster/node_snapshots', require('../cluster/node_snapshots'),
+               'NodeSnapshots');
+    // 18s. THE WORKER POOLS' PAGE (#327, 2026-09-28). `/admin/worker-pools` —
+    // the request, hosted-surface and post-quantum pools of this node. 18a's
+    // placement and 18a's reason: the console's shell is here, the two pool
+    // modules are libraries it reaches lazily when a page is drawn, and
+    // `mgmt-api/admin_api` requires it in the ordinary direction.
+    require('../admin-ui/worker_pools_admin');
+    this.build('admin-ui/worker_pools_admin',
+               require('../admin-ui/worker_pools_admin'), 'WorkerPoolsAdmin');
+    this.register(app, require('../admin-ui/worker_pools_admin'),
+                  'admin-ui/worker_pools_admin');
+    // 18t. NODE HEALTH (#329, 2026-09-28). `/admin/node-health` — the
+    // container's CPU and memory from its cgroup, and every process of this
+    // node. 18s's placement and 18a's reason: the console's shell, the pools
+    // and the debugger's api reached lazily when a page is drawn, and
+    // `mgmt-api/admin_api` requires it in the ordinary direction.
+    require('../admin-ui/node_health_admin');
+    this.build('admin-ui/node_health_admin',
+               require('../admin-ui/node_health_admin'), 'NodeHealthAdmin');
+    this.register(app, require('../admin-ui/node_health_admin'),
+                  'admin-ui/node_health_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1187,6 +1299,9 @@ class ProtocolStack {
     this.build('oauth-oidc/claims_providers_api',
                require('../oauth-oidc/claims_providers_api'),
                'ClaimsProvidersApi');
+    this.build('attribute-sources/attribute_sources_api',
+               require('../attribute-sources/attribute_sources_api'),
+               'AttributeSourcesApi');
     this.build('oauth-oidc/provider_commands_api',
                require('../oauth-oidc/provider_commands_api'),
                'ProviderCommandsApi');
@@ -1441,6 +1556,17 @@ class ProtocolStack {
     this.build('oauth-oidc/oauth_grant_signals',
                require('../oauth-oidc/oauth_grant_signals'),
                'OAuthGrantSignals');
+    // 23b-vii. A SESSION HELD AWAY FROM ITS PERSON'S HOME (#98): a library,
+    // loaded by `app.js` for its middleware long before this line, whose
+    // install() registers its operations on the inter-cell channel and no
+    // route. After `ssf/ssf` and the grant signals, beside which it belongs
+    // for a reader — everything it reaches (the session store, the directory,
+    // the sign-out) it reaches lazily, and in single-cell mode no operation it
+    // registers is ever called.
+    require('./cell_sessions').install();
+    // And re-homing's receiving half (#98 §8.8): `adopt-person`, the same
+    // arrangement — a library whose install() registers one operation.
+    require('./cell_rehome').install();
     // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
     // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
     // signingKeyRotated() it calls (lazily, so the order is for a reader).
@@ -1698,8 +1824,20 @@ class ProtocolStack {
 // process that wants the routes and requires only one module has to call
 // that module's `registerRoutes(app)` itself.
 const stack = new ProtocolStack();
+/**
+ * The socket owners the one stack's `load()` returned.
+ */
 const sockets = stack.load(appModule);
 
+/**
+ * The composition root: the one place the require order and the route order
+ * are kept.
+ *
+ * Requiring this module loads the whole stack once against the shared app
+ * (TRANSITIONAL until #50's R2 is complete); its exports are that instance's
+ * reports and the modules that own sockets.
+ * @namespace
+ */
 export = {
   ProtocolStack: ProtocolStack,
   registeredModules: stack.registeredModules.bind(stack) as

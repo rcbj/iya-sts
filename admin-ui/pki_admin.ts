@@ -261,11 +261,23 @@ const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
                      'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
                      'thirteen', 'fourteen', 'fifteen'];
 
+/**
+ * Protocols → PKI, `/admin/pki`: the realm's certificate authority (Root,
+ * Intermediate, Issuing), the key pairs it issues, the Certificate & Key
+ * Configuration pane, revocation and pinned signing keys, every control a form
+ * field and every computation on the server.
+ */
 class PkiAdmin {
   // The table the comments here call PURPOSE_WRITES — see
   // `purposeWritesTable()`.
   private readonly purposeWrites: Record<string, any>;
 
+  /**
+   * Builds an instance and its table of what each key-pair purpose writes.
+   *
+   * @param deps - the certificate authority, the authoring pane, the registers
+   * and the console
+   */
   constructor(private readonly deps: PkiAdminDeps) {
     deps.log.debug("Entering PkiAdmin.constructor().");
     this.purposeWrites = this.purposeWritesTable();
@@ -274,6 +286,11 @@ class PkiAdmin {
 
   // What the composition root passes: the real modules, as the load-time
   // instance was built from before R2 (#50).
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): PkiAdminDeps {
     helpers.log.debug("Entering PkiAdmin.defaultDeps().");
     helpers.log.debug("Leaving PkiAdmin.defaultDeps().");
@@ -300,6 +317,11 @@ class PkiAdmin {
   }
 
   // The action names this page's form can post, for the management API.
+  /**
+   * Answers the action names the page's form can post, for the management API.
+   *
+   * @returns a copy of the action list
+   */
   pkiActionNames() {
     const { log } = this.deps;
     log.debug("Entering PkiAdmin.pkiActionNames().");
@@ -730,12 +752,30 @@ class PkiAdmin {
   // than this file's: `describe()` drops every one of them on the way out, so a
   // caller here could not leak the Root's key by forgetting.
   // ---------------------------------------------------------------------------
-  pkiJson(req: Json, draft?: Json) {
-    const { log, pki, authoring, applications, personAssertions, pqcSupport,
-            adminViews, admin } = this.deps;
+  /**
+   * Builds the page's model, which `GET /admin-api/pki` also answers: the
+   * hierarchy, the issued key pairs, the pane, revocation and pinned signers.
+   *
+   * No private key is in it; `common/pki.js`'s `describe()` drops every one.
+   * @param req - the request, for paging
+   * @param draft - the pane's draft to draw, after a pane action
+   * @param options - `shownOnly: true` reads each key pair's certificate for
+   *   the rows the two tables draw and no others (the page's own call);
+   *   absent, every row of both lists carries `pqc`, as the JSON always did
+   * @returns the model
+   */
+  pkiJson(req: Json, draft?: Json, options?: { shownOnly?: boolean }) {
+    const { log, pki, authoring, applications, personAssertions,
+            certificateViews, adminViews, admin } = this.deps;
     const self = this;
     log.debug('Entering PkiAdmin.pkiJson().');
     const chain = pki.describe();
+    // ONCE, where it was read once PER PROFILE (#352): the two profiles'
+    // rows are two readings of the same entries.
+    const everyApplication = applications.list();
+    // Each application row's certificate, for `decorate()` below, beside the
+    // row rather than on it so that it is in no reply.
+    const certificateOf = new WeakMap<object, Json>();
     const report = pki.report();
     const json: Json = {
       realm: self.realmLabel(),
@@ -775,9 +815,9 @@ class PkiAdmin {
       // have had to say which of two things each of its buttons meant.
       issued: pki.PURPOSE_IDS.reduce(function (rows, purpose) {
         const table = self.purposeWrites[purpose];
-        return rows.concat(applications.list().map(function (one) {
+        return rows.concat(everyApplication.map(function (one) {
           const fields = one.fields || {};
-          return {
+          const row: Json = {
             identifier: one.identifier,
             name: one.name,
             purpose: purpose,
@@ -811,12 +851,12 @@ class PkiAdmin {
             registeredOwnKeys: purpose === 'saml'
               ? !!fields.oauthSamlAssertionSigningCertificate
               : !!fields.oauthJwks,
-            // Whether the key pair on the entry uses a post-quantum algorithm,
-            // read off its certificate (2026-09-13): `null` for a classical key
-            // or none, otherwise `pqc_support.js`'s kind, label and standard.
-            pqc: pqcSupport.of({ certificatePem:
-              fields[table.certificateAttribute] })
+            // `pqc` goes LAST, added by `decorate()` below — whether the key
+            // pair on the entry uses a post-quantum algorithm, read off its
+            // certificate (2026-09-13).
           };
+          certificateOf.set(row, fields[table.certificateAttribute]);
+          return row;
         }).filter(function (one) {
           return one.hasKeyPair || one.assertionIssuers.length ||
                  one.registeredOwnKeys;
@@ -840,13 +880,12 @@ class PkiAdmin {
       // before that day reads the profile it always did; the page draws a row
       // per profile held, as it does for applications.
       // ---------------------------------------------------------------------
-      // Each with `pqc`, read off the person's certificate as `issued` above.
+      // Each with `pqc`, read off the person's certificate as `issued` above
+      // and added by `decorate()` below. `holders()` reads presence off the
+      // entries in one walk and opens no private key (#352).
       persons: personAssertions.holders().map(function (one) {
         return Object.assign({}, one, {
-          pqc: pqcSupport.of({ certificatePem: one.certificatePem }),
-          saml: Object.assign({}, one.saml, {
-            pqc: pqcSupport.of({ certificatePem: one.saml.certificatePem }) })
-        });
+          saml: Object.assign({}, one.saml) });
       }),
       personsStorable: personAssertions.storable(),
       personAttributes: personAssertions.ATTRIBUTES.slice(),
@@ -905,6 +944,28 @@ class PkiAdmin {
     const paged = self.keyPairPaging(req && req.query, json);
     json.issuedPaging = adminViews.pagingJson(paged.applications.paging);
     json.personsPaging = adminViews.pagingJson(paged.people.paging);
+    // ---------------------------------------------------------------------
+    // PAGE, THEN READ THE CERTIFICATES (#352, 2026-09-29). `pqc` is the one
+    // member of a key-pair row that costs a certificate parse, and it was
+    // computed for every application and every person before either table
+    // was paged. The page draws twenty-five of each, so it asks for those
+    // (`shownOnly`); the JSON carries both lists whole and so asks for every
+    // row, through `certificateViews.pqcOf()`, which parses a certificate
+    // once and remembers the answer. Added in place, as the LAST member of
+    // each row — where it always was — so the reply is byte for byte what it
+    // was, and the rows `keyPairPaging()` slices for the page are these same
+    // objects.
+    // ---------------------------------------------------------------------
+    const decorate = function (row: Json) {
+      row.pqc = certificateViews.pqcOf(certificateOf.has(row)
+        ? certificateOf.get(row) : row.certificatePem);
+      if (row.saml) {
+        row.saml.pqc = certificateViews.pqcOf(row.saml.certificatePem);
+      }
+    };
+    const shownOnly = !!(options && options.shownOnly);
+    (shownOnly ? paged.applications.shown : json.issued).forEach(decorate);
+    (shownOnly ? paged.people.shown : json.persons).forEach(decorate);
     log.debug('Leaving PkiAdmin.pkiJson(). ' + json.issued.length +
               ' application(s).');
     return json;
@@ -1320,6 +1381,17 @@ class PkiAdmin {
                   'them.' };
   }
 
+  /**
+   * Performs one of the page's actions, for the console's POST and
+   * `/admin-api/pki/{action}` alike.
+   *
+   * An action that names a branch this realm does not draw is refused, and an
+   * unknown action is refused with the list of known ones; a pane action
+   * answers with a `draft` as well as a verdict.
+   * @param body - `action` and its fields
+   * @returns `ok` with a message (and a draft for a pane action), or a refusal
+   * carrying its error code
+   */
   async pkiAction(body: Json) {
     const { log, config, pki, pkiRevocation, authoring, applications,
             errorCodes } = this.deps;
@@ -2948,18 +3020,15 @@ class PkiAdmin {
           '<strong>' + esc(slow.map(function (one) { return one.family; })
             .filter(function (v, i, a) { return a.indexOf(v) === i; })
                                .join(', ')) +
-          ' key generation takes SECONDS and it runs on this ' +
+          ' key generation takes up to a second and it runs on this ' +
           'thread.</strong> This process owns six listener families on one ' +
           'thread, so while a key like that is being made this service ' +
           'answers nobody &mdash; not the next HTTP caller, not the KDC on ' +
-          'port 88, not the LDAP socket. It is deliberately not moved to ' +
-          '<code>common/worker_pool.js</code>: that pool runs this ' +
-          'service\'s own reading of the post-quantum constructions, which ' +
-          'is independent of the vendored one on purpose, and crossing the ' +
-          'two to save a button a few seconds is exactly the defect that ' +
-          'independence exists to expose. In <code>dispatch</code> mode the ' +
-          'console holds affinity to a request worker, so the stall is that ' +
-          'worker\'s rather than the listener\'s.',
+          'port 88, not the LDAP socket. The primitive is native (node\'s ' +
+          'OpenSSL since #363), and the SLH-DSA <code>s</code> parameter ' +
+          'sets are slow by design even so. In <code>dispatch</code> mode ' +
+          'the console holds affinity to a request worker, so the stall is ' +
+          'that worker\'s rather than the listener\'s.',
           'One algorithm family is slow, and the cost is real')
         : '') +
       '<div class="pki-row">' +
@@ -3310,6 +3379,14 @@ class PkiAdmin {
 
   // The whole pane: the three columns, the extensions, the buttons and the
   // store, in one form.
+  /**
+   * Draws the Certificate & Key Configuration pane: its three columns, the
+   * extensions, the buttons and the store, in one form.
+   *
+   * @param json - `pkiJson()`'s model
+   * @param draft - the pane's draft
+   * @returns the pane's markup
+   */
   certificatePane(json: Json, draft: Json) {
     const { log, admin, esc } = this.deps;
     const self = this;
@@ -3566,6 +3643,12 @@ class PkiAdmin {
   // THE PINNED SIGNING KEYS (#263): the model `GET /admin-api/pki` carries and
   // the section this page draws from it. Read in the realm this page is for.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the realm's pinned signing keys, each with whether its
+   * certificate is expiring soon.
+   *
+   * @returns whether pinning is on, the pinned keys and their warnings
+   */
   pinnedSignersModel() {
     const { log, pki, config, realms } = this.deps;
     log.debug("Entering PkiAdmin.pinnedSignersModel().");
@@ -4269,7 +4352,9 @@ class PkiAdmin {
             esc } = this.deps;
     const self = this;
     log.debug('Entering PkiAdmin.renderPki().');
-    const json = self.pkiJson(req, draft);
+    // THE PAGE'S OWN CALL reads the certificates of the rows it draws and no
+    // others (#352); see the end of `pkiJson()`.
+    const json = self.pkiJson(req, draft, { shownOnly: true });
     if (certificate) {
       json.certificateDetails = certificate;
     }
@@ -4728,6 +4813,14 @@ class PkiAdmin {
   // `permissionsReturnTo()`'s reason: a redirect target taken out of a request
   // body is an open redirect.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers where a PKI action goes back to: the application's or person's own
+   * page when the form was posted from there, otherwise `/admin/pki`, rebuilt
+   * from the body rather than taken from it.
+   *
+   * @param body - the posted body: `from`, `identifier` and paging
+   * @returns the path to redirect to
+   */
   pkiReturnTo(body: Json) {
     const { log, adminViews, admin } = this.deps;
     const self = this;
@@ -4762,6 +4855,12 @@ class PkiAdmin {
     return '/admin/pki';
   }
 
+  /**
+   * Registers `/admin/pki`, its actions, the certificate view and export, and a
+   * person's key-pair actions.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, parseBody, authoring, errorCodes, certificateViews,
             certificateDialog, admin, esc } = this.deps;
@@ -5125,10 +5224,24 @@ const slot = new InstanceSlot<PkiAdmin>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Protocols → PKI, `/admin/pki`: the realm's certificate authority and the key
+ * pairs it issues, and the functions `mgmt-api/admin_api.ts` reaches it through
+ * (rule 7).
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   PkiAdmin: PkiAdmin,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: PkiAdmin): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts`. Rule 7: every control on this page has an
   // operation, and both go through THESE functions so the API decides nothing

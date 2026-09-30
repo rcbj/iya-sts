@@ -189,6 +189,12 @@ import requestSignature = require('./request_signature');
 // The audit log, for the one row per checked request signature (#37). A leaf
 // that requires nothing that reaches back here.
 import audit = require('../common/audit');
+// WHERE A BACK-CHANNEL REQUEST IS ANSWERED IN A SERVICE DEPLOYED AS CELLS
+// (#98 D10): the artifact's tag, the cell holding a query's session, and the
+// relay. Libraries that register no route.
+import samlCells = require('./saml_cells');
+import cellPlacement = require('../common/cell_placement');
+import cells = require('../common/cells');
 // The session, from the service that owns it. This profile starts none of its
 // own: `beginAuthentication()` sends the browser to authn.js's screen and back.
 import authn = require('../authn/authn');
@@ -234,10 +240,19 @@ const NS_DS = 'http://www.w3.org/2000/09/xmldsig#';
 
 const NS_SOAP = 'http://schemas.xmlsoap.org/soap/envelope/';
 
+/**
+ * The SAML 2.0 HTTP-Redirect binding's URI.
+ */
 const BINDING_REDIRECT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect';
 
+/**
+ * The SAML 2.0 HTTP-POST binding's URI.
+ */
 const BINDING_POST = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST';
 
+/**
+ * The SAML 2.0 HTTP-Artifact binding's URI.
+ */
 const BINDING_ARTIFACT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact';
 
 // THE HTTP-POST-SimpleSign BINDING (#37 follow-up; OASIS "SAML V2.0 HTTP POST
@@ -246,9 +261,15 @@ const BINDING_ARTIFACT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact';
 // values instead — the Redirect binding's signature without its length limit.
 // Accepted for AuthnRequest, LogoutRequest and LogoutResponse, answered on
 // when a request or a consumed endpoint asks for it, and published.
+/**
+ * The SAML 2.0 HTTP-POST-SimpleSign binding's URI.
+ */
 const BINDING_SIMPLESIGN =
   'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign';
 
+/**
+ * The SAML 2.0 SOAP binding's URI.
+ */
 const BINDING_SOAP = 'urn:oasis:names:tc:SAML:2.0:bindings:SOAP';
 
 const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
@@ -282,6 +303,9 @@ const STATUS_UNKNOWN_PRINCIPAL =
 // InvalidNameIDPolicy (#37, `nameIdPolicyProblem()`). The list is what goes in
 // the metadata, and a service provider's configuration UI is usually built
 // from exactly this.
+/**
+ * The NameID formats this identity provider advertises in its metadata.
+ */
 const NAMEID_FORMATS = [
   'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
   'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
@@ -342,7 +366,10 @@ const AA_PATH = BASE_PATH + '/aa';
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const pendingRequests = realms.map({ persist: 'saml2_sso.pendingRequests',
-                                     retain: 'age' });
+                                     retain: 'age',
+                                     // #333: the request's `expires`, ms.
+                                     expiresAt: realms.expiryField('expires',
+                                                                   1) });
 
 // Artifact -> the message it stands for. See decision 6: resolving one deletes
 // it, so this map is also the record of what has NOT been resolved yet.
@@ -351,14 +378,18 @@ const pendingRequests = realms.map({ persist: 'saml2_sso.pendingRequests',
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const artifacts = realms.map({ persist: 'saml2_sso.artifacts', retain: 'age' });
+const artifacts = realms.map({ persist: 'saml2_sso.artifacts', retain: 'age',
+                               // #333: the artifact's `expires`, ms.
+                               expiresAt: realms.expiryField('expires', 1) });
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const spContexts = realms.map({ persist: 'saml2_sso.spContexts' });
+const spContexts = realms.map({ persist: 'saml2_sso.spContexts',
+                                // #333: the context's `expires`, ms.
+                                expiresAt: realms.expiryField('expires', 1) });
 
 // ---------------------------------------------------------------------------
 // WHICH SERVICE PROVIDER A PATH NAMES.
@@ -470,7 +501,19 @@ interface Saml2SsoDeps {
   capabilities: typeof capabilities;
 }
 
+/**
+ * The SAML 2.0 identity provider: the Web Browser SSO profile over the
+ * Redirect, POST, SimpleSign and Artifact bindings, Single Logout, artifact
+ * resolution, the attribute authority, the metadata, and a mock service
+ * provider.
+ */
 class Saml2Sso {
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the helpers, settings, the assertion builder, the sign-on
+   * session, the registers and the SAML libraries this profile reads
+   */
   constructor(private readonly deps: Saml2SsoDeps) {
     deps.helpers.log.debug("Entering Saml2Sso.constructor().");
     deps.helpers.log.debug("Leaving Saml2Sso.constructor().");
@@ -478,6 +521,11 @@ class Saml2Sso {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): Saml2SsoDeps {
     helpers.log.debug("Entering Saml2Sso.defaultDeps().");
     helpers.log.debug("Leaving Saml2Sso.defaultDeps().");
@@ -512,6 +560,11 @@ class Saml2Sso {
   }
 
   // How many artifacts are waiting to be resolved, for the console.
+  /**
+   * Answers how many artifacts are waiting to be resolved, for the console.
+   *
+   * @returns the count
+   */
   artifactCount(): number {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.artifactCount().");
@@ -520,6 +573,11 @@ class Saml2Sso {
   }
 
   // How many AuthnRequests are held for a sign-in, for the console.
+  /**
+   * Answers how many AuthnRequests are held for a sign-in, for the console.
+   *
+   * @returns the count
+   */
   pendingRequestCount(): number {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.pendingRequestCount().");
@@ -529,6 +587,12 @@ class Saml2Sso {
 
   // Every route this profile answers, in the order the file always registered
   // them. The four handlers mounted twice are bound once.
+  /**
+   * Registers every route this profile answers under `/saml2`, in the order the
+   * file always registered them.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: typeof import('../common/app')): void {
     const { baseUrlOf, iso, log, randomId, xmlEscape } = this.deps.helpers;
     const self = this;
@@ -597,7 +661,14 @@ class Saml2Sso {
                'service provider calls it directly, which is the whole point ' +
                'of the artifact profile.</td></tr><tr><td><a ' +
                'href="' + SLO_PATH + '">' + SLO_PATH + '</a></td><td>Single ' +
-               'Logout, both directions.</td></tr><tr><td><a ' +
+               'Logout, both directions.</td></tr><tr><td><code>' +
+               UNSOLICITED_PATH + '</code></td><td>Identity-provider-' +
+               'initiated sign-in: an unsolicited Response to the service ' +
+               'provider <code>providerId</code> names ' +
+               '(<code>saml2.unsolicitedSso</code>).</td></tr><tr><td><code>' +
+               AA_PATH + '</code></td><td>The attribute authority: a SOAP ' +
+               '<code>&lt;samlp:AttributeQuery&gt;</code>, the Assertion ' +
+               'Query and Request profile.</td></tr><tr><td><a ' +
                'href="' + METADATA_PATH + '">' + METADATA_PATH +
                  '</a></td><td>The ' +
                'signed identity provider metadata. ' +
@@ -833,6 +904,13 @@ class Saml2Sso {
     return Number(config.value('saml2.mockSpContextTtlMin')) * 60 * 1000;
   }
 
+  /**
+   * Answers the path segment an application identifier is written as: itself
+   * when it is a safe segment, otherwise `app-` and a short SHA-256 digest.
+   *
+   * @param identifier - the application's identifier
+   * @returns the segment
+   */
   slugOf(identifier) {
     const { crypto } = this.deps;
     const { log } = this.deps.helpers;
@@ -945,6 +1023,17 @@ class Saml2Sso {
   // against, and `urn:sts:idp` is a development placeholder in a product's
   // signed documents. The predicate is `inventsClaimValues()` because that is
   // the question: may a value be invented where the configuration holds none.
+  /**
+   * Answers this identity provider's own entityID for a service provider:
+   * `saml2.entityId`, with the service provider's segment appended when
+   * `saml2.perApplicationEntityId` is on.
+   *
+   * An empty `saml2.entityId` falls back to `urn:sts:idp` in development and
+   * answers '' in product.
+   * @param spEntityId - the service provider's entityID; none for the shared
+   * one
+   * @returns the entityID, or ''
+   */
   idpEntityIdFor(spEntityId) {
     const { config, mode } = this.deps;
     const { log } = this.deps.helpers;
@@ -985,6 +1074,15 @@ class Saml2Sso {
   // failure that produces is a service provider configured from a document,
   // posting to a path nothing serves, and a 404 that looks like the identity
   // provider is down.
+  /**
+   * Answers where a service provider's endpoints live, for the metadata and the
+   * handlers alike.
+   *
+   * @param base - the realm's base URL
+   * @param spEntityId - the service provider's entityID
+   * @returns the `sso`, `slo`, `ars`, `aa`, `unsolicited` and `metadata`
+   *   URLs
+   */
   endpointsFor(base, spEntityId) {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.endpointsFor().");
@@ -996,6 +1094,7 @@ class Saml2Sso {
       slo: base + SLO_PATH + suffix,
       ars: base + ARS_PATH + suffix,
       aa: base + AA_PATH + suffix,
+      unsolicited: base + UNSOLICITED_PATH + suffix,
       metadata: base + METADATA_PATH + suffix
     };
   }
@@ -1407,8 +1506,9 @@ class Saml2Sso {
   // gigabytes.
   //
   // **AND IT IS SYNCHRONOUS ON THE THREAD THAT OWNS EVERY SOCKET.** That is the
-  // argument `common/CLAUDE.md` makes about post-quantum signing and the whole
-  // reason `common/worker_pool.js` exists: this process runs every listener
+  // argument `common/CLAUDE.md` makes about post-quantum signing, and why that
+  // runs on libuv's thread pool (`common/pq_native.js`): this process runs
+  // every listener
   // family on one thread, so a computation like this does not slow the service
   // down, it STOPS it — the KDC stops answering, the directory stops answering,
   // and from the outside that is indistinguishable from a service that is not
@@ -2397,6 +2497,9 @@ class Saml2Sso {
   //                   identity providers can tell whose artifact it is holding
   //                   without asking anybody
   //   MessageHandle   twenty random bytes, and the only part that is a secret
+  //                   — in a service deployed as cells (#98 D10) its last
+  //                   four are the minting cell's keyed tag, which is how
+  //                   `/saml2/ars` at another cell finds it (`saml_cells.ts`)
   //
   // The whole 44 bytes are base64, which is what travels in `SAMLart`.
   private mintArtifact(idpEntityId, endpointIndex) {
@@ -2409,7 +2512,7 @@ class Saml2Sso {
     const sourceId = crypto.createHash('sha1')
                            .update(String(idpEntityId), 'utf8')
                            .digest();
-    const handle = crypto.randomBytes(20);
+    const handle = samlCells.stampHandle(crypto.randomBytes(20));
     const artifact = Buffer.concat([header, sourceId,
                                     handle]).toString('base64');
     log.debug("Leaving Saml2Sso.mintArtifact(). " + artifact.length +
@@ -3586,9 +3689,8 @@ class Saml2Sso {
   // no AuthnStatement (`attributeQuery` in saml2.ts).
   // ---------------------------------------------------------------------------
   private attributeQuery(req, res) {
-    const { audit, errorCodes, gate, mode, validation } = this.deps;
+    const { audit, errorCodes, mode, validation } = this.deps;
     const { firstByLocal, log, logArtifact, textByLocal } = this.deps.helpers;
-    const { buildSamlAssertion } = this.deps.saml2;
     const self = this;
     log.debug("Entering Saml2Sso.attributeQuery().");
     const scoped = this.entityIdFromSegment(req.params.sp);
@@ -3664,9 +3766,40 @@ class Saml2Sso {
       return answer(envelopeProblem.errorCode, STATUS_REQUESTER, '',
                     envelopeProblem.why, '');
     }
+    // THE CELL THAT HOLDS THE SESSION (#98 D10), before the caller is
+    // authenticated: the query is answered only about the subject of a live
+    // session that gave this service provider that NameID, and that session
+    // is held in one cell — this one, asked first, or a peer
+    // (`saml_cells.ts`, which argues why the person's home is not the
+    // question). Single-cell mode goes straight on, as it always did.
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). Answering here.");
+      return this.answerAttributeQuery(req, res, query, spEntityId, answer);
+    }
+    const namedEl = firstByLocal(query, 'NameID');
+    const named = namedEl ? String(namedEl.textContent || '').trim() : '';
+    log.debug("Leaving Saml2Sso.attributeQuery(). Finding the session.");
+    return samlCells.sessionHolder(req, 'saml2', spEntityId, named)
+      .then(function (holder: string) {
+        if (cellPlacement.relayToCell(req, res, holder,
+                                      'a SAML 2.0 attribute query')) {
+          return undefined;
+        }
+        return self.answerAttributeQuery(req, res, query, spEntityId,
+                                         answer);
+      });
+  }
+
+  // The attribute query, once it is known to be answered HERE: the caller,
+  // the session, the issuance policy and the answer (see attributeQuery()).
+  private answerAttributeQuery(req, res, query, spEntityId, answer) {
+    const { gate, mode } = this.deps;
+    const { firstByLocal, log } = this.deps.helpers;
+    const { buildSamlAssertion } = this.deps.saml2;
+    log.debug("Entering Saml2Sso.answerAttributeQuery().");
     const caller = this.authenticateQueryCaller(req, query, spEntityId);
     if (caller.refuse) {
-      log.debug("Leaving Saml2Sso.attributeQuery(). The caller.");
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). The caller.");
       return answer(caller.errorCode || 'STS-SAML-0077', STATUS_REQUESTER,
                     'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
                     caller.why, '');
@@ -3687,7 +3820,7 @@ class Saml2Sso {
       log.info('saml2: an AttributeQuery from "' + spEntityId + '" named "' +
                nameId + '", which no live session here gave it; ' +
                'UnknownPrincipal.');
-      log.debug("Leaving Saml2Sso.attributeQuery(). Unknown principal.");
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). Unknown principal.");
       return answer('STS-SAML-0094', STATUS_REQUESTER,
                     STATUS_UNKNOWN_PRINCIPAL,
                     'no session here gave this service provider that NameID ' +
@@ -3705,7 +3838,8 @@ class Saml2Sso {
       session: session
     });
     if (!roleAnswer.allowed) {
-      log.debug("Leaving Saml2Sso.attributeQuery(). The issuance policy.");
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). The issuance " +
+                "policy.");
       return answer(roleAnswer.retiring ? 'STS-CORE-0121'
                                         : 'STS-SAML-0010',
                     STATUS_RESPONDER,
@@ -3753,7 +3887,8 @@ class Saml2Sso {
                         'assertion')
       : { xml: built, encrypted: false };
     if (wantsEncryption && !sealed.encrypted && !mode.sendsWeakerThanAsked()) {
-      log.debug("Leaving Saml2Sso.attributeQuery(). Encryption impossible.");
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). Encryption " +
+                "impossible.");
       return answer('STS-SAML-0011', STATUS_RESPONDER, '',
                     'the assertion for this service provider is to be ' +
                     'encrypted and could not be (' + (sealed.why ||
@@ -3762,7 +3897,7 @@ class Saml2Sso {
     log.info('saml2: answered an AttributeQuery from "' + spEntityId +
              '" about ' + nameId + ' with ' + released.length +
              ' attribute(s).');
-    log.debug("Leaving Saml2Sso.attributeQuery(). Answered.");
+    log.debug("Leaving Saml2Sso.answerAttributeQuery(). Answered.");
     return answer('', STATUS_SUCCESS, '', '', sealed.xml);
   }
 
@@ -4057,6 +4192,17 @@ class Saml2Sso {
       return answer(STATUS_REQUESTER, 'the ArtifactResolve carries no ' +
                                       '<samlp:Artifact>.',
                     '', inResponseTo);
+    }
+    // MINTED IN ANOTHER CELL (#98 D10): the whole ArtifactResolve goes to
+    // the cell whose tag its MessageHandle carries, before the caller is
+    // authenticated or anything is spent — the artifact, its one-shot claim
+    // and the service provider's view of it are all that cell's.
+    if (cellPlacement.relayToCell(req, res, samlCells.artifactCell(artifact,
+                                                                   44),
+                                  'a SAML 2.0 artifact')) {
+      log.debug("Leaving Saml2Sso.resolveArtifact(). Relayed to the cell " +
+                "that minted it.");
+      return undefined;
     }
     const held = artifacts.get(artifact);
     if (held) {
@@ -4836,6 +4982,16 @@ class Saml2Sso {
   // url rather than dropped, for the same reason the table below prints
   // "nowhere to send one": that is the interesting row.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the LogoutRequests one session is owed, each built and signed for the
+   * HTTP-Redirect binding; read by `logout/logout.ts` as well.
+   *
+   * A service provider with no logout return address is reported with an empty
+   * `url` rather than dropped.
+   * @param session - the sign-on session
+   * @returns one row per service provider: entityID, where the address came
+   * from, the destination and the request's URL
+   */
   logoutTargetsFor(session) {
     const { log } = this.deps.helpers;
     const self = this;
@@ -4943,6 +5099,14 @@ class Saml2Sso {
   //
   // It answers for ANY {sp}. See decision 1 — the ask is what registers it.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds this identity provider's metadata for a service provider, signed
+   * with the signature first inside the EntityDescriptor.
+   *
+   * @param base - the realm's base URL
+   * @param spEntityId - the service provider's entityID
+   * @returns the metadata document, unsigned only when signing failed
+   */
   metadataFor(base, spEntityId) {
     const { documentSettings, errorCodes, listenerKeys,
             requestSignature } = this.deps;
@@ -5164,9 +5328,15 @@ class Saml2Sso {
       '<code>&lt;samlp:AuthnRequest&gt;</code>, on the HTTP Redirect binding ' +
       '(a GET) or the HTTP POST binding (a form POST), and answers with a ' +
       '<code>&lt;samlp:Response&gt;</code> on whichever binding the ' +
-      'request\'s <code>ProtocolBinding</code> asked for. It authenticates ' +
-      'nobody: the username typed at the sign-in screen becomes the subject ' +
-      'of the assertion.</p><h2>Try it</h2><ul><li><a ' +
+      'request\'s <code>ProtocolBinding</code> asked for. ' +
+      (mode.verifiesCredentials()
+        ? 'This realm is in PRODUCT mode, so the person signs in with the ' +
+          'password on their directory entry, and a second factor where ' +
+          'the realm\'s authentication policy asks for one.'
+        : 'This realm is in development mode, so it checks no password: ' +
+          'the username typed at the sign-in screen becomes the subject of ' +
+          'the assertion.') +
+      '</p><h2>Try it</h2><ul><li><a ' +
       'href="' + SP_PATH + '">' + SP_PATH + '</a> — a mock service ' +
       'provider here that sends a complete AuthnRequest over each of the ' +
       'three bindings and then verifies the response check by ' +
@@ -5237,18 +5407,43 @@ class Saml2Sso {
        ['Subject/NameID', 'Read as a hint to pre-fill the sign-in screen, ' +
                           'exactly as OIDC\'s login_hint is, and never as a ' +
                           'claim about who is at the browser.'],
-       ['Destination, IssueInstant', 'Recorded in the log. Neither is ' +
-                                     'enforced: there is no clock skew ' +
-                                     'setting for this profile to reject a ' +
-                                     'request under.']
+       ['Destination', 'Where present, it must be the URL the request ' +
+                       'arrived at, and a SIGNED request must carry one ' +
+                       '(saml-core-2.0-os section 3.2.1, ' +
+                       'saml-bindings-2.0-os sections 3.4.5.2 and ' +
+                       '3.5.5.2); otherwise the request ' +
+                       'is refused (STS-SAML-0085).'],
+       ['IssueInstant', 'Required, and refused when it is more than a ' +
+                        'minute in the future or older than ' +
+                        'saml2.requestTtlMin — ' +
+                        Math.round(this.requestWindowMs() / 60000) +
+                        ' minute(s) in this realm — plus a minute of clock ' +
+                        'disagreement (STS-SAML-0086).'],
+       ['Version', 'Must be 2.0 (saml-core-2.0-os section 3.2.2.1); ' +
+                   'anything else is refused (STS-SAML-0087).'],
+       ['ID', 'Answered ONCE: the same issuer and ID arriving again inside ' +
+              'the freshness window is refused as a replay (STS-SAML-0088), ' +
+              'and so is every request while the store that records them ' +
+              'cannot be asked (STS-SAML-0089).']
       ].map(function (r) {
         return '<tr><td><code>' + r[0] + '</code></td><td>' + r[1] +
                '</td></tr>';
-      }).join('') + '</tbody></table><div class="meta"><div>Not implemented, ' +
-      'and stated rather than left to be discovered: the ECP profile and its ' +
-      'PAOS binding, identity-provider-initiated SSO with an unsolicited ' +
-      'Response, Name Identifier Management, and the Assertion Query and ' +
-      'Request profile.</div></div>';
+      }).join('') + '</tbody></table><h2>Beside it</h2><ul><li><code>' +
+      xmlEscape(where.unsolicited) + '?providerId=&lt;entityID&gt;</code> ' +
+      '— identity-provider-initiated sign-in: an unsolicited Response ' +
+      '(saml-profiles-2.0-os section 4.1.5) to the service provider it ' +
+      'names. ' +
+      (config.value('saml2.unsolicitedSso')
+        ? 'Answered in this realm.'
+        : 'Turned OFF in this realm (saml2.unsolicitedSso).') +
+      '</li><li><code>' + xmlEscape(where.aa) + '</code> — the attribute ' +
+      'authority: a SOAP <code>&lt;samlp:AttributeQuery&gt;</code> (the ' +
+      'Assertion Query and Request profile, section 6), answered for a ' +
+      'service provider about a person it is signed in for.</li></ul>' +
+      '<div class="meta"><div>Not implemented, and stated rather than left ' +
+      'to be discovered: the ECP profile and its PAOS binding (refused by ' +
+      'name), Name Identifier Management, and the Assertion Query and ' +
+      'Request profile\'s AuthnQuery and AuthzDecisionQuery.</div></div>';
   }
 
   // ===========================================================================
@@ -5292,6 +5487,17 @@ class Saml2Sso {
   // its own verdict. One boolean for the whole response would say "it failed"
   // and nothing anybody could act on — the same argument /wsfed/rp and the
   // OID4VP verifier both make.
+  /**
+   * Verifies a SAML Response as a service provider would, each check with its
+   * own verdict; the mock service provider's reading.
+   *
+   * @param xml - the Response
+   * @param spEntityId - the service provider's entityID
+   * @param acsUrl - the assertion consumer service URL it was sent to
+   * @param relayState - the RelayState that came with it
+   * @returns `ok`, every check, and the subject, attributes, session index and
+   * status
+   */
   verifyResponse(xml, spEntityId, acsUrl, relayState): any {
     const { firstByLocal, log, textByLocal } = this.deps.helpers;
     const { DOMParser } = this.deps.xmldom;
@@ -5643,10 +5849,23 @@ capabilities.provide('saml.artifacts-once');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * SAML 2.0: the Web Browser SSO profile, all its bindings, and Single Logout,
+ * with the functions the console and the global sign-out read.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   Saml2Sso: Saml2Sso,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: Saml2Sso): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   BINDING_REDIRECT: BINDING_REDIRECT,
   BINDING_POST: BINDING_POST,

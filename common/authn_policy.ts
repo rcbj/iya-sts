@@ -165,8 +165,15 @@ interface AuthnPolicyDeps {
   mailAvailable(): boolean;
 }
 
+/**
+ * The name of the one authentication policy profile, `default`.
+ */
 const DEFAULT_PROFILE = 'default';
 
+/**
+ * The warning drawn beside the two emailed mechanisms: NIST SP 800-63B-4
+ * section 3.1.3.1 forbids email for out-of-band authentication.
+ */
 const NIST_EMAIL_WARNING =
   'NIST SP 800-63B-4 section 3.1.3.1: "Email SHALL NOT be used for ' +
   'out-of-band authentication", because a mailbox may be reached with a ' +
@@ -177,6 +184,10 @@ const NIST_EMAIL_WARNING =
 // THE MECHANISMS. The rows below are generated from this list, so a mechanism
 // is one line here.
 // ---------------------------------------------------------------------------
+/**
+ * The sign-in mechanisms the policy decides on, each with the roles it can take
+ * (first factor, second factor) and its default in each.
+ */
 const MECHANISMS: Mechanism[] = [
   { id: 'password', label: 'Password', primary: true, secondFactor: true,
     what: 'A password on the sign-in screen. As a SECOND factor it is the ' +
@@ -251,6 +262,10 @@ function attributeOf(key: string): string {
 // schema, the form on /admin/policies, the API body, the validation of a save
 // and the parse of an entry.
 // ---------------------------------------------------------------------------
+/**
+ * The policy's fields: one table read as the schema, the console form, the API
+ * body, the validation of a save and the parse of an entry.
+ */
 const FIELDS: PolicyField[] = ([
   { key: 'requireSecondFactor', attribute: 'stsAuthnRequireSecondFactor',
     type: 'enum', values: ['if-held', 'always'], dflt: 'if-held',
@@ -344,17 +359,27 @@ const FIELDS: PolicyField[] = ([
           'starts the period again.' }
 ]);
 
+/**
+ * The fields, by key.
+ */
 const FIELD_BY_KEY: Record<string, PolicyField> = {};
 FIELDS.forEach(function (field) {
   FIELD_BY_KEY[field.key] = field;
 });
 
+/**
+ * The built-in value of every field, in force where no entry says otherwise.
+ */
 const DEFAULTS: Readonly<Record<string, number | boolean | string>> =
   Object.freeze(FIELDS.reduce(function (out, field) {
     out[field.key] = field.dflt;
     return out;
   }, {} as Record<string, number | boolean | string>));
 
+/**
+ * The directory schema of `ou=authnPolicies`: its container, object class and
+ * attributes, and the two person attributes the emailed factor uses.
+ */
 const SCHEMA = {
   container: 'ou=authnPolicies',
   objectClasses: [
@@ -381,23 +406,64 @@ const SCHEMA = {
   ]
 };
 
+/**
+ * The authentication policy: which mechanisms a realm accepts as a first factor
+ * and as a second, and when a second factor is required.
+ *
+ * Kept as a `stsAuthnPolicy` entry in `ou=authnPolicies`; a realm with no entry
+ * of its own inherits the default realm's, and failing that the built-in
+ * defaults.
+ */
 class AuthnPolicy {
+  /**
+   * The name of the one profile.
+   */
   static readonly DEFAULT_PROFILE = DEFAULT_PROFILE;
+  /**
+   * The built-in value of every field.
+   */
   static readonly DEFAULTS = DEFAULTS;
+  /**
+   * The policy's fields.
+   */
   static readonly FIELDS = FIELDS;
+  /**
+   * The fields, by key.
+   */
   static readonly FIELD_BY_KEY = FIELD_BY_KEY;
+  /**
+   * The sign-in mechanisms the policy decides on.
+   */
   static readonly MECHANISMS = MECHANISMS;
+  /**
+   * The directory schema of `ou=authnPolicies`.
+   */
   static readonly SCHEMA = SCHEMA;
+  /**
+   * The warning drawn beside the emailed mechanisms.
+   */
   static readonly NIST_EMAIL_WARNING = NIST_EMAIL_WARNING;
 
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
 
+  /**
+   * Builds the policy with no directory installed.
+   *
+   * @param deps - the logger, mode, realms, error codes and a lazy check of
+   *   whether the realm can send mail
+   */
   constructor(private readonly deps: AuthnPolicyDeps) {
     deps.log.debug("Entering AuthnPolicy.constructor().");
     deps.log.debug("Leaving AuthnPolicy.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the service's own modules, and a mail check that requires
+   *   `mail.ts` lazily
+   */
   static defaultDeps(): AuthnPolicyDeps {
     log.debug("Entering AuthnPolicy.defaultDeps().");
     log.debug("Leaving AuthnPolicy.defaultDeps().");
@@ -427,6 +493,12 @@ class AuthnPolicy {
     };
   }
 
+  /**
+   * Installs the directory hooks the policy is read from and written to; filled
+   * by the directory.
+   *
+   * @param hooks - the directory's policy hooks, or null to remove them
+   */
   setDirectory(hooks: DirectoryHooks | null | undefined): void {
     const { log } = this.deps;
     log.debug('Entering AuthnPolicy.setDirectory().');
@@ -436,6 +508,12 @@ class AuthnPolicy {
               (this.directory ? 'has its container.' : 'has none.'));
   }
 
+  /**
+   * Returns the installed directory hooks, so a test can put back what was
+   * there.
+   *
+   * @returns the hooks, or null
+   */
   directoryInstalled(): DirectoryHooks | null {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.directoryInstalled().");
@@ -601,6 +679,16 @@ class AuthnPolicy {
   // back to the built-in default and is named in `problems`, for
   // `password_policy.ts`'s reason — somebody who broke one attribute must not
   // get a policy with no rule.
+  /**
+   * Reads the profile in force: this realm's entry, else the default realm's,
+   * else the built-in defaults.
+   *
+   * Always answers. An unreadable stored value falls back to its default and is
+   * named in `problems`.
+   *
+   * @param name - the profile name; `default` when omitted
+   * @returns the profile's values, where each came from, and any problems
+   */
   read(name?: string): AuthnProfile {
     const { log } = this.deps;
     log.debug('Entering AuthnPolicy.read(). name=' + name);
@@ -654,6 +742,14 @@ class AuthnPolicy {
     return out;
   }
 
+  /**
+   * Returns the profile that applies to a person, which is always the one
+   * profile.
+   *
+   * @param username - the person (unused; nothing assigns a profile to a
+   *   person)
+   * @returns the profile in force
+   */
   profileFor(username?: unknown): AuthnProfile {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.profileFor().");
@@ -662,6 +758,11 @@ class AuthnPolicy {
     return this.read(DEFAULT_PROFILE);
   }
 
+  /**
+   * Lists the profiles: the one profile in force.
+   *
+   * @returns a one-element list
+   */
   list(): AuthnProfile[] {
     const { log } = this.deps;
     log.debug('Entering AuthnPolicy.list().');
@@ -676,6 +777,14 @@ class AuthnPolicy {
 
   // Whether the policy ALLOWS a mechanism in a role. An unknown mechanism or
   // a role it is incapable of is false.
+  /**
+   * Says whether the policy allows a mechanism in a role.
+   *
+   * @param mechanism - the mechanism id
+   * @param role - `primary` or `second-factor`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns false for an unknown mechanism or a role it cannot take
+   */
   allows(mechanism: string, role: Role, profile?: AuthnProfile | null):
       boolean {
     const { log } = this.deps;
@@ -694,6 +803,15 @@ class AuthnPolicy {
   // Whether a mechanism may be OFFERED right now: allowed, and — for the two
   // email mechanisms — this realm's mail is functional. Fail closed: a
   // mechanism nobody can receive is never drawn.
+  /**
+   * Says whether a mechanism may be offered now: allowed, and for an emailed
+   * mechanism, the realm can send mail.
+   *
+   * @param mechanism - the mechanism id
+   * @param role - `primary` or `second-factor`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns true when it may be offered
+   */
   active(mechanism: string, role: Role, profile?: AuthnProfile | null):
       boolean {
     const { log } = this.deps;
@@ -708,6 +826,11 @@ class AuthnPolicy {
     return out;
   }
 
+  /**
+   * Says whether this realm can send mail.
+   *
+   * @returns true when a mail transport is functional
+   */
   mailUsable(): boolean {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.mailUsable().");
@@ -717,6 +840,12 @@ class AuthnPolicy {
   }
 
   // `if-held` or `always`.
+  /**
+   * Returns when a second factor is required.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `if-held` or `always`
+   */
   requireSecondFactor(profile?: AuthnProfile | null): string {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.requireSecondFactor().");
@@ -728,6 +857,12 @@ class AuthnPolicy {
   // `if-held`, `offer` or `always` (#246): what an administrator who holds
   // no second factor meets at sign-in. `credentials.mfaRequirementFor()`
   // is the one reader that decides with it.
+  /**
+   * Returns what an administrator who holds no second factor meets at sign-in.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `if-held`, `offer` or `always`
+   */
   requireSecondFactorForAdministrators(profile?: AuthnProfile | null): string {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.requireSecondFactorForAdministrators().");
@@ -740,6 +875,13 @@ class AuthnPolicy {
   // how many days after the second factor was last given on it (#265). The
   // one reader that decides with it is `common/browser_devices.ts`'s
   // `skipsSecondFactor()`, which adds the conditions no realm may relax.
+  /**
+   * Returns whether a remembered browser may stand in for the second factor,
+   * and for how many days.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `skipsSecondFactor` and `days` (1 to 400)
+   */
   rememberedBrowser(profile?: AuthnProfile | null) {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.rememberedBrowser().");
@@ -756,6 +898,13 @@ class AuthnPolicy {
   // The email mechanisms' numbers, with the ten-minute bound applied again
   // here — a hand-edited entry is range-checked by `read()`, and this is the
   // line every emailed secret's lifetime is computed from.
+  /**
+   * Returns the emailed mechanisms' numbers, bounded again here.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the lifetime in seconds (at most 600), attempts, resend wait, the
+   *   most sends per step and the failure limit
+   */
   emailSettings(profile?: AuthnProfile | null) {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.emailSettings().");
@@ -773,6 +922,12 @@ class AuthnPolicy {
   }
 
   // The policy as sentences, for the page and for a save's answer.
+  /**
+   * Describes the policy in sentences, for the page and a save's answer.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the sentences
+   */
   describe(profile?: AuthnProfile | null): string[] {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.describe().");
@@ -835,6 +990,13 @@ class AuthnPolicy {
 
   // Every field, as the password policy's save: one left out is refused by
   // name, except an unticked checkbox on the console's own form.
+  /**
+   * Validates a whole profile as sent; every field is required, except an
+   * unticked checkbox on the console's form.
+   *
+   * @param given - the submitted fields
+   * @returns the parsed values and the problems found
+   */
   validate(given?: Record<string, any> | null) {
     const { log } = this.deps;
     log.debug('Entering AuthnPolicy.validate().');
@@ -886,6 +1048,17 @@ class AuthnPolicy {
     });
   }
 
+  /**
+   * Saves this realm's profile, replacing it whole.
+   *
+   * Refused when the name is not `default`, a field is missing or invalid, an
+   * emailed mechanism is turned on in a realm that cannot send mail, or there
+   * is no directory.
+   *
+   * @param name - the profile name
+   * @param given - every field of the profile
+   * @returns `ok` and the profile now in force, or `ok: false` with `errors`
+   */
   save(name: unknown, given?: Record<string, any> | null): PolicyResult {
     const { log, errorCodes } = this.deps;
     log.debug('Entering AuthnPolicy.save(). name=' + name);
@@ -947,6 +1120,12 @@ class AuthnPolicy {
   // Deleting THIS REALM'S entry, which puts it back to inheriting — the
   // default realm's entry where there is one, the built-in defaults where
   // there is not.
+  /**
+   * Deletes this realm's own entry, so it inherits again.
+   *
+   * @param name - the profile name
+   * @returns `ok`, whether an entry was removed, and the profile now in force
+   */
   reset(name: unknown): PolicyResult {
     const { log, errorCodes } = this.deps;
     log.debug('Entering AuthnPolicy.reset(). name=' + name);
@@ -967,6 +1146,11 @@ class AuthnPolicy {
              profile: this.read(DEFAULT_PROFILE) };
   }
 
+  /**
+   * Says whether the policy is enforced; it is, in both modes.
+   *
+   * @returns true
+   */
   enforced(): boolean {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.enforced().");
@@ -983,9 +1167,25 @@ const slot = new InstanceSlot<AuthnPolicy>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The authentication policy: which ways of signing in a realm accepts as a
+ * first factor and as a second, and when a second is required.
+ *
+ * A separate policy from the password policy, drawn on the same Directory >
+ * Policies page. The exports forward to the instance the composition root
+ * installs.
+ *
+ * @namespace
+ */
 export = {
   AuthnPolicy: AuthnPolicy,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: AuthnPolicy): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   DEFAULT_PROFILE: AuthnPolicy.DEFAULT_PROFILE,
   DEFAULTS: AuthnPolicy.DEFAULTS,

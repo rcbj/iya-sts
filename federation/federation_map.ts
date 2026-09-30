@@ -92,6 +92,10 @@ import config = require('./../common/config');
 import helpers = require('./../common/helpers');
 import InstanceSlot = require('./../common/instance_slot');
 import vcClaims = require('./../oid4vc/vc_claims');
+// The attributes no outside source may write (#94), and the code a mapping
+// that names one is dropped under. Both leaves.
+import SourcedAttributes = require('./../common/sourced_attributes');
+import errorCodes = require('./../common/error_codes');
 // `identityKeyOf()`, and ONLY that. See usernameFor() below, where the reason
 // is argued: the local name a foreign subject becomes has to be the SAME name
 // the identity funnel and the directory will file them under, and that
@@ -147,6 +151,11 @@ interface FederationMapDeps {
 // rather than reimplemented: getting it wrong would map every address
 // component onto whichever attribute happened to be last.
 // ---------------------------------------------------------------------------
+/**
+ * The default mapping table (layer 2): incoming attribute and claim names to
+ * LDAP attributes, the OIDC half derived from the credential catalogue. Filled
+ * at load.
+ */
 const DEFAULT_MAP: MapRow[] = [];
 const seenIncoming = new Set();
 
@@ -156,9 +165,25 @@ const MS_CLAIMS = 'http://schemas.microsoft.com/ws/2008/06/identity/claims/';
 
 const DEFAULT_BY_INCOMING = new Map();
 
+/**
+ * Turns what a foreign identity provider asserted into a directory entry: which
+ * LDAP attribute each incoming name becomes, and the username.
+ *
+ * Three layers in order: the relationship's own `fedAttributeMap`, the default
+ * table, and nothing; an unrecognised name is reported as unmapped, never
+ * written.
+ */
 class FederationMap {
+  /**
+   * The default mapping table, the module's `DEFAULT_MAP`.
+   */
   static readonly DEFAULT_MAP = DEFAULT_MAP;
 
+  /**
+   * Builds the mapper over the given dependencies.
+   *
+   * @param deps - the logger, the settings and `identityKeyOf()`
+   */
   constructor(private readonly deps: FederationMapDeps) {
     deps.log.debug("Entering FederationMap.constructor().");
     deps.log.debug("Leaving FederationMap.constructor().");
@@ -166,6 +191,12 @@ class FederationMap {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): FederationMapDeps {
     helpers.log.debug("Entering FederationMap.defaultDeps().");
     helpers.log.debug("Leaving FederationMap.defaultDeps().");
@@ -197,6 +228,14 @@ class FederationMap {
 
   // The default table, layer 2, built once at load into the module's
   // `DEFAULT_MAP` and `DEFAULT_BY_INCOMING`.
+  /**
+   * Builds the default table into `DEFAULT_MAP` once at load: the OIDC claims
+   * inverted from the credential catalogue, then the hand-written SAML,
+   * WS-Federation and common spellings. The first row for a name wins.
+   *
+   * @param log - the logger
+   * @param vcAttributes - the credential catalogue's `VC_ATTRIBUTES`
+   */
   static buildDefaults(log: FederationMapDeps['log'],
                        vcAttributes: CatalogueRow[]): void {
     log.debug("Entering FederationMap.buildDefaults().");
@@ -357,6 +396,15 @@ class FederationMap {
   // works for every short name and silently fails for exactly the
   // WS-Federation claim URIs this feature exists to handle.
   // -------------------------------------------------------------------------
+  /**
+   * Parses a relationship's own `fedAttributeMap`, one `<incoming>=<LDAP
+   * attribute>` value per mapping split at the first `=`.
+   *
+   * A value with no `=` is logged and ignored.
+   *
+   * @param record - the federation relationship
+   * @returns the mappings, keyed by the lower-cased incoming name
+   */
   relationshipMap(record?: RelationshipLike | null): Map<string, MapRow> {
     const { log } = this.deps;
     log.debug("Entering FederationMap.relationshipMap().");
@@ -418,6 +466,14 @@ class FederationMap {
   // as JSON on the entry is a fact about what arrived, and walking it would be
   // inventing attribute names that no partner sent.
   // -------------------------------------------------------------------------
+  /**
+   * Flattens what arrived into names and string values: OIDC's `address` into
+   * its member claims, `place_of_birth` into dotted names, any other object
+   * into its JSON text.
+   *
+   * @param bag - the incoming attributes or claims
+   * @returns the values by name
+   */
   flatten(bag?: Record<string, any> | null): Record<string, string[]> {
     const { log } = this.deps;
     log.debug("Entering FederationMap.flatten().");
@@ -523,6 +579,20 @@ class FederationMap {
   // themselves on their next sign-in. It cannot change WHICH incoming value
   // was picked, only what it is called here.
   // -------------------------------------------------------------------------
+  /**
+   * Chooses the username a federated person is filed under: from
+   * `fedUsernameSource` or the subject, normalised through `identityKeyOf()`,
+   * then prefixed by `federation.usernamePrefix`.
+   *
+   * A `urn:uuid:` subject becomes `sub-<uuid>` rather than being resolved in
+   * this realm's directory. A configured source the assertion did not carry
+   * falls back to the subject, with a warning.
+   *
+   * @param record - the federation relationship
+   * @param flat - the flattened incoming values
+   * @param subject - the subject the protocol carried
+   * @returns `{ username, raw, from, prefixed }`
+   */
   usernameFor(record: RelationshipLike | null | undefined,
               flat: Record<string, string[]>,
               subject?: unknown): UsernameChoice {
@@ -615,6 +685,19 @@ class FederationMap {
   // one and AD FS-configured providers the other — is sending ONE address,
   // not two. Concatenating blindly wrote `mail: [x, x]` onto the entry.
   // -------------------------------------------------------------------------
+  /**
+   * Maps one federated sign-in's attributes: the attributes for the directory,
+   * what was mapped and where, what was not, and the username.
+   *
+   * Values of two names mapped to one attribute are joined, each value kept
+   * once.
+   *
+   * @param record - the federation relationship
+   * @param bag - the incoming attributes or claims
+   * @param subject - the subject the protocol carried
+   * @returns `{ username, usernameRaw, usernameFrom, usernamePrefixed,
+   *   attributes, mapped, unmapped, flat }`
+   */
   mapIncoming(record: RelationshipLike | null | undefined,
               bag: Record<string, any> | null | undefined,
               subject?: unknown) {
@@ -631,6 +714,19 @@ class FederationMap {
       const row = this.resolve(name, own);
       if (!row) {
         unmapped.push({ incoming: name, values: values });
+        return;
+      }
+      // A TARGET NO PARTNER MAY WRITE (#94) is dropped as if unmapped, with
+      // the reason. The console and the API refuse such a mapping when it
+      // is written; this is the second net, for one written before #94 or
+      // by an ldapmodify on ou=federations.
+      const refused = SourcedAttributes.refusal(row.ldap);
+      if (refused) {
+        log.warn(errorCodes.tag('STS-FED-0153') + 'federation: ' +
+                 ((record && record.fedId) || '?') + ' maps "' + name +
+                 '" onto ' + row.ldap + ', and it was NOT written: ' +
+                 refused + '.');
+        unmapped.push({ incoming: name, values: values, refused: refused });
         return;
       }
       const kept = attributes[row.ldap] || [];
@@ -689,13 +785,44 @@ const slot = new InstanceSlot<FederationMap>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What a foreign identity provider asserted, turned into a directory entry: the
+ * attribute mapping and the username every federation protocol shares.
+ *
+ * A library: it registers no route.
+ *
+ * @namespace
+ */
 export = {
   FederationMap: FederationMap,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: FederationMap): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   DEFAULT_MAP: DEFAULT_MAP,
+  /**
+   * Forwards to `FederationMap.relationshipMap()` on the installed instance.
+   */
   relationshipMap: slot.forward('relationshipMap'),
+  /**
+   * Forwards to `FederationMap.flatten()` on the installed instance.
+   */
   flatten: slot.forward('flatten'),
+  /**
+   * Forwards to `FederationMap.usernameFor()` on the installed instance.
+   */
   usernameFor: slot.forward('usernameFor'),
+  /**
+   * Forwards to `FederationMap.mapIncoming()` on the installed instance.
+   */
   mapIncoming: slot.forward('mapIncoming')
 };

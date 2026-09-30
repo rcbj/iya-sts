@@ -178,6 +178,8 @@ interface ClaimAttributesDeps {
   vcClaims: {
     subjectClaimsFor(name: unknown, tokenClaims?: any,
                      rows?: CatalogueRow[]): any;
+    // Optional, so a test supplying the rest need not supply it (#94).
+    entryAttributes?(name: unknown): Record<string, unknown[]> | null;
   };
   audit: { audit(row: Record<string, unknown>): unknown };
   errorCodes: { mark<T>(target: T, code: string): T };
@@ -193,6 +195,10 @@ interface ClaimAttributesDeps {
 // way in, so every lookup that could start from a stored entry has to start
 // from the lower-cased form.
 // ---------------------------------------------------------------------------
+/**
+ * The directory attribute catalogue a claim set may select from: `vc_claims`'
+ * attribute table.
+ */
 const CATALOGUE: CatalogueRow[] = vcClaims.VC_ATTRIBUTES;
 
 const BY_LDAP = new Map<string, CatalogueRow>();
@@ -255,6 +261,9 @@ CATALOGUE.forEach(function (row) {
 // would fail to. It was four until 2026-08-26 and is five now, and NOTHING IN
 // THIS FILE WAS EDITED TO MAKE THAT TRUE — which is the whole reason the list
 // is derived.
+/**
+ * The ids of the claim sets a selection is kept for.
+ */
 const SET_IDS: string[] = stats.CLAIM_SET_IDS;
 
 // setId -> list of lower-cased attribute names (see below for why a list).
@@ -293,10 +302,29 @@ const selections = realms.obj(function () {
   return fresh;
 }, { persist: 'claim_attributes.selections' });
 
+/**
+ * The per-set selection of directory attributes a token, response or assertion
+ * carries, read off the person's entry.
+ *
+ * The other half of the claim-set pages beside `admin_stats.js`'s typed claims;
+ * it fills `admin_stats.setAttributeResolver()`.
+ */
 class ClaimAttributes {
+  /**
+   * The directory attribute catalogue.
+   */
   static readonly CATALOGUE = CATALOGUE;
+  /**
+   * The claim set ids.
+   */
   static readonly SET_IDS = SET_IDS;
 
+  /**
+   * Builds the selection service.
+   *
+   * @param deps - the logger, `admin_stats`, `vc_claims`, audit, error codes
+   *   and the per-set selection store
+   */
   constructor(private readonly deps: ClaimAttributesDeps) {
     deps.log.debug("Entering ClaimAttributes.constructor().");
     deps.log.debug("Leaving ClaimAttributes.constructor().");
@@ -304,6 +332,11 @@ class ClaimAttributes {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time instance is built from
+   */
   static defaultDeps(): ClaimAttributesDeps {
     log.debug("Entering ClaimAttributes.defaultDeps().");
     log.debug("Leaving ClaimAttributes.defaultDeps().");
@@ -319,6 +352,12 @@ class ClaimAttributes {
 
   // What loading this module did with its instance before R2, run once
   // for whichever instance is installed (#50, R2).
+  /**
+   * Installs an instance's resolver into `admin_stats`, as loading this module
+   * did before #50's R2.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: ClaimAttributes): void {
     log.debug("Entering ClaimAttributes.wire().");
     instance.installResolver();
@@ -342,6 +381,12 @@ class ClaimAttributes {
   // JWT payload and of the <Attribute> elements in an assertion — and a claim
   // list that reordered itself because somebody unticked and reticked a box
   // would look like a different token to anything diffing them.
+  /**
+   * Returns a set's selected catalogue rows, in catalogue order.
+   *
+   * @param setId - the claim set id
+   * @returns the rows, or none for an unknown set
+   */
   selectedRows(setId: unknown): CatalogueRow[] {
     const { log, selections } = this.deps;
     log.debug("Entering ClaimAttributes.selectedRows().");
@@ -362,6 +407,12 @@ class ClaimAttributes {
   // same object. A reply naming
   // `schacdateofbirth` beside a catalogue naming `schacDateOfBirth` reads as
   // two different attributes.
+  /**
+   * Returns a set's selected attribute names, canonically spelled.
+   *
+   * @param setId - the claim set id
+   * @returns the LDAP attribute names
+   */
   selectedNames(setId: unknown): string[] {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.selectedNames().");
@@ -371,6 +422,13 @@ class ClaimAttributes {
     });
   }
 
+  /**
+   * Says whether an attribute is selected in a set.
+   *
+   * @param setId - the claim set id
+   * @param ldapName - the LDAP attribute name, in any case
+   * @returns true when selected
+   */
   isSelected(setId: unknown, ldapName: unknown): boolean {
     const { log, selections } = this.deps;
     log.debug("Entering ClaimAttributes.isSelected().");
@@ -382,6 +440,11 @@ class ClaimAttributes {
 
   // Every name in the catalogue, for the "select all" button and for the
   // API's equivalent operation.
+  /**
+   * Returns every attribute name in the catalogue.
+   *
+   * @returns the LDAP attribute names
+   */
   allNames(): string[] {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.allNames().");
@@ -477,6 +540,20 @@ class ClaimAttributes {
   // behind. A partial application would leave the set in a state nobody asked
   // for, which is the same rule `replace` follows for the typed claims.
   // -------------------------------------------------------------------------
+  /**
+   * Replaces a set's selection, the one funnel every change goes through.
+   *
+   * An unknown set or attribute refuses the whole call. A change is logged,
+   * audited without values, and announced to holders of live artifacts of the
+   * set.
+   *
+   * @param setId - the claim set id
+   * @param names - the LDAP attribute names to select
+   * @param how - what kind of change it was, for the audit row (`select`, `all`
+   *   or `clear`)
+   * @returns `ok`, the set, the attributes now selected, and those added and
+   *   removed; or `ok: false` with `errors`
+   */
   setSelection(setId: unknown, names?: unknown[] | null,
                how?: string): SelectionResult {
     const { log, errorCodes, selections } = this.deps;
@@ -575,6 +652,12 @@ class ClaimAttributes {
     log.debug("Leaving ClaimAttributes.announce().");
   }
 
+  /**
+   * Selects every attribute in the catalogue for a set.
+   *
+   * @param setId - the claim set id
+   * @returns what `setSelection()` answers
+   */
   selectAll(setId: unknown): SelectionResult {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.selectAll(). setId=" + setId);
@@ -583,6 +666,12 @@ class ClaimAttributes {
     return result;
   }
 
+  /**
+   * Clears a set's selection.
+   *
+   * @param setId - the claim set id
+   * @returns what `setSelection()` answers
+   */
   clearSelection(setId: unknown): SelectionResult {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.clearSelection(). setId=" + setId);
@@ -636,6 +725,17 @@ class ClaimAttributes {
   // the catalogue nests (`address.locality` becomes an `address` object with a
   // `locality` member, which is what OIDC Core 5.1.1 defines and what a client
   // reading `address` expects).
+  /**
+   * Returns the claims a set's selected attributes produce for one person,
+   * nested where the catalogue nests.
+   *
+   * Values come from the person's directory entry, else the generated persona.
+   *
+   * @param setId - the claim set id
+   * @param username - the person
+   * @returns the claims, a per-claim report with each value's source, and
+   *   whether an entry was found
+   */
   claimsFor(setId: unknown, username: unknown): any {
     const { log, vcClaims } = this.deps;
     log.debug("Entering ClaimAttributes.claimsFor(). setId=" + setId +
@@ -670,6 +770,15 @@ class ClaimAttributes {
   // the same default namespace a typed claim gets, for the reason
   // admin_stats.js states beside it: it is the namespace every WS-Federation
   // relying party already reads.
+  /**
+   * Returns a set's selected attributes for one person as flat SAML attributes,
+   * a nested claim named by its dotted path.
+   *
+   * @param setId - the claim set id (`saml11` attributes carry the default SAML
+   *   1.1 namespace)
+   * @param username - the person
+   * @returns the attributes, each a name and value
+   */
   samlAttributesFor(setId: unknown, username: unknown): any[] {
     const { log, stats } = this.deps;
     log.debug("Entering ClaimAttributes.samlAttributesFor(). setId=" + setId +
@@ -695,6 +804,15 @@ class ClaimAttributes {
   // calls rather than by a second walk of the catalogue — a preview that
   // agreed with the page and disagreed with the token would be worse than no
   // preview at all.
+  /**
+   * Previews what a set's selection would put in an artifact for one person,
+   * built by the issuance path's own function.
+   *
+   * @param setId - the claim set id
+   * @param username - the person
+   * @returns the person, whether an entry was found, the claims and the
+   *   per-claim report
+   */
   previewFor(setId: unknown, username: unknown) {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.previewFor(). setId=" + setId +
@@ -711,6 +829,14 @@ class ClaimAttributes {
   // than one call per row: subjectClaimsFor() reads the directory entry once,
   // and one read per catalogue row per page render would be a read per row too
   // many.
+  /**
+   * Returns one person's value for every catalogue row, selected or not, in one
+   * directory read.
+   *
+   * @param username - the person
+   * @returns the report rows keyed by lower-cased LDAP name, and whether an
+   *   entry was found
+   */
   catalogueValuesFor(username: unknown) {
     const { log, vcClaims } = this.deps;
     log.debug("Entering ClaimAttributes.catalogueValuesFor(). user=" +
@@ -817,6 +943,18 @@ class ClaimAttributes {
   // catalogue does. `claims` is ready to merge into a response; `report` is one
   // row per name for the log and the console; `unknown` is every name this
   // catalogue cannot produce.
+  /**
+   * Resolves the claims a client requested by name (OIDC Core 5.5) for one
+   * person, in one directory read.
+   *
+   * A language tag is kept on the name in the response. A name the catalogue
+   * cannot produce is reported in `unknown`, never refused.
+   *
+   * @param username - the person
+   * @param names - the requested claim names
+   * @returns the claims ready to merge into a response, a per-claim report, the
+   *   unresolvable names, and whether an entry was found
+   */
   requestedClaimsFor(username: unknown, names?: unknown[] | null) {
     const { log, vcClaims } = this.deps;
     log.debug("Entering ClaimAttributes.requestedClaimsFor(). user=" +
@@ -919,6 +1057,13 @@ class ClaimAttributes {
   // group. It is what the console lists under "what a client may request" and
   // what the management API publishes, so that a client learns the vocabulary
   // from this service rather than from a copy of the catalogue in a document.
+  /**
+   * Lists every claim name a client may request: each row's flat name and each
+   * nested group's top-level name.
+   *
+   * @returns the names, each with its LDAP attribute(s), label and whether it
+   *   is a group
+   */
   requestableClaims() {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.requestableClaims().");
@@ -961,6 +1106,12 @@ class ClaimAttributes {
   // row per attribute type, with which of the sets currently carries it. Built
   // here rather than in admin.js because the API answers the same list and
   // neither of them should be walking the catalogue itself.
+  /**
+   * Lists the catalogue as the console and API draw it: one row per attribute,
+   * with which sets carry it.
+   *
+   * @returns the rows
+   */
   catalogueRows() {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.catalogueRows().");
@@ -991,6 +1142,10 @@ class ClaimAttributes {
   // loads this module simply has no attribute claims, which is a smaller
   // service and not a broken one.
   // -------------------------------------------------------------------------
+  /**
+   * Fills `admin_stats.setAttributeResolver()` with this instance's JWT and
+   * SAML resolvers.
+   */
   installResolver(): void {
     const { log, stats } = this.deps;
     log.debug("Entering ClaimAttributes.installResolver().");
@@ -1005,6 +1160,16 @@ class ClaimAttributes {
         log.debug("Entering samlAttributes().");
         log.debug("Leaving samlAttributes().");
         return self.samlAttributesFor(setId, self.subjectOf(context));
+      },
+      // THE ENTRY ITSELF (#94), for the claim sets' attribute claims: every
+      // attribute, lower-cased, of the person the token is about, or null.
+      entryAttributes: function (context) {
+        log.debug("Entering entryAttributes().");
+        const subject = self.subjectOf(context);
+        const reader = self.deps.vcClaims.entryAttributes;
+        log.debug("Leaving entryAttributes().");
+        return subject && typeof reader === 'function'
+          ? reader.call(self.deps.vcClaims, subject) : null;
       }
     });
     log.debug("Leaving ClaimAttributes.installResolver().");
@@ -1037,9 +1202,23 @@ log.info('The claim-attribute selection is loaded: /admin/claims can now put ' +
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Which LDAP attributes the five token, response and assertion claim sets
+ * carry, read off the person's directory entry.
+ *
+ * The exports forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
   ClaimAttributes: ClaimAttributes,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: ClaimAttributes): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   CATALOGUE: ClaimAttributes.CATALOGUE,
   SET_IDS: ClaimAttributes.SET_IDS,

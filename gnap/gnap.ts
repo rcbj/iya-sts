@@ -96,6 +96,7 @@ import rs = require('./gnap_rs');
 import tokens = require('./gnap_tokens');
 import zcap = require('./token_zcap');
 import signals = require('./gnap_signals');
+import gnapCells = require('./gnap_cells');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -163,15 +164,44 @@ const STATUS_FOR: Record<string, number> = {
 const DEMO_TYPE = 'urn:mock-sts:gnap:demo';
 const DEMO_REFERENCE = 'mock-sts-gnap-demo';
 
+/**
+ * GNAP's HTTP surface: the grant, continuation, token management, discovery,
+ * RS-facing and demonstration resource server routes (RFC 9635, RFC 9767).
+ *
+ * Transport only: every decision is `gnap_grants.ts`'s and `gnap_rs.ts`'s.
+ */
 class GnapRoutes {
+  /**
+   * The access type the demonstration resource server at `/gnap/rs/resource`
+   * protects.
+   */
   static readonly DEMO_TYPE = DEMO_TYPE;
+  /**
+   * The registered reference the demonstration resource server's RS-first
+   * challenge hands out for its access.
+   */
   static readonly DEMO_REFERENCE = DEMO_REFERENCE;
 
+  /**
+   * Builds the routes from the modules they read.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapRoutesDeps) {
     deps.log.debug("Entering GnapRoutes.constructor().");
     deps.log.debug("Leaving GnapRoutes.constructor().");
   }
 
+  /**
+   * Sends a GNAP error response: `{ error: { code, description } }` with the
+   * given status, marked `no-store`.
+   *
+   * @param res - the response to answer on
+   * @param status - the HTTP status
+   * @param code - the GNAP error code
+   * @param description - the human-readable description
+   * @param extra - further members merged into the body
+   */
   // error-code: none — the helper's definition, not a call to it.
   gnapError(res: Res, status: number, code: string, description: string,
             extra?: object): void {
@@ -311,6 +341,14 @@ class GnapRoutes {
       }
       if (self.offCheck(res)) {
         log.debug("Leaving the grant endpoint. Off.");
+        return undefined;
+      }
+      // WHICH CELL (#98): before the caller's key proof is verified or its
+      // nonce spent — the owning cell does both (`gnap_cells.ts`). A named
+      // authorization server was `ensure()`d above, which every cell does
+      // alike and which is configuration, not the request's.
+      if (await gnapCells.placeGrantRequest(req, res)) {
+        log.debug("Leaving the grant endpoint. Relayed to its cell.");
         return undefined;
       }
       const result: any = await grants.createGrant(req, asId);
@@ -457,6 +495,16 @@ class GnapRoutes {
         log.debug("Leaving the demonstration RS. RS-first challenge.");
         return;
       }
+      // WHICH CELL (#98): the one holding the token — before its key proof
+      // is verified and its nonce spent. A `jwt-signed` token was placed at
+      // the edge already; the other formats are found here.
+      const presented = /^GNAP\s+(\S+)$/i.exec(
+        String(req.headers.authorization).trim());
+      if (presented && await gnapCells.placeToken(req, res, presented[1],
+                                                  'gnap:resource')) {
+        log.debug("Leaving the demonstration RS. Relayed to its cell.");
+        return;
+      }
       const required = [{ type: DEMO_TYPE, actions: [action] }];
       const judged: any = await rs.authenticate(req, { audience: selfUri,
                                                        base: base });
@@ -499,6 +547,14 @@ class GnapRoutes {
   }
 
   // Every route, in the order this file has always registered them.
+  /**
+   * Registers every GNAP route, in the order this file always registered them.
+   *
+   * Called by `common/protocol_stack.ts`; requiring this module registers
+   * nothing.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteTable): void {
     const self = this;
     const { log, validation, errorCodes, grants, rs, tokens,
@@ -527,6 +583,12 @@ class GnapRoutes {
         errorCodes.mark(res, 'STS-GNAP-0164');
         self.gnapError(res, 401, 'invalid_continuation', 'The continuation ' +
                        'URI does not identify a grant request.');
+        return;
+      }
+      // WHICH CELL (#98): the grant's, before the continuation token or the
+      // key proof is checked there.
+      if (await gnapCells.placeContinuation(req, res, params.value.grant)) {
+        log.debug("Leaving the continuation endpoint. Relayed to its cell.");
         return;
       }
       const result: any = await grants.continueGrant(req,
@@ -592,6 +654,12 @@ class GnapRoutes {
         log.debug("Leaving the introspection endpoint. Off.");
         return;
       }
+      // WHICH CELL (#98): the one holding the token, before the resource
+      // server's proof is verified.
+      if (await gnapCells.placeIntrospection(req, res)) {
+        log.debug("Leaving the introspection endpoint. Relayed to its cell.");
+        return;
+      }
       const result = await rs.introspect(req);
       if (!result.ok) {
         log.debug("Leaving the introspection endpoint. Refused: " +
@@ -609,6 +677,13 @@ class GnapRoutes {
       log.debug("Entering the resource registration endpoint.");
       if (self.offCheck(res)) {
         log.debug("Leaving the resource registration endpoint. Off.");
+        return;
+      }
+      // WHICH CELL (#98): the one holding the resource server's instance,
+      // when it names itself by one.
+      if (gnapCells.placeResourceServer(req, res)) {
+        log.debug("Leaving the resource registration endpoint. Relayed to " +
+                  "its cell.");
         return;
       }
       const result = await rs.register(req);
@@ -669,6 +744,12 @@ class GnapRoutes {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapRoutesDeps {
     helpers.log.debug("Entering GnapRoutes.defaultDeps().");
     helpers.log.debug("Leaving GnapRoutes.defaultDeps().");
@@ -695,6 +776,12 @@ class GnapRoutes {
   // install GNAP's subject scope on the SSF streams. Run once, for whichever
   // instance is installed; the scope is `gnap_signals`' and needs nothing of
   // the instance itself.
+  /**
+   * Installs GNAP's subject scope on the Shared Signals streams, once, for
+   * whichever instance is installed.
+   *
+   * @param _instance - the installed instance (unused)
+   */
   static wire(_instance: GnapRoutes): void {
     helpers.log.debug("Entering GnapRoutes.wire().");
     signals.install();
@@ -731,8 +818,26 @@ require('./gnap_admin');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * GNAP (RFC 9635) and its resource server connections (RFC 9767), as routes.
+ *
+ * This family is one require in the stack: it requires `gnap_interact.ts` and
+ * `gnap_admin.ts`, and the composition root registers the three in turn.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapRoutes): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   GnapRoutes: GnapRoutes,

@@ -148,12 +148,32 @@ interface BreachedPasswordsDeps {
   fetch(url: string, opts: Json): Promise<Json>;
 }
 
+/**
+ * Screens passwords against Have I Been Pwned's Pwned Passwords by k-anonymity,
+ * in product mode.
+ *
+ * Only the first five hex characters of the password's SHA-1 leave the process;
+ * the verdict is remembered for the synchronous `credentials.preparePassword()`
+ * to read.
+ */
 class BreachedPasswords {
+  /**
+   * Builds the screener.
+   *
+   * @param deps - the logger, settings, a clock, the mode module and the
+   *   outbound fetch
+   */
   constructor(private readonly deps: BreachedPasswordsDeps) {
     deps.log.debug("Entering BreachedPasswords.constructor().");
     deps.log.debug("Leaving BreachedPasswords.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the module's logger, settings, `Date.now`, `mode.js` (lazily) and
+   *   `federation_http.fetchPublished()`
+   */
   static defaultDeps(): BreachedPasswordsDeps {
     log.debug("Entering BreachedPasswords.defaultDeps().");
     log.debug("Leaving BreachedPasswords.defaultDeps().");
@@ -173,6 +193,13 @@ class BreachedPasswords {
   }
 
   // The counts above, and whether screening is on.
+  /**
+   * Returns what this process has screened since it started, for Monitoring >
+   * Risk Scoring.
+   *
+   * @returns whether screening is on, and the counts screened, breached,
+   *   unanswered and answered from cache
+   */
   metrics(): Json {
     const { log } = this.deps;
     log.debug("Entering BreachedPasswords.metrics().");
@@ -181,6 +208,12 @@ class BreachedPasswords {
   }
 
   // Whether a password is screened at all: the setting, in product mode.
+  /**
+   * Says whether passwords are screened: `risk.breachCheck` is `on` and the
+   * mode verifies credentials.
+   *
+   * @returns true when screening is on
+   */
   enabled(): boolean {
     const { log, config, mode } = this.deps;
     log.debug("Entering BreachedPasswords.enabled().");
@@ -202,6 +235,16 @@ class BreachedPasswords {
   // remembers the verdict for `verdictOf()`. Never rejects: an API that
   // cannot answer is `checked: false`, logged, and decides nothing.
   // -------------------------------------------------------------------------
+  /**
+   * Screens one password and remembers the verdict for `verdictOf()`.
+   *
+   * Never rejects: a range API that does not answer yields `checked: false`,
+   * logged under STS-AUTHN-0224, and the password is set unscreened.
+   *
+   * @param password - the prospective password
+   * @returns a promise of `checked`, `breached`, the breach count and `why`
+   *   when not checked
+   */
   async screen(password: string): Promise<Json> {
     const { log, config, now, fetch } = this.deps;
     log.debug("Entering BreachedPasswords.screen().");
@@ -274,6 +317,13 @@ class BreachedPasswords {
   // Every password a request carries, screened in turn — for a door whose
   // synchronous action takes a body (the console and the management API).
   // Anything that is not a non-empty string is not a password. Never rejects.
+  /**
+   * Screens every non-empty string in a list in turn, for a door whose
+   * synchronous action takes a whole body.
+   *
+   * @param values - the candidate passwords
+   * @returns a promise that settles when all are screened; never rejects
+   */
   async screenAll(values: unknown[]): Promise<void> {
     const { log } = this.deps;
     log.debug("Entering BreachedPasswords.screenAll().");
@@ -288,6 +338,13 @@ class BreachedPasswords {
   // The verdict a door's `screen()` left for this password, or null — read
   // synchronously by `credentials.preparePassword()`. A hot path's helper:
   // one map read, and no Entering/Leaving pair would add anything.
+  /**
+   * Returns the verdict a door's `screen()` left for a password, if it is still
+   * fresh.
+   *
+   * @param password - the password being set
+   * @returns the verdict (`breached`, `count`, `at`), or null
+   */
   verdictOf(password: string): Json | null {
     const { now } = this.deps;
     const row = verdicts.get(stsCrypto.pwnedPasswordDigest(password));
@@ -308,10 +365,25 @@ const slot = new InstanceSlot<BreachedPasswords>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Breached-password screening (NIST SP 800-63B section 3.1.1.2) against Pwned
+ * Passwords, asked by k-anonymity and never held.
+ *
+ * Product mode only. The exports forward to the instance the composition root
+ * installs.
+ *
+ * @namespace
+ */
 export = {
   BreachedPasswords: BreachedPasswords,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: BreachedPasswords): void =>
     slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   enabled: slot.forward('enabled'),
   screen: slot.forward('screen'),
@@ -319,6 +391,9 @@ export = {
   verdictOf: slot.forward('verdictOf'),
   metrics: slot.forward('metrics'),
   // For the tests: forget every range and verdict.
+  /**
+   * Forgets every cached range and verdict; for the tests.
+   */
   forget: function (): void {
     log.debug("Entering forget().");
     ranges.clear();

@@ -55,8 +55,16 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # runs: it only produces files, `tsc` is a native binary whose output does not
 # depend on the node beside it, and the version is still 24.16.0.
 #
+# **AND SHIPPED WITHOUT ITS COMMENTS (#365, 2026-09-30)**: `--strip` also
+# takes the comments out of every `.js` left in the tree, compiled or written
+# in JavaScript, keeping every name and every line break
+# (`tests/tools/strip-comments.js` argues it). V8 holds each script's source
+# for the life of the process, and this repository's comments were 79 MB of
+# every process's heap. The repository and the tests image keep them.
+#
 # The installs are the final stage's (for the types of what the service
-# requires) and `tests/package.json`'s (the compiler). Both `node_modules` are
+# requires) and `tests/package.json`'s (the compiler, and the parser the
+# comment stripper uses). Both `node_modules` are
 # removed at the end, so the COPY below cannot replace the final stage's own.
 # ---------------------------------------------------------------------------
 FROM node:24.16.0-bookworm-slim AS typescript
@@ -443,4 +451,8 @@ EXPOSE 8181
 # The embedded protocol debugger's listener (debugger.port), when it is
 # embedded and installed. See debugger/CLAUDE.md.
 EXPOSE 8444
+# The inter-cell channel (cells.port), bound only when the service is deployed
+# as cells (#98). A private address between cells; never publish it. See
+# docs/cells.md.
+EXPOSE 8446
 CMD [ "node", "server.js" ]

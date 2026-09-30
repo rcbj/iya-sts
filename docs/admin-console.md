@@ -41,6 +41,18 @@ console session is tied to the sign-on session it came from and ends with it;
 **Sign out** ends both. See [Sessions](sessions.md) and
 [Signing out](signing-out.md).
 
+**Your own account is one click away, with no second sign-in.** The account
+menu links to the user portal of the realm you signed in through. When the
+portal has no session of its own in your browser but finds a live console
+session, it makes its own from it: the same person, the same realm, and the
+same record of how you signed in. It does this even after the sign-on session
+behind the console has run out, which the console outlives by renewing its
+tokens. You are not asked to choose a realm or to sign in. A realm's own
+administrator who opens the plain `/portal` is sent to their realm's portal.
+That portal session ends when the console session does, and **Sign out** in
+the portal ends the console session too. It works one way only: a portal
+session never signs anybody in to the console.
+
 **There is no setting that turns the gate off.** What `global.mode` changes is
 whether the password typed at the sign-in screen is *checked*:
 
@@ -156,8 +168,8 @@ The navigation is a grouped list down the left. Its five sections:
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
   enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,
-  encryption, the secret store, caches, the scheduler, the mail outbox, risk,
-  the audit log and the error codes.
+  encryption, the secret store, caches, the worker pools, node health, the
+  scheduler, the mail outbox, risk, the audit log and the error codes.
 * **Server configuration** — trust realms, configuration, mode, persistence,
   cluster, mail, admin roles, the protocol debugger, the service metadata, the
   API explorer, key pairs and cryptography.
@@ -983,6 +995,79 @@ every permission it exposes and every grant in it.
 or `?application=` for one application's group with its rows and graph. Neither
 picture has a form on it.
 
+### Worker pools — `/admin/worker-pools`
+
+`/admin/worker-pools` shows the two pools of child processes this node runs
+([the worker pools](architecture.md#the-request-dispatcher-and-the-worker-pools)):
+the request pool (`workers.requestCount`) and the console and portal's own
+pool (`workers.surfaceCount`). For each it gives:
+
+* the workers it has now, how many are **busy** and how many **free**;
+* its **maximum** (the setting) and its **initial** size — what it was started
+  with;
+* **restarts and crashes**: every fork, the workers that exited when nobody
+  asked (and how many of those never started) apart from the ones the pool
+  stopped or retired, and how many it replaced;
+* the **average response time**, from dispatch to the end of the answer, with
+  a recent average beside the one since start.
+
+A pool that is off says so in a sentence rather than showing zeros. The
+figures are **this node's**, since each node of a cluster has its own pools,
+and the page is always drawn by the node's front process, which holds them.
+Post-quantum signing and password hashing are not a pool: they run on
+libuv's thread pool inside each process (#363). It is read-only; the sizes
+are set on Configuration. A realm's own administrator is refused it.
+`GET /admin-api/worker-pools` answers the same figures.
+
+### Node health — `/admin/node-health`
+
+`/admin/node-health` shows the container this node runs in and every Node.js
+process in it:
+
+* **CPU** — the container's utilisation, measured from its cgroup (v2, or
+  v1 as on AWS Fargate — the page says which) over a short interval, as a
+  percentage of its CPU quota. With no quota of its own it is a percentage of
+  the ECS task's vCPUs on Amazon ECS, and of the CPUs the host gives it
+  elsewhere; the page says which. Where the cgroup cannot be read at all but
+  the ECS agent answers, the figures are the agent's, and labelled so. How often the quota held it
+  back (throttling) beside it.
+* **Memory** — what the container uses against its limit (the ECS task's
+  memory when the container has none of its own, as on Fargate), and how much of it
+  is the processes' own memory, page cache the kernel can reclaim, and the
+  kernel's; how many processes the kernel killed at the limit.
+* **Node.js processes** — for the front process, each request and console
+  worker, each post-quantum child and the protocol debugger's api: resident
+  memory, and for the Node.js processes that report it the heap used and
+  allocated, external memory and array buffers, with the totals. A worker
+  that did not answer within a second is listed as such.
+* **ECS task metadata** — on Amazon ECS (Fargate included), the agent's own
+  figures for the container and the task's limits, as a cross-check; it
+  needs no IAM permission. Elsewhere the page says there is no endpoint.
+* **The machine** — load average and free memory of the machine the container
+  runs on, labelled as the machine's: on Fargate that is the micro-VM, and it
+  says nothing about the container's limit.
+
+A source that is not there — no cgroup v2, not Linux, no ECS endpoint — is
+said in a sentence rather than drawn as zeros. The figures are **this
+node's**, drawn by its front process. It is read-only, and a realm's own
+administrator is refused it. `GET /admin-api/node-health` answers the same
+figures.
+
+### Every cluster node on both pages
+
+In a cluster, Worker pools and Node health show **every node, by name**
+(`node-a`, `node-b`, … — `STS_CLUSTER_NODE_NAME`), never by address. The node
+that draws the page shows its own figures live; every other node's come from
+the snapshot it writes to the shared database every 15 seconds, each stamped
+with its age. A node whose snapshot is more than 45 seconds old is marked
+**stale**, one the cluster no longer lists is marked **gone** — and is removed a day
+after its last snapshot (`cluster.nodeSnapshotRetentionHours`), which its
+section says — and one that has not written a snapshot yet says so. Above the nodes,
+the cluster's totals: each pool's workers, busy and free, and crashes; the
+containers' memory against their limits, CPU, and the processes. Add
+`?node=<name>` to see one node. With no cluster the pages show the one node,
+and say there is no cluster.
+
 ### Audit log — `/admin/audit`
 
 `/admin/audit` is the one page that reports **history** rather than state.
@@ -1134,6 +1219,40 @@ to the two token sets and UserInfo (whose `sub` a client must check against the
 ID Token's), not to the SAML sets, where an attribute called `exp` collides with
 nothing; the additive rule still protects SAML, because a WS-Federation relying
 party keys off the claim URIs this service writes.
+
+**A claim can carry any directory attribute** (#94). *Add a
+directory-attribute claim* on each of these pages (`add-attribute-claim` on
+the API) names a claim and the attribute of the person's entry it carries, for
+example `cost_center` from `costCenter`. It works for any attribute, including
+one a federation partner or an attribute source wrote, which the ticked
+catalogue below it cannot reach.
+* **Every value** carries them all (a JSON array, or one `<AttributeValue>`
+  per value); otherwise it carries the first.
+* **as** is the JSON type in a token: `string`, `number`, `boolean` or `json`.
+  A value that isn't one is left out.
+* **Only the directory.** No value is invented, even in development: a person
+  whose entry lacks the attribute gets no such claim, and a lower layer of the
+  same name still answers.
+* **Refused:** a secret (`userPassword`), a binary value (`jpegPhoto`, a
+  certificate) and anything this service keeps (`sts*`, `hoba*`, `app*`,
+  `pwd*`).
+* A directory write that changes the attribute sends CAEP
+  `token-claims-change` to the holders of live tokens. `remove` takes the claim
+  off by name.
+
+Three things on each claim page help with these:
+* **A pick-list.** The attribute field offers what this realm's attribute
+  sources and federation mappings write, each labelled with who writes it. You
+  can still type any other name.
+* **A preview.** Each attribute claim shows what it would carry for the
+  previewed person, or says their entry has no such attribute.
+* **A release warning.** A claim is marked *withheld from* any federation
+  partner whose release list (`fedRelease`) doesn't name it. When partners have
+  release lists, a note under the form says a new claim reaches them only once
+  it is added to those lists.
+
+`GET /admin-api/claims` (and its two siblings) returns the same data:
+`attributeChoices`, and per set `attributeClaimPreview` and `withheldFrom`.
 
 **Values may contain `${username}`-style placeholders**, so a claim can carry
 the signed-in user's identity. **An unknown placeholder is left exactly as

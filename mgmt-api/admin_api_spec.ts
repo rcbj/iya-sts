@@ -215,7 +215,23 @@ const CLAIM_ENTRY = {
                    'expands.'
     },
     nameFormat: { type: 'string' },
-    namespace: { type: 'string' }
+    namespace: { type: 'string' },
+    attribute: {
+      type: 'string',
+      description: 'AN ATTRIBUTE CLAIM (#94), in place of `value`: the ' +
+                   'directory attribute of the person the artifact is about ' +
+                   'that the claim carries. Only the directory, never an ' +
+                   'invented value; absent on the entry, the claim is ' +
+                   'absent. A secret, a binary value or an attribute this ' +
+                   'service keeps (sts*, hoba*, app*, pwd*) is refused.'
+    },
+    multi: { type: 'boolean',
+             description: 'An attribute claim: every value (a JSON array; ' +
+                          'several AttributeValues) rather than the first.' },
+    type: { type: 'string', enum: ['string', 'number', 'boolean', 'json'],
+            description: 'An attribute claim in a JWT or UserInfo set: the ' +
+                         'JSON type each value becomes. A value that is not ' +
+                         'one is left out. Ignored by the SAML sets.' }
   },
   required: ['name'],
   additionalProperties: false
@@ -248,13 +264,28 @@ interface AdminApiSpecDeps {
   protocolEndpoints: typeof protocolEndpoints;
 }
 
+/**
+ * Builds the management API's OpenAPI 3.1.0 document from `admin_api.ts`'s
+ * route table, so that an operation that exists is documented by construction.
+ */
 class AdminApiSpec {
+  /**
+   * Builds a document builder over the given dependencies.
+   *
+   * @param deps - the logger and `admin-core/protocol_endpoints`
+   */
   constructor(private readonly deps: AdminApiSpecDeps) {
     deps.log.debug("Entering AdminApiSpec.constructor().");
     deps.log.debug("Leaving AdminApiSpec.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the logger and `admin-core/protocol_endpoints`
+   */
   static defaultDeps(): AdminApiSpecDeps {
     log.debug("Entering AdminApiSpec.defaultDeps().");
     log.debug("Leaving AdminApiSpec.defaultDeps().");
@@ -275,6 +306,14 @@ class AdminApiSpec {
   // drill-down's lists have no filter, so the honest name for the number is the
   // plain one.
   // Static since R2: the tables call it at load (see the header).
+  /**
+   * Returns the schema of a paging object: where a list in a reply came from in
+   * the whole list (`total` plus the paging members).
+   *
+   * @param what - the name of the list the object describes, for its
+   *   description
+   * @returns a closed JSON Schema object
+   */
   static pagingObject(what) {
     log.debug("Entering AdminApiSpec.pagingObject().");
     log.debug("Leaving AdminApiSpec.pagingObject().");
@@ -295,6 +334,14 @@ class AdminApiSpec {
   }
 
   // Static since R2: the tables call it at load (see the header).
+  /**
+   * Returns an open JSON Schema object (`additionalProperties: true`) with the
+   * given description and properties.
+   *
+   * @param description - the schema's description
+   * @param properties - the schema's properties
+   * @returns the schema
+   */
   static openObject(description, properties) {
     log.debug("Entering AdminApiSpec.openObject().");
     log.debug("Leaving AdminApiSpec.openObject().");
@@ -324,6 +371,13 @@ class AdminApiSpec {
   // than hedged once. The OFF text is the original, verbatim, because it is the
   // argument for the switch.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the prose at the top of the document, whose paragraph on protection
+   * depends on whether the API's gate is on.
+   *
+   * @param authRequired - whether `/admin-api` requires an access token
+   * @returns the description, paragraphs separated by blank lines
+   */
   describe(authRequired) {
     const { log } = this.deps;
     log.debug("Entering AdminApiSpec.describe(). authRequired=" + authRequired);
@@ -368,6 +422,18 @@ class AdminApiSpec {
   // (#164 phase 3): `POST /admin-api/device-compliance`, the MDM feed, takes
   // `device:compliance` and not `admin:write` — `admin_api.ts`'s
   // `isDeviceComplianceFeed()` — so a posture feed holds nothing else.
+  /**
+   * Returns the scope an operation needs: `admin:read` for a GET, `admin:write`
+   * for any other method, and `device:compliance` for `POST
+   * /admin-api/device-compliance`.
+   *
+   * A second copy of the gate's rule; `tests/admin_api_document_security.js`
+   * compares the two.
+   *
+   * @param method - the HTTP method
+   * @param path - the operation's path, if known
+   * @returns the scope name
+   */
   scopeForMethod(method, path?) {
     const { log } = this.deps;
     log.debug("Entering AdminApiSpec.scopeForMethod().");
@@ -380,6 +446,14 @@ class AdminApiSpec {
            'admin:write';
   }
 
+  /**
+   * Returns the document's two security schemes: `oauth2` (client credentials
+   * at this service's token endpoint, with the resource indicator to send) and
+   * `bearerAuth` (an already-held token).
+   *
+   * @param baseUrl - the service's base URL, for the token URL and resource
+   * @returns the `securitySchemes` object
+   */
   securitySchemesFor(baseUrl) {
     const { log } = this.deps;
     log.debug("Entering AdminApiSpec.securitySchemesFor().");
@@ -429,6 +503,14 @@ class AdminApiSpec {
   // a LIST of requirement objects as "any one of these will do". The bearer
   // entry carries an empty array because scopes are meaningless outside oauth2
   // — naming them there would be a document that validators reject.
+  /**
+   * Returns one operation's security requirement: either scheme, with the scope
+   * `scopeForMethod()` names on the oauth2 one.
+   *
+   * @param method - the HTTP method
+   * @param path - the operation's path, if known
+   * @returns the list of requirement objects
+   */
   securityFor(method, path?) {
     const { log } = this.deps;
     log.debug("Entering AdminApiSpec.securityFor().");
@@ -439,6 +521,17 @@ class AdminApiSpec {
 
   // One operation, as OpenAPI wants it. `entry` is a row of admin_api.ts's
   // route table and `action` is one of its actions, or null for a plain route.
+  /**
+   * Returns one OpenAPI operation object for a route table entry, or for one
+   * action of an entry.
+   *
+   * An action answers 200 or 400 with an `ActionResult`; every POST documents
+   * its 400.
+   *
+   * @param entry - a row of `admin_api.ts`'s route table
+   * @param action - one of the entry's actions, or null for a plain route
+   * @returns the operation object
+   */
   operationOf(entry, action) {
     const { log, protocolEndpoints } = this.deps;
     log.debug("Entering AdminApiSpec.operationOf().");
@@ -539,6 +632,18 @@ class AdminApiSpec {
   // becomes one operation per action, at the concrete URL each of them has —
   // which is a real address even though express serves all of them from one
   // `:action` pattern.
+  /**
+   * Returns the whole OpenAPI document for the given route table, one operation
+   * per plain route and one per action at its concrete URL.
+   *
+   * With the gate off (`authRequired: false`) the document carries `security:
+   * []` and no schemes; a caller that omits the option gets the protected
+   * document.
+   *
+   * @param routes - `admin_api.ts`'s route table
+   * @param options - `baseUrl`, `version` and `authRequired` (default true)
+   * @returns the OpenAPI 3.1.0 document
+   */
   buildSpec(routes, options) {
     const { log } = this.deps;
     const self = this;
@@ -1017,6 +1122,10 @@ const CLAIM_SET_PROPS = {
       }
 };
 
+/**
+ * Every named schema the document's operations refer to, keyed by name
+ * (`components.schemas`).
+ */
 const SCHEMAS = {
   ActionResult: ACTION_RESULT,
   IssuedRecord: ISSUED_RECORD,
@@ -5700,10 +5809,32 @@ const slot = new InstanceSlot<AdminApiSpec>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OpenAPI document for the management API, built from the route table in
+ * `admin_api.ts`, and the schemas it is written in.
+ *
+ * A library: it registers no route and holds no state.
+ *
+ * @namespace
+ */
 export = {
   AdminApiSpec: AdminApiSpec,
   SCHEMAS: SCHEMAS,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: AdminApiSpec): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
+  /**
+   * Forwards to `AdminApiSpec.buildSpec()` on the installed instance.
+   */
   buildSpec: slot.forward('buildSpec')
 };

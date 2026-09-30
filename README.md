@@ -2,6 +2,12 @@
 
 # iya-sts
 
+> [!WARNING]
+> **Not ready for production deployments.** This is a relatively new project.
+> No formal penetration testing has been done, and it has not been formally
+> evaluated by any standards body. Do not use it to protect real users,
+> credentials or data yet.
+
 An **identity provider and security token service** that speaks the protocol
 families below from one process, with a certificate authority of its own.
 
@@ -94,7 +100,7 @@ through a first sign-in.
 
 ### The ports
 
-Ten bindings across nine numbers — 88 is listed twice because TCP and UDP are
+Eleven bindings across ten numbers — 88 is listed twice because TCP and UDP are
 two sockets. Every one is settable.
 
 | Port | | Setting / env var | What is on it |
@@ -110,6 +116,7 @@ two sockets. Every one is settable.
 | **8181** | tcp | `spiffe.serverPort` / `STS_SPIFFE_SERVER_PORT` | The SPIRE Server API over gRPC, mutual TLS. |
 | *(off)* | tcp | `spiffe.brokerPort` / `STS_SPIFFE_BROKER_PORT` | The SPIFFE Broker API, mutual TLS. `0` by default. |
 | **8444** | tcp | `debugger.port` / `STS_DEBUGGER_PORT` | The embedded protocol debugger, for console administrators. |
+| **8446** | tcp | `cells.port` / `STS_CELL_PORT` | The inter-cell channel, mutual TLS 1.3, bound only when `cells.id` is set ([cells](docs/cells.md)). A private address between cells, never published. |
 
 And two Unix domain sockets (mount the directory as a volume to reach them):
 

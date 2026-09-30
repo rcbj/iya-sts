@@ -159,8 +159,16 @@ function accountSignals() {
 // constants, because the console's *take the key pair off* control clears
 // exactly this set and an eighth attribute added to the issue and not to the
 // list would be one that survived being taken off.
+/**
+ * The attribute declaring the `iss` a person's RFC 7523 assertions are issued
+ * under: `stsAssertionIssuer`.
+ */
 const ISSUER_ATTRIBUTE = 'stsAssertionIssuer';
 
+/**
+ * The seven attributes an RFC 7523 key pair issue writes on a person's entry,
+ * which taking it off clears.
+ */
 const KEY_ATTRIBUTES = ['stsAssertionJwks', 'stsAssertionCertificate',
                         'stsAssertionCertificateChain',
                         'stsAssertionPrivateKey', 'stsAssertionKid',
@@ -193,8 +201,16 @@ const KEY_ATTRIBUTES = ['stsAssertionJwks', 'stsAssertionCertificate',
 // `applications.js`'s own reason: it sits on the token endpoint's path, and a
 // vocabulary of three words is not worth a module.
 // ===========================================================================
+/**
+ * The attribute declaring the `<Issuer>` a person's RFC 7522 assertions are
+ * issued under: `stsSamlAssertionIssuer`.
+ */
 const SAML_ISSUER_ATTRIBUTE = 'stsSamlAssertionIssuer';
 
+/**
+ * The attributes an RFC 7522 key pair issue writes on a person's entry, which
+ * taking it off clears.
+ */
 const SAML_KEY_ATTRIBUTES = ['stsSamlAssertionCertificate',
                              'stsSamlAssertionCertificateChain',
                              'stsSamlAssertionPrivateKey',
@@ -206,6 +222,10 @@ const SAML_KEY_ATTRIBUTES = ['stsSamlAssertionCertificate',
 // `applications.KEY_PAIR_ATTRIBUTES` has, so a page drawing an application's
 // key pairs and a person's reads one kind of table. `present` is the attribute
 // whose presence means the profile holds a key pair at all.
+/**
+ * Which attribute holds which half of a key pair, per profile (`jwt` and
+ * `saml`): the shape `applications.KEY_PAIR_ATTRIBUTES` has.
+ */
 const KEY_PAIR_ATTRIBUTES = {
   jwt: { issuer: ISSUER_ATTRIBUTE, certificate: 'stsAssertionCertificate',
          chain: 'stsAssertionCertificateChain',
@@ -225,10 +245,16 @@ const KEY_PAIR_ATTRIBUTES = {
           attributes: SAML_KEY_ATTRIBUTES.slice() }
 };
 
+/**
+ * The profiles a person may hold a key pair for: `jwt` and `saml`.
+ */
 const PURPOSE_IDS = Object.keys(KEY_PAIR_ATTRIBUTES);
 
 // Every attribute this module owns, which is what the directory has to hand
 // back. A clear removes ONE PROFILE's slice of it — see `clear()`.
+/**
+ * Every attribute this module owns, both profiles' declarations and key pairs.
+ */
 const ATTRIBUTES = [ISSUER_ATTRIBUTE].concat(KEY_ATTRIBUTES)
   .concat([SAML_ISSUER_ATTRIBUTE]).concat(SAML_KEY_ATTRIBUTES);
 
@@ -236,6 +262,10 @@ const ATTRIBUTES = [ISSUER_ATTRIBUTE].concat(KEY_ATTRIBUTES)
 // reason: *is this attribute private key material* is a question somebody
 // adding a name above has to answer, and a list is where they will look for
 // it. The second arrived with the RFC 7522 set, which is that reason working.
+/**
+ * The attributes that hold private key material, sealed under the
+ * key-encryption key where one persists.
+ */
 const SEALED_ATTRIBUTES = ['stsAssertionPrivateKey',
                            'stsSamlAssertionPrivateKey'];
 
@@ -259,6 +289,16 @@ let directory = null;
 // an assertion from a person and unable to give anybody a key to sign one
 // with, which reads on the page as a control that does nothing.
 // ---------------------------------------------------------------------------
+/**
+ * Fills the directory slot this register reads and writes people through.
+ *
+ * Validated whole: hooks missing any of `read`, `write` and `persons` are
+ * refused (STS-OAUTH-0084).
+ *
+ * @param hooks - `{ read, write, persons }`, and optionally `holdingAny`
+ *   (#352), which `holders()` walks the directory through once
+ * @returns true when installed, false when refused
+ */
 function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
   const needed = ['read', 'write', 'persons'];
@@ -282,12 +322,23 @@ function setDirectory(hooks) {
 
 // Is there a store at all? Read by `/admin/pki` and by the report, which say
 // so rather than letting somebody press a button that quietly writes nothing.
+/**
+ * Tells whether there is a directory to store key pairs in.
+ *
+ * @returns true once the slot is filled
+ */
 function storable() {
   log.debug("Entering storable().");
   log.debug("Leaving storable().");
   return !!directory;
 }
 
+/**
+ * Tells whether a stored value is sealed under the key-encryption key.
+ *
+ * @param value - the stored value
+ * @returns true for a `$aesgcm$` value
+ */
 function isSealed(value) {
   log.debug("Entering isSealed().");
   log.debug("Leaving isSealed().");
@@ -314,7 +365,9 @@ function sealValue(name, value) {
     log.debug("Leaving sealValue().");
     return String(value);
   }
-  const out = keystore.seal(String(value), SEAL_LABEL);
+  // Under the CELL's key where there is one (#98): a person's key pair is
+  // theirs and lives only in their home cell.
+  const out = keystore.seal(String(value), SEAL_LABEL, 'cell');
   if (!out) {
     log.debug("Leaving sealValue().");
     return null;
@@ -369,6 +422,18 @@ function valuesOf(value) {
 // nobody in this realm has and the second is somebody who has not been issued
 // a key pair.
 // ---------------------------------------------------------------------------
+/**
+ * Reads what one person holds: declared issuers and both profiles' key pairs,
+ * private keys opened.
+ *
+ * A sealed private key that will not open is returned as stored and logged
+ * (STS-OAUTH-0088).
+ *
+ * @param username - the person's username
+ * @returns the record, with `hasKeyPair`, `hasSamlKeyPair` and the effective
+ * issuers (the username where none is declared); null where there is no such
+ * entry
+ */
 function recordFor(username) {
   log.debug('Entering recordFor(). username=' + username);
   const name = String(username || '');
@@ -381,14 +446,36 @@ function recordFor(username) {
     log.debug('Leaving recordFor(). Nobody by that name.');
     return null;
   }
+  log.debug('Leaving recordFor().');
+  return recordOf(name, raw, true);
+}
+
+// ---------------------------------------------------------------------------
+// ONE PERSON'S RECORD OUT OF THE ATTRIBUTES ALREADY READ, which is
+// `recordFor()`'s body since #352 (2026-09-29) so that `holders()` can build
+// the same record out of a walk without a second read per person.
+//
+// **`openKeys` FALSE LEAVES THE PRIVATE KEYS OUT ALTOGETHER** — not opened and
+// not copied sealed either — and it is what `holders()` passes. A report of who
+// holds a key pair is answered by the JWKS and the certificate, which are
+// public; opening the private half to answer it cost a `keystore.open()` per
+// person per page view and made every console visit a decryption of every
+// person's signing key. A record without them says so by not having the
+// member, and nothing that builds a row from `holders()` reads it.
+// ---------------------------------------------------------------------------
+function recordOf(name, raw, openKeys) {
+  log.debug('Entering recordOf(). username=' + name);
   const out = { username: name,
                 issuers: valuesOf(raw[ISSUER_ATTRIBUTE]),
                 hasKeyPair: false,
                 samlIssuers: valuesOf(raw[SAML_ISSUER_ATTRIBUTE]),
                 hasSamlKeyPair: false };
   KEY_ATTRIBUTES.concat(SAML_KEY_ATTRIBUTES).forEach(function (attribute) {
+    if (!openKeys && SEALED_ATTRIBUTES.indexOf(attribute) >= 0) {
+      return;
+    }
     const first = valuesOf(raw[attribute])[0] || '';
-    out[attribute] = openValue(attribute, first, name);
+    out[attribute] = openKeys ? openValue(attribute, first, name) : first;
   });
   out.hasKeyPair = !!out.stsAssertionJwks;
   out.hasSamlKeyPair = !!out.stsSamlAssertionCertificate;
@@ -402,7 +489,7 @@ function recordFor(username) {
   out.effectiveIssuers = out.issuers.length ? out.issuers.slice() : [name];
   out.samlEffectiveIssuers = out.samlIssuers.length
     ? out.samlIssuers.slice() : [name];
-  log.debug('Leaving recordFor(). ' +
+  log.debug('Leaving recordOf(). ' +
             (out.hasKeyPair ? 'A JWT key pair. ' : 'No JWT key pair. ') +
             (out.hasSamlKeyPair ? 'A SAML key pair.' : 'No SAML key pair.'));
   return out;
@@ -443,6 +530,17 @@ function recordFor(username) {
 // sets exist to prevent, made once here instead of being hoped for. Absent
 // means `jwt`, which is what every caller written before the SAML set sends.
 // ---------------------------------------------------------------------------
+/**
+ * Finds the person, if any, who issues assertions under an issuer name for a
+ * profile.
+ *
+ * A declared issuer wins over a bare username, and a person with no key pair
+ * for the profile is no issuer. A scan: one read per person in the realm.
+ *
+ * @param iss - the assertion's issuer
+ * @param purpose - `jwt` (the default) or `saml`
+ * @returns `{ identifier, record, declared }`, or null
+ */
 function issuerFor(iss, purpose) {
   log.debug('Entering issuerFor(). iss=' + iss + ' purpose=' + purpose);
   const wanted = String(iss || '');
@@ -487,6 +585,16 @@ function issuerFor(iss, purpose) {
 // is me*, and the JWT declaration is a different name for a different
 // profile. A record built by hand (a certificate naming somebody since
 // deleted) carries only `effectiveIssuers`, so the SAML list falls back to it.
+/**
+ * Tells whether an assertion's subject names the person who signed it: their
+ * username, a declared issuer for the profile, or their own `urn:uuid:`
+ * subject.
+ *
+ * @param record - the signer's record, from `recordFor()`
+ * @param sub - the assertion's subject
+ * @param purpose - `jwt` (the default) or `saml`
+ * @returns true when the subject is the signer
+ */
 function subjectIsSelf(record, sub, purpose) {
   log.debug("Entering subjectIsSelf().");
   const wanted = String(sub || '');
@@ -530,6 +638,21 @@ function subjectIsSelf(record, sub, purpose) {
 // FIRST for the same reason: a write that fails after it leaves the old
 // certificate with no key, which refuses rather than signs.
 // ---------------------------------------------------------------------------
+/**
+ * Writes an issued or uploaded key pair onto a person's entry, every attribute
+ * or a failure naming which one.
+ *
+ * The private key is sealed and written first; a key pair that fails to seal or
+ * write is lost, since this service keeps no copy. A CAEP credential-change
+ * event follows a successful write.
+ *
+ * @param username - the person's username
+ * @param record - the key pair from `pki.js`: private key, certificate, chain,
+ * JWKS, `kid` or thumbprint, `notAfter`, `source`
+ * @param opts - `purpose` (`jwt` by default), `issuer` to declare, and
+ * `initiatingEntity` and `via` for the event
+ * @returns `{ ok, written, errors }`, with `errorCode` on a refusal
+ */
 function write(username, record, opts) {
   log.debug('Entering write(). username=' + username);
   const name = String(username || '');
@@ -632,6 +755,12 @@ function write(username, record, opts) {
 // seconds**: RFC 5280 section 4.1.2.5.2 forbids them and a reader that parses
 // strictly refuses the whole value, which is the defect
 // `tests/pki_anchor_drift.js` was written for.
+/**
+ * Spells a time as RFC 4517 GeneralizedTime, without fractional seconds.
+ *
+ * @param when - the time; now when absent
+ * @returns the timestamp, such as `20260927120000Z`
+ */
 function generalizedTime(when) {
   log.debug("Entering generalizedTime().");
   const d = when ? new Date(when) : new Date();
@@ -659,6 +788,15 @@ function generalizedTime(when) {
 // `/portal/signing-key`'s Remove and `/admin/pki`'s person arm meant when they
 // were written.
 // `opts.initiatingEntity` and `opts.via` go on the CAEP event (#145).
+/**
+ * Takes one profile's key pair off a person's entry, and the issuer declaration
+ * with it; the other profile's is left working.
+ *
+ * @param username - the person's username
+ * @param purpose - `jwt` (the default) or `saml`
+ * @param opts - `initiatingEntity` and `via`, for the CAEP event
+ * @returns `{ ok, removed }`, with `errorCode` and `unknown` on a refusal
+ */
 function clear(username, purpose, opts) {
   log.debug('Entering clear(). username=' + username + ' purpose=' + purpose);
   const options = opts || {};
@@ -708,16 +846,54 @@ function clear(username, purpose, opts) {
 // report in this module that a page renders, and a page that drew a private
 // key would be one that gives it away on every visit to everybody who can
 // read the console.
+//
+// **PRESENCE, READ IN ONE WALK, WITH NOTHING UNSEALED (#352, 2026-09-29).**
+// This was `persons()` — every name in the realm, uncapped — and then
+// `recordFor()` for each: a directory read per person and a `keystore.open()`
+// of both private keys per holder, to answer a list that carries no private
+// key. On testidp that was twenty-nine thousand reads per view of
+// `/admin/pki`. It is now the directory's `holdingAny()`: the people holding
+// any of the four attributes that make somebody a row here (either profile's
+// key pair or declared issuer), with their raw values, in the one walk the
+// directory makes anyway — and the record built from those values with
+// `openKeys` false, so no private key is opened or even copied.
+//
+// **THE ANSWER IS THE SAME ROWS IN THE SAME ORDER.** `holdingAny()` hands
+// them back in `allPersons()`'s order, and the test below is the old one
+// applied to the same record, so an entry carrying an attribute with only an
+// empty value is left out exactly as it was. A directory that offers no
+// `holdingAny()` — an older filler, or a test's stub — is walked the old way,
+// still without an unseal.
 // ---------------------------------------------------------------------------
+/**
+ * Lists everybody in the realm who holds a key pair or declares an issuer, for
+ * `/admin/pki` and the management API. No private key is in the answer, and
+ * none is opened to build it.
+ *
+ * @returns one row per person, the JWT profile's members at the top and the
+ * SAML profile's under `saml`
+ */
 function holders() {
   log.debug('Entering holders().');
   if (!directory) {
     log.debug('Leaving holders(). No directory.');
     return [];
   }
+  let found;
+  if (typeof directory.holdingAny === 'function') {
+    found = (directory.holdingAny([ISSUER_ATTRIBUTE,
+      KEY_PAIR_ATTRIBUTES.jwt.present, SAML_ISSUER_ATTRIBUTE,
+      KEY_PAIR_ATTRIBUTES.saml.present]) || []).map(function (one) {
+      return recordOf(String(one.username), one.attributes || {}, false);
+    });
+  } else {
+    found = (directory.persons() || []).map(function (name) {
+      const raw = directory.read(String(name || ''));
+      return raw ? recordOf(String(name), raw, false) : null;
+    });
+  }
   const out = [];
-  (directory.persons() || []).forEach(function (name) {
-    const record = recordFor(name);
+  found.forEach(function (record) {
     if (!record || (!record.hasKeyPair && !record.issuers.length &&
                     !record.hasSamlKeyPair && !record.samlIssuers.length)) {
       return;
@@ -751,6 +927,15 @@ function holders() {
   return out;
 }
 
+/**
+ * The register of people who hold an RFC 7523 or RFC 7522 signing key pair,
+ * which may assert about that person and about nobody else.
+ *
+ * Key pairs live on the person's directory entry, reached through a slot the
+ * directory fills.
+ *
+ * @namespace
+ */
 module.exports = {
   ISSUER_ATTRIBUTE: ISSUER_ATTRIBUTE,
   KEY_ATTRIBUTES: KEY_ATTRIBUTES,

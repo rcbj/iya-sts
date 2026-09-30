@@ -1,0 +1,10 @@
+{
+  "name": "iya-sts-api-docs",
+  "private": true,
+  "description": "TypeDoc and the TypeScript it runs on, for ./run-jsdoc.sh. A package of its own because the repository's TypeScript (tests/package.json) is 7, the native compiler, which has no JavaScript API for TypeDoc to call.",
+  "license": "MIT",
+  "dependencies": {
+    "typedoc": "0.28.20",
+    "typescript": "6.0.3"
+  }
+}

@@ -117,6 +117,25 @@ is accepted** and logged, because this directory does no referential integrity.
 entry with `origin: scim` and no row on `/admin/users` until they sign in
 somewhere.
 
+### A service deployed in several regions
+
+When this service runs as several regional cells, each person is homed in one
+of them and their data stays there. SCIM follows the person:
+
+* a request about one person (`/Users/{id}`) is answered by the region they
+  are homed in, whichever region your client reached;
+* a new person is homed in the region named by
+  `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:homeCell` (a region
+  id; write-only and never returned), or in the realm's default region. A
+  region the realm may not home people in is refused. A later write cannot
+  move a person: that is an administrator's act;
+* a list or a search returns the people of the region that answered;
+* a Group write whose members are homed in more than one region, and a
+  BulkRequest whose operations are, are refused whole (400 `invalidValue`).
+  Send one request per region's people.
+
+A service deployed as one region ignores `homeCell`.
+
 ### Attribute mapping
 
 Each SCIM member is stored in one LDAP attribute. For example, `userName` is

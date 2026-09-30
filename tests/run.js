@@ -61,6 +61,15 @@ require('../common/compiled_tree').refuseUncompiledTree('npm test');
 // override — `tests/breached_passwords.js` turns it on, with the range API
 // stubbed. Child processes the tests spawn inherit it.
 process.env.STS_RISK_BREACH_CHECK = process.env.STS_RISK_BREACH_CHECK || 'off';
+// AND THE DIRECTORY'S CEILING IS RAISED FOR IT (2026-09-27). Every file here
+// runs in ONE process against one directory, and the entries they create stay
+// there: by the time 372 files had run, `ldap.maxEntries` (2,000) was reached,
+// and a later file's createUser() was refused — quietly, so a HOBA
+// registration answered 404 for a person the test had just made and four
+// XACML files could not store a policy. Each file of ./run-tests.sh runs in a
+// process of its own and never meets it. The environment layer, so a test
+// that sets the setting itself still wins.
+process.env.LDAP_MAX_ENTRIES = process.env.LDAP_MAX_ENTRIES || '100000';
 
 const fs = require('fs');
 const path = require('path');
@@ -81,8 +90,11 @@ const log = bunyan.createLogger({ name: 'run',
 // (#49) is the simulated cluster the two scheduler tests drive.
 // `webauthn_attestation_kit.js` (#105) is the software authenticator that
 // attests in all eight formats for `webauthn_attestation.js`.
+// `sync_query_kit.js` (#349) is the stand-in database the directory bridge's
+// thread loads for `sync_query.js`.
 const NOT_A_TEST = ['run.js', 'harness.js', 'wallet_kit.js',
-                    'scheduler_kit.js', 'webauthn_attestation_kit.js'];
+                    'scheduler_kit.js', 'webauthn_attestation_kit.js',
+                    'sync_query_kit.js'];
 
 // `patterns` is the `--only` filter: a file is kept when its name contains any
 // one of them. Empty means every file, which is what `npm test` asks for.

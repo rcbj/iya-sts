@@ -21,10 +21,12 @@
 #             measures as a child process in there, because V8 writes coverage
 #             from inside the process being measured and a service container
 #             next door can never be under the report.
-#   conformance  STS_TEST_CONFORMANCE_MODES=memory ./run-tests.sh
-#             --modes=memory --only=conformance — the OpenID Foundation
+#   openid-conformance  STS_TEST_CONFORMANCE_MODES=memory ./run-tests.sh
+#             --modes=memory --conformance-only — the OpenID Foundation
 #             conformance suite's plans (#176, #187), which the `tests` job
-#             leaves out because they take over two hours.
+#             leaves out because they take over two hours. Only those: every
+#             other third-party suite (the SAML peers, Samba, Heimdal,
+#             tlsfuzzer, the W3C and SCIM suites) runs in `tests`.
 #   cluster   ./run-tests.sh --modes=cluster — the third mode of
 #             tests/tools/modes.sh, which the `tests` job does not name: two
 #             production nodes (product mode, request workers) active-active
@@ -146,12 +148,16 @@ jobs:
     # Not larger, for the reason it exists at all: without a number here a
     # stuck job holds a runner for six hours.
     #
+    # 150 SINCE 2026-09-27: a runner with no layer cache spends about nineteen
+    # minutes building the images before any mode starts, which no mode bound
+    # covers; tests/teardown_bounds.js adds thirty for it.
+    #
     # 120 SINCE 2026-09-14. The suite is 225 jobs now and `dispatch` alone
     # outgrew the launcher's 25-minute mode bound, which went to 50; this has
     # to sit above one wedged mode plus every teardown (tests/teardown_bounds.js)
     # and above three healthy modes, measured at about 70 minutes on a
     # developer machine. 120 is that test's own ceiling.
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       # submodules: recursive is LOAD-BEARING, and `true` is not enough. The
       # embedded directory's library is `"ldapjs": "file:node-ldapjs"` — a git
@@ -198,7 +204,7 @@ jobs:
       #
       # STS_TEST_CONFORMANCE_MODES EMPTY (#187): the OpenID conformance
       # suite's jobs take about two hours and a quarter on their own, which
-      # is the `conformance` job's below; here they are reported SKIPPED
+      # is the `openid-conformance` job's below; here they are reported SKIPPED
       # with the reason, as they are in every mode that does not run them.
       - name: Run the containerized test suite
         env:
@@ -271,7 +277,10 @@ jobs:
     # 90 since 2026-09-15: the suite alone took 2,807s of a 49-minute job on
     # develop (244 jobs), and the post-quantum jobs that used to fail at the
     # service's 120s worker bound now wait out their signatures instead.
-    timeout-minutes: 90
+    # 150 since 2026-09-27: on a runner with no layer cache the build took
+    # nineteen minutes, and the instrumented suite had reached 386 of its jobs
+    # when 90 cancelled it.
+    timeout-minutes: 150
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
@@ -333,12 +342,22 @@ jobs:
       # keeping both: a job that passes plain and fails under coverage is a real
       # thing (the throwaway service is a child process here, not a container),
       # and without this there would be no report to read it from.
+      #
+      # THE WHOLE tests/report TREE, NOT `tests/report/latest` (2026-09-27):
+      # the runner points `latest` at the run only when it finishes, so a run
+      # that died first — CI run 36369109378's, out of heap in the render —
+      # uploaded nothing, and with it went the throwaway service's own log,
+      # the one record of why it stopped answering twenty minutes earlier.
+      # The dated directory is written from the first job on. The tests job's
+      # reason for leaving out the PEP credentials applies here too.
       - name: Upload the coverage run's test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-test-report
-          path: tests/report/latest
+          path: |
+            tests/report
+            !tests/report/pep-credential
           if-no-files-found: warn
           retention-days: 30
 
@@ -349,20 +368,26 @@ jobs:
   # OpenID Federation, OpenID4VCI and OpenID4VP — against the suite's own
   # three containers under the `conformance` compose profile, in the
   # `memory` mode (the launcher's STS_TEST_CONFORMANCE_MODES default, argued
-  # in its header). `--only=conformance` names them by substring.
+  # in its header). `--conformance-only` names them by that FLAG
+  # (2026-09-27): `--only=conformance` was a substring and also ran
+  # sts_ssf_conformance and sts_scim_conformance, which the `tests` job
+  # already runs in both its modes. The job was called `conformance` until
+  # the same day; it runs the OpenID Foundation's suite and nothing else.
   #
   # A JOB OF ITS OWN because of the time: the plans took about two hours and
   # a quarter on 2026-09-24, so the launcher grows such a mode's bound by
   # STS_CONFORMANCE_TIMEOUT (180m) and no ceiling the `tests` job may have
   # fits it. The same argument as that job's number: above the mode's bound
-  # (50m + 180m) and two teardowns (5m each), so the launcher's bound is the
+  # (50m + 180m) and two teardowns (5m each) — and, since 2026-09-27, thirty
+  # minutes for the image build before any mode starts — so the launcher's
+  # bound is the
   # one that fires, and under GitHub's own six hours
   # (tests/teardown_bounds.js asserts both).
   # ---------------------------------------------------------------------------
-  conformance:
+  openid-conformance:
     needs: mirror
     runs-on: ubuntu-latest
-    timeout-minutes: 270
+    timeout-minutes: 280
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
@@ -383,11 +408,11 @@ jobs:
       - name: Run the OpenID conformance suite's plans
         # The SAML interoperability peers (#189-#192) are the tests job's;
         # the launcher would start them in `memory` by default, for jobs
-        # `--only=conformance` does not run.
+        # `--conformance-only` does not run.
         env:
           STS_TEST_CONFORMANCE_MODES: memory
           STS_TEST_SAML_PEERS_MODES: ""
-        run: ./run-tests.sh --modes=memory --only=conformance --no-browser
+        run: ./run-tests.sh --modes=memory --conformance-only --no-browser
 
       # See the tests job: the runner writes tests/report as root.
       - name: Normalize report permissions
@@ -441,8 +466,11 @@ jobs:
     # one that can explain itself — tests/teardown_bounds.js asserts it. The
     # mode took 24.7 minutes on 2026-09-15 in development mode with one process
     # per node; as two production nodes (2026-09-21) its bulk loads alone
-    # outran the shared 50-minute bound.
-    timeout-minutes: 115
+    # outran the shared 50-minute bound. 150 since 2026-09-27: 115 did not
+    # count the image build (nineteen minutes on a cold runner), so a run was
+    # cancelled at 527 jobs before the mode's own bound could fire; the test
+    # now adds thirty minutes for it.
+    timeout-minutes: 150
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out

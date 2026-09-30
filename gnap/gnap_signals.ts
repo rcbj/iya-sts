@@ -96,12 +96,29 @@ interface GnapSignalsDeps {
 // the application's stream may hear about. Persisted like every GNAP store.
 const approvers = realms.map({ persist: 'gnap.approvers' });
 
+/**
+ * GNAP and the Shared Signals Framework: CAEP for grant and token revocation
+ * and modification, and a stream owned by a GNAP web application that hears
+ * only about the people who approved it.
+ */
 class GnapSignals {
+  /**
+   * Builds the signals from the modules they read.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapSignalsDeps) {
     deps.log.debug("Entering GnapSignals.constructor().");
     deps.log.debug("Leaving GnapSignals.constructor().");
   }
 
+  /**
+   * Records that a person approved a grant to an application, for the stream
+   * scope. A failure is logged, never thrown.
+   *
+   * @param identifier - the application's identifier
+   * @param username - the person who approved
+   */
   noteApprover(identifier: unknown, username: unknown): void {
     const { log, errorCodes, approvers } = this.deps;
     log.debug("Entering GnapSignals.noteApprover().");
@@ -123,6 +140,15 @@ class GnapSignals {
     log.debug("Leaving GnapSignals.noteApprover().");
   }
 
+  /**
+   * Says whether a person approved a grant to an application: from the
+   * approvers noted in this process, or from a `gnap:` row in the consent
+   * register.
+   *
+   * @param identifier - the application's identifier
+   * @param username - the person
+   * @returns true when they did
+   */
   approvedBy(identifier: unknown, username: unknown): boolean {
     const { log, approvers, loadConsent } = this.deps;
     log.debug("Entering GnapSignals.approvedBy().");
@@ -210,6 +236,14 @@ class GnapSignals {
     });
   }
 
+  /**
+   * Emits CAEP `session-revoked` for a revoked grant, about its resource owner.
+   *
+   * @param req - the request that revoked it
+   * @param grant - the grant
+   * @param reason - why it was revoked
+   * @returns the delivery's promise
+   */
   grantRevoked(req: unknown, grant: any, reason?: string): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering GnapSignals.grantRevoked().");
@@ -219,6 +253,15 @@ class GnapSignals {
                      reason || 'A GNAP grant was revoked.');
   }
 
+  /**
+   * Emits CAEP `session-revoked` for an access token its client instance
+   * revoked.
+   *
+   * @param req - the request that revoked it
+   * @param record - the token's record
+   * @param grant - the grant it was issued under, for its resource owner
+   * @returns the delivery's promise
+   */
   tokenRevoked(req: unknown, record: any, grant?: any): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering GnapSignals.tokenRevoked().");
@@ -231,6 +274,15 @@ class GnapSignals {
                      'instance.');
   }
 
+  /**
+   * Emits CAEP `token-claims-change` for a grant modified onto different
+   * access.
+   *
+   * @param req - the request that modified it
+   * @param grant - the grant
+   * @param access - the grant's new access
+   * @returns the delivery's promise
+   */
   grantModified(req: unknown, grant: any, access: unknown): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering GnapSignals.grantModified().");
@@ -248,6 +300,12 @@ class GnapSignals {
   // means "not a GNAP-owned stream; this file has no opinion", which is every
   // stream that existed before this feature.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the username a Shared Signals subject names, or null.
+   *
+   * @param subjectValue - the subject identifier
+   * @returns the username, or null
+   */
   usernameOf(subjectValue: any): string | null {
     const { log, nameForSubject } = this.deps;
     log.debug("Entering GnapSignals.usernameOf().");
@@ -282,6 +340,15 @@ class GnapSignals {
     return null;
   }
 
+  /**
+   * The subject scope filled into `ssf/ssf_streams.ts`: whether a stream owned
+   * by a GNAP web application covers a subject.
+   *
+   * @param record - the stream's record
+   * @param subjectValue - the subject identifier
+   * @returns true or false for a GNAP-owned stream, undefined for any other (no
+   *   opinion)
+   */
   scope(record: any, subjectValue: any): boolean | undefined {
     const { log, config, loadApplications } = this.deps;
     log.debug("Entering GnapSignals.scope().");
@@ -322,6 +389,12 @@ class GnapSignals {
     return username ? this.approvedBy(app.identifier, username) : false;
   }
 
+  /**
+   * Installs `scope()` as the `gnap` subject scope on the Shared Signals
+   * streams.
+   *
+   * @returns true when installed, false when SSF is not loadable here
+   */
   install(): boolean {
     const { log, loadSsfStreams } = this.deps;
     log.debug("Entering GnapSignals.install().");
@@ -346,6 +419,12 @@ class GnapSignals {
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before. The loaders keep every require
   // as lazy as it was.
+  /**
+   * Returns the real modules and lazy loaders the instance was built from
+   * before the composition root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapSignalsDeps {
     helpers.log.debug("Entering GnapSignals.defaultDeps().");
     helpers.log.debug("Leaving GnapSignals.defaultDeps().");
@@ -392,9 +471,25 @@ const slot = new InstanceSlot<GnapSignals>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * GNAP and the Shared Signals Framework: CAEP for grants and tokens, and
+ * streams scoped to the people who approved an application.
+ *
+ * @namespace
+ */
 export = {
   GnapSignals: GnapSignals,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapSignals): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   noteApprover: slot.forward('noteApprover'),
   approvedBy: slot.forward('approvedBy'),

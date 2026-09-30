@@ -60,6 +60,9 @@
 // default at load.
 // ---------------------------------------------------------------------------
 
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import crypto = require('crypto');
 import qrcode = require('qrcode');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
@@ -139,8 +142,15 @@ const VCI_FORMATS = Array.from(new Set(
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // id -> { offer, issuerState, expires }
+/**
+ * Credential Offers served by reference, per trust realm: id to `{ offer,
+ * issuerState, expires }`.
+ */
 const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers',
-                                      retain: 'age' });
+                                      retain: 'age',
+                                      // #333: the offer's `expires`, ms.
+                                      expiresAt: realms.expiryField('expires',
+                                                                    1) });
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -148,8 +158,15 @@ const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers',
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // issuer_state -> { configurationIds, expires }
+/**
+ * Issuer states of same-device offers, per trust realm: `issuer_state` to `{
+ * configurationIds, expires }`.
+ */
 const issuerStates = realms.map({ persist: 'vc_offers.issuerStates',
-                                  retain: 'age' });
+                                  retain: 'age',
+                                  // #333: its `expires`, ms.
+                                  expiresAt: realms.expiryField('expires',
+                                                                1) });
 
 // Pre-authorized codes (OID4VCI Appendix H.2 / H.3): the End-User authorized
 // the issuance out of band, so there is no authorization request at all — the
@@ -163,8 +180,14 @@ const issuerStates = realms.map({ persist: 'vc_offers.issuerStates',
 // partition and this behaves as the plain Map it replaced. See
 // common/realms.js.
 // code -> { configurationIds, txCode, user, deferred, expires }
+/**
+ * Pre-authorized codes (OID4VCI Appendix H.2 and H.3), per trust realm: code to
+ * `{ configurationIds, txCode, user, deferred, expires }`.
+ */
 const preAuthorizedCodes =
-    realms.map({ persist: 'vc_offers.preAuthorizedCodes', retain: 'age' });
+    realms.map({ persist: 'vc_offers.preAuthorizedCodes', retain: 'age',
+                 // #333: the code's `expires`, ms.
+                 expiresAt: realms.expiryField('expires', 1) });
 
 // Deferred issuance transactions (OID4VCI section 9): the credential endpoint
 // answered 202 with one of these instead of a credential.
@@ -174,8 +197,14 @@ const preAuthorizedCodes =
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // transaction_id -> { claims, holderJwk, readyAt, expires }
+/**
+ * Deferred issuance transactions (OID4VCI section 9), per trust realm:
+ * `transaction_id` to `{ claims, holderJwk, readyAt, expires }`.
+ */
 const deferredTransactions =
-    realms.map({ persist: 'vc_offers.deferredTransactions', retain: 'age' });
+    realms.map({ persist: 'vc_offers.deferredTransactions', retain: 'age',
+                 // #333: the transaction's `expires`, ms.
+                 expiresAt: realms.expiryField('expires', 1) });
 
 // Access tokens minted from a deferred offer: the credential endpoint answers
 // 202 for these instead of issuing straight away.
@@ -268,11 +297,25 @@ const OID4VC_QUERY = validation.z.looseObject({
     validation.z.string().max(validation.CAP.SCOPE))
 });
 
+/**
+ * Credential Offer (OID4VCI section 4), the issuer-initiated half of issuance:
+ * the issuer's page, the offer built and handed to the wallet by value or by
+ * reference, and the offer served by reference, for the three Appendix H use
+ * cases.
+ */
 class VcOffers {
+  /**
+   * The default lifetime of an offer, in milliseconds; `offerTtlMs()` is the
+   * live value.
+   */
   static readonly OFFER_TTL_MS = OFFER_TTL_MS;
 
   // Access tokens minted from a deferred offer, as the SET-SHAPED FACADE the
   // store comment above describes. Built once, here; `add` returns it.
+  /**
+   * The access tokens minted from a deferred offer, for which the credential
+   * endpoint answers 202: a set-shaped facade over the per-realm store.
+   */
   readonly deferredAccessTokens: {
     add(token: unknown): unknown;
     has(token: unknown): boolean;
@@ -281,6 +324,11 @@ class VcOffers {
     readonly size: number;
   };
 
+  /**
+   * Builds the offer pages from the modules and stores they read.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcOffersDeps) {
     deps.log.debug("Entering VcOffers.constructor().");
     const self = this;
@@ -320,6 +368,11 @@ class VcOffers {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcOffersDeps {
     helpers.log.debug("Entering VcOffers.defaultDeps().");
     helpers.log.debug("Leaving VcOffers.defaultDeps().");
@@ -359,6 +412,12 @@ class VcOffers {
 
   // How long a deferred issuance "takes". Short enough for a test to wait for
   // it, long enough that the first poll genuinely comes back still-pending.
+  /**
+   * Returns how long a deferred issuance takes before it is ready
+   * (`oid4vci.deferredReadyMs`).
+   *
+   * @returns milliseconds
+   */
   deferredReadyMs() {
     const { log, config } = this.deps;
     log.debug("Entering VcOffers.deferredReadyMs().");
@@ -366,6 +425,12 @@ class VcOffers {
     return config.value('oid4vci.deferredReadyMs');
   }
 
+  /**
+   * Returns the polling interval a deferred response tells the wallet
+   * (`oid4vci.deferredIntervalS`).
+   *
+   * @returns seconds
+   */
   deferredIntervalS() {
     const { log, config } = this.deps;
     log.debug("Entering VcOffers.deferredIntervalS().");
@@ -373,6 +438,11 @@ class VcOffers {
     return config.value('oid4vci.deferredIntervalS');
   }
 
+  /**
+   * Returns the lifetime of an offer (`oid4vci.offerTtlS`), or the default.
+   *
+   * @returns milliseconds
+   */
   offerTtlMs() {
     const { log, config } = this.deps;
     log.debug("Entering VcOffers.offerTtlMs().");
@@ -453,6 +523,17 @@ class VcOffers {
   // }`, and writes to `preAuthorizedCodes` itself so the caller cannot forget
   // either the count or the spending.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a Transaction Code presented with a pre-authorized code, counting
+   * wrong ones across the cluster and spending the code when its attempts run
+   * out.
+   *
+   * @param code - the pre-authorized code
+   * @param record - its record in `preAuthorizedCodes`
+   * @param presented - the Transaction Code the wallet sent
+   * @returns `{ ok }`, or `{ ok: false, missing | spent | store, attemptsLeft
+   *   }`
+   */
   async checkTxCode(code: string, record: any, presented: unknown) {
     const { log, config, mode, stsCrypto, errorCodes,
             preAuthorizedCodes } = this.deps;
@@ -568,6 +649,14 @@ class VcOffers {
   //
   // `{ ok: true }` or `{ ok: false, errorCode, description }`.
   // ---------------------------------------------------------------------------
+  /**
+   * Claims a pre-authorized code once across the cluster; exactly one caller on
+   * any node gets `{ ok: true }`. Fails closed when the store cannot be asked.
+   *
+   * @param code - the pre-authorized code
+   * @param record - its record
+   * @returns `{ ok: true }`, or `{ ok: false, errorCode, description }`
+   */
   async spendPreAuthorizedCode(code: string, record: any) {
     const { log, errorCodes, clusterClaims } = this.deps;
     log.debug("Entering VcOffers.spendPreAuthorizedCode().");
@@ -615,6 +704,14 @@ class VcOffers {
   // Compared with trailing slashes removed, which is the only normalisation the
   // URL gets before it is used, so what is compared is what is dialled.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns where the End-User is sent: the configured wallet URL, or the
+   * `wallet` query parameter — which, where only registered addresses are
+   * accepted, must name the configured wallet or an allowed one.
+   *
+   * @param req - the request
+   * @returns `{ url }`, or `{ error }` naming the refused wallet
+   */
   walletFor(req: any) {
     const { log, walletBaseUrl, config, mode } = this.deps;
     log.debug("Entering VcOffers.walletFor().");
@@ -645,6 +742,12 @@ class VcOffers {
   // A pre-authorized offer is made to an End-User the issuer has ALREADY
   // identified (H.2: they uploaded documents to an employee portal days
   // before), so the issuer knows the subject without anyone signing in.
+  /**
+   * Returns whom a pre-authorized offer is for when no one is named
+   * (`oid4vci.offerUsername`).
+   *
+   * @returns the username
+   */
   vciOfferUsername() {
     const { log, config } = this.deps;
     log.debug("Entering VcOffers.vciOfferUsername().");
@@ -670,6 +773,17 @@ class VcOffers {
   // the End-User out of band — which is what this function always did and what
   // development still does. The offer page passes the signed-in person in a
   // realm whose test controls are closed; see that route.
+  /**
+   * Builds a Credential Offer for one of the Appendix H use cases:
+   * `same-device` (authorization code and issuer state), `cross-device`
+   * (pre-authorized code and Transaction Code) or `deferred`.
+   *
+   * @param req - the request
+   * @param configurationIds - the configurations on offer
+   * @param mode - the use case
+   * @param options - `user`, whom a pre-authorized offer is for
+   * @returns `{ offer, issuerState, preAuthorizedCode, txCode, mode }`
+   */
   buildCredentialOffer(req: any, configurationIds: string[],
                          mode: string, options?: { user?: any }) {
     const { log, logArtifact, baseUrlOf, randomId, userFor, config,
@@ -687,7 +801,9 @@ class VcOffers {
     let txCodeValue = "";
 
     if (mode === 'cross-device' || mode === 'deferred') {
-      preAuthorizedCode = randomId(24);
+      // Stamped with the minting cell (#98 D10): the wallet redeems it at
+      // the cell nearest it, which relays the token request here.
+      preAuthorizedCode = cellLocator.stamp(randomId(24));
       // Numeric digits, which is what the issuer's page displays — see
       // newTxCode() for the length and the generator. The value never travels
       // in the offer — only its shape does — because the whole point is that it
@@ -743,6 +859,13 @@ class VcOffers {
   // The issuer's screen in a cross-device flow: a QR code carrying the
   // Credential Offer, and — separately, which is the whole point — the
   // Transaction Code.
+  /**
+   * Sends the issuer's screen for a cross-device flow: a QR code carrying the
+   * offer, and the Transaction Code shown separately.
+   *
+   * @param res - the response
+   * @param opts - the offer URI, the mode and the Transaction Code
+   */
   renderOfferQrPage(res: any, opts: any) {
     const { log, xmlEscape, errorCodes } = this.deps;
     log.debug("Entering VcOffers.renderOfferQrPage(). mode=" + opts.mode);
@@ -814,6 +937,14 @@ class VcOffers {
 
   // The three pages, in the order they were registered at load before
   // #50's R1. Called by `common/protocol_stack.ts`.
+  /**
+   * Registers the three offer routes — `/issuer`, `/issuer/offer` and
+   * `/oid4vci/credential-offer/:id` — in the order they were always registered.
+   *
+   * Called by `common/protocol_stack.ts`, just before `oauth2`'s routes.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: any) {
     const { log, baseUrlOf, randomId, xmlEscape, vciError, userFor,
             walletBaseUrl, mode, errorCodes, validation, loadAuthn,
@@ -982,7 +1113,9 @@ class VcOffers {
       if (String(req.query.by || '') === 'reference') {
         // 128 bits (#65): fetching this URI hands over the offer and its
         // pre-authorized code, so it is a bearer value like the code.
-        const id = randomId(16);
+        // Stamped (#98 D10): a wallet fetches the offer from the cell
+        // nearest it, whose edge relays the fetch here.
+        const id = cellLocator.stamp(randomId(16));
         credentialOffers.set(id,
                              { offer: built.offer, expires: now +
                               this.offerTtlMs() });
@@ -1069,28 +1202,59 @@ const slot = new InstanceSlot<VcOffers>(
 // shape it always did and builds nothing before the root installs the
 // instance. A getter answering `slot.get().deferredAccessTokens` would have
 // built the default at that read, and the root's install would then refuse.
+/**
+ * The deferred access tokens as a stable set-shaped object, each member
+ * forwarding to the installed instance's store, so a module that reads it at
+ * its own load builds nothing.
+ */
 const deferredAccessTokens = {
+  /**
+   * Adds a deferred access token.
+   *
+   * @param token - the access token
+   * @returns this facade
+   */
   add: function (token: unknown): unknown {
     helpers.log.debug("Entering deferredAccessTokens.add().");
     slot.get().deferredAccessTokens.add(token);
     helpers.log.debug("Leaving deferredAccessTokens.add().");
     return deferredAccessTokens;
   },
+  /**
+   * Says whether an access token was minted from a deferred offer.
+   *
+   * @param token - the access token
+   * @returns true when it was
+   */
   has: function (token: unknown): boolean {
     helpers.log.debug("Entering deferredAccessTokens.has().");
     helpers.log.debug("Leaving deferredAccessTokens.has().");
     return slot.get().deferredAccessTokens.has(token);
   },
+  /**
+   * Removes a deferred access token.
+   *
+   * @param token - the access token
+   * @returns true when there was one
+   */
   delete: function (token: unknown): boolean {
     helpers.log.debug("Entering deferredAccessTokens.delete().");
     helpers.log.debug("Leaving deferredAccessTokens.delete().");
     return slot.get().deferredAccessTokens.delete(token);
   },
+  /**
+   * Removes every deferred access token in the realm.
+   */
   clear: function (): void {
     helpers.log.debug("Entering deferredAccessTokens.clear().");
     slot.get().deferredAccessTokens.clear();
     helpers.log.debug("Leaving deferredAccessTokens.clear().");
   },
+  /**
+   * The number of deferred access tokens in the realm.
+   *
+   * @returns the count
+   */
   get size(): number {
     helpers.log.debug("Entering deferredAccessTokens.size().");
     helpers.log.debug("Leaving deferredAccessTokens.size().");
@@ -1101,10 +1265,26 @@ const deferredAccessTokens = {
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Credential Offer (OID4VCI section 4), the issuer-initiated half of issuance,
+ * and the stores the token endpoint redeems offers from.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   VcOffers: VcOffers,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcOffers): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   credentialOffers: credentialOffers,
   issuerStates: issuerStates,

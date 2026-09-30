@@ -110,6 +110,11 @@ const MAX_RESPONSE_BYTES = 64 * 1024;
 // Plain http in product is admitted to loopback only — RFC 9635 section
 // 2.5.2.1 — and a refusal of it is `STS-GNAP-0103`, the code the grant-time
 // check already gives that same condition (one code per condition).
+/**
+ * The outbound transport policy of a push interaction finish, in the shape
+ * `common/outbound_tls.ts` takes: its settings for plain http, TLS verification
+ * and a CA file.
+ */
 const PUSH_TRANSPORT = {
   what: 'a GNAP push interaction finish',
   allowHttpKey: 'gnap.pushAllowHttp',
@@ -120,10 +125,25 @@ const PUSH_TRANSPORT = {
   skipIgnoredCode: 'STS-GNAP-0720'
 };
 
+/**
+ * GNAP's one outbound request: the push interaction finish of RFC 9635 section
+ * 4.2.2, bounded against server-side request forgery (section 11.34).
+ */
 class GnapHttp {
+  /**
+   * The User-Agent a push finish is sent with.
+   */
   static readonly USER_AGENT = USER_AGENT;
+  /**
+   * The most of a client's response a push finish reads.
+   */
   static readonly MAX_RESPONSE_BYTES = MAX_RESPONSE_BYTES;
 
+  /**
+   * Builds the transport from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapHttpDeps) {
     deps.log.debug("Entering GnapHttp.constructor().");
     deps.log.debug("Leaving GnapHttp.constructor().");
@@ -146,6 +166,15 @@ class GnapHttp {
   // refused while the client is still there to be told (as
   // `invalid_interaction`), rather than after a person has approved a request
   // that can then never finish.
+  /**
+   * Says why a push finish URI may not be dialled, or '' when it may.
+   *
+   * Called at grant time as well as at push time, so a URI that could never be
+   * dialled is refused while the client is still there to be told.
+   *
+   * @param raw - the URI the client gave
+   * @returns a sentence, or ''
+   */
   urlProblem(raw: unknown): string {
     const { log } = this.deps;
     log.debug("Entering GnapHttp.urlProblem().");
@@ -156,6 +185,13 @@ class GnapHttp {
   // The same answer with the code a product-mode refusal of plain http
   // carries (`STS-GNAP-0103`), '' for every other refusal — whose code is the
   // caller's (`STS-GNAP-0102` at grant time, `STS-GNAP-0601` at push time).
+  /**
+   * Gives `urlProblem()`'s answer with the error code a product-mode refusal of
+   * plain http carries; every other refusal's code is the caller's.
+   *
+   * @param raw - the URI the client gave
+   * @returns `{ why, errorCode }`, both '' when the URI may be dialled
+   */
   urlVerdict(raw: unknown): { why: string; errorCode: string } {
     const { log } = this.deps;
     log.debug("Entering GnapHttp.urlVerdict().");
@@ -195,6 +231,16 @@ class GnapHttp {
     return { why: '', errorCode: '' };
   }
 
+  /**
+   * POSTs a push interaction finish message to the client's callback URI.
+   *
+   * Refuses before any socket opens when `gnap.pushFinish` is off or the URI
+   * fails `urlVerdict()`.
+   *
+   * @param url - the client's finish URI
+   * @param message - the `{ hash, interact_ref }` body
+   * @returns `{ ok, status }`, with `why` and `errorCode` on a failure
+   */
   pushFinish(url: string, message: unknown): Promise<PushResult> {
     const { log, config, errorCodes, http, https } = this.deps;
     log.debug("Entering GnapHttp.pushFinish().");
@@ -327,6 +373,12 @@ class GnapHttp {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapHttpDeps {
     helpers.log.debug("Entering GnapHttp.defaultDeps().");
     helpers.log.debug("Leaving GnapHttp.defaultDeps().");
@@ -357,9 +409,25 @@ const slot = new InstanceSlot<GnapHttp>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * GNAP's push interaction finish (RFC 9635 section 4.2.2), the family's one
+ * outbound request, and the checks on the URI it dials.
+ *
+ * @namespace
+ */
 export = {
   GnapHttp: GnapHttp,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapHttp): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   urlProblem: slot.forward('urlProblem'),
   urlVerdict: slot.forward('urlVerdict'),

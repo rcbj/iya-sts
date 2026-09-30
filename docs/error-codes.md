@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3730** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3878** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -51,26 +51,28 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 66
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 43
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
+* [Service core (`STS-CORE`)](#sts-core) — 72
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 48
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 70
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 16
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 86
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
-* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
+* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 53
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 251
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 666
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 253
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 667
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 134
+* [Federation (`STS-FED`)](#sts-fed) — 137
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 87
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
+* [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 37
@@ -80,13 +82,13 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 83
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 201
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 211
 * [Management API (`STS-API`)](#sts-api) — 75
-* [User portal (`STS-PORTAL`)](#sts-portal) — 75
+* [User portal (`STS-PORTAL`)](#sts-portal) — 77
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 132
+* [Registries (`STS-REG`)](#sts-reg) — 135
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -138,7 +140,7 @@ Raised from: common/proxy_protocol.ts, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -156,7 +158,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0012` | A trust realm was defined with an id that is already in use. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0013` | A trust realm was named that is not defined. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0014` | A realms.* setting was set on one trust realm; those settings decide how a realm is reached and may only be set service-wide. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-CORE-0015` | A per-process setting (such as workers.count) was set on one trust realm, where it would change every realm at once. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0015` | A per-process setting (such as workers.requestCount) was set on one trust realm, where it would change every realm at once. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0016` | A setting was cleared on a trust realm that does not set it. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0017` | The router could not be read to reserve realm ids, so a realm id may shadow an endpoint without being refused. | — |
 | `STS-CORE-0018` | A trust realm change watcher threw; the change stands but what watches it (persistence, most often) may not have recorded it. | — |
@@ -208,21 +210,27 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0121` | A sign-in or an issuance was refused because its trust realm is being removed (#262): realms.retire() marks the realm retiring before it ends its sessions and announces the removal, and from then on no session, token, authorization code, assertion, ticket, credential, certificate or SVID is started or issued in it, in either mode. Also logged once, as information, when the mark is set. | the protocol's own refusal — invalid_grant at the token endpoint, access_denied at the authorization endpoint, credential_request_denied at OpenID4VCI, a SAML Responder / RequestDenied status, a SOAP fault, a 503 problem at ACME, EST and SCEP, and a refused session at every sign-in door |
 | `STS-CORE-0122` | A trust realm's removal was refused because a removal of it is already in progress (#294): realms.retire() marked it less than realms.removalDeliveryTimeoutS plus a 30-second margin ago, or is running in this process. Starting a second one would end and announce everything twice. Once that time has passed the removal is taken to be interrupted, and removing the realm again finishes it. | none — the console and /admin-api refuse the remove action |
 | `STS-CORE-0123` | A trust realm is stuck half removed (#294): it carries the retiring mark (#262) from longer ago than a removal can take, so the process that was removing it stopped before it finished. Every new sign-in and issuance in it is refused (STS-CORE-0121) until an administrator removes it again, from another realm. Logged when such a realm is restored at start, and when the removal is finished. | none — logged; /admin/realms and GET /admin-api/realms show it |
+| `STS-CORE-0124` | The /admin/node-health page or GET /admin-api/node-health could not build its report of the node's container and processes (#329). | HTTP 500 page or JSON |
+| `STS-CORE-0125` | ECS_CONTAINER_METADATA_URI_V4 is set, but the ECS task metadata endpoint did not answer Monitoring → Node Health within its bound, or answered with an error (#329). Logged when it starts failing, not on every page; the page says so in a sentence and draws the cgroup figures without the cross-check. | none — the page and GET /admin-api/node-health still answer 200 |
+| `STS-CORE-0126` | Monitoring → Worker Pools or → Node Health, or their management API operations, were asked about a node (?node=) that is neither this node nor any node with a snapshot or a membership row (#332). | HTTP 404, with the names there are |
+| `STS-CORE-0127` | A cluster node's snapshot of Monitoring → Worker Pools and → Node Health could not be written to the shared store, or the other nodes' snapshots could not be read from it (#332). Logged when it starts failing, not on every run or page; the page draws this node alone and says why. | none — the pages and their API still answer 200 |
+| `STS-CORE-0128` | The hourly cluster.node-snapshot-purge job could not delete the snapshots of nodes that are no longer live cluster members (#332). Logged when it starts failing, not on every run; the rows stay, and the pages go on drawing those nodes as gone. | none — the scheduler records the failed run |
+| `STS-CORE-0140` | A package this service requires at first use rather than at start (common/lazy_module.ts, #348) — the gRPC runtime, its proto loader, jsonld through the vendored bbs2023.js — failed to load when it was first needed, so the call that needed it fails. The image is missing or has a broken copy of the package. | none — logged; the call fails as it would have at start |
 
 ## STS-WORKER
 
-**Worker pools.** The child processes post-quantum signing runs in, and the request workers the whole protocol stack can be dispatched to.
+**Worker pools.** The request workers the whole protocol stack can be dispatched to (and, until #363, the child processes post-quantum signing ran in).
 
-Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.ts, common/service_state.ts.
+Raised from: common/request_pool.js, common/request_worker.ts, common/service_state.ts, admin-ui/worker_pools_admin.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-WORKER-0001` | The IPC channel to a post-quantum worker process failed, so a job sent to it may not arrive or its answer may not come back. | — |
-| `STS-WORKER-0002` | A post-quantum worker process exited or was killed with jobs in flight; every one of those jobs was failed and its caller told it can be retried. | — |
-| `STS-WORKER-0003` | Post-quantum worker processes kept exiting immediately without finishing a job, so the pool stopped forking them and computes in the front process (blocking) — usually an unreadable CONFIG_FILE or a machine out of memory. | — |
-| `STS-WORKER-0004` | A post-quantum worker stayed alive and did not answer a job within workers.jobTimeoutS, so the request waiting on it was failed rather than left to hang. | — |
-| `STS-WORKER-0005` | During shutdown a post-quantum worker did not finish within the drain bound and was killed. | — |
-| `STS-WORKER-0006` | A job (post-quantum sign, verify or generate, or a scrypt derivation) threw inside a worker process and was answered as a failure. | — |
+| `STS-WORKER-0001` *(retired)* | The IPC channel to a post-quantum worker process failed, so a job sent to it may not arrive or its answer may not come back. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0002` *(retired)* | A post-quantum worker process exited or was killed with jobs in flight; every one of those jobs was failed and its caller told it can be retried. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0003` *(retired)* | Post-quantum worker processes kept exiting immediately without finishing a job, so the pool stopped forking them and computes in the front process (blocking) — usually an unreadable CONFIG_FILE or a machine out of memory. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0004` *(retired)* | A post-quantum worker stayed alive and did not answer a job within workers.jobTimeoutS, so the request waiting on it was failed rather than left to hang. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0005` *(retired)* | During shutdown a post-quantum worker did not finish within the drain bound and was killed. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0006` *(retired)* | A job (post-quantum sign, verify or generate, or a scrypt derivation) threw inside a worker process and was answered as a failure. Retired by #363: the post-quantum worker pool was removed. | — |
 | `STS-WORKER-0007` | A dispatched read waited the full 2000ms barrier bound for an earlier write to be reported committed and was served without it, so it may be stale. | — |
 | `STS-WORKER-0008` | Read-barrier tickets that had been answered for longer than the reap threshold without any worker reporting them committed were dropped — a lost commit announcement, or a flush running that long. | — |
 | `STS-WORKER-0009` | A TLS client certificate was too large to forward to a request worker in a header, so the worker saw the request as having presented no certificate. | — |
@@ -260,6 +268,11 @@ Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, co
 | `STS-WORKER-0041` | A batch request (workers.batch) waited workers.batchQueueTimeoutS for the pool's batch lane and was refused. | HTTP 503 with Retry-After |
 | `STS-WORKER-0042` | The connection to a request worker failed before any byte of a dispatched request reached it, and the request was sent again on a new connection (#77). | Nothing: the client gets the worker's answer |
 | `STS-WORKER-0043` | A request worker exited (or could not start) and a replacement was forked into its pool and slot. | Nothing directly: requests in flight on the dead worker were answered 502 (STS-WORKER-0030) |
+| `STS-WORKER-0044` | The /admin/worker-pools page or GET /admin-api/worker-pools could not build its report of the worker pools (#327). | HTTP 500 page or JSON |
+| `STS-WORKER-0045` | A request worker could not be forked at all (the fork call threw); the start gate moved on to the next (#342). | — |
+| `STS-WORKER-0046` | A request worker ran out of heap: its heap reached its limit (workers.heapLimitMb, #341) — ERR_WORKER_OUT_OF_MEMORY for a worker thread since #364, a SIGABRT of a worker process before. | Nothing directly: requests in flight on it were answered 502 |
+| `STS-WORKER-0047` *(retired)* | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). Retired by #364: a worker is a thread, and the kernel's OOM killer ends the whole process. | — |
+| `STS-WORKER-0048` | A heap limit was due for the front process and it could not restart itself with one (no process.execve, or the call failed), so it runs without a limit; its request workers still get one (#341). | — |
 
 ## STS-STORE
 
@@ -270,7 +283,7 @@ Raised from: persistence/.
 | Code | What failed | Client sees |
 |---|---|---|
 | `STS-STORE-0001` | A scheduled persistence flush threw past its own handler. | — |
-| `STS-STORE-0002` | Writing the directory, the realm registry or the settings overrides to the persistence store failed; the service keeps answering from memory and retries on the next change. | — |
+| `STS-STORE-0002` | Writing the directory, the realm registry or the settings overrides to the persistence store failed; the change stays in memory, the write is retried with a backoff, and in postgres mode a request whose change was in it is answered 503 (STS-STORE-0066). | — |
 | `STS-STORE-0003` | persistence.mode names a mode the persistence module does not know, so nothing is persisted. | — |
 | `STS-STORE-0004` | The service refused to start: a persisting mode is configured and no directory module is installed to persist. | — |
 | `STS-STORE-0005` | The service refused to start: the database password comes from a secret store but persistence.databaseUrl is not a URL it can be injected into. | — |
@@ -289,11 +302,11 @@ Raised from: persistence/.
 | `STS-STORE-0018` | Minted state could not be written because no key-encryption key is available to seal it. | — |
 | `STS-STORE-0019` | A handle that is not a declared store reported a minted write; its rows cannot be written. | — |
 | `STS-STORE-0020` | A minted store holds a value that will not serialise, so that row cannot be written. | — |
-| `STS-STORE-0021` | Writing minted state (sessions, tokens, codes, the audit log) to the store failed; the keys stay journalled and the next flush retries. | — |
+| `STS-STORE-0021` | Writing minted state (sessions, tokens, codes, the audit log) to the store failed; the keys stay journalled, the write is retried with a backoff, and in postgres mode a request whose rows were in it is answered 503 (STS-STORE-0066). | — |
 | `STS-STORE-0022` | The service refused to start: minted state is persisted but no key-encryption key is available to open it. | — |
 | `STS-STORE-0023` | An earlier run's unreadable minted rows could not be cleared from the store. | — |
 | `STS-STORE-0024` | A store refused a minted row restored at startup; the row was dropped. | — |
-| `STS-STORE-0025` | Minted rows older than persistence.mintedRetention could not be purged from the store. | — |
+| `STS-STORE-0025` *(retired)* | Minted rows older than persistence.mintedRetention could not be purged from the store at startup. Retired (#333): a start deletes nothing; the persistence.minted-expiry-purge job does, and its failure is STS-STORE-0065. | — |
 | `STS-STORE-0026` | The service refused to start: the minted state in the store could not be read. | — |
 | `STS-STORE-0027` | The service refused to start: persistence.mode is postgres and persistence.databaseUrl was set to empty. | — |
 | `STS-STORE-0028` | The service refused to start: persistence.mode is postgres and the pg package is not installed. | — |
@@ -332,6 +345,13 @@ Raised from: persistence/.
 | `STS-STORE-0061` | A process lost the claim on its persistence origin while running — another process took it — and exits rather than go on refusing every write. | none — logged, then the process exits |
 | `STS-STORE-0062` | The claim on this process's persistence origin could not be renewed because the store did not answer. Not fatal: the claim outlives a short outage and every write checks it. | none — logged |
 | `STS-STORE-0063` | A minted store journalled a key holding a NUL character, which PostgreSQL text cannot hold; the row is left out of the write rather than failing every write after it. | none — logged |
+| `STS-STORE-0064` | A minted store's expiresAt hook threw while its row was being written; the row is written as not expiring, so it is restored and kept until the store deletes it. Said once per store. | none — logged |
+| `STS-STORE-0065` | The persistence.minted-expiry-purge job could not delete the expired, orphaned or stale minted rows; a start skips them anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
+| `STS-STORE-0066` | A request changed the store and the commit of that change failed, so it was answered 503 with Retry-After instead of its success (#351); the change is still in memory and its write is retried. | RFC 9110 section 15.6.4 |
+| `STS-STORE-0067` | An LDAP operation changed the store and the commit of that change failed, so it was answered unavailable (52) instead of its result (#351); the change is still in memory and its write is retried. | RFC 4511 section 4.1.9 |
+| `STS-STORE-0068` | This process's event loop was blocked past the warning threshold in the last report window; timers such as the origin renewal and the cluster heartbeat ran that late too. | none — logged |
+| `STS-STORE-0069` | The renewal of this process's origin claim started or answered more than half the claim's lifetime late; the line names the event loop's delay, so a lost origin says why. | none — logged |
+| `STS-STORE-0070` | The liveness connection (origin renewal, heartbeat, leases) dropped or could not be opened; the next statement reconnects, and one that cannot goes through the pool. | none — logged |
 
 ## STS-CLUSTER
 
@@ -359,7 +379,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0016` | A secret every node must share could not be written to or read from the store; the service does not start. | — |
 | `STS-CLUSTER-0017` | A shared secret could not be sealed or opened with the key-encryption key; the service does not start. | — |
 | `STS-CLUSTER-0018` | A request could not catch up with the other nodes' committed writes before it was served; it is answered from this process's copy. | — |
-| `STS-CLUSTER-0019` | A response held until its writes committed could not commit them; it is sent anyway and the writes are retried. | — |
+| `STS-CLUSTER-0019` | An outbound message held until this node's writes committed could not commit them; it is sent anyway and the writes are retried. (A held RESPONSE whose commit fails is STS-STORE-0066 since #351.) | — |
 | `STS-CLUSTER-0020` | Active-active mode is running with capabilities an operator accepted as missing; each named one is a known way nodes disagree. | — |
 | `STS-CLUSTER-0021` | A request worker could not attach to its node's cluster membership; the worker does not start. | — |
 | `STS-CLUSTER-0022` | A counter that may only go up (a WebAuthn signature counter, a one-time code step) could not be advanced because the store could not be asked; the credential is refused. | — |
@@ -369,6 +389,101 @@ Raised from: cluster/.
 | `STS-CLUSTER-0026` | Active-active mode was refused because global.publicBaseUrl is empty, so each node would name itself by the address it was reached on. | — |
 | `STS-CLUSTER-0040` | A cluster mode was configured with persistence.minted off, so nodes would not share sessions, pending sign-ins, codes or tokens; the service does not start. | — |
 | `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
+
+## STS-CELL
+
+**Cells and residency.** One service deployed as several cells in several jurisdictions: the global and cell tiers of the store, the routing index that says where a person is homed, the inter-cell channel, relaying a request to the cell that owns it, the sealed locators, the transfer decisions and the revocations pushed between cells.
+
+Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistence/persistence_tiered.js, admin-ui/cells_admin.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-CELL-0001` | The cell settings are inconsistent (an id without a jurisdiction, a malformed cells.peers, a peer with this cell's id, or a cell id that is not [a-z0-9]{1,16}); the service does not start. | — |
+| `STS-CELL-0002` | cells.id is set and persistence.globalDatabaseUrl is empty, or the store is not postgres; a cell keeps its global rows in the global database, so the service does not start. | — |
+| `STS-CELL-0003` | A multi-cell deployment in product mode has no cell key-encryption key (keys.cellKekProvider is none), so one cell's rows would open in every other; the service does not start. | — |
+| `STS-CELL-0004` | A service deployed as cells does not persist its signing keys or has no operator key-encryption key, so its cells would sign with different keys and could not open each other's global rows; the service does not start. | — |
+| `STS-CELL-0005` | A service deployed as cells has no global.publicBaseUrl, so a cell would build addresses from the name a request reached it by; the service does not start. | — |
+| `STS-CELL-0010` | The global tier database password was read and is empty; the service does not start. | — |
+| `STS-CELL-0011` | The cell key-encryption key has no location of its own, or names the service key's; it has no fallback, so the service does not start. | — |
+| `STS-CELL-0012` | The cell key-encryption key is the same key as the service key-encryption key; the service does not start. | — |
+| `STS-CELL-0020` | A person was written in this cell whose login name or entryUUID the routing index already places in another cell (a creation raced the index check); sign-in routing will not find the copy here. | — |
+| `STS-CELL-0021` | The routing index could not be updated at a directory flush; it is retried at the next write of the same person. | — |
+| `STS-CELL-0022` | Group membership rows in this cell belong to a group the global tier no longer has; they are not restored. | — |
+| `STS-CELL-0030` | A request could not be relayed to the cell that owns it, or that cell could not be dialled; the request is answered 503 here (fail-closed). | — |
+| `STS-CELL-0031` | This process's inter-cell certificate could not be issued (the process branch or its inter-cell Issuing CA is missing or refused). | — |
+| `STS-CELL-0032` | A peer on the inter-cell channel was refused: its chain does not verify to the service Root, its leaf is not from the inter-cell Issuing CA, or it names a cell that is not one of this cell's peers or not the one dialled. | — |
+| `STS-CELL-0033` | The inter-cell listener could not bind its port; requests relayed to this cell and questions from other cells fail at them. | — |
+| `STS-CELL-0034` | A relayed request did not carry its sending cell and exactly one hop, or a relayed request would have been relayed again; refused. | — |
+| `STS-CELL-0035` | An inter-cell operation call was refused: no such operation, not a POST, a body that is not JSON, or a body over the size limit. | — |
+| `STS-CELL-0036` | An inter-cell operation failed, at this cell for another's call or at another cell for this one's. | — |
+| `STS-CELL-0040` | The routing index could not be read while finding a person's home cell; the request is served here as if the person were unknown. | — |
+| `STS-CELL-0041` | A pushed authorization request could not be handed to the home cell of a flow restarting there; the flow restarts without it. | — |
+| `STS-CELL-0042` | A request another cell selected this one for (?cell=) was refused: the release policy does not permit this cell's people to be released to a reader in that cell's jurisdiction. | — |
+| `STS-CELL-0043` | A person's creation named a home cell this service does not have, or one in a jurisdiction the realm may not place people in (cells.jurisdictions); refused. | — |
+| `STS-CELL-0044` | A person's creation was refused because the routing index already places that login name in another cell: a login name is unique in a realm across every cell. | — |
+| `STS-CELL-0045` | A re-homing was refused: the target is not a cell of this service, is this one, is in a jurisdiction the realm may not place people in, or the person is not homed here. | — |
+| `STS-CELL-0046` | A re-homing was refused: a value sealed on the person's entry or device will not open in this cell, so it cannot be moved. | — |
+| `STS-CELL-0047` | A re-homing failed part way: the target did not take the person, the routing index could not be moved, or what was left here could not be removed. The log line says which, and what is left. | — |
+| `STS-CELL-0048` | A re-homed person could not be put back in one of their groups at the receiving cell. | — |
+| `STS-CELL-0050` | A change made in this cell to a projected person could not be sent to their home cell; it is held here only until the session ends. | — |
+| `STS-CELL-0051` | The cells holding a projection of a changed person could not be told; each finds out at its next check against home. | — |
+| `STS-CELL-0052` | A session could not be exported to the cell a relayed request came from; it stays at home and the browser stays pinned there. | — |
+| `STS-CELL-0053` | What this cell held for a person homed elsewhere could not be ended when their home said to. | — |
+| `STS-CELL-0054` | Another cell sent a change to an attribute of a person homed here that no other cell may write (a credential, the name, the entryUUID, memberOf); refused. | — |
+| `STS-CELL-0055` | A cell holding a person's exported session could not be told to end it; it finds out at its next check against home. | — |
+| `STS-CELL-0056` | The home cell of a projected person could not be reached to confirm the account; refused fail-closed, or allowed within cells.failOpenGraceS when cells.homeUnreachable is fail-open. | — |
+| `STS-CELL-0060` | An inter-cell delivery was not sent: the outbound kill switch is on. | — |
+| `STS-CELL-0061` | An inter-cell delivery names no cell this service has; it is dead-lettered. | — |
+| `STS-CELL-0062` | An inter-cell delivery could not be prepared; it is dead-lettered. | — |
+| `STS-CELL-0063` | An inter-cell delivery could not reach the other cell (a timeout or a connection failure); it is tried again with a doubling backoff. | — |
+| `STS-CELL-0064` | The other cell refused an inter-cell delivery, or it was given up after its last attempt; it is dead-lettered and retried by hand from /admin/deliveries. | — |
+| `STS-CELL-0065` | An inter-cell delivery was deferred to a later attempt. | — |
+| `STS-CELL-0066` | An inter-cell delivery stayed pending past cells.deliveryRetentionS and was dead-lettered. | — |
+| `STS-CELL-0067` | The periodic summary of inter-cell deliveries in a realm: sent, retried and dead-lettered since the last line. | — |
+| `STS-CELL-0068` | The inter-cell delivery sweep failed; it runs again at its next slot. | — |
+| `STS-CELL-0069` | An inter-cell dead letter could not be retried. | — |
+| `STS-CELL-0100` | An ACME request naming its account only by key (a newAccount with no External Account Binding) or an RFC 9773 renewal-info request could not be asked of every other cell; it is refused 503 rather than answered by a cell that could not know. | RFC 8555 section 7.3.1; RFC 9773 section 4 |
+| `STS-CELL-0101` | An EST enrollment on behalf of a person homed in another cell was refused: the certificate is written onto their entry only in that cell, and the administrator's own credential is checked only in theirs. | RFC 7030 section 4.2 |
+| `STS-CELL-0120` | Two cells' short keyed tags collide, so a SAML artifact whose handle carries one is served where it arrives rather than relayed to either. | — |
+| `STS-CELL-0121` | A cell could not be asked whether it holds the session a SAML attribute or authentication query names; the query is answered without it. | — |
+| `STS-CELL-0122` | A federation partner's sign-out could not reach every cell; sessions held in a cell not reached last until they end by themselves, and the partner is told where its protocol allows. | — |
+| `STS-CELL-0123` | A cell could not be asked whether a person homed there carries a federation partner's link; the partner's subject is decided without it. | — |
+| `STS-CELL-0124` | A person's home cell did not release their attributes to the cell serving a token about them (the transfer policy refused, or no policy was available); the token is refused. | — |
+| `STS-CELL-0125` | A person's home cell could not be reached for their attributes; a token about them is refused (fail-closed, D6). | — |
+| `STS-CELL-0140` | A SCIM create names a home cell (the iya-sts User extension's homeCell, or the realm's default) that this service does not have or that is outside the jurisdictions the realm may home people in; refused 400 invalidValue and nothing is created. | RFC 7644 section 3.12 |
+| `STS-CELL-0141` | A SCIM create reached a cell that is not the home it resolves to and could not be relayed again (it arrived relayed, or inside a relayed BulkRequest); refused 400 invalidValue rather than made in the wrong region. | RFC 7644 section 3.12 |
+| `STS-CELL-0142` | A SCIM create names a login name the routing index already places in another cell of this realm; refused 409 uniqueness. | RFC 7644 section 3.12 |
+| `STS-CELL-0143` | A SCIM Group write names members homed in more than one cell; one request is performed in one cell, so it is refused 400 invalidValue whole and nothing is changed. | RFC 7644 section 3.12 |
+| `STS-CELL-0144` | A SCIM BulkRequest's operations belong to people homed in more than one cell; it is refused 400 invalidValue whole before any operation runs. | RFC 7644 section 3.7 |
+| `STS-CELL-0145` | A SCIM write to an existing User names a homeCell other than the one the person is homed in; re-homing is an administrator's act, so it is refused 400 mutability. | RFC 7644 section 3.12 |
+| `STS-CELL-0146` | The routing index could not be asked to claim a SCIM create's login name; the create is refused 500 and nothing is written. | — |
+| `STS-CELL-0147` | An LDAP simple bind names a person homed in another cell, and that cell could not be asked to verify the password; the bind is refused LDAP_UNAVAILABLE (52), fail-closed, and not counted as a failed bind. | RFC 4511 section 4.1.9 |
+| `STS-CELL-0160` | A GNAP continuation for a grant that moved to another cell reached the cell it moved from by way of a third cell, and a relayed request is not relayed again; answered 503 too_fast so the client tries again once every cell knows where the grant went. | RFC 9635 section 5 |
+| `STS-CELL-0161` | The cell that minted a GNAP grant did not hand it to the cell the resource owner's browser is pinned to — it had issued tokens, was no longer waiting, or was not held there; the browser is told nothing is waiting. | — |
+| `STS-CELL-0162` | A GNAP grant waiting at an interaction handle could not be fetched from the cell that minted it; the browser pinned here is told nothing is waiting. | — |
+| `STS-CELL-0163` | Another cell could not be asked whether it holds a GNAP access token, user code or user reference; the request is served here as if no cell did. | — |
+| `STS-CELL-0164` | Another cell could not be told that a GNAP grant moved; a continuation it receives goes to the minting cell by the grant's tag and is forwarded from there. | — |
+| `STS-CELL-0165` | A GNAP inter-cell operation was malformed: an unknown realm, an unknown kind, or a grant handed to no other cell; the calling cell is answered with a failure. | — |
+| `STS-CELL-0180` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a transfer question (hold-session or serve-request) — a defect; the strict default was read from the facts instead: a session is held only in the same jurisdiction or a listed transfer, a request refused only under a hard geofence (#98). | none — a warning in the log |
+| `STS-CELL-0181` | The built-in issuance policy could not be evaluated for a transfer question in a process with no issuance PEP — a defect; the strict default was read from the facts instead (#98). | none — an error in the log |
+| `STS-CELL-0182` | A transfer question named a realm this service does not have; the session is not held away from home, the request is not served and nothing is released (#98). | — |
+| `STS-CELL-0183` | A request about a person homed in another jurisdiction was refused under the realm's hard geofence (cells.hardGeofence): the issuance policy answered serve-request with refuse, so it is neither served nor relayed (#98). | — |
+| `STS-CELL-0184` | Personal data of the people homed in this cell was withheld from a reader at a cell in another jurisdiction (a directory listing or a management-API call relayed with ?cell=): the issuance policy answered release-attributes with withhold (#98 D11). | — |
+| `STS-CELL-0190` | Server configuration -> Cells (/admin/cells) could not be drawn: the cell map or its peers could not be read; the page answers 500 and the reason is logged. | — |
+| `STS-CELL-0191` | GET /admin-api/cells could not read the cell map; the call answers 500 server_error. | — |
+| `STS-CELL-0192` | POST /admin-api/cells/rehome failed without a refusal of its own (the move threw, or a refusal carried no code); the call answers an error and the person stays where they were homed. | — |
+| `STS-CELL-0193` | A person's creation from the console or /admin-api arrived relayed from another cell for a home that is not this cell (the two cells' settings disagree); it is refused 400 rather than relayed again, and nothing is created. | — |
+| `STS-CELL-0194` | Another cell did not answer cluster-summary (#361): the Cluster page and GET /admin-api/cluster draw that cell as unreachable, with the reason, and every other cell as it answered. | — |
+| `STS-CELL-0200` | The one-time conversion of a single-cell store into a cell (persistence/cell_convert.js) was refused before it read anything: an unknown argument, no cells.id, a store that is not postgres, no global database, or keys not persisted under an operator key-encryption key. Nothing is changed and it exits non-zero. | none — an operator tool |
+| `STS-CELL-0201` | The conversion found the cell or the global database at a schema version other than this service's; postgres/schema.sql has to be run against both first. Nothing is changed. | none — an operator tool |
+| `STS-CELL-0202` | The conversion found nothing to convert: the cell database holds no realm and no key and the global database is empty — the cell's database URL does not name the single-cell deployment's database. Nothing is changed. | none — an operator tool |
+| `STS-CELL-0203` | The conversion refused a second source: the global database already holds realms or keys that are not the cell database's, or a routing index row naming another cell. Nothing is changed. | none — an operator tool |
+| `STS-CELL-0204` | The conversion's copy into the global database (or an already-converted store's missing routing index rows) could not be written; the transaction was rolled back and the cell database is unchanged. Running it again is safe. | none — an operator tool |
+| `STS-CELL-0205` | The conversion read the global database back after the copy and it did not hold what was copied (a row missing or different, or a person indexed in another cell); the cell database is unchanged. | none — an operator tool |
+| `STS-CELL-0206` | The conversion copied and verified the global rows and then could not take them out of the cell database; that transaction was rolled back. Running it again finds the copy and finishes. | none — an operator tool |
+| `STS-CELL-0207` | The conversion could not hold the service key-encryption key, or it did not open the stored key sets: the routing index's digests are keyed under it and would route nobody. Nothing is changed. | none — an operator tool |
+| `STS-CELL-0208` | The conversion could not dial or read the cell or the global database the way the service does (a connection, a password provider or a statement failed). Nothing is changed. | none — an operator tool |
+| `STS-CELL-0209` | A conversion finished with something worth a look: the sts_risk_* counts moved while it ran (something else was writing the cell database), or an already-converted cell database holds a global-tier directory row or a person indexed in another cell. Nothing is changed for it. | none — a warning in the log |
 
 ## STS-SCHED
 
@@ -394,6 +509,8 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0014` | The scheduler's leader could not stand down; its lease expires on its own. | — |
 | `STS-SCHED-0015` | A per-process job's run in this process threw or rejected; its row for this process says so, and it runs again at its next slot. | — |
 | `STS-SCHED-0016` | A run was asked for that does not exist (an unknown run id). | — |
+| `STS-SCHED-0017` | Purging the scheduler's run history past its bound (scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the rows stay until the next run of scheduler.history, and a start still skips the ones past their expiry. | — |
+| `STS-SCHED-0018` | A run of a realm job was not started, or its outcome not written, because its trust realm was removed; nothing is run for a removed realm, and nothing is written back into it. | — |
 
 ## STS-KEYS
 
@@ -408,7 +525,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0003` | This runtime cannot generate ML-DSA keys (it needs OpenSSL 3.5 / node 24); ML-DSA certificates are unavailable. | — |
 | `STS-KEYS-0004` | A stored password or secret hash is not decodable and was treated as no match. | — |
 | `STS-KEYS-0005` | A stored password or secret hash names scrypt parameters this process cannot compute and was treated as no match. | — |
-| `STS-KEYS-0006` | The worker pool could not run a scrypt derivation, so it was computed in the front process instead. | — |
+| `STS-KEYS-0006` *(retired)* | The worker pool could not run a scrypt derivation, so it was computed in the front process instead. Retired by #363: scrypt runs on libuv's thread pool and there is no worker pool to fail. | — |
 | `STS-KEYS-0007` | An XML signature was not verified: the document is not well-formed XML. | refusal by the calling protocol (e.g. SAML Responder status, SOAP fault) |
 | `STS-KEYS-0008` | An XML signature was not verified: the named element is absent or carries no ds:Signature of its own. | refusal by the calling protocol |
 | `STS-KEYS-0009` | An XML signature was refused because its Reference names a different element than the one it is attached to (signature wrapping). | refusal by the calling protocol |
@@ -755,6 +872,8 @@ Raised from: common/cert_enrollment.ts, common/enrollment_monitor.ts.
 | `STS-ENROLL-0085` | A SCEP challenge password was presented after it expired. | SCEP CertRep FAILURE badRequest |
 | `STS-ENROLL-0090` | An enrollment monitor counter could not be recorded (the request it counted is unaffected). | none (log only) |
 | `STS-ENROLL-0091` | An ACME External Account Binding key or a SCEP challenge password could not be proved unspent because the cluster store could not be asked, so it was refused. | ACME unauthorized / SCEP CertRep FAILURE badRequest |
+| `STS-ENROLL-0092` | A renewal named a certificate that is not recorded as issued to the entry in this realm, so it could not be superseded and nothing was issued. | EST 400 / SCEP CertRep FAILURE badRequest |
+| `STS-ENROLL-0093` | A renewal was issued but the certificate it renews could not be revoked as superseded, so the renewal was revoked and the request refused. | EST 503 / SCEP CertRep FAILURE badRequest |
 
 ## STS-ACME
 
@@ -1187,6 +1306,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400, the set-up page again |
 | `STS-AUTHN-0290` | A session was ended by a caller that did not say who initiated it (#242): CAEP session-revoked says `system`, and the caller should state admin, user, policy or system. | none — logged; the session is ended |
 | `STS-AUTHN-0291` | Reporting a session's end (its audit row, CAEP session-revoked and back-channel Logout Tokens) threw after the claim that decides who reports it was won (#242); it is not tried again, because a second try could tell a receiver twice. | none — logged |
+| `STS-AUTHN-0292` | A realm held authn.maxSessions sign-on sessions when another was created, so the least recently used session was ended to make room (#345) — through the same end an expiry takes: its audit row (which carries this code), CAEP session-revoked and back-channel Logout Tokens. | none — audited; logged at most once a minute per process |
+| `STS-AUTHN-0293` | The directory's credential census threw (#352), so the users list's counts and second-factor filter asked each person's credentials one at a time instead — slower, and the same answer. | none — logged |
 
 ## STS-OAUTH
 
@@ -1862,6 +1983,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0784` | Under FAPI 1.0 Advanced, an authorization request (its signed request object) named no scope; RFC 6749 section 3.3's refusal rather than a default (#187). | invalid_request |
 | `STS-OAUTH-0785` | An RP-Initiated Logout request carried a post_logout_redirect_uri with neither an id_token_hint nor a client_id, so it was not followed (section 2: nothing confirms the address, #187). | none (the sign-out page says so; no redirect) |
 | `STS-OAUTH-0786` | A CAEP session-revoked (or, for a replay, risk-level-change) about a revoked OAuth grant could not be delivered; the revocation stands (#239). | none (a log line) |
+| `STS-OAUTH-0787` | A realm's register of revoked token ids reached oauth2.maxRevokedJtis and none of its entries had expired, so the revocation whose token expires soonest was forgotten to make room (#345): that token, if it is still unexpired, is accepted again by a check that asks only this register. | none — logged, at most once a minute per process |
 
 ## STS-SAML
 
@@ -2166,6 +2288,9 @@ Raised from: federation/.
 | `STS-FED-0148` | A relationship whose OpenID Provider is discovered through an OpenID Federation could not resolve it to its fedTrustAnchor (#134). | HTTP 502 page |
 | `STS-FED-0149` | An OpenID Provider resolved through an OpenID Federation cannot be used: no openid_provider metadata, an issuer that is not its Entity Identifier, no https endpoints, no automatic registration, or no keys (#134). | HTTP 502 page |
 | `STS-FED-0150` | A federation relationship field that takes a closed set of values (fedAuthnMechanism, fedBinding, fedResponseType, or any row with an enum) was set to a value outside it (#86). | HTTP 400 (console and API) |
+| `STS-FED-0151` | A fedAttributeMap value was not a mapping: it is <incoming name>=<LDAP attribute> (#94). | HTTP 400 (console and API) |
+| `STS-FED-0152` | A fedAttributeMap value named a target no partner may write — an attribute this service keeps (sts*, app*, fed*, pwd*) or the entry's identity, structure or authorization (uid, memberOf, userPassword, the operational attributes) (#94). | HTTP 400 (console and API) |
+| `STS-FED-0153` | A partner's attribute was dropped at sign-in because the relationship maps it onto an attribute no partner may write (a mapping written before #94, or by an ldapmodify) (#94). | none (logged; the sign-in proceeds without it) |
 
 ## STS-OIDFED
 
@@ -2516,6 +2641,34 @@ Raised from: ldap/.
 | `STS-LDAP-0111` | An LDAP add or modify named a credential attribute (a security key, an authenticator app, recovery codes, an app password, a signing key pair, a HOBA key, a self-issued subject, the emailed factor, Kerberos keys, a CIBA user code, an enrolment credential or a device secret). Credentials are written only through the doors that check them and send CAEP credential-change (#237), in every mode and for every bind, administrator included; the refusal names the door. | RFC 4511 section 4.1.9 unwillingToPerform (53) |
 | `STS-LDAP-0112` | The node-ldapjs in use does not support the encodeErrorMessage server option, so every LDAP result is sent with an empty diagnosticMessage and a client never sees the text of a refusal (#261). | none — logged at startup |
 | `STS-LDAP-0120` | A person was deleted from the directory (#241) and handing the delete to account_state.ts failed, so what they held may not have been ended at once. authn.sessionOf() still ends a session whose person has no entry the next time it is presented. | none — logged; the delete stands |
+| `STS-LDAP-0130` | A request or surface worker holding the directory as a window (ldap.workerDirectory=postgres-lru, #349) asked the store for an entry it did not hold and no answer came within ldap.workerDirectoryTimeoutMs — the database is down, unreachable or too slow. The request is refused rather than answered out of a window that cannot say what it is missing. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
+| `STS-LDAP-0131` | A windowed worker's question to the store (#349) was refused by the database: the connection failed or the statement errored. The request is refused as for STS-LDAP-0130. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
+| `STS-LDAP-0132` | The directory bridge's worker thread (#349) failed. The question it was answering timed out (STS-LDAP-0130); the next question starts a new thread. | none — logged |
+| `STS-LDAP-0133` | ldap.workerDirectory=postgres-lru (#349) was set where it cannot work: the store is not PostgreSQL (a memory or ldif store has nothing for a window to read), or the service is deployed as several cells (a person's entry may be in another cell's database). The service does not start. | none — fatal at startup |
+
+## STS-ATTR
+
+**Attribute sources.** The operators' SQL databases a realm reads people's attributes from, onto their entries (#94): a source's definition, its driver, its connection and password, the lookup, and the sign-in or scheduled refresh.
+
+Raised from: attribute-sources/attribute_sources.ts, attribute-sources/attribute_source_drivers.ts, common/secrets.js (readSourceSecret), ldap/ldap_server.js (applySourcedAttributes).
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-ATTR-0001` | An attribute source's driver (or Knex) is not installed: the dialect's package is an optional one, installed into the image with STS_CLOUD_SDKS (#94). | none (a console or API refusal, or a logged refresh failure) |
+| `STS-ATTR-0002` | An attribute source could not be read: the connection, TLS, the password, the CA file or the query failed (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0003` | An attribute source did not answer within its timeout (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0004` | An attribute source has more than one row for a person's key, so it names nobody (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0005` | An attribute source's definition was refused: its id, dialect, host, port, database, user, password provider, table, key or column names, refresh modes, interval, timeout or failure policy (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0006` | An attribute source's password could not be read from where it names (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0007` | An attribute source's password was read and is empty (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0008` | An attribute source may not write an attribute: one this service keeps, the entry's identity, structure or authorization, or mail (#94). | HTTP 400 (console and API), or logged at the write |
+| `STS-ATTR-0009` | An attribute source named an attribute another source in the realm already writes; an attribute has one source (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0010` | An attribute source named a host attributeSources.hostPatterns does not allow in its realm (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0011` | An attribute source action named a source that is not there, or added one that already is, or named a person the realm does not have (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0012` | A sign-in was refused: an attribute source whose failure policy is refuse could not be read (#94). | the calling protocol's access_denied |
+| `STS-ATTR-0013` | An attribute source's refresh could not be queued on the scheduler (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0014` | The directory would not store or remove an attribute source (no directory, or it is full) (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0015` | An attribute source's CA chain was refused: it is not PEM certificates, a block did not parse, a certificate is expired or not yet valid, or it is longer than 64 KiB (#94). | HTTP 400 (console and API) |
 
 ## STS-SCIM
 
@@ -3574,6 +3727,15 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0072` | A remote PEP's HTTPS listener certificate could not be issued: the certificate authority refused it, or issuing threw. | console: a page saying so; /admin-api: HTTP 400 { ok: false, errors }, or 500 when issuing threw |
 | `STS-XACML-0073` | A change nudge was not sent because the PEP's notify URL is plain http and the realm is in product mode, whatever xacml.pepNotifyAllowHttp says (#171). | — |
 | `STS-XACML-0074` | Product mode ignored xacml.pepNotifySkipTlsVerification: a nudge verifies the PEP's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-XACML-0075` | A write put a person or a group on ADMIN_READ or ADMIN_WRITE; their people are the console roster's, granted on /admin/rbac, and only an application is added on the role (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0076` | A delete named a native role — ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — which every realm keeps (#303, #309). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE) could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309). | none — a warning in the log |
+| `STS-XACML-0078` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a requested scope — a defect; a scope gated by role was dropped and an ungated one kept (#304). | none — a warning in the log |
+| `STS-XACML-0079` | The built-in issuance policy could not be evaluated for the per-scope question in a process with no issuance PEP — a defect; scopes gated by role were dropped and the rest kept (#304, #305). | none — an error in the log |
+| `STS-XACML-0080` | A write named an application's role that is not <role>@<application>, or used a native or built-in role's name for one (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0081` | A role write named a member type that is not user or application (#93). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0082` | A role write gave the role a member of a kind its member types exclude: a person or group on an applications-only role, or an application on a people-only one (#93). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0083` | A role write tried to restrict a console role (ADMIN_READ, ADMIN_WRITE) to one member type; it holds people and applications both (#93). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-XPEP
 
@@ -3823,8 +3985,18 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0819` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0820` | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
-| `STS-ADMIN-0821` | admin:read or admin:write was asked for on behalf of a person whose console roles in the realm do not authorize it — no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim — and was left off the tokens (#302). | none — the token is issued without that scope (RFC 6749 section 3.3) |
-| `STS-ADMIN-0822` | Every scope a person's request asked for was admin:read or admin:write that their console roles do not authorize, so nothing was left to issue (#302). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
+| `STS-ADMIN-0821` | A permission gated by role — admin:read, admin:write, or an application permission its resource lists in oauthRoleGatedPermission — was asked for on behalf of a person or an application no held role authorizes it for (for a person's console roles: no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim), and was left off the tokens (#302, #303). | none — the token is issued without that scope (RFC 6749 section 3.3) |
+| `STS-ADMIN-0822` | Every scope a request asked for was a permission gated by role that the subject's roles do not authorize, so nothing was left to issue (#302, #303). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
+| `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — whose permission is fixed (#303, #309). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0824` | add-permission or remove-permission named no permission (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0825` | add-permission named a native permission (admin:read, admin:write, device:compliance), which only its native role authorizes (#303, #309). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0826` | add-permission named a permission no application in the realm defines; a permission must be defined before a role can authorize it (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0827` | add-permission named a permission the role already authorizes (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0828` | remove-permission named a permission the role does not authorize (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0829` | create-role named a realm-wide role with the application separator "@" in it; that is how an application's role is named (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0830` | create-role named an application that is not in the realm's registry (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0831` | add-permission put another application's permission on an application's role, which may authorize only its own application's permissions (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0832` | add-attribute-claim named no directory attribute for the claim to carry (#94). | HTTP 400 (console and API) |
 
 ## STS-API
 
@@ -3908,7 +4080,7 @@ Raised from: mgmt-api/.
 | `STS-API-0122` | A management API access token was refused because this service has revoked or disowned it, or the person it was issued to has a disabled account. | invalid_token (HTTP 401) |
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
 | `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
-| `STS-API-0125` | A management API access token issued for a PERSON carried the admin scope an operation needs, and that person no longer holds the console role it goes with in the realm that issued it (#302). | HTTP 403 forbidden |
+| `STS-API-0125` | A management API access token carried the admin scope an operation needs, and its subject — a person, or the application on a client_credentials token — no longer holds a role authorizing it in the realm that issued it (#302, #303). | HTTP 403 forbidden |
 
 ## STS-PORTAL
 
@@ -3993,6 +4165,8 @@ Raised from: portal/.
 | `STS-PORTAL-0095` | A user code typed or approved on /portal/device matched no waiting device (#150). | none (a portal page, HTTP 404 or 400) |
 | `STS-PORTAL-0096` | A sign-on session typed too many user codes that matched nothing on /portal/device and is refused for ten minutes (RFC 8628 section 5.1, #150). | none (a portal page, HTTP 429) |
 | `STS-PORTAL-0097` | Answering a device sign-in on /portal/device failed unexpectedly (#150). | none (a portal page, HTTP 500) |
+| `STS-PORTAL-0098` | A live admin console session in the same browser was not adopted by /portal — it names nobody, the realm it was signed in through is no longer defined, its tokens ran out beyond renewal, or its person is homed in another cell — so the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
+| `STS-PORTAL-0099` | Adopting a live admin console session on /portal threw; the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
 
 ## STS-LOGOUT
 
@@ -4093,6 +4267,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0087` | In product mode, a fetched RFC 9728 document's `resource` is not the identifier its well-known URL was built from (section 3.3). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0088` | In product mode, an RFC 9728 document's `resource` is not an https URL (section 2). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0089` | A console or /admin-api write put an unusable value on oauthResourceMetadata (not a JSON object with a `resource`) or oauthResourceMetadataUrl (not an http or https URL). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0090` | oauthRoleGatedPermission named a permission the application does not define in oauthPermission; only its own permissions can be gated by role (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0100` | An RFC 7591 registration or RFC 7592 update named request_uris, request_object_signing_alg, request_object_encryption_alg, request_object_encryption_enc or require_signed_request_object this service cannot honour. | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0101` | A console or /admin-api write put an unusable value on oauthRequestUri, oauthRequestObjectSigningAlg, oauthRequestObjectEncryptionAlg, oauthRequestObjectEncryptionEnc or oauthRequireSignedRequestObject. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0110` | An RFC 7591 registration or RFC 7592 update gave authorization_details_types a value that is not an array of type names (RFC 9396 section 10). | invalid_client_metadata (HTTP 400) |
@@ -4150,6 +4325,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0197` | A registration's CIBA metadata was refused: an unknown backchannel_token_delivery_mode, no https notification endpoint for ping or push, a signing algorithm that is not asymmetric, or a user code parameter that is not a boolean (#131). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0198` | FAPI-CIBA: a registration under a FAPI profile asked for the push delivery mode, which the profile does not allow (#142). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0199` | A command_endpoint (OpenID Provider Commands, #151) was not an https URL with no fragment, at registration or update (a console or API write is refused under STS-REG-0071). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0200` | A claim-set attribute claim named an attribute it may not carry: not an attribute name, a secret or binary value (userPassword, jpegPhoto, a certificate), or one this service keeps (sts*, hoba*, app*, pwd*) (#94). | HTTP 400 (console and API) |
+| `STS-REG-0201` | A JWT or UserInfo attribute claim named a type that is not string, number, boolean or json (#94). | HTTP 400 (console and API) |
 
 ## STS-DBG
 

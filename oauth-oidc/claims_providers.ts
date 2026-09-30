@@ -94,21 +94,42 @@ import credentials = require('../common/credentials');
 type Json = any;
 type Req = any;
 
+/**
+ * The scheduler job id that refreshes linked tokens and drops stale setup
+ * flows.
+ */
 const REFRESH_JOB = 'oauth2.claim-sources-refresh';
 const FLOW_TTL_MS = 10 * 60 * 1000;
 const REFRESH_AHEAD_MS = 5 * 60 * 1000;
+/**
+ * How a provider's claims are handed on: aggregated or distributed.
+ */
 const DELIVERY = Object.freeze(['aggregated', 'distributed']);
+/**
+ * The client authentication methods this service can use at a provider.
+ */
 const AUTH_METHODS = Object.freeze(['client_secret_basic',
                                     'client_secret_post', 'none']);
 // The portal path the provider sends the person back to.
+/**
+ * The portal path a provider sends a person back to after linking.
+ */
 const CALLBACK_PATH = '/portal/claim-sources/callback';
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
 // Setup flows in progress: state -> { username, provider, verifier, at }.
 // PERSISTED: the provider may send the person back to another node.
-const flows = realms.map({ persist: 'oauth2.claimSourceFlows',
-                           retain: 'age' });
+// `expiresAt` (#333): a link request lives FLOW_TTL_MS from its `at`.
+const flows = realms.map({
+  persist: 'oauth2.claimSourceFlows',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (flow: Json): number | null {
+    const at = Number(flow && flow.at);
+    return at > 0 ? at + FLOW_TTL_MS : null;
+  }
+});
 
 interface Provider {
   id: string;
@@ -154,17 +175,46 @@ interface ClaimsProvidersDeps {
   signals: () => Json;
 }
 
+/**
+ * OpenID Connect Claims Aggregation (#147): the register of Claims Providers,
+ * each person's links, aggregated or distributed claims for a relying party,
+ * and the verification of sources an upstream OP sends.
+ */
 class ClaimsProviders {
+  /**
+   * The scheduler job id that refreshes linked tokens.
+   */
   static readonly REFRESH_JOB = REFRESH_JOB;
+  /**
+   * The portal path a provider sends a person back to after linking.
+   */
   static readonly CALLBACK_PATH = CALLBACK_PATH;
+  /**
+   * How a provider's claims are handed on.
+   */
   static readonly DELIVERY = DELIVERY;
+  /**
+   * The client authentication methods this service can use at a provider.
+   */
   static readonly AUTH_METHODS = AUTH_METHODS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, settings, error codes, clock, the directory's
+   *   store operations, and lazy loaders of HTTP, the keystore, the scheduler,
+   *   the audit log and account signals
+   */
   constructor(private readonly deps: ClaimsProvidersDeps) {
     deps.log.debug("Entering ClaimsProviders.constructor().");
     deps.log.debug("Leaving ClaimsProviders.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): ClaimsProvidersDeps {
     helpers.log.debug("Entering ClaimsProviders.defaultDeps().");
     helpers.log.debug("Leaving ClaimsProviders.defaultDeps().");
@@ -253,6 +303,11 @@ class ClaimsProviders {
     return record && record.id ? record as Provider : null;
   }
 
+  /**
+   * Lists the registered providers, sorted by id.
+   *
+   * @returns the providers
+   */
   list(): Provider[] {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.list().");
@@ -268,6 +323,12 @@ class ClaimsProviders {
     return out;
   }
 
+  /**
+   * Returns one registered provider.
+   *
+   * @param id - the provider id
+   * @returns the provider, or null
+   */
   get(id: string): Provider | null {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.get(). " + id);
@@ -280,6 +341,12 @@ class ClaimsProviders {
   }
 
   // The provider whose issuer is `issuer`, for the consuming side.
+  /**
+   * Returns the provider whose issuer is given, for the consuming side.
+   *
+   * @param issuer - the issuer
+   * @returns the provider, or null
+   */
   byIssuer(issuer: string): Provider | null {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.byIssuer().");
@@ -304,6 +371,12 @@ class ClaimsProviders {
   }
 
   // What is wrong with a provider as submitted, or ''.
+  /**
+   * Says what is wrong with a provider as submitted.
+   *
+   * @param p - the submitted provider
+   * @returns the problem, or ''
+   */
   problemOf(p: Json): string {
     const { log, http } = this.deps;
     log.debug("Entering ClaimsProviders.problemOf().");
@@ -339,6 +412,13 @@ class ClaimsProviders {
 
   // Writes a provider; `secret` undefined keeps the one held. Returns '' or
   // why it was not written.
+  /**
+   * Writes a provider.
+   *
+   * @param p - the provider
+   * @param secret - its client secret; undefined keeps the one held
+   * @returns '', or why it was not written
+   */
   save(p: Json, secret?: string): string {
     const { log, now } = this.deps;
     log.debug("Entering ClaimsProviders.save(). " + p.id);
@@ -392,6 +472,13 @@ class ClaimsProviders {
   // (#238): sourcesFor() offers only registered providers, so tokens issued
   // from now on name it nowhere. The links stay on the entries, as they
   // always did; the holders are read before the entry goes.
+  /**
+   * Removes a provider, which is a source gone for every person who linked it;
+   * the links stay on the entries.
+   *
+   * @param id - the provider id
+   * @returns true when there was one
+   */
   remove(id: string): boolean {
     const { log } = this.deps;
     const self = this;
@@ -458,6 +545,13 @@ class ClaimsProviders {
 
   // An OpenID Provider's discovery document, for filling the four endpoints
   // from an issuer. Resolves { ok, metadata } or { ok: false, why }.
+  /**
+   * Fetches an OpenID Provider's discovery document, to fill a provider's
+   * endpoints from its issuer.
+   *
+   * @param issuer - the issuer
+   * @returns a promise of `{ ok: true, metadata }`, or `{ ok: false, why }`
+   */
   async discover(issuer: string): Promise<Json> {
     const { log, http } = this.deps;
     log.debug("Entering ClaimsProviders.discover().");
@@ -527,6 +621,12 @@ class ClaimsProviders {
 
   // What a person, the portal and the console may see of a person's links:
   // never a token.
+  /**
+   * Lists a person's links, never with a token.
+   *
+   * @param username - the person
+   * @returns the links
+   */
   linksOf(username: string): Json[] {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.linksOf().");
@@ -542,6 +642,11 @@ class ClaimsProviders {
   }
 
   // Every person's links, for the console.
+  /**
+   * Lists every person's links, for the console.
+   *
+   * @returns the links
+   */
   allLinks(): Json[] {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.allLinks().");
@@ -559,6 +664,14 @@ class ClaimsProviders {
 
   // `by` is who unlinked it, in CAEP's initiating_entity words: the person on
   // /portal/claim-sources (`user`), an administrator otherwise.
+  /**
+   * Removes a person's link to a provider.
+   *
+   * @param username - the person
+   * @param id - the provider id
+   * @param by - who unlinked it, `user` or an administrator
+   * @returns true when there was a link
+   */
   unlink(username: string, id: string, by?: string): boolean {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.unlink(). " + id);
@@ -580,6 +693,16 @@ class ClaimsProviders {
   // ===========================================================================
   // THE SETUP PHASE: an authorization code flow with PKCE to the provider.
   // ===========================================================================
+  /**
+   * Starts linking a person to a provider: an authorization code flow with
+   * PKCE.
+   *
+   * @param username - the person
+   * @param id - the provider id
+   * @param base - the request's base URL
+   * @returns `{ ok: true, location }` to send the browser to, or `{ ok: false,
+   *   code, why }`
+   */
   beginLink(username: string, id: string, base: string): Json {
     const { log, now } = this.deps;
     log.debug("Entering ClaimsProviders.beginLink(). " + id);
@@ -611,6 +734,14 @@ class ClaimsProviders {
 
   // The provider sent the person back. Resolves { ok, provider } or
   // { ok: false, code, why }.
+  /**
+   * Finishes a link when the provider sends the person back.
+   *
+   * @param username - the person
+   * @param query - the callback's query
+   * @returns a promise of `{ ok: true, provider }`, or `{ ok: false, code, why
+   *   }`
+   */
   async finishLink(username: string, query: Json): Promise<Json> {
     const { log, now } = this.deps;
     log.debug("Entering ClaimsProviders.finishLink().");
@@ -739,6 +870,15 @@ class ClaimsProviders {
   // A JWT the provider signed, verified against its keys, its `iss` the
   // provider's; `sub` checked where one is given. { ok, claims } or
   // { ok: false, why }.
+  /**
+   * Verifies a JWT a provider signed against its keys, with its `iss` the
+   * provider's and `sub` checked where one is given.
+   *
+   * @param provider - the provider
+   * @param jwt - the JWT
+   * @param sub - the expected subject, or ''
+   * @returns a promise of `{ ok: true, claims }`, or `{ ok: false, why }`
+   */
   async verifyFrom(provider: Provider, jwt: string,
                    sub: string): Promise<Json> {
     const { log, config } = this.deps;
@@ -864,6 +1004,15 @@ class ClaimsProviders {
   // that the person's entry did not answer. Resolves the two members to merge
   // into an ID Token or UserInfo response, or null.
   // ===========================================================================
+  /**
+   * Builds the aggregated and distributed claims for the claims a relying party
+   * asked for that the person's entry did not answer.
+   *
+   * @param username - the person
+   * @param wanted - the claim names wanted
+   * @returns a promise of the `_claim_names` and `_claim_sources` members, or
+   *   null
+   */
   async sourcesFor(username: string, wanted: string[]): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.sourcesFor().");
@@ -938,6 +1087,13 @@ class ClaimsProviders {
   // { claims, notes }: what could be taken, and a sentence for each source
   // that could not.
   // ===========================================================================
+  /**
+   * Resolves the `_claim_names` and `_claim_sources` an upstream OP sent,
+   * honouring only sources from a registered provider whose keys verify them.
+   *
+   * @param bag - the upstream claim set
+   * @returns a promise of `{ claims, notes }`
+   */
   async resolve(bag: Json): Promise<Json> {
     const { log, http } = this.deps;
     log.debug("Entering ClaimsProviders.resolve().");
@@ -1022,6 +1178,12 @@ class ClaimsProviders {
   // THE REFRESH JOB (#49): every token within five minutes of expiring, and
   // setup flows older than ten.
   // ===========================================================================
+  /**
+   * Refreshes every linked token within five minutes of expiring and drops
+   * setup flows older than ten. The scheduler job's body.
+   *
+   * @returns a promise of `{ summary }`
+   */
   async refreshDue(): Promise<Json> {
     const { log, now } = this.deps;
     log.debug("Entering ClaimsProviders.refreshDue().");
@@ -1053,6 +1215,38 @@ class ClaimsProviders {
              dropped + ' abandoned link request(s) dropped' };
   }
 
+  /**
+   * Says whether a realm has nothing for the refresh job to do: no Claims
+   * Provider registered and no link request pending. Asked outside any
+   * realm, so it enters the one named.
+   *
+   * @param realmId - the realm
+   * @returns true when the job has nothing to do there
+   */
+  idleIn(realmId: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ClaimsProviders.idleIn(). " + realmId);
+    const self = this;
+    const realm = realms.get(String(realmId || realms.DEFAULT_ID));
+    if (!realm) {
+      log.debug("Leaving ClaimsProviders.idleIn(). No such realm.");
+      return true;
+    }
+    if (flows.realmMap(realm.id).size > 0) {
+      log.debug("Leaving ClaimsProviders.idleIn(). A request is pending.");
+      return false;
+    }
+    const none = realms.run(realm, function (): boolean {
+      return self.list().length === 0;
+    });
+    log.debug("Leaving ClaimsProviders.idleIn(). " + (none ? 'Idle.' :
+                                                         'Providers.'));
+    return none;
+  }
+
+  /**
+   * Registers the refresh job on the scheduler, once.
+   */
   scheduleJobs(): void {
     const { log, scheduler } = this.deps;
     const self = this;
@@ -1072,6 +1266,18 @@ class ClaimsProviders {
       kind: 'cluster', scope: 'realm', everyMs: function (): number {
         return 60000;
       },
+      // OFF IN A REALM WITH NOTHING TO REFRESH (#338). It ran every minute
+      // in EVERY realm — each run a claim and a recorded row — and in a
+      // realm with no Claims Provider registered it can do nothing: a link
+      // needs a provider, and a link request with no provider left expires
+      // on its own (#333's hook on `flows`). On testidp that was 270 of the
+      // 300 most recent runs, in realms that had never registered one.
+      off: function (realmId: string): string {
+        return self.idleIn(realmId)
+          ? 'no Claims Provider is registered in this realm and no link ' +
+            'request is pending'
+          : '';
+      },
       manual: true,
       run: function (): Promise<Json> {
         return self.refreshDue();
@@ -1084,6 +1290,12 @@ class ClaimsProviders {
   // THE CONSOLE AND /admin-api: the register and every link, never a secret
   // or a token; and the acts.
   // ===========================================================================
+  /**
+   * Describes the register and every link for the console and `/admin-api`,
+   * never a secret or a token.
+   *
+   * @returns `{ callbackPath, providers, links }`
+   */
   view(): Json {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.view().");
@@ -1101,6 +1313,14 @@ class ClaimsProviders {
 
   // One act from the console or `/admin-api`. Resolves { ok, message } or
   // { ok: false, errors } with its code marked.
+  /**
+   * Performs one act from the console or `/admin-api`.
+   *
+   * @param body - the posted body, naming the action
+   * @param context - `via` and `actor`
+   * @returns a promise of `{ ok: true, message }`, or `{ ok: false, errors }`
+   *   with its code marked
+   */
   async act(body: Json, context: Json): Promise<Json> {
     const { log, audit } = this.deps;
     log.debug("Entering ClaimsProviders.act(). " + body.action);
@@ -1199,10 +1419,29 @@ const slot = new InstanceSlot<ClaimsProviders>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * OpenID Connect Claims Aggregation, as both provider and consumer.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   ClaimsProviders: ClaimsProviders,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: ClaimsProviders): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   REFRESH_JOB: REFRESH_JOB,
   CALLBACK_PATH: CALLBACK_PATH,

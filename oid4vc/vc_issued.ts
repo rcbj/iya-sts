@@ -156,7 +156,11 @@ const MAX_PER_ROW = 64;
 // key -> { key, kind, subject, jkt, format, configId, credentials: Issued[],
 //          expiresAt, issuedAt, disownedAt, disownedVia }
 // PER TRUST REALM; see the header.
-const issued = realms.map({ persist: 'vc_issued.credentials' });
+// `expiresAt` (#333): the row's `expiresAt`, ms — the latest of its
+// credentials', 0 when any has none (kept). A DISOWNED row keeps refusing
+// until then, which is why it is not earlier.
+const issued = realms.map({ persist: 'vc_issued.credentials',
+                            expiresAt: realms.expiryField('expiresAt', 1) });
 
 // Described to `/admin/caches` (rule 3ap, #38 follow-ups). It is not a cache:
 // it cannot be rebuilt, and a lookup that misses refuses a sign-in — which is
@@ -205,16 +209,40 @@ const issuedCount = cacheRegistry.register({
   }
 });
 
+/**
+ * The credentials this realm issued for a directory entry (#38): the register
+ * that answers whom a verified presentation signs in, since the credential's
+ * own subject cannot.
+ *
+ * A row is written only for a person named by an access token this realm
+ * verified and granted for credential issuance.
+ */
 class VcIssued {
+  /**
+   * The formats a row may describe: `dc+sd-jwt`, `jwt_vc_json` and `ldp_vc`.
+   */
   static readonly KEPT_FORMATS = KEPT_FORMATS;
+  /**
+   * How many credentials one Data Integrity row lists; the oldest go first.
+   */
   static readonly MAX_PER_ROW = MAX_PER_ROW;
 
+  /**
+   * Builds the register from the modules and store it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcIssuedDeps) {
     deps.log.debug("Entering VcIssued.constructor().");
     deps.log.debug("Leaving VcIssued.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcIssuedDeps {
     helpers.log.debug("Entering VcIssued.defaultDeps().");
     helpers.log.debug("Leaving VcIssued.defaultDeps().");
@@ -237,6 +265,13 @@ class VcIssued {
   // by: everything before the first `~`, which for an SD-JWT is the
   // issuer-signed JWT and for a plain JWT is the whole of it. Hashed, so the
   // key is not a credential.
+  /**
+   * Returns the key a JOSE credential or presentation is registered under: a
+   * SHA-256 of everything before its first `~`.
+   *
+   * @param credential - the credential or presentation
+   * @returns the digest
+   */
   digestOf(credential: unknown): string {
     const { log } = this.deps;
     log.debug("Entering VcIssued.digestOf().");
@@ -283,6 +318,17 @@ class VcIssued {
   //     signs that person in, which is a larger power than the person
   //     granted that client.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the person an access token names, when a credential issued on it
+   * may later sign them in: verified by this realm, a `urn:uuid:` subject
+   * naming an entry now, and granted for credential issuance.
+   *
+   * @param claims - the access token's claims
+   * @param verified - whether its signature verified against this realm's key
+   *   and it is not disowned
+   * @param credentialScopes - the scopes this issuer's configurations name
+   * @returns the subject, or '' when none qualifies
+   */
   subjectFromToken(claims: any, verified: boolean,
                    credentialScopes: string[]): string {
     const { log, nameForSubject, subjectForName } = this.deps;
@@ -326,6 +372,14 @@ class VcIssued {
   // nothing was kept. Never throws: a register that could not be written
   // costs that credential the ability to sign somebody in, and must not cost
   // the wallet the credential.
+  /**
+   * Records one issued credential. Never throws: a failure costs the credential
+   * the ability to sign somebody in, not the wallet the credential.
+   *
+   * @param entry - the credential, its format, configuration, subject, holder
+   *   key, expiry and status and validity details
+   * @returns the row key, or '' when nothing was kept
+   */
   record(entry: { credential: unknown; format: string; configId: string;
                   subject: string; holderJwk: any; expiresAt: number;
                   artifactKey?: string; statusKey?: string;
@@ -410,6 +464,13 @@ class VcIssued {
 
   // The row for a presented JOSE credential, or null — an expired row is
   // removed on the way past.
+  /**
+   * Returns the row for a presented JOSE credential; an expired row is removed
+   * on the way past.
+   *
+   * @param credential - the presented credential
+   * @returns the row, or null
+   */
   lookup(credential: unknown): any {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.lookup().");
@@ -432,6 +493,12 @@ class VcIssued {
   }
 
   // The live Data Integrity rows for one holder key, whoever they name.
+  /**
+   * Returns the live Data Integrity rows for one holder key.
+   *
+   * @param jkt - the holder key's JWK thumbprint
+   * @returns the rows
+   */
   lookupHolder(jkt: string): any[] {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.lookupHolder().");
@@ -455,6 +522,15 @@ class VcIssued {
   // The credentials on a row a presentation could be, for a Data Integrity
   // row the ones whose disclosed validity window matches. An empty window
   // matches nothing: a sign-in asks the wallet for it.
+  /**
+   * Returns the credentials on a row a presentation could be: for a Data
+   * Integrity row, those whose disclosed validity window matches. An empty
+   * window matches nothing.
+   *
+   * @param row - the row
+   * @param window - the presentation's disclosed `validFrom` and `validUntil`
+   * @returns the candidate credentials
+   */
   credentialsMatching(row: any, window?: { validFrom?: string;
                                             validUntil?: string }): Issued[] {
     const { log } = this.deps;
@@ -482,6 +558,14 @@ class VcIssued {
   // and any one of them disowned disowns the presentation, because nothing in
   // an unlinkable proof says which sibling it came from.
   // ---------------------------------------------------------------------------
+  /**
+   * Says why these credentials sign nobody in any more; any one candidate
+   * disowned disowns the presentation.
+   *
+   * @param row - the row
+   * @param candidates - the credentials the presentation could be
+   * @returns the reason, or ''
+   */
   disownedReason(row: any, candidates: Issued[]): string {
     const { log, artifactRevokedByKey, statusOf } = this.deps;
     log.debug("Entering VcIssued.disownedReason().");
@@ -517,6 +601,13 @@ class VcIssued {
   // family: the live ones whose newest credential is not disowned. `null`
   // answers every person's, for a caller that files them itself.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the live rows one person has whose newest credential is not
+   * disowned, for the wallet-credential family of `logout`.
+   *
+   * @param subject - the person's subject, or null for everyone's
+   * @returns the rows
+   */
   rowsForSubject(subject: string | null): any[] {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.rowsForSubject().");
@@ -538,6 +629,12 @@ class VcIssued {
   }
 
   // One row by key, or null.
+  /**
+   * Returns one row by key.
+   *
+   * @param key - the row key
+   * @returns the row, or null
+   */
   rowByKey(key: unknown): any {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.rowByKey().");
@@ -550,6 +647,14 @@ class VcIssued {
   // anybody in, and each one's status-list bit is set INVALID so a verifier
   // elsewhere learns it too. Answers whether anything changed.
   // ---------------------------------------------------------------------------
+  /**
+   * Disowns a row: every credential on it issued up to now stops signing
+   * anybody in, and each one's status-list bit is set invalid.
+   *
+   * @param key - the row key
+   * @param via - who or what disowned it
+   * @returns true when anything changed
+   */
   disown(key: unknown, via: string): boolean {
     const { log, store, setStatus } = this.deps;
     log.debug("Entering VcIssued.disown().");
@@ -585,6 +690,12 @@ class VcIssued {
   }
 
   // Takes one JOSE credential out of the sign-in path, for a test.
+  /**
+   * Takes one JOSE credential out of the sign-in path, for a test.
+   *
+   * @param credential - the credential
+   * @returns true when there was a row
+   */
   forget(credential: unknown): boolean {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.forget().");
@@ -594,6 +705,11 @@ class VcIssued {
   }
 
   // How many rows the ambient realm holds, for the tests and the console.
+  /**
+   * Returns how many rows the ambient realm holds.
+   *
+   * @returns the count
+   */
   size(): number {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.size().");
@@ -632,9 +748,25 @@ const slot = new InstanceSlot<VcIssued>(
 // Standalone, build the default now, as loading any module on the pattern does.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The credentials this realm issued for a directory entry: the register a
+ * wallet sign-in asks whom a presentation signs in.
+ *
+ * @namespace
+ */
 export = {
   VcIssued: VcIssued,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcIssued): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   KEPT_FORMATS: VcIssued.KEPT_FORMATS,
   digestOf: slot.forward('digestOf'),

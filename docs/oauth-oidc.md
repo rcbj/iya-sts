@@ -531,6 +531,24 @@ earlier — a refresh, a token exchange inheriting the subject token's scope, an
 assertion grant — is issued without the scope instead, and the token response's
 `scope` says what was issued.
 
+**Declaring a scope is a request, and some scopes also need a role** (#302,
+#303). A scope that is *gated by role* is issued only to a subject whose roles
+authorize it. For a person that is the signed-in person; for `client_credentials`
+it is the client itself. Two kinds of scope are gated:
+
+* **`admin:read` and `admin:write`**, always. They are authorized by the
+  `ADMIN_READ` and `ADMIN_WRITE` roles. A person holds those through the
+  console's Admin Read and Admin Write groups, and an application by being a
+  member of the role ([Management API](management-api.md)).
+* **An application permission its resource opts in.** List the permission's
+  name in `oauthRoleGatedPermission` on the resource application. Then name the
+  full permission (base URI + name) on a role, with the `add-permission` action
+  on `/admin/roles` or `POST /admin-api/roles/add-permission`.
+
+A gated scope the subject's roles do not authorize is left off the token. If
+nothing else was requested, the request is refused with `invalid_scope`. A
+permission nobody has gated is issued exactly as before.
+
 ### ID Tokens
 
 An ID Token carries `nonce`, `at_hash` and `c_hash` in all three flows, plus
@@ -557,7 +575,9 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
 * **Encryption** (OpenID Connect Core section 10.2): a client that registers
   `id_token_encrypted_response_alg` gets a signed-then-encrypted token,
   encrypted to a key in its `jwks` or registered `jwks_uri`. Only asymmetric key management
-  is offered. A registration with no key to encrypt to is refused, and so is
+  is offered — RSA-OAEP, ECDH-ES, and the post-quantum and hybrid ML-KEM and
+  HPKE algorithms ([Post-quantum key establishment](post-quantum-encryption.md)).
+  A registration with no key to encrypt to is refused, and so is
   an issuance that cannot be encrypted. It is never sent in the clear.
 * **Subject**: `sub` is `urn:uuid:<entryUUID>` of the person's directory entry,
   the same for every `public` client. A renamed person keeps their `sub`. A
@@ -961,7 +981,9 @@ the client registered (RFC 7591, OpenID Connect Core section 5.3.2):
   table is offered: the fourteen of the JWS registry (RS, PS and ES at 256, 384
   and 512, ES256K, EdDSA, and HS256/384/512 keyed by the client's own secret)
   and the eleven post-quantum ones.
-* `userinfo_encrypted_response_alg` gives a JWE: RSA-OAEP, RSA-OAEP-256,
+* `userinfo_encrypted_response_alg` gives a JWE (ML-KEM and the HPKE
+  suites too, X-Wing among them — see
+  [Post-quantum key establishment](post-quantum-encryption.md)): RSA-OAEP, RSA-OAEP-256,
   ECDH-ES and its three key-wrapping variants, over any of the three AES-GCM
   and three AES-CBC-HMAC content encryptions. **`enc` defaults to
   `A128CBC-HS256`** when only an `alg` is registered, as the registration
@@ -1012,8 +1034,13 @@ derived from the same table, so what is advertised is what is accepted.
 **Protocols → OAuth2 / OIDC → Custom claims** says what to add to every access
 token and every ID Token issued **from now on**. There are two sets because the
 two tokens go to different readers (a resource server and a client). Each set
-takes typed claims, LDAP attribute types ticked from those found under
-`ou=users`, and the groups claim.
+takes:
+* typed claims;
+* LDAP attribute types ticked from those found under `ou=users`;
+* **directory-attribute claims**, a claim name of your choosing carrying any
+  attribute of the person's entry (#94, see
+  [the admin console](admin-console.md));
+* the groups claim.
 
 Custom claims are **additive only**. A name the protocol sets itself (`exp`,
 `scope`, `iss` and the rest) is refused when you configure it, because a
@@ -1838,6 +1865,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.authorizationCodeTtlS` | `STS_OAUTH2_AUTHORIZATION_CODE_TTL_S` | `300` | yes | How long an authorization code may wait to be redeemed; RFC 9700 mode's transaction memory is measured from it. |
 | `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered so an identical repeat gets the same tokens and a different one is refused by name. |
 | `oauth2.expiredTokenRetentionS` | `STS_OAUTH2_EXPIRED_TOKEN_RETENTION_S` | `86400` | yes | How long an expired token stays in the `/admin/tokens` register before the hourly purge job deletes its record. |
+| `oauth2.maxRevokedJtis` | `STS_OAUTH2_MAX_REVOKED_JTIS` | `100000` | yes | The most revoked token ids a realm keeps. A revocation is dropped anyway once its token expires; at the cap the one whose token expires soonest is forgotten (`STS-OAUTH-0787`), and that token is accepted again until it expires. |
 
 ### Certificate chain headers
 

@@ -210,6 +210,11 @@ const errorCodes = require('../common/error_codes');
 // `no-cors-at-authorize` is a header withheld. Do not invent a check to give
 // one of them a citation.
 // ---------------------------------------------------------------------------
+/**
+ * What RFC 9700 asks of the authorization server, row by row, each with whether
+ * this mode enforces it; checks cite a row by id and `GET /oauth2/rfc9700`
+ * publishes the table.
+ */
 const REQUIREMENTS = [
   // --- section 2.1 — redirect URIs ----------------------------------------
   { id: 'redirect-exact-match', section: '2.1, 4.1.3', level: 'MUST',
@@ -1425,6 +1430,12 @@ const REQUIREMENTS = [
 // **AND ANY FAPI PROFILE (#138)**, which is a stricter superset in the same
 // way — per realm, or per named authorization server through fapi.js's
 // ambient profile.
+/**
+ * Tells whether RFC 9700 mode is on: by `oauth2.rfc9700`, OAuth 2.1 mode, a
+ * FAPI profile, or product mode as a floor.
+ *
+ * @returns true when it is on
+ */
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
@@ -1512,6 +1523,13 @@ function registeredUrisFor(client) {
 // confidential or public here, which is exactly the switch a client author
 // needs in order to exercise both halves of section 2.1.1 against one
 // client_id.
+/**
+ * Tells whether a client is confidential: its entry declares a method other
+ * than `none`.
+ *
+ * @param client - the client's configuration
+ * @returns true when it is confidential
+ */
 function isConfidential(client) {
   log.debug("Entering isConfidential().");
   if (!client) {
@@ -1548,6 +1566,13 @@ function isConfidential(client) {
 // a client that DECLARED a method, and they do — it is only the undeclared
 // case they read differently, because only one of them has RFC 7591's default
 // to apply.
+/**
+ * Tells whether a client explicitly declared `none`, the only thing that makes
+ * it public for authentication.
+ *
+ * @param registered - the client's configuration
+ * @returns true when it declared `none`
+ */
 function declaredPublic(registered) {
   log.debug("Entering declaredPublic().");
   if (!registered || !registered.known) {
@@ -1639,6 +1664,15 @@ function uriMatches(registered, presented) {
 // the redirect_uri, so it is a separate call from checkAuthorizationRequest()
 // below rather than one more clause inside it — see the header.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a redirect URI against the client's registered ones (or the configured
+ * list for an unregistered client). Its refusal must not be reported to the
+ * redirect URI.
+ *
+ * @param opts - `client`, `clientId` and `redirectUri`
+ * @returns `{ ok: true, matched, how }`, or `{ ok: false, errorCode, error,
+ *   requirement, description }`
+ */
 function checkRedirectUri(opts) {
   log.debug("Entering checkRedirectUri(). redirect_uri=" + opts.redirectUri);
   if (!enabled()) {
@@ -1754,6 +1788,14 @@ function checkRedirectUri(opts) {
 // request names — by `id_token_hint`, or `client_id` — and `oauth2.ts`'s
 // `logoutEndpoint()` asks this before the session is ended, so a refused
 // target leaves the person on a page rather than following it.
+/**
+ * Checks RP-Initiated Logout's `post_logout_redirect_uri` against the client's
+ * registered ones, in every mode.
+ *
+ * @param opts - `client` and `target`
+ * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
+ *   description }`
+ */
 function checkPostLogoutRedirectUri(opts) {
   log.debug("Entering checkPostLogoutRedirectUri().");
   const client = opts.client;
@@ -1893,7 +1935,9 @@ function maxTransactions() {
 // this behaves as the plain Map it replaced. See common/realms.js.
 // 'pkce:x' / 'nonce:x' -> record
 const transactions = realms.map({ persist: 'oauth2_bcp.transactions',
-                                  retain: 'age' });
+                                  retain: 'age',
+                                  // #333: the sweep's `forget`, ms.
+                                  expiresAt: realms.expiryField('forget', 1) });
 
 function forgetStaleTransactions() {
   log.debug("Entering forgetStaleTransactions().");
@@ -1936,6 +1980,14 @@ function transactionKeys(query) {
 // endpoint TWICE (once before the sign-in screen and once on the way back), and
 // a check at the top of the endpoint would refuse every request for reusing its
 // own value between the two passes.
+/**
+ * Refuses, immediately before a code is minted, a PKCE challenge or nonce the
+ * client has already used in another transaction.
+ *
+ * @param opts - `clientId` and `query`
+ * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
+ *   description }`
+ */
 function checkTransactionValues(opts) {
   log.debug("Entering checkTransactionValues().");
   if (!enabled()) {
@@ -1986,6 +2038,12 @@ function checkTransactionValues(opts) {
 // that transaction, so its nonce is spent there and then. Leaving it open would
 // mean nonce reuse was never detectable in the one flow where the nonce is the
 // only protection there is.
+/**
+ * Remembers a transaction's PKCE challenge and nonce, closed at once where the
+ * response carries no code.
+ *
+ * @param opts - `clientId`, `query` and `completed`
+ */
 function rememberTransactionValues(opts) {
   log.debug("Entering rememberTransactionValues().");
   if (!enabled()) {
@@ -2004,6 +2062,11 @@ function rememberTransactionValues(opts) {
 // The other end of it: the token endpoint says which transaction is over. The
 // record is the authorization code's own, so the challenge and the nonce come
 // from what was authorized rather than from what the Token Request claims.
+/**
+ * Marks a transaction over when its code is redeemed at the token endpoint.
+ *
+ * @param record - the authorization code's record
+ */
 function noteRedeemed(record) {
   log.debug("Entering noteRedeemed().");
   if (!enabled() || !record) {
@@ -2031,6 +2094,14 @@ function noteRedeemed(record) {
 // fixing two problems finds the second one on the next attempt and a client
 // shown two at once usually reads only the first anyway.
 // ---------------------------------------------------------------------------
+/**
+ * Checks an authorization request whose redirect URI has already been
+ * validated, returning the first refusal.
+ *
+ * @param opts - `client`, `query` and `types`
+ * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
+ *   description }`
+ */
 function checkAuthorizationRequest(opts) {
   log.debug("Entering checkAuthorizationRequest().");
   if (!enabled()) {
@@ -2158,6 +2229,14 @@ function checkAuthorizationRequest(opts) {
 // that grant at all, which is what that error code means and what the metadata
 // now says by leaving `password` out of grant_types_supported.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses the password grant, which RFC 9700 rules out, as
+ * `unsupported_grant_type`.
+ *
+ * @param grant - the grant type
+ * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
+ *   description }`
+ */
 function checkGrantType(grant) {
   log.debug("Entering checkGrantType(). grant=" + grant);
   if (!enabled() || grant !== 'password') {
@@ -2199,6 +2278,15 @@ function checkGrantType(grant) {
 // means the client author finds out at registration rather than at the first
 // authorization request, which is a different afternoon.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses, in RFC 9700 mode, registration metadata the endpoints would refuse,
+ * such as the password and implicit grants and redirect URIs they would not
+ * accept.
+ *
+ * @param metadata - the registration metadata
+ * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
+ *   description }`
+ */
 function checkClientRegistration(metadata) {
   log.debug("Entering checkClientRegistration().");
   if (!enabled()) {
@@ -2382,6 +2470,13 @@ function checkClientRegistration(metadata) {
 // OAuth 2.1's PKCE exemption all ask it — and they were two inline copies of
 // one expression until 2026-09-13, which is the shape that disagrees the first
 // time a method is added.
+/**
+ * Tells whether a confidential client has anything on file to check its
+ * declared method against.
+ *
+ * @param registered - the client's configuration
+ * @returns true when it has
+ */
 function credentialOnFile(registered) {
   log.debug("Entering credentialOnFile().");
   if (!registered || !isConfidential(registered)) {
@@ -2426,7 +2521,7 @@ function credentialOnFile(registered) {
 // `private_key_jwt` assertion may be signed with one of the eleven
 // post-quantum algorithms this service advertises for client authentication —
 // seconds of computation on the thread that owns every listener here. See
-// common/worker.js. What this function DECIDES is unchanged: the policy is
+// common/pq_native.js. What this function DECIDES is unchanged: the policy is
 // still this module's and the mechanics are still client_auth.js's.
 // ---------------------------------------------------------------------------
 // WHAT THIS REQUEST DEMONSTRATED ABOUT THE CLIENT — AN OBSERVATION, NEVER A
@@ -2468,6 +2563,15 @@ function credentialOnFile(registered) {
 // about to mint several — and the alternative was a third state, "we did not
 // look", which every caller would have had to decide what to do about.
 // ---------------------------------------------------------------------------
+/**
+ * Observes, in every mode, whether a token request authenticated the client by
+ * the method its entry declares.
+ *
+ * @param opts - `clientId`, `registered`, `clientSecret`, `assertion`,
+ *   `assertionType`, `audiences`, `strictAudience`, `issuer` and `request`
+ * @returns a promise of `{ authenticated: true, method, alg, why }`, or `{
+ *   authenticated: false, method, errorCode, why, ... }`
+ */
 async function observeClientAuthentication(opts) {
   log.debug("Entering observeClientAuthentication(). client=" +
             (opts.clientId || '?'));
@@ -2567,6 +2671,14 @@ async function observeClientAuthentication(opts) {
            why: 'it authenticated with ' + method + '.' };
 }
 
+/**
+ * Refuses, in RFC 9700 mode, a confidential client that did not authenticate
+ * with the method it declared; a client with nothing on file is let through.
+ *
+ * @param opts - as for `observeClientAuthentication()`
+ * @returns a promise of `{ ok: true, method }`, or `{ ok: false, errorCode,
+ *   error, requirement, description }`
+ */
 async function checkClientAuthentication(opts) {
   log.debug("Entering checkClientAuthentication().");
   const registered = opts.registered;
@@ -2806,6 +2918,8 @@ function maxRefreshTokens() {
 // record back as unrotated, which would make the replay it marks undetectable.
 const refreshTokens = realms.map({
   persist: 'oauth2_bcp.refreshTokens', tombstone: true,
+  // #333: the sweep's `forget`, ms.
+  expiresAt: realms.expiryField('forget', 1),
   mergeRow: function (mine, theirs) {
     log.debug("Entering mergeRow().");
     log.debug("Leaving mergeRow().");
@@ -2823,7 +2937,12 @@ const refreshTokens = realms.map({
 // this behaves as the plain Map it replaced. See common/realms.js.
 // family -> { clientId, forget, lastUsedAt } — no `members` array since #46
 // (see `membersOf()`); a row restored from an older build may still carry one.
-const refreshFamilies = realms.map({ persist: 'oauth2_bcp.refreshFamilies' });
+// `expiresAt` (#333): the family's absolute `forget`, ms, moved forward at
+// every issuance — the idle rule refuses earlier but deletes nothing.
+const refreshFamilies = realms.map({
+  persist: 'oauth2_bcp.refreshFamilies',
+  expiresAt: realms.expiryField('forget', 1)
+});
 
 function forgetStaleRefreshTokens() {
   log.debug("Entering forgetStaleRefreshTokens().");
@@ -2901,10 +3020,21 @@ function forgetStaleRefreshTokens() {
 //      member nobody listed is refused at its first use instead of at the
 //      replay, which is the same outcome one request later.
 // ---------------------------------------------------------------------------
+/**
+ * The claim a refresh token carries its family in.
+ */
 const FAMILY_CLAIM = 'refresh_family';
 
 // The family a refresh token about to be minted belongs to. `parentFamily` is
 // the presented token's own `refresh_family` claim, where it has one.
+/**
+ * Returns the family a refresh token about to be minted belongs to.
+ *
+ * @param jti - the new token's jti
+ * @param parentJti - the presented token's jti, or '' for a family's root
+ * @param parentFamily - the presented token's own family claim
+ * @returns the family id
+ */
 function familyForIssuance(jti, parentJti, parentFamily) {
   log.debug("Entering familyForIssuance().");
   const parent = parentJti ? (refreshTokens.get(String(parentJti)) ||
@@ -2948,6 +3078,15 @@ function membersOf(familyId, alsoJti) {
 // for the root of a family (any grant minting its first refresh token) and is
 // the presented token's jti on a refresh; `parentFamily` is that token's own
 // `refresh_family` claim.
+/**
+ * Records a refresh token as minted into its family, from the one function that
+ * mints one.
+ *
+ * @param jti - the new token's jti
+ * @param parentJti - the presented token's jti, or '' for a family's root
+ * @param clientId - the client
+ * @param parentFamily - the presented token's own family claim
+ */
 function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
   log.debug("Entering noteRefreshIssued(). jti=" + jti + ", parent=" +
             (parentJti || '(root)'));
@@ -3012,7 +3151,9 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
 // ---------------------------------------------------------------------------
 // refresh jti -> { family, access, clientId, forget }
 const grantTokens = realms.map({ persist: 'oauth2_bcp.grantTokens',
-                                 tombstone: true });
+                                 tombstone: true,
+                                 // #333: the sweep's `forget`, ms.
+                                 expiresAt: realms.expiryField('forget', 1) });
 
 function forgetStaleGrantTokens() {
   log.debug("Entering forgetStaleGrantTokens().");
@@ -3046,6 +3187,16 @@ function forgetStaleGrantTokens() {
 // Called from `refreshToken()` in `oauth2.ts`, the one function that mints a
 // refresh token, with the access token `tokenSet()` minted beside it (empty
 // where there was none). `expSec` is the later of the two `exp`s.
+/**
+ * Records what one grant issued, a refresh token and the access token beside
+ * it, for RFC 7009's revocation of the refresh token.
+ *
+ * @param familyId - the family
+ * @param refreshJti - the refresh token's jti
+ * @param accessJti - the access token's jti, or ''
+ * @param clientId - the client
+ * @param expSec - the later of the two expiries, in seconds
+ */
 function noteGrantTokens(familyId, refreshJti, accessJti, clientId, expSec) {
   log.debug("Entering noteGrantTokens(). family=" + familyId);
   if (!familyId || !refreshJti) {
@@ -3069,6 +3220,12 @@ function noteGrantTokens(familyId, refreshJti, accessJti, clientId, expSec) {
 // then what either record here says, then the token itself as the root of a
 // family of one (a token minted before #102 carried no claim outside RFC 9700
 // mode).
+/**
+ * Returns the family a presented refresh token belongs to.
+ *
+ * @param claims - the refresh token's claims
+ * @returns the family id
+ */
 function familyOfRefresh(claims) {
   log.debug("Entering familyOfRefresh().");
   const c = claims || {};
@@ -3082,6 +3239,14 @@ function familyOfRefresh(claims) {
 // Every jti of the grant a family is: its refresh tokens and the access tokens
 // minted beside them, as recorded here, and the members the rotation
 // bookkeeping knows (`membersOf()`). `alsoJti` is the presented token's own.
+/**
+ * Returns every jti of the grant a family is: its refresh tokens and the access
+ * tokens minted beside them.
+ *
+ * @param familyId - the family
+ * @param alsoJti - the presented token's own jti
+ * @returns the jtis
+ */
 function grantMembersOf(familyId, alsoJti) {
   log.debug("Entering grantMembersOf().");
   const wanted = String(familyId || '');
@@ -3118,6 +3283,13 @@ function familyRevocationTtlMs(clientId) {
 // Revokes a family BY ID, for every node at once. Resolves whether the mark is
 // in place; never rejects. A mark that could not be written is logged — the
 // members this node knew are still revoked by the caller.
+/**
+ * Revokes a family by id, for every node at once. Never rejects.
+ *
+ * @param familyId - the family
+ * @param clientId - the client
+ * @returns a promise of whether the mark is in place
+ */
 function revokeFamily(familyId, clientId) {
   log.debug("Entering revokeFamily(). family=" + familyId);
   if (!familyId) {
@@ -3172,6 +3344,14 @@ function revokeFamily(familyId, clientId) {
 // while rotation is not required (neither compliance mode nor
 // `oauth2.refreshTokenRotation`), where a refresh token is reusable by design.
 // ---------------------------------------------------------------------------
+/**
+ * Redeems a refresh token once across the cluster while rotation is required; a
+ * no-op otherwise. Never rejects.
+ *
+ * @param opts - `claims` (the token's) and `res`
+ * @returns a promise of `{ ok: true, handle }`, or a refusal in
+ *   `checkRefreshRequest()`'s shape with `revoke`
+ */
 async function spendRefreshToken(opts) {
   log.debug("Entering spendRefreshToken().");
   if (!senderConstraints.rotationRequired()) {
@@ -3272,6 +3452,12 @@ function storeRefusal() {
 // The presented token has just been redeemed, so it is retired. `oauth2.js`
 // revokes it; this records that the retirement was a ROTATION, which is what
 // makes the difference between "revoked" and "replayed" reportable later.
+/**
+ * Records that a redeemed refresh token was retired by rotation, so a later
+ * presentation is reported as a replay.
+ *
+ * @param jti - the redeemed token's jti
+ */
 function noteRefreshRotated(jti) {
   log.debug("Entering noteRefreshRotated(). jti=" + jti);
   if (!senderConstraints.rotationRequired() || !jti) {
@@ -3372,6 +3558,15 @@ function coreRefreshRefusal(claims, body, presentedClient) {
 // Keeping them in one function is deliberate: they are all "what this server
 // thinks of the refresh token being presented", and a second entry point would
 // be two orders for a caller to get right.
+/**
+ * Decides what this server thinks of the refresh token presented: RFC 6749
+ * section 6 in every mode, replay detection while rotation is required, and the
+ * idle timeout, client binding and scope check in RFC 9700 mode.
+ *
+ * @param opts - `claims`, `body` and `clientId`
+ * @returns `{ ok: true, ... }`, or `{ ok: false, errorCode, error, requirement,
+ *   description }`, with `revoke` naming what to revoke
+ */
 function checkRefreshRequest(opts) {
   log.debug("Entering checkRefreshRequest().");
   const claims = opts.claims || {};
@@ -3523,6 +3718,13 @@ function checkRefreshRequest(opts) {
 // out and leaving their refresh token introspecting active was a gap, not a
 // permissive default (the refresh grant already refused it since #118). The
 // `offline_access` distinction is `authn.ts`'s, where the records are.
+/**
+ * Tells whether a client's refresh tokens issued without `offline_access` are
+ * revoked when the session ends (`oauth2.revokeRefreshOnLogout`).
+ *
+ * @param clientId - the client
+ * @returns true when they are
+ */
 function revokeRefreshOnLogout(clientId) {
   log.debug("Entering revokeRefreshOnLogout().");
   log.debug("Leaving revokeRefreshOnLogout().");
@@ -3534,6 +3736,12 @@ function revokeRefreshOnLogout(clientId) {
 // sender-constrained is the CLIENT's decision, since it binds by sending a
 // proof. Logged at issuance so that "this server issued a bearer token" is a
 // fact somebody can find, rather than an absence they have to notice.
+/**
+ * Logs whether an access token was issued sender-constrained. It refuses
+ * nothing.
+ *
+ * @param opts - `clientId`, `scope`, `jkt` and `certificateBound`
+ */
 function noteTokenBinding(opts) {
   log.debug("Entering noteTokenBinding().");
   const info = opts || {};
@@ -3591,6 +3799,14 @@ function noteTokenBinding(opts) {
 // `checkRefreshRequest()` gives: this module decides and the protocol acts, and
 // `stats.revoke()` is the one set /oauth2/revoke and the console write to.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses a code presented twice, naming the tokens it bought for revocation
+ * (RFC 6749 section 10.5).
+ *
+ * @param opts - `issuedJtis`, `secondsAgo` and `clientId`
+ * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
+ *   description }` with `revoke`
+ */
 function checkCodeReplay(opts) {
   log.debug("Entering checkCodeReplay().");
   // RFC 6749 section 4.1.2's MUST, in every mode since #187: the relaxation
@@ -3669,6 +3885,13 @@ function checkCodeReplay(opts) {
 // A SUCCESS is never affected. Reaching one means a session exists, which means
 // the person was authenticated first, which is exactly what the MUST asks for.
 // ---------------------------------------------------------------------------
+/**
+ * Decides whether an authorization error may be redirected to the client: not
+ * when nobody has been authenticated (section 4.11.2).
+ *
+ * @param opts - `hasSession`, `fromSignIn` and `prompt`
+ * @returns `{ redirect, why, requirement }`
+ */
 function redirectPolicyFor(opts) {
   log.debug("Entering redirectPolicyFor().");
   const info = opts || {};
@@ -3721,6 +3944,14 @@ function redirectPolicyFor(opts) {
 // service issues to any client_id that asks, and the combination is checked
 // where it can be, in `checkRedirectUri()` — a registered client is judged
 // against its own URIs and an unregistered one against the configured list.
+/**
+ * Refuses an authorization request with no client_id, whose error must not be
+ * redirected anywhere.
+ *
+ * @param clientId - the client_id
+ * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
+ *   description }`
+ */
 function checkClientIdPresent(clientId) {
   log.debug("Entering checkClientIdPresent().");
   if (!enabled() || String(clientId || '').trim()) {
@@ -3750,6 +3981,13 @@ function checkClientIdPresent(clientId) {
 // The token, userinfo, metadata and JWKS endpoints keep their headers: an
 // in-browser client fetches those with XHR and needs them. The authorization
 // endpoint is NAVIGATED to, so nothing legitimate ever read them there.
+/**
+ * Tells whether a request is to the authorization endpoint, where CORS headers
+ * are withheld in this mode.
+ *
+ * @param req - the request
+ * @returns true when they are withheld
+ */
 function corsForbidden(req) {
   log.debug("Entering corsForbidden().");
   if (!enabled()) {
@@ -3776,6 +4014,15 @@ function corsForbidden(req) {
 // is the exception and refuses such a code at the token endpoint too
 // (section 4.1.3) — `oauth21.tokenCodeRefusal()`, asked by `oauth2.js`.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a code redemption: the code was issued to this client with this
+ * redirect_uri (in every mode), and in RFC 9700 mode no `code_verifier` is
+ * smuggled in where no challenge was made.
+ *
+ * @param opts - `record` (the code's), `body` and `client`
+ * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
+ *   description }`
+ */
 function checkTokenRequest(opts) {
   log.debug("Entering checkTokenRequest().");
   const record = opts.record || {};
@@ -3871,6 +4118,13 @@ function checkCodeBinding(record, body, presentedClient) {
 // The object is mutated in place and returned, because it is built fresh per
 // request in asMetadata() and there is nothing to share.
 // ---------------------------------------------------------------------------
+/**
+ * Removes from the discovery document what this mode refuses: token response
+ * types and the implicit and password grants.
+ *
+ * @param metadata - the discovery document, mutated in place
+ * @returns the document
+ */
 function applyToMetadata(metadata) {
   log.debug("Entering applyToMetadata().");
   if (!enabled()) {
@@ -3906,6 +4160,11 @@ function applyToMetadata(metadata) {
 
 // What GET /oauth2/rfc9700 publishes, and what a test reads to find out whether
 // the mode is on without having to infer it from a refusal.
+/**
+ * Describes the mode as `GET /oauth2/rfc9700` publishes it.
+ *
+ * @returns the description
+ */
 function state() {
   log.debug("Entering state().");
   const on = enabled();
@@ -4007,6 +4266,13 @@ function state() {
 // which this row names too. At require time — see cluster/CLAUDE.md.
 capabilities.provide('oauth.refresh-rotation');
 
+/**
+ * RFC 9700, the OAuth 2.0 Security Best Current Practice, as a mode, with the
+ * refresh token family bookkeeping and the redirect URI checks that hold in
+ * every mode.
+ *
+ * @namespace
+ */
 module.exports = {
   REQUIREMENTS: REQUIREMENTS,
   enabled: enabled,

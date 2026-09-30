@@ -33,6 +33,13 @@ interface RefusedProfile {
   readonly why: string;
 }
 
+/**
+ * The certificate profiles an enrollment protocol names, as data only.
+ *
+ * The nine profiles ACME, EST and SCEP issue and the five they never do,
+ * kept in a leaf that requires nothing so that `common/realms.js` can read
+ * the names. The decisions themselves are in `common/cert_enrollment.ts`.
+ */
 class EnrollmentProfiles {
   // ---------------------------------------------------------------------------
   // **NINE ARE ISSUED AND FIVE ARE NOT, AND THE FIVE ARE A DECISION rcbj MADE
@@ -42,11 +49,16 @@ class EnrollmentProfiles {
   // certificate is holding a power over everybody else in the realm. The `why`
   // of each is drawn on every protocol page and returned by every refusal.
   // ---------------------------------------------------------------------------
+  /** The nine certificate profiles an enrollment protocol may issue. */
   static readonly PROFILE_IDS: string[] = [
     'tls-server', 'tls-client', 'tls-server-client', 'digital-signature',
     'key-encipherment', 'code-signing', 'email', 'timestamping',
     'smartcard-logon'];
 
+  /**
+   * The five profiles an enrollment protocol never issues, each with the
+   * reason drawn on every protocol page and returned by every refusal.
+   */
   static readonly REFUSED_PROFILES: RefusedProfile[] = [
     { id: 'root-ca',
       why: 'A Root CA is a trust anchor. Its holder could issue a ' +
@@ -75,6 +87,10 @@ class EnrollmentProfiles {
   // one it answers 403 for rather than 404. A trust realm may not be called
   // any of these (`realms.validateId()`, STS-CORE-0107), and a realm that was
   // is never reached through the label position: the label reading wins.
+  /**
+   * Every name EST reads as a label: the issued profiles and the refused
+   * ones. A trust realm may not be called any of these.
+   */
   static readonly EST_LABELS: string[] = EnrollmentProfiles.PROFILE_IDS
     .concat(EnrollmentProfiles.REFUSED_PROFILES.map(function (one) {
       return one.id;

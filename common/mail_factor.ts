@@ -82,15 +82,42 @@ interface MailFactorDeps {
   mail(): any;
 }
 
+/**
+ * The emailed second factor as a fact about a person: whether they hold it, the
+ * codes and link tokens it sends, and the failures that turn it off.
+ *
+ * An opt-in on the entry (`stsMailFactor`); held means usable now: opted in,
+ * allowed by the realm's authentication policy, mail can be sent and the
+ * address is verified.
+ */
 class MailFactor {
+  /**
+   * The authentication policy's mechanism for each kind: `emailCode` and
+   * `emailLink`.
+   */
   static readonly MECHANISM = MECHANISM;
+  /**
+   * The two kinds of emailed factor: `code` and `link`.
+   */
   static readonly KINDS: Kind[] = ['code', 'link'];
 
+  /**
+   * Creates the emailed factor.
+   *
+   * @param deps - its dependencies: the logger, the secret hasher, the
+   * error-code table, the audit log, the authentication policy, a CSPRNG and
+   * the mail channel
+   */
   constructor(private readonly deps: MailFactorDeps) {
     deps.log.debug("Entering MailFactor.constructor().");
     deps.log.debug("Leaving MailFactor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): MailFactorDeps {
     log.debug("Entering MailFactor.defaultDeps().");
     log.debug("Leaving MailFactor.defaultDeps().");
@@ -112,6 +139,12 @@ class MailFactor {
     };
   }
 
+  /**
+   * Tells whether a value is one of the two kinds, `code` or `link`.
+   *
+   * @param value - the value
+   * @returns true when it is
+   */
   static isKind(value: unknown): value is Kind {
     log.debug("Entering MailFactor.isKind().");
     log.debug("Leaving MailFactor.isKind().");
@@ -139,7 +172,17 @@ class MailFactor {
       log.debug("Leaving MailFactor.entryOf(). None.");
       return null;
     }
-    const attrs = entry.attributes || {};
+    const out = this.valuesOf(entry.attributes || {});
+    log.debug("Leaving MailFactor.entryOf().");
+    return out;
+  }
+
+  // The four values this file reads off a person's attributes (lower-cased
+  // names, as the store keeps them). One place, so `entryOf()` and
+  // `heldOfAttributes()` read an entry the same way.
+  private valuesOf(attrs: Record<string, unknown[]>): Record<string, string> {
+    const { log } = this.deps;
+    log.debug("Entering MailFactor.valuesOf().");
     const first = function (name: string): string {
       log.debug("Entering first().");
       const values = attrs[name.toLowerCase()] || [];
@@ -152,15 +195,79 @@ class MailFactor {
       factor: first('stsMailFactor').trim().toLowerCase(),
       failures: first('stsMailFactorFailures').trim()
     };
-    log.debug("Leaving MailFactor.entryOf().");
+    log.debug("Leaving MailFactor.valuesOf().");
     return out;
   }
 
   // Everything a page or a sign-in asks about one person's emailed factor.
+  /**
+   * Answers everything a page or a sign-in asks about one person's emailed
+   * factor.
+   *
+   * @param username - the person
+   * @returns `{ optedIn, kind, usable, why, verified, address, offered,
+   * failures }`, where `why` says what keeps an opted-in factor from being
+   * usable
+   */
   status(username: string) {
-    const { log, authnPolicy } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering MailFactor.status(). " + username);
-    const entry = this.entryOf(username);
+    const out = this.statusOfValues(this.entryOf(username));
+    log.debug("Leaving MailFactor.status().");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE KIND HELD, FROM ATTRIBUTES ALREADY READ (#352, 2026-09-29).
+  //
+  // `/admin/users` counts who holds a second factor over everybody in the
+  // realm, and an emailed factor that is usable is one (`mechanismsFor()`'s
+  // `mfaRequired`). Asking `held()` per person was a lookup and a copy of the
+  // whole entry each; the directory's credential census hands over the four
+  // attributes instead, and this answers from them by the SAME rule
+  // `status()` applies — `statusOfValues()` is both.
+  //
+  // Nobody opted in is answered before the realm's policy is asked, which is
+  // the common case and is `status()`'s own first test, so it is the same
+  // answer without two policy reads per person. Where this process has no
+  // mail channel directory, nobody holds one — `entryOf()`'s answer.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the kind of emailed factor held, from a person's attributes.
+   *
+   * @param attrs - the person's attributes, lower-cased names to values
+   * @returns `code`, `link`, or '' when none is usable
+   */
+  heldOfAttributes(attrs: Record<string, unknown[]>): Kind | '' {
+    const { log } = this.deps;
+    log.debug("Entering MailFactor.heldOfAttributes().");
+    let directory = null;
+    try {
+      directory = this.deps.mail().directory();
+    } catch (e) {
+      log.debug("Caught in MailFactor.heldOfAttributes(): " +
+                ((e && e.message) || e));
+      // No mail channel in this process: `entryOf()` reads nobody then.
+      directory = null;
+    }
+    if (!directory || !attrs) {
+      log.debug("Leaving MailFactor.heldOfAttributes(). No directory.");
+      return '';
+    }
+    const values = this.valuesOf(attrs);
+    if (!MailFactor.isKind(values.factor)) {
+      log.debug("Leaving MailFactor.heldOfAttributes(). Not opted in.");
+      return '';
+    }
+    const s = this.statusOfValues(values);
+    log.debug("Leaving MailFactor.heldOfAttributes().");
+    return s.usable ? s.kind : '';
+  }
+
+  // `status()`'s rule, over values already read. Null is nobody.
+  private statusOfValues(entry: Record<string, string> | null) {
+    const { log, authnPolicy } = this.deps;
+    log.debug("Entering MailFactor.statusOfValues().");
     const kind: Kind | '' = entry && MailFactor.isKind(entry.factor)
       ? entry.factor as Kind : '';
     const verified = !!(entry && entry.mail &&
@@ -190,12 +297,18 @@ class MailFactor {
       offered: offered,
       failures: Number((entry && entry.failures) || 0) || 0
     };
-    log.debug("Leaving MailFactor.status(). " + (out.usable ? 'usable'
-      : why));
+    log.debug("Leaving MailFactor.statusOfValues(). " + (out.usable
+      ? 'usable' : why));
     return out;
   }
 
   // The kind a person HOLDS right now, or ''.
+  /**
+   * Returns the kind of emailed factor a person holds right now.
+   *
+   * @param username - the person
+   * @returns `code`, `link`, or '' when none is usable
+   */
   held(username: string): Kind | '' {
     const { log } = this.deps;
     log.debug("Entering MailFactor.held().");
@@ -207,6 +320,12 @@ class MailFactor {
   // A masked address for a page: `j***@example.com`. The person proved they
   // own it; a page naming it in full to whoever typed their account name
   // would be account enumeration with an address attached.
+  /**
+   * Masks an address for a page, such as `j***@example.com`.
+   *
+   * @param address - the address
+   * @returns the masked address, or `your address` for one without a local part
+   */
   masked(address: string): string {
     const { log } = this.deps;
     log.debug("Entering MailFactor.masked().");
@@ -244,6 +363,19 @@ class MailFactor {
   // THE OPT-IN, by the person from /portal/mfa. Refused unless it would be
   // USABLE at once: an opt-in the next sign-in could not honour is a setting
   // that lies.
+  /**
+   * Turns a person's emailed second factor on, from `/portal/mfa`; refused
+   * unless it would be usable at once.
+   *
+   * Audited, and a CAEP credential-change is sent.
+   *
+   * @param username - the person
+   * @param kind - `code` or `link`
+   * @param actor - who did it
+   * @param via - the surface it came through
+   * @returns `{ ok, kind }`, or `{ ok: false, errors }` marked with its code
+   * (STS-AUTHN-0247 to STS-AUTHN-0251)
+   */
   optIn(username: string, kind: unknown, actor: string, via: string) {
     const { log, errorCodes, audit, authnPolicy } = this.deps;
     log.debug("Entering MailFactor.optIn(). " + username + " " + kind);
@@ -294,6 +426,16 @@ class MailFactor {
 
   // THE OPT-OUT, by the person or by an administrator — or by this service at
   // the failure limit, when `why` says so.
+  /**
+   * Turns a person's emailed second factor off: by the person, an
+   * administrator, or this service at the failure limit.
+   *
+   * @param username - the person
+   * @param actor - who did it; '' for this service
+   * @param via - the surface it came through
+   * @param why - the reason, when there is one
+   * @returns `{ ok, removed, was }`
+   */
   clear(username: string, actor: string, via: string, why?: string) {
     const { log, audit } = this.deps;
     log.debug("Entering MailFactor.clear(). " + username);
@@ -363,6 +505,11 @@ class MailFactor {
   }
 
   // A success clears the count.
+  /**
+   * Clears a person's count of consecutive failures after a success.
+   *
+   * @param username - the person
+   */
   noteSuccess(username: string): void {
     const { log } = this.deps;
     log.debug("Entering MailFactor.noteSuccess().");
@@ -376,6 +523,15 @@ class MailFactor {
   // Only a person who HOLDS the factor as a second factor, or used an emailed
   // code as a first, is counted — `username` is always a real account here,
   // never a name somebody typed that has no entry.
+  /**
+   * Counts a failed emailed code or link on the person's entry; at the
+   * authentication policy's limit the factor is turned off (STS-AUTHN-0252), a
+   * RISC credential-compromise is sent and the person and administrators are
+   * mailed.
+   *
+   * @param username - the person
+   * @returns `{ failures, cleared }`
+   */
   noteFailure(username: string): { failures: number; cleared: boolean } {
     const { log, authnPolicy, errorCodes } = this.deps;
     log.debug("Entering MailFactor.noteFailure(). " + username);
@@ -448,6 +604,11 @@ class MailFactor {
 
   // Six digits, uniformly: `randomInt` rejects the bias a modulus would add,
   // and the leading zeros are kept — one code in ten starts with one.
+  /**
+   * Mints a uniformly random six-digit code, leading zeros kept.
+   *
+   * @returns the code
+   */
   mintCode(): string {
     const { log } = this.deps;
     log.debug("Entering MailFactor.mintCode().");
@@ -457,6 +618,11 @@ class MailFactor {
   }
 
   // 256 bits, base64url: a link token nobody guesses in the life of a step.
+  /**
+   * Mints a 256-bit link token, base64url.
+   *
+   * @returns the token
+   */
   mintToken(): string {
     const { log } = this.deps;
     log.debug("Entering MailFactor.mintToken().");
@@ -464,6 +630,12 @@ class MailFactor {
     return this.deps.randomBytes(32).toString('base64url');
   }
 
+  /**
+   * Hashes a code or token with scrypt, for keeping on the sign-in step.
+   *
+   * @param secret - the code or token
+   * @returns a promise of the hash
+   */
   hash(secret: string): Promise<string> {
     const { log } = this.deps;
     log.debug("Entering MailFactor.hash().");
@@ -472,6 +644,14 @@ class MailFactor {
   }
 
   // Constant-time by construction: scrypt, then the stored comparison.
+  /**
+   * Tells whether a code or token matches its stored hash; an unreadable hash
+   * matches nothing.
+   *
+   * @param secret - what was presented
+   * @param stored - the stored hash
+   * @returns a promise of true when it matches
+   */
   matches(secret: string, stored: unknown): Promise<boolean> {
     const { log } = this.deps;
     log.debug("Entering MailFactor.matches().");
@@ -492,6 +672,12 @@ class MailFactor {
   // What a code a person typed looks like once the spaces and dashes a mail
   // client or a phone added are gone. Anything that is not then six digits
   // is refused before the hash is asked.
+  /**
+   * Normalises a code a person typed, removing spaces and dashes.
+   *
+   * @param typed - what was typed
+   * @returns the six digits, or '' when it is not six digits
+   */
   normalizeCode(typed: unknown): string {
     const { log } = this.deps;
     log.debug("Entering MailFactor.normalizeCode().");
@@ -509,6 +695,15 @@ const slot = new InstanceSlot<MailFactor>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The emailed second factor, as a fact about a person: opt-in, usability,
+ * secrets and the failure limit.
+ *
+ * Exports the class and facades forwarding to the instance the composition root
+ * built.
+ *
+ * @namespace
+ */
 export = {
   MailFactor: MailFactor,
   installInstance: (instance: MailFactor): void => slot.install(instance),
@@ -518,6 +713,7 @@ export = {
   isKind: MailFactor.isKind,
   status: slot.forward('status'),
   held: slot.forward('held'),
+  heldOfAttributes: slot.forward('heldOfAttributes'),
   masked: slot.forward('masked'),
   optIn: slot.forward('optIn'),
   clear: slot.forward('clear'),

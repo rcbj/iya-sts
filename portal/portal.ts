@@ -256,7 +256,13 @@ import risc = require('../ssf/risc');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 
+/**
+ * The portal's root path.
+ */
 const BASE = '/portal';
+/**
+ * The activation link's path.
+ */
 const ACTIVATE = BASE + '/activate';
 // A PASSWORD RESET LINK an administrator issued (2026-09-13). Unauthenticated,
 // like ACTIVATE, and for its reason: the token is the credential.
@@ -1036,10 +1042,30 @@ interface PortalDeps {
   baseUrlOf: typeof helpers.baseUrlOf;
 }
 
+/**
+ * The user portal: the pages that belong to the person looking at them, behind
+ * a navigation column of their own.
+ *
+ * An OpenID Connect relying party of this service's own authorization server.
+ * No route takes an identity from the request; the person is always the one the
+ * portal's session names.
+ */
 class Portal {
+  /**
+   * The portal's root path, `/portal`.
+   */
   static readonly BASE = BASE;
+  /**
+   * The activation link's path, `/portal/activate`, the one page reached
+   * without signing in to spend a link.
+   */
   static readonly ACTIVATE = ACTIVATE;
 
+  /**
+   * Builds the portal over its dependencies.
+   *
+   * @param deps - the app and the modules the pages read and write through
+   */
   constructor(private readonly deps: PortalDeps) {
     deps.log.debug("Entering Portal.constructor().");
     deps.log.debug("Leaving Portal.constructor().");
@@ -1047,6 +1073,11 @@ class Portal {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalDeps {
     helpers.log.debug("Entering Portal.defaultDeps().");
     helpers.log.debug("Leaving Portal.defaultDeps().");
@@ -1088,6 +1119,13 @@ class Portal {
   // report: the non-enumerable mark, or an `errorCode` member on an internal
   // result. Its own is the more specific; this portal's code names the door
   // otherwise.
+  /**
+   * Returns the error code a library already put on a result the portal is
+   * about to report.
+   *
+   * @param result - the result
+   * @returns the code, or ''
+   */
   innerCode(result) {
     const { errorCodes, log } = this.deps;
     log.debug("Entering Portal.innerCode().");
@@ -1142,6 +1180,14 @@ class Portal {
   // ===========================================================================
   private directory: DirectoryHooks | null = null;
 
+  /**
+   * Fills the directory slot, through which the Overview reads the person's own
+   * entry; `ldap/ldap_server.js` fills it. Something without `personEntry()` is
+   * refused whole.
+   *
+   * @param hooks - the directory's functions
+   * @returns whether they were taken
+   */
   setDirectory(hooks) {
     const self = this;
     const { errorCodes, log } = this.deps;
@@ -1202,6 +1248,12 @@ class Portal {
 
   // Everything drawn here goes through it. The console has its own; this is a
   // separate application and shares no markup with it.
+  /**
+   * Escapes a value for HTML; everything the portal draws goes through it.
+   *
+   * @param value - the value
+   * @returns the escaped text
+   */
   esc(value) {
     const { log } = this.deps;
     log.debug("Entering Portal.esc().");
@@ -1252,6 +1304,13 @@ class Portal {
       encodeURIComponent(realms.DEFAULT_ID) : '');
   }
 
+  /**
+   * Sends a page, always with `Cache-Control: no-store`.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param html - the page
+   */
   send(res, status, html) {
     const { log } = this.deps;
     log.debug("Entering Portal.send().");
@@ -1318,6 +1377,17 @@ class Portal {
   // after a successful write says so with `?done=`, and a refused write
   // re-draws the page it was posted from with the reason on it.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws a signed-in page: the navigation column, the heading and sign-out,
+   * the message or error the page was reached with, and the cards.
+   *
+   * @param active - the page's path, which the column highlights
+   * @param session - the portal session
+   * @param message - a success message to draw, if any
+   * @param error - an error to draw, if any
+   * @param cards - the page's body
+   * @returns the page's HTML
+   */
   shell(active, session, message, error, cards) {
     const self = this;
     const { log, websecurity } = this.deps;
@@ -1544,6 +1614,12 @@ class Portal {
   // malformed, which is true whether or not anybody is signed in — the same
   // line `common/validation.js` draws between shape and existence.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers a malformed request with a 400 page in the portal's shell.
+   *
+   * @param res - the response
+   * @param why - the validation failure, with its field and detail
+   */
   // error-code: none — the helper's definition, not a call to it.
   refuseShape(res, why) {
     const self = this;
@@ -1755,6 +1831,14 @@ class Portal {
   // the forgot-password form and the address verification link
   // (`portal_mail.ts`, #63), beside the reset and activation pages that use
   // `page()` directly.
+  /**
+   * Draws a page with no navigation column, for the pages nobody is signed in
+   * to.
+   *
+   * @param title - the page's title
+   * @param inner - the page's body
+   * @returns the page's HTML
+   */
   bare(title, inner) {
     const { log } = this.deps;
     log.debug("Entering Portal.bare().");
@@ -1802,6 +1886,184 @@ class Portal {
   }
 
   // ---------------------------------------------------------------------------
+  // ADOPTING THE CONSOLE'S SESSION (2026-09-30).
+  //
+  // **WHAT WENT WRONG, ON A PRODUCT DEPLOYMENT.** An administrator signed in to
+  // `/admin`, followed the account menu's link to their own account here, and
+  // was asked first to CHOOSE A REALM and then to SIGN IN AGAIN. Both were
+  // this surface doing exactly what it was written to do: it had no session of
+  // its own, so `realmChooser.decide()` asked the bare `/portal`'s question,
+  // and the code flow behind it met no sign-on session — because the sign-on
+  // session behind the console had run out (`authn.sessionLifetimeS`, an
+  // hour, absolute) while the console session carried on past it by renewing
+  // its own tokens (`common/oidc_rp.ts` section 4). Single sign-on between the
+  // two surfaces rested on a session one of them no longer needed.
+  //
+  // **THE OWNER'S DECISION: the portal reads the realm and the authenticated
+  // session from the console session.** So a request with no portal session,
+  // in a browser holding a LIVE console session, is given a portal session of
+  // its own made from that one (`authn.adoptRelyingPartySession()`): the same
+  // person, the realm they signed in to the console through, the same
+  // authentication record, and a life bounded by the console session's — it
+  // names the console session as its parent and ends with it, on any sign-out
+  // and on the first request after it is gone.
+  //
+  // Five things keep it narrow:
+  //
+  //   * **ONE DIRECTION.** Nothing here writes the console's cookie, and the
+  //     console's gate reads only its own (`admin-core/admin_views.ts`'s
+  //     `consoleRpSession()`). A portal session grants no console.
+  //   * **"LIVE" IS THE CONSOLE'S OWN ANSWER**: `oidcRp.sessionFor(req,
+  //     'admin')`, which applies the console session's expiry, idle timeout
+  //     and parent check, and then `renewalDecision()`, which refuses one
+  //     whose tokens ran out and can no longer be renewed. Nothing is
+  //     loosened for the portal's sake.
+  //   * **THE REALM IS THE CONSOLE SESSION'S IDENTITY REALM** (its
+  //     `derivedFromRealm`, the realm whose roster the console asks — the same
+  //     answer the console's account-menu link is built from). Reached at the
+  //     bare `/portal` of the default realm by a realm's own administrator, it
+  //     is a REDIRECT to that realm's portal, built from the registry as the
+  //     chooser builds one, and the adoption happens there. Reached under
+  //     ANOTHER realm's prefix, nothing is adopted: somebody who named a realm
+  //     the console session is not from is asking to sign in there.
+  //   * **THE ACCESS POLICY STILL DECIDES.** The adopted session goes through
+  //     the same `accessGate` check as a code-flow session, in
+  //     `requireSignIn()`.
+  //   * **NOT ACROSS CELLS (#98).** A person held here only as a projection is
+  //     homed elsewhere, and their account is managed there; nothing is
+  //     adopted and the code flow runs as it always did.
+  //
+  // Anything that stops an adoption leaves the old path — the chooser, then
+  // the code flow — exactly as it was, with the reason logged under its code.
+  // ---------------------------------------------------------------------------
+  /**
+   * Makes this portal's session from a live admin console session in the same
+   * browser, or says where that session's realm's portal is.
+   *
+   * @param req - the request, which has no portal session
+   * @param res - the response the new session's cookie is set on
+   * @param returnTo - the portal path the caller would return to
+   * @returns `{ session }` when adopted, `{ redirect }` to that realm's
+   *   portal, or null to sign in the ordinary way
+   */
+  adoptConsoleSession(req, res, returnTo) {
+    const { authn, baseUrlOf, errorCodes, log, oidcRp, realms } = this.deps;
+    log.debug("Entering Portal.adoptConsoleSession().");
+    let held: any = null;
+    try {
+      held = oidcRp.sessionFor(req, 'admin');
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PORTAL-0099') + 'portal: reading the ' +
+                'admin console session to adopt it threw, and the portal ' +
+                'signs in the ordinary way: ' + ((e && e.stack) || e));
+      held = null;
+    }
+    if (!held || held.rpSurface !== 'admin' || !held.user) {
+      log.debug("Leaving Portal.adoptConsoleSession(). No live console " +
+                "session.");
+      return null;
+    }
+    const username = String(held.user.username || '');
+    const homeId = String(held.derivedFromRealm || realms.DEFAULT_ID);
+    const home = realms.get(homeId);
+    const decision = oidcRp.renewalDecision(held, Date.now(), 0);
+    const why = !username ? 'it names nobody'
+      : !home ? 'the realm "' + homeId + '" it was signed in through is no ' +
+                'longer defined'
+      : decision.action === 'end' ? String(decision.why || 'its tokens ran ' +
+                                           'out')
+      : '';
+    if (why) {
+      log.info(errorCodes.tag('STS-PORTAL-0098') + 'portal: the admin ' +
+               'console session ' + held.id + ' was not adopted, because ' +
+               why + '. The portal signs in the ordinary way.');
+      log.debug("Leaving Portal.adoptConsoleSession(). Not adoptable.");
+      return null;
+    }
+    const here = realms.currentId();
+    // THE CHOOSER'S OWN ANSWER WINS. `?realm=` on the bare `/portal` is a
+    // person saying which realm they mean (`common/realm_chooser.ts`), and one
+    // naming a realm this console session is not from is left to the chooser.
+    const rawAsked = req.query ? req.query.realm : undefined;
+    const asked = String((Array.isArray(rawAsked) ? rawAsked[0] : rawAsked) ||
+                         '').trim();
+    if (here === realms.DEFAULT_ID && asked && asked !== homeId) {
+      log.debug("Leaving Portal.adoptConsoleSession(). The chooser named " +
+                "another realm.");
+      return null;
+    }
+    if (here !== homeId) {
+      if (here !== realms.DEFAULT_ID) {
+        log.debug("Leaving Portal.adoptConsoleSession(). A realm the console " +
+                  "session is not from was named; its own sign-in.");
+        return null;
+      }
+      // BUILT, NEVER ECHOED: the service's own base with the ambient prefix
+      // taken off, the registry's prefix for the realm, and a portal path
+      // this file wrote — `returnTo` is always a constant built from `BASE`,
+      // and anything else (or a request that is not a GET) is the root.
+      const withRealm = baseUrlOf(req);
+      const prefix = realms.currentPrefix();
+      const root = prefix && withRealm.slice(-prefix.length) === prefix
+        ? withRealm.slice(0, withRealm.length - prefix.length) : withRealm;
+      const method = String(req.method || 'GET').toUpperCase();
+      const portalPath = /^\/portal(\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*$/;
+      const path = (method === 'GET' || method === 'HEAD') &&
+                   portalPath.test(String(returnTo || ''))
+        ? String(returnTo) : BASE;
+      const location = root + realms.prefixOf(home) + path;
+      log.info('portal: the admin console session ' + held.id + ' of ' +
+               username + ' was signed in through realm ' + homeId +
+               ', so its portal is that realm\'s; sending the browser to ' +
+               location + ' to adopt it there.');
+      log.debug("Leaving Portal.adoptConsoleSession(). To " + location + ".");
+      return { redirect: location };
+    }
+    let projected = false;
+    try {
+      projected = require('../common/cell_sessions').isProjected(homeId,
+                                                                 'name',
+                                                                 username);
+    } catch (e) {
+      log.debug("Caught in Portal.adoptConsoleSession(): " +
+                ((e && e.message) || e));
+      // No cells in this process: every person is homed here.
+      projected = false;
+    }
+    if (projected) {
+      log.info(errorCodes.tag('STS-PORTAL-0098') + 'portal: the admin ' +
+               'console session ' + held.id + ' was not adopted, because ' +
+               username + ' is homed in another cell, where their account ' +
+               'is managed. The portal signs in the ordinary way.');
+      log.debug("Leaving Portal.adoptConsoleSession(). Projected.");
+      return null;
+    }
+    const surface = oidcRp.surfaceOf('portal');
+    let session: any = null;
+    try {
+      session = authn.adoptRelyingPartySession({
+        res: res, req: req, source: held, sourceRealm: realms.DEFAULT_ID,
+        surface: surface.id, label: surface.label,
+        clientId: surface.clientId, cookie: surface.cookie
+      });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PORTAL-0099') + 'portal: adopting the ' +
+                'admin console session ' + held.id + ' threw, and the ' +
+                'portal signs in the ordinary way: ' + ((e && e.stack) || e));
+      session = null;
+    }
+    if (!session) {
+      log.debug("Leaving Portal.adoptConsoleSession(). Not made.");
+      return null;
+    }
+    log.info('portal: ' + username + ' was signed in to the portal in realm ' +
+             homeId + ' from their live admin console session ' + held.id +
+             '; portal session ' + session.id + ' ends when that one does.');
+    log.debug("Leaving Portal.adoptConsoleSession(). Adopted.");
+    return { session: session };
+  }
+
+  // ---------------------------------------------------------------------------
   // THE AUTHENTICATED PORTAL.
   //
   // **THE IDENTITY COMES FROM THE SESSION AND NOWHERE ELSE.** Not from a query
@@ -1809,6 +2071,17 @@ class Portal {
   // for anybody to change, which is the only version of OWASP A01 that survives
   // somebody adding a page later without reading this comment.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the portal session for a request, after the access policy allows
+   * it; otherwise starts the sign-in, or answers the realm chooser or a
+   * refusal.
+   *
+   * @param req - the request
+   * @param res - the response, written when there is no session
+   * @param returnTo - where to come back to after signing in
+   * @param want - what the policy is asked for
+   * @returns the session, or null when the response has been answered
+   */
   requireSignIn(req, res, returnTo, want) {
     const self = this;
     const { accessGate, errorCodes, log, oidcRp, realmChooser } = this.deps;
@@ -1821,7 +2094,22 @@ class Portal {
     // family here was silently already signed in to their account page, which
     // is single sign-on happening without an application ever having asked for
     // it.
-    const session = oidcRp.sessionFor(req, 'portal');
+    let session = oidcRp.sessionFor(req, 'portal');
+    // NO PORTAL SESSION, BUT A LIVE CONSOLE SESSION IN THIS BROWSER
+    // (2026-09-30): adopted, or the browser sent to the realm it is adopted
+    // in — see adoptConsoleSession(). Before the chooser and the code flow,
+    // which are what it replaces for this one case, and before the policy,
+    // which it does not replace at all.
+    if (!session) {
+      const adopted = self.adoptConsoleSession(req, res, returnTo);
+      if (adopted && adopted.redirect) {
+        res.set('Cache-Control', 'no-store').redirect(303, adopted.redirect);
+        log.debug("Leaving Portal.requireSignIn(). To the console session's " +
+                  "realm.");
+        return null;
+      }
+      session = adopted ? adopted.session : null;
+    }
     if (session) {
       // -------------------------------------------------------------------
       // AND THE POLICY (2026-09-06). OWASP A01, decided by the PDP.
@@ -1950,6 +2238,13 @@ class Portal {
 
   // What `requireSignIn()` does with the answer: nothing when the browser was
   // sent on, and the refusal page when it could not be.
+  /**
+   * Finishes what `requireSignIn()` started: nothing when the browser was sent
+   * on, a 503 page naming the reason when it could not be.
+   *
+   * @param res - the response
+   * @param started - the sign-in's outcome
+   */
   startedSignIn(res, started) {
     const self = this;
     const { errorCodes, log } = this.deps;
@@ -4370,6 +4665,12 @@ class Portal {
   // NAV rather than listed again — a page added to the column is a page in this
   // list, and one removed leaves nothing behind for `sts_metadata.js` to report
   // as described-but-not-registered.
+  /**
+   * Returns every path the portal registers, the signed-in pages read off the
+   * navigation table, for `sts_metadata.ts`.
+   *
+   * @returns the paths
+   */
   paths(): string[] {
     const { log } = this.deps;
     log.debug("Entering Portal.paths().");
@@ -4387,6 +4688,55 @@ class Portal {
                BASE + '/forgot-password', BASE + '/verify-email',
                // The device app's two JSON doors (#164 phase 2).
                BASE + '/devices/challenge', BASE + '/devices/proof']);
+  }
+
+  /**
+   * Registers the portal's own routes on the app; `common/protocol_stack.ts`
+   * calls it (#50, R1), and the module's export then registers each page
+   * module's.
+   *
+   * @param app - the express app
+   */
+  // Which cell a portal request belongs to (#98): the home of the person it
+  // is about. Resolves true when it was relayed.
+  /**
+   * Relays a portal request to the home cell of the person it is about.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns a promise of true when the request was relayed
+   */
+  async placeRequest(req: any, res: any): Promise<boolean> {
+    const { authn, log, parseBody } = this.deps;
+    log.debug("Entering Portal.placeRequest().");
+    const cells = require('../common/cells');
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Portal.placeRequest(). Here.");
+      return false;
+    }
+    const realms = require('../common/realms');
+    const placement = require('../common/cell_placement');
+    const realmId = realms.currentId();
+    const session = authn.sessionOf(req);
+    const username = session && session.user
+      ? String(session.user.username || '') : '';
+    if (username &&
+        require('../common/cell_sessions').isProjected(realmId, 'name',
+                                                       username)) {
+      log.debug("Leaving Portal.placeRequest(). A projected session.");
+      return placement.relayToHome(req, res, realmId, 'name', username,
+                                   'portal');
+    }
+    // A link that names its person — the activation, reset and verification
+    // pages carry `user` in the query or the form.
+    const body = String(req.method || 'GET') === 'POST'
+      ? (parseBody(req) || {}) : {};
+    const named = String((req.query && req.query.user) || body.user || '')
+      .trim();
+    log.debug("Leaving Portal.placeRequest().");
+    return named ? placement.relayToHome(req, res, realmId, 'name', named,
+                                         'portal-link')
+                 : false;
   }
 
   registerRoutes(app: typeof import('../common/app')): void {
@@ -4413,6 +4763,27 @@ class Portal {
     // browser through the code flow as it always did for a request with no
     // session.
     // -------------------------------------------------------------------------
+    // THE PORTAL IS SERVED AT THE PERSON'S HOME (#98). It manages a person's
+    // own entry, which only their home cell holds: a request whose session
+    // is a PROJECTION of somebody homed elsewhere, or a link naming a person
+    // homed elsewhere (activation, password reset, address verification), is
+    // relayed there whole. Above the renewal and every page, before anything
+    // is read or spent. `common/cell_placement.ts` is the table.
+    app.use(BASE, function (req, res, next) {
+      log.debug("Entering the portal's cell placement.");
+      self.placeRequest(req, res).then(function (relayed) {
+        log.debug("Leaving the portal's cell placement. " +
+                  (relayed ? 'Relayed.' : 'Here.'));
+        if (!relayed) {
+          next();
+        }
+      }, function (e) {
+        log.debug("Caught in the portal's cell placement: " +
+                  ((e && e.message) || e));
+        next();
+      });
+    });
+
     app.use(BASE, oidcRp.renewal('portal'));
 
     // ASYNCHRONOUS SINCE 2026-09-14 (#46): the rate limit below counts in the
@@ -6307,12 +6678,50 @@ class Portal {
 
       }
       const parent = String(session.derivedFrom || '');
+      // AN ADOPTED SESSION'S PARENT IS THE CONSOLE SESSION (2026-09-30), in
+      // the default realm's partition, and the SIGN-ON session is that one's
+      // parent, in the realm it names — see adoptConsoleSession(). Both are
+      // ended, for this button's own reason: ending only the portal's would
+      // let the next page adopt the console session again and come back in
+      // with nothing typed. Read before anything is ended, because the
+      // cascade takes the rows that name them.
+      const adopted = !!session.rpAdoptedFrom;
+      const realmsHere = self.deps.realms;
+      const consoleRow = adopted && parent
+        ? realmsHere.run(realmsHere.get(String(session.derivedFromRealm ||
+                                               realmsHere.DEFAULT_ID)),
+                         function () {
+                           return authn.sessionById(parent);
+                         })
+        : null;
       oidcRp.endSessionFor(req, res, 'portal', 'the Sign out button on the ' +
                                                'user portal', 'user');
-      const signOnEnded = parent
-        ? !!authn.endSessionById(parent, 'the Sign out button on the user ' +
-                                         'portal', 'user')
-        : false;
+      let consoleEnded = false;
+      let signOnEnded = false;
+      if (adopted) {
+        consoleEnded = !!(consoleRow && realmsHere.run(
+          realmsHere.get(String(session.derivedFromRealm ||
+                                realmsHere.DEFAULT_ID)),
+          function () {
+            return authn.endSessionById(parent, 'the Sign out button on ' +
+                                                'the user portal', 'user');
+          }));
+        authn.clearSessionCookie(res, oidcRp.cookieFor('admin'));
+        const signOnId = consoleRow ? String(consoleRow.derivedFrom || '') :
+          '';
+        const signOnRealm = realmsHere.get(String((consoleRow &&
+          consoleRow.derivedFromRealm) || realmsHere.DEFAULT_ID));
+        signOnEnded = !!(signOnId && signOnRealm && realmsHere.run(
+          signOnRealm, function () {
+            return authn.endSessionById(signOnId, 'the Sign out button on ' +
+                                                  'the user portal', 'user');
+          }));
+      } else {
+        signOnEnded = parent
+          ? !!authn.endSessionById(parent, 'the Sign out button on the user ' +
+                                           'portal', 'user')
+          : false;
+      }
       // AND THE SIGN-ON COOKIE. `endSessionById()` takes no response — it is
       // how /logout ends sessions that are not the caller's — so the cookie
       // naming it has to be cleared here, or the browser goes on presenting a
@@ -6324,21 +6733,32 @@ class Portal {
         category: 'authentication', action: 'portal.signout',
         actor: username, outcome: 'success',
         summary: username + ' signed out of the user portal' +
+                 (consoleEnded ? ', and of the admin console session it was ' +
+                                 'adopted from' : '') +
                  (signOnEnded ? ', and of the sign-on session behind it' : ''),
-        detail: { portalSession: session.id, signOnSession: parent || '(none)',
+        detail: { portalSession: session.id,
+                  signOnSession: (adopted
+                    ? String((consoleRow && consoleRow.derivedFrom) || '')
+                    : parent) || '(none)',
+                  consoleSession: adopted ? parent : '(none)',
+                  consoleEnded: consoleEnded,
                   signOnEnded: signOnEnded,
                   address: websecurity.addressOf(req) }
       });
       log.info('portal: ' + username + ' signed out. The portal session ' +
                'is gone' +
+               (consoleEnded ? ', with the admin console session it was ' +
+                               'adopted from (' + parent + ')' : '') +
                (signOnEnded ?
-                ' and so is the sign-on session behind it (' + parent +
-                '), with every session derived from it.'
+                ' and so is the sign-on session behind it, with every ' +
+                'session derived from it.'
                 : '; there was no sign-on session left to end.'));
       log.debug('Leaving POST ' + BASE + '/signout. Signed out.');
       return self.send(res, 200, self.page('Signed out',
         '<div class="card"><h1>You are signed out</h1>' +
         '<div class="ok">Your portal session has ended' +
+        (consoleEnded
+          ? ', and so has the admin console session it was made from' : '') +
         (signOnEnded
           ? ', and so has the sign-on session it was built on — so anything ' +
             'else you were signed in to through it is signed out too.'
@@ -6426,6 +6846,10 @@ const portalClaimSources = require('./portal_claim_sources');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The user portal: the pages that belong to the person looking at them.
+ * @namespace
+ */
 export = {
   registerRoutes: (target: any): void => {
     slot.get().registerRoutes(target);

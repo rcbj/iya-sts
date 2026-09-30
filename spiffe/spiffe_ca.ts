@@ -189,7 +189,23 @@ interface SpiffeCaDeps {
   loadClusterClaims(): typeof import('../cluster/cluster_claims');
 }
 
+/**
+ * The trust domain's issuing authority: the X.509 CA that signs X509-SVIDs, the
+ * JWT authority that signs JWT-SVIDs, the bundle that publishes both, and the
+ * federated bundles of foreign trust domains.
+ *
+ * Per realm. Under a PKI hierarchy the X.509 authority is the realm's SPIFFE
+ * Issuing CA and the bundle publishes the service Root; without one it is
+ * self-signed. Every entry point awaits `ready()`.
+ */
 class SpiffeCa {
+  /**
+   * Builds the authority over its dependencies and describes its cache to
+   * `/admin/caches`.
+   *
+   * @param deps - the logger, configuration, realms, crypto, the SPIFFE ID
+   *   grammar, PKI, keys and the other modules it signs and stores through
+   */
   constructor(private readonly deps: SpiffeCaDeps) {
     deps.log.debug("Entering SpiffeCa.constructor().");
     SpiffeCa.describeCache(this);
@@ -200,6 +216,11 @@ class SpiffeCa {
   // by the instance, because an entry is current only while the realm's
   // stored array is the one it was unpacked from, and only an instance can
   // read that; a second instance replaces the first's row.
+  /**
+   * Registers the unpacked X.509 authority cache with `/admin/caches` (#74).
+   *
+   * @param ca - the instance whose cache is described
+   */
   static describeCache(ca: SpiffeCa): void {
     helpers.log.debug("Entering SpiffeCa.describeCache().");
     x509Count = cacheRegistry.register({
@@ -242,6 +263,11 @@ class SpiffeCa {
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SpiffeCaDeps {
     helpers.log.debug("Entering SpiffeCa.defaultDeps().");
     helpers.log.debug("Leaving SpiffeCa.defaultDeps().");
@@ -275,6 +301,13 @@ class SpiffeCa {
   // for a per-realm setting here — and read OUTSIDE any realm for the default
   // one, so that a call arriving in `acme` cannot be answered with acme's name
   // when it asked about the default realm.
+  /**
+   * Returns the trust domain configuration names for a realm, read in that
+   * realm.
+   *
+   * @param realmId - the realm's id
+   * @returns the trust domain name, lower-cased
+   */
   configuredTrustDomain(realmId) {
     const { log, realms, config } = this.deps;
     log.debug("Entering SpiffeCa.configuredTrustDomain().");
@@ -295,6 +328,12 @@ class SpiffeCa {
   // are about. Every caller here is building or replacing material for one
   // realm, and a plain `config.value()` would answer with whichever realm the
   // request that triggered the work arrived in.
+  /**
+   * Reads the settings a realm's authorities are generated with, in that realm.
+   *
+   * @param realmId - the realm's id
+   * @returns the key types, CA lifetime, CA subject and retained count
+   */
   realmSettings(realmId) {
     const { log, realms, config } = this.deps;
     log.debug("Entering SpiffeCa.realmSettings().");
@@ -314,6 +353,13 @@ class SpiffeCa {
 
   // Run something inside a named realm. `realms.get('')` is the default realm's
   // record, so a missing id is the default realm here rather than no realm.
+  /**
+   * Runs a function inside a realm, given its id.
+   *
+   * @param realmId - the realm's id, '' for the default
+   * @param fn - the function
+   * @returns what it returns
+   */
   inRealmOf(realmId, fn) {
     const { log, realms } = this.deps;
     log.debug("Entering SpiffeCa.inRealmOf().");
@@ -322,6 +368,12 @@ class SpiffeCa {
     return realm ? realms.run(realm, fn) : fn();
   }
 
+  /**
+   * Returns the trust domain a realm's authorities were built under.
+   *
+   * @param realmId - the realm's id
+   * @returns the name, or null before they are built
+   */
   builtTrustDomain(realmId) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.builtTrustDomain().");
@@ -332,6 +384,13 @@ class SpiffeCa {
 
   // THE ONE ANSWER EVERY OTHER FUNCTION IN THIS FILE USES. The built name wins
   // wherever there is one, for the reason the block above gives.
+  /**
+   * Returns a realm's trust domain: the one its authorities were built under
+   * wherever there is one, otherwise the configured one.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the trust domain name
+   */
   trustDomainOf(realmId?) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.trustDomainOf().");
@@ -344,6 +403,13 @@ class SpiffeCa {
   // this state is not broken — it is issuing under the name it has always
   // issued under — and it is exactly the state `config.js`'s header calls the
   // silent disagreement, so nothing here is allowed to be silent about it.
+  /**
+   * Reports whether configuration and a realm's material disagree about its
+   * trust domain.
+   *
+   * @param realmId - the realm's id
+   * @returns the built and configured names, or null when they agree
+   */
   trustDomainDrift(realmId) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.trustDomainDrift().");
@@ -357,6 +423,11 @@ class SpiffeCa {
     return { built: built, configured: configured };
   }
 
+  /**
+   * Returns `spiffe.svidTtl`, an X509-SVID's default lifetime.
+   *
+   * @returns seconds
+   */
   svidTtlSeconds() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeCa.svidTtlSeconds().");
@@ -364,6 +435,11 @@ class SpiffeCa {
     return config.value('spiffe.svidTtl');
   }
 
+  /**
+   * Returns `spiffe.jwtSvidTtl`, a JWT-SVID's default lifetime.
+   *
+   * @returns seconds
+   */
   jwtSvidTtlSeconds() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeCa.jwtSvidTtlSeconds().");
@@ -371,6 +447,11 @@ class SpiffeCa {
     return config.value('spiffe.jwtSvidTtl');
   }
 
+  /**
+   * Returns `spiffe.refreshHint`, the bundle's refresh hint.
+   *
+   * @returns seconds
+   */
   refreshHintSeconds() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeCa.refreshHintSeconds().");
@@ -378,6 +459,11 @@ class SpiffeCa {
     return config.value('spiffe.refreshHint');
   }
 
+  /**
+   * Returns `spiffe.svidSubject`, the subject an X509-SVID carries.
+   *
+   * @returns the subject template
+   */
   svidSubject() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeCa.svidSubject().");
@@ -385,6 +471,12 @@ class SpiffeCa {
     return config.value('spiffe.svidSubject');
   }
 
+  /**
+   * Returns `spiffe.maxFederatedBundles`, the cap on a realm's federated
+   * bundles.
+   *
+   * @returns the cap
+   */
   maxFederatedBundles() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeCa.maxFederatedBundles().");
@@ -410,6 +502,15 @@ class SpiffeCa {
   // The PKI path is untouched: a realm with a hierarchy takes its Issuing CA's
   // subject from `common/pki.js`, which owns it.
   // ---------------------------------------------------------------------------
+  /**
+   * Renders `spiffe.caSubject` for a self-signed authority.
+   *
+   * @param template - the template, with `{kind}` and `{trustDomain}`
+   * @param kind - the authority's kind
+   * @param trustDomain - the trust domain
+   * @returns the subject
+   * @throws an Error when the result is empty
+   */
   caSubjectFor(template, kind, trustDomain) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.caSubjectFor().");
@@ -428,6 +529,12 @@ class SpiffeCa {
     return rendered;
   }
 
+  /**
+   * Returns one of `KEY_TYPES` by id.
+   *
+   * @param id - the key type's id
+   * @returns the key type, or null
+   */
   keyTypeById(id) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.keyTypeById().");
@@ -447,6 +554,12 @@ class SpiffeCa {
   // store in this service has. A gRPC call is in the realm whose socket it
   // arrived on, because `spiffe_server.ts`'s `handlersInRealm()` enters that
   // realm around every handler (the default realm's four sockets included).
+  /**
+   * Returns the realm a call is about: the id given, or the ambient realm's.
+   *
+   * @param realmId - the realm's id, if given
+   * @returns the id, '' for the default realm
+   */
   realmIdOf(realmId) {
     const { log, realms } = this.deps;
     log.debug("Entering SpiffeCa.realmIdOf().");
@@ -459,6 +572,12 @@ class SpiffeCa {
     return String((current && current.id) || '');
   }
 
+  /**
+   * Returns a realm's partition of the authority store.
+   *
+   * @param realmId - the realm's id
+   * @returns the partition
+   */
   authoritiesIn(realmId) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.authoritiesIn().");
@@ -466,6 +585,12 @@ class SpiffeCa {
     return authorities.realmMap(this.realmIdOf(realmId));
   }
 
+  /**
+   * Packs an X.509 authority for the store, its DER as base64.
+   *
+   * @param one - the authority
+   * @returns the stored form
+   */
   packX509(one) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.packX509().");
@@ -477,6 +602,12 @@ class SpiffeCa {
     });
   }
 
+  /**
+   * Unpacks a stored X.509 authority, its DER as a Buffer.
+   *
+   * @param one - the stored form
+   * @returns the authority
+   */
   unpackX509(one) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.unpackX509().");
@@ -488,6 +619,13 @@ class SpiffeCa {
     });
   }
 
+  /**
+   * Returns a realm's self-signed X.509 authorities, unpacked and cached while
+   * the stored list is unchanged.
+   *
+   * @param realmId - the realm's id
+   * @returns the authorities, active first
+   */
   x509List(realmId) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.x509List().");
@@ -506,6 +644,12 @@ class SpiffeCa {
     return x509Unpacked.get(id).list;
   }
 
+  /**
+   * Stores a realm's self-signed X.509 authorities.
+   *
+   * @param realmId - the realm's id
+   * @param list - the authorities
+   */
   setX509List(realmId, list) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.setX509List().");
@@ -513,6 +657,12 @@ class SpiffeCa {
     log.debug("Leaving SpiffeCa.setX509List().");
   }
 
+  /**
+   * Returns a realm's JWT authorities.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the authorities, active first
+   */
   jwtList(realmId?) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.jwtList().");
@@ -520,6 +670,12 @@ class SpiffeCa {
     return this.authoritiesIn(realmId).get('jwt') || [];
   }
 
+  /**
+   * Stores a realm's JWT authorities.
+   *
+   * @param realmId - the realm's id
+   * @param list - the authorities
+   */
   setJwtList(realmId, list) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.setJwtList().");
@@ -530,6 +686,12 @@ class SpiffeCa {
   // The realm's own partition of that store — the ambient realm's when no id is
   // given, which is how every gRPC handler reaches it (they run inside the
   // realm whose socket the call arrived on).
+  /**
+   * Returns a realm's partition of the federated bundle store.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the partition
+   */
   federatedIn(realmId?) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.federatedIn().");
@@ -547,6 +709,12 @@ class SpiffeCa {
   // has claimed, and a bundle registered under it today would be a second
   // authority for that name the moment somebody turned it on.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns every trust domain this process serves and the realm that serves
+   * it, SPIFFE on or off.
+   *
+   * @returns a map of trust domain to realm id
+   */
   servedTrustDomains() {
     const { log, realms } = this.deps;
     const self = this;
@@ -569,6 +737,13 @@ class SpiffeCa {
   // domain this process serves. Registration refuses that, so this is true only
   // of a row written before the refusal existed — and such a row must verify
   // nothing, anywhere, rather than wait for somebody to notice it.
+  /**
+   * Asks whether a federated bundle's name is a trust domain this process
+   * serves, which a reader must ignore.
+   *
+   * @param name - the federated trust domain
+   * @returns whether it is
+   */
   shadowsServedDomain(name) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.shadowsServedDomain().");
@@ -593,6 +768,12 @@ class SpiffeCa {
   // counter — would have been worse in the direction that matters: a rotation
   // in realm acme that DID change what acme publishes, with a number that never
   // moved for a caller reading acme.
+  /**
+   * Returns a realm's bundle sequence number.
+   *
+   * @param realmId - the realm's id
+   * @returns the sequence, at least 1
+   */
   sequenceNow(realmId) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.sequenceNow().");
@@ -601,6 +782,12 @@ class SpiffeCa {
     return held > 0 ? held : 1;
   }
 
+  /**
+   * Increments a realm's bundle sequence number.
+   *
+   * @param realmId - the realm's id
+   * @param why - what changed, for the log
+   */
   bumpSequence(realmId, why) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.bumpSequence().");
@@ -647,6 +834,17 @@ class SpiffeCa {
   // for one realm and the answer has to be the one that realm is about to be
   // fixed at — a read here would take the ambient realm's, which is whichever
   // realm the request that triggered the lazy build happened to arrive in.
+  /**
+   * Generates a self-signed X.509 authority for one realm.
+   *
+   * @param keyTypeId - one of `KEY_TYPES`
+   * @param ttlSeconds - its lifetime
+   * @param pathLen - its basicConstraints path length
+   * @param trustDomain - the trust domain it is for
+   * @param subjectTemplate - `spiffe.caSubject`
+   * @returns the authority, with its certificate and keys
+   * @throws an Error for an unknown key type
+   */
   async makeX509Authority(keyTypeId, ttlSeconds, pathLen, trustDomain,
                           subjectTemplate) {
     const { log, keys, x509, config, spiffeId } = this.deps;
@@ -717,6 +915,13 @@ class SpiffeCa {
   // bundle is a JWK Set of PUBLIC KEYS — the JWT-SVID specification has no
   // certificate in it — which is the whole structural difference from the X.509
   // half and the reason these are two lists rather than one.
+  /**
+   * Generates a JWT authority: a key pair and a `kid`, no certificate.
+   *
+   * @param keyTypeId - one of `KEY_TYPES`
+   * @returns the authority
+   * @throws an Error for a key type with no JWS algorithm
+   */
   async makeJwtAuthority(keyTypeId) {
     const { log, keys } = this.deps;
     log.debug('Entering SpiffeCa.makeJwtAuthority(). keyType=' + keyTypeId);
@@ -753,6 +958,12 @@ class SpiffeCa {
   // An X.509 authority's id: a SHA-256 over the certificate DER, which is what
   // SPIRE's `local authority` ids are and what a person can compare with
   // `openssl x509 -fingerprint -sha256`.
+  /**
+   * Returns an X.509 authority's id: a SHA-256 over its certificate's DER.
+   *
+   * @param pem - the certificate
+   * @returns the id
+   */
   authorityIdOf(pem) {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering SpiffeCa.authorityIdOf().");
@@ -765,6 +976,12 @@ class SpiffeCa {
   // a key: the members are ordered and the set of them is fixed per key type,
   // so two implementations agree. Hashing the PEM instead would give a
   // different answer for the same key depending on line wrapping.
+  /**
+   * Returns a key's RFC 7638 JWK thumbprint, used as its `kid`.
+   *
+   * @param jwk - the public key
+   * @returns the thumbprint
+   */
   thumbprintOf(jwk) {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering SpiffeCa.thumbprintOf().");
@@ -786,6 +1003,12 @@ class SpiffeCa {
   // vendored modules' — it handles RSA, EC and OKP, it is in the standard
   // library, and there is nothing here for a second implementation to disagree
   // with.
+  /**
+   * Converts a public key PEM to a JWK.
+   *
+   * @param publicPem - the public key
+   * @returns the JWK
+   */
   publicJwkOf(publicPem) {
     const { log, crypto } = this.deps;
     log.debug("Entering SpiffeCa.publicJwkOf().");
@@ -817,6 +1040,13 @@ class SpiffeCa {
   // why a single field would have looked correct right up until the hierarchy
   // existed.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes a realm's SPIFFE Issuing CA from `common/pki.js` as this module's
+   * authority record, its anchor and chain kept apart.
+   *
+   * @param issuer - the issuer `pki.js` reports
+   * @returns the authority
+   */
   pkiAuthorityFrom(issuer) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.pkiAuthorityFrom().");
@@ -850,6 +1080,13 @@ class SpiffeCa {
     };
   }
 
+  /**
+   * Describes a self-signed authority as the same record, anchor and chain
+   * being itself.
+   *
+   * @param one - the stored authority
+   * @returns the authority
+   */
   selfSignedAuthorityFrom(one) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.selfSignedAuthorityFrom().");
@@ -871,6 +1108,13 @@ class SpiffeCa {
   // self-signed if there is not. Synchronous: both answers are already in a
   // store, and the only asynchronous thing here is BUILDING the fallback, which
   // `ensureTrustMaterial()` does.
+  /**
+   * Returns a realm's active X.509 authority: PKI-backed under a hierarchy,
+   * self-signed otherwise.
+   *
+   * @param realmId - the realm's id
+   * @returns the authority, or null when none is built
+   */
   activeX509Authority(realmId) {
     const { log, pki } = this.deps;
     log.debug("Entering SpiffeCa.activeX509Authority().");
@@ -889,6 +1133,13 @@ class SpiffeCa {
   // the hierarchy is there — the Root — and the retained self-signed list when
   // it is not, because in that arrangement each retired authority is an anchor
   // of its own and dropping it is what makes a rotation look like an outage.
+  /**
+   * Returns every anchor a consumer of a realm's bundle should trust: the Root
+   * under a hierarchy, the retained self-signed authorities otherwise.
+   *
+   * @param realmId - the realm's id
+   * @returns the anchors
+   */
   trustAnchorsIn(realmId) {
     const { log, pki, crypto } = this.deps;
     log.debug("Entering SpiffeCa.trustAnchorsIn().");
@@ -924,6 +1175,16 @@ class SpiffeCa {
   // places for the SVID extension set to drift, and that extension set IS the
   // X509-SVID specification.
   // ---------------------------------------------------------------------------
+  /**
+   * Issues a certificate from a realm's authority, through `pki.issueUnder()`
+   * for a PKI-backed one or with this module's key for a self-signed one.
+   *
+   * @param realmId - the realm's id
+   * @param authority - the authority
+   * @param spec - the certificate to issue
+   * @returns the certificate's PEM and DER and the issuer's chain
+   * @throws an Error when `pki.js` refuses to issue
+   */
   async issueFromAuthority(realmId, authority, spec) {
     const { log, pki, x509 } = this.deps;
     log.debug('Entering SpiffeCa.issueFromAuthority(). source=' +
@@ -1025,6 +1286,12 @@ class SpiffeCa {
   // SVID, which is the same rule `common/pki.js` follows for a realm's branch
   // and removes any need for this module to watch `realms.onChange()`.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks the process's trust domain name and marks the authority started; a
+   * realm's trust material is built the first time it is asked for.
+   *
+   * @throws an Error when `spiffe.trustDomain` is not a valid trust domain name
+   */
   async initialise() {
     const { log, spiffeId, config } = this.deps;
     log.debug('Entering SpiffeCa.initialise().');
@@ -1065,6 +1332,12 @@ class SpiffeCa {
   // the fourteen other protocol families in this service from running. Every
   // entry point re-throws it, so a caller gets the real reason rather than an
   // empty bundle.
+  /**
+   * Starts the build of the trust material, capturing a failure rather than
+   * leaving it unhandled.
+   *
+   * @returns the promise `ready()` awaits
+   */
   buildReadyPromise() {
     const { log, errorCodes } = this.deps;
     log.debug("Entering SpiffeCa.buildReadyPromise().");
@@ -1082,6 +1355,12 @@ class SpiffeCa {
   // run by `common/instance_slot.ts` once for whichever instance is
   // installed: starting the build of the trust material, whose promise
   // `ready()` awaits.
+  /**
+   * Starts the build of the trust material for the installed instance (#50,
+   * R2).
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: SpiffeCa): void {
     helpers.log.debug("Entering SpiffeCa.wire().");
     readyPromise = instance.buildReadyPromise();
@@ -1100,6 +1379,10 @@ class SpiffeCa {
   // The rotation itself is the one the console's buttons make, which keeps
   // `spiffe.retainedAuthorities` of the old ones published.
   // ---------------------------------------------------------------------------
+  /**
+   * Registers the scheduler job that rotates each realm's authorities once past
+   * half their lifetime, in both modes.
+   */
   registerRotationJob(): void {
     const { log, config } = this.deps;
     const self = this;
@@ -1133,6 +1416,13 @@ class SpiffeCa {
 
   // One realm's due rotations. Resolves `{ x509, jwt }`, each the new
   // authority's id or ''.
+  /**
+   * Rotates whichever of a realm's authorities is due.
+   *
+   * @param realmId - the realm's id
+   * @param nowMs - the time to judge by, or now
+   * @returns `{ x509, jwt }`, each the new authority's id or ''
+   */
   async rotateDue(realmId: string, nowMs?: number): Promise<any> {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeCa.rotateDue(). realm=" + realmId);
@@ -1158,6 +1448,16 @@ class SpiffeCa {
     return out;
   }
 
+  /**
+   * Makes one authority of a kind for a realm across the cluster: one node
+   * claims the right to make it, and the others wait for it to arrive.
+   *
+   * @param realmId - the realm's id
+   * @param kind - the authority's kind
+   * @param present - asks whether the realm already holds one
+   * @param make - makes and stores one
+   * @throws an Error when no authority arrives in time
+   */
   async establishOnce(realmId, kind, present, make) {
     const { log, loadKeystore, loadClusterClaims, errorCodes } = this.deps;
     log.debug("Entering SpiffeCa.establishOnce(). realm=" + realmId + " kind=" +
@@ -1269,6 +1569,13 @@ class SpiffeCa {
     }
   }
 
+  /**
+   * Builds a realm's trust material, keeping what the store already holds so
+   * that several processes are one trust domain.
+   *
+   * @param realmId - the realm's id
+   * @throws an Error when a key cannot be generated or the hierarchy refuses
+   */
   async buildTrustMaterial(realmId) {
     const { log, spiffeId, pki } = this.deps;
     const self = this;
@@ -1413,6 +1720,13 @@ class SpiffeCa {
     log.debug('Leaving SpiffeCa.buildTrustMaterial().');
   }
 
+  /**
+   * Returns the build of a realm's trust material, started once; a failed build
+   * is dropped so that the next caller retries.
+   *
+   * @param realmId - the realm's id
+   * @returns the build's promise
+   */
   ensureTrustMaterial(realmId) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.ensureTrustMaterial().");
@@ -1436,6 +1750,13 @@ class SpiffeCa {
   // header states: a caller cannot forget to, and a caller that reaches this
   // module before the realm has trust material gets the right answer rather
   // than an empty bundle. `state()` is the single exception and says so.
+  /**
+   * Waits until a realm has trust material.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns true
+   * @throws an Error when the start or the build failed
+   */
   async ready(realmId?) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.ready().");
@@ -1499,6 +1820,13 @@ class SpiffeCa {
   // seconds. Thrown, as every other refusal here is; the callers answer it
   // as a failed mint. `STS-CORE-0121` is logged here.
   // ---------------------------------------------------------------------------
+  /**
+   * Refuses to mint in a realm being removed (#262).
+   *
+   * @param what - what was to be minted
+   * @param realmId - the realm's id
+   * @throws an Error when the realm is retiring
+   */
   refuseRetiring(what, realmId) {
     const { log, realms, errorCodes } = this.deps;
     log.debug("Entering SpiffeCa.refuseRetiring().");
@@ -1513,6 +1841,14 @@ class SpiffeCa {
     throw new Error('Cannot mint ' + what + ': ' + refusal.why);
   }
 
+  /**
+   * Refuses to mint for a SPIFFE ID outside the realm's trust domain.
+   *
+   * @param what - what was to be minted
+   * @param id - the SPIFFE ID
+   * @param realmId - the realm's id
+   * @throws an Error when the ID is in another trust domain
+   */
   refuseForeignDomain(what, id, realmId) {
     const { log, spiffeId } = this.deps;
     log.debug("Entering SpiffeCa.refuseForeignDomain().");
@@ -1533,6 +1869,16 @@ class SpiffeCa {
                     'not own is one no bundle anywhere verifies.');
   }
 
+  /**
+   * Mints an X509-SVID and its key pair for a SPIFFE ID.
+   *
+   * @param id - the SPIFFE ID
+   * @param options - the realm, lifetime, key type and hint
+   * @returns the SVID's certificate, private key and chain in the shapes both
+   *   surfaces take
+   * @throws an Error for an invalid or foreign SPIFFE ID, or a realm that
+   *   cannot issue
+   */
   async mintX509Svid(id, options) {
     const { log, spiffeId, keys } = this.deps;
     log.debug('Entering SpiffeCa.mintX509Svid(). id=' + id);
@@ -1613,6 +1959,16 @@ class SpiffeCa {
   // permissive posture rather than an oversight — see the note on `/spiffe` —
   // but reading only the key means a forged CSR still cannot name itself
   // something it is not.
+  /**
+   * Signs a CSR for a SPIFFE ID the caller decided, reading only the key from
+   * the CSR.
+   *
+   * @param csrDer - the CSR
+   * @param id - the SPIFFE ID the certificate names
+   * @param options - the realm and lifetime
+   * @returns the certificate and its chain
+   * @throws an Error when the CSR cannot be read or the ID is refused
+   */
   async signCsr(csrDer, id, options) {
     const { log, spiffeId, pkijs } = this.deps;
     log.debug('Entering SpiffeCa.signCsr(). id=' + id);
@@ -1664,6 +2020,16 @@ class SpiffeCa {
   // key. One function rather than two copies, because the extension set IS the
   // X509-SVID specification and two copies of it is one copy that will
   // eventually be missing `clientAuth`.
+  /**
+   * Issues an X509-SVID leaf for a public key, with the extension set the
+   * X509-SVID specification requires.
+   *
+   * @param id - the SPIFFE ID
+   * @param publicPem - the leaf's public key
+   * @param options - the realm, lifetime and subject
+   * @returns the certificate and its issuer chain
+   * @throws an Error when the realm has no X.509 authority
+   */
   async issueLeaf(id, publicPem, options) {
     const { log } = this.deps;
     log.debug('Entering SpiffeCa.issueLeaf(). id=' + id);
@@ -1756,6 +2122,12 @@ class SpiffeCa {
   // field being a chain rather than a certificate is what made 2026-09-11 an
   // edit to one function instead of four protocol handlers.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns an issued certificate's chain as PEMs, leaf first, anchor excluded.
+   *
+   * @param issued - the issued certificate
+   * @returns the chain
+   */
   chainPemOf(issued) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.chainPemOf().");
@@ -1763,6 +2135,12 @@ class SpiffeCa {
     return [issued.pem].concat(issued.issuerChainPem || []);
   }
 
+  /**
+   * Returns an issued certificate's chain as DERs, leaf first, anchor excluded.
+   *
+   * @param issued - the issued certificate
+   * @returns the chain
+   */
   chainDerOf(issued) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.chainDerOf().");
@@ -1806,6 +2184,13 @@ class SpiffeCa {
   // `recordClientCertificate()` follows on the other path and the observer in
   // `ldap_server.js` follows at the end of it.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the facts recorded about an issued certificate; a failure here never
+   * fails the issuance.
+   *
+   * @param der - the certificate
+   * @returns its subject, issuer, serial, validity and fingerprint, or null
+   */
   certificateFacts(der) {
     const { log, crypto, dnRfc4514, errorCodes } = this.deps;
     log.debug('Entering SpiffeCa.certificateFacts().');
@@ -1862,6 +2247,13 @@ class SpiffeCa {
   // when a downstream CA is minted, which is the correct answer and was not
   // available before.
   // ---------------------------------------------------------------------------
+  /**
+   * Mints a downstream CA under the realm's authority, for NewDownstreamX509CA.
+   *
+   * @param options - the realm, lifetime and key type
+   * @returns the CA's certificate, private key and chain
+   * @throws an Error when the realm has no X.509 authority
+   */
   async downstreamCa(options) {
     const { log, keys, spiffeId } = this.deps;
     log.debug('Entering SpiffeCa.downstreamCa().');
@@ -1940,6 +2332,17 @@ class SpiffeCa {
   // is the structural difference from every other JWT this service mints, and
   // adding an `iss` here would teach a client to check the wrong thing.
   // ---------------------------------------------------------------------------
+  /**
+   * Mints a JWT-SVID for a SPIFFE ID and its audiences; it carries no `iss`.
+   *
+   * @param id - the SPIFFE ID
+   * @param audiences - at least one audience
+   * @param options - the realm, lifetime and hint
+   * @returns the token, with its SPIFFE ID, audiences, times, `jti`, `kid` and
+   *   `alg`
+   * @throws an Error for an invalid ID, no audience, or a realm that cannot
+   *   issue
+   */
   async mintJwtSvid(id, audiences, options) {
     const { log, spiffeId, nowSec, b64u, crypto, stsCrypto } = this.deps;
     log.debug('Entering SpiffeCa.mintJwtSvid(). id=' + id);
@@ -2026,6 +2429,16 @@ class SpiffeCa {
   //     verified it. A token signed by trust domain A carrying a `sub` in trust
   //     domain B is the confused-deputy shape this check exists for.
   // ---------------------------------------------------------------------------
+  /**
+   * Validates a JWT-SVID: signed by a key of the trust domain its `sub` names,
+   * unexpired, and for the audience given.
+   *
+   * @param token - the JWT-SVID
+   * @param audience - the audience the caller says it is
+   * @param options - the realm whose bundle is asked
+   * @returns `{ ok: true, spiffeId, claims, trustDomain }`, or `{ ok: false,
+   *   reason, errorCode }`
+   */
   async validateJwtSvid(token, audience, options?) {
     const { log, jwt, spiffeId, stsCrypto } = this.deps;
     const self = this;
@@ -2145,6 +2558,13 @@ class SpiffeCa {
   // The verification keys for a trust domain, as PEMs the JWS library can use.
   // null — not an empty array — when the trust domain is not one this service
   // knows, because those are different answers.
+  /**
+   * Returns the JWT verification keys of a trust domain the ambient realm
+   * knows.
+   *
+   * @param trustDomain - the trust domain
+   * @returns the keys, or null when the trust domain is not known
+   */
   jwkSetFor(trustDomain) {
     const { log, crypto } = this.deps;
     const self = this;
@@ -2192,6 +2612,12 @@ class SpiffeCa {
     return out;
   }
 
+  /**
+   * Returns the JWS algorithms a JWK may verify.
+   *
+   * @param jwk - the key
+   * @returns the algorithms
+   */
   algorithmsFor(jwk) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.algorithmsFor().");
@@ -2252,6 +2678,13 @@ class SpiffeCa {
   //
   // A realm with no hierarchy publishes its self-signed authorities exactly as
   // before — see `trustAnchorsIn()`.
+  /**
+   * Builds a realm's SPIFFE bundle document: the trust anchors and the JWT
+   * authorities, with its sequence number and refresh hint.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the JWK Set document
+   */
   async bundle(realmId?) {
     const { log } = this.deps;
     const self = this;
@@ -2287,6 +2720,13 @@ class SpiffeCa {
   // one byte string holding every CA certificate end to end. Getting this wrong
   // produces a field a workload parses as one certificate and then cannot
   // verify anything against after a rotation.
+  /**
+   * Returns a realm's X.509 trust anchors as concatenated DER, the Workload
+   * API's shape.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the bytes
+   */
   async x509BundleDer(realmId?) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.x509BundleDer().");
@@ -2300,6 +2740,14 @@ class SpiffeCa {
 
   // The same, for a federated trust domain, built from the `x5c` members of the
   // bundle somebody gave us.
+  /**
+   * Returns a federated trust domain's X.509 bundle as concatenated DER, from
+   * its `x5c` members.
+   *
+   * @param trustDomain - the trust domain
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the bytes
+   */
   federatedX509BundleDer(trustDomain, realmId?) {
     const { log } = this.deps;
     log.debug('Entering SpiffeCa.federatedX509BundleDer().');
@@ -2347,6 +2795,18 @@ class SpiffeCa {
   // `POST /admin-api/spiffe/federation-set`, or through the SPIRE Server API's
   // `BatchCreateFederatedBundle` — and `RefreshBundle` answers by saying so.
   // ---------------------------------------------------------------------------
+  /**
+   * Holds a federated trust domain's bundle, pasted in rather than fetched.
+   *
+   * A name this process serves is refused, as is a malformed bundle or one past
+   * the cap.
+   * @param trustDomain - the trust domain
+   * @param document - the bundle document
+   * @param options - the realm, and the relationship's endpoint URL, profile
+   *   and endpoint SPIFFE ID
+   * @returns `{ ok: true, trustDomain, created }`, or `{ ok: false, reason,
+   *   errorCode }`
+   */
   setFederatedBundle(trustDomain, document, options): Record<string, any> {
     const { log, spiffeId, realms } = this.deps;
     log.debug('Entering SpiffeCa.setFederatedBundle(). trustDomain=' +
@@ -2435,6 +2895,13 @@ class SpiffeCa {
   // remove in this service has: a row an older build wrote under a name this
   // process now serves is exactly the row somebody needs to be able to take
   // off.
+  /**
+   * Removes a federated bundle; never refused for a served name.
+   *
+   * @param trustDomain - the trust domain
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns whether one was removed
+   */
   deleteFederatedBundle(trustDomain, realmId?) {
     const { log } = this.deps;
     log.debug('Entering SpiffeCa.deleteFederatedBundle(). trustDomain=' +
@@ -2449,6 +2916,13 @@ class SpiffeCa {
     return had;
   }
 
+  /**
+   * Returns one federated bundle.
+   *
+   * @param trustDomain - the trust domain
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the entry, or null
+   */
   federatedBundle(trustDomain, realmId?) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.federatedBundle().");
@@ -2462,6 +2936,13 @@ class SpiffeCa {
     return this.federatedIn(realmId).get(name) || null;
   }
 
+  /**
+   * Returns a realm's federated bundles, ignoring any named after a trust
+   * domain this process serves.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the entries, sorted by trust domain
+   */
   federatedBundles(realmId?) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.federatedBundles().");
@@ -2496,6 +2977,13 @@ class SpiffeCa {
   // stored and then silently drops every key when a workload parses it. The
   // failure arrives as "nothing from that trust domain verifies" with nothing
   // pointing back here.
+  /**
+   * Checks a bundle document before it is held: a JSON object whose `keys` are
+   * usable JWKs.
+   *
+   * @param value - the document, or its JSON text
+   * @returns `{ ok: true, document }`, or `{ ok: false, reason }`
+   */
   checkBundleDocument(value): Record<string, any> {
     const { log } = this.deps;
     log.debug('Entering SpiffeCa.checkBundleDocument().');
@@ -2569,6 +3057,13 @@ class SpiffeCa {
   // 2 in config.js and not 1, because keeping only the new authority is the
   // rotation-as-outage this section argues against: every SVID in the field
   // stops verifying the moment the button is pressed.
+  /**
+   * Returns how many authorities a rotation keeps published,
+   * `spiffe.retainedAuthorities`, read in the realm.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the count
+   */
   retainedAuthorities(realmId?) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.retainedAuthorities().");
@@ -2584,6 +3079,15 @@ class SpiffeCa {
   // reached lazily (it reads `ssf.ts` from the cache); a failure never
   // reaches the rotation, which has happened.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends the Shared Signals `spiffe-authority-rotated` event for a rotation
+   * (#245); a failure never reaches the rotation.
+   *
+   * @param realmId - the realm's id
+   * @param rotated - the authorities that moved
+   * @param reason - `scheduled` or `requested`
+   * @param bundleChanged - whether the bundle changed
+   */
   announceRotation(realmId: string, rotated: any[], reason: string,
                    bundleChanged: boolean): void {
     const { log } = this.deps;
@@ -2604,6 +3108,15 @@ class SpiffeCa {
     log.debug('Leaving SpiffeCa.announceRotation().');
   }
 
+  /**
+   * Rotates a realm's X.509 authority: re-issues the SPIFFE Issuing CA under a
+   * hierarchy, or makes a new self-signed authority and retains the old ones.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @param reason - `scheduled`, or anything else for requested
+   * @returns the new active authority
+   * @throws an Error when the Issuing CA cannot be re-issued
+   */
   async rotateX509Authority(realmId?, reason?) {
     const { log, pki } = this.deps;
     log.debug('Entering SpiffeCa.rotateX509Authority().');
@@ -2669,6 +3182,13 @@ class SpiffeCa {
     return this.selfSignedAuthorityFrom(authority);
   }
 
+  /**
+   * Rotates a realm's JWT authority, retaining the old ones in the bundle.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @param reason - `scheduled`, or anything else for requested
+   * @returns the new active authority
+   */
   async rotateJwtAuthority(realmId?, reason?) {
     const { log } = this.deps;
     log.debug('Entering SpiffeCa.rotateJwtAuthority().');
@@ -2698,6 +3218,12 @@ class SpiffeCa {
   // SMALL CONVERSIONS. Here rather than in `jose_jwe.js` because that file is
   // vendored and must stay byte-identical to the parent project's copy.
   // ---------------------------------------------------------------------------
+  /**
+   * Converts a PEM to DER.
+   *
+   * @param pem - the PEM
+   * @returns the DER
+   */
   pemToDer(pem) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.pemToDer().");
@@ -2706,6 +3232,13 @@ class SpiffeCa {
       .replace(/\s+/g, ''), 'base64');
   }
 
+  /**
+   * Converts DER to a PEM with a label.
+   *
+   * @param der - the DER
+   * @param label - such as `CERTIFICATE`
+   * @returns the PEM
+   */
   derToPem(der, label) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.derToPem().");
@@ -2716,6 +3249,12 @@ class SpiffeCa {
            '\n-----END ' + label + '-----\n';
   }
 
+  /**
+   * Returns a Buffer's bytes as an ArrayBuffer.
+   *
+   * @param buf - the Buffer
+   * @returns the ArrayBuffer
+   */
   toArrayBuffer(buf) {
     const { log } = this.deps;
     log.debug("Entering SpiffeCa.toArrayBuffer().");
@@ -2739,6 +3278,13 @@ class SpiffeCa {
   // published; the keys stay in this module, exactly as `tls_server.js`
   // publishes its certificate and not its key.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes a realm's authority for the pages: whether it is ready, its trust
+   * domain, its authorities and federated bundles; no private key is in it.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns the state
+   */
   state(realmId?) {
     const { log, config, spiffeId, crypto, errorCodes } = this.deps;
     log.debug("Entering SpiffeCa.state().");
@@ -2882,6 +3428,10 @@ class SpiffeCa {
 // refused at startup with that sentence, rather than accepted and then failing
 // at the first FetchJWTSVID.
 // ---------------------------------------------------------------------------
+/**
+ * The key types an authority may be generated with, each with its signature
+ * algorithm and JWS `alg`.
+ */
 const KEY_TYPES = [
   { id: 'ec-p256', label: 'ECDSA P-256', kind: 'ec',
     sigAlg: 'sha256-ecdsa', jwtAlg: 'ES256',
@@ -3193,6 +3743,10 @@ const warnedShadows = new Set();
 // The default, kept as an export for the pages that print it. What is APPLIED
 // is `spiffe.retainedAuthorities`, read in the realm being rotated — see
 // `retainedAuthorities()`.
+/**
+ * The default of `spiffe.retainedAuthorities`, kept for the pages that print
+ * it.
+ */
 const MAX_RETAINED_AUTHORITIES = 4;
 
 // DECLARED AT REQUIRE TIME (cluster/CLAUDE.md): a realm's JWT authority and
@@ -3206,6 +3760,11 @@ capabilities.provide('spiffe.authority-agreement');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The trust domain's issuing authority: X.509 and JWT authorities, the bundle,
+ * and federated bundles, per realm.
+ * @namespace
+ */
 export = {
   SpiffeCa: SpiffeCa,
   installInstance: (instance: SpiffeCa): void => slot.install(instance),
@@ -3214,6 +3773,9 @@ export = {
   // A GETTER, so that `admin-core/admin_views.ts` — which reads this member to
   // print the cap — reports the value `spiffe.retainedAuthorities` holds in the
   // ambient realm rather than the default it replaced.
+  /**
+   * `spiffe.retainedAuthorities` as the ambient realm holds it.
+   */
   get MAX_RETAINED_AUTHORITIES() {
     log.debug("Entering MAX_RETAINED_AUTHORITIES().");
     log.debug("Leaving MAX_RETAINED_AUTHORITIES().");
@@ -3225,17 +3787,26 @@ export = {
   // run inside `realms.run()` for the realm whose socket the call arrived on
   // (see spiffe_server.ts), so a caller that passes nothing still gets the
   // right trust domain rather than the process's.
+  /**
+   * Returns a realm's trust domain name, or the ambient realm's.
+   */
   trustDomain: function (realmId?) {
     log.debug("Entering trustDomain().");
     log.debug("Leaving trustDomain().");
     return slot.get().trustDomainOf(realmId);
   },
+  /**
+   * Returns a realm's trust domain as a `spiffe://` identifier.
+   */
   trustDomainId: function (realmId?) {
     log.debug("Entering trustDomainId().");
     log.debug("Leaving trustDomainId().");
     return spiffeId.trustDomainId(slot.get().trustDomainOf(realmId));
   },
   trustDomainDrift: slot.forward('trustDomainDrift'),
+  /**
+   * Returns the process-wide default trust domain.
+   */
   processTrustDomain: function () {
     log.debug("Entering processTrustDomain().");
     log.debug("Leaving processTrustDomain().");
@@ -3263,6 +3834,9 @@ export = {
   // signed an SVID without drawing the whole of `state()`.
   activeX509Authority: slot.forward('activeX509Authority'),
   trustAnchors: slot.forward('trustAnchorsIn'),
+  /**
+   * Returns a realm's bundle sequence number, or the ambient realm's.
+   */
   sequence: function (realmId?) {
     log.debug("Entering sequence().");
     log.debug("Leaving sequence().");

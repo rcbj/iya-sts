@@ -61,7 +61,14 @@ const crypto = require('crypto');
 const forge = require('node-forge');
 const jwt = require('jsonwebtoken');
 const bunyan = require("bunyan");
-const bbs2023 = require('./vendored/bbs2023.js');
+// THE VENDORED BBS SUITE IS REQUIRED AT FIRST USE (#348), through
+// `bbs2023Suite()` below: it requires `jsonld` at its top, and the two are
+// resident memory in every request worker that never makes a BBS key. By
+// hand rather than through `common/lazy_module.ts`, because this file is in
+// the parent project's Kerberos COPY closure (kerberos/CLAUDE.md) and a new
+// require here would add that file to it.
+/** @type {typeof import('./vendored/bbs2023.js') | null} */
+let bbs2023Loaded = null;
 // ---------------------------------------------------------------------------
 // THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS, since
 // 2026-08-27. It is a LEAF — it requires npm packages, the vendored XML signer
@@ -111,8 +118,37 @@ const joseKid = require('./jose_kid');
 // peer must be one of `global.trustedProxies` when that is set. It is in the
 // parent project's Kerberos COPY set through this file (kerberos/CLAUDE.md).
 const clientAddress = require('./client_address');
+/**
+ * The service's logger, registered so that `global.logLevel` changes take
+ * effect at runtime.
+ */
 const log = bunyan.createLogger({ name: 'sts',
                                 level: config.value('global.logLevel') });
+
+/**
+ * Returns the vendored BBS suite, requiring it the first time (#348).
+ *
+ * @returns {typeof import('./vendored/bbs2023.js')} the suite
+ */
+function bbs2023Suite() {
+  log.debug("Entering bbs2023Suite().");
+  if (!bbs2023Loaded) {
+    try {
+      bbs2023Loaded = require('./vendored/bbs2023.js');
+    } catch (e) {
+      // Thrown on to the caller, as the top-level require's failure was
+      // thrown at start; logged first, because it now happens mid-request.
+      log.error(errorCodes.tag('STS-CORE-0140') + 'helpers: ' +
+                'common/vendored/bbs2023.js, required at first use, did ' +
+                'not load: ' + ((e && e.message) || e));
+      log.debug("Leaving bbs2023Suite(). Threw.");
+      throw e;
+    }
+  }
+  log.debug("Leaving bbs2023Suite().");
+  return bbs2023Loaded;
+}
+
 // Registering it is what makes global.logLevel a setting rather than a claim:
 // bunyan takes a level when the logger is created, so without this
 // /admin/config could change the setting and every line after it would still be
@@ -136,6 +172,13 @@ log.info("Log initialized. logLevel=" + log.level());
 //   what   'SAML assertion' / 'JWT' / 'SD-JWT VC' ...
 //   stage  'before signing' / 'after signing' / 'before encryption' / ...
 //   value  the object or string itself, recorded in full
+/**
+ * Logs a security artifact in full, before or after it was protected.
+ *
+ * @param what - what it is, such as `SAML assertion` or `JWT`
+ * @param stage - such as `before signing` or `after encryption`
+ * @param value - the artifact, an object or a string
+ */
 function logArtifact(what, stage, value) {
   log.debug("Entering logArtifact().");
   log.debug({ artifact: what,
@@ -148,6 +191,12 @@ function logArtifact(what, stage, value) {
 
 // Headers with nothing removed: this mock issues test credentials only, and the
 // point of the log is to be able to see exactly what was exchanged.
+/**
+ * Copies a request's headers for the log, with nothing removed.
+ *
+ * @param source - the headers
+ * @returns the copy
+ */
 function headersOf(source) {
   log.debug("Entering headersOf().");
   const out = {};
@@ -157,6 +206,12 @@ function headersOf(source) {
 }
 
 // Bodies arrive (and leave) as strings or objects; either way they go in whole.
+/**
+ * Turns a body into a string for the log.
+ *
+ * @param value - a string or an object
+ * @returns the body as a string; '' for none
+ */
 function bodyOf(value) {
   log.debug("Entering bodyOf().");
   if (value === undefined || value === null) {
@@ -191,6 +246,13 @@ function bodyOf(value) {
 // ignored: statistics must never be able to stop a token being issued.
 let jwtRecorder = null;
 
+/**
+ * Fills the slot `signJwt()` hands every token to for the statistics;
+ * `admin_stats.js` fills it. The recorder's return value is ignored.
+ *
+ * @param fn - the recorder, called with the payload, the signed token and the
+ * context
+ */
 function setJwtRecorder(fn) {
   log.debug("Entering setJwtRecorder().");
   jwtRecorder = fn;
@@ -226,17 +288,35 @@ let subjectResolver = null;
 // The one subject form this service issued before 2026-09-14. It is still READ
 // — refresh tokens, stored consent and another instance's tokens carry it —
 // and never written.
+/**
+ * The subject prefix issued before 2026-09-14, `urn:sts:user:`: still read,
+ * never written.
+ */
 const LEGACY_SUBJECT_PREFIX = 'urn:sts:user:';
 
 // Whether this process can issue a subject at all. A caller that REFUSES a
 // person with no entry asks this first, because in a process with no directory
 // everybody has no entry and refusing them all would refuse every module test.
+/**
+ * Tells whether this process can issue a subject at all.
+ *
+ * @returns true once the resolver is installed
+ */
 function hasSubjectResolver() {
   log.debug("Entering hasSubjectResolver().");
   log.debug("Leaving hasSubjectResolver().");
   return !!subjectResolver;
 }
 
+/**
+ * Fills the slot a person's subject is resolved through; `ldap/ldap_server.js`
+ * fills it.
+ *
+ * An object without both `subjectFor()` and `nameFor()` is ignored
+ * (STS-CORE-0090).
+ *
+ * @param resolver - `{ subjectFor(name), nameFor(sub) }`
+ */
 function setSubjectResolver(resolver) {
   log.debug("Entering setSubjectResolver().");
   if (!resolver || typeof resolver.subjectFor !== 'function' ||
@@ -255,6 +335,13 @@ function setSubjectResolver(resolver) {
 // A person's subject, or '' where the directory holds no entry for them (or
 // there is no directory). Never throws: a lookup that fails is a person with
 // no subject, which every caller already has to handle.
+/**
+ * Returns a person's subject, `urn:uuid:` and their entry's `entryUUID`. Never
+ * throws.
+ *
+ * @param name - the person's username
+ * @returns the subject, or '' where there is no entry or no directory
+ */
 function subjectForName(name) {
   log.debug("Entering subjectForName().");
   if (!subjectResolver || !name) {
@@ -277,6 +364,13 @@ function subjectForName(name) {
 // Who a subject names, as the name this service files a person under, or ''.
 // Both forms: `urn:uuid:` is looked up, `urn:sts:user:` is read, and anything
 // else is not a subject this service issued.
+/**
+ * Returns the username a subject names: a `urn:uuid:` subject looked up, a
+ * legacy `urn:sts:user:` one read.
+ *
+ * @param sub - the subject
+ * @returns the username, or '' for a subject this service did not issue
+ */
 function nameForSubject(sub) {
   log.debug("Entering nameForSubject().");
   const text = String(sub == null ? '' : sub).trim();
@@ -304,10 +398,16 @@ function nameForSubject(sub) {
 // Read once, because the listener is bound with it before anything can ask
 // for it again; config.js marks it restart-only for that reason and refuses
 // to change it while this process runs.
+/**
+ * The port the main listener binds (`global.port`), read once at start.
+ */
 const PORT = config.value('global.port');
 
 // The bind address, likewise fixed once. 0.0.0.0 is every interface, which is
 // what a container needs.
+/**
+ * The address the main listener binds (`global.host`), read once at start.
+ */
 const HOST = config.value('global.host');
 
 // ---------------------------------------------------------------------------
@@ -367,6 +467,10 @@ const HOST = config.value('global.host');
 // setting gets the size it asked for. A change reaches key sets made AFTER it
 // and never a key that exists, which is what that setting's row says.
 // ---------------------------------------------------------------------------
+/**
+ * The algorithm of the OpenID4VCI credential request-encryption key:
+ * `RSA-OAEP-256`.
+ */
 const VCI_REQUEST_ENC_ALG = 'RSA-OAEP-256';
 
 // The public JWK a request-encryption private key publishes, with the members
@@ -374,6 +478,13 @@ const VCI_REQUEST_ENC_ALG = 'RSA-OAEP-256';
 // there is no alg_values_supported for requests), `kid` (a JWE encrypted to a
 // key with a kid MUST repeat it), `use` and `key_ops`. The kid prefix is the
 // one `vc_issuer.js` used, so a wallet sees the same shape it always did.
+/**
+ * Builds the public JWK a request-encryption private key publishes, with `alg`,
+ * `kid`, `use` and `key_ops`.
+ *
+ * @param privateKey - the private key
+ * @returns the JWK
+ */
 function requestEncryptionJwkOf(privateKey) {
   log.debug("Entering requestEncryptionJwkOf().");
   const publicJwk = crypto.createPublicKey(privateKey)
@@ -455,6 +566,14 @@ function refreshTokenJwkOf(privateKey, kind) {
   });
 }
 
+/**
+ * Makes a set of refresh-token encryption keys: RSA, EC and a symmetric secret,
+ * sized by the `oauth2.refreshTokenEncryption*` settings.
+ *
+ * @param madeRsa - an RSA key pair already made, to use in place of generating
+ * one
+ * @returns `{ rsa, ec, secret, secretKid }`
+ */
 function makeRefreshTokenEncryptionKeys(madeRsa) {
   log.debug("Entering makeRefreshTokenEncryptionKeys().");
   const bits = rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits');
@@ -874,6 +993,12 @@ function plainKeySet(realmId, stored) {
   // forgotten by every other worker.
   if (stored.browserDeviceKeys) {
     set.browserDeviceKeys = stored.browserDeviceKeys;
+  }
+  // AND THE KEM DECRYPTION KEYS (#82): dropped here, this process would
+  // publish keys of its own for an opted-in alg and fail to open what a
+  // client encrypted to the JWKS a sibling served.
+  if (stored.kemEncKeys) {
+    set.kemEncKeys = stored.kemEncKeys;
   }
   // AND THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42), for
   // the same reason: dropped here, this process would sign XML with a key of
@@ -1635,6 +1760,56 @@ function lazyKeySet(realmId, stored) {
     }
   });
   // ---------------------------------------------------------------------
+  // **THE KEM DECRYPTION KEYS (#82)**, the request object keys' arrangement
+  // for a LIST: each public JWK resident, each private JWK a getter over the
+  // keystore's timed decryption, found by kid. `/oauth2/jwks` reads the
+  // public halves on every fetch, and publishing must not decrypt anything.
+  // ---------------------------------------------------------------------
+  const kemStored = Array.isArray(stored.kemEncKeys) ? stored.kemEncKeys
+    : null;
+  let kemGenerated = null;
+  Object.defineProperty(set, 'kemEncKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      if (kemGenerated) {
+        log.debug("Leaving get().");
+        return kemGenerated;
+      }
+      if (!kemStored || !kemStored.length) {
+        log.debug("Leaving get().");
+        return undefined;
+      }
+      const views = kemStored.map(function (one) {
+        const view = { alg: one.alg, publicJwk: one.publicJwk };
+        Object.defineProperty(view, 'privateJwk', {
+          enumerable: true, configurable: true,
+          get: function () {
+            log.debug("Entering get().");
+            const held = keystore.privateMaterialFor(realmId);
+            const jwk = held && held.kem &&
+                        held.kem.get(one.publicJwk && one.publicJwk.kid);
+            if (!jwk) {
+              throw new Error('the "' + realmId + '" realm\'s ' + one.alg +
+                ' decryption key is held encrypted and could not be ' +
+                'decrypted; see the keystore errors above.');
+            }
+            log.debug("Leaving get().");
+            return jwk;
+          }
+        });
+        return view;
+      });
+      log.debug("Leaving get().");
+      return views;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      kemGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // ---------------------------------------------------------------------
   // **THE BROWSER DEVICE KEYS (#265)**, the request object keys' arrangement:
   // the public halves resident, both private keys getters over the keystore.
   // ---------------------------------------------------------------------
@@ -1963,6 +2138,11 @@ const pqKeysCount = cacheRegistry.register({
   }
 });
 
+/**
+ * Returns a realm's signing key set, restored from the keystore where one is
+ * stored and generated otherwise; the ambient realm's when called with no
+ * realm. `stsKeysFor.of(id)` reads a named realm's.
+ */
 const stsKeysFor = realms.keyed(function (realm) {
   // ---------------------------------------------------------------------
   // THE STORED KEYS FIRST, WHERE THERE ARE ANY (2026-09-06).
@@ -2192,12 +2372,10 @@ const stsKeysFor = realms.keyed(function (realm) {
 // thread — six curve keys, a certificate signature, four JWK exports — is tens
 // of milliseconds, and `prepareKeySets()` yields between realms.
 //
-// **NOT `common/worker_pool.js`**, and the reason is not the one
-// `pki_authoring.js` gives for its own generation (that one is about the
-// post-quantum encoders' byte layouts): an RSA or EC generation is node's own
-// OpenSSL either way, and node already has an asynchronous door to it that
-// costs no IPC round trip and no forked child. The pool is for computation
-// node has no asynchronous door to.
+// **NODE'S OWN ASYNCHRONOUS DOOR**: an RSA or EC generation is node's
+// OpenSSL, and `generateKeyPair()` runs it on libuv's thread pool with no IPC
+// round trip and no forked child — the same door the post-quantum keys have
+// used since #363 (`common/pq_native.js`).
 //
 // **THE FACTORY'S ORDER IS NOT CHANGED**: stored, then a sibling's, then
 // generated — and `prepared` is only ever the third. A set prepared here while
@@ -2274,6 +2452,14 @@ function generateRsaPairAsync(bits, asPem) {
 // Resolves once the realm's key set is held by this process (or there was
 // nothing to prepare). Never rejects: a failure is logged and the read that
 // follows generates synchronously, which is what it did before this existed.
+/**
+ * Makes a realm's key set in the background where it does not exist yet, so the
+ * read that follows does not generate synchronously. Never rejects.
+ *
+ * @param realmId - the realm
+ * @returns a promise resolving once the set is held (false when there was
+ * nothing to prepare)
+ */
 function prepareKeySet(realmId) {
   log.debug("Entering prepareKeySet(). realm=" + realmId);
   const id = String(realmId || '');
@@ -2339,6 +2525,13 @@ function prepareKeySet(realmId) {
 // what a list of realms or a cold start calls. In sequence rather than all at
 // once because the thread pool is four threads that DNS, the file system and
 // scrypt also use; one realm's four generations fill it.
+/**
+ * Prepares several realms' key sets one after another, yielding to the event
+ * loop between them.
+ *
+ * @param realmIds - the realms
+ * @returns a promise of how many were prepared
+ */
 function prepareKeySets(realmIds) {
   log.debug("Entering prepareKeySets().");
   const ids = (realmIds || []).slice();
@@ -2388,6 +2581,13 @@ function prepareKeySets(realmIds) {
 // key, once, on the first start after an upgrade; the next start restores it
 // from the row like every other private key here.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a key set's OpenID4VCI credential request-encryption key, reading or
+ * making it where the set was written before it existed.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ privateKey, publicJwk }`
+ */
 function requestEncryptionKeyFor(keySet) {
   log.debug("Entering requestEncryptionKeyFor().");
   const keys = keySet || stsKeysFor();
@@ -2423,6 +2623,13 @@ function requestEncryptionKeyFor(keySet) {
 // them, make them in the set's own realm if not, and hand them on as an
 // enrichment of the set every other process holds.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a key set's refresh-token encryption keys, reading or making them
+ * where the set was written before they existed.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ rsa, ec, secret, secretKid }`
+ */
 function refreshTokenKeysFor(keySet) {
   log.debug("Entering refreshTokenKeysFor().");
   const keys = keySet || stsKeysFor();
@@ -2453,12 +2660,193 @@ function refreshTokenKeysFor(keySet) {
 }
 
 // ---------------------------------------------------------------------------
+// THE REALM'S KEM DECRYPTION KEYS (#82, 2026-09-27): one key pair for each
+// ML-KEM or HPKE JWE alg the ambient realm's `keys.encryptionKemAlgs` names,
+// in that order, as `[{ alg, publicJwk, privateJwk }]`. An EMPTY LIST BY
+// DEFAULT, and that is rcbj's decision rather than an unfinished feature: a
+// post-quantum or hybrid key in a realm's JWKS is a key type many clients'
+// JOSE libraries do not parse yet, so publishing one is an administrator's
+// choice, made per realm.
+//
+// Made the way `requestObjectKeysFor()` backfills: a key some process
+// already made (stored, then shared) is adopted before one is generated, and
+// a generated one is remembered and shared at once so every sibling
+// publishes and opens with the SAME key. A key for an alg the setting no
+// longer names is kept on the set but neither listed here nor published —
+// naming the alg again brings the same key back.
+// ---------------------------------------------------------------------------
+/**
+ * The ML-KEM and HPKE algs the ambient realm's `keys.encryptionKemAlgs`
+ * names (#82), valid and de-duplicated.
+ *
+ * @returns the algs, empty by default
+ */
+function kemAlgsConfigured() {
+  log.debug("Entering kemAlgsConfigured().");
+  const raw = config.value('keys.encryptionKemAlgs');
+  const listed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).trim();
+    })
+    .filter(function (one, i, all) {
+      return one && all.indexOf(one) === i &&
+             stsCrypto.JWE_ASYMMETRIC_ALGS.indexOf(one) >= 0 &&
+             !!stsCrypto.describeJweKemAlg(one);
+    });
+  log.debug("Leaving kemAlgsConfigured(). " + listed.join(','));
+  return listed;
+}
+
+/**
+ * The realm's KEM decryption keys, one per configured alg, adopting or
+ * making any that are missing (#82).
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `[{ alg, publicJwk, privateJwk }]`
+ */
+function kemEncryptionKeysFor(keySet) {
+  log.debug("Entering kemEncryptionKeysFor().");
+  const wanted = kemAlgsConfigured();
+  if (!wanted.length) {
+    log.debug("Leaving kemEncryptionKeysFor(). None configured.");
+    return [];
+  }
+  const keys = keySet || stsKeysFor();
+  const realmId = String(keys.realm || realms.currentId());
+  let have = keys.kemEncKeys || [];
+  const missing = function () {
+    log.debug("Entering missing().");
+    const algs = have.map(function (one) {
+      return one.alg;
+    });
+    log.debug("Leaving missing().");
+    return wanted.filter(function (alg) {
+      return algs.indexOf(alg) === -1;
+    });
+  };
+  if (missing().length) {
+    const held = keystore.kemEncKeysHeldFor(realmId) || [];
+    const heldAlgs = held.map(function (one) {
+      return one.alg;
+    });
+    const fromHeld = missing().filter(function (alg) {
+      return heldAlgs.indexOf(alg) >= 0;
+    });
+    const made = [];
+    missing().forEach(function (alg) {
+      const found = held.filter(function (one) {
+        return one.alg === alg;
+      })[0];
+      if (found) {
+        made.push(found);
+        return;
+      }
+      const pair = stsCrypto.generateJweKemKeyPair(alg);
+      const kid = 'sts-kem-' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '') +
+                  '-' + stsCrypto.jwkThumbprint(
+                    stsCrypto.publicJweKemJwk(pair.publicJwk),
+                    { truncate: 16 });
+      pair.publicJwk.kid = kid;
+      pair.privateJwk.kid = kid;
+      made.push({ alg: alg, publicJwk: pair.publicJwk,
+                  privateJwk: pair.privateJwk });
+    });
+    have = have.concat(made);
+    keys.kemEncKeys = have;
+    if (made.length > fromHeld.length) {
+      log.info('KEM decryption keys were added to the "' + realmId + '" ' +
+               'realm\'s key set for ' + made.map(function (one) {
+                 return one.alg;
+               }).join(', ') + ' (keys.encryptionKemAlgs).');
+    }
+    keystore.remember(realmId, keys);
+    keystore.publishShared(realmId, keys);
+  }
+  const out = wanted.map(function (alg) {
+    return have.filter(function (one) {
+      return one.alg === alg;
+    })[0];
+  }).filter(Boolean);
+  log.debug("Leaving kemEncryptionKeysFor(). " + out.length + " key(s).");
+  return out;
+}
+
+// The realm's KEM decryption key for one alg, or null when the realm has not
+// opted in to it — what a decrypt site asks before it tries.
+/**
+ * The realm's KEM decryption key for one alg.
+ *
+ * @param alg - an ML-KEM or HPKE `alg`
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ alg, publicJwk, privateJwk }`, or null when not held
+ */
+function kemDecryptionKeyFor(alg, keySet) {
+  log.debug("Entering kemDecryptionKeyFor(). " + alg);
+  const found = kemEncryptionKeysFor(keySet).filter(function (one) {
+    return one.alg === alg;
+  })[0] || null;
+  log.debug("Leaving kemDecryptionKeyFor(). " + (found ? 'held' : 'none'));
+  return found;
+}
+
+// The JWE algs this realm can DECRYPT, for a discovery list that describes
+// decryption: every classical alg in `base`, and of section 4a's only those
+// the realm holds a key for. `base` defaults to `JWE_DECRYPT_ALGS`.
+/**
+ * The JWE algs this realm can decrypt: every classical one in `base`,
+ * and of the ML-KEM and HPKE ones only those it holds a key for (#82).
+ *
+ * @param base - the list to narrow; `JWE_DECRYPT_ALGS` by default
+ * @returns the narrowed list
+ */
+function decryptableJweAlgs(base) {
+  log.debug("Entering decryptableJweAlgs().");
+  const held = kemAlgsConfigured();
+  const out = (base || stsCrypto.JWE_DECRYPT_ALGS).filter(function (alg) {
+    return !stsCrypto.describeJweKemAlg(alg) || held.indexOf(alg) >= 0;
+  });
+  log.debug("Leaving decryptableJweAlgs(). " + out.length);
+  return out;
+}
+
+// The JWE algs this realm OFFERS where it encrypts TO a key a client or a
+// wallet holds (2026-09-28, rcbj): every classical alg in `base`, and the
+// ML-KEM and HPKE ones only while `keys.offerKemEncryption` is on in the
+// ambient realm. The twin of `decryptableJweAlgs()` above for the other
+// direction; used for every outbound discovery list and every registration
+// check, so what is advertised and what is accepted cannot disagree.
+/**
+ * The JWE algs this realm offers for encryption to a client's or a wallet's
+ * key: the classical ones in `base`, and the ML-KEM and HPKE ones only while
+ * `keys.offerKemEncryption` is on.
+ *
+ * @param base - the list to narrow; `JWE_ASYMMETRIC_ALGS` by default
+ * @returns the narrowed list
+ */
+function offeredJweAlgs(base) {
+  log.debug("Entering offeredJweAlgs().");
+  const offered = config.value('keys.offerKemEncryption') === true;
+  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (alg) {
+    return offered || !stsCrypto.describeJweKemAlg(alg);
+  });
+  log.debug("Leaving offeredJweAlgs(). " + out.length);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE REQUEST OBJECT ENCRYPTION KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS
 // WRITTEN BEFORE THEY EXISTED (2026-09-13). `refreshTokenKeysFor()` above, step
 // for step: ask whether some process already made them, make them in the set's
 // own realm if not, and hand them on as an enrichment of the set every other
 // process holds.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a key set's Request Object encryption keys, reading or making them
+ * where the set was written before they existed.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the keys
+ */
 function requestObjectKeysFor(keySet) {
   log.debug("Entering requestObjectKeysFor().");
   const keys = keySet || stsKeysFor();
@@ -2491,6 +2879,13 @@ function requestObjectKeysFor(keySet) {
 // THE BROWSER DEVICE KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS WRITTEN
 // BEFORE THEY EXISTED (#265) — `requestObjectKeysFor()` step for step.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a key set's browser device keys, reading or making them where the set
+ * was written before they existed.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the keys, with `sign` the signing key
+ */
 function browserDeviceKeysFor(keySet) {
   log.debug("Entering browserDeviceKeysFor().");
   const keys = keySet || stsKeysFor();
@@ -2525,6 +2920,14 @@ function browserDeviceKeysFor(keySet) {
 // made. NEVER a key that signs anything else, which is why this does not go
 // through `signingKeyFor()` and its per-algorithm fallback.
 // ---------------------------------------------------------------------------
+/**
+ * Chooses the key that signs a browser device token: the `browser-devices`
+ * group's ES256 key in a `hybrid-groups` realm, the dedicated key otherwise.
+ * Never a key that signs anything else.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ key, kid, via }`, `via` being `group` or `dedicated`
+ */
 function browserDeviceSigner(keySet) {
   log.debug("Entering browserDeviceSigner().");
   const grouped = groupSignerFor('browser-device-token', 'ES256', false);
@@ -2542,6 +2945,13 @@ function browserDeviceSigner(keySet) {
 // accepts: the dedicated key, and the `browser-devices` group's ES256 keys
 // whatever the model is NOW (a realm switched back keeps verifying what it
 // issued). By kid.
+/**
+ * Lists every key that may have signed a browser device token this realm still
+ * accepts.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns a Map of `kid` to public JWK
+ */
 function browserDeviceVerifiers(keySet) {
   log.debug("Entering browserDeviceVerifiers().");
   const out = new Map();
@@ -2561,6 +2971,13 @@ function browserDeviceVerifiers(keySet) {
 // SET WAS WRITTEN BEFORE IT EXISTED — `requestObjectKeysFor()` step for step.
 // What every XML signer and verifier here asks for, through `STS.xml`.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a key set's XML signing key, reading or generating it where the set
+ * was written before it existed.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the XML key
+ */
 function xmlKeyFor(keySet) {
   log.debug("Entering xmlKeyFor().");
   const keys = keySet || stsKeysFor();
@@ -2705,6 +3122,15 @@ function xmlViewOf(keys, member) {
 // ---------------------------------------------------------------------------
 const xmlFallbackSaid = new Set();
 
+/**
+ * Decides which algorithm and which key sign XML in the ambient realm, from
+ * `saml.signatureAlgorithm`.
+ *
+ * An algorithm the realm holds no certified XML group key for falls back to
+ * rsa-sha256, said once.
+ *
+ * @returns `{ name, view }`, with `fellBack: true` on a fallback
+ */
 function xmlSignatureChoice() {
   log.debug("Entering xmlSignatureChoice().");
   const keys = stsKeysFor();
@@ -2752,6 +3178,10 @@ function xmlSignatureChoice() {
 // running service that forgot its signing key would publish a new JWKS and
 // invalidate every token it had issued, which is precisely what the keystore
 // exists to prevent.
+/**
+ * Forgets every built key set so the factory runs again. For
+ * `tests/keystore.js` only; nothing in the service calls it.
+ */
 function resetStsKeys() {
   log.debug("Entering resetStsKeys().");
   const held = stsKeysFor.existing();
@@ -2761,6 +3191,13 @@ function resetStsKeys() {
   log.debug("Leaving resetStsKeys().");
 }
 
+/**
+ * The ambient realm's signing key set, read through a proxy so every property
+ * is the current realm's.
+ *
+ * `STS.xml` is the XML signing key and `STS.xmlSigner` the key for the
+ * configured XML signature algorithm; everything else is the JOSE key set.
+ */
 const STS = /** @type {any} */ (new Proxy({}, {
   get: function (target, prop) {
     log.debug("Entering get().");
@@ -2847,6 +3284,14 @@ const STS = /** @type {any} */ (new Proxy({}, {
 // ===========================================================================
 
 // Every unit a key set holds a current key for, with where that key sits.
+/**
+ * Lists every signing unit a key set holds a current key for, with where that
+ * key sits.
+ *
+ * @param keys - the realm's key set
+ * @returns one row per unit: `unit`, `useCase`, `slot`, `alg`, `kind`, `kid`,
+ * and the key's index where it has one
+ */
 function signingUnitsOf(keys) {
   log.debug("Entering signingUnitsOf().");
   const out = [{ unit: 'jose:RS256', useCase: 'jose', slot: 'RS256',
@@ -2896,6 +3341,13 @@ function signingUnitsOf(keys) {
 }
 
 // The standby entries of a set (`next` and `retired`), optionally of one unit.
+/**
+ * Lists a key set's standby entries, the `next` and `retired` keys.
+ *
+ * @param keys - the realm's key set
+ * @param unit - a unit to narrow to; every unit when absent
+ * @returns the standby entries
+ */
 function standbyOf(keys, unit) {
   log.debug("Entering standbyOf().");
   const all = (keys && keys.generations && keys.generations.standby) || [];
@@ -2927,6 +3379,18 @@ function standbyLive(one, nowMs) {
 // publishes (its own generation slot's, or the self-signed one it was born
 // with). Selection only: the verification is still `crypto.js`'s.
 // ---------------------------------------------------------------------------
+/**
+ * Lists the certificates a signature this realm made with a use case's RSA unit
+ * may verify against: current first, then `next`, then each retired key still
+ * in its grace.
+ *
+ * The one lookup every "is this ours" check asks, so a signature made before a
+ * rotation still verifies. Selection only; the verification is `crypto.js`'s.
+ *
+ * @param useCaseId - `jose` or `xml`
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ kid, certPem, role, chainPem }` rows
+ */
 function ownRsaCertificates(useCaseId, keySet) {
   log.debug("Entering ownRsaCertificates(). use=" + useCaseId);
   const keys = keySet || stsKeysFor();
@@ -3003,6 +3467,14 @@ function ownRsaCertificates(useCaseId, keySet) {
 // KeyDescriptors ONLY: `ownRsaCertificates()` stays RSA because the same
 // metadata publishes an ENCRYPTION key, which an ECDSA or ML-DSA key is not.
 // ---------------------------------------------------------------------------
+/**
+ * Lists every certificate an XML signature of this realm may be made under: the
+ * RSA ones and the XML signer group's, the configured signer's first. For
+ * verification and signing metadata only.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ kid, certPem, role, chainPem }` rows
+ */
 function ownXmlSigningCertificates(keySet) {
   log.debug("Entering ownXmlSigningCertificates().");
   const keys = keySet || stsKeysFor();
@@ -3058,6 +3530,12 @@ function ownXmlSigningCertificates(keySet) {
   return first.concat(out, rest);
 }
 
+/**
+ * Reads a compact JWS's header without verifying anything.
+ *
+ * @param token - the token
+ * @returns the header, or `{}` when it does not parse
+ */
 function peekJoseHeader(token) {
   log.debug("Entering peekJoseHeader().");
   try {
@@ -3130,6 +3608,19 @@ function groupMembersOf(keys) {
   return (keys && keys.signerGroups) || [];
 }
 
+/**
+ * Finds the signer-group key that signs an algorithm for a use case in a
+ * `hybrid-groups` realm.
+ *
+ * Answers null outside that model, for an algorithm outside the group, and
+ * while the group's keys are still being made; the caller then signs with the
+ * per-algorithm key.
+ *
+ * @param useCaseId - the certificate-header use case
+ * @param alg - the JWS algorithm
+ * @param allowPq - false to refuse a post-quantum algorithm
+ * @returns `{ key, kid, slot, group }`, or null
+ */
 function groupSignerFor(useCaseId, alg, allowPq) {
   log.debug("Entering groupSignerFor(). use=" + useCaseId + ", alg=" + alg);
   const spec = stsCrypto.JWS_ALGS[alg];
@@ -3242,6 +3733,14 @@ function pkiForPins() {
 
 // Every pinned signer this realm publishes (pending, active, retired within
 // its grace), optionally of one use case.
+/**
+ * Lists every pinned signer a realm publishes: pending, active, and retired
+ * within its grace.
+ *
+ * @param keys - the realm's key set
+ * @param useCaseId - a use case to narrow to; every use case when absent
+ * @returns the pinned signers
+ */
 function pinnedSignersOf(keys, useCaseId) {
   log.debug("Entering pinnedSignersOf().");
   const pki = pkiForPins();
@@ -3253,6 +3752,14 @@ function pinnedSignersOf(keys, useCaseId) {
 }
 
 // The `jose` slot an algorithm signs from: `certificateSlotOf()`'s naming.
+/**
+ * Names the `jose` certificate slot an algorithm signs from, in
+ * `certificateSlotOf()`'s naming.
+ *
+ * @param alg - the JWS algorithm
+ * @returns the slot, such as `RS256`, `ES256:P-256` or `ML-DSA-44`; '' for an
+ * unknown algorithm
+ */
 function joseSlotForAlg(alg) {
   log.debug("Entering joseSlotForAlg(). alg=" + alg);
   const spec = stsCrypto.JWS_ALGS[alg];
@@ -3288,6 +3795,18 @@ function joseSlotForAlg(alg) {
 // A pinned key that cannot be read answers null — STS-PKI-0214 is logged by
 // `pki.pinnedSigningKey()` — and the generated key signs, which every
 // verifier holds.
+/**
+ * Returns the pinned key that signs an algorithm in the ambient realm now, as a
+ * signer.
+ *
+ * A pinned key that cannot be read answers null, and the generated key signs
+ * instead.
+ *
+ * @param alg - the JWS algorithm
+ * @param allowPq - false to refuse a post-quantum algorithm, as the synchronous
+ * `signJwt()` does
+ * @returns `{ key, kid, slot, pinned }`, or null
+ */
 function pinnedJoseSigner(alg, allowPq) {
   log.debug("Entering pinnedJoseSigner(). alg=" + alg);
   const spec = stsCrypto.JWS_ALGS[alg];
@@ -3377,6 +3896,13 @@ function pinnedXmlView(keys) {
 // the JWKS already takes from `ownRsaCertificates('jose')` — with its
 // certificate and chain in `x5c` (the operator's chain, where they supplied
 // the certificate).
+/**
+ * Returns the pinned `jose` keys other than the RSA one as published JWKs, each
+ * with its certificate and chain in `x5c`.
+ *
+ * @param keys - the realm's key set
+ * @returns the JWKs
+ */
 function pinnedPublishedJwks(keys) {
   log.debug("Entering pinnedPublishedJwks().");
   const out = pinnedSignersOf(keys, 'jose').filter(function (one) {
@@ -3450,6 +3976,14 @@ function ownSignerFor(alg) {
 // the certificate in a Request Object's `x5c` holds exactly the key the
 // Request Object is signed with. The same `ownSignerFor()`, so the two
 // cannot name different keys; throws where that does.
+/**
+ * Returns the public half of the key `signJwt()` signs an algorithm with, and
+ * its internal `kid`.
+ *
+ * @param alg - the JWS algorithm
+ * @returns `{ kid, publicKeyPem }`
+ * @throws Error when this realm holds no key for the algorithm
+ */
 function ownPublicKeyFor(alg) {
   log.debug("Entering ownPublicKeyFor(). alg=" + alg);
   const signer = ownSignerFor(alg);
@@ -3544,6 +4078,17 @@ function ownVerifyOptions(header, opts) {
 // that key and no other, so an expired token's `exp` error is its own and not
 // "invalid signature" from the wrong key. `opts` is `verifyJws()`'s.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies a JWS this realm signed, against each of its candidate keys.
+ *
+ * A token naming one of its keys by `kid` is tried against that key only. When
+ * none verifies, the current key's error is thrown.
+ *
+ * @param token - the compact JWS
+ * @param opts - `stsCrypto.verifyJws()`'s options
+ * @returns the verified claims
+ * @throws Error when no candidate key verifies it
+ */
 function verifyOwnJws(token, opts) {
   log.debug("Entering verifyOwnJws().");
   const header = peekJoseHeader(token);
@@ -3574,6 +4119,16 @@ function verifyOwnJws(token, opts) {
 
 // `verifyCompactJws()`'s spelling of the same — the verifiers that check the
 // signature first and the claims themselves.
+/**
+ * Verifies a compact JWS this realm signed, against each candidate key, with
+ * `stsCrypto.verifyCompactJws()`: the signature only, the claims left to the
+ * caller.
+ *
+ * @param token - the compact JWS
+ * @param opts - `stsCrypto.verifyCompactJws()`'s options
+ * @returns what `verifyCompactJws()` answers for the key that verified it
+ * @throws Error when no candidate key verifies it
+ */
 function verifyOwnCompactJws(token, opts) {
   log.debug("Entering verifyOwnCompactJws().");
   const header = peekJoseHeader(token);
@@ -3605,6 +4160,15 @@ function verifyOwnCompactJws(token, opts) {
 // or the CURRENT key's answer when none verifies — the shape every caller
 // already reads. `opts` is that function's, less `certPem`.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies an XML signature this realm made, against every XML signing
+ * certificate it holds.
+ *
+ * @param xml - the signed document
+ * @param opts - `stsCrypto.verifyXmlSignature()`'s options, less `certPem`
+ * @returns the first `{ ok: true }` answer, or the current key's answer when
+ * none verifies
+ */
 function verifyOwnXml(xml, opts) {
   log.debug("Entering verifyOwnXml().");
   // Every XML signing certificate, the signer groups' ECDSA and
@@ -3635,6 +4199,16 @@ function verifyOwnXml(xml, opts) {
 // certificate fetched before a rotation still opens. `{ kid, privateKeyPem,
 // privateKey }`, each read through the set's own getters.
 // ---------------------------------------------------------------------------
+/**
+ * Lists the RSA keys that may open something encrypted to this realm, most
+ * likely first: the current keys, then each unit's `next` and retired keys
+ * still in their grace.
+ *
+ * @param firstUseCase - `jose` to put the `jose` unit's current key first; the
+ * `xml` unit's otherwise
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ kid, privateKeyPem, privateKey }` rows
+ */
 function ownRsaDecryptionKeys(firstUseCase, keySet) {
   log.debug("Entering ownRsaDecryptionKeys().");
   const keys = keySet || stsKeysFor();
@@ -3748,6 +4322,13 @@ function pinnedDecryptionRows(keys, now) {
 // generated key goes on decrypting through `supersedesUntil`
 // (`ownRsaDecryptionKeys()`). `[{ kid, certPem }]`.
 // ---------------------------------------------------------------------------
+/**
+ * Lists the certificates the realm's SAML metadata offers for encryption: the
+ * XML key's, or a pinned key's beside or in place of it.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ kid, certPem }` rows
+ */
 function ownXmlEncryptionCertificates(keySet) {
   log.debug("Entering ownXmlEncryptionCertificates().");
   const keys = keySet || stsKeysFor();
@@ -3774,6 +4355,15 @@ function ownXmlEncryptionCertificates(keySet) {
 // first `{ ok: true }`, or the first key's answer, whose `why` every caller
 // already words its refusal around.
 // ---------------------------------------------------------------------------
+/**
+ * Opens an XML element encrypted to this realm, trying each key of
+ * `ownRsaDecryptionKeys('xml')` in turn.
+ *
+ * @param xml - the document holding the encrypted element
+ * @param opts - `stsCrypto.decryptElement()`'s options
+ * @returns the first `{ ok: true }` answer, or the first key's answer when none
+ * opens it
+ */
 function decryptOwnElement(xml, opts) {
   log.debug("Entering decryptOwnElement().");
   const keys = ownRsaDecryptionKeys('xml');
@@ -3798,11 +4388,24 @@ function decryptOwnElement(xml, opts) {
 // current curve and post-quantum keys and every live standby one of any unit.
 // For the verifiers that look their own keys up in a list —
 // `oid4vc/vc_verifier.ts`, `ssf/ssf_events.js`.
+/**
+ * Lists every public signing key of this realm a verifier may find by `kid`:
+ * the current curve and post-quantum keys, every live standby, group and pinned
+ * key.
+ *
+ * @returns `{ alg, publicJwk, role }` rows
+ */
 function allVerificationKeys() {
   log.debug("Entering allVerificationKeys().");
   const keys = stsKeysFor();
   const now = Date.now();
-  const out = allSigningKeys().concat(standbyOf(keys).filter(function (one) {
+  // THE POST-QUANTUM KEYS THAT EXIST, NOT ONES MADE HERE (2026-09-28): a key
+  // never made has signed nothing, and making the eleven synchronously to look
+  // a `kid` up stopped the whole service for ten seconds on a CI runner the
+  // first time this realm's own receivers verified a Security Event Token —
+  // keyListFor()'s reason. Keys another process made arrive by adoption.
+  const out = (keys.extraKeys || []).concat(keys.pqKeys || [])
+    .concat(standbyOf(keys).filter(function (one) {
     // The JWK-shaped generations only: a BBS key (#49 P5) has no JWK and is
     // looked up through bbsGenerations().
     return (one.kind === 'curve' || one.kind === 'pq' ||
@@ -3815,6 +4418,12 @@ function allVerificationKeys() {
   return out;
 }
 
+/**
+ * The same list as `allVerificationKeys()`, with the post-quantum keys
+ * generated on libuv's thread pool.
+ *
+ * @returns a promise of the rows
+ */
 function allVerificationKeysAsync() {
   log.debug("Entering allVerificationKeysAsync().");
   const keys = stsKeysFor();
@@ -3852,6 +4461,14 @@ function pinnedJwkEntries(keys) {
 // is published BARE: the first certificate would hold a different key. The
 // SLH-DSA key has a certificate of its own and carries it. A key not yet
 // certified is published bare, as every key here was before it had one.
+/**
+ * Returns the JOSE signer groups' keys as published JWKs, each with its
+ * certificate chain in `x5c` where its certificate holds that key; bare
+ * otherwise.
+ *
+ * @param keys - the realm's key set
+ * @returns the JWKs
+ */
 function groupPublishedJwks(keys) {
   log.debug("Entering groupPublishedJwks().");
   let pki = null;
@@ -3889,6 +4506,13 @@ function groupPublishedJwks(keys) {
 // The JOSE signer groups' keys as `{ alg, publicJwk, role }` rows (#68) —
 // every group but XML, in whatever model the realm is in now, for the reason
 // groupVerifiersFor() gives.
+/**
+ * Lists the JOSE signer groups' keys as `{ alg, publicJwk, role }` rows, every
+ * group but XML and browser devices, in whatever model the realm is in now.
+ *
+ * @param keys - the realm's key set
+ * @returns the rows
+ */
 function groupJwkEntries(keys) {
   log.debug("Entering groupJwkEntries().");
   const out = groupMembersOf(keys).filter(function (one) {
@@ -3902,8 +4526,8 @@ function groupJwkEntries(keys) {
 
 // ---------------------------------------------------------------------------
 // MINTING ONE UNIT'S NEXT KEY — off the event loop where there is an async
-// door (RSA and the curves in node's thread pool, the post-quantum keys on the
-// worker pool), with the builders the current keys were made by.
+// door (RSA, the curves and the post-quantum keys all on libuv's thread
+// pool), with the builders the current keys were made by.
 // ---------------------------------------------------------------------------
 function curveSpecFor(unitRow) {
   log.debug("Entering curveSpecFor().");
@@ -4015,7 +4639,7 @@ async function mintStandbyKey(unitRow, role) {
     return entry;
   }
   if (unitRow.kind === 'bbs') {
-    const pair = await bbs2023.generateKeyPair();
+    const pair = await bbs2023Suite().generateKeyPair();
     const kid = bbsKidOf(pair.publicKey);
     log.debug("Leaving mintStandbyKey(). BBS " + kid);
     return Object.assign(base, {
@@ -4043,10 +4667,22 @@ async function mintStandbyKey(unitRow, role) {
 // compatible with, and the curve and post-quantum keys are the stronger
 // choices at their sizes.
 // ---------------------------------------------------------------------------
+/**
+ * The algorithms an OpenID Federation Entity Key is made for: the curve and
+ * ML-DSA ones, never RSA.
+ */
 const FEDERATION_KEY_ALGS = Object.freeze(['ES256', 'ES384', 'ES512', 'EdDSA',
                                            'ML-DSA-44', 'ML-DSA-65',
                                            'ML-DSA-87']);
 
+/**
+ * Makes an OpenID Federation Entity Key, whose `kid` is its RFC 7638
+ * thumbprint.
+ *
+ * @param alg - one of `FEDERATION_KEY_ALGS`
+ * @returns `{ alg, privateKey, publicJwk }`
+ * @throws Error for an algorithm not offered
+ */
 async function makeFederationKey(alg) {
   log.debug("Entering makeFederationKey(). alg=" + alg);
   if (FEDERATION_KEY_ALGS.indexOf(alg) < 0) {
@@ -4092,6 +4728,10 @@ function plainCopyOf(keys, overrides) {
     refreshTokenEncKeys: keys.refreshTokenEncKeys,
     requestObjectEncKeys: keys.requestObjectEncKeys,
     browserDeviceKeys: keys.browserDeviceKeys,
+    // The KEM decryption keys (#82) carry over a rotation unchanged: they are
+    // not signing keys, and a client holding the published key must still
+    // be able to encrypt to it after the realm's signer moves on.
+    kemEncKeys: keys.kemEncKeys,
     xmlKey: keys.xmlKey ? {
       privateKeyPem: keys.xmlKey.privateKeyPem,
       selfSignedCertPem: keys.xmlKey.selfSignedCertPem,
@@ -4176,6 +4816,14 @@ function unitsWanted(keys, units) {
 // and handing the set on ONCE for all of them. Idempotent: a unit that has a
 // `next` is left alone. Resolves `{ ok, minted: [unit…], generation }`.
 // ---------------------------------------------------------------------------
+/**
+ * Makes sure every wanted signing unit of a realm has a `next` key, minting the
+ * ones that lack one and storing the set once. Idempotent.
+ *
+ * @param realmId - the realm
+ * @param options - `units`, the units to consider; every unit when absent
+ * @returns `{ ok, minted, generation }`
+ */
 async function ensureNextGenerations(realmId, options) {
   log.debug("Entering ensureNextGenerations(). realm=" + realmId);
   const o = options || {};
@@ -4228,6 +4876,17 @@ async function ensureNextGenerations(realmId, options) {
 // minted one first — a rotation of a key nobody has seen published is still a
 // rotation, and an emergency one has to be.
 // ---------------------------------------------------------------------------
+/**
+ * Rotates a realm's signing keys: each wanted unit's `next` becomes current,
+ * and the current one is retired for `graceMs`, then a fresh `next` is minted.
+ *
+ * With `emergency`, the current key and its `next` are dropped at once instead
+ * of retired, and the caller revokes their certificates.
+ *
+ * @param realmId - the realm
+ * @param options - `units`, `graceMs` and `emergency`
+ * @returns `{ ok, rotated, dropped, generation }`
+ */
 async function promoteGenerations(realmId, options) {
   log.debug("Entering promoteGenerations(). realm=" + realmId);
   const o = options || {};
@@ -4412,6 +5071,63 @@ async function promoteGenerations(realmId, options) {
 // #42). Resolves `{ ok, dropped: [{ unit, kid, useCase, slot }], generation }`;
 // the caller supersedes their certificates.
 // ---------------------------------------------------------------------------
+/**
+ * Drops every retired key whose grace has passed, and retired refresh-token
+ * encryption keys past theirs; the caller supersedes their certificates.
+ *
+ * @param realmId - the realm
+ * @param nowMs - the time now; `Date.now()` when absent
+ * @returns `{ ok, dropped, generation }`
+ */
+// A REALM'S KEY SET IF IT HAS ONE, NEVER A NEW ONE (2026-09-29). The
+// scheduled rotation jobs (`signing.rotate`, `signing.retire`) run in every
+// realm every minute, and asked `stsKeysFor.of()`, which GENERATES a set for a
+// realm that has none — four RSA pairs and a self-signed certificate on this
+// thread, hundreds of milliseconds each. A realm makes its keys on first use,
+// so every realm created since the last run had its keys made by the job:
+// measured with 400 realms, the event loop stalled 16 to 36 seconds every
+// minute, and in the suite's memory mode up to 20 seconds, which is what
+// failed `sts_attribute_sources`' 2-second connection and every "fetch failed"
+// whose socket the server's late keep-alive timer closed. There is nothing to
+// rotate or retire in a set that does not exist. A set that DOES exist — held
+// here, sealed in the store, or held by a sibling process — is restored as
+// `.of()` restores it; only generation is refused. `.existing()` is the
+// held-check that reads the cache, the certificate authority's realm
+// watcher's lesson (`common/CLAUDE.md`, *THE REALM WATCHER ASKS AND DOES NOT
+// TAKE*).
+/**
+ * Returns a realm's signing key set when one exists anywhere — held by this
+ * process, in the store, or shared by a sibling — and null otherwise; never
+ * generates one.
+ *
+ * @param {string} realmId - the realm, '' for the default realm
+ * @returns {any} the key set, or null when none is made or kept
+ */
+function keySetIfMade(realmId) {
+  log.debug("Entering keySetIfMade(). realm=" + realmId);
+  const id = String(realmId || '');
+  const canonical = id || realms.DEFAULT_ID;
+  const held = stsKeysFor.existing();
+  if (held.has(id) || held.has(canonical)) {
+    log.debug("Leaving keySetIfMade(). Held.");
+    return held.has(id) ? held.get(id) : held.get(canonical);
+  }
+  let elsewhere = false;
+  try {
+    elsewhere = !!(keystore.storedFor(canonical) ||
+                   keystore.sharedFor(canonical));
+  } catch (e) {
+    log.debug("Caught in keySetIfMade(): " + ((e && e.message) || e));
+    elsewhere = false;
+  }
+  if (!elsewhere) {
+    log.debug("Leaving keySetIfMade(). None made yet.");
+    return null;
+  }
+  log.debug("Leaving keySetIfMade(). Restored.");
+  return stsKeysFor.of(id);
+}
+
 function retireExpiredGenerations(realmId, nowMs) {
   log.debug("Entering retireExpiredGenerations(). realm=" + realmId);
   const id = String(realmId || '');
@@ -4467,6 +5183,15 @@ function retireExpiredGenerations(realmId, nowMs) {
 // already in clients' hands until `graceMs` has passed, and never sealed
 // under again. `generations.rotated['refresh:enc']` records when.
 // ---------------------------------------------------------------------------
+/**
+ * Rotates a realm's refresh-token encryption keys; the set replaced is retired,
+ * kept only to open refresh tokens already issued until `graceMs` has passed.
+ *
+ * @param realmId - the realm
+ * @param graceMs - how long the retired set still opens tokens
+ * @param why - the reason, for the log
+ * @returns what storing the new generation answered
+ */
 function rotateRefreshTokenKeys(realmId, graceMs, why) {
   log.debug("Entering rotateRefreshTokenKeys(). realm=" + realmId);
   const id = String(realmId || '');
@@ -4488,6 +5213,13 @@ function rotateRefreshTokenKeys(realmId, graceMs, why) {
 }
 
 // The retired refresh-token key sets still within their grace, newest first.
+/**
+ * Lists the retired refresh-token key sets still within their grace, newest
+ * first.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the key sets
+ */
 function retiredRefreshTokenKeysFor(keySet) {
   log.debug("Entering retiredRefreshTokenKeysFor().");
   const keys = keySet || stsKeysFor();
@@ -4515,6 +5247,12 @@ function retiredRefreshTokenKeysFor(keySet) {
 // caching.
 
 // --- helpers ---------------------------------------------------------------
+/**
+ * Escapes text for XML content and attribute values.
+ *
+ * @param s - the value; null and undefined escape to ''
+ * @returns the escaped text
+ */
 function xmlEscape(s) {
   log.debug("Entering xmlEscape().");
   log.debug("Leaving xmlEscape().");
@@ -4526,6 +5264,11 @@ function xmlEscape(s) {
 // An XML ID: `_` and 128 random bits in hex — the NCName an `ID` attribute
 // needs cannot start with a digit. Node's generator since #65; it was
 // forge.random, a second DRBG (common/crypto.js, section 13).
+/**
+ * Makes an XML ID: `_` and 128 random bits in hex.
+ *
+ * @returns the ID
+ */
 function genId() {
   log.debug("Entering genId().");
   log.debug("Leaving genId().");
@@ -4550,6 +5293,16 @@ function genId() {
 // every caller wants (find the UsernameToken anywhere in the SOAP envelope) but
 // is worth stating: firstByLocal(el, 'Assertion') will not return `el` itself
 // even when `el` IS the Assertion.
+/**
+ * Finds the first descendant element with a local name, in any namespace and
+ * under any prefix.
+ *
+ * Descendants only: the root itself is never returned.
+ *
+ * @param root - the element or document to search under
+ * @param name - the local name
+ * @returns the element, or null
+ */
 function firstByLocal(root, name) {
   log.debug("Entering firstByLocal().");
   const els = root.getElementsByTagNameNS('*', name);
@@ -4557,6 +5310,13 @@ function firstByLocal(root, name) {
   return els && els.length ? els[0] : null;
 }
 
+/**
+ * Returns the trimmed text of the first descendant element with a local name.
+ *
+ * @param root - the element or document to search under
+ * @param name - the local name
+ * @returns the text, or '' when there is no such element
+ */
 function textByLocal(root, name) {
   log.debug("Entering textByLocal().");
   const e = firstByLocal(root, name);
@@ -4564,6 +5324,12 @@ function textByLocal(root, name) {
   return e ? (e.textContent || '').trim() : '';
 }
 
+/**
+ * Returns an ISO 8601 timestamp some minutes from now.
+ *
+ * @param offsetMin - minutes to add; 0 when absent
+ * @returns the timestamp
+ */
 function iso(offsetMin) {
   log.debug("Entering iso().");
   log.debug("Leaving iso().");
@@ -4592,8 +5358,19 @@ function jsonFromB64u(s) {
 
 // Small and called constantly: no entering/leaving logs, they would drown the
 // log.
+/**
+ * Returns the time now in whole seconds since the epoch.
+ *
+ * @returns the time
+ */
 function nowSec() { return Math.floor(Date.now() / 1000); }
 
+/**
+ * Makes a random identifier, base64url-encoded.
+ *
+ * @param bytes - how many random bytes; 24 when absent
+ * @returns the identifier
+ */
 function randomId(bytes) {
   log.debug("Entering randomId().");
   log.debug("Leaving randomId().");
@@ -4618,8 +5395,17 @@ function randomId(bytes) {
 // process, and written down only by the process whose set is the realm's. A
 // pair some other process already made for this realm is adopted first.
 // ---------------------------------------------------------------------------
+/**
+ * The signing unit of a realm's BBS key: `bbs:BBS`.
+ */
 const BBS_UNIT = 'bbs:BBS';
 
+/**
+ * Derives the `kid` of a BBS public key from its SHA-256 hash.
+ *
+ * @param publicKey - the public key's bytes
+ * @returns the `kid`, `bbs-` and 22 base64url characters
+ */
 function bbsKidOf(publicKey) {
   log.debug("Entering bbsKidOf().");
   log.debug("Leaving bbsKidOf().");
@@ -4668,7 +5454,7 @@ function bbsKeyFor(keys) {
     log.debug("Leaving bbsKeyFor(). One is already in flight.");
     return keys.bbsKeyPromise;
   }
-  keys.bbsKeyPromise = bbs2023.generateKeyPair().then(function (made) {
+  keys.bbsKeyPromise = bbs2023Suite().generateKeyPair().then(function (made) {
     if (!keys.bbsKey) {
       keys.bbsKey = { secretKey: Uint8Array.from(made.secretKey),
                       publicKey: Uint8Array.from(made.publicKey),
@@ -4718,6 +5504,11 @@ function bbsKeyFor(keys) {
 }
 
 // The ambient realm's current BBS pair, `{ secretKey, publicKey }`.
+/**
+ * Returns the ambient realm's current BBS key pair, made on first use.
+ *
+ * @returns `{ secretKey, publicKey }`
+ */
 async function bbsKeyPair() {
   log.debug("Entering bbsKeyPair().");
   const pair = await bbsKeyFor(stsKeysFor());
@@ -4729,6 +5520,12 @@ async function bbsKeyPair() {
 // then the next key and the retired ones within their grace, each
 // `{ kid, publicKey, role }` — for the Verifier, the DID document and
 // `/bbs/keys/<kid>`. Public halves only.
+/**
+ * Lists every generation of the ambient realm's BBS key that still verifies,
+ * current first. Public halves only.
+ *
+ * @returns `{ kid, publicKey, role }` rows
+ */
 async function bbsGenerations() {
   log.debug("Entering bbsGenerations().");
   const keys = stsKeysFor();
@@ -4763,6 +5560,14 @@ async function bbsGenerations() {
 // that joined its scopes with a tab or sent one across a folded header is
 // asking for exactly what it looks like it is asking for.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether a scope string carries a scope, as RFC 6749 section 3.3 reads
+ * it: whitespace-delimited and case-sensitive.
+ *
+ * @param scope - the scope string
+ * @param name - the scope
+ * @returns true when present
+ */
 function hasScope(scope, name) {
   log.debug("Entering hasScope().");
   log.debug("Leaving hasScope().");
@@ -4771,6 +5576,17 @@ function hasScope(scope, name) {
 
 // Request bodies arrive as raw text (the SOAP parser takes every content type),
 // so form-encoded and JSON are both decoded here.
+/**
+ * Decodes a request body, which arrives as raw text: JSON, multipart form data
+ * (every part as text) or form-encoded.
+ *
+ * A repeated form parameter keeps its last value; `bodyValues()` reads every
+ * one.
+ *
+ * @param req - the request
+ * @returns the parameters; `{}` for a JSON body that does not parse
+ * (STS-CORE-0026)
+ */
 function parseBody(req) {
   log.debug("Entering parseBody(). content-type=" +
             (req.headers['content-type'] || '(none)'));
@@ -4824,6 +5640,14 @@ function parseBody(req) {
 // ---------------------------------------------------------------------------
 const MULTIPART_MAX_PARTS = 200;
 
+/**
+ * Splits a multipart/form-data body (RFC 7578) into its parts, read off the raw
+ * bytes.
+ *
+ * @param req - the request
+ * @returns `{ name, filename, contentType, data }` rows, `data` a Buffer; `[]`
+ * when there is no boundary
+ */
 function multipartParts(req) {
   log.debug("Entering multipartParts().");
   const type = String((req && req.headers && req.headers['content-type']) ||
@@ -4939,6 +5763,15 @@ function multipartParts(req) {
 // that file, and the shape here is deliberately identical so that it is a
 // one-line delegation when somebody does.
 // ---------------------------------------------------------------------------
+/**
+ * Reads every value of a parameter that may repeat, such as RFC 8707's
+ * `resource`, from a form or JSON body.
+ *
+ * @param req - the request
+ * @param body - the parsed body, for JSON
+ * @param name - the parameter
+ * @returns every value, as strings
+ */
 function bodyValues(req, body, name) {
   log.debug("Entering bodyValues(). name=" + name);
   const type = String((req && req.headers &&
@@ -4962,6 +5795,15 @@ function bodyValues(req, body, name) {
   return out;
 }
 
+/**
+ * Sends an OAuth 2.0 error response: JSON `error` and `error_description`, with
+ * `Cache-Control: no-store`.
+ *
+ * @param res - the response
+ * @param status - the HTTP status
+ * @param error - the error code
+ * @param description - the error description
+ */
 function oauthError(res, status, error, description) {
   // error-code: none — the helper's trace line, not a call to it.
   log.debug("Entering oauthError(). status=" + status + ", error=" + error);
@@ -5018,7 +5860,7 @@ function pqKeysFor(keys) {
 // Nearly all of the ~1.9 seconds above is one SLH-DSA-SHAKE keygen, and it is
 // spent on the FIRST JWKS FETCH of a realm — a request that, until the worker
 // pool existed, stopped this whole service for two seconds while it was
-// answered. See common/worker.js.
+// answered. See common/pq_native.js.
 //
 // TWO THINGS HERE ARE NOT DECORATION.
 //
@@ -5038,7 +5880,49 @@ function pqKeysFor(keys) {
 // A failure clears the in-flight promise rather than remembering it, so a realm
 // whose first attempt failed can be asked again instead of being permanently
 // without post-quantum keys.
+//
+// **AND THE GENERATION BELONGS TO THE REALM, NOT TO THE SET THAT ASKED
+// (2026-09-27, CI run 36369109378).** A set can be REPLACED while its eleven
+// keys are being made: another node writes the realm's next generation, and
+// `keystore.onAdopt()` drops this process's set so the next read rebuilds
+// from the stored one. Until this date the finished keys landed on the set
+// that asked, which nobody held any more; the rebuilt set had neither the
+// keys nor the promise, so the next JWKS fetch started a second generation
+// and waited for it. On the cluster suite that was nine and a half seconds
+// more, a new realm's first sign-in's back-channel JWKS fetch ran out of its
+// ten, and a FAPI 1.0 Advanced sign-in failed with a JARM response it could
+// not verify. The post-quantum keys are a family of their own, independent
+// of the RSA and curve keys the new generation replaced, so the fix is to
+// put them where the realm is NOW: `pqGenerations` lets a rebuilt set join
+// the generation already running, and a finished one goes on the set the
+// realm holds when it finishes — published, written down and certified from
+// there, under the rules below.
 // ---------------------------------------------------------------------------
+// A realm's id → its post-quantum generation in flight in this process, the
+// promise of the eleven keys it makes.
+const pqGenerations = new Map();
+
+// The set a realm holds in this process NOW, for a generation that finished:
+// the one in the cache, rebuilt from the store if the cache was just emptied
+// by an adoption — but only for a realm that still exists, so that a
+// generation finishing after its realm was removed does not bring a set back
+// for it. `keys` itself where there is no other answer.
+function pqTargetSet(keys) {
+  log.debug("Entering pqTargetSet().");
+  const id = keys.realm;
+  const held = stsKeysFor.existing().get(id);
+  if (held) {
+    log.debug("Leaving pqTargetSet(). The cached set.");
+    return held;
+  }
+  if (id !== undefined && realms.get(id)) {
+    log.debug("Leaving pqTargetSet(). Rebuilt.");
+    return stsKeysFor.of(id);
+  }
+  log.debug("Leaving pqTargetSet(). The set that asked.");
+  return keys;
+}
+
 function pqKeysForAsync(keys) {
   log.debug("Entering pqKeysForAsync().");
   if (keys.pqKeys) {
@@ -5050,15 +5934,38 @@ function pqKeysForAsync(keys) {
     log.debug("Leaving pqKeysForAsync(). One is already in flight.");
     return keys.pqKeysPromise;
   }
-  pqKeysCount.miss();
   const started = Date.now();
-  keys.pqKeysPromise = Promise.all(pqJose.PQ_ALGS.map(function (alg) {
-    return pqJose.generateAsync(alg).then(function (pair) {
-      return pqKeyFrom(alg, pair);
+  let generation = pqGenerations.get(keys.realm);
+  if (generation) {
+    pqKeysCount.hit();
+  } else {
+    pqKeysCount.miss();
+    generation = Promise.all(pqJose.PQ_ALGS.map(function (alg) {
+      return pqJose.generateAsync(alg).then(function (pair) {
+        return pqKeyFrom(alg, pair);
+      });
+    }));
+    const running = generation;
+    pqGenerations.set(keys.realm, running);
+    running.then(function () {
+      if (pqGenerations.get(keys.realm) === running) {
+        pqGenerations.delete(keys.realm);
+      }
+    }, function (e) {
+      // Reported by the caller's own chain below; this branch only frees the
+      // slot, so a realm whose generation failed can be asked again.
+      log.debug("Caught in pqKeysForAsync(): " + ((e && e.message) || e));
+      if (pqGenerations.get(keys.realm) === running) {
+        pqGenerations.delete(keys.realm);
+      }
     });
-  })).then(function (made) {
-    if (!keys.pqKeys) {
-      keys.pqKeys = made;
+  }
+  keys.pqKeysPromise = generation.then(function (made) {
+    // The set the realm holds now — this one, unless it was replaced while
+    // the keys were being made (the block above this function).
+    const target = pqTargetSet(keys);
+    if (!target.pqKeys) {
+      target.pqKeys = made;
       // AND OFFERED TO EVERY OTHER PROCESS. The set was published when it was
       // GENERATED, before these existed — so without this the shared blob keeps
       // the RSA and EC halves and every worker makes its own post-quantum keys,
@@ -5069,7 +5976,7 @@ function pqKeysForAsync(keys) {
       // where nothing was offered, which is "yes": there is nobody to lose to.
       let took;
       if (keys.realm) {
-        took = keystore.publishShared(keys.realm, keys);
+        took = keystore.publishShared(keys.realm, target);
         // ---------------------------------------------------------------
         // **AND WRITTEN DOWN, WHICH THEY WERE NOT UNTIL 2026-09-12.**
         //
@@ -5097,7 +6004,7 @@ function pqKeysForAsync(keys) {
         // the row converges on what everybody is signing with.
         // ---------------------------------------------------------------
         if (took !== false) {
-          keystore.remember(keys.realm, keys);
+          keystore.remember(keys.realm, target);
         }
       }
       // -----------------------------------------------------------------
@@ -5115,9 +6022,16 @@ function pqKeysForAsync(keys) {
       log.info('The post-quantum signing keys were generated for the "' +
                keys.realm + '" realm: ' + made.length + ' key(s) in ' +
                (Date.now() - started) + 'ms, in worker processes, so this ' +
-               'service went on answering throughout.');
+               'service went on answering throughout.' +
+               (target !== keys ? ' The set that asked for them had been ' +
+                'replaced meanwhile; they are on the one held now.' : ''));
     }
-    return keys.pqKeys;
+    // The set that asked answers with the realm's keys too, so a caller
+    // still holding it cannot publish a different post-quantum half.
+    if (!keys.pqKeys) {
+      keys.pqKeys = target.pqKeys;
+    }
+    return target.pqKeys;
   }).catch(function (err) {
     keys.pqKeysPromise = null;
     throw err;
@@ -5153,12 +6067,12 @@ function pqKeysForAsync(keys) {
 // sign-in in the parent project's suite, reporting "the JWKS could not be
 // fetched", which is a sentence about a service that was working.
 //
-// So the keys are made when the realm is created, in the pool, where nothing
-// is waiting on them. That was not affordable before: eager generation used to
-// mean 5.8 seconds of a stopped service per realm, which is why they were lazy
-// in the first place. It is affordable now, and it is the whole point — the
-// pool does not merely move the cost off the request that pays it, it makes
-// paying it EARLY free.
+// So the keys are made when the realm is created, on libuv's thread pool, where
+// nothing is waiting on them. That was not affordable before: eager generation
+// used to mean 5.8 seconds of a stopped service per realm, which is why they
+// were lazy in the first place. It is affordable now, and it is the whole point
+// — the pool does not merely move the cost off the request that pays it, it
+// makes paying it EARLY free.
 //
 // `stsKeysFor.of(id)` rather than `stsKeysFor()`: this runs from a change
 // watcher, outside any request, so there is no ambient realm to read. See
@@ -5183,7 +6097,7 @@ function pqKeysForAsync(keys) {
 // **NO NEW RECIPE** (rcbj's rule of 2026-09-21): RSA through
 // generateRsaPairAsync(), the curves through generateCurvePairAsync() over
 // CURVE_KEY_SPECS' own rows, ML-DSA and SLH-DSA through
-// `pq_jose.generateAsync()` — the worker pool, which is what keeps an
+// `pq_jose.generateAsync()` — libuv's thread pool, which is what keeps an
 // SLH-DSA key generation from stopping this service answering.
 //
 // The `kid` is `sts-g-<group>-<slot>-<hash of the public key>`: from the key's
@@ -5306,6 +6220,13 @@ function certifySignerGroupsLater(realmId, members) {
   log.debug("Leaving certifySignerGroupsLater().");
 }
 
+/**
+ * Returns a key set's signer-group keys, making them on libuv's thread pool
+ * where they do not exist yet; concurrent callers share one generation.
+ *
+ * @param keys - the realm's key set
+ * @returns a promise of the group members
+ */
 function signerGroupsForAsync(keys) {
   log.debug("Entering signerGroupsForAsync().");
   if ((keys.signerGroups || []).length) {
@@ -5351,6 +6272,14 @@ function signerGroupsForAsync(keys) {
 // the realm is in the `hybrid-groups` model, read IN that realm. Never
 // rejects: a failure is named, and a group signature falls back to the
 // per-algorithm key until the keys exist (see groupSignerFor()).
+/**
+ * Generates a realm's signer-group keys ahead of the first signature, only
+ * where the realm is in the `hybrid-groups` model. Never rejects.
+ *
+ * @param realmId - the realm
+ * @returns a promise, resolving null where there is nothing to warm or it
+ * failed
+ */
 function warmSignerGroups(realmId) {
   log.debug("Entering warmSignerGroups(). realm=" + realmId);
   const realm = realms.get(realmId);
@@ -5379,6 +6308,14 @@ function warmSignerGroups(realmId) {
   });
 }
 
+/**
+ * Generates a realm's post-quantum keys on libuv's thread pool ahead of the
+ * first JWKS fetch. Never rejects; a failure is logged (STS-CORE-0028).
+ *
+ * @param realmId - the realm
+ * @returns a promise, resolving null where there is nothing to warm or it
+ * failed
+ */
 function warmPqKeys(realmId) {
   log.debug("Entering warmPqKeys(). realm=" + realmId);
   let keys;
@@ -5408,9 +6345,9 @@ function warmPqKeys(realmId) {
 // THERE IS NO WATCHER ANY MORE, AND THAT REVERSES HALF OF `5d9b51b` ON
 // EVIDENCE RATHER THAN ON TASTE (2026-08-30).
 //
-// It warmed every realm's eleven post-quantum keys as the realm was CREATED,
-// on `realms.onChange(… 'create')`. The argument was the paragraph above and
-// it is still correct as far as it goes: the pool makes paying early free, so
+// It warmed every realm's eleven post-quantum keys as the realm was CREATED, on
+// `realms.onChange(… 'create')`. The argument was the paragraph above and it is
+// still correct as far as it goes: the thread pool makes paying early free, so
 // pay early.
 //
 // What it did not account for is WHO CREATES REALMS HERE. In a deployment a
@@ -5425,15 +6362,15 @@ function warmPqKeys(realmId) {
 //
 // Over two minutes of both worker processes, under instrumentation, spent on
 // key material nothing would ever ask for — on the same two cores the job that
-// DOES sign is waiting for. Eager generation is free when the pool is idle and
-// is not free when something else needs it.
+// DOES sign is waiting for. Eager generation is free when the thread pool is
+// idle and is not free when something else needs it.
 //
-// So the eager path is now the DEFAULT REALM ALONE, warmed from `announce()`
-// in server.js once the port is open — the realm every process has, that every
+// So the eager path is now the DEFAULT REALM ALONE, warmed from `announce()` in
+// server.js once the port is open — the realm every process has, that every
 // protocol answers in, and the one whose first JWKS fetch a person actually
 // waits for. A realm created at runtime makes its keys on first use, the way
-// every realm did before that commit: about 1.7 seconds in the pool, off the
-// event loop, on a request nobody has made yet.
+// every realm did before that commit: about 1.7 seconds on the thread pool, off
+// the event loop, on a request nobody has made yet.
 //
 // **This is a latency optimisation and not a correctness one**, which is what
 // makes it safe to narrow: no behaviour depends on when the keys exist, only
@@ -5443,6 +6380,12 @@ function warmPqKeys(realmId) {
 
 // Every signing key this realm can publish — the RSA one, the curve ones, and
 // the post-quantum ones, which this call brings into being.
+/**
+ * Lists every signing key this realm can publish besides the RSA one: the curve
+ * keys and the post-quantum keys, which this call brings into being.
+ *
+ * @returns the keys
+ */
 function allSigningKeys() {
   log.debug("Entering allSigningKeys().");
   const keys = stsKeysFor();
@@ -5451,15 +6394,25 @@ function allSigningKeys() {
   return out;
 }
 
-// The same list, with the post-quantum half generated in the pool. It is what
-// the JWKS endpoint calls, because that endpoint is the one that brings those
-// eleven keys into being.
+// The same list, with the post-quantum half generated on libuv's thread pool.
+// It is what the JWKS endpoint calls, because that endpoint is the one that
+// brings those eleven keys into being.
+/**
+ * The same list as `allSigningKeys()`, with the post-quantum keys generated in
+ * libuv's thread pool; what the JWKS endpoint calls.
+ *
+ * @returns a promise of the keys
+ */
 function allSigningKeysAsync() {
   log.debug("Entering allSigningKeysAsync().");
   const keys = stsKeysFor();
   log.debug("Leaving allSigningKeysAsync().");
   return pqKeysForAsync(keys).then(function (pq) {
-    return (keys.extraKeys || []).concat(pq);
+    // The set read AGAIN after the wait (2026-09-27): another node's
+    // generation may have replaced it meanwhile, and a JWKS of the old
+    // set's curve keys would lack the keys this realm now signs with.
+    const now = stsKeysFor();
+    return (now.extraKeys || []).concat(now.pqKeys || pq);
   });
 }
 
@@ -5562,6 +6515,19 @@ function certificateSlotOf(entry) {
 // `signPublishedDocument()`, the OpenID4VCI credential signers and the Domain
 // Linkage Credential — which merge it into their own `header`.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the `x5c` or `x5u` header members for one signature by the ambient
+ * realm's key named by `kid`.
+ *
+ * The policy is `jose_certificate_header.js`'s; this finds the key and its
+ * public half without touching a private key.
+ *
+ * @param useCaseId - a row of `jose_certificate_header.js`'s use cases
+ * @param alg - the JWS algorithm
+ * @param kid - the signing key's `kid`
+ * @returns the header members to merge; `{}` for HMAC, a key this realm does
+ * not hold, or a use case that gets nothing
+ */
 function certificateHeaderFor(useCaseId, alg, kid) {
   log.debug("Entering certificateHeaderFor(). use=" + useCaseId +
             ", alg=" + alg);
@@ -5656,6 +6622,13 @@ function withCertificateHeader(header, useCaseId, alg, kid) {
 // others' are their own public JWKs, so no private key is touched —
 // `certificateHeaderFor()`'s arrangement, and the same list it searches.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the public JWK of the ambient realm's key named by an internal `kid`,
+ * current or standby, without touching a private key.
+ *
+ * @param kid - the internal `kid`
+ * @returns the JWK, or null
+ */
 function publicJwkOfKid(kid) {
   log.debug("Entering publicJwkOfKid().");
   const keys = stsKeysFor();
@@ -5689,6 +6662,13 @@ function publicJwkOfKid(kid) {
 // signers that call `stsCrypto.signJws()` directly, which are the ones that
 // also call `certificateHeaderFor()`: that function still takes the INTERNAL
 // kid, because the internal kid is how a key is found in this service.
+/**
+ * Returns the `kid` a header carries for the ambient realm's key with this
+ * internal `kid`, as `keys.kidFormat` decides.
+ *
+ * @param kid - the key's internal `kid`
+ * @returns the `kid` to publish
+ */
 function publishedKidFor(kid) {
   log.debug("Entering publishedKidFor().");
   log.debug("Leaving publishedKidFor().");
@@ -5700,6 +6680,14 @@ function publishedKidFor(kid) {
 // Does a header's `kid` name the ambient realm's key with this internal kid,
 // under either spelling. For the verifiers here that find their own key by
 // `kid` (`ssf/ssf_events.js`, `oid4vc/vc_verifier.ts`).
+/**
+ * Tells whether a header's `kid` names the ambient realm's key with this
+ * internal `kid`, under either spelling.
+ *
+ * @param headerKid - the `kid` from the header
+ * @param internalKid - the key's internal `kid`
+ * @returns true when it names the key
+ */
 function kidNamesKey(headerKid, internalKid) {
   log.debug("Entering kidNamesKey().");
   log.debug("Leaving kidNamesKey().");
@@ -5726,6 +6714,19 @@ function kidNamesKey(headerKid, internalKid) {
 // function has no way to know and no business holding. A caller wanting an
 // HS\* signature passes the secret itself.
 // ---------------------------------------------------------------------------
+/**
+ * Finds the key that signs an algorithm a client chose: a pinned key first,
+ * then a signer-group key, then the realm's own.
+ *
+ * HMAC is not here; its key is the client's secret, which the caller passes
+ * itself.
+ *
+ * @param alg - the JWS algorithm
+ * @param useCaseId - the certificate-header use case, which decides the signer
+ * group
+ * @returns the signer: its key and `kid`
+ * @throws Error when this realm holds no key for the algorithm
+ */
 function signingKeyFor(alg, useCaseId) {
   log.debug("Entering signingKeyFor(). alg=" + alg);
   // A PINNED key first, where the realm signs with one (#263): the operator
@@ -5747,10 +6748,58 @@ function signingKeyFor(alg, useCaseId) {
     return direct;
   }
   log.debug("Leaving signingKeyFor(). " + alg + ".");
-  return signingKeyFromList(alg, allSigningKeys());
+  return signingKeyFromList(alg, keyListFor(alg));
 }
 
-// The same key, with the post-quantum half of the list generated in the pool.
+// ---------------------------------------------------------------------------
+// THE LIST A CURVE SIGNATURE IS PICKED FROM IS THE CURVE KEYS ALONE
+// (2026-09-28, CI run 36380417724).
+//
+// `allSigningKeys()` is the curve keys followed by the post-quantum ones, and
+// its post-quantum half is MADE on first use — eleven key generations, SLH-DSA
+// among them, SYNCHRONOUSLY, on this process's one thread. So the first ES256
+// signature in a new realm stopped the whole service while keys it could not
+// use were made: ten seconds on a CI runner, which a sign-in's connection timed
+// out against (sts_mail's reset link, sts_kerberos_krbtgt_rotation). A curve
+// algorithm can only ever be answered by a curve key, so it is looked up among
+// those and the post-quantum keys are left for whoever asks for one — the JWKS,
+// on libuv's thread pool (`pqKeysForAsync()`), or a post-quantum signature. The
+// answer is the same key it always was.
+// ---------------------------------------------------------------------------
+/**
+ * Lists this realm's curve signing keys (EC and EdDSA), without making its
+ * post-quantum keys: what a caller wanting one of these uses, since the full
+ * list generates the post-quantum half on this thread the first time.
+ *
+ * @returns the curve keys, as `allSigningKeys()` lists them
+ */
+function curveSigningKeys() {
+  log.debug("Entering curveSigningKeys().");
+  log.debug("Leaving curveSigningKeys().");
+  return stsKeysFor().extraKeys || [];
+}
+
+function keyListFor(alg) {
+  log.debug("Entering keyListFor(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (spec && spec.family !== 'pq') {
+    log.debug("Leaving keyListFor(). The curve keys.");
+    return curveSigningKeys();
+  }
+  log.debug("Leaving keyListFor(). Every key.");
+  return allSigningKeys();
+}
+
+// The same key, with the post-quantum half of the list generated off the
+// thread.
+/**
+ * The same key as `signingKeyFor()`, with any post-quantum key generated in the
+ * libuv's thread pool.
+ *
+ * @param alg - the JWS algorithm
+ * @param useCaseId - the certificate-header use case
+ * @returns a promise of the signer
+ */
 function signingKeyForAsync(alg, useCaseId) {
   log.debug("Entering signingKeyForAsync(). alg=" + alg);
   let direct;
@@ -5767,6 +6816,18 @@ function signingKeyForAsync(alg, useCaseId) {
   if (direct) {
     log.debug("Leaving signingKeyForAsync(). No list needed.");
     return Promise.resolve(direct);
+  }
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (spec && spec.family !== 'pq') {
+    // The curve keys alone, and at once: see keyListFor().
+    try {
+      const curve = signingKeyFromList(alg, keyListFor(alg));
+      log.debug("Leaving signingKeyForAsync(). A curve key.");
+      return Promise.resolve(curve);
+    } catch (e) {
+      log.debug("Leaving signingKeyForAsync(). Refused.");
+      return Promise.reject(e);
+    }
   }
   log.debug("Leaving signingKeyForAsync(). Waiting on the key list.");
   return allSigningKeysAsync().then(function (list) {
@@ -5790,6 +6851,18 @@ function signingKeyForAsync(alg, useCaseId) {
 // the token carries `x5c` or `x5u` (2026-09-13) — see
 // `certificateHeaderFor()`. A caller that names none gets neither, and
 // `tests/jose_certificate_header.js` fails on a signing call that names none.
+/**
+ * Signs a JWT with whichever key the algorithm needs.
+ *
+ * @param payload - the claims
+ * @param alg - the JWS algorithm
+ * @param secret - the client secret, required for HS* and ignored otherwise
+ * @param opts - `header`, merged into the protected header, and
+ * `certificateHeader`, the use case whose setting decides `x5c` or `x5u`
+ * @returns the compact JWS
+ * @throws Error for HS* without a secret, or an algorithm this realm holds no
+ * key for
+ */
 function signJwtAs(payload, alg, secret, opts) {
   log.debug("Entering signJwtAs().");
   const options = opts || {};
@@ -5824,13 +6897,24 @@ function signJwtAs(payload, alg, secret, opts) {
 // Token (`id_token_signed_response_alg`) and the signed UserInfo response
 // (`userinfo_signed_response_alg`). An SLH-DSA-SHAKE-128s token took 14.6 and
 // 15.4 seconds on 2026-08-29, and for those seconds this service answered
-// nobody — see common/worker.js.
+// nobody — see common/pq_native.js.
 //
 // Everything else it can be asked for resolves with the value signJwtAs()
 // computed, unchanged and not deferred: an HS256 or RS256 signature is
 // microseconds, and an IPC round trip to save that would be a cost with no
-// saving. `opts.session` is the pool's routing hint and may be omitted.
+// saving.
 // ---------------------------------------------------------------------------
+/**
+ * The same signature as `signJwtAs()`, made on libuv's thread pool where the
+ * algorithm is post-quantum; anything else resolves with the value computed
+ * here.
+ *
+ * @param payload - the claims
+ * @param alg - the JWS algorithm
+ * @param secret - the client secret, for HS*
+ * @param opts - as `signJwtAs()`
+ * @returns a promise of the compact JWS
+ */
 function signJwtAsAsync(payload, alg, secret, opts) {
   log.debug("Entering signJwtAsAsync().");
   const options = opts || {};
@@ -5853,7 +6937,6 @@ function signJwtAsAsync(payload, alg, secret, opts) {
     .then(function (signer) {
       return stsCrypto.signJwsAsync(payload, signer.key,
         { algorithm: alg, keyid: publishedKidFor(signer.kid),
-          session: options.session,
           header: withCertificateHeader(options.header,
                                         options.certificateHeader, alg,
                                         signer.kid) });
@@ -5889,6 +6972,17 @@ function signJwtAsAsync(payload, alg, secret, opts) {
 // classical algorithm this realm holds a key for. The key comes from
 // `ownSignerFor()`, never from the post-quantum list, because this function is
 // synchronous and the one every issued token is counted through.
+/**
+ * Signs a token this service issues, RS256 by default, and records it: every
+ * OAuth token goes through here.
+ *
+ * @param payload - the claims
+ * @param context - facts the payload cannot say, such as the session and the
+ * grant, for the token registry; never signed or sent
+ * @param opts - `algorithm`, `header` merged into the protected header, and
+ * `certificateHeader`, the use case whose setting decides `x5c` or `x5u`
+ * @returns the compact JWS
+ */
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
   const alg = String((opts && opts.algorithm) || 'RS256');
@@ -5933,6 +7027,14 @@ function signJwt(payload, context, opts) {
   return signed;
 }
 
+/**
+ * Sends an OpenID4VCI error response: JSON `error` and `error_description`.
+ *
+ * @param res - the response
+ * @param status - the HTTP status
+ * @param error - the error code
+ * @param description - the error description
+ */
 function vciError(res, status, error, description) {
   // error-code: none — the helper's trace line, not a call to it.
   log.debug("Entering vciError(). status=" + status + ", error=" + error);
@@ -5972,6 +7074,12 @@ function vciError(res, status, error, description) {
 // two functions in one service disagreed about whether a forwarded header was
 // believable. One function now, and one setting.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether forwarded headers are believed (`global.trustProxy`), read per
+ * request.
+ *
+ * @returns true when a proxy is trusted
+ */
 function trustProxy() {
   log.debug("Entering trustProxy().");
   log.debug("Leaving trustProxy().");
@@ -5982,6 +7090,14 @@ function trustProxy() {
 // the forwarded ones where a proxy is trusted, the socket's otherwise. A
 // comma-separated list takes its FIRST value, which is the client-facing hop —
 // each proxy appends, so the left-hand end is the one furthest from here.
+/**
+ * Returns the scheme and host a request should be understood as having arrived
+ * at: the forwarded ones where a proxy is trusted and the peer is believed, the
+ * socket's otherwise.
+ *
+ * @param req - the request
+ * @returns `{ proto, host, forwarded }`
+ */
 function forwardedFrom(req) {
   log.debug("Entering forwardedFrom().");
   const socketProto = (req && req.protocol) || 'http';
@@ -6029,6 +7145,12 @@ function forwardedFrom(req) {
 // property a deployed identity provider needs and a mock reached by three
 // container names does not. The realm prefix is still appended.
 // ---------------------------------------------------------------------------
+/**
+ * Returns `global.publicBaseUrl` without its trailing slashes, the base URL
+ * that overrides every request's own.
+ *
+ * @returns the pinned base, or '' when none is set
+ */
 function pinnedBaseUrl() {
   log.debug("Entering pinnedBaseUrl().");
   const raw = String(config.value('global.publicBaseUrl') || '').trim();
@@ -6036,6 +7158,16 @@ function pinnedBaseUrl() {
   return raw ? raw.replace(/\/+$/, '') : '';
 }
 
+/**
+ * Returns the base URL a request should be answered under, the trust realm's
+ * path prefix included.
+ *
+ * `global.publicBaseUrl` pins it; otherwise it is read off the request,
+ * forwarded headers only where a proxy is trusted.
+ *
+ * @param req - the request
+ * @returns the base URL, without a trailing slash
+ */
 function baseUrlOf(req) {
   log.debug("Entering baseUrlOf().");
   const pinned = pinnedBaseUrl();
@@ -6068,12 +7200,23 @@ function baseUrlOf(req) {
 // wildcard bind is reachable on loopback, so it answers loopback in the
 // wildcard's own family; a specific address is dialled as itself.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the address every listener binds (`global.host`).
+ *
+ * @returns the address; `0.0.0.0` when unset
+ */
 function listenHost() {
   log.debug("Entering listenHost().");
   log.debug("Leaving listenHost().");
   return String(config.value('global.host') || '0.0.0.0');
 }
 
+/**
+ * Returns the address this process dials itself on: loopback in the wildcard's
+ * family for a wildcard bind, the bound address otherwise.
+ *
+ * @returns the address, without IPv6 brackets
+ */
 function loopbackHost() {
   log.debug("Entering loopbackHost().");
   const host = listenHost();
@@ -6091,6 +7234,12 @@ function loopbackHost() {
 
 // A host as it goes into a URL: an IPv6 literal needs its brackets there and
 // nowhere else.
+/**
+ * Brackets an IPv6 literal for use in a URL.
+ *
+ * @param host - the host
+ * @returns the host as it goes into a URL
+ */
 function hostForUrl(host) {
   log.debug("Entering hostForUrl().");
   const h = String(host);
@@ -6107,6 +7256,12 @@ function hostForUrl(host) {
 // every runtime-settable value takes here: a constant is read once at require
 // time, so /admin/config could change the setting and every caller would go
 // on using what it captured at startup.
+/**
+ * Returns where the wallet lives, as a URL the browser can use
+ * (`oid4vci.walletUrl`).
+ *
+ * @returns the URL
+ */
 function walletBaseUrl() {
   log.debug("Entering walletBaseUrl().");
   log.debug("Leaving walletBaseUrl().");
@@ -6129,6 +7284,16 @@ function walletBaseUrl() {
 // through the same claim-attribute resolver every other directory attribute
 // reaches a token by. What stays is what this function genuinely knows: the
 // name that authenticated, and the subject derived from it.
+/**
+ * Builds the claims this service knows about a person: the subject from the
+ * directory and the username.
+ *
+ * In development mode it adds a persona (name, email, `email_verified`); in
+ * product mode it invents nothing.
+ *
+ * @param username - the person; `mock-user` when absent
+ * @returns the claims
+ */
 function userFor(username) {
   log.debug("Entering userFor(). username=" + username);
   const name = String(username || 'mock-user');
@@ -6198,6 +7363,12 @@ function userFor(username) {
 // Values are ESCAPED. A comma inside `O=Example\, Ltd` that went through
 // unescaped would turn one RDN into two and name an object that does not exist.
 // ---------------------------------------------------------------------------
+/**
+ * Escapes an attribute value for an RFC 4514 DN.
+ *
+ * @param value - the value
+ * @returns the escaped value
+ */
 function escapeRdnValue(value) {
   log.debug("Entering escapeRdnValue().");
   const text = String(value == null ? '' : value);
@@ -6210,6 +7381,16 @@ function escapeRdnValue(value) {
   return out;
 }
 
+/**
+ * Renders a certificate subject as an RFC 4514 DN string, least significant RDN
+ * first and values escaped, so two spellings of one DN cannot become two
+ * entries.
+ *
+ * @param dn - node's object form (`getPeerCertificate()`) or line-per-RDN
+ * string form (`X509Certificate#subject`); a one-line string is returned as it
+ * stands
+ * @returns the DN
+ */
 function dnRfc4514(dn) {
   log.debug("Entering dnRfc4514().");
   if (!dn) {
@@ -6275,6 +7456,12 @@ const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
                       'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
                       'thirteen', 'fourteen', 'fifteen'];
 
+/**
+ * Spells a small count as a word, for refusal sentences.
+ *
+ * @param count - the count
+ * @returns the word for 0 to 15, the digits otherwise
+ */
 function numberWord(count) {
   log.debug("Entering numberWord().");
   const n = Number(count);
@@ -6312,6 +7499,14 @@ function numberWord(count) {
 // which is the argument that file already made about not writing a second
 // access-token check.
 // ---------------------------------------------------------------------------
+/**
+ * Makes a response object that records what a handler said instead of writing
+ * it, headers kept verbatim, so a caller owing a different error shape can
+ * translate the verdict.
+ *
+ * @returns `{ res, captured }`: the response object, and what it recorded as
+ * `status`, `headers` and `body`
+ */
 function capturingResponse() {
   log.debug("Entering capturingResponse().");
   const captured = { status: 0, headers: {}, body: '' };
@@ -6366,6 +7561,13 @@ function capturingResponse() {
 // whatever the handler wrote; today that is always JSON, and a change there
 // must not turn a 401 into an exception here — so the raw text is a better
 // answer than nothing.
+/**
+ * Reads what a captured reply was trying to say, as one sentence.
+ *
+ * @param captured - what `capturingResponse()` recorded
+ * @returns its `error_description` or `error`, or the raw body when it is not
+ * JSON
+ */
 function capturedDescription(captured) {
   log.debug("Entering capturedDescription().");
   try {
@@ -6379,6 +7581,13 @@ function capturedDescription(captured) {
   }
 }
 
+/**
+ * The shared helpers every protocol module uses: the realm's signing keys and
+ * their generations, JWT signing, the logger, request and URL helpers, subjects
+ * and small XML and DN utilities.
+ *
+ * @namespace
+ */
 module.exports = {
   // THE KEY GENERATIONS (2026-09-22, #42): the one lookup every "is this ours"
   // check asks, the RSA keys that may decrypt, and the three acts a rotation
@@ -6402,10 +7611,12 @@ module.exports = {
   ensureNextGenerations: ensureNextGenerations,
   promoteGenerations: promoteGenerations,
   retireExpiredGenerations: retireExpiredGenerations,
+  keySetIfMade: keySetIfMade,
   signingKeyFor: signingKeyFor,
   signingKeyForAsync: signingKeyForAsync,
   allSigningKeys: allSigningKeys,
   allSigningKeysAsync: allSigningKeysAsync,
+  curveSigningKeys: curveSigningKeys,
   signJwtAs: signJwtAs,
   signJwtAsAsync: signJwtAsAsync,
   certificateHeaderFor: certificateHeaderFor,
@@ -6493,6 +7704,11 @@ module.exports = {
   rotateRefreshTokenKeys: rotateRefreshTokenKeys,
   retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
   requestObjectKeysFor: requestObjectKeysFor,
+  kemEncryptionKeysFor: kemEncryptionKeysFor,
+  kemDecryptionKeyFor: kemDecryptionKeyFor,
+  kemAlgsConfigured: kemAlgsConfigured,
+  decryptableJweAlgs: decryptableJweAlgs,
+  offeredJweAlgs: offeredJweAlgs,
   browserDeviceKeysFor: browserDeviceKeysFor,
   browserDeviceSigner: browserDeviceSigner,
   browserDeviceVerifiers: browserDeviceVerifiers,

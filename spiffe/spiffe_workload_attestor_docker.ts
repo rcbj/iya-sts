@@ -68,16 +68,45 @@ interface DockerDeps {
   retries: number;
 }
 
+/**
+ * The `docker` workload attestor: the container the caller's process runs in,
+ * as the Docker Engine (or Podman) reports its labels, environment and image.
+ *
+ * A process in no container, or one this service cannot see, gets no selectors.
+ * With `spiffe.dockerSigstoreEnabled` the image's cosign signature must verify.
+ */
 class DockerWorkloadAttestor {
+  /**
+   * The workload attestor's name, as `spiffe.workloadAttestors` lists it.
+   */
   readonly type = 'docker';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'The Docker container the caller\'s process runs in, ' +
     'as the Docker Engine reports its labels, environment and image.';
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, configuration, error codes, the local-socket
+   *   requester, the container-info and cgroup readers, the sigstore verifier
+   *   and the retry count
+   */
   constructor(private readonly deps: DockerDeps) {
     deps.log.debug("Entering DockerWorkloadAttestor.constructor().");
     deps.log.debug("Leaving DockerWorkloadAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @param containerInfo - reads the container ID from a process's cgroups
+   * @param cgroupPaths - reads a process's cgroup paths, for Podman detection
+   * @param sigstore - the image signature verifier
+   * @returns the production dependency set
+   */
   static defaultDeps(containerInfo: DockerDeps['containerInfo'],
                      cgroupPaths?: DockerDeps['cgroupPaths'],
                      sigstore?: DockerDeps['sigstore']): DockerDeps {
@@ -92,6 +121,12 @@ class DockerWorkloadAttestor {
   }
 
   // The socket path from `unix:///var/run/docker.sock` or a bare path.
+  /**
+   * Returns the Docker Engine's socket path from `spiffe.dockerSocketPath`,
+   * given as `unix://…` or a bare path.
+   *
+   * @returns the socket path
+   */
   socketPath(): string {
     const { log, config } = this.deps;
     log.debug("Entering DockerWorkloadAttestor.socketPath().");
@@ -103,6 +138,16 @@ class DockerWorkloadAttestor {
   // SPIRE's `%d`-and-`%%` template, filled with a uid; throws a sentence on
   // a template with no `%d`, two, or any other verb
   // (validatePodmanSocketPathTemplate()).
+  /**
+   * Fills SPIRE's `%d`-and-`%%` socket path template with a uid
+   * (validatePodmanSocketPathTemplate()).
+   *
+   * @param template - the template
+   * @param uid - the uid to fill in
+   * @returns the filled path
+   * @throws an Error carrying a sentence for a template with no `%d`, two, or
+   *   any other verb
+   */
   fillTemplate(template: string, uid: number): string {
     const { log } = this.deps;
     log.debug("Entering DockerWorkloadAttestor.fillTemplate().");
@@ -140,6 +185,13 @@ class DockerWorkloadAttestor {
   // SPIRE's detectPodmanSocket(): the Podman API socket to ask, '' for the
   // Docker Engine, or null when the workload is a rootless Podman container
   // and rootless Podman is off — then it is not attested by this plugin.
+  /**
+   * SPIRE's detectPodmanSocket(): which API socket to ask about a container.
+   *
+   * @param paths - the process's cgroup paths
+   * @returns the Podman API socket, '' for the Docker Engine, or null when the
+   *   workload is a rootless Podman container and rootless Podman is off
+   */
   podmanSocket(paths: string[]): string | null {
     const { log, config, errorCodes } = this.deps;
     log.debug("Entering DockerWorkloadAttestor.podmanSocket().");
@@ -182,6 +234,15 @@ class DockerWorkloadAttestor {
   // One JSON document from the Engine (or Podman), retried; throws a
   // sentence. `socket` is a `unix://` URI or a bare path; empty is the
   // Engine's.
+  /**
+   * Reads one JSON document from the Docker Engine (or Podman), retried as
+   * SPIRE's retryer retries.
+   *
+   * @param path - the API path
+   * @param socket - a `unix://` URI or bare path; empty is the Engine's
+   * @returns the parsed document
+   * @throws an Error carrying a sentence when the API cannot be read
+   */
   async engine(path: string, socket?: string): Promise<any> {
     const { log, config, outbound, retries } = this.deps;
     log.debug("Entering DockerWorkloadAttestor.engine(). " + path);
@@ -204,6 +265,15 @@ class DockerWorkloadAttestor {
                     (last ? last.why : 'nothing'));
   }
 
+  /**
+   * Attests the caller's container: its labels, environment, image and image
+   * configuration digest, and the sigstore selectors when enabled.
+   *
+   * @param facts - the caller's peer facts from `spiffe_peer.ts`, taken at
+   *   accept
+   * @returns the `docker` selector values, empty when the process is in no
+   *   container or not visible
+   */
   async attest(facts: any): Promise<string[]> {
     const { log, containerInfo } = this.deps;
     log.debug("Entering DockerWorkloadAttestor.attest(). " + facts.tag);
@@ -268,6 +338,17 @@ class DockerWorkloadAttestor {
 
   // SPIRE's sigstore half of Attest(): each repository digest in turn until
   // one verifies; throws a sentence naming every failure when none does.
+  /**
+   * SPIRE's sigstore half of Attest(): tries each of the image's repository
+   * digests in turn until one's signature verifies.
+   *
+   * @param imageName - the image the container was configured with
+   * @param image - the image as the Engine inspected it
+   * @param inspectProblem - why the image could not be inspected, or ''
+   * @returns the sigstore selector values
+   * @throws an Error carrying a sentence naming every failure when none
+   *   verifies
+   */
   async sigstoreSelectors(imageName: string, image: any,
                           inspectProblem: string): Promise<string[]> {
     const { log, sigstore } = this.deps;
@@ -319,6 +400,11 @@ class DockerWorkloadAttestor {
 // Whether STS-SPIFFE-0142 has been said in this process.
 const ROOTLESS_REFUSED = { logged: false };
 
+/**
+ * The `docker` workload attestor (#40, #170), after SPIRE's plugin, with Podman
+ * and sigstore.
+ * @namespace
+ */
 export = {
   DockerWorkloadAttestor: DockerWorkloadAttestor
 };

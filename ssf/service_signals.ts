@@ -86,9 +86,17 @@ import InstanceSlot = require('../common/instance_slot');
 type Json = any;
 
 // People per batch of a hierarchy fan-out.
+/**
+ * The number of people whose events a hierarchy fan-out sends before it yields
+ * the event loop.
+ */
 const BATCH = 50;
 // The two RFC 5280 reasons that say the authority's key is not safe, and so
 // that everything it vouched for may have been forged.
+/**
+ * The RFC 5280 revocation reasons, `keyCompromise` and `cACompromise`, that
+ * make a revoked authority's leaves a RISC credential-compromise as well.
+ */
 const COMPROMISE_REASONS = Object.freeze(['keyCompromise', 'cACompromise']);
 
 interface Delivery {
@@ -145,15 +153,41 @@ interface Notice {
   compromised: boolean;
 }
 
+/**
+ * Reports moves of this service's own keys and certificate authorities over
+ * Shared Signals: a pinned key rotated, and the hierarchy changing under
+ * people's certificates.
+ *
+ * It finds `ssf/ssf.ts` in `require.cache` rather than requiring it; where that
+ * is not loaded nothing is sent, and nothing here throws into the act.
+ */
 class ServiceSignals {
+  /**
+   * The fan-out batch size; the module's `BATCH`.
+   */
   static readonly BATCH = BATCH;
+  /**
+   * The compromise reasons; the module's `COMPROMISE_REASONS`.
+   */
   static readonly COMPROMISE_REASONS = COMPROMISE_REASONS;
 
+  /**
+   * Builds the reporter from its dependencies.
+   *
+   * @param deps - the logger, the lazy module readers, `findSsf()`,
+   * `nameForSubject()`, `yieldTurn()` and `now()`
+   */
   constructor(private readonly deps: ServiceSignalsDeps) {
     deps.log.debug('Entering ServiceSignals.constructor().');
     deps.log.debug('Leaving ServiceSignals.constructor().');
   }
 
+  /**
+   * Returns the real modules and functions this reporter depends on, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): ServiceSignalsDeps {
     helpers.log.debug('Entering ServiceSignals.defaultDeps().');
     helpers.log.debug('Leaving ServiceSignals.defaultDeps().');
@@ -194,6 +228,12 @@ class ServiceSignals {
 
   // `ssf.ts` as loaded in THIS process, or null — `account_signals.ts`'s
   // lookup, for its reason.
+  /**
+   * Returns `ssf.ts`'s exports as loaded in this process, found in
+   * `require.cache`, without loading it.
+   *
+   * @returns the exports, or null when it is not loaded
+   */
   static loadedSsf(): SsfEmitter | null {
     const { log } = helpers;
     log.debug('Entering ServiceSignals.loadedSsf().');
@@ -237,6 +277,20 @@ class ServiceSignals {
   // belongs to, or `*` for the listener, which is every realm's. `notice`:
   // `{ rotated: [{ unit, from, to }], reason, trustDomain?, bundleChanged? }`.
   // Resolves the number of SETs handed over; never rejects.
+  /**
+   * Reports that a key relying parties pin rotated, through
+   * `ssf.serviceKeyChanged()` inside each realm it belongs to.
+   *
+   * Nothing is sent when `notice.rotated` is empty or Shared Signals is not
+   * loaded in this process.
+   *
+   * @param kind - `federation`, `spiffe` or `tls`
+   * @param realmId - the realm the key belongs to, or `*` for the listener
+   * certificate, which is every realm's
+   * @param notice - `{ rotated: [{ unit, from, to }], reason, trustDomain?,
+   * bundleChanged? }`
+   * @returns a promise of the number of SETs handed over; it never rejects
+   */
   keyChanged(kind: string, realmId: string, notice?: Json): Promise<number> {
     const { log, findSsf, realms } = this.deps;
     log.debug('Entering ServiceSignals.keyChanged(). ' + kind + ' in ' +
@@ -334,6 +388,15 @@ class ServiceSignals {
   // Every certificate a PERSON holds that is live under a scope's current
   // tree, optionally narrowed to one use case. See the header for what
   // "live under the current tree" leaves out, and why.
+  /**
+   * Lists every certificate a person holds that is live under a scope's current
+   * tree: a register slot or an issued key pair, not expired, not revoked, and
+   * chaining to the current tiers.
+   *
+   * @param scopeId - the pki scope (a realm id)
+   * @param useCaseId - narrows the list to one Issuing CA
+   * @returns the holdings; empty for a scope that is not a realm
+   */
   holdingsOf(scopeId: string, useCaseId?: string): Holding[] {
     const self = this;
     const { log, pki, revocation, tlsClient, nameForSubject, now } =
@@ -437,6 +500,16 @@ class ServiceSignals {
   // with. `scopeIds` is every scope the act can reach (every realm, for a
   // Root); `useCaseId` narrows it to one Issuing CA. Never throws: a
   // snapshot that could not be taken is empty, and the act goes ahead.
+  /**
+   * Records what the tree holds before an act on the hierarchy, for
+   * `hierarchyChanged()` to compare with.
+   *
+   * It never throws: a scope that cannot be read contributes nothing.
+   *
+   * @param scopeIds - every scope the act can reach
+   * @param useCaseId - narrows it to one Issuing CA
+   * @returns `{ holdings, spiffe }`
+   */
   snapshot(scopeIds: string[], useCaseId?: string): Json {
     const self = this;
     const { log } = this.deps;
@@ -478,6 +551,18 @@ class ServiceSignals {
   // CA moved is told its authority rotated (#245). `ctx`: `{ via,
   // reasonAdmin, reason }`. Answers the counts at once; the events go on in
   // batches behind it.
+  /**
+   * Compares the tree now with a snapshot and sends each person-held
+   * certificate that moved a CAEP credential-change: `update` for one re-minted
+   * from the current tree, `revoke` for one orphaned.
+   *
+   * A realm whose SPIFFE Issuing CA moved is told its authority rotated. The
+   * events go out in batches after this returns.
+   *
+   * @param before - the result of `snapshot()` taken before the act
+   * @param ctx - `{ via, reasonAdmin, reason }`
+   * @returns `{ updated, revoked, spiffeRealms }`
+   */
   hierarchyChanged(before: Json, ctx?: Json): Json {
     const self = this;
     const { log, pki } = this.deps;
@@ -565,6 +650,22 @@ class ServiceSignals {
   // not a CURRENT tier revokes nothing anybody here still holds, and a
   // leaf's serial is not this function's: the leaf revoke is already told.
   // Answers `{ tier, people }` at once; the events go on in batches.
+  /**
+   * Tells every person holding a live leaf beneath a revoked Issuing CA or
+   * Intermediate: a CAEP credential-change `revoke`, and a RISC
+   * credential-compromise as well for a compromise reason.
+   *
+   * A serial that is not a current tier reaches nobody. The events go out in
+   * batches after this returns.
+   *
+   * @param scopeId - the pki scope
+   * @param caId - the authority whose list the serial went on: `intermediate`
+   * (an Issuing CA revoked) or `root` (an Intermediate revoked)
+   * @param serialHex - the revoked authority's serial
+   * @param reason - the RFC 5280 revocation reason
+   * @param ctx - `{ via, reasonAdmin }`
+   * @returns `{ tier, people }`; `tier` is empty when nothing was reached
+   */
   caRevoked(scopeId: string, caId: string, serialHex: string,
             reason: string, ctx?: Json): Json {
     const self = this;
@@ -622,6 +723,14 @@ class ServiceSignals {
   // THE FAN-OUT, IN BATCHES OF `BATCH`, each inside its person's realm. Runs
   // behind the caller; resolves the number of events handed over (for a
   // test), never rejects.
+  /**
+   * Sends each notice's events, `BATCH` people at a time inside each person's
+   * realm, yielding the event loop between batches.
+   *
+   * @param notices - one per person-held certificate
+   * @param ctx - the act's context, passed to each event
+   * @returns a promise of the number of events handed over; it never rejects
+   */
   fanOut(notices: Notice[], ctx?: Json): Promise<number> {
     const self = this;
     const { log, yieldTurn } = this.deps;
@@ -722,9 +831,24 @@ const slot = new InstanceSlot<ServiceSignals>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Shared Signals reporter for this service's own keys and certificate
+ * hierarchy.
+ *
+ * Exports the `ServiceSignals` class, its constants, and facades that forward
+ * to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   ServiceSignals: ServiceSignals,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: ServiceSignals): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   BATCH: BATCH,
   COMPROMISE_REASONS: COMPROMISE_REASONS,

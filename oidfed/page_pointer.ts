@@ -50,6 +50,11 @@ const log = helpers.log;
 const SECRET = 'oidfed-page';
 const LABEL = 'oidfed-page-pointer';
 
+/**
+ * The opaque `next` / `from` pointer of a paged federation listing (the
+ * Extended Subordinate Listing and the Entity Collection): the first Entity
+ * Identifier of the next page, MACed under a secret every node shares.
+ */
 class PagePointer {
   // Base64url of UTF-8 text, and back ('' for anything that is not).
   private static toB64u(text: string): string {
@@ -81,6 +86,14 @@ class PagePointer {
 
   // The pointer to the page that starts at `key`, for `endpoint` in the
   // realm `realmId`.
+  /**
+   * Makes the pointer to the page that starts at an entity.
+   *
+   * @param realmId - the realm
+   * @param endpoint - the listing endpoint
+   * @param key - the Entity Identifier the page starts at
+   * @returns the pointer
+   */
   static encode(realmId: string, endpoint: string, key: string): string {
     log.debug("Entering PagePointer.encode(). " + endpoint);
     const out = PagePointer.toB64u(String(key)) + '.' +
@@ -91,6 +104,15 @@ class PagePointer {
 
   // The key a pointer names, or null when this service did not make it for
   // this realm and endpoint (`page_not_found`).
+  /**
+   * Reads the Entity Identifier a pointer names.
+   *
+   * @param realmId - the realm
+   * @param endpoint - the listing endpoint
+   * @param pointer - the pointer a request handed back as `from`
+   * @returns the identifier, or null when this service did not make the pointer
+   * for this realm and endpoint (`page_not_found`)
+   */
   static decode(realmId: string, endpoint: string,
                 pointer: Json): string | null {
     log.debug("Entering PagePointer.decode(). " + endpoint);
@@ -121,6 +143,19 @@ class PagePointer {
   // `{ ok, page, next }`, or `{ ok: false }` for a pointer this service did
   // not make.
   // -------------------------------------------------------------------------
+  /**
+   * Cuts one page of a sorted, filtered list: from the entity `from` names, at
+   * most `limit` items, and the pointer to the rest.
+   *
+   * @param items - the list, sorted by `keyOf`
+   * @param keyOf - an item's Entity Identifier
+   * @param realmId - the realm
+   * @param endpoint - the listing endpoint
+   * @param from - the pointer a request handed back, if any
+   * @param limit - the most items on the page
+   * @returns `{ ok, page, next }`, or `{ ok: false }` for a pointer this
+   * service did not make
+   */
   static page<T>(items: T[], keyOf: (item: T) => string, realmId: string,
                  endpoint: string, from: Json, limit: number): Json {
     log.debug("Entering PagePointer.page(). " + items.length);

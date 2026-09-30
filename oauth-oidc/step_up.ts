@@ -195,15 +195,50 @@ const ACR_VALUE = /^[\x21\x23-\x5B\x5D-\x7E]{1,256}$/;
 // the authorization endpoint's schema bound too.
 const MAX_AGE_LIMIT = 315360000;
 
+/**
+ * RFC 9470 step-up authentication: what a request or a resource requires of the
+ * authentication behind it, whether a session or a token meets it, what the
+ * sign-in screen must demand, and the challenge a resource server sends.
+ */
 class StepUp {
+  /**
+   * The context classes this service's sign-in produces, weakest first; the
+   * index is the level.
+   */
   static readonly LEVELS = LEVELS;
+  /**
+   * The acr class met only by an authentication on the person's own compliant
+   * registered device.
+   */
   static readonly COMPLIANT_DEVICE = COMPLIANT_DEVICE;
+  /**
+   * What `acr_values_supported` publishes: the levels, then the device class.
+   */
   static readonly SUPPORTED = SUPPORTED;
+  /**
+   * The RFC 8176 method names accepted as a demand for two factors including a
+   * security key.
+   */
   static readonly KEY_ALIASES = KEY_ALIASES;
+  /**
+   * The name of the round-trip marker on a return from a step-up sign-in.
+   */
   static readonly HONOURED = HONOURED;
+  /**
+   * The shape an acr value must have to be repeated in a header.
+   */
   static readonly ACR_VALUE = ACR_VALUE;
+  /**
+   * The largest `max_age` accepted, ten years in seconds.
+   */
   static readonly MAX_AGE_LIMIT = MAX_AGE_LIMIT;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, settings, error codes, the monitor and an
+   *   optional reader of a session's current registered device
+   */
   constructor(private readonly deps: StepUpDeps) {
     deps.log.debug("Entering StepUp.constructor().");
     deps.log.debug("Leaving StepUp.constructor().");
@@ -211,6 +246,11 @@ class StepUp {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): StepUpDeps {
     helpers.log.debug("Entering StepUp.defaultDeps().");
     helpers.log.debug("Leaving StepUp.defaultDeps().");
@@ -236,6 +276,13 @@ class StepUp {
   // `acr_values` as a list, in the order of preference it was given in, with
   // a repeat dropped. A value outside ACR_VALUE is dropped too and reported
   // in `invalid`, so a caller can refuse rather than quietly ask for less.
+  /**
+   * Parses `acr_values` into a list in the order of preference given, repeats
+   * dropped; values of the wrong shape are dropped and reported.
+   *
+   * @param text - the space-separated `acr_values`
+   * @returns `{ values, invalid }`
+   */
   parseAcrValues(text: unknown): ParsedAcrValues {
     const { log } = this.deps;
     log.debug("Entering StepUp.parseAcrValues().");
@@ -259,6 +306,12 @@ class StepUp {
   }
 
   // `max_age` as a whole number of seconds, or null when absent or not one.
+  /**
+   * Parses `max_age` as a whole number of seconds.
+   *
+   * @param value - the `max_age` parameter
+   * @returns the seconds, or null when absent or not a whole number
+   */
   parseMaxAge(value: unknown): number | null {
     const { log } = this.deps;
     log.debug("Entering StepUp.parseMaxAge().");
@@ -283,6 +336,16 @@ class StepUp {
   // Registration section 2's `default_max_age` and `default_acr_values` apply
   // when the request names neither `max_age` nor `acr_values` (or, for the
   // acr, an essential acr claim), which override them.
+  /**
+   * Reads what an authorization request requires, with the client's registered
+   * `default_max_age` and `default_acr_values` applying where the request names
+   * neither.
+   *
+   * @param query - the authorization request's parameters
+   * @param registered - the client's registration
+   * @returns `{ acrValues, maxAge, present }`, `present` false when nothing is
+   *   required
+   */
   requirementOf(query: Json, registered?: Json): Requirement {
     const { log } = this.deps;
     log.debug("Entering StepUp.requirementOf().");
@@ -322,6 +385,12 @@ class StepUp {
   // The acr values a claims request marks essential, from its id_token and
   // userinfo members; [] for none or for a claims request that does not parse
   // (the authorization endpoint refuses that separately, by name).
+  /**
+   * Returns the acr values a claims request marks essential.
+   *
+   * @param claims - the claims request, as text or an object
+   * @returns the values; [] for none or for one that does not parse
+   */
   essentialAcrValuesOf(claims: Json): string[] {
     const { log } = this.deps;
     log.debug("Entering StepUp.essentialAcrValuesOf().");
@@ -361,6 +430,12 @@ class StepUp {
   // `-1` is "no requirement" for the age, because `0` is a legal one: it
   // means the authentication must have happened this second, which is what
   // OpenID Connect's `max_age=0` means too.
+  /**
+   * Returns what this service's own resource server requires, from its two
+   * settings.
+   *
+   * @returns `{ acrValues, maxAge }`
+   */
   ownResourceRequirement(): Requirement {
     const { log, config, errorCodes } = this.deps;
     log.debug("Entering StepUp.ownResourceRequirement().");
@@ -408,6 +483,13 @@ class StepUp {
 
   // Whether ONE requested value is met by an authentication whose `acr` and
   // `amr` are `facts`. See the header for the three kinds of value.
+  /**
+   * Tells whether one requested acr value is met by an authentication.
+   *
+   * @param requested - the requested value
+   * @param facts - the authentication's `acr` and `amr`, or a session
+   * @returns true when it is met
+   */
   meets(requested: string, facts: Json): boolean {
     const { log } = this.deps;
     log.debug("Entering StepUp.meets(). requested=" + requested);
@@ -447,6 +529,13 @@ class StepUp {
   // carries no device and meets nothing. Never throws: a register that
   // cannot answer is no device.
   // -------------------------------------------------------------------------
+  /**
+   * Tells whether an authentication came from the person's own compliant
+   * registered device. Never throws.
+   *
+   * @param facts - a session, whose latest event names the device
+   * @returns true when it did
+   */
   compliantDeviceOf(facts: Json): boolean {
     const { log, config, currentDevice } = this.deps;
     log.debug("Entering StepUp.compliantDeviceOf().");
@@ -476,6 +565,14 @@ class StepUp {
   // The most preferred requested value `facts` meets, or null. With nothing
   // requested, the authentication's own `acr` — which is what every token
   // here carried before this file.
+  /**
+   * Returns the most preferred requested value an authentication meets; with
+   * nothing requested, the authentication's own `acr`.
+   *
+   * @param acrValues - the requested values, in order of preference
+   * @param facts - the authentication's facts
+   * @returns the value met, or null
+   */
   satisfiedAcr(acrValues: string[] | null | undefined,
                facts: Json): string | null {
     const { log } = this.deps;
@@ -499,6 +596,13 @@ class StepUp {
   // value it knows how to produce needs two. `mfa 1` does not — `1` is an
   // acceptable answer, only a less preferred one — and a request naming only
   // values the screen cannot produce (a partner's URN) demands nothing of it.
+  /**
+   * Tells whether the sign-in screen must demand a second factor: every
+   * requested value it can produce needs two.
+   *
+   * @param acrValues - the requested values
+   * @returns true when a second factor is demanded
+   */
   demandsSecondFactor(acrValues: string[] | null | undefined): boolean {
     const { log } = this.deps;
     const self = this;
@@ -535,6 +639,13 @@ class StepUp {
   // producible value needing two factors is 'mfa', and when every one of
   // them is a key alias it is 'mfa+key'.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the two flags `authn.beginAuthentication()` takes for a kind of
+   * demand.
+   *
+   * @param kind - '', `mfa`, `key` or `mfa+key`
+   * @returns `{ forceMfa, forceKey }`
+   */
   screenDemand(kind: string): Json {
     const { log } = this.deps;
     log.debug("Entering StepUp.screenDemand(). " + kind);
@@ -545,6 +656,12 @@ class StepUp {
     return out;
   }
 
+  /**
+   * Returns the two flags the sign-in screen needs for a request's acr values.
+   *
+   * @param acrValues - the requested values
+   * @returns `{ forceMfa, forceKey }`
+   */
   screenDemandFor(acrValues: string[] | null | undefined): Json {
     const { log } = this.deps;
     const self = this;
@@ -585,6 +702,17 @@ class StepUp {
   // `reason` is `max_age` or `acr`, and is the age when both fail: that is
   // the one a fresh sign-in is sure to cure, so it is the one to name.
   // -------------------------------------------------------------------------
+  /**
+   * Tells the authorization endpoint whether the session in hand answers a
+   * request, and if not whether the person may be sent to sign in again.
+   *
+   * @param requirement - what the request requires
+   * @param session - the sign-on session
+   * @param options - `honoured`, the round-trip marker, and `windowS`, how long
+   *   a sign-in may take
+   * @returns `{ met: true, acr }`, or `{ met: false, reason, retry }` with
+   *   `reason` `max_age` or `acr`
+   */
   assessSession(requirement: Requirement | null | undefined, session: Json,
                 options?: Json): Json {
     const { log } = this.deps;
@@ -615,6 +743,16 @@ class StepUp {
 
   // The refusal an authorization request that cannot be met is answered
   // with, as `{ error, description }` with its code under the Symbol.
+  /**
+   * Builds the refusal for an authorization request whose requirement cannot be
+   * met: `login_required` under `prompt=none`, and otherwise
+   * `unmet_authentication_requirements`.
+   *
+   * @param requirement - what the request required
+   * @param assessed - `assessSession()`'s answer
+   * @param promptNone - true when the request carried `prompt=none`
+   * @returns `{ error, description }` with its code under the Symbol
+   */
   unmetRefusal(requirement: Requirement | null | undefined, assessed: Json,
                promptNone?: unknown): Json {
     const { log, errorCodes } = this.deps;
@@ -677,6 +815,17 @@ class StepUp {
   // by this service's own clock, and thirty seconds' grace on `max_age=5`
   // would be a requirement nobody made.
   // -------------------------------------------------------------------------
+  /**
+   * Tells a resource server whether a presented access token's claims meet its
+   * requirement. A token with no `auth_time` or `acr` does not meet one, and no
+   * clock skew is allowed on the age.
+   *
+   * @param requirement - the resource's requirement
+   * @param claims - the token's verified claims
+   * @param options - the caller's options, such as the time to compare with
+   * @returns null when met, or `{ error: 'insufficient_user_authentication',
+   *   description, reason }` with its code under the Symbol
+   */
   tokenRefusal(requirement: Requirement | null | undefined, claims: Json,
                options?: Json): Json | null {
     const { log, errorCodes } = this.deps;
@@ -725,6 +874,15 @@ class StepUp {
   // up for one and was challenged again for the other would have been told
   // half. `description` is the refusal's; a double quote in it would end the
   // quoted-string, so each is replaced, and a backslash escaped.
+  /**
+   * Builds section 3's `WWW-Authenticate` challenge, naming every requirement
+   * the resource has.
+   *
+   * @param scheme - `Bearer` or `DPoP`
+   * @param requirement - the resource's requirement
+   * @param description - the refusal's description
+   * @returns the header value
+   */
   challengeHeader(scheme: string, requirement: Requirement | null | undefined,
                   description?: string): string {
     const { log } = this.deps;
@@ -752,6 +910,14 @@ class StepUp {
 
   // Counted per client on the monitoring page. Never throws, which is the
   // monitor's own guarantee.
+  /**
+   * Counts a step-up event against a client on the monitoring page. Never
+   * throws.
+   *
+   * @param clientId - the client
+   * @param event - the monitor event
+   * @param detail - the event's detail, such as its error
+   */
   record(clientId: string, event: string, detail?: Json): void {
     const { log, monitor } = this.deps;
     log.debug("Entering StepUp.record(). event=" + event);
@@ -778,9 +944,29 @@ const slot = new InstanceSlot<StepUp>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9470, the OAuth 2.0 Step Up Authentication Challenge Protocol, for the
+ * authorization endpoint and the resource servers here.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   StepUp: StepUp,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: StepUp): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   LEVELS: StepUp.LEVELS,
   COMPLIANT_DEVICE: StepUp.COMPLIANT_DEVICE,

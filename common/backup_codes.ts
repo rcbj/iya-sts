@@ -150,6 +150,9 @@ import authnPolicy = require('./authn_policy');
 
 // See the header: the same thirty-two characters as base32 and for a different
 // reason, declared here so that a change to either cannot move the other.
+/**
+ * The thirty-two characters a recovery code is drawn from.
+ */
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 interface BackupCodeSettings {
@@ -178,9 +181,22 @@ interface BackupCodesDeps {
   randomInt(min: number, max: number): number;
 }
 
+/**
+ * Recovery codes: single-use second-factor codes a person generates as a set,
+ * is shown once, and which are stored as scrypt hashes.
+ */
 class BackupCodes {
+  /**
+   * The alphabet recovery codes are drawn from.
+   */
   static readonly ALPHABET = ALPHABET;
 
+  /**
+   * Builds the recovery-code service.
+   *
+   * @param deps - the logger, settings, `crypto.js`, error codes, the
+   *   authentication policy and a random integer source
+   */
   constructor(private readonly deps: BackupCodesDeps) {
     deps.log.debug("Entering BackupCodes.constructor().");
     deps.log.debug("Leaving BackupCodes.constructor().");
@@ -188,6 +204,11 @@ class BackupCodes {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the service's own modules and node's `randomInt`
+   */
   static defaultDeps(): BackupCodesDeps {
     helpers.log.debug("Entering BackupCodes.defaultDeps().");
     helpers.log.debug("Leaving BackupCodes.defaultDeps().");
@@ -219,6 +240,12 @@ class BackupCodes {
   // exactly as it did, because nothing about the comparison depends on the
   // setting.
   // -------------------------------------------------------------------------
+  /**
+   * Reads the recovery-code settings live, in the ambient realm.
+   *
+   * @returns whether the authentication policy allows recovery codes, and the
+   *   count, length and print grouping of a set
+   */
   settings(): BackupCodeSettings {
     const { log, config } = this.deps;
     log.debug("Entering BackupCodes.settings().");
@@ -264,6 +291,14 @@ class BackupCodes {
   // accepts one — a setting that silently took away the only way back into an
   // account whose phone is lost would be the worst possible knob in this
   // service. What it stops is a new set being ISSUED.
+  /**
+   * Says whether a new set may be issued.
+   *
+   * Turning it off does not invalidate a set somebody already holds.
+   *
+   * @returns true when the authentication policy allows recovery codes as a
+   *   second factor
+   */
   offered(): boolean {
     const { log } = this.deps;
     log.debug("Entering BackupCodes.offered().");
@@ -283,6 +318,12 @@ class BackupCodes {
   // the property does not depend on a coincidence a later reader would have
   // to re-derive.
   // -------------------------------------------------------------------------
+  /**
+   * Generates one code, one `randomInt` per character.
+   *
+   * @param length - the length; the setting's when omitted
+   * @returns the code
+   */
   generateCode(length?: number | string): string {
     const { log, randomInt } = this.deps;
     log.debug("Entering BackupCodes.generateCode().");
@@ -306,6 +347,13 @@ class BackupCodes {
   // is a code which works twice, which is the one property a single-use
   // credential may not have, and it would be found by nobody.
   // -------------------------------------------------------------------------
+  /**
+   * Generates a whole set of distinct codes.
+   *
+   * @param opts - `count` and `length`; the settings' when omitted
+   * @returns the codes, or null (logged under STS-AUTHN-0083) when not enough
+   *   distinct codes could be drawn
+   */
   generate(opts?: { count?: number | string;
                     length?: number | string }): string[] | null {
     const { log, errorCodes } = this.deps;
@@ -359,6 +407,13 @@ class BackupCodes {
   // characters would turn `ABCD3-EFGH!` into a code that matched `ABCD3EFGH`,
   // which is a comparison against a string the person did not type.
   // -------------------------------------------------------------------------
+  /**
+   * Normalises what a person typed: upper-cased, with spaces and dashes
+   * removed.
+   *
+   * @param text - what was typed
+   * @returns the normalised code
+   */
   normalise(text: unknown): string {
     const { log } = this.deps;
     log.debug("Entering BackupCodes.normalise().");
@@ -369,6 +424,14 @@ class BackupCodes {
 
   // The printed form: groups with a dash between them, which is the rendering
   // `normalise()` above is written to accept back.
+  /**
+   * Returns the printed form of a code: groups joined by dashes.
+   *
+   * @param code - the code
+   * @param groupSize - the group size; the setting's when omitted, and 0 prints
+   *   it unbroken
+   * @returns the printed form
+   */
   formatted(code: unknown, groupSize?: number | string): string {
     const { log } = this.deps;
     log.debug("Entering BackupCodes.formatted().");
@@ -397,6 +460,13 @@ class BackupCodes {
   // the wrong one is what gets written by reflex. `common/credentials.ts` has
   // a whole header about that.
   // -------------------------------------------------------------------------
+  /**
+   * Compares two codes in constant time, after normalising both.
+   *
+   * @param presented - the code presented
+   * @param stored - the code to compare with
+   * @returns true when they are the same code
+   */
   matches(presented: unknown, stored: unknown): boolean {
     const { log, crypto } = this.deps;
     log.debug("Entering BackupCodes.matches().");
@@ -431,14 +501,20 @@ class BackupCodes {
   // this machine: one hash is 72ms, and a WRONG code has to be compared
   // against every code in the set — ten by default — which measured **906ms
   // of blocked event loop**. That is not a price a sign-in path can pay on
-  // one thread, so `common/credentials.ts` checks a presented code through
-  // the WORKER POOL and in parallel. The synchronous door is kept for `npm
-  // test` and for `workers.count = 0`, which is a supported configuration.
+  // one thread, so `common/credentials.ts` checks a presented code on
+  // libuv's thread pool and in parallel (#363; a pool of forked processes
+  // until then). The synchronous door is kept for `npm test`.
   //
   // A hash carries its own random salt, so two identical codes in two sets —
   // or in one — hash differently, and there is no shortcut that would let a
   // presented code be looked up rather than walked.
   // =========================================================================
+  /**
+   * Hashes a code for storage, through `crypto.hashSecret()` (scrypt).
+   *
+   * @param code - the code
+   * @returns the stored form
+   */
   hash(code: unknown): string {
     const { log, crypto } = this.deps;
     log.debug("Entering BackupCodes.hash().");
@@ -446,6 +522,12 @@ class BackupCodes {
     return crypto.hashSecret(this.normalise(code));
   }
 
+  /**
+   * Hashes a code for storage without blocking the event loop.
+   *
+   * @param code - the code
+   * @returns a promise of the stored form
+   */
   hashAsync(code: unknown): Promise<string> {
     const { log, crypto } = this.deps;
     log.debug("Entering BackupCodes.hashAsync().");
@@ -461,6 +543,13 @@ class BackupCodes {
   // silently did a plaintext comparison against anything that did not look
   // like a hash — which is precisely what a set written by an older build
   // looks like.
+  /**
+   * Checks a presented code against a stored hash.
+   *
+   * @param presented - the code presented
+   * @param storedHash - the stored hash
+   * @returns true when it matches
+   */
   matchesHash(presented: unknown, storedHash: unknown): boolean {
     const { log, crypto } = this.deps;
     log.debug("Entering BackupCodes.matchesHash().");
@@ -468,6 +557,14 @@ class BackupCodes {
     return crypto.verifySecret(this.normalise(presented), storedHash);
   }
 
+  /**
+   * Checks a presented code against a stored hash without blocking the event
+   * loop.
+   *
+   * @param presented - the code presented
+   * @param storedHash - the stored hash
+   * @returns a promise of true when it matches
+   */
   matchesHashAsync(presented: unknown, storedHash: unknown): Promise<boolean> {
     const { log, crypto } = this.deps;
     log.debug("Entering BackupCodes.matchesHashAsync().");
@@ -479,6 +576,13 @@ class BackupCodes {
   // reason one file along: a marker beside the value would be a second fact to
   // keep in step, and a set written by a build that stored the codes
   // themselves is exactly the case this has to be able to tell apart.
+  /**
+   * Says whether a stored value is one of this service's scrypt hashes rather
+   * than a code stored by an older build.
+   *
+   * @param stored - the stored value
+   * @returns true for a `$scrypt$` value
+   */
   isHash(stored: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering BackupCodes.isHash().");
@@ -490,6 +594,13 @@ class BackupCodes {
   // password typed into the code box is refused with a sentence about the
   // shape rather than being compared — in constant time — against every code
   // the person holds.
+  /**
+   * Says whether a presented value has the shape of a recovery code: non-empty
+   * and entirely in the alphabet.
+   *
+   * @param presented - what was typed
+   * @returns true when it has the shape
+   */
   wellFormed(presented: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering BackupCodes.wellFormed().");
@@ -513,6 +624,13 @@ class BackupCodes {
   // this module rather than written down over there, which is that page's
   // whole design: the table lives with the code that performs the thing.
   // -------------------------------------------------------------------------
+  /**
+   * Describes the mechanism as configured, for `/admin/backup-codes` and
+   * `/admin/crypto-metadata`.
+   *
+   * @returns the settings, the alphabet, the bits per code and sentences on the
+   *   source, comparison and storage
+   */
   report() {
     const { log } = this.deps;
     log.debug("Entering BackupCodes.report().");
@@ -548,7 +666,7 @@ class BackupCodes {
               '2026-09-11 holds the codes themselves and is still accepted, ' +
               'code by code, until its owner generates a new one.',
       comparisonOfAHash: 'crypto.verifySecret() in constant time against ' +
-                         'each stored hash in turn, on the worker pool ' +
+                         'each stored hash in turn, on libuv\'s thread pool ' +
                          'where the door is asynchronous.'
     };
   }
@@ -572,9 +690,23 @@ const slot = new InstanceSlot<BackupCodes>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Recovery codes: single-use second-factor codes, generated as a set, shown
+ * once and stored hashed.
+ *
+ * The exports forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
   BackupCodes: BackupCodes,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: BackupCodes): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   ALPHABET: BackupCodes.ALPHABET,
   settings: slot.forward('settings'),

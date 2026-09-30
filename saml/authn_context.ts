@@ -97,34 +97,78 @@ const AC_PREFIX = 'urn:oasis:names:tc:SAML:2.0:ac:classes:';
 // --- SAML 1.1 authentication methods (saml-core-1.1 section 7.1) ------------
 const AM_PREFIX = 'urn:oasis:names:tc:SAML:1.0:am:';
 
+/**
+ * Says how a session authenticated in the two SAML vocabularies: a SAML 2.0
+ * authentication context class and a SAML 1.1 authentication method.
+ */
 class AuthnContext {
+  /**
+   * SAML 2.0's PasswordProtectedTransport class.
+   */
   static readonly AC_PASSWORD_PROTECTED =
     AC_PREFIX + 'PasswordProtectedTransport';
+  /**
+   * SAML 2.0's Password class.
+   */
   static readonly AC_PASSWORD = AC_PREFIX + 'Password';
+  /**
+   * SAML 2.0's Kerberos class.
+   */
   static readonly AC_KERBEROS = AC_PREFIX + 'Kerberos';
   // TLSClient and not X509: the X509 class is "the principal authenticated by
   // means of a digital signature where the key was validated as part of an
   // X.509 PKI" at the MESSAGE level, and what the main port verified is the
   // client certificate of the TLS HANDSHAKE, which is exactly what TLSClient
   // names.
+  /**
+   * SAML 2.0's TLSClient class, for a verified TLS client certificate.
+   */
   static readonly AC_TLS_CLIENT = AC_PREFIX + 'TLSClient';
+  /**
+   * SAML 2.0's X509 class.
+   */
   static readonly AC_X509 = AC_PREFIX + 'X509';
+  /**
+   * SAML 2.0's unspecified class.
+   */
   static readonly AC_UNSPECIFIED = AC_PREFIX + 'unspecified';
   // Microsoft's, and used for the reason wsfed.ts recorded long before this
   // file: SAML 2.0's own classes have no member that describes a WebAuthn key
   // after a password without overstating a specific mechanism, and
   // `multipleauthn` is exactly the claim — more than one factor — and what
   // AD FS emits for it.
+  /**
+   * Microsoft's `multipleauthn` class, for more than one factor.
+   */
   static readonly AC_MULTIFACTOR =
     'http://schemas.microsoft.com/claims/multipleauthn';
 
+  /**
+   * SAML 1.1's password authentication method.
+   */
   static readonly AM_PASSWORD = AM_PREFIX + 'password';
+  /**
+   * SAML 1.1's Kerberos authentication method, RFC 1510 by number.
+   */
   static readonly AM_KERBEROS = 'urn:ietf:rfc:1510';
   // "SSL/TLS Certificate Based Client Authentication" — RFC 2246 by number,
   // which is how section 7.1 spells it.
+  /**
+   * SAML 1.1's TLS client certificate authentication method, RFC 2246 by
+   * number.
+   */
   static readonly AM_TLS_CLIENT = 'urn:ietf:rfc:2246';
+  /**
+   * SAML 1.1's X509-PKI authentication method.
+   */
   static readonly AM_X509 = AM_PREFIX + 'X509-PKI';
+  /**
+   * SAML 1.1's HardwareToken authentication method.
+   */
   static readonly AM_HARDWARE_TOKEN = AM_PREFIX + 'HardwareToken';
+  /**
+   * SAML 1.1's unspecified authentication method.
+   */
   static readonly AM_UNSPECIFIED = AM_PREFIX + 'unspecified';
 
   // A partner's SAML 2.0 class, said in SAML 1.1 — for a federated session
@@ -150,12 +194,22 @@ class AuthnContext {
     [AuthnContext.AC_MULTIFACTOR]: AuthnContext.AC_MULTIFACTOR
   };
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger
+   */
   constructor(private readonly deps: AuthnContextDeps) {
     deps.log.debug("Entering AuthnContext.constructor().");
     deps.log.debug("Leaving AuthnContext.constructor().");
   }
 
   // What the composition root passes: the service logger.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): AuthnContextDeps {
     helpers.log.debug("Entering AuthnContext.defaultDeps().");
     helpers.log.debug("Leaving AuthnContext.defaultDeps().");
@@ -303,6 +357,16 @@ class AuthnContext {
   // from the same reading as the URIs and the two can never disagree about one
   // session.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads how a session authenticated, from its `amr` and, for a federated
+   * session, what the partner said.
+   *
+   * `multiFactor` and `hardwareKey` are what a SAML 2.0 RequestedAuthnContext
+   * or a WS-Federation `wauth` demand is checked against, from the same reading
+   * as the URIs.
+   * @param session - the sign-on session
+   * @returns `{ kind, saml2, saml11, multiFactor, hardwareKey }`
+   */
   forSession(session?: SessionLike | null): AuthnReading {
     const { log } = this.deps;
     const C = AuthnContext;
@@ -350,9 +414,22 @@ const slot = new InstanceSlot<AuthnContext>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * How a session authenticated, in the two SAML vocabularies, answered once for
+ * SAML 2.0, SAML 1.1 and WS-Federation.
+ * @namespace
+ */
 export = {
   AuthnContext: AuthnContext,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: AuthnContext): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   forSession: slot.forward('forSession'),
   AC_PASSWORD_PROTECTED: AuthnContext.AC_PASSWORD_PROTECTED,

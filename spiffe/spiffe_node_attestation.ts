@@ -52,14 +52,31 @@ interface NodeAttestationDeps {
   config: typeof config;
 }
 
+/**
+ * The table of node attestors `Agent.AttestAgent` runs: one plugin per
+ * attestation type, as a SPIRE server has.
+ *
+ * A type not in the table, or not turned on in `spiffe.nodeAttestors`, is
+ * refused; there is no default attestor.
+ */
 class NodeAttestation {
   private readonly attestors = new Map<string, NodeAttestor>();
 
+  /**
+   * Builds an empty table.
+   *
+   * @param deps - the logger and configuration
+   */
   constructor(private readonly deps: NodeAttestationDeps) {
     deps.log.debug("Entering NodeAttestation.constructor().");
     deps.log.debug("Leaving NodeAttestation.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service builds the table with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): NodeAttestationDeps {
     helpers.log.debug("Entering NodeAttestation.defaultDeps().");
     helpers.log.debug("Leaving NodeAttestation.defaultDeps().");
@@ -69,6 +86,12 @@ class NodeAttestation {
   // One attestor per type. A second registration of a type is a defect in
   // whoever built the table — two plugins answering one type would make the
   // answer depend on the order they were registered in — so it throws.
+  /**
+   * Registers a node attestor under its type.
+   *
+   * @param attestor - the attestor
+   * @throws an Error when a second attestor registers the same type
+   */
   register(attestor: NodeAttestor): void {
     const { log } = this.deps;
     log.debug("Entering NodeAttestation.register(). type=" + attestor.type);
@@ -84,6 +107,12 @@ class NodeAttestation {
   }
 
   // Every type this build can verify, whether or not any realm turned it on.
+  /**
+   * Returns every type this build can verify, whether or not any realm turned
+   * it on.
+   *
+   * @returns the types, sorted
+   */
   known(): string[] {
     const { log } = this.deps;
     log.debug("Entering NodeAttestation.known().");
@@ -93,6 +122,12 @@ class NodeAttestation {
 
   // The types `spiffe.nodeAttestors` names, as written, in the AMBIENT realm
   // — the realm of the socket the call arrived on (`spiffe/CLAUDE.md`).
+  /**
+   * Returns the types `spiffe.nodeAttestors` names in the ambient realm, as
+   * written.
+   *
+   * @returns the configured types
+   */
   configured(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering NodeAttestation.configured().");
@@ -107,6 +142,11 @@ class NodeAttestation {
   // with no attestor behind it is not an error at the setting — the setting
   // is shared by every realm and a typo in one should not stop another — but
   // it is reported by `state()` and can never accept anything.
+  /**
+   * Returns the configured types this build can verify.
+   *
+   * @returns the enabled types
+   */
   enabled(): string[] {
     const { log } = this.deps;
     const self = this;
@@ -119,6 +159,12 @@ class NodeAttestation {
 
   // The attestor for `type` if this realm accepts it, and null otherwise.
   // The caller refuses on null; there is no default attestor.
+  /**
+   * Returns the attestor for a type if the ambient realm accepts it.
+   *
+   * @param type - the attestation type the agent named
+   * @returns the attestor, or null; the caller refuses on null
+   */
   attestorFor(type: string): NodeAttestor | null {
     const { log } = this.deps;
     log.debug("Entering NodeAttestation.attestorFor(). type=" + type);
@@ -132,6 +178,12 @@ class NodeAttestation {
 
   // How long an attestor's challenge waits for its response, in
   // milliseconds — `spiffe.attestationChallengeTimeout`, in seconds.
+  /**
+   * Returns how long an attestor's challenge waits for its response, from
+   * `spiffe.attestationChallengeTimeout`.
+   *
+   * @returns the timeout in milliseconds
+   */
   challengeTimeoutMs(): number {
     const { log, config } = this.deps;
     log.debug("Entering NodeAttestation.challengeTimeoutMs().");
@@ -141,6 +193,13 @@ class NodeAttestation {
 
   // What the pages draw: every type this build verifies, whether the realm
   // accepts it, and the configured names nothing verifies.
+  /**
+   * Describes the table for the pages: every type this build verifies, whether
+   * the realm accepts it, and the configured names nothing verifies.
+   *
+   * @returns the attestors with `type`, `enabled` and `verifies`,
+   *   `unknownConfigured` and `challengeTimeoutSeconds`
+   */
   state() {
     const { log } = this.deps;
     const self = this;
@@ -161,6 +220,11 @@ class NodeAttestation {
   }
 }
 
+/**
+ * The node attestors as a table (#40): a library that registers no route and
+ * holds no state but the table.
+ * @namespace
+ */
 export = {
   NodeAttestation: NodeAttestation
 };

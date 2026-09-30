@@ -162,17 +162,51 @@ const MAX_POINTS = 1024;
 const THUMBPRINT_RE = /^[A-Za-z0-9_-]{43}$/;
 const CONTROL_RE = /[\x00-\x1f\x7f]/;
 
+/**
+ * RFC 9635 section 8 access rights as a token reads them, and the four checks
+ * every structured token format shares: time, audience, key binding and access.
+ *
+ * A route-free library, so a jwt-signed token and a biscuit are refused for the
+ * same reasons under the same codes.
+ */
 class GnapAccess {
+  /**
+   * The two token flags RFC 9635 section 3.2.1 defines, `bearer` and `durable`;
+   * a token carrying any other is refused.
+   */
   static readonly TOKEN_FLAGS = TOKEN_FLAGS;
+  /**
+   * The common array dimensions of an access right: `actions`, `locations`,
+   * `datatypes` and `privileges`.
+   */
   static readonly ARRAY_DIMENSIONS = ARRAY_DIMENSIONS;
+  /**
+   * The common fields of an access right: `type`, `identifier` and the array
+   * dimensions.
+   */
   static readonly COMMON_FIELDS = COMMON_FIELDS;
+  /**
+   * The cap on an access right's cross-product of dimension values.
+   */
   static readonly MAX_POINTS = MAX_POINTS;
 
+  /**
+   * Builds the library from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapAccessDeps) {
     deps.log.debug("Entering GnapAccess.constructor().");
     deps.log.debug("Leaving GnapAccess.constructor().");
   }
 
+  /**
+   * Returns a refusal carrying an error code and a reason.
+   *
+   * @param code - the error code
+   * @param why - the reason
+   * @returns `{ ok: false, errorCode, why }`, marked with the code
+   */
   refusal(code: string, why: string): Refusal {
     const { log, errorCodes } = this.deps;
     log.debug("Entering GnapAccess.refusal().");
@@ -199,6 +233,13 @@ class GnapAccess {
 
   // JSON with the keys of every object sorted, so two rights that differ only
   // in member order are one right. Used for dedupe and for deep equality.
+  /**
+   * Serialises a value as JSON with every object's keys sorted, so two rights
+   * that differ only in member order are one right.
+   *
+   * @param value - the value
+   * @returns the canonical JSON
+   */
   canonicalJson(value: unknown): string {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.canonicalJson().");
@@ -225,6 +266,13 @@ class GnapAccess {
   // token every requirement fails against for a reason nobody could read off
   // it. Returns `{ ok:true, access }` (a deduplicated copy) or a refusal.
   // -------------------------------------------------------------------------
+  /**
+   * Checks a token's access array has the shape it must: non-empty, each
+   * element a string reference or a well-formed right.
+   *
+   * @param access - the access array
+   * @returns `{ ok: true, access }` (a deduplicated copy), or a refusal
+   */
   normalise(access: unknown): any {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.normalise().");
@@ -282,6 +330,12 @@ class GnapAccess {
   // Order-preserving: the first occurrence of each canonical right survives,
   // so a round trip through a format that deduplicates hands back the same
   // array.
+  /**
+   * Removes duplicate rights, keeping the first occurrence of each, in order.
+   *
+   * @param access - the access array
+   * @returns the deduplicated array
+   */
   dedupe(access: any[]): any[] {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.dedupe().");
@@ -298,6 +352,13 @@ class GnapAccess {
     return out;
   }
 
+  /**
+   * Returns the deduplicated union of two access arrays.
+   *
+   * @param a - the first array
+   * @param b - the second array
+   * @returns the union
+   */
   union(a: any[], b: any[]): any[] {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.union().");
@@ -310,6 +371,14 @@ class GnapAccess {
   // object into the covered part of its cross-product: a right handed back to
   // a client in a shape it never asked for is a right the client cannot
   // recognise.
+  /**
+   * Returns the elements of `requested` that `granted` covers, each kept whole,
+   * never split into its covered part.
+   *
+   * @param granted - the granted access
+   * @param requested - the requested access
+   * @returns the covered elements
+   */
   intersect(granted: any[], requested: any[]): any[] {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.intersect().");
@@ -411,6 +480,16 @@ class GnapAccess {
   // a no. An absent or empty `required` is covered: a resource server that
   // states no requirement has asked nothing of the access array.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether the union of `granted` covers every element of `required`.
+   *
+   * Malformed input on either side is false; an absent or empty requirement is
+   * covered.
+   *
+   * @param granted - the granted access
+   * @param required - the access required
+   * @returns true when covered
+   */
   accessCovers(granted: unknown, required: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.accessCovers().");
@@ -486,6 +565,13 @@ class GnapAccess {
   // one way.
   //   jkt:<thumbprint>   x5t:<thumbprint>   kid:<reference>   (null = bearer)
   // -------------------------------------------------------------------------
+  /**
+   * Spells a key confirmation as a string (`jkt:`, `x5t:` or `kid:`), shared by
+   * the macaroon caveat and the zcap term.
+   *
+   * @param cnf - the confirmation
+   * @returns the string, or null for a bearer token
+   */
   cnfToString(cnf: any): string | null {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.cnfToString().");
@@ -505,6 +591,12 @@ class GnapAccess {
     return 'kid:' + cnf.kid;
   }
 
+  /**
+   * Reads a key confirmation back from its string spelling.
+   *
+   * @param text - the string
+   * @returns the confirmation, or undefined when it does not parse
+   */
   cnfFromString(text: unknown): Record<string, string> | undefined {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.cnfFromString().");
@@ -576,6 +668,17 @@ class GnapAccess {
   // null and no `bearer` flag, or with both, is two answers to the one
   // question an RS asks before anything else.
   // -------------------------------------------------------------------------
+  /**
+   * Validates a token model (RFC 9767 section 2.1) before a format mints it and
+   * after a format reconstructs it.
+   *
+   * The `bearer` flag and `cnf` must agree: a bound token has no `bearer` flag
+   * and a bearer token no `cnf`.
+   *
+   * @param model - the token model
+   * @returns `{ ok: true, model }` with every optional member present as null,
+   *   or a refusal
+   */
   validateModel(model: any): any {
     const { log } = this.deps;
     const self = this;
@@ -712,6 +815,15 @@ class GnapAccess {
   // valid BEFORE exp) and `nbf` inclusive. No clock skew here: the caller
   // hands `now`, and a skew belongs to the caller's configuration, not to a
   // format.
+  /**
+   * Checks a token's time window (RFC 9767 section 2.1.7): `exp` exclusive,
+   * `nbf` inclusive, no clock skew.
+   *
+   * @param exp - the expiry, in seconds
+   * @param nbf - the not-before, in seconds
+   * @param now - the current time, in seconds
+   * @returns a refusal, or null when the token is in its window
+   */
   checkTime(exp: number, nbf: number | null | undefined,
             now: number): Refusal | null {
     const { log } = this.deps;
@@ -736,6 +848,14 @@ class GnapAccess {
   // RFC 9767 section 2.1.3. Every list must name the verifying RS; an empty
   // list is no restriction. `audience` null means the verifier is not an RS
   // (the AS introspecting its own token) and asks nothing.
+  /**
+   * Checks every audience list names the verifying resource server (RFC 9767
+   * section 2.1.3); an empty list is no restriction.
+   *
+   * @param audienceLists - the token's audience lists
+   * @param audience - the verifier, or null when it is not a resource server
+   * @returns a refusal, or null
+   */
   checkAudience(audienceLists: any[], audience: unknown): Refusal | null {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.checkAudience().");
@@ -764,6 +884,15 @@ class GnapAccess {
   // the token "with a key in an undefined way" — the key simply confirms
   // nothing. A BOUND token must be presented with the key it names, compared
   // on the one member the confirmation carries.
+  /**
+   * Checks the key binding (RFC 9767 section 2.1.4): a bound token must be
+   * presented with the key it names; a bearer token presented with a key is
+   * accepted.
+   *
+   * @param cnf - the token's confirmation
+   * @param presentedKey - the confirmation of the key presented
+   * @returns a refusal, or null
+   */
   checkBinding(cnf: any, presentedKey: any): Refusal | null {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.checkBinding().");
@@ -785,6 +914,13 @@ class GnapAccess {
   }
 
   // RFC 9767 section 2.1.6: every access list must cover the requirement.
+  /**
+   * Checks every access list covers the requirement (RFC 9767 section 2.1.6).
+   *
+   * @param accessLists - the token's access lists
+   * @param requiredAccess - the access the request needs
+   * @returns a refusal, or null
+   */
   checkAccess(accessLists: any[], requiredAccess: unknown): Refusal | null {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.checkAccess().");
@@ -813,6 +949,16 @@ class GnapAccess {
   // of lists (a format's attenuations) and an effective `exp` / `nbf`; the
   // model's own are the default.
   // -------------------------------------------------------------------------
+  /**
+   * Applies all four checks, in the order a refusal is most useful in.
+   *
+   * @param model - the token model
+   * @param context - the presentation: `now`, `audience`, `presentedKey`,
+   *   `requiredAccess`
+   * @param lists - a format's attenuations: `audience` and `access` lists of
+   *   lists and an effective `exp` and `nbf`
+   * @returns a refusal, or null
+   */
   checkPresentation(model: any, context?: any, lists?: any): Refusal | null {
     const { log, nowSec } = this.deps;
     log.debug("Entering GnapAccess.checkPresentation().");
@@ -841,6 +987,13 @@ class GnapAccess {
   // its package.json are unresolvable from CommonJS. So this walks the same
   // node_modules directories `require` would, in the same order.
   // -------------------------------------------------------------------------
+  /**
+   * Finds where an npm package is installed, walking the node_modules
+   * directories `require` would, in the same order.
+   *
+   * @param name - the package's name
+   * @returns its directory, or null when it is not installed
+   */
   packageDir(name: string): string | null {
     const { log, fs, path, modulePaths } = this.deps;
     log.debug("Entering GnapAccess.packageDir().");
@@ -856,6 +1009,12 @@ class GnapAccess {
     return null;
   }
 
+  /**
+   * Returns an npm package's name, version and licence, for the console.
+   *
+   * @param name - the package's name
+   * @returns `{ name, version, license }`, null members when unknown
+   */
   libraryInfo(name: string) {
     const { log, fs, path } = this.deps;
     log.debug("Entering GnapAccess.libraryInfo(). name=" + name);
@@ -885,6 +1044,12 @@ class GnapAccess {
   // module built its own instance from before. `modulePaths` is this file's
   // own `module.paths`, which is what the function read before; the clock is
   // read off `helpers` at each call, as it was.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapAccessDeps {
     helpers.log.debug("Entering GnapAccess.defaultDeps().");
     helpers.log.debug("Leaving GnapAccess.defaultDeps().");
@@ -918,9 +1083,25 @@ const slot = new InstanceSlot<GnapAccess>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9635 section 8 access rights as a token reads them, and the four checks
+ * every structured GNAP token format shares.
+ *
+ * @namespace
+ */
 export = {
   GnapAccess: GnapAccess,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapAccess): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   TOKEN_FLAGS: GnapAccess.TOKEN_FLAGS,
   ARRAY_DIMENSIONS: GnapAccess.ARRAY_DIMENSIONS,

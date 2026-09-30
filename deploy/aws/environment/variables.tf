@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 variable "aws_region" {
-  description = "The one region this project deploys to."
+  description = "The region of a single-cell environment. A cell's is `cells[cell].region` (cells.tf, #98)."
   type        = string
   default     = "us-west-2"
 }
@@ -67,14 +67,18 @@ variable "pep_image_tag" {
 variable "ldap_max_entries" {
   description = <<-EOT
     The directory's entry ceiling (LDAP_MAX_ENTRIES) on every node. The service
-    default is 2000; the three bulk-load jobs leave about 15,000 entries in the
-    default realm on every run, and an environment is reused run after run, so
-    reset-environment.js resets the override they leave back to THIS value
-    rather than to one that refuses every later create. Entries are held in
-    each node's memory: raise the task memory with it.
+    default is 2000. The three bulk-load jobs add about 15,000 entries to the
+    default realm on every run (raising `ldap.maxEntries` for themselves while
+    they do), and an environment is reused run after run, so
+    reset-environment.js deletes the previous runs' bulk-load entries and then
+    resets that override back to THIS value (#344). 50,000 holds one run's bulk
+    loads beside the seeded population with room to spare. It was 200,000
+    until 2026-09-29, when nothing was deleted between runs. Every entry is
+    held in the memory of every node process (1 + request + surface workers):
+    raise task_memory with it.
   EOT
   type        = number
-  default     = 200000
+  default     = 50000
 }
 
 variable "applications_max" {
@@ -129,13 +133,25 @@ variable "node_count" {
 }
 
 variable "task_cpu" {
-  description = "Fargate CPU units per node."
+  description = <<-EOT
+    Fargate CPU units per node. It bounds the worker counts: do not run more
+    than task_cpu / 1024 + 1 node processes (1 + workers_request_count +
+    workers_surface_count) — a process beyond that adds a whole copy of the
+    service's memory and no parallelism (#340).
+  EOT
   type        = number
   default     = 1024
 }
 
 variable "task_memory" {
-  description = "Fargate memory (MiB) per node."
+  description = <<-EOT
+    Fargate memory (MiB) per node. Size it as (node processes x one process's
+    working set) + headroom, where node processes = 1 + workers_request_count
+    + workers_surface_count: every process holds the whole directory and every
+    store (#339), so memory grows with the process count, not the load. The
+    task is OOM-killed past it, and a restart — every process restoring from
+    postgres at once — is the peak (#340).
+  EOT
   type        = number
   default     = 3072
 }
@@ -175,7 +191,7 @@ variable "delete_automated_backups" {
 }
 
 variable "vpc_cidr" {
-  description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16."
+  description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16. A cell's is `cells[cell].vpc_cidr` (#98)."
   type        = string
   default     = "10.51.0.0/16"
 }
@@ -184,6 +200,51 @@ variable "extra_environment" {
   description = "Additional environment variables for every mock-sts container."
   type        = map(string)
   default     = {}
+}
+
+variable "mail_ses_domain" {
+  description = <<-EOT
+    A domain to send mail as through Amazon SES (#311). EMPTY (the default)
+    leaves `mail.transport` at the mode's default, which in product mode sends
+    nothing. SET, it must be `public_hostname` or a name under it: the
+    environment creates the SES identity with Easy DKIM and its three CNAMEs
+    (mail.tf), lets the task role send as it, and sets `mail.transport=ses`.
+    The image must be built with `@aws-sdk/client-sesv2` in STS_CLOUD_SDKS, or
+    a product node refuses to start (STS-MAIL-0002).
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "spiffe_workload_port" {
+  description = "The default realm's SPIFFE Workload API port, the same on the load balancer and the node (spiffe.workloadPort; spiffe_default.tf)."
+  type        = number
+  default     = 8092
+}
+
+variable "spiffe_server_port" {
+  description = "The default realm's SPIRE Server API port, the same on the load balancer and the node (spiffe.serverPort; spiffe_default.tf)."
+  type        = number
+  default     = 8181
+}
+
+variable "mail_allowed_recipients" {
+  description = <<-EOT
+    Where set, the only recipient addresses the task role may send to through
+    SES (IAM `ses:Recipients`, StringLike patterns such as `*@iyasec.io`).
+    Empty (the default) restricts nothing. Mail to anybody else is refused by
+    IAM before SES counts or delivers it, and dead-letters in the service's
+    outbox — which is what keeps a test suite's invented addresses from using
+    the SES quota or bouncing (#311).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "mail_from" {
+  description = "The From address when mail_ses_domain is set. Empty means `no-reply@<mail_ses_domain>`."
+  type        = string
+  default     = ""
 }
 
 variable "tags" {
@@ -277,13 +338,23 @@ variable "pki_listener_port" {
 }
 
 variable "workers_request_count" {
-  description = "STS_WORKERS_REQUEST_COUNT on every node: request workers running the whole service. 0 is off."
+  description = <<-EOT
+    STS_WORKERS_REQUEST_COUNT on every node: request workers running the whole
+    service. 0 is off. Each is a whole copy of the service in memory, so keep
+    1 + request + surface within task_cpu / 1024 + 1 and size task_memory to
+    it (#340).
+  EOT
   type        = number
   default     = 0
 }
 
 variable "workers_surface_count" {
-  description = "STS_WORKERS_SURFACE_COUNT on every node: workers running only /admin and /portal. 0 is off."
+  description = <<-EOT
+    STS_WORKERS_SURFACE_COUNT on every node: workers running only /admin and
+    /portal. 0 is off, and those paths then go to the request workers. Each is
+    a whole copy of the service in memory like a request worker, and counts
+    against the same bound (#340).
+  EOT
   type        = number
   default     = 0
 }
@@ -295,7 +366,12 @@ variable "workers_dispatch" {
 }
 
 variable "workers_read_your_write" {
-  description = "STS_WORKERS_READ_YOUR_WRITE on every node. Required by the surface pool."
+  description = <<-EOT
+    STS_WORKERS_READ_YOUR_WRITE on every node. Required by the surface pool
+    (the service refuses to start without it, STS-WORKER-0038), and needed
+    with more than one request worker too, where a caller that writes through
+    one worker and reads back through another must see its write.
+  EOT
   type        = bool
   default     = false
 }

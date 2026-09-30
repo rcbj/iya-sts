@@ -72,7 +72,13 @@ interface Problem {
   message: string;
 }
 
+/**
+ * The base context of a VC Data Model 2.0 document.
+ */
 const V2 = 'https://www.w3.org/ns/credentials/v2';
+/**
+ * The base context of a VC Data Model 1.1 document.
+ */
 const V1 = 'https://www.w3.org/2018/credentials/v1';
 
 // XML Schema 1.1 dateTimeStamp: a dateTime WITH a time zone.
@@ -87,15 +93,37 @@ const DATE_TIME = new RegExp('^-?\\d{4,}-(0[1-9]|1[0-2])-' +
 // RFC 3986's scheme, then no white space anywhere.
 const ABSOLUTE_URL = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$/;
 
+/**
+ * The W3C Verifiable Credentials Data Model's MUSTs, checked: what a conforming
+ * issuer refuses to secure and a conforming verifier refuses to accept,
+ * whatever securing mechanism is on it. Each check names the section it
+ * enforces.
+ */
 class VcDataModel {
+  /**
+   * The base context of a VC Data Model 2.0 document.
+   */
   static readonly V2 = V2;
+  /**
+   * The base context of a VC Data Model 1.1 document.
+   */
   static readonly V1 = V1;
 
+  /**
+   * Builds the checker around a logger.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcDataModelDeps) {
     deps.log.debug("Entering VcDataModel.constructor().");
     deps.log.debug("Leaving VcDataModel.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcDataModelDeps {
     helpers.log.debug("Entering VcDataModel.defaultDeps().");
     helpers.log.debug("Leaving VcDataModel.defaultDeps().");
@@ -115,6 +143,12 @@ class VcDataModel {
   }
 
   // Is this ONE absolute URL (VCDM 2.0 section 4.4's "URL")?
+  /**
+   * Says whether a value is one absolute URL (VCDM 2.0 section 4.4).
+   *
+   * @param value - the value
+   * @returns true when it is
+   */
   isUrl(value: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering VcDataModel.isUrl().");
@@ -150,6 +184,12 @@ class VcDataModel {
 
   // The data model version a document's @context says it is: '2.0', '1.1',
   // or '' when the first item is neither base context.
+  /**
+   * Returns the data model version a document's `@context` says it is.
+   *
+   * @param document - the document
+   * @returns `2.0`, `1.1`, or '' when the first item is neither base context
+   */
   versionOf(document: any): string {
     const { log } = this.deps;
     log.debug("Entering VcDataModel.versionOf().");
@@ -411,6 +451,15 @@ class VcDataModel {
   // accepts an EnvelopedVerifiableCredential (its shape only — the envelope's
   // contents are the securing mechanism's to open).
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a credential against the data model's MUSTs.
+   *
+   * @param vc - the credential
+   * @param opts - `atTime` (ms) to check the validity window too, as a verifier
+   *   does; `enveloped` to accept an EnvelopedVerifiableCredential's shape;
+   *   `where` to name it in problems
+   * @returns `{ ok, problems, warnings }`
+   */
   checkCredential(vc: any, opts?: { atTime?: number; enveloped?: boolean;
                                     where?: string }): any {
     const { log } = this.deps;
@@ -512,6 +561,14 @@ class VcDataModel {
   // ---------------------------------------------------------------------------
   // A PRESENTATION, and every credential in it.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a presentation, and every credential in it, against the data model's
+   * MUSTs.
+   *
+   * @param vp - the presentation
+   * @param opts - `atTime` (ms) to check each credential's validity window
+   * @returns `{ ok, problems, warnings }`
+   */
   checkPresentation(vp: any, opts?: { atTime?: number }): any {
     const { log } = this.deps;
     log.debug("Entering VcDataModel.checkPresentation().");
@@ -576,9 +633,25 @@ const slot = new InstanceSlot<VcDataModel>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The W3C Verifiable Credentials Data Model's MUSTs, checked for an issuer and
+ * a verifier.
+ *
+ * @namespace
+ */
 export = {
   VcDataModel: VcDataModel,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcDataModel): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   V2: V2,
   V1: V1,

@@ -310,8 +310,15 @@ async function setUp(k) {
   for (;;) {
     account = await wire.asExchange(tcp, KREALM, ACCOUNT,
                                     { password: k.password });
-    const err = account && !account.tgt && account.first &&
-      account.first.error;
+    // EITHER LEG (CI run 36394938951): the pre-authenticated second request
+    // is a connection of its own, and behind the cluster's balancer it can
+    // reach the node that has not learnt the realm while the first did.
+    const leg = account && !account.tgt
+      ? ((account.second && account.second.error) ||
+         (account.first && account.first.error))
+      : null;
+    const err = leg && leg.code === 68 ? leg
+      : (account && account.first && account.first.error);
     if (!(err && err.code === 68) || Date.now() > until) {
       break;
     }
@@ -327,7 +334,29 @@ async function setUp(k) {
   check("host/" + HOST + " is issued a ticket, so it exists", function () {
     assert.ok(host.ok, host.error && host.error.toString());
   });
-  const rows = await principalRows(base + "/realm/" + RID);
+  // AND THE PRINCIPALS REACH THE OTHER NODE BY REPLICATION TOO (2026-09-27).
+  // The KDC made host/ and the account on first sight, over TCP 88, whose
+  // reply is not held for its commit the way an HTTP response is
+  // (cluster/cluster_barrier.js) — and krb5_kdc.js is the parent project's,
+  // locked here. So in the cluster mode this GET, balanced to the other
+  // node, can arrive before that node has pulled them; it is asked again,
+  // for up to thirty seconds, until all three are there.
+  const wanted = ["krbtgt/" + KREALM + "@" + KREALM, "host/" + HOST + "@" +
+                  KREALM, ACCOUNT + "@" + KREALM];
+  let rows = [];
+  const rowsUntil = Date.now() + 30000;
+  for (;;) {
+    rows = await principalRows(base + "/realm/" + RID);
+    const have = wanted.every(function (name) {
+      return rows.some(function (one) {
+        return one.principal === name;
+      });
+    });
+    if (have || Date.now() > rowsUntil) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 500); });
+  }
   const krbtgt = rowFor(rows, "krbtgt/" + KREALM + "@" + KREALM);
   const hostRow = rowFor(rows, "host/" + HOST + "@" + KREALM);
   const accountRow = rowFor(rows, ACCOUNT + "@" + KREALM);

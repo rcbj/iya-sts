@@ -57,6 +57,10 @@ const { log } = helpers;
 
 // The OIDs this file writes, in one table so the csrattrs response and the
 // crypto report read the same numbers.
+/**
+ * The object identifiers this codec writes, shared by the CSR attributes
+ * response and the crypto report.
+ */
 const OIDS = {
   data: '1.2.840.113549.1.7.1',
   signedData: '1.2.840.113549.1.7.2',
@@ -74,6 +78,11 @@ const OIDS = {
 // classical three, Ed25519 and ML-DSA's three parameter sets — not every
 // algorithm the vendored encoder knows, because a long list tells a client
 // nothing about which to prefer.
+/**
+ * The signature algorithms the CSR attributes response offers a client to sign
+ * its request with: ECDSA with SHA-256 and SHA-384, RSA with SHA-256, Ed25519
+ * and ML-DSA's three parameter sets.
+ */
 const SIGNATURE_ALGORITHMS = [
   { oid: '1.2.840.10045.4.3.2', name: 'ecdsa-with-SHA256' },
   { oid: '1.2.840.10045.4.3.3', name: 'ecdsa-with-SHA384' },
@@ -92,7 +101,21 @@ interface EstCodecDeps {
   log: typeof log;
 }
 
+/**
+ * The wire shapes EST adds over its older formats: a base64 body, a certs-only
+ * CMS message, the CSR attributes response and the server-generated key's
+ * `multipart/mixed` response.
+ *
+ * It reads no CSR and builds no certificate; the DER is written by hand so that
+ * certificates travel verbatim.
+ */
 class EstCodec {
+  /**
+   * Builds the codec from its dependencies.
+   *
+   * @param deps - node's crypto and the logger, from `EstCodec.defaultDeps()`
+   * or the composition root
+   */
   constructor(private readonly deps: EstCodecDeps) {
     deps.log.debug("Entering EstCodec.constructor().");
     deps.log.debug("Leaving EstCodec.constructor().");
@@ -100,6 +123,12 @@ class EstCodec {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the real modules the codec depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): EstCodecDeps {
     log.debug("Entering EstCodec.defaultDeps().");
     log.debug("Leaving EstCodec.defaultDeps().");
@@ -112,6 +141,12 @@ class EstCodec {
   // ---------------------------------------------------------------------------
   // DER.
   // ---------------------------------------------------------------------------
+  /**
+   * Encodes a DER length.
+   *
+   * @param length - the content's length in bytes
+   * @returns the length octets
+   */
   lengthOctets(length) {
     const { log } = this.deps;
     log.debug("Entering EstCodec.lengthOctets().");
@@ -129,6 +164,13 @@ class EstCodec {
     return Buffer.from([0x80 | bytes.length].concat(bytes));
   }
 
+  /**
+   * Encodes a DER tag-length-value.
+   *
+   * @param tag - the tag byte
+   * @param content - the content, or a list of pieces to concatenate
+   * @returns the encoding
+   */
   tlv(tag, content) {
     const { log } = this.deps;
     log.debug("Entering EstCodec.tlv(). tag=" + tag);
@@ -141,6 +183,13 @@ class EstCodec {
                           body]);
   }
 
+  /**
+   * Encodes an OBJECT IDENTIFIER in DER.
+   *
+   * @param dotted - the OID in dotted form
+   * @returns the encoding
+   * @throws when `dotted` is not an object identifier
+   */
   oid(dotted) {
     const { log } = this.deps;
     log.debug("Entering EstCodec.oid(). " + dotted);
@@ -173,6 +222,12 @@ class EstCodec {
     return this.tlv(0x06, Buffer.from(out));
   }
 
+  /**
+   * Encodes a UTF8String in DER.
+   *
+   * @param text - the text
+   * @returns the encoding
+   */
   utf8String(text) {
     const { log } = this.deps;
     log.debug("Entering EstCodec.utf8String().");
@@ -180,6 +235,12 @@ class EstCodec {
     return this.tlv(0x0c, Buffer.from(String(text), 'utf8'));
   }
 
+  /**
+   * Decodes a PEM block to DER.
+   *
+   * @param pem - the PEM text
+   * @returns the DER bytes
+   */
   pemToDer(pem) {
     const { log } = this.deps;
     log.debug("Entering EstCodec.pemToDer().");
@@ -197,6 +258,13 @@ class EstCodec {
   // half a PEM header decodes to a DER value that happens to parse. So: only
   // the alphabet, `=` padding at the end, and SP / HTAB / CR / LF anywhere.
   // ---------------------------------------------------------------------------
+  /**
+   * Decodes an EST request body strictly: only the base64 alphabet, `=` padding
+   * at the end, and whitespace anywhere (RFC 8951 section 3).
+   *
+   * @param bytes - the body
+   * @returns `{ ok: true, der }`, or `{ ok: false, why }`
+   */
   decodeBody(bytes) {
     const { log } = this.deps;
     log.debug("Entering EstCodec.decodeBody().");
@@ -233,6 +301,12 @@ class EstCodec {
 
   // Base64 at 64 characters a line with CRLF, which is what RFC 2045's
   // Content-Transfer-Encoding: base64 and every EST client reads.
+  /**
+   * Encodes DER as base64 at 64 characters a line, each ending in CRLF.
+   *
+   * @param der - the bytes
+   * @returns the text
+   */
   base64Lines(der) {
     const { log } = this.deps;
     log.debug("Entering EstCodec.base64Lines().");
@@ -253,6 +327,13 @@ class EstCodec {
   // because RFC 7030 section 4.1.3 names the CA certificates and nothing
   // requires a sort, and a client reading them builds its path from the names.
   // ---------------------------------------------------------------------------
+  /**
+   * Encodes a certs-only CMS message (RFC 7030 section 4.1.3): a SignedData
+   * with the certificates, verbatim and in the order given, and no signer.
+   *
+   * @param pems - the PEM certificates
+   * @returns the DER ContentInfo
+   */
   certsOnly(pems) {
     const { log } = this.deps;
     log.debug("Entering EstCodec.certsOnly().");
@@ -279,6 +360,14 @@ class EstCodec {
   // `{ type, values }` (an Attribute), where each value is `{ oid }` or
   // `{ utf8 }`.
   // ---------------------------------------------------------------------------
+  /**
+   * Encodes the CSR attributes response (RFC 7030 section 4.5.2), a `SEQUENCE
+   * OF AttrOrOID`.
+   *
+   * @param items - each `{ oid }` (a bare OID) or `{ type, values }` (an
+   * Attribute whose values are `{ oid }` or `{ utf8 }`)
+   * @returns the DER
+   */
   csrAttrs(items) {
     const { log } = this.deps;
     const self = this;
@@ -317,6 +406,14 @@ class EstCodec {
   // which ends in CRLF, converted. The extra CRLF is whitespace inside the
   // base64, which RFC 8951 section 3.1 tells every reader to tolerate.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the server-generated key response's `multipart/mixed` body (RFC 7030
+   * section 4.4.2), each part base64 with its own headers and a random
+   * boundary.
+   *
+   * @param parts - each `{ contentType, der }`
+   * @returns `{ boundary, body }`
+   */
   multipartMixed(parts) {
     const { log, nodeCrypto } = this.deps;
     const self = this;
@@ -354,9 +451,23 @@ const slot = new InstanceSlot<EstCodec>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The EST wire encodings.
+ *
+ * Exports the `EstCodec` class, its OID tables, and facades that forward to the
+ * installed instance.
+ *
+ * @namespace
+ */
 export = {
   EstCodec: EstCodec,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: EstCodec): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   OIDS: OIDS,
   SIGNATURE_ALGORITHMS: SIGNATURE_ALGORITHMS,

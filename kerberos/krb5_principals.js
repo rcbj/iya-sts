@@ -167,6 +167,12 @@ const cacheRegistry = require('../common/cache_registry');
 // The value a setting ships with, read off its row rather than written out a
 // second time here. A password equal to it is a password printed in this
 // repository, whoever typed it.
+/**
+ * Returns the value a setting ships with, read off its settings row.
+ *
+ * @param key - the setting key
+ * @returns the default, or undefined for an unknown key
+ */
 function publishedDefault(key) {
   log.debug("Entering publishedDefault().");
   const row =
@@ -190,6 +196,13 @@ function publishedDefault(key) {
 // its configuration says, and the first symptom would be KDC_ERR_ETYPE_NOSUPP
 // for a client that asked for exactly what the operator wrote down.
 // ---------------------------------------------------------------------------
+/**
+ * Parses an enctype list into the numbers the Kerberos codec implements;
+ * anything else is a problem rather than dropped.
+ *
+ * @param list - a comma-separated string or an array of numbers
+ * @returns `{ ids, problems }`
+ */
 function parseEtypes(list) {
   log.debug('Entering parseEtypes().');
   const ids = [];
@@ -257,6 +270,14 @@ function configuredEtypes(realmId) {
 }
 
 // AD's salt for a user account: realm + sAMAccountName, no separator.
+/**
+ * Returns Active Directory's salt for a user account: the realm and the
+ * sAMAccountName, no separator.
+ *
+ * @param realm - the Kerberos realm
+ * @param name - the account name
+ * @returns the salt
+ */
 function userSalt(realm, name) {
   log.debug("Entering userSalt().");
   log.debug("Leaving userSalt().");
@@ -307,6 +328,12 @@ function userSalt(realm, name) {
 // "wrong password" sends a person off to reset a password that was never the
 // problem. These names are therefore refused rather than created, and they are
 // configurable so a test can name its own.
+/**
+ * Returns the usernames that stay unknown (`krb5.unknownUsers`), so
+ * KDC_ERR_C_PRINCIPAL_UNKNOWN is still reachable.
+ *
+ * @returns the names, lower-cased
+ */
 function reservedUnknown() {
   log.debug("Entering reservedUnknown().");
   log.debug("Leaving reservedUnknown().");
@@ -427,14 +454,28 @@ function serviceDomainsFor() {
 // Another trust realm's KDC stands alone: rcbj's decision was that trust realms
 // do not trust each other's Kerberos.
 // ---------------------------------------------------------------------------
+/**
+ * The trusted Kerberos realm the default trust realm's KDC answers for in
+ * development, `krb5.trustedRealm`.
+ */
 const TRUSTED_REALM = config.value('krb5.trustedRealm');
+/**
+ * The trusted realm's DNS domain.
+ */
 const TRUSTED_DOMAIN = TRUSTED_REALM.toLowerCase();
 const TRUST_PASSWORD = config.value('krb5.trustPassword');
+/**
+ * The trusted domain's SID, `krb5.trustedDomainSid`.
+ */
 const TRUSTED_DOMAIN_SID = config.value('krb5.trustedDomainSid');
 
 // [MS-SAMR] section 2.2.1.13's USER_ACCOUNT codes — NOT the LDAP
 // userAccountControl bits, which share most of these names and none of their
 // values.
+/**
+ * The [MS-SAMR] USER_ACCOUNT codes carried in a PAC, not the LDAP
+ * userAccountControl bits.
+ */
 const UAC = {
   NORMAL_ACCOUNT: 0x00000010,
   WORKSTATION_TRUST_ACCOUNT: 0x00000080,
@@ -451,6 +492,10 @@ const UAC = {
 };
 
 // Well-known RIDs. 513 is Domain Users, which every account belongs to.
+/**
+ * Well-known RIDs: Domain Users, Domain Admins, Domain Computers, Domain
+ * Controllers and Protected Users.
+ */
 const RID = {
   DOMAIN_USERS: 513,
   DOMAIN_ADMINS: 512,
@@ -462,6 +507,15 @@ const RID = {
 // AD's salt for a computer account: realm + "host" + short name (lower case) +
 // the DNS domain. Nothing about this is derivable from the principal string,
 // which is why ETYPE-INFO2 exists.
+/**
+ * Returns Active Directory's salt for a computer account: the realm, `host`,
+ * the short name and the DNS domain, lower-cased.
+ *
+ * @param realm - the Kerberos realm
+ * @param shortName - the host's short name
+ * @param dnsDomain - the DNS domain
+ * @returns the salt
+ */
 function hostSalt(realm, shortName, dnsDomain) {
   log.debug("Entering hostSalt().");
   log.debug("Leaving hostSalt().");
@@ -894,6 +948,13 @@ function definitionsFor(ctx) {
 //
 // **ONE, OR NONE, IN ANOTHER TRUST REALM** (2026-09-15): its own name while its
 // Kerberos is on, and nothing while it is off.
+/**
+ * Returns the Kerberos realms the ambient trust realm's KDC answers for: the
+ * default realm's own and, in development, the trusted realm; another realm's
+ * own name, or none while its Kerberos is off.
+ *
+ * @returns the realm names
+ */
 function realmsServed() {
   log.debug("Entering realmsServed().");
   const ctx = current();
@@ -914,6 +975,12 @@ function servedBy(ctx) {
                                            [ctx.REALM];
 }
 
+/**
+ * Returns the domain SID of a Kerberos realm this KDC answers for.
+ *
+ * @param realm - the Kerberos realm
+ * @returns the SID
+ */
 function domainSidFor(realm) {
   log.debug("Entering domainSidFor().");
   const ctx = current();
@@ -934,6 +1001,13 @@ function domainSidFor(realm) {
 //
 // Returns null when nothing claims it, which is a genuine
 // KDC_ERR_S_PRINCIPAL_UNKNOWN rather than a referral.
+/**
+ * Decides which realm a service principal belongs to from its host name's DNS
+ * suffix.
+ *
+ * @param nameComponents - the principal's name components, host last
+ * @returns the realm name, or null when nothing claims it
+ */
 function realmForService(nameComponents) {
   log.debug("Entering realmForService().");
   if (!nameComponents || nameComponents.length < 2) {
@@ -1047,6 +1121,10 @@ function realmForService(nameComponents) {
 // applier would be two processes with different settings exchanging one row
 // for ever — the one unbounded failure `persistence/CLAUDE.md` warns about.
 // ---------------------------------------------------------------------------
+/**
+ * The three sign-out fields a principal carries at runtime, each merged as the
+ * later instant.
+ */
 const RUNTIME_FIELDS = ['signedOutAt', 'signOutHorizon',
                         'signOutClearedAt'];
 
@@ -1313,9 +1391,23 @@ const derivedKeyCount = cacheRegistry.register({
 // write, which is a store feature this service does not have; the remaining
 // window is not worth a design an operator would have to run.
 // ---------------------------------------------------------------------------
+/**
+ * The first RID an account made at runtime may be given.
+ */
 const AUTO_RID_BASE = 5000;
+/**
+ * The end of the RID range runtime-made accounts are drawn from.
+ */
 const AUTO_RID_LIMIT = 0x40000000;
 
+/**
+ * Returns the RID an account made at runtime under a name would be given: a
+ * slot derived from the name's hash, probed past RIDs already taken.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns the RID
+ */
 function autoRidFor(nameComponents, realm) {
   log.debug('Entering autoRidFor().');
   const key = keyOf({ name: (nameComponents || []).map(String),
@@ -1755,6 +1847,13 @@ function idOf(realmId) {
 // realm, and the realm's OWN `krb5.realm` for any other — never an inherited
 // one, since two realms answering to one name is a request nothing can route.
 // Empty for a realm that names none.
+/**
+ * Returns the Kerberos realm a trust realm answers as: the process's
+ * `krb5.realm` for the default realm, the realm's own override for another.
+ *
+ * @param realmId - the trust realm id
+ * @returns the Kerberos realm name, or the empty string when it names none
+ */
 function nameOf(realmId) {
   log.debug("Entering nameOf().");
   const id = idOf(realmId);
@@ -1777,6 +1876,13 @@ function nameOf(realmId) {
 // clearing it is off rather than an inherited on, and it counts only with a
 // name of its own beside it (realms.js refuses the one without the other; a
 // realm restored from before that rule is held to it here).
+/**
+ * Says whether a trust realm's KDC answers: `krb5.enabled` for the default
+ * realm, the realm's own override and a name of its own for another.
+ *
+ * @param realmId - the trust realm id
+ * @returns whether it answers
+ */
 function enabledIn(realmId) {
   log.debug("Entering enabledIn().");
   const id = idOf(realmId);
@@ -1998,6 +2104,14 @@ realms.onChange(function (id, what) {
 // LOGGED ONCE per name rather than on every request that meets it.
 const collisionsLogged = new Set();
 
+/**
+ * Routes a Kerberos realm name in a request to the trust realm whose KDC
+ * answers for it, compared exactly; a name two realms claim goes to the first,
+ * logged once.
+ *
+ * @param krbName - the Kerberos realm name
+ * @returns the trust realm, or null
+ */
 function trustRealmFor(krbName) {
   log.debug("Entering trustRealmFor(). name=" + krbName);
   const name = String(krbName || '');
@@ -2028,6 +2142,12 @@ function trustRealmFor(krbName) {
 }
 
 // The Kerberos realms a trust realm's KDC answers for, by id.
+/**
+ * Returns the Kerberos realms a trust realm's KDC answers for.
+ *
+ * @param realmId - the trust realm id
+ * @returns the realm names
+ */
 function servedIn(realmId) {
   log.debug("Entering servedIn().");
   log.debug("Leaving servedIn().");
@@ -2100,6 +2220,13 @@ function kdcNowMs() {
 // truncated to the second on the wire (krb5_asn1.js), so an authtime earlier
 // than the stamp is always earlier than this and one taken at or after this is
 // never refused. Hot path, for kdcNowMs()'s reason.
+/**
+ * Returns the first whole second at or after a sign-out stamp, the smallest
+ * `authtime` a ticket can carry and still be newer than it.
+ *
+ * @param stamp - the sign-out instant, a Date or an ISO string
+ * @returns the boundary, or null
+ */
 function signOutBoundary(stamp) {
   const at = asDate(stamp);
   if (!at) {
@@ -2119,6 +2246,16 @@ function horizonAfter(atMs) {
   return new Date(atMs + (longest + skew) * 1000);
 }
 
+/**
+ * Stamps a principal as signed out on the KDC's clock, so a TGS-REQ presenting
+ * a ticket authenticated before it is refused KDC_ERR_TGT_REVOKED until no such
+ * ticket can still be valid. Written through the store; creates nothing.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @param at - the instant, now by default
+ * @returns the principal, or null when there is none
+ */
 function signOut(nameComponents, realm, at) {
   log.debug("Entering signOut(). principal=" +
             (nameComponents || []).join('/'));
@@ -2165,6 +2302,15 @@ function signOut(nameComponents, realm, at) {
 // node's copy would put the stamp straight back. It writes `signOutClearedAt`
 // instead — an instant that beats every stamp not later than itself, and loses
 // to the next sign-out.
+/**
+ * Clears a principal's sign-out, the console's development-only undo, by
+ * writing a later cleared-at instant rather than removing the stamp.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns the sign-out instant that was cleared, or null when none was in
+ *   force
+ */
 function clearSignOut(nameComponents, realm) {
   log.debug("Entering clearSignOut(). principal=" +
             (nameComponents || []).join('/'));
@@ -2243,6 +2389,14 @@ function laterOf(a, b) {
 }
 
 // `target`'s three sign-out fields become the later of its own and `other`'s.
+/**
+ * Makes each of a record's three sign-out fields the later of its own and
+ * another record's.
+ *
+ * @param target - the record changed in place
+ * @param other - the other record
+ * @returns the target
+ */
 function mergeSignOut(target, other) {
   log.debug("Entering mergeSignOut().");
   RUNTIME_FIELDS.forEach(function (field) {
@@ -2273,6 +2427,14 @@ function effectiveSignOut(principal) {
   return at;
 }
 
+/**
+ * Returns the sign-out instant in force for a principal: none when it was
+ * cleared or its horizon has passed.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns the instant, or null
+ */
 function signedOutAt(nameComponents, realm) {
   log.debug("Entering signedOutAt().");
   const principal = find(nameComponents, realm);
@@ -2281,6 +2443,13 @@ function signedOutAt(nameComponents, realm) {
 }
 
 // Until when the stamp in force matters, or null when none is in force.
+/**
+ * Returns until when the sign-out in force for a principal matters.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns the horizon, or null when no sign-out is in force
+ */
 function signOutHorizon(nameComponents, realm) {
   log.debug("Entering signOutHorizon().");
   const principal = find(nameComponents, realm);
@@ -2292,6 +2461,12 @@ function signOutHorizon(nameComponents, realm) {
 // Every principal currently carrying one, for the console and for /logout's
 // inventory. Read off the database rather than kept in a second list beside it,
 // which is the one-store rule this service applies everywhere else.
+/**
+ * Returns every principal with a sign-out in force, for the console and
+ * `/logout`'s inventory.
+ *
+ * @returns the rows: `name`, `realm`, `principal`, `signedOutAt` and `horizon`
+ */
 function signedOutPrincipals() {
   log.debug("Entering signedOutPrincipals().");
   // Built first, for `all()`'s reason: this reads the realm's partition.
@@ -2487,6 +2662,14 @@ function withKeyCache(principal) {
 // ---------------------------------------------------------------------------
 let keySource = null;
 
+/**
+ * Installs the key source: the directory-backed provider of person and service
+ * keys (and optionally the krbtgt key, second-factor answers and FAST).
+ * Validated whole; one missing `personKeys` or `serviceKeys` refuses it.
+ *
+ * @param source - the key source
+ * @returns whether it was installed
+ */
 function setKeySource(source) {
   log.debug('Entering setKeySource().');
   const needed = ['personKeys', 'serviceKeys'];
@@ -2528,6 +2711,14 @@ function personShaped(nameComponents, realm) {
 // `krb5_person_keys.ts`, which reads `pwdAccountLockedTime` off the entry.
 // A source without the function (an older one, or none) disables nobody.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether a person's account is disabled, asked before an AS-REQ or an
+ * S4U2Self is answered, in both modes.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns whether it is disabled; false without a key source
+ */
 function personDisabled(nameComponents, realm) {
   log.debug('Entering personDisabled().');
   const ctx = current();
@@ -2561,6 +2752,14 @@ function personDisabled(nameComponents, realm) {
 const NO_SECOND_FACTOR = Object.freeze({ person: false, totp: false,
   key: false, holds: false, required: false, byUser: false, needed: false });
 
+/**
+ * Says whether a person holds, or owes, a second factor, asked after a password
+ * alone verified; a source that throws is answered as needed.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns `{ person, totp, key, holds, required, byUser, needed }`
+ */
 function personSecondFactor(nameComponents, realm) {
   log.debug('Entering personSecondFactor().');
   const ctx = current();
@@ -2594,6 +2793,11 @@ function personSecondFactor(nameComponents, realm) {
 // key source, or null — which is what a process without the directory has,
 // and a KDC without it neither advertises nor accepts FAST, exactly as
 // before.
+/**
+ * Returns the FAST provider handed over inside the key source.
+ *
+ * @returns the `krb5_fast.ts` instance, or null
+ */
 function preauthProvider() {
   log.debug('Entering preauthProvider().');
   log.debug('Leaving preauthProvider().');
@@ -2747,6 +2951,15 @@ function attachRetained(principal, answer) {
 // version that expires between the two reads is not used. A principal built
 // from a password in the configuration has no previous versions: its key does
 // not change when its number does.
+/**
+ * Returns the key of a stored-key principal at a previous key version, read
+ * afresh from the source and checked against the clock.
+ *
+ * @param principal - the principal
+ * @param etype - the enctype
+ * @param kvno - the previous key version
+ * @returns `{ key, kvno, expiresAt }`, or null
+ */
 function retainedKeyFor(principal, etype, kvno) {
   log.debug("Entering retainedKeyFor().");
   if (!principal || !principal.directoryKeys || kvno === null ||
@@ -2776,6 +2989,12 @@ function retainedKeyFor(principal, etype, kvno) {
 
 // Which previous versions a stored-key principal still keeps, as numbers — for
 // the sentence a refusal carries.
+/**
+ * Returns the previous key versions a stored-key principal still keeps.
+ *
+ * @param principal - the principal
+ * @returns the version numbers
+ */
 function retainedKvnosOf(principal) {
   log.debug("Entering retainedKvnosOf().");
   log.debug("Leaving retainedKvnosOf().");
@@ -2787,6 +3006,15 @@ function retainedKvnosOf(principal) {
 // The whole lookup an AS exchange makes, with the REASON beside a refusal.
 // `findOrCreateUser()` is this with the reason thrown away, for S4U2Self in
 // krb5_kdc.js and the in-process tests.
+/**
+ * Looks up the client of an AS exchange: a directory person in product mode,
+ * the database (created on demand in development) otherwise, with the reason
+ * for a refusal.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns `{ principal, refusal }`; `refusal` is `{ errorCode, eText }`
+ */
 function lookupUser(nameComponents, realm) {
   log.debug('Entering lookupUser().');
   if (personShaped(nameComponents, realm)) {
@@ -2895,6 +3123,14 @@ function storedService(nameComponents, realm) {
 // works unchanged. A caller that means "in the realm this ticket came from"
 // has to say so — and in handleTgsReq that is the difference between opening a
 // cross-realm ticket-granting ticket and failing to.
+/**
+ * Finds a principal: a stored service key first, then the database. Creates
+ * nothing.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns the principal, or null
+ */
 function find(nameComponents, realm) {
   log.debug("Entering find().");
   const ctx = current();
@@ -2980,6 +3216,14 @@ function find(nameComponents, realm) {
 // where a store rarely outlives its test run; each entry is a name, a salt and
 // lazily-derived keys.
 // ---------------------------------------------------------------------------
+/**
+ * Finds a user principal, creating a single-component one on demand where the
+ * mode allows; `lookupUser()` without the reason.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns the principal, or null
+ */
 function findOrCreateUser(nameComponents, realm) {
   log.debug("Entering findOrCreateUser().");
   log.debug("Leaving findOrCreateUser().");
@@ -3071,6 +3315,14 @@ function findOrCreateUserInDatabase(nameComponents, realm) {
 // and every caller treats null as KDC_ERR_S_PRINCIPAL_UNKNOWN exactly as
 // before.
 // ---------------------------------------------------------------------------
+/**
+ * Finds a service principal, or creates the service account for a host this KDC
+ * will be a service for.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @returns the principal, or null (KDC_ERR_S_PRINCIPAL_UNKNOWN)
+ */
 function findOrCreateService(nameComponents, realm) {
   log.debug('Entering findOrCreateService().');
   const ctx = current();
@@ -3157,6 +3409,17 @@ function findOrCreateService(nameComponents, realm) {
 // its keys come from the key source and a miss is asked of the source again
 // and then REFUSED. Deriving would mean a password, and the only password this
 // file could reach for is the shared development one — see register().
+/**
+ * Returns a principal's long-term key for an enctype, derived from its password
+ * on demand and cached; a directory-keyed principal's comes from the key source
+ * and is never derived.
+ *
+ * @param principal - the principal
+ * @param etype - the enctype
+ * @returns a promise of the key
+ * @throws Error for an enctype the mode withholds, or a directory-keyed
+ *   principal with no stored key of that type
+ */
 async function longTermKey(principal, etype) {
   log.debug("Entering longTermKey().");
   // BEFORE THE CACHE (#182): a key derived while the realm was in development
@@ -3217,6 +3480,13 @@ async function longTermKey(principal, etype) {
 // table lookup and a predicate, so it logs no Entering/Leaving pair — one per
 // enctype per request would drown the log.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether an enctype may be used at all in the ambient realm's mode;
+ * product withholds RC4.
+ *
+ * @param etype - the enctype
+ * @returns whether it may
+ */
 function etypePermitted(etype) {
   return mode.allowsValue('krb5.enctypes', [String(etype)]);
 }
@@ -3234,6 +3504,13 @@ function offeredEtypes(ctx) {
 // What this principal can offer, in the KDC's preference order rather than the
 // order the definition happened to list — and never an etype the mode
 // withholds (#182), whatever the principal was built with.
+/**
+ * Returns the enctypes a principal can offer, in the KDC's preference order,
+ * never one the mode withholds.
+ *
+ * @param principal - the principal
+ * @returns the enctypes
+ */
 function supportedEtypes(principal) {
   log.debug("Entering supportedEtypes().");
   log.debug("Leaving supportedEtypes().");
@@ -3246,6 +3523,13 @@ function supportedEtypes(principal) {
 // ALL it named — the one case the KDC refuses with its own code
 // (STS-KRB-0156) rather than as an ordinary mismatch, because the fix is on
 // the client and the sentence has to say so. Empty otherwise.
+/**
+ * Returns the enctypes a request named that the mode withholds, when those are
+ * all it named.
+ *
+ * @param requested - the request's enctypes
+ * @returns the withheld enctypes, or an empty list
+ */
 function onlyWithheldEtypes(requested) {
   log.debug("Entering onlyWithheldEtypes().");
   const list = Array.isArray(requested) ? requested : [];
@@ -3259,6 +3543,13 @@ function onlyWithheldEtypes(requested) {
 // Negotiate: the FIRST etype the client asked for that this principal supports.
 // The client's order is its preference and a KDC honours it — which is why the
 // debugger's etype list is ordered and why that order is worth displaying.
+/**
+ * Chooses the first enctype the client asked for that the principal supports.
+ *
+ * @param principal - the principal
+ * @param requested - the client's enctypes, in its order of preference
+ * @returns the enctype, or null
+ */
 function chooseEtype(principal, requested) {
   log.debug("Entering chooseEtype().");
   const supported = supportedEtypes(principal);
@@ -3299,6 +3590,11 @@ function chooseEtype(principal, requested) {
 // s2kparams and therefore already uses the profile default, so what changes is
 // only what the KDC advertises.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether PA-ETYPE-INFO2 carries s2kparams (`krb5.s2kparams`).
+ *
+ * @returns `send` or `omit`
+ */
 function s2kparamsMode() {
   log.debug("Entering s2kparamsMode().");
   log.debug("Leaving s2kparamsMode().");
@@ -3322,6 +3618,15 @@ function s2kparamsMode() {
 // right password. Samba's kdc_tests.test_arc4_hmac_md5 found it. So the first
 // entry here is always what chooseEtype() picked. Without `requested` (a
 // caller with no request in hand) it is every supported etype, as before.
+/**
+ * Returns the ETYPE-INFO2 entries for a principal, each with its salt and
+ * s2kparams; with `requested`, only the enctypes the request asked for, in its
+ * order.
+ *
+ * @param principal - the principal
+ * @param requested - the AS-REQ's enctypes, if in hand
+ * @returns the entries: `etype`, `salt` and `s2kparams`
+ */
 function etypeInfo2For(principal, requested) {
   log.debug("Entering etypeInfo2For().");
   const supported = supportedEtypes(principal);
@@ -3392,6 +3697,13 @@ function etypeInfo2For(principal, requested) {
 // account is one principal carrying a flag that changes what delegation can do
 // to it or with it, whether or not any pair names it.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the realm's delegation configuration: every front-end and target pair
+ * and every account whose flags change what delegation can do, with the
+ * warnings a correctly configured pair can still fail on.
+ *
+ * @returns `{ pairs, accounts }`
+ */
 function delegationPolicy() {
   log.debug('Entering delegationPolicy().');
   const pairs = [];
@@ -3552,11 +3864,24 @@ function delegationPolicy() {
   return { pairs: pairs, accounts: accounts };
 }
 
+/**
+ * The Kerberos principal database: one per trust realm, its accounts, salts,
+ * keys and key versions, enctype negotiation, sign-out instants and the key
+ * source the directory fills.
+ *
+ * @namespace
+ */
 module.exports = {
   parseEtypes: parseEtypes,
   // The acceptor's account in the AMBIENT realm: its SPN, whether it exists,
   // and if not, why. A copy, so a caller cannot change what the next caller is
   // told.
+  /**
+   * Returns the acceptor's account in the ambient realm: its SPN, whether it is
+   * available, whether a stored key keys it, and why not.
+   *
+   * @returns `{ spn, available, storedKey, reason }`
+   */
   serviceAccount: function () {
     log.debug("Entering serviceAccount().");
     const ctx = current();
@@ -3575,6 +3900,11 @@ module.exports = {
   // The SPN the acceptor holds in the AMBIENT realm, as components — what
   // `krb5_service.js` read once from `krb5.servicePrincipal` until that became
   // a setting a trust realm carries (2026-09-15).
+  /**
+   * Returns the SPN the acceptor holds in the ambient realm, as components.
+   *
+   * @returns the components
+   */
   servicePrincipal: function () {
     log.debug("Entering servicePrincipal().");
     const ctx = current();
@@ -3591,6 +3921,13 @@ module.exports = {
   nameOf: nameOf,
   trustRealmFor: trustRealmFor,
   servedIn: servedIn,
+  /**
+   * Describes a trust realm's Kerberos: its Kerberos realm, whether it is
+   * enabled and active, and the realms it serves.
+   *
+   * @param realmId - the trust realm id; the ambient realm when undefined
+   * @returns `{ trustRealm, kerberosRealm, enabled, active, reason, served }`
+   */
   kerberosRealmOf: function (realmId) {
     log.debug("Entering kerberosRealmOf().");
     const ctx = contextOf(realmId === undefined ? realms.currentId() :
@@ -3604,6 +3941,11 @@ module.exports = {
   // The key source (see KEY SOURCE). `lookupUser()` is the AS exchange's
   // lookup, with the reason for a refusal beside a null principal.
   setKeySource: setKeySource,
+  /**
+   * Says whether a key source is installed.
+   *
+   * @returns whether it is
+   */
   keySourceInstalled: function () {
     log.debug("Entering keySourceInstalled().");
     log.debug("Leaving keySourceInstalled().");
@@ -3620,6 +3962,12 @@ module.exports = {
   // etypes are unusable (the context's reason), or — product, #169 — no
   // random krbtgt key is stored for it yet, or the one stored cannot be
   // opened.
+  /**
+   * Says why the ambient realm has no usable krbtgt: its Kerberos is off, its
+   * enctypes are unusable, or in product no stored random key.
+   *
+   * @returns the reason, or the empty string
+   */
   krbtgtUnavailableReason: function () {
     log.debug("Entering krbtgtUnavailableReason().");
     const ctx = current();
@@ -3646,6 +3994,11 @@ module.exports = {
   findOrCreateUser: findOrCreateUser,
   findOrCreateService: findOrCreateService,
   reservedUnknown: reservedUnknown,
+  /**
+   * Returns every principal in the ambient realm's database.
+   *
+   * @returns the principals
+   */
   all: function () {
     log.debug("Entering all().");
     // `current()` FIRST, so the realm's database is built before its partition
@@ -3666,6 +4019,13 @@ module.exports = {
   AUTO_RID_LIMIT: AUTO_RID_LIMIT,
   // Whether a principal was built from this process's settings and code, which
   // decides what a restored row may change on it — see reconcileRestored().
+  /**
+   * Says whether a principal was built from this process's settings and code.
+   *
+   * @param nameComponents - the principal's name components
+   * @param realm - the Kerberos realm; the ambient KDC's own by default
+   * @returns whether it was
+   */
   isConfigured: function (nameComponents, realm) {
     log.debug("Entering isConfigured().");
     log.debug("Leaving isConfigured().");

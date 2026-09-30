@@ -26,7 +26,15 @@ since the cluster's tables arrived with schema version 5 (#46), and
 twenty-eight since the thirteen `sts_risk_*` tables of risk scoring arrived with
 version 7 (#62, 2026-09-22), and twenty-nine since `sts_risk_terms_acceptances`
 arrived with version 8 (2026-09-23) — version 10 (#262) added a column,
-`sts_realms.retiring_at`, and no table; `sts_app` holds
+`sts_realms.retiring_at`, and no table, and thirty since
+`sts_node_snapshots` arrived with version 11 (#332, 2026-09-28) — which
+develop's version 11 also numbers `sts_cell_routing` (#98); the two were
+merged on 2026-09-29 and both tables are created by name — and version
+12 (#333) added a column, `sts_minted.expires_at`, with the partial index
+`sts_minted_expires`, and no table, and version 13 (#349, after #333's
+12) six GENERATED lookup columns on `sts_ldap_entries` and seven indexes over
+them, for a request worker that holds the people and devices as a window
+(`persistence/directory_queries.js`); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.
@@ -40,6 +48,17 @@ table, and it writes schema version 4 beside the 3 already there. That was
 checked against a real version-3 database rather than reasoned about.
 `persistence/CLAUDE.md` and `common/used_assertions.js` argue why the history
 is a table of its own rather than a handle in `sts_minted`.
+
+**A COLUMN IS THE SAME UPGRADE, AND ITS INDEX WAITS FOR IT (#333).** A
+version-11 database has no `sts_minted.expires_at`; `sts_app` cannot `ALTER`
+a table it does not own, so the service refuses with `STS-STORE-0029` until the
+owner runs `schema.sql` again, whose `ALTER … ADD COLUMN IF NOT EXISTS` adds it
+(existing rows get NULL — no expiry — and fall under the write-age rule once;
+there is no other migration). The script creates `sts_minted_expires` after
+that `ALTER`, and the driver's own `open()` does the same: an object marked
+`afterColumns` in `SCHEMA_OBJECTS` is created after `SCHEMA_COLUMNS`, because
+an index on a column an older table does not have yet cannot be built before
+it.
 
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that

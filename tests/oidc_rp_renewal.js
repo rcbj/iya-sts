@@ -428,7 +428,11 @@ function checkRegistration(t) {
                                            'portal.ts'), 'utf8');
   const renewPortal = portal.indexOf("app.use(BASE, oidcRp.renewal('portal'))");
   const firstPortal = firstIndex(portal,
-                                 [/^\s*app\.(get|post|all|use)\((?!BASE, oidcRp\.renewal)/m]);
+                                 [/^\s*app\.(get|post|all|use)\((?!BASE, oidcRp\.renewal)(?!BASE, function \(req, res, next\) \{\n\s*log\.debug\("Entering the portal's cell placement)/m]);
+  // The one registration allowed above the renewal is the cell placement
+  // (#98): it reads no session of this cell's, it relays a request whose
+  // person lives in another cell, and a renewal run here first would renew a
+  // projection the home cell is the authority for.
   t.check(renewPortal >= 0, 'the portal registers oidcRp.renewal(\'portal\')');
   t.check(renewPortal >= 0 && firstPortal > renewPortal,
           'ABOVE the first /portal route (rule 1)',

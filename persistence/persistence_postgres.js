@@ -122,6 +122,9 @@ const nodeCrypto = require('crypto');
 // A LEAF with no requires: the three-way merge a directory upsert is written
 // through when another node has changed the row (#46 section 3).
 const directoryMerge = require('./directory_merge');
+// The directory's lookups as SQL (#349): one builder for this driver and the
+// bridge's thread. A leaf.
+const directoryQueries = require('./directory_queries');
 // The table of what active-active mode depends on (#46). A LEAF but for bunyan
 // and config, and it reads no setting at require time. The two rows this
 // driver provides are provided at the foot of this file.
@@ -138,23 +141,50 @@ const capabilities = require('../cluster/cluster_capabilities');
 // therefore holds the same size.
 //
 // **WHAT IT COSTS THE SERVER**: each process opens up to this many, plus its
-// LISTEN connection, so a node holds up to (1 + workers) * (poolMax() + 1).
+// LISTEN connection and its LIVENESS connection (#351, `liveQuery()` below),
+// so a node holds up to (1 + workers) * (poolMax() + 2).
 // The local cluster mode — two nodes of one front process and four workers
 // — is 2 * 5 * 9 = 90, which is why the test stacks' postgres runs with
 // max_connections=200. A deployment sizes the server's max_connections for
 // its own node and worker counts. Idle connections are closed after 30 s,
 // so this is the ceiling under load, not the steady state.
+//
+// **FOUR IS STILL THE FLOOR AFTER #351, AND WHY WRITERS DO NOT GET MORE.**
+// What starved on testidp was the origin renewal, which shared these four with
+// the writes; it has a connection of its own now, with the heartbeat and the
+// leases, so a full pool delays a write and can no longer end the process.
+// The writes themselves do not scale with connections: a process flushes its
+// directory one transaction at a time and its minted rows one at a time
+// (`persistence.js`, `persistence_minted.js`), so a writer holds at most two
+// connections however many requests are waiting, and the rest are the
+// change-log pull, claims and reads. A bigger pool per process would multiply
+// the server's connections by every process on every node — the cost above —
+// to buy concurrency the flush does not use. A write that still cannot get a
+// connection within the pool's wait now answers its request 503 rather than
+// being acknowledged and lost (`cluster/cluster_barrier.js`, rule 2).
 const POOL_FLOOR = 4;
 
 // A PURE FUNCTION of the node's request-worker count, so the scheduler's cap
 // (cluster/scheduler.ts, maxConcurrentRuns()) and the pool agree. No log
 // line: this module's logger arrives with create().
+/**
+ * Returns how many connections each process's pool holds.
+ *
+ * Twice the node's request-worker count, and never fewer than four, so the
+ * scheduler's cap and the pool agree.
+ * @param workers - the node's request workers (`workers.requestCount` plus
+ * `workers.surfaceCount`)
+ * @returns the pool size
+ */
 function poolMax(workers) {
   const n = Math.max(0, Number(workers) || 0);
   return Math.max(POOL_FLOOR, 2 * n);
 }
 
 // A CHANNEL NAME AND A SCHEMA VERSION, both spelt once here.
+/**
+ * The LISTEN/NOTIFY channel a committed change is announced on.
+ */
 const CHANNEL = 'sts_ldap_change';
 // How many change-log rows go in one INSERT. Four bind parameters a row, and
 // the protocol's limit is 65,535, so 5,000 leaves room and still makes a large
@@ -175,8 +205,20 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // which dataset provider's terms (the second licence review on #62). 10 SINCE
 // 2026-09-26, for `sts_realms.retiring_at` (#262): the mark
 // `realms.retire()` sets before it ends anything, which every process reads
-// to refuse new sign-ins in a realm being removed.
-const SCHEMA_VERSION = 10;
+// to refuse new sign-ins in a realm being removed. 11 SINCE 2026-09-28, for
+// `sts_node_snapshots` (#332): each cluster node's latest snapshot of
+// Monitoring → Worker Pools and → Node Health, one row per node NAME. 12
+// SINCE 2026-09-28, for `sts_minted.expires_at` and its partial index (#333):
+// a minted row's own expiry, so a start reads only live rows.
+// `sts_cell_routing` (#98): where each person is homed, in the global tier.
+// 13 SINCE 2026-09-29, for the six generated lookup columns of
+// `sts_ldap_entries` and their indexes (#349): what a request worker holding
+// the directory as a window asks the store instead of an index in memory.
+// 12 IS #333's (`sts_minted.expires_at`), and this merged after it.
+/**
+ * The version of the schema this driver creates, recorded in `sts_schema`.
+ */
+const SCHEMA_VERSION = 13;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -212,6 +254,41 @@ const TOMBSTONE = '$tombstone$1';
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
 // node that went away. A join purges older ones.
 const DEAD_NODE_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// THE DIRECTORY'S GENERATED LOOKUP COLUMNS (#349, schema version 13), each a
+// column definition spelt ONCE, for the CREATE TABLE and the ADD COLUMN that
+// brings an older table level. Every expression is IMMUTABLE — the database
+// refuses a generated column otherwise — and mirrors a rule of
+// `ldap/ldap_server.js`, which `persistence/directory_queries.js`'s header
+// states one by one:
+//
+//   * `parent_key`: `parentDn()` of the key, everything after the first comma
+//     (`normalizeDn()` splits on every comma, so this does too);
+//   * `rdn_value`: the first RDN's value — lower-cased, because the key is;
+//   * `name_keys`, `mail_keys`: the `uid` and `mail` values lower-cased, as a
+//     JSON array: `lower()` over the array's own JSON text, then read back as
+//     JSON, since a set-returning function is not allowed here;
+//   * `uuid_keys`: `entryUUID` and `stsEntryUuidAlias` the same way;
+//   * `class_keys`: the `objectClass` values the same way — how a GROUP
+//     placed under `ou=users` or `ou=devices` is found without a walk.
+// ---------------------------------------------------------------------------
+const LDAP_GENERATED = {
+  parent_key: 'parent_key text GENERATED ALWAYS AS (CASE WHEN ' +
+    'strpos(dn_key, \',\') > 0 THEN substr(dn_key, strpos(dn_key, \',\') ' +
+    '+ 1) ELSE \'\' END) STORED',
+  rdn_value: 'rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ' +
+    '\',\', 1), strpos(split_part(dn_key, \',\', 1), \'=\') + 1)) STORED',
+  name_keys: 'name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
+    'attrs->\'uid\', \'[]\'::jsonb)::text)::jsonb) STORED',
+  mail_keys: 'mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
+    'attrs->\'mail\', \'[]\'::jsonb)::text)::jsonb) STORED',
+  uuid_keys: 'uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(' +
+    'attrs->\'entryuuid\', \'[]\'::jsonb) || COALESCE(' +
+    'attrs->\'stsentryuuidalias\', \'[]\'::jsonb))::text)::jsonb) STORED',
+  class_keys: 'class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
+    'attrs->\'objectclass\', \'[]\'::jsonb)::text)::jsonb) STORED'
+};
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
 // than a migration table, and that is a decision rather than laziness: this is
@@ -252,6 +329,13 @@ const DEAD_NODE_RETENTION_MS = 24 * 60 * 60 * 1000;
 // `postgres/schema.sql` holds the same statements for the owner to run, and
 // `tests/postgres_schema.js` fails if the two lists disagree.
 // ---------------------------------------------------------------------------
+/**
+ * Every table and index of the schema, each `{ name, statement }`.
+ *
+ * Each is probed by name before its CREATE is issued, so a role that may not
+ * change the schema is not refused on every start; `postgres/schema.sql`
+ * holds the same statements for an owner to run.
+ */
 const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries', statement:
   'CREATE TABLE IF NOT EXISTS sts_ldap_entries (' +
@@ -262,12 +346,56 @@ const SCHEMA_OBJECTS = [
   '  origin      text,' +
   '  created_at  text,' +
   '  modified_at text,' +
+  '  ' + LDAP_GENERATED.parent_key + ',' +
+  '  ' + LDAP_GENERATED.rdn_value + ',' +
+  '  ' + LDAP_GENERATED.name_keys + ',' +
+  '  ' + LDAP_GENERATED.mail_keys + ',' +
+  '  ' + LDAP_GENERATED.uuid_keys + ',' +
+  '  ' + LDAP_GENERATED.class_keys + ',' +
   '  PRIMARY KEY (realm, dn_key))' },
   // The one index worth having beyond the primary key: every enumerator in
   // this service walks one realm.
   { name: 'sts_ldap_entries_realm', statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries ' +
   '(realm)' },
+  // -------------------------------------------------------------------------
+  // THE DIRECTORY'S LOOKUP INDEXES (#349, schema version 13): what a request
+  // worker holding the people and devices as a bounded window asks instead
+  // of an index in memory — `persistence/directory_queries.js` builds every
+  // statement that reads them. Each is over a GENERATED column (above), so no
+  // writer maintains it and a row that existed before the column gets it when
+  // the column is added. `afterColumns`: on an older table the columns come
+  // from SCHEMA_COLUMNS, so these can only be built after that step.
+  //   * the children of a container, in key order (listings, paging, the
+  //     `ou=users` a login name is looked for under) and the RDN value there;
+  //   * the lower-cased `uid`, `mail` and entryUUID values, GIN over a JSON
+  //     array (`@>`), and every attribute value as written, GIN over `attrs`
+  //     (a DID, a SPIFFE ID, a federation link).
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_entries_parent', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries ' +
+  '(realm, parent_key, dn_key)' },
+  { name: 'sts_ldap_entries_rdn', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries ' +
+  '(realm, parent_key, rdn_value)' },
+  { name: 'sts_ldap_entries_names', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
+  'USING gin (name_keys jsonb_path_ops)' },
+  { name: 'sts_ldap_entries_mails', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries ' +
+  'USING gin (mail_keys jsonb_path_ops)' },
+  { name: 'sts_ldap_entries_uuids', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries ' +
+  'USING gin (uuid_keys jsonb_path_ops)' },
+  { name: 'sts_ldap_entries_attrs', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attrs ON sts_ldap_entries ' +
+  'USING gin (attrs jsonb_path_ops)' },
+  // The object classes, GIN with the DEFAULT operator class: `?|` (any of
+  // the group classes) is what it is asked, and `jsonb_path_ops` answers
+  // only containment.
+  { name: 'sts_ldap_entries_classes', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries ' +
+  'USING gin (class_keys)' },
   { name: 'sts_realms', statement:
   'CREATE TABLE IF NOT EXISTS sts_realms (' +
   '  id          text PRIMARY KEY,' +
@@ -334,12 +462,25 @@ const SCHEMA_OBJECTS = [
   '  key        text        NOT NULL,' +
   '  body       text        NOT NULL,' +
   '  written_at timestamptz NOT NULL DEFAULT now(),' +
+  '  expires_at bigint,' +
   '  PRIMARY KEY (handle, realm, key))' },
   { name: 'sts_minted_handle', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, ' +
   'realm)' },
   { name: 'sts_minted_written', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at)' },
+  // `expires_at` (#333, schema version 12) IS THE RECORD'S OWN EXPIRY, in
+  // epoch milliseconds, as its store's `expiresAt` hook answered it — NULL
+  // for a record that does not expire, and for a tombstone. A restore reads
+  // no row whose instant has passed, and the `persistence.minted-expiry-purge`
+  // job deletes them in batches through this index. PARTIAL, because the
+  // rows with no expiry are the ones the purge never looks for by it, and an
+  // index is paid for by every INSERT into the busiest table here.
+  // `afterColumns`: an older table gets the column from SCHEMA_COLUMNS, so
+  // the index can only be built after that.
+  { name: 'sts_minted_expires', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted ' +
+  '(expires_at) WHERE expires_at IS NOT NULL' },
   // -------------------------------------------------------------------------
   // THE CHANGE LOG (2026-09-06), which is what makes several processes against
   // one store agree rather than merely coexist.
@@ -523,6 +664,25 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_cluster_windows_expiry', statement:
   'CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON ' +
   'sts_cluster_windows (window_ends_at)' },
+  // `sts_node_snapshots` — WHAT EACH NODE LAST SAID ABOUT ITSELF (#332,
+  // schema version 11, 2026-09-28): the node's own Monitoring → Worker Pools
+  // and → Node Health views, written by its front process's per-process
+  // scheduler job `cluster.node-snapshot` every fifteen seconds and read by
+  // whichever node draws those pages, so every node is on the page with no
+  // request crossing between nodes (rcbj: no node's address is published).
+  // ONE ROW PER NODE NAME, OVERWRITTEN — keyed by `cluster.nodeName`, which
+  // survives a restart where the membership row's UUID does not — so the
+  // table is as long as the list of names the cluster has ever had and never
+  // grows with time. NOT `sts_cluster_nodes.info`: that rides the heartbeat a
+  // node's life depends on and is read with every retained row on each beat,
+  // and a snapshot is kilobytes. `taken_at` is the database's clock.
+  // `cluster/node_snapshots.ts` argues it.
+  { name: 'sts_node_snapshots', statement:
+  'CREATE TABLE IF NOT EXISTS sts_node_snapshots (' +
+  '  name     text   PRIMARY KEY,' +
+  '  node_id  text   NOT NULL DEFAULT \'\',' +
+  '  taken_at bigint NOT NULL,' +
+  '  body     jsonb  NOT NULL DEFAULT \'{}\'::jsonb)' },
   // `sts_change_readers` — WHERE EVERY PROCESS READING `sts_changes` HAS GOT
   // TO (2026-09-14, #46 section 8). One row per process that coordinates —
   // a front process, and each of its request workers, which are origins of
@@ -815,6 +975,28 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_risk_terms_acceptances_provider', statement:
   'CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON ' +
   'sts_risk_terms_acceptances (provider, accepted_at)' },
+  // -------------------------------------------------------------------------
+  // WHERE EACH PERSON IS HOMED (#98, 2026-09-28, schema version 11). The
+  // routing index of a service deployed as cells: in the GLOBAL tier, so
+  // every cell can ask it, and holding NO name and NO identifier in the
+  // clear — `digest` is a keyed digest (`keystore.keyedDigest()`, under the
+  // service key every cell holds) of a login name (`kind` 'name') or of an
+  // entryUUID (`kind` 'uuid'). The row says which cell holds the person and
+  // nothing else about them. It is also what keeps a login name unique in a
+  // realm across cells: the PRIMARY KEY is the claim.
+  //
+  // Present in every database this driver opens, and empty in single-cell
+  // mode and in a cell's own database; one schema everywhere is cheaper than
+  // two schemas and a rule about which is where.
+  // -------------------------------------------------------------------------
+  { name: 'sts_cell_routing', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cell_routing (' +
+  '  realm      text   NOT NULL,' +
+  '  kind       text   NOT NULL,' +
+  '  digest     text   NOT NULL,' +
+  '  cell       text   NOT NULL,' +
+  '  written_at bigint NOT NULL,' +
+  '  PRIMARY KEY (realm, kind, digest))' },
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -832,6 +1014,11 @@ const SCHEMA_OBJECTS = [
 // table, and added where it is missing. The least-privileged role cannot
 // ALTER, and is refused with STS-STORE-0029's sentence naming
 // `postgres/schema.sql`, which carries the same `ADD COLUMN IF NOT EXISTS`.
+/**
+ * The columns added to tables that may already exist, each `{ table, column,
+ * statement }`, probed in `information_schema.columns` and added where
+ * missing.
+ */
 const SCHEMA_COLUMNS = [
   { table: 'sts_realms', column: 'domain', statement:
   'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text' },
@@ -844,13 +1031,42 @@ const SCHEMA_COLUMNS = [
   'NOT NULL DEFAULT \'\'' },
   { table: 'sts_risk_assessments', column: 'feedback_at', statement:
   'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback_at ' +
-  'bigint NOT NULL DEFAULT 0' }
+  'bigint NOT NULL DEFAULT 0' },
+  // A minted row's own expiry (#333, schema version 12). An existing row gets
+  // NULL — no expiry — and so falls under the write-age rule once, which is
+  // the whole of the migration.
+  { table: 'sts_minted', column: 'expires_at', statement:
+  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint' },
+  // The directory's six generated lookup columns (#349, schema version 13).
+  // Adding a STORED generated column rewrites the table once and fills every
+  // existing row, which is the whole of the migration.
+  { table: 'sts_ldap_entries', column: 'parent_key', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.parent_key },
+  { table: 'sts_ldap_entries', column: 'rdn_value', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.rdn_value },
+  { table: 'sts_ldap_entries', column: 'name_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.name_keys },
+  { table: 'sts_ldap_entries', column: 'mail_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.mail_keys },
+  { table: 'sts_ldap_entries', column: 'uuid_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.uuid_keys },
+  { table: 'sts_ldap_entries', column: 'class_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.class_keys }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
 // above existed and what `tests/postgres_schema.js` compares against
 // `postgres/schema.sql`. Derived rather than written twice, so the two cannot
 // come apart.
+/**
+ * The schema's CREATE statements alone, derived from `SCHEMA_OBJECTS`.
+ */
 const SCHEMA =
     SCHEMA_OBJECTS.map(function (object) { return object.statement; });
 
@@ -908,6 +1124,13 @@ const SCHEMA =
 // the page can draw them differently from a probe that failed for a reason
 // somebody should look at.
 // ===========================================================================
+/**
+ * The catalog-view probes `/admin/database` draws, each `{ id, group, shape,
+ * what, sql }`.
+ *
+ * Every one is a SELECT against a catalog view, declared here and never
+ * composed from a request, and each is run and caught on its own.
+ */
 const METRIC_PROBES = [
   // -------------------------------------------------------------------------
   // WHAT THIS SERVER IS.
@@ -1172,6 +1395,82 @@ const METRIC_PROBES = [
 // The claim scope a stable origin is held under (`adoptOrigin()`).
 const ORIGIN_SCOPE = 'persistence.origin';
 
+// ---------------------------------------------------------------------------
+// A LAPSED ORIGIN CLAIM IS NOT PURGED WITH THE OTHERS (2026-09-29, #351).
+//
+// `purgeClaims()` deleted every expired claim, and an origin claim that had
+// lapsed — a renewal starved past its 30 s — went with it at the next purge.
+// The owner's renewal then matched no row, which `reassertOrigin()` can only
+// read as "another process took it", and the process EXITED on a claim nobody
+// held (STS-STORE-0061) — the one outcome the lapse-is-not-taken rule of
+// 2026-09-21 exists to prevent, reintroduced by a housekeeping job on another
+// node. A taker REPLACES the reservation in place, so a lapsed origin row is
+// the evidence that nobody took it; it is kept for ORIGIN_RETAIN_MS past its
+// expiry, one row per node name and slot, and only then swept. A process
+// whose claim has been lapsed for a day has been gone for a day.
+// ---------------------------------------------------------------------------
+const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// HOW A CONNECTION STRING BECOMES WHAT `pg` IS GIVEN — the one place, shared
+// by this driver's writer pool, its LISTEN client, its read pool and, since
+// #98's conversion tool (`persistence/cell_convert.js`), a process that is
+// not the service and dials the same databases. `create()` argues the two
+// decisions it holds: TLS is wanted when the string's `sslmode` asks for it,
+// and the parameter is then STRIPPED so that `pg`'s own reading of it cannot
+// disagree with the `ssl` option built here. A libpq keyword/value string,
+// which cannot be edited safely, is passed through untouched.
+//
+// A PURE FUNCTION with no log line, for `poolMax()`'s reason: this module's
+// logger arrives with create(). `notUrl` carries why a string that asked for
+// TLS could not be edited, so the caller can say so on its own logger.
+// ---------------------------------------------------------------------------
+/**
+ * Returns what `pg` is given to dial a connection string the way this driver
+ * does.
+ *
+ * @param url - the connection string
+ * @param verifyTls - whether the server's certificate is verified
+ * @returns `{ connectionString, ssl, wantsTls, notUrl }`; `notUrl` is '' or
+ * the reason the string could not be edited
+ */
+function dialOptions(url, verifyTls) {
+  const raw = String(url || '');
+  const wantsTls = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
+    .test(raw);
+  let connectionString = raw;
+  let notUrl = '';
+  if (wantsTls) {
+    try {
+      const parsed = new URL(raw);
+      parsed.searchParams.delete('sslmode');
+      connectionString = parsed.toString();
+    } catch (e) {
+      // Not a URL: see the header. Carried on the answer rather than
+      // logged, because there is no logger here.
+      notUrl = String((e && e.message) || e) || 'not a URL';
+      connectionString = raw;
+    }
+  }
+  return {
+    connectionString: connectionString,
+    ssl: wantsTls ? { rejectUnauthorized: !!verifyTls } : undefined,
+    wantsTls: wantsTls,
+    notUrl: notUrl
+  };
+}
+
+/**
+ * Creates the postgres persistence driver.
+ *
+ * A connection pool, a transaction per flush, the change log that several
+ * processes coordinate through, and the minted, key, cluster and risk tables.
+ * TLS is used when the connection string's `sslmode` asks for it.
+ * @param options - `url`, the connection string; `log`, the logger;
+ * `verifyTls`, whether the server certificate is verified; and `poolMax`, the
+ * pool size
+ * @returns the driver object, with the methods the persistence contract names
+ */
 function create(options) {
   const url = options.url;
   const log = options.log;
@@ -1327,8 +1626,10 @@ function create(options) {
   // make `sslmode=disable` mean its opposite — a connection string saying one
   // thing and the client doing another, which is the shape of bug this whole
   // change exists to remove.
-  const wantsTls = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
-    .test(url);
+  // `dialOptions()`, above create(), is the one reading of it (#98): this
+  // driver's pools and an out-of-process tool dial the same way.
+  const dial = dialOptions(url, options.verifyTls);
+  const wantsTls = dial.wantsTls;
   const verify = !!options.verifyTls;
   if (wantsTls) {
     log.info('persistence: the database connection is TLS (sslmode in the ' +
@@ -1360,24 +1661,16 @@ function create(options) {
   // string SAYS — it is read above to decide whether TLS is wanted at all, and
   // it is what an operator writes — but there is exactly one place that turns
   // it into a socket option, which is what stops the two disagreeing again.
-  const dialled = (function () {
-    if (!wantsTls) {
-      return url;
-    }
-    try {
-      const parsed = new URL(url);
-      parsed.searchParams.delete('sslmode');
-      return parsed.toString();
-    } catch (e) {
-      log.debug("Caught in a callback in create(): " + ((e && e.message) || e));
-      // A libpq keyword/value string rather than a URL. `pg` accepts those and
-      // this cannot edit one safely, so it is passed through untouched and
-      // whatever it says about ssl is what happens.
-      log.debug('persistence: the connection string is not a URL, so its ' +
-                'sslmode was left as it is.');
-      return url;
-    }
-  })();
+  // That place is `dialOptions()` since #98, so a process that is not the
+  // service dials the same way.
+  const dialled = dial.connectionString;
+  if (dial.notUrl) {
+    // A libpq keyword/value string rather than a URL. `pg` accepts those and
+    // this cannot edit one safely, so it is passed through untouched and
+    // whatever it says about ssl is what happens.
+    log.debug('persistence: the connection string is not a URL, so its ' +
+              'sslmode was left as it is.');
+  }
 
   // ONE PLACE THE CONNECTION IS DESCRIBED, because the pool and the change
   // listener have to dial the same database the same way — and a listener that
@@ -1408,6 +1701,66 @@ function create(options) {
     idleTimeoutMillis: 30000
   });
 
+  // -------------------------------------------------------------------------
+  // THE READ POOL (#98, 2026-09-28). The global tier of a service deployed as
+  // cells has ONE writer and a read replica in every cell; `options.readUrl`
+  // is this cell's replica, and every statement that only reads — the
+  // restore at start, every pull of the change log, the row a change points
+  // at — goes to it, so a cell far from the writer reads at local latency.
+  // Everything that writes, locks or claims stays on `pool`.
+  //
+  // **A READ AND THE CHANGE LOG ROW IT FOLLOWS COME FROM THE SAME REPLICA**,
+  // which is what keeps this correct: a replica replays the writer's commits
+  // whole and in order, so a change row visible there has its data row
+  // visible there too. Mixing the two — the log from the replica and the row
+  // from the writer, or the reverse — is the one arrangement that could read
+  // a pointer to something not yet there, and nothing here does it.
+  //
+  // Without `readUrl` it IS `pool`: every other store — a cell's own
+  // database, single-cell mode, ldif's neighbour — has one database and
+  // reads where it writes, exactly as before.
+  // -------------------------------------------------------------------------
+  const readUrl = String(options.readUrl || '').trim();
+  // The read pool's connection options when it is a pool of its own, for
+  // the bridge's thread (#349) — `readClientOptions()` below.
+  let readOptions = null;
+  const readPool = (function () {
+    if (!readUrl || readUrl === url) {
+      return pool;
+    }
+    const readDial = dialOptions(readUrl, verify);
+    readOptions = {
+      connectionString: readDial.connectionString,
+      ssl: readDial.ssl,
+      connectionTimeoutMillis: 5000
+    };
+    const made = new Pool({
+      connectionString: readDial.connectionString,
+      ssl: readDial.ssl,
+      max: Number(options.poolMax) > 0 ? Number(options.poolMax)
+        : POOL_FLOOR,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 30000
+    });
+    made.on('error', function (err) {
+      log.error(errorCodes.tag('STS-STORE-0030') +
+                'persistence: an idle postgres client of the read replica ' +
+                'errored: ' + err.message + '. The pool will make a new one ' +
+                'on the next read.');
+    });
+    log.info('persistence: reads of this store go to its read replica; ' +
+             'writes go to its writer.');
+    return made;
+  })();
+
+  // The options a client of the READ side dials with: the replica's when
+  // there is one, the writer's otherwise (#349's bridge thread).
+  function readClientOptions() {
+    log.debug("Entering readClientOptions().");
+    log.debug("Leaving readClientOptions().");
+    return readOptions ? Object.assign({}, readOptions) : clientOptions();
+  }
+
   pool.on('error', function (err) {
     // A pooled client that died while idle. Logged rather than thrown — an
     // unhandled 'error' on a Pool is a process exit, and a mock identity
@@ -1416,6 +1769,107 @@ function create(options) {
               'persistence: an idle postgres client errored: ' + err.message +
               '. The pool will make a new one on the next write.');
   });
+
+  // -------------------------------------------------------------------------
+  // THE LIVENESS CONNECTION (2026-09-29, #351).
+  //
+  // The origin-claim renewal went through `pool`, and on testidp a SCIM Bulk
+  // load held all four of a worker's connections for longer than the claim
+  // lives: the renewal could not get one, the claim lapsed, and the worker
+  // exited (STS-STORE-0061) with acknowledged writes still in memory. The
+  // lease that keeps a process writing must not queue behind the writes.
+  //
+  // So the statements that keep this process ALIVE in the store — the origin
+  // renewal and its re-assertion, the cluster heartbeat, a lease acquired,
+  // released or given up when leaving — go through a `Client` of their own,
+  // like the LISTEN connection (a pooled client cannot be reserved). pg
+  // queues a client's queries in order, which is what one heartbeat and one
+  // renewal every few seconds want. Opened on first use and again after it
+  // drops — no timer, the next statement reconnects. A statement that finds
+  // it cannot CONNECT goes through the pool instead, once, and says so
+  // (STS-STORE-0070): a server at `max_connections` refuses a new connection
+  // while a pooled one may be free, and a renewal that could run must.
+  //
+  // **A TRANSACTION'S OWN FENCE CHECKS STAY IN ITS TRANSACTION** —
+  // `checkOriginFence()`, `checkClusterFence()` and the lapse re-assertion
+  // they make run on the transaction's client under its locks, because the
+  // check is only worth anything held to that transaction's COMMIT.
+  // -------------------------------------------------------------------------
+  let liveClient = null;
+  let liveConnecting = null;
+  let liveClosed = false;
+  const liveStats = { queries: 0, connects: 0, drops: 0, viaPool: 0 };
+
+  function liveConnection() {
+    log.debug("Entering liveConnection().");
+    if (liveClient) {
+      log.debug("Leaving liveConnection(). Open.");
+      return Promise.resolve(liveClient);
+    }
+    if (liveConnecting) {
+      log.debug("Leaving liveConnection(). Connecting.");
+      return liveConnecting;
+    }
+    const client = new Client(clientOptions());
+    client.on('error', function (err) {
+      // A dropped connection: the next statement opens another. An 'error'
+      // with no listener on a Client is a process exit.
+      liveStats.drops += 1;
+      log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
+               'liveness connection dropped (' + err.message + '); the ' +
+               'next renewal or heartbeat opens another.');
+      if (liveClient === client) {
+        liveClient = null;
+      }
+      Promise.resolve(client.end()).catch(function (e) {
+        log.debug("Caught in a callback in liveConnection(): " +
+                  ((e && e.message) || e));
+      });
+    });
+    liveConnecting = Promise.resolve(client.connect()).then(function () {
+      liveConnecting = null;
+      if (liveClosed) {
+        Promise.resolve(client.end()).catch(function (e) {
+          log.debug("Caught in a callback in liveConnection(): " +
+                    ((e && e.message) || e));
+        });
+        throw new Error('the store is closed');
+      }
+      liveStats.connects += 1;
+      liveClient = client;
+      return client;
+    }, function (err) {
+      liveConnecting = null;
+      throw err;
+    });
+    log.debug("Leaving liveConnection(). Connecting.");
+    return liveConnecting;
+  }
+
+  /**
+   * Runs one liveness statement on the liveness connection, or through the
+   * pool when that connection cannot be opened.
+   * @param sql - the statement
+   * @param params - its parameters
+   * @returns the query's result
+   */
+  function liveQuery(sql, params) {
+    log.debug("Entering liveQuery().");
+    liveStats.queries += 1;
+    log.debug("Leaving liveQuery().");
+    return Promise.resolve().then(liveConnection).then(function (client) {
+      return client.query(sql, params);
+    }, function (err) {
+      liveStats.viaPool += 1;
+      log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
+               'liveness connection could not be opened (' + err.message +
+               '); this statement goes through the pool.');
+      return pool.query(sql, params);
+    });
+  }
+
+  // The runner `reassertOrigin()` is given outside a transaction.
+  const liveRunner = { query: liveQuery };
 
   // WHO THIS PROCESS IS. It is stamped on every `sts_changes` row and on every
   // notification, and it does ONE job: letting a process skip its own writes
@@ -1531,7 +1985,7 @@ function create(options) {
   // has taken the claim (and so replaced the reservation). One statement, so a
   // claimant racing it either wins first (and this matches nothing) or finds
   // a live claim and is refused. `runner` is a client inside a transaction, or
-  // the pool.
+  // the liveness connection (#351).
   function reassertOrigin(runner, held) {
     log.debug("Entering reassertOrigin().");
     log.debug("Leaving reassertOrigin().");
@@ -1817,6 +2271,7 @@ function create(options) {
     open: function () {
       log.debug('Entering the postgres driver open().');
       const created = [];
+      let late = [];
       log.debug("Leaving open().");
       return withTransaction(function (client) {
         // -------------------------------------------------------------
@@ -1840,6 +2295,11 @@ function create(options) {
           const missing = SCHEMA_OBJECTS.filter(function (object, index) {
             return !row['o' + index];
           });
+          // AN OBJECT BUILT ON A COLUMN THAT SCHEMA_COLUMNS MAY STILL HAVE TO
+          // ADD (#333, #349) waits for the column step below.
+          late = missing.filter(function (object) {
+            return object.afterColumns === true;
+          });
           if (!missing.length) {
             log.debug('open(): every object in the schema is present; no ' +
                       'CREATE is issued.');
@@ -1851,7 +2311,9 @@ function create(options) {
                    ') and this process is creating them. A store built by ' +
                    'postgres/schema.sql needs none of this.');
           let chain = Promise.resolve();
-          missing.forEach(function (object) {
+          missing.filter(function (object) {
+            return object.afterColumns !== true;
+          }).forEach(function (object) {
             chain = chain.then(function () {
               return client.query(object.statement).then(function () {
                 created.push(object.name);
@@ -1888,6 +2350,16 @@ function create(options) {
             });
             return chain;
           });
+        }).then(function () {
+          let chain = Promise.resolve();
+          late.forEach(function (object) {
+            chain = chain.then(function () {
+              return client.query(object.statement).then(function () {
+                created.push(object.name);
+              });
+            });
+          });
+          return chain;
         }).then(function () {
           // DML, and the one statement here that runs on every open. The
           // script writes this row too; `ON CONFLICT DO NOTHING` is what
@@ -2113,7 +2585,19 @@ function create(options) {
     close: function () {
       log.debug('Entering the postgres driver close().');
       log.debug("Leaving close().");
+      liveClosed = true;
+      const live = liveClient;
+      liveClient = null;
       return pool.end().then(function () {
+        // The read replica's pool, when it is a pool of its own (#98).
+        return readPool !== pool ? readPool.end() : null;
+      }).then(function () {
+        // The liveness connection, last: leaving the cluster and giving the
+        // origin back were its final statements.
+        return live ? Promise.resolve(live.end()).catch(function (e) {
+          log.debug("Caught in close(): " + ((e && e.message) || e));
+        }) : null;
+      }).then(function () {
         log.debug('Leaving the postgres driver close().');
       });
     },
@@ -2121,7 +2605,7 @@ function create(options) {
     loadDirectory: function () {
       log.debug('Entering the postgres driver loadDirectory().');
       log.debug("Leaving loadDirectory().");
-      return pool.query(
+      return readPool.query(
         'SELECT realm, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries ORDER BY realm, dn_key'
       ).then(function (result) {
@@ -2155,7 +2639,7 @@ function create(options) {
     loadRealms: function () {
       log.debug('Entering the postgres driver loadRealms().');
       log.debug("Leaving loadRealms().");
-      return pool.query(
+      return readPool.query(
         'SELECT id, name, description, created_at, overrides, domain, ' +
         'retiring_at FROM sts_realms ' +
         'ORDER BY created_at NULLS FIRST, id'
@@ -2188,7 +2672,7 @@ function create(options) {
     loadOverrides: function () {
       log.debug('Entering the postgres driver loadOverrides().');
       log.debug("Leaving loadOverrides().");
-      return pool.query('SELECT key, value FROM sts_appconfig')
+      return readPool.query('SELECT key, value FROM sts_appconfig')
         .then(function (result) {
           if (!result.rows.length) {
             log.debug('Leaving loadOverrides(). The table is empty.');
@@ -2618,7 +3102,7 @@ function create(options) {
     loadKeys: function () {
       log.debug('Entering the postgres driver loadKeys().');
       log.debug("Leaving loadKeys().");
-      return pool.query('SELECT realm, material FROM sts_keys')
+      return readPool.query('SELECT realm, material FROM sts_keys')
                  .then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return { realm: row.realm, material: row.material };
@@ -2680,13 +3164,45 @@ function create(options) {
     // for — `persistence_minted.js` hands it exactly the rows that moved, so
     // there is nothing here to work out.
     // -----------------------------------------------------------------------
-    loadMinted: function () {
+    // -----------------------------------------------------------------------
+    // ONLY WHAT IS STILL WORTH HAVING (2026-09-28, #333). `filter` is
+    // `persistence_minted.js`'s restoreFilter(): the realm partitions that
+    // exist, the instant a row's own expiry is compared with, and the
+    // write-age rule for a short-lived store's row that carries no expiry.
+    // It is REQUIRED: this read had no WHERE, and every process on testidp
+    // fetched, decrypted and parsed 127,131 rows — most of them dead or of
+    // realms long gone — in 31 s before it could serve. A caller that does
+    // not say what it wants is refused rather than handed the table.
+    //
+    // `expires_at` is compared with a NUMBER from the caller rather than the
+    // database clock, because the stores computed it on their own clocks —
+    // `sts_used_assertions`' arrangement. The scan is sequential either way:
+    // what is read is most of the live table, and an index would only have
+    // to be walked back to the heap for every row.
+    // -----------------------------------------------------------------------
+    loadMinted: function (filter) {
       log.debug('Entering the postgres driver loadMinted().');
+      if (!filter || !Array.isArray(filter.realms)) {
+        log.debug("Leaving loadMinted(). No filter.");
+        return Promise.reject(new Error('loadMinted() needs the realms to ' +
+                                        'read and the instant to read at'));
+      }
+      const staleBefore = Number(filter.staleBefore) || 0;
+      const shortLived = Array.isArray(filter.ageHandles)
+        ? filter.ageHandles.map(String) : [];
+      const aged = staleBefore > 0 && shortLived.length > 0;
       log.debug("Leaving loadMinted().");
-      return pool.query(
-        'SELECT handle, realm, key, body,        (extract(epoch from ' +
-        'written_at) * 1000)::bigint AS written_ms FROM sts_minted ' +
-        'WHERE body <> $1', [TOMBSTONE]
+      return readPool.query(
+        'SELECT handle, realm, key, body, (extract(epoch from written_at) ' +
+        '* 1000)::bigint AS written_ms, expires_at FROM sts_minted ' +
+        'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
+        '(expires_at IS NULL OR expires_at > $3)' +
+        (aged ? ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
+                'AND written_at < to_timestamp($5 / 1000.0))' : ''),
+        aged ? [TOMBSTONE, filter.realms.map(String),
+                Number(filter.nowMs) || Date.now(), shortLived, staleBefore]
+             : [TOMBSTONE, filter.realms.map(String),
+                Number(filter.nowMs) || Date.now()]
       ).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return {
@@ -2698,7 +3214,9 @@ function create(options) {
             // reader compares it against `Date.now()` and a driver that
             // answered a Date would make the ldif driver — which has no
             // timestamptz — answer something different for the same field.
-            writtenAt: Number(row.written_ms || 0)
+            writtenAt: Number(row.written_ms || 0),
+            expiresAt: row.expires_at === null || row.expires_at === undefined
+              ? null : Number(row.expires_at)
           };
         });
         log.debug('Leaving the postgres driver loadMinted(). ' + rows.length +
@@ -2763,14 +3281,20 @@ function create(options) {
       return withTransaction(function (client) {
         let chain = Promise.resolve();
         const upsert = function (row, body, guarded) {
+          // `expires_at` (#333) is the store's own answer for the record,
+          // or NULL; see `expiresAt` in common/realms.js.
+          const expires = Number(row.expiresAt) > 0
+            ? Math.floor(Number(row.expiresAt)) : null;
           return client.query(
             'INSERT INTO sts_minted (handle, realm, key, body, ' +
-            'written_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT ' +
-            '(handle, realm, key) DO UPDATE SET   body = EXCLUDED.body, ' +
-            'written_at = now()' +
-            (guarded ? ' WHERE sts_minted.body <> $5' : ''),
-            guarded ? [row.handle, row.realm, row.key, body, TOMBSTONE]
-                    : [row.handle, row.realm, row.key, body]
+            'written_at, expires_at) VALUES ($1, $2, $3, $4, now(), $5) ' +
+            'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
+            'body = EXCLUDED.body, written_at = now(), ' +
+            'expires_at = EXCLUDED.expires_at' +
+            (guarded ? ' WHERE sts_minted.body <> $6' : ''),
+            guarded ? [row.handle, row.realm, row.key, body, expires,
+                       TOMBSTONE]
+                    : [row.handle, row.realm, row.key, body, expires]
           ).then(function (r) {
             if (guarded && !(r && r.rowCount)) {
               refused.push(row);
@@ -2811,11 +3335,14 @@ function create(options) {
               return upsert(row, row.body, !!row.tombstone);
             }
             if (row.tombstone) {
+              // A TOMBSTONE HAS NO EXPIRY OF ITS OWN (#333): it lives for
+              // `persistence.mintedRetention` whatever the record it ended
+              // said, so the expiry purge never takes it early.
               return client.query(
                 'INSERT INTO sts_minted (handle, realm, key, body, ' +
-                'written_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT ' +
-                '(handle, realm, key) DO UPDATE SET body = EXCLUDED.body, ' +
-                'written_at = now()',
+                'written_at, expires_at) VALUES ($1, $2, $3, $4, now(), ' +
+                'NULL) ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
+                'body = EXCLUDED.body, written_at = now(), expires_at = NULL',
                 [row.handle, row.realm, row.key, TOMBSTONE]
               );
             }
@@ -2965,7 +3492,7 @@ function create(options) {
         binds.push(String(ref.handle), String(ref.realm), String(ref.key));
       });
       log.debug("Leaving readMintedMany().");
-      return pool.query(
+      return readPool.query(
         'SELECT m.handle, m.realm, m.key, m.body, ' +
         '(extract(epoch from m.written_at) * 1000)::bigint AS written_ms ' +
         'FROM sts_minted m JOIN (VALUES ' + values.join(', ') +
@@ -3087,15 +3614,23 @@ function create(options) {
       // the claim extended by its reservation, and said so.
       const held = { key: originClaim.key,
                      reservation: originClaim.reservation, ttlMs: ttlMs };
-      return pool.query(
+      // On the LIVENESS connection (#351), both statements.
+      return liveQuery(
         'UPDATE sts_cluster_claims SET expires_at = ' + DB_NOW + ' + $4 ' +
         'WHERE scope = $1 AND realm = \'\' AND key = $2 AND reservation = $3 ' +
         'AND expires_at > ' + DB_NOW,
         [ORIGIN_SCOPE, held.key, held.reservation,
          Math.max(1000, Number(ttlMs) || 30000)]
       ).then(function (r) {
-        return r.rowCount > 0 ? true : reassertOrigin(pool, held);
+        return r.rowCount > 0 ? true : reassertOrigin(liveRunner, held);
       });
+    },
+
+    // The liveness connection's counters (#351), for `persistence.status()`.
+    livenessStatus: function () {
+      log.debug("Entering livenessStatus().");
+      log.debug("Leaving livenessStatus().");
+      return Object.assign({ open: !!liveClient }, liveStats);
     },
 
     setOriginLost: function (fn) {
@@ -3124,7 +3659,7 @@ function create(options) {
     latestChangeSeq: function () {
       log.debug('Entering the postgres driver latestChangeSeq().');
       log.debug("Leaving latestChangeSeq().");
-      return pool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
+      return readPool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
         .then(function (r) {
           const seq = Number((r.rows[0] || {}).seq || 0);
           log.debug('Leaving the postgres driver latestChangeSeq(). ' + seq);
@@ -3171,7 +3706,7 @@ function create(options) {
       // the second. `applyRows()` skips this process's own rows itself — it
       // always did — so nothing is applied twice.
       // ---------------------------------------------------------------------
-      return pool.query(
+      return readPool.query(
         'SELECT seq, origin, kind, realm, key FROM sts_changes ' +
         'WHERE seq > $1 ORDER BY seq ASC LIMIT $2',
         [Number(afterSeq) || 0, Number(limit) || 500]
@@ -3192,7 +3727,7 @@ function create(options) {
     changeCeiling: function () {
       log.debug("Entering changeCeiling().");
       log.debug("Leaving changeCeiling().");
-      return pool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
+      return readPool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
         .then(function (r) { return Number((r.rows[0] || {}).seq || 0); });
     },
 
@@ -3201,7 +3736,7 @@ function create(options) {
     readEntry: function (realmId, dnKey) {
       log.debug("Entering readEntry().");
       log.debug("Leaving readEntry().");
-      return pool.query(
+      return readPool.query(
         'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
         [realmId, dnKey]
@@ -3216,11 +3751,49 @@ function create(options) {
       });
     },
 
+    // -----------------------------------------------------------------------
+    // THE DIRECTORY'S LOOKUPS (#349 phase 2). `name` is one of
+    // `persistence/directory_queries.js`'s queries and `args` its arguments;
+    // the answer is its rows in the directory's own shape, `{ realm, key,
+    // entry }`, or for `count` the number and for `hasChild` a boolean. On
+    // the read pool, like `readEntry()`: every one only reads. A request
+    // worker's synchronous path runs the same statements through the bridge
+    // (`common/sync_query.ts`) on a connection of its own; this is the async
+    // door, and what the in-process tests drive.
+    // -----------------------------------------------------------------------
+    directoryQuery: function (name, args) {
+      log.debug("Entering directoryQuery(). " + name);
+      let statement;
+      try {
+        statement = directoryQueries.build(name, args);
+      } catch (e) {
+        log.debug("Caught in directoryQuery(): " + ((e && e.message) || e));
+        log.debug("Leaving directoryQuery(). Unknown query.");
+        return Promise.reject(e);
+      }
+      log.debug("Leaving directoryQuery().");
+      return readPool.query(statement.text, statement.values)
+        .then(function (r) {
+          return directoryQueries.answerOf(name, r.rows || []);
+        });
+    },
+
+    // WHAT THE BRIDGE'S THREAD DIALS (#349 phase 3): the read pool's own
+    // connection options — the same database, the same TLS decision — so
+    // the thread is one more client of this store and never a second,
+    // differently configured way into it. It holds the password when the
+    // URL does; it is handed to a thread of this process and nowhere else.
+    bridgeConnection: function () {
+      log.debug("Entering bridgeConnection().");
+      log.debug("Leaving bridgeConnection().");
+      return readClientOptions();
+    },
+
     // One minted row, same reason.
     readMinted: function (handle, realmId, key) {
       log.debug("Entering readMinted().");
       log.debug("Leaving readMinted().");
-      return pool.query(
+      return readPool.query(
         'SELECT handle, realm, key, body,        (extract(epoch from ' +
         'written_at) * 1000)::bigint AS written_ms FROM sts_minted WHERE ' +
         'handle = $1 AND realm = $2 AND key = $3',
@@ -3378,7 +3951,7 @@ function create(options) {
         return Promise.resolve([]);
       }
       log.debug("Leaving changesAt().");
-      return pool.query(
+      return readPool.query(
         'SELECT seq, origin, kind, realm, key FROM sts_changes ' +
         'WHERE seq = ANY($1::bigint[]) ORDER BY seq ASC', [list]
       ).then(function (r) {
@@ -3505,7 +4078,8 @@ function create(options) {
     heartbeat: function (nodeId, ttlMs, info) {
       log.debug("Entering heartbeat(). node=" + nodeId);
       log.debug("Leaving heartbeat().");
-      return pool.query(
+      // On the LIVENESS connection (#351).
+      return liveQuery(
         'WITH n AS (UPDATE sts_cluster_nodes SET heartbeat_at = ' + DB_NOW +
         ', expires_at = ' + DB_NOW + ' + $2, info = COALESCE($3::jsonb, ' +
         'info) WHERE node_id = $1 AND left_at = 0 AND expires_at > ' + DB_NOW +
@@ -3535,7 +4109,7 @@ function create(options) {
     leaveCluster: function (nodeId) {
       log.debug("Entering leaveCluster(). node=" + nodeId);
       log.debug("Leaving leaveCluster().");
-      return pool.query(
+      return liveQuery(
         'WITH n AS (UPDATE sts_cluster_nodes SET left_at = ' + DB_NOW +
         ', expires_at = LEAST(expires_at, ' + DB_NOW + ') WHERE node_id = $1 ' +
         'RETURNING node_id) ' +
@@ -3552,7 +4126,7 @@ function create(options) {
     acquireLease: function (name, nodeId, ttlMs) {
       log.debug("Entering acquireLease(). name=" + name);
       log.debug("Leaving acquireLease().");
-      return pool.query(
+      return liveQuery(
         'INSERT INTO sts_cluster_leases (name, holder, token, acquired_at, ' +
         'expires_at) SELECT $1, $2, 1, ' + DB_NOW + ', ' + DB_NOW + ' + $3 ' +
         'WHERE EXISTS (SELECT 1 FROM sts_cluster_nodes WHERE node_id = $2 ' +
@@ -3575,7 +4149,7 @@ function create(options) {
           return { held: true, token: Number(row.token),
                    expiresAt: Number(row.expires_at) };
         }
-        return pool.query(
+        return liveQuery(
           'SELECT holder, token, expires_at FROM sts_cluster_leases ' +
           'WHERE name = $1', [name]
         ).then(function (found) {
@@ -3591,7 +4165,7 @@ function create(options) {
     releaseLease: function (name, nodeId, token) {
       log.debug("Entering releaseLease(). name=" + name);
       log.debug("Leaving releaseLease().");
-      return pool.query(
+      return liveQuery(
         'UPDATE sts_cluster_leases SET expires_at = 0 WHERE name = $1 AND ' +
         'holder = $2 AND token = $3', [name, nodeId, Number(token)]
       ).then(function (r) {
@@ -3629,6 +4203,70 @@ function create(options) {
                      token: Number(row.token),
                      acquiredAt: Number(row.acquired_at),
                      expiresAt: Number(row.expires_at) };
+          })
+        };
+      });
+    },
+
+    // THIS NODE'S SNAPSHOT (#332): one upsert of the row for its name, at
+    // the database's clock. Not fenced: it is a report about the node, not
+    // state the service acts on, and a node that lost its membership exits
+    // on its next heartbeat anyway; a stale write is shown with its age.
+    putNodeSnapshot: function (name, nodeId, body) {
+      log.debug("Entering putNodeSnapshot(). name=" + name);
+      log.debug("Leaving putNodeSnapshot().");
+      return pool.query(
+        'INSERT INTO sts_node_snapshots (name, node_id, taken_at, body) ' +
+        'VALUES ($1, $2, ' + DB_NOW + ', $3::jsonb) ON CONFLICT (name) DO ' +
+        'UPDATE SET node_id = EXCLUDED.node_id, taken_at = ' +
+        'EXCLUDED.taken_at, body = EXCLUDED.body',
+        [String(name), String(nodeId || ''), JSON.stringify(body || {})]
+      ).then(function () {
+        return { written: true };
+      });
+    },
+
+    // A GONE NODE'S SNAPSHOT, EXPIRED (#332): every row older than
+    // `olderThanMs` by the database's clock whose name is not in
+    // `keepNames` — the live members, which the caller read — deleted, and
+    // the names answered for the log. An empty `keepNames` is refused: the
+    // caller keeps at least its own name, and a list that came back empty
+    // is a membership read that failed, not a cluster with no members.
+    purgeNodeSnapshots: function (olderThanMs, keepNames) {
+      log.debug("Entering purgeNodeSnapshots().");
+      const keep = (keepNames || []).map(String);
+      if (!keep.length || !(Number(olderThanMs) > 0)) {
+        log.debug("Leaving purgeNodeSnapshots(). Refused.");
+        return Promise.reject(new Error('purgeNodeSnapshots needs the live ' +
+          'names and an age'));
+      }
+      log.debug("Leaving purgeNodeSnapshots().");
+      return pool.query(
+        'DELETE FROM sts_node_snapshots WHERE taken_at < ' + DB_NOW +
+        ' - $1 AND NOT (name = ANY($2::text[])) RETURNING name, taken_at',
+        [Number(olderThanMs), keep]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { name: row.name, takenAt: Number(row.taken_at) };
+        });
+      });
+    },
+
+    // EVERY NODE'S LATEST SNAPSHOT (#332), with the database clock to read
+    // their ages against. Bounded twice: a row per name, and at most 64.
+    nodeSnapshots: function () {
+      log.debug("Entering nodeSnapshots().");
+      log.debug("Leaving nodeSnapshots().");
+      return Promise.all([
+        pool.query('SELECT name, node_id, taken_at, body FROM ' +
+                   'sts_node_snapshots ORDER BY name LIMIT 64'),
+        pool.query('SELECT ' + DB_NOW + ' AS now')
+      ]).then(function (answers) {
+        return {
+          now: Number((answers[1].rows[0] || {}).now) || 0,
+          rows: answers[0].rows.map(function (row) {
+            return { name: row.name, nodeId: row.node_id,
+                     takenAt: Number(row.taken_at), body: row.body || {} };
           })
         };
       });
@@ -3709,8 +4347,12 @@ function create(options) {
     purgeClaims: function () {
       log.debug("Entering purgeClaims().");
       log.debug("Leaving purgeClaims().");
+      // A lapsed ORIGIN claim is kept for ORIGIN_RETAIN_MS: see the note
+      // above ORIGIN_RETAIN_MS.
       return pool.query('DELETE FROM sts_cluster_claims WHERE expires_at <= ' +
-                        DB_NOW).then(function (r) {
+                        DB_NOW + ' AND (scope <> $1 OR expires_at <= ' +
+                        DB_NOW + ' - $2)',
+                        [ORIGIN_SCOPE, ORIGIN_RETAIN_MS]).then(function (r) {
         return r.rowCount || 0;
       });
     },
@@ -3873,12 +4515,19 @@ function create(options) {
       const o = opts || {};
       const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
       const retentionMs = Math.max(0, Math.floor(Number(o.retentionMs) || 0));
+      // `nodeLiveness: false` judges a reader by its report's age alone: the
+      // GLOBAL change log's readers are nodes of other databases' clusters,
+      // whose membership rows this database does not hold.
+      const byMembership = o.nodeLiveness !== false;
       log.debug("Leaving purgeChangeLog().");
       return pool.query(
         'WITH gone AS (DELETE FROM sts_change_readers r WHERE ' +
-        'r.reported_at < ' + DB_NOW + ' - $1::bigint OR (r.node_id <> \'\' ' +
-        'AND NOT EXISTS (SELECT 1 FROM sts_cluster_nodes n WHERE n.node_id = ' +
-        'r.node_id AND n.left_at = 0 AND n.expires_at > ' + DB_NOW + ')) ' +
+        'r.reported_at < ' + DB_NOW + ' - $1::bigint' +
+        (byMembership
+          ? ' OR (r.node_id <> \'\' AND NOT EXISTS (SELECT 1 FROM ' +
+            'sts_cluster_nodes n WHERE n.node_id = r.node_id AND ' +
+            'n.left_at = 0 AND n.expires_at > ' + DB_NOW + '))'
+          : '') + ' ' +
         'RETURNING r.origin), ' +
         'live AS (SELECT min(r.applied) AS low, count(*) AS readers FROM ' +
         'sts_change_readers r WHERE NOT EXISTS (SELECT 1 FROM gone g WHERE ' +
@@ -3924,10 +4573,147 @@ function create(options) {
     // `sts_changes` only when the row actually moved, so a merge that decided
     // "keep what is there" wakes no other process.
     // =====================================================================
+    // -----------------------------------------------------------------------
+    // THE ROUTING INDEX (#98): where each person is homed, in the global
+    // tier. See `sts_cell_routing` in SCHEMA_OBJECTS. `kind` is 'name' or
+    // 'uuid' and `digest` is a keyed digest the caller made; this driver
+    // never sees a name.
+    //
+    // A CLAIM IS THE UNIQUENESS: the insert does nothing when the row is
+    // there, and the answer is whichever cell holds it — this one when the
+    // claim took, another when a person of that name is already homed
+    // elsewhere. A single statement on the pool, unfenced, like every other
+    // claim (`cluster/CLAUDE.md`, *What is NOT fenced*).
+    // -----------------------------------------------------------------------
+    routeClaim: function (realmId, kind, digest, cell) {
+      log.debug("Entering routeClaim().");
+      log.debug("Leaving routeClaim().");
+      return pool.query(
+        'WITH put AS (INSERT INTO sts_cell_routing ' +
+        '  (realm, kind, digest, cell, written_at) ' +
+        '  VALUES ($1, $2, $3, $4, ' + DB_NOW + ') ' +
+        '  ON CONFLICT (realm, kind, digest) DO NOTHING RETURNING cell) ' +
+        'SELECT cell, true AS claimed FROM put UNION ALL ' +
+        'SELECT cell, false AS claimed FROM sts_cell_routing ' +
+        'WHERE realm = $1 AND kind = $2 AND digest = $3 ' +
+        '  AND NOT EXISTS (SELECT 1 FROM put)',
+        [String(realmId || ''), String(kind), String(digest), String(cell)]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || null;
+        return row ? { cell: String(row.cell), claimed: !!row.claimed }
+                   : { cell: '', claimed: false };
+      });
+    },
+
+    // Where a digest is homed, or '' — read from the REPLICA like every other
+    // read of this tier: an index row written in another cell is visible here
+    // after the replica's lag, and a caller that must not miss one it just
+    // wrote is the cell that wrote it, which already knows.
+    routeLookup: function (realmId, kind, digest) {
+      log.debug("Entering routeLookup().");
+      log.debug("Leaving routeLookup().");
+      return readPool.query(
+        'SELECT cell FROM sts_cell_routing WHERE realm = $1 AND kind = $2 ' +
+        'AND digest = $3', [String(realmId || ''), String(kind),
+                            String(digest)]
+      ).then(function (r) {
+        const row = (r.rows || [])[0];
+        return row ? String(row.cell) : '';
+      });
+    },
+
+    // Ends a row, only while it still names `cell` — a cell cannot release a
+    // name another cell holds.
+    routeRelease: function (realmId, kind, digest, cell) {
+      log.debug("Entering routeRelease().");
+      log.debug("Leaving routeRelease().");
+      return pool.query(
+        'DELETE FROM sts_cell_routing WHERE realm = $1 AND kind = $2 AND ' +
+        'digest = $3 AND cell = $4',
+        [String(realmId || ''), String(kind), String(digest), String(cell)]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // Re-homing (#98 §8.8): moves a row from one cell to another, only while
+    // it still names the one it is moving from.
+    routeMove: function (realmId, kind, digest, fromCell, toCell) {
+      log.debug("Entering routeMove().");
+      log.debug("Leaving routeMove().");
+      return pool.query(
+        'UPDATE sts_cell_routing SET cell = $5, written_at = ' + DB_NOW +
+        ' WHERE realm = $1 AND kind = $2 AND digest = $3 AND cell = $4',
+        [String(realmId || ''), String(kind), String(digest),
+         String(fromCell), String(toCell)]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // How many people each cell holds, per realm — `/admin/cells`' count.
+    routeCounts: function () {
+      log.debug("Entering routeCounts().");
+      log.debug("Leaving routeCounts().");
+      return readPool.query(
+        'SELECT realm, cell, count(*)::int AS people FROM sts_cell_routing ' +
+        'WHERE kind = \'uuid\' GROUP BY realm, cell ORDER BY realm, cell'
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { realm: String(row.realm), cell: String(row.cell),
+                   people: Number(row.people) || 0 };
+        });
+      });
+    },
+
+    // Every row of a realm's index held by one cell — the reconciliation of a
+    // cell's residents against the index at start (`cell_routing.ts`).
+    routeRowsOf: function (realmId, cell) {
+      log.debug("Entering routeRowsOf().");
+      log.debug("Leaving routeRowsOf().");
+      return pool.query(
+        'SELECT kind, digest FROM sts_cell_routing WHERE realm = $1 AND ' +
+        'cell = $2', [String(realmId || ''), String(cell)]
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { kind: String(row.kind), digest: String(row.digest) };
+        });
+      });
+    },
+
+    // Drops a whole realm's index — the realm was removed.
+    routeRemoveRealm: function (realmId) {
+      log.debug("Entering routeRemoveRealm().");
+      log.debug("Leaving routeRemoveRealm().");
+      return pool.query('DELETE FROM sts_cell_routing WHERE realm = $1',
+                        [String(realmId || '')]).then(function (r) {
+        return r.rowCount;
+      });
+    },
+
+    // The replica's lag behind its writer, in milliseconds, or null where
+    // this is not a replica or the question cannot be asked — `/admin/cells`.
+    replicaLagMs: function () {
+      log.debug("Entering replicaLagMs().");
+      if (readPool === pool) {
+        log.debug("Leaving replicaLagMs(). No replica.");
+        return Promise.resolve(null);
+      }
+      log.debug("Leaving replicaLagMs().");
+      return readPool.query(
+        'SELECT CASE WHEN pg_is_in_recovery() THEN ' +
+        '(extract(epoch from (now() - pg_last_xact_replay_timestamp())) ' +
+        '* 1000)::bigint ELSE 0 END AS lag'
+      ).then(function (r) {
+        const row = (r.rows || [])[0];
+        return row && row.lag !== null ? Number(row.lag) : null;
+      });
+    },
+
     loadKey: function (realmId) {
       log.debug("Entering loadKey(). realm=" + realmId);
       log.debug("Leaving loadKey().");
-      return pool.query('SELECT material FROM sts_keys WHERE realm = $1',
+      return readPool.query('SELECT material FROM sts_keys WHERE realm = $1',
                         [String(realmId)]).then(function (r) {
         const row = (r.rows || [])[0];
         return row ? row.material : null;
@@ -5186,25 +5972,81 @@ function create(options) {
       });
     },
 
-    // `handles`, when given, limits the delete to those stores — the
-    // short-lived ones (`retain: 'age'`, 2026-09-18). Without it every row
-    // older than `beforeMs` goes, which is right only for the ephemeral-key
-    // clear, where nothing in the table can be opened anyway.
-    purgeMinted: function (beforeMs, handles) {
+    // EVERY ROW OLDER THAN `beforeMs`, of every store. Right only for the
+    // ephemeral-key clear, where nothing in the table can be opened anyway;
+    // the ordinary deleting is purgeExpiredMinted()'s (#333).
+    purgeMinted: function (beforeMs) {
       log.debug('Entering the postgres driver purgeMinted(). before=' +
                 beforeMs);
       log.debug("Leaving purgeMinted().");
-      if (Array.isArray(handles) && !handles.length) {
-        return Promise.resolve(0);
-      }
-      const limited = Array.isArray(handles);
       return pool.query(
-        'DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)' +
-        (limited ? ' AND handle = ANY($2::text[])' : ''),
-        limited ? [Number(beforeMs), handles.map(String)] : [Number(beforeMs)]
+        'DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)',
+        [Number(beforeMs)]
       ).then(function (r) {
         log.debug('Leaving the postgres driver purgeMinted(). ' +
                   (r.rowCount || 0) + ' row(s).');
+        return r.rowCount || 0;
+      });
+    },
+
+    // -----------------------------------------------------------------------
+    // ONE BATCH OF THE MINTED ROWS NOTHING WILL READ AGAIN (2026-09-28, #333),
+    // for the `persistence.minted-expiry-purge` job. `kind` is one of:
+    //
+    //   'expired'  `expires_at` has passed `nowMs`. A tombstone is never one
+    //              (its expiry is NULL; `purgeTombstones()` has it).
+    //   'orphan'   the row's realm is neither the shared '' nor the default
+    //              realm nor a row of `sts_realms`, and it was written before
+    //              `orphanBeforeMs`. A realm removal already deletes its rows
+    //              in the same transaction (saveDirectory()); what reaches
+    //              here is a flush another process had in flight for it.
+    //              THE GRACE IS FOR THE OTHER ORDER: a realm created on
+    //              another node writes its minted rows and its registry row in
+    //              two transactions, and a row whose registry row has not
+    //              committed yet is not an orphan.
+    //   'stale'    a `retain: 'age'` store's row with NO expiry, written
+    //              before `staleBeforeMs` — the retention rule the restore
+    //              used to apply by deleting at every start.
+    //
+    // At most `limit` rows, chosen by ctid and deleted by ctid, so each batch
+    // is one short statement and a row rewritten between the two (a renewal)
+    // has a new ctid and is left alone. Returns how many went.
+    // -----------------------------------------------------------------------
+    purgeExpiredMinted: function (kind, options) {
+      log.debug('Entering the postgres driver purgeExpiredMinted(). ' + kind);
+      const o = options || {};
+      const limit = Math.max(1, Math.floor(Number(o.limit) || 1000));
+      let where = '';
+      let binds = [];
+      if (kind === 'expired') {
+        where = 'expires_at IS NOT NULL AND expires_at <= $1';
+        binds = [Number(o.nowMs)];
+      } else if (kind === 'orphan') {
+        where = 'realm <> \'\' AND realm <> $1 AND written_at < ' +
+                'to_timestamp($2 / 1000.0) AND NOT EXISTS (SELECT 1 FROM ' +
+                'sts_realms r WHERE r.id = sts_minted.realm)';
+        binds = [String(o.defaultRealm || 'default'),
+                 Number(o.orphanBeforeMs)];
+      } else if (kind === 'stale') {
+        const handles = Array.isArray(o.handles) ? o.handles.map(String) : [];
+        if (!handles.length || !(Number(o.staleBeforeMs) > 0)) {
+          log.debug("Leaving purgeExpiredMinted(). No stale rule.");
+          return Promise.resolve(0);
+        }
+        where = 'expires_at IS NULL AND body <> $1 AND handle = ' +
+                'ANY($2::text[]) AND written_at < to_timestamp($3 / 1000.0)';
+        binds = [TOMBSTONE, handles, Number(o.staleBeforeMs)];
+      } else {
+        log.debug("Leaving purgeExpiredMinted(). Unknown kind.");
+        return Promise.reject(new Error('purgeExpiredMinted(): unknown kind ' +
+                                        String(kind)));
+      }
+      log.debug("Leaving purgeExpiredMinted().");
+      return pool.query(
+        'DELETE FROM sts_minted WHERE ctid = ANY(ARRAY(SELECT ctid FROM ' +
+        'sts_minted WHERE ' + where + ' LIMIT ' + limit + '))',
+        binds
+      ).then(function (r) {
         return r.rowCount || 0;
       });
     }
@@ -5228,6 +6070,14 @@ function create(options) {
 capabilities.provide('store.no-foreign-deletes');
 capabilities.provide('directory.concurrent-writes');
 
+/**
+ * The postgres persistence driver: the shared store, and the change log that
+ * several processes coordinate through.
+ *
+ * Selected by `persistence.mode=postgres`. The schema tables and the metric
+ * probes are exported for the tests.
+ * @namespace
+ */
 module.exports = {
   create: create,
   // For `tests/database_metrics.js`, which checks that every probe is
@@ -5240,5 +6090,9 @@ module.exports = {
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
   SCHEMA_VERSION: SCHEMA_VERSION,
-  poolMax: poolMax
+  poolMax: poolMax,
+  // What `pg` is given for a connection string (#98): for
+  // `persistence/cell_convert.js`, which dials the service's databases
+  // without being the service.
+  dialOptions: dialOptions
 };

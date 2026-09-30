@@ -60,7 +60,9 @@ type Req = any;
 type Res = any;
 type Json = any;
 
+/** The path the document is served under, before its suffixes. */
 const BASE = '/crypto/metadata';
+/** The XML namespace of the document: `urn:iya:sts:crypto-metadata:1`. */
 const XML_NS = 'urn:iya:sts:crypto-metadata:1';
 const SPEC_VERSION = 1;
 
@@ -96,15 +98,35 @@ interface CryptoMetadataDeps {
   now: () => number;
 }
 
+/**
+ * The public crypto metadata document, per realm: every signer generation
+ * with its chain, the algorithms per use case, and the rotation policy.
+ *
+ * One model, served as JSON, XML, signed JSON and signed XML, public and
+ * `no-store` in both modes.
+ */
 class CryptoMetadataDocument {
+  /** The path the document is served under. */
   static readonly BASE = BASE;
+  /** The document's XML namespace. */
   static readonly XML_NS = XML_NS;
 
+  /**
+   * Builds the document over the given dependencies.
+   *
+   * @param deps - the logger, settings, helpers, `crypto`, `pki`, the
+   *   revocation module, realms, the signer and a clock
+   */
   constructor(private readonly deps: CryptoMetadataDeps) {
     deps.log.debug("Entering CryptoMetadataDocument.constructor().");
     deps.log.debug("Leaving CryptoMetadataDocument.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): CryptoMetadataDeps {
     helpers.log.debug("Entering CryptoMetadataDocument.defaultDeps().");
     helpers.log.debug("Leaving CryptoMetadataDocument.defaultDeps().");
@@ -376,6 +398,12 @@ class CryptoMetadataDocument {
   }
 
   // THE MODEL — the document, as one object, which both serialisations write.
+  /**
+   * Builds the document as one object, which both serialisations write.
+   *
+   * @param req - the express request, for the ambient realm and its issuer
+   * @returns the model
+   */
   model(req: Req): Json {
     const { log, helpers, realms, now } = this.deps;
     log.debug("Entering CryptoMetadataDocument.model().");
@@ -448,6 +476,12 @@ class CryptoMetadataDocument {
       self.el('CaIssuers', c.caIssuers) + '</cm:Certificate>';
   }
 
+  /**
+   * Serialises the model as XML in the document's namespace.
+   *
+   * @param m - the model
+   * @returns the XML
+   */
   toXml(m: Json): string {
     const { log } = this.deps;
     const self = this;
@@ -512,6 +546,12 @@ class CryptoMetadataDocument {
   // that extension found nothing to check it against —
   // tests/vendored/sts_xml_schema_validation.js loads this file for exactly
   // that and refused the metadata until the declaration was here.
+  /**
+   * Returns the XSD served at `/crypto/metadata.xsd`, which also declares the
+   * `cm:CryptoMetadataLocation` element the SAML metadata carries.
+   *
+   * @returns the schema
+   */
   static schema(): string {
     helpers.log.debug("Entering CryptoMetadataDocument.schema().");
     helpers.log.debug("Leaving CryptoMetadataDocument.schema().");
@@ -596,6 +636,13 @@ class CryptoMetadataDocument {
 
   // THE XML, SIGNED — an enveloped signature, FIRST, by the realm's current
   // `xml` signer, through the one XML signer (D9).
+  /**
+   * Serialises the model as XML with an enveloped signature by the realm's
+   * current `xml` signer.
+   *
+   * @param m - the model
+   * @returns the signed XML
+   */
   signedXml(m: Json): string {
     const { log, stsCrypto, helpers } = this.deps;
     log.debug("Entering CryptoMetadataDocument.signedXml().");
@@ -619,6 +666,13 @@ class CryptoMetadataDocument {
   // THE JSON, SIGNED — a JWS by the realm's current `jose` signer, through
   // `signPublishedDocument()` (D9). `sub` is the issuer, as RFC 8414's
   // signed_metadata is.
+  /**
+   * Signs the model as a JWS by the realm's current `jose` signer, `sub` the
+   * issuer as in RFC 8414's `signed_metadata`.
+   *
+   * @param m - the model
+   * @returns the compact JWS
+   */
   signedJson(m: Json): string {
     const { log, signPublishedDocument } = this.deps;
     log.debug("Entering CryptoMetadataDocument.signedJson().");
@@ -629,6 +683,13 @@ class CryptoMetadataDocument {
   }
 
   // Which of the forms a request asked for, by suffix, then `Accept`.
+  /**
+   * Says which form a request asked for: by suffix, then by `Accept`.
+   *
+   * @param req - the express request
+   * @param suffix - the path's suffix, or empty
+   * @returns `json`, `xml`, `jwt`, `signed.xml` or `xsd`
+   */
   formOf(req: Req, suffix: string): string {
     const { log } = this.deps;
     log.debug("Entering CryptoMetadataDocument.formOf().");
@@ -648,6 +709,14 @@ class CryptoMetadataDocument {
     return form;
   }
 
+  /**
+   * Answers a request for the document in the form it asked for, `no-store`;
+   * a document that cannot be built is a 500 (`STS-PKI-0187`).
+   *
+   * @param req - the express request
+   * @param res - the express response
+   * @param suffix - the path's suffix, or empty
+   */
   answer(req: Req, res: Res, suffix: string): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering CryptoMetadataDocument.answer(). " + suffix);
@@ -684,6 +753,12 @@ class CryptoMetadataDocument {
     log.debug("Leaving CryptoMetadataDocument.answer(). " + form);
   }
 
+  /**
+   * Registers the document's six routes on the shared app; the composition
+   * root calls it.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: { get: Function }): void {
     const { log } = this.deps;
     const self = this;
@@ -709,11 +784,29 @@ const slot = new InstanceSlot<CryptoMetadataDocument>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The public crypto metadata document, per realm, at `/crypto/metadata`.
+ *
+ * Requiring it registers nothing; `registerRoutes()` does. The functions
+ * forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   CryptoMetadataDocument: CryptoMetadataDocument,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: CryptoMetadataDocument): void =>
     slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   BASE: BASE,
   XML_NS: XML_NS,

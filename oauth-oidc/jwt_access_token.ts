@@ -136,12 +136,36 @@ const RESOURCE_PATH = '/resource';
 const OIDC_SCOPES = ['openid', 'profile', 'email', 'address', 'phone',
                      'offline_access', 'bound_key'];
 
+/**
+ * RFC 9068 access tokens as a format: the header, the issuer and default
+ * audience a minter uses, the section 4 checks a resource server here makes,
+ * and the audience-and-scope plan behind section 3's refusals.
+ */
 class JwtAccessTokens {
+  /**
+   * The `typ` header an access token is minted with (section 2.1).
+   */
   static readonly TYP = TYP;
+  /**
+   * The long form of the access token type, which is accepted as the same.
+   */
   static readonly MEDIA_TYPE = MEDIA_TYPE;
+  /**
+   * The path of an authorization server's default resource indicator.
+   */
   static readonly RESOURCE_PATH = RESOURCE_PATH;
+  /**
+   * The OpenID Connect scopes, which have meaning only for this service's own
+   * resource server.
+   */
   static readonly OIDC_SCOPES = OIDC_SCOPES;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, base64url JSON reader, settings, error codes and
+   *   authorization server register this class reads
+   */
   constructor(private readonly deps: JwtAccessTokensDeps) {
     deps.log.debug("Entering JwtAccessTokens.constructor().");
     deps.log.debug("Leaving JwtAccessTokens.constructor().");
@@ -149,6 +173,11 @@ class JwtAccessTokens {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): JwtAccessTokensDeps {
     helpers.log.debug("Entering JwtAccessTokens.defaultDeps().");
     helpers.log.debug("Leaving JwtAccessTokens.defaultDeps().");
@@ -161,6 +190,11 @@ class JwtAccessTokens {
     };
   }
 
+  /**
+   * Returns the protected-header members every access token is minted with.
+   *
+   * @returns `{ typ: 'at+jwt' }`
+   */
   header(): { typ: string } {
     const { log } = this.deps;
     log.debug("Entering JwtAccessTokens.header().");
@@ -171,6 +205,13 @@ class JwtAccessTokens {
   // RFC 7515 section 4.1.9: media type names are compared case-insensitively,
   // and `application/` may be omitted — so `AT+JWT` and `application/at+jwt`
   // are this profile's type and `JWT` is not.
+  /**
+   * Tells whether a `typ` header value is this profile's type, compared
+   * case-insensitively and with or without `application/`.
+   *
+   * @param typ - the header value
+   * @returns true for `at+jwt` or `application/at+jwt`
+   */
   isAccessTokenType(typ: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering JwtAccessTokens.isAccessTokenType().");
@@ -184,6 +225,12 @@ class JwtAccessTokens {
   // which hands back the payload: the header is what section 4 step 1 is
   // about, and it is integrity-protected by the signature every caller has
   // already checked.
+  /**
+   * Reads the protected header's `typ` out of a token.
+   *
+   * @param token - a compact JWS
+   * @returns the `typ`, or '' for anything that is not a compact JWS
+   */
   typOf(token: unknown): string {
     const { log, jsonFromB64u } = this.deps;
     log.debug("Entering JwtAccessTokens.typOf().");
@@ -213,6 +260,15 @@ class JwtAccessTokens {
   // identifier it fetched from, and that failure names the issuer rather than
   // the scheme.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the issuer identifier of the authorization server at a base URL.
+   *
+   * A pinned `oauth2.issuer` wins, with an `http://` pin on an HTTPS port
+   * upgraded; otherwise the base itself.
+   *
+   * @param base - the authorization server's base URL
+   * @returns the issuer identifier
+   */
   issuerFor(base: string): string {
     const { log, config } = this.deps;
     log.debug("Entering JwtAccessTokens.issuerFor().");
@@ -236,6 +292,12 @@ class JwtAccessTokens {
   }
 
   // The default resource indicator of the authorization server at `asBase`.
+  /**
+   * Returns the default resource indicator of an authorization server.
+   *
+   * @param asBase - the authorization server's base URL
+   * @returns the base with `/resource` appended
+   */
   defaultAudienceFor(asBase: unknown): string {
     const { log } = this.deps;
     log.debug("Entering JwtAccessTokens.defaultAudienceFor().");
@@ -301,6 +363,14 @@ class JwtAccessTokens {
   // not the one it was configured with. `global.publicBaseUrl` is how a
   // deployment reached under several names gives this service one.
   // -------------------------------------------------------------------------
+  /**
+   * Tells whether an `iss` exactly matches an authorization server this process
+   * publishes at the request's address (section 4 step 3).
+   *
+   * @param iss - the token's `iss` claim
+   * @param base - the request's base URL
+   * @returns true when it matches
+   */
   isHostedIssuer(iss: unknown, base: string): boolean {
     const { log } = this.deps;
     log.debug("Entering JwtAccessTokens.isHostedIssuer().");
@@ -327,6 +397,15 @@ class JwtAccessTokens {
   // ended in `/resource` until this file, which accepted
   // `https://api.partner.example/resource` — somebody else's server, narrowed
   // to by RFC 8707 — as this one.
+  /**
+   * Tells whether an `aud` value is, whole, the default resource indicator of
+   * an authorization server this process publishes at `base` (section 4 step
+   * 4).
+   *
+   * @param aud - one audience value
+   * @param base - the request's base URL
+   * @returns true when it names this service's resource server
+   */
   isOwnResourceAudience(aud: unknown, base: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering JwtAccessTokens.isOwnResourceAudience().");
@@ -384,6 +463,19 @@ class JwtAccessTokens {
   // are the same for every resource server here, because the authorization
   // servers it trusts are the same.
   // -------------------------------------------------------------------------
+  /**
+   * Makes section 4's checks of type, issuer and audience for a token already
+   * verified, at a resource server here.
+   *
+   * @param token - the compact token, for its header
+   * @param claims - its verified claims
+   * @param base - the request's base URL
+   * @param options - `audience` (`{ names, label }`), which replaces the
+   *   audience check for a resource server answering for a registered
+   *   application
+   * @returns null to accept, or an `invalid_token` refusal `{ error,
+   *   description }` carrying its error code
+   */
   resourceServerRefusal(token: unknown, claims: Json, base: string,
                         options?: Json): Refusal | null {
     const { log } = this.deps;
@@ -550,6 +642,18 @@ class JwtAccessTokens {
     return out;
   }
 
+  /**
+   * Decides which audiences an access token is addressed to and which scopes it
+   * carries for them (sections 2.2.3 and 3, as one decision).
+   *
+   * Refuses scopes naming two APIs, a scope naming an API the request did not
+   * address, and an ordinary scope on a token with several audiences; strips
+   * OpenID Connect scopes from a token for an API.
+   *
+   * @param input - the classified request: `ownResource`, `explicit` audiences
+   *   and one row per scope
+   * @returns `{ audiences, scope, stripped, refusal }`
+   */
   audiencePlan(input: Json): AudiencePlan {
     const { log } = this.deps;
     const self = this;
@@ -732,9 +836,29 @@ const slot = new InstanceSlot<JwtAccessTokens>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9068, the JWT profile for OAuth 2.0 access tokens, for both the minter
+ * and the resource servers here.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   JwtAccessTokens: JwtAccessTokens,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: JwtAccessTokens): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   TYP: JwtAccessTokens.TYP,
   MEDIA_TYPE: JwtAccessTokens.MEDIA_TYPE,

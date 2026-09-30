@@ -876,6 +876,36 @@ so nothing downstream would ever report that the name was wrong. Listing them as
 unmapped is what turns a partner's fifteenth claim into a line somebody can act
 on, and mapping it is one form field away.
 
+**The list on `/admin/federation` was promised here and not built until #94
+(2026-09-28).** It is `federation.js`'s `recordUnmapped()` / `unmappedOf()`: a
+per-realm persisted store (`federation.unmapped`, in `sts_minted`) of the names
+each relationship's partner sent and nothing wrote, at most 50 per
+relationship, written only when a name is new, its reason changed or an hour
+has passed. It is drawn under `fedAttributeMap` as *Sent and not written*, each
+row with a Map form holding `<name>=`, and returned as `unmappedAttributes` by
+`GET /admin-api/federation?id=`.
+
+### A mapping may not target what this service keeps (#94)
+
+Until #94 a `fedAttributeMap` target was not looked at. `groups=memberOf`
+put a partner's value into a person's group memberships, which grant console
+roles. `x=pwdAccountLockedTime` disabled them. `x=stsTotpCredential` replaced
+their second factor. **`common/sourced_attributes.ts` is the rule**, shared
+with #94's attribute sources:
+* **refused by prefix:** `sts*`, `app*`, `fed*`/`federation*`, `pwd*` and
+  `hoba*`, so the next credential attribute is covered without an edit;
+* **refused by name:** `uid`, `objectClass`, `memberOf`, `userPassword` and the
+  operational attributes.
+
+**`mail` is not refused**: a partner's `email` is the default table's ordinary
+target. It is held at three points:
+* `update()` refuses the mapping on write (`STS-FED-0151` not a mapping,
+  `STS-FED-0152` a refused target). Removing one is never refused, so a mapping
+  written before #94 can be taken off.
+* `federation_map.ts`'s `mapIncoming()` drops it at sign-in as unmapped, with
+  the reason (`STS-FED-0153`).
+* `ldap_server.js`'s `applyFederatedAttributes()` refuses it at the write.
+
 ### Two names for one attribute: values concatenated, each kept once (#189)
 
 Two incoming names that map to one directory attribute have their values
@@ -1033,6 +1063,20 @@ partner that stopped releasing `title` has not said the person has no title.
 here.** A federated `mail` and an invented `mail` are indistinguishable on the
 entry — both are ordinary directory attributes — and telling them apart is
 exactly the question a person reading a federated directory entry has.
+
+**It is TOLD since #94 (2026-09-28).** A write that changed a value describing
+a person who already existed calls `noteAccountChange('updated', …)` with the
+entry before and after. That call reaches:
+* CAEP `token-claims-change`, for what their live tokens carry;
+* RISC, for an identifier;
+* the former address, told of a new `mail`, the mail flow's notice;
+* Provider Commands.
+
+Until then this was the one silent door onto a person's attributes: a partner
+could change someone's address and nothing downstream heard. It fires once
+per write, and not for a sign-in that changed only `federationLastSeen` or
+the provenance attributes. It does not fire for an entry the sign-in
+created, because its creation is announced by the create.
 
 ---
 
@@ -1339,6 +1383,25 @@ Logout Token from another realm's OpenID Provider among it);
 
 ## A PARTNER'S ENCRYPTED ASSERTION (#168, 2026-09-23)
 
+**AND A POST-QUANTUM KEY FOR AN OpenID Connect RELATIONSHIP (#82,
+2026-09-27).**
+* **The key types.** `fedEncryptionKeyType` may be `x-wing` (HPKE-10-KE,
+  ML-KEM-768 + X25519) or `ml-kem-768` (ML-KEM-768), each doing exactly the
+  one management algorithm its AKP key names.
+* **JOSE only.** A SAML 2.0 or WS-Federation relationship is refused them
+  (`STS-FED-0143`), because XML Encryption defines no post-quantum key
+  transport.
+* **Certificate-less rows.** Such a key has NO certificate: no X.509 profile
+  exists for X-Wing, and pki.js issues none. So its row carries `kem` (the
+  alg) and the AKP JWK, with its private half sealed as JSON where a
+  classical row seals a PEM. A partner reads the key from the relationship's
+  JWKS.
+* **Everything else is unchanged.** `rotate()` makes the key with
+  `crypto.generateJweKemKeyPair()` and hands it to the SAME `store()` a
+  classical key goes through: sealing, current and previous, the grace
+  period, retirement. The cryptography is `common/CLAUDE.md`'s
+  *crypto.js section 4a*.
+
 Until #168 an `<EncryptedAssertion>` was refused as "no assertion", a JWE ID
 Token was read as a JWS and failed on the key, and no key was published — so
 the only way to federate was for the partner to send the person's NameID, mail
@@ -1562,9 +1625,18 @@ cluster node could not read.
 funnel carries `create` and `autoCreateUser()` makes nobody without it, so a
 sign-in sent to an existing person can never create one because the entry
 went in between. Every entry a sign-in creates is namespaced — rcbj's
-"development's auto-create becomes this shape". Product still creates nobody
-(`mode.autoCreates()`), so in product `jit-namespaced` refuses an unlinked
-subject exactly as `STS-FED-0090` always did.
+"development's auto-create becomes this shape". **Product mode creates too,
+since 2026-09-29 (#325, rcbj)**, for a relationship whose `fedAutocreateUsers`
+is on: that switch is the operator's own, per partner, and until then
+`autoCreateUser()`'s `mode.autoCreates()` gate made product refuse every
+federated newcomer `STS-FED-0090` whatever the switch said. Nothing else
+creates in product mode, and an entry created there carries only the
+identity and what the partner sent — no invented value
+(`mode.inventsClaimValues()`). **It overrides `ldap.autocreateUsers` as
+well (rcbj, 2026-09-30)**: a relationship with the switch on creates its
+newcomers even in a realm whose `ldap.autocreateUsers` is off, in either
+mode; with the switch off it creates nobody, and every other door still
+reads the realm setting (`tests/federation_provisioning.js` 7c).
 
 **UNLINKING** — the console's *Federation links* panel, `POST /admin-api/users/
 federation-unlink`, SCIM, `ldapmodify` — goes through the directory's write
@@ -1618,3 +1690,59 @@ found it and validates every document this module emits — the SAML 2.0,
 SAML 1.1 and WS-Federation relationship metadata, the outbound AuthnRequest
 on both bindings and the outbound LogoutRequest — against the published
 OASIS schemas (`tests/CLAUDE.md`, *The published XML Schemas*).
+
+## IN A SERVICE DEPLOYED AS CELLS (#98 D10, 2026-09-28)
+
+**EVERY FLOW HANDLE NAMES ITS CELL.** `putContext()` stamps the handle
+(`'fed-' + cellLocator.stamp(randomId(18))`, 40 characters — inside the
+`^fed-[A-Za-z0-9_-]{1,64}$` pattern the three readers hold and SAML's 80-byte
+RelayState). So `/federation/link/{handle}` is an `artifact` row the edge
+places by its path segment, and the ACS (`consume()`) relays a partner's
+answer whose RelayState, fedctx, wctx or state names another cell, before the
+response is verified or anything in it spent. A browser pinned elsewhere was
+placed at the edge already.
+
+**A PARTNER'S SIGN-OUT REACHES EVERY CELL** (`federation_slo.ts`,
+`endAtPeers()`). The sessions a relationship started are held wherever the
+person signed in, one person may hold several in several cells, and a
+sign-out arrives at one cell naming WHAT to end and not where. The cell it
+arrives at verifies it and spends it — once, in the global used-assertion
+history — ends what it holds, and calls `federation-partner-signout` on every
+peer with the match as data; each side builds the one predicate from it
+(`FederationSlo.matcherOf()`), so a peer ends exactly what this cell would
+have. It applies to the Back-Channel Logout Token, the SAML LogoutRequest and
+the Front-Channel Logout (whose iframe carries no affinity cookie a browser
+blocking third-party cookies would send). A peer ends on the back channel:
+its sessions' Logout Tokens and CAEP events go from their end, and a browser
+fan-out it cannot draw counts as partial.
+
+**What the partner is told when a cell cannot be reached** (`STS-CELL-0122`):
+Back-Channel Logout section 2.8's 400, unless the token named one session by
+`sid` and that session ended; a LogoutResponse's PartialLogout; the
+front-channel page says it signed out nothing it could reach. **The sessions
+in that cell last until they end by themselves** — the durable, retried
+revocation push is the design's section 5, not built yet. WS-Federation's
+confirmed cleanup is bound to the session in THIS browser, which the edge has
+already placed, and needs nothing more.
+
+**A PARTNER ASSERTING A PERSON HOMED IN ANOTHER CELL RESTARTS THE FLOW
+THERE (D9)** — `completeSignIn()`, before `subjectDecision()`, which reads
+this cell's directory: residents, and projections of people homed elsewhere
+that are not residents. `homeOfSubject()` finds the home the way the
+decision would find the person: the person a local federationLink names (a
+projection's home from the routing index); with no local holder, a RESIDENT
+of another cell carrying the link (`federation-link-home`, asked of every
+peer, because the index keeps names and entryUUIDs and not links); then the
+names the policy would sign in or create (the mapped username under
+any-existing and link-at-first-sign-in, the namespaced name under every
+policy that creates one) from the index. A home elsewhere is answered by
+`authn.restartPendingAtHome()`: the browser is pinned home and sent back to
+where the flow started — the sign-in screen's pending record, whose id rides
+on the partner button (`&authn=`, multi-cell only), or a RESTART-ONLY record
+home realm discovery mints when it goes straight to the partner — so home
+re-runs the flow and the partner, holding its own sign-on session, answers
+again at home's consumer. The verified assertion is dropped unused; nothing
+about the person is written, carried or provisioned in the flow's cell, and
+a link-at-first-sign-in happens at home. A peer that cannot be asked about a
+link is skipped (`STS-CELL-0123`). Held in process by `tests/cell_saml_federation.js`.
+

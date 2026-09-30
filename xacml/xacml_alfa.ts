@@ -208,15 +208,39 @@ const OPERATORS = [
 const PUNCTUATION = ['==', '!=', '>=', '<=', '&&', '||', '{', '}', '(', ')',
                      ',', '=', '>', '<', '!', '$'];
 
+/**
+ * Reads and writes ALFA, the Abbreviated Language for Authorization, over
+ * the same policy model the XML and JSON readers produce.
+ *
+ * Nothing downstream can tell which syntax a policy arrived in.
+ */
 class AlfaLanguage {
+  /**
+   * ALFA's names for the attribute categories, mapped to their URIs.
+   */
   static readonly CATEGORY_NAMES: Record<string, string> = CATEGORY_NAMES;
+  /**
+   * ALFA's camel-case names for the combining algorithms, each mapped to its
+   * rule-combining and policy-combining URIs (null where there is none).
+   */
   static readonly ALGORITHM_NAMES: Record<string, string[]> = ALGORITHM_NAMES;
 
   // The inverse of `shortFunctionName()`. Built once from the library, so
   // every function this service implements is reachable by its camel-case
   // name and nothing else is.
+  /**
+   * Every implemented function's URI, keyed by its camel-case ALFA name;
+   * where two share a name the 3.0 function wins.
+   */
   readonly functionByShortName: Record<string, string> = {};
 
+  /**
+   * Builds the language over its dependencies and indexes the function
+   * library by short name.
+   *
+   * @param deps - the logger, the model, the datatype table and the function
+   *   library
+   */
   constructor(private readonly deps: AlfaLanguageDeps) {
     const self = this;
     deps.log.debug("Entering AlfaLanguage.constructor().");
@@ -233,6 +257,12 @@ class AlfaLanguage {
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AlfaLanguageDeps {
     helpers.log.debug("Entering AlfaLanguage.defaultDeps().");
     helpers.log.debug("Leaving AlfaLanguage.defaultDeps().");
@@ -245,6 +275,14 @@ class AlfaLanguage {
   }
 
 
+  /**
+   * Returns the ALFA name of a combining algorithm URI.
+   *
+   * A legacy 1.0 or 1.1 spelling maps by its suffix to the name its modern
+   * counterpart shares, so writing it back names the 3.0 algorithm.
+   * @param uri - the combining algorithm identifier
+   * @returns the ALFA name, or null when there is none
+   */
   algorithmNameOf(uri: string): string | null {
     const { log } = this.deps;
     log.debug("Entering AlfaLanguage.algorithmNameOf().");
@@ -266,6 +304,15 @@ class AlfaLanguage {
     return ALGORITHM_NAMES[camel] ? camel : null;
   }
 
+  /**
+   * Returns the combining algorithm URI for an ALFA name.
+   *
+   * @param name - the ALFA algorithm name
+   * @param forPolicySet - true for the policy-combining URI, otherwise the
+   *   rule-combining one
+   * @returns the URI, or null when the name is unknown or has no URI of
+   *   that kind
+   */
   algorithmUriOf(name: string, forPolicySet?: boolean): string | null {
     const { log } = this.deps;
     log.debug("Entering AlfaLanguage.algorithmUriOf().");
@@ -320,6 +367,13 @@ class AlfaLanguage {
     return functions.lookup(uri) ? uri : null;
   }
 
+  /**
+   * Returns a function's camel-case ALFA name: the part after `:function:`
+   * with each hyphen folded into a capital.
+   *
+   * @param uri - the function identifier
+   * @returns the short name
+   */
   shortFunctionName(uri: string): string {
     const { log } = this.deps;
     log.debug("Entering AlfaLanguage.shortFunctionName().");
@@ -384,6 +438,15 @@ class AlfaLanguage {
     return { byKey: byKey, order: order };
   }
 
+  /**
+   * Derives a short ALFA name for an attribute from the last segment of its
+   * identifier, in camel case.
+   *
+   * Returns `attr` when nothing usable is left, and prefixes `a` to a name
+   * that would start with a digit.
+   * @param attributeId - the attribute identifier
+   * @returns the short name
+   */
   shortNameForAttribute(attributeId: string): string {
     const { log } = this.deps;
     log.debug("Entering AlfaLanguage.shortNameForAttribute().");
@@ -795,6 +858,16 @@ class AlfaLanguage {
     return lines.join('\n');
   }
 
+  /**
+   * Renders a policy or policy set as an ALFA document.
+   *
+   * Every designator is declared once at the top under a short name; legacy
+   * combining algorithms are written with their 3.0 names.
+   * @param policy - the Policy or PolicySet
+   * @param options - optional; `namespace`, the ALFA namespace (`stsMock` by
+   *   default)
+   * @returns the ALFA text
+   */
   write(policy: ModelNode, options?: { namespace?: string }): string {
     const self = this;
     const { log, datatypes } = this.deps;
@@ -818,6 +891,13 @@ class AlfaLanguage {
     return text;
   }
 
+  /**
+   * Splits ALFA source into tokens, ending with an `end` token.
+   *
+   * @param text - the source
+   * @returns the tokens, each with its kind, value and line
+   * @throws a syntax error on a character ALFA does not use
+   */
   tokenize(text: unknown): Token[] {
     const { log, model } = this.deps;
     log.debug('Entering AlfaLanguage.tokenize().');
@@ -922,6 +1002,14 @@ class AlfaLanguage {
   // ---------------------------------------------------------------------------
   // THE PARSER.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses an ALFA document into the policy model.
+   *
+   * @param text - the ALFA source
+   * @returns the root Policy or PolicySet
+   * @throws a syntax error on anything that does not parse, or a document
+   *   with no policy in it
+   */
   parse(text: unknown): ModelNode {
     const self = this;
     const { log, model, datatypes, functions } = this.deps;
@@ -1625,6 +1713,13 @@ const slot = new InstanceSlot<AlfaLanguage>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * ALFA, read and written: the third syntax over `xacml_model.js`.
+ *
+ * The functions forward to the `AlfaLanguage` instance the composition
+ * root installs.
+ * @namespace
+ */
 export = {
   AlfaLanguage: AlfaLanguage,
   installInstance: (instance: AlfaLanguage): void => slot.install(instance),

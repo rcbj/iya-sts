@@ -80,6 +80,10 @@ const errorCodes = require('./error_codes');
 // written against — adding one is adding a word a policy author can match on,
 // and renaming one silently stops every policy that named the old word from
 // matching, which is a policy that permits nothing rather than an error.
+/**
+ * The kinds of issuance a caller may ask about, each the XACML `action-id`
+ * policies are written against.
+ */
 const ISSUANCE = {
   SESSION: 'start-session',
   ACCESS_TOKEN: 'issue-access-token',
@@ -92,12 +96,37 @@ const ISSUANCE = {
   KERBEROS_TICKET: 'issue-kerberos-ticket'
 };
 
+/**
+ * Every value of `ISSUANCE`.
+ */
 const KINDS = Object.keys(ISSUANCE).map(function (key) {
   return ISSUANCE[key];
 });
 
+// THE PROTOCOL OF AN ISSUANCE, where the caller did not name one (#304): the
+// issuance request carries it as an environment attribute, and every kind but
+// a session belongs to one family. A session is protocol-independent — the
+// authenticated identity is `authn/`'s — so it carries none unless named.
+const PROTOCOL_OF_KIND = {
+  'issue-access-token': 'OAuth 2.0',
+  'issue-id-token': 'OpenID Connect',
+  'issue-refresh-token': 'OAuth 2.0',
+  'issue-authorization-code': 'OAuth 2.0',
+  'issue-saml-assertion': 'SAML',
+  'issue-wsfed-token': 'WS-Federation',
+  'issue-wstrust-token': 'WS-Trust',
+  'issue-kerberos-ticket': 'Kerberos'
+};
+
 let decider = null;
 
+/**
+ * Installs the function that decides issuance: the embedded PEP,
+ * `xacml/xacml_role_pep.ts`.
+ *
+ * @param fn - the decider; anything but a function empties the slot, and
+ * issuance is then ungated
+ */
 function setDecider(fn) {
   log.debug('Entering setDecider().');
   decider = typeof fn === 'function' ? fn : null;
@@ -108,6 +137,11 @@ function setDecider(fn) {
 // What is installed, for a test that stubs it — `xacml_store.js` argues why
 // this is not pedantry, and it is the same one-process, one-reference
 // situation here.
+/**
+ * Returns the decider now installed, for a test that stubs it.
+ *
+ * @returns the decider, or null
+ */
 function deciderInstalled() {
   log.debug("Entering deciderInstalled().");
   log.debug("Leaving deciderInstalled().");
@@ -165,6 +199,22 @@ function deciderInstalled() {
 // token endpoint asynchronous would be a change to eight protocol
 // implementations rather than to one file.
 // ---------------------------------------------------------------------------
+/**
+ * Asks whether something may be issued: a session, a token, an assertion, a
+ * ticket.
+ *
+ * Refuses first for a realm being removed (STS-CORE-0121) and a disabled
+ * account (STS-AUTHN-0201). With no decider installed every other call is
+ * allowed; otherwise the embedded PEP decides on roles, risk and the registered
+ * device. Never throws and never returns a promise; a decider that throws is
+ * logged (STS-XACML-0052) and the issuance allowed.
+ *
+ * @param request - the question: `application`, `kind` (one of `ISSUANCE`),
+ * `subject`, `claims`, `realm`, and optionally `risk`, `session`, `device` and
+ * `deviceDeferred`
+ * @returns `{ allowed, decision, why, roles, required, policy }`, where
+ * `allowed` is what the caller branches on
+ */
 function check(request) {
   log.debug('Entering check(). kind=' + (request || {}).kind);
   const asked = request || {};
@@ -257,6 +307,7 @@ function check(request) {
                  'to check.');
   }
   const question = Object.assign({}, asked, {
+    protocol: asked.protocol || PROTOCOL_OF_KIND[String(asked.kind)] || '',
     risk: risk,
     device: device,
     deviceRequirement: deviceRequirement,
@@ -321,8 +372,23 @@ function check(request) {
 //
 // `delegation`: { intermediary, subject, target, mode, protocol }.
 // ---------------------------------------------------------------------------
+/**
+ * The `action-id` of the delegation question: `delegate`. Not a member of
+ * `ISSUANCE`.
+ */
 const DELEGATE = 'delegate';
 
+/**
+ * Puts a delegation the attribute rule already allowed to the embedded PEP,
+ * which may only deny it.
+ *
+ * Only an explicit Deny refuses; a Permit, NotApplicable, Indeterminate, no
+ * decider or a decider that throws all leave the attribute rule's answer
+ * standing.
+ *
+ * @param delegation - `{ intermediary, subject, target, mode, protocol }`
+ * @returns the same shape as `check()`
+ */
 function checkDelegation(delegation) {
   log.debug('Entering checkDelegation().');
   const asked = delegation || {};
@@ -365,6 +431,227 @@ function checkDelegation(delegation) {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// THE PER-SCOPE QUESTION (#304, #305 — parts C and D of #88): which requested
+// scopes (or RFC 9396 details) are issued. `request` is the question
+// `xacml/xacml_scope_verdicts.js` asks — `{ subject, client, grantType,
+// protocol, held, mode, settings, stage, consentRequired, action, requested,
+// facts: [{ scope, gated?, attributes }] }` — the FACTS, gathered by the
+// subsystem that knows them; the issuance policy decides each one and this
+// answers `{ verdicts: [{ scope, verdict, code, decidedBy }] }`, verdict
+// `keep`, `drop`, `refuse` or `consent`.
+//
+// **WITH NO DECIDER THE BUILT-IN POLICY STILL DECIDES (rcbj's decision on
+// #305).** A process with no XACML family loaded — the in-process tests, the
+// parent project's Kerberos jobs — loads the engine's LIBRARIES here, lazily
+// (the model, the PDP, the templates and the request builder, none of which
+// registers a route or fills a slot), and asks the built-in document itself:
+// the rules live in one place and hold in every process. A decider that
+// THROWS is a defect, and the built-in policy is asked the same way.
+// ---------------------------------------------------------------------------
+function builtInScopeVerdicts(asked, why) {
+  log.debug('Entering builtInScopeVerdicts().');
+  let verdicts;
+  try {
+    verdicts = require('../xacml/xacml_scope_verdicts').decide(asked, null, {});
+  } catch (error) {
+    // THE ENGINE ITSELF COULD NOT BE LOADED OR RUN — a defect. What is left
+    // is the fact-level reading the policy module uses for its own defect:
+    // a gated scope dropped, everything else kept.
+    log.error(errorCodes.tag('STS-XACML-0079') + 'issuance_gate: the ' +
+              'built-in issuance policy could not be evaluated for the ' +
+              'scope question; gated scopes are dropped. ' + error.message);
+    verdicts = (asked.facts || []).map(function (one) {
+      return { scope: one.scope, verdict: one.gated ? 'drop' : 'keep',
+               code: one.gated ? 'STS-ADMIN-0821' : '', decidedBy: 'none' };
+    });
+  }
+  log.debug('Leaving builtInScopeVerdicts().');
+  return { verdicts: verdicts, why: why, policy: 'built-in' };
+}
+
+function checkScopes(request) {
+  log.debug('Entering checkScopes().');
+  const asked = Object.assign({}, request || {});
+  asked.facts = Array.isArray(asked.facts) ? asked.facts : [];
+  if (!asked.facts.length) {
+    log.debug('Leaving checkScopes(). Nothing asked.');
+    return { verdicts: [], why: '' };
+  }
+  if (!decider) {
+    log.debug('Leaving checkScopes(). No decider: the built-in policy.');
+    return builtInScopeVerdicts(asked, 'No XACML family is loaded in this ' +
+                                'process; the built-in policy decided.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: asked.action || 'issue-scope',
+      application: String(asked.application || ''),
+      subject: asked.subject || {},
+      client: asked.client || '',
+      grantType: asked.grantType || '',
+      protocol: asked.protocol || '',
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      scopeQuestion: asked
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on the scope question; the ' +
+              'built-in policy decides instead. This is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug('Leaving checkScopes(). The decider threw.');
+    return builtInScopeVerdicts(asked, 'The embedded PEP threw: ' +
+                                error.message);
+  }
+  const verdicts = answer && Array.isArray(answer.scopes) ? answer.scopes
+    : null;
+  if (!verdicts) {
+    log.debug('Leaving checkScopes(). The PEP answered no verdicts.');
+    return builtInScopeVerdicts(asked, 'The embedded PEP answered no ' +
+                                'verdicts.');
+  }
+  log.debug('Leaving checkScopes(). ' + verdicts.length + ' verdict(s).');
+  return { verdicts: verdicts, why: '', policy: answer.policy || '' };
+}
+
+// ---------------------------------------------------------------------------
+// THE TRANSFER QUESTIONS (#98 D4, the design's section 6): action-ids
+// `hold-session`, `serve-request` and `release-attributes`, asked by
+// `common/cell_transfer.ts` when the service is deployed as cells.
+// `hold-session`: may a session of a subject homed in one jurisdiction be
+// HELD by a cell in another? `serve-request`: may a request about them be
+// served from that cell at all, even by relaying it home?
+// `release-attributes` (#98 D11): may residents' personal data be RELEASED
+// to a reader at a cell in another jurisdiction?
+//
+// **NOT MEMBERS OF `ISSUANCE`**, for `DELEGATE`'s reason and the scope
+// question's: neither issues anything — holding a session somewhere is a
+// question about WHERE a session already decided on lives, and serving a
+// request or releasing a directory listing is not an issuance at all — and
+// every reader of `KINDS` lists
+// issuances (the /admin/roles preview, `/admin-api`'s closed set of issuance
+// kinds, the realm-retiring test that refuses each one). They are still
+// action-ids of the ISSUANCE POLICY, spelt in the verb-noun shape of the
+// kinds above, and a realm's policy writes rules against them exactly as it
+// does against `issue-scope`.
+//
+// `request`: `{ action, subject, home, serving, clientCountry, listed,
+// hardGeofence, category, realm, purpose }` — FACTS, gathered by
+// `cell_transfer.ts`; the answer is `{ verdict, decidedBy, why }`, verdict
+// `hold` / `relay`, `serve` / `refuse` or `release` / `withhold`.
+//
+// **WITH NO DECIDER THE BUILT-IN POLICY STILL DECIDES**, the scope question's
+// arrangement (rcbj's decision on #305): the engine's libraries are loaded
+// here lazily and asked the built-in document, and a decider that THROWS is
+// a defect and the built-in policy is asked the same way. A process that
+// cannot load the engine at all falls to the strict reading of the same rule
+// (`xacml_transfer_verdicts.js`'s `strictReading()`), STS-CELL-0181 — never
+// to something looser.
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids of the three transfer questions (#98). Not members of
+ * `ISSUANCE`.
+ */
+const TRANSFER = {
+  HOLD_SESSION: 'hold-session',
+  SERVE_REQUEST: 'serve-request',
+  RELEASE_ATTRIBUTES: 'release-attributes'
+};
+
+function builtInTransferVerdict(asked, why) {
+  log.debug('Entering builtInTransferVerdict().');
+  let out;
+  try {
+    const verdicts = require('../xacml/xacml_transfer_verdicts');
+    out = verdicts.decide(asked, null, {});
+  } catch (error) {
+    log.error(errorCodes.tag('STS-CELL-0181') + 'issuance_gate: the ' +
+              'built-in issuance policy could not be evaluated for ' +
+              String(asked.action) + '; the strict default decides. ' +
+              ((error && error.message) || error));
+    out = { verdict: strictTransferReading(asked), decidedBy: 'none' };
+  }
+  log.debug('Leaving builtInTransferVerdict(). ' + out.verdict);
+  return Object.assign({ why: why }, out);
+}
+
+// The strict default read from the facts — the built-in rule, for the one
+// case where not even the engine can be loaded. A copy of
+// `xacml_transfer_verdicts.js`'s `strictReading()`, because this is exactly
+// the process that cannot load that module; `tests/cell_transfer.js` holds
+// the two to the same truth table.
+function strictTransferReading(asked) {
+  log.debug('Entering strictTransferReading().');
+  const q = asked || {};
+  const same = !!q.home && !!q.serving && q.home === q.serving;
+  const permitted = same || !!q.listed;
+  let verdict;
+  if (q.action === TRANSFER.SERVE_REQUEST) {
+    verdict = q.hardGeofence && !permitted ? 'refuse' : 'serve';
+  } else if (q.action === TRANSFER.RELEASE_ATTRIBUTES) {
+    verdict = permitted ? 'release' : 'withhold';
+  } else {
+    verdict = permitted ? 'hold' : 'relay';
+  }
+  log.debug('Leaving strictTransferReading(). ' + verdict);
+  return verdict;
+}
+
+/**
+ * Puts a transfer question (#98) to the issuance policy: `hold-session`,
+ * `serve-request` or `release-attributes`, with the facts
+ * `common/cell_transfer.ts` gathered.
+ *
+ * Never throws and never returns a promise. With no decider, or a decider
+ * that throws or answers nothing, the built-in policy decides.
+ *
+ * @param request - `{ action, subject, home, serving, clientCountry, listed,
+ * hardGeofence, category, realm, purpose }`
+ * @returns `{ verdict, decidedBy, why }`
+ */
+function checkTransfer(request) {
+  log.debug('Entering checkTransfer().');
+  const asked = Object.assign({}, request || {});
+  if (!decider) {
+    log.debug('Leaving checkTransfer(). No decider: the built-in policy.');
+    return builtInTransferVerdict(asked, 'No XACML family is loaded in this ' +
+                                  'process; the built-in policy decided.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: asked.action,
+      application: '',
+      subject: { kind: 'user', name: String(asked.subject || ''),
+                 authenticated: true },
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      transferQuestion: asked
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on a transfer question; the ' +
+              'built-in policy decides instead. This is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug('Leaving checkTransfer(). The decider threw.');
+    return builtInTransferVerdict(asked, 'The embedded PEP threw: ' +
+                                  error.message);
+  }
+  const transfer = answer && answer.transfer;
+  if (!transfer || !transfer.verdict) {
+    log.debug('Leaving checkTransfer(). The PEP answered no verdict.');
+    return builtInTransferVerdict(asked, 'The embedded PEP answered no ' +
+                                  'transfer verdict.');
+  }
+  log.debug('Leaving checkTransfer(). ' + transfer.verdict);
+  return { verdict: transfer.verdict, decidedBy: transfer.decidedBy || '',
+           why: answer.why || '' };
+}
+
 function riskFactsOf(asked) {
   log.debug("Entering riskFactsOf().");
   if (Object.prototype.hasOwnProperty.call(asked, 'risk')) {
@@ -396,6 +683,15 @@ function riskFactsOf(asked) {
 // reason; a process without the register has no device facts, which a
 // device rule reads as "none".
 // ---------------------------------------------------------------------------
+/**
+ * Finds the registered device an issuance came from, brought up to date against
+ * the device register.
+ *
+ * @param asked - the issuance request: its own `device` where named (null
+ * meaning none), otherwise the device the session's latest authentication event
+ * recognised
+ * @returns the device fact, or null
+ */
 function deviceFactsOf(asked) {
   log.debug("Entering deviceFactsOf().");
   let fact = null;
@@ -431,6 +727,13 @@ function deviceFactsOf(asked) {
 // `devices.compliantDeviceAttested` is. The settings SWITCH the rules and
 // the policy states them — `xacml/xacml_templates.ts` argues it.
 // ---------------------------------------------------------------------------
+/**
+ * Lists what the ambient realm requires of a device, as the bag the issuance
+ * policy reads.
+ *
+ * @returns some of `not-compromised`, `compliant` and `attested`, as the
+ * `devices.*` settings say
+ */
 function deviceRequirementOf() {
   log.debug("Entering deviceRequirementOf().");
   const out = [];
@@ -483,14 +786,27 @@ function allow(why) {
            roles: [], required: [], policy: null };
 }
 
+/**
+ * The one place this service asks "may I issue this?", answered by whichever
+ * policy enforcement point filled its slot.
+ *
+ * A leaf; an empty slot means issue. The embedded XACML PEP fills it.
+ *
+ * @namespace
+ */
 module.exports = {
   ISSUANCE: ISSUANCE,
   KINDS: KINDS,
   setDecider: setDecider,
   deciderInstalled: deciderInstalled,
   check: check,
+  checkScopes: checkScopes,
+  PROTOCOL_OF_KIND: PROTOCOL_OF_KIND,
   deviceFactsOf: deviceFactsOf,
   deviceRequirementOf: deviceRequirementOf,
   DELEGATE: DELEGATE,
-  checkDelegation: checkDelegation
+  checkDelegation: checkDelegation,
+  TRANSFER: TRANSFER,
+  checkTransfer: checkTransfer,
+  strictTransferReading: strictTransferReading
 };

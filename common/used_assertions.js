@@ -142,6 +142,10 @@ config.registerLogger(log);
 // The two formats and the three uses. Closed lists: a row carrying anything
 // else is refused at `claim()` rather than written, because a history whose
 // rows can say anything is one a page cannot draw a column for.
+/**
+ * The closed list of document formats a row may carry, each with the label
+ * the console draws for it.
+ */
 const FORMATS = {
   jwt: 'RFC 7523 JWT',
   saml: 'RFC 7522 SAML 2.0 assertion',
@@ -158,6 +162,10 @@ const FORMATS = {
   // string rather than somebody's `jti`.
   'attestation-challenge': 'OAuth client attestation challenge'
 };
+/**
+ * The closed list of uses a document may be accepted for, each with the
+ * label the console draws for it.
+ */
 const USES = {
   'client-authentication': 'client authentication (RFC 7521 section 4.2)',
   'authorization-grant': 'authorization grant (RFC 7521 section 4.1)',
@@ -188,6 +196,10 @@ const USES = {
 };
 
 // What a row is, spelt once. Every store hands rows back in this shape.
+/**
+ * The two states of a row: `reserved` while the response it belongs to is
+ * unfinished, `spent` once tokens were issued for it.
+ */
 const STATES = {
   reserved: 'accepted, and the response it belongs to has not finished',
   spent: 'tokens were issued for it'
@@ -294,6 +306,17 @@ function capOf() {
 // One key for one DOCUMENT, whatever it was presented as. The use is left out
 // on purpose — see the header. base64url of SHA-256, so a key is short and
 // fixed-length whatever an issuer put in its `jti`.
+/**
+ * Computes the history key of one document: base64url SHA-256 over its
+ * format, issuer and identifier.
+ *
+ * The use is left out on purpose, so a document is spent once whatever it
+ * was presented as.
+ * @param format - the document format, a FORMATS key
+ * @param issuer - who issued the document
+ * @param identifier - its `jti`, SAML `ID` or challenge value
+ * @returns the key
+ */
 function keyOf(format, issuer, identifier) {
   log.debug("Entering keyOf().");
   const digest = crypto.createHash('sha256')
@@ -347,9 +370,17 @@ function sweep(realmId, now) {
 // against it — a claim answered from an empty copy of a history that exists on
 // disk would be the restart-replay this file exists to close.
 // ---------------------------------------------------------------------------
+/**
+ * The driver functions a store must have for the history to be held in it
+ * as a database, with each claim atomic across processes.
+ */
 const DATABASE_GROUP = ['claimUsedAssertion', 'settleUsedAssertion',
                         'listUsedAssertions', 'purgeUsedAssertions',
                         'removeUsedAssertions'];
+/**
+ * The driver functions a store must have for the history to be held in
+ * memory, written to it and read back at startup.
+ */
 const SNAPSHOT_GROUP = ['loadUsedAssertions', 'saveUsedAssertions',
                         'removeUsedAssertions'];
 
@@ -362,6 +393,17 @@ function hasGroup(theDriver, names) {
   return all;
 }
 
+/**
+ * Installs the persistence store the history is held in; called by
+ * persistence.js once a driver is open.
+ *
+ * A database driver is used directly; a snapshot driver is read before the
+ * promise settles; a driver with neither group leaves the history in this
+ * process's memory, with a warning.
+ * @param theDriver - the open persistence driver
+ * @param activeMode - the store's name, for messages and summary()
+ * @returns a promise of true for a persistent store, false for memory
+ */
 function setStore(theDriver, activeMode) {
   log.debug("Entering setStore(). mode=" + activeMode);
   partitions.clear();
@@ -422,6 +464,12 @@ function setStore(theDriver, activeMode) {
 
 // Back to this process's memory, for `persistence.stop()`. Writes whatever a
 // snapshot store still owes first.
+/**
+ * Returns the history to this process's memory, for persistence.stop(),
+ * after writing whatever a snapshot store is still owed.
+ *
+ * @returns a promise settled once the owed writes are done
+ */
 function clearStore() {
   log.debug("Entering clearStore().");
   const pending = flush();
@@ -469,6 +517,13 @@ function scheduleWrite(realmId) {
   log.debug("Leaving scheduleWrite().");
 }
 
+/**
+ * Writes every realm whose rows changed to a snapshot store now.
+ *
+ * A failed write is logged, not rejected. Nothing is written for any other
+ * kind of store.
+ * @returns a promise settled when the writes are done
+ */
 function flush() {
   log.debug("Entering flush().");
   if (store.kind !== 'snapshot' || !dirtyRealms.size) {
@@ -505,6 +560,19 @@ function flush() {
 // assertion outside a request, which is what the in-process tests do — the
 // claim is spent at once, which is what every caller did before this file.
 // ---------------------------------------------------------------------------
+/**
+ * Records that a document has been accepted, unless it already was.
+ *
+ * With a request the row is reserved and bound to the response: a status
+ * below `keepBelow` (300 by default) spends it, anything else releases it.
+ * Without one it is spent at once. A store that cannot be asked fails
+ * closed.
+ * @param opts - `format`, `use`, `issuer`, `identifier` (all required),
+ *   and optionally `expiresAt`, `clientId`, `subject`, `request` and
+ *   `keepBelow`
+ * @returns a promise of `{ ok: true, claim }`, or `{ ok: false, reason }`
+ *   where reason is `replay` (with `existing`), `full` or `store`
+ */
 function claim(opts) {
   log.debug("Entering claim().");
   const o = opts || {};
@@ -691,6 +759,13 @@ function claimInDatabase(row, cap, now) {
 // file is in the parent project's Kerberos COPY closure and must not load the
 // scheduler there. An expired row is ignored by every read whenever the
 // sweep last ran.
+/**
+ * Registers the `oauth2.used-assertion-purge` cluster job that deletes
+ * expired rows from a database store, once per process.
+ *
+ * @param schedulerInstance - optional; the scheduler to register with,
+ *   required lazily when omitted
+ */
 function ensurePurgeJob(schedulerInstance) {
   log.debug("Entering ensurePurgeJob().");
   if (purgeJobRegistered) {
@@ -857,6 +932,14 @@ function settle(handle, spent) {
 // READING, for the console page and `GET /admin-api/used-assertions`. Always
 // the ambient realm, always unexpired rows only, newest first.
 // ---------------------------------------------------------------------------
+/**
+ * Lists the ambient realm's unexpired rows, newest first, for the console
+ * page and `GET /admin-api/used-assertions`.
+ *
+ * @param opts - optional `q` (text search), `format`, `use`, `state`,
+ *   `limit` (50 by default) and `offset`
+ * @returns a promise of `{ rows, matched, live, filter }`
+ */
 function list(opts) {
   log.debug("Entering list().");
   const o = opts || {};
@@ -918,6 +1001,13 @@ function list(opts) {
 // thing a client author cannot work out from their own request once a JWT that
 // authenticated a client is refused as a grant, or the reverse. A clause, with
 // its leading dash, so each verifier can put it after its own sentence.
+/**
+ * Says what a spent document was used as, as a clause with its leading dash
+ * for a replay refusal to append.
+ *
+ * @param existing - the row a replay was refused on
+ * @returns the clause, or an empty string when there is no row
+ */
 function usedAs(existing) {
   log.debug("Entering usedAs().");
   if (!existing) {
@@ -943,6 +1033,13 @@ function usedAs(existing) {
 
 // What is known without asking anybody: where the history is held, whether it
 // survives a restart, the cap, and the last live count this process saw.
+/**
+ * Reports what is known without asking the store: where the history is held,
+ * whether it survives a restart, the cap and the ambient realm's live count.
+ *
+ * @returns `{ store, kind, persistent, atomicAcrossProcesses, why, cap, live,
+ *   liveIsCurrent }`
+ */
 function summary() {
   log.debug("Entering summary().");
   const realmId = realms.currentId();
@@ -981,6 +1078,14 @@ realms.onRemove(function (realmId) {
   log.debug("Leaving the used-assertions realm removal hook.");
 });
 
+/**
+ * The used-assertion history: every RFC 7523 JWT, RFC 7522 SAML assertion and
+ * other single-use document this service accepted, so none is accepted twice.
+ *
+ * Per realm; held in the persistence store where it can be, claimed
+ * atomically on a database, and spent only when tokens are issued.
+ * @namespace
+ */
 module.exports = {
   FORMATS: FORMATS,
   USES: USES,

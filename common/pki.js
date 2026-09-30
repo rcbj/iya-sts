@@ -144,6 +144,10 @@ const capabilities = require('../cluster/cluster_capabilities');
 // spellings exist in the wild and getting them the wrong way round produces a
 // chain that every validator refuses with a message about the leaf.
 // ---------------------------------------------------------------------------
+/**
+ * The three tiers of the hierarchy (Root, Intermediate, Issuing), each with
+ * the vendored profile it is issued under and its `order` from the Root down.
+ */
 const TIERS = [
   { id: 'root', order: 0, profile: 'root-ca', label: 'Root CA',
     what: 'The trust anchor. Self-signed, the longest-lived of the three, ' +
@@ -163,6 +167,9 @@ const TIERS = [
           'than of this service\'s manners.' }
 ];
 
+/**
+ * The ids of `TIERS`, in order.
+ */
 const TIER_IDS = TIERS.map(function (one) { return one.id; });
 
 // ===========================================================================
@@ -206,7 +213,15 @@ const TIER_IDS = TIERS.map(function (one) { return one.id; });
 // start with a letter or a digit (`realms.js` enforces it), so a leading `*`
 // cannot collide with one — which is what lets these share `keystore`'s one
 // `pki:` row family rather than needing a table of their own.
+/**
+ * The scope id of the service's own row, which holds the Root. The leading
+ * `*` cannot collide with a realm id.
+ */
 const SERVICE_SCOPE = '*service';
+/**
+ * The scope id of the process branch, the Intermediate beside the realms'
+ * that signs what every realm shares (a TLS certificate, for one).
+ */
 const PROCESS_SCOPE = '*process';
 
 // ---------------------------------------------------------------------------
@@ -228,6 +243,10 @@ const PROCESS_SCOPE = '*process';
 // the compatibility shape below still reports three tiers: everything this
 // module did before this change it still does, through that use case.
 // ---------------------------------------------------------------------------
+/**
+ * The use cases, each a family of key material with an Issuing CA of its
+ * own; `scope` says which kind of Intermediate signs it.
+ */
 const USE_CASES = [
   { id: 'jose', scope: 'realm', label: 'JOSE signing',
     cn: 'JOSE Signing CA',
@@ -258,6 +277,34 @@ const USE_CASES = [
           'PROCESS-scoped because those sockets are: one certificate answers ' +
           'every realm, so a realm\'s Intermediate signing it would make one ' +
           'realm vouch for every other realm\'s front door.' },
+  // **THE CHANNEL BETWEEN CELLS (#98, 2026-09-28).** A service deployed as
+  // cells talks to itself across regions — a request relayed to the cell
+  // that owns it, a subject's state asked of its home, a revocation pushed
+  // to every cell — over mutual TLS on `cells.port`. Every node of every cell
+  // presents a leaf from THIS authority, in both roles, and accepts a peer
+  // only when its leaf came from here: "chains to the service Root" is true
+  // of every certificate this service issues, a person's TLS client
+  // certificate included, and is not a statement that the peer is a cell.
+  // PROCESS-scoped for `tls`'s reason — the channel answers for the service,
+  // not a realm — and the process branch is in the global tier, so every
+  // cell holds the same authority. Its leaves are SHORT-LIVED and never
+  // recorded (`issueUnder()`, the SVID arrangement): a node re-mints its own
+  // on a scheduler job, and a lost node's leaf simply expires.
+  //
+  // **BUILT ONLY IN A SERVICE DEPLOYED AS CELLS** (`multiCellOnly`,
+  // `useCasesFor()`): a single-cell service has no channel, and an authority
+  // it never used made every stored process branch incomplete on its next
+  // start — a top-up write nobody asked for (tests/key_residency.js found the
+  // stray `pki:default` row). Turning cells on tops the branch up.
+  { id: 'cell', scope: 'process', label: 'Inter-cell channel',
+    multiCellOnly: true,
+    cn: 'Inter-cell Issuing CA',
+    what: 'The certificates the nodes of a service deployed as cells ' +
+          'present to each other on the inter-cell channel (cells.port), as ' +
+          'server and as client, each naming its cell in a urn:sts:cell: ' +
+          'subjectAltName. Short-lived, re-minted by each node, and never ' +
+          'recorded. A peer is accepted only with a leaf from this ' +
+          'authority. Unused in single-cell mode.' },
   // **THE ONE USE CASE WITH ROOM BENEATH IT (2026-09-11).** Every other
   // Issuing CA here signs LEAVES and nothing else, which is what `pathLen: 0`
   // in the `issuing-ca` profile says. This one signs leaves AND, for
@@ -353,8 +400,17 @@ const USE_CASES = [
           'does not, although every one of them chains to the same Root.' }
 ];
 
+/**
+ * The ids of `USE_CASES`, in order.
+ */
 const USE_CASE_IDS = USE_CASES.map(function (one) { return one.id; });
 
+/**
+ * Looks up one use case by id.
+ *
+ * @param id - the use case id
+ * @returns the `USE_CASES` entry, or null for an unknown id
+ */
 function useCase(id) {
   log.debug("Entering useCase().");
   log.debug("Leaving useCase().");
@@ -365,10 +421,27 @@ function useCase(id) {
 
 // The use cases an Intermediate of this kind carries. `realm` for a realm's
 // own, `process` for the one beside them.
+/**
+ * Lists the use cases an Intermediate of one kind carries.
+ *
+ * @param kind - 'realm' for a realm's own Intermediate, 'process' for the
+ *   process branch
+ * @returns the `USE_CASES` entries
+ */
 function useCasesFor(kind) {
   log.debug("Entering useCasesFor().");
+  let multiCell = false;
+  try {
+    // Lazily: this library is below the cell map in the require order.
+    multiCell = require('./cells').isMulti();
+  } catch (e) {
+    log.debug("Caught in useCasesFor(): " + ((e && e.message) || e));
+    multiCell = false;
+  }
   log.debug("Leaving useCasesFor().");
-  return USE_CASES.filter(function (one) { return one.scope === kind; });
+  return USE_CASES.filter(function (one) {
+    return one.scope === kind && (!one.multiCellOnly || multiCell);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -467,6 +540,12 @@ function issuingPathLen(useCaseId) {
 
 // Which row an Intermediate lives in. A realm id is the row; the process
 // branch has one of its own.
+/**
+ * Answers which kind of branch a scope id names.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @returns 'process' for the process branch, otherwise 'realm'
+ */
 function scopeKindOf(scopeId) {
   log.debug("Entering scopeKindOf().");
   log.debug("Leaving scopeKindOf().");
@@ -478,7 +557,13 @@ function scopeKindOf(scopeId) {
 // chose one for. RSA-2048 with SHA-256 because it is what every JWS verifier in
 // existence can read, and because the leaf this chain is FOR signs a client
 // assertion that somebody else's OAuth library has to check.
+/**
+ * The key algorithm of a hierarchy nobody chose one for.
+ */
 const DEFAULT_KEY_ALG = 'rsa-2048';
+/**
+ * The signature algorithm of a hierarchy nobody chose one for.
+ */
 const DEFAULT_SIG_ALG = 'sha256-rsa';
 
 // The default subject fields. Overridable per build; they are here so that a
@@ -512,6 +597,12 @@ const DEFAULT_ORGANISATION = 'sts';
 const ALTERNATIVE_NONE = 'none';
 const DEFAULT_ALTERNATIVE_KEY_ALG = 'none';
 
+/**
+ * Lists the key algorithms an authority's alternative (hybrid) key may be:
+ * the pure ML-DSA and SLH-DSA signature keys.
+ *
+ * @returns the key algorithm ids
+ */
 function alternativeKeyAlgs() {
   log.debug("Entering alternativeKeyAlgs().");
   const out = keyMaterial.keyAlgIds().filter(function (id) {
@@ -589,6 +680,12 @@ const TIER_YEARS_SETTINGS = {
   issuing: 'pki.issuingLifetimeYears'
 };
 
+/**
+ * Answers the lifetime of a leaf certificate in days
+ * (`pki.leafLifetimeDays`, 365 when unset).
+ *
+ * @returns the number of days
+ */
 function leafLifetimeDays() {
   log.debug("Entering leafLifetimeDays().");
   const n = Number(config.value('pki.leafLifetimeDays'));
@@ -608,6 +705,16 @@ function configuredTierYears(tier) {
 // is one — that tier's member of an object, or a bare number, which is what
 // `buildRoot()`'s own callers pass and so means the ROOT and nothing else —
 // then the setting, then 0, which `issueCaTier()` reads as the profile's own.
+/**
+ * Answers the lifetime in years a build asked for, for one tier.
+ *
+ * The caller's number first (that tier's member of an object, or a bare
+ * number, which means the Root), then the setting, then 0, which means the
+ * profile's own default.
+ * @param years - an object keyed by tier, a bare number, or nothing
+ * @param tier - 'root', 'intermediate' or 'issuing'
+ * @returns the number of years, or 0
+ */
 function tierYearsFrom(years, tier) {
   log.debug("Entering tierYearsFrom().");
   const asked = (years && typeof years === 'object') ? years[tier]
@@ -627,6 +734,12 @@ function tierYearsFrom(years, tier) {
 // applied one layer down: a page offering an algorithm the encoder cannot
 // produce is a dropdown whose third entry is a 500.
 // ---------------------------------------------------------------------------
+/**
+ * Lists the key algorithms that may be asked for, read from the module
+ * that performs them.
+ *
+ * @returns `[{ id, label, kind }]`
+ */
 function keyAlgorithms() {
   log.debug('Entering keyAlgorithms().');
   const out = keyMaterial.keyAlgIds().map(function (id) {
@@ -640,6 +753,12 @@ function keyAlgorithms() {
 // The signature algorithms a key of this kind can produce. Handed the KEY
 // algorithm id, because that is what a form has — offering ECDSA against an RSA
 // key produces a Web Crypto error naming neither.
+/**
+ * Lists the signature algorithms a key of one kind can produce.
+ *
+ * @param keyAlgId - the key algorithm id
+ * @returns `[{ id, label, weak }]`, empty for an unknown key algorithm
+ */
 function signatureAlgorithms(keyAlgId) {
   log.debug('Entering signatureAlgorithms(). keyAlg=' + keyAlgId);
   const desc = keyMaterial.keyAlg(keyAlgId || DEFAULT_KEY_ALG);
@@ -661,6 +780,12 @@ function signatureAlgorithms(keyAlgId) {
 
 // The default signature algorithm for a key algorithm, so that a caller that
 // names only the key gets a matching pair rather than a refusal.
+/**
+ * Answers the default signature algorithm for a key algorithm.
+ *
+ * @param keyAlgId - the key algorithm id
+ * @returns the signature algorithm id
+ */
 function defaultSignatureAlgorithmFor(keyAlgId) {
   log.debug("Entering defaultSignatureAlgorithmFor().");
   // The vendored module's own answer, not a first-non-weak scan: for an EC key
@@ -932,6 +1057,11 @@ function serviceRow() {
   return keystore.pkiFor(SERVICE_SCOPE) || null;
 }
 
+/**
+ * Answers the service Root CA as this process holds it.
+ *
+ * @returns the Root's tier record, or null when there is none
+ */
 function serviceRoot() {
   log.debug("Entering serviceRoot().");
   const row = serviceRow();
@@ -939,6 +1069,11 @@ function serviceRoot() {
   return (row && row.root) || null;
 }
 
+/**
+ * Answers whether the service has a Root CA.
+ *
+ * @returns true when a Root is held
+ */
 function hasRoot() {
   log.debug("Entering hasRoot().");
   log.debug("Leaving hasRoot().");
@@ -959,6 +1094,15 @@ function hasRoot() {
 // message for it, and rebuilding on the way past would turn a clear error into
 // a confusing one.
 // ---------------------------------------------------------------------------
+/**
+ * Answers whether a scope's Intermediate carries the current Root's
+ * signature.
+ *
+ * Checked by signature, never by name: every Root this service builds has
+ * the same subject. A scope with no Intermediate answers true.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @returns true when the branch chains to the current Root, or has none
+ */
 function scopeChainsToRoot(scopeId) {
   log.debug('Entering scopeChainsToRoot(). scope=' + scopeId);
   const root = serviceRoot();
@@ -1044,6 +1188,13 @@ async function buildRootNow(opts) {
   return { ok: true, root: describeTier(root) };
 }
 
+/**
+ * Builds the service Root only if there is none, once in the cluster.
+ *
+ * @param opts - the build options `buildRoot()` takes
+ * @returns a promise of `{ ok: true, root, existing: true }` for a Root
+ *   already held, otherwise what the build answered
+ */
 async function ensureRoot(opts) {
   log.debug("Entering ensureRoot().");
   log.debug("Leaving ensureRoot().");
@@ -1065,6 +1216,15 @@ async function ensureRoot(opts) {
 // The deliberate replacement — its own button — waits behind any build of the
 // Root already running, so it replaces the Root that build made rather than
 // racing it.
+/**
+ * Replaces the service Root with a new one.
+ *
+ * Waits behind any Root build already running. The realm branches are left
+ * in place and no longer chain to the new Root until they are rebuilt.
+ * @param opts - the build options (organisation, country, algorithms and
+ *   lifetimes)
+ * @returns a promise of `{ ok: true, root }` or `{ ok: false, errors }`
+ */
 async function buildRoot(opts) {
   log.debug("Entering buildRoot().");
   log.debug("Leaving buildRoot().");
@@ -1137,6 +1297,19 @@ function lostTier(outcome, tiers) {
 // (a certificate kept in the scope's row — the SCEP RA's), and must, because a
 // build of that thing may repair the branch under the branch's own claim;
 // `options.label` is how the log and a refusal name it.
+/**
+ * Runs one build of a scope at a time in the cluster, reading the store
+ * first.
+ *
+ * Takes a cluster claim; a node that finds it held waits and adopts the
+ * other node's build. Where the store does not arbitrate, this is `build()`.
+ * @param scopeId - the scope
+ * @param tier - the tier or tiers being built
+ * @param existing - a function answering what already exists, or null
+ * @param build - the function that builds
+ * @param options - `claim` and `label`
+ * @returns a promise of the build's answer, or the adopted one
+ */
 async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
   log.debug("Entering oneBuildInTheCluster(). scope=" + scopeId);
   if (typeof keystore.arbitrates !== 'function' || !keystore.arbitrates()) {
@@ -1303,6 +1476,13 @@ function oneBuildAtATime(scopeId, build) {
 // (and a Root, where there is none) in the background, and a test that sets
 // the Root aside and builds its own would otherwise have that background
 // build land in the middle (tests/pki.js, 2026-09-26). Never rejects.
+/**
+ * Waits for every build queued in this process to settle, for a caller
+ * that must not race one it did not start.
+ *
+ * Never rejects.
+ * @returns a promise that resolves when the builds have settled
+ */
 function buildsSettled() {
   log.debug("Entering buildsSettled().");
   const tails = Array.from(scopeBuilds.values());
@@ -1316,6 +1496,14 @@ function buildsSettled() {
 // one function because the three checks belong together — an unknown key
 // algorithm, an unknown signature algorithm, and a pair whose families
 // disagree — and because every builder below makes all three.
+/**
+ * Decides the key, signature and alternative key algorithms a build is to
+ * use, checked as a pair.
+ *
+ * @param options - `keyAlg`, `signatureAlg` and `altKeyAlg`
+ * @returns `{ ok: true, keyAlg, signatureAlg, keyDesc, sig, altKeyAlg }`,
+ *   or `{ ok: false, errors }`
+ */
 function algorithmsFrom(options) {
   log.debug("Entering algorithmsFrom().");
   const keyAlgId = String(options.keyAlg || config.value('pki.keyAlgorithm') ||
@@ -1416,6 +1604,16 @@ function algorithmsFrom(options) {
 // somebody who pasted a corporate Intermediate in did not press this button to
 // have it thrown away.
 // ---------------------------------------------------------------------------
+/**
+ * Builds a scope's branch: an Intermediate signed by the service Root and
+ * an Issuing CA under it for each of the scope's use cases.
+ *
+ * All of it or none of it: a failure anywhere stores nothing. An imported
+ * tier is kept unless the caller says otherwise. Once in the cluster.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param opts - the build options
+ * @returns a promise of the build's `{ ok, ... }` answer
+ */
 async function buildScope(scopeId, opts) {
   log.debug("Entering buildScope().");
   log.debug("Leaving buildScope().");
@@ -1457,6 +1655,17 @@ async function buildScope(scopeId, opts) {
 // process reaches a stale branch first rebuilds it, and the other adopts it.
 // `opts` are `buildScopeNow()`'s.
 // ---------------------------------------------------------------------------
+/**
+ * Rebuilds a branch the Root no longer signs, once across callers and
+ * processes.
+ *
+ * Asks again inside the build queue and the cluster claim, so a branch
+ * another build already made current is adopted rather than rebuilt.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param opts - the build options, as `buildScope()` takes them
+ * @returns a promise of `{ ok: true, existing: true }` when the branch was
+ *   already current, otherwise the build's answer
+ */
 async function repairBranch(scopeId, opts) {
   log.debug("Entering repairBranch(). scope=" + scopeId);
   const id = String(scopeId);
@@ -1648,6 +1857,13 @@ async function buildScopeNow(scopeId, opts) {
 // every caller of it means "give this realm a certificate authority", which is
 // still exactly what happens — the Root it hangs from is simply the service's
 // now rather than one of this realm's own.
+/**
+ * Builds a realm's certificate authority branch under the service Root.
+ *
+ * @param realmId - the realm
+ * @param opts - the build options
+ * @returns a promise of `buildScope()`'s answer
+ */
 async function buildChain(realmId, opts) {
   log.debug("Entering buildChain().");
   log.debug("Leaving buildChain().");
@@ -1668,6 +1884,12 @@ async function buildChain(realmId, opts) {
 // three tiers or nothing — because "is there a hierarchy" is the question nine
 // callers here ask and a half-built one must go on answering no.
 // ---------------------------------------------------------------------------
+/**
+ * Answers a scope's whole `pki:` row, private keys included.
+ *
+ * @param realmId - a realm id or scope id
+ * @returns the row, or null
+ */
 function rawRowFor(realmId) {
   log.debug("Entering rawRowFor().");
   const id = realmIdOf(realmId);
@@ -1716,6 +1938,12 @@ function primaryUseCaseFor(scopeId) {
   return scopeKindOf(scopeId) === 'process' ? 'tls' : 'assertions';
 }
 
+/**
+ * Answers whether a realm holds a whole hierarchy.
+ *
+ * @param realmId - the realm
+ * @returns true when the realm's chain is complete
+ */
 function hasChain(realmId) {
   log.debug("Entering hasChain().");
   log.debug("Leaving hasChain().");
@@ -1727,6 +1955,12 @@ function hasChain(realmId) {
 // neither tiers nor objects would be read back at the next start, counted in
 // the "certificate authorities recovered" line and describe as nothing, which
 // is a service reporting a hierarchy it does not have.
+/**
+ * Writes a scope's row back, or removes it when nothing is left in it.
+ *
+ * @param realmId - a realm id or scope id
+ * @param row - the row
+ */
 function saveRow(realmId, row) {
   log.debug('Entering saveRow().');
   const id = realmIdOf(realmId);
@@ -1836,6 +2070,13 @@ function describeChain(chain) {
   };
 }
 
+/**
+ * Describes a realm's hierarchy for the console and the management API,
+ * with no private key.
+ *
+ * @param realmId - the realm
+ * @returns the description
+ */
 function describe(realmId) {
   log.debug('Entering describe().');
   const out = describeChain(rawChainFor(realmId));
@@ -1846,6 +2087,12 @@ function describe(realmId) {
 // ONE TIER, PUBLIC. The same dropping rule `describeChain()` follows and for
 // its reason: every private key goes on the way out HERE, so a caller cannot
 // leak one by forgetting.
+/**
+ * Describes one CA tier publicly, dropping every private key.
+ *
+ * @param one - a tier record
+ * @returns the public view, or null when there is no tier
+ */
 function describeTier(one) {
   log.debug("Entering describeTier().");
   if (!one) {
@@ -1886,6 +2133,14 @@ function describeTier(one) {
 // draws a tree from and what `GET /admin-api/pki` publishes beside the
 // three-tier view.
 // ---------------------------------------------------------------------------
+/**
+ * Describes one scope's whole branch: the Intermediate and every Issuing CA
+ * under it, with the certificates each has issued counted.
+ *
+ * No private key is included.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @returns the branch's description
+ */
 function describeScope(scopeId) {
   log.debug('Entering describeScope(). scope=' + scopeId);
   const id = String(scopeId);
@@ -1929,6 +2184,13 @@ function describeScope(scopeId) {
 // function because the console's picture and the management API's reply are
 // one question asked twice, and two walks of this store would eventually
 // disagree about what a branch is.
+/**
+ * Describes the whole hierarchy: the Root, the process branch, and every
+ * realm's branch.
+ *
+ * @param realmIds - the realms whose branches to include
+ * @returns the tree's description, with no private key
+ */
 function describeTree(realmIds) {
   log.debug('Entering describeTree().');
   const root = serviceRoot();
@@ -1953,6 +2215,13 @@ function describeTree(realmIds) {
 // which is what RFC 5246 section 7.4.2 asks of a TLS certificate_list and what
 // every JWS `x5c` header does. The root is a trust anchor: sending it is
 // harmless and relying on it having been sent is the mistake.
+/**
+ * Answers the chain a leaf issued in a realm travels with, leaf-first and
+ * without the Root.
+ *
+ * @param realmId - the realm
+ * @returns the PEMs, or an empty list where there is no hierarchy
+ */
 function chainPemFor(realmId) {
   log.debug("Entering chainPemFor().");
   const chain = rawChainFor(realmId);
@@ -1968,6 +2237,12 @@ function chainPemFor(realmId) {
 
 // The trust anchors — the Root, and nothing else. What `verifyLeaf()` builds a
 // path to, and what an operator hands to a relying party out of band.
+/**
+ * Answers a realm's trust anchors: the Root, and nothing else.
+ *
+ * @param realmId - the realm
+ * @returns the PEMs, or an empty list where there is no hierarchy
+ */
 function trustAnchorsFor(realmId) {
   log.debug("Entering trustAnchorsFor().");
   const chain = rawChainFor(realmId);
@@ -2041,6 +2316,10 @@ function trustAnchorsFor(realmId) {
 // issued before 2026-09-11 reads the same. That is the same decision the
 // PURPOSES table below records about `jwt`.
 // ---------------------------------------------------------------------------
+/**
+ * Who a signing leaf is issued to: an application (the default) or a
+ * person, each with the URN and kid prefix it puts in the certificate.
+ */
 const SUBJECT_KINDS = [
   { id: 'application', label: 'an application',
     urnPrefix: 'urn:sts:application:', kidPrefix: 'app-',
@@ -2054,8 +2333,17 @@ const SUBJECT_KINDS = [
           'argued.' }
 ];
 
+/**
+ * The ids of `SUBJECT_KINDS`.
+ */
 const SUBJECT_KIND_IDS = SUBJECT_KINDS.map(function (one) { return one.id; });
 
+/**
+ * Looks up one subject kind.
+ *
+ * @param id - the id; 'application' when empty
+ * @returns the `SUBJECT_KINDS` entry, or null
+ */
 function subjectKindFor(id) {
   log.debug("Entering subjectKindFor().");
   const wanted = String(id || 'application');
@@ -2065,6 +2353,10 @@ function subjectKindFor(id) {
   })[0] || null;
 }
 
+/**
+ * The profiles a signing leaf may be issued for, each named in the
+ * certificate as a second URI subjectAltName; `jwt` is the default.
+ */
 const PURPOSES = [
   { id: 'jwt', label: 'RFC 7523 — a JWT assertion',
     profileUri: '',
@@ -2079,8 +2371,17 @@ const PURPOSES = [
           'certificate.' }
 ];
 
+/**
+ * The ids of `PURPOSES`.
+ */
 const PURPOSE_IDS = PURPOSES.map(function (one) { return one.id; });
 
+/**
+ * Looks up one purpose.
+ *
+ * @param id - the id; 'jwt' when empty
+ * @returns the `PURPOSES` entry, or null
+ */
 function purposeFor(id) {
   log.debug("Entering purposeFor().");
   const wanted = String(id || 'jwt');
@@ -2112,8 +2413,21 @@ function purposeFor(id) {
 // body passed through to that function can ask for it.
 // ---------------------------------------------------------------------------
 const ENCRYPTION_LEAF = Symbol('encryption-leaf');
+/**
+ * The key algorithms `issueEncryptionKeyPair()` issues.
+ */
 const ENCRYPTION_KEY_ALGS = ['rsa-3072', 'ec-p256'];
 
+/**
+ * Generates and certifies a key pair this service decrypts with (a
+ * federation relationship's encryption key).
+ *
+ * Differs from a signing leaf in its key usage, `use: enc` and kid prefix.
+ * @param realmId - the realm
+ * @param opts - as `issueSigningKeyPair()`; `keyAlg` one of
+ *   `ENCRYPTION_KEY_ALGS`
+ * @returns a promise of `issueSigningKeyPair()`'s answer
+ */
 async function issueEncryptionKeyPair(realmId, opts) {
   log.debug('Entering issueEncryptionKeyPair().');
   const options = opts || {};
@@ -2133,6 +2447,15 @@ async function issueEncryptionKeyPair(realmId, opts) {
   return out;
 }
 
+/**
+ * Generates and certifies a signing key pair for an application or a
+ * person, and records the issuance.
+ *
+ * @param realmId - the realm
+ * @param opts - `identifier`, `subjectKind`, `purpose`, `keyAlg`,
+ *   `signatureAlg`, `commonName` and `days`
+ * @returns a promise of `{ ok: true, issued }` or `{ ok: false, errors }`
+ */
 async function issueSigningKeyPair(realmId, opts) {
   log.debug('Entering issueSigningKeyPair().');
   const id = realmIdOf(realmId);
@@ -2960,6 +3283,15 @@ function nameBytesOf(name) {
 // parse, it repeats an extension, or an extension this module reads is
 // malformed — and every rule question then refuses it.
 // ---------------------------------------------------------------------------
+/**
+ * Reads the facts of one certificate once and keeps them on the entry.
+ *
+ * `problem` is set on the facts when the certificate cannot be held to the
+ * rules at all (it does not parse, repeats an extension, or carries a
+ * malformed extension this module reads).
+ * @param one - an entry with `der`, as `certificateFromDer()` makes it
+ * @returns the certificate's path facts
+ */
 function pathFactsOf(one) {
   log.debug("Entering pathFactsOf().");
   if (one.pathFacts) {
@@ -3332,6 +3664,17 @@ function policyConstraintsOf(bytes) {
 // qualifiers are carried by no node: nothing here reads them, and section
 // 6.1 decides nothing on them.
 // ---------------------------------------------------------------------------
+/**
+ * Runs RFC 5280 section 6.1's certificate policy processing over a path.
+ *
+ * With the defaults (initial-policy-set anyPolicy, the three indicators
+ * clear) a path is refused only where its own certificates require an
+ * explicit policy and the tree came out empty, or a mapping names anyPolicy.
+ * @param path - the path, leaf first and anchor last (the anchor is not
+ *   processed)
+ * @param opts - the four section 6.1 inputs a caller may set
+ * @returns `{ ok, why, userConstrainedPolicySet, explicitPolicy }`
+ */
 function pathPolicyOutcome(path, opts) {
   log.debug("Entering pathPolicyOutcome().");
   const options = opts || {};
@@ -3639,6 +3982,17 @@ function describePathName(name) {
 // in that order along the path from the leaf: the first certificate with a
 // problem is the one reported.
 // ---------------------------------------------------------------------------
+/**
+ * Holds a certificate path to this module's path rules and reports the first
+ * certificate, from the leaf, that breaks one.
+ *
+ * `check` is one of unusable, critical, weak-signature, malformed, not-ca,
+ * key-cert-sign, path-len, name-constraints or policy.
+ * @param path - entries with `der`, leaf first and anchor last
+ * @param opts - `allowCritical` (extensions the caller evaluates itself),
+ *   `allowSha1`, and `policy` (the section 6.1 inputs)
+ * @returns null, or `{ check, index, why }`
+ */
 function pathRuleProblem(path, opts) {
   log.debug("Entering pathRuleProblem(). " + path.length +
             " certificate(s).");
@@ -4014,6 +4368,18 @@ async function holdsAlternativeKey(pem) {
   return held;
 }
 
+/**
+ * Holds the alternative (hybrid) signatures on a path to this module's
+ * rule: a hybrid certificate is verified as hybrid or not at all.
+ *
+ * A wrong alternative signature is refused everywhere; an uncheckable or
+ * missing one only where `opts.required` is set (this service's own
+ * hierarchy).
+ * @param pems - the path, leaf first
+ * @param links - `x509.verifyChain()` over it
+ * @param opts - `required`
+ * @returns a promise of null, or `{ index, check, algorithm, reason }`
+ */
 async function alternativeProblem(pems, links, opts) {
   log.debug("Entering alternativeProblem(). " + pems.length +
             " certificate(s).");
@@ -4102,6 +4468,17 @@ function alternativeSentence(problem, subject) {
 // is this service's own. `admin-ui/crypto_metadata.ts` still draws published
 // and consulted as two rows, because they are still two claims.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies that a certificate chains to the service Root through this
+ * realm's own Intermediate, and that nothing on the path is revoked.
+ *
+ * @param realmId - the realm
+ * @param leafPem - the leaf certificate
+ * @param presentedChainPems - the chain presented with it
+ * @param opts - `revocation`
+ * @returns a promise of `{ ok: true, links, revocation, anchor }` or
+ *   `{ ok: false, why }`
+ */
 async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
   log.debug('Entering verifyLeaf().');
   const id = realmIdOf(realmId);
@@ -4633,6 +5010,18 @@ function selfSignedCert(cert) {
   }
 }
 
+/**
+ * Registers a certificate an operator uploads in place of an issued key
+ * pair, after checking its chain.
+ *
+ * A leaf from this realm's authority may arrive alone; any other needs its
+ * whole chain to a self-signed root. An upload carrying a private key is
+ * refused.
+ * @param realmId - the realm
+ * @param opts - `certificatePem`, `chainPem`, `identifier`, `subjectKind`
+ *   and `purpose`
+ * @returns a promise of `{ ok: true, registered }` or a refusal
+ */
 async function registerCertificate(realmId, opts) {
   log.debug('Entering registerCertificate().');
   const id = realmIdOf(realmId);
@@ -5250,6 +5639,18 @@ function certificateHoldsKey(pem, key) {
 // A bare key has no certificate and is not asked about: RFC 7523 permits one,
 // and there is nothing to chain.
 // ===========================================================================
+/**
+ * Validates the chain of an RFC 7523 or RFC 7522 signer's certificate,
+ * after its signature has verified.
+ *
+ * The anchor is `realm` (this realm's hierarchy), `registered-root` (a
+ * self-signed root registered with it) or `pinned` (a self-signed
+ * certificate). Refused in both modes.
+ * @param realmId - the realm
+ * @param material - `certificate`, `chain`, `key`, `source` and `index`
+ * @returns a promise of `{ ok: true, anchor, links, path, ... }` or
+ *   `{ ok: false, why }`
+ */
 async function verifySignerChain(realmId, material) {
   log.debug('Entering verifySignerChain().');
   const id = realmIdOf(realmId);
@@ -5478,6 +5879,13 @@ async function verifySignerChain(realmId, material) {
 }
 
 // A short sentence for a door's log line and audit detail.
+/**
+ * Summarises a `verifySignerChain()` verdict in a short sentence for a log
+ * line and audit detail.
+ *
+ * @param verdict - the verdict
+ * @returns the sentence
+ */
 function signerChainSummary(verdict) {
   log.debug("Entering signerChainSummary().");
   if (!verdict) {
@@ -5501,6 +5909,13 @@ function signerChainSummary(verdict) {
 // service holds no copy of what was issued, so nothing here can list what
 // broke.
 // ---------------------------------------------------------------------------
+/**
+ * Throws a realm's hierarchy away.
+ *
+ * Destructive: every certificate issued from it stops chaining.
+ * @param realmId - the realm
+ * @returns `{ ok: true, issuedCount }` or `{ ok: false, errors }`
+ */
 function clearChain(realmId) {
   log.debug('Entering clearChain().');
   const id = realmIdOf(realmId);
@@ -5545,6 +5960,12 @@ function clearChain(realmId) {
 // SMALL THINGS, in one place so that two call sites cannot spell them
 // differently.
 // ---------------------------------------------------------------------------
+/**
+ * Computes a certificate's hex thumbprint.
+ *
+ * @param pem - the certificate
+ * @returns the thumbprint
+ */
 function thumbprintOf(pem) {
   log.debug("Entering thumbprintOf().");
   log.debug("Leaving thumbprintOf().");
@@ -5640,6 +6061,13 @@ function slotKey(useCaseId, slot, kid) {
 }
 
 // Every certificate this Issuing CA has minted, newest first.
+/**
+ * Lists every certificate one Issuing CA has minted, newest first.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @returns the certificate records
+ */
 function certificatesFor(scopeId, useCaseId) {
   log.debug("Entering certificatesFor().");
   const row = rawRowFor(scopeId);
@@ -5658,6 +6086,14 @@ function certificatesFor(scopeId, useCaseId) {
 // The key pairs `issueSigningKeyPair()` issued from one use case's Issuing CA,
 // as the records that function keeps — serial, subject, expiry, who for, and
 // no key. `pki_revocation.js`'s `issuedList()` is the reader.
+/**
+ * Lists the key pairs `issueSigningKeyPair()` issued from one use case's
+ * Issuing CA, as records with no key (serial, subject, expiry, holder).
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @returns the issuance records
+ */
 function issuedKeyPairsFor(scopeId, useCaseId) {
   log.debug("Entering issuedKeyPairsFor().");
   const row = rawRowFor(scopeId);
@@ -5670,6 +6106,17 @@ function issuedKeyPairsFor(scopeId, useCaseId) {
 // `kid`, where given, asks for that key generation's own slot first, and the
 // plain slot only when the certificate there is over the same key — so a
 // caller naming a key never gets a certificate over another one.
+/**
+ * Answers the certificate held in one slot.
+ *
+ * With `kid`, the key generation's own slot is asked first, and the plain
+ * slot only when its certificate is over that same key.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param slot - the slot, an algorithm
+ * @param kid - optionally, the key generation's kid
+ * @returns the certificate record, or null
+ */
 function certificateFor(scopeId, useCaseId, slot, kid) {
   log.debug("Entering certificateFor().");
   const row = rawRowFor(scopeId);
@@ -5691,6 +6138,13 @@ function certificateFor(scopeId, useCaseId, slot, kid) {
 // The public view of one certificate. A pinned record HAS a private key in it
 // and this is where it is dropped, for `describeChain()`'s reason: one place,
 // so a caller cannot leak an operator's own key by forgetting.
+/**
+ * Describes one certificate record publicly, dropping any private key a
+ * pinned record holds.
+ *
+ * @param one - a certificate record
+ * @returns the public view, or null when there is no record
+ */
 function describeCertificate(one) {
   log.debug("Entering describeCertificate().");
   if (!one) {
@@ -5731,6 +6185,21 @@ function describeCertificate(one) {
 // replaced during the signature — see the block above its `saveRow()`.
 const CERTIFY_ISSUER_MOVED_RETRIES = 3;
 
+/**
+ * Certifies one key pair from a use case's Issuing CA and records the
+ * certificate in the slot the spec names.
+ *
+ * The caller keeps the key. A branch that no longer chains to the Root is
+ * repaired first (unless `spec.repairBranch` is false). Answers rather than
+ * throws when there is no Issuing CA.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param spec - the slot, `publicKeyPem`, and optionally `alg`, `kid`,
+ *   `label`, `commonName`, `keyUsage`, `extensions`, `days` and the pinned
+ *   material
+ * @returns a promise of `{ ok: true, certificate, record }` or
+ *   `{ ok: false, errors }`
+ */
 async function certify(scopeId, useCaseId, spec) {
   log.debug('Entering certify(). scope=' + scopeId + ' use=' + useCaseId +
             ' slot=' + (spec && spec.slot));
@@ -6054,6 +6523,15 @@ async function certify(scopeId, useCaseId, spec) {
 // A slot the operator supplied key material for, or null. Read SYNCHRONOUSLY
 // by `helpers.js` while it builds a key set, which is why it is a plain map
 // lookup and issues nothing.
+/**
+ * Answers the key material an operator supplied for a slot, synchronously.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param slot - the slot, an algorithm
+ * @returns `{ privateKeyPem, publicKeyPem, certificatePem, chainPem }`, or
+ *   null where the slot holds no pinned key
+ */
 function pinnedKeyFor(scopeId, useCaseId, slot) {
   log.debug("Entering pinnedKeyFor().");
   const held = certificateFor(scopeId, useCaseId, slot);
@@ -6070,6 +6548,16 @@ function pinnedKeyFor(scopeId, useCaseId, slot) {
 
 // The certificate a caller should PUBLISH for a slot, and the chain under it.
 // Synchronous, for `pinnedKeyFor()`'s reason.
+/**
+ * Answers the certificate a caller should publish for a slot, and the chain
+ * under it, synchronously.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param slot - the slot, an algorithm
+ * @param kid - optionally, the key generation's kid
+ * @returns `{ certificatePem, chainPem }`, or null
+ */
 function publishedCertificateFor(scopeId, useCaseId, slot, kid) {
   log.debug("Entering publishedCertificateFor().");
   const held = certificateFor(scopeId, useCaseId, slot, kid);
@@ -6082,6 +6570,14 @@ function publishedCertificateFor(scopeId, useCaseId, slot, kid) {
            chainPem: (held.chainPem || []).slice() };
 }
 
+/**
+ * Removes the certificate held in one slot.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param slot - the slot, an algorithm
+ * @returns `{ ok: true, pinned }` or `{ ok: false, errors }`
+ */
 function forgetCertificate(scopeId, useCaseId, slot) {
   log.debug('Entering forgetCertificate().');
   const id = String(scopeId);
@@ -6136,8 +6632,15 @@ function forgetCertificate(scopeId, useCaseId, slot) {
 // node's `checkServerIdentity()` no longer does, so a SAN-less server
 // certificate is one this service would issue and nothing would accept.
 // ===========================================================================
+/**
+ * The key algorithms `issueTlsServerKeyPair()` issues: the RSA and NIST
+ * curve keys a TLS stack serves.
+ */
 const TLS_SERVER_KEY_ALGS = ['ec-p256', 'ec-p384', 'ec-p521', 'rsa-2048',
                              'rsa-3072', 'rsa-4096'];
+/**
+ * The key algorithm `issueTlsServerKeyPair()` uses when none is named.
+ */
 const DEFAULT_TLS_SERVER_KEY_ALG = 'ec-p256';
 
 // A DNS name a certificate may carry: labels of letters, digits and hyphens,
@@ -6158,6 +6661,19 @@ function tlsDnsNameProblem(name) {
     'an optional leading "*.".';
 }
 
+/**
+ * Generates a TLS server key pair for a listener this service does not run
+ * (a remote XACML PEP's), certifies it and hands the private key back once.
+ *
+ * The certificate is recorded under the slot; the private key is not kept.
+ * A certificate with no subjectAltName is refused.
+ * @param scopeId - a realm id (a process use case uses the process branch)
+ * @param useCaseId - the use case
+ * @param spec - `slot`, `dnsNames`, `ipAddresses`, `keyAlg`, `commonName`,
+ *   `label` and `days`
+ * @returns a promise of `{ ok: true, issued }`, `issued` carrying the
+ *   certificate, the private key and the anchor, or `{ ok: false, errors }`
+ */
 async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
   log.debug('Entering issueTlsServerKeyPair(). scope=' + scopeId + ' use=' +
             useCaseId);
@@ -6344,6 +6860,10 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
 // only it knows whether the name came from configuration or a request.
 // ===========================================================================
 const VERIFIER_SLOT = 'oid4vp-verifier';
+/**
+ * How many OpenID4VP Verifier certificates (one per DNS name) a realm holds
+ * at most.
+ */
 const MAX_VERIFIER_CERTIFICATES = 16;
 // A certificate this close to its end is renewed before it is used, so a
 // wallet is never handed one that expires while the request is in flight.
@@ -6362,6 +6882,17 @@ function verifierSlotFor(dnsName) {
 // key than `publicKeyPem` (when given), or it has expired. Synchronous: the
 // Verifier builds its Request Object synchronously and asks this after
 // `certifyVerifierKey()` has made sure.
+/**
+ * Answers the OpenID4VP Verifier's certificate for one DNS name in a realm,
+ * synchronously.
+ *
+ * @param realmId - the realm
+ * @param dnsName - the DNS name, or '' for the nameless certificate
+ * @param publicKeyPem - optionally, the key the certificate must be over
+ * @returns `{ certificatePem, chainPem, anchorPem, dnsName, notAfter,
+ *   subjectKeyFingerprint }`, or null where there is none, it is over
+ *   another key, or it has expired
+ */
 function verifierCertificateFor(realmId, dnsName, publicKeyPem) {
   log.debug("Entering verifierCertificateFor().");
   const id = realmIdOf(realmId);
@@ -6398,6 +6929,16 @@ function verifierCertificateFor(realmId, dnsName, publicKeyPem) {
 // the certificate already there when it is over that key and not about to
 // expire. `spec`: { dnsName, publicKeyPem, alg, keyAlg }. Answers
 // { ok: true, certificate, issued } or { ok: false, errors } with a code.
+/**
+ * Certifies the OpenID4VP Verifier's signing key for a DNS name, or answers
+ * the certificate already there when it is over that key and not about to
+ * expire.
+ *
+ * @param realmId - the realm
+ * @param spec - `{ dnsName, publicKeyPem, alg, keyAlg }`
+ * @returns a promise of `{ ok: true, certificate, issued }` or
+ *   `{ ok: false, errors }`
+ */
 async function certifyVerifierKey(realmId, spec) {
   log.debug("Entering certifyVerifierKey().");
   const s = spec || {};
@@ -6527,6 +7068,21 @@ async function certifyVerifierKey(realmId, spec) {
 // answers the same question with SHORT LIFETIMES instead, which is the design
 // rationale in its own specification, and `spiffe.svidTtl` is the knob.
 // ===========================================================================
+/**
+ * Issues a certificate over a presented public key from a use case's
+ * Issuing CA, without recording it.
+ *
+ * The caller owns what comes out (an X509-SVID, for one). The signature
+ * algorithm is the issuer's, the validity is clamped to the Issuing CA's,
+ * and the certificate carries no revocation pointers.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param spec - `publicKeyPem`, `subject`, `profile`, `extensions`,
+ *   `notBefore` and `notAfter`
+ * @returns a promise of `{ ok: true, certificatePem, certificateDer,
+ *   chainPem, issuerChainPem, ... }`, the chain leaf first without the Root,
+ *   or `{ ok: false, errors }`
+ */
 async function issueUnder(scopeId, useCaseId, spec) {
   log.debug('Entering issueUnder(). scope=' + scopeId + ' use=' + useCaseId);
   const id = String(scopeId);
@@ -6645,6 +7201,18 @@ async function issueUnder(scopeId, useCaseId, spec) {
 // That keeps the certificate authority ignorant of who a person is, which is
 // the split `issueSigningKeyPair()` already keeps with SUBJECT_KINDS.
 // ===========================================================================
+/**
+ * Issues one enrolled certificate (ACME, EST, SCEP) from a family's
+ * Issuing CA and records its serial so OCSP and the CRL can answer for it.
+ *
+ * The caller decides the subject and names; this adds the profile's
+ * extensions and the CA's CDP and AIA, and never reads a CSR.
+ * @param scopeId - the realm
+ * @param useCaseId - the family's use case
+ * @param spec - `publicKeyPem`, `profile`, `subject`, `subjectAltName` and
+ *   `days`
+ * @returns a promise of what `issueUnder()` answers
+ */
 async function issueEnrolled(scopeId, useCaseId, spec) {
   log.debug('Entering issueEnrolled(). scope=' + scopeId + ' use=' + useCaseId);
   const id = realmIdOf(scopeId);
@@ -6744,6 +7312,14 @@ async function issueEnrolled(scopeId, useCaseId, spec) {
 // and for SPIFFE specifically it is the difference between a bundle and a
 // certificate list.
 // ---------------------------------------------------------------------------
+/**
+ * Describes one Issuing CA without its key: its certificate, the chain
+ * above it (Root excluded) and, separately, the Root it ends at.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @returns the description, or null when there is no such authority
+ */
 function describeIssuer(scopeId, useCaseId) {
   log.debug("Entering describeIssuer().");
   const id = String(scopeId);
@@ -6837,6 +7413,12 @@ function describeIssuer(scopeId, useCaseId) {
 // live cap without being edited.
 const MAX_OBJECTS = 200;
 
+/**
+ * Answers how many objects a realm's object store may hold
+ * (`pki.maxStoredObjects`, read per call).
+ *
+ * @returns the cap
+ */
 function maxObjects() {
   log.debug("Entering maxObjects().");
   const n = Number(config.value('pki.maxStoredObjects'));
@@ -6849,6 +7431,15 @@ function maxObjects() {
 // takes the id rather than answering about the count alone. Exported so a
 // caller can ask BEFORE it spends a key generation on an object it cannot
 // keep.
+/**
+ * Answers whether a realm has room for one more object.
+ *
+ * A replacement of an id already held always has room. Lets a caller ask
+ * before it spends a key generation on an object it could not keep.
+ * @param realmId - the realm
+ * @param objectId - the id of the object to be stored
+ * @returns whether it may be stored
+ */
 function roomForObject(realmId, objectId) {
   log.debug("Entering roomForObject().");
   const held = objects(realmId);
@@ -6861,6 +7452,13 @@ function roomForObject(realmId, objectId) {
   return held.length < maxObjects();
 }
 
+/**
+ * Lists the objects in a realm's object store (what `/admin/pki`'s
+ * Certificate & Key Configuration pane issues into).
+ *
+ * @param realmId - the realm
+ * @returns a copy of the list
+ */
 function objects(realmId) {
   log.debug("Entering objects().");
   const row = rawRowFor(realmId);
@@ -6868,6 +7466,13 @@ function objects(realmId) {
   return ((row && row.objects) || []).slice();
 }
 
+/**
+ * Looks up one object in a realm's object store.
+ *
+ * @param realmId - the realm
+ * @param objectId - the object's id
+ * @returns the object, or null
+ */
 function objectFor(realmId, objectId) {
   log.debug("Entering objectFor().");
   const wanted = String(objectId || '');
@@ -6885,6 +7490,14 @@ function objectFor(realmId, objectId) {
 // through `rawRowFor()` on every call rather than held here, because a request
 // worker's copy of it is replaced wholesale when another process writes — a
 // cached reference would go on appending to a row nobody else has.
+/**
+ * Puts one object in a realm's store, replacing any with the same id.
+ *
+ * Refused when the store is full; nothing is evicted.
+ * @param realmId - the realm
+ * @param object - the object, with `id`
+ * @returns `{ ok: true, dropped: 0, object }` or a refusal with `full`
+ */
 function putObject(realmId, object) {
   log.debug('Entering putObject(). id=' + (object && object.id));
   const id = realmIdOf(realmId);
@@ -6921,6 +7534,13 @@ function putObject(realmId, object) {
   return { ok: true, dropped: 0, object: object };
 }
 
+/**
+ * Removes one object from a realm's store.
+ *
+ * @param realmId - the realm
+ * @param objectId - the object's id
+ * @returns `{ ok: true }` or `{ ok: false, errors }`
+ */
 function removeObject(realmId, objectId) {
   log.debug('Entering removeObject(). id=' + objectId);
   const id = realmIdOf(realmId);
@@ -6946,6 +7566,12 @@ function removeObject(realmId, objectId) {
   return { ok: true };
 }
 
+/**
+ * Removes every object from a realm's store.
+ *
+ * @param realmId - the realm
+ * @returns `{ ok: true, removed }` or `{ ok: false, errors }`
+ */
 function clearObjects(realmId) {
   log.debug('Entering clearObjects().');
   const id = realmIdOf(realmId);
@@ -6978,6 +7604,12 @@ function clearObjects(realmId) {
 // Intermediate, and `issuedHere()` answered false for every serial this
 // service had ever minted, which is an OCSP responder saying `unknown` about
 // its own leaves.
+/**
+ * Lists every scope this process holds a branch for, read from the
+ * keystore.
+ *
+ * @returns the scope ids
+ */
 function knownScopes() {
   log.debug("Entering knownScopes().");
   if (typeof keystore.pkiAll !== 'function') {
@@ -7001,6 +7633,14 @@ function knownScopes() {
 // needs both and a second lookup by id is a second chance to hand one
 // certificate the other's key.
 // ---------------------------------------------------------------------------
+/**
+ * Lists what may sign the next certificate in a realm: the tiers, then
+ * every stored CA object whose private key is here, with its signing
+ * material.
+ *
+ * @param realmId - the realm
+ * @returns the issuers
+ */
 function issuers(realmId) {
   log.debug('Entering issuers().');
   const chain = rawChainFor(realmId);
@@ -7031,6 +7671,13 @@ function issuers(realmId) {
   return out;
 }
 
+/**
+ * Looks up one issuer by id.
+ *
+ * @param realmId - the realm
+ * @param issuerId - the issuer's id
+ * @returns the issuer, or null
+ */
 function issuerFor(realmId, issuerId) {
   log.debug("Entering issuerFor().");
   const wanted = String(issuerId || '');
@@ -7162,6 +7809,10 @@ function joseSlotsOf(keys) {
 // its prefix. `tests/pq_key_certification.js` holds this table against
 // `pq_jose.PQ_ALGS` in both directions and against both files' domain-separator
 // labels, so a twelfth algorithm cannot arrive in one and not the other.
+/**
+ * Maps each post-quantum JOSE `alg` to the vendored registry's X.509 id,
+ * with `ecField` set for the ECDSA composites.
+ */
 const PQ_JOSE_IN_X509 = {
   'ML-DSA-44': { id: 'ML-DSA-44' },
   'ML-DSA-65': { id: 'ML-DSA-65' },
@@ -7179,6 +7830,15 @@ const PQ_JOSE_IN_X509 = {
 // The SubjectPublicKeyInfo, as PEM, of one post-quantum JOSE key — from its
 // PUBLIC JWK and nothing else. Throws, naming the algorithm, where the key
 // cannot be written down honestly; `certifyPqKeys()` reports that per key.
+/**
+ * Writes the SubjectPublicKeyInfo of one post-quantum JOSE key as PEM, from
+ * its public JWK alone.
+ *
+ * @param alg - the JOSE algorithm
+ * @param publicJwk - the public JWK
+ * @returns the PEM
+ * @throws Error, naming the algorithm, where the key cannot be written down
+ */
 function pqSubjectPublicKeyPem(alg, publicJwk) {
   log.debug("Entering pqSubjectPublicKeyPem(). alg=" + alg);
   const entry = PQ_JOSE_IN_X509[String(alg)];
@@ -7235,6 +7895,17 @@ function pqSubjectPublicKeyPem(alg, publicJwk) {
 // **IT ANSWERS AND DOES NOT THROW**, for `certify()`'s reason — a key that
 // could not be certified still signs, and a startup path must not fail on it.
 // ---------------------------------------------------------------------------
+/**
+ * Certifies a realm's post-quantum keys under its JOSE Issuing CA.
+ *
+ * Idempotent per key: a slot already over this key from the current Issuing
+ * CA is left alone. Answers and does not throw.
+ * @param realmId - the realm
+ * @param pqKeys - the keys, `{ alg, publicJwk }` read from each
+ * @param keepKids - kids whose displaced certificates are kept rather than
+ *   superseded
+ * @returns a promise of `{ ok, certified, unchanged, failed }`
+ */
 async function certifyPqKeys(realmId, pqKeys, keepKids) {
   log.debug('Entering certifyPqKeys(). realm=' + realmId);
   const id = realmIdOf(realmId);
@@ -7336,6 +8007,16 @@ async function certifyPqKeys(realmId, pqKeys, keepKids) {
 // `certifyPqKeys()`'s test, over both keys, so regenerating either half
 // re-issues.
 // ===========================================================================
+/**
+ * Certifies a realm's signer groups: one hybrid certificate per classical
+ * and ML-DSA pair, and a plain one for the SLH-DSA key.
+ *
+ * A slot already over the same keys from the current Issuing CA is left
+ * alone.
+ * @param realmId - the realm
+ * @param members - the signer group members
+ * @returns a promise of `{ ok, certified, unchanged, failed }`
+ */
 async function certifySignerGroups(realmId, members) {
   log.debug('Entering certifySignerGroups(). realm=' + realmId);
   const signerGroups = require('./signer_groups');
@@ -7567,6 +8248,15 @@ function adoptGenerationCertificate(id, useCaseId, slot, kid, publicKeyPem) {
 // the same key from the current Issuing CA is left alone, as
 // `certifyPqKeys()` leaves its keys.
 // ---------------------------------------------------------------------------
+/**
+ * Certifies a realm's standby key generations (the `next` and retired keys)
+ * each in a slot of its own, once.
+ *
+ * @param realmId - the realm
+ * @param keys - the realm's key set
+ * @param nodeCryptoModule - optionally, the node crypto module to use
+ * @returns a promise of `{ certified, failed }`
+ */
 async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
   log.debug('Entering certifyStandbyKeys(). realm=' + realmId);
   const id = realmIdOf(realmId);
@@ -7703,6 +8393,16 @@ async function certifyStandbyGroupEntry(id, one, standby, nodeC) {
     : one.unit + '@' + one.kid + ': ' + done.errors.join(' ');
 }
 
+/**
+ * Certifies every key in a realm's key set under its Issuing CAs: the RSA
+ * key under JOSE and XML, the curve keys, the post-quantum keys and the
+ * signer groups.
+ *
+ * @param realmId - the realm
+ * @param keys - the realm's key set
+ * @param nodeCryptoModule - optionally, the node crypto module to use
+ * @returns a promise of `{ ok, certified, failed }`
+ */
 async function certifyKeySet(realmId, keys, nodeCryptoModule) {
   log.debug('Entering certifyKeySet(). realm=' + realmId);
   const id = realmIdOf(realmId);
@@ -8008,6 +8708,14 @@ function tidyPem(text) {
 // Re-mint everything one Issuing CA has certified, from whatever authority it
 // now is. Shared by the reissue and the renewal, which differ only in whether
 // the authority changed first.
+/**
+ * Re-mints everything one Issuing CA has certified, from whatever authority
+ * it now is.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @returns a promise of `{ ok, recertified, failed }`
+ */
 async function recertifyUseCase(scopeId, useCaseId) {
   log.debug('Entering recertifyUseCase(). scope=' + scopeId + ' use=' +
             useCaseId);
@@ -8113,6 +8821,15 @@ async function recertifyUseCase(scopeId, useCaseId) {
 // certified from the live CA since the merge — by the rebuild's own re-mint,
 // or by a second report of the same merge.
 // ---------------------------------------------------------------------------
+/**
+ * Certifies again, from the Issuing CA the row now holds, the slots a merge
+ * left under one it no longer holds.
+ *
+ * Keeps the key, key usage, kid and slot; revokes nothing.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param slots - the orphaned slots
+ * @returns a promise of `{ ok, recertified, failed }`
+ */
 async function recertifyOrphanedSlots(scopeId, slots) {
   log.debug('Entering recertifyOrphanedSlots(). scope=' + scopeId);
   const id = String(scopeId);
@@ -8223,6 +8940,14 @@ function subjectCnOf(subject) {
 }
 
 // A NEW KEY for one Issuing CA, and everything under it re-certified from it.
+/**
+ * Gives one Issuing CA a new key and re-certifies everything under it.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @returns a promise of `{ ok: true, recertified, ... }` or
+ *   `{ ok: false, errors }`
+ */
 async function reissueUseCase(scopeId, useCaseId) {
   log.debug('Entering reissueUseCase(). scope=' + scopeId + ' use=' +
             useCaseId);
@@ -8327,6 +9052,18 @@ async function reissueUseCase(scopeId, useCaseId) {
 // perfectly and issues certificates nothing can verify, and the failure would
 // arrive at somebody else's relying party.
 // ---------------------------------------------------------------------------
+/**
+ * Imports an authority this service did not generate: the service Root, or
+ * one scope's Issuing CA.
+ *
+ * The certificate and key are checked to belong together before anything
+ * is stored.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - 'root' for the service Root, otherwise the use case
+ * @param material - `{ certificatePem, privateKeyPem }`
+ * @returns a promise of `{ ok: true, imported, ... }` or
+ *   `{ ok: false, errors }`
+ */
 async function importCa(scopeId, useCaseId, material) {
   log.debug('Entering importCa(). scope=' + scopeId + ' use=' + useCaseId);
   const certificatePem = tidyPem((material || {}).certificatePem);
@@ -8465,6 +9202,21 @@ async function importCa(scopeId, useCaseId, material) {
 // use case's Issuing CA, which is what somebody who wants their own key under
 // this service's Root is asking for.
 // ---------------------------------------------------------------------------
+/**
+ * Pins a leaf key pair an operator supplied into a slot, in place of the
+ * one this service would generate.
+ *
+ * With `pki.pinnedSigners` on in the realm, a `jose` or `xml` pin becomes a
+ * real signer with a publication lead. Without a certificate, one is issued
+ * over the key from the use case's Issuing CA.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param slot - the slot, an algorithm
+ * @param material - `{ privateKeyPem, certificatePem, chainPem }`, the
+ *   certificate optional
+ * @param options - `nowMs`, for a pinned signer
+ * @returns a promise of `{ ok: true, why, ... }` or `{ ok: false, errors }`
+ */
 async function pinKeyPair(scopeId, useCaseId, slot, material, options) {
   log.debug('Entering pinKeyPair(). scope=' + scopeId + ' use=' + useCaseId +
             ' slot=' + slot);
@@ -8668,6 +9420,10 @@ async function pinKeyPair(scopeId, useCaseId, slot, material, options) {
 // certificate, and the composites' private-key encodings are not the ones
 // `pq_jose.js` signs with.
 // ===========================================================================
+/**
+ * The use cases whose pins become real signers when `pki.pinnedSigners` is
+ * on.
+ */
 const PINNED_SIGNER_USE_CASES = ['jose', 'xml'];
 const PINNED_KID_PREFIX = 'sts-pinned-';
 const PINNED_CURVE_SLOTS = {
@@ -8689,6 +9445,13 @@ const PINNED_RSA_MIN_BITS = 2048;
 // Is the setting on in the realm this scope names? Read INSIDE that realm,
 // because the console may act on a realm other than the one the request
 // arrived in (`SCOPED_ACTIONS`). The process branch signs nothing.
+/**
+ * Answers whether `pki.pinnedSigners` is on in the realm a scope names,
+ * read inside that realm.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE` (which signs nothing)
+ * @returns whether pins in that realm are signers
+ */
 function pinnedSignersOn(scopeId) {
   log.debug("Entering pinnedSignersOn().");
   if (scopeKindOf(scopeId) === 'process') {
@@ -8951,6 +9714,14 @@ function pinnedRoleOf(meta, nowMs) {
 // published — pending, active, and retired within its grace — for the JWKS,
 // the metadata, the verifiers and the console. `nowMs` is for tests.
 // ---------------------------------------------------------------------------
+/**
+ * Lists a scope's pinned signers still published (pending, active, and
+ * retired within their grace), as views with no private key.
+ *
+ * @param scopeId - a realm id
+ * @param nowMs - the time to judge by, for tests
+ * @returns the views
+ */
 function pinnedSignersFor(scopeId, nowMs) {
   log.debug("Entering pinnedSignersFor().");
   const now = Number(nowMs) || Date.now();
@@ -9003,6 +9774,14 @@ function pinnedSignersFor(scopeId, nowMs) {
 // "off" where it is already off changes no signer. Answers
 // `[{ realm, unit, kid, role }]`.
 // ---------------------------------------------------------------------------
+/**
+ * Lists the live or pending pins a write of `pki.pinnedSigners=false`
+ * would silently demote, so the doors that could write it refuse instead.
+ *
+ * @param realmId - the realm the write lands in
+ * @param processWide - whether the write is to the service as a whole
+ * @returns `[{ realm, unit, kid, role }]`
+ */
 function pinsBlockingSignersOff(realmId, processWide) {
   log.debug("Entering pinsBlockingSignersOff(). realm=" + realmId);
   const ids = [];
@@ -9039,6 +9818,13 @@ function pinsBlockingSignersOff(realmId, processWide) {
 // this says so once per realm, with a code, so the change of signer is at
 // least on the record (STS-PKI-0216). The pins are left where they are: an
 // operator turning the setting back on gets them back.
+/**
+ * Logs, once per realm at start, the pins left unused because
+ * `pki.pinnedSigners` arrived off (STS-PKI-0216).
+ *
+ * @param realmIds - the realms to check
+ * @returns how many realms were reported
+ */
 function reportPinsWithSignersOff(realmIds) {
   log.debug("Entering reportPinsWithSignersOff().");
   let said = 0;
@@ -9100,6 +9886,16 @@ function pinnedPublicJwk(meta, kid, publicKeyPem) {
 
 // The pinned signer that SIGNS for a slot now, or null: on only where the
 // realm's setting is, and only once its publication lead has passed.
+/**
+ * Answers the pinned signer that signs for a slot now: only where the
+ * realm's setting is on and its publication lead has passed.
+ *
+ * @param scopeId - a realm id
+ * @param useCaseId - the use case
+ * @param slot - the slot, an algorithm
+ * @param nowMs - the time to judge by
+ * @returns the pinned signer's view, or null
+ */
 function activePinnedSigner(scopeId, useCaseId, slot, nowMs) {
   log.debug("Entering activePinnedSigner(). " + useCaseId + ':' + slot);
   if (!pinnedSignersOn(scopeId)) {
@@ -9121,6 +9917,16 @@ function activePinnedSigner(scopeId, useCaseId, slot, nowMs) {
 // that chose to pin pays, and a copy held here would be a second place a
 // decrypted key outlives the use it was read for (`keystore.js`, WHAT IS
 // RESIDENT). Null where the record has no key or it will not parse.
+/**
+ * Reads the signing half of a pinned signer from the row, each time.
+ *
+ * @param scopeId - a realm id
+ * @param useCaseId - the use case
+ * @param slot - the slot, an algorithm
+ * @param kid - the pinned key's kid
+ * @returns a KeyObject for a classical key, the seed or secret for a
+ *   post-quantum one, or null where there is no key or it will not parse
+ */
 function pinnedSigningKey(scopeId, useCaseId, slot, kid) {
   log.debug("Entering pinnedSigningKey(). " + useCaseId + ':' + slot);
   const found = certificateFor(realmIdOf(scopeId), useCaseId, slot, kid);
@@ -9355,6 +10161,16 @@ function retirePinnedSigners(scopeId, useCaseId, slot, now, graceMs, keepKid) {
 // in a slot nothing signs from) is simply forgotten, as before. Answers
 // `{ ok, why, unpinned: [kid], signed }` or STS-PKI-0211.
 // ---------------------------------------------------------------------------
+/**
+ * Unpins a slot: the generated key signs again at once and the pinned key
+ * retires through `options.graceMs`.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param slot - the slot, an algorithm
+ * @param options - `graceMs` and `nowMs`
+ * @returns `{ ok, why, unpinned, signed }`, or a refusal (STS-PKI-0211)
+ */
 function unpinKeyPair(scopeId, useCaseId, slot, options) {
   log.debug('Entering unpinKeyPair(). ' + useCaseId + ':' + slot);
   const o = options || {};
@@ -9411,6 +10227,13 @@ function unpinKeyPair(scopeId, useCaseId, slot, options) {
 // Drop every pinned signer whose grace has passed. Answers what was dropped,
 // with its certificate's serial, for `signing.retire` to supersede on its
 // Issuing CA's list where this service issued it.
+/**
+ * Drops every pinned signer whose grace has passed.
+ *
+ * @param scopeId - a realm id
+ * @param nowMs - the time to judge by
+ * @returns what was dropped, with each certificate's serial
+ */
 function dropRetiredPinnedSigners(scopeId, nowMs) {
   log.debug("Entering dropRetiredPinnedSigners().");
   const id = realmIdOf(scopeId);
@@ -9466,6 +10289,14 @@ function dropRetiredPinnedSigners(scopeId, nowMs) {
 // ---------------------------------------------------------------------------
 const certifiable = [];
 
+/**
+ * Registers a key another module owns, to be certified by
+ * `certifyRegistered()`.
+ *
+ * @param spec - `useCase`, `slot`, and a `publicKeyPem` function (the key
+ *   may not exist yet when it registers)
+ * @returns true when registered, false (and logged) when refused
+ */
 function registerCertifiable(spec) {
   log.debug('Entering registerCertifiable(). ' + (spec && spec.useCase) + '/' +
             (spec && spec.slot));
@@ -9494,6 +10325,13 @@ function registerCertifiable(spec) {
 // for the process rebuilding it rather than rebuilt here. See the block at the
 // top of `certify()`; `tls_server.js`'s `reconcileWithHierarchy()` is the one
 // caller that passes it.
+/**
+ * Certifies everything registered through `registerCertifiable()`.
+ *
+ * @param opts - `repairBranch: false` leaves a stale branch for the process
+ *   rebuilding it
+ * @returns a promise of how many registrations were certified
+ */
 async function certifyRegistered(opts) {
   log.debug('Entering certifyRegistered(). ' + certifiable.length +
             ' registration(s).');
@@ -9599,6 +10437,16 @@ let keySetProvider = null;
 // ---------------------------------------------------------------------------
 let keySetHeldProvider = null;
 
+/**
+ * Builds the certificate hierarchy at startup, where there is none, and
+ * certifies the keys this service already holds.
+ *
+ * A failure is logged and the service starts with self-signed keys;
+ * `pki.autoBuild` off builds nothing.
+ * @param opts - `realmIds`, and `keySetFor` and `keySetHeldFor`, the key-set
+ *   providers the realm watcher uses
+ * @returns a promise of `{ ok, built, ... }`
+ */
 async function start(opts) {
   log.debug('Entering pki.start().');
   const options = opts || {};
@@ -9887,6 +10735,15 @@ function watchRealms() {
 // `ensureRoot()` and for its reason: rebuilding a branch that exists would
 // invalidate every certificate under it, and a restart in PRODUCT mode — where
 // the branch is read back from the store — must not do that.
+/**
+ * Builds a scope's branch only if it is not there.
+ *
+ * Rebuilding a branch that exists would invalidate every certificate under
+ * it, which a product-mode restart must not do.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param opts - the build options
+ * @returns a promise of the existing branch's or the build's answer
+ */
 async function ensureScope(scopeId, opts) {
   log.debug("Entering ensureScope().");
   log.debug("Leaving ensureScope().");
@@ -10026,6 +10883,13 @@ async function topUpScopeNow(scopeId, missing) {
 // x509 module and for the hashing is `crypto.js` — rather than written here.
 // That is `crypto_metadata.js`'s own rule applied to its newest family.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the report `/admin/crypto-metadata` draws, read from the modules
+ * that perform each algorithm.
+ *
+ * @param realmId - the realm
+ * @returns the report
+ */
 function report(realmId) {
   log.debug('Entering report().');
   const chain = describe(realmId);
@@ -10134,6 +10998,13 @@ function report(realmId) {
 
 // One certificate from DER: `{ der, pem, x509, sha1 }`, `sha1` being SPIRE's
 // fingerprint (SHA-1 of the DER, lowercase hex). null when it is not one.
+/**
+ * Reads one certificate from DER.
+ *
+ * @param der - the DER bytes
+ * @returns `{ der, pem, x509, sha1 }`, `sha1` being SPIRE's fingerprint
+ *   (lowercase hex SHA-1 of the DER), or null when it is not a certificate
+ */
 function certificateFromDer(der) {
   log.debug("Entering certificateFromDer().");
   try {
@@ -10153,6 +11024,15 @@ function certificateFromDer(der) {
 // Every certificate in a PEM bundle. A block that does not parse is counted
 // and skipped, never fatal, so one bad paste does not take the rest of an
 // operator's anchors with it.
+/**
+ * Reads every certificate in a PEM bundle.
+ *
+ * A block that does not parse is counted and skipped, never fatal, so one
+ * bad paste does not lose the rest of an operator's anchors.
+ * @param pemText - the PEM text
+ * @returns `{ certificates, unreadable }`, the certificates as
+ *   `certificateFromDer()` makes them and the count of blocks skipped
+ */
 function certificateBundle(pemText) {
   log.debug("Entering certificateBundle().");
   const blocks = String(pemText || '').match(
@@ -10173,9 +11053,56 @@ function certificateBundle(pemText) {
   return { certificates: certificates, unreadable: unreadable };
 }
 
+// WHAT AN OPERATOR'S TRUST ANCHORS ARE, for a page that shows them (#94): each
+// certificate in a PEM bundle as a person reads it — subject, issuer,
+// validity, whether it is a CA, its SHA-256 fingerprint — and how many blocks
+// did not parse. The bundle is read by certificateBundle() above; this only
+// describes it, so every page that shows an operator's pasted chain shows it
+// the same way.
+/**
+ * Describes each certificate in a PEM bundle for a page: subject, issuer,
+ * validity, CA or not, and SHA-256 fingerprint.
+ *
+ * @param pemText - the PEM text
+ * @param nowMs - the instant `expired` and `notYetValid` are judged at
+ * @returns `{ certificates, unreadable }`
+ */
+function describeCertificateBundle(pemText, nowMs) {
+  log.debug("Entering describeCertificateBundle().");
+  const now = typeof nowMs === 'number' ? nowMs : Date.now();
+  const read = certificateBundle(pemText);
+  const certificates = read.certificates.map(function (one) {
+    const x = one.x509;
+    const from = new Date(x.validFrom).getTime();
+    const to = new Date(x.validTo).getTime();
+    return {
+      subject: String(x.subject || '').replace(/\n/g, ', '),
+      issuer: String(x.issuer || '').replace(/\n/g, ', '),
+      notBefore: new Date(from).toISOString(),
+      notAfter: new Date(to).toISOString(),
+      expired: to < now,
+      notYetValid: from > now,
+      ca: x.ca === true,
+      selfSigned: String(x.subject) === String(x.issuer),
+      sha256: String(x.fingerprint256 || '').toLowerCase()
+    };
+  });
+  log.debug("Leaving describeCertificateBundle(). " + certificates.length +
+            " certificate(s).");
+  return { certificates: certificates, unreadable: read.unreadable };
+}
+
 // A certificate's SubjectPublicKeyInfo, read with pkijs so that a key node
 // cannot read (a post-quantum one) is still there to describe —
 // `stsCrypto.publicKeyFromSpki()` takes it. null when it cannot be read.
+/**
+ * Reads a certificate's SubjectPublicKeyInfo with pkijs.
+ *
+ * Works for a key node cannot read (a post-quantum one); the result is what
+ * `stsCrypto.publicKeyFromSpki()` takes.
+ * @param one - a certificate as `certificateFromDer()` makes it
+ * @returns the SubjectPublicKeyInfo, or null when it cannot be read
+ */
 function spkiOf(one) {
   log.debug("Entering spkiOf().");
   try {
@@ -10192,6 +11119,13 @@ function spkiOf(one) {
 
 // The keyUsage bits a certificate states, by name, or null when it states
 // none — Go's `KeyUsage` is zero then, which permits nothing.
+/**
+ * Lists the keyUsage bits a certificate states, by name.
+ *
+ * @param one - a certificate as `certificateFromDer()` makes it
+ * @returns a promise of the names, or null when the certificate states no
+ *   keyUsage (which, as Go reads it, permits nothing)
+ */
 async function keyUsageOf(one) {
   log.debug("Entering keyUsageOf().");
   const ku = (await extensionsOf(one)).filter(function (ext) {
@@ -10202,6 +11136,12 @@ async function keyUsageOf(one) {
 }
 
 // The RSA modulus size of a certificate's key in bits; 0 for any other key.
+/**
+ * Answers the RSA modulus size of a certificate's key.
+ *
+ * @param one - a certificate as `certificateFromDer()` makes it
+ * @returns the size in bits, or 0 for any key that is not RSA
+ */
 function rsaKeyBits(one) {
   log.debug("Entering rsaKeyBits().");
   let bits = 0;
@@ -10257,6 +11197,8 @@ function subjectText(one) {
 // certificate — nor a second certificate with the same subject and key —
 // used twice in one path, so a loop of cross-certificates ends.
 /**
+ * Builds and verifies a path from a leaf to one of the given anchors.
+ *
  * @returns {Promise<{ ok: boolean, chain?: any[], reason?: string,
  *                     check?: string, policies?: string[] }>}
  */
@@ -10469,6 +11411,16 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
 // node reports, ending at the anchor. Answers `pathRuleProblem()`'s verdict
 // or null; a chain it cannot read is left to OpenSSL's answer.
 // ---------------------------------------------------------------------------
+/**
+ * Holds a chain OpenSSL already verified to this module's path rules.
+ *
+ * Used for the main port's client certificate and every outbound request,
+ * where OpenSSL was found to accept paths these rules refuse. A chain that
+ * cannot be read is left to OpenSSL's answer.
+ * @param peer - node's detailed peer certificate
+ *   (`getPeerCertificate(true)`), linked through `issuerCertificate`
+ * @returns `pathRuleProblem()`'s verdict, or null when the chain passes
+ */
 function peerChainProblem(peer) {
   log.debug("Entering peerChainProblem().");
   const path = [];
@@ -10516,6 +11468,20 @@ function peerChainProblem(peer) {
 // `opts` as `verifyPathToAnchors()`. `{ ok: true, index }` — which authority
 // — or `{ ok: false, check, reason }`.
 // ---------------------------------------------------------------------------
+/**
+ * Checks, synchronously, that a leaf is issued directly by one of the given
+ * authorities and that the two-certificate path holds the path rules.
+ *
+ * Uses node's signature check, so an authority with a key OpenSSL cannot
+ * read (a post-quantum one) verifies nothing here; `verifyPathToAnchors()`
+ * is the door for those.
+ * @param leafDer - the leaf certificate, DER or PEM
+ * @param authorities - `{ certificate: X509Certificate }` entries, or DER
+ *   or PEM
+ * @param opts - options as `verifyPathToAnchors()` takes them
+ * @returns `{ ok: true, index }` naming the authority, or
+ *   `{ ok: false, check, reason }`
+ */
 function verifyIssuedDirectly(leafDer, authorities, opts) {
   log.debug("Entering verifyIssuedDirectly().");
   const options = opts || {};
@@ -10605,6 +11571,16 @@ const SUBJECT_TYPES = { '2.5.4.6': 'C', '2.5.4.10': 'O', '2.5.4.11': 'OU',
 // basicConstraints. `sanDirectoryTypes` are the attribute types inside the
 // directoryName entries of subjectAltName, which is where a TPM AIK
 // certificate names its TPM (TCG EK Credential Profile section 3.2.9).
+/**
+ * Reads the facts of a WebAuthn attestation certificate.
+ *
+ * `sanDirectoryTypes` are the attribute types inside subjectAltName's
+ * directoryName entries, where a TPM AIK certificate names its TPM.
+ * @param der - the certificate's DER
+ * @returns `{ version, subject, subjectEmpty, ca, eku, extensions,
+ *   sanDirectoryTypes, publicKeyJwk, keyType, curve }`, or null when it is
+ *   not a certificate
+ */
 function attestationCertificateFacts(der) {
   log.debug("Entering attestationCertificateFacts().");
   let cert = null;
@@ -10686,6 +11662,13 @@ function attestationCertificateFacts(der) {
 // section 4): the hex SHA-1 of the subjectPublicKey BIT STRING's value,
 // RFC 5280 section 4.2.1.2 method (1). How a fido-u2f authenticator, which
 // has no AAGUID, is found in MDS. '' when the certificate cannot be read.
+/**
+ * Computes an attestation certificate's key identifier as the FIDO Metadata
+ * Service lists it: the hex SHA-1 of the subjectPublicKey BIT STRING's value.
+ *
+ * @param der - the certificate's DER
+ * @returns the identifier, or '' when the certificate cannot be read
+ */
 function attestationKeyIdentifier(der) {
   log.debug("Entering attestationKeyIdentifier().");
   try {
@@ -10706,6 +11689,10 @@ function attestationKeyIdentifier(der) {
 
 const SSH_CERT_SUFFIX = '-cert-v01@openssh.com';
 // SSH_CERT_TYPE_HOST (PROTOCOL.certkeys).
+/**
+ * SSH_CERT_TYPE_HOST, the certificate type of an SSH host certificate
+ * (PROTOCOL.certkeys).
+ */
 const SSH_HOST_CERT = 2;
 // Go's CertTimeInfinity, and the largest time Go treats as a time.
 const SSH_FOREVER = BigInt('0xffffffffffffffff');
@@ -10840,6 +11827,15 @@ function sshOptions(bytes) {
 // `serial`, `kind`, `keyId`, `principals`, `validAfter`, `validBefore`,
 // `criticalOptions`, `extensions`, `signatureKey`, `signature` and `signed`
 // (the bytes the authority signed). Throws on anything unreadable.
+/**
+ * Parses an SSH public key blob or certificate blob, as Go's
+ * `ssh.ParsePublicKey()`.
+ *
+ * @param blob - the wire-format bytes
+ * @returns `{ type, key, curve, blob }` for a key; a certificate adds its
+ *   fields, `signatureKey`, `signature` and `signed` (the signed bytes)
+ * @throws Error on anything unreadable
+ */
 function parseSshPublicKey(blob) {
   log.debug("Entering parseSshPublicKey().");
   const bytes = Buffer.from(blob || []);
@@ -10901,6 +11897,13 @@ function parseSshPublicKey(blob) {
 
 // One authorized_keys line — `[options] type base64 [comment]` — as a key,
 // or null for a line that is not one.
+/**
+ * Parses one authorized_keys line (`[options] type base64 [comment]`).
+ *
+ * @param line - the line
+ * @returns the key as `parseSshPublicKey()` answers, or null for a line that
+ *   is not one
+ */
 function parseSshAuthorizedKey(line) {
   log.debug("Entering parseSshAuthorizedKey().");
   const text = String(line || '').trim();
@@ -10931,6 +11934,12 @@ function parseSshAuthorizedKey(line) {
 
 // `ssh.FingerprintSHA256()` without its prefix: unpadded base64 of the
 // SHA-256 of the key blob.
+/**
+ * Computes `ssh.FingerprintSHA256()` without its prefix.
+ *
+ * @param key - a parsed key with `blob`
+ * @returns unpadded base64 of the SHA-256 of the key blob
+ */
 function sshFingerprint(key) {
   log.debug("Entering sshFingerprint().");
   log.debug("Leaving sshFingerprint().");
@@ -10942,6 +11951,15 @@ function sshFingerprint(key) {
 // The formats Go's `Verify()` accepts for each key type and no others:
 // ssh-rsa (SHA-1), rsa-sha2-256 and rsa-sha2-512; the curve's own hash for
 // ECDSA, whose blob is two mpints; ssh-ed25519.
+/**
+ * Verifies an SSH signature over data under an SSH key.
+ *
+ * Accepts only the formats Go's `Verify()` accepts for the key type.
+ * @param key - a parsed SSH key
+ * @param data - the signed bytes
+ * @param signature - `{ format, blob }`
+ * @returns a promise of whether the signature verifies
+ */
 async function verifySshSignature(key, data, signature) {
   log.debug("Entering verifySshSignature(). " + key.type + " / " +
             (signature && signature.format));
@@ -10990,6 +12008,16 @@ async function verifySshSignature(key, data, signature) {
 
 // `CertChecker.CheckHostKey(principal + ':22', …)`: resolves '' when the host
 // certificate is acceptable, otherwise why not.
+/**
+ * Checks an SSH host certificate as Go's
+ * `CertChecker.CheckHostKey(principal + ':22', ...)` does.
+ *
+ * @param cert - the parsed certificate
+ * @param principal - the host name it must be valid for
+ * @param authorities - the trusted certificate authority keys
+ * @param nowSeconds - the time to check validity at
+ * @returns a promise of '' when acceptable, otherwise the reason it is not
+ */
 async function checkSshHostCertificate(cert, principal, authorities,
                                        nowSeconds) {
   log.debug("Entering checkSshHostCertificate().");
@@ -11065,6 +12093,15 @@ function cloudAnchorTable() {
 // The AWS certificate for `region` and `keyType` ('rsa2048' | 'rsa1024'), as
 // certificateFromDer() answers, or null — RSA-2048 has no fallback and an
 // unknown region is refused, RSA-1024 falls back to AWS's default, as SPIRE.
+/**
+ * Answers the AWS instance identity document certificate for a region.
+ *
+ * RSA-2048 has no fallback and an unknown region is refused; RSA-1024 falls
+ * back to AWS's default certificate, as SPIRE does.
+ * @param region - the AWS region
+ * @param keyType - 'rsa2048' or 'rsa1024'
+ * @returns the certificate as `certificateFromDer()` answers, or null
+ */
 function awsIidCertificate(region, keyType) {
   log.debug("Entering awsIidCertificate(). " + region + "/" + keyType);
   const table = cloudAnchorTable();
@@ -11076,6 +12113,12 @@ function awsIidCertificate(region, keyType) {
 }
 
 // The roots an Azure attested document's signing certificate must chain to.
+/**
+ * Answers the roots an Azure attested document's signing certificate must
+ * chain to.
+ *
+ * @returns the root certificates
+ */
 function azureImdsRoots() {
   log.debug("Entering azureImdsRoots().");
   log.debug("Leaving azureImdsRoots().");
@@ -11142,6 +12185,15 @@ function deviceAnchorTable() {
 // 'appleAppAttest' or 'tpm') must chain to, as certificateFromDer()
 // answers, and where they came from: `{ anchors, source }`, `source` being
 // 'configured', 'shipped' or 'none'.
+/**
+ * Answers the anchors a device key attestation must chain to, and where
+ * they came from.
+ *
+ * @param kind - 'androidKeyAttestation', 'appleAppAttest' or 'tpm'
+ * @param configuredPem - the operator's configured anchors, a PEM bundle
+ * @returns `{ anchors, source }`, `source` being 'configured', 'shipped'
+ *   or 'none'
+ */
 function deviceAttestationAnchors(kind, configuredPem) {
   log.debug("Entering deviceAttestationAnchors(). " + kind);
   const configured = certificateBundle(configuredPem).certificates;
@@ -11159,6 +12211,13 @@ function deviceAttestationAnchors(kind, configuredPem) {
 
 // The shipped set, described for Protocols → Device registration: subject,
 // expiry and pin of each, per kind. Never a certificate's text.
+/**
+ * Describes the shipped device attestation anchors for Protocols → Device
+ * registration: subject, expiry and pin of each, per kind.
+ *
+ * Never includes a certificate's text.
+ * @returns the description, per kind
+ */
 function describeDeviceAnchors() {
   log.debug("Entering describeDeviceAnchors().");
   const raw = require('./pki_device_anchors.json');
@@ -11221,6 +12280,13 @@ const MDS_ALGORITHMS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
 
 // The anchors a BLOB's chain must end at: the operator's, or FIDO's root out
 // of node's own root store.
+/**
+ * Answers the anchors a FIDO MDS3 BLOB's chain must end at.
+ *
+ * @param anchorsPem - the operator's configured anchors, a PEM bundle
+ * @returns those anchors, or with none configured FIDO's root (GlobalSign
+ *   Root CA - R3) found in node's own root store
+ */
 function fidoMdsRoots(anchorsPem) {
   log.debug("Entering fidoMdsRoots().");
   if (String(anchorsPem || '').trim()) {
@@ -11237,6 +12303,18 @@ function fidoMdsRoots(anchorsPem) {
   return system;
 }
 
+/**
+ * Verifies a FIDO MDS3 BLOB as section 3.1.8 of the specification asks.
+ *
+ * Checks the `x5c` chain to an anchor and the signature; revocation of the
+ * chain is left to the caller. `opts.overrideSignature` lets an
+ * administrator load a BLOB whose anchor, path or signature fails, and the
+ * answer then says so in `overridden`. Never rejects.
+ * @param token - the BLOB, a compact JWS
+ * @param opts - `anchorsPem`, `now` and `overrideSignature`
+ * @returns a promise of `{ ok: true, header, payload, chainPems }` or
+ *   `{ ok: false, reason }`
+ */
 async function verifyFidoMdsBlob(token, opts) {
   log.debug("Entering verifyFidoMdsBlob().");
   const options = opts || {};
@@ -11367,6 +12445,15 @@ const OID_CODE_SIGNING = '1.3.6.1.5.5.7.3.3';
 // IP, URI, then an otherName's value) — SPIRE's `extractSubject()` — and
 // `issuer` the OIDC issuer extension, the UTF8String form first. null when
 // the bytes are not a certificate.
+/**
+ * Reads the facts of a sigstore signing certificate.
+ *
+ * `subject` is the first non-empty subjectAltName in sigstore's order and
+ * `issuer` the OIDC issuer extension, as SPIRE's `extractSubject()` does.
+ * @param der - the certificate's DER bytes
+ * @returns `{ subject, issuer, codeSigning, notBefore, notAfter, spki }`,
+ *   or null when the bytes are not a certificate
+ */
 function sigstoreSignerFacts(der) {
   log.debug("Entering sigstoreSignerFacts().");
   let cert = null;
@@ -11469,6 +12556,18 @@ function precertificateTbs(cert) {
 // precertificate entry — version 0, certificate_timestamp, the timestamp,
 // precert_entry, SHA-256 of the ISSUER's SubjectPublicKeyInfo, the TBS
 // without the list, the SCT's extensions. Resolves `{ ok, why }`.
+/**
+ * Verifies the embedded SCTs of a signing certificate against known CT logs.
+ *
+ * The answer is ok when at least one SCT is from a log in `logs`, made
+ * inside that log key's window, and verifies over the precertificate entry
+ * (cosign's `VerifyEmbeddedSCT()` with a threshold of one).
+ * @param leafDer - the signing certificate's DER
+ * @param issuerDer - its issuer's DER, whose SubjectPublicKeyInfo the
+ *   precertificate entry names
+ * @param logs - the trusted logs, `[{ logIdHex, spki, startMs, endMs }]`
+ * @returns a promise of `{ ok, why }`
+ */
 async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
   log.debug("Entering verifyEmbeddedScts().");
   let leaf = null;
@@ -11576,6 +12675,16 @@ async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
            (problems.join('; ') || 'the list is empty') };
 }
 
+/**
+ * The certificate authority this service maintains: one Root for the
+ * service, an Intermediate per trust realm (and one for the process), and
+ * an Issuing CA per use case under each.
+ *
+ * It keeps no store of its own (its rows are the keystore's `pki:` rows),
+ * certifies every key pair this service generates, verifies presented
+ * paths, and holds the object store `/admin/pki` issues into.
+ * @namespace
+ */
 module.exports = {
   // --- sigstore signing certificates (#170) ---
   sigstoreSignerFacts: sigstoreSignerFacts,
@@ -11583,6 +12692,7 @@ module.exports = {
   // --- somebody else's certificates (#40) ---
   certificateFromDer: certificateFromDer,
   certificateBundle: certificateBundle,
+  describeCertificateBundle: describeCertificateBundle,
   rsaKeyBits: rsaKeyBits,
   spkiOf: spkiOf,
   keyUsageOf: keyUsageOf,
@@ -11611,6 +12721,9 @@ module.exports = {
   TIERS: TIERS,
   TIER_IDS: TIER_IDS,
   // A GETTER, so a reader of `pki.MAX_OBJECTS` sees `pki.maxStoredObjects`.
+  /**
+   * The object store's current cap, as `maxObjects()` answers it.
+   */
   get MAX_OBJECTS() {
     log.debug("Entering MAX_OBJECTS().");
     log.debug("Leaving MAX_OBJECTS().");
@@ -11752,6 +12865,14 @@ module.exports = {
   // `scep/scep_ra.ts`'s RA certificate. `refreshScope()` lands this process's
   // queued writes of the row and takes what the store holds.
   oneBuildInTheCluster: oneBuildInTheCluster,
+  /**
+   * Lands this process's queued writes of a scope's row and takes what the
+   * store holds, where the store arbitrates.
+   *
+   * @param scopeId - the scope
+   * @returns a promise of the keystore's adoption answer, or of null where
+   *   the store does not arbitrate
+   */
   refreshScope: function (scopeId) {
     log.debug("Entering refreshScope().");
     log.debug("Leaving refreshScope().");

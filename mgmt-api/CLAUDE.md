@@ -513,28 +513,34 @@ the action needs — so what this surface demands is stated where every other
 access decision in this service is stated, and `admin_api.ts` decides the
 QUESTION rather than the outcome.
 
-**WHO MAY BE ISSUED THOSE SCOPES IS ASKED AT ISSUANCE, SINCE 2026-09-27
-(#302, part A of #88).** Until then the only question was the CLIENT's —
-does it declare them (#110) — so a client registered with `admin:write` on
-the code flow handed Admin Write to anybody who signed in through it: the
-scope was the authorization. Now `admin_scope_access.ts` narrows them, for a
-PERSON, to what that person's console roles in the realm authorize —
-`admin:read` with Admin Read, `admin:write` with Admin Write — at the
-authorization endpoint and again in `oauth2.ts`'s `tokenSet()`, the backstop
-every grant mints through. Narrowed and audited (`STS-ADMIN-0821`), refused
-`invalid_scope` only when nothing else was asked for (`STS-ADMIN-0822`). The
-open console is honoured (the API is its machine door, rule 7); the
-bootstrap administrator before its claim is not (#103). **An application on
-`client_credentials` is not asked yet**: the client declaring the scopes is
-still what authorizes them, and `sts-management-api` is the machine door
-every launcher uses — #303 moves both kinds of principal onto a role →
-permission relation. The file's header argues each choice. **AND ON EVERY
-CALL**: the gate hands a person's token to `recheck()` beside the client
-declaration, against the roster as it is now in the realm that issued the
-token, so a role revoked after a token was minted stops working at once
-(403, `STS-API-0125`) rather than when the token expires — the debugger's
-gate does the same. A client's own token (`sub` equal to `client_id`, or
-`urn:sts:client:<id>`) is not asked.
+**WHO MAY BE ISSUED THOSE SCOPES IS ASKED AT ISSUANCE AND ON EVERY CALL,
+SINCE 2026-09-27 (#302 and #303, parts A and B of #88).** Until then the only
+question was the CLIENT's — does it declare them (#110) — so a client
+registered with `admin:write` on the code flow handed Admin Write to anybody
+who signed in through it, and any client an administrator declared the scope
+on was Admin Write on `client_credentials`: the scope was the authorization.
+Now **ADMIN_READ and ADMIN_WRITE are configured roles that AUTHORIZE the two
+scopes** (`common/roles.js`, seeded in every realm), and
+`common/role_permissions.ts` issues a scope only to a subject holding the role:
+
+* **A PERSON holds them through the console roster** — Admin Read or Admin
+  Write in the realm issuing the token — so the open console is honoured
+  (the API is its machine door, rule 7) and the bootstrap administrator
+  before its claim is not (#103).
+* **AN APPLICATION holds them by being a member** — `sts-management-api` is
+  seeded in both, in every realm; any other client needs `add-member` on
+  `/admin/roles`. Declaring the scope is still required (the gate re-checks
+  it, #110) and is no longer enough.
+
+Asked at the authorization endpoint and in `oauth2.ts`'s `tokenSet()`, the
+backstop every grant mints through: narrowed and audited (`STS-ADMIN-0821`),
+`invalid_scope` only when nothing else was asked for (`STS-ADMIN-0822`). **AND
+ON EVERY CALL — held ∩ carried (rcbj's decision 4 on #303):** the gate hands
+the access-control policy the roles the token's subject — person or client —
+holds NOW in the realm that issued the token, less any whose permission the
+token does not carry. A role revoked after a token was minted stops working at
+once (403, `STS-API-0125`), and an `admin:read` token is not Admin Write
+because its subject also holds that. The XACML document is unchanged.
 
 **THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
 ACCEPTS TWO AT THAT DEFAULT.** `adminApi.audience` was `''`, meaning
@@ -1936,3 +1942,24 @@ deliberate:
 exception out of the gate's source. `admin-ui/devices_admin.ts`'s `mdmFeed()`
 is the handler, shared with development's test control at
 `/devices/test/compliance` (`mode.opensTestControls()`).
+
+## ONE COPY OF THE COMPONENTS BEHIND EVERY VALIDATOR (#365, 2026-09-30)
+
+Each request schema is compiled wrapped in a root that carries the
+document's named schemas as `components`, so a `$ref` into them resolves
+(`admin_api.ts`, above `NOT_ENFORCED_HERE`). Until #365 `compilable()` built
+that wrapper with a fresh `structureOnly(spec.SCHEMAS)` each time — a deep
+copy of the whole components table, about 170 KB, for each of the 363
+validators — and ajv keeps every root it compiled for the life of the
+process. **A heap snapshot of a fresh front process put 61 MB of its 190 MB
+under this module.** `compileRequestSchemas()` now makes the copy once and
+every root points at it; ajv reads a schema and never writes to it, so the
+shared subtree is the same value the copies were. Measured on the service
+image: the module's retained size 60.9 MB → 1.9 MB, the live heap 190.5 MB
+→ 131.3 MB. What each validator accepts and refuses, and the sentence it
+refuses in, did not change.
+
+**Do not make the wrapper per operation again** — not by cloning "to be
+safe", and not by giving an operation a components table of its own. A
+second shared copy costs 170 KB once; a per-validator one costs it 363
+times, in every process (#339).

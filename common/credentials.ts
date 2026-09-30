@@ -178,6 +178,78 @@ import claims = require('../cluster/cluster_claims');
 import counters = require('../cluster/cluster_counters');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
+// THE CACHE REGISTRY (#74, rule 3ap), for the one cache this file keeps — the
+// TOTP verdicts below (#352). A LEAF in JavaScript that requires `config` and
+// `error_codes`, so it can close no cycle from here.
+import cacheRegistry = require('./cache_registry');
+
+// ===========================================================================
+// WHETHER A SEALED AUTHENTICATOR SECRET OPENS HERE, REMEMBERED (#352,
+// 2026-09-29).
+//
+// **`/admin/users` UNSEALED EVERY ENROLLED PERSON'S TOTP SECRET ON EVERY
+// REQUEST**, to report a tile. `mechanismsFor()` asked `totpOf()`, which
+// opens the secret, and the page asked `mechanismsFor()` of everybody in the
+// realm to count who holds an authenticator and whose enrolment cannot be
+// read — one `keystore.open()` per enrolled person, per page view, whatever
+// the page number. Nothing on that page, and nothing `mechanismsFor()`
+// reports, needs the secret: it needs the VERDICT, *does it open under this
+// process's key-encryption key*, which is what `totpUsable` and the
+// *unreadable* tile are.
+//
+// **A VERDICT IS A PURE FUNCTION OF THE CIPHERTEXT AND THE KEYS**, so it may
+// be remembered, keyed by the ciphertext and stamped with
+// `keystore.kekEpoch()`, which moves whenever the keys `open()` would try
+// change. A new enrolment is a new ciphertext (a fresh IV), so it is a miss;
+// a verdict about keys this process no longer holds carries a stale stamp,
+// so it is a miss. Nothing else can make one wrong, so there is no lifetime
+// and no sweep (root CLAUDE.md, *Anything periodic is a scheduler job*): an
+// entry goes only to make room.
+//
+// **IT HOLDS NO SECRET.** The key is the SEALED text, which every directory
+// dump already carries; the value is a boolean. The one reader that needs the
+// secret itself — `verifyTotp()`, through `totpOf()` — still opens it every
+// time and never consults this.
+//
+// **PER PROCESS, AND THAT IS CORRECT RATHER THAN MERELY ACCEPTABLE**: the
+// verdict is about THIS process's keys, so another process's answer would be
+// the wrong one to share, and no write anywhere can change it.
+// ===========================================================================
+const TOTP_VERDICTS_MAX = 20000;
+const totpVerdicts = new Map<string, { epoch: number; opens: boolean }>();
+const totpVerdictCount = cacheRegistry.register({
+  name: 'credentials.totp-verdicts',
+  title: 'Authenticator secret verdicts',
+  description: 'Whether each sealed authenticator (TOTP) secret this process ' +
+    'has been asked about opens under its key-encryption key (#352), so the ' +
+    'users list and the second-factor roster can report an enrolment as ' +
+    'readable or not without unsealing it on every request. Keyed by the ' +
+    'sealed text; the value is yes or no, never the secret.',
+  owner: 'common/credentials.ts',
+  scope: 'process', kind: 'cache', persisted: false,
+  hitMeaning: 'a sealed secret whose verdict was already known, so it was ' +
+    'not opened',
+  settings: [],
+  maxEntries: function (): number {
+    return TOTP_VERDICTS_MAX;
+  },
+  bound: 'Enforced: ' + TOTP_VERDICTS_MAX + ' verdicts; full, the oldest is ' +
+    'dropped and that secret is opened again when next asked about.',
+  lifetime: function (): string {
+    return 'Until the key-encryption keys change, or it is dropped to make ' +
+      'room. A new enrolment is a new sealed text and is asked afresh.';
+  },
+  entries: function (): unknown[] {
+    const epoch = keystore.kekEpoch();
+    const out: Array<Record<string, unknown>> = [];
+    totpVerdicts.forEach(function (row, key): void {
+      out.push({ key: cacheRegistry.digestKey(key), validUntil: null,
+                 valid: row.epoch === epoch,
+                 basis: row.opens ? 'opens' : 'will not open' });
+    });
+    return out;
+  }
+});
 
 // What `Credentials` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -249,7 +321,9 @@ interface CredentialsDeps {
 // owes no `touch()`. And it carries no `tombstone`: it is keyed by a NAME,
 // which a person legitimately writes again every time they start over.
 const pendingTotp = realms.map({ persist: 'credentials.pendingTotp',
-                                 retain: 'age' });
+                                 retain: 'age',
+                                 // #333: the enrolment's `expires`, ms.
+                                 expiresAt: realms.expiryField('expires', 1) });
 
 // THE PENDING SETS. `realms.map()` for the reason every store in this service
 // is: a set begun in one realm must not be confirmable in another, and the
@@ -264,7 +338,9 @@ const pendingTotp = realms.map({ persist: 'credentials.pendingTotp',
 // they have to be, the page shows them — and sealed in the ROW, which is gone
 // when the set is confirmed, discarded, replaced or swept.
 const pendingBackupCodes = realms.map({
-  persist: 'credentials.pendingBackupCodes', retain: 'age' });
+  persist: 'credentials.pendingBackupCodes', retain: 'age',
+  // #333: the pending set's `expires`, ms.
+  expiresAt: realms.expiryField('expires', 1) });
 
 // The attribute is the same one `addKey()` writes; this register holds only
 // what has been ASKED FOR and not yet proved. Per realm, like every other
@@ -276,14 +352,31 @@ const pendingBackupCodes = realms.map({
 // not a credential, so the row leaks nothing, and it is sealed anyway like
 // every minted row.
 const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
-                                 retain: 'age' });
+                                 retain: 'age',
+                                 // #333: the ceremony's `expires`, ms.
+                                 expiresAt: realms.expiryField('expires', 1) });
 
+/**
+ * The one place a presented password is verified, and the store of every
+ * credential a person holds on their own entry: the password, security
+ * keys, the authenticator app, recovery codes, app passwords, and the
+ * activation and password-reset links.
+ *
+ * Reached through the directory's slot. In development mode a password is
+ * accepted unchecked; product mode verifies every one.
+ */
 class Credentials {
   // An AAGUID as the UUID string CAEP and the FIDO metadata service write
   // (`01020304-0506-...`), from the 32 hex digits `authn/webauthn.js` parses
   // out of the attested credential data. All zeros — an authenticator that
   // declines to name its model, or attestation "none" — is no AAGUID, and ''
   // is returned for it as for anything unparseable.
+  /**
+   * Formats an AAGUID as the UUID string CAEP and the FIDO metadata write.
+   *
+   * @param value - the 32 hex digits parsed from the attested credential data
+   * @returns the UUID string, or empty for all zeros or anything unparseable
+   */
   static aaguidString(value: unknown): string {
     helpers.log.debug("Entering Credentials.aaguidString().");
     const hex = String(value || '').toLowerCase().replace(/-/g, '');
@@ -311,6 +404,13 @@ class Credentials {
   // `device_enrolment.ts`'s `beginLink()` asks this rather than repeating
   // the test. `name` is the label, with the model the FIDO metadata named
   // where the attestation chained to it, so a "security key" is findable.
+  /**
+   * Says what kind of authenticator one stored key is, in a person's words.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ kind, linkable, text, name }`, where only a roaming key is not
+   *   `linkable` to a device
+   */
   static keyKind(key: any): { kind: string; linkable: boolean;
                               text: string; name: string } {
     helpers.log.debug("Entering Credentials.keyKind().");
@@ -337,6 +437,13 @@ class Credentials {
              text: 'not reported by your browser' };
   }
 
+  /**
+   * Builds the credential store over the given dependencies.
+   *
+   * @param deps - the logger, settings, mode, `crypto`, the keystore, the
+   *   password policy, the TOTP, recovery-code and app-password libraries, the
+   *   cluster's claims and counters, and lazy loaders
+   */
   constructor(private readonly deps: CredentialsDeps) {
     deps.log.debug("Entering Credentials.constructor().");
     deps.log.debug("Leaving Credentials.constructor().");
@@ -344,6 +451,11 @@ class Credentials {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): CredentialsDeps {
     helpers.log.debug("Entering Credentials.defaultDeps().");
     helpers.log.debug("Leaving Credentials.defaultDeps().");
@@ -405,6 +517,12 @@ class Credentials {
 
   // What loading this module did with its instance before R2, run once
   // for whichever instance is installed (#50, R2).
+  /**
+   * Runs, once for whichever instance is installed, what loading this module
+   * did before the composition root: it declares the cluster capabilities.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: Credentials): void {
     helpers.log.debug("Entering Credentials.wire().");
     instance.provideCapabilities();
@@ -421,6 +539,7 @@ class Credentials {
   // The attribute. RFC 4519 section 2.41 — the standard name, so an entry this
   // service writes is one an ordinary LDAP client recognises, and one written
   // by an ordinary LDAP client is one this service can read.
+  /** The password attribute: RFC 4519's `userPassword`. */
   static readonly PASSWORD_ATTRIBUTE = 'userPassword';
 
   // ---------------------------------------------------------------------------
@@ -475,6 +594,7 @@ class Credentials {
   // the verifier holds something useless to an attacker — so hashing it would
   // make it unusable for the only thing it is for. What must never be stored is
   // a PASSWORD, and this is not one.
+  /** The attribute that holds a person's security keys. */
   static readonly WEBAUTHN_ATTRIBUTE = 'stsWebauthnCredential';
 
   // WHAT A KEY IS FOR. Two roles and no third, because a key can do exactly two
@@ -488,13 +608,25 @@ class Credentials {
   //              person whose only key is `mfa` and who has no password cannot
   //              sign in at all, which is why the setup flow refuses that
   //              combination rather than letting somebody lock themselves out.
+  /**
+   * What a key is for: `primary` (passwordless) or `mfa` (a second factor).
+   */
   static readonly ROLES = ['primary', 'mfa'];
 
   // THE RESERVED REFUSAL, honoured in BOTH modes. See the header.
+  /** The password refused in both modes: `invalid`. */
   static readonly RESERVED_REFUSAL = 'invalid';
 
   private directory = null;
 
+  /**
+   * Fills the directory slot. Refused whole unless it carries at least
+   * `readPassword` and `writePassword`; every other hook is checked where it
+   * is used.
+   *
+   * @param hooks - the directory's credential functions
+   * @returns true when installed, false when refused
+   */
   setDirectory(hooks) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering Credentials.setDirectory().');
@@ -528,9 +660,65 @@ class Credentials {
     return true;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE POPULATION HOOKS (#352, 2026-09-29): two more functions of the SAME
+  // directory, offered after `setDirectory()` rather than inside it.
+  //
+  //   * `credentialCensus(names)` — for each name, the RAW values of the
+  //     credential attributes this file reads, off the entry it names; see
+  //     `factorCensus()` for what it replaced and why it is raw.
+  //   * `applicationMatcher()` — a function that says whether a key names an
+  //     application registered in this realm, built from one listing, for the
+  //     people list's *an application is not a person* rule.
+  //
+  // **THEY ARE REMEMBERED AGAINST THE DIRECTORY THEY CAME WITH.** A test that
+  // installs a stub directory with `setDirectory()` and no census must not be
+  // answered by the real directory's census about people the stub holds — so
+  // the hooks are used only while `this.directory` is the object they were
+  // offered beside, and otherwise the old one-name-at-a-time path answers.
+  // Checked where they are used, like every other optional hook here.
+  // ---------------------------------------------------------------------------
+  private directoryExtras = null;
+
+  /**
+   * Adds the population hooks to the directory slot already filled.
+   *
+   * @param hooks - `credentialCensus` and `applicationMatcher`
+   * @returns true when added, false when no directory is installed
+   */
+  addDirectoryHooks(hooks) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.addDirectoryHooks().');
+    if (!this.directory || !hooks) {
+      log.debug('Leaving Credentials.addDirectoryHooks(). No directory.');
+      return false;
+    }
+    this.directoryExtras = { forDirectory: this.directory, hooks: hooks };
+    log.debug('Leaving Credentials.addDirectoryHooks().');
+    return true;
+  }
+
+  // The population hook named, or null where it is absent or was offered
+  // beside a different directory than the one installed now.
+  private directoryHook(name) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.directoryHook(). ' + name);
+    const extras = this.directoryExtras;
+    const hook = extras && extras.forDirectory === this.directory &&
+                 typeof extras.hooks[name] === 'function'
+      ? extras.hooks[name] : null;
+    log.debug('Leaving Credentials.directoryHook(). ' + !!hook);
+    return hook;
+  }
+
   // Is there a store at all? Read by the console and by the mode report, which
   // say so rather than letting somebody switch to product mode and discover at
   // the sign-in screen that nothing can be verified.
+  /**
+   * Says whether there is a store at all.
+   *
+   * @returns true when the directory slot is filled
+   */
   storable() {
     const { log } = this.deps;
     const directory = this.directory;
@@ -574,6 +762,15 @@ class Credentials {
   // ---------------------------------------------------------------------------
   private passwordObserver = null;
 
+  /**
+   * Installs or clears the observer told of a password this file has just
+   * verified or written, which derives the person's Kerberos keys.
+   *
+   * The observer may not keep the password, and one that throws is logged
+   * without changing the answer.
+   * @param fn - the observer, or null to clear it
+   * @returns true when installed or cleared, false when refused
+   */
   setPasswordObserver(fn) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering Credentials.setPasswordObserver().');
@@ -596,6 +793,14 @@ class Credentials {
   // password changed over the socket derived no Kerberos keys until the next
   // verified sign-in, and the old keys were refused in between. Called by the
   // handler AFTER it has committed, for setPassword()'s reason.
+  /**
+   * Tells the password observer of a password written by a door that does
+   * not go through `setPassword()`: the LDAP add and modify handlers, after
+   * they commit.
+   *
+   * @param name - the person
+   * @param password - the plaintext just written
+   */
   passwordWritten(name, password) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -826,6 +1031,13 @@ class Credentials {
   // **DEVELOPMENT MODE CHECKS NO PASSWORD AT THOSE DOORS**, so there is nothing
   // there to refuse; the sign-in screen still forces the change in both modes.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether the person's password must be changed before it is used
+   * (`pwdReset: TRUE`).
+   *
+   * @param username - the person
+   * @returns true when a change is required
+   */
   passwordResetRequired(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -848,6 +1060,13 @@ class Credentials {
     return flagged;
   }
 
+  /**
+   * Sets or clears `pwdReset` on the person's entry.
+   *
+   * @param username - the person
+   * @param required - whether the password must be changed
+   * @returns what the directory write answered, or false with no store
+   */
   setPasswordResetRequired(username, required) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
@@ -930,6 +1149,20 @@ class Credentials {
     log.debug('Leaving Credentials.noteRefusal().');
   }
 
+  /**
+   * Verifies a presented password, holding the event loop for the scrypt
+   * comparison.
+   *
+   * In development mode any password but the reserved one is accepted
+   * unchecked. An app password is tried first where the value has one's
+   * shape. A refused password is recorded for risk scoring.
+   * @param username - the name as presented
+   * @param password - the password
+   * @param opts - `via` (the door, for the log and risk), and
+   *   `allowPasswordReset` for the sign-in screen
+   * @returns `{ ok, reason, … }`; the reason is for the log, never for a
+   *   protocol response
+   */
   verify(username, password, opts?) {
     const { log, crypto } = this.deps;
     log.debug('Entering Credentials.verify().');
@@ -975,10 +1208,19 @@ class Credentials {
   // the KDC does not answer, the LDAP socket does not answer and every other
   // request waits. It is a smaller number than an SLH-DSA signature's 14.6
   // seconds and it is paid FAR more often: once per authentication, in five
-  // protocols. See common/worker.js.
-  //
-  // `opts.session` is the pool's routing hint and is passed straight through.
+  // protocols. So the comparison runs on libuv's thread pool, through
+  // `crypto.verifySecretAsync()` (#363; a pool of forked processes until
+  // then).
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies a presented password as `verify()` does, with the scrypt
+   * comparison on libuv's thread pool rather than the event loop.
+   *
+   * @param username - the name as presented
+   * @param password - the password
+   * @param opts - as for `verify()`
+   * @returns a promise of `{ ok, reason, … }`
+   */
   verifyAsync(username, password, opts?) {
     const { log, crypto } = this.deps;
     log.debug('Entering Credentials.verifyAsync().');
@@ -992,9 +1234,9 @@ class Credentials {
                   'Decided without a derivation.');
         return Promise.resolve(ready.done);
       }
-      log.debug('Leaving Credentials.verifyAsync() password step. Handed ' +
-                'to the pool.');
-      return crypto.verifySecretAsync(password, ready.stored, opts)
+      log.debug('Leaving Credentials.verifyAsync() password step. On ' +
+                'libuv.');
+      return crypto.verifySecretAsync(password, ready.stored)
         .then((ok) => {
           const finished = this.verifyFinish(ok, ready.name, ready.via);
           const answer = this.resetRefusal(finished, ready.name, opts) ||
@@ -1133,6 +1375,12 @@ class Credentials {
   //
   // Mode-free: whether `needed` REFUSES anything is each door's predicate.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a person holds, or owes, a second factor. Mode-free.
+   *
+   * @param username - the person
+   * @returns `{ person, holds, required, byUser, needed, … }`
+   */
   secondFactorDemand(username) {
     const { log } = this.deps;
     log.debug('Entering Credentials.secondFactorDemand().');
@@ -1206,6 +1454,13 @@ class Credentials {
   // row. All SHOW IT ONCE and never again, because what is stored is a scrypt
   // hash: this service cannot produce the value a second time, only replace it.
   // ---------------------------------------------------------------------------
+  /**
+   * Makes up a password under the profile in force for the person; the one
+   * place this service invents one.
+   *
+   * @param username - the person
+   * @returns the password, to be shown once
+   */
   generatePassword(username) {
     const { log, passwordPolicy } = this.deps;
     log.debug("Entering Credentials.generatePassword().");
@@ -1245,6 +1500,15 @@ class Credentials {
   // contract the length-only rule had, kept so that a caller written against it
   // reads the same answer. It does not look at the history, which needs a
   // person.
+  /**
+   * Says what is wrong with a password's shape under the profile in force.
+   * It does not look at the history.
+   *
+   * @param password - the password
+   * @param username - the person
+   * @returns the problem as one sentence, or empty when there is none or
+   *   nothing is checked
+   */
   passwordProblem(password, username) {
     const { log, mode, passwordPolicy } = this.deps;
     log.debug("Entering Credentials.passwordProblem().");
@@ -1267,6 +1531,13 @@ class Credentials {
   // The rules as a person reads them, and whether they are being enforced — for
   // the forms that ask somebody for a password, so a page says what it will
   // refuse BEFORE it refuses it.
+  /**
+   * Returns the password rules as a person reads them, and whether they are
+   * enforced, for a form to print before it refuses anything.
+   *
+   * @param username - the person
+   * @returns `{ enforced, … }`
+   */
   passwordRules(username) {
     const { log, mode, passwordPolicy } = this.deps;
     log.debug("Entering Credentials.passwordRules().");
@@ -1353,6 +1624,17 @@ class Credentials {
   // characters are not a previous password, and the comparison is up to six
   // scrypt derivations on the one thread every socket is answered from.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides everything setting a password decides, and writes nothing: the
+   * policy, the breach check, the history, and the hash.
+   *
+   * @param username - the person
+   * @param password - the new password
+   * @param opts - `current` and `history` from an entry the caller holds,
+   *   and `generated` for a password this service just made up
+   * @returns `{ ok: true, hash, history, … }`, or a refusal with its reason
+   *   and code
+   */
   preparePassword(username, password, opts?) {
     const { log, crypto, mode, passwordPolicy } = this.deps;
     const { PASSWORD_ATTRIBUTE } = Credentials;
@@ -1454,6 +1736,14 @@ class Credentials {
   // `opts.generated` is passed by a caller that made the password up with
   // `generatePassword()`; see `preparePassword()` for what it skips.
   // ---------------------------------------------------------------------------
+  /**
+   * Sets a person's password, hashed here, and tells the password observer.
+   *
+   * @param username - the person
+   * @param password - the new password
+   * @param opts - `generated` for a password from `generatePassword()`
+   * @returns `{ ok: true, username, … }`, or a refusal `{ ok: false, errors }`
+   */
   setPassword(username, password, opts?) {
     const { log, errorCodes } = this.deps;
     const { PASSWORD_ATTRIBUTE } = Credentials;
@@ -1554,6 +1844,12 @@ class Credentials {
   // Does this person hold a credential at all? What /admin/users draws beside
   // them and what the mode report counts, so that switching to product mode is
   // a decision somebody makes knowing how many people it locks out.
+  /**
+   * Says whether a person holds a password at all.
+   *
+   * @param username - the person
+   * @returns true when their entry holds one
+   */
   hasPassword(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -1612,6 +1908,15 @@ class Credentials {
   // every password is accepted, so an account with a generated one would be an
   // account with a password that changes nothing and a log line that alarms
   // people.
+  /**
+   * Creates the bootstrap administrator a fresh product-mode service is
+   * reached through, with a generated password announced in the log.
+   *
+   * It does not run in development mode.
+   * @param opts - `username`, `admin` by default; the password is
+   *   `admin.bootstrapPassword` or a generated one
+   * @returns `{ ran, username, … }`, or `{ ran: false, why }`
+   */
   bootstrap(opts?) {
     const { log, mode, errorCodes, config } = this.deps;
     const directory = this.directory;
@@ -1779,8 +2084,19 @@ class Credentials {
   // ldif the claim is this process's, always won, and this is exactly the old
   // step.
   // ---------------------------------------------------------------------------
+  /** How long the cluster-wide bootstrap claim is held. */
   static readonly BOOTSTRAP_CLAIM_TTL_MS = 5 * 60 * 1000;
 
+  /**
+   * Runs the bootstrap once for the cluster, under a claim, giving the claim
+   * back only once the writes have committed.
+   *
+   * A store that cannot be asked runs nothing (`STS-AUTHN-0185`).
+   * @param realmId - the realm
+   * @param work - the bootstrap to run
+   * @returns a promise of what `work` answered, or `{ ran: false, … }` when
+   *   another node holds the claim or the store could not be asked
+   */
   bootstrapOnce(realmId, work) {
     const { log, errorCodes, claims } = this.deps;
     const { BOOTSTRAP_CLAIM_TTL_MS } = Credentials;
@@ -1848,9 +2164,14 @@ class Credentials {
   // ---------------------------------------------------------------------------
   // THE KEYS SOMEBODY HOLDS, AND WHAT THEY ARE FOR.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the security keys a person holds, and what each is for.
+   *
+   * @param username - the person
+   * @returns the keys
+   */
   keysOf(username) {
     const { log, errorCodes } = this.deps;
-    const { WEBAUTHN_ATTRIBUTE } = Credentials;
     const directory = this.directory;
     log.debug('Entering Credentials.keysOf(). username=' + username);
     if (!directory || typeof directory.readWebauthn !== 'function') {
@@ -1867,8 +2188,20 @@ class Credentials {
       log.debug("Leaving Credentials.keysOf().");
       return [];
     }
+    const out = this.keysFromValues(raw, username);
+    log.debug('Leaving Credentials.keysOf(). ' + out.length + ' key(s).');
+    return out;
+  }
+
+  // WHAT A STORED VALUE IS AS A KEY, in one place (#352): `keysOf()` reads
+  // the values for one person and `factorCensus()` is handed them for many,
+  // and both must agree about which values are keys at all.
+  private keysFromValues(raw, username) {
+    const { log } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.keysFromValues().');
     const out = [];
-    raw.forEach((value) => {
+    (raw || []).forEach((value) => {
       try {
         const parsed = JSON.parse(value);
         if (parsed && parsed.credentialId && parsed.publicKeyJwk) {
@@ -1882,12 +2215,21 @@ class Credentials {
                  'ignored: ' + e.message);
       }
     });
-    log.debug('Leaving Credentials.keysOf(). ' + out.length + ' key(s).');
+    log.debug('Leaving Credentials.keysFromValues(). ' + out.length + '.');
     return out;
   }
 
   // Add one. The caller has already verified the registration ceremony — this
   // records what it produced.
+  /**
+   * Records a security key whose registration ceremony the caller has
+   * already verified.
+   *
+   * @param username - the person
+   * @param credential - what the ceremony produced
+   * @param role - `primary` or `mfa`
+   * @returns `{ ok: true, username, role, … }`, or a refusal
+   */
   addKey(username, credential, role) {
     const { log, backupCodes, webauthnPolicy, errorCodes } = this.deps;
     const { ROLES } = Credentials;
@@ -2092,7 +2434,9 @@ class Credentials {
   // entry, is what the next assertion is decided by across nodes; the entry
   // stays the first, free check `webauthn.js` makes.
   // ---------------------------------------------------------------------------
+  /** The claim scope a WebAuthn challenge is spent under. */
   static readonly WEBAUTHN_CHALLENGE_SCOPE = 'authn.webauthn-challenge';
+  /** The counter scope a key's signature count is advanced under. */
   static readonly WEBAUTHN_COUNTER_SCOPE = 'authn.webauthn-sign-count';
   // ---------------------------------------------------------------------------
   // A REGISTRATION CLAIMS ITS CREDENTIAL ID (2026-09-14, #46 follow-up).
@@ -2114,9 +2458,21 @@ class Credentials {
   // that the entry's own check above does. On memory or ldif the claim is this
   // process's map, as atomic as the check it backs.
   // ---------------------------------------------------------------------------
+  /** The claim scope a registration's credential id is claimed under. */
   static readonly WEBAUTHN_REGISTRATION_SCOPE = 'authn.webauthn-registration';
+  /** How long a registration's credential id claim is held. */
   static readonly WEBAUTHN_REGISTRATION_CLAIM_MS = 30 * 60 * 1000;
 
+  /**
+   * Records a security key as `addKey()` does, after claiming its credential
+   * id across the cluster so one attestation cannot be registered twice.
+   *
+   * @param username - the person
+   * @param credential - what the ceremony produced
+   * @param role - `primary` or `mfa`
+   * @returns a promise of `addKey()`'s answer, or a refusal (`duplicate`,
+   *   `store`)
+   */
   addKeyClaimed(username, credential, role) {
     const { log, realms, errorCodes, claims } = this.deps;
     const {
@@ -2165,6 +2521,15 @@ class Credentials {
     });
   }
 
+  /**
+   * Spends a WebAuthn assertion across the cluster: the challenge claimed
+   * once, the signature counter advanced.
+   *
+   * A refused counter gives the challenge back.
+   * @param spec - `username`, `credentialId`, `challenge` and `signCount`
+   * @returns a promise of `{ ok: true, recorded, advanced }`, or a refusal
+   *   (`replay`, `counter`, `store`)
+   */
   spendAssertion(spec) {
     const { log, realms, errorCodes, claims, counters } = this.deps;
     const { WEBAUTHN_CHALLENGE_SCOPE, WEBAUTHN_COUNTER_SCOPE } = Credentials;
@@ -2241,6 +2606,14 @@ class Credentials {
   // replay defence: an authenticator's counter only ever goes up, so a counter
   // that went backwards is a cloned key. `webauthn.js` performs the CHECK; this
   // records the new value so the next assertion has something to check against.
+  /**
+   * Records a key's new signature counter after a successful assertion.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param signCount - the counter the assertion carried
+   * @returns what the directory write answered, or false
+   */
   noteKeyUsed(username, credentialId, signCount) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
@@ -2284,6 +2657,13 @@ class Credentials {
   // every other, only to a stream that takes the type and covers the person.
   // Lazily required, never allowed to undo the write.
   // ---------------------------------------------------------------------------
+  /**
+   * Announces a bootstrap administrator's password as a CAEP
+   * `credential-change` `create`, initiated by `system`.
+   *
+   * @param username - the person
+   * @param when - when it was set
+   */
   noteBootstrapPassword(username, when) {
     const { log } = this.deps;
     log.debug('Entering Credentials.noteBootstrapPassword().');
@@ -2327,6 +2707,13 @@ class Credentials {
   // Whether an assertion's verdict is THAT evidence: the counter check the
   // only one that failed, so the signature verified. A counter that did not
   // go up beside a signature that did not verify says nothing about the key.
+  /**
+   * Says whether an assertion's verdict is evidence of a cloned key: the
+   * counter check the only one that failed.
+   *
+   * @param verdict - the assertion's verdict
+   * @returns true when only the counter check failed
+   */
   static clonedKeyVerdict(verdict) {
     helpers.log.debug('Entering Credentials.clonedKeyVerdict().');
     const failed = (verdict && verdict.failed) || [];
@@ -2335,6 +2722,14 @@ class Credentials {
            failed[0] === 'signature counter advanced';
   }
 
+  /**
+   * Reports a security key found cloned: a RISC credential-compromise and the
+   * person's risk standing set to HIGH. Neither is awaited.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param evidence - what the assertion showed
+   */
   noteKeyCloned(username, credentialId, evidence) {
     const { log, realms } = this.deps;
     log.debug('Entering Credentials.noteKeyCloned().');
@@ -2411,6 +2806,14 @@ class Credentials {
     log.debug('Leaving Credentials.noteTotpReplay().');
   }
 
+  /**
+   * Removes one of a person's security keys, refusing one that would leave
+   * them unable to sign in.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @returns `{ ok: true, remaining }`, or a refusal
+   */
   removeKey(username, credentialId) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -2568,6 +2971,7 @@ class Credentials {
   // RFC 4519 has no attribute for this and neither does any other schema worth
   // borrowing, so it is `sts`-prefixed like the security key beside it. The
   // value is one JSON object; `ldap/ldap_server.js` writes it single-valued.
+  /** The attribute that holds a person's authenticator app enrolment. */
   static readonly TOTP_ATTRIBUTE = 'stsTotpCredential';
 
 
@@ -2604,6 +3008,13 @@ class Credentials {
   // dropping an unreadable SESSION costs somebody a sign-in, and dropping an
   // unreadable SECOND FACTOR silently removes a security control.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads a person's authenticator app enrolment.
+   *
+   * @param username - the person
+   * @returns the enrolment, `{ unusable: true, why }` for one this process
+   *   cannot use (logged), or null where there is none
+   */
   totpOf(username) {
     const { log, keystore, errorCodes } = this.deps;
     const { TOTP_ATTRIBUTE } = Credentials;
@@ -2658,6 +3069,127 @@ class Credentials {
     return parsed;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ENROLMENT WITHOUT ITS SECRET (#352, 2026-09-29): what every REPORT
+  // asks — enrolled, when, how, and whether this process could check a code —
+  // answered without unsealing anything whose verdict is already known. See
+  // `totpVerdicts` at the top of this file.
+  //
+  // **THE SAME THREE ANSWERS `totpOf()` GIVES AND FOR THE SAME REASONS**: null
+  // for none, `{ unusable, why }` for a value that is not JSON or a secret
+  // that will not open — never "absent", because absent would sign somebody in
+  // on one factor — and otherwise the record. The record comes back WITHOUT a
+  // secret where it was sealed; `verifyTotp()` never reads this, so nothing
+  // that needs the secret can be handed a record without one.
+  // ---------------------------------------------------------------------------
+  private totpStatusFromValue(raw, name) {
+    const { log } = this.deps;
+    const { TOTP_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.totpStatusFromValue().');
+    if (!raw) {
+      log.debug('Leaving Credentials.totpStatusFromValue(). None enrolled.');
+      return null;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      log.warn('credentials: the ' + TOTP_ATTRIBUTE + ' value on ' + name +
+               ' is not JSON this service wrote and is being reported as an ' +
+               'unusable enrolment rather than ignored: ' + e.message);
+      log.debug('Leaving Credentials.totpStatusFromValue(). Not JSON.');
+      return { unusable: true, why: 'the stored value is not readable' };
+    }
+    if (parsed && parsed.sealed) {
+      const verdict = this.sealedSecretVerdict(parsed.secret);
+      if (!verdict.opens) {
+        // SAID ONCE PER SECRET AND KEY SET, when it is found — not on every
+        // page view that counts it, which is the flood `totpOf()`'s own
+        // warning would be if this path repeated it (a state, logged when it
+        // is learned; the *unreadable* tile is where it stays visible).
+        if (!verdict.remembered) {
+          log.warn('credentials: the authenticator secret for ' + name +
+                   ' is sealed and will not open under this process\'s ' +
+                   'key-encryption key. It is reported as UNUSABLE rather ' +
+                   'than as absent, because absent would sign them in with ' +
+                   'one factor.');
+        }
+        log.debug('Leaving Credentials.totpStatusFromValue(). Unusable.');
+        return { unusable: true,
+                 why: 'the stored secret is sealed under a different ' +
+                      'key-encryption key' };
+      }
+      const withoutSecret = Object.assign({}, parsed);
+      delete withoutSecret.secret;
+      log.debug('Leaving Credentials.totpStatusFromValue(). Sealed, opens.');
+      return withoutSecret;
+    }
+    log.debug('Leaving Credentials.totpStatusFromValue(). Enrolled.');
+    return parsed;
+  }
+
+  // One person's, read off the directory: `totpOf()`'s read, and
+  // `totpStatusFromValue()`'s answer.
+  private totpStatusOf(username) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const name = String(username || '').trim();
+    log.debug('Entering Credentials.totpStatusOf(). username=' + name);
+    if (!directory || typeof directory.readTotp !== 'function') {
+      log.debug('Leaving Credentials.totpStatusOf(). No store.');
+      return null;
+    }
+    let raw = '';
+    try {
+      raw = directory.readTotp(name) || '';
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0071') +
+                'credentials: reading the authenticator enrolment for ' + name +
+                ' threw: ' + e.message);
+      log.debug('Leaving Credentials.totpStatusOf(). It threw.');
+      return null;
+    }
+    const out = this.totpStatusFromValue(raw, name);
+    log.debug('Leaving Credentials.totpStatusOf().');
+    return out;
+  }
+
+  // Does this sealed secret open here? `keystore.open()` at most once per
+  // sealed text and key set — see `totpVerdicts`. A keystore without
+  // `kekEpoch()` (a test's stub) is asked every time, which is the old cost
+  // and never a wrong answer. `remembered` says whether the verdict was
+  // already known, so a caller reports a finding once.
+  private sealedSecretVerdict(ciphertext) {
+    const { log, keystore } = this.deps;
+    log.debug('Entering Credentials.sealedSecretVerdict().');
+    const epoch = typeof keystore.kekEpoch === 'function'
+      ? keystore.kekEpoch() : -1;
+    const key = String(ciphertext);
+    const held = epoch >= 0 ? totpVerdicts.get(key) : undefined;
+    if (held && held.epoch === epoch) {
+      totpVerdictCount.hit();
+      log.debug('Leaving Credentials.sealedSecretVerdict(). Remembered.');
+      return { opens: held.opens, remembered: true };
+    }
+    totpVerdictCount.miss();
+    const opens = !!keystore.open(ciphertext, 'totp-secret');
+    if (epoch >= 0) {
+      if (!held) {
+        cacheRegistry.makeRoom(totpVerdicts, TOTP_VERDICTS_MAX,
+                               { counter: totpVerdictCount });
+      }
+      totpVerdicts.set(key, { epoch: epoch, opens: opens });
+    }
+    log.debug('Leaving Credentials.sealedSecretVerdict(). ' + opens);
+    return { opens: opens, remembered: false };
+  }
+
+  /**
+   * Says whether a person has an authenticator app enrolled.
+   *
+   * @param username - the person
+   * @returns true when enrolled
+   */
   hasTotp(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.hasTotp().");
@@ -2680,7 +3212,9 @@ class Credentials {
     // question is whether the KEY survives a restart, and in development it
     // does not even when there is one.
     if (keystore.persists()) {
-      const sealedSecret = keystore.seal(out.secret, 'totp-secret');
+      // Under the CELL's key where there is one (#98): a person's secret is
+      // theirs and lives only in their home cell.
+      const sealedSecret = keystore.seal(out.secret, 'totp-secret', 'cell');
       if (!sealedSecret) {
         log.error(errorCodes.tag('STS-AUTHN-0072') +
                   'credentials: the authenticator secret for ' + name + ' ' +
@@ -2728,6 +3262,14 @@ class Credentials {
   // name would create that name, and creating objects because something
   // referenced them is what product mode removes.
   // ---------------------------------------------------------------------------
+  /**
+   * Mints an authenticator app secret and returns it to show; nothing is
+   * written. Refused in product mode for somebody who does not exist.
+   *
+   * @param username - the person
+   * @param opts - `base`, the base URL the issuer name is drawn from
+   * @returns `{ ok: true, username, secret, issuer, uri, … }`, or a refusal
+   */
   beginTotpEnrolment(username, opts?) {
     const { log, mode, totp } = this.deps;
     const directory = this.directory;
@@ -2797,6 +3339,12 @@ class Credentials {
   // What is waiting, if anything. Read by the page that redraws the QR code
   // after a wrong code was typed — regenerating the secret there would mean a
   // person who mistypes once has to scan again.
+  /**
+   * Returns the authenticator app enrolment waiting for a code, if any.
+   *
+   * @param username - the person
+   * @returns the pending enrolment, or null
+   */
   pendingTotpFor(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.pendingTotpFor().");
@@ -2806,6 +3354,11 @@ class Credentials {
     return held || null;
   }
 
+  /**
+   * Forgets a pending authenticator app enrolment.
+   *
+   * @param username - the person
+   */
   abandonTotpEnrolment(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.abandonTotpEnrolment().");
@@ -2820,6 +3373,14 @@ class Credentials {
   // to confirm the enrolment cannot also be used to sign in — RFC 6238 section
   // 5.2 applied from the first moment rather than from the second.
   // ---------------------------------------------------------------------------
+  /**
+   * Stores a pending authenticator app enrolment once a code proves the app
+   * holds it, with the accepted step spent.
+   *
+   * @param username - the person
+   * @param code - the code the app shows
+   * @returns `{ ok: true, username, … }`, or a refusal
+   */
   confirmTotpEnrolment(username, code) {
     const { log, totp, backupCodes, errorCodes } = this.deps;
     const coded = this.coded.bind(this);
@@ -2976,6 +3537,15 @@ class Credentials {
   // the step on the entry only, which is the whole defence on one node and two
   // nodes' worth of acceptance across two. The sign-in screen uses
   // `verifyTotpAsync()` below; nothing in this service calls this one any more.
+  /**
+   * Verifies a one-time code, spending the step on the entry only; not
+   * cluster-safe, and nothing in the service calls it any more.
+   *
+   * @param username - the person
+   * @param code - the code
+   * @param opts - handed to the TOTP verifier
+   * @returns `{ ok: true, counter, drift }`, or a refusal
+   */
   verifyTotp(username, code, opts?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.verifyTotp().");
@@ -3023,8 +3593,19 @@ class Credentials {
   // and lets stand — by then the step is spent in the counter, which is the
   // defence.
   // ---------------------------------------------------------------------------
+  /** The counter scope a one-time code's step is advanced under. */
   static readonly TOTP_STEP_SCOPE = 'authn.totp-step';
 
+  /**
+   * Verifies a one-time code and spends its step across the cluster: a step
+   * at or below the highest any node accepted is refused.
+   *
+   * A store that cannot be asked refuses (`STS-AUTHN-0182`).
+   * @param username - the person
+   * @param code - the code
+   * @param opts - handed to the TOTP verifier
+   * @returns a promise of `{ ok: true, … }`, or a refusal (`replay`, `store`)
+   */
   verifyTotpAsync(username, code, opts?) {
     const { log, realms, errorCodes, counters } = this.deps;
     const { TOTP_STEP_SCOPE } = Credentials;
@@ -3110,6 +3691,7 @@ class Credentials {
   // constant is its default. The reply has always carried `capped` and `limit`,
   // so a page drawing it says when it stopped; what an operator with a larger
   // directory could not do was move the number.
+  /** The default cap on the realm walk of `secondFactorHolders()`. */
   static readonly FACTOR_SCAN_LIMIT = 5000;
 
   private factorScanLimit() {
@@ -3121,10 +3703,71 @@ class Credentials {
     return isFinite(n) && n > 0 ? Math.floor(n) : FACTOR_SCAN_LIMIT;
   }
 
+  /**
+   * Lists who holds which second factor across the realm: the directory's
+   * people and the names the caller knows, capped.
+   *
+   * @param alsoKnown - names the caller has seen
+   * @param opts - `limit`; `credentials.factorScanLimit` when omitted
+   * @returns `{ rows, scanned, capped, limit, … }`
+   */
   secondFactorHolders(alsoKnown, opts?) {
-    const { log, totp, backupCodes, errorCodes } = this.deps;
-    const directory = this.directory;
+    const { log } = this.deps;
     log.debug('Entering Credentials.secondFactorHolders().');
+    const population = this.secondFactorPopulation(alsoKnown, opts);
+    const rows = population.rows.map((row) => {
+      return this.factorHolderRow(row);
+    });
+    log.debug('Leaving Credentials.secondFactorHolders(). ' + rows.length +
+              ' person/people.');
+    return { rows: rows, scanned: population.scanned,
+             capped: population.capped, limit: population.limit,
+             store: population.store };
+  }
+
+  // ===========================================================================
+  // THE SAME POPULATION, WITHOUT ASKING ANYBODY ANYTHING YET (#352,
+  // 2026-09-29).
+  //
+  // **`secondFactorHolders()` ASKED `mechanismsFor()` OF EVERY NAME IT
+  // LISTED, AND `/admin/users` SHOWS FIFTY.** That is about nine directory
+  // reads, a copy of the entry for the mail factor and an unseal of the TOTP
+  // secret per person, for five thousand people (the cap) plus everybody the
+  // register has seen — on testidp ten seconds a request, whatever the page,
+  // on the one thread a request worker has. The list needed three things per
+  // name to exist at all: the name, whether it came from the directory, and
+  // whether the register knows it. Everything else is DECORATION of the rows
+  // somebody is looking at.
+  //
+  // So the roster is three functions now, and the page calls them in the
+  // order *list, filter, page, decorate*:
+  //
+  //   * `secondFactorPopulation()` — this one: the union, deduplicated and
+  //     sorted exactly as before, capped exactly as before, and nothing read
+  //     per name. Its `isApplication` is the directory's answer to *is this
+  //     key a registered application*, built once (see `peopleRows()`).
+  //   * `factorHolderRow(row)` — the full row `secondFactorHolders()` always
+  //     returned, for ONE name: what the shown slice is decorated with.
+  //   * `factorCensus(names)` — the handful of facts the tiles and the
+  //     `?factor=` filter need, for every name, in one pass. See below.
+  //
+  // `secondFactorHolders()` is the first two composed, unchanged in what it
+  // answers, for any caller that really does want everybody decorated.
+  // ===========================================================================
+  /**
+   * Lists the population the second-factor roster is drawn from — the
+   * directory's people (capped) and the names the caller knows — without
+   * reading anything per name.
+   *
+   * @param alsoKnown - names the caller has seen
+   * @param opts - `limit`; `credentials.factorScanLimit` when omitted
+   * @returns `{ rows: [{ username, inDirectory, known }], scanned, capped,
+   *   limit, store, isApplication }`
+   */
+  secondFactorPopulation(alsoKnown, opts?) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.secondFactorPopulation().');
     const options = opts || {};
     const limit = Math.max(1, Number(options.limit || this.factorScanLimit()));
     const seen = new Map();
@@ -3162,41 +3805,228 @@ class Credentials {
     }
     (alsoKnown || []).forEach((name) => { add(name, 'known'); });
 
-    const rows = [];
-    seen.forEach((row) => {
-      const mechanisms = this.mechanismsFor(row.username);
-      rows.push({
-        username: row.username,
-        inDirectory: row.inDirectory,
-        known: row.known,
-        password: mechanisms.password,
-        primaryKeys: mechanisms.primaryKeys,
-        mfaKeys: mechanisms.mfaKeys,
-        totp: mechanisms.totp,
-        totpUsable: mechanisms.totpUsable,
-        totpDetail: mechanisms.totpDetail,
-        // THE RECOVERY CODES AS A COUNT AND NEVER AS CODES. This roster is the
-        // operator's view and is drawn on `/admin/users`, which must never show
-        // a working second factor — `backupCodeStatus()` is what the whole row
-        // is built from and it carries none.
-        backupCodes: mechanisms.backupCodes,
-        // Whether this person should be told to generate a set — the flag that
-        // replaced the automatic issue on 2026-09-11, on the roster so that an
-        // operator can see the population it is true of rather than one row at
-        // a time.
-        recoveryAdvised: mechanisms.recoveryAdvised,
-        mfaRequired: mechanisms.mfaRequired,
-        secondFactor: mechanisms.secondFactor,
-        usable: mechanisms.usable
-      });
-    });
+    const rows = Array.from(seen.values());
+    // The order `secondFactorHolders()` always sorted its rows into, and
+    // `peopleRows()` folds spellings in this order — so it is kept exactly,
+    // comparator and all.
     rows.sort((a, b) => {
       return a.username.toLowerCase() < b.username.toLowerCase() ? -1 : 1;
     });
-    log.debug('Leaving Credentials.secondFactorHolders(). ' + rows.length +
-              ' person/people.');
+    // WHICH KEYS ARE APPLICATIONS, asked once of the directory rather than
+    // once per row of the register (`peopleRows()` argues it). Null where the
+    // directory offers no such hook, and the caller then asks the registry
+    // per row as it always did.
+    let isApplication = null;
+    const matcherHook = this.directoryHook('applicationMatcher');
+    if (matcherHook) {
+      try {
+        isApplication = matcherHook();
+      } catch (e) {
+        log.debug('Caught in Credentials.secondFactorPopulation(): ' +
+                  ((e && e.message) || e));
+        // Asked per row instead, which is slower and never different.
+        isApplication = null;
+      }
+    }
+    log.debug('Leaving Credentials.secondFactorPopulation(). ' + rows.length +
+              ' name(s).');
     return { rows: rows, scanned: scanned, capped: capped, limit: limit,
-             store: !!directory };
+             store: !!directory,
+             isApplication: typeof isApplication === 'function'
+               ? isApplication : null };
+  }
+
+  /**
+   * Builds one row of the second-factor roster: what one name can sign in
+   * with, from `mechanismsFor()`.
+   *
+   * @param row - a population row, `{ username, inDirectory, known }`
+   * @returns the roster row
+   */
+  factorHolderRow(row) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factorHolderRow().');
+    const mechanisms = this.mechanismsFor(row.username);
+    log.debug('Leaving Credentials.factorHolderRow().');
+    return {
+      username: row.username,
+      inDirectory: row.inDirectory,
+      known: row.known,
+      password: mechanisms.password,
+      primaryKeys: mechanisms.primaryKeys,
+      mfaKeys: mechanisms.mfaKeys,
+      totp: mechanisms.totp,
+      totpUsable: mechanisms.totpUsable,
+      totpDetail: mechanisms.totpDetail,
+      // THE RECOVERY CODES AS A COUNT AND NEVER AS CODES. This roster is the
+      // operator's view and is drawn on `/admin/users`, which must never show
+      // a working second factor — `backupCodeStatus()` is what the whole row
+      // is built from and it carries none.
+      backupCodes: mechanisms.backupCodes,
+      // Whether this person should be told to generate a set — the flag that
+      // replaced the automatic issue on 2026-09-11, on the roster so that an
+      // operator can see the population it is true of rather than one row at
+      // a time.
+      recoveryAdvised: mechanisms.recoveryAdvised,
+      mfaRequired: mechanisms.mfaRequired,
+      secondFactor: mechanisms.secondFactor,
+      usable: mechanisms.usable
+    };
+  }
+
+  // ===========================================================================
+  // THE CENSUS: WHAT EVERYBODY HOLDS, IN ONE PASS (#352, 2026-09-29).
+  //
+  // The seven tiles on `/admin/users` — hold a second factor, an authenticator
+  // app, a security key, a passwordless key, password only, an enrolment this
+  // process cannot read, no way in yet — are counts over the WHOLE population,
+  // and so is the `?factor=` filter, which has to know every row's factors to
+  // say which ones match. Those were the reason the page asked
+  // `mechanismsFor()` of everybody. They need seven facts per person, not
+  // `mechanismsFor()`'s twenty, and none of the seven needs a secret.
+  //
+  // **THE DIRECTORY HANDS OVER RAW VALUES AND THIS FILE INTERPRETS THEM**,
+  // which is the rule at the head of `secondFactorHolders()` kept rather than
+  // bent: *what an enrolment is* — which `stsWebauthnCredential` values are
+  // keys and in which role, what a sealed TOTP record is, when an emailed
+  // factor is held — is decided here and in `common/mail_factor.ts`, and
+  // `ldap_server.js`'s `credentialCensus()` only reads attributes off entries.
+  // A second implementation of the rule in the directory would agree with
+  // this one until the day it did not, and the tile would be the thing that
+  // was wrong.
+  //
+  // **THE SAME ANSWERS `mechanismsFor()` GIVES, BY CONSTRUCTION**: the keys go
+  // through `keysFromValues()`, the authenticator through
+  // `totpStatusFromValue()` and the emailed factor through
+  // `mailFactor.heldOfAttributes()` — the functions the one-name path uses.
+  // The TOTP verdict is `sealedSecretVerdict()`, so each sealed secret is
+  // opened at most once per process and key set, and not at all on a repeat
+  // request.
+  // `tests/users_page_before_decoration.js` computes both and compares them.
+  //
+  // **WHERE THE DIRECTORY OFFERS NO CENSUS** — a test's stub, an older
+  // `ldap_server.js` — every name is answered by `mechanismsFor()`, which is
+  // the old cost and the same answer.
+  //
+  // What it does NOT carry, deliberately: the recovery codes, `totpDetail`,
+  // the requirement flag and the reset link. No tile and no filter reads
+  // them, and they are on the rows somebody is looking at, where
+  // `factorHolderRow()` supplies them whole.
+  // ===========================================================================
+  /**
+   * Answers, for each name, the facts the users list counts and filters by:
+   * `password`, `primaryKeys`, `mfaKeys`, `totp`, `totpUsable`,
+   * `mfaRequired`, `secondFactor` and `usable` — in one pass over the
+   * directory, unsealing each TOTP secret at most once per process.
+   *
+   * @param names - the names, as the population lists them
+   * @returns a Map from each name (trimmed) to its facts
+   */
+  factorCensus(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.factorCensus().');
+    const list = (names || []).map((name) => {
+      return String(name == null ? '' : name).trim();
+    });
+    const out = new Map();
+    const census = this.directoryHook('credentialCensus');
+    let raws = null;
+    if (census) {
+      try {
+        raws = census(list);
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0293') +
+                  'credentials: the directory\'s credential census threw, so ' +
+                  'each person is asked on their own: ' + e.message);
+        raws = null;
+      }
+    }
+    if (!Array.isArray(raws) || raws.length !== list.length) {
+      list.forEach((name) => {
+        out.set(name, this.factsOf(this.mechanismsFor(name)));
+      });
+      log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+                ' name(s), one at a time.');
+      return out;
+    }
+    let mailFactor = null;
+    try {
+      mailFactor = require('./mail_factor');
+    } catch (e) {
+      log.debug('Caught in Credentials.factorCensus(): ' +
+                ((e && e.message) || e));
+      // Not held, for `mailFactorOf()`'s reason.
+      mailFactor = null;
+    }
+    list.forEach((name, index) => {
+      out.set(name, this.factsFromValues(raws[index], name, mailFactor));
+    });
+    log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+              ' name(s), in one pass.');
+    return out;
+  }
+
+  // `mechanismsFor()`'s answer cut down to the census's members, for the
+  // one-name fallback — so both paths hand back one shape.
+  private factsOf(mechanisms) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factsOf().');
+    log.debug('Leaving Credentials.factsOf().');
+    return {
+      password: !!mechanisms.password,
+      primaryKeys: mechanisms.primaryKeys || 0,
+      mfaKeys: mechanisms.mfaKeys || 0,
+      totp: !!mechanisms.totp,
+      totpUsable: !!mechanisms.totpUsable,
+      mfaRequired: !!mechanisms.mfaRequired,
+      secondFactor: mechanisms.secondFactor || '',
+      usable: !!mechanisms.usable
+    };
+  }
+
+  // One person's census facts from the raw values the directory handed over.
+  // `raw` is null for a name that finds no entry, which answers what
+  // `mechanismsFor()` answers for one: nothing held.
+  private factsFromValues(raw, name, mailFactor) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factsFromValues().');
+    const values = raw || {};
+    const keys = this.keysFromValues(values.webauthn || [], name);
+    const primaryKeys = keys.filter((one) => {
+      return one.role === 'primary';
+    }).length;
+    const mfaKeys = keys.filter((one) => {
+      return one.role === 'mfa';
+    }).length;
+    const authenticator = this.totpStatusFromValue(values.totp || '', name);
+    const totpEnrolled = !!authenticator;
+    let mailHeld = '';
+    if (mailFactor && values.mail &&
+        typeof mailFactor.heldOfAttributes === 'function') {
+      try {
+        mailHeld = mailFactor.heldOfAttributes(values.mail) || '';
+      } catch (e) {
+        log.debug('Caught in Credentials.factsFromValues(): ' +
+                  ((e && e.message) || e));
+        // Not held, for `mailFactorOf()`'s reason.
+        mailHeld = '';
+      }
+    }
+    const password = !!values.password;
+    log.debug('Leaving Credentials.factsFromValues().');
+    return {
+      password: password,
+      primaryKeys: primaryKeys,
+      mfaKeys: mfaKeys,
+      totp: totpEnrolled,
+      totpUsable: totpEnrolled && !authenticator.unusable,
+      // `mechanismsFor()`'s two lines, read against the same three facts.
+      mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
+      secondFactor: mfaKeys > 0 ? 'webauthn' :
+                    (totpEnrolled ? 'totp' :
+                     (mailHeld ? 'email-' + mailHeld : '')),
+      usable: password || primaryKeys > 0
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -3211,6 +4041,12 @@ class Credentials {
   // who has lost their phone needs, since there is no other way back: the
   // secret is on a device this service cannot reach.
   // ---------------------------------------------------------------------------
+  /**
+   * Removes a person's authenticator app; it cannot lock anybody out.
+   *
+   * @param username - the person
+   * @returns `{ ok: true, username }`, or a refusal
+   */
   removeTotp(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -3325,7 +4161,7 @@ class Credentials {
   // 72ms on this machine and a WRONG code must be compared against every code
   // in the set, which measured **906ms of blocked event loop** for a default
   // set of ten. So `verifyBackupCodeAsync()` exists and the sign-in door uses
-  // it — the candidates go to the WORKER POOL, in parallel.
+  // it — the candidates go to libuv's THREAD POOL, in parallel.
   //
   // **A SET WRITTEN BY AN OLDER BUILD STILL WORKS**, and that is not
   // compatibility for its own sake: somebody is holding it on paper, and the
@@ -3377,6 +4213,7 @@ class Credentials {
   // value is one JSON object and `ldap/ldap_server.js` assigns rather than
   // appends, for `stsTotpCredential`'s reason — a second value would be a
   // second set, and a code names neither.
+  /** The attribute that holds a person's recovery codes, hashed. */
   static readonly BACKUP_CODES_ATTRIBUTE = 'stsBackupCodes';
 
   // ---------------------------------------------------------------------------
@@ -3539,7 +4376,7 @@ class Credentials {
     let vault = plain;
     let sealedVault = false;
     if (legacy && keystore.persists()) {
-      const sealedText = keystore.seal(plain, 'recovery-codes');
+      const sealedText = keystore.seal(plain, 'recovery-codes', 'cell');
       if (!sealedText) {
         log.error(errorCodes.tag('STS-AUTHN-0195') +
                   'credentials: the legacy recovery codes for ' + name +
@@ -3652,6 +4489,14 @@ class Credentials {
   // It never throws and it never touches an existing set: a person who begins
   // this and walks away still holds whatever they held before.
   // ---------------------------------------------------------------------------
+  /**
+   * Generates a set of recovery codes to show once, storing nothing; an
+   * existing set is untouched.
+   *
+   * @param username - the person
+   * @param opts - `count` and `length`; the realm's settings when omitted
+   * @returns `{ ok: true, handle, codes, … }`, or a refusal
+   */
   beginBackupCodes(username, opts?) {
     const { log, backupCodes, errorCodes, nodeCrypto } = this.deps;
     const directory = this.directory;
@@ -3728,6 +4573,13 @@ class Credentials {
   }
 
   // What is pending for this person, for a page that has to redraw itself.
+  /**
+   * Returns a pending set of recovery codes, for a page that has to redraw.
+   *
+   * @param username - the person
+   * @param handle - the pending set's handle
+   * @returns the pending set, or null
+   */
   pendingBackupCodesFor(username, handle) {
     const { log } = this.deps;
     log.debug("Entering Credentials.pendingBackupCodesFor().");
@@ -3756,6 +4608,14 @@ class Credentials {
   // working with nothing having said so — is answered by saying so, loudly, at
   // the one moment somebody is choosing.
   // ---------------------------------------------------------------------------
+  /**
+   * Hashes and stores a pending set of recovery codes once the person says
+   * they kept it, replacing any set they held.
+   *
+   * @param username - the person
+   * @param handle - the pending set's handle
+   * @returns `{ ok: true, total, remaining }`, or a refusal
+   */
   confirmBackupCodes(username, handle) {
     const { log, backupCodes, errorCodes } = this.deps;
     const coded = this.coded.bind(this);
@@ -3807,6 +4667,13 @@ class Credentials {
   // Throw away a pending set without storing it. The Cancel beside the Confirm:
   // a person who decides they are not ready should not leave a live list in
   // this process's memory for the rest of the TTL.
+  /**
+   * Throws away a pending set of recovery codes without storing it.
+   *
+   * @param username - the person
+   * @param handle - the pending set's handle
+   * @returns `{ ok: true, discarded }`
+   */
   discardBackupCodes(username, handle) {
     const { log } = this.deps;
     log.debug("Entering Credentials.discardBackupCodes().");
@@ -3834,6 +4701,12 @@ class Credentials {
   // calls this one and there is no call site anywhere in the console for the
   // other.
   // ---------------------------------------------------------------------------
+  /**
+   * Says what recovery codes a person holds, without the codes.
+   *
+   * @param username - the person
+   * @returns `{ present, usable, total, remaining, … }`
+   */
   backupCodeStatus(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.backupCodeStatus().");
@@ -3897,6 +4770,13 @@ class Credentials {
   // caller left over from an older build gets a sentence rather than `is not a
   // function`.
   // ---------------------------------------------------------------------------
+  /**
+   * Refuses to show a set of recovery codes back, which hashing made
+   * impossible; kept so every old door explains rather than answering 404.
+   *
+   * @param username - the person
+   * @returns the refusal
+   */
   revealBackupCodes(username) {
     const { log } = this.deps;
     const coded = this.coded.bind(this);
@@ -4098,6 +4978,13 @@ class Credentials {
     return { ok: true, remaining: written.remaining, total: written.total };
   }
 
+  /**
+   * Verifies and spends a recovery code on the event loop; not cluster-safe.
+   *
+   * @param username - the person
+   * @param presented - the code
+   * @returns `{ ok, … }`
+   */
   verifyBackupCode(username, presented) {
     const { log } = this.deps;
     log.debug("Entering Credentials.verifyBackupCode().");
@@ -4126,15 +5013,23 @@ class Credentials {
   // this.
   //
   // **THE CANDIDATES GO IN PARALLEL**, which the password door does not do and
-  // does not need to: it has one hash to check and this has ten. Five workers
-  // turn 906ms of blocked loop into about 150ms of wall time during which this
+  // does not need to: it has one hash to check and this has ten. libuv's
+  // thread pool (four threads by default, `UV_THREADPOOL_SIZE`) turns 906ms
+  // of blocked loop into a fraction of that in wall time, during which this
   // service keeps answering.
   //
-  // The synchronous door above is KEPT and is not deprecated: `workers.count =
-  // 0` is a supported configuration that computes the same jobs in this
-  // process, `npm test` drives the sync door, and a caller that cannot be made
-  // asynchronous is better off blocking than wrong.
+  // The synchronous door above is KEPT and is not deprecated: `npm test`
+  // drives it, and a caller that cannot be made asynchronous is better off
+  // blocking than wrong.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies a recovery code with the scrypt comparisons on libuv's pool,
+   * and spends it across the cluster; the door the sign-in screen uses.
+   *
+   * @param username - the person
+   * @param presented - the code
+   * @returns a promise of `{ ok, … }`
+   */
   verifyBackupCodeAsync(username, presented) {
     const { log, realms, backupCodes } = this.deps;
     log.debug("Entering Credentials.verifyBackupCodeAsync().");
@@ -4240,12 +5135,15 @@ class Credentials {
   // **THE SYNCHRONOUS DOOR DOES NONE OF THIS** and has no caller outside the
   // tests; see `verifyTotp()` beside it for the same note.
   // ---------------------------------------------------------------------------
+  /** The claim scope a recovery code is spent under. */
   static readonly RECOVERY_SCOPE = 'authn.recovery-code';
+  /** How long a spent recovery code's claim is held. */
   static readonly RECOVERY_CLAIM_TTL_MS = 30 * 24 * 60 * 60 * 1000;
   // Longer than LISTEN/NOTIFY's delivery (under a second) and the replication
   // poll's five-second backstop, so the other node's write has normally
   // arrived; the reconcile catches up explicitly as well, so this bounds the
   // wait rather than the correctness.
+  /** How long to wait before converging the entry on the claims. */
   static readonly RECOVERY_RECONCILE_MS = 8000;
 
   private recoveryClaimOf(name, entry, realmId) {
@@ -4293,6 +5191,15 @@ class Credentials {
   }
 
   // Step 2 of the header: converge the entry on the claims.
+  /**
+   * Converges the person's entry on the recovery-code claims: marks used
+   * every code another node spent.
+   *
+   * @param username - the person
+   * @param realm - the realm
+   * @param generatedAt - the set's generation time
+   * @returns a promise of `{ repaired, … }`
+   */
   reconcileBackupCodes(username, realm, generatedAt) {
     const { log, realms, errorCodes } = this.deps;
     log.debug("Entering Credentials.reconcileBackupCodes().");
@@ -4426,6 +5333,12 @@ class Credentials {
   // it removes is the way BACK, which is a real change and is why every caller
   // audits it.
   // ---------------------------------------------------------------------------
+  /**
+   * Clears a person's recovery codes; it cannot lock anybody out.
+   *
+   * @param username - the person
+   * @returns `{ ok: true, … }`, or a refusal
+   */
   removeBackupCodes(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4492,6 +5405,13 @@ class Credentials {
   // this is the one module the directory hands its per-person read and write
   // pairs to; nothing here interprets the value.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads a person's identity verifications, passed through from the
+   * directory.
+   *
+   * @param username - the person
+   * @returns the stored value, or null
+   */
   readIdaVerifications(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4506,6 +5426,13 @@ class Credentials {
     return value;
   }
 
+  /**
+   * Writes a person's identity verifications through the directory.
+   *
+   * @param username - the person
+   * @param value - the value to store
+   * @returns what the directory write answered, or false with no store
+   */
   writeIdaVerifications(username, value) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4524,6 +5451,12 @@ class Credentials {
   // values as stored (null where there is no store or no entry), the whole
   // list written back, and the owner of one — each a hook the directory
   // passes in, as the identity verifications' are.
+  /**
+   * Reads a person's enrolled SIOPv2 subjects.
+   *
+   * @param username - the person
+   * @returns the values as stored, or null with no store or entry
+   */
   readSelfIssuedSubjects(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4538,6 +5471,13 @@ class Credentials {
     return values;
   }
 
+  /**
+   * Writes a person's whole list of SIOPv2 subjects.
+   *
+   * @param username - the person
+   * @param values - the list
+   * @returns what the directory write answered, or false with no store
+   */
   writeSelfIssuedSubjects(username, values) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4553,6 +5493,12 @@ class Credentials {
     return written;
   }
 
+  /**
+   * Returns the owner of a SIOPv2 subject.
+   *
+   * @param matches - the directory's matcher for the subject
+   * @returns the owner's username, or empty
+   */
   selfIssuedSubjectOwner(matches) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4571,6 +5517,14 @@ class Credentials {
   // seven hooks, each answering nothing (an empty list, false, '', null)
   // where no directory is loaded in this process — and `hasHook`, which says
   // whether the loaded directory offers one (#164 phase 3: the index).
+  /**
+   * Calls one of the directory's device-register hooks; answers nothing
+   * where no directory is loaded in this process.
+   *
+   * @param operation - the hook's name, or `hasHook`
+   * @param args - its arguments
+   * @returns the hook's answer
+   */
   deviceStore(operation: string, args: any[]): any {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4597,6 +5551,14 @@ class Credentials {
   // THE OPENID FEDERATION REGISTER (#132), for `oidfed/oidfed_store.ts`: the
   // directory's three hooks over ou=oidfed, each answering nothing (an empty
   // list, false) where no directory is loaded in this process.
+  /**
+   * Calls one of the directory's OpenID Federation hooks over `ou=oidfed`;
+   * answers nothing where no directory is loaded.
+   *
+   * @param operation - the hook's name
+   * @param args - its arguments
+   * @returns the hook's answer
+   */
   oidfedStore(operation: string, args: any[]): any {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4615,6 +5577,14 @@ class Credentials {
   // `oauth-oidc/claims_providers.ts`: the directory function of that name,
   // or an empty answer where no directory is loaded (`oidfedStore()`'s
   // arrangement).
+  /**
+   * Calls the directory's Claims Provider register function of that name;
+   * answers nothing where no directory is loaded.
+   *
+   * @param operation - the function's name
+   * @param args - its arguments
+   * @returns the function's answer
+   */
   claimsAggregationStore(operation: string, args: any[]): any {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4633,6 +5603,12 @@ class Credentials {
 
   // A PERSON'S ACCOUNT IDS AT CLIENTS (#148): every `<client_id> <aud_sub>`
   // value (none where no directory is loaded), and a write of all of them.
+  /**
+   * Returns a person's account ids at clients, each `<client_id> <aud_sub>`.
+   *
+   * @param username - the person
+   * @returns the values, empty where no directory is loaded
+   */
   audSubsOf(username: string): string[] {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4643,6 +5619,13 @@ class Credentials {
     return values.map(String);
   }
 
+  /**
+   * Writes all of a person's account ids at clients.
+   *
+   * @param username - the person
+   * @param values - every `<client_id> <aud_sub>` value
+   * @returns whether it was written
+   */
   writeAudSubs(username: string, values: string[]): boolean {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4656,6 +5639,12 @@ class Credentials {
 
   // A PERSON'S CIBA USER CODE (#131), for `oauth-oidc/ciba.ts`: the stored
   // hash ('' for none or no store), and the hash written ('' removes it).
+  /**
+   * Reads the hash of a person's CIBA user code.
+   *
+   * @param username - the person
+   * @returns the stored hash, or empty for none or no store
+   */
   readCibaUserCode(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4667,6 +5656,13 @@ class Credentials {
     return value;
   }
 
+  /**
+   * Writes the hash of a person's CIBA user code; empty removes it.
+   *
+   * @param username - the person
+   * @param value - the hash
+   * @returns what the directory write answered
+   */
   writeCibaUserCode(username, value) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4678,7 +5674,9 @@ class Credentials {
     return written;
   }
 
+  /** The attribute that holds a person's app passwords, hashed. */
   static readonly APP_PASSWORDS_ATTRIBUTE = 'stsAppPassword';
+  /** How often an app password's last use is written, at most. */
   static readonly APP_PASSWORD_USE_WRITE_MS = 60 * 1000;
 
   private appPasswordRecords(username) {
@@ -4778,6 +5776,12 @@ class Credentials {
 
   // The person's app passwords, newest first, as `appPasswordView()` draws
   // them. `unreadable` where the stored value is not this service's.
+  /**
+   * Returns a person's app passwords, newest first, never their hashes.
+   *
+   * @param username - the person
+   * @returns `{ ok, unreadable, passwords }`
+   */
   appPasswordsOf(username) {
     const { log } = this.deps;
     log.debug('Entering Credentials.appPasswordsOf().');
@@ -4793,6 +5797,13 @@ class Credentials {
   // MAKING ONE. Answers the password ONCE, printed, in `password`; nothing
   // anywhere can produce it again. `spec`: `{ name, doors, createdBy }`.
   // ---------------------------------------------------------------------------
+  /**
+   * Makes an app password, answering it once in `password`.
+   *
+   * @param username - the person
+   * @param spec - `name`, `doors` and `createdBy`
+   * @returns the created app password with `password`, or a refusal
+   */
   createAppPassword(username, spec?) {
     const { log, appPasswords } = this.deps;
     const directory = this.directory;
@@ -4882,6 +5893,13 @@ class Credentials {
   }
 
   // Revoking one, by its id. Answers what went — never its hash.
+  /**
+   * Revokes one of a person's app passwords by its id.
+   *
+   * @param username - the person
+   * @param id - the app password's id
+   * @returns `{ ok: true, username, revoked }`, or a refusal
+   */
   revokeAppPassword(username, id) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -4923,6 +5941,13 @@ class Credentials {
   // whole table at once for the pages that say it: `/portal/app-passwords`,
   // `/portal/mfa`, the person's /admin/users page and `/admin-api`. One
   // function, so a page cannot promise a door the verifier then refuses.
+  /**
+   * Says which of the five password-only doors refuse this person's own
+   * password, for the pages that say so.
+   *
+   * @param username - the person
+   * @returns `{ secondFactor, holds, … }` with the doors each way
+   */
   passwordOnlyDoors(username) {
     const { log, mode, appPasswords } = this.deps;
     log.debug('Entering Credentials.passwordOnlyDoors().');
@@ -5082,6 +6107,13 @@ class Credentials {
     return out;
   }
 
+  /**
+   * Returns what a person holds to sign in with: password, keys by role, the
+   * authenticator app and recovery codes.
+   *
+   * @param username - the person
+   * @returns `{ username, password, primaryKeys, mfaKeys, keys, totp, … }`
+   */
   mechanismsFor(username) {
     const { log, totp, backupCodes } = this.deps;
     log.debug("Entering Credentials.mechanismsFor().");
@@ -5091,7 +6123,11 @@ class Credentials {
     const primaryKeys =
         keys.filter((one) => { return one.role === 'primary'; });
     const mfaKeys = keys.filter((one) => { return one.role === 'mfa'; });
-    const authenticator = this.totpOf(name);
+    // THE ENROLMENT WITHOUT ITS SECRET (#352): nothing below reads the
+    // secret, only whether it opens, and `totpStatusOf()` remembers that per
+    // sealed text rather than unsealing on every call — this is asked for
+    // every row a users page shows.
+    const authenticator = this.totpStatusOf(name);
     // An enrolment this process cannot READ is not an enrolment it can ignore:
     // it still means this person configured two factors, and reporting it as
     // absent would sign them in with one. `verifyTotp()` refuses it by name.
@@ -5300,6 +6336,14 @@ class Credentials {
   // that is not duplication: this one is a COURTESY and that one is the
   // enforcement, and the enforcement has to be at the write.
   // ---------------------------------------------------------------------------
+  /**
+   * Mints a WebAuthn registration challenge and says what the ceremony will
+   * be, refusing anything knowable before the person touches their key.
+   *
+   * @param username - the person
+   * @param opts - `role` (`mfa` by default), `kind` and `label`
+   * @returns `{ ok: true, enrolmentId, challenge, … }`, or a refusal
+   */
   beginKeyEnrolment(username, opts?) {
     const { log, mode, webauthnPolicy, errorCodes,
       nodeCrypto } = this.deps;
@@ -5388,6 +6432,12 @@ class Credentials {
              expiresAt: new Date(record.expires).toISOString() };
   }
 
+  /**
+   * Returns the pending security key enrolment, if any.
+   *
+   * @param username - the person
+   * @returns the pending enrolment, or null
+   */
   pendingKeyEnrolmentFor(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.pendingKeyEnrolmentFor().");
@@ -5397,6 +6447,11 @@ class Credentials {
     return held || null;
   }
 
+  /**
+   * Forgets a pending security key enrolment.
+   *
+   * @param username - the person
+   */
   abandonKeyEnrolment(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.abandonKeyEnrolment().");
@@ -5415,6 +6470,16 @@ class Credentials {
   // **IT ANSWERS A PROMISE SINCE 2026-09-14**: the write claims the credential
   // id across nodes first (`addKeyClaimed()`). Every refusal before the write
   // is the same object it was, resolved.
+  /**
+   * Verifies what the browser produced for a pending enrolment and only then
+   * writes the key, claiming its credential id across the cluster.
+   *
+   * @param username - the person
+   * @param enrolmentId - the pending enrolment's id
+   * @param credential - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `addKey()`'s answer, or a refusal
+   */
   confirmKeyEnrolment(username, enrolmentId, credential, opts?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.confirmKeyEnrolment().");
@@ -5614,6 +6679,13 @@ class Credentials {
   // Mint one for somebody. Returns the token IN THE CLEAR exactly once — the
   // caller shows it and forgets it, because what is stored is a hash and this
   // service can never produce it again.
+  /**
+   * Mints an activation link token for somebody, returned in the clear once;
+   * its hash is stored.
+   *
+   * @param username - the person
+   * @returns `{ ok: true, username, token, expires, … }`, or a refusal
+   */
   issueActivation(username) {
     const { log, crypto, errorCodes, nodeCrypto } = this.deps;
     const directory = this.directory;
@@ -5674,6 +6746,14 @@ class Credentials {
   // expired token and no token at all are one answer at the door, because
   // distinguishing them tells an attacker whether a username is worth grinding.
   // The `reason` is for the LOG.
+  /**
+   * Checks an activation token against the person's entry.
+   *
+   * @param username - the person
+   * @param token - the presented token
+   * @returns `{ ok: true, reason: 'valid', expires }`, or a refusal whose
+   *   reason is for the log only
+   */
   checkActivation(username, token) {
     const { log, crypto, errorCodes } = this.deps;
     const directory = this.directory;
@@ -5719,6 +6799,12 @@ class Credentials {
   // Spend it. Called when the setup FINISHES, not when the link is opened — a
   // link consumed on opening would strand anybody whose browser prefetched it
   // or who reloaded the page.
+  /**
+   * Spends the activation token, when the setup finishes.
+   *
+   * @param username - the person
+   * @returns true when it was removed
+   */
   consumeActivation(username) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
@@ -5816,6 +6902,13 @@ class Credentials {
     });
   }
 
+  /**
+   * Claims an activation link across the cluster, so it is spent once.
+   *
+   * @param username - the person
+   * @param token - the presented token
+   * @returns a promise of the claim's answer, or a refusal
+   */
   spendActivation(username, token) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -5830,6 +6923,13 @@ class Credentials {
     return this.linkClaim('activation', username, token);
   }
 
+  /**
+   * Claims a password reset link across the cluster, so it is spent once.
+   *
+   * @param username - the person
+   * @param token - the presented token
+   * @returns a promise of the claim's answer, or a refusal
+   */
   spendPasswordReset(username, token) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -5845,6 +6945,12 @@ class Credentials {
   }
 
   // Gives a link's claim back: the request that claimed it did not finish.
+  /**
+   * Gives a link's claim back when the request that claimed it did not
+   * finish.
+   *
+   * @param handle - the claim's handle
+   */
   releaseLink(handle) {
     const { log, claims } = this.deps;
     log.debug("Entering Credentials.releaseLink().");
@@ -5855,6 +6961,12 @@ class Credentials {
   // Is one outstanding? What /admin/users draws beside somebody who cannot yet
   // sign in, so an operator can tell "never activated" from "link already
   // sent".
+  /**
+   * Says whether an activation link is outstanding.
+   *
+   * @param username - the person
+   * @returns `{ expires, … }`, or null
+   */
   activationPending(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -5944,6 +7056,12 @@ class Credentials {
            60 * 1000;
   }
 
+  /**
+   * Removes a person's password.
+   *
+   * @param username - the person
+   * @returns `{ ok: true, username, removed }`, or a refusal
+   */
   removePassword(username) {
     const { log, passwordPolicy, errorCodes } = this.deps;
     const directory = this.directory;
@@ -5996,6 +7114,13 @@ class Credentials {
 
   // Mint a password reset link for somebody who is in the directory. The token
   // comes back IN THE CLEAR exactly once; what is stored is its hash.
+  /**
+   * Mints a password reset link token for somebody in the directory,
+   * returned in the clear once; its hash is stored.
+   *
+   * @param username - the person
+   * @returns `{ ok: true, username, token, expires, … }`, or a refusal
+   */
   issuePasswordReset(username) {
     const { log, crypto, errorCodes, nodeCrypto } = this.deps;
     const directory = this.directory;
@@ -6047,6 +7172,14 @@ class Credentials {
   // Is this token the one on that person's entry, and is it still alive? The
   // REASON is for the log; a page answers every failure with one sentence, so
   // nobody learns which usernames have a link outstanding.
+  /**
+   * Checks a password reset token against the person's entry.
+   *
+   * @param username - the person
+   * @param token - the presented token
+   * @returns `{ ok: true, reason: 'valid', expires }`, or a refusal whose
+   *   reason is for the log only
+   */
   checkPasswordReset(username, token) {
     const { log, crypto } = this.deps;
     const directory = this.directory;
@@ -6089,6 +7222,12 @@ class Credentials {
   // for the activation link's reason: a link burned by a mail scanner or a
   // prefetch would strand somebody whose password was removed when it was
   // issued.
+  /**
+   * Spends the password reset token, when the new password is stored.
+   *
+   * @param username - the person
+   * @returns true when it was removed
+   */
   consumePasswordReset(username) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
@@ -6112,6 +7251,12 @@ class Credentials {
     return cleared;
   }
 
+  /**
+   * Says whether a password reset link is outstanding.
+   *
+   * @param username - the person
+   * @returns the link's expiry details, or null
+   */
   passwordResetPending(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -6137,6 +7282,13 @@ class Credentials {
   // Is a second factor required of this person, and by whom? `byRealm` is the
   // setting as the AMBIENT realm reads it, which is the realm the sign-in
   // screen runs in.
+  /**
+   * Says whether a second factor is required of a person, and by whom: their
+   * entry or the ambient realm's setting.
+   *
+   * @param username - the person
+   * @returns `{ required, byUser, byRealm, … }`
+   */
   mfaRequirementFor(username) {
     const { log, config } = this.deps;
     const directory = this.directory;
@@ -6184,6 +7336,13 @@ class Credentials {
              offered: offered && !required };
   }
 
+  /**
+   * Sets or clears the requirement of a second factor on a person's entry.
+   *
+   * @param username - the person
+   * @param required - whether one is required
+   * @returns `{ ok: true, username, required }`, or a refusal
+   */
   setMfaRequired(username, required) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
@@ -6234,6 +7393,13 @@ class Credentials {
   // like everything else here. Every read is wrapped: a directory consulted
   // during an issuance must never fail it.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the person's half of the delegation policy: `stsNotDelegated`,
+   * `stsMayAct` and the groups. A read that fails answers null.
+   *
+   * @param username - the person
+   * @returns the facts, or null
+   */
   delegationFactsFor(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -6256,6 +7422,11 @@ class Credentials {
     return facts;
   }
 
+  /**
+   * Lists the people carrying `stsNotDelegated` or `stsMayAct`.
+   *
+   * @returns the rows, empty with no store
+   */
   delegationFlaggedPersons() {
     const { log } = this.deps;
     const directory = this.directory;
@@ -6278,6 +7449,13 @@ class Credentials {
     return rows;
   }
 
+  /**
+   * Sets or clears `stsNotDelegated` on a person's entry.
+   *
+   * @param username - the person
+   * @param value - whether nobody may act for them
+   * @returns `{ ok: true, username, notDelegated }`, or a refusal
+   */
   setNotDelegated(username, value) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
@@ -6319,6 +7497,15 @@ class Credentials {
   // realm — or empty to clear. It is resolved before it is written, so an
   // entry that names nobody (or the person themselves) is refused here
   // rather than discovered at the token that would have carried it.
+  /**
+   * Names, or clears, the one party a person has chosen as their delegate.
+   *
+   * @param username - the person
+   * @param delegate - the DN of a person or application in the realm, or
+   *   empty to clear
+   * @returns `{ ok: true, username, mayAct }`, or a refusal for a DN naming
+   *   nobody or the person themselves
+   */
   setMayAct(username, delegate) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
@@ -6404,6 +7591,12 @@ class Credentials {
   // has disabled nobody; every door that authenticates in product mode has
   // already failed closed on the missing store for its own reason.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a person's account is disabled (`pwdAccountLockedTime`).
+   *
+   * @param username - the person
+   * @returns true when disabled; false where nothing can be asked
+   */
   accountDisabled(username) {
     const { log } = this.deps;
     const directory = this.directory;
@@ -6429,6 +7622,13 @@ class Credentials {
   // The refusal every door gives a disabled account, with its code. The detail
   // is for the LOG; a door that answers a person says "authentication failed",
   // for the account-enumeration reason `verify()`'s callers give.
+  /**
+   * Returns the refusal every door gives a disabled account, with its code.
+   *
+   * @param username - the person
+   * @param via - the door
+   * @returns the refusal, whose detail is for the log
+   */
   disabledRefusal(username, via) {
     const { log } = this.deps;
     const coded = this.coded.bind(this);
@@ -6445,6 +7645,14 @@ class Credentials {
   // also ends what the person holds; this is only the attribute.
   // `options.riscReason` (#146): RISC account-disabled's reason, handed to the
   // directory write so its account observer can carry it.
+  /**
+   * Writes or clears the lock on a person's account; only the attribute.
+   *
+   * @param username - the person
+   * @param disabled - whether to disable
+   * @param options - `riscReason`, handed to the directory write
+   * @returns `{ ok: true, username, disabled }`, or a refusal
+   */
   setAccountDisabled(username, disabled, options?) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
@@ -6492,6 +7700,13 @@ class Credentials {
              label: one.label || '', enrolledAt: one.enrolledAt || 0 };
   }
 
+  /**
+   * Removes every passwordless security key a person holds, refusing where
+   * that would leave them unable to sign in.
+   *
+   * @param username - the person
+   * @returns `{ ok: true, username, … }`, or a refusal
+   */
   removePrimaryKeys(username) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
@@ -6546,6 +7761,12 @@ class Credentials {
              removed: primary.map((one) => this.keySummary(one)) };
   }
 
+  /**
+   * Removes every second-factor security key a person holds.
+   *
+   * @param username - the person
+   * @returns `{ ok: true, username, removed }`, or a refusal
+   */
   removeSecondFactors(username) {
     const { log, totp, backupCodes, errorCodes } = this.deps;
     const directory = this.directory;
@@ -6615,6 +7836,10 @@ class Credentials {
   //     code door, `spendAssertion()`;
   //   * `credentials.links-once`: `spendActivation()`, `spendPasswordReset()`;
   //   * `ops.bootstrap-once`: `bootstrapOnce()`.
+  /**
+   * Declares the cluster capabilities this module provides: second factors
+   * spent once, links spent once, and the bootstrap run once.
+   */
   provideCapabilities() {
     const { log, capabilities } = this.deps;
     log.debug("Entering Credentials.provideCapabilities().");
@@ -6643,6 +7868,13 @@ const slot = new InstanceSlot<Credentials>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The one place a presented password is verified, and the store of every
+ * credential on a person's entry.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   Credentials: Credentials,
   // --- identity verifications, passed through (#127) ---
@@ -6658,7 +7890,18 @@ export = {
   claimsAggregationStore: slot.forward('claimsAggregationStore'),
   readCibaUserCode: slot.forward('readCibaUserCode'),
   writeCibaUserCode: slot.forward('writeCibaUserCode'),
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: Credentials): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   // --- the authenticator app (RFC 6238) ---
   TOTP_ATTRIBUTE: Credentials.TOTP_ATTRIBUTE,
@@ -6694,6 +7937,11 @@ export = {
   verifyTotp: slot.forward('verifyTotp'),
   removeTotp: slot.forward('removeTotp'),
   secondFactorHolders: slot.forward('secondFactorHolders'),
+  // THE USERS LIST'S THREE STEPS (#352): list, then decorate the shown rows,
+  // and count everybody in one pass — see `secondFactorPopulation()`.
+  secondFactorPopulation: slot.forward('secondFactorPopulation'),
+  factorHolderRow: slot.forward('factorHolderRow'),
+  factorCensus: slot.forward('factorCensus'),
   issueActivation: slot.forward('issueActivation'),
   checkActivation: slot.forward('checkActivation'),
   consumeActivation: slot.forward('consumeActivation'),
@@ -6722,6 +7970,7 @@ export = {
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,
   setDirectory: slot.forward('setDirectory'),
+  addDirectoryHooks: slot.forward('addDirectoryHooks'),
   // The plaintext-password observer (2026-09-12) — see the block above it.
   setPasswordObserver: slot.forward('setPasswordObserver'),
   storable: slot.forward('storable'),

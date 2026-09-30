@@ -75,6 +75,9 @@ const LABEL = 'oidc-pairwise-sub';
 // The pairwise DEVICE identifier's own label (#164 phase 6): a device id
 // derived under the subject's label could collide with a person's `sub`.
 const DEVICE_LABEL = 'oidc-pairwise-device-id';
+/**
+ * The scheduler job id that removes expired ephemeral subject mappings.
+ */
 const PURGE_JOB = 'oauth2.ephemeral-subjects-purge';
 
 // EPHEMERAL SUBJECTS (#149, the Ephemeral Subject Identifier draft), PER
@@ -90,15 +93,37 @@ const PURGE_JOB = 'oauth2.ephemeral-subjects-purge';
 // authentication, then removed by the `oauth2.ephemeral-subjects-purge` job.
 const ephemeral = realms.map({ persist: 'oauth2.ephemeralSubjects' });
 
+/**
+ * The `sub` and `device_id` a client is told for a person: public, pairwise per
+ * sector (OpenID Connect Core section 8) or ephemeral per authentication
+ * (#149).
+ */
 class PairwiseSubjects {
+  /**
+   * The subject types a client may register.
+   */
   static readonly SUBJECT_TYPES = ['public', 'pairwise', 'ephemeral'];
+  /**
+   * The scheduler job id that removes expired ephemeral subject mappings.
+   */
   static readonly PURGE_JOB = PURGE_JOB;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, crypto module, realms, application registry,
+   *   cluster secrets, outbound HTTP, settings, scheduler and clock it reads
+   */
   constructor(private readonly deps: PairwiseDeps) {
     deps.log.debug("Entering PairwiseSubjects.constructor().");
     deps.log.debug("Leaving PairwiseSubjects.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): PairwiseDeps {
     helpers.log.debug("Entering PairwiseSubjects.defaultDeps().");
     helpers.log.debug("Leaving PairwiseSubjects.defaultDeps().");
@@ -116,6 +141,13 @@ class PairwiseSubjects {
   // The sector of a client's configuration, or '' when it has none it can be
   // given — a pairwise client whose redirect URIs span hosts and which names
   // no sector URI.
+  /**
+   * Returns the sector of a client: the host of its `sector_identifier_uri`, or
+   * the one host all its redirect URIs share.
+   *
+   * @param client - the client's configuration
+   * @returns the sector host, or '' when the client has none it can be given
+   */
   sectorOf(client: Json): string {
     const { log } = this.deps;
     log.debug("Entering PairwiseSubjects.sectorOf().");
@@ -157,6 +189,19 @@ class PairwiseSubjects {
   // which every caller turns into a server_error rather than a public `sub`
   // this client registered not to be given.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the `sub` a client is told for a person.
+   *
+   * Public clients get the local `sub`; pairwise clients an HMAC over the
+   * realm, their sector and the local `sub`; ephemeral clients one minted for
+   * this authentication.
+   *
+   * @param clientId - the client being answered
+   * @param localSub - the person's public `sub`
+   * @param sessionId - the session, which an ephemeral subject is bound to
+   * @returns the client-facing `sub`
+   * @throws an Error with the sentence, for a pairwise client with no sector
+   */
   subjectFor(clientId: Json, localSub: Json, sessionId?: Json): string {
     const { log, stsCrypto, realms, applications, clusterSecrets } = this.deps;
     log.debug("Entering PairwiseSubjects.subjectFor(). client=" + clientId);
@@ -215,6 +260,18 @@ class PairwiseSubjects {
   // concern is End-Users: its id goes to every client as it is (`person`
   // false).
   // -------------------------------------------------------------------------
+  /**
+   * Returns the `device_id` a client is told for a registered device, by the
+   * same rule as its `sub`.
+   *
+   * An ephemeral client, and a pairwise client with no sector, are told
+   * nothing. A device owned by an application goes to every client as it is.
+   *
+   * @param clientId - the client being answered
+   * @param deviceId - the device register's id
+   * @param person - false when an application owns the device
+   * @returns the client-facing device id, or '' to omit the claim
+   */
   deviceIdFor(clientId: Json, deviceId: Json, person?: boolean): string {
     const { log, stsCrypto, realms, applications, clusterSecrets } = this.deps;
     log.debug("Entering PairwiseSubjects.deviceIdFor(). client=" + clientId);
@@ -286,6 +343,12 @@ class PairwiseSubjects {
 
   // The public `sub` behind an ephemeral one, or '' (#149): what a verified
   // id_token_hint names, mapped back to the person.
+  /**
+   * Maps an ephemeral `sub` back to the person's public one.
+   *
+   * @param sub - an ephemeral `sub`, as a verified id_token_hint names it
+   * @returns the public `sub`, or ''
+   */
   localFor(sub: Json): string {
     const { log } = this.deps;
     log.debug("Entering PairwiseSubjects.localFor().");
@@ -296,6 +359,12 @@ class PairwiseSubjects {
 
   // The scheduler job (#49): mappings past their life are removed, with
   // their session index.
+  /**
+   * Removes every ephemeral mapping past its life, with its session index. The
+   * scheduler job's body.
+   *
+   * @returns `{ summary }` for the scheduler
+   */
   purge(): Json {
     const { log, now } = this.deps;
     log.debug("Entering PairwiseSubjects.purge().");
@@ -316,6 +385,9 @@ class PairwiseSubjects {
              'removed' };
   }
 
+  /**
+   * Registers the purge job on the scheduler, once.
+   */
   scheduleJobs(): void {
     const { log, scheduler } = this.deps;
     const self = this;
@@ -348,6 +420,15 @@ class PairwiseSubjects {
   // redirect_uris to be in it. Resolves null or `{ errorCode, error,
   // description }`, and never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Checks a registered `sector_identifier_uri` (section 8.1): fetches it and
+   * requires every redirect URI of the registration to be in the JSON array it
+   * serves.
+   *
+   * @param metadata - the registration metadata
+   * @returns a promise of null, or `{ errorCode, error, description }`; it
+   *   never rejects
+   */
   sectorIdentifierProblem(metadata: Json): Promise<Json> {
     const { log, fedHttp } = this.deps;
     log.debug("Entering PairwiseSubjects.sectorIdentifierProblem().");
@@ -421,10 +502,29 @@ const slot = new InstanceSlot<PairwiseSubjects>(
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * OpenID Connect pairwise and ephemeral subject identifiers.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   PairwiseSubjects: PairwiseSubjects,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: PairwiseSubjects): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   SUBJECT_TYPES: PairwiseSubjects.SUBJECT_TYPES,
   sectorOf: slot.forward('sectorOf'),

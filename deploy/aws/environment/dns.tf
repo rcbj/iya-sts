@@ -42,11 +42,14 @@ data "aws_route53_zone" "public" {
 }
 
 resource "aws_acm_certificate" "public" {
-  count             = local.public_name ? 1 : 0
-  domain_name       = var.public_hostname
-  validation_method = "DNS"
-  key_algorithm     = "EC_prime256v1"
-  tags              = { Name = var.public_hostname }
+  count       = local.public_name ? 1 : 0
+  domain_name = var.public_hostname
+  # A cell's certificate also names its own console name (#361), which the
+  # node presents to a browser that asked for it.
+  subject_alternative_names = local.cell_console_host != "" ? [local.cell_console_host] : []
+  validation_method         = "DNS"
+  key_algorithm             = "EC_prime256v1"
+  tags                      = { Name = var.public_hostname }
 
   # THE WHOLE POINT: without this ACM will not release the private key, and a
   # certificate whose key cannot leave ACM can only ever be presented by an
@@ -90,11 +93,63 @@ resource "aws_acm_certificate_validation" "public" {
   validation_record_fqdns = [for r in aws_route53_record.certificate_validation : r.fqdn]
 }
 
+# A CELL WRITES THE RECORD TREE IN dns_cells.tf INSTEAD (#98): a CNAME may not
+# share its name with any other record, so the two are exclusive.
 resource "aws_route53_record" "public" {
-  count   = local.public_name ? 1 : 0
+  count   = local.public_name && !local.multi ? 1 : 0
   zone_id = data.aws_route53_zone.public[0].zone_id
   name    = var.public_hostname
   type    = "CNAME"
   ttl     = 300
   records = [aws_lb.main.dns_name]
+}
+
+# ---------------------------------------------------------------------------
+# AND THE SAME NAME INSIDE THE VPC (#311): the load balancer's PRIVATE
+# addresses, in the private zone foundation/dns_inside.tf made for this name.
+# A node dialling its own public name (a Shared Signals receiver reading this
+# service's configuration, a Provider Command to its own mock relying party)
+# otherwise left through the internet gateway with a public address the load
+# balancer does not admit, and timed out. From inside, it arrives from a
+# node's private address, which security.tf's `nlb_from_nodes` admits — and,
+# as the PROXY header says, from a node: `STS_TRUSTED_PROXIES` is the public
+# subnets, where these addresses are.
+#
+# The load balancer's interfaces are found one per public subnet by their
+# description, so the count is known at plan time and the addresses are read
+# once the load balancer exists.
+# ---------------------------------------------------------------------------
+data "aws_route53_zone" "inside" {
+  count        = local.public_name ? 1 : 0
+  name         = var.public_hostname
+  private_zone = true
+}
+
+resource "aws_route53_zone_association" "inside" {
+  count   = local.public_name ? 1 : 0
+  zone_id = data.aws_route53_zone.inside[0].zone_id
+  vpc_id  = aws_vpc.main.id
+}
+
+data "aws_network_interface" "nlb" {
+  count = local.public_name ? length(aws_subnet.public) : 0
+  filter {
+    name   = "description"
+    values = ["ELB ${aws_lb.main.arn_suffix}"]
+  }
+  filter {
+    name   = "subnet-id"
+    values = [aws_subnet.public[count.index].id]
+  }
+}
+
+resource "aws_route53_record" "inside" {
+  count           = local.public_name ? 1 : 0
+  zone_id         = data.aws_route53_zone.inside[0].zone_id
+  name            = var.public_hostname
+  type            = "A"
+  ttl             = 60
+  records         = data.aws_network_interface.nlb[*].private_ip
+  allow_overwrite = true
+  depends_on      = [aws_route53_zone_association.inside]
 }

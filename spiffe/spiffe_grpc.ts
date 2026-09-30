@@ -43,9 +43,11 @@
 // THE `.proto` FILES ARE VENDORED AND ARE LOAD-BEARING
 //
 // `protos/workloadapi.proto` and `protos/brokerapi.proto` are verbatim copies
-// of the SPIFFE project's own, and `protos/spire/**` of the `spire-api-sdk`'s. They are read AT REQUIRE
-// TIME, at module scope, and a missing one is not a degraded feature — this
-// module does not load. That is the same decision `bbs2023.js` makes about
+// of the SPIFFE project's own, and `protos/spire/**` of the
+// `spire-api-sdk`'s. They are read when first needed (`services()`, since
+// #348) — which in the front process is at START, when the default realm's
+// listeners are bound — and a missing one is not a degraded feature: the
+// service does not start. That is the same decision `bbs2023.js` makes about
 // `contexts/`, and for a similar reason: a service that advertised the Workload
 // API and then answered `Unimplemented` because a file was missing would be
 // worse than one that did not start.
@@ -66,11 +68,39 @@
 
 import fs = require('fs');
 import path = require('path');
-import grpc = require('@grpc/grpc-js');
-import loader = require('@grpc/proto-loader');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import LazyModule = require('../common/lazy_module');
 const { log } = helpers;
+// ---------------------------------------------------------------------------
+// THE gRPC RUNTIME AND ITS PROTO LOADER ARE REQUIRED AT FIRST USE (#348).
+//
+// Every request and surface worker loads this module (the stack is the same
+// in every process), and only the FRONT process binds a SPIFFE socket — so
+// requiring `@grpc/grpc-js` and `@grpc/proto-loader` here put about 5 MB of
+// heap and 13 MB of resident memory into every worker that never used them
+// (measured on #348). `grpc` and `loader` are stand-ins that require the
+// package the first time a property is read: binding a server, building its
+// credentials, a `Metadata`, loading the protos.
+//
+// **WHAT A WORKER DOES NEED IS THE STATUS NUMBERS**, because a dispatched
+// method refuses with a gRPC status and that number crosses back to the
+// front process. They are grpc-js's own table — `grpc.status` IS
+// `build/src/constants.js`'s `Status`, a file that requires nothing — so
+// `status` below is that table, the same object, read without the runtime.
+// `tests/spiffe_operations.js` checks the two are the same object, so a
+// grpc-js that moved the file fails there rather than in a refusal.
+// ---------------------------------------------------------------------------
+type Grpc = typeof import('@grpc/grpc-js');
+type ProtoLoader = typeof import('@grpc/proto-loader');
+const grpc: Grpc = LazyModule.of('@grpc/grpc-js', function () {
+  return require('@grpc/grpc-js') as Grpc;
+}, log);
+const loader: ProtoLoader = LazyModule.of('@grpc/proto-loader', function () {
+  return require('@grpc/proto-loader') as ProtoLoader;
+}, log);
+import grpcConstants = require('@grpc/grpc-js/build/src/constants');
+const status: Grpc['status'] = grpcConstants.Status;
 import config = require('../common/config');
 // A LEAF (it requires `config` and `error_codes` only), for the one
 // development-only setting this file reads (#181).
@@ -157,8 +187,10 @@ const SERVER_PROTOS = [
 interface SpiffeGrpcDeps {
   fs: typeof fs;
   path: typeof path;
-  grpc: typeof grpc;
-  loader: typeof loader;
+  grpc: Grpc;
+  loader: ProtoLoader;
+  // grpc-js's status numbers without the runtime (#348) — see the top.
+  status: Grpc['status'];
   log: typeof log;
   config: typeof config;
   mode: typeof mode;
@@ -194,11 +226,24 @@ const RESTRICTED_SOCKETS = new Map<string, boolean>();
 type ServiceName = 'workload' | 'entry' | 'agent' | 'bundle' | 'svid' |
   'trustdomain' | 'debug' | 'broker';
 
+/**
+ * The gRPC plumbing the SPIFFE surfaces sit on: the vendored `.proto` files,
+ * the listeners, the security headers, the call wrappers and the mapping of a
+ * thrown Error to a gRPC status.
+ *
+ * A library that holds no protocol knowledge; the Workload API, the SPIRE
+ * Server API and the Broker API bring their own handlers. Unary methods may be
+ * dispatched to a request worker.
+ */
 class SpiffeGrpc {
   // The signature schemes the SPIFFE TLS listeners sign with and accept from
   // a client's SVID (#212): OpenSSL's TLS 1.3 list, with brainpool omitted
   // from the offered signature schemes by policy — see where it is applied,
   // in the credentials below.
+  /**
+   * The TLS signature schemes the SPIFFE listeners sign with and accept from a
+   * client's SVID (#212).
+   */
   static readonly POLICY_SIGALGS = 'mldsa65:mldsa87:mldsa44:' +
     'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:' +
     'ed25519:ed448:rsa_pss_pss_sha256:rsa_pss_pss_sha384:' +
@@ -206,12 +251,24 @@ class SpiffeGrpc {
     'rsa_pss_rsae_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:' +
     'rsa_pkcs1_sha512';
 
+  /**
+   * Builds the plumbing over its dependencies.
+   *
+   * @param deps - the logger, configuration, grpc-js and its loader, mode,
+   *   realms, audit, error codes, statistics, the modules the wrappers consult,
+   *   and lazy loaders for the request pool, request worker and cluster barrier
+   */
   constructor(private readonly deps: SpiffeGrpcDeps) {
     deps.log.debug("Entering SpiffeGrpc.constructor().");
     deps.log.debug("Leaving SpiffeGrpc.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SpiffeGrpcDeps {
     helpers.log.debug("Entering SpiffeGrpc.defaultDeps().");
     helpers.log.debug("Leaving SpiffeGrpc.defaultDeps().");
@@ -220,6 +277,7 @@ class SpiffeGrpc {
       path: path,
       grpc: grpc,
       loader: loader,
+      status: status,
       log: log,
       config: config,
       mode: mode,
@@ -249,11 +307,41 @@ class SpiffeGrpc {
 
   // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
   // run by `common/instance_slot.ts` once for whichever instance is
-  // installed: loading the vendored protos and naming the services, and
-  // refusing to go on when one is missing.
+  // installed. It loaded the vendored protos and named the services until
+  // #348 (2026-09-29); that moved to `services()`, at first use, because
+  // every request worker built this instance and only the front process
+  // binds a SPIFFE socket. The front process still loads them at START,
+  // because `spiffe_server.ts` binds the default realm's listeners from
+  // `listen()` whether `spiffe.enabled` is on or not — so a missing proto is
+  // still a service that does not start rather than a surface that answers
+  // `Unimplemented` later, which is what the header asks for.
+  /**
+   * The installed instance's wire step: nothing since #348 — the protos are
+   * loaded by `services()` when first needed.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: SpiffeGrpc): void {
     helpers.log.debug("Entering SpiffeGrpc.wire().");
-    const DEFINITIONS = instance.loadDefinitions();
+    helpers.log.debug("Leaving SpiffeGrpc.wire(). " +
+                      (instance ? 'Protos at first use.' : ''));
+  }
+
+  /**
+   * Loads the vendored protos and names the services, the first time a caller
+   * needs them (#348), refusing to go on when one is missing.
+   *
+   * @returns the service definitions by name
+   * @throws an Error when a service is missing from the loaded definitions
+   */
+  services(): Record<ServiceName, any> {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.services().");
+    if (SERVICES) {
+      log.debug("Leaving SpiffeGrpc.services(). Already loaded.");
+      return SERVICES;
+    }
+    const DEFINITIONS = this.loadDefinitions();
     const services = {
       workload: DEFINITIONS.workload['SpiffeWorkloadAPI'],
       entry: DEFINITIONS.server['spire.api.server.entry.v1.Entry'],
@@ -265,20 +353,25 @@ class SpiffeGrpc {
       debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug'],
       broker: DEFINITIONS.broker['spiffe.broker.API']
     };
-    SERVICES = services;
     Object.keys(services).forEach(function (name) {
       if (!services[name]) {
-        helpers.log.debug("Leaving SpiffeGrpc.wire(). " + name +
-                          " missing.");
+        log.debug("Leaving SpiffeGrpc.services(). " + name + " missing.");
         throw new Error('spiffe: the ' + name + ' service is not in the ' +
                         'vendored protos. This is a build problem rather ' +
                         'than a runtime one — see protos/ and the note at ' +
                         'the top of spiffe_grpc.js.');
       }
     });
-    helpers.log.debug("Leaving SpiffeGrpc.wire().");
+    SERVICES = services;
+    log.debug("Leaving SpiffeGrpc.services().");
+    return SERVICES;
   }
 
+  /**
+   * Loads the vendored Workload API, SPIRE Server API and Broker API protos.
+   *
+   * @returns the loaded package definitions
+   */
   loadDefinitions() {
     const { log, loader } = this.deps;
     log.debug('Entering SpiffeGrpc.loadDefinitions().');
@@ -295,10 +388,17 @@ class SpiffeGrpc {
   // method that exists and goes undescribed is the drift `sts_metadata.js`
   // exists to prevent, and this is the only way to have the same property for a
   // surface Express knows nothing about.
+  /**
+   * Lists what a service publishes, from the loaded definitions, for `/spiffe`
+   * and `/admin/sts-metadata`.
+   *
+   * @param serviceName - the service's fully-qualified name
+   * @returns each method's name, path and streaming shape, sorted by name
+   */
   methodsOf(serviceName) {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.methodsOf().");
-    const service = SERVICES[serviceName];
+    const service = this.services()[serviceName];
     log.debug("Leaving SpiffeGrpc.methodsOf().");
     return Object.keys(service).map(function (key) {
       const method = service[key];
@@ -311,6 +411,13 @@ class SpiffeGrpc {
     }).sort(function (a, b) { return a.name.localeCompare(b.name); });
   }
 
+  /**
+   * Asks whether a call carries the `workload.spiffe.io: true` header the
+   * Workload Endpoint specification requires.
+   *
+   * @param call - the gRPC call
+   * @returns whether it does
+   */
   securityHeaderPresent(call) {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.securityHeaderPresent().");
@@ -335,6 +442,13 @@ class SpiffeGrpc {
   // check (`verifyBrokerSecurityHeader()`) is exactly one value, exactly
   // that. Stricter than the Workload API's reading above, because the
   // specification says "case sensitive" here and nothing there.
+  /**
+   * Asks whether a call carries exactly one `broker.spiffe.io` header with the
+   * value `true`, case sensitive (#170).
+   *
+   * @param call - the gRPC call
+   * @returns whether it does
+   */
   brokerHeaderPresent(call) {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.brokerHeaderPresent().");
@@ -358,6 +472,14 @@ class SpiffeGrpc {
   // or one carrying a `.code`, built by `statusError()` below, which is what
   // every deliberate refusal uses.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds an Error carrying a gRPC status code, the shape every deliberate
+   * refusal uses.
+   *
+   * @param code - the gRPC status code
+   * @param message - the message
+   * @returns the error
+   */
   // error-code: none — the constructor every refusal is built with; each caller
   // marks its own condition
   statusError(code, message) {
@@ -369,40 +491,64 @@ class SpiffeGrpc {
     return err;
   }
 
+  /**
+   * Builds an INVALID_ARGUMENT status error.
+   *
+   * @param message - the message
+   * @returns the error
+   */
   // error-code: none — the definition of this helper, not a call to it
   invalidArgument(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.invalidArgument().");
     log.debug("Leaving SpiffeGrpc.invalidArgument().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.INVALID_ARGUMENT, message);
+    return this.statusError(status.INVALID_ARGUMENT, message);
   }
 
+  /**
+   * Builds a NOT_FOUND status error.
+   *
+   * @param message - the message
+   * @returns the error
+   */
   // error-code: none — the definition of this helper, not a call to it
   notFound(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.notFound().");
     log.debug("Leaving SpiffeGrpc.notFound().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.NOT_FOUND, message);
+    return this.statusError(status.NOT_FOUND, message);
   }
 
+  /**
+   * Builds a PERMISSION_DENIED status error.
+   *
+   * @param message - the message
+   * @returns the error
+   */
   // error-code: none — the definition of this helper, not a call to it
   permissionDenied(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.permissionDenied().");
     log.debug("Leaving SpiffeGrpc.permissionDenied().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.PERMISSION_DENIED, message);
+    return this.statusError(status.PERMISSION_DENIED, message);
   }
 
+  /**
+   * Builds an UNAVAILABLE status error.
+   *
+   * @param message - the message
+   * @returns the error
+   */
   // error-code: none — the definition of this helper, not a call to it
   unavailable(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.unavailable().");
     log.debug("Leaving SpiffeGrpc.unavailable().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.UNAVAILABLE, message);
+    return this.statusError(status.UNAVAILABLE, message);
   }
 
   // WHICH CODE THE AUDIT ROW FOR A FAILED CALL CARRIES. A throw that is not a
@@ -411,6 +557,14 @@ class SpiffeGrpc {
   // the call, or '' — which means the condition was already recorded on a row
   // of its own (an authorization refusal, a JWT-SVID refused at
   // ValidateJWTSVID) and a second coded row would count one refusal twice.
+  /**
+   * Decides which error code the audit row for a failed call carries.
+   *
+   * @param call - the gRPC call
+   * @param err - what the handler threw
+   * @returns a defect's code for a throw that is not a status error, otherwise
+   *   the code marked on the call, or ''
+   */
   failureCodeOf(call, err) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering SpiffeGrpc.failureCodeOf().");
@@ -422,8 +576,16 @@ class SpiffeGrpc {
     return errorCodes.codeOf(call);
   }
 
+  /**
+   * Turns a thrown error into the status object grpc-js sends; a throw that is
+   * not a status error is logged as a defect and answered UNKNOWN.
+   *
+   * @param err - what was thrown
+   * @param where - the method, for the log
+   * @returns the status
+   */
   errorToStatus(err, where) {
-    const { log, errorCodes, grpc } = this.deps;
+    const { log, errorCodes, status } = this.deps;
     log.debug("Entering SpiffeGrpc.errorToStatus().");
     if (err && typeof err.code === 'number') {
       log.debug("Leaving SpiffeGrpc.errorToStatus().");
@@ -438,7 +600,7 @@ class SpiffeGrpc {
               'error, which is a defect in this service rather than in the ' +
               'call: ' + (err && err.stack ? err.stack : err));
     log.debug("Leaving SpiffeGrpc.errorToStatus().");
-    return { code: grpc.status.UNKNOWN,
+    return { code: status.UNKNOWN,
              details: (err && err.message) || 'Something went wrong.' };
   }
 
@@ -467,6 +629,11 @@ class SpiffeGrpc {
   // that appears to work: `go-spiffe`'s first fetch succeeds and the client
   // then treats the stream ending as an error and reconnects in a tight loop.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns `spiffe.enabled` in the ambient realm.
+   *
+   * @returns whether SPIFFE is turned on
+   */
   enabled() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeGrpc.enabled().");
@@ -478,6 +645,12 @@ class SpiffeGrpc {
   // specification section 3 says a call without the header MUST be refused,
   // so a product realm with off still stored refuses it and says so once
   // (`mode.valueInForce()`, STS-CORE-0106).
+  /**
+   * Returns `spiffe.requireSecurityHeader` as it is in force; off is honoured
+   * in development only.
+   *
+   * @returns whether the header is required
+   */
   requireSecurityHeader() {
     const { log, mode } = this.deps;
     log.debug("Entering SpiffeGrpc.requireSecurityHeader().");
@@ -490,10 +663,17 @@ class SpiffeGrpc {
   // mapping is in one place so that module can stay ignorant of the transport,
   // and an unknown name becomes PERMISSION_DENIED rather than UNKNOWN: a
   // misspelt status in a refusal must still refuse.
+  /**
+   * Turns a refusal descriptor from `spiffe_auth.ts` into a status error; an
+   * unknown status name becomes PERMISSION_DENIED.
+   *
+   * @param descriptor - `{ status, message }`, the status a grpc-js name
+   * @returns the error
+   */
   fromDescriptor(descriptor) {
-    const { log, grpc, errorCodes } = this.deps;
+    const { log, status, errorCodes } = this.deps;
     log.debug("Entering SpiffeGrpc.fromDescriptor().");
-    const code = grpc.status[descriptor.status];
+    const code = status[descriptor.status];
     if (typeof code !== 'number') {
       log.error(errorCodes.tag('STS-SPIFFE-0004') +
                 'spiffe: spiffe_auth.js returned the status name "' +
@@ -502,7 +682,7 @@ class SpiffeGrpc {
                 'with PERMISSION_DENIED; this is a defect in this service.');
       log.debug("Leaving SpiffeGrpc.fromDescriptor().");
       // The refusal STS-SPIFFE-0004 above describes.
-      return this.statusError(grpc.status.PERMISSION_DENIED,
+      return this.statusError(status.PERMISSION_DENIED,
                               descriptor.message);
     }
     log.debug("Leaving SpiffeGrpc.fromDescriptor().");
@@ -559,6 +739,13 @@ class SpiffeGrpc {
   // `authenticated` false, and a session recording that somebody signed in
   // would be untrue.
   // ---------------------------------------------------------------------------
+  /**
+   * Starts or touches the sign-on session of an authenticated SPIRE Server API
+   * caller, keyed by a digest of its SPIFFE ID.
+   *
+   * @param caller - the caller
+   * @returns the session, or null when nobody authenticated
+   */
   sessionForCaller(caller) {
     const { log, nodeCrypto, authn, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.sessionForCaller().');
@@ -595,6 +782,14 @@ class SpiffeGrpc {
   // The gate, in a refusal shape `authorize()`'s caller already understands.
   // Null means permitted, which is what that function returns too — so the `||`
   // at the call site reads as "SPIRE's rule, then ours".
+  /**
+   * Asks this service's access policy about a SPIRE Server API caller, after
+   * SPIRE's own rule.
+   *
+   * @param caller - the caller
+   * @param method - `Service.Method`
+   * @returns null when permitted, or a refusal
+   */
   policyRefusal(caller, method) {
     const { log, accessGate, auth } = this.deps;
     log.debug('Entering SpiffeGrpc.policyRefusal(). method=' + method);
@@ -686,6 +881,13 @@ class SpiffeGrpc {
   // `SpiffeAuth.peerSelectorValue()` drops it. A Unix socket has no address,
   // and its rows say so by carrying none.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the address a call came from, for the audit source: without the
+   * scheme, the brackets and the ephemeral port.
+   *
+   * @param call - the gRPC call
+   * @returns the address, or '' on a Unix socket
+   */
   callerAddressOf(call) {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.callerAddressOf().");
@@ -724,6 +926,11 @@ class SpiffeGrpc {
   // the wait can no longer reach grpc-js, so it is logged, and a unary call
   // is answered INTERNAL rather than left open.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the cluster read barrier when it is active (active-active).
+   *
+   * @returns the barrier, or null
+   */
   clusterBarrier() {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.clusterBarrier().");
@@ -741,8 +948,15 @@ class SpiffeGrpc {
     return active ? barrier : null;
   }
 
+  /**
+   * Wraps a handler so that it runs inside an audit source naming the caller,
+   * after the cluster read barrier where one is active.
+   *
+   * @param handler - the handler
+   * @returns the wrapped handler
+   */
   fromCaller(handler) {
-    const { log, audit, errorCodes, grpc } = this.deps;
+    const { log, audit, errorCodes, status } = this.deps;
     const self = this;
     log.debug("Entering SpiffeGrpc.fromCaller().");
     log.debug("Leaving SpiffeGrpc.fromCaller().");
@@ -764,7 +978,7 @@ class SpiffeGrpc {
                   'handler threw after the cluster read barrier: ' +
                   ((e && e.message) || e));
         if (typeof callback === 'function') {
-          callback({ code: grpc.status.INTERNAL,
+          callback({ code: status.INTERNAL,
                      details: 'The call failed inside the service.' });
         }
       });
@@ -772,6 +986,16 @@ class SpiffeGrpc {
     };
   }
 
+  /**
+   * Prepares a call on any surface: SPIFFE turned on, the security header, the
+   * caller built and authorized, and the attested peer revalidated.
+   *
+   * @param call - the gRPC call
+   * @param surface - `workload`, `server` or `broker`
+   * @param method - `Service.Method`
+   * @returns the caller, and a refusal with its error code when the call is
+   *   refused
+   */
   prepareCall(call, surface, method) {
     const { log, auth, errorCodes, audit } = this.deps;
     log.debug('Entering SpiffeGrpc.prepareCall(). surface=' + surface +
@@ -941,6 +1165,14 @@ class SpiffeGrpc {
   // like any other presented SVID, and lets a client see a status that says
   // why.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a Broker API call: the header, an authenticated caller, and a broker
+   * `spiffe.brokers` names; the broker is put on `caller.broker`.
+   *
+   * @param call - the gRPC call
+   * @returns the caller, and a refusal with its error code when the call is
+   *   refused
+   */
   prepareBrokerCall(call) {
     const { log, auth, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.prepareBrokerCall().');
@@ -980,6 +1212,16 @@ class SpiffeGrpc {
   // `errorCode` is the condition a refused call was refused for — see
   // failureCodeOf() — and '' for a success or for a refusal already recorded on
   // a row of its own.
+  /**
+   * Writes the audit and metrics row for one gRPC call, on the `grpc` channel.
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param ok - whether it succeeded
+   * @param detail - what to record about it
+   * @param caller - the caller
+   * @param errorCode - the condition a refused call was refused for, or ''
+   */
   recordCall(surface, method, ok, detail, caller, errorCode?) {
     const { log, stats, errorCodes, audit } = this.deps;
     log.debug('Entering SpiffeGrpc.recordCall().');
@@ -1019,6 +1261,14 @@ class SpiffeGrpc {
     log.debug('Leaving SpiffeGrpc.recordCall().');
   }
 
+  /**
+   * Returns a method's operation kind in the request worker table,
+   * `spiffe.<surface>.<method>`.
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @returns the kind
+   */
   methodKind(surface, method) {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.methodKind().");
@@ -1030,6 +1280,11 @@ class SpiffeGrpc {
   // order and the pool is loaded by `app.js` above every route, so a top-level
   // require would be this family reaching up into the process's own bootstrap.
   // By the time a gRPC call arrives it is a cache hit.
+  /**
+   * Returns the request worker pool, required lazily.
+   *
+   * @returns the pool, or null in a process with none
+   */
   requestPool() {
     const { log, loadRequestPool } = this.deps;
     log.debug("Entering SpiffeGrpc.requestPool().");
@@ -1065,6 +1320,13 @@ class SpiffeGrpc {
   // it. It was inline in `dispatchUnary()` until a mutant that sent `caller:
   // null` survived — the test was building the shape itself and therefore
   // asserting `structuredClone()` rather than this.
+  /**
+   * Builds what a request worker is sent for one dispatched call: the request,
+   * the caller and the realm's id.
+   *
+   * @param call - the gRPC call
+   * @returns the operation's arguments
+   */
   methodRequest(call) {
     const { log, realms } = this.deps;
     log.debug("Entering SpiffeGrpc.methodRequest().");
@@ -1105,6 +1367,15 @@ class SpiffeGrpc {
     };
   }
 
+  /**
+   * Sends a unary call to a request worker when the pool is running and the
+   * surface is dispatched.
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param call - the gRPC call
+   * @returns the worker's result, or `{ dispatched: false }` to run it here
+   */
   dispatchUnary(surface, method, call) {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.dispatchUnary().");
@@ -1126,6 +1397,17 @@ class SpiffeGrpc {
   // the socket would have called, which is what makes "a dispatched method is
   // the same answer" true by construction rather than by a comparison somebody
   // maintains.
+  /**
+   * Runs one method in the realm the request names, with the same handler the
+   * socket would have called.
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param args - what `methodRequest()` built
+   * @returns `{ ok: true, reply }`, or `{ ok: false, … }` describing the
+   *   refusal
+   * @throws an Error when this process has no handler for the method
+   */
   performMethod(surface, method, args) {
     const { log, realms, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.performMethod(). ' + surface + '.' + method);
@@ -1174,6 +1456,12 @@ class SpiffeGrpc {
   // A refusal carrying no numeric code was NOT a status error in the worker, so
   // it is rebuilt as a plain Error and `errorToStatus()` logs it as the defect
   // it is — the same answer it would have reached had the handler run here.
+  /**
+   * Turns a worker's refusal back into the error the wrapper expects.
+   *
+   * @param result - the worker's result
+   * @returns a status error, or a plain Error for a refusal that was not one
+   */
   errorFromResult(result) {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.errorFromResult().");
@@ -1192,6 +1480,15 @@ class SpiffeGrpc {
     return err;
   }
 
+  /**
+   * Wraps a unary handler: prepared, dispatched to a worker where possible,
+   * audited, and answered with a status on failure.
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param handler - the handler, `(call) => reply`
+   * @returns the grpc-js handler
+   */
   unary(surface, method, handler) {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -1283,6 +1580,14 @@ class SpiffeGrpc {
   // So the gate is `STS_REQUEST_WORKER`, which is the marker `request_pool.js`
   // forks a child with and the same one it uses itself to stop a worker
   // proxying to itself.
+  /**
+   * Registers a unary handler in the table a request worker runs from; inside a
+   * worker, also registers it as that worker's operation.
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param handler - the handler
+   */
   registerWorkerMethod(surface, method, handler) {
     const { log, loadRequestWorker } = this.deps;
     const self = this;
@@ -1363,6 +1668,15 @@ class SpiffeGrpc {
   // `SyncAuthorizedEntries` are request/response in practice, but the stream
   // and its `data`/`end` events belong to the connection.
   // ---------------------------------------------------------------------------
+  /**
+   * Wraps a server-streaming handler, which is never dispatched: the stream
+   * belongs to the connection.
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param handler - the handler, `(call, push, end)`
+   * @returns the grpc-js handler
+   */
   serverStream(surface, method, handler) {
     const { log } = this.deps;
     const self = this;
@@ -1461,6 +1775,15 @@ class SpiffeGrpc {
   // once every handler started so far has written its answer or failed, and a
   // challenge outstanding at the half-close is failed with `ended` — the
   // client can no longer send the response it is waiting for.
+  /**
+   * Wraps a bidirectional-streaming handler, ending the stream once every
+   * message's handler has answered after the client half-closes.
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param handler - the handler
+   * @returns the grpc-js handler
+   */
   bidiStream(surface, method, handler) {
     const { log } = this.deps;
     const self = this;
@@ -1599,6 +1922,14 @@ class SpiffeGrpc {
     });
   }
 
+  /**
+   * Prepares a Unix socket's path before binding: creates its directory (0700
+   * for a private socket), removes a stale socket, and warns about a directory
+   * somebody else made.
+   *
+   * @param socketPath - the socket's path
+   * @param privateSocket - whether only this process's uid may connect
+   */
   prepareSocketPath(socketPath, privateSocket) {
     const { log, path, fs, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.prepareSocketPath(). path=' + socketPath +
@@ -1658,6 +1989,13 @@ class SpiffeGrpc {
   // A directory somebody else made, holding a socket that matters. Reported and
   // never changed: the path came from configuration and may be shared on
   // purpose.
+  /**
+   * Warns when a private socket's existing directory is reachable by others;
+   * the directory is never changed.
+   *
+   * @param directory - the directory
+   * @param privateSocket - whether the socket is meant to be private
+   */
   warnAboutDirectory(directory, privateSocket) {
     const { log, fs } = this.deps;
     log.debug("Entering SpiffeGrpc.warnAboutDirectory().");
@@ -1692,6 +2030,12 @@ class SpiffeGrpc {
   // prepareSocketPath. A failure is LOGGED LOUDLY and not thrown, for
   // bindOne()'s reason — but it is an error, because a `local` socket other
   // users can reach is an administrator credential lying on a filesystem.
+  /**
+   * Makes a SPIRE Server API socket 0600 after it binds; a failure is logged
+   * loudly rather than thrown.
+   *
+   * @param socketPath - the socket's path
+   */
   restrictSocket(socketPath) {
     const { log, fs, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.restrictSocket(). path=' + socketPath);
@@ -1726,6 +2070,13 @@ class SpiffeGrpc {
   // and only a directory nobody else can enter closes that window. Never
   // throws; `why` is the sentence a refusal quotes.
   // ---------------------------------------------------------------------------
+  /**
+   * Asks whether a socket is private enough for the `local` entity: restricted
+   * to 0600, with no group or other bit on it or its directory.
+   *
+   * @param socketPath - the socket's path
+   * @returns whether it is private, and why not
+   */
   socketPrivacy(socketPath: string): { private: boolean; why: string } {
     const { log, fs, path } = this.deps;
     log.debug('Entering SpiffeGrpc.socketPrivacy(). ' + socketPath);
@@ -1767,12 +2118,19 @@ class SpiffeGrpc {
   // Build a server with a set of services on it. One function for both
   // surfaces, because they differ only in which services they carry and where
   // they bind.
+  /**
+   * Builds a gRPC server carrying a set of services.
+   *
+   * @param services - the services, each with its name and handlers
+   * @returns the server
+   */
   buildServer(services) {
     const { log, grpc } = this.deps;
     log.debug('Entering SpiffeGrpc.buildServer().');
     const server = new grpc.Server();
+    const definitions = this.services();
     services.forEach(function (entry) {
-      server.addService(SERVICES[entry.name], entry.handlers);
+      server.addService(definitions[entry.name], entry.handlers);
     });
     log.debug('Leaving SpiffeGrpc.buildServer(). ' + services.length +
               ' service(s).');
@@ -1784,6 +2142,15 @@ class SpiffeGrpc {
   // `tls_server.js`, while it owned listeners) — and the reason is the same: a
   // port can already be taken, and the fourteen other protocol families here
   // are still useful when one listener is not.
+  /**
+   * Binds one address, reporting a failure rather than throwing it.
+   *
+   * @param server - the gRPC server
+   * @param address - the address
+   * @param credentials - the server credentials
+   * @returns a promise of the binding's row: whether it listens, the port, and
+   *   any error
+   */
   bindOne(server, address, credentials): Record<string, any> {
     const { log, errorCodes } = this.deps;
     log.debug("Entering SpiffeGrpc.bindOne().");
@@ -1817,6 +2184,15 @@ class SpiffeGrpc {
   // tag to `call.getPeer()`. Bytes the client sent meanwhile wait in the
   // socket. A failure to bind is REPORTED, as `bindOne()`'s is.
   // ---------------------------------------------------------------------------
+  /**
+   * Binds a Workload API Unix socket whose connections are attested before
+   * grpc-js sees them, each tagged `unix:attested-<n>`.
+   *
+   * @param server - the gRPC server
+   * @param socketPath - the socket's path
+   * @param onConnection - resolves a connection's facts
+   * @returns the binding's row; a failure to bind is reported
+   */
   bindAttestedSocket(server, socketPath: string,
                      onConnection: (socket: any) => Promise<any>):
       Promise<Record<string, any>> {
@@ -1870,6 +2246,11 @@ class SpiffeGrpc {
 
   // The accepting listeners bindAttestedSocket() opened for `server`, closed
   // when its realm stops — grpc-js's own shutdown does not know them.
+  /**
+   * Closes the accepting listeners `bindAttestedSocket()` opened for a server.
+   *
+   * @param server - the gRPC server
+   */
   closeAttested(server): void {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.closeAttested().");
@@ -1920,6 +2301,12 @@ class SpiffeGrpc {
   // listener that did not come up at all would take the whole surface away for
   // a reason nobody could see, and `GET /spiffe` says which of the two it got.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the SPIRE Server API listener's credentials: the server SVID, a
+   * client certificate requested but not required.
+   *
+   * @returns the credentials
+   */
   async serverApiCredentials() {
     const { log } = this.deps;
     log.debug('Entering SpiffeGrpc.serverApiCredentials().');
@@ -1936,6 +2323,12 @@ class SpiffeGrpc {
   // `prepareBrokerCall()`; see there for why the refusal is not the
   // handshake's.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the Broker API listener's credentials, the same server SVID and
+   * handshake as the SPIRE Server API's (#170).
+   *
+   * @returns the credentials
+   */
   async brokerCredentials() {
     const { log } = this.deps;
     log.debug('Entering SpiffeGrpc.brokerCredentials().');
@@ -1944,6 +2337,12 @@ class SpiffeGrpc {
   }
 
   // Both listeners' credentials; `surface` names the listener in the log.
+  /**
+   * Mints the server SVID and builds mutual-TLS server credentials from it.
+   *
+   * @param surface - names the listener in the log
+   * @returns the credentials
+   */
   async svidServerCredentials(surface: string) {
     const { log, ca, spiffeId, config, grpc, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.svidServerCredentials(). ' + surface);
@@ -2060,6 +2459,12 @@ class SpiffeGrpc {
   // chain this replaces. `rejectUnauthorized` is a CONSTRUCTOR option and is
   // untouched by this, so request-but-not-require survives it.
   // -------------------------------------------------------------------------
+  /**
+   * Re-keys a listener's credentials with a freshly minted server SVID and the
+   * current trust bundle, applied to the next handshake.
+   *
+   * @param credentials - the listener's credentials
+   */
   async refreshServerApiCredentials(credentials) {
     const { log, ca, spiffeId, config } = this.deps;
     log.debug('Entering SpiffeGrpc.refreshServerApiCredentials().');
@@ -2097,9 +2502,14 @@ const slot = new InstanceSlot<SpiffeGrpc>(
   helpers.log);
 
 // The service definitions, by the fully-qualified name the wire uses. Named
-// in `SpiffeGrpc.wire()`, once, so that a typo in a service name is a
-// `TypeError` at startup rather than a method nothing ever routes to. Loaded
-// by the instance, so filled when the instance is installed (#50, R2).
+// in `SpiffeGrpc.services()`, once, so that a typo in a service name is an
+// Error when the front process binds at startup rather than a method nothing
+// ever routes to. Filled at first use since #348 (it was when the instance
+// was installed, #50's R2).
+/**
+ * The service definitions by fully-qualified name, filled by
+ * `SpiffeGrpc.services()` at first use.
+ */
 let SERVICES: Record<ServiceName, any> | null = null;
 
 // ---------------------------------------------------------------------------
@@ -2123,9 +2533,15 @@ let SERVICES: Record<ServiceName, any> | null = null;
 //
 // The refusal is `InvalidArgument`, which is what SPIRE answers.
 // ---------------------------------------------------------------------------
+/**
+ * The metadata key the Workload Endpoint specification requires on every call.
+ */
 const SECURITY_HEADER = 'workload.spiffe.io';
 
 // The SPIFFE Broker Endpoint's own (#170) — see `brokerHeaderPresent()`.
+/**
+ * The metadata key the Broker Endpoint specification requires on every call.
+ */
 const BROKER_SECURITY_HEADER = 'broker.spiffe.io';
 
 // ---------------------------------------------------------------------------
@@ -2242,20 +2658,32 @@ const PRIVATE_SOCKET_MODE = 0o600;
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The gRPC plumbing the SPIFFE surfaces sit on: a library with no protocol
+ * knowledge.
+ * @namespace
+ */
 export = {
   SpiffeGrpc: SpiffeGrpc,
   installInstance: (instance: SpiffeGrpc): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
+  // A stand-in that requires grpc-js when first read (#348); `status` is its
+  // status table without the runtime, for anything a worker runs.
   grpc: grpc,
-  // Named by `SpiffeGrpc.wire()`, so read once the instance exists.
+  status: status,
+  // Named by `SpiffeGrpc.services()`, which loads the protos if nothing has
+  // yet (#348).
+  /**
+   * The service definitions, once the instance exists.
+   */
   get SERVICES(): Record<ServiceName, any> {
     log.debug("Entering SERVICES().");
-    slot.get();
     log.debug("Leaving SERVICES().");
-    return SERVICES;
+    return slot.get().services();
   },
   SECURITY_HEADER: SECURITY_HEADER,
   BROKER_SECURITY_HEADER: BROKER_SECURITY_HEADER,
+  services: slot.forward('services'),
   methodsOf: slot.forward('methodsOf'),
   statusError: slot.forward('statusError'),
   invalidArgument: slot.forward('invalidArgument'),
@@ -2297,11 +2725,17 @@ export = {
   // install one: that table is what a worker runs, and a handle on it would be
   // a second door onto forty-two handlers.
   // ---------------------------------------------------------------------
+  /**
+   * Returns the kinds of every method a request worker can run, sorted.
+   */
   dispatchedMethodKinds: function () {
     log.debug("Entering dispatchedMethodKinds().");
     log.debug("Leaving dispatchedMethodKinds().");
     return Array.from(LOCAL_METHODS.keys()).sort();
   },
+  /**
+   * Returns the handler a request worker would run for a method.
+   */
   localMethod: function (surface, method) {
     log.debug("Entering localMethod().");
     log.debug("Leaving localMethod().");

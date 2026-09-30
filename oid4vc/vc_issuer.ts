@@ -74,8 +74,17 @@ import jwt = require('jsonwebtoken');
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import config = require('../common/config');
-import bbs2023 = require('../common/vendored/bbs2023.js');
 import helpers = require('../common/helpers');
+import LazyModule = require('../common/lazy_module');
+// THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
+// at its top, and together they are resident memory in every request worker
+// that never issues or verifies a BBS credential. `common/lazy_module.ts`
+// argues it; `common/helpers.js` defers the same file by hand.
+type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+  function () {
+    return require('../common/vendored/bbs2023.js') as Bbs2023;
+  }, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('../oauth-oidc/dpop');
 import mode = require('../common/mode');
@@ -211,7 +220,13 @@ interface VcIssuerDeps {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age' });
+/**
+ * The `c_nonce` values this issuer has handed out and not yet seen used, per
+ * trust realm; each is single-use.
+ */
+const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age',
+                               // #333: the value IS the expiry, ms.
+                               expiresAt: realms.expiryField(null, 1) });
 
 // `oid4vci.cNonceTtlS` since 2026-09-12; the constant is its default and keeps
 // its exported name.
@@ -279,7 +294,10 @@ const CLAIM_SKEW_MS = 60 * 1000;
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // id -> { accessToken, expires, event }
-const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds' });
+const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds',
+                                     // #333: its `expires`, ms.
+                                     expiresAt: realms.expiryField('expires',
+                                                                   1) });
 
 // ---------------------------------------------------------------------------
 // Credential Response encryption (OID4VCI section 10).
@@ -293,7 +311,18 @@ const VCI_ENC_ALG = 'RSA-OAEP-256';
 // wherever it names one (section 5, OpenID4VP) and the one the OpenID
 // conformance suite's HAIP issuer plan sends a P-256 key for. RSA-OAEP-256
 // stays for an RSA key; each is taken only with the key type it fits.
-const VCI_ENC_ALGS = [VCI_ENC_ALG, 'ECDH-ES'];
+//
+// AND THE ML-KEM AND HPKE KEY ENCRYPTION ALGS (#82): a wallet whose
+// `credential_response_encryption.jwk` names one of them in its `alg` gets
+// the Credential Response encrypted with post-quantum or PQ/T hybrid key
+// establishment — ML-KEM-768 for pqc-kem-05, HPKE-10-KE for X-Wing. Not
+// HPKE Integrated Encryption: section 10 requires an `enc` and that mode
+// has none.
+const VCI_KEM_ALGS = stsCrypto.JWE_MLKEM_ALGS.concat(
+  stsCrypto.JWE_HPKE_ALGS.filter(function (alg) {
+    return !stsCrypto.isIntegratedJweAlg(alg);
+  }));
+const VCI_ENC_ALGS = [VCI_ENC_ALG, 'ECDH-ES'].concat(VCI_KEM_ALGS);
 const VCI_ENC_CURVES = ['P-256', 'P-384', 'P-521'];
 
 // The implemented list, kept under its old name. What is ADVERTISED and
@@ -367,14 +396,48 @@ const lastCredentialRequestStore = realms.map({
 const NOTIFICATION_EVENTS = ['credential_accepted', 'credential_failure',
                              'credential_deleted'];
 
+/**
+ * The OpenID4VCI credential issuer: its metadata, the nonce, credential,
+ * deferred and notification endpoints, proof and key attestation checks,
+ * request and response encryption, and the three credential formats
+ * (`dc+sd-jwt`, `jwt_vc_json` and `ldp_vc`).
+ */
 class VcIssuer {
+  /**
+   * The default lifetime of a `c_nonce`, in milliseconds
+   * (`oid4vci.cNonceTtlS`).
+   */
   static readonly VCI_NONCE_TTL_MS = VCI_NONCE_TTL_MS;
+  /**
+   * The content encryption algorithms implemented for request and response
+   * encryption: `A128GCM` and `A256GCM`.
+   */
   static readonly IMPLEMENTED_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
+  /**
+   * The key management algorithm a response is encrypted to an RSA key with,
+   * `RSA-OAEP-256`.
+   */
   static readonly VCI_ENC_ALG = VCI_ENC_ALG;
+  /**
+   * The implemented response `enc` values; what is advertised is the setting
+   * narrowed to these.
+   */
   static readonly VCI_ENC_VALUES = VCI_ENC_VALUES;
+  /**
+   * The implemented request `enc` values; what is advertised is the setting
+   * narrowed to these.
+   */
   static readonly VCI_REQUEST_ENC_VALUES = VCI_REQUEST_ENC_VALUES;
+  /**
+   * The events the Notification Endpoint accepts (OpenID4VCI section 11).
+   */
   static readonly NOTIFICATION_EVENTS = NOTIFICATION_EVENTS;
 
+  /**
+   * Builds the issuer from the modules and stores it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcIssuerDeps) {
     deps.log.debug("Entering VcIssuer.constructor().");
     deps.log.debug("Leaving VcIssuer.constructor().");
@@ -382,6 +445,11 @@ class VcIssuer {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcIssuerDeps {
     helpers.log.debug("Entering VcIssuer.defaultDeps().");
     helpers.log.debug("Leaving VcIssuer.defaultDeps().");
@@ -448,6 +516,12 @@ class VcIssuer {
   // is called: it requires this module's siblings for their stores, and a
   // top-level require back would be a cycle (rule 2). The default the
   // composition root passes (`defaultDeps()`).
+  /**
+   * Requires `oauth2` lazily, when its published-document signer is called,
+   * since a top-level require would close a cycle (rule 2).
+   *
+   * @returns the `oauth2` module
+   */
   static loadOauth2() {
     helpers.log.debug("Entering VcIssuer.loadOauth2().");
     helpers.log.debug("Leaving VcIssuer.loadOauth2().");
@@ -547,6 +621,13 @@ class VcIssuer {
     return usable;
   }
 
+  /**
+   * Builds the Credential Issuer Metadata for the realm the request arrived on,
+   * from the configurations and the claims selection.
+   *
+   * @param req - the request
+   * @returns the metadata
+   */
   vciMetadata(req) {
     const { log, baseUrlOf, stsCrypto, config, bbs2023, errorCodes,
             vciAuthorizationServer, vciBatchSize, VCI_CONFIGS,
@@ -574,7 +655,10 @@ class VcIssuer {
       // as well, which nothing implemented — metadata that overstates is worse
       // than metadata that says little.
       credential_response_encryption: {
-        alg_values_supported: VCI_ENC_ALGS.slice(),
+        // The ML-KEM and HPKE ones only where `keys.offerKemEncryption` is
+        // on (helpers.offeredJweAlgs(), 2026-09-28): drafts, and the
+        // OpenID4VCI conformance suite refuses the metadata naming them.
+        alg_values_supported: helpers.offeredJweAlgs(VCI_ENC_ALGS),
         enc_values_supported: this.responseEncValues(),
         // DEFLATE before encryption (section 8.2's `zip`, #187). Requests
         // are not decompressed — credential_request_encryption says none.
@@ -824,6 +908,14 @@ class VcIssuer {
   // valid before it was issued nor for less than its lifetime. The OpenID
   // conformance suite's batch-issuance module failed the precise values.
   // -------------------------------------------------------------------------
+  /**
+   * Returns a credential's `nbf` rounded down and `exp` rounded up to the hour,
+   * so the credentials of one batch cannot be correlated by their instants (RFC
+   * 9901 section 10.1).
+   *
+   * @param nowSec - the issuance time, in seconds
+   * @returns `{ nbf, exp }`
+   */
   unlinkableTimes(nowSec: number): { nbf: number; exp: number } {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.unlinkableTimes().");
@@ -837,6 +929,13 @@ class VcIssuer {
 
   // An Error the credential endpoint answers with `invalid_nonce` rather
   // than `invalid_proof` (OpenID4VCI 1.0 section 8.3.1.2, #187).
+  /**
+   * Returns an Error the credential endpoint answers with `invalid_nonce`
+   * rather than `invalid_proof` (OpenID4VCI section 8.3.1.2).
+   *
+   * @param message - the error's message
+   * @returns the Error
+   */
   static nonceError(message: string): Error {
     helpers.log.debug("Entering VcIssuer.nonceError().");
     const e: any = new Error(message);
@@ -963,6 +1062,15 @@ class VcIssuer {
   // the reason. `opts.proofJwk` — the key a `jwt` proof was signed with, which
   // must be one of the attested keys (Appendix D.1); `opts.expRequired` —
   // true for that proof type, where `exp` is required.
+  /**
+   * Verifies one key attestation and answers what it attests.
+   *
+   * @param token - the key attestation JWT
+   * @param opts - `proofJwk`, the key a `jwt` proof was signed with, which must
+   *   be attested; `expRequired`, for that proof type
+   * @returns what it attests
+   * @throws Error, with the reason, when it does not verify
+   */
   verifyKeyAttestation(token: string, opts: { proofJwk?: any;
                                                expRequired?: boolean }): any {
     const { log, jsonFromB64u, stsCrypto, vciNonces } = this.deps;
@@ -1101,7 +1209,7 @@ class VcIssuer {
   // advertises every asymmetric algorithm in the shared table — the eleven
   // post-quantum and composite ones included. Verifying one of those takes
   // SECONDS on the thread that owns every listener here, and a wallet may send
-  // a batch of them. See common/worker.js.
+  // a batch of them. See common/pq_native.js.
   private async verifyProofJwt(proofJwt, credentialIssuer) {
     const { log, logArtifact, jsonFromB64u, stsCrypto, vciNonces } = this.deps;
     log.debug("Entering VcIssuer.verifyProofJwt().");
@@ -1674,6 +1782,20 @@ class VcIssuer {
   // `person` is the subject a VERIFIED, undisowned access token named (see
   // signInSubjectOf()), or ''. It files the credential under that person on
   // the issued register, which an ldp_vc's own subject — a did:jwk — cannot.
+  /**
+   * Builds one credential in a configuration's format, with a status index
+   * allocated for it.
+   *
+   * @param configId - the configuration's id
+   * @param subjectClaims - the subject claims
+   * @param holderJwk - the holder's key
+   * @param credentialIssuer - the credential issuer's URL
+   * @param issuerDid - the issuer's DID, or '' for its URL
+   * @param holderName - the holder's username
+   * @param person - the subject a verified, undisowned access token named, or
+   *   ''
+   * @returns `{ credential, disclosures, payload, ... }`
+   */
   async buildCredentialFor(configId, subjectClaims, holderJwk,
                            credentialIssuer, issuerDid,
                            holderName, person?: string) {
@@ -1911,6 +2033,14 @@ class VcIssuer {
   //     before. The name is what everything downstream is keyed on: it selects
   //     the directory entry and seeds the persona, so `alice` gets the same
   //     invented person here that ldap_server.js wrote onto uid=alice,ou=users.
+  /**
+   * Returns the subject claims a credential carries for the person an access
+   * token names, with the `sub` its format uses.
+   *
+   * @param accessToken - the access token
+   * @param configId - the configuration's id
+   * @returns the claims
+   */
   subjectClaimsFrom(accessToken, configId) {
     const { log, jsonFromB64u, crypto, stats, vciFormatOf, vcClaims
             } = this.deps;
@@ -2081,6 +2211,13 @@ class VcIssuer {
   // let another node that still holds it accept the replay.
   //
   // Resolves to `{ ok: true }` or `{ ok: false, errorCode, description }`.
+  /**
+   * Spends the `c_nonce` of every proof across the cluster, so a replay on
+   * another node is refused. Fails closed when the store cannot be asked.
+   *
+   * @param proofJwts - the proofs
+   * @returns `{ ok: true }`, or `{ ok: false, errorCode, description }`
+   */
   async spendProofNonces(proofJwts) {
     const { log, jsonFromB64u, errorCodes, clusterClaims, vciNonces
             } = this.deps;
@@ -2247,12 +2384,25 @@ class VcIssuer {
     return requestEncryptionKeyFor();
   }
 
+  /**
+   * Returns the `credential_request_encryption` metadata: the realm's request
+   * encryption key, the `enc` values and whether encryption is required.
+   *
+   * @returns the metadata
+   */
   credentialRequestEncryptionMetadata() {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.credentialRequestEncryptionMetadata().");
     log.debug("Leaving VcIssuer.credentialRequestEncryptionMetadata().");
     return {
-      jwks: { keys: [this.requestEncryptionKeys().publicJwk] },
+      // The RSA key, and — where an administrator opted the realm in
+      // (`keys.encryptionKemAlgs`, #82) — each of its ML-KEM and HPKE Key
+      // Encryption keys: section 10's request JWE takes its `alg` from the
+      // key the wallet picked, so a key with an `alg` is the whole offer.
+      jwks: { keys: [this.requestEncryptionKeys().publicJwk].concat(
+        this.requestKemKeys().map(function (one) {
+          return stsCrypto.publicJweKemJwk(one.publicJwk);
+        })) },
       enc_values_supported: this.requestEncValues(),
       // zip_values_supported is deliberately absent: "If absent then no
       // compression algorithms are supported", and this issuer does not
@@ -2262,12 +2412,33 @@ class VcIssuer {
     };
   }
 
+  // The realm's KEM decryption keys a Credential Request may be encrypted to
+  // (#82): the Key Encryption ones only, for the `enc` reason above.
+  private requestKemKeys(): any[] {
+    const { log } = this.deps;
+    log.debug("Entering VcIssuer.requestKemKeys().");
+    const out = helpers.kemEncryptionKeysFor().filter(function (one) {
+      return VCI_KEM_ALGS.indexOf(one.alg) >= 0;
+    });
+    log.debug("Leaving VcIssuer.requestKemKeys(). " + out.length);
+    return out;
+  }
+
   // The mirror of encryptToJwe(): RSA-OAEP-256 unwrap of the content key, then
   // AES-GCM with the protected header as additional authenticated data. Written
   // out by hand for the same reason — having the steps visible is the point.
   //
   // Throws with a reason a caller can hand back to the wallet; every failure
   // here is the wallet's request being unusable, not an issuer fault.
+  /**
+   * Decrypts an encrypted credential request: RSA-OAEP-256 unwrap of the
+   * content key, then AES-GCM.
+   *
+   * @param compact - the compact JWE
+   * @returns the plaintext request
+   * @throws Error, with a reason the wallet can be told, for an unusable
+   *   request
+   */
   decryptJweRequest(compact) {
     const { log, logArtifact, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.decryptJweRequest().");
@@ -2282,11 +2453,33 @@ class VcIssuer {
     // The hand-rolled implementation was KEPT rather than replaced by a JOSE
     // library, for the reason encryptToJwe() has always given: having the steps
     // visible is the point of a mock. It is simply in one place now.
-    const result = stsCrypto.decryptJweCompact(compact, {
-      privateKey: this.requestEncryptionKeys().privateKey,
-      allowedEnc: this.requestEncValues(),
-      expectedKid: this.requestEncryptionKeys().publicJwk.kid
-    });
+    // WHICH KEY: the header's alg picks it (#82). An ML-KEM or HPKE alg
+    // opens only with the realm's key for exactly that alg, and only where
+    // one is published; everything else is the RSA key, as it always was.
+    let headerAlg = '';
+    try {
+      headerAlg = String(JSON.parse(Buffer.from(String(compact || '')
+        .split('.')[0], 'base64url').toString('utf8')).alg || '');
+    } catch (e) {
+      log.debug("Caught in VcIssuer.decryptJweRequest(): " +
+                ((e && e.message) || e));
+      headerAlg = '';
+    }
+    const kemKey = this.requestKemKeys().filter(function (one) {
+      return one.alg === headerAlg;
+    })[0];
+    const result = kemKey
+      ? stsCrypto.decryptJweCompact(compact, {
+          privateJwk: kemKey.privateJwk,
+          allowedAlg: [kemKey.alg],
+          allowedEnc: this.requestEncValues(),
+          expectedKid: kemKey.publicJwk.kid
+        })
+      : stsCrypto.decryptJweCompact(compact, {
+          privateKey: this.requestEncryptionKeys().privateKey,
+          allowedEnc: this.requestEncValues(),
+          expectedKid: this.requestEncryptionKeys().publicJwk.kid
+        });
     logArtifact('OID4VCI Credential Request',
                 'JWE protected header as received', result.header);
     let body;
@@ -2326,6 +2519,13 @@ class VcIssuer {
   // go through it so the credential and deferred paths cannot drift — section
   // 10 applies identically to each, and the deferred one is the easy one to
   // forget.
+  /**
+   * Reads the credential or deferred endpoint's request body, decrypting it
+   * when it is encrypted (section 10).
+   *
+   * @param req - the request
+   * @returns `{ body }`, or `{ error }` for the caller to answer
+   */
   readPossiblyEncryptedRequest(req) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering VcIssuer.readPossiblyEncryptedRequest().");
@@ -2407,14 +2607,46 @@ class VcIssuer {
     }
   }
 
+  /**
+   * Says why a requested `credential_response_encryption` cannot be used.
+   *
+   * @param encryption - the requested encryption
+   * @returns the reason, or '' when it can be used
+   */
   encryptionProblem(encryption) {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.encryptionProblem().");
     const jwk = encryption.jwk;
+    // A KEY THAT NAMES AN ML-KEM OR HPKE KEY ENCRYPTION ALG (#82) is judged
+    // by `common/crypto.js`'s own check of that alg against the key, and
+    // then by the same `enc` and `zip` rules below.
+    // Only while the realm OFFERS them (`keys.offerKemEncryption`).
+    const offeredKem = helpers.offeredJweAlgs(VCI_KEM_ALGS);
+    const kemAlg = jwk && offeredKem.indexOf(String(jwk.alg || '')) >= 0
+      ? String(jwk.alg) : '';
+    if (jwk && jwk.kty === 'AKP' && !kemAlg) {
+      log.debug("Leaving VcIssuer.encryptionProblem(). AKP without a KEM " +
+                "alg.");
+      return offeredKem.length
+        ? 'credential_response_encryption.jwk is an AKP key, and an AKP ' +
+          'key names its algorithm: this issuer encrypts to one whose ' +
+          '`alg` is one of ' + offeredKem.join(', ') + '; this one ' +
+          'says "' + (jwk.alg || '(none)') + '".'
+        : 'credential_response_encryption.jwk is an AKP key, and this ' +
+          'issuer offers no ML-KEM or HPKE encryption ' +
+          '(keys.offerKemEncryption is off in this realm).';
+    }
+    if (kemAlg && !stsCrypto.jweRecipientKeyFits(kemAlg, jwk)) {
+      log.debug("Leaving VcIssuer.encryptionProblem(). The KEM key does " +
+                "not fit its alg.");
+      return 'credential_response_encryption.jwk names alg "' + kemAlg +
+             '", which needs ' + stsCrypto.jweRecipientKeyNeed(kemAlg) +
+             ', and this key is not one.';
+    }
     const rsa = !!jwk && jwk.kty === 'RSA' && !!jwk.n && !!jwk.e;
     const ec = !!jwk && jwk.kty === 'EC' && !!jwk.x && !!jwk.y &&
                VCI_ENC_CURVES.indexOf(jwk.crv) >= 0;
-    if (!rsa && !ec) {
+    if (!rsa && !ec && !kemAlg) {
       log.debug("Leaving VcIssuer.encryptionProblem(). The key is unusable.");
       return 'credential_response_encryption.jwk must be an RSA public key ' +
              '(for ' + VCI_ENC_ALG + ') or an EC public key on ' +
@@ -2422,7 +2654,7 @@ class VcIssuer {
     }
     const alg = jwk.alg || encryption.alg ||
                 (rsa ? VCI_ENC_ALG : 'ECDH-ES');
-    if (alg !== (rsa ? VCI_ENC_ALG : 'ECDH-ES')) {
+    if (!kemAlg && alg !== (rsa ? VCI_ENC_ALG : 'ECDH-ES')) {
       log.debug("Leaving VcIssuer.encryptionProblem(). Unsupported alg " +
                 alg);
       return 'This issuer encrypts to ' + (rsa ? 'an RSA' : 'an EC') +
@@ -2456,6 +2688,14 @@ class VcIssuer {
   // DEF before it when the wallet asked (#187). Written out by hand rather
   // than with a JOSE library, because having the steps visible is the point
   // of a mock.
+  /**
+   * Encrypts a response as a compact JWE: RSA-OAEP-256 or ECDH-ES for the
+   * content key, AES-GCM for the content, DEF first when asked.
+   *
+   * @param plaintext - the response
+   * @param encryption - the wallet's key, `enc` and `zip`
+   * @returns the compact JWE
+   */
   encryptToJwe(plaintext, encryption) {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.encryptToJwe(). enc=" + encryption.enc);
@@ -2466,8 +2706,13 @@ class VcIssuer {
     const compact = stsCrypto.encryptJweCompact(plaintext, {
       jwk: encryption.jwk,
       enc: encryption.enc,
-      alg: encryption.jwk && encryption.jwk.kty === 'EC' ? 'ECDH-ES' :
-        VCI_ENC_ALG,
+      // The key's own alg where it names an ML-KEM or HPKE one (#82) —
+      // `encryptionProblem()` has already held the key to it.
+      alg: encryption.jwk &&
+           VCI_KEM_ALGS.indexOf(String(encryption.jwk.alg || '')) >= 0
+        ? String(encryption.jwk.alg)
+        : (encryption.jwk && encryption.jwk.kty === 'EC' ? 'ECDH-ES' :
+          VCI_ENC_ALG),
       zip: encryption.zip === 'DEF' ? 'DEF' : undefined
     });
     log.debug("Leaving VcIssuer.encryptToJwe(). " + compact.length +
@@ -2500,6 +2745,14 @@ class VcIssuer {
 
   // THE ROUTES, in the order this module always registered them (rule 1).
   // Called by `common/protocol_stack.ts` through `registerRoutes(app)`.
+  /**
+   * Registers the issuer's routes — the metadata documents and the OpenID4VCI
+   * endpoints — in the order they were always registered.
+   *
+   * Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteApp): void {
     const { log, logArtifact, baseUrlOf, b64u, randomId, bbsKeyPair, vciError,
             crypto, config, bbs2023, dpop, errorCodes, vciBatchSize,
@@ -3159,6 +3412,11 @@ class VcIssuer {
   }
 
   // The record `GET /oid4vci/last_request` answers with, for the tests.
+  /**
+   * Returns the record `GET /oid4vci/last_request` answers with.
+   *
+   * @returns the record
+   */
   lastCredentialRequest() {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.lastCredentialRequest().");
@@ -3201,10 +3459,25 @@ capabilities.provide('oid4vc.once');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OpenID4VCI credential issuer.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   VcIssuer: VcIssuer,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcIssuer): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   vciMetadata: slot.forward('vciMetadata'),
   // For tests/cluster_single_use_protocols.js: the c_nonce's spend, driven

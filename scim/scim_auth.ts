@@ -285,8 +285,17 @@ void mtls;
 // `cluster_claims.js` before a credential is accepted (`spendPresented()`),
 // which is what decides a replay presented at two nodes at once.
 // ---------------------------------------------------------------------------
-const digestNonces = realms.map({ persist: 'scim.digestNonces',
-                                  retain: 'age' });
+// `expiresAt` (#333): a nonce lives `scim.digestNonceSeconds` from `at`.
+const digestNonces = realms.map({
+  persist: 'scim.digestNonces',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: any): number | null {
+    const at = Number(row && row.at);
+    const ttlS = Number(config.value('scim.digestNonceSeconds'));
+    return at > 0 && ttlS > 0 ? at + ttlS * 1000 : null;
+  }
+});
 // nonce -> the nonce-counts this process has accepted. Per realm for
 // `digestNonces`'s reason. It was not persisted (see above) until
 // 2026-09-18 — below.
@@ -342,8 +351,18 @@ const MAX_COUNTS_PER_NONCE = 1024;
 // is last writer wins. **It is persisted since 2026-09-18** all the same
 // (`scim.hobaSeen`), so a restarted process's fast refusal survives the
 // restart; the claim is still what decides between two live processes.
-const hobaChallenges = realms.map({ persist: 'scim.hobaChallenges',
-                                    retain: 'age' });
+// `expiresAt` (#333): the value is when the challenge was ISSUED, ms; it
+// lives `scim.hobaMaxAgeSeconds`.
+const hobaChallenges = realms.map({
+  persist: 'scim.hobaChallenges',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (issuedMs: any): number | null {
+    const at = Number(issuedMs);
+    const ttlS = Number(config.value('scim.hobaMaxAgeSeconds'));
+    return at > 0 && ttlS > 0 ? at + ttlS * 1000 : null;
+  }
+});
 const hobaSeen = realms.map({ persist: 'scim.hobaSeen', retain: 'age' });
 
 // ---------------------------------------------------------------------------
@@ -622,12 +641,31 @@ interface ScimAuthDeps {
   hobaSeen: ChallengeStore;
 }
 
+/**
+ * Who is asking at the SCIM endpoints, and what they may do: RFC 7644 section
+ * 2's six authentication schemes, their challenges, and the decision on each
+ * request.
+ *
+ * A turnstile in development mode; in product mode each scheme offered is
+ * verified.
+ */
 class ScimAuth {
   // The scheme table and the digest algorithms this build can compute. Both
   // built once, by the constructor — see the header.
+  /**
+   * The scheme table, built once by the constructor.
+   */
   readonly SCHEMES: SchemeRow[];
+  /**
+   * The Digest algorithms this build can compute, strongest first.
+   */
   readonly DIGEST_ALGORITHMS: DigestAlgorithm[];
 
+  /**
+   * Builds the scheme table and the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: ScimAuthDeps) {
     deps.log.debug("Entering ScimAuth.constructor().");
     this.SCHEMES = this.buildSchemes();
@@ -638,6 +676,11 @@ class ScimAuth {
   // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
   // run by `common/instance_slot.ts` once for whichever instance is
   // installed: the log line naming the schemes the instance offers.
+  /**
+   * Logs the schemes the installed instance offers, once.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: ScimAuth): void {
     helpers.log.debug("Entering ScimAuth.wire().");
     helpers.log.info('scim: the SCIM endpoints authenticate through ' +
@@ -654,6 +697,11 @@ class ScimAuth {
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): ScimAuthDeps {
     helpers.log.debug("Entering ScimAuth.defaultDeps().");
     helpers.log.debug("Leaving ScimAuth.defaultDeps().");
@@ -701,6 +749,11 @@ class ScimAuth {
   // is the single thing /admin/config cannot reach, and it fails in the
   // direction that looks like the console is broken.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a credential is required at SCIM: the mode's answer.
+   *
+   * @returns true when required
+   */
   authRequired() {
     const { log, mode } = this.deps;
     log.debug("Entering ScimAuth.authRequired().");
@@ -709,6 +762,12 @@ class ScimAuth {
     return mode.gatesScim();
   }
 
+  /**
+   * Says whether the discovery endpoints require a credential too
+   * (`scim.authDiscovery`).
+   *
+   * @returns true when they do
+   */
   authDiscovery() {
     const { log, config } = this.deps;
     log.debug("Entering ScimAuth.authDiscovery().");
@@ -716,6 +775,12 @@ class ScimAuth {
     return config.value('scim.authDiscovery') === true;
   }
 
+  /**
+   * Returns the realm string challenges carry (`scim.authRealm`), with quotes
+   * and anything outside printable ASCII taken out.
+   *
+   * @returns the realm, `SCIM` by default
+   */
   realm() {
     const { log, config } = this.deps;
     log.debug("Entering ScimAuth.realm().");
@@ -730,6 +795,11 @@ class ScimAuth {
       .replace(/[^\x20-\x7E]/g, '').replace(/"/g, '').trim() || 'SCIM';
   }
 
+  /**
+   * Returns the OAuth scope that allows reading (`scim.scopeRead`).
+   *
+   * @returns the scope, `scim:read` by default
+   */
   scopeRead() {
     const { log, config } = this.deps;
     log.debug("Entering ScimAuth.scopeRead().");
@@ -737,6 +807,11 @@ class ScimAuth {
     return String(config.value('scim.scopeRead') || 'scim:read');
   }
 
+  /**
+   * Returns the OAuth scope that allows writing (`scim.scopeWrite`).
+   *
+   * @returns the scope, `scim:write` by default
+   */
   scopeWrite() {
     const { log, config } = this.deps;
     log.debug("Entering ScimAuth.scopeWrite().");
@@ -799,6 +874,12 @@ class ScimAuth {
   // until #70, which was untrue in product mode: a Basic password is checked
   // against the entry's hash, a HOBA key must have been registered by its
   // signed-in owner, and Digest is not offered at all.
+  /**
+   * Says whether a presented credential goes unchecked, for the start-up lines
+   * here and in `scim.ts`.
+   *
+   * @returns true when every scheme offered is permissive
+   */
   permissive(): boolean {
     const { log, mode } = this.deps;
     log.debug("Entering ScimAuth.permissive().");
@@ -833,6 +914,10 @@ class ScimAuth {
   // keeps a 401 reachable on a scheme that otherwise accepts anything — and
   // note that Digest needs no such exception, because there the password is
   // really checked.
+  /**
+   * The one refused password, `invalid`, which keeps a 401 reachable on a
+   * scheme that otherwise accepts anything.
+   */
   static readonly REFUSED_PASSWORD = 'invalid';
 
   // ---------------------------------------------------------------------------
@@ -1033,6 +1118,11 @@ class ScimAuth {
     return this.SCHEMES.filter((row) => { return row.id === id; })[0] || null;
   }
 
+  /**
+   * Returns the rows of the scheme table that are available now.
+   *
+   * @returns the enabled schemes
+   */
   enabledSchemes() {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.enabledSchemes().");
@@ -1106,6 +1196,14 @@ class ScimAuth {
   // because express sets one header per element and RFC 7235 allows either that
   // or one comma-joined value — and the array form is the one that survives a
   // Digest challenge, whose value contains commas of its own.
+  /**
+   * Returns every challenge a caller could act on, in table order, as an array
+   * of header values — the form that survives a Digest challenge's own commas.
+   *
+   * @param req - the request
+   * @param opts - options for the challenges, such as a stale Digest nonce
+   * @returns the WWW-Authenticate values
+   */
   challenges(req, opts?) {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.challenges().");
@@ -1288,10 +1386,18 @@ class ScimAuth {
     // — so the client_id is the principal and `isClient` says why the name
     // looks like an application. `username` is what every user-bearing grant
     // here carries alongside `sub`, and it is the form the audit log and
-    // /admin/users file people under.
-    const isClient = !claims.username && !claims.sub;
-    const principal = String(claims.username || claims.sub ||
-                             claims.client_id || '').trim();
+    // /admin/users file people under. A client's token is told by its `sub`,
+    // which names the client — the client_id, or `urn:sts:client:<id>` in
+    // RFC 9700 mode — the rule `role_permissions.ts`'s isClientToken() and
+    // `ssf_auth.ts`'s principalOfClaims() state; it carries no `username`
+    // since #93, so its principal is the client_id in both modes.
+    const clientId = String(claims.client_id || '');
+    const sub = String(claims.sub || '');
+    const isClient = !claims.username &&
+      (!sub || (!!clientId &&
+                (sub === clientId || sub === 'urn:sts:client:' + clientId)));
+    const principal = String((isClient ? clientId : '') || claims.username ||
+                             sub || clientId).trim();
 
     log.debug("Leaving ScimAuth.attemptBearer(). " + row + " for " +
               (principal || '(unnamed)') + ".");
@@ -1435,6 +1541,10 @@ class ScimAuth {
   // speaks nothing else; it is not a recommendation, it is OFF unless
   // `scim.digestMd5` is set, and that is development's alone (#182).
   // ---------------------------------------------------------------------------
+  /**
+   * The Digest algorithms offered, strongest first (RFC 7616 section 3.7); MD5
+   * is last, and off unless `scim.digestMd5` is set in development.
+   */
   static readonly DIGEST_CANDIDATES: readonly DigestAlgorithm[] = [
     { token: 'SHA-256', hash: 'sha256' },
     { token: 'SHA-512-256', hash: 'sha512-256' },
@@ -1871,6 +1981,9 @@ class ScimAuth {
   // and this service publishes what it will not do rather than letting it be
   // discovered.
   // ---------------------------------------------------------------------------
+  /**
+   * The one HOBA signature algorithm accepted (RFC 7486): `0`, RSA-SHA256.
+   */
   static readonly HOBA_ALG_RSA_SHA256 = '0';
 
   private maxHobaChallenges() {
@@ -1966,7 +2079,14 @@ class ScimAuth {
   // through would write a stored copy of the DN, which is a second definition
   // of one fact and the one that goes stale on a rename.
   // ---------------------------------------------------------------------------
+  /**
+   * The directory attribute a HOBA client public key is stored in on the
+   * person's entry, as `<kid> <base64 DER>`.
+   */
   static readonly HOBA_ATTRIBUTE = 'hobaPublicKey';
+  /**
+   * The operational attributes a HOBA key registration must not write back.
+   */
   static readonly NOT_STORED = ['entrydn', 'createtimestamp',
                                 'modifytimestamp'];
 
@@ -2422,6 +2542,15 @@ class ScimAuth {
   // `registerHobaKey()` returns a value rather than answering: `scim.ts` owns
   // the response, here as everywhere else in this module.
   // ---------------------------------------------------------------------------
+  /**
+   * Registers a HOBA client public key (RFC 7486) on the person's directory
+   * entry; outside development mode only to the existing account of the
+   * caller's sign-on session.
+   *
+   * @param req - the registration request
+   * @returns `{ ok: true, status: 201, ... }`, or a refusal `scim.ts` answers
+   *   with
+   */
   registerHobaKey(req) {
     const { log, crypto, stsCrypto, mode, parseBody, authn, directory,
             errorCodes } = this.deps;
@@ -2706,6 +2835,17 @@ class ScimAuth {
   //   3. Only then does "is authentication required" decide what happens to a
   //      request carrying nothing.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides who a SCIM request is and whether it may proceed, synchronously.
+   *
+   * A credential presented and failed is always a refusal; one that worked is
+   * used; only then does "is a credential required" decide a request carrying
+   * none.
+   *
+   * @param req - the request
+   * @param need - `read`, `write` or `none` (discovery; the default)
+   * @returns the decision: `{ ok, status, ... }`
+   */
   authenticate(req, need?) {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.authenticate(). need=" + need);
@@ -2738,6 +2878,15 @@ class ScimAuth {
   // `scim.ts` calls this; `authenticate()` stays synchronous for the callers
   // that read a decision in one tick, and does everything else identically.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides as `authenticate()` does, with a Basic password verified in the
+   * thread pool and a single-use Digest or HOBA credential claimed across the
+   * cluster before any session is made.
+   *
+   * @param req - the request
+   * @param need - `read`, `write` or `none` (discovery; the default)
+   * @returns a promise of the decision
+   */
   authenticateSpent(req, need?) {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.authenticateSpent(). need=" + need);
@@ -2756,20 +2905,24 @@ class ScimAuth {
   }
 
   // ---------------------------------------------------------------------------
-  // A BASIC PASSWORD, VERIFIED IN THE WORKER POOL (2026-09-21).
+  // A BASIC PASSWORD, VERIFIED ON LIBUV'S THREAD POOL (2026-09-21).
   //
   // `attemptBasic()` is synchronous, so in product mode it hashed the password
   // with scrypt ON THE REQUEST THREAD — about 70ms at the default cost, in
   // which this worker answered nothing else. The asynchronous path
   // (`authenticateSpent()`, which `scim.ts` takes) now asks
   // `credentials.verifyAsync()` first, which is the same check with the hash
-  // done in the worker pool, and leaves the verdict on the request for
+  // done on libuv's thread pool, and leaves the verdict on the request for
   // `attemptBasic()` to use. It keeps the username and a SHA-256 of the
   // password beside the verdict — never the password — so a verdict is only
   // used for the credential it was reached for. Only when the Basic scheme is
   // enabled: a disabled scheme must cost nothing and record nothing, exactly
   // as before. The synchronous `authenticate()` is unchanged.
   // ---------------------------------------------------------------------------
+  /**
+   * The request key under which a Basic password's off-thread verdict is left
+   * for `attemptBasic()`.
+   */
   static readonly BASIC_VERDICT: unique symbol = Symbol('scim.basicVerdict');
 
   private basicPairOf(req) {
@@ -2824,6 +2977,9 @@ class ScimAuth {
   // reason `errorCodes.mark()` uses one: `req.scimAuth` is the decision, the
   // monitor and the audit row read it, and nothing about it serialises
   // differently.
+  /**
+   * The key under which a decision carries the single-use credential it spends.
+   */
   static readonly SPEND: unique symbol = Symbol('scim.spend');
 
   private withSpend(decision, spend?) {
@@ -3252,6 +3408,13 @@ class ScimAuth {
     return out;
   }
 
+  /**
+   * Returns the ServiceProviderConfig `authenticationSchemes` documents of the
+   * enabled schemes that are in RFC 7643's canonical list.
+   *
+   * @param base - the base URL for the documents' URIs
+   * @returns the scheme documents
+   */
   schemesForConfig(base?) {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.schemesForConfig().");
@@ -3263,6 +3426,13 @@ class ScimAuth {
     return out;
   }
 
+  /**
+   * Returns the documents of the enabled schemes outside RFC 7643's canonical
+   * list.
+   *
+   * @param base - the base URL for the documents' URIs
+   * @returns the scheme documents
+   */
   schemesBeyondTheCanonicalList(base?) {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.schemesBeyondTheCanonicalList().");
@@ -3277,6 +3447,11 @@ class ScimAuth {
 
   // Which published scheme is `primary`, by id, so that serialisation can mark
   // it without a second opinion about which one it is.
+  /**
+   * Returns the id of the published scheme marked `primary`.
+   *
+   * @returns the id, or ''
+   */
   primarySchemeId() {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.primarySchemeId().");
@@ -3295,6 +3470,13 @@ class ScimAuth {
   // disagree with the challenge a client actually gets, because all of it is
   // this one table.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the authentication of this surface as data, read by `GET /scim`,
+   * `/admin/scim` and `GET /admin-api/scim`.
+   *
+   * @param req - the request
+   * @returns the description
+   */
   describe(req?) {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.describe() for SCIM authentication.");
@@ -3368,6 +3550,12 @@ class ScimAuth {
   // including the zeroes — the same rule the operations table follows, and for
   // the same reason: "does this server do Digest" is answered by a row saying 0
   // and not by an absence.
+  /**
+   * Returns every scheme id, and `anonymous`, so the monitor draws a row per
+   * scheme including the zeroes.
+   *
+   * @returns the ids
+   */
   schemeIds() {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.schemeIds().");
@@ -3401,11 +3589,31 @@ capabilities.provide('scim.challenge-state');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Who is asking at the SCIM endpoints, and what they may do.
+ *
+ * @namespace
+ */
 export = {
   ScimAuth: ScimAuth,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: ScimAuth): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   // Built by the instance's constructor, so read from it when asked.
+  /**
+   * The installed instance's scheme table.
+   *
+   * @returns the scheme rows
+   */
   get SCHEMES(): SchemeRow[] {
     helpers.log.debug("Entering SCHEMES().");
     helpers.log.debug("Leaving SCHEMES().");
@@ -3416,6 +3624,11 @@ export = {
   // compute, which is exactly what that page should report — a console that
   // listed SHA-512-256 on a build without it would be naming an algorithm no
   // challenge will ever offer.
+  /**
+   * The Digest algorithms this build can compute, for the crypto metadata page.
+   *
+   * @returns the algorithms
+   */
   get DIGEST_ALGORITHMS(): DigestAlgorithm[] {
     helpers.log.debug("Entering DIGEST_ALGORITHMS().");
     helpers.log.debug("Leaving DIGEST_ALGORITHMS().");

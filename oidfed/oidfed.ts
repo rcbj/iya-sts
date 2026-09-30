@@ -86,6 +86,11 @@ const KINDS = OidfedStore.KINDS;
 // registrations and revocations (#137) — once, whatever builds an instance.
 let realmsWatched = false;
 const TYP = EntityStatement.TYP;
+/**
+ * The paths of the federation endpoints under the realm's base: the
+ * configuration, fetch, list, resolve, the Trust Mark endpoints, historical
+ * keys, registration and the three extensions.
+ */
 const PATHS = Object.freeze({
   configuration: '/.well-known/openid-federation',
   fetch: '/oidfed/fetch',
@@ -198,14 +203,33 @@ interface Outcome {
   [key: string]: Json;
 }
 
+/**
+ * This realm as an OpenID Federation 1.1 entity: its Entity Configuration, the
+ * federation endpoints of section 8 and the three extensions, and the acts
+ * behind `/admin/oidfed` and `/admin-api/oidfed`.
+ */
 class Oidfed {
+  /**
+   * See the module's `PATHS`.
+   */
   static readonly PATHS = PATHS;
 
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - settings, realms, the register, the federation keys, the
+   * authorization server and the other modules the entity reads
+   */
   constructor(private readonly deps: OidfedDeps) {
     deps.log.debug("Entering Oidfed.constructor().");
     deps.log.debug("Leaving Oidfed.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): OidfedDeps {
     helpers.log.debug("Entering Oidfed.defaultDeps().");
     helpers.log.debug("Leaving Oidfed.defaultDeps().");
@@ -264,6 +288,12 @@ class Oidfed {
   // ===========================================================================
 
   // The realm's Entity Identifier: its issuer (see the header).
+  /**
+   * Answers the realm's Entity Identifier: its issuer.
+   *
+   * @param req - the request, for its base URL
+   * @returns the Entity Identifier
+   */
   entityId(req: Req): string {
     const { log, oauth2, baseUrlOf } = this.deps;
     log.debug("Entering Oidfed.entityId().");
@@ -289,6 +319,14 @@ class Oidfed {
   // Run `fn` inside the realm `realm`, with the request re-read there.
   // Public for the listing and the collection (#135, #136), which walk the
   // realms beneath this one.
+  /**
+   * Runs a function inside a realm, with the request re-read there.
+   *
+   * @param realm - the realm
+   * @param req - the request
+   * @param fn - what to run, given the request as seen in that realm
+   * @returns what `fn` returns
+   */
   inRealm<T>(realm: Json, req: Req, fn: (r: Req) => T): T {
     const { log, realms } = this.deps;
     log.debug("Entering Oidfed.inRealm(). " + realm.id);
@@ -301,6 +339,13 @@ class Oidfed {
   }
 
   // The realm of this service whose Entity Identifier `entityId` is, or null.
+  /**
+   * Answers the realm of this service whose Entity Identifier this is.
+   *
+   * @param entityId - the Entity Identifier
+   * @param req - the request
+   * @returns the realm, or null
+   */
   localRealmOf(entityId: string, req: Req): Json {
     const { log, realms } = this.deps;
     log.debug("Entering Oidfed.localRealmOf().");
@@ -352,6 +397,14 @@ class Oidfed {
   // `oidfed.authorityHints`, and — in the default topology, for every realm
   // but the default — the default realm. None makes the realm a Trust Anchor.
   // -------------------------------------------------------------------------
+  /**
+   * Answers the superiors the realm names (`authority_hints`, 3.1.2): those in
+   * `oidfed.authorityHints` and, in the default topology, the default realm for
+   * every other realm.
+   *
+   * @param req - the request
+   * @returns the Entity Identifiers; none makes the realm a Trust Anchor
+   */
   authorityHints(req: Req): string[] {
     const { log, config } = this.deps;
     log.debug("Entering Oidfed.authorityHints().");
@@ -380,6 +433,15 @@ class Oidfed {
   // the events endpoint; `activeSubordinates()` is what every federation
   // endpoint reads.
   // -------------------------------------------------------------------------
+  /**
+   * Lists the subordinates the realm vouches for, suspended ones included:
+   * every registered one and, in the default topology for the default realm,
+   * every other realm.
+   *
+   * @param req - the request
+   * @returns each with what its statement says, the key its history is recorded
+   * under, and its suspension or null
+   */
   subordinates(req: Req): Json[] {
     const { log, store, realms } = this.deps;
     log.debug("Entering Oidfed.subordinates().");
@@ -421,6 +483,13 @@ class Oidfed {
 
   // The subordinates this realm issues statements about: every one but the
   // suspended (#137).
+  /**
+   * Lists the subordinates the realm issues statements about: every one but the
+   * suspended.
+   *
+   * @param req - the request
+   * @returns the subordinates
+   */
   activeSubordinates(req: Req): Json[] {
     const { log } = this.deps;
     log.debug("Entering Oidfed.activeSubordinates().");
@@ -433,6 +502,13 @@ class Oidfed {
 
   // When a realm was created, in ms — `realms.js` keeps a number, and a
   // realm restored from an older store may carry a date string.
+  /**
+   * Answers when a realm was created, in milliseconds, whether it holds a
+   * number or a date string.
+   *
+   * @param realm - the realm
+   * @returns the time, or 0
+   */
   realmCreatedMs(realm: Json): number {
     this.deps.log.debug("Entering Oidfed.realmCreatedMs().");
     const raw = realm && realm.createdAt;
@@ -448,6 +524,13 @@ class Oidfed {
   // register's for a registered one, read off its configuration for a realm
   // of this service — and whether it is an Intermediate.
   // -------------------------------------------------------------------------
+  /**
+   * Answers what the listings filter on for each active subordinate: its entity
+   * types and whether it is an Intermediate.
+   *
+   * @param req - the request
+   * @returns a promise of one row per subordinate
+   */
   async subordinateFacts(req: Req): Promise<Json[]> {
     const { log } = this.deps;
     log.debug("Entering Oidfed.subordinateFacts().");
@@ -501,6 +584,14 @@ class Oidfed {
   // and the realm itself when it IS a Trust Anchor, so it can resolve what it
   // vouches for. A local anchor's keys are read live.
   // -------------------------------------------------------------------------
+  /**
+   * Lists the Trust Anchors the realm trusts: every registered one with its
+   * pinned keys, the default realm in the default topology, and the realm
+   * itself when it is a Trust Anchor.
+   *
+   * @param req - the request
+   * @returns the anchors, each an Entity Identifier and its keys
+   */
   anchors(req: Req): Json[] {
     const { log, store, keys } = this.deps;
     log.debug("Entering Oidfed.anchors().");
@@ -534,6 +625,12 @@ class Oidfed {
   }
 
   // Which role the realm plays, as the page and the API say it.
+  /**
+   * Answers the role the realm plays: `trust anchor`, `intermediate` or `leaf`.
+   *
+   * @param req - the request
+   * @returns the role
+   */
   roleOf(req: Req): string {
     const { log } = this.deps;
     log.debug("Entering Oidfed.roleOf().");
@@ -563,6 +660,11 @@ class Oidfed {
   }
 
   // The Trust Mark types this realm issues, from its register.
+  /**
+   * Lists the Trust Mark types the realm issues, from its register.
+   *
+   * @returns the types
+   */
   markTypes(): Json[] {
     const { log, store } = this.deps;
     log.debug("Entering Oidfed.markTypes().");
@@ -685,6 +787,12 @@ class Oidfed {
 
   // The client registration types this realm's OP accepts through the
   // federation (`oidfed.clientRegistrationTypes`, Connect 1.1, 12).
+  /**
+   * Answers the client registration types the realm's OP accepts through the
+   * federation (`oidfed.clientRegistrationTypes`): `automatic`, `explicit`.
+   *
+   * @returns the types
+   */
   registrationTypes(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering Oidfed.registrationTypes().");
@@ -700,6 +808,12 @@ class Oidfed {
 
   // The Trust Marks this realm carries (3.1.2): the ones issued TO it, while
   // they have not expired.
+  /**
+   * Lists the Trust Marks issued to the realm that have not expired, which its
+   * Entity Configuration carries.
+   *
+   * @returns the marks
+   */
   heldMarks(): Json[] {
     const { log, store } = this.deps;
     log.debug("Entering Oidfed.heldMarks().");
@@ -716,6 +830,13 @@ class Oidfed {
   // As a Trust Anchor: `trust_mark_issuers` and `trust_mark_owners` (3.1.2),
   // from the realm's mark policies, and every type the realm issues itself
   // (its own issuer) where no policy names the type.
+  /**
+   * Answers, as a Trust Anchor, the `trust_mark_issuers` and
+   * `trust_mark_owners` claims (3.1.2) from the realm's mark policies.
+   *
+   * @param req - the request
+   * @returns the two claims
+   */
   markPolicyClaims(req: Req): Json {
     const { log, store } = this.deps;
     log.debug("Entering Oidfed.markPolicyClaims().");
@@ -743,6 +864,13 @@ class Oidfed {
   // or `{ ok: false }` when the realm has no key to sign with (a cluster
   // node that lost the race to mint one, until the directory catches up).
   // -------------------------------------------------------------------------
+  /**
+   * Builds and signs the realm's Entity Configuration.
+   *
+   * @param req - the request
+   * @returns a promise of `{ ok, jwt, claims }`, or `{ ok: false }` when the
+   * realm has no key to sign with
+   */
   async configuration(req: Req): Promise<Outcome> {
     const { log, config, keys } = this.deps;
     log.debug("Entering Oidfed.configuration().");
@@ -791,6 +919,14 @@ class Oidfed {
   // THE SUBORDINATE STATEMENT ABOUT `sub` (3.1.3, 8.1.2): its keys, and the
   // metadata, policy and constraints the register holds for it.
   // -------------------------------------------------------------------------
+  /**
+   * Builds and signs the Subordinate Statement about a subordinate (3.1.3,
+   * 8.1.2).
+   *
+   * @param req - the request
+   * @param subId - the subordinate's Entity Identifier
+   * @returns a promise of `{ ok, jwt, claims }`, or of a refusal
+   */
   async subordinateStatement(req: Req, subId: string): Promise<Outcome> {
     const { log, keys } = this.deps;
     log.debug("Entering Oidfed.subordinateStatement(). " + subId);
@@ -819,6 +955,14 @@ class Oidfed {
   // no subordinate at all, 8.1.2's not_found, so a chain through it cannot
   // be built.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the claims of a Subordinate Statement, unsigned; a suspended
+   * subordinate has none and is answered as `not_found`.
+   *
+   * @param req - the request
+   * @param subId - the subordinate's Entity Identifier
+   * @returns `{ ok, claims }`, or a refusal
+   */
   subordinateStatementClaims(req: Req, subId: string): Outcome {
     const { log, config, baseUrlOf } = this.deps;
     log.debug("Entering Oidfed.subordinateStatementClaims(). " + subId);
@@ -908,6 +1052,14 @@ class Oidfed {
   // resolve request (18.1); without it every entity outside this service is
   // refused before a request is made.
   // -------------------------------------------------------------------------
+  /**
+   * Builds a Trust Chain resolver for this request.
+   *
+   * @param req - the request
+   * @param discover - whether it may fetch from other entities; never for an
+   * unauthenticated resolve request
+   * @returns the resolver
+   */
   chainResolver(req: Req, discover: boolean): TrustChain {
     const { log, config, fedHttp } = this.deps;
     log.debug("Entering Oidfed.chainResolver(). discover=" + discover);
@@ -962,6 +1114,17 @@ class Oidfed {
   // realm issued it, its revocation read from the register.
   // Public for the Entity Collection (#136), which verifies the marks of
   // every entity it collects the same way.
+  /**
+   * Answers the Trust Marks of a resolved subject that the anchor's federation
+   * trusts (7.3, 8.3.2), each issuer established through its own chain to the
+   * same anchor first.
+   *
+   * @param resolved - the resolved chain
+   * @param tc - the resolver
+   * @param anchor - the Trust Anchor
+   * @param req - the request
+   * @returns a promise of the verified marks
+   */
   async verifiedMarks(resolved: Json, tc: TrustChain,
                       anchor: Json, req: Req): Promise<Json[]> {
     const { log } = this.deps;
@@ -1025,6 +1188,17 @@ class Oidfed {
   // only, unless `discover`. Caches what it resolves. `{ ok, resolved,
   // marks, anchor }` or a refusal in the section 8.9 vocabulary.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves an entity to one of the given Trust Anchors (the realm's when
+   * none), from the cache while the chain lives, otherwise by walking.
+   *
+   * @param req - the request
+   * @param sub - the entity's Entity Identifier
+   * @param anchorIds - the Trust Anchors to resolve to
+   * @param discover - whether the walk may fetch from other entities
+   * @returns a promise of `{ ok, resolved, marks, anchor }`, or of a refusal in
+   * section 8.9's vocabulary
+   */
   async resolve(req: Req, sub: string, anchorIds: string[],
                 discover: boolean): Promise<Outcome> {
     const { log, config, now } = this.deps;
@@ -1093,6 +1267,15 @@ class Oidfed {
   }
 
   // The resolve response (8.3.2), signed.
+  /**
+   * Builds the signed resolve response (8.3.2).
+   *
+   * @param req - the request
+   * @param sub - the entity's Entity Identifier
+   * @param anchorIds - the Trust Anchors to resolve to
+   * @param entityTypes - the entity types to keep in the metadata
+   * @returns a promise of `{ ok, jwt, claims }`, or of a refusal
+   */
   async resolveResponse(req: Req, sub: string, anchorIds: string[],
                         entityTypes: string[]): Promise<Outcome> {
     const { log, keys } = this.deps;
@@ -1148,6 +1331,13 @@ class Oidfed {
 
   // The status of a mark this realm issued (8.4.2): active, expired, revoked
   // — or '' when this realm did not issue it (a 404, 8.4.2).
+  /**
+   * Answers the status of a Trust Mark the realm issued (8.4.2).
+   *
+   * @param jwt - the Trust Mark
+   * @returns `active`, `expired` or `revoked`, or '' when the realm did not
+   * issue it
+   */
   markStatusOf(jwt: string): string {
     const { log, store } = this.deps;
     log.debug("Entering Oidfed.markStatusOf().");
@@ -1166,6 +1356,13 @@ class Oidfed {
 
   // The marks of `type` this realm issued that are still valid, optionally
   // for one subject.
+  /**
+   * Lists the still-valid Trust Marks of a type the realm issued.
+   *
+   * @param type - the Trust Mark type; any when empty
+   * @param sub - one subject to limit it to
+   * @returns the marks
+   */
   validIssued(type: string, sub?: string): Json[] {
     const { log } = this.deps;
     log.debug("Entering Oidfed.validIssued(). " + type);
@@ -1179,6 +1376,13 @@ class Oidfed {
   }
 
   // The status response (8.4.2), signed.
+  /**
+   * Builds the signed Trust Mark status response (8.4.2).
+   *
+   * @param req - the request
+   * @param jwt - the Trust Mark asked about
+   * @returns a promise of `{ ok, jwt, markStatus }`, or of a refusal
+   */
   async markStatusResponse(req: Req, jwt: string): Promise<Outcome> {
     const { log, keys } = this.deps;
     log.debug("Entering Oidfed.markStatusResponse().");
@@ -1209,6 +1413,12 @@ class Oidfed {
   }
 
   // The historical keys (8.7.2), signed.
+  /**
+   * Builds the signed historical keys response (8.7.2).
+   *
+   * @param req - the request
+   * @returns a promise of `{ ok, jwt }`, or of a refusal
+   */
   async historicalKeysResponse(req: Req): Promise<Outcome> {
     const { log, keys } = this.deps;
     log.debug("Entering Oidfed.historicalKeysResponse().");
@@ -1241,6 +1451,13 @@ class Oidfed {
   // request — its prefix on this realm's base, which assumes it pinned no
   // `oauth2.issuer` of its own (a deleted realm's settings went with it).
   // -------------------------------------------------------------------------
+  /**
+   * Answers the key a subordinate's history is recorded under.
+   *
+   * @param req - the request
+   * @param sub - the subordinate's Entity Identifier
+   * @returns the key, or '' when the realm never had it as a subordinate
+   */
   eventKeyOf(req: Req, sub: string): string {
     const { log, realms, baseUrlOf } = this.deps;
     log.debug("Entering Oidfed.eventKeyOf().");
@@ -1275,6 +1492,14 @@ class Oidfed {
   // the draft's Event Objects (never this service's merge `id`), led by a
   // `registration` at the subordinate's creation where none was recorded —
   // a subordinate registered before #137 kept no history.
+  /**
+   * Answers a subordinate's history as the events endpoint serves it: the
+   * draft's Event Objects, led by a `registration` where none was recorded.
+   *
+   * @param key - the key the history is recorded under
+   * @param subordinate - the subordinate, when it is still one
+   * @returns the events
+   */
   eventsOf(key: string, subordinate: Json): Json[] {
     const { log } = this.deps;
     log.debug("Entering Oidfed.eventsOf().");
@@ -1302,6 +1527,13 @@ class Oidfed {
 
   // The events response (draft 01 section "Subordinate Historical Events
   // Response"), signed with the Federation Entity Key.
+  /**
+   * Builds the signed Subordinate Events response (draft 01).
+   *
+   * @param req - the request
+   * @param sub - the subordinate's Entity Identifier
+   * @returns a promise of `{ ok, jwt, claims }`, or of a refusal
+   */
   async eventsResponse(req: Req, sub: string): Promise<Outcome> {
     const { log, config, keys } = this.deps;
     log.debug("Entering Oidfed.eventsResponse().");
@@ -1344,6 +1576,13 @@ class Oidfed {
   // `registered`, its latest registration, and `updated`, the latest event
   // that changed its statement — each falling back to the register's own
   // times.
+  /**
+   * Answers the times the Extended Listing reports for a subordinate:
+   * `registered` and `updated`, from its history, else the register's times.
+   *
+   * @param subordinate - the subordinate
+   * @returns `{ registered, updated }`
+   */
   auditTimesOf(subordinate: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Oidfed.auditTimesOf().");
@@ -1373,6 +1612,15 @@ class Oidfed {
   // subordinate's entity types are the register's for a registered one, and
   // read off its configuration for a realm of this service.
   // -------------------------------------------------------------------------
+  /**
+   * Answers the subordinate listing (8.2): the Immediate Subordinates filtered
+   * by entity type, by a still-valid Trust Mark the realm issued, and by being
+   * an Intermediate.
+   *
+   * @param req - the request
+   * @param query - the listing's parameters
+   * @returns a promise of `{ ok, list }`, or of a refusal
+   */
   async listing(req: Req, query: Json): Promise<Outcome> {
     const { log } = this.deps;
     log.debug("Entering Oidfed.listing().");
@@ -1465,6 +1713,12 @@ class Oidfed {
     };
   }
 
+  /**
+   * Registers the Entity Configuration and every federation endpoint under
+   * `/oidfed`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: Json): void {
     const { log } = this.deps;
     const self = this;
@@ -1769,6 +2023,14 @@ class Oidfed {
   // Resolves `{ ok, message, … }` or `{ ok: false, errors }` carrying its
   // error code.
   // -------------------------------------------------------------------------
+  /**
+   * Performs one of the console's and the API's acts, named by `body.action`.
+   *
+   * @param body - `action` and its fields
+   * @param ctx - `{ via, actor, req }`
+   * @returns a promise of `{ ok, message, … }`, or of `{ ok: false, errors }`
+   * carrying its error code
+   */
   async act(body: Json, ctx: Json): Promise<Outcome> {
     const { log, store, keys, scheduler, realms } = this.deps;
     const b = body || {};
@@ -2263,6 +2525,12 @@ class Oidfed {
   // The realm's register generation — see `registerGeneration`, above.
   // Public for the Entity Collection (#136), whose in-process cache is kept
   // under it for the same reason.
+  /**
+   * Answers the realm's register generation, under which cached resolutions are
+   * kept, so a changed register is not answered from an old chain.
+   *
+   * @returns the generation
+   */
   generation(): string {
     this.deps.log.debug("Entering Oidfed.generation().");
     const row: Json = registerGeneration.get(GENERATION_KEY);
@@ -2312,6 +2580,12 @@ class Oidfed {
   }
 
   // A resolution as a page or the API shows it.
+  /**
+   * Describes a resolution as the page and the API show it.
+   *
+   * @param got - `resolve()`'s answer
+   * @returns the view
+   */
   resolutionView(got: Json): Json {
     this.deps.log.debug("Entering Oidfed.resolutionView().");
     const r = got.resolved;
@@ -2332,6 +2606,12 @@ class Oidfed {
   // The subordinates this realm HAD — revoked, their history kept (#137) —
   // for the console and the API. A realm of this service that was deleted
   // is shown by the identifier it would have under this request.
+  /**
+   * Lists the subordinates the realm revoked, whose histories it keeps.
+   *
+   * @param req - the request
+   * @returns the former subordinates
+   */
   formerSubordinates(req: Req): Json[] {
     const { log, store, realms, baseUrlOf } = this.deps;
     log.debug("Entering Oidfed.formerSubordinates().");
@@ -2368,6 +2648,10 @@ class Oidfed {
   // RESTORED from the store at start, or replayed from another node's
   // creation, was registered where it was created.
   // -------------------------------------------------------------------------
+  /**
+   * Records each realm's creation and deletion as its registration and
+   * revocation under the default realm, once per process.
+   */
   watchRealms(): void {
     const { log, realms } = this.deps;
     log.debug("Entering Oidfed.watchRealms().");
@@ -2392,6 +2676,13 @@ class Oidfed {
   // THE VIEW: everything the console page draws and GET /admin-api/oidfed
   // answers, from one call (rule 7). Never a private key.
   // -------------------------------------------------------------------------
+  /**
+   * Builds everything the console page draws and `GET /admin-api/oidfed`
+   * answers, from one call (rule 7). Never a private key.
+   *
+   * @param req - the request
+   * @returns a promise of the view
+   */
   async view(req: Req): Promise<Json> {
     const { log, keys, baseUrlOf, config } = this.deps;
     log.debug("Entering Oidfed.view().");
@@ -2488,12 +2779,28 @@ const slot = new InstanceSlot<Oidfed>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * This realm as an OpenID Federation entity: its Entity Configuration, the
+ * federation endpoints, and the acts behind the console and the API.
+ * @namespace
+ */
 export = {
   Oidfed: Oidfed,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: Oidfed): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   // The instance itself, for the collection's scheduled crawl (#136), which
   // walks through methods the facade does not forward.
+  /**
+   * Answers the instance in use.
+   */
   instance: (): Oidfed => slot.get(),
   PATHS: PATHS,
   registerRoutes: slot.forward('registerRoutes'),

@@ -200,6 +200,9 @@ const applications = require('./../common/applications');
 // `any-existing` is refused in product (#109): a relationship may not be SET to
 // it there. A leaf over config.js; it requires nothing here back.
 const mode = require('./../common/mode');
+// The attributes no outside source may write (#94): a map naming one as its
+// target is refused. A leaf, so this require closes no cycle.
+const SourcedAttributes = require('./../common/sourced_attributes');
 
 // ---------------------------------------------------------------------------
 // THE TWO ROLES. Which end of the relationship THIS SERVICE is.
@@ -226,6 +229,10 @@ const mode = require('./../common/mode');
 // could make: the person configures the wrong URL at the partner, signs in
 // successfully somewhere else, and lands on a 404 with nothing to point at.
 // ---------------------------------------------------------------------------
+/**
+ * The URL paths of the federation endpoints, kept here so the console that
+ * prints them and the router that serves them cannot disagree.
+ */
 const PATHS = {
   base: '/federation',
   login: '/federation/login',
@@ -249,6 +256,10 @@ const PATHS = {
   jwks: '/federation/jwks'
 };
 
+/**
+ * The two roles a relationship can take: this service as the service provider,
+ * or as the identity provider.
+ */
 const ROLES = [
   { role: 'service-provider', label: 'This service is the service provider',
     short: 'Service provider',
@@ -266,6 +277,9 @@ const ROLES = [
           'test client, and a list of which attributes are released to it.' }
 ];
 
+/**
+ * The role names, in `ROLES` order.
+ */
 const ROLE_IDS = ROLES.map(function (one) { return one.role; });
 
 // ---------------------------------------------------------------------------
@@ -294,6 +308,10 @@ const ROLE_IDS = ROLES.map(function (one) { return one.role; });
 // and named by readinessOf() like every other missing field — rather than by a
 // check that quietly lapses.
 // ---------------------------------------------------------------------------
+/**
+ * The five federation protocols, each with the fields a service-provider-side
+ * relationship of it `needs` before it is ready.
+ */
 const PROTOCOLS = [
   { protocol: 'saml2', label: 'SAML 2.0', family: 'SAML 2.0',
     what: 'The Web Browser SSO profile. This service sends an <AuthnRequest> ' +
@@ -334,8 +352,17 @@ const PROTOCOLS = [
     spec: 'RFC 6749 section 4.1' }
 ];
 
+/**
+ * The protocol names, in `PROTOCOLS` order.
+ */
 const PROTOCOL_IDS = PROTOCOLS.map(function (one) { return one.protocol; });
 
+/**
+ * Returns the `PROTOCOLS` row of a protocol name.
+ *
+ * @param id - the protocol name
+ * @returns the row, or null
+ */
 function protocolRow(id) {
   log.debug("Entering protocolRow().");
   const wanted = String(id || '');
@@ -349,6 +376,12 @@ function protocolRow(id) {
   return null;
 }
 
+/**
+ * Returns the `ROLES` row of a role name.
+ *
+ * @param id - the role name
+ * @returns the row, or null
+ */
 function roleRow(id) {
   log.debug("Entering roleRow().");
   const wanted = String(id || '');
@@ -396,6 +429,11 @@ function roleRow(id) {
 // overriding it — otherwise adding this feature would have silently switched
 // off every `appFederationRelationship` in the field.
 // ---------------------------------------------------------------------------
+/**
+ * How a person proves who they are when this service is the identity provider
+ * for a partner (`fedAuthnMechanism`): six mechanisms, one of them another
+ * federation relationship.
+ */
 const MECHANISMS = [
   { mechanism: 'password', label: 'Username and password',
     what: 'This service\'s own sign-in screen, which checks no password. The ' +
@@ -457,6 +495,9 @@ const MECHANISMS = [
           'mechanism does not lose to forceMfa the way spnego does.' }
 ];
 
+/**
+ * The mechanism names, in `MECHANISMS` order.
+ */
 const MECHANISM_IDS = MECHANISMS.map(function (one) {
   return one.mechanism;
 });
@@ -474,6 +515,10 @@ const MECHANISM_IDS = MECHANISMS.map(function (one) {
 // arrived by `ldapmodify` (update() refuses it), and reading it as anything
 // but `pre-linked` would let a typo widen who the partner may sign in.
 // ---------------------------------------------------------------------------
+/**
+ * The four values of `fedSubjectPolicy`, which people a partner may assert, in
+ * the order they are offered.
+ */
 const SUBJECT_POLICIES = [
   { policy: 'link-at-first-sign-in', label: 'Link at first sign-in (default)',
     what: 'A linked subject signs in. An unlinked one naming an existing ' +
@@ -491,12 +536,24 @@ const SUBJECT_POLICIES = [
           'Refused in product mode.' }
 ];
 
+/**
+ * The subject policy names, in `SUBJECT_POLICIES` order.
+ */
 const SUBJECT_POLICY_IDS = SUBJECT_POLICIES.map(function (one) {
   return one.policy;
 });
 
+/**
+ * The subject policy an empty `fedSubjectPolicy` means.
+ */
 const DEFAULT_SUBJECT_POLICY = 'link-at-first-sign-in';
 
+/**
+ * Returns the `SUBJECT_POLICIES` row of a policy name.
+ *
+ * @param id - the policy name
+ * @returns the row, or null
+ */
 function subjectPolicyRow(id) {
   log.debug("Entering subjectPolicyRow().");
   const wanted = String(id || '');
@@ -508,6 +565,13 @@ function subjectPolicyRow(id) {
 }
 
 // The policy a relationship is under. See the header above SUBJECT_POLICIES.
+/**
+ * Returns the subject policy a relationship is under: the default when empty,
+ * and `pre-linked`, the strictest, for a value that is none of the four.
+ *
+ * @param record - the federation relationship
+ * @returns the policy name
+ */
 function subjectPolicyOf(record) {
   log.debug("Entering subjectPolicyOf().");
   const text = String((record && record.fedSubjectPolicy) || '').trim();
@@ -603,6 +667,14 @@ function nestedQuantifier(pattern) {
   return found;
 }
 
+/**
+ * Says why a `fedSubjectPattern` may not be used: too long, a backreference, a
+ * quantified group that is itself quantified or an alternation, or a pattern
+ * that does not compile.
+ *
+ * @param text - the pattern
+ * @returns the problem, or the empty string when it is usable or empty
+ */
 function subjectPatternProblem(text) {
   log.debug("Entering subjectPatternProblem().");
   const pattern = String(text == null ? '' : text);
@@ -643,6 +715,15 @@ function subjectPatternProblem(text) {
 // Whether `value` matches the relationship's pattern, WHOLE. A pattern that
 // would be refused today (written by `ldapmodify`) matches NOTHING — a rule
 // that cannot be read must not fall open.
+/**
+ * Says whether a value matches a relationship's pattern whole,
+ * case-insensitively; a pattern `subjectPatternProblem()` refuses matches
+ * nothing.
+ *
+ * @param text - the pattern
+ * @param value - the value tested
+ * @returns whether it matches
+ */
 function subjectPatternMatches(text, value) {
   log.debug("Entering subjectPatternMatches().");
   const pattern = String(text == null ? '' : text);
@@ -660,6 +741,12 @@ function subjectPatternMatches(text, value) {
   return matched;
 }
 
+/**
+ * Returns the `MECHANISMS` row of a mechanism name.
+ *
+ * @param id - the mechanism name
+ * @returns the row, or null
+ */
 function mechanismRow(id) {
   log.debug("Entering mechanismRow().");
   const wanted = String(id || '');
@@ -676,6 +763,13 @@ function mechanismRow(id) {
 // Which protocol family a relationship belongs to, for the audit log and for
 // the application record an identity-provider-side relationship points at. One
 // function so the four spellings cannot drift.
+/**
+ * Returns the protocol family a relationship's protocol belongs to, for the
+ * audit log and the application record.
+ *
+ * @param protocolId - the protocol name
+ * @returns the family label, or the name itself when it is unknown
+ */
 function familyOf(protocolId) {
   log.debug("Entering familyOf().");
   const row = protocolRow(protocolId);
@@ -714,22 +808,69 @@ function familyOf(protocolId) {
 // authenticated but there is no partner that has CBC and not GCM), and
 // RSAES-PKCS1-v1_5 in either (Bleichenbacher).
 // ---------------------------------------------------------------------------
+/**
+ * The protocols whose service-provider-side relationships hold an encryption
+ * key.
+ */
 const ENCRYPTING_PROTOCOLS = ['saml2', 'wsfed', 'oidc'];
-const ENCRYPTION_KEY_TYPES = ['rsa-3072', 'ec-p256'];
+// AND TWO POST-QUANTUM KEY TYPES FOR AN OpenID Connect RELATIONSHIP (#82):
+// `x-wing` (HPKE-10-KE, the ML-KEM-768 + X25519 hybrid) and `ml-kem-768`
+// (ML-KEM-768 direct key agreement) — `common/crypto.js` section 4a. JOSE
+// only: XML Encryption defines no post-quantum key transport, so a SAML 2.0
+// or WS-Federation relationship is refused them. An AKP key names ONE alg,
+// so each type does exactly one management algorithm. Such a key has no
+// X.509 certificate (none is defined for X-Wing), so its row carries the
+// AKP JWK instead; a partner reads it from the relationship's JWKS.
+/**
+ * The post-quantum key types, for an OpenID Connect relationship only
+ * (#82).
+ */
+const JOSE_ONLY_KEY_TYPES = ['x-wing', 'ml-kem-768'];
+/**
+ * The encryption key types a relationship may hold.
+ */
+const ENCRYPTION_KEY_TYPES = ['rsa-3072', 'ec-p256'].concat(
+  JOSE_ONLY_KEY_TYPES);
+/**
+ * The XML Encryption key-management algorithms a relationship may accept.
+ */
 const XML_KEY_MANAGEMENT = ['rsa-oaep', 'ecdh-es'];
+/**
+ * The JWE key-management algorithms a relationship may accept.
+ */
 const JOSE_KEY_MANAGEMENT = ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES',
-                             'ECDH-ES+A128KW', 'ECDH-ES+A256KW'];
+                             'ECDH-ES+A128KW', 'ECDH-ES+A256KW',
+                             'HPKE-10-KE', 'ML-KEM-768'];
+/**
+ * The XML Encryption content-encryption algorithms a relationship may accept.
+ */
 const XML_CONTENT_ENCRYPTION = ['aes256-gcm', 'aes128-gcm'];
+/**
+ * The JWE content-encryption algorithms a relationship may accept.
+ */
 const JOSE_CONTENT_ENCRYPTION = ['A256GCM', 'A128GCM'];
+/**
+ * The encryption algorithms refused in every mode: AES-CBC and
+ * RSAES-PKCS1-v1_5, in either family.
+ */
 const REFUSED_ALGORITHMS = ['aes128-cbc', 'aes192-cbc', 'aes256-cbc',
                             'rsa-1_5', 'RSA1_5', 'A128CBC-HS256',
                             'A192CBC-HS384', 'A256CBC-HS512'];
 // Which management algorithms a key of each type can do.
+/**
+ * The key management algorithms each key type can do.
+ */
 const MANAGEMENT_FOR_KEY = {
   'rsa-3072': ['rsa-oaep', 'RSA-OAEP-256', 'RSA-OAEP'],
-  'ec-p256': ['ecdh-es', 'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A256KW']
+  'ec-p256': ['ecdh-es', 'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A256KW'],
+  'x-wing': ['HPKE-10-KE'],
+  'ml-kem-768': ['ML-KEM-768']
 };
 
+/**
+ * The `ou=federations` entry schema: one row per attribute, the whole
+ * definition of what a relationship holds.
+ */
 const SCHEMA = {
   objectClasses: [
     { name: 'top', where: 'RFC 4512', standard: true,
@@ -1065,7 +1206,12 @@ const SCHEMA = {
       from: 'this register', enum: ENCRYPTION_KEY_TYPES,
       what: 'THE KIND OF KEY A PARTNER ENCRYPTS TO: rsa-3072 (the default ' +
             'for SAML 2.0 and WS-Federation) or ec-p256 (the default for ' +
-            'OpenID Connect). Changing it issues a new key of that kind at ' +
+            'OpenID Connect) — or, for OpenID Connect only, a post-quantum ' +
+            'one (#82): x-wing (HPKE-10-KE, ML-KEM-768 + X25519) or ' +
+            'ml-kem-768 (ML-KEM-768), an AKP key published in the ' +
+            'relationship\'s JWKS with no certificate, from Internet-Drafts ' +
+            'few partners implement yet. Changing it issues a new key of ' +
+            'that kind at ' +
             'once and keeps the old one for federation.encryptionKeyGraceS, ' +
             'as a rotation does.' },
     { name: 'fedKeyManagementAlgorithm', kind: 'single',
@@ -1315,6 +1461,15 @@ SCHEMA.attributes.forEach(function (row) {
 // Every attribute that applies to a relationship in this role, in schema order.
 // The console draws its form from this and the action validates against the
 // same call, which is what stops a form offering a field the action refuses.
+/**
+ * Returns the editable attributes that apply to a relationship in a role, in
+ * schema order.
+ *
+ * @param role - the relationship's role
+ * @param mode - `set` or `multi` to narrow to one kind of edit, or empty for
+ *   both
+ * @returns the schema rows
+ */
 function fieldsForRole(role, mode) {
   log.debug('Entering fieldsForRole(). role=' + role + ', mode=' +
             (mode || 'any'));
@@ -1328,6 +1483,13 @@ function fieldsForRole(role, mode) {
   return rows;
 }
 
+/**
+ * Returns every editable attribute, in schema order.
+ *
+ * @param mode - `set` or `multi` to narrow to one kind of edit, or empty for
+ *   both
+ * @returns the schema rows
+ */
 function editableFields(mode) {
   log.debug("Entering editableFields().");
   log.debug("Leaving editableFields().");
@@ -1354,6 +1516,12 @@ function editableFields(mode) {
 let directory = null;
 let warnedAboutNoDirectory = false;
 
+/**
+ * Fills the directory slot, the register's only way in and out of its store;
+ * called by `ldap/ldap_server.js`.
+ *
+ * @param fns - the directory's functions, or null
+ */
 function setDirectory(fns) {
   log.debug('Entering setDirectory().');
   directory = fns || null;
@@ -1395,6 +1563,13 @@ function haveDirectory() {
 // `fedSigningCertificate` those two states are "not configured" and
 // "configured to trust nothing", which must not look alike.
 // ---------------------------------------------------------------------------
+/**
+ * Turns a record into the attributes the directory writes; an empty value is
+ * left off the entry.
+ *
+ * @param record - the relationship record
+ * @returns the attributes, each an array of strings
+ */
 function attributesFor(record) {
   log.debug('Entering attributesFor(). id=' + (record && record.fedId));
   const out = {
@@ -1438,6 +1613,13 @@ function byLowerName(attributes, name) {
   return undefined;
 }
 
+/**
+ * Turns an entry's attributes back into a record: single-valued members as
+ * strings, multi-valued ones as arrays, names matched case-insensitively.
+ *
+ * @param attributes - the entry's attributes
+ * @returns the record
+ */
 function recordFromAttributes(attributes) {
   log.debug('Entering recordFromAttributes().');
   const record = {};
@@ -1459,6 +1641,14 @@ function recordFromAttributes(attributes) {
 // directory is read. It is a STRING in LDAP, so `'FALSE'` is truthy in
 // JavaScript and a naive read makes every relationship enabled — which is the
 // one bug in this file that would be silent and would matter.
+/**
+ * Reads a boolean attribute value (`TRUE`, `YES`, `1`, `ON` and their
+ * opposites, in any case).
+ *
+ * @param value - the value
+ * @param dflt - what anything else reads as
+ * @returns the boolean
+ */
 function boolOf(value, dflt) {
   log.debug("Entering boolOf().");
   const text = String(value == null ? '' : value).trim().toUpperCase();
@@ -1474,6 +1664,12 @@ function boolOf(value, dflt) {
   return !!dflt;
 }
 
+/**
+ * Writes a boolean as the directory spells it.
+ *
+ * @param value - the boolean
+ * @returns `TRUE` or `FALSE`
+ */
 function boolText(value) {
   log.debug("Entering boolText().");
   log.debug("Leaving boolText().");
@@ -1511,6 +1707,14 @@ function generalizedTime(ms) {
 // ---------------------------------------------------------------------------
 const ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 
+/**
+ * Says why a relationship id will not do: it is the RDN, a URL segment and a
+ * button label, so it is a letter or digit then letters, digits, dot, dash and
+ * underscore, up to 63 characters.
+ *
+ * @param id - the id
+ * @returns the problem, or the empty string
+ */
 function idProblem(id) {
   log.debug("Entering idProblem().");
   const text = String(id == null ? '' : id).trim();
@@ -1533,6 +1737,12 @@ function idProblem(id) {
 // ---------------------------------------------------------------------------
 // READING THE REGISTER.
 // ---------------------------------------------------------------------------
+/**
+ * Returns every relationship in this realm's register, by id.
+ *
+ * @returns the records, each with `dn`, `createdAt`, `modifiedAt` and `entry`;
+ *   empty without a directory
+ */
 function list() {
   log.debug('Entering list().');
   if (!haveDirectory()) {
@@ -1556,6 +1766,12 @@ function list() {
   return rows;
 }
 
+/**
+ * Returns one relationship.
+ *
+ * @param id - the relationship id
+ * @returns the record, or null
+ */
 function get(id) {
   log.debug('Entering get(). id=' + id);
   if (!haveDirectory()) {
@@ -1576,12 +1792,22 @@ function get(id) {
   return record;
 }
 
+/**
+ * Returns how many relationships the register holds.
+ *
+ * @returns the count, 0 without a directory
+ */
 function count() {
   log.debug("Entering count().");
   log.debug("Leaving count().");
   return haveDirectory() ? directory.countFederations() : 0;
 }
 
+/**
+ * Returns the DN of the register's container.
+ *
+ * @returns the DN, or the empty string without a directory
+ */
 function containerDn() {
   log.debug("Entering containerDn().");
   log.debug("Leaving containerDn().");
@@ -1611,6 +1837,12 @@ function directoryHas(fn) {
   return haveDirectory() && typeof directory[fn] === 'function';
 }
 
+/**
+ * Returns the person entry a name finds, with its DN, mail, links and groups.
+ *
+ * @param name - the username
+ * @returns the person, or null
+ */
 function federatedPerson(name) {
   log.debug("Entering federatedPerson().");
   log.debug("Leaving federatedPerson().");
@@ -1618,6 +1850,12 @@ function federatedPerson(name) {
     ? directory.federationPerson(String(name || '')) : null;
 }
 
+/**
+ * Returns every person carrying a `federationLink` value.
+ *
+ * @param value - the link value
+ * @returns the people
+ */
 function peopleLinkedBy(value) {
   log.debug("Entering peopleLinkedBy().");
   log.debug("Leaving peopleLinkedBy().");
@@ -1627,6 +1865,12 @@ function peopleLinkedBy(value) {
 
 // Every person with this mail address (#153), for a foreign transmitter's
 // `email` subject where the relationship allows it.
+/**
+ * Returns every person with a mail address.
+ *
+ * @param address - the mail address
+ * @returns the people
+ */
 function peopleByMail(address) {
   log.debug("Entering peopleByMail().");
   log.debug("Leaving peopleByMail().");
@@ -1634,6 +1878,12 @@ function peopleByMail(address) {
     ? directory.peopleByMail(String(address || '')) : [];
 }
 
+/**
+ * Returns every link made through one relationship.
+ *
+ * @param fedId - the relationship id
+ * @returns the links
+ */
 function linkedThrough(fedId) {
   log.debug("Entering linkedThrough().");
   log.debug("Leaving linkedThrough().");
@@ -1641,6 +1891,12 @@ function linkedThrough(fedId) {
     ? directory.federationLinksThrough(String(fedId || '')) : [];
 }
 
+/**
+ * Returns the DN an entry created for a name would get.
+ *
+ * @param name - the username
+ * @returns the DN, or the empty string without a directory
+ */
 function plannedPersonDn(name) {
   log.debug("Entering plannedPersonDn().");
   log.debug("Leaving plannedPersonDn().");
@@ -1648,6 +1904,17 @@ function plannedPersonDn(name) {
     ? directory.plannedPersonDn(String(name || '')) : '';
 }
 
+/**
+ * Adds or removes one `federationLink` value on one person, through the
+ * directory.
+ *
+ * @param name - the username
+ * @param value - the link value
+ * @param add - true to add, false to remove
+ * @param options - passed to the directory's writer
+ * @returns the directory's result, or a refusal (`STS-FED-0109`) when no
+ *   directory is loaded
+ */
 function writeFederationLink(name, value, add, options) {
   log.debug("Entering writeFederationLink(). add=" + !!add);
   if (!directoryHas('writeFederationLink')) {
@@ -1660,6 +1927,11 @@ function writeFederationLink(name, value, add, options) {
                                        !!add, options || {});
 }
 
+/**
+ * Returns how many relationships the container may hold.
+ *
+ * @returns the cap, 0 without a directory
+ */
 function maxRelationships() {
   log.debug("Entering maxRelationships().");
   log.debug("Leaving maxRelationships().");
@@ -1682,6 +1954,13 @@ function maxRelationships() {
 // half-configured a partner is looking at, and "nothing happened" is the worst
 // possible answer for them.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether a relationship has every field its protocol and role need to
+ * work, and which are missing.
+ *
+ * @param record - the federation relationship
+ * @returns `{ ready, missing }`
+ */
 function readinessOf(record) {
   log.debug('Entering readinessOf(). id=' + (record && record.fedId));
   const missing = [];
@@ -1771,6 +2050,13 @@ function readinessOf(record) {
 // place so that the console, the metadata, the decryption and the readiness
 // check cannot disagree about the default.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether a relationship holds an encryption key: a service-provider-side
+ * SAML 2.0, WS-Federation or OpenID Connect one.
+ *
+ * @param record - the federation relationship
+ * @returns whether it does
+ */
 function encrypts(record) {
   log.debug("Entering encrypts().");
   log.debug("Leaving encrypts().");
@@ -1779,6 +2065,13 @@ function encrypts(record) {
 }
 
 // `xml` for SAML 2.0 and WS-Federation, `jose` for OpenID Connect.
+/**
+ * Returns a relationship's encryption family: `jose` for OpenID Connect, `xml`
+ * otherwise.
+ *
+ * @param record - the federation relationship
+ * @returns the family
+ */
 function encryptionFamilyOf(record) {
   log.debug("Entering encryptionFamilyOf().");
   log.debug("Leaving encryptionFamilyOf().");
@@ -1793,6 +2086,11 @@ function defaultKeyTypeFor(protocol) {
 
 function defaultManagementFor(family, keyType) {
   log.debug("Entering defaultManagementFor().");
+  if (MANAGEMENT_FOR_KEY[keyType] &&
+      JOSE_ONLY_KEY_TYPES.indexOf(keyType) >= 0) {
+    log.debug("Leaving defaultManagementFor(). A post-quantum key.");
+    return MANAGEMENT_FOR_KEY[keyType][0];
+  }
   const ec = keyType === 'ec-p256';
   log.debug("Leaving defaultManagementFor().");
   return family === 'jose' ? (ec ? 'ECDH-ES' : 'RSA-OAEP-256')
@@ -1803,12 +2101,23 @@ function defaultManagementFor(family, keyType) {
 // A stored value the vocabulary no longer holds (only an ldapmodify writes
 // one) reads as the DEFAULT — the strictest reading there is, since every
 // default is also the strongest choice.
+/**
+ * Returns what a relationship's encryption fields mean, each the field or its
+ * default; a value the vocabulary no longer holds reads as the default.
+ *
+ * @param record - the federation relationship
+ * @returns `{ family, keyType, management, content }`
+ */
 function encryptionPolicyOf(record) {
   log.debug("Entering encryptionPolicyOf().");
   const family = encryptionFamilyOf(record);
   const typed = String((record && record.fedEncryptionKeyType) || '').trim();
-  const keyType = ENCRYPTION_KEY_TYPES.indexOf(typed) >= 0 ? typed
-    : defaultKeyTypeFor(record && record.fedProtocol);
+  // A post-quantum key type on an XML relationship reads as the default:
+  // the write is refused (encryptionFieldProblem()), and only an ldapmodify
+  // could put one there.
+  const keyType = ENCRYPTION_KEY_TYPES.indexOf(typed) >= 0 &&
+      !(family === 'xml' && JOSE_ONLY_KEY_TYPES.indexOf(typed) >= 0)
+    ? typed : defaultKeyTypeFor(record && record.fedProtocol);
   const managed = String((record && record.fedKeyManagementAlgorithm) || '')
     .trim();
   const managementList = family === 'jose' ? JOSE_KEY_MANAGEMENT
@@ -1831,13 +2140,23 @@ function encryptionPolicyOf(record) {
 
 // THE KEY TABLE, parsed. A row that does not parse is dropped with a line in
 // the log: it decrypts nothing and publishes nothing either way.
+/**
+ * Returns a relationship's encryption key table, parsed, private keys included;
+ * a row that does not parse is dropped with a warning.
+ *
+ * @param record - the federation relationship
+ * @returns the rows
+ */
 function encryptionKeysOf(record) {
   log.debug("Entering encryptionKeysOf().");
   const rows = [];
   ((record && record.fedEncryptionKey) || []).forEach(function (value) {
     try {
       const row = JSON.parse(String(value));
-      if (row && row.kid && row.certificate) {
+      // A classical key's row carries its certificate; a post-quantum one
+      // (#82) its AKP JWK and the alg it serves, and no certificate.
+      if (row && row.kid && (row.certificate ||
+                             (row.kem && row.publicJwk))) {
         rows.push(row);
       }
     } catch (e) {
@@ -1852,6 +2171,13 @@ function encryptionKeysOf(record) {
 
 // The same rows WITHOUT the private key — what any page, API reply or log may
 // carry.
+/**
+ * Returns the encryption key table without the private keys, for a page, reply
+ * or log.
+ *
+ * @param record - the federation relationship
+ * @returns the rows
+ */
 function encryptionKeyView(record) {
   log.debug("Entering encryptionKeyView().");
   const out = encryptionKeysOf(record).map(function (row) {
@@ -1863,6 +2189,12 @@ function encryptionKeyView(record) {
   return out;
 }
 
+/**
+ * Returns the relationship's current encryption key row.
+ *
+ * @param record - the federation relationship
+ * @returns the row, or null
+ */
 function currentEncryptionKeyOf(record) {
   log.debug("Entering currentEncryptionKeyOf().");
   log.debug("Leaving currentEncryptionKeyOf().");
@@ -1876,6 +2208,14 @@ function currentEncryptionKeyOf(record) {
 // and only in product, where `fedAllowUnencrypted` is the one way out. An ID
 // Token redeemed at the partner's token endpoint comes over TLS from the
 // partner and is not the exposure this closes. See mode.js.
+/**
+ * Says whether a response through a relationship must be encrypted: only on the
+ * front channel, and only where the mode refuses plaintext and
+ * `fedAllowUnencrypted` is off.
+ *
+ * @param record - the federation relationship
+ * @returns whether it must
+ */
 function encryptionRequired(record) {
   log.debug("Entering encryptionRequired().");
   if (!encrypts(record)) {
@@ -1926,6 +2266,17 @@ function encryptionFieldProblem(record, field, value) {
                           '6.1.2, RFC 8017)') + '.' };
   }
   const family = encryptionFamilyOf(record);
+  if (field === 'fedEncryptionKeyType' && family === 'xml' &&
+      JOSE_ONLY_KEY_TYPES.indexOf(value) >= 0) {
+    log.debug("Leaving encryptionFieldProblem(). A JOSE-only key type.");
+    return { code: 'STS-FED-0143',
+             why: value + ' is a JOSE key type and this relationship is XML',
+             message: value + ' is a post-quantum key for an OpenID ' +
+                      'Connect ID Token (JWE). A SAML 2.0 or WS-Federation ' +
+                      'assertion is XML Encryption, which defines no ' +
+                      'post-quantum key transport; use rsa-3072 or ' +
+                      'ec-p256.' };
+  }
   const allowed = field === 'fedEncryptionKeyType' ? ENCRYPTION_KEY_TYPES
     : field === 'fedKeyManagementAlgorithm'
       ? (family === 'jose' ? JOSE_KEY_MANAGEMENT : XML_KEY_MANAGEMENT)
@@ -1960,6 +2311,15 @@ function encryptionFieldProblem(record, field, value) {
 // THE ONE WRITER OF THE KEY TABLE, for `federation_encryption.ts`: rotate,
 // issue and retire. `rows` are whole rows, private keys included, as they are
 // to be stored; `why` is the audit sentence.
+/**
+ * Writes a relationship's whole encryption key table and audits it; the one
+ * writer, for `federation_encryption.ts`.
+ *
+ * @param id - the relationship id
+ * @param rows - the key rows as they are to be stored
+ * @param why - the audit sentence
+ * @returns whether it was written
+ */
 function writeEncryptionKeys(id, rows, why) {
   log.debug("Entering writeEncryptionKeys(). id=" + id);
   const record = get(id);
@@ -1983,12 +2343,24 @@ function writeEncryptionKeys(id, rows, why) {
   return true;
 }
 
+/**
+ * Says whether an operator enabled a relationship.
+ *
+ * @param record - the federation relationship
+ * @returns whether it is enabled
+ */
 function isEnabled(record) {
   log.debug("Entering isEnabled().");
   log.debug("Leaving isEnabled().");
   return !!record && boolOf(record.fedEnabled, false);
 }
 
+/**
+ * Says whether a relationship is enabled and ready.
+ *
+ * @param record - the federation relationship
+ * @returns whether it is usable
+ */
 function isUsable(record) {
   log.debug("Entering isUsable().");
   log.debug("Leaving isUsable().");
@@ -1999,6 +2371,12 @@ function isUsable(record) {
 // halves of that — the sign-in screen wants the usable ones and the console
 // wants all of them — so the filter is the caller's rather than being baked in
 // here, and there is one list function rather than two that could drift.
+/**
+ * Returns every relationship in one role, usable or not.
+ *
+ * @param role - the role
+ * @returns the records
+ */
 function inRole(role) {
   log.debug("Entering inRole().");
   const wanted = String(role || '');
@@ -2018,6 +2396,12 @@ function inRole(role) {
 // It is HERE and not in authn.js because the register owns what a relationship
 // IS. A second description assembled in the sign-in path would be the copy that
 // stopped matching the day fedName gained a fallback.
+/**
+ * Describes a relationship for a page somebody chooses a partner from.
+ *
+ * @param record - the federation relationship
+ * @returns `{ id, label, protocol, protocolLabel, peer }`
+ */
 function optionOf(record) {
   log.debug("Entering optionOf().");
   log.debug("Leaving optionOf().");
@@ -2035,6 +2419,12 @@ function optionOf(record) {
 // would actually work if somebody clicked them. A button that led to a refusal
 // would be worse than no button, which is why this is `isUsable` and not
 // `isEnabled`.
+/**
+ * Returns the partners the sign-in screen offers: every usable
+ * service-provider-side relationship.
+ *
+ * @returns the options
+ */
 function signInOptions() {
   log.debug('Entering signInOptions().');
   const rows = inRole('service-provider').filter(isUsable).map(optionOf);
@@ -2066,6 +2456,15 @@ function signInOptions() {
 // the two callers are looking at different pages. It is interpolated into
 // every message and nothing else is.
 // ---------------------------------------------------------------------------
+/**
+ * Checks that a relationship id names a service-provider-side relationship that
+ * exists, is enabled and is ready.
+ *
+ * @param id - the relationship id somebody configured
+ * @param subject - what named it, for the message
+ * @returns `{ id, relationship, problem }`: the record when usable, a sentence
+ *   in `problem` otherwise, both empty for an empty id
+ */
 function usableServiceProvider(id, subject) {
   log.debug('Entering usableServiceProvider(). id=' + (id || '(none)'));
   const named = String(id || '').trim();
@@ -2134,6 +2533,14 @@ function usableServiceProvider(id, subject) {
 // calling that a misconfiguration would put an error banner on every sign-in
 // screen in the service.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a list of relationship ids as `usableServiceProvider()` does, keeping
+ * the unusable ones with their problems and collapsing duplicates.
+ *
+ * @param ids - the relationship ids
+ * @param subject - what named them, for the messages
+ * @returns `{ all, usable, problems }`
+ */
 function usableServiceProviders(ids, subject) {
   log.debug('Entering usableServiceProviders(). ' +
             (Array.isArray(ids) ? ids.length : (ids ? 1 : 0)) + ' named.');
@@ -2192,6 +2599,13 @@ function usableServiceProviders(ids, subject) {
 // and skipping is the safe direction: falling through to the password screen
 // is what the service did before anybody configured this.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the enabled identity-provider-side relationship naming an
+ * application; the first when there are several, with a warning.
+ *
+ * @param applicationId - the application identifier
+ * @returns the record, or null
+ */
 function identityProviderFor(applicationId) {
   log.debug('Entering identityProviderFor(). application=' +
             (applicationId || '(none)'));
@@ -2235,6 +2649,14 @@ function identityProviderFor(applicationId) {
 // password, which is the same argument authn.js's federationFor() makes at
 // length.
 // ---------------------------------------------------------------------------
+/**
+ * Resolves what an identity-provider-side relationship says to do to
+ * authenticate a person, including the onward relationship for the broker case.
+ *
+ * @param record - the federation relationship
+ * @returns null when it says nothing, or `{ via, mechanism, label,
+ *   relationship, problem }` (with `onward` for the broker case)
+ */
 function authenticationFor(record) {
   log.debug('Entering authenticationFor(). id=' +
             ((record && record.fedId) || '(none)'));
@@ -2419,6 +2841,14 @@ function releaseIndexNow() {
   return index;
 }
 
+/**
+ * Returns the release policy for the partner a token or assertion is issued to,
+ * looked up by `client_id` first and `audience` second.
+ *
+ * @param context - the issuing context, with `client_id` and `audience`
+ * @returns null for no policy, or `{ id, names }` with the attribute names that
+ *   may be released
+ */
 function releaseFilterFor(context) {
   log.debug('Entering releaseFilterFor().');
   const index = releaseIndexNow();
@@ -2637,6 +3067,14 @@ function actionRefused(code, id, why) {
 // register exists to prevent is a partner that half-exists and silently
 // accepts. Enabling is a second, deliberate act.
 // ---------------------------------------------------------------------------
+/**
+ * Creates a relationship, always disabled; refuses a bad or duplicate id, an
+ * unknown role or protocol, and a full container.
+ *
+ * @param spec - the relationship's attributes (`fedId`, `fedRole`,
+ *   `fedProtocol` and any others)
+ * @returns `{ ok: true, relationship, readiness }`, or `{ ok: false, errors }`
+ */
 function create(spec) {
   log.debug('Entering create(). id=' + (spec && spec.fedId));
   const info = spec || {};
@@ -2849,6 +3287,144 @@ function subjectFieldProblem(field, value) {
   return null;
 }
 
+// A `fedAttributeMap` value (#94): `<incoming name>=<LDAP attribute>`, whose
+// target an outside source may write. Until #94 the target was not looked
+// at, so `groups=memberOf` put a partner's value into a person's group
+// memberships and `x=pwdAccountLockedTime` disabled them. Answers null, or
+// the code, the audit sentence and the message, as subjectFieldProblem().
+function attributeMapProblem(value) {
+  log.debug("Entering attributeMapProblem().");
+  const text = String(value || '');
+  const at = text.indexOf('=');
+  const incoming = at > 0 ? text.slice(0, at).trim() : '';
+  const target = at > 0 ? text.slice(at + 1).trim() : '';
+  if (!incoming || !target) {
+    log.debug("Leaving attributeMapProblem(). Not a mapping.");
+    return { code: 'STS-FED-0151',
+             why: '"' + text + '" is not a mapping',
+             message: '"' + text + '" is not a mapping. A mapping is ' +
+                      '<incoming name>=<LDAP attribute>, split at the ' +
+                      'first equals sign.' };
+  }
+  const refusal = SourcedAttributes.refusal(target);
+  if (refusal) {
+    log.debug("Leaving attributeMapProblem(). A refused target.");
+    return { code: 'STS-FED-0152',
+             why: 'a mapping targets ' + target + ', which a partner may ' +
+                  'not write',
+             message: 'A partner may not write "' + target + '": ' +
+                      refusal + '.' };
+  }
+  log.debug("Leaving attributeMapProblem(). A mapping.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// THE NAMES A PARTNER SENT THAT NOTHING MAPPED (#94).
+//
+// A partner's attribute that no mapping names — or that a mapping sends onto
+// an attribute no partner may write — is dropped at sign-in, and until #94
+// that was said only in a log line and on the signed-in person's own result
+// page. `/admin/federation` now lists them per relationship, which is where
+// somebody deciding what to map looks.
+//
+// A per-realm persisted store keyed by relationship id: each value is
+// `{ names: { <lower-cased name>: { name, refused, first, last } } }`, at
+// most UNMAPPED_CAP names (the oldest `last` goes first). A sign-in writes
+// only when a name is new, its reason changed, or it was last recorded over
+// UNMAPPED_REFRESH_MS ago, so a relationship's steady traffic is not a write
+// per sign-in. In `sts_minted` on postgres, so it ages out with
+// `persistence.mintedRetention` like any observation.
+// ---------------------------------------------------------------------------
+const UNMAPPED_CAP = 50;
+const UNMAPPED_REFRESH_MS = 60 * 60 * 1000;
+const unmappedSeen = realms.map({ persist: 'federation.unmapped',
+                                 retain: 'age' });
+
+/**
+ * Records the names a partner sent that were not written, for the console.
+ *
+ * @param id - the relationship id
+ * @param unmapped - `federation_map`'s `unmapped`: `{ incoming, refused? }`
+ * @returns true when the store was written
+ */
+function recordUnmapped(id, unmapped) {
+  log.debug('Entering recordUnmapped(). id=' + id);
+  const list = Array.isArray(unmapped) ? unmapped : [];
+  if (!id || !list.length) {
+    log.debug('Leaving recordUnmapped(). Nothing to record.');
+    return false;
+  }
+  const now = Date.now();
+  const held = unmappedSeen.get(String(id));
+  const names = Object.assign({}, (held && held.names) || {});
+  let changed = false;
+  list.forEach(function (one) {
+    const name = String((one && one.incoming) || '').trim();
+    if (!name) {
+      return;
+    }
+    const key = name.toLowerCase();
+    const refused = String((one && one.refused) || '');
+    const was = names[key];
+    if (!was || was.refused !== refused ||
+        now - (was.last || 0) >= UNMAPPED_REFRESH_MS) {
+      names[key] = { name: name, refused: refused,
+                     first: was ? was.first : now, last: now };
+      changed = true;
+    }
+  });
+  if (!changed) {
+    log.debug('Leaving recordUnmapped(). Nothing new.');
+    return false;
+  }
+  const kept = Object.keys(names).sort(function (a, b) {
+    return names[b].last - names[a].last;
+  }).slice(0, UNMAPPED_CAP);
+  const out = {};
+  kept.forEach(function (key) {
+    out[key] = names[key];
+  });
+  unmappedSeen.set(String(id), { names: out });
+  log.debug('Leaving recordUnmapped(). ' + kept.length + ' name(s) held.');
+  return true;
+}
+
+/**
+ * The names a relationship's partner sent that were not written, newest
+ * first.
+ *
+ * @param id - the relationship id
+ * @returns `[{ name, refused, first, last }]`, times in ISO 8601
+ */
+function unmappedOf(id) {
+  log.debug('Entering unmappedOf(). id=' + id);
+  const held = unmappedSeen.get(String(id || ''));
+  const names = (held && held.names) || {};
+  const out = Object.keys(names).map(function (key) {
+    const one = names[key];
+    return { name: String(one.name), refused: String(one.refused || ''),
+             first: new Date(one.first).toISOString(),
+             last: new Date(one.last).toISOString(), at: one.last };
+  }).sort(function (a, b) {
+    return b.at - a.at;
+  }).map(function (one) {
+    return { name: one.name, refused: one.refused, first: one.first,
+             last: one.last };
+  });
+  log.debug('Leaving unmappedOf(). ' + out.length + ' name(s).');
+  return out;
+}
+
+/**
+ * Changes one attribute of a relationship.
+ *
+ * @param id - the relationship id
+ * @param change - `field`, `value`, and `mode` (`add` or another edit) for a
+ *   multi-valued attribute
+ * @returns `{ ok: true, relationship, readiness, message }`, or `{ ok: false,
+ *   errors }`
+ */
 function update(id, change) {
   log.debug('Entering update(). id=' + id + ', field=' +
             (change && change.field));
@@ -2912,10 +3488,16 @@ function update(id, change) {
     value = value.trim().replace(/^@+/, '').toLowerCase();
   }
   const refusal = subjectFieldProblem(field, value) ||
-                  encryptionFieldProblem(record, field, value);
+                  encryptionFieldProblem(record, field, value) ||
+                  // Removing a value is never refused: a mapping written
+                  // before #94 must be removable.
+                  (field === 'fedAttributeMap' &&
+                   String(info.mode || 'add') !== 'remove'
+                    ? attributeMapProblem(value) : null);
   if (refusal) {
     log.debug('Leaving update(). ' + refusal.code);
-    // error-code: none — subjectFieldProblem() names the code at each return
+    // error-code: none — subjectFieldProblem() and attributeMapProblem()
+    // name the code at each return
     actionRefused(refusal.code, id, refusal.why);
     log.debug("Leaving update().");
     return { ok: false, errors: [refusal.message] };
@@ -3051,6 +3633,12 @@ function update(id, change) {
                : 'The relationship is still disabled.') };
 }
 
+/**
+ * Deletes a relationship.
+ *
+ * @param id - the relationship id
+ * @returns `{ ok: true, message }`, or `{ ok: false, errors }`
+ */
 function remove(id) {
   log.debug('Entering remove(). id=' + id);
   const record = get(id);
@@ -3072,6 +3660,9 @@ function remove(id) {
   }
   forgetReleaseIndexes();
   announceReleaseChange(id, releasePolicyOf(record), null);
+  // Its unmapped names go with it (#94): they describe a partner that is
+  // no longer configured.
+  unmappedSeen.delete(String(record.fedId));
   recordChange('federation.delete', record,
                'the federation relationship ' + id + ' was deleted',
                { dn: record.dn,
@@ -3125,6 +3716,15 @@ function remove(id) {
 // It answers WHICH of the two rather than a boolean, because the map draws them
 // as different lines and the log line is worth the distinction.
 // ---------------------------------------------------------------------------
+/**
+ * Says whether an application is configured to authenticate through a
+ * relationship, and which way: its entry names it, or an identity-provider-side
+ * relationship brokers to it.
+ *
+ * @param applicationId - the application identifier
+ * @param relationshipId - the relationship id
+ * @returns `{ configured, source }`, with `via` for the broker case
+ */
 function applicationConfiguredFor(applicationId, relationshipId) {
   log.debug('Entering applicationConfiguredFor(). application=' +
             (applicationId || '(none)') + ', relationship=' +
@@ -3226,6 +3826,14 @@ function packApplicationUse(row) {
 // console and the map both read it, so the ordering is decided here rather than
 // twice: a picture whose boxes moved because two applications drew level would
 // be a picture nobody could compare with itself.
+/**
+ * Returns the per-application use rows recorded on a relationship, busiest
+ * first.
+ *
+ * @param record - the federation relationship
+ * @returns the rows: `application`, `authentications`, `users`, `lastUser`,
+ *   `lastSeen`
+ */
 function applicationUse(record) {
   log.debug('Entering applicationUse(). id=' +
             ((record && record.fedId) || '(none)'));
@@ -3255,6 +3863,12 @@ function applicationUse(record) {
 // `federation.maxApplicationUse` since 2026-09-12; it was the constant 64, and
 // the export is the function now (nothing outside this file read the constant),
 // so a reader sees the value in force rather than the number it once was.
+/**
+ * Returns how many per-application rows a relationship keeps,
+ * `federation.maxApplicationUse`.
+ *
+ * @returns the cap
+ */
 function maxApplicationUse() {
   log.debug("Entering maxApplicationUse().");
   log.debug("Leaving maxApplicationUse().");
@@ -3272,6 +3886,13 @@ function maxApplicationUse() {
 // these entries and an index this module kept would be wrong exactly when
 // somebody had just edited one by hand. It runs when a page is drawn, over a
 // register an operator configured, and not on any issuing path.
+/**
+ * Returns the applications configured to use a relationship, read from the two
+ * registers rather than from what has happened.
+ *
+ * @param relationshipId - the relationship id
+ * @returns the rows: `application`, `source` and `via`
+ */
 function applicationsUsing(relationshipId) {
   log.debug('Entering applicationsUsing(). id=' + (relationshipId || '(none)'));
   const wanted = String(relationshipId || '').trim();
@@ -3394,6 +4015,17 @@ function recordApplicationUse(record, application, user, now, how) {
 // It cannot throw. A federation that worked must not be failed by a counter,
 // which is the argument the JWT recorder and the user observer both make.
 // ---------------------------------------------------------------------------
+/**
+ * Records an accepted federated sign-in on a relationship: the counts, the last
+ * user and, for a configured application, its own counts; clears the last
+ * error.
+ *
+ * Never throws.
+ *
+ * @param id - the relationship id
+ * @param detail - `user` and `application`
+ * @returns the updated record, or null
+ */
 function recordUse(id, detail) {
   log.debug('Entering recordUse(). id=' + id);
   try {
@@ -3468,6 +4100,15 @@ function recordUse(id, detail) {
 // And the other half, which is the more useful one. See fedLastError's schema
 // row: a federation that does not work fails at somebody else's service, and
 // this is where this service writes down what it thought was wrong.
+/**
+ * Records why a sign-in through a relationship was refused, on `fedLastError`.
+ *
+ * Never throws.
+ *
+ * @param id - the relationship id
+ * @param why - the reason
+ * @returns the updated record, or null
+ */
 function recordFailure(id, why) {
   log.debug('Entering recordFailure(). id=' + id);
   try {
@@ -3502,6 +4143,13 @@ function recordFailure(id, why) {
   }
 }
 
+/**
+ * The federation register: every relationship with a foreign identity service
+ * in one trust realm, held in the directory under `ou=federations`, with its
+ * vocabulary and the decisions every federation module shares.
+ *
+ * @namespace
+ */
 module.exports = {
   PATHS: PATHS,
   ROLES: ROLES,
@@ -3569,6 +4217,8 @@ module.exports = {
   // the header: it is consulted by admin_stats.js at its two existing funnels
   // and by nothing else.
   releaseFilterFor: releaseFilterFor,
+  recordUnmapped: recordUnmapped,
+  unmappedOf: unmappedOf,
   create: create,
   update: update,
   // ENCRYPTION TO THIS SERVICE (#168): the vocabulary, the policy a record's
@@ -3577,6 +4227,8 @@ module.exports = {
   ENCRYPTION_KEY_TYPES: ENCRYPTION_KEY_TYPES,
   XML_KEY_MANAGEMENT: XML_KEY_MANAGEMENT,
   JOSE_KEY_MANAGEMENT: JOSE_KEY_MANAGEMENT,
+  MANAGEMENT_FOR_KEY: MANAGEMENT_FOR_KEY,
+  JOSE_ONLY_KEY_TYPES: JOSE_ONLY_KEY_TYPES,
   XML_CONTENT_ENCRYPTION: XML_CONTENT_ENCRYPTION,
   JOSE_CONTENT_ENCRYPTION: JOSE_CONTENT_ENCRYPTION,
   REFUSED_ALGORITHMS: REFUSED_ALGORITHMS,

@@ -540,9 +540,11 @@ function childMain() {
       const trimmed = await replication.purgeOnce();
       note(trimmed && trimmed.trimmed === 3 &&
            calls.purges[0].retentionMs === 3600000 &&
-           calls.purges[0].readerTtlMs === 3600000,
+           calls.purges[0].readerTtlMs === 3600000 &&
+           calls.purges[0].nodeLiveness === true,
            'E3. the trim is asked with the retention and a reader lifetime ' +
-           'no shorter than it', JSON.stringify(calls.purges));
+           'no shorter than it, and the cell\'s own log judges readers by ' +
+           'membership too', JSON.stringify(calls.purges));
       config.setOverride('persistence.changeLogRetentionS', 0);
       const off = await replication.purgeOnce();
       note(off === null && calls.purges.length === 1,
@@ -595,6 +597,9 @@ function childMain() {
       }
       await pgDriver.purgeChangeLog({ retentionMs: 3600000,
                                      readerTtlMs: 3600000 });
+      await pgDriver.purgeChangeLog({ retentionMs: 3600000,
+                                     readerTtlMs: 3600000,
+                                     nodeLiveness: false });
       await pgDriver.countWindow('s', '', 'k', 1000);
       const trim = statements.filter(function (one) {
         return /DELETE FROM sts_changes/.test(one.sql);
@@ -607,6 +612,15 @@ function childMain() {
            'live reader AND older than the retention, nothing with no ' +
            'reader, and declares a reader of a dead node gone',
            trim ? trim.sql : 'no statement');
+      const trims = statements.filter(function (one) {
+        return /DELETE FROM sts_changes/.test(one.sql);
+      });
+      note(trims.length === 2 && !/sts_cluster_nodes/.test(trims[1].sql) &&
+           /reported_at < /.test(trims[1].sql),
+           'E7b. THE GLOBAL LOG\'S TRIM JUDGES A READER BY ITS REPORT ALONE ' +
+           '(2026-09-30): its readers\' membership rows are in their cells\' ' +
+           'databases, and reading this one declared every live reader gone',
+           trims[1] ? trims[1].sql : 'no second statement');
       const count = statements.filter(function (one) {
         return /INSERT INTO sts_cluster_windows/.test(one.sql);
       })[0];

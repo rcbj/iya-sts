@@ -22,9 +22,13 @@
 //      refuses THAT SAME TOKEN (403).
 //   2. SHARED SIGNALS, the same three steps.
 //   3. /admin-api. A client that is not the management client is refused
-//      `admin:read` at issuance; declared, its token reaches the API;
-//      withdrawn, the token it holds is refused 403 — in the DEFAULT realm,
-//      where until #110 any client's token carrying the scope was accepted.
+//      `admin:read` at issuance; declared but holding no role, it is still
+//      refused (#303 — a scope is a request, and ADMIN_READ is what
+//      authorizes it); in ADMIN_READ as well, its token reaches the API;
+//      taken out of the role, the token it holds is refused 403
+//      (STS-API-0125); and the declaration withdrawn, refused again — in the
+//      DEFAULT realm, where until #110 any client's token carrying the scope
+//      was accepted.
 //   4. REGISTRATION. RFC 7591's `scope` is the declaration, returned by the
 //      registration and by RFC 7592's read; a protected scope in it is
 //      `invalid_client_metadata`.
@@ -229,15 +233,41 @@ async function managementApi() {
     });
     await declare(api, ADMIN_CLIENT, "admin:read");
     r = await token(base, ADMIN_CLIENT, "admin:read", audience);
+    check("declared but holding no role, it is still refused invalid_scope " +
+          "(#303: the role authorizes the scope, not the declaration)",
+          function () {
+      assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+      assert.strictEqual(r.json && r.json.error, "invalid_scope", r.text);
+      assert.ok(/ADMIN_READ|no role/.test(r.text), r.text);
+    });
+    await ok(api + "/roles/add-member",
+             { role: "ADMIN_READ", kind: "application", member: ADMIN_CLIENT },
+             "put the client in ADMIN_READ");
+    r = await token(base, ADMIN_CLIENT, "admin:read", audience);
     assert.ok(r.status === 200 && r.json.access_token,
-              "precondition: declared, the token is issued: " + r.status +
-              " " + r.text.slice(0, 300));
+              "precondition: declared and in ADMIN_READ, the token is " +
+              "issued: " + r.status + " " + r.text.slice(0, 300));
     const auth = { Authorization: "Bearer " + r.json.access_token };
     r = await call("GET", api + "/status", undefined, auth);
-    check("declared by an administrator, its token reaches the API",
-          function () {
+    check("declared by an administrator and holding the role, its token " +
+          "reaches the API", function () {
       assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     });
+    await ok(api + "/roles/remove-member",
+             { role: "ADMIN_READ", kind: "application", member: ADMIN_CLIENT },
+             "took the client out of ADMIN_READ");
+    r = await call("GET", api + "/status", undefined, auth);
+    check("taken out of the role, the token it already holds is refused " +
+          "403 at once (#303, held ∩ carried)", function () {
+      assert.strictEqual(r.status, 403, r.text.slice(0, 300));
+      assert.ok(/no longer holds a role/.test(r.text), r.text);
+    });
+    await ok(api + "/roles/add-member",
+             { role: "ADMIN_READ", kind: "application", member: ADMIN_CLIENT },
+             "put the client back in ADMIN_READ");
+    r = await call("GET", api + "/status", undefined, auth);
+    assert.strictEqual(r.status, 200, "precondition: back in the role, the " +
+                       "same token works again: " + r.text.slice(0, 300));
     await declare(api, ADMIN_CLIENT, "admin:read", "remove");
     r = await call("GET", api + "/status", undefined, auth);
     check("withdrawn, the token it already holds is refused 403 — the " +
@@ -247,7 +277,12 @@ async function managementApi() {
       assert.ok(/oauthAllowedScope/.test(r.text), r.text);
     });
   } finally {
-    // An administrative client is not left behind in the default realm.
+    // An administrative client is not left behind in the default realm, and
+    // nor is its membership of ADMIN_READ (a refusal here means it was
+    // never added, which is fine).
+    await call("POST", api + "/roles/remove-member",
+               { role: "ADMIN_READ", kind: "application",
+                 member: ADMIN_CLIENT });
     await call("POST", api + "/applications/forget",
                { application: ADMIN_CLIENT });
   }

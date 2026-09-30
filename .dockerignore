@@ -51,7 +51,10 @@
 # list, the compose files, every Dockerfile and build-container.yml's named
 # contexts to each other. The service Dockerfile removes .github whole.
 !.github/image-mirror.txt
+!.github/scripts/push-stack-images.sh
 !.github/workflows/build-container.yml
+# ./run-jsdoc.sh's output, never read by an image.
+apidocs
 CLAUDE.md
 **/CLAUDE.md
 COVERAGE.md

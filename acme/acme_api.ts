@@ -63,7 +63,19 @@ interface AcmeApiDeps {
   loadAcmeConsole(): typeof import('./acme_console');
 }
 
+/**
+ * The ACME operations of `/admin-api`, mirroring the two console pages; both
+ * doors call `acme_console.ts`.
+ *
+ * Registers no route: `mgmt-api/admin_api.ts` spreads its table into its own.
+ */
 class AcmeApi {
+  /**
+   * Creates the ACME operations.
+   *
+   * @param deps - the logger, the body parser, the error-code table and a lazy
+   * loader of the console view model
+   */
   constructor(private readonly deps: AcmeApiDeps) {
     deps.log.debug("Entering AcmeApi.constructor().");
     deps.log.debug("Leaving AcmeApi.constructor().");
@@ -71,6 +83,11 @@ class AcmeApi {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AcmeApiDeps {
     helpers.log.debug("Entering AcmeApi.defaultDeps().");
     helpers.log.debug("Leaving AcmeApi.defaultDeps().");
@@ -86,12 +103,26 @@ class AcmeApi {
 
   // What loading this module did with its instance before R2, run once
   // for whichever instance is installed (#50, R2).
+  /**
+   * Builds the route table for the installed instance, the work loading this
+   * module did before R2.
+   *
+   * @param instance - the instance installed
+   */
   static wire(instance: AcmeApi): void {
     helpers.log.debug("Entering AcmeApi.wire().");
     routes = instance.buildRoutes();
     helpers.log.debug("Leaving AcmeApi.wire().");
   }
 
+  /**
+   * Sends a JSON answer, uncached, adding the realm's protocol endpoints to a
+   * successful object answer when the registration loop computed them.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the answer
+   */
   sendJson(res, status, body) {
     const { log } = this.deps;
     log.debug("Entering AcmeApi.sendJson(). status=" + status);
@@ -107,6 +138,11 @@ class AcmeApi {
     log.debug("Leaving AcmeApi.sendJson().");
   }
 
+  /**
+   * Returns the ACME console view model, required lazily.
+   *
+   * @returns the `acme_console` module
+   */
   consoleModel() {
     const { log, loadAcmeConsole } = this.deps;
     log.debug("Entering AcmeApi.consoleModel().");
@@ -114,6 +150,12 @@ class AcmeApi {
     return loadAcmeConsole();
   }
 
+  /**
+   * Builds the table of ACME operations: method, path, OpenAPI description and
+   * handler of each.
+   *
+   * @returns the operations
+   */
   buildRoutes() {
     const { log, parseBody, errorCodes } = this.deps;
     const self = this;
@@ -403,6 +445,14 @@ const OBJECT = function (description) {
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The ACME operations of the management API.
+ *
+ * Exports the class and the `ROUTES` table of the instance the composition root
+ * built.
+ *
+ * @namespace
+ */
 export = {
   AcmeApi: AcmeApi,
   installInstance: (instance: AcmeApi): void => slot.install(instance),
@@ -410,6 +460,10 @@ export = {
   // A GETTER, so the table is the installed instance's: under the root it is
   // built when the root installs that instance, and `mgmt-api/admin_api.ts`
   // reads it after that.
+  /**
+   * The ACME operations table of the installed instance, read by
+   * `mgmt-api/admin_api.ts` after the root has installed it.
+   */
   get ROUTES(): Routes {
     log.debug("Entering ROUTES().");
     slot.get();

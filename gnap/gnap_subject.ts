@@ -95,10 +95,29 @@ const SUB_ID_FORMATS_SUPPORTED = ['opaque', 'iss_sub', 'email', 'account',
                                   'aliases'];
 const ASSERTION_FORMATS_SUPPORTED = ['id_token', 'saml2'];
 
+/**
+ * Who the GNAP resource owner is, in both directions: Subject Identifiers and
+ * assertions about them out (RFC 9635 section 3.4), and a client's `user` in
+ * (section 2.4).
+ *
+ * It builds no token of its own: the ID Token is `oauth2`'s and the SAML
+ * assertion `saml2`'s.
+ */
 class GnapSubject {
+  /**
+   * The Subject Identifier formats (RFC 9493) this AS can produce.
+   */
   static readonly SUB_ID_FORMATS_SUPPORTED = SUB_ID_FORMATS_SUPPORTED;
+  /**
+   * The assertion formats this AS can produce about a resource owner.
+   */
   static readonly ASSERTION_FORMATS_SUPPORTED = ASSERTION_FORMATS_SUPPORTED;
 
+  /**
+   * Builds the subject reader from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapSubjectDeps) {
     deps.helpers.log.debug("Entering GnapSubject.constructor().");
     deps.helpers.log.debug("Leaving GnapSubject.constructor().");
@@ -121,6 +140,12 @@ class GnapSubject {
     return errorCodes.mark(out, code);
   }
 
+  /**
+   * Normalises a username: trimmed and lower-cased.
+   *
+   * @param name - the name
+   * @returns the normalised name
+   */
   normaliseName(name: unknown): string {
     const { log } = this;
     log.debug("Entering GnapSubject.normaliseName().");
@@ -148,6 +173,14 @@ class GnapSubject {
   // broken by a directory edit. The reference records the subject, so
   // presenting it back names whoever that entry is called now, and nobody once
   // the entry is gone.
+  /**
+   * Returns the opaque Subject Identifier for a person, derived over their
+   * stable subject where there is one, and records it in the reference store so
+   * that presenting it back as `user` resolves (section 2.4.1).
+   *
+   * @param username - the person
+   * @returns the opaque identifier
+   */
   opaqueIdFor(username: string): string {
     const { log } = this;
     const { helpers, store } = this.deps;
@@ -214,6 +247,15 @@ class GnapSubject {
   // unrequested one is never sent: the client asked for specific formats and
   // "the AS MAY return the RO's information in its response as requested".
   // -------------------------------------------------------------------------
+  /**
+   * Returns Subject Identifiers for a person in the requested formats; a format
+   * this AS cannot produce for them is omitted, never invented.
+   *
+   * @param username - the person
+   * @param formats - the requested formats
+   * @param ctx - the grant's context
+   * @returns the Subject Identifiers
+   */
   subIdsFor(username: string, formats: string[], ctx?: any): any[] {
     const { log } = this;
     const self = this;
@@ -297,6 +339,16 @@ class GnapSubject {
   // section 2.4's example makes the CLIENT the audience of an assertion about
   // its user.
   // -------------------------------------------------------------------------
+  /**
+   * Returns assertions about a person in the requested formats (section 3.4.1),
+   * with the client instance as their audience.
+   *
+   * @param username - the person
+   * @param formats - the requested assertion formats
+   * @param ctx - `{ oauthBase, instanceId }`: the realm's issuer base and the
+   *   audience
+   * @returns the assertions
+   */
   async assertionsFor(username: string, formats: string[],
                       ctx?: any): Promise<any[]> {
     const { log } = this;
@@ -349,6 +401,18 @@ class GnapSubject {
   // }` — an unrecognisable sub_id is a hint that did not help, not an error;
   // an unrecognised REFERENCE is `unknown_user` (section 2.4.1 says MUST).
   // -------------------------------------------------------------------------
+  /**
+   * Resolves an inbound `user` (section 2.4) to a username.
+   *
+   * `verified` is true only when an assertion this realm signed named the
+   * person; an unresolvable sub_id is a hint that did not help, and an unknown
+   * reference is `unknown_user`.
+   *
+   * @param user - the `user` member of the grant request
+   * @param ctx - the grant's context
+   * @returns `{ ok: true, username, verified }` (username null when nothing
+   *   resolved), or a refusal
+   */
   resolveUser(user: any, ctx?: any): Resolution {
     const { log } = this;
     const { store } = this.deps;
@@ -552,6 +616,12 @@ class GnapSubject {
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before. The loaders keep every require
   // as lazy as it was.
+  /**
+   * Returns the real modules and lazy loaders the instance was built from
+   * before the composition root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapSubjectDeps {
     helpers.log.debug("Entering GnapSubject.defaultDeps().");
     helpers.log.debug("Leaving GnapSubject.defaultDeps().");
@@ -595,9 +665,25 @@ const slot = new InstanceSlot<GnapSubject>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Who the GNAP resource owner is, in both directions: Subject Identifiers and
+ * assertions out, a client's `user` in.
+ *
+ * @namespace
+ */
 export = {
   GnapSubject: GnapSubject,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapSubject): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   SUB_ID_FORMATS_SUPPORTED: GnapSubject.SUB_ID_FORMATS_SUPPORTED,
   ASSERTION_FORMATS_SUPPORTED: GnapSubject.ASSERTION_FORMATS_SUPPORTED,

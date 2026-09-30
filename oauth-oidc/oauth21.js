@@ -61,16 +61,27 @@
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 
+/**
+ * The OAuth 2.1 draft revision this mode implements.
+ */
 const DRAFT = 'draft-ietf-oauth-v2-1-16';
 const DRAFT_URL = 'https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/16/';
 // Section 2.4 makes this one mandatory for JWT client authentication, so it is
 // cited beside the framework rather than folded into it.
+/**
+ * The RFC 7523bis draft whose sole-audience rule this mode applies to JWT
+ * client authentication.
+ */
 const AUDIENCE_DRAFT = 'draft-ietf-oauth-rfc7523bis-11';
 
 // Section 4.1.2: "A maximum authorization code lifetime of 10 minutes is
 // RECOMMENDED." A cap rather than a new setting, because the setting that
 // decides a code's lifetime already exists and a mode that invented a second
 // one would be two answers to "how long does a code live".
+/**
+ * The longest an authorization code may live in this mode, ten minutes (section
+ * 4.1.2).
+ */
 const MAX_CODE_TTL_MS = 10 * 60 * 1000;
 
 // The grants the registered-client rule applies to. Each is a grant a CLIENT
@@ -79,6 +90,9 @@ const MAX_CODE_TTL_MS = 10 * 60 * 1000;
 // the report: OpenID4VCI's pre-authorized code is anonymous access by that
 // specification's design, and the two assertion grants authenticate the
 // SUBJECT with a signature and may arrive with no client at all.
+/**
+ * The grants the registered-client rule applies to.
+ */
 const REGISTERED_CLIENT_GRANTS = [
   'authorization_code',
   'refresh_token',
@@ -102,6 +116,10 @@ const REPEATABLE_PARAMETERS = ['resource', 'audience'];
 //                 names the RFC 9700 row that does it
 //   'no'        — not enforced, and `note` says why
 // ---------------------------------------------------------------------------
+/**
+ * The mode's requirements, each with its section, level and whether it is
+ * enforced; checks cite a row by id and `GET /oauth2/oauth21` publishes them.
+ */
 const REQUIREMENTS = [
   { id: 'implies-rfc9700', section: '10', level: 'MUST',
     appliesTo: 'authorization server', enforced: 'inherited',
@@ -345,6 +363,11 @@ const REQUIREMENTS = [
           'declared is nobody.' }
 ];
 
+/**
+ * Tells whether OAuth 2.1 mode is on (`oauth2.oauth21`).
+ *
+ * @returns true when it is on
+ */
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
@@ -374,6 +397,13 @@ function hasScope(scope, value) {
 // `unconfirmed_redirect_uris` is what product mode withheld — named in the
 // sentence, because "you have no redirect URI" is false of an entry that holds
 // three nobody has confirmed.
+/**
+ * Refuses, in this mode, a client with no redirect URI of its own.
+ *
+ * @param client - `applications.clientConfigOf()`'s answer
+ * @param clientId - the client_id
+ * @returns null, or a refusal naming any unconfirmed redirect URIs
+ */
 function registeredClientRefusal(client, clientId) {
   log.debug("Entering registeredClientRefusal(). client=" + clientId);
   const own = client && Array.isArray(client.redirect_uris)
@@ -412,6 +442,14 @@ function registeredClientRefusal(client, clientId) {
 // the answer against the redirect allowlist before using it — this file cannot
 // require the module that holds it, and a default is still an address a
 // browser is sent to.
+/**
+ * Chooses the redirect URI when the request named none: optional with exactly
+ * one registered, required with several (section 4.1.1).
+ *
+ * @param client - `applications.clientConfigOf()`'s answer
+ * @param clientId - the client_id
+ * @returns `{ ok: true, uri }`, or a refusal
+ */
 function defaultRedirectUri(client, clientId) {
   log.debug("Entering defaultRedirectUri(). client=" + clientId);
   const own = client && Array.isArray(client.redirect_uris)
@@ -437,6 +475,14 @@ function defaultRedirectUri(client, clientId) {
 // check it against", because that is what makes the OpenID Connect nonce an
 // assurance rather than a hope. Answers `{ ok: true, exempt: '' }`, `{ ok:
 // true, exempt: 'oidc-nonce' }`, or a refusal.
+/**
+ * Decides whether this authorization request needs PKCE, and if not why.
+ *
+ * @param opts - `query`, `types` and `confidential` (a confidential method and
+ *   a credential on file)
+ * @returns `{ ok: true, exempt: '' }`, `{ ok: true, exempt: 'oidc-nonce' }`, or
+ *   a refusal
+ */
 function pkceDecision(opts) {
   log.debug("Entering pkceDecision().");
   const query = opts.query || {};
@@ -487,6 +533,13 @@ function pkceDecision(opts) {
 
 // The code-record fields this mode adds, so the one place a code is minted
 // does not have to know which ones they are.
+/**
+ * Returns the fields this mode adds to an authorization code's record.
+ *
+ * @param query - the authorization request
+ * @param types - the response types
+ * @returns `{ pkce_exempt }`, or {} outside the mode
+ */
 function codeRecordFields(query, types) {
   log.debug("Entering codeRecordFields().");
   if (!enabled()) {
@@ -506,6 +559,12 @@ function codeRecordFields(query, types) {
 }
 
 // The lifetime to mint a code with.
+/**
+ * Returns the lifetime to mint a code with, capped at ten minutes in this mode.
+ *
+ * @param configuredMs - the configured lifetime
+ * @returns the lifetime, in milliseconds
+ */
 function codeTtlMs(configuredMs) {
   log.debug("Entering codeTtlMs().");
   const configured = Number(configuredMs);
@@ -524,6 +583,13 @@ function codeTtlMs(configuredMs) {
 // Whether RFC 6749's token-request redirect_uri is still required of this
 // code. Every mode but this one: yes. This mode: only for a code minted under
 // the nonce exemption, which has no PKCE to bind it.
+/**
+ * Tells whether the token request must repeat the redirect_uri: always outside
+ * this mode, and in it only for a code minted under the nonce exemption.
+ *
+ * @param record - the code's record
+ * @returns true when it is required
+ */
 function tokenRedirectUriRequired(record) {
   log.debug("Entering tokenRedirectUriRequired().");
   if (!enabled()) {
@@ -535,6 +601,13 @@ function tokenRedirectUriRequired(record) {
 }
 
 // Section 4.1.3's last bullet, and the second half of the exemption.
+/**
+ * Refuses, in this mode, a code issued without PKCE, unless it was issued under
+ * the nonce exemption and the client authenticates (section 4.1.3).
+ *
+ * @param opts - `record` (the code's record) and `authenticated`
+ * @returns null, or an `invalid_grant` refusal
+ */
 function tokenCodeRefusal(opts) {
   log.debug("Entering tokenCodeRefusal().");
   const record = opts.record || {};
@@ -565,6 +638,14 @@ function tokenCodeRefusal(opts) {
 
 // How many client authentication methods a request carried. `presented` is
 // what the endpoint read: a Basic header, a body secret, a client assertion.
+/**
+ * Refuses, in this mode, a request carrying more than one client authentication
+ * method.
+ *
+ * @param presented - what the endpoint read: `basic`, `bodySecret` and
+ *   `assertion`
+ * @returns null, or an `invalid_request` refusal
+ */
 function multipleMethodsRefusal(presented) {
   log.debug("Entering multipleMethodsRefusal().");
   if (!enabled()) {
@@ -599,6 +680,13 @@ function multipleMethodsRefusal(presented) {
 // different moments: this one before the request is recorded against the
 // client's entry — a refusal for being unregistered must not be what creates
 // the entry — and the one below after the credential has been observed.
+/**
+ * Decides, before anything is verified, whether the client's entry may use this
+ * grant at the token endpoint in this mode.
+ *
+ * @param opts - `grant`, `clientId`, `registered` and `presented`
+ * @returns null, or an `invalid_client` refusal
+ */
 function tokenClientDeclarationRefusal(opts) {
   log.debug("Entering tokenClientDeclarationRefusal().");
   if (!enabled()) {
@@ -678,11 +766,21 @@ function tokenClientDeclarationRefusal(opts) {
 //   * a grant with NO client gets its access token and no refresh token, which
 //     is the honest version of what the redemption would have done.
 // ---------------------------------------------------------------------------
+/**
+ * The two assertion grants, which may arrive with no client at all.
+ */
 const ASSERTION_GRANTS = [
   'urn:ietf:params:oauth:grant-type:jwt-bearer',
   'urn:ietf:params:oauth:grant-type:saml2-bearer'
 ];
 
+/**
+ * Refuses, in this mode, an assertion grant naming a client that is not
+ * declared.
+ *
+ * @param opts - `grant`, `clientId` and `registered`
+ * @returns null, or an `invalid_client` refusal
+ */
 function assertionClientRefusal(opts) {
   log.debug("Entering assertionClientRefusal().");
   if (!enabled()) {
@@ -713,6 +811,13 @@ function assertionClientRefusal(opts) {
 // `withRefresh: false` and records STS-OAUTH-0298 on the audit row; the token
 // response is otherwise untouched, and RFC 6749 section 5.1 makes
 // `refresh_token` optional in it.
+/**
+ * Tells whether a refresh token is withheld: an assertion grant with no client,
+ * in this mode.
+ *
+ * @param opts - `grant` and `clientId`
+ * @returns true when it is withheld
+ */
 function withholdsRefreshToken(opts) {
   log.debug("Entering withholdsRefreshToken().");
   if (!enabled()) {
@@ -729,6 +834,13 @@ function withholdsRefreshToken(opts) {
 // What the token endpoint decides about what the client PRESENTED, once
 // `bcp.observeClientAuthentication()` — made in every mode — has said whether
 // it verified.
+/**
+ * Decides, once client authentication has been observed, whether what the
+ * client presented is refused in this mode.
+ *
+ * @param opts - `grant`, `observation` and `presented`
+ * @returns null, or an `invalid_client` refusal
+ */
 function tokenClientAuthenticationRefusal(opts) {
   log.debug("Entering tokenClientAuthenticationRefusal().");
   if (!enabled()) {
@@ -769,6 +881,12 @@ function tokenClientAuthenticationRefusal(opts) {
 // ---------------------------------------------------------------------------
 
 // Whether a JWT client assertion must name the issuer as its sole audience.
+/**
+ * Tells whether a JWT client assertion must name the issuer as its sole
+ * audience: in this mode.
+ *
+ * @returns true when it must
+ */
 function strictClientAssertionAudience() {
   log.debug("Entering strictClientAssertionAudience().");
   log.debug("Leaving strictClientAssertionAudience().");
@@ -776,6 +894,12 @@ function strictClientAssertionAudience() {
 }
 
 // Whether the loopback port wildcard applies whatever its setting says.
+/**
+ * Tells whether a loopback redirect URI matches on any port whatever its
+ * setting says: in this mode.
+ *
+ * @returns true when it does
+ */
 function loopbackAnyPort() {
   log.debug("Entering loopbackAnyPort().");
   log.debug("Leaving loopbackAnyPort().");
@@ -784,6 +908,14 @@ function loopbackAnyPort() {
 
 // The refusal for a repeated parameter, or null. `repeated` is the list of
 // names the caller found more than once.
+/**
+ * Refuses, in this mode, a parameter repeated that may not repeat (sections 3.1
+ * and 3.2).
+ *
+ * @param repeated - the names found more than once
+ * @param where - the endpoint, named in the refusal
+ * @returns null, or an `invalid_request` refusal
+ */
 function repeatedParameterRefusal(repeated, where) {
   log.debug("Entering repeatedParameterRefusal().");
   if (!enabled()) {
@@ -807,6 +939,14 @@ function repeatedParameterRefusal(repeated, where) {
 
 // The names that occur more than once in a parsed query (express gives an
 // array for a repeat) or in a form body read as text.
+/**
+ * Lists the names that occur more than once in a parsed query or a form body
+ * read as text.
+ *
+ * @param query - the parsed query
+ * @param rawBody - the form body as text
+ * @returns the names
+ */
 function repeatedNames(query, rawBody) {
   log.debug("Entering repeatedNames().");
   const seen = {};
@@ -859,6 +999,13 @@ const DESCRIPTION_REPLACEMENTS = {
   ' ': ' '
 };
 
+/**
+ * Holds an `error_description` to RFC 6749's character set, in every mode:
+ * common punctuation is replaced readably and anything else becomes `?`.
+ *
+ * @param text - the description
+ * @returns the sanitised description
+ */
 function sanitizeDescription(text) {
   log.debug("Entering sanitizeDescription().");
   if (typeof text !== 'string') {
@@ -879,6 +1026,12 @@ function sanitizeDescription(text) {
 // what it will do (`oauth-oidc/CLAUDE.md` 3f: a refusal at an endpoint needs
 // the matching refusal at registration).
 // ---------------------------------------------------------------------------
+/**
+ * Refuses, at registration in this mode, metadata an endpoint would refuse.
+ *
+ * @param metadata - the registration metadata
+ * @returns null, or an `invalid_client_metadata` refusal
+ */
 function registrationRefusal(metadata) {
   log.debug("Entering registrationRefusal().");
   if (!enabled()) {
@@ -911,6 +1064,13 @@ function registrationRefusal(metadata) {
 
 // What the metadata stops advertising, for the reason `oauth2_bcp.js` gives: a
 // discovery document is a promise the endpoints keep.
+/**
+ * Removes, in this mode, what the discovery document must stop advertising:
+ * `saml2_bearer`.
+ *
+ * @param metadata - the discovery document
+ * @returns the document
+ */
 function applyToMetadata(metadata) {
   log.debug("Entering applyToMetadata().");
   if (!enabled() || !metadata) {
@@ -928,6 +1088,11 @@ function applyToMetadata(metadata) {
 }
 
 // What GET /oauth2/oauth21 publishes.
+/**
+ * Describes the mode as `GET /oauth2/oauth21` publishes it.
+ *
+ * @returns the description
+ */
 function state() {
   log.debug("Entering state().");
   const on = enabled();
@@ -985,6 +1150,12 @@ function state() {
   return view;
 }
 
+/**
+ * The OAuth 2.1 Authorization Framework as a mode (`oauth2.oauth21`), which
+ * implies RFC 9700 mode.
+ *
+ * @namespace
+ */
 module.exports = {
   DRAFT: DRAFT,
   AUDIENCE_DRAFT: AUDIENCE_DRAFT,

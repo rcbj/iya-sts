@@ -78,12 +78,24 @@ const { log } = helpers;
 
 // The scheme, written once. Compared case-insensitively when reading (a URI
 // scheme is case-insensitive per RFC 3986) and always written lower-case.
+/**
+ * The SPIFFE URI scheme, always written lower-case.
+ */
 const SCHEME = 'spiffe';
+/**
+ * `spiffe://`, the text every SPIFFE ID starts with.
+ */
 const PREFIX = SCHEME + '://';
 
 // From the SPIFFE-ID specification: the whole identifier, and the trust domain
 // name within it.
+/**
+ * The longest SPIFFE ID the specification allows, in bytes.
+ */
 const MAX_ID_BYTES = 2048;
+/**
+ * The longest trust domain name the specification allows, in bytes.
+ */
 const MAX_TRUST_DOMAIN_BYTES = 255;
 
 // The two character classes, as they are written in the specification rather
@@ -97,6 +109,10 @@ const PATH_SEGMENT_CHARS = /^[a-zA-Z0-9.\-_]+$/;
 // implementation itself — the server, the agents it attests, and the join
 // tokens it mints — and a workload registered there would be given an
 // identifier this service also issues on its own account.
+/**
+ * The path prefix reserved for the SPIFFE implementation itself: the server,
+ * its agents and its join tokens.
+ */
 const RESERVED_PREFIX = '/spire';
 
 // What `SpiffeId` needs from the rest of the service: the modules this file
@@ -106,13 +122,30 @@ interface SpiffeIdDeps {
   log: typeof log;
 }
 
+/**
+ * The SPIFFE ID grammar: parsing, building and comparing identifiers, and
+ * converting them to and from `spire.api.types.SPIFFEID`.
+ *
+ * Stricter than a URL parser: an upper-case trust domain is refused rather than
+ * normalised.
+ */
 class SpiffeId {
+  /**
+   * Builds the grammar over its dependencies.
+   *
+   * @param deps - the logger
+   */
   constructor(private readonly deps: SpiffeIdDeps) {
     deps.log.debug("Entering SpiffeId.constructor().");
     deps.log.debug("Leaving SpiffeId.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SpiffeIdDeps {
     helpers.log.debug("Entering SpiffeId.defaultDeps().");
     helpers.log.debug("Leaving SpiffeId.defaultDeps().");
@@ -121,6 +154,12 @@ class SpiffeId {
     };
   }
 
+  /**
+   * Returns the UTF-8 length of a value's text.
+   *
+   * @param text - the value
+   * @returns its length in bytes
+   */
   byteLength(text) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.byteLength().");
@@ -146,6 +185,13 @@ class SpiffeId {
   // which is a valid SPIFFE ID and is what names the trust domain itself in a
   // bundle map. That case is the reason `path` is not defaulted to '/'.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses a SPIFFE ID against the specification's grammar.
+   *
+   * @param value - the text to parse
+   * @returns `{ ok: true, id, trustDomain, path, segments }`, `path` being ''
+   *   for a trust-domain-only identifier, or `{ ok: false, reason }`
+   */
   parse(value) {
     const { log } = this.deps;
     log.debug('Entering SpiffeId.parse(). value=' + value);
@@ -265,6 +311,12 @@ class SpiffeId {
   }
 
   // The plain question, for the many callers that only want yes or no.
+  /**
+   * Asks whether a value is a valid SPIFFE ID.
+   *
+   * @param value - the text to check
+   * @returns whether it parses
+   */
   isValid(value) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.isValid().");
@@ -284,6 +336,15 @@ class SpiffeId {
   // building an identifier out of its own values has a bug if the result is
   // invalid, where a caller reading one has been handed something.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a SPIFFE ID from a trust domain and a path, supplying the path's
+   * leading slash when it is missing.
+   *
+   * @param trustDomain - the trust domain name
+   * @param path - the path, with or without its leading slash
+   * @returns the identifier
+   * @throws an Error when the result is not a valid SPIFFE ID
+   */
   make(trustDomain, path) {
     const { log } = this.deps;
     log.debug('Entering SpiffeId.make(). trustDomain=' + trustDomain);
@@ -304,6 +365,13 @@ class SpiffeId {
   // `spiffe://example.org`, with no path. This is what keys a bundle map on
   // both the Workload API and the SPIRE Server API, and it is a valid SPIFFE ID
   // rather than a special case.
+  /**
+   * Returns a trust domain as an identifier in its own right,
+   * `spiffe://example.org`, which keys a bundle map.
+   *
+   * @param trustDomain - the trust domain name
+   * @returns the identifier
+   */
   trustDomainId(trustDomain) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.trustDomainId().");
@@ -315,6 +383,12 @@ class SpiffeId {
   // The trust domain NAME out of an identifier, or '' if it is not one. Named
   // separately from parse() because a great many callers want only this and
   // reading `.trustDomain` off a failed parse silently gives undefined.
+  /**
+   * Returns the trust domain name out of an identifier.
+   *
+   * @param value - the identifier
+   * @returns the trust domain name, or '' when it is not a SPIFFE ID
+   */
   trustDomainOf(value) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.trustDomainOf().");
@@ -328,6 +402,14 @@ class SpiffeId {
   // `spiffe://example.org` is also a prefix of
   // `spiffe://example.org.attacker.com`, and every implementation that has got
   // this wrong got it wrong that way.
+  /**
+   * Asks whether an identifier belongs to a trust domain, by comparing the
+   * parsed trust domain rather than a string prefix.
+   *
+   * @param value - the identifier
+   * @param trustDomain - the trust domain name
+   * @returns whether it is a member
+   */
   isMemberOf(value, trustDomain) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.isMemberOf().");
@@ -353,6 +435,12 @@ class SpiffeId {
   // The match is on the SEGMENT rather than on the string, because `/spirev2/x`
   // starts with `/spire` and is not reserved.
   // ---------------------------------------------------------------------------
+  /**
+   * Asks whether an identifier's path is under the reserved `/spire` segment.
+   *
+   * @param value - the identifier
+   * @returns whether it is reserved
+   */
   isReservedPath(value) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.isReservedPath().");
@@ -367,6 +455,13 @@ class SpiffeId {
 
   // This service's own identifier as a SPIFFE server. SPIRE uses exactly this
   // path and so does everything that talks to it.
+  /**
+   * Returns this service's own identifier as a SPIFFE server, `spiffe://<trust
+   * domain>/spire/server`.
+   *
+   * @param trustDomain - the trust domain name
+   * @returns the identifier
+   */
   serverId(trustDomain) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.serverId().");
@@ -379,6 +474,15 @@ class SpiffeId {
   // agent that attested against a real SPIRE server and then against this one
   // should get an identifier of the same shape, and because the attestor name
   // is the only part of it this service chooses.
+  /**
+   * Returns an attested agent's identifier in SPIRE's shape,
+   * `/spire/agent/<attestor>/<suffix>`.
+   *
+   * @param trustDomain - the trust domain name
+   * @param attestorName - the node attestor's name
+   * @param suffix - the attestor-specific suffix
+   * @returns the identifier
+   */
   agentId(trustDomain, attestorName, suffix) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.agentId().");
@@ -389,6 +493,12 @@ class SpiffeId {
     return this.make(trustDomain, '/spire/agent/' + attestor + '/' + tail);
   }
 
+  /**
+   * Asks whether an identifier is an agent's, under `/spire/agent/`.
+   *
+   * @param value - the identifier
+   * @returns whether it is
+   */
   isAgentId(value) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.isAgentId().");
@@ -398,6 +508,12 @@ class SpiffeId {
            parsed.segments[0] === 'spire' && parsed.segments[1] === 'agent';
   }
 
+  /**
+   * Asks whether an identifier is a server's, `/spire/server`.
+   *
+   * @param value - the identifier
+   * @returns whether it is
+   */
   isServerId(value) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.isServerId().");
@@ -417,6 +533,13 @@ class SpiffeId {
   // `spiffe://example.org` in the trust_domain field, which produces an
   // identifier of `spiffe://spiffe://example.org/x` at the far end.
   // ---------------------------------------------------------------------------
+  /**
+   * Converts an identifier to `spire.api.types.SPIFFEID`: the trust domain name
+   * without its scheme, and the path with its slash.
+   *
+   * @param value - the identifier
+   * @returns the message's fields, or null when the value is not a SPIFFE ID
+   */
   toProto(value) {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.toProto().");
@@ -429,6 +552,12 @@ class SpiffeId {
     return { trust_domain: parsed.trustDomain, path: parsed.path };
   }
 
+  /**
+   * Converts a `spire.api.types.SPIFFEID` back to an identifier.
+   *
+   * @param message - the message
+   * @returns the identifier, or '' when the message does not make a valid one
+   */
   fromProto(message) {
     const { log } = this.deps;
     log.debug('Entering SpiffeId.fromProto().');
@@ -478,6 +607,10 @@ const slot = new InstanceSlot<SpiffeId>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The SPIFFE ID grammar, and nothing else: a library that registers no route.
+ * @namespace
+ */
 export = {
   SpiffeId: SpiffeId,
   installInstance: (instance: SpiffeId): void => slot.install(instance),

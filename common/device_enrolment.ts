@@ -93,12 +93,16 @@ import webauthnPolicy = require('../authn/webauthn_policy');
 
 type Json = any;
 
+/** The two purposes a challenge is issued for: `key` and `webauthn`. */
 const PURPOSES = ['key', 'webauthn'];
 const CLAIM_SCOPE = 'devices.challenge';
 const MAX_LABEL = 128;
 
 const challenges = realms.map({ persist: 'devices.challenges',
-                                tombstone: true });
+                                tombstone: true,
+                                // #333: the challenge's `expiresAt`, ms.
+                                expiresAt: realms.expiryField('expiresAt',
+                                                              1) });
 
 function challengeTtlMs(): number {
   helpers.log.debug("Entering challengeTtlMs().");
@@ -160,14 +164,35 @@ interface DeviceEnrolmentDeps {
   now: () => number;
 }
 
+/**
+ * A person registering their own device by proving one of its keys: a JWK
+ * proof or App Attest statement over a challenge, or a linked WebAuthn
+ * platform credential proven again by a fresh assertion.
+ *
+ * A key that is not attested is registered `self-asserted` in development
+ * and refused in product mode.
+ */
 class DeviceEnrolment {
+  /** The two purposes a challenge is issued for. */
   static readonly PURPOSES = PURPOSES;
 
+  /**
+   * Builds an enrolment service over the given dependencies.
+   *
+   * @param deps - the logger, settings, mode, error codes, audit, the device
+   *   register, attestation and recognition, credentials, cluster claims, the
+   *   WebAuthn verifier and policy, the realm reader and a clock
+   */
   constructor(private readonly deps: DeviceEnrolmentDeps) {
     deps.log.debug("Entering DeviceEnrolment.constructor().");
     deps.log.debug("Leaving DeviceEnrolment.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): DeviceEnrolmentDeps {
     helpers.log.debug("Entering DeviceEnrolment.defaultDeps().");
     helpers.log.debug("Leaving DeviceEnrolment.defaultDeps().");
@@ -196,6 +221,15 @@ class DeviceEnrolment {
   // `detail` rides along (a WebAuthn link's credential and target). Answers
   // { ok, challenge, purpose, expiresAt }.
   // =========================================================================
+  /**
+   * Issues a challenge bound to the session and the person, replacing any
+   * earlier one this session holds for the same purpose.
+   *
+   * @param spec - `purpose` (`key` or `webauthn`), `sessionId`, `username`,
+   *   and `detail` to carry along (a WebAuthn link's credential and target)
+   * @returns `{ ok, challenge, purpose, expiresAt, detail }`, or a refusal
+   *   `{ ok: false, status, error }`
+   */
   issueChallenge(spec: Json): Json {
     const { log, config } = this.deps;
     log.debug("Entering DeviceEnrolment.issueChallenge().");
@@ -236,6 +270,13 @@ class DeviceEnrolment {
 
   // The live challenge this session holds for `purpose`, or null — what the
   // page draws while a ceremony or a proof is awaited.
+  /**
+   * Returns the live challenge this session holds for a purpose.
+   *
+   * @param sessionId - the session's id
+   * @param purpose - `key` or `webauthn`
+   * @returns the challenge's row with its `challenge`, or null
+   */
   pendingFor(sessionId: unknown, purpose: string): Json {
     const { log } = this.deps;
     log.debug("Entering DeviceEnrolment.pendingFor(). " + purpose);
@@ -252,6 +293,12 @@ class DeviceEnrolment {
   }
 
   // Forgets this session's challenge for `purpose` (the page's Cancel).
+  /**
+   * Forgets this session's challenge for a purpose (the page's Cancel).
+   *
+   * @param sessionId - the session's id
+   * @param purpose - `key` or `webauthn`
+   */
   abandon(sessionId: unknown, purpose: string): void {
     const { log } = this.deps;
     log.debug("Entering DeviceEnrolment.abandon(). " + purpose);
@@ -383,6 +430,17 @@ class DeviceEnrolment {
   // JWS) | appAttest: { keyId, attestation }, deviceId?, label, platform,
   // model, os, keyLabel }.
   // =========================================================================
+  /**
+   * Registers a device key from a JWK proof or an App Attest statement that
+   * answers a `key` challenge.
+   *
+   * The challenge is spent once across the cluster before the proof is
+   * verified.
+   * @param spec - `username`, `sessionId`, `challenge`, `audience`, and
+   *   `proof` (a compact JWS) or `appAttest: { keyId, attestation }`; with
+   *   `deviceId`, `label`, `platform`, `model`, `os` and `keyLabel`
+   * @returns the register's result, or a refusal `{ ok: false, status, error }`
+   */
   async proveKey(spec: Json): Promise<Json> {
     const { log, deviceAttestation, deviceRecognition } = this.deps;
     log.debug("Entering DeviceEnrolment.proveKey().");
@@ -428,6 +486,15 @@ class DeviceEnrolment {
   // a `webauthn` challenge carrying it is issued. { ok, challenge, … } or a
   // refusal.
   // =========================================================================
+  /**
+   * Begins linking one of the person's WebAuthn credentials to a device by
+   * issuing a `webauthn` challenge that carries it.
+   *
+   * A roaming (cross-platform) authenticator is refused.
+   * @param spec - `username`, `sessionId`, `credentialId`, `deviceId` and the
+   *   device's description
+   * @returns `{ ok, challenge, … }`, or a refusal
+   */
   beginLink(spec: Json): Json {
     const { log, credentials } = this.deps;
     log.debug("Entering DeviceEnrolment.beginLink().");
@@ -465,6 +532,15 @@ class DeviceEnrolment {
   // `credentials.spendAssertion()`; the key's REGISTRATION attestation
   // decides its level.
   // =========================================================================
+  /**
+   * Finishes a WebAuthn link: verifies the assertion with the stored key,
+   * spends it, and registers the key on the device.
+   *
+   * The key's registration attestation decides whether it is `attested`.
+   * @param spec - `username`, `sessionId`, `challenge`, `credential` (what
+   *   `/authn/webauthn.js` posted in `get` mode), `origin` and `rpId`
+   * @returns the register's result, or a refusal
+   */
   async finishLink(spec: Json): Promise<Json> {
     const { log, credentials, webauthnVerifier, webauthnPolicy } = this.deps;
     log.debug("Entering DeviceEnrolment.finishLink().");
@@ -558,6 +634,11 @@ class DeviceEnrolment {
   }
 
   // What Protocols → Device registration says about the store.
+  /**
+   * Describes the challenge store for Protocols → Device registration.
+   *
+   * @returns the store's name, live count, lifetime, cap and purposes
+   */
   describeChallenges(): Json {
     this.deps.log.debug("Entering DeviceEnrolment.describeChallenges().");
     let live = 0;
@@ -588,10 +669,29 @@ const slot = new InstanceSlot<DeviceEnrolment>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * A person registering their own device by proving one of its keys.
+ *
+ * A library that registers no route (`portal/portal_devices.ts` is the
+ * door); the functions forward to the instance the composition root
+ * installs.
+ * @namespace
+ */
 export = {
   DeviceEnrolment: DeviceEnrolment,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: DeviceEnrolment): void =>
     slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   PURPOSES: PURPOSES,
   issueChallenge: slot.forward('issueChallenge'),

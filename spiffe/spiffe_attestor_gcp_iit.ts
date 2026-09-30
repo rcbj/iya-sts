@@ -49,6 +49,10 @@ type NodeAttestationResult =
 const AUDIENCE = 'spire-gcp-node-attestor';
 const DEFAULT_TEMPLATE = '/{{ .PluginName }}/{{ .ProjectID }}/' +
   '{{ .InstanceID }}';
+/**
+ * The optional npm package the Compute Engine API is read through when
+ * `spiffe.gcpIitUseInstanceMetadata` is on.
+ */
 const COMPUTE_PACKAGE = '@google-cloud/compute';
 // go-jose's jwt.DefaultLeeway.
 const LEEWAY_SECONDS = 60;
@@ -66,19 +70,45 @@ interface GcpIitDeps {
   now(): number;
 }
 
+/**
+ * The `gcp_iit` node attestor: verifies a Google Compute Engine instance
+ * identity token, after SPIRE's `gcpiit` plugin.
+ *
+ * The token is checked RS256 against Google's published certificates, the
+ * project against `spiffe.gcpIitProjectIdAllowList`, and an instance attests
+ * once (trust on first use).
+ */
 class GcpIitAttestor {
+  /**
+   * The attestation type an agent names in `params.data.type`.
+   */
   readonly type = 'gcp_iit';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'A Compute Engine instance identity token signed by ' +
     'Google, for an allowed project; once per instance.';
   // Google's certificates by kid, and until when they may be kept.
   private certs: Record<string, string> = {};
   private certsUntil = 0;
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, configuration, crypto, SPIFFE and gRPC helpers,
+   *   the outbound HTTP client, a package loader and a clock
+   */
   constructor(private readonly deps: GcpIitDeps) {
     deps.log.debug("Entering GcpIitAttestor.constructor().");
     deps.log.debug("Leaving GcpIitAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): GcpIitDeps {
     helpers.log.debug("Entering GcpIitAttestor.defaultDeps().");
     helpers.log.debug("Leaving GcpIitAttestor.defaultDeps().");
@@ -95,6 +125,15 @@ class GcpIitAttestor {
     };
   }
 
+  /**
+   * Marks an error code on the call and returns the gRPC status error to throw.
+   *
+   * @param call - the gRPC call the refusal is for
+   * @param code - the `STS-SPIFFE-…` error code to record
+   * @param grpcCode - the gRPC status code
+   * @param message - the message the client is sent
+   * @returns the status error
+   */
   refuse(call: any, code: string, grpcCode: number, message: string): Error {
     const { log, errorCodes, rpc } = this.deps;
     log.debug("Entering GcpIitAttestor.refuse(). " + code);
@@ -105,6 +144,12 @@ class GcpIitAttestor {
     return rpc.statusError(grpcCode, message);
   }
 
+  /**
+   * Reads a list setting, given as an array or a comma-separated string.
+   *
+   * @param key - the setting's name
+   * @returns the trimmed, non-empty values
+   */
   csv(key: string): string[] {
     const { log, config } = this.deps;
     log.debug("Entering GcpIitAttestor.csv(). " + key);
@@ -118,6 +163,13 @@ class GcpIitAttestor {
 
   // Google's certificates, fetched when none are held or they have expired.
   // Resolves the kid → PEM map, or throws a sentence.
+  /**
+   * Returns Google's signing certificates by `kid`, fetching them from
+   * `spiffe.gcpIitCertsUrl` when none are held or the held ones have expired.
+   *
+   * @returns a map of kid to PEM certificate
+   * @throws an Error carrying a sentence when the fetch or its answer fails
+   */
   async googleCertificates(): Promise<Record<string, string>> {
     const { log, config, outbound, now } = this.deps;
     log.debug("Entering GcpIitAttestor.googleCertificates().");
@@ -147,6 +199,13 @@ class GcpIitAttestor {
   }
 
   // The instance, from the Compute Engine API.
+  /**
+   * Reads the instance from the Compute Engine API, through the optional
+   * `@google-cloud/compute` package.
+   *
+   * @param identity - the verified token's Compute Engine claims
+   * @returns the instance as the API describes it
+   */
   async instance(identity: any): Promise<any> {
     const { log, config, load } = this.deps;
     log.debug("Entering GcpIitAttestor.instance().");
@@ -161,13 +220,22 @@ class GcpIitAttestor {
     return Array.isArray(answer) ? answer[0] : answer;
   }
 
+  /**
+   * Verifies an instance identity token and derives the agent's ID and
+   * selectors.
+   *
+   * @param context - the attestation context; the payload is the token
+   * @returns the agent's ID and selectors (project-id, zone, instance-name, sa,
+   *   and the instance's tags, labels and metadata when configured)
+   * @throws a gRPC status error when the token or its instance is refused
+   */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
     const { log, config, stsCrypto, spiffeId, rpc, agentPath, load,
             now } = this.deps;
     log.debug("Entering GcpIitAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const projects = this.csv('spiffe.gcpIitProjectIdAllowList');
     let template = null;
     let problem = projects.length ? '' : 'projectid_allow_list is required ' +
@@ -367,6 +435,11 @@ class GcpIitAttestor {
   }
 }
 
+/**
+ * The `gcp_iit` node attestor (#40): a Google Compute Engine instance identity
+ * token, verified as SPIRE's plugin verifies it.
+ * @namespace
+ */
 export = {
   GcpIitAttestor: GcpIitAttestor,
   COMPUTE_PACKAGE: COMPUTE_PACKAGE

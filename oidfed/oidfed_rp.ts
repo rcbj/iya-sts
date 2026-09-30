@@ -51,6 +51,9 @@ type Req = any;
 // The algorithm the RP signs with: ES256, which every OpenID Federation
 // implementation verifies (Connect 1.1 lists no mandatory one; the realm's
 // federation key's default is the same, for the same reason).
+/**
+ * The algorithm the relying party signs with: ES256.
+ */
 const RP_ALG = 'ES256';
 
 interface RpDeps {
@@ -75,14 +78,33 @@ interface Outcome {
   [key: string]: Json;
 }
 
+/**
+ * This service as a federated OpenID Connect relying party (OpenID Federation
+ * for OpenID Connect 1.1): an `oidc` federation relationship whose OP is
+ * resolved through its Trust Chain to a configured Trust Anchor.
+ */
 class OidfedRp {
+  /**
+   * See the module's `RP_ALG`.
+   */
   static readonly RP_ALG = RP_ALG;
 
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - the realm's keys and signer, the lazily loaded entity,
+   * relationship register, federation SP and outbound HTTP, and a clock
+   */
   constructor(private readonly deps: RpDeps) {
     deps.log.debug("Entering OidfedRp.constructor().");
     deps.log.debug("Leaving OidfedRp.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): RpDeps {
     helpers.log.debug("Entering OidfedRp.defaultDeps().");
     helpers.log.debug("Leaving OidfedRp.defaultDeps().");
@@ -118,6 +140,13 @@ class OidfedRp {
   }
 
   // Is this relationship one whose OP is found through a Trust Chain?
+  /**
+   * Answers whether a relationship's OP is found through a Trust Chain: an
+   * `oidc` service-provider relationship with `fedTrustAnchor` set.
+   *
+   * @param record - the federation relationship
+   * @returns true when it is federated
+   */
   isFederated(record: Json): boolean {
     this.deps.log.debug("Entering OidfedRp.isFederated().");
     this.deps.log.debug("Leaving OidfedRp.isFederated().");
@@ -127,6 +156,12 @@ class OidfedRp {
   }
 
   // The realm's ES256 protocol key, as the JWK the RP metadata publishes.
+  /**
+   * Answers the realm's ES256 protocol key as the JWK the relying party
+   * metadata publishes.
+   *
+   * @returns the public JWK
+   */
   publicJwk(): Json {
     const { log, signingKeys, publishedKidFor } = this.deps;
     log.debug("Entering OidfedRp.publicJwk().");
@@ -150,6 +185,14 @@ class OidfedRp {
   // invite registrations that lead nowhere. Its redirect_uris are the
   // assertion consumer service of every such relationship.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the realm's `openid_relying_party` metadata for its Entity
+   * Configuration, its `redirect_uris` the assertion consumer service of every
+   * relationship that trusts an OP through the federation.
+   *
+   * @param req - the request, for the realm's base URL
+   * @returns the metadata, or null where no enabled relationship needs it
+   */
   relyingPartyMetadata(req: Req): Json {
     const { log, federation, federationSp, baseUrlOf } = this.deps;
     const self = this;
@@ -188,6 +231,16 @@ class OidfedRp {
   // put where the rest of `federation_sp.ts` reads them. `{ ok, record,
   // anchor }` or a refusal naming what failed.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves a relationship's OP through its Trust Chain to `fedTrustAnchor`
+   * and puts its endpoints, keys and this realm's client_id where
+   * `federation_sp.ts` reads them.
+   *
+   * @param req - the request
+   * @param record - the federation relationship
+   * @returns a promise of `{ ok, record, anchor }`, or of a refusal naming what
+   * failed
+   */
   async effectiveRecord(req: Req, record: Json): Promise<Outcome> {
     const { log, oidfed, fedHttp } = this.deps;
     log.debug("Entering OidfedRp.effectiveRecord(). " + record.fedId);
@@ -266,6 +319,14 @@ class OidfedRp {
   // header: the OP resolves this realm through its own Entity Configuration,
   // and a URL carrying a whole chain is longer than many servers accept.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the authorization request as a signed Request Object (12.1.1.1),
+   * with the outer query OpenID Connect requires.
+   *
+   * @param effective - `effectiveRecord()`'s record
+   * @param params - the authorization request's parameters
+   * @returns a promise of the URL to send the browser to
+   */
   async authorizationRequestUrl(effective: Json, params: URLSearchParams):
       Promise<string> {
     const { log, now, signJwtAsAsync } = this.deps;
@@ -297,6 +358,13 @@ class OidfedRp {
 
   // The private_key_jwt for the token request (RFC 7523, 12.1.1.2): `iss`
   // and `sub` this realm's client_id, `aud` the OP's Entity Identifier.
+  /**
+   * Signs the `private_key_jwt` for the token request (RFC 7523, 12.1.1.2):
+   * `iss` and `sub` this realm's client_id, `aud` the OP's Entity Identifier.
+   *
+   * @param effective - `effectiveRecord()`'s record
+   * @returns a promise of the assertion
+   */
   async clientAssertion(effective: Json): Promise<string> {
     const { log, now, signJwtAsAsync } = this.deps;
     log.debug("Entering OidfedRp.clientAssertion().");
@@ -320,9 +388,23 @@ const slot = new InstanceSlot<OidfedRp>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * This service as a federated relying party: an OpenID Connect federation
+ * relationship configured by the OP's Entity Identifier and a Trust Anchor,
+ * everything else discovered through the Trust Chain.
+ * @namespace
+ */
 export = {
   OidfedRp: OidfedRp,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: OidfedRp): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   RP_ALG: RP_ALG,
   isFederated: slot.forward('isFederated'),

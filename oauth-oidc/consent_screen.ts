@@ -164,7 +164,9 @@ const CONSENT_TTL_MS = 10 * 60 * 1000;
 // stores that were left shared, and the reason `realms.map()` exists.
 // ---------------------------------------------------------------------------
 const pending = realms.map({ persist: 'consent_screen.pending',
-                             retain: 'age' });
+                             retain: 'age',
+                             // #333: the screen's `expires`, ms.
+                             expiresAt: realms.expiryField('expires', 1) });
 
 // The few rules the sign-in screen's stylesheet has no use for. Appended rather
 // than merged into CARD_CSS, so that a change here cannot alter the sign-in
@@ -203,9 +205,22 @@ const CONSENT_FORM = vz.object({
   csrf_token: vt.opt(vt.token)
 });
 
+/**
+ * The OAuth consent screen at `/oauth2/consent`: the pending records, the page,
+ * and Allow or Deny. What has been agreed is `common/consent.ts`'s.
+ */
 class ConsentScreen {
+  /**
+   * The consent screen's path.
+   */
   static readonly CONSENT_PATH = CONSENT_PATH;
 
+  /**
+   * Builds the screen from its dependencies.
+   *
+   * @param deps - the helpers, consent register, audit log and other modules
+   *   this class reads
+   */
   constructor(private readonly deps: ConsentScreenDeps) {
     deps.log.debug("Entering ConsentScreen.constructor().");
     deps.log.debug("Leaving ConsentScreen.constructor().");
@@ -213,6 +228,11 @@ class ConsentScreen {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): ConsentScreenDeps {
     helpers.log.debug("Entering ConsentScreen.defaultDeps().");
     helpers.log.debug("Leaving ConsentScreen.defaultDeps().");
@@ -262,6 +282,20 @@ class ConsentScreen {
   // does with it — and so that this module never has to know that a
   // `form_post` response is not a redirect.
   // -------------------------------------------------------------------------
+  /**
+   * Mints a pending consent record for an authorization request and returns the
+   * path the browser is sent to. Called by the authorization endpoint only.
+   *
+   * The browser is sent back to `returnTo`, the authorization request whole,
+   * once the person answers; `returnTo` is kept server-side and never in the
+   * URL.
+   *
+   * @param opts - `returnTo` (a path on this service), `username`, `clientId`,
+   *   `clientName`, `scopes` (the outstanding rows), `already`, `details` and
+   *   the other facts the screen shows
+   * @returns the consent screen's path for the new record
+   * @throws an Error when `returnTo` is not a path on this service
+   */
   beginConsent(opts: Json): string {
     const { log, randomId } = this.deps;
     log.debug("Entering ConsentScreen.beginConsent().");
@@ -329,6 +363,13 @@ class ConsentScreen {
   // The record a request names, or null. Expired ones are dropped on the way
   // past, which is the only cleanup this store needs beyond the sweep above —
   // `authn.js`'s `pendingFor()` exactly.
+  /**
+   * Returns the pending record a request names, dropping expired ones on the
+   * way past.
+   *
+   * @param id - the record's id
+   * @returns the record, or null
+   */
   pendingFor(id: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering ConsentScreen.pendingFor(). id=" + (id || '(none)'));
@@ -552,6 +593,11 @@ class ConsentScreen {
               target + " with a 303.");
   }
 
+  /**
+   * Registers `GET` and `POST /oauth2/consent`: the screen, and the answer.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: Json): void {
     const { log, parseBody, oauthError, baseUrlOf, consent, audit,
             errorCodes, validation, authorizationDetails } = this.deps;
@@ -728,10 +774,29 @@ helpers.log.info('The consent screen is registered at ' + CONSENT_PATH +
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OAuth consent screen, a sign-in-like hop the authorization endpoint sends
+ * a person through before issuing for an outstanding scope.
+ *
+ * The composition root builds the instance and calls `registerRoutes()`.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   ConsentScreen: ConsentScreen,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: ConsentScreen): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   CONSENT_PATH: ConsentScreen.CONSENT_PATH,
   beginConsent: slot.forward('beginConsent'),

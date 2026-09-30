@@ -101,13 +101,27 @@ import x509 = require('../common/vendored/x509');
 import mtls = require('../oauth-oidc/mtls');
 import codec = require('./est_codec');
 import InstanceSlot = require('../common/instance_slot');
+// WHICH CELL ANSWERS (#98 D10): the cell map, the placement helpers and the
+// routing index. Libraries; each is a no-op in a single-cell service.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
+import cellRouting = require('../common/cell_routing');
 
+/**
+ * The enrollment family's name in the core and the monitor, `est`.
+ */
 const FAMILY = 'est';
 
+/**
+ * The base path of every EST operation, `/.well-known/est`.
+ */
 const BASE = '/.well-known/est';
 
 // The six operations, and the one method each answers. HEAD is answered for a
 // GET by Express itself.
+/**
+ * The six operations of RFC 7030 and the one method each answers.
+ */
 const OPERATIONS = [
   { name: 'cacerts', method: 'GET' },
   { name: 'simpleenroll', method: 'POST' },
@@ -119,6 +133,10 @@ const OPERATIONS = [
 
 // Every path this module registers, for `sts_metadata.js` and the endpoints
 // table to be checked against.
+/**
+ * Every path this module registers: each operation under the base and under
+ * `/:label`.
+ */
 const PATHS = [];
 OPERATIONS.forEach(function (op) {
   PATHS.push(BASE + '/' + op.name);
@@ -127,6 +145,10 @@ OPERATIONS.forEach(function (op) {
   PATHS.push(BASE + '/:label/' + op.name);
 });
 
+/**
+ * The media types EST reads and writes: PKCS#10, certs-only CMS, CSR attributes
+ * and PKCS#8.
+ */
 const MEDIA = {
   pkcs10: 'application/pkcs10',
   certsOnly: 'application/pkcs7-mime; smime-type=certs-only',
@@ -165,6 +187,9 @@ interface EstDeps {
   x509: typeof x509;
   mtls: typeof mtls;
   codec: typeof codec;
+  cells: typeof cells;
+  cellPlacement: typeof cellPlacement;
+  cellRouting: typeof cellRouting;
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
   loadPkijs(): typeof import('pkijs');
@@ -173,7 +198,23 @@ interface EstDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * Enrollment over Secure Transport (RFC 7030, with RFC 8951): the six
+ * operations under `/.well-known/est/` and `/.well-known/est/<label>/`, where a
+ * label names a certificate profile.
+ *
+ * It authenticates in EST's own way (HTTP Basic, or a TLS client certificate),
+ * reads the body, and leaves every decision about what may be issued to
+ * `common/cert_enrollment.ts`. Nothing about a credential or a body is read
+ * before the checks that need neither.
+ */
 class Est {
+  /**
+   * Builds the server from its dependencies.
+   *
+   * @param deps - the modules it reads, from `Est.defaultDeps()` or the
+   * composition root
+   */
   constructor(private readonly deps: EstDeps) {
     deps.log.debug("Entering Est.constructor().");
     deps.log.debug("Leaving Est.constructor().");
@@ -181,6 +222,12 @@ class Est {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the real modules the server depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): EstDeps {
     log.debug("Entering Est.defaultDeps().");
     log.debug("Leaving Est.defaultDeps().");
@@ -196,6 +243,9 @@ class Est {
       x509: x509,
       mtls: mtls,
       codec: codec,
+      cells: cells,
+      cellPlacement: cellPlacement,
+      cellRouting: cellRouting,
       loadPkijs: function () {
         return require('pkijs');
       },
@@ -210,6 +260,12 @@ class Est {
   // ---------------------------------------------------------------------------
 
   // Record one request in the family monitor. Never throws.
+  /**
+   * Records one request in the enrollment monitor. Never throws.
+   *
+   * @param ctx - the request's context: operation, profile, identity and target
+   * @param detail - the outcome, status and anything else to record
+   */
   counted(ctx, detail) {
     const { log, monitor } = this.deps;
     log.debug("Entering Est.counted().");
@@ -222,6 +278,18 @@ class Est {
     log.debug("Leaving Est.counted().");
   }
 
+  /**
+   * Answers an EST refusal with a one-sentence text body, recording it in the
+   * monitor and, for a status a guessing client produces, against the caller's
+   * rate limit. The caller has marked the error code on `res`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @param status - the HTTP status
+   * @param sentence - what is wrong
+   * @param headers - extra response headers
+   */
   // THE ONE REFUSAL WRITER. The caller has marked the code on `res` on the line
   // before, so the code travels to the audit row and the monitor and never into
   // the body. The body is one sentence of text, which is all RFC 7030 section
@@ -269,6 +337,14 @@ class Est {
   }
 
   // The bytes of an EST refusal.
+  /**
+   * Writes the bytes of an EST refusal, unless the headers are already sent.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param sentence - the text body
+   * @param headers - extra response headers
+   */
   sendEstError(res, status, sentence, headers) {
     const { log } = this.deps;
     log.debug("Entering Est.sendEstError(). status=" + status);
@@ -287,6 +363,17 @@ class Est {
   // A refusal the core returned, answered with its own status and sentence. A
   // 401 carries the Basic challenge where Basic is accepted; a 429 carries
   // Retry-After.
+  /**
+   * Answers a refusal the core returned with its own status and sentence: a 401
+   * carries the Basic challenge where Basic is accepted, and a 429 carries
+   * `Retry-After`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @param refusal - the core's refusal
+   * @param fallbackCode - the error code to mark when the refusal carries none
+   */
   refuseWith(req, res, ctx, refusal, fallbackCode?) {
     const { log, config, core, errorCodes } = this.deps;
     log.debug("Entering Est.refuseWith().");
@@ -308,6 +395,13 @@ class Est {
 
   // A body answered base64, as RFC 8951 section 3 requires of every EST
   // response that carries DER.
+  /**
+   * Answers 200 with a DER body in base64, as RFC 8951 section 3 requires.
+   *
+   * @param res - the response
+   * @param contentType - the media type
+   * @param der - the bytes
+   */
   sendBase64(res, contentType, der) {
     const { log, codec } = this.deps;
     log.debug("Entering Est.sendBase64().");
@@ -323,6 +417,15 @@ class Est {
   // THE CHECKS EVERY OPERATION MAKES BEFORE READING A CREDENTIAL.
   // Returns true when the request has been answered.
   // ---------------------------------------------------------------------------
+  /**
+   * Makes the checks every operation makes before reading a credential: no
+   * query string, EST enabled, the transport, and the label.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context, given the profile
+   * @returns true when the request has been answered
+   */
   refusedBeforeAuthentication(req, res, ctx) {
     const { log, validation, errorCodes, config, core } = this.deps;
     log.debug("Entering Est.refusedBeforeAuthentication(). op=" + ctx.op);
@@ -413,6 +516,15 @@ class Est {
   // rate limit, the media type, the size.
   // ASYNCHRONOUS SINCE 2026-09-14 (#46): the throttle is the cluster's one
   // budget (`throttledShared()`), which is a round trip.
+  /**
+   * Makes an enrollment's checks of the request before its credential: the
+   * cluster's shared rate limit, the media type and the size.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @returns a promise of true when the request has been answered
+   */
   async refusedBeforeBody(req, res, ctx) {
     const { log, core, errorCodes, config } = this.deps;
     log.debug("Entering Est.refusedBeforeBody().");
@@ -456,6 +568,14 @@ class Est {
   // The Authorization header, READ but not believed: which scheme, and for
   // Basic the name and password. A malformed Basic credential is reported as
   // such rather than as a wrong password.
+  /**
+   * Reads the Authorization header without believing it: which scheme, and for
+   * Basic the name and password.
+   *
+   * @param req - the request
+   * @returns `{ present, basic, username, password }`, or `malformed` for a
+   * Basic credential that does not decode
+   */
   basicCredentialOf(req) {
     const { log, core } = this.deps;
     log.debug("Entering Est.basicCredentialOf().");
@@ -491,6 +611,13 @@ class Est {
              password: text.slice(colon + 1) };
   }
 
+  /**
+   * Says whether a name is an application's client_id or identifier in the
+   * realm.
+   *
+   * @param clientId - the name
+   * @returns true when an application answers to it
+   */
   applicationNamed(clientId) {
     const { log, applications } = this.deps;
     log.debug("Entering Est.applicationNamed().");
@@ -506,6 +633,14 @@ class Est {
   }
 
   // { ok, principal } or a marked refusal the caller answers with.
+  /**
+   * Authenticates an enrollment: HTTP Basic, as a person first and then as an
+   * application, or, with no Authorization header, the TLS client certificate.
+   *
+   * @param req - the request
+   * @param ctx - the request's context, carrying the parsed `basic` credential
+   * @returns a promise of `{ ok, principal }`, or a marked refusal
+   */
   async authenticate(req, ctx) {
     const { log, core, config, mtls } = this.deps;
     log.debug("Entering Est.authenticate().");
@@ -568,6 +703,14 @@ class Est {
 
   // The label a request is counted and rate-limited under before it has been
   // authenticated: the Basic name, or the presented certificate's serial.
+  /**
+   * Returns the label a request is counted and rate-limited under before it is
+   * authenticated: the Basic name, or the presented certificate's serial.
+   *
+   * @param req - the request
+   * @param basic - what `basicCredentialOf()` read
+   * @returns the label; empty when there is none
+   */
   identityHintOf(req, basic) {
     const { log, mtls, core } = this.deps;
     log.debug("Entering Est.identityHintOf().");
@@ -581,6 +724,12 @@ class Est {
       ? 'certificate:' + core.normalSerial(presented.serialNumber) : '';
   }
 
+  /**
+   * Returns a principal as `kind:id`.
+   *
+   * @param principal - the principal
+   * @returns the label; empty for none
+   */
   principalLabel(principal) {
     const { log } = this.deps;
     log.debug("Entering Est.principalLabel().");
@@ -588,14 +737,129 @@ class Est {
     return principal ? principal.kind + ':' + principal.id : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // WHICH CELL ANSWERS AN ENROLLMENT (#98 D10), decided before the throttle,
+  // the credential and the body: the entry the request authenticates as is
+  // held — its password, its enrolled certificates, the certificates about
+  // to be written onto it — only by the cell it is homed in, so the request
+  // is relayed there WHOLE, its client certificate with it (the channel
+  // forwards it as the front process hands one to a request worker). What
+  // names the entry is READ, NOT BELIEVED, and chooses only where it is
+  // checked:
+  //
+  //   * **an HTTP Basic username** — a person's login name goes to their
+  //     home cell. An application's client_id is not a person the routing
+  //     index knows, so it is served here: an application's entry is the
+  //     global tier's and every cell holds it.
+  //   * **a TLS client certificate**, when there is no Authorization header
+  //     (the order `authenticate()` reads them in) — the person its
+  //     `urn:sts:person:` subjectAltName names goes home the same way.
+  //
+  // A name nobody knows, or a certificate naming no person, is served here
+  // and refused here for its own reasons. A single-cell service places
+  // nothing.
+  // ---------------------------------------------------------------------------
+  /**
+   * Relays an enrollment to the home cell of the person its credential
+   * names, when that is another cell.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param basic - what `basicCredentialOf()` read
+   * @returns a promise of true when the request was relayed
+   */
+  async placeRequest(req, res, basic): Promise<boolean> {
+    const { log, mtls, core, cells, cellPlacement } = this.deps;
+    log.debug("Entering Est.placeRequest().");
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Est.placeRequest(). Here.");
+      return false;
+    }
+    const realmId = realms.currentId();
+    if (basic.present) {
+      const named = basic.basic && !basic.malformed && basic.username
+        ? String(basic.username) : '';
+      log.debug("Leaving Est.placeRequest(). By the Basic name.");
+      return named
+        ? cellPlacement.relayToHome(req, res, realmId, 'name', named,
+                                    'est:basic')
+        : false;
+    }
+    const presented = mtls.peerCertificate(req);
+    const entry = presented && presented.raw
+      ? core.entryNamedByCertificate(Buffer.from(presented.raw)) : null;
+    log.debug("Leaving Est.placeRequest(). By the client certificate.");
+    return entry && entry.kind === 'person'
+      ? cellPlacement.relayToHome(req, res, realmId, 'name', entry.id,
+                                  'est:certificate')
+      : false;
+  }
+
+  // A TARGET HOMED IN ANOTHER CELL (#98). The request was placed by its
+  // CREDENTIAL, which is right for everything but one case: an administrator
+  // enrolling on somebody else's behalf, whose own home and the target's can
+  // differ. The certificate is written onto the target's entry, which only
+  // its home cell holds, and the administrator's password is checked only
+  // at theirs — one relay cannot reach both. So it is refused with a
+  // sentence that says why, rather than as "there is no such person"
+  // (STS-ENROLL-0012), which would be false. `est/CLAUDE.md` records it.
+  /**
+   * Refuses an enrollment whose target person is homed in another cell.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @param target - the entry the certificate is for
+   * @returns a promise of true when the request was refused
+   */
+  async refusedAsElsewhere(req, res, ctx, target): Promise<boolean> {
+    const { log, core, cells, cellRouting } = this.deps;
+    log.debug("Entering Est.refusedAsElsewhere().");
+    if (!cells.isMulti() || !target || target.kind !== 'person' ||
+        core.resolveEntry('person', target.id).ok) {
+      log.debug("Leaving Est.refusedAsElsewhere(). Here.");
+      return false;
+    }
+    const home = await cellRouting.homeOf(realms.currentId(), 'name',
+                                          target.id);
+    if (!home || home === cells.id()) {
+      log.debug("Leaving Est.refusedAsElsewhere(). Not homed elsewhere.");
+      return false;
+    }
+    this.refuseWith(req, res, ctx, core.refuse('STS-CELL-0101', 403,
+      'The person "' + target.id + '" is homed in another region of this ' +
+      'service, and a certificate is written onto their entry only there. ' +
+      'Enroll as that person, or ask an administrator homed in their ' +
+      'region.'));
+    log.debug("Leaving Est.refusedAsElsewhere(). Refused.");
+    return true;
+  }
+
   // The common start of the three enrollments: the pre-body checks, the
   // credential, and the body decoded and parsed. Answers `null` when it has
   // already answered.
+  /**
+   * Runs the common start of the three enrollments: the pre-body checks, the
+   * credential, and the body decoded and parsed as a PKCS#10 request.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @param parseOptions - passed to the core's CSR parser
+   * @returns a promise of the parsed request, or null when the request has been
+   * answered
+   */
   async enrollmentRequest(req, res, ctx, parseOptions?) {
     const { log, codec, errorCodes, core } = this.deps;
     log.debug("Entering Est.enrollmentRequest().");
     ctx.basic = this.basicCredentialOf(req);
     ctx.identity = this.identityHintOf(req, ctx.basic);
+    // FIRST, before the throttle reads its window (#98 D10): see
+    // `placeRequest()`.
+    if (await this.placeRequest(req, res, ctx.basic)) {
+      log.debug("Leaving Est.enrollmentRequest(). Relayed to another cell.");
+      return null;
+    }
     if (await this.refusedBeforeBody(req, res, ctx)) {
       log.debug("Leaving Est.enrollmentRequest(). Refused before the body.");
       return null;
@@ -626,6 +890,14 @@ class Est {
   }
 
   // The certificate the core issued, as RFC 7030 section 4.2.3 returns it.
+  /**
+   * Answers an issued certificate as RFC 7030 section 4.2.3 returns it: a
+   * certs-only message in base64.
+   *
+   * @param res - the response
+   * @param ctx - the request's context
+   * @param issued - what the core issued
+   */
   answerIssued(res, ctx, issued) {
     const { log, core, codec } = this.deps;
     log.debug("Entering Est.answerIssued().");
@@ -648,6 +920,15 @@ class Est {
   // 4.1 — the CA certificates: the EST Issuing CA, this realm's Intermediate
   // and the service Root. Unauthenticated, as section 4.1.1 says it MUST be: a
   // client needs the anchor before it can check anything else.
+  /**
+   * Answers `cacerts` (section 4.1): the EST Issuing CA, the realm's
+   * Intermediate and the service Root. Unauthenticated.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @returns a promise that settles when it has answered
+   */
   async cacerts(req, res, ctx) {
     const { log, core, errorCodes, codec } = this.deps;
     log.debug("Entering Est.cacerts().");
@@ -667,6 +948,15 @@ class Est {
   }
 
   // 4.2.1 — a certificate for a key the client holds.
+  /**
+   * Answers `simpleenroll` (section 4.2.1): a certificate for a key the client
+   * holds.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @returns a promise that settles when it has answered
+   */
   async simpleenroll(req, res, ctx) {
     const { log, core } = this.deps;
     log.debug("Entering Est.simpleenroll().");
@@ -680,6 +970,10 @@ class Est {
     if (!target.ok) {
       this.refuseWith(req, res, ctx, target);
       log.debug("Leaving Est.simpleenroll(). No target.");
+      return;
+    }
+    if (await this.refusedAsElsewhere(req, res, ctx, target.target)) {
+      log.debug("Leaving Est.simpleenroll(). Homed in another cell.");
       return;
     }
     ctx.targetUri = core.entryUri(target.target);
@@ -704,6 +998,14 @@ class Est {
   // The subject of a certificate in `parseCsr()`'s spelling — `type=value` by
   // OID, in encoded order — so a request and a certificate compare as equal
   // only when they carry the same attributes in the same order.
+  /**
+   * Returns a certificate's subject in the CSR parser's spelling, so a request
+   * and a certificate compare equal only with the same attributes in the same
+   * order.
+   *
+   * @param pem - the certificate
+   * @returns the subject, or null when it cannot be read
+   */
   subjectOfCertificate(pem) {
     const { log, loadPkijs, loadAsn1js, codec } = this.deps;
     log.debug("Entering Est.subjectOfCertificate().");
@@ -732,6 +1034,13 @@ class Est {
 
   // The names a request asks for, in the spelling an enrolled record keeps them
   // (`kind:value`), lower-cased where the name is case-insensitive.
+  /**
+   * Returns the names a request asks for as an enrolled record keeps them
+   * (`kind:value`), lower-cased where a name is case-insensitive.
+   *
+   * @param requested - the request's names
+   * @returns the sorted names
+   */
   requestedNameSet(requested) {
     const { log, core } = this.deps;
     log.debug("Entering Est.requestedNameSet().");
@@ -758,6 +1067,13 @@ class Est {
     }).sort();
   }
 
+  /**
+   * Returns an enrolled certificate's names in the same spelling as
+   * `requestedNameSet()`.
+   *
+   * @param record - the enrolled certificate's record
+   * @returns the sorted names
+   */
   recordNameSet(record) {
     const { log } = this.deps;
     log.debug("Entering Est.recordNameSet().");
@@ -776,6 +1092,14 @@ class Est {
 
   // Does this request repeat the renewed certificate's subject and names
   // exactly (RFC 7030 section 4.2.2)?
+  /**
+   * Says whether a request repeats a certificate's subject and names exactly
+   * (RFC 7030 section 4.2.2).
+   *
+   * @param csr - the parsed request
+   * @param record - the certificate being renewed
+   * @returns true when it does
+   */
   repeats(csr, record) {
     const { log } = this.deps;
     log.debug("Entering Est.repeats().");
@@ -792,6 +1116,16 @@ class Est {
   // among the target entry's valid EST certificates by the subject and names
   // the request repeats. Either way it is superseded on the EST CRL once the
   // new one is issued.
+  /**
+   * Answers `simplereenroll` (section 4.2.2): renews the TLS client certificate
+   * presented or, with Basic alone, the target's EST certificate whose subject
+   * and names the request repeats; the old one is superseded on the EST CRL.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @returns a promise that settles when it has answered
+   */
   async simplereenroll(req, res, ctx) {
     const { log, mtls, config, core, errorCodes } = this.deps;
     const self = this;
@@ -845,6 +1179,10 @@ class Est {
       if (!named.ok) {
         this.refuseWith(req, res, ctx, named);
         log.debug("Leaving Est.simplereenroll(). No target.");
+        return;
+      }
+      if (await this.refusedAsElsewhere(req, res, ctx, named.target)) {
+        log.debug("Leaving Est.simplereenroll(). Homed in another cell.");
         return;
       }
       target = named.target;
@@ -906,6 +1244,15 @@ class Est {
   // The key algorithm a /serverkeygen template asks for: the template key's own
   // when this service generates that algorithm, and otherwise the profile's
   // sensible default — RSA for key encipherment, P-256 for everything else.
+  /**
+   * Returns the key algorithm a `serverkeygen` template asks for: the template
+   * key's own when this service generates it, else RSA for key encipherment and
+   * P-256 for everything else.
+   *
+   * @param csr - the parsed template request
+   * @param profile - the profile
+   * @returns the key algorithm's id
+   */
   serverKeyAlgorithm(csr, profile) {
     const { log, keyMaterial } = this.deps;
     log.debug("Entering Est.serverKeyAlgorithm().");
@@ -919,6 +1266,16 @@ class Est {
 
   // 4.4 — a key pair generated here and certified in the same act. The private
   // key is sent ONCE, PKCS#8, and kept sealed on the entry by the core.
+  /**
+   * Answers `serverkeygen` (section 4.4): a key pair generated here and
+   * certified in the same act, the private key sent once as PKCS#8 in a
+   * `multipart/mixed` response and kept sealed on the entry.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @returns a promise that settles when it has answered
+   */
   async serverkeygen(req, res, ctx) {
     const { log, config, errorCodes, codec, keyMaterial, core } = this.deps;
     log.debug("Entering Est.serverkeygen().");
@@ -967,6 +1324,10 @@ class Est {
       log.debug("Leaving Est.serverkeygen(). No target.");
       return;
     }
+    if (await this.refusedAsElsewhere(req, res, ctx, target.target)) {
+      log.debug("Leaving Est.serverkeygen(). Homed in another cell.");
+      return;
+    }
     ctx.targetUri = core.entryUri(target.target);
     const issued = await core.issueWithServerKey({
       family: FAMILY, profile: ctx.profile, principal: ctx.principal,
@@ -996,6 +1357,13 @@ class Est {
   }
 
   // What csrattrs says about one profile.
+  /**
+   * Returns what the CSR attributes response says for a profile: the signature
+   * algorithms, the extension request, and the profile's extended key usages.
+   *
+   * @param profileId - the profile
+   * @returns the items, as `est_codec.ts`'s `csrAttrs()` takes them
+   */
   csrAttributesFor(profileId) {
     const { log, codec, x509 } = this.deps;
     log.debug("Entering Est.csrAttributesFor(). profile=" + profileId);
@@ -1032,6 +1400,15 @@ class Est {
   // 4.5.1 lets a server require authentication and this one does not, because
   // nothing in the answer is about anybody and a client asks it before it has a
   // certificate to authenticate with.
+  /**
+   * Answers `csrattrs` (section 4.5) for the request's profile.
+   * Unauthenticated.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @returns a promise that settles when it has answered
+   */
   async csrattrs(req, res, ctx) {
     const { log, codec } = this.deps;
     log.debug("Entering Est.csrattrs().");
@@ -1042,6 +1419,14 @@ class Est {
   }
 
   // 4.3 — Full CMC is optional and not implemented.
+  /**
+   * Answers `fullcmc` (section 4.3) with 501: Full CMC is not implemented.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @returns a promise that settles when it has answered
+   */
   async fullcmc(req, res, ctx) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Est.fullcmc().");
@@ -1055,6 +1440,14 @@ class Est {
 
   // One operation, with the checks every operation makes and a catch that turns
   // anything unexpected into a 500 with no detail in it.
+  /**
+   * Returns the route handler for one operation: the checks every operation
+   * makes, the operation, and a catch that answers anything unexpected with a
+   * 500 carrying no detail.
+   *
+   * @param op - the `OPERATIONS` row
+   * @returns the handler
+   */
   operation(op) {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -1086,6 +1479,13 @@ class Est {
   }
 
   // The wrong method on a known path.
+  /**
+   * Returns the handler that answers the wrong method on an operation's path
+   * with 405 and `Allow`.
+   *
+   * @param op - the `OPERATIONS` row
+   * @returns the handler
+   */
   wrongMethod(op) {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -1107,6 +1507,12 @@ class Est {
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order
   // is unchanged (rule 1). Nothing calls it at load.
+  /**
+   * Registers every EST operation under the base and under `/:label`, and the
+   * wrong-method answer. Called by `common/protocol_stack.ts`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log } = this.deps;
     const self = this;
@@ -1189,10 +1595,24 @@ require('./est_admin');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Enrollment over Secure Transport (RFC 7030).
+ *
+ * Exports `registerRoutes`, the `Est` class, its tables, the route handlers for
+ * tests, and facades that forward to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   Est: Est,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: Est): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   FAMILY: FAMILY,
   BASE: BASE,

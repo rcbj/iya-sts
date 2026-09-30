@@ -77,6 +77,18 @@ const functions = require('./xacml_functions');
 // different answers and collapsing them would turn "I do not know" into "any
 // type is fine".
 // ---------------------------------------------------------------------------
+/**
+ * Derives the static type of a policy expression without evaluating it,
+ * pushing any certain type error onto `problems`.
+ *
+ * A literal's lexical form is checked against its declared datatype here.
+ * Where the type cannot be known the answer is null rather than a guess.
+ * @param expression - a model expression node
+ * @param scope - the variable definitions in scope
+ * @param problems - the list each problem found is appended to
+ * @returns `{ kind, type }` with kind 'primitive', 'bag' or 'function' (a
+ * null `type` meaning of some type it cannot name), or null when unknown
+ */
 function staticTypeOf(expression, scope, problems) {
   log.debug('Entering staticTypeOf(). kind=' +
             (expression ? expression.kind : 'none'));
@@ -387,6 +399,16 @@ function checkPolicySet(policySet, problems) {
 // checking feel like an obstacle instead of a service — and the PAP's editor
 // renders this list beside the policy.
 // ---------------------------------------------------------------------------
+/**
+ * Checks a Policy or PolicySet statically for the errors a policy can be
+ * refused for before any request arrives.
+ *
+ * A PolicyIdReference is not followed.
+ * @param policy - a Policy or PolicySet from the model
+ * @returns true when the policy typechecks
+ * @throws an IndeterminateError with the syntax-error status, listing every
+ * problem found in its message and in `xacmlDetail.problems`
+ */
 function validate(policy) {
   log.debug('Entering validate(). id=' + policy.id);
   const problems = [];
@@ -409,6 +431,12 @@ function validate(policy) {
 
 // The same walk without throwing, for the PAP's editor — which wants to SHOW
 // the problems beside the form rather than refuse the page.
+/**
+ * Runs the same checks as `validate()` and returns the problems instead of
+ * throwing, for the PAP's editor.
+ * @param policy - a Policy or PolicySet from the model
+ * @returns the problems found, as strings; empty when clean
+ */
 function problemsIn(policy) {
   log.debug("Entering problemsIn().");
   const problems = [];
@@ -421,6 +449,14 @@ function problemsIn(policy) {
   return problems;
 }
 
+/**
+ * Static validation of a XACML policy model: the type and literal errors a
+ * policy is refused for at load.
+ *
+ * It validates the model, so it is the same check for XML, JSON and ALFA,
+ * and it refuses only what is certainly wrong.
+ * @namespace
+ */
 module.exports = {
   validate: validate,
   problemsIn: problemsIn,

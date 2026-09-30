@@ -152,13 +152,32 @@ interface SpiffeWorkloadDeps {
   auth: typeof auth;
 }
 
+/**
+ * The SPIFFE Workload API: seven methods on `SpiffeWorkloadAPI`, answered with
+ * the SVIDs and bundles of the registration entries the caller is entitled to.
+ *
+ * It asks for no credential, as the Workload Endpoint specification requires;
+ * on the Unix socket the caller is attested instead. A library:
+ * `spiffe_server.ts` mounts the handlers.
+ */
 class SpiffeWorkload {
+  /**
+   * Builds the API over its dependencies.
+   *
+   * @param deps - the logger, configuration, mode, audit, statistics, error
+   *   codes, and the SPIFFE ID, CA, registry, gRPC and authentication modules
+   */
   constructor(private readonly deps: SpiffeWorkloadDeps) {
     deps.log.debug("Entering SpiffeWorkload.constructor().");
     deps.log.debug("Leaving SpiffeWorkload.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SpiffeWorkloadDeps {
     helpers.log.debug("Entering SpiffeWorkload.defaultDeps().");
     helpers.log.debug("Leaving SpiffeWorkload.defaultDeps().");
@@ -177,6 +196,11 @@ class SpiffeWorkload {
     };
   }
 
+  /**
+   * Returns the ambient realm's trust domain name.
+   *
+   * @returns the trust domain
+   */
   trustDomain() {
     const { log, ca } = this.deps;
     log.debug("Entering SpiffeWorkload.trustDomain().");
@@ -192,6 +216,16 @@ class SpiffeWorkload {
   // identities and a FetchJWTSVID that returned one would be a mock that
   // contradicts itself.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides which registration entries a caller gets: the one decision all four
+   * issuing methods share.
+   *
+   * Live entries only; narrowed to those whose selectors the caller's attested
+   * selectors satisfy when workloads are attested or the caller is brokered.
+   * @param caller - the attested caller, or nothing for the console's
+   *   unnarrowed view of the registry
+   * @returns the entries
+   */
   entitledEntries(caller) {
     const { log, registry, auth, config, mode, spiffeId } = this.deps;
     log.debug('Entering SpiffeWorkload.entitledEntries().');
@@ -319,6 +353,13 @@ class SpiffeWorkload {
   // SPIFFE ID (not its bare name — the map key in both response messages is a
   // SPIFFE ID, and a bare name there is a map a client silently finds nothing
   // in).
+  /**
+   * Returns the federated bundles a holder of these entries should be given:
+   * the union of their `federatesWith`.
+   *
+   * @param entries - the entitled entries
+   * @returns the bundles, keyed by each trust domain's SPIFFE ID
+   */
   async federatedBundlesFor(entries) {
     const { log, ca, spiffeId } = this.deps;
     log.debug('Entering SpiffeWorkload.federatedBundlesFor().');
@@ -360,6 +401,14 @@ class SpiffeWorkload {
   // `observed`, when given, is told the SHORTEST lifetime among the SVIDs this
   // response carried — see `pushOnRotation()` for why the rotation timer needs
   // it.
+  /**
+   * Builds a FetchX509SVID response: one X509-SVID per entitled entry, each
+   * with its private key, and the trust domain's X.509 bundle, all DER.
+   *
+   * @param caller - the attested caller
+   * @param observed - when given, told the shortest lifetime among the SVIDs
+   * @returns the response message
+   */
   async buildX509Response(caller, observed) {
     const { log, ca, registry, stats, audit } = this.deps;
     log.debug('Entering SpiffeWorkload.buildX509Response().');
@@ -464,6 +513,13 @@ class SpiffeWorkload {
   // which is only there so that an SVID clamped to nothing cannot spin the
   // loop.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the rotation period for a stream: half the shortest SVID lifetime
+   * served, at least one second.
+   *
+   * @param lifetimeSeconds - the lifetime, or 0 for `spiffe.svidTtl`
+   * @returns the period in seconds
+   */
   rotationPeriod(lifetimeSeconds) {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeWorkload.rotationPeriod().");
@@ -473,6 +529,17 @@ class SpiffeWorkload {
     return Math.max(1, Math.floor(lifetime / 2));
   }
 
+  /**
+   * Re-sends a stream's response at every rotation period until the client has
+   * gone; a failure to re-mint is logged and retried at the next rotation.
+   *
+   * @param push - sends a message; returns false once the client has gone
+   * @param buildResponse - builds the next response
+   * @param label - what is being re-sent, for the log
+   * @param lifetimeOf - when given, answers the shortest lifetime the last
+   *   response carried
+   * @returns the timer's handle
+   */
   pushOnRotation(push, buildResponse, label, lifetimeOf?) {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -523,6 +590,12 @@ class SpiffeWorkload {
   // run by `common/instance_slot.ts` once for whichever instance is
   // installed: building the seven handlers, in the order loading this module
   // registered them with `spiffe_grpc.ts`, and the table of them.
+  /**
+   * Builds the seven handlers and their table for the installed instance, the
+   * work loading this module used to do (#50, R2).
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: SpiffeWorkload): void {
     helpers.log.debug("Entering SpiffeWorkload.wire().");
     const fetchX509Svid = instance.buildFetchX509Svid();
@@ -540,13 +613,13 @@ class SpiffeWorkload {
     const fetchWitSvid = rpc.serverStream('workload', 'FetchWITSVID',
       async function (call) {
         errorCodes.mark(call, 'STS-SPIFFE-0029');
-        throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
+        throw rpc.statusError(rpc.status.UNIMPLEMENTED, WIT_MESSAGE);
       });
 
     const fetchWitBundles = rpc.serverStream('workload', 'FetchWITBundles',
       async function (call) {
         errorCodes.mark(call, 'STS-SPIFFE-0029');
-        throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
+        throw rpc.statusError(rpc.status.UNIMPLEMENTED, WIT_MESSAGE);
       });
 
     HANDLERS = {
@@ -561,6 +634,11 @@ class SpiffeWorkload {
     helpers.log.debug("Leaving SpiffeWorkload.wire().");
   }
 
+  /**
+   * Builds the FetchX509SVID server-streaming handler.
+   *
+   * @returns the handler
+   */
   buildFetchX509Svid() {
     const { log, rpc, ca } = this.deps;
     const self = this;
@@ -600,6 +678,12 @@ class SpiffeWorkload {
   // bundles and has no business being handed an identity. A client that fetches
   // SVIDs it never uses is a client holding private keys it does not need.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a FetchX509Bundles response: the trust domain's and every federated
+   * X.509 bundle, with no SVID and no private key.
+   *
+   * @returns the response message
+   */
   async buildX509BundlesResponse() {
     const { log, ca, spiffeId } = this.deps;
     log.debug('Entering SpiffeWorkload.buildX509BundlesResponse().');
@@ -627,6 +711,11 @@ class SpiffeWorkload {
     return { crl: [], bundles: bundles };
   }
 
+  /**
+   * Builds the FetchX509Bundles server-streaming handler.
+   *
+   * @returns the handler
+   */
   buildFetchX509Bundles() {
     const { log, rpc, ca } = this.deps;
     const self = this;
@@ -659,6 +748,12 @@ class SpiffeWorkload {
   // error, which is what SPIRE does: "you may not have that" and "there is no
   // such entry" are not distinguishable to a workload and should not be.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the FetchJWTSVID unary handler: an audience is required, and a
+   * `spiffe_id` the caller is not entitled to answers an empty list.
+   *
+   * @returns the handler
+   */
   buildFetchJwtSvid() {
     const { log, rpc, ca, errorCodes, spiffeId } = this.deps;
     const self = this;
@@ -702,6 +797,15 @@ class SpiffeWorkload {
 
   // THE JWT-SVIDS FOR `entries`, minted, recorded and audited — one copy for
   // the Workload API's FetchJWTSVID and the Broker API's (#170).
+  /**
+   * Mints, records and audits the JWT-SVIDs for a set of entries, for the
+   * Workload API's FetchJWTSVID and the Broker API's.
+   *
+   * @param entries - the entitled entries
+   * @param audiences - the audiences the SVIDs are for
+   * @param caller - the caller, for the audit row
+   * @returns the SVIDs
+   */
   async issueJwtSvids(entries, audiences, caller) {
     const { log, ca, registry, stats, audit } = this.deps;
     log.debug('Entering SpiffeWorkload.issueJwtSvids(). ' + entries.length);
@@ -752,6 +856,13 @@ class SpiffeWorkload {
   // would be sending certificates to something that is going to parse them as
   // JWKs.
   // ---------------------------------------------------------------------------
+  /**
+   * Reduces a bundle document to its `jwt-svid` keys, as the JWT bundle the
+   * Workload API returns.
+   *
+   * @param document - the bundle document
+   * @returns the JWKS bytes
+   */
   async jwtBundleFor(document) {
     const { log } = this.deps;
     log.debug("Entering SpiffeWorkload.jwtBundleFor().");
@@ -762,6 +873,12 @@ class SpiffeWorkload {
     return Buffer.from(JSON.stringify({ keys: jwtKeys }), 'utf8');
   }
 
+  /**
+   * Builds a FetchJWTBundles response: the trust domain's and every federated
+   * JWT bundle.
+   *
+   * @returns the response message
+   */
   async buildJwtBundlesResponse() {
     const { log, ca, spiffeId } = this.deps;
     log.debug('Entering SpiffeWorkload.buildJwtBundlesResponse().');
@@ -782,6 +899,11 @@ class SpiffeWorkload {
     return { bundles: bundles };
   }
 
+  /**
+   * Builds the FetchJWTBundles server-streaming handler.
+   *
+   * @returns the handler
+   */
   buildFetchJwtBundles() {
     const { log, rpc, ca } = this.deps;
     const self = this;
@@ -810,6 +932,12 @@ class SpiffeWorkload {
   // an array and both are fine; a `Buffer` or an `undefined` in there produces
   // a serialisation error naming the field and not the value.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the ValidateJWTSVID unary handler, which checks a JWT-SVID for an
+   * audience and returns its SPIFFE ID and claims.
+   *
+   * @returns the handler
+   */
   buildValidateJwtSvid() {
     const { log, rpc, ca, audit, auth } = this.deps;
     const self = this;
@@ -901,6 +1029,13 @@ class SpiffeWorkload {
   // because it has no fields and the second because its one field is called
   // `value` in both spellings.
   // ---------------------------------------------------------------------------
+  /**
+   * Converts a plain object to a `google.protobuf.Struct` in the loader's
+   * camelCase field names.
+   *
+   * @param value - the object
+   * @returns the Struct
+   */
   structFrom(value) {
     const { log } = this.deps;
     const self = this;
@@ -913,6 +1048,12 @@ class SpiffeWorkload {
     return { fields: fields };
   }
 
+  /**
+   * Converts a JSON value to a `google.protobuf.Value`.
+   *
+   * @param value - the value
+   * @returns the Value
+   */
   valueFrom(value) {
     const { log } = this.deps;
     log.debug('Entering SpiffeWorkload.valueFrom().');
@@ -985,6 +1126,10 @@ const slot = new InstanceSlot<SpiffeWorkload>(
 // take, rather than a silent empty response — which a client would read as "I
 // am entitled to no WIT-SVIDs" and never ask about again.
 // ---------------------------------------------------------------------------
+/**
+ * The message the two WIT-SVID methods answer `Unimplemented` with, saying why
+ * this service issues no WIT-SVIDs.
+ */
 const WIT_MESSAGE =
   'This service does not issue WIT-SVIDs. The methods are on the service ' +
   'because they are in the SPIFFE project\'s own workloadapi.proto, and ' +
@@ -1005,12 +1150,18 @@ const WIT_MESSAGE =
 // Built by `SpiffeWorkload.wire()` when the instance is installed (#50, R2):
 // every handler is registered through `spiffe_grpc.ts`, whose instance the
 // root has installed by then.
+/**
+ * The handlers by the loader's method names, built by `SpiffeWorkload.wire()`.
+ */
 let HANDLERS: Record<string, any> | null = null;
 
 // What this surface implements, for the pages that describe it. `implemented`
 // is a claim rather than a count, and the two WIT methods say why they are not
 // — a table that reported seven of seven would be the most misleading thing on
 // the page.
+/**
+ * What each Workload API method implements, for the pages that describe it.
+ */
 const METHOD_NOTES = {
   FetchX509SVID: { implemented: true,
     what: 'One X509-SVID per registration entry, each with its private key ' +
@@ -1039,11 +1190,19 @@ const METHOD_NOTES = {
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The SPIFFE Workload API: the surface a workload talks to, over a Unix socket
+ * or TCP.
+ * @namespace
+ */
 export = {
   SpiffeWorkload: SpiffeWorkload,
   installInstance: (instance: SpiffeWorkload): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   // Built by `SpiffeWorkload.wire()`, so read once the instance exists.
+  /**
+   * The handlers, once the instance exists.
+   */
   get HANDLERS(): Record<string, any> {
     log.debug("Entering HANDLERS().");
     slot.get();

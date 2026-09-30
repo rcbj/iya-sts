@@ -138,7 +138,7 @@
 // leaves (`helpers` for the logger, `crypto` for the clock allowance,
 // `pq_jose` for ML-DSA), so any module in this directory can require it
 // without a cycle. ML-DSA goes through `pq_jose`'s asynchronous pair, so a
-// verification happens in the worker pool where one is running.
+// verification happens on libuv's thread pool.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -266,17 +266,43 @@ const DATE_TIME = new RegExp('^-?\\d{4,}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:' +
 // 32 raw bytes.
 const ED25519_SPKI_PREFIX = '302a300506032b6570032100';
 
+/**
+ * W3C Verifiable Credential Data Integrity 1.0 proofs: the holder's proof on a
+ * presentation (OpenID4VP Appendix B.1.3.2.5), `did:jwk` and `did:key`,
+ * Multikey, and the JCS, RDFC and ecdsa-sd-2023 cryptosuites the VC-API adapter
+ * signs and verifies with.
+ */
 class VcDataIntegrity {
+  /**
+   * The cryptosuites a verification accepts when its caller names none: the JCS
+   * suites.
+   */
   static readonly SUPPORTED_CRYPTOSUITES = SUPPORTED_CRYPTOSUITES;
+  /**
+   * Every cryptosuite this module implements.
+   */
   static readonly ALL_CRYPTOSUITES = ALL_CRYPTOSUITES;
+  /**
+   * Each cryptosuite by id: its key kind, multibase, canonicalization and hash.
+   */
   static readonly SUITES = SUITES;
 
+  /**
+   * Builds the proof module from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: VcDataIntegrityDeps) {
     deps.log.debug("Entering VcDataIntegrity.constructor().");
     deps.log.debug("Leaving VcDataIntegrity.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): VcDataIntegrityDeps {
     helpers.log.debug("Entering VcDataIntegrity.defaultDeps().");
     helpers.log.debug("Leaving VcDataIntegrity.defaultDeps().");
@@ -313,6 +339,13 @@ class VcDataIntegrity {
   // omission: a signature over a document this function had quietly changed
   // would verify something nobody signed.
   // -------------------------------------------------------------------------
+  /**
+   * Canonicalizes a value with the JSON Canonicalization Scheme (RFC 8785).
+   *
+   * @param value - the value
+   * @returns the canonical JSON
+   * @throws Error for a value JSON cannot carry
+   */
   jcs(value: unknown): string {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.jcs().");
@@ -354,6 +387,12 @@ class VcDataIntegrity {
   // BASE58-BTC, the alphabet Bitcoin defined and multibase names `z`.
   // Leading zero bytes are leading '1's; the rest is a big-endian integer.
   // -------------------------------------------------------------------------
+  /**
+   * Encodes bytes as base58-btc.
+   *
+   * @param bytes - the bytes
+   * @returns the base58 text
+   */
   base58Encode(bytes: Uint8Array): string {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.base58Encode().");
@@ -372,6 +411,13 @@ class VcDataIntegrity {
     return '1'.repeat(zeros) + out;
   }
 
+  /**
+   * Decodes base58-btc text.
+   *
+   * @param text - the text
+   * @returns the bytes
+   * @throws Error for a character outside the alphabet
+   */
   base58Decode(text: string): Buffer {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.base58Decode().");
@@ -399,6 +445,15 @@ class VcDataIntegrity {
 
   // A multibase value in one of the two bases this file reads, refused
   // unless it is the one the caller expects.
+  /**
+   * Decodes a multibase value, refused unless it is in the base the caller
+   * expects.
+   *
+   * @param value - the multibase value
+   * @param expected - `z` (base58-btc) or `u` (base64url)
+   * @returns the bytes
+   * @throws Error for another base or a malformed value
+   */
   multibaseDecode(value: unknown, expected: 'z' | 'u'): Buffer {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.multibaseDecode(). expected=" +
@@ -431,6 +486,12 @@ class VcDataIntegrity {
   // The public members of a JWK, in a fixed order with `kty` first — what a
   // did:jwk is made of (the did:jwk method encodes the JWK as JSON; a
   // private member in one would publish the key).
+  /**
+   * Returns the public members of a JWK, in a fixed order with `kty` first.
+   *
+   * @param jwk - the JWK
+   * @returns the public JWK
+   */
   publicJwkOf(jwk: any): any {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.publicJwkOf(). kty=" +
@@ -456,6 +517,12 @@ class VcDataIntegrity {
     return out;
   }
 
+  /**
+   * Returns the `did:jwk` of a public key.
+   *
+   * @param jwk - the JWK
+   * @returns the DID
+   */
   didJwkOf(jwk: any): string {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.didJwkOf().");
@@ -465,6 +532,13 @@ class VcDataIntegrity {
     return did;
   }
 
+  /**
+   * Returns the public JWK a `did:jwk` encodes.
+   *
+   * @param did - the DID, with or without a fragment
+   * @returns the public JWK
+   * @throws Error when it is not a `did:jwk` of a public JWK
+   */
   jwkOfDidJwk(did: unknown): any {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.jwkOfDidJwk().");
@@ -515,6 +589,12 @@ class VcDataIntegrity {
   }
 
   // The did:key of a public JWK, with the Multikey each suite's examples use.
+  /**
+   * Returns the `did:key` of a public JWK.
+   *
+   * @param jwk - the JWK
+   * @returns the DID
+   */
   didKeyOf(jwk: any): string {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.didKeyOf().");
@@ -531,6 +611,13 @@ class VcDataIntegrity {
   // using the base-64-url alphabet"). What a `did:key` is made of, and what a
   // controller document publishes a Multikey verification method with.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the Multikey `publicKeyMultibase` of a public JWK: base58-btc for
+   * the EC and EdDSA suites, base64url for the post-quantum ones.
+   *
+   * @param jwk - the JWK
+   * @returns the Multikey
+   */
   multikeyOf(jwk: any): string {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.multikeyOf().");
@@ -561,6 +648,13 @@ class VcDataIntegrity {
     return encoded;
   }
 
+  /**
+   * Returns the public JWK a Multikey encodes.
+   *
+   * @param multikey - the `publicKeyMultibase`
+   * @returns the public JWK
+   * @throws Error for a Multikey this module cannot read
+   */
   jwkOfMultikey(multikey: string): any {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.jwkOfMultikey().");
@@ -614,6 +708,14 @@ class VcDataIntegrity {
   // reason, for anything this file will not resolve; `verifyProof()` turns
   // that into a failed check.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves a verification method from its own identifier (`did:jwk` or
+   * `did:key`).
+   *
+   * @param vm - the verification method, an identifier or an object
+   * @returns `{ jwk, controller }`
+   * @throws Error, with the reason, for anything this module will not resolve
+   */
   resolveVerificationMethod(vm: unknown): { jwk: any; controller: string } {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.resolveVerificationMethod().");
@@ -668,6 +770,15 @@ class VcDataIntegrity {
   // Answers `{ privateKey, publicJwk, did, verificationMethod }`; throws
   // when the realm holds no such key, which is a defect in the key set.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the realm's own key of a curve, named by the `did:key` of its
+   * public half: what this service signs a Data Integrity proof with as an
+   * issuer.
+   *
+   * @param curve - `Ed25519`, `P-256` or `P-384`
+   * @returns `{ privateKey, publicJwk, did, verificationMethod }`
+   * @throws Error when the realm holds no such key
+   */
   realmKeyFor(curve: string): any {
     const { log, stsKeysFor } = this.deps;
     log.debug("Entering VcDataIntegrity.realmKeyFor(). " + curve);
@@ -693,6 +804,12 @@ class VcDataIntegrity {
 
   // Which of the three suites a holder key signs with, or '' — and, for '',
   // the sentence that says why.
+  /**
+   * Returns which cryptosuite a holder key signs with.
+   *
+   * @param jwk - the public JWK
+   * @returns the cryptosuite, or ''
+   */
   cryptosuiteForJwk(jwk: any): string {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.cryptosuiteForJwk().");
@@ -710,6 +827,12 @@ class VcDataIntegrity {
     return suite;
   }
 
+  /**
+   * Says why a key has no cryptosuite here.
+   *
+   * @param jwk - the public JWK
+   * @returns the sentence
+   */
   unsupportedReason(jwk: any): string {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.unsupportedReason().");
@@ -778,6 +901,16 @@ class VcDataIntegrity {
   // configuration carrying the document's `@context` (EdDSA and ECDSA
   // Cryptosuites v1.0, sections 3.2.4 and 3.2.5). Asynchronous, because the
   // JSON-LD processor is.
+  /**
+   * Computes a proof's hash data for either kind of suite: for an RDFC suite
+   * H(RDFC(proofConfig)) || H(RDFC(unsecuredDocument)).
+   *
+   * @param suite - the cryptosuite
+   * @param jwk - the key, for the hash its curve is signed under
+   * @param proofConfig - the proof configuration
+   * @param unsecured - the unsecured document
+   * @returns the hash data
+   */
   async hashDataAsync(suite: Suite, jwk: any, proofConfig: any,
                       unsecured: any): Promise<Buffer> {
     const { log, canonize } = this.deps;
@@ -805,6 +938,16 @@ class VcDataIntegrity {
   }
 
   // hashData = H(JCS(proofConfig)) || H(JCS(unsecuredDocument)).
+  /**
+   * Computes a JCS suite's hash data: H(JCS(proofConfig)) ||
+   * H(JCS(unsecuredDocument)).
+   *
+   * @param suite - the cryptosuite
+   * @param jwk - the key, for the hash its curve is signed under
+   * @param proofConfig - the proof configuration
+   * @param unsecured - the unsecured document
+   * @returns the hash data
+   */
   hashData(suite: Suite, jwk: any, proofConfig: any,
            unsecured: any): Buffer {
     const { log } = this.deps;
@@ -884,6 +1027,15 @@ class VcDataIntegrity {
   // `privateKey` is a node KeyObject or a private JWK (an AKP one carrying
   // RFC 9964's `priv` seed).
   // -------------------------------------------------------------------------
+  /**
+   * Signs a presentation with the holder's key, `signDocument()` with a
+   * presentation's defaults.
+   *
+   * @param unsecuredVp - the unsecured presentation
+   * @param options - `publicJwk`, `privateKey` (a KeyObject or a private JWK)
+   *   and the proof options
+   * @returns the secured presentation
+   */
   async signPresentation(unsecuredVp: any, options: any): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.signPresentation().");
@@ -904,6 +1056,19 @@ class VcDataIntegrity {
   // (`type`, `cryptosuite`, `proofValue`, `@context`): a caller that could
   // would be signing a proof of some other suite under this suite's name.
   // -------------------------------------------------------------------------
+  /**
+   * Signs any document with the create-proof algorithm of the suite named or
+   * implied by the key.
+   *
+   * `options.proofMembers` are put on the proof and signed; they may not
+   * override `type`, `cryptosuite`, `proofValue` or `@context`.
+   *
+   * @param unsecured - the unsecured document
+   * @param options - `publicJwk`, `privateKey`, `cryptosuite`,
+   *   `verificationMethod`, `proofPurpose`, `challenge`, `domain`,
+   *   `proofMembers` and the other proof options
+   * @returns the secured document
+   */
   async signDocument(unsecured: any, options: any): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.signDocument().");
@@ -1055,6 +1220,16 @@ class VcDataIntegrity {
   // VERIFYING ONE. Never throws for a proof that is wrong — the answer is
   // `ok: false` and the check that failed. See the header for the list.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies one proof on a document. Never throws for a wrong proof: the
+   * answer is `ok: false` and the check that failed.
+   *
+   * @param securedDocument - the secured document
+   * @param options - `allowedCryptosuites`, `expectedPurpose`,
+   *   `expectedChallenge`, `expectedDomain`, `now`, `clockSkewS`, `maxAgeS`,
+   *   `createdRequired`, `chain` and `onlyProof`
+   * @returns `{ ok, checks, jwk, ... }`
+   */
   async verifyProof(securedDocument: any, options: any): Promise<any> {
     const { log, clockSkewS } = this.deps;
     log.debug("Entering VcDataIntegrity.verifyProof().");
@@ -1331,6 +1506,13 @@ class VcDataIntegrity {
 
   // An ecdsa-sd-2023 derived proof from the base proof a document carries
   // (#196; `vc_ecdsa_sd.ts`, section 3.6.6).
+  /**
+   * Derives an ecdsa-sd-2023 proof from the base proof a document carries.
+   *
+   * @param securedDocument - the document with its base proof
+   * @param selectivePointers - the JSON pointers to reveal
+   * @returns the revealed document with its derived proof
+   */
   async deriveProof(securedDocument: any,
                     selectivePointers: string[]): Promise<any> {
     const { log, sd } = this.deps;
@@ -1347,6 +1529,15 @@ class VcDataIntegrity {
   // `{ ok, results }`, one result per member in order; `ok` only when there
   // is at least one member and every one verified.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies every proof on a document — a proof set and its chains (Data
+   * Integrity 1.0 section 4.4).
+   *
+   * @param securedDocument - the secured document
+   * @param options - as `verifyProof()` takes them
+   * @returns `{ ok, results }`, `ok` only when there is at least one proof and
+   *   every one verified
+   */
   async verifyAllProofs(securedDocument: any, options: any): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.verifyAllProofs().");
@@ -1389,9 +1580,25 @@ const slot = new InstanceSlot<VcDataIntegrity>(
 // does.
 slot.buildNowUnlessDeferred();
 
+/**
+ * W3C Verifiable Credential Data Integrity 1.0 proofs: the holder's proof on a
+ * presentation, and the cryptosuites the VC-API adapter uses.
+ *
+ * @namespace
+ */
 export = {
   VcDataIntegrity: VcDataIntegrity,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: VcDataIntegrity): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   SUPPORTED_CRYPTOSUITES: VcDataIntegrity.SUPPORTED_CRYPTOSUITES,
   ALL_CRYPTOSUITES: VcDataIntegrity.ALL_CRYPTOSUITES,

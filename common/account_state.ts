@@ -71,6 +71,8 @@ type Json = any;
 interface LogoutFamily {
   terminate(key?: string, selection?: string[], opts?: Json): Json;
   heldIds?(key?: string): string[];
+  heldIdsFor?(keys?: string[]): Map<string, string[]>;
+  terminateEach?(list?: Json[], opts?: Json): Json[];
 }
 
 interface AccountStateDeps {
@@ -95,12 +97,30 @@ interface AccountAct {
   errors?: string[];
 }
 
+/**
+ * Disables and enables accounts, and answers whether one is disabled.
+ *
+ * A disabled account is `pwdAccountLockedTime` on the person's entry; disabling
+ * it also ends everything the person holds, through the global logout.
+ */
 class AccountState {
+  /**
+   * Builds the account-state service.
+   *
+   * @param deps - the logger, credentials, audit, statistics, error codes,
+   *   realms, the logout finder and a deferral function
+   */
   constructor(private readonly deps: AccountStateDeps) {
     deps.log.debug("Entering AccountState.constructor().");
     deps.log.debug("Leaving AccountState.constructor().");
   }
 
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the service's own modules, the loaded-logout finder, and
+   *   `setImmediate` as the deferral
+   */
   static defaultDeps(): AccountStateDeps {
     helpers.log.debug("Entering AccountState.defaultDeps().");
     helpers.log.debug("Leaving AccountState.defaultDeps().");
@@ -120,6 +140,13 @@ class AccountState {
 
   // `logout/logout.ts` as it is loaded in THIS process, or null. Never a
   // require — see the header.
+  /**
+   * Returns `logout/logout.ts` as loaded in this process, or null.
+   *
+   * It looks in `require.cache` and never requires the module.
+   *
+   * @returns the logout module's exports, or null when it is not loaded
+   */
   static loadedLogout(): LogoutFamily | null {
     const { log } = helpers;
     log.debug('Entering AccountState.loadedLogout().');
@@ -167,6 +194,15 @@ class AccountState {
   // application is refused by the issuance policy, and nobody is the
   // anonymous principal.
   // -------------------------------------------------------------------------
+  /**
+   * Says whether an account is disabled; the question every door asks.
+   *
+   * Never throws. The anonymous principal and an empty name are never disabled.
+   *
+   * @param who - the name a door has in hand: a username, a token `sub` or a
+   *   Kerberos principal
+   * @returns true when the person's entry carries the lock
+   */
   isDisabled(who: unknown): boolean {
     const { log, credentials } = this.deps;
     log.debug("Entering AccountState.isDisabled().");
@@ -198,6 +234,13 @@ class AccountState {
   // later that must end only these — or null where no sign-out module is
   // loaded in this process, which the caller reads as "cannot say".
   // -------------------------------------------------------------------------
+  /**
+   * Lists the ids of what a person holds now, for a later `endEverything()`
+   * that must end only those.
+   *
+   * @param who - the person's name
+   * @returns the ids, or null when no sign-out module is loaded in this process
+   */
   heldBy(who: string): string[] | null {
     const { log, findLogout } = this.deps;
     log.debug("Entering AccountState.heldBy(). who=" + who);
@@ -213,6 +256,19 @@ class AccountState {
 
   // `opts.selection`, when given, is the ids to end (`heldBy()`), and
   // nothing else; absent, EVERYTHING — a global logout.
+  /**
+   * Ends every session, token, code and connection a person holds, through
+   * `logout.terminate()`.
+   *
+   * Front-channel notifications are not sent from here. A failure is logged
+   * under STS-AUTHN-0203 and reported in the answer rather than thrown.
+   *
+   * @param who - the person's name
+   * @param opts - `selection` (the ids to end, else everything), `actor`,
+   *   `channel`, `by` and `initiatingEntity`
+   * @returns whether anything was ended, the counts, the back-channel
+   *   deliveries queued and a message
+   */
   endEverything(who: string, opts?: Json): Json {
     const { log, findLogout, errorCodes } = this.deps;
     log.debug("Entering AccountState.endEverything(). who=" + who);
@@ -278,6 +334,21 @@ class AccountState {
   // `POST /admin-api/users/{disable|enable}`. `opts`: `actor`, `via`
   // (`console` or `api`, for the sentence and the channel), `reason`.
   // -------------------------------------------------------------------------
+  /**
+   * Disables or enables an account: the administrator's act from the console or
+   * the management API.
+   *
+   * Disabling writes the lock, ends everything the person holds, writes one
+   * audit row and mails the person a security notice. Enabling clears the lock
+   * and ends nothing.
+   *
+   * @param who - the person's name
+   * @param disabled - true to disable, false to enable
+   * @param opts - `actor`, `via` (`console` or `api`), `door`, `reason`,
+   *   `riscReason`, `by` and `initiatingEntity`
+   * @returns the outcome, with `changed` false when the account was already in
+   *   that state; a refusal carries `ok: false` and `errors`
+   */
   setDisabled(who: string, disabled: boolean, opts?: Json): AccountAct {
     const { log, credentials, audit, errorCodes } = this.deps;
     log.debug("Entering AccountState.setDisabled(). disabled=" + !!disabled);
@@ -384,6 +455,15 @@ class AccountState {
   // AFTER the write has been answered, in the realm the entry is in. Enabling
   // ends nothing, so only a disable is scheduled; both are audited.
   // -------------------------------------------------------------------------
+  /**
+   * Handles a lock the directory saw move without `setDisabled()` (SCIM, an
+   * LDAP modify, a console create).
+   *
+   * After the write has been answered it ends what the person holds (for a
+   * disable) and writes the audit row.
+   *
+   * @param change - `username`, `realm`, `disabled` and `kind` of the write
+   */
   directoryChanged(change: Json): void {
     const { log, later, realms, audit } = this.deps;
     const self = this;
@@ -446,47 +526,207 @@ class AccountState {
   // does. `authn.sessionOf()` is the catch-up for a session this could not
   // reach: a delete made on another node.
   // -------------------------------------------------------------------------
+  /**
+   * Ends what a deleted person held at the moment of the delete.
+   *
+   * The held ids are read now and ended after the write has been answered, so a
+   * person re-created under the same name keeps what they hold. A batch of one
+   * of directoryDeletedMany().
+   *
+   * @param change - `username`, `realm` and `door` of the delete
+   */
   directoryDeleted(change: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering AccountState.directoryDeleted().");
+    this.directoryDeletedMany([change]);
+    log.debug("Leaving AccountState.directoryDeleted().");
+  }
+
+  // -------------------------------------------------------------------------
+  // SEVERAL PEOPLE DELETED AT ONCE (#351, 2026-09-29) — a SCIM Bulk, or any
+  // door's run of deletes the directory hands over together. Everything above
+  // holds per person: what they held is read NOW, ended LATER, and a person
+  // made again under the name in between keeps theirs. What changes is how
+  // often the stores are read: once for the whole set (`heldIdsFor()`), not
+  // once per person, and ended with one index (`terminateEach()`) — each
+  // person's sign-out still its own act, with its own audit row, CAEP and
+  // back-channel Logout Tokens. A person holding nothing is dropped here and
+  // costs nothing after; the deferred step logs ONE line per batch.
+  //
+  // The ending runs in chunks of `CHUNK`, a macrotask apart, so a thousand
+  // sign-outs never hold the event loop for the whole thousand.
+  // -------------------------------------------------------------------------
+  static readonly CHUNK = 500;
+
+  /**
+   * Ends what each deleted person held at the moment of the delete, reading
+   * the stores once for the set.
+   *
+   * @param changes - `username`, `realm` and `door` per delete
+   */
+  directoryDeletedMany(changes: Json[]): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering AccountState.directoryDeletedMany(). " +
+              (changes || []).length + ".");
+    // By realm, in the order given; a name once per realm.
+    const byRealm = new Map<string, { realm: Json, door: string,
+                                      names: string[] }>();
+    (changes || []).forEach((change) => {
+      const c = change || {};
+      const name = String(c.username || '');
+      if (!name || name === 'anonymous') {
+        return;
+      }
+      const realm = realms.get(String(c.realm || '')) || realms.current();
+      let group = byRealm.get(realm.id);
+      if (!group) {
+        group = { realm: realm, door: String(c.door || 'a directory delete'),
+                  names: [] };
+        byRealm.set(realm.id, group);
+      }
+      if (group.names.indexOf(name) < 0) {
+        group.names.push(name);
+      }
+    });
+    byRealm.forEach((group) => {
+      this.endHeldByDeleted(group.realm, group.names, group.door);
+    });
+    log.debug("Leaving AccountState.directoryDeletedMany().");
+  }
+
+  // One realm's deleted people: read what they hold now, end it later.
+  private endHeldByDeleted(realm: Json, names: string[], door: string): void {
     const { log, later, realms } = this.deps;
     const self = this;
-    log.debug("Entering AccountState.directoryDeleted().");
-    const c = change || {};
-    const name = String(c.username || '');
-    if (!name || name === 'anonymous') {
-      log.debug("Leaving AccountState.directoryDeleted(). Nobody named.");
-      return;
-    }
-    const realm = realms.get(String(c.realm || '')) || realms.current();
-    const held = realms.run(realm, function (): string[] | null {
-      return self.heldBy(name);
+    log.debug("Entering AccountState.endHeldByDeleted(). " + names.length +
+              ".");
+    const held: Map<string, string[]> | null = realms.run(realm,
+      function (): Map<string, string[]> | null {
+        return self.heldByMany(names);
+      });
+    const toEnd = names.filter(function (name) {
+      return !held || (held.get(name) || []).length > 0;
     });
-    if (held && !held.length) {
-      log.debug("Leaving AccountState.directoryDeleted(). They held " +
+    if (!toEnd.length) {
+      log.debug("Leaving AccountState.endHeldByDeleted(). They held " +
                 "nothing.");
       return;
     }
-    later(function (): void {
+    const totals = { people: 0, ended: 0, backchannel: 0 };
+    const step = function (from: number): void {
       if (!realms.get(realm.id)) {
         // The realm went in the meantime, and its removal ended everything
         // in it already (`realms.retire()`).
         return;
       }
+      const chunk = toEnd.slice(from, from + AccountState.CHUNK);
       realms.run(realm, function (): void {
-        const ended = self.endEverything(name, {
+        const results = self.endEach(chunk.map(function (name) {
+          return { who: name,
+                   selection: held ? held.get(name) : undefined };
+        }), {
           channel: 'internal',
-          selection: held || undefined,
           initiatingEntity: 'admin',
-          by: 'the deletion of the account (' +
-              String(c.door || 'a directory delete') + ')' });
-        log.info('account state: ' + name + ' was deleted; ' +
-                 ended.terminated + ' live item(s) they held were ended' +
-                 (ended.backchannel.length
-                   ? ', with ' + ended.backchannel.length +
-                     ' back-channel Logout Token(s) queued'
-                   : '') + '.');
+          by: 'the deletion of the account (' + door + ')' });
+        results.forEach(function (ended: Json) {
+          totals.people += 1;
+          totals.ended += ended.terminated;
+          totals.backchannel += ended.backchannel.length;
+        });
       });
+      if (from + AccountState.CHUNK < toEnd.length) {
+        later(function (): void {
+          step(from + AccountState.CHUNK);
+        });
+        return;
+      }
+      log.info('account state: ' + (names.length === 1
+        ? names[0] + ' was deleted; '
+        : names.length + ' people were deleted (' + door + '); ' +
+          totals.people + ' of them held something, and ') +
+        totals.ended + ' live item(s) they held were ended' +
+        (totals.backchannel
+          ? ', with ' + totals.backchannel +
+            ' back-channel Logout Token(s) queued'
+          : '') + '.');
+    };
+    later(function (): void {
+      step(0);
     });
-    log.debug("Leaving AccountState.directoryDeleted(). Scheduled.");
+    log.debug("Leaving AccountState.endHeldByDeleted(). Scheduled " +
+              toEnd.length + ".");
+  }
+
+  // heldBy() for several people at once: the stores read once for the set.
+  // Null where no sign-out module is loaded, as heldBy()'s.
+  private heldByMany(names: string[]): Map<string, string[]> | null {
+    const { log, findLogout } = this.deps;
+    log.debug("Entering AccountState.heldByMany(). " + names.length + ".");
+    const logout = findLogout();
+    if (!logout) {
+      log.debug("Leaving AccountState.heldByMany(). No logout family.");
+      return null;
+    }
+    const out = new Map<string, string[]>();
+    if (typeof logout.heldIdsFor === 'function') {
+      const byKey = logout.heldIdsFor(names.map((name) => {
+        return this.keyOf(name);
+      }));
+      names.forEach((name) => {
+        out.set(name, byKey.get(this.keyOf(name)) || []);
+      });
+    } else if (typeof logout.heldIds === 'function') {
+      names.forEach((name) => {
+        out.set(name, this.heldBy(name) || []);
+      });
+    } else {
+      log.debug("Leaving AccountState.heldByMany(). No logout family.");
+      return null;
+    }
+    log.debug("Leaving AccountState.heldByMany().");
+    return out;
+  }
+
+  // endEverything() for several people, through `terminateEach()` where the
+  // sign-out offers it, so the stores are read once; each person's answer is
+  // endEverything()'s, and each one's info line becomes the caller's one.
+  private endEach(list: Json[], opts: Json): Json[] {
+    const { log, findLogout, errorCodes } = this.deps;
+    log.debug("Entering AccountState.endEach(). " + list.length + ".");
+    const logout = findLogout();
+    if (!logout || typeof logout.terminateEach !== 'function') {
+      log.debug("Leaving AccountState.endEach(). One at a time.");
+      return list.map((one) => {
+        return this.endEverything(one.who, Object.assign({}, opts,
+          { selection: one.selection }));
+      });
+    }
+    let results: Json[] = [];
+    try {
+      results = logout.terminateEach(list.map((one) => {
+        return { key: this.keyOf(one.who),
+                 selection: Array.isArray(one.selection) ? one.selection
+                   : [] };
+      }), {
+        actor: opts.actor || '', channel: opts.channel || 'internal',
+        by: opts.by, initiatingEntity: opts.initiatingEntity || 'admin',
+        providerCommand: false, quiet: true
+      });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0120') + 'account state: ending ' +
+                'what ' + list.length + ' deleted person(s) held failed: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving AccountState.endEach(). Threw.");
+      return list.map(function (): Json {
+        return { ended: false, terminated: 0, backchannel: [] };
+      });
+    }
+    log.debug("Leaving AccountState.endEach().");
+    return results.map(function (result: Json): Json {
+      return { ended: true,
+               terminated: ((result && result.terminated) || []).length,
+               backchannel: (result && result.backchannel) || [] };
+    });
   }
 }
 
@@ -499,14 +739,31 @@ const slot = new InstanceSlot<AccountState>(
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The disabled-account state: the one place an account is disabled, enabled and
+ * asked about.
+ *
+ * A library the doors ask (`credentials.verify()`, `authn`, the issuance gate,
+ * the KDC, the management API). The exports forward to the instance the
+ * composition root installs.
+ *
+ * @namespace
+ */
 export = {
   AccountState: AccountState,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: AccountState): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   isDisabled: slot.forward('isDisabled'),
   endEverything: slot.forward('endEverything'),
   heldBy: slot.forward('heldBy'),
   setDisabled: slot.forward('setDisabled'),
   directoryChanged: slot.forward('directoryChanged'),
-  directoryDeleted: slot.forward('directoryDeleted')
+  directoryDeleted: slot.forward('directoryDeleted'),
+  directoryDeletedMany: slot.forward('directoryDeletedMany')
 };

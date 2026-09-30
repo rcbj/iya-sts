@@ -135,11 +135,18 @@ const ATTESTATION_METHODS = ['attest_jwt_client_auth',
 // RFC 7523 section 2.2. One value, spelt once, because a client that sends the
 // wrong one is told which is expected rather than being told its assertion is
 // invalid.
+/**
+ * The `client_assertion_type` of a JWT client assertion (RFC 7523 section 2.2).
+ */
 const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 // RFC 7522 section 2.2's value, spelt once for the same reason. The two
 // profiles of RFC 7521 both put a document in `client_assertion` and the type
 // is the only thing on the wire that says which document it is, so a client
 // that sends the wrong one is told which is expected.
+/**
+ * The `client_assertion_type` of a SAML client assertion (RFC 7522 section
+ * 2.2).
+ */
 const SAML_ASSERTION_TYPE =
   'urn:ietf:params:oauth:client-assertion-type:saml2-bearer';
 
@@ -168,19 +175,37 @@ const SAML_ASSERTION_TYPE =
 // RFC 7522's URN exactly, and a client that sends that with its assertion is
 // conforming whatever this service happens to call the method internally.
 // ---------------------------------------------------------------------------
+/**
+ * The client authentication methods that rest on a shared secret.
+ */
 const SYMMETRIC_METHODS = ['client_secret_basic', 'client_secret_post',
                            'client_secret_jwt'];
 // The two attestation methods (#229) are asymmetric twice over: the attester
 // signs the attestation, and the client instance proves its own key.
+/**
+ * The client authentication methods that rest on a key the server never holds,
+ * `saml2_bearer` (this service's own name) and the two attestation methods
+ * among them.
+ */
 const ASYMMETRIC_METHODS = ['private_key_jwt', 'saml2_bearer',
                             'tls_client_auth',
                             'self_signed_tls_client_auth'].concat(
                               ATTESTATION_METHODS);
+/**
+ * Every client authentication method this module can verify, which
+ * `token_endpoint_auth_methods_supported` is built from.
+ */
 const METHODS = ['none'].concat(SYMMETRIC_METHODS, ASYMMETRIC_METHODS);
 
 // Which of them RFC 9700 section 2.5 is asking for. Read by the caller that
 // logs the RECOMMENDED a client did not follow, so that the list and the advice
 // cannot drift apart.
+/**
+ * Tells whether a method is one RFC 9700 section 2.5 recommends: asymmetric.
+ *
+ * @param method - the method name
+ * @returns true for an asymmetric method
+ */
 function isAsymmetric(method) {
   log.debug("Entering isAsymmetric().");
   log.debug("Leaving isAsymmetric().");
@@ -288,7 +313,7 @@ function keysFrom(jwksText) {
 // composite algorithms are advertised in
 // `token_endpoint_auth_signing_alg_values_supported`, and verifying a composite
 // ML-DSA assertion took 17.8 and 23.3 seconds on 2026-08-29 — on the one thread
-// that also answers the KDC. See common/worker.js.
+// that also answers the KDC. See common/pq_native.js.
 //
 // Nothing else about it changed: the order of the checks is the order it was,
 // the signature is still verified BEFORE the claims for the reason stated
@@ -792,6 +817,12 @@ async function verifyAssertion(opts) {
 // `self_signed_tls_client_auth` is untouched by it: section 6.1 says that
 // method does not verify the chain, and the proof is the handshake.
 // ---------------------------------------------------------------------------
+/**
+ * Writes a certificate's subject as RFC 4514 does, leaf first, from its DER.
+ *
+ * @param cert - the peer certificate, with its `raw` DER
+ * @returns the subject, or '' when it cannot be read
+ */
 function subjectRfc4514(cert) {
   log.debug("Entering subjectRfc4514().");
   // The subject as RFC 4514 writes it, leaf first, off the DER — through
@@ -1076,6 +1107,19 @@ function verifiedOnce(request, parts, run) {
 // assertion — the two secret ones and the two RFC 8705 certificate ones —
 // resolve without leaving this process; nothing about what any of them decides
 // changed.
+/**
+ * Decides whether what a request presented proves the client, by the method its
+ * entry declares. Whether authentication is required is `oauth2_bcp.js`'s
+ * question, not this one.
+ *
+ * @param opts - `method`, `clientId`, `presentedSecret` and `clientSecret`, the
+ *   assertion (`assertion`, `assertionType`, `jwks`, `jwksUri`,
+ *   `assertionJwks`, `audiences`, `strictAudience`, `issuer`), the SAML
+ *   certificates, the TLS facts (`certificateThumbprint`, `subjectDn`,
+ *   `tlsSubjects`, `applicationIdentifier`) and `request`
+ * @returns a promise of `{ ok: true, method, ... }`, or `{ ok: false,
+ *   errorCode, description }`
+ */
 async function verify(opts) {
   log.debug("Entering verify().");
   const info = opts || {};
@@ -1338,6 +1382,12 @@ async function verify(opts) {
                         ' it can are: ' + METHODS.join(', ') + '.' };
 }
 
+/**
+ * How a client proves who it is at the token endpoint: every method this
+ * service can verify.
+ *
+ * @namespace
+ */
 module.exports = {
   ASSERTION_TYPE: ASSERTION_TYPE,
   SAML_ASSERTION_TYPE: SAML_ASSERTION_TYPE,
@@ -1350,6 +1400,12 @@ module.exports = {
   // For the pages that report how many assertions are being remembered. The
   // history is one per realm now, shared with both grant profiles, so this is
   // that history's count rather than a count of client assertions alone.
+  /**
+   * Counts the assertions the realm's used-assertion history remembers, shared
+   * with both grant profiles.
+   *
+   * @returns the count
+   */
   assertionsRemembered: function () {
     log.debug("Entering assertionsRemembered().");
     log.debug("Leaving assertionsRemembered().");

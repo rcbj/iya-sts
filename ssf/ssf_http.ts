@@ -130,6 +130,10 @@ const USER_AGENT = version.userAgent('ssf-transmitter');
 // No plain http in product at all: RFC 8935 names no loopback exception, and
 // this service's own receivers are exempt for a different reason (header,
 // point 3).
+/**
+ * The outbound transport policy for a push, as `common/outbound_tls.ts` takes
+ * it: its settings and codes, with no plain http in product mode.
+ */
 const PUSH_TRANSPORT = {
   what: 'an SSF push delivery',
   allowHttpKey: 'ssf.pushAllowHttp',
@@ -206,19 +210,48 @@ interface SsfHttpDeps {
   userAgent: string;
   // `tls/tls_server.js`, required when first asked for. See `pushSet()`.
   loadTlsServer(): {
-    serverCertificate(): { trustAnchorPem?: string };
+    serverCertificate(): { trustAnchorPem?: string;
+                          fingerprint256?: string };
   };
 }
 
+/**
+ * The transmitter's outbound half: pushing a Security Event Token to a
+ * receiver's endpoint (RFC 8935), with the URL rules, a per-process concurrency
+ * cap and retries.
+ *
+ * The endpoint is the receiver's choice by construction; the bounds are
+ * `ssf.pushDelivery`, `ssf.pushAllowedHosts`, https and the response size. This
+ * service's own loopback receivers are exempt from the allowlist and, where the
+ * listener is http, from the https rule.
+ */
 class SsfHttp {
+  /**
+   * The default bound on a receiver's response body, 64 KiB.
+   */
   static readonly MAX_BODY_BYTES = MAX_BODY_BYTES;
+  /**
+   * The media type a SET is posted with, `application/secevent+jwt`.
+   */
   static readonly SET_MEDIA_TYPE = SET_MEDIA_TYPE;
 
+  /**
+   * Builds the transport from its dependencies.
+   *
+   * @param deps - the modules and functions it reads, from
+   * `SsfHttp.defaultDeps()` or the composition root
+   */
   constructor(private readonly deps: SsfHttpDeps) {
     deps.log.debug("Entering SsfHttp.constructor().");
     deps.log.debug("Leaving SsfHttp.constructor().");
   }
 
+  /**
+   * Returns the bound on a receiver's response body
+   * (`ssf.pushMaxResponseBytes`).
+   *
+   * @returns the bound, in bytes
+   */
   maxBodyBytes(): any {
     const { log, config } = this.deps;
     log.debug("Entering SsfHttp.maxBodyBytes().");
@@ -226,6 +259,12 @@ class SsfHttp {
     return config.value('ssf.pushMaxResponseBytes');
   }
 
+  /**
+   * Says whether this service makes push deliveries at all
+   * (`ssf.pushDelivery`).
+   *
+   * @returns true when it does
+   */
   pushAllowed(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering SsfHttp.pushAllowed().");
@@ -236,6 +275,12 @@ class SsfHttp {
 
   // The three transport settings as they are IN FORCE in this realm (#171) —
   // in product a stored `ssf.pushSkipTlsVerification` is not.
+  /**
+   * Describes the three push transport settings as they are in force in the
+   * ambient realm.
+   *
+   * @returns the description
+   */
   transportSettings(): ReturnType<typeof OutboundTls.describe> {
     const { log } = this.deps;
     log.debug("Entering SsfHttp.transportSettings().");
@@ -254,6 +299,12 @@ class SsfHttp {
   // The allowlist, as a list of lower-case host names. Empty means ANY, which
   // is the default and the one deliberate looseness in this file — see point
   // 2 of the header.
+  /**
+   * Returns the push host allowlist, lower-cased (`ssf.pushAllowedHosts`);
+   * empty means any host.
+   *
+   * @returns the host names
+   */
   allowedHosts(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering SsfHttp.allowedHosts().");
@@ -311,6 +362,12 @@ class SsfHttp {
   // `https://evil.example/?x=https://127.0.0.1:8081/` is not this service and
   // must not inherit either exemption.
   // =========================================================================
+  /**
+   * Returns the origin this process dials itself on: the loopback address of
+   * the bound family, `global.port`, and https or http as `global.https` says.
+   *
+   * @returns the origin
+   */
   loopbackOrigin(): string {
     const { log, config, hostForUrl, loopbackHost, PORT } = this.deps;
     log.debug("Entering SsfHttp.loopbackOrigin().");
@@ -349,6 +406,13 @@ class SsfHttp {
   // really speaks. The realm's prefix goes on the end ONCE, which is
   // `baseUrlOf()`'s own contract.
   // -------------------------------------------------------------------------
+  /**
+   * Returns this service's base URL when there is no request to read one from:
+   * `global.publicBaseUrl` where set, else the loopback origin, with the
+   * ambient realm's prefix.
+   *
+   * @returns the base URL
+   */
   ownBaseUrl(): string {
     const { log, pinnedBaseUrl, realms } = this.deps;
     log.debug("Entering SsfHttp.ownBaseUrl().");
@@ -364,6 +428,14 @@ class SsfHttp {
   // cannot require the first. A value the REALM carries is used as it stands;
   // a process-wide value gets the realm's prefix; an empty one is the base
   // URL, which carries the prefix already.
+  /**
+   * Returns this transmitter's `iss` in the ambient realm: a realm's own
+   * `ssf.issuer` as it stands, a process-wide one with the realm's prefix, and
+   * otherwise the base URL.
+   *
+   * @param req - the request, when there is one
+   * @returns the issuer
+   */
   transmitterIssuer(req?: any): string {
     const { log, config, realms, baseUrlOf } = this.deps;
     log.debug("Entering SsfHttp.transmitterIssuer().");
@@ -383,6 +455,13 @@ class SsfHttp {
     return value;
   }
 
+  /**
+   * Says whether a URL's origin is this process's own loopback origin, by
+   * comparing origins, never substrings.
+   *
+   * @param raw - the URL
+   * @returns true when it is this process
+   */
   isOwnLoopback(raw: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering SsfHttp.isOwnLoopback().");
@@ -415,6 +494,13 @@ class SsfHttp {
   // never be dialled is refused when it is created rather than accepted and
   // then silently delivering nothing.
   // -------------------------------------------------------------------------
+  /**
+   * Says why a delivery endpoint may not be dialled, as a sentence naming the
+   * setting that decides it; called at stream creation and at push time.
+   *
+   * @param raw - the endpoint URL
+   * @returns the problem; empty when it may be dialled
+   */
   urlProblem(raw: unknown): string {
     const { log } = this.deps;
     log.debug("Entering SsfHttp.urlProblem().");
@@ -425,6 +511,14 @@ class SsfHttp {
   // The same answer, with `STS-SSF-0108` when the refusal is plain http in
   // product mode and '' for every other, whose code is the caller's
   // (`STS-SSF-0012` at stream creation, `STS-SSF-0034` at push time).
+  /**
+   * Says why a delivery endpoint may not be dialled, with `STS-SSF-0108` when
+   * the refusal is plain http in product mode.
+   *
+   * @param raw - the endpoint URL
+   * @returns `{ why, errorCode }`; `why` is empty when it may be dialled, and
+   * `errorCode` is empty for a refusal whose code is the caller's
+   */
   urlVerdict(raw: unknown): { why: string; errorCode: string } {
     const { log } = this.deps;
     log.debug("Entering SsfHttp.urlVerdict().");
@@ -496,6 +590,19 @@ class SsfHttp {
   // false for both, and `err` is set only for the second, so the stream's log
   // can tell "nothing answered" from "the receiver said invalid_audience".
   // -------------------------------------------------------------------------
+  /**
+   * Pushes one SET to a receiver's endpoint.
+   *
+   * A 202 is success; a 400 with `err`/`description` is the receiver refusing;
+   * anything else is a failure to deliver. The promise never rejects.
+   *
+   * @param url - the stream's `delivery.endpoint_url`
+   * @param token - the signed SET, as a compact JWS
+   * @param options - `authorizationHeader`, sent as the `Authorization`
+   * header
+   * @returns a promise of `{ ok, status, err, description, why, errorCode,
+   * retryable }`
+   */
   pushSet(url: unknown, token: unknown,
           options?: PushOptions | null): Promise<PushResult> {
     const { log, loadTlsServer, userAgent } = this.deps;
@@ -546,12 +653,18 @@ class SsfHttp {
     // loaded and it is a cache hit.
     // -----------------------------------------------------------------------
     let anchor = null;
+    let ownLeaf = '';
     if (ours && secure) {
       try {
         // THE ANCHOR AND NOT THE CERTIFICATE — see common/oidc_rp.ts's
         // back channel, which pinned the leaf and stopped being able to reach
         // this service at all the hour that leaf acquired an issuer.
         anchor = loadTlsServer().serverCertificate().trustAnchorPem;
+        // The leaf's fingerprint, for a SUPPLIED certificate with no anchor
+        // (#311, below) — read as its own call so the anchor read above keeps
+        // the one shape tests/tls_trust_anchor.js holds every pin to.
+        ownLeaf = String(loadTlsServer().serverCertificate().fingerprint256 ||
+                         '');
       } catch (e) {
         // Reported as a push failure rather than thrown, like every other
         // outcome here: the stream's log is where a receiver's operator finds
@@ -589,7 +702,13 @@ class SsfHttp {
     // node's store and `ssf.pushCaFile`, and skipped only where development
     // mode and `ssf.pushSkipTlsVerification` both say so. Not asked for one
     // of our own receivers: the pin above is what that connection checks.
-    const policy = secure && !anchor
+    // Nor for one of our own with NO anchor (#311): a SUPPLIED, publicly
+    // issued certificate (testidp's ACM leaf) has none, and the ordinary
+    // policy then checked its name against 127.0.0.1, which it never
+    // carries — every push to this service's own two receivers failed and
+    // both streams were declared dead. Such a push is verified below against
+    // the system's store AND held to this process's own leaf.
+    const policy = secure && !anchor && !ours
       ? OutboundTls.tlsVerdict(PUSH_TRANSPORT, target.origin) : null;
     if (policy && !policy.ok) {
       log.debug("Leaving SsfHttp.pushSet(). " + policy.why);
@@ -659,6 +778,24 @@ class SsfHttp {
       if (anchor) {
         requestOptions.checkServerIdentity = function () {
           return undefined;
+        };
+      } else if (ours && secure) {
+        // THIS PROCESS, WITH A SUPPLIED CERTIFICATE (#311): the chain is
+        // verified against the system's store (rejectUnauthorized, above,
+        // with no `ca`), and in place of a name the loopback address cannot
+        // match, the peer must present EXACTLY the leaf this process serves
+        // — stronger than a name, and the same leaf the front process handed
+        // a request worker.
+        requestOptions.rejectUnauthorized = true;
+        requestOptions.checkServerIdentity = function (host: string,
+            cert: { fingerprint256?: string }) {
+          const norm = function (f: string): string {
+            return String(f || '').replace(/:/g, '').toLowerCase();
+          };
+          return ownLeaf && norm(cert && cert.fingerprint256) === norm(ownLeaf)
+            ? undefined
+            : new Error('the loopback peer did not present this ' +
+                        'process\'s own certificate');
         };
       } else if (policy && policy.checkServerIdentity) {
         // The host check, and the verified chain held to the path rules
@@ -817,8 +954,9 @@ class SsfHttp {
   // with `Promise.all()`, and a directory write is two events — so a SCIM
   // bulk load against forty-two push streams asked for eighty-four pushes per
   // person, all at once. Most were to this service's OWN receivers, which is
-  // a request back into the worker pool, so the burst was load on the service
-  // itself and it stopped answering. The cap makes that fan-out a queue.
+  // a request back into the request-worker pool, so the burst was load on the
+  // service itself and it stopped answering. The cap makes that fan-out a
+  // queue.
   //
   // **A PUSH THAT CANNOT WAIT IS NOT MADE**, and says so with a code: the SET
   // is dead-lettered by `transmit()`, which is where the bound on memory comes
@@ -895,6 +1033,16 @@ class SsfHttp {
   }
 
   // One push, inside a slot. What every push this module makes goes through.
+  /**
+   * Pushes one SET inside a slot of the per-process cap
+   * (`ssf.pushConcurrency`), or fails at once with `STS-SSF-0092` when
+   * `ssf.pushBacklog` pushes to that receiver are already waiting.
+   *
+   * @param url - the endpoint
+   * @param token - the signed SET
+   * @param options - as `pushSet()` takes them
+   * @returns a promise of the push's result
+   */
   pushSetGated(url: unknown, token: unknown,
                options?: PushOptions | null): Promise<PushResult> {
     const { log } = this.deps;
@@ -923,6 +1071,11 @@ class SsfHttp {
   }
 
   // For a report: how busy the cap is in this process right now.
+  /**
+   * Reports how busy this process's push cap is.
+   *
+   * @returns `{ active, waiting, concurrency, backlog }`
+   */
   pushGateState(): { active: number; waiting: number; concurrency: number;
                      backlog: number } {
     const { log } = this.deps;
@@ -953,6 +1106,16 @@ class SsfHttp {
   // `attempts`, so the stream's log says how many were made rather than only
   // how the last one went.
   // -------------------------------------------------------------------------
+  /**
+   * Pushes one SET, retrying a failure that could go differently (no
+   * connection, a timeout, a 5xx or a 429) up to `ssf.pushRetries` times with a
+   * linear delay of `ssf.pushRetryDelayMs`.
+   *
+   * @param url - the endpoint
+   * @param token - the signed SET
+   * @param options - as `pushSet()` takes them
+   * @returns a promise of the last result, with every attempt in `attempts`
+   */
   pushSetWithRetries(url: unknown, token: unknown,
                      options?: PushOptions | null): Promise<PushResult> {
     const { log, config } = this.deps;
@@ -991,6 +1154,12 @@ class SsfHttp {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules and functions this transport depends on, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): SsfHttpDeps {
     helpers.log.debug("Entering SsfHttp.defaultDeps().");
     helpers.log.debug("Leaving SsfHttp.defaultDeps().");
@@ -1028,9 +1197,24 @@ const slot = new InstanceSlot<SsfHttp>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Push delivery of Security Event Tokens (RFC 8935): the URL rules, the
+ * concurrency cap, retries, and this transmitter's own address and issuer.
+ *
+ * Exports the `SsfHttp` class, its constants, and facades that forward to the
+ * installed instance.
+ *
+ * @namespace
+ */
 export = {
   SsfHttp: SsfHttp,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SsfHttp): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   pushSetWithRetries: slot.forward('pushSetWithRetries'),
   pushSetGated: slot.forward('pushSetGated'),

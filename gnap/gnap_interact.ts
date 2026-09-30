@@ -94,6 +94,7 @@ import authn = require('../authn/authn');
 import store = require('./gnap_store');
 import grants = require('./gnap_grants');
 import monitor = require('./gnap_monitor');
+import gnapCells = require('./gnap_cells');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -152,7 +153,17 @@ const PAGE_CSS =
   'input.code{font-size:1.4em;letter-spacing:.2em;text-transform:uppercase;' +
   'width:100%}';
 
+/**
+ * The pages a GNAP resource owner sees: the four start modes, sign-in through
+ * the one authentication service, the approval page, and the finish that tells
+ * the client (RFC 9635 section 4).
+ */
 class GnapInteract {
+  /**
+   * Builds the interaction pages from the modules they read.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapInteractDeps) {
     deps.log.debug("Entering GnapInteract.constructor().");
     deps.log.debug("Leaving GnapInteract.constructor().");
@@ -219,6 +230,14 @@ class GnapInteract {
       log.debug("Entering the GNAP " + mode + " start.");
       const params = validation.checkParsed({ id: req.params.id }, 'params',
                                             ID_PARAMS);
+      // WHICH CELL (#98): the grant is pulled to the cell this browser is
+      // pinned to, or the request relayed to the cell it moved to — before
+      // the link is spent (`gnap_cells.ts`).
+      if (params.ok && await gnapCells.placeInteraction(req, res, mode + ':' +
+                                                        params.value.id)) {
+        log.debug("Leaving the GNAP " + mode + " start. Relayed.");
+        return undefined;
+      }
       const grant: any = params.ok ?
         store.grantByInteraction(mode + ':' + params.value.id) : null;
       if (!self.activeForInteraction(grant)) {
@@ -260,6 +279,25 @@ class GnapInteract {
       return res.set('Cache-Control', 'no-store')
                 .redirect(303, '/gnap/approve/' +
                                grant.interaction.approvalId);
+    });
+  }
+
+  // THE APPROVAL PAGE, PLACED FIRST (#98): the grant waiting at the handle is
+  // pulled to the cell this browser is pinned to, or the request relayed to
+  // the cell it moved to (`gnap_cells.ts`), and then the page is the page it
+  // always was. Wrapped in `settled()` for its reason: a defect in the
+  // placement is a coded page, not an unhandled rejection.
+  private placed(name: string, handler: Handler): Handler {
+    const { log } = this.deps;
+    log.debug("Entering GnapInteract.placed().");
+    log.debug("Leaving GnapInteract.placed().");
+    return this.settled(name, async function (req, res, next) {
+      const relayed = await gnapCells.placeInteraction(req, res, 'approve:' +
+        String((req.params && req.params.id) || ''));
+      if (relayed) {
+        return undefined;
+      }
+      return handler(req, res, next);
     });
   }
 
@@ -510,6 +548,14 @@ class GnapInteract {
   }
 
   // The six routes, in the order this file has always registered them.
+  /**
+   * Registers the six interaction routes, in the order this file always
+   * registered them.
+   *
+   * Called by `common/protocol_stack.ts` after `gnap.ts`'s routes.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteTable): void {
     const self = this;
     const { log, config, validation, parseBody, bodyValues, errorCodes,
@@ -559,6 +605,16 @@ class GnapInteract {
                              allowed.detail);
       }
       const code = grants.normaliseUserCode(posted.value.code);
+      // WHICH CELL (#98): a user code carries no tag, so a code this cell
+      // does not hold is asked of the others (`gnap_cells.ts`). AFTER the
+      // attempt is counted here, deliberately: the count is what stops a
+      // guesser making every cell answer every guess; the owning cell counts
+      // the relayed attempt again, and a person who types the right code
+      // spends one attempt of each budget.
+      if (await gnapCells.placeUserCode(req, res, code)) {
+        log.debug("Leaving POST /gnap/code. Relayed to its cell.");
+        return undefined;
+      }
       const grant: any = code ? store.grantByUserCode(code) : null;
       const mode = grant && grant.interaction && grant.interaction.modes
         ? (grant.interaction.modes.user_code &&
@@ -602,7 +658,8 @@ class GnapInteract {
                                grant.interaction.approvalId);
     }));
 
-    app.get('/gnap/approve/:id', function (req, res) {
+    app.get('/gnap/approve/:id', self.placed('GET /gnap/approve',
+                                             function (req, res) {
       log.debug("Entering GET /gnap/approve.");
       const grant = self.approvalGrant(req, res);
       if (!grant) {
@@ -670,9 +727,10 @@ class GnapInteract {
       self.approvalPage(req, res, grant, session);
       log.debug("Leaving GET /gnap/approve. Page drawn.");
       return undefined;
-    });
+    }));
 
-    app.post('/gnap/approve/:id', function (req, res) {
+    app.post('/gnap/approve/:id', self.placed('POST /gnap/approve',
+                                              function (req, res) {
       log.debug("Entering POST /gnap/approve.");
       const grant = self.approvalGrant(req, res);
       if (!grant) {
@@ -748,13 +806,19 @@ class GnapInteract {
                                      'Something went wrong',
                                      'The answer could not be completed.');
       });
-    });
+    }));
 
     log.debug("Leaving GnapInteract.registerRoutes().");
   }
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapInteractDeps {
     helpers.log.debug("Entering GnapInteract.defaultDeps().");
     helpers.log.debug("Leaving GnapInteract.defaultDeps().");
@@ -797,8 +861,24 @@ const slot = new InstanceSlot<GnapInteract>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The pages a GNAP resource owner sees: where an interaction starts, where they
+ * sign in and decide, and how the client is told.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapInteract): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   GnapInteract: GnapInteract

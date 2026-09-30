@@ -76,13 +76,30 @@ import OidfedStore = require('./oidfed_store');
 
 type Json = any;
 
+/**
+ * The label a Federation Entity Key's private key is sealed under.
+ */
 const SEAL_LABEL = 'oidfed-key';
 const ROW_VERSION = 1;
+/**
+ * The scheduler job that rotates the realm's Federation Entity Key on its
+ * schedule, in product mode.
+ */
 const ROTATE_JOB = 'oidfed.key-rotate';
+/**
+ * The scheduler job that rotates it by hand, in every mode.
+ */
 const ROTATE_NOW_JOB = 'oidfed.key-rotate-now';
 const MINT_SCOPE = 'oidfed.key-mint';
+// How long a request that met another process's mint waits for its row, and
+// how often it looks (see `awaitMinted()`).
+const MINT_WAIT_MS = 15000;
+const MINT_POLL_MS = 100;
 const DAY_MS = 86400000;
 // The revocation reasons 8.7.3 defines.
+/**
+ * The revocation reasons 8.7.3 defines.
+ */
 const REASONS = Object.freeze(['unspecified', 'compromised', 'superseded']);
 
 interface Signer {
@@ -112,17 +129,46 @@ interface FederationKeysDeps {
   now: () => number;
 }
 
+/**
+ * A realm's Federation Entity Keys (OpenID Federation 1.1, 3.1.1, 8.7, 11): a
+ * table of its own, separate from the protocol signing keys, rotated with
+ * overlap, and every retired key kept for the Historical Keys endpoint.
+ */
 class FederationKeys {
+  /**
+   * See the module's `SEAL_LABEL`.
+   */
   static readonly SEAL_LABEL = SEAL_LABEL;
+  /**
+   * See the module's `ROTATE_JOB`.
+   */
   static readonly ROTATE_JOB = ROTATE_JOB;
+  /**
+   * See the module's `ROTATE_NOW_JOB`.
+   */
   static readonly ROTATE_NOW_JOB = ROTATE_NOW_JOB;
+  /**
+   * See the module's `REASONS`.
+   */
   static readonly REASONS = REASONS;
 
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - settings, realms, the keystore, the register, the key maker,
+   * the lazily loaded scheduler, mode, audit log, claims and event log, and a
+   * clock
+   */
   constructor(private readonly deps: FederationKeysDeps) {
     deps.log.debug("Entering FederationKeys.constructor().");
     deps.log.debug("Leaving FederationKeys.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): FederationKeysDeps {
     helpers.log.debug("Entering FederationKeys.defaultDeps().");
     helpers.log.debug("Leaving FederationKeys.defaultDeps().");
@@ -159,6 +205,11 @@ class FederationKeys {
   // The algorithm a NEW key is made for: `oidfed.signingAlg`, one of
   // `helpers.FEDERATION_KEY_ALGS`. A change takes effect at the next key
   // minted — a rotation by hand makes it at once.
+  /**
+   * Answers the algorithm a new key is made for: `oidfed.signingAlg`.
+   *
+   * @returns the algorithm
+   */
   algorithm(): string {
     const { log, config } = this.deps;
     log.debug("Entering FederationKeys.algorithm().");
@@ -172,6 +223,37 @@ class FederationKeys {
     log.debug("Entering FederationKeys.overlapMs().");
     log.debug("Leaving FederationKeys.overlapMs().");
     return Math.max(0, Number(config.value('oidfed.keyOverlapDays'))) * DAY_MS;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ROW ANOTHER PROCESS IS MINTING, waited for (see `ensure()`): the rows
+  // are read again every MINT_POLL_MS until a current key is among them or
+  // `waitMs` passes. Each read is the directory as replication has brought it,
+  // so nothing here dials anything. A claim that lapsed while waiting (the
+  // minter died) is not taken over here: the next request's `ensure()` claims
+  // again.
+  // -------------------------------------------------------------------------
+  /**
+   * Waits, bounded, for another process's current key to arrive.
+   *
+   * @param waitMs - how long to wait
+   * @returns a promise of the key rows as they then stand
+   */
+  private async awaitMinted(waitMs: number): Promise<Json[]> {
+    const { log } = this.deps;
+    log.debug("Entering FederationKeys.awaitMinted().");
+    const until = Date.now() + Math.max(0, Number(waitMs) || 0);
+    let rows = this.rows();
+    while (!rows.some(function (r: Json): boolean {
+      return r.state === 'current';
+    }) && Date.now() < until) {
+      await new Promise(function (resolve): void {
+        setTimeout(resolve, MINT_POLL_MS);
+      });
+      rows = this.rows();
+    }
+    log.debug("Leaving FederationKeys.awaitMinted(). " + rows.length);
+    return rows;
   }
 
   private rows(): Json[] {
@@ -263,6 +345,12 @@ class FederationKeys {
   // cluster: the minting is a claim, and a node that loses it reads back the
   // winner's row. Resolves the rows as they now stand.
   // -------------------------------------------------------------------------
+  /**
+   * Makes sure there is a current key, minting one where there is none, once
+   * for the cluster.
+   *
+   * @returns a promise of the key rows as they now stand
+   */
   async ensure(): Promise<Json[]> {
     const { log, store, claims, realms } = this.deps;
     log.debug("Entering FederationKeys.ensure().");
@@ -277,9 +365,13 @@ class FederationKeys {
     const claimed: Json = await claims().claim({ scope: MINT_SCOPE,
       value: realmId + ':' + rows.length, ttlMs: 60000 });
     if (!claimed.ok) {
-      // Another node is minting it. Its row arrives with the directory's
-      // next change; until then this realm has no key to sign with.
-      rows = this.rows();
+      // Another node or worker is minting it, and its row arrives with the
+      // directory's next change. WAITED FOR, BOUNDED (2026-09-28): this
+      // answered at once with no key, so a request that met the claim held
+      // was a 503 a moment before the key existed everywhere — CI run
+      // 36415737694, `sts_siop` in single-node, the Entity Configuration of
+      // a realm created 1.4 s earlier.
+      rows = await this.awaitMinted(MINT_WAIT_MS);
       log.debug("Leaving FederationKeys.ensure(). Minted elsewhere.");
       return rows;
     }
@@ -293,6 +385,12 @@ class FederationKeys {
 
   // The signer of the CURRENT key: `{ key, alg, kid }`, or null when there is
   // none or it will not open.
+  /**
+   * Answers the signer of the current key.
+   *
+   * @returns a promise of `{ key, alg, kid }`, or of null when there is none or
+   * it will not open
+   */
   async signer(): Promise<Signer | null> {
     const { log } = this.deps;
     log.debug("Entering FederationKeys.signer().");
@@ -314,6 +412,13 @@ class FederationKeys {
   // `next` one, and each retired one inside its overlap — never a revoked
   // one. Public halves only, each with its `kid`.
   // -------------------------------------------------------------------------
+  /**
+   * Answers the keys the Entity Configuration publishes: the current one, the
+   * next one, and each retired one inside its overlap; never a revoked one.
+   *
+   * @param rowsIn - the key rows; the realm's own when absent
+   * @returns the JWK Set, public halves only
+   */
   jwks(rowsIn?: Json[]): Json {
     const { log, now } = this.deps;
     log.debug("Entering FederationKeys.jwks().");
@@ -337,6 +442,12 @@ class FederationKeys {
   // being valid, and `revoked` with its reason where it was revoked. A
   // current or next key is not historical and is not listed.
   // -------------------------------------------------------------------------
+  /**
+   * Answers the historical keys (8.7.2): every retired or revoked key, with
+   * `iat`, `exp` and, where revoked, `revoked` with its reason.
+   *
+   * @returns the keys
+   */
   historical(): Json[] {
     const { log } = this.deps;
     log.debug("Entering FederationKeys.historical().");
@@ -376,6 +487,15 @@ class FederationKeys {
   // current and next keys are REVOKED as `compromised` rather than retired,
   // and leave the published set at once.
   // -------------------------------------------------------------------------
+  /**
+   * Rotates the keys (11.2): the next key becomes current, the current one is
+   * retired and published through the overlap, and a fresh next key is made.
+   *
+   * With `emergency`, the current and next keys are revoked as `compromised`
+   * and leave the published set at once.
+   * @param options - `emergency`, and the `reason` recorded
+   * @returns a promise of `{ ok, from, to }`, or of a refusal
+   */
   async rotate(options?: Json): Promise<Json> {
     const { log, store, now } = this.deps;
     const o = options || {};
@@ -446,6 +566,14 @@ class FederationKeys {
   // the current or next key cannot be revoked without an emergency
   // rotation, so it is refused here and the caller is told which to use.
   // -------------------------------------------------------------------------
+  /**
+   * Revokes one retired key by hand (8.7.3), with a reason; the current or next
+   * key is refused and needs an emergency rotation.
+   *
+   * @param kid - the key's `kid`
+   * @param reason - one of `REASONS`
+   * @returns `{ ok, kid, reason }`, or a refusal with its code and status
+   */
   revoke(kid: string, reason: string): Json {
     const { log, store, now } = this.deps;
     log.debug("Entering FederationKeys.revoke(). kid=" + kid);
@@ -484,6 +612,12 @@ class FederationKeys {
   }
 
   // The table as a page or the API shows it: never a private key.
+  /**
+   * Describes the key table as the page and the API show it, never a private
+   * key.
+   *
+   * @returns one row per key
+   */
   view(): Json[] {
     const { log } = this.deps;
     log.debug("Entering FederationKeys.view().");
@@ -577,6 +711,13 @@ class FederationKeys {
   // whole overlap — so a key is never promoted that entities may not have
   // fetched yet.
   // -------------------------------------------------------------------------
+  /**
+   * Runs the scheduled step for the ambient realm: a key where there is none, a
+   * next key where there is none, and a rotation once the current key is old
+   * enough and the next one has been published for the whole overlap.
+   *
+   * @returns a promise of what it did
+   */
   async scheduledStep(): Promise<Json> {
     const { log, store, config, now } = this.deps;
     log.debug("Entering FederationKeys.scheduledStep().");
@@ -613,6 +754,10 @@ class FederationKeys {
 
   // The two jobs (#49): the schedule, product only, and the rotation by
   // hand, in every mode.
+  /**
+   * Registers the scheduled rotation job (product only) and the rotation by
+   * hand (every mode).
+   */
   scheduleJobs(): void {
     const { log, scheduler, mode } = this.deps;
     const self = this;
@@ -676,9 +821,22 @@ const slot = new InstanceSlot<FederationKeys>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * A realm's Federation Entity Keys: the one key table every statement it makes
+ * as a federation entity is signed from.
+ * @namespace
+ */
 export = {
   FederationKeys: FederationKeys,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: FederationKeys): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   SEAL_LABEL: SEAL_LABEL,
   ROTATE_JOB: ROTATE_JOB,

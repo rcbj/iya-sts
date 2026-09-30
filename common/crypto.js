@@ -101,26 +101,6 @@ const bunyan = require('bunyan');
 const config = require('./config');
 const pqJose = require('./pq_jose');
 
-// ---------------------------------------------------------------------------
-// REQUIRED FOR ITS EFFECT, and the effect is the point: loading the pool is
-// what hands pq_jose.js the pool to use, so this line is why signJwsAsync()
-// below computes in a child process rather than in this one. See the foot of
-// common/worker_pool.js, which explains why the reference goes that way round
-// and why a worker process is never armed by it.
-//
-// This module is where the line belongs because this module is what routes an
-// `alg` to pq_jose.js in the first place — every path that can reach a
-// post-quantum signature comes through here.
-//
-// **THE VALUE IS KEPT NOW, AND WAS DISCARDED UNTIL 2026-09-07.** The effect
-// above is still the reason the line is here, but `hashSecretAsync()` below
-// hands the pool a job DIRECTLY rather than through pq_jose.js — a scrypt
-// derivation is not a JOSE operation and routing it through that module would
-// have put a password in a file about post-quantum signing. Requiring it twice
-// would be the same module object either way; naming it says that this file
-// uses the pool as well as arming it.
-// ---------------------------------------------------------------------------
-const workerPool = require('./worker_pool');
 const xmldom = require('@xmldom/xmldom');
 // THE FAILURE CODES. A LEAF with no requires, so this file stays one (rule 3r).
 // A verdict that refuses carries its code NON-ENUMERABLY — `errorCodes.mark()`
@@ -166,6 +146,7 @@ if (!global.DOMParser) {
 if (!global.XMLSerializer) {
   global.XMLSerializer = /** @type {any} */ (xmldom.XMLSerializer);
 }
+/** The vendored XML Signature engine. */
 const xmldsig = require('./vendored/xmldsig.js');
 
 // The namespace URIs this file names. They are also exported by xmldsig.js and
@@ -198,6 +179,10 @@ const NS_SAML = 'urn:oasis:names:tc:SAML:2.0:assertion';
 //                 in 1.1 the issuer is an ATTRIBUTE, so "after the issuer" is
 //                 not a position that exists.
 // ---------------------------------------------------------------------------
+/**
+ * Where an enveloped `<ds:Signature>` goes: after the issuer, first, or
+ * last, as each document's schema requires.
+ */
 const PLACEMENT = {
   AFTER_ISSUER: 'after-issuer',
   FIRST: 'first',
@@ -214,6 +199,12 @@ const ID_ATTRIBUTES = ['ID', 'AssertionID', 'ResponseID', 'RequestID', 'Id',
 // The id an element carries, whatever it is called. Returns '' when there is
 // none, which is a legal signature reference (URI="" means the whole document)
 // rather than an error.
+/**
+ * Returns the id an element carries, whatever its attribute is called.
+ *
+ * @param element - the DOM element
+ * @returns the id, or empty when there is none
+ */
 function idOf(element) {
   log.debug("Entering idOf().");
   for (let i = 0; i < ID_ATTRIBUTES.length; i++) {
@@ -275,6 +266,14 @@ function directChildByLocal(parent, localName, namespaceUri) {
 // renders only visibly-utilized prefixes and is therefore stable under
 // embedding. It is the default below and no caller overrides it.
 // ---------------------------------------------------------------------------
+/**
+ * Signs one XML document with an enveloped signature, exclusive c14n.
+ *
+ * @param xml - the document
+ * @param opts - `privateKeyPem` or `privateKey`, `certPem`, `refUri`,
+ *   `placement`, `sigAlg`, `includeKeyInfo` and `what`
+ * @returns the signed document
+ */
 function signXml(xml, opts) {
   log.debug("Entering signXml().");
   const options = opts || {};
@@ -650,6 +649,12 @@ Object.keys(XML_DIGEST_METHODS).forEach(function (uri) {
 // FORCE since #181: `saml.allowSha1Signatures` on is development's, so a
 // product realm refuses SHA-1 whatever is stored and says so once
 // (`mode.valueInForce()`, STS-CORE-0106).
+/**
+ * Says whether SHA-1 XML signatures are accepted, as in force now; a
+ * product realm refuses them whatever is stored.
+ *
+ * @returns true when accepted
+ */
 function sha1Allowed() {
   log.debug("Entering sha1Allowed().");
   const on = mode.valueInForce('saml.allowSha1Signatures') === true;
@@ -660,6 +665,15 @@ function sha1Allowed() {
 // What a SignatureMethod and a set of DigestMethods amount to, before any
 // cryptography: `{ problem, code, weak, sha1 }`. `problem` is '' when the
 // algorithms are ones this file verifies and policy allows.
+/**
+ * Says what a SignatureMethod and DigestMethods amount to, before any
+ * cryptography.
+ *
+ * @param signatureMethod - the SignatureMethod URI
+ * @param digestMethods - the DigestMethod URIs
+ * @returns `{ problem, code, weak, sha1 }`, `problem` empty when they are
+ *   verified here and policy allows them
+ */
 function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
   log.debug("Entering xmlAlgorithmVerdict(). " + signatureMethod);
   const sig = XML_SIGNATURE_METHODS[String(signatureMethod || '')];
@@ -739,6 +753,12 @@ function verificationKeyFrom(certPem, publicKeyPem) {
 
 // Whether a key TYPE (node's `asymmetricKeyType`) makes an XML signature
 // this file verifies.
+/**
+ * Says whether a key type makes an XML signature this file verifies.
+ *
+ * @param type - node's `asymmetricKeyType`
+ * @returns true when it does
+ */
 function xmlSignatureKeyTypeUsable(type) {
   log.debug("Entering xmlSignatureKeyTypeUsable(). " + type);
   const usable = Object.keys(XML_SIGNATURE_METHODS).some(function (uri) {
@@ -750,6 +770,13 @@ function xmlSignatureKeyTypeUsable(type) {
 
 // Whether a certificate's key can make an XML signature this file verifies —
 // the question a registration asks before trusting one. '' when it can.
+/**
+ * Says whether a certificate's key can make an XML signature this file
+ * verifies.
+ *
+ * @param certificate - the certificate
+ * @returns the problem, or empty when it can
+ */
 function xmlSignatureKeyProblem(certificate) {
   log.debug("Entering xmlSignatureKeyProblem().");
   const found = verificationKeyFrom(certificate, null);
@@ -863,6 +890,17 @@ function xmlEcdsaCurveProblem(key) {
 // `signatureMethod` with `key`? A key of the wrong type for the method is
 // `false` — another registered certificate may be the right one — and never a
 // throw. `pss` is pssParameters()'s answer for `rsa-pss`.
+/**
+ * Says whether a signature verifies over octets under a SignatureMethod
+ * with a key; a key of the wrong type is false, never a throw.
+ *
+ * @param signatureMethod - the SignatureMethod URI
+ * @param key - the public key
+ * @param octets - the canonical SignedInfo
+ * @param signature - the signature value
+ * @param pss - the PSS parameters for `rsa-pss`
+ * @returns true when it verifies
+ */
 function verifyXmlSignatureValue(signatureMethod, key, octets, signature, pss) {
   log.debug("Entering verifyXmlSignatureValue(). " + signatureMethod);
   const row = XML_SIGNATURE_METHODS[String(signatureMethod || '')];
@@ -924,6 +962,12 @@ function verifyXmlSignatureValue(signatureMethod, key, octets, signature, pss) {
 }
 
 // A description of every method, for the crypto metadata page and the tests.
+/**
+ * Describes every XML signature method, for the crypto metadata page and
+ * the tests.
+ *
+ * @returns the descriptions
+ */
 function xmlSignatureAlgorithms() {
   log.debug("Entering xmlSignatureAlgorithms().");
   log.debug("Leaving xmlSignatureAlgorithms().");
@@ -1003,6 +1047,15 @@ function withoutCertificateText(signatureXml) {
 // verified since 2026-09-17** — see the SignedInfo note further down, where
 // the in-scope namespace declarations are put back before the engine reads it.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies the signature on one named element and on no other, against the
+ * certificates the caller trusts. It answers rather than throws.
+ *
+ * @param xml - the document
+ * @param opts - `element` (which one), and `certPem` or `publicKeyPem`
+ * @returns the verdict `{ ok, present, why, signatureValid,
+ *   referencesValid, signatureMethod, … }`, a refusal carrying its code
+ */
 function verifyXmlSignature(xml, opts) {
   log.debug("Entering verifyXmlSignature().");
   const options = opts || {};
@@ -1292,6 +1345,17 @@ function verifyXmlSignature(xml, opts) {
 // with — for which the vendored signer, RSA through forge, has no path. The
 // ECDSA signature is the raw r||s XML Signature 1.1 specifies, which is what
 // the binding's SigAlg names; RSA takes the vendored path as it always has.
+/**
+ * Signs a query string for the SAML HTTP Redirect binding's detached
+ * signature.
+ *
+ * @param queryString - the query string to sign
+ * @param privateKeyPem - the RSA private key
+ * @param sigAlg - the signature algorithm URI
+ * @param privateKey - for an ECDSA or post-quantum `sigAlg`, the signer
+ *   group's key
+ * @returns the base64 signature
+ */
 function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
   log.debug('Entering signQueryString().');
   const pqMethod = xmldsig.SIG_METHODS[sigAlg] &&
@@ -1348,6 +1412,16 @@ function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
 // separate from `usable`: "this signature is wrong" and "this could not be
 // checked at all" are refused under different codes.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies a service provider's HTTP Redirect binding signature. It answers
+ * rather than throws.
+ *
+ * @param queryString - the query string as received
+ * @param opts - `signature`, `sigAlg` and `certPem` (the registered
+ *   certificates)
+ * @returns `{ ok, usable, … }`: `ok` separate from `usable`, whether it
+ *   could be checked at all
+ */
 function verifyQueryString(queryString, opts) {
   log.debug('Entering verifyQueryString().');
   const options = opts || {};
@@ -1477,6 +1551,7 @@ function verifyQueryString(queryString, opts) {
 // it; `ivBytes` and `tagBytes` are the layout above. A URI that is not here is
 // refused BY NAME on the way in and cannot be chosen on the way out, because
 // the setting is an enum over exactly these keys.
+/** Every XML Encryption block cipher this service speaks, by name. */
 const BLOCK_CIPHERS = {
   'aes256-gcm': { uri: XENC11_NS + 'aes256-gcm', keyBytes: 32, mode: 'AES-GCM',
                   ivBytes: 12, tagBytes: 16 },
@@ -1509,6 +1584,7 @@ const BLOCK_CIPHERS = {
 // own identity provider has to be able to encrypt to it. Node performs it
 // (`oaepHash` names the digest of the OAEP padding AND of MGF1), forge does
 // not, which is why its two directions below go through node's OpenSSL.
+/** The three XML Encryption key transports, by name. */
 const KEY_TRANSPORTS = {
   'rsa-oaep': { uri: XENC11_NS + 'rsa-oaep', scheme: 'RSA-OAEP',
                 hash: 'sha256', node: true },
@@ -1522,12 +1598,14 @@ const KEY_TRANSPORTS = {
 // MGF1 digest from the OAEP digest, so a document naming two DIFFERENT ones
 // is refused by name rather than read under the wrong one — which would fail
 // exactly as a wrong key fails, and send somebody to the wrong place.
+/** The digests an `rsa-oaep` EncryptionMethod may name, by URI. */
 const OAEP_DIGESTS = {
   sha1: DS_NS + 'sha1',
   sha256: XENC_NS + 'sha256',
   sha384: 'http://www.w3.org/2001/04/xmldsig-more#sha384',
   sha512: XENC_NS + 'sha512'
 };
+/** The MGF1 URIs of XML Encryption 1.1 section 5.5.2. */
 const MGF1_URIS = {
   sha1: XENC11_NS + 'mgf1sha1',
   sha256: XENC11_NS + 'mgf1sha256',
@@ -1558,10 +1636,12 @@ const MGF1_URIS = {
 // ML-KEM method for XML Encryption, so confidentiality here stays classical
 // against a harvest-now-decrypt-later adversary; see federation/CLAUDE.md.
 // ---------------------------------------------------------------------------
+/** XML Encryption 1.1's ECDH-ES key agreement. */
 const KEY_AGREEMENTS = {
   'ecdh-es': { uri: XENC11_NS + 'ECDH-ES' }
 };
 const CONCAT_KDF_URI = XENC11_NS + 'ConcatKDF';
+/** The AES key wraps an agreed key encrypts the content key with. */
 const KEY_WRAPS = {
   'kw-aes128': { uri: XENC_NS + 'kw-aes128', bytes: 16 },
   'kw-aes192': { uri: XENC_NS + 'kw-aes192', bytes: 24 },
@@ -1645,6 +1725,12 @@ function hexBits(bytes) {
   return '00' + Buffer.from(bytes).toString('hex').toUpperCase();
 }
 
+/**
+ * Returns the block cipher an algorithm URI names.
+ *
+ * @param uri - the EncryptionMethod URI
+ * @returns the cipher with its `name`, or null
+ */
 function cipherByUri(uri) {
   log.debug("Entering cipherByUri().");
   const name = Object.keys(BLOCK_CIPHERS).filter(function (key) {
@@ -1654,6 +1740,12 @@ function cipherByUri(uri) {
   return name ? Object.assign({ name: name }, BLOCK_CIPHERS[name]) : null;
 }
 
+/**
+ * Returns the key transport an algorithm URI names.
+ *
+ * @param uri - the EncryptionMethod URI
+ * @returns the transport with its `name`, or null
+ */
 function transportByUri(uri) {
   log.debug("Entering transportByUri().");
   const name = Object.keys(KEY_TRANSPORTS).filter(function (key) {
@@ -1713,6 +1805,16 @@ function artifact(opts, what, stage, value) {
   log.debug("Leaving artifact().");
 }
 
+/**
+ * Encrypts one XML element to a recipient's certificate, wrapped in the
+ * element the caller names.
+ *
+ * @param xml - the element to encrypt
+ * @param certPem - the recipient's certificate
+ * @param opts - `wrapper` (`saml:EncryptedAssertion` by default),
+ *   `algorithm`, `keyTransport`, `keyWrap` and `logArtifact`
+ * @returns the wrapper element's XML
+ */
 function encryptElement(xml, certPem, opts) {
   log.debug("Entering encryptElement().");
   opts = opts || {};
@@ -1867,6 +1969,15 @@ function encryptElement(xml, certPem, opts) {
 
 // The original name, kept because WS-Trust calls it and its signature is part
 // of that module's contract. It is now one line over encryptElement().
+/**
+ * Encrypts an assertion as `encryptElement()` does; the name WS-Trust
+ * calls.
+ *
+ * @param assertionXml - the assertion
+ * @param certPem - the recipient's certificate
+ * @param opts - as for `encryptElement()`
+ * @returns the encrypted element's XML
+ */
 function encryptAssertion(assertionXml, certPem, opts) {
   log.debug("Entering encryptAssertion().");
   log.debug("Leaving encryptAssertion().");
@@ -2165,6 +2276,14 @@ function cbcPlaintextUsable(opened) {
 // GCM's IV and tag are the fixed 12 and 16 octets the layout defines, and
 // node refuses a tag that does not verify.
 // ---------------------------------------------------------------------------
+/**
+ * Opens the content of an XML EncryptedData on node's OpenSSL.
+ *
+ * @param cipher - the block cipher's row
+ * @param key - the content key
+ * @param raw - the CipherValue: IV, ciphertext and, for GCM, the tag
+ * @returns `{ plain, padOk }`, or null when it cannot be opened
+ */
 function openXmlContent(cipher, key, raw) {
   log.debug("Entering openXmlContent(). " + cipher.name);
   const bits = key.length * 8;
@@ -2212,6 +2331,15 @@ function openXmlContent(cipher, key, raw) {
   }
 }
 
+/**
+ * Decrypts one encrypted XML element. It answers rather than throws.
+ *
+ * @param xml - the encrypted element's XML
+ * @param privateKeyPem - the private key it was encrypted to
+ * @param opts - `allowedCiphers`, `allowedKeyManagement`,
+ *   `allowedOaepDigests` and `logArtifact`
+ * @returns `{ ok, xml, why, algorithm, keyTransport }`
+ */
 function decryptElement(xml, privateKeyPem, opts) {
   log.debug("Entering decryptElement().");
   const options = opts || {};
@@ -2593,6 +2721,10 @@ const SIGN_OPTIONS = ['keyid', 'header', 'expiresIn', 'notBefore',
 // something the runtime already does, so it is gone. Anything that needs the
 // raw form passes that option.
 // ---------------------------------------------------------------------------
+/**
+ * The one JWS algorithm table: every algorithm this service signs or
+ * verifies, with its family, hash and key type.
+ */
 const JWS_ALGS = {
   HS256: { family: 'hmac', hash: 'sha256' },
   HS384: { family: 'hmac', hash: 'sha384' },
@@ -2647,7 +2779,9 @@ pqJose.PQ_ALGS.forEach(function (alg) {
 // several specifications say "an asymmetric algorithm, never a MAC and never
 // none": DPoP proofs (RFC 9449 section 4.2), OID4VCI proofs of possession, and
 // request objects are all in that class.
+/** Every JWS signing algorithm this service speaks. */
 const JWS_SIGNING_ALGS = Object.keys(JWS_ALGS);
+/** The asymmetric JWS algorithms: never a MAC, never `none`. */
 const JWS_ASYMMETRIC_ALGS = JWS_SIGNING_ALGS.filter(function (alg) {
   return JWS_ALGS[alg].family !== 'hmac';
 });
@@ -2688,6 +2822,13 @@ const PQ_ID_TOKEN_HASH = {
   'ML-DSA-65-Ed25519': 'sha512', 'ML-DSA-87-Ed448': 'shake256-114'
 };
 
+/**
+ * Returns the hash an ID Token's `at_hash`, `c_hash` and `s_hash` use for
+ * a signing algorithm.
+ *
+ * @param alg - the JWS algorithm
+ * @returns `{ name }`, with `outputLength` for SHAKE256
+ */
 function idTokenHashFor(alg) {
   log.debug('Entering idTokenHashFor(). alg=' + alg);
   const name = String(alg || '');
@@ -2704,6 +2845,14 @@ function idTokenHashFor(alg) {
 
 // The base64url of the left-most half of that hash of the ASCII octets of
 // `value` — at_hash, c_hash and s_hash alike.
+/**
+ * Returns the base64url of the left-most half of the algorithm's hash of
+ * `value`: `at_hash`, `c_hash` and `s_hash` alike.
+ *
+ * @param value - the token or code, as ASCII
+ * @param alg - the ID Token's JWS algorithm
+ * @returns the half hash
+ */
 function idTokenHalfHash(value, alg) {
   log.debug('Entering idTokenHalfHash(). alg=' + alg);
   const hash = idTokenHashFor(alg);
@@ -2715,6 +2864,13 @@ function idTokenHalfHash(value, alg) {
   return digest.subarray(0, digest.length / 2).toString('base64url');
 }
 
+/**
+ * Returns the table row for a JWS algorithm.
+ *
+ * @param alg - the algorithm
+ * @returns the row
+ * @throws Error for an algorithm this service does not speak
+ */
 function jwsSpec(alg) {
   log.debug('Entering jwsSpec(). alg=' + alg);
   const spec = JWS_ALGS[alg];
@@ -2768,6 +2924,14 @@ function nodeParamsFor(spec, key) {
 // them: the algorithm is what was actually used, and the kid names the key
 // that was actually used. Everything else in `options.header` is merged.
 // ---------------------------------------------------------------------------
+/**
+ * Builds the protected header the hand-rolled signers use: `alg` and `kid`
+ * set here, everything else in `options.header` merged.
+ *
+ * @param algorithm - the algorithm actually used
+ * @param options - `header` and `keyid`
+ * @returns the header
+ */
 function protectedHeaderFor(algorithm, options) {
   log.debug('Entering protectedHeaderFor(). alg=' + algorithm);
   const asked = (options && options.header && typeof options.header ===
@@ -2802,6 +2966,17 @@ function pqSigningInput(payload, algorithm, options) {
   return input;
 }
 
+/**
+ * Signs a JWT payload as a compact JWS: the one place this service signs a
+ * JWT.
+ *
+ * @param payload - the claims
+ * @param key - the signing key
+ * @param opts - `algorithm` (RS256 by default), `header`, `keyid` and the
+ *   claim conveniences `jsonwebtoken` takes
+ * @returns the compact JWS
+ * @throws Error when no key is given or the algorithm is not supported
+ */
 function signJws(payload, key, opts) {
   log.debug("Entering signJws().");
   const options = opts || {};
@@ -2858,24 +3033,30 @@ function signJws(payload, key, opts) {
 // ---------------------------------------------------------------------------
 // THE SAME SIGNATURE, WITHOUT HOLDING THE EVENT LOOP.
 //
-// Post-quantum signing is the one thing this service does that takes SECONDS —
-// 14.6 and 15.4 of them were measured for a single SLH-DSA-SHAKE-128s token on
-// 2026-08-29 — and node runs this service's six listener families on one
-// thread, so for those seconds it answers nobody: not another HTTP caller, not
-// the KDC on port 88. See common/worker.js.
+// Post-quantum signing is the one thing this service does that takes long
+// enough to matter — SLH-DSA-SHAKE-128s costs about 640 ms even natively
+// (#363's measurement; 14.6 s on the JavaScript implementation this replaced)
+// — and node runs every listener on one thread, so for that time a
+// synchronous signature answers nobody: not another HTTP caller, not the KDC
+// on port 88.
 //
 // So the four call paths that can reach a post-quantum `alg` — the ID Token,
-// the signed UserInfo response, a client assertion and an OID4VCI proof — call
-// this instead, and it hands the computation to the pool. **EVERY OTHER
+// the signed UserInfo response, a client assertion and an OID4VCI proof —
+// call this instead, and `pq_jose.signAsync()` computes on libuv's thread
+// pool (#363; a pool of forked processes until then). **EVERY OTHER
 // ALGORITHM IS UNCHANGED AND IS NOT DEFERRED**: an RS256 signature is
-// microseconds, so sending it to a child process would cost an IPC round trip
-// to save nothing. Those resolve with the value signJws() computed, which is
+// microseconds. Those resolve with the value signJws() computed, which is
 // what lets a caller be written one way and not two.
-//
-// `opts.session` is passed through as the routing hint — see worker_pool.js.
-// It is a preference and never a correctness requirement, so a caller with no
-// session to name simply omits it.
 // ---------------------------------------------------------------------------
+/**
+ * Signs as `signJws()` does, with a post-quantum signature computed on
+ * libuv's thread pool; every other algorithm is signed in place.
+ *
+ * @param payload - the claims
+ * @param key - the signing key
+ * @param opts - as for `signJws()`
+ * @returns a promise of the compact JWS
+ */
 function signJwsAsync(payload, key, opts) {
   log.debug("Entering signJwsAsync().");
   const options = opts || {};
@@ -2893,7 +3074,7 @@ function signJwsAsync(payload, key, opts) {
   }
   if (spec.family !== 'pq') {
     // Not deferred, and the throw is turned into a rejection so that a caller
-    // never has to know which algorithms go to the pool.
+    // never has to know which algorithms are computed off the thread.
     try {
       const signed = signJws(payload, key, opts);
       log.debug('Leaving signJwsAsync(). ' + algorithm + ', in process.');
@@ -2904,9 +3085,8 @@ function signJwsAsync(payload, key, opts) {
     }
   }
   const input = pqSigningInput(payload, algorithm, options);
-  log.debug('Leaving signJwsAsync(). ' + algorithm + ', handed to the pool.');
-  return pqJose.signAsync(algorithm, key, Buffer.from(input, 'ascii'),
-                          { session: options.session })
+  log.debug('Leaving signJwsAsync(). ' + algorithm + ', on libuv.');
+  return pqJose.signAsync(algorithm, key, Buffer.from(input, 'ascii'))
     .then(function (signature) {
       return input + '.' + b64u(signature);
     });
@@ -2930,6 +3110,12 @@ function signJwsAsync(payload, key, opts) {
 // the console and a constant taken at require time would be the one value
 // nothing could change.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the clock allowance applied when reading back a token this
+ * service signed, read per call.
+ *
+ * @returns the allowance in seconds
+ */
 function tokenClockSkew() {
   log.debug("Entering tokenClockSkew().");
   log.debug("Leaving tokenClockSkew().");
@@ -2978,7 +3164,7 @@ function tokenClockSkew() {
 // Reading the token, choosing the algorithm and refusing an unacceptable one
 // are the same in both directions; only the one line that actually checks the
 // bytes differs, and for a composite ML-DSA verification that line took 17.8
-// and 23.3 seconds on 2026-08-29 (see common/worker.js). So:
+// and 23.3 seconds on 2026-08-29 (see common/pq_native.js). So:
 //
 //   prepareVerification()  everything up to the check — and every refusal that
 //                          is about the TOKEN rather than about the signature
@@ -2988,7 +3174,7 @@ function tokenClockSkew() {
 //
 // `verifyCompactJws()` below runs the three in a row exactly as it always did.
 // `verifyCompactJwsAsync()` runs the same three with the post-quantum check
-// handed to the pool. THE ORDER OF THE REFUSALS IS PART OF THE CONTRACT: a
+// on libuv's thread pool. THE ORDER OF THE REFUSALS IS PART OF THE CONTRACT: a
 // token whose `alg` is not in the caller's list is refused for that and never
 // for its signature, whichever entry point was used.
 // ---------------------------------------------------------------------------
@@ -3237,6 +3423,16 @@ function checkPreparedSignature(prepared, key) {
   return !!ok;
 }
 
+/**
+ * Says whether a JWS signature verifies over a signing input, for external
+ * test vectors.
+ *
+ * @param alg - the algorithm
+ * @param key - the verification key
+ * @param signingInput - the octets signed
+ * @param signature - the signature
+ * @returns true when it verifies
+ */
 function jwsSignatureValid(alg, key, signingInput, signature) {
   log.debug('Entering jwsSignatureValid(). alg=' + alg);
   const spec = jwsSpec(alg);
@@ -3257,24 +3453,25 @@ function jwsSignatureValid(alg, key, signingInput, signature) {
 // ---------------------------------------------------------------------------
 // THE SIGNATURE A JWS CARRIES, OVER OCTETS A CALLER NAMES — for the
 // algorithms this file signs ITSELF: EdDSA and ES256K (the `ownSigner` rows)
-// and every post-quantum one. `signJws()` signs through this, so the
-// deterministic ML-DSA and SLH-DSA signatures NIST and Wycheproof publish
-// can be compared with what this service actually produces. The rows
+// and every post-quantum one. `signJws()` signs through this. The rows
 // `jsonwebtoken` signs are refused by name: this function would otherwise
 // be a second signer for them that nothing in the service uses.
 // ---------------------------------------------------------------------------
-//
-// `internal.deterministic` (#203) asks pq_jose for FIPS 204/205's
-// DETERMINISTIC variant instead of the hedged one every other caller gets.
-// It exists for `tests/acvp_pqc.js`, which compares with NIST's
-// deterministic vectors, and is not a setting: signJws() never passes it.
-function jwsSignatureOver(alg, key, signingInput, internal) {
+/**
+ * Signs octets as a JWS signature, for the algorithms this file signs
+ * itself: EdDSA, ES256K and the post-quantum ones.
+ *
+ * @param alg - the algorithm
+ * @param key - the signing key
+ * @param signingInput - the octets to sign
+ * @returns the signature
+ */
+function jwsSignatureOver(alg, key, signingInput) {
   log.debug('Entering jwsSignatureOver(). alg=' + alg);
   const spec = jwsSpec(alg);
   const input = Buffer.from(signingInput);
   if (spec.family === 'pq') {
-    const pqSig = Buffer.from(pqJose.sign(alg, key, input,
-      { deterministic: !!(internal && internal.deterministic === true) }));
+    const pqSig = Buffer.from(pqJose.sign(alg, key, input));
     log.debug('Leaving jwsSignatureOver(). Post-quantum.');
     return pqSig;
   }
@@ -3370,6 +3567,15 @@ function finishVerification(prepared, ok) {
   return { header: prepared.header, claims: claims };
 }
 
+/**
+ * Verifies a compact JWS's signature, without the claim checks.
+ *
+ * @param token - the compact JWS
+ * @param key - the verification key
+ * @param opts - `algorithms`, and `emptyPayload` for a detached payload
+ * @returns `{ header, claims }`
+ * @throws Error when it does not verify or the payload is not JSON
+ */
 function verifyCompactJws(token, key, opts) {
   log.debug("Entering verifyCompactJws().");
   const options = opts || {};
@@ -3382,10 +3588,18 @@ function verifyCompactJws(token, key, opts) {
   return out;
 }
 
-// The same verification with the post-quantum check handed to the pool. Every
-// other algorithm resolves with what verifyCompactJws() computed, for the
-// reason signJwsAsync() gives: an RS256 check is microseconds, and an IPC round
-// trip to save that would be a cost with no saving.
+// The same verification with the post-quantum check on libuv's thread pool.
+// Every other algorithm resolves with what verifyCompactJws() computed, for
+// the reason signJwsAsync() gives: an RS256 check is microseconds.
+/**
+ * Verifies as `verifyCompactJws()` does, with a post-quantum signature
+ * checked on libuv's thread pool.
+ *
+ * @param token - the compact JWS
+ * @param key - the verification key
+ * @param opts - as for `verifyCompactJws()`
+ * @returns a promise of `{ header, claims }`
+ */
 function verifyCompactJwsAsync(token, key, opts) {
   log.debug("Entering verifyCompactJwsAsync().");
   const options = opts || {};
@@ -3407,10 +3621,9 @@ function verifyCompactJwsAsync(token, key, opts) {
       return Promise.reject(e);
     }
   }
-  log.debug('Leaving verifyCompactJwsAsync(). Handed to the pool.');
+  log.debug('Leaving verifyCompactJwsAsync(). On libuv.');
   return pqJose.verifyAsync(prepared.header.alg, prepared.pub,
-                            prepared.signingInput, prepared.signature,
-                            { session: options.session })
+                            prepared.signingInput, prepared.signature)
     .then(function (ok) {
       return finishVerification(prepared, ok);
     });
@@ -3420,6 +3633,15 @@ function verifyCompactJwsAsync(token, key, opts) {
 // verify. Written once, here, so that an EdDSA or ES256K token is held to
 // exactly the same rules as an RS256 one — a token that skipped `exp` because
 // of the curve it was signed on would be the worst kind of inconsistency.
+/**
+ * Checks a JWT's claims as `jsonwebtoken` does: expiry, not-before, issuer
+ * and audience, with the clock allowance.
+ *
+ * @param claims - the claims
+ * @param options - `issuer`, `audience` and the clock options
+ * @returns the claims
+ * @throws Error naming the check that failed
+ */
 function checkJwtClaims(claims, options) {
   log.debug('Entering checkJwtClaims().');
   const now = Math.floor(Date.now() / 1000);
@@ -3463,6 +3685,17 @@ function checkJwtClaims(claims, options) {
   return claims;
 }
 
+/**
+ * Verifies a compact JWS and checks its claims: the one entry point for
+ * "verify a JWT", for every algorithm this service speaks.
+ *
+ * @param token - the compact JWS
+ * @param key - the verification key
+ * @param opts - `algorithms` (the token's own when omitted), and
+ *   `issuer`, `audience` and the clock checks
+ * @returns the claims
+ * @throws Error when the signature or a claim check fails
+ */
 function verifyJws(token, key, opts) {
   log.debug("Entering verifyJws().");
   const options = opts || {};
@@ -3535,6 +3768,15 @@ function verifyJws(token, key, opts) {
 // the worst kind of inconsistency, and it is the reason this is a wrapper of
 // the same three steps rather than a second reading of them.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies as `verifyJws()` does, with a post-quantum signature checked on
+ * libuv's thread pool, and the same claim checks.
+ *
+ * @param token - the compact JWS
+ * @param key - the verification key
+ * @param opts - as for `verifyJws()`
+ * @returns a promise of the claims
+ */
 function verifyJwsAsync(token, key, opts) {
   log.debug("Entering verifyJwsAsync().");
   const options = opts || {};
@@ -3549,9 +3791,8 @@ function verifyJwsAsync(token, key, opts) {
   }
   if (peeked && JWS_ALGS[peeked.alg] && JWS_ALGS[peeked.alg].family === 'pq') {
     const allowed = options.algorithms || [peeked.alg];
-    log.debug('Leaving verifyJwsAsync(). Handed to the pool.');
-    return verifyCompactJwsAsync(token, key,
-        { algorithms: allowed, session: options.session })
+    log.debug('Leaving verifyJwsAsync(). On libuv.');
+    return verifyCompactJwsAsync(token, key, { algorithms: allowed })
       .then(function (verified) {
         return checkJwtClaims(verified.claims, options);
       });
@@ -3566,6 +3807,1661 @@ function verifyJwsAsync(token, key, opts) {
     log.debug('Leaving verifyJwsAsync(). It did not verify.');
     return Promise.reject(e);
   }
+}
+
+// ===========================================================================
+// SECTION 4a — POST-QUANTUM AND HPKE KEY ESTABLISHMENT FOR JWE (#82,
+// 2026-09-27)
+// ===========================================================================
+//
+// It sits BEFORE section 4 rather than after it because section 4's alg
+// lists (`JWE_ASYMMETRIC_ALGS` and the rest) are built from this section's
+// table when the module loads, and a `const` read before its line throws.
+//
+// ---------------------------------------------------------------------------
+// WHY THIS SECTION EXISTS. Section 4's key management was RSA and ECDH only.
+// A signature is checked when it is presented, so a signature algorithm that
+// falls in 2035 is a problem in 2035. A CIPHERTEXT captured today can be kept
+// and opened then, so every encrypted ID Token, Logout Token, UserInfo
+// response and OID4VP response this service sent was only as safe as a
+// classical key agreement. This section adds two families, and a JWE reaches
+// both through `encryptJweCompact()` and `decryptJweCompact()` above, the
+// same two functions every other `alg` goes through (rule 3r):
+//
+//   ML-KEM-512 / -768 / -1024            draft-ietf-jose-pqc-kem-05, JOSE
+//   ML-KEM-512+A128KW / -768+A192KW /    sections 5.1, 6 and 8: the KEM
+//     -1024+A256KW                       shared secret through KMAC256, used
+//                                        as the CEK (direct) or as an AES Key
+//                                        Wrap key; the KEM ciphertext in `ek`
+//   HPKE-0 .. HPKE-7 (and -KE forms)     draft-ietf-jose-hpke-encrypt-22:
+//                                        HPKE over the classical DHKEMs,
+//                                        Integrated or Key Encryption
+//   HPKE-8 .. HPKE-16 (and -KE forms)    draft-reddy-cose-jose-pqc-hybrid-
+//                                        hpke-11: HPKE over ML-KEM and the
+//                                        PQ/T hybrids of draft-ietf-hpke-pq-05
+//                                        (X-Wing is HPKE-10 and HPKE-11)
+//
+// **EVERY ONE OF THESE IS A DRAFT, AND WHICH TEXT WAS READ IS THE RECORD.**
+//
+//   * pqc-kem: revision -06 (6 July 2026) REMOVED every JOSE section; it is a
+//     COSE document now. -05 (9 December 2025) is the last text that defines
+//     the JWE algorithms, and it is what is implemented, with one deliberate
+//     departure: -05 says an AKP `priv` is "the 32-byte seed", and an ML-KEM
+//     key pair cannot be made from 32 bytes (FIPS 203 KeyGen_internal takes
+//     d AND z). -06 corrected it to the 64-octet d || z, and that is what is
+//     used here. No revision has test vectors.
+//   * The hybrid names are from an INDIVIDUAL draft, -11, which expired on
+//     2026-08-20. It is the only document that names a hybrid JWE `alg` at
+//     all, so it is what is implemented, and the console says so.
+//   * jose-hpke-encrypt-22 removed HPKE-4-KE and HPKE-6-KE (their vectors
+//     are still in the working group's repository; `tests/jwe_pq_kem.js`
+//     classifies them as not applicable for that reason).
+//   * The HPKE core is draft-ietf-hpke-hpke (RFC 9180's successor, which adds
+//     the one-stage KDFs the SHAKE suites need); the KEMs are
+//     draft-ietf-hpke-pq-05, over draft-irtf-cfrg-concrete-hybrid-kems and
+//     draft-irtf-cfrg-hybrid-kems-12. hpke-pq-05's and the concrete draft's
+//     published vectors are what `tests/jwe_pq_kem.js` holds this to.
+//
+// **WHAT RUNS WHERE.** ML-KEM is node's OpenSSL through
+// `common/pq_native.js` (#363; @noble/post-quantum until then), which takes
+// the 64-octet seed the key format is defined in. FIPS 203 section 7.2's
+// modulus check on an encapsulation key, which HPKE-PQ section 3 requires,
+// is made by `mlkemCheckEncapsulationKey()` below whatever the primitive
+// does, so the requirement is visible here rather than assumed of a
+// library. The
+// traditional half of every hybrid, every DHKEM, AES-GCM, ChaCha20-Poly1305,
+// HKDF, SHA3-256 and SHAKE are node's OpenSSL; KMAC256 and TurboSHAKE, which
+// node does not offer, are `@noble/hashes`.
+//
+// **SYNCHRONOUS, AND THAT WAS MEASURED** (#82's note). A whole JWE —
+// encrypt and decrypt, key expansion from the seed included — cost
+// milliseconds on the JavaScript ML-KEM this used until #363 (RSA-OAEP-256
+// 0.5 ms, ML-KEM-768 1.3 ms, X-Wing 3.4 ms, ML-KEM-1024 + P-384 7.4 ms), and
+// ML-KEM on node's OpenSSL (`common/pq_native.js`, #363) is a fraction of
+// that. `tests/jwe_pq_kem.js` prints the figures on every run.
+//
+// **THE PUBLISHED VECTORS ARE CHECKED FROM THE RECEIVING SIDE** since #363.
+// FIPS 203's Encaps_internal takes the encapsulation randomness m as an
+// input, and the vectors are made with it; node's OpenSSL does not take it,
+// so `mlkemEncaps()` refuses a given `randomness` rather than ignoring it,
+// and the vector tests decapsulate the vector's ciphertext instead.
+// ---------------------------------------------------------------------------
+
+const nobleMlKem = require('./pq_native');
+const nobleSha3Addons = require('@noble/hashes/sha3-addons');
+
+// ---------------------------------------------------------------------------
+// BYTE HELPERS. `I2OSP(n, w)` is RFC 8017's, big-endian; `lengthPrefixed()`
+// is draft-ietf-hpke-hpke section 3's two-byte length and the bytes.
+// ---------------------------------------------------------------------------
+function i2osp(n, width) {
+  log.debug('Entering i2osp().');
+  const out = Buffer.alloc(width);
+  let v = BigInt(n);
+  for (let i = width - 1; i >= 0; i--) {
+    out[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  if (v !== 0n) {
+    log.debug('Leaving i2osp(). Too wide.');
+    throw new Error('i2osp: ' + n + ' does not fit in ' + width + ' octets');
+  }
+  log.debug('Leaving i2osp().');
+  return out;
+}
+
+function lengthPrefixed(bytes) {
+  log.debug('Entering lengthPrefixed().');
+  const b = Buffer.from(bytes);
+  if (b.length > 65535) {
+    log.debug('Leaving lengthPrefixed(). Too long.');
+    throw new Error('lengthPrefixed: ' + b.length + ' octets is more than ' +
+                    'two octets can count');
+  }
+  log.debug('Leaving lengthPrefixed().');
+  return Buffer.concat([i2osp(b.length, 2), b]);
+}
+
+function shake(bits, input, length) {
+  log.debug('Entering shake(). SHAKE' + bits + ', ' + length + ' octets.');
+  const out = nodeCrypto.createHash('shake' + bits, { outputLength: length })
+    .update(Buffer.from(input)).digest();
+  log.debug('Leaving shake().');
+  return out;
+}
+
+function sha3_256(input) {
+  log.debug('Entering sha3_256().');
+  const out = nodeCrypto.createHash('sha3-256').update(Buffer.from(input))
+    .digest();
+  log.debug('Leaving sha3_256().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// ML-KEM, AS THE THREE PARAMETER SETS FIPS 203 DEFINES. `Npk` and `Nct` are
+// the encapsulation key and ciphertext sizes; `k` is the module rank, which
+// the encapsulation key check needs.
+// ---------------------------------------------------------------------------
+const MLKEM_SETS = {
+  'ML-KEM-512': { impl: nobleMlKem.ml_kem512, k: 2, Npk: 800, Nct: 768 },
+  'ML-KEM-768': { impl: nobleMlKem.ml_kem768, k: 3, Npk: 1184, Nct: 1088 },
+  'ML-KEM-1024': { impl: nobleMlKem.ml_kem1024, k: 4, Npk: 1568, Nct: 1568 }
+};
+
+// FIPS 203 section 7.2, "input checking": the encapsulation key is 384k + 32
+// octets, and every one of its 256k twelve-bit coefficients is below q =
+// 3329 (ByteEncode12(ByteDecode12(ek)) == ek). An unreduced key is refused,
+// never encapsulated to: HPKE-PQ section 3 makes it an EncapError, and a
+// sender that encrypts to a malformed key has no idea what it produced.
+/**
+ * FIPS 203 section 7.2's encapsulation key check.
+ *
+ * @param set - ML-KEM-512, -768 or -1024
+ * @param ek - the encapsulation key
+ * @throws Error for a wrong size or an unreduced coefficient
+ */
+function mlkemCheckEncapsulationKey(set, ek) {
+  log.debug('Entering mlkemCheckEncapsulationKey().');
+  const spec = MLKEM_SETS[set];
+  const bytes = Buffer.from(ek);
+  if (!spec || bytes.length !== spec.Npk) {
+    log.debug('Leaving mlkemCheckEncapsulationKey(). Wrong size.');
+    throw new Error('an ' + set + ' encapsulation key is ' +
+                    (spec ? spec.Npk : '?') + ' octets; this one is ' +
+                    bytes.length);
+  }
+  const polyBytes = 384 * spec.k;
+  for (let i = 0; i < polyBytes; i += 3) {
+    const a = bytes[i] | ((bytes[i + 1] & 0x0f) << 8);
+    const b = (bytes[i + 1] >> 4) | (bytes[i + 2] << 4);
+    if (a >= 3329 || b >= 3329) {
+      log.debug('Leaving mlkemCheckEncapsulationKey(). Unreduced.');
+      throw new Error('the ' + set + ' encapsulation key fails FIPS 203 ' +
+                      'section 7.2\'s modulus check: a coefficient is not ' +
+                      'below q = 3329');
+    }
+  }
+  log.debug('Leaving mlkemCheckEncapsulationKey().');
+}
+
+// The key pair from the 64-octet seed d || z (FIPS 203 KeyGen_internal).
+// `dk` is the EXPANDED decapsulation key, which never leaves this section:
+// the seed is the key's only stored form (pqc-kem-06 section 8, HPKE-PQ
+// section 3).
+function mlkemFromSeed(set, seed) {
+  log.debug('Entering mlkemFromSeed(). ' + set);
+  const spec = MLKEM_SETS[set];
+  const bytes = Buffer.from(seed);
+  if (bytes.length !== 64) {
+    log.debug('Leaving mlkemFromSeed(). Wrong seed size.');
+    throw new Error('an ML-KEM private key is the 64-octet seed d || z ' +
+                    '(FIPS 203 KeyGen_internal); this one is ' +
+                    bytes.length + ' octets');
+  }
+  const pair = spec.impl.keygen(new Uint8Array(bytes));
+  log.debug('Leaving mlkemFromSeed().');
+  return { ek: Buffer.from(pair.publicKey), dk: pair.secretKey };
+}
+
+// `randomness`, when given, is FIPS 203's 32-octet m (Encaps_internal) —
+// the deterministic form the published vectors are made with. A caller
+// outside a test never passes it.
+function mlkemEncaps(set, ek, randomness) {
+  log.debug('Entering mlkemEncaps(). ' + set);
+  mlkemCheckEncapsulationKey(set, ek);
+  const spec = MLKEM_SETS[set];
+  const out = randomness
+    ? spec.impl.encapsulate(new Uint8Array(ek), new Uint8Array(randomness))
+    : spec.impl.encapsulate(new Uint8Array(ek));
+  log.debug('Leaving mlkemEncaps().');
+  return { ss: Buffer.from(out.sharedSecret), ct: Buffer.from(out.cipherText) };
+}
+
+function mlkemDecaps(set, seed, ct) {
+  log.debug('Entering mlkemDecaps(). ' + set);
+  const spec = MLKEM_SETS[set];
+  const bytes = Buffer.from(ct);
+  if (bytes.length !== spec.Nct) {
+    log.debug('Leaving mlkemDecaps(). Wrong ciphertext size.');
+    throw new Error('an ' + set + ' ciphertext is ' + spec.Nct +
+                    ' octets; this one is ' + bytes.length);
+  }
+  const keys = mlkemFromSeed(set, seed);
+  const ss = Buffer.from(spec.impl.decapsulate(new Uint8Array(bytes),
+                                               keys.dk));
+  log.debug('Leaving mlkemDecaps().');
+  return ss;
+}
+
+// ---------------------------------------------------------------------------
+// THE ELLIPTIC-CURVE GROUPS, ON NODE'S OPENSSL. The NIST curves as raw
+// big-endian scalars and UNCOMPRESSED points (SEC1), which is how both HPKE
+// and the hybrid KEMs serialise them; X25519 and X448 as RFC 7748's raw
+// octet strings, carried into node as PKCS#8 / SPKI around the raw bytes.
+// ---------------------------------------------------------------------------
+const EC_GROUPS = {
+  'P-256': { node: 'prime256v1', Nsk: 32, Npk: 65, Ndh: 32,
+             order: BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e' +
+                           '84f3b9cac2fc632551') },
+  'P-384': { node: 'secp384r1', Nsk: 48, Npk: 97, Ndh: 48,
+             order: BigInt('0xffffffffffffffffffffffffffffffffffffffffffffff' +
+                           'ffc7634d81f4372ddf581a0db248b0a77aecec196accc529' +
+                           '73') },
+  'P-521': { node: 'secp521r1', Nsk: 66, Npk: 133, Ndh: 66,
+             order: BigInt('0x01ffffffffffffffffffffffffffffffffffffffffffff' +
+                           'fffffffffffffffffffffa51868783bf2f966b7fcc0148f7' +
+                           '09a5d03bb5c9b8899c47aebb6fb71e91386409') }
+};
+const MONTGOMERY = {
+  X25519: { Nsk: 32, Npk: 32,
+            pkcs8: Buffer.from('302e020100300506032b656e04220420', 'hex'),
+            spki: Buffer.from('302a300506032b656e032100', 'hex') },
+  X448: { Nsk: 56, Npk: 56,
+          pkcs8: Buffer.from('3046020100300506032b656f043a0438', 'hex'),
+          spki: Buffer.from('3042300506032b656f033900', 'hex') }
+};
+
+function os2ip(bytes) {
+  log.debug('Entering os2ip().');
+  const hex = Buffer.from(bytes).toString('hex');
+  log.debug('Leaving os2ip().');
+  return hex ? BigInt('0x' + hex) : 0n;
+}
+
+// The public point of a scalar, uncompressed. createECDH is used rather than
+// a KeyObject because it takes a bare scalar, which is the only form HPKE's
+// DeriveKeyPair and the hybrid KEMs' RandomScalar produce.
+function nistPublic(curve, scalar) {
+  log.debug('Entering nistPublic(). ' + curve);
+  const ecdh = nodeCrypto.createECDH(EC_GROUPS[curve].node);
+  ecdh.setPrivateKey(Buffer.from(scalar));
+  log.debug('Leaving nistPublic().');
+  return ecdh.getPublicKey(null, 'uncompressed');
+}
+
+// The x-coordinate of scalar * point. `computeSecret()` refuses a point that
+// is not on the curve (draft-ietf-hpke-hpke section 7.1.4's partial public
+// key validation) by throwing, and the caller's message says which input.
+function nistDh(curve, scalar, point) {
+  log.debug('Entering nistDh(). ' + curve);
+  const ecdh = nodeCrypto.createECDH(EC_GROUPS[curve].node);
+  ecdh.setPrivateKey(Buffer.from(scalar));
+  const bytes = Buffer.from(point);
+  if (bytes.length !== EC_GROUPS[curve].Npk || bytes[0] !== 0x04) {
+    log.debug('Leaving nistDh(). Not an uncompressed point.');
+    throw new Error('a ' + curve + ' public key here is an uncompressed ' +
+                    'point of ' + EC_GROUPS[curve].Npk + ' octets');
+  }
+  const out = ecdh.computeSecret(bytes);
+  log.debug('Leaving nistDh().');
+  return out;
+}
+
+function montgomeryPrivate(group, sk) {
+  log.debug('Entering montgomeryPrivate(). ' + group);
+  const spec = MONTGOMERY[group];
+  const out = nodeCrypto.createPrivateKey({
+    key: Buffer.concat([spec.pkcs8, Buffer.from(sk)]),
+    format: 'der', type: 'pkcs8' });
+  log.debug('Leaving montgomeryPrivate().');
+  return out;
+}
+
+function montgomeryPublic(group, sk) {
+  log.debug('Entering montgomeryPublic(). ' + group);
+  const der = nodeCrypto.createPublicKey(montgomeryPrivate(group, sk))
+    .export({ type: 'spki', format: 'der' });
+  log.debug('Leaving montgomeryPublic().');
+  return Buffer.from(der).subarray(der.length - MONTGOMERY[group].Npk);
+}
+
+// RFC 7748 section 6: a recipient MUST refuse the all-zero output, which is
+// what a small-order public key produces.
+/**
+ * X25519 or X448, refusing the all-zero output (RFC 7748 section 6).
+ *
+ * @param group - X25519 or X448
+ * @param sk - the raw private key
+ * @param pk - the raw public key
+ * @returns the shared secret
+ * @throws Error for a wrong size or an all-zero output
+ */
+function montgomeryDh(group, sk, pk) {
+  log.debug('Entering montgomeryDh(). ' + group);
+  const spec = MONTGOMERY[group];
+  const bytes = Buffer.from(pk);
+  if (bytes.length !== spec.Npk) {
+    log.debug('Leaving montgomeryDh(). Wrong size.');
+    throw new Error('an ' + group + ' public key is ' + spec.Npk +
+                    ' octets; this one is ' + bytes.length);
+  }
+  const publicKey = nodeCrypto.createPublicKey({
+    key: Buffer.concat([spec.spki, bytes]), format: 'der', type: 'spki' });
+  const out = nodeCrypto.diffieHellman({
+    privateKey: montgomeryPrivate(group, sk), publicKey: publicKey });
+  if (out.every(function (b) {
+    return b === 0;
+  })) {
+    log.debug('Leaving montgomeryDh(). All-zero output.');
+    throw new Error('the ' + group + ' exchange produced the all-zero ' +
+                    'value, which RFC 7748 section 6 requires refusing ' +
+                    '(a small-order public key)');
+  }
+  log.debug('Leaving montgomeryDh().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// HPKE'S KDFs (draft-ietf-hpke-hpke section 7.2, draft-ietf-hpke-pq section
+// 5). The HKDFs are TWO-STAGE (Extract, Expand); the SHAKE and TurboSHAKE
+// XOFs are ONE-STAGE (Derive). Every labelled function below takes the
+// suite_id explicitly — inside a KEM it names the KEM, in the key schedule
+// the whole suite, and a function that picked it up from ambient state would
+// be the place the two got mixed.
+// ---------------------------------------------------------------------------
+const HPKE_KDFS = {
+  0x0001: { name: 'HKDF-SHA256', twoStage: true, hash: 'sha256', Nh: 32 },
+  0x0002: { name: 'HKDF-SHA384', twoStage: true, hash: 'sha384', Nh: 48 },
+  0x0003: { name: 'HKDF-SHA512', twoStage: true, hash: 'sha512', Nh: 64 },
+  0x0010: { name: 'SHAKE128', twoStage: false, xof: 'shake128', Nh: 32 },
+  0x0011: { name: 'SHAKE256', twoStage: false, xof: 'shake256', Nh: 64 },
+  0x0012: { name: 'TurboSHAKE128', twoStage: false, xof: 'turboshake128',
+            Nh: 32 },
+  0x0013: { name: 'TurboSHAKE256', twoStage: false, xof: 'turboshake256',
+            Nh: 64 }
+};
+
+const HPKE_V1 = Buffer.from('HPKE-v1', 'ascii');
+
+function hkdfExtract(kdf, salt, ikm) {
+  log.debug('Entering hkdfExtract(). ' + kdf.name);
+  // RFC 5869: an absent salt is Nh zero octets.
+  const key = salt && salt.length ? Buffer.from(salt) : Buffer.alloc(kdf.Nh);
+  const out = nodeCrypto.createHmac(kdf.hash, key).update(Buffer.from(ikm))
+    .digest();
+  log.debug('Leaving hkdfExtract().');
+  return out;
+}
+
+function hkdfExpand(kdf, prk, info, length) {
+  log.debug('Entering hkdfExpand(). ' + kdf.name + ', ' + length);
+  if (length > 255 * kdf.Nh) {
+    log.debug('Leaving hkdfExpand(). Too long.');
+    throw new Error('HKDF-Expand cannot produce ' + length + ' octets');
+  }
+  const blocks = [];
+  let previous = Buffer.alloc(0);
+  for (let i = 1; Buffer.concat(blocks).length < length; i++) {
+    previous = nodeCrypto.createHmac(kdf.hash, Buffer.from(prk))
+      .update(Buffer.concat([previous, Buffer.from(info), Buffer.from([i])]))
+      .digest();
+    blocks.push(previous);
+  }
+  log.debug('Leaving hkdfExpand().');
+  return Buffer.concat(blocks).subarray(0, length);
+}
+
+function xofDerive(kdf, ikm, length) {
+  log.debug('Entering xofDerive(). ' + kdf.name + ', ' + length);
+  let out;
+  if (kdf.xof === 'shake128' || kdf.xof === 'shake256') {
+    out = shake(kdf.xof === 'shake128' ? 128 : 256, ikm, length);
+  } else {
+    // RFC 9861 TurboSHAKE with the domain separation byte HPKE-PQ section 5
+    // fixes (D = 0x1f).
+    out = Buffer.from(nobleSha3Addons[kdf.xof](new Uint8Array(ikm),
+                                               { D: 0x1f, dkLen: length }));
+  }
+  log.debug('Leaving xofDerive().');
+  return out;
+}
+
+function labeledExtract(kdf, suiteId, salt, label, ikm) {
+  log.debug('Entering labeledExtract(). ' + label);
+  const out = hkdfExtract(kdf, salt, Buffer.concat([
+    HPKE_V1, suiteId, Buffer.from(label, 'ascii'), Buffer.from(ikm)]));
+  log.debug('Leaving labeledExtract().');
+  return out;
+}
+
+function labeledExpand(kdf, suiteId, prk, label, info, length) {
+  log.debug('Entering labeledExpand(). ' + label);
+  const out = hkdfExpand(kdf, prk, Buffer.concat([
+    i2osp(length, 2), HPKE_V1, suiteId, Buffer.from(label, 'ascii'),
+    Buffer.from(info)]), length);
+  log.debug('Leaving labeledExpand().');
+  return out;
+}
+
+function labeledDerive(kdf, suiteId, ikm, label, context, length) {
+  log.debug('Entering labeledDerive(). ' + label);
+  const out = xofDerive(kdf, Buffer.concat([
+    Buffer.from(ikm), HPKE_V1, suiteId,
+    lengthPrefixed(Buffer.from(label, 'ascii')), i2osp(length, 2),
+    Buffer.from(context)]), length);
+  log.debug('Leaving labeledDerive().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE HYBRID KEMs (draft-irtf-cfrg-hybrid-kems-12's CG framework, as the
+// concrete draft instantiates it): ML-KEM plus a nominal group, SHAKE256 as
+// the PRG that splits one 32-octet seed into both components' seeds, and
+// SHA3-256 over ss_PQ || ss_T || ct_T || ek_T || Label as the C2PRI
+// combiner. MLKEM768-X25519 is X-Wing.
+// ---------------------------------------------------------------------------
+const HYBRID_KEMS = {
+  'MLKEM768-P256': { pq: 'ML-KEM-768', group: 'P-256', Nseed: 128,
+                     Nscalar: 32, Nelem: 65,
+                     label: Buffer.from('MLKEM768-P256', 'ascii') },
+  'MLKEM768-X25519': { pq: 'ML-KEM-768', group: 'X25519', Nseed: 32,
+                       Nscalar: 32, Nelem: 32,
+                       label: Buffer.from('5c2e2f2f5e5c', 'hex') },
+  'MLKEM1024-P384': { pq: 'ML-KEM-1024', group: 'P-384', Nseed: 48,
+                      Nscalar: 48, Nelem: 97,
+                      label: Buffer.from('MLKEM1024-P384', 'ascii') }
+};
+
+// RandomScalar: rejection sampling over Nscalar-octet windows for the NIST
+// curves (concrete-hybrid-kems section 3.1.1), the identity for Curve25519.
+function hybridRandomScalar(h, seed) {
+  log.debug('Entering hybridRandomScalar(). ' + h.group);
+  const bytes = Buffer.from(seed);
+  if (h.group === 'X25519') {
+    log.debug('Leaving hybridRandomScalar(). Identity.');
+    return bytes;
+  }
+  const order = EC_GROUPS[h.group].order;
+  for (let start = 0; start + h.Nscalar <= bytes.length;
+       start += h.Nscalar) {
+    const window = bytes.subarray(start, start + h.Nscalar);
+    const sk = os2ip(window);
+    if (sk !== 0n && sk < order) {
+      log.debug('Leaving hybridRandomScalar().');
+      return Buffer.from(window);
+    }
+  }
+  log.debug('Leaving hybridRandomScalar(). Rejection sampling failed.');
+  throw new Error('RandomScalar: rejection sampling failed for ' + h.group);
+}
+
+function hybridGroupPublic(h, scalar) {
+  log.debug('Entering hybridGroupPublic().');
+  const out = h.group === 'X25519' ? montgomeryPublic('X25519', scalar)
+    : nistPublic(h.group, scalar);
+  log.debug('Leaving hybridGroupPublic().');
+  return out;
+}
+
+function hybridGroupDh(h, scalar, element) {
+  log.debug('Entering hybridGroupDh().');
+  const out = h.group === 'X25519' ? montgomeryDh('X25519', scalar, element)
+    : nistDh(h.group, scalar, element);
+  log.debug('Leaving hybridGroupDh().');
+  return out;
+}
+
+/**
+ * Expands a hybrid KEM's 32-octet seed into both components' keys.
+ *
+ * @param name - MLKEM768-P256, MLKEM768-X25519 or MLKEM1024-P384
+ * @param seed - the 32-octet private key
+ * @returns the component keys and the encapsulation key `ek`
+ */
+function hybridExpand(name, seed) {
+  log.debug('Entering hybridExpand(). ' + name);
+  const h = HYBRID_KEMS[name];
+  const bytes = Buffer.from(seed);
+  if (bytes.length !== 32) {
+    log.debug('Leaving hybridExpand(). Wrong seed size.');
+    throw new Error('a ' + name + ' private key is a 32-octet seed; this ' +
+                    'one is ' + bytes.length + ' octets');
+  }
+  const full = shake(256, bytes, 64 + h.Nseed);
+  const pq = mlkemFromSeed(h.pq, full.subarray(0, 64));
+  const dkT = hybridRandomScalar(h, full.subarray(64));
+  const ekT = hybridGroupPublic(h, dkT);
+  log.debug('Leaving hybridExpand().');
+  return { h: h, seedPq: full.subarray(0, 64), ekPq: pq.ek, dkT: dkT,
+           ekT: ekT, ek: Buffer.concat([pq.ek, ekT]) };
+}
+
+function hybridCombine(h, ssPq, ssT, ctT, ekT) {
+  log.debug('Entering hybridCombine().');
+  const out = sha3_256(Buffer.concat([ssPq, ssT, ctT, ekT, h.label]));
+  log.debug('Leaving hybridCombine().');
+  return out;
+}
+
+// `randomness`, for the vectors only: the PQ constituent's 32 octets first,
+// then the group's Nseed (hybrid-kems-12 appendix A).
+/**
+ * A hybrid KEM's Encaps, deterministic where `randomness` is given.
+ *
+ * @param name - the hybrid KEM
+ * @param ek - the encapsulation key
+ * @param randomness - the vector's randomness
+ * @returns `{ ss, ct }`
+ */
+function hybridEncaps(name, ek, randomness) {
+  log.debug('Entering hybridEncaps(). ' + name);
+  const h = HYBRID_KEMS[name];
+  const pqSpec = MLKEM_SETS[h.pq];
+  const bytes = Buffer.from(ek);
+  if (bytes.length !== pqSpec.Npk + h.Nelem) {
+    log.debug('Leaving hybridEncaps(). Wrong size.');
+    throw new Error('a ' + name + ' encapsulation key is ' +
+                    (pqSpec.Npk + h.Nelem) + ' octets; this one is ' +
+                    bytes.length);
+  }
+  const ekPq = bytes.subarray(0, pqSpec.Npk);
+  const ekT = bytes.subarray(pqSpec.Npk);
+  const rand = randomness ? Buffer.from(randomness) : null;
+  const pq = mlkemEncaps(h.pq, ekPq, rand ? rand.subarray(0, 32) : null);
+  const skE = hybridRandomScalar(h, rand ? rand.subarray(32)
+    : nodeCrypto.randomBytes(h.Nseed));
+  const ctT = hybridGroupPublic(h, skE);
+  const ssT = hybridGroupDh(h, skE, ekT);
+  log.debug('Leaving hybridEncaps().');
+  return { ss: hybridCombine(h, pq.ss, ssT, ctT, ekT),
+           ct: Buffer.concat([pq.ct, ctT]) };
+}
+
+/**
+ * A hybrid KEM's Decaps.
+ *
+ * @param name - the hybrid KEM
+ * @param seed - the 32-octet private key
+ * @param ct - the ciphertext
+ * @returns the shared secret
+ */
+function hybridDecaps(name, seed, ct) {
+  log.debug('Entering hybridDecaps(). ' + name);
+  const keys = hybridExpand(name, seed);
+  const h = keys.h;
+  const pqSpec = MLKEM_SETS[h.pq];
+  const bytes = Buffer.from(ct);
+  if (bytes.length !== pqSpec.Nct + h.Nelem) {
+    log.debug('Leaving hybridDecaps(). Wrong size.');
+    throw new Error('a ' + name + ' ciphertext is ' +
+                    (pqSpec.Nct + h.Nelem) + ' octets; this one is ' +
+                    bytes.length);
+  }
+  const ctT = bytes.subarray(pqSpec.Nct);
+  const ssPq = mlkemDecaps(h.pq, keys.seedPq, bytes.subarray(0, pqSpec.Nct));
+  const ssT = hybridGroupDh(h, keys.dkT, ctT);
+  log.debug('Leaving hybridDecaps().');
+  return hybridCombine(h, ssPq, ssT, ctT, keys.ekT);
+}
+
+// ---------------------------------------------------------------------------
+// HPKE's KEMs (draft-ietf-hpke-hpke section 7.1, draft-ietf-hpke-pq section
+// 8). Each has DeriveKeyPair(ikm) -> { sk, pk } in its SERIALISED forms,
+// Encap(pk, ikmE?) -> { ss, enc } and Decap(enc, sk) -> ss. `ikmE` is the
+// deterministic encapsulation input the vectors carry.
+// ---------------------------------------------------------------------------
+const HPKE_KEMS = {
+  0x0010: { name: 'DHKEM(P-256, HKDF-SHA256)', kind: 'nist', group: 'P-256',
+            kdf: 0x0001, Nsecret: 32, Nenc: 65, Npk: 65, Nsk: 32 },
+  0x0011: { name: 'DHKEM(P-384, HKDF-SHA384)', kind: 'nist', group: 'P-384',
+            kdf: 0x0002, Nsecret: 48, Nenc: 97, Npk: 97, Nsk: 48 },
+  0x0012: { name: 'DHKEM(P-521, HKDF-SHA512)', kind: 'nist', group: 'P-521',
+            kdf: 0x0003, Nsecret: 64, Nenc: 133, Npk: 133, Nsk: 66 },
+  0x0020: { name: 'DHKEM(X25519, HKDF-SHA256)', kind: 'montgomery',
+            group: 'X25519', kdf: 0x0001, Nsecret: 32, Nenc: 32, Npk: 32,
+            Nsk: 32 },
+  0x0021: { name: 'DHKEM(X448, HKDF-SHA512)', kind: 'montgomery',
+            group: 'X448', kdf: 0x0003, Nsecret: 64, Nenc: 56, Npk: 56,
+            Nsk: 56 },
+  0x0040: { name: 'ML-KEM-512', kind: 'mlkem', set: 'ML-KEM-512',
+            Nsecret: 32, Nenc: 768, Npk: 800, Nsk: 64 },
+  0x0041: { name: 'ML-KEM-768', kind: 'mlkem', set: 'ML-KEM-768',
+            Nsecret: 32, Nenc: 1088, Npk: 1184, Nsk: 64 },
+  0x0042: { name: 'ML-KEM-1024', kind: 'mlkem', set: 'ML-KEM-1024',
+            Nsecret: 32, Nenc: 1568, Npk: 1568, Nsk: 64 },
+  0x0050: { name: 'MLKEM768-P256', kind: 'hybrid', hybrid: 'MLKEM768-P256',
+            Nsecret: 32, Nenc: 1153, Npk: 1249, Nsk: 32 },
+  0x0051: { name: 'MLKEM1024-P384', kind: 'hybrid',
+            hybrid: 'MLKEM1024-P384', Nsecret: 32, Nenc: 1665, Npk: 1665,
+            Nsk: 32 },
+  0x647a: { name: 'MLKEM768-X25519', kind: 'hybrid',
+            hybrid: 'MLKEM768-X25519', Nsecret: 32, Nenc: 1120, Npk: 1216,
+            Nsk: 32 }
+};
+
+function kemSuiteId(kemId) {
+  log.debug('Entering kemSuiteId().');
+  log.debug('Leaving kemSuiteId().');
+  return Buffer.concat([Buffer.from('KEM', 'ascii'), i2osp(kemId, 2)]);
+}
+
+function hpkeKem(kemId) {
+  log.debug('Entering hpkeKem(). ' + kemId);
+  const kem = HPKE_KEMS[kemId];
+  if (!kem) {
+    log.debug('Leaving hpkeKem(). Unknown.');
+    throw new Error('no HPKE KEM 0x' + Number(kemId).toString(16));
+  }
+  log.debug('Leaving hpkeKem().');
+  return kem;
+}
+
+// DeriveKeyPair (hpke-hpke section 7.1.3; hpke-pq sections 3 and 4). The
+// ML-KEM and hybrid KEMs derive through SHAKE256 whatever the suite's KDF;
+// a DHKEM through its own HKDF.
+/**
+ * HPKE DeriveKeyPair for a KEM.
+ *
+ * @param kemId - an HPKE KEM id
+ * @param ikm - the input keying material
+ * @returns `{ sk, pk }`, serialised
+ */
+function hpkeDeriveKeyPair(kemId, ikm) {
+  log.debug('Entering hpkeDeriveKeyPair(). ' + kemId);
+  const kem = hpkeKem(kemId);
+  const suiteId = kemSuiteId(kemId);
+  if (kem.kind === 'mlkem' || kem.kind === 'hybrid') {
+    const shake256 = HPKE_KDFS[0x0011];
+    const sk = labeledDerive(shake256, suiteId, ikm, 'DeriveKeyPair', '',
+                             kem.Nsk);
+    const pk = kem.kind === 'mlkem' ? mlkemFromSeed(kem.set, sk).ek
+      : hybridExpand(kem.hybrid, sk).ek;
+    log.debug('Leaving hpkeDeriveKeyPair(). ' + kem.kind);
+    return { sk: sk, pk: pk };
+  }
+  const kdf = HPKE_KDFS[kem.kdf];
+  const prk = labeledExtract(kdf, suiteId, '', 'dkp_prk', ikm);
+  if (kem.kind === 'montgomery') {
+    const sk = labeledExpand(kdf, suiteId, prk, 'sk', '', kem.Nsk);
+    log.debug('Leaving hpkeDeriveKeyPair(). Montgomery.');
+    return { sk: sk, pk: montgomeryPublic(kem.group, sk) };
+  }
+  const group = EC_GROUPS[kem.group];
+  for (let counter = 0; counter < 256; counter++) {
+    const bytes = labeledExpand(kdf, suiteId, prk, 'candidate',
+                                i2osp(counter, 1), kem.Nsk);
+    // The bitmask of section 7.1.3: 0xff for P-256 and P-384, 0x01 for
+    // P-521, whose order is a 521-bit number in 66 octets.
+    bytes[0] = bytes[0] & (kem.group === 'P-521' ? 0x01 : 0xff);
+    const sk = os2ip(bytes);
+    if (sk !== 0n && sk < group.order) {
+      log.debug('Leaving hpkeDeriveKeyPair(). NIST curve.');
+      return { sk: bytes, pk: nistPublic(kem.group, bytes) };
+    }
+  }
+  log.debug('Leaving hpkeDeriveKeyPair(). DeriveKeyPairError.');
+  throw new Error('DeriveKeyPairError: no scalar in 256 candidates');
+}
+
+/**
+ * HPKE GenerateKeyPair for a KEM.
+ *
+ * @param kemId - an HPKE KEM id
+ * @returns `{ sk, pk }`, serialised
+ */
+function hpkeGenerateKeyPair(kemId) {
+  log.debug('Entering hpkeGenerateKeyPair(). ' + kemId);
+  const kem = hpkeKem(kemId);
+  let out;
+  if (kem.kind === 'mlkem' || kem.kind === 'hybrid') {
+    // GenerateKeyPair is KeyGen on a random seed (hpke-pq sections 3, 4;
+    // hybrid-kems-12 section 5.2): the seed IS the private key.
+    const sk = nodeCrypto.randomBytes(kem.Nsk);
+    out = { sk: sk, pk: kem.kind === 'mlkem' ? mlkemFromSeed(kem.set, sk).ek
+      : hybridExpand(kem.hybrid, sk).ek };
+  } else {
+    out = hpkeDeriveKeyPair(kemId, nodeCrypto.randomBytes(kem.Nsk));
+  }
+  log.debug('Leaving hpkeGenerateKeyPair().');
+  return out;
+}
+
+function dhkemExtractAndExpand(kem, suiteId, dh, kemContext) {
+  log.debug('Entering dhkemExtractAndExpand().');
+  const kdf = HPKE_KDFS[kem.kdf];
+  const prk = labeledExtract(kdf, suiteId, '', 'eae_prk', dh);
+  const out = labeledExpand(kdf, suiteId, prk, 'shared_secret', kemContext,
+                            kem.Nsecret);
+  log.debug('Leaving dhkemExtractAndExpand().');
+  return out;
+}
+
+/**
+ * HPKE Encap, deterministic where `ikmE` is given (the vectors).
+ *
+ * @param kemId - an HPKE KEM id
+ * @param pkR - the recipient's serialised public key
+ * @param ikmE - the encapsulation randomness, for a vector
+ * @returns `{ ss, enc }`
+ */
+function hpkeEncap(kemId, pkR, ikmE) {
+  log.debug('Entering hpkeEncap(). ' + kemId);
+  const kem = hpkeKem(kemId);
+  const pk = Buffer.from(pkR);
+  if (pk.length !== kem.Npk) {
+    log.debug('Leaving hpkeEncap(). Wrong key size.');
+    throw new Error('a ' + kem.name + ' public key is ' + kem.Npk +
+                    ' octets; this one is ' + pk.length);
+  }
+  if (kem.kind === 'mlkem') {
+    const out = mlkemEncaps(kem.set, pk, ikmE || null);
+    log.debug('Leaving hpkeEncap(). ML-KEM.');
+    return { ss: out.ss, enc: out.ct };
+  }
+  if (kem.kind === 'hybrid') {
+    const out = hybridEncaps(kem.hybrid, pk, ikmE || null);
+    log.debug('Leaving hpkeEncap(). Hybrid.');
+    return { ss: out.ss, enc: out.ct };
+  }
+  const ephemeral = ikmE ? hpkeDeriveKeyPair(kemId, ikmE)
+    : hpkeGenerateKeyPair(kemId);
+  const dh = kem.kind === 'montgomery'
+    ? montgomeryDh(kem.group, ephemeral.sk, pk)
+    : nistDh(kem.group, ephemeral.sk, pk);
+  const enc = ephemeral.pk;
+  const ss = dhkemExtractAndExpand(kem, kemSuiteId(kemId), dh,
+                                   Buffer.concat([enc, pk]));
+  log.debug('Leaving hpkeEncap(). DHKEM.');
+  return { ss: ss, enc: enc };
+}
+
+/**
+ * HPKE Decap.
+ *
+ * @param kemId - an HPKE KEM id
+ * @param enc - the encapsulated secret
+ * @param skR - the recipient's serialised private key
+ * @returns the shared secret
+ */
+function hpkeDecap(kemId, enc, skR) {
+  log.debug('Entering hpkeDecap(). ' + kemId);
+  const kem = hpkeKem(kemId);
+  const e = Buffer.from(enc);
+  if (e.length !== kem.Nenc) {
+    log.debug('Leaving hpkeDecap(). Wrong enc size.');
+    throw new Error('a ' + kem.name + ' encapsulated secret is ' + kem.Nenc +
+                    ' octets; this one is ' + e.length);
+  }
+  if (kem.kind === 'mlkem') {
+    const out = mlkemDecaps(kem.set, skR, e);
+    log.debug('Leaving hpkeDecap(). ML-KEM.');
+    return out;
+  }
+  if (kem.kind === 'hybrid') {
+    const out = hybridDecaps(kem.hybrid, skR, e);
+    log.debug('Leaving hpkeDecap(). Hybrid.');
+    return out;
+  }
+  const sk = Buffer.from(skR);
+  const dh = kem.kind === 'montgomery' ? montgomeryDh(kem.group, sk, e)
+    : nistDh(kem.group, sk, e);
+  const pkRm = kem.kind === 'montgomery' ? montgomeryPublic(kem.group, sk)
+    : nistPublic(kem.group, sk);
+  const out = dhkemExtractAndExpand(kem, kemSuiteId(kemId), dh,
+                                    Buffer.concat([e, pkRm]));
+  log.debug('Leaving hpkeDecap(). DHKEM.');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// HPKE'S AEADs (section 7.3). `ct` is the ciphertext with the 16-octet tag
+// appended, which is HPKE's shape and not JWE's.
+// ---------------------------------------------------------------------------
+const HPKE_AEADS = {
+  0x0001: { name: 'AES-128-GCM', cipher: 'aes-128-gcm', Nk: 16, Nn: 12,
+            Nt: 16 },
+  0x0002: { name: 'AES-256-GCM', cipher: 'aes-256-gcm', Nk: 32, Nn: 12,
+            Nt: 16 },
+  0x0003: { name: 'ChaCha20Poly1305', cipher: 'chacha20-poly1305', Nk: 32,
+            Nn: 12, Nt: 16 },
+  0xffff: { name: 'Export-only', cipher: '', Nk: 0, Nn: 0, Nt: 0 }
+};
+
+// The key and nonce sizes are the suite's (Nk, Nn — 96 bits for all three),
+// checked here rather than left to OpenSSL, whose GCM takes any nonce size.
+function hpkeAeadSizes(aead, key, nonce) {
+  log.debug('Entering hpkeAeadSizes(). ' + aead.name);
+  if (Buffer.from(key).length !== aead.Nk ||
+      Buffer.from(nonce).length !== aead.Nn) {
+    log.debug('Leaving hpkeAeadSizes(). Wrong size.');
+    throw new Error(aead.name + ' takes a ' + (aead.Nk * 8) + '-bit key ' +
+                    'and a ' + (aead.Nn * 8) + '-bit nonce in HPKE');
+  }
+  log.debug('Leaving hpkeAeadSizes().');
+}
+
+function hpkeAeadSeal(aead, key, nonce, aad, pt) {
+  log.debug('Entering hpkeAeadSeal(). ' + aead.name);
+  hpkeAeadSizes(aead, key, nonce);
+  const cipher = /** @type {import('crypto').CipherGCM} */ (
+    nodeCrypto.createCipheriv(aead.cipher, key, nonce,
+                              /** @type {any} */ ({ authTagLength: 16 })));
+  cipher.setAAD(Buffer.from(aad), /** @type {any} */ (
+    { plaintextLength: Buffer.from(pt).length }));
+  const ct = Buffer.concat([cipher.update(Buffer.from(pt)), cipher.final(),
+                            cipher.getAuthTag()]);
+  log.debug('Leaving hpkeAeadSeal().');
+  return ct;
+}
+
+function hpkeAeadOpen(aead, key, nonce, aad, ct) {
+  log.debug('Entering hpkeAeadOpen(). ' + aead.name);
+  hpkeAeadSizes(aead, key, nonce);
+  const bytes = Buffer.from(ct);
+  if (bytes.length < aead.Nt) {
+    log.debug('Leaving hpkeAeadOpen(). Shorter than a tag.');
+    throw new Error('an HPKE ciphertext carries a ' + (aead.Nt * 8) +
+                    '-bit tag and this one is ' + bytes.length + ' octets');
+  }
+  const decipher = /** @type {import('crypto').DecipherGCM} */ (
+    nodeCrypto.createDecipheriv(aead.cipher, key, nonce,
+                                /** @type {any} */ ({ authTagLength: 16 })));
+  const body = bytes.subarray(0, bytes.length - aead.Nt);
+  decipher.setAAD(Buffer.from(aad), /** @type {any} */ (
+    { plaintextLength: body.length }));
+  decipher.setAuthTag(bytes.subarray(bytes.length - aead.Nt));
+  const out = Buffer.concat([decipher.update(body), decipher.final()]);
+  log.debug('Leaving hpkeAeadOpen().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY SCHEDULE AND THE CONTEXT (hpke-hpke sections 5.1 and 5.2), for
+// mode_base and mode_psk — the two modes the successor to RFC 9180 keeps,
+// and the two jose-hpke-encrypt-22 section 4 allows (psk_id present means
+// mode_psk). The context is a small object whose sequence number moves on
+// each seal or open; a JWE uses it once.
+// ---------------------------------------------------------------------------
+const HPKE_MODE_BASE = 0x00;
+const HPKE_MODE_PSK = 0x01;
+
+function hpkeSuiteId(kemId, kdfId, aeadId) {
+  log.debug('Entering hpkeSuiteId().');
+  log.debug('Leaving hpkeSuiteId().');
+  return Buffer.concat([Buffer.from('HPKE', 'ascii'), i2osp(kemId, 2),
+                        i2osp(kdfId, 2), i2osp(aeadId, 2)]);
+}
+
+function hpkeKeySchedule(suite, mode, sharedSecret, info, psk, pskId) {
+  log.debug('Entering hpkeKeySchedule(). mode=' + mode);
+  const kdf = HPKE_KDFS[suite.kdf];
+  const aead = HPKE_AEADS[suite.aead];
+  if (!kdf || !aead) {
+    log.debug('Leaving hpkeKeySchedule(). Unknown suite.');
+    throw new Error('no HPKE KDF 0x' + Number(suite.kdf).toString(16) +
+                    ' or AEAD 0x' + Number(suite.aead).toString(16));
+  }
+  const suiteId = hpkeSuiteId(suite.kem, suite.kdf, suite.aead);
+  const pskBytes = Buffer.from(psk || '');
+  const pskIdBytes = Buffer.from(pskId || '');
+  // VerifyPSKInputs.
+  if ((pskBytes.length > 0) !== (pskIdBytes.length > 0)) {
+    log.debug('Leaving hpkeKeySchedule(). Inconsistent PSK inputs.');
+    throw new Error('HPKE: a PSK and its psk_id go together or not at all');
+  }
+  if (pskBytes.length > 0 && mode === HPKE_MODE_BASE) {
+    throw new Error('HPKE: a PSK was given for mode_base');
+  }
+  if (pskBytes.length === 0 && mode === HPKE_MODE_PSK) {
+    throw new Error('HPKE: mode_psk needs a PSK and a psk_id');
+  }
+  if (mode === HPKE_MODE_PSK && pskBytes.length < 32) {
+    // Section 5.1.2: "The PSK MUST have at least 32 bytes of entropy".
+    throw new Error('HPKE: a PSK is at least 32 octets');
+  }
+  let key;
+  let baseNonce;
+  let exporterSecret;
+  if (kdf.twoStage) {
+    const pskIdHash = labeledExtract(kdf, suiteId, '', 'psk_id_hash',
+                                     pskIdBytes);
+    const infoHash = labeledExtract(kdf, suiteId, '', 'info_hash',
+                                    Buffer.from(info || ''));
+    const context = Buffer.concat([Buffer.from([mode]), pskIdHash,
+                                   infoHash]);
+    const secret = labeledExtract(kdf, suiteId, sharedSecret, 'secret',
+                                  pskBytes);
+    key = labeledExpand(kdf, suiteId, secret, 'key', context, aead.Nk);
+    baseNonce = labeledExpand(kdf, suiteId, secret, 'base_nonce', context,
+                              aead.Nn);
+    exporterSecret = labeledExpand(kdf, suiteId, secret, 'exp', context,
+                                   kdf.Nh);
+  } else {
+    const secrets = Buffer.concat([lengthPrefixed(pskBytes),
+                                   lengthPrefixed(sharedSecret)]);
+    const context = Buffer.concat([Buffer.from([mode]),
+                                   lengthPrefixed(pskIdBytes),
+                                   lengthPrefixed(Buffer.from(info || ''))]);
+    const secret = labeledDerive(kdf, suiteId, secrets, 'secret', context,
+                                 aead.Nk + aead.Nn + kdf.Nh);
+    key = secret.subarray(0, aead.Nk);
+    baseNonce = secret.subarray(aead.Nk, aead.Nk + aead.Nn);
+    exporterSecret = secret.subarray(aead.Nk + aead.Nn);
+  }
+  const context = {
+    key: key, baseNonce: baseNonce, exporterSecret: exporterSecret, seq: 0,
+    nonce: function () {
+      log.debug('Entering hpkeContext.nonce().');
+      const seqBytes = i2osp(this.seq, aead.Nn);
+      const out = Buffer.alloc(aead.Nn);
+      for (let i = 0; i < aead.Nn; i++) {
+        out[i] = baseNonce[i] ^ seqBytes[i];
+      }
+      log.debug('Leaving hpkeContext.nonce().');
+      return out;
+    },
+    seal: function (aad, pt) {
+      log.debug('Entering hpkeContext.seal().');
+      if (aead.Nk === 0) {
+        throw new Error('HPKE: an export-only suite cannot encrypt');
+      }
+      const ct = hpkeAeadSeal(aead, key, this.nonce(), aad, pt);
+      this.seq += 1;
+      log.debug('Leaving hpkeContext.seal().');
+      return ct;
+    },
+    open: function (aad, ct) {
+      log.debug('Entering hpkeContext.open().');
+      if (aead.Nk === 0) {
+        throw new Error('HPKE: an export-only suite cannot decrypt');
+      }
+      const pt = hpkeAeadOpen(aead, key, this.nonce(), aad, ct);
+      this.seq += 1;
+      log.debug('Leaving hpkeContext.open().');
+      return pt;
+    },
+    exportSecret: function (exporterContext, length) {
+      log.debug('Entering hpkeContext.exportSecret().');
+      const out = kdf.twoStage
+        ? labeledExpand(kdf, suiteId, exporterSecret, 'sec',
+                        exporterContext, length)
+        : labeledDerive(kdf, suiteId, exporterSecret, 'sec',
+                        exporterContext, length);
+      log.debug('Leaving hpkeContext.exportSecret().');
+      return out;
+    }
+  };
+  log.debug('Leaving hpkeKeySchedule().');
+  return context;
+}
+
+// SetupS / SetupR for both modes. `opts`: `info`, `psk`, `pskId`, and — for
+// the vectors only — `ikmE`.
+/**
+ * HPKE SetupBaseS / SetupPSKS.
+ *
+ * @param suite - `{ kem, kdf, aead }`
+ * @param pkR - the recipient's serialised public key
+ * @param opts - `info`, `psk`, `pskId`, and `ikmE` for a vector
+ * @returns `{ enc, sharedSecret, context }`
+ */
+function hpkeSetupSender(suite, pkR, opts) {
+  log.debug('Entering hpkeSetupSender().');
+  const o = opts || {};
+  const encap = hpkeEncap(suite.kem, pkR, o.ikmE || null);
+  const mode = o.psk ? HPKE_MODE_PSK : HPKE_MODE_BASE;
+  const context = hpkeKeySchedule(suite, mode, encap.ss, o.info, o.psk,
+                                  o.pskId);
+  log.debug('Leaving hpkeSetupSender().');
+  return { enc: encap.enc, sharedSecret: encap.ss, context: context };
+}
+
+/**
+ * HPKE SetupBaseR / SetupPSKR.
+ *
+ * @param suite - `{ kem, kdf, aead }`
+ * @param enc - the encapsulated secret
+ * @param skR - the recipient's serialised private key
+ * @param opts - `info`, `psk`, `pskId`
+ * @returns `{ sharedSecret, context }`
+ */
+function hpkeSetupReceiver(suite, enc, skR, opts) {
+  log.debug('Entering hpkeSetupReceiver().');
+  const o = opts || {};
+  const ss = hpkeDecap(suite.kem, enc, skR);
+  const mode = o.psk ? HPKE_MODE_PSK : HPKE_MODE_BASE;
+  const context = hpkeKeySchedule(suite, mode, ss, o.info, o.psk, o.pskId);
+  log.debug('Leaving hpkeSetupReceiver().');
+  return { sharedSecret: ss, context: context };
+}
+
+// ---------------------------------------------------------------------------
+// THE JWE ALGORITHMS. One table, each row saying what it is built from, so
+// that the key checks, the wrap and the unwrap all read the same row.
+//
+//   family 'mlkem'  pqc-kem-05: `set`, and `kwBytes` for the +AxxxKW forms
+//   family 'hpke'   `kem`, `kdf`, `aead`, and `integrated` (no CEK, no
+//                   `enc`) or not (Key Encryption: the CEK is the HPKE
+//                   plaintext)
+//
+// `keyType` is what a recipient's JWK must be: 'AKP' (with `alg` equal to the
+// JWE alg — draft-ietf-cose-dilithium's rule that an AKP key names exactly
+// one algorithm, which pqc-kem-05 section 10 and the hybrid draft section 6
+// both apply to KEM keys), or EC / OKP with the curve jose-hpke-encrypt-22's
+// Table 3 names.
+// ---------------------------------------------------------------------------
+const JWE_PQ_KEM_TABLE = {};
+['ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'].forEach(function (set) {
+  JWE_PQ_KEM_TABLE[set] = { family: 'mlkem', set: set, kwBytes: 0,
+                            keyType: 'AKP', postQuantum: true,
+                            hybrid: false,
+                            spec: 'draft-ietf-jose-pqc-kem-05' };
+});
+[['ML-KEM-512+A128KW', 'ML-KEM-512', 16],
+ ['ML-KEM-768+A192KW', 'ML-KEM-768', 24],
+ ['ML-KEM-1024+A256KW', 'ML-KEM-1024', 32]].forEach(function (row) {
+  JWE_PQ_KEM_TABLE[row[0]] = { family: 'mlkem', set: row[1], kwBytes: row[2],
+                               keyType: 'AKP', postQuantum: true,
+                               hybrid: false,
+                               spec: 'draft-ietf-jose-pqc-kem-05' };
+});
+// jose-hpke-encrypt-22 Tables 1 and 2 (the classical suites), and the hybrid
+// draft's section 9.1 (8 to 16). `crv` is the JWK curve for the classical
+// ones; the post-quantum ones are AKP.
+[[0, 0x0010, 0x0001, 0x0001, 'EC', 'P-256', true],
+ [1, 0x0011, 0x0002, 0x0002, 'EC', 'P-384', true],
+ [2, 0x0012, 0x0003, 0x0002, 'EC', 'P-521', true],
+ [3, 0x0020, 0x0001, 0x0001, 'OKP', 'X25519', true],
+ [4, 0x0020, 0x0001, 0x0003, 'OKP', 'X25519', false],
+ [5, 0x0021, 0x0003, 0x0002, 'OKP', 'X448', true],
+ [6, 0x0021, 0x0003, 0x0003, 'OKP', 'X448', false],
+ [7, 0x0010, 0x0001, 0x0002, 'EC', 'P-256', true],
+ [8, 0x0050, 0x0011, 0x0002, 'AKP', '', true],
+ [9, 0x0050, 0x0011, 0x0003, 'AKP', '', true],
+ [10, 0x647a, 0x0011, 0x0002, 'AKP', '', true],
+ [11, 0x647a, 0x0011, 0x0003, 'AKP', '', true],
+ [12, 0x0051, 0x0011, 0x0002, 'AKP', '', true],
+ [13, 0x0051, 0x0011, 0x0003, 'AKP', '', true],
+ [14, 0x0040, 0x0011, 0x0001, 'AKP', '', true],
+ [15, 0x0041, 0x0011, 0x0002, 'AKP', '', true],
+ [16, 0x0042, 0x0011, 0x0002, 'AKP', '', true]].forEach(function (row) {
+  const n = Number(row[0]);
+  const kem = HPKE_KEMS[Number(row[1])];
+  const pq = kem.kind === 'mlkem' || kem.kind === 'hybrid';
+  const base = { family: 'hpke', kem: row[1], kdf: row[2], aead: row[3],
+                 keyType: row[4], crv: row[5], postQuantum: pq,
+                 hybrid: kem.kind === 'hybrid',
+                 spec: n <= 7 ? 'draft-ietf-jose-hpke-encrypt-22'
+                   : 'draft-reddy-cose-jose-pqc-hybrid-hpke-11' };
+  JWE_PQ_KEM_TABLE['HPKE-' + n] = Object.assign({ integrated: true }, base);
+  // HPKE-4-KE and HPKE-6-KE were removed by jose-hpke-encrypt-22 (its
+  // change log: at the request of the responsible AD); column 7 says so.
+  if (row[6]) {
+    JWE_PQ_KEM_TABLE['HPKE-' + n + '-KE'] =
+      Object.assign({ integrated: false }, base);
+  }
+});
+
+/**
+ * The ML-KEM JWE algorithms (draft-ietf-jose-pqc-kem-05), #82.
+ */
+const JWE_MLKEM_ALGS = Object.keys(JWE_PQ_KEM_TABLE).filter(function (a) {
+  return JWE_PQ_KEM_TABLE[a].family === 'mlkem';
+});
+/**
+ * The HPKE JWE algorithms, Integrated and Key Encryption, HPKE-0 to 16.
+ */
+const JWE_HPKE_ALGS = Object.keys(JWE_PQ_KEM_TABLE).filter(function (a) {
+  return JWE_PQ_KEM_TABLE[a].family === 'hpke';
+});
+/**
+ * The HPKE algorithms that use Integrated Encryption (no `enc`).
+ */
+const JWE_HPKE_INTEGRATED_ALGS = JWE_HPKE_ALGS.filter(function (a) {
+  return JWE_PQ_KEM_TABLE[a].integrated;
+});
+// The post-quantum ones: every ML-KEM alg and HPKE-8 to HPKE-16. What the
+// console counts as "post-quantum key establishment" and the PQC badge marks.
+/**
+ * The post-quantum JWE algorithms: every ML-KEM one and HPKE-8 to 16.
+ */
+const JWE_POST_QUANTUM_ALGS = Object.keys(JWE_PQ_KEM_TABLE).filter(
+  function (a) {
+    return JWE_PQ_KEM_TABLE[a].postQuantum;
+  });
+/**
+ * The PQ/T hybrid JWE algorithms (HPKE-8 to 13; X-Wing is HPKE-10/11).
+ */
+const JWE_HYBRID_ALGS = Object.keys(JWE_PQ_KEM_TABLE).filter(function (a) {
+  return JWE_PQ_KEM_TABLE[a].hybrid;
+});
+
+/**
+ * Tells whether an alg is HPKE Integrated Encryption, which carries no
+ * `enc`.
+ *
+ * @param alg - a JWE `alg`
+ * @returns true for `HPKE-n` (not `-KE`)
+ */
+function isIntegratedJweAlg(alg) {
+  log.debug('Entering isIntegratedJweAlg().');
+  const row = JWE_PQ_KEM_TABLE[String(alg)];
+  log.debug('Leaving isIntegratedJweAlg().');
+  return !!(row && row.family === 'hpke' && row.integrated);
+}
+
+// ---------------------------------------------------------------------------
+// A RECIPIENT'S KEY, CHECKED AGAINST THE ALG — the refusal #82's tests ask
+// for ("a key that does not match the alg"). Returns the raw public key
+// octets in the form the KEM takes. An EC or OKP key that carries an `alg`
+// must name this one too (RFC 7517 section 4.4).
+// ---------------------------------------------------------------------------
+function kemPublicKeyFor(alg, jwk) {
+  log.debug('Entering kemPublicKeyFor(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  const key = jwk && typeof jwk === 'object' ? jwk : {};
+  if (key.kty !== row.keyType) {
+    log.debug('Leaving kemPublicKeyFor(). Wrong kty.');
+    throw new Error('alg "' + alg + '" encrypts to a key of type "' +
+                    row.keyType + '"' + (row.crv ? ' (' + row.crv + ')' : '') +
+                    ' and this key is "' + (key.kty || '(none)') + '"');
+  }
+  if (row.keyType === 'AKP') {
+    if (key.alg !== alg) {
+      log.debug('Leaving kemPublicKeyFor(). AKP names another alg.');
+      throw new Error('an AKP key names exactly one algorithm, and this one ' +
+                      'is for "' + (key.alg || '(none)') + '", not "' + alg +
+                      '"');
+    }
+    const pub = Buffer.from(String(key.pub || ''), 'base64url');
+    const want = row.family === 'mlkem' ? MLKEM_SETS[row.set].Npk
+      : HPKE_KEMS[row.kem].Npk;
+    if (pub.length !== want) {
+      log.debug('Leaving kemPublicKeyFor(). Wrong size.');
+      throw new Error('the AKP key\'s `pub` is ' + pub.length + ' octets ' +
+                      'and "' + alg + '" takes ' + want);
+    }
+    log.debug('Leaving kemPublicKeyFor(). AKP.');
+    return pub;
+  }
+  if (key.alg && key.alg !== alg) {
+    log.debug('Leaving kemPublicKeyFor(). The JWK names another alg.');
+    throw new Error('this key names alg "' + key.alg + '", not "' + alg +
+                    '"');
+  }
+  if (key.crv !== row.crv) {
+    log.debug('Leaving kemPublicKeyFor(). Wrong curve.');
+    throw new Error('alg "' + alg + '" encrypts to a ' + row.crv + ' key ' +
+                    'and this one is "' + (key.crv || '(none)') + '"');
+  }
+  if (row.keyType === 'OKP') {
+    log.debug('Leaving kemPublicKeyFor(). OKP.');
+    return Buffer.from(String(key.x || ''), 'base64url');
+  }
+  const size = EC_GROUPS[row.crv].Nsk;
+  const x = Buffer.from(String(key.x || ''), 'base64url');
+  const y = Buffer.from(String(key.y || ''), 'base64url');
+  if (x.length !== size || y.length !== size) {
+    log.debug('Leaving kemPublicKeyFor(). Bad coordinates.');
+    throw new Error('a ' + row.crv + ' key has ' + size + '-octet x and y');
+  }
+  log.debug('Leaving kemPublicKeyFor(). EC.');
+  return Buffer.concat([Buffer.from([0x04]), x, y]);
+}
+
+// ---------------------------------------------------------------------------
+// WHICH OF A RECIPIENT'S PUBLISHED KEYS AN `alg` CAN ENCRYPT TO, for every
+// asymmetric JWE alg — the question `recipientKey()` asks of a client's
+// jwks. Section 4's families by `kty`; section 4a's by the whole check above
+// (an AKP key names its alg, an EC or OKP key its curve). `need` is the
+// phrase a refusal uses for what was missing.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether a recipient's published JWK can be encrypted to with an
+ * alg.
+ *
+ * @param alg - an asymmetric JWE `alg`
+ * @param jwk - the recipient's public JWK
+ * @returns true when the key's type, curve or AKP `alg` fits
+ */
+function jweRecipientKeyFits(alg, jwk) {
+  log.debug('Entering jweRecipientKeyFits(). ' + alg);
+  if (!jwk || typeof jwk !== 'object') {
+    log.debug('Leaving jweRecipientKeyFits(). No key.');
+    return false;
+  }
+  if (JWE_PQ_KEM_TABLE[alg]) {
+    try {
+      kemPublicKeyFor(alg, jwk);
+    } catch (e) {
+      log.debug('Caught in jweRecipientKeyFits(): ' +
+                ((e && e.message) || e));
+      log.debug('Leaving jweRecipientKeyFits(). Does not fit.');
+      return false;
+    }
+    log.debug('Leaving jweRecipientKeyFits(). Fits.');
+    return true;
+  }
+  log.debug('Leaving jweRecipientKeyFits().');
+  return JWE_ECDH_ALGS.indexOf(alg) >= 0 ? jwk.kty === 'EC'
+    : jwk.kty === 'RSA';
+}
+
+/**
+ * Names the kind of key an alg encrypts to, for a refusal's sentence.
+ *
+ * @param alg - an asymmetric JWE `alg`
+ * @returns a phrase such as "an AKP key whose alg is …"
+ */
+function jweRecipientKeyNeed(alg) {
+  log.debug('Entering jweRecipientKeyNeed(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  log.debug('Leaving jweRecipientKeyNeed().');
+  if (!row) {
+    return JWE_ECDH_ALGS.indexOf(alg) >= 0 ? 'an EC key' : 'an RSA key';
+  }
+  return row.keyType === 'AKP' ? 'an AKP key whose alg is "' + alg + '"'
+    : 'an ' + row.keyType + ' ' + row.crv + ' key';
+}
+
+// The PRIVATE half, from what a caller holds: an AKP JWK with `priv` (the
+// seed), an EC or OKP JWK with `d`, or a node KeyObject of an EC or
+// Montgomery key. Returns the serialised private key the KEM takes.
+function kemPrivateKeyFor(alg, key) {
+  log.debug('Entering kemPrivateKeyFor(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  let jwk = key;
+  if (key && typeof key === 'object' && typeof key.export === 'function' &&
+      key.type === 'private') {
+    jwk = key.export({ format: 'jwk' });
+  }
+  if (!jwk || typeof jwk !== 'object') {
+    log.debug('Leaving kemPrivateKeyFor(). None.');
+    throw new Error('alg "' + alg + '" is encrypted to a private key and ' +
+                    'this caller was given none');
+  }
+  if (row.keyType === 'AKP') {
+    if (jwk.kty !== 'AKP' || jwk.alg !== alg || !jwk.priv) {
+      log.debug('Leaving kemPrivateKeyFor(). Not this alg\'s AKP key.');
+      throw new Error('alg "' + alg + '" is decrypted with an AKP key for ' +
+                      'that algorithm, and the key held is ' +
+                      (jwk.kty === 'AKP' ? 'for "' + (jwk.alg || '') + '"'
+                        : 'of type "' + (jwk.kty || '(none)') + '"'));
+    }
+    log.debug('Leaving kemPrivateKeyFor(). AKP.');
+    return Buffer.from(String(jwk.priv), 'base64url');
+  }
+  if (jwk.kty !== row.keyType || jwk.crv !== row.crv || !jwk.d) {
+    log.debug('Leaving kemPrivateKeyFor(). Wrong key.');
+    throw new Error('alg "' + alg + '" is decrypted with a ' + row.crv +
+                    ' private key, and the key held is ' +
+                    (jwk.crv || jwk.kty || '(none)'));
+  }
+  const d = Buffer.from(String(jwk.d), 'base64url');
+  if (row.keyType === 'EC') {
+    // A JWK's d is exactly the curve's size, but a KeyObject's export can
+    // lose a leading zero on the coordinate; pad rather than refuse.
+    const size = EC_GROUPS[row.crv].Nsk;
+    log.debug('Leaving kemPrivateKeyFor(). EC.');
+    return d.length >= size ? d
+      : Buffer.concat([Buffer.alloc(size - d.length), d]);
+  }
+  log.debug('Leaving kemPrivateKeyFor(). OKP.');
+  return d;
+}
+
+// ---------------------------------------------------------------------------
+// pqc-kem-05 SECTION 5.1's KDF: KMAC256(K = SS', X, L, S = "") where X is
+// AlgorithmID || SuppPubInfo from RFC 7518 section 4.6.2 — the same fields
+// section 4's Concat KDF uses, with PartyUInfo and PartyVInfo left out on
+// purpose (the draft: a KEM has no sender authentication, and the
+// recipient is bound by its key). AlgorithmID is the length-prefixed `enc`
+// for direct agreement and the length-prefixed `alg` for key wrapping,
+// exactly as in RFC 7518; SuppPubInfo is the key length in bits.
+// ---------------------------------------------------------------------------
+/**
+ * draft-ietf-jose-pqc-kem-05's KMAC256 derivation.
+ *
+ * @param sharedSecret - the KEM shared secret
+ * @param algorithmId - `enc` (direct) or `alg` (key wrapping)
+ * @param keyBytes - the key length in octets
+ * @returns the derived key
+ */
+function mlkemJoseKdf(sharedSecret, algorithmId, keyBytes) {
+  log.debug('Entering mlkemJoseKdf(). ' + algorithmId);
+  const id = Buffer.from(String(algorithmId), 'utf8');
+  const x = Buffer.concat([i2osp(id.length, 4), id, i2osp(keyBytes * 8, 4)]);
+  const out = Buffer.from(nobleSha3Addons.kmac256(
+    new Uint8Array(sharedSecret), new Uint8Array(x),
+    { dkLen: keyBytes, personalization: new Uint8Array(0) }));
+  log.debug('Leaving mlkemJoseKdf().');
+  return out;
+}
+
+// The JOSE-HPKE Recipient_structure (jose-hpke-encrypt-22 section 6.1), the
+// HPKE info for Key Encryption: "JOSE-HPKE rcpt" 0xFF enc 0xFF extra.
+/**
+ * jose-hpke-encrypt-22's Recipient_structure, the HPKE info for Key
+ * Encryption.
+ *
+ * @param enc - the JWE `enc`
+ * @param extra - recipient_extra_info, empty by default
+ * @returns the octets
+ */
+function joseHpkeRecipientStructure(enc, extra) {
+  log.debug('Entering joseHpkeRecipientStructure().');
+  log.debug('Leaving joseHpkeRecipientStructure().');
+  return Buffer.concat([Buffer.from('JOSE-HPKE rcpt', 'ascii'),
+                        Buffer.from([0xff]), Buffer.from(String(enc), 'ascii'),
+                        Buffer.from([0xff]), Buffer.from(extra || '')]);
+}
+
+// The HPKE PSK inputs a caller named (`psk`, `pskId`), for both directions:
+// a psk_id in the header is base64url (jose-hpke-encrypt-22 section 11.2.2).
+function joseHpkePsk(options, header, forEncrypt) {
+  log.debug('Entering joseHpkePsk().');
+  if (forEncrypt) {
+    if (!options.psk) {
+      log.debug('Leaving joseHpkePsk(). Base mode.');
+      return {};
+    }
+    header.psk_id = b64u(Buffer.from(options.pskId || ''));
+    log.debug('Leaving joseHpkePsk(). PSK mode.');
+    return { psk: Buffer.from(options.psk),
+             pskId: Buffer.from(options.pskId || '') };
+  }
+  if (header.psk_id === undefined) {
+    log.debug('Leaving joseHpkePsk(). Base mode.');
+    return {};
+  }
+  const pskId = Buffer.from(String(header.psk_id), 'base64url');
+  const psk = typeof options.psk === 'function' ? options.psk(pskId)
+    : options.psk;
+  if (!psk) {
+    log.debug('Leaving joseHpkePsk(). No PSK for that id.');
+    throw new Error('this JWE names an HPKE pre-shared key (psk_id) and ' +
+                    'this caller holds none for it');
+  }
+  log.debug('Leaving joseHpkePsk(). PSK mode.');
+  return { psk: Buffer.from(psk), pskId: pskId };
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY MANAGEMENT HALF FOR THESE FAMILIES, as `wrapCek()` is for section
+// 4's. Returns { cek, encryptedKey } and writes `ek` (and `psk_id`) into the
+// header. Integrated HPKE is NOT here: it has no CEK, so
+// `encryptJweCompact()` calls `hpkeIntegratedSeal()` instead.
+// ---------------------------------------------------------------------------
+function wrapCekPq(alg, recipientJwk, cek, header, options) {
+  log.debug('Entering wrapCekPq(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  const pub = kemPublicKeyFor(alg, recipientJwk);
+  if (row.family === 'mlkem') {
+    const out = mlkemEncaps(row.set, pub, null);
+    header.ek = b64u(out.ct);
+    if (!row.kwBytes) {
+      // Direct Key Agreement (pqc-kem-05 section 6.1): the KDF output IS the
+      // CEK, its length the `enc`'s, and the JWE Encrypted Key is empty.
+      log.debug('Leaving wrapCekPq(). ML-KEM direct.');
+      return { cek: mlkemJoseKdf(out.ss, header.enc, cek.length),
+               encryptedKey: Buffer.alloc(0) };
+    }
+    const kek = mlkemJoseKdf(out.ss, alg, row.kwBytes);
+    log.debug('Leaving wrapCekPq(). ML-KEM with key wrapping.');
+    return { cek: cek, encryptedKey: aesKeyWrap(kek, cek) };
+  }
+  const suite = { kem: row.kem, kdf: row.kdf, aead: row.aead };
+  const psk = joseHpkePsk(options || {}, header, true);
+  const sender = hpkeSetupSender(suite, pub, {
+    info: joseHpkeRecipientStructure(header.enc,
+                                     (options && options.recipientExtraInfo) ||
+                                     ''),
+    psk: psk.psk, pskId: psk.pskId });
+  header.ek = b64u(sender.enc);
+  // Section 6: the HPKE aad is empty and the plaintext is the CEK.
+  const wrapped = sender.context.seal(Buffer.alloc(0), cek);
+  log.debug('Leaving wrapCekPq(). HPKE Key Encryption.');
+  return { cek: cek, encryptedKey: wrapped };
+}
+
+function unwrapCekPq(alg, header, encryptedKey, options, spec) {
+  log.debug('Entering unwrapCekPq(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  if (typeof header.ek !== 'string' || !header.ek) {
+    log.debug('Leaving unwrapCekPq(). No ek.');
+    throw new Error('an "' + alg + '" JWE carries the KEM ciphertext in the ' +
+                    'header as `ek` (' + row.spec + ') and this one has none');
+  }
+  const ek = strictBase64url(header.ek, 'JWE ek');
+  const priv = kemPrivateKeyFor(alg, options.privateKey || options.privateJwk);
+  if (row.family === 'mlkem') {
+    const ss = mlkemDecaps(row.set, priv, ek);
+    if (!row.kwBytes) {
+      if (encryptedKey.length) {
+        log.debug('Leaving unwrapCekPq(). Direct with an encrypted key.');
+        throw new Error('direct key agreement leaves the JWE Encrypted Key ' +
+                        'empty (pqc-kem-05 section 6.1), and this one is not');
+      }
+      if (!spec) {
+        throw new Error('alg "' + alg + '" derives the content key at the ' +
+                        'length `enc` names, and "' + header.enc + '" is ' +
+                        'not one this service knows');
+      }
+      log.debug('Leaving unwrapCekPq(). ML-KEM direct.');
+      return mlkemJoseKdf(ss, header.enc, spec.cekBytes);
+    }
+    const out = aesKeyUnwrap(mlkemJoseKdf(ss, alg, row.kwBytes), encryptedKey);
+    log.debug('Leaving unwrapCekPq(). ML-KEM with key wrapping.');
+    return out;
+  }
+  const psk = joseHpkePsk(options, header, false);
+  const receiver = hpkeSetupReceiver(
+    { kem: row.kem, kdf: row.kdf, aead: row.aead }, ek, priv, {
+      info: joseHpkeRecipientStructure(header.enc,
+                                       options.recipientExtraInfo || ''),
+      psk: psk.psk, pskId: psk.pskId });
+  const out = receiver.context.open(Buffer.alloc(0), encryptedKey);
+  log.debug('Leaving unwrapCekPq(). HPKE Key Encryption.');
+  return out;
+}
+
+// INTEGRATED ENCRYPTION (jose-hpke-encrypt-22 section 5): the plaintext is
+// the HPKE plaintext, the HPKE aad is ASCII(Encoded Protected Header), the
+// JWE Encrypted Key is the encapsulated secret, and the IV and tag are
+// empty. The header is final before this is called — it is the aad.
+function hpkeIntegratedSeal(alg, recipientJwk, headerB64, body, options,
+                            psk) {
+  log.debug('Entering hpkeIntegratedSeal(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  const pub = kemPublicKeyFor(alg, recipientJwk);
+  const sender = hpkeSetupSender({ kem: row.kem, kdf: row.kdf,
+                                   aead: row.aead }, pub, {
+    info: (options && options.hpkeInfo) || '',
+    psk: psk.psk, pskId: psk.pskId });
+  const ct = sender.context.seal(Buffer.from(headerB64, 'ascii'), body);
+  log.debug('Leaving hpkeIntegratedSeal().');
+  return { encryptedKey: sender.enc, ciphertext: ct };
+}
+
+function hpkeIntegratedOpen(alg, header, headerB64, parts, options) {
+  log.debug('Entering hpkeIntegratedOpen(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  if (header.enc !== undefined) {
+    log.debug('Leaving hpkeIntegratedOpen(). enc present.');
+    throw new Error('alg "' + alg + '" is HPKE Integrated Encryption, whose ' +
+                    'header MUST NOT carry `enc` (jose-hpke-encrypt-22 ' +
+                    'section 5)');
+  }
+  if (header.ek !== undefined) {
+    log.debug('Leaving hpkeIntegratedOpen(). ek present.');
+    throw new Error('alg "' + alg + '" carries the encapsulated secret as ' +
+                    'the JWE Encrypted Key, and its header MUST NOT carry ' +
+                    '`ek` (jose-hpke-encrypt-22 section 5)');
+  }
+  if (parts[2] !== '' || parts[4] !== '') {
+    log.debug('Leaving hpkeIntegratedOpen(). IV or tag present.');
+    throw new Error('HPKE Integrated Encryption leaves the JWE IV and ' +
+                    'Authentication Tag empty (jose-hpke-encrypt-22 section ' +
+                    '5), and this JWE carries ' +
+                    (parts[2] !== '' ? 'an IV' : 'a tag'));
+  }
+  const priv = kemPrivateKeyFor(alg, options.privateKey || options.privateJwk);
+  const psk = joseHpkePsk(options, header, false);
+  const receiver = hpkeSetupReceiver(
+    { kem: row.kem, kdf: row.kdf, aead: row.aead },
+    Buffer.from(parts[1], 'base64url'), priv, {
+      info: options.hpkeInfo || '', psk: psk.psk, pskId: psk.pskId });
+  const out = receiver.context.open(Buffer.from(headerB64, 'ascii'),
+                                    Buffer.from(parts[3], 'base64url'));
+  log.debug('Leaving hpkeIntegratedOpen().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// A KEY PAIR FOR ONE OF THESE ALGS, as JWKs: AKP { alg, pub } and
+// { alg, pub, priv } for the post-quantum rows (priv the seed — 64 octets
+// for ML-KEM, 32 for a hybrid); EC or OKP for the classical HPKE rows. What
+// a realm's opt-in decryption keys and OID4VP's ephemeral keys are made
+// with, so there is one generator (the crypto-pki-in-shared-modules rule).
+// ---------------------------------------------------------------------------
+/**
+ * Generates a key pair for an ML-KEM or HPKE JWE alg.
+ *
+ * @param alg - an ML-KEM or HPKE `alg`
+ * @param kid - the kid both JWKs carry, when given
+ * @returns `{ publicJwk, privateJwk }` — AKP, EC or OKP
+ * @throws Error for an alg that is neither
+ */
+function generateJweKemKeyPair(alg, kid) {
+  log.debug('Entering generateJweKemKeyPair(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[String(alg)];
+  if (!row) {
+    log.debug('Leaving generateJweKemKeyPair(). Not one of these algs.');
+    throw new Error('generateJweKemKeyPair: "' + alg + '" is not an ML-KEM ' +
+                    'or HPKE JWE algorithm');
+  }
+  const extra = { use: 'enc', alg: alg };
+  if (kid) {
+    extra.kid = kid;
+  }
+  if (row.keyType === 'AKP') {
+    const sk = nodeCrypto.randomBytes(row.family === 'mlkem' ? 64
+      : HPKE_KEMS[row.kem].Nsk);
+    const pk = row.family === 'mlkem' ? mlkemFromSeed(row.set, sk).ek
+      : (HPKE_KEMS[row.kem].kind === 'mlkem'
+        ? mlkemFromSeed(HPKE_KEMS[row.kem].set, sk).ek
+        : hybridExpand(HPKE_KEMS[row.kem].hybrid, sk).ek);
+    const publicJwk = Object.assign({ kty: 'AKP', pub: b64u(pk) }, extra);
+    log.debug('Leaving generateJweKemKeyPair(). AKP.');
+    return { publicJwk: publicJwk,
+             privateJwk: Object.assign({ priv: b64u(sk) }, publicJwk) };
+  }
+  const pair = row.keyType === 'EC'
+    ? nodeCrypto.generateKeyPairSync('ec',
+                                     { namedCurve: EC_GROUPS[row.crv].node })
+    : nodeCrypto.generateKeyPairSync(
+      /** @type {any} */ (row.crv.toLowerCase()));
+  const priv = pair.privateKey.export({ format: 'jwk' });
+  const pub = pair.publicKey.export({ format: 'jwk' });
+  log.debug('Leaving generateJweKemKeyPair(). ' + row.keyType + '.');
+  return { publicJwk: Object.assign(pub, extra),
+           privateJwk: Object.assign(priv, extra) };
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME KEY PAIR, DERIVED rather than drawn: from input keying material
+// through the KEM's own DeriveKeyPair (draft-ietf-hpke-hpke section 7.1.3,
+// draft-ietf-hpke-pq sections 3 and 4) — for an ML-KEM alg, the HPKE ML-KEM
+// KEM of the same parameter set, whose DeriveKeyPair yields the 64-octet
+// seed. A published KDF, so the derivation is one somebody else can check.
+// For a key a realm only ever encrypts to ITSELF (a refresh token), made
+// from a secret it already holds, sealed, shares and rotates.
+// ---------------------------------------------------------------------------
+const MLKEM_HPKE_KEM = { 'ML-KEM-512': 0x0040, 'ML-KEM-768': 0x0041,
+                         'ML-KEM-1024': 0x0042 };
+
+/**
+ * Derives a key pair for an ML-KEM or HPKE JWE alg through the KEM's own
+ * DeriveKeyPair.
+ *
+ * @param alg - an ML-KEM or HPKE `alg`
+ * @param ikm - the input keying material
+ * @param kid - the kid both JWKs carry, when given
+ * @returns `{ publicJwk, privateJwk }`, the same for the same input
+ */
+function deriveJweKemKeyPair(alg, ikm, kid) {
+  log.debug('Entering deriveJweKemKeyPair(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[String(alg)];
+  if (!row) {
+    log.debug('Leaving deriveJweKemKeyPair(). Not one of these algs.');
+    throw new Error('deriveJweKemKeyPair: "' + alg + '" is not an ML-KEM ' +
+                    'or HPKE JWE algorithm');
+  }
+  const kemId = row.family === 'mlkem' ? MLKEM_HPKE_KEM[row.set] : row.kem;
+  const pair = hpkeDeriveKeyPair(kemId, ikm);
+  const extra = { use: 'enc', alg: alg };
+  if (kid) {
+    extra.kid = kid;
+  }
+  let publicJwk;
+  let privateMembers;
+  if (row.keyType === 'AKP') {
+    publicJwk = Object.assign({ kty: 'AKP', pub: b64u(pair.pk) }, extra);
+    privateMembers = { priv: b64u(pair.sk) };
+  } else if (row.keyType === 'EC') {
+    const size = EC_GROUPS[row.crv].Nsk;
+    publicJwk = Object.assign({
+      kty: 'EC', crv: row.crv, x: b64u(pair.pk.subarray(1, 1 + size)),
+      y: b64u(pair.pk.subarray(1 + size)) }, extra);
+    privateMembers = { d: b64u(pair.sk) };
+  } else {
+    publicJwk = Object.assign({ kty: 'OKP', crv: row.crv,
+                                x: b64u(pair.pk) }, extra);
+    privateMembers = { d: b64u(pair.sk) };
+  }
+  log.debug('Leaving deriveJweKemKeyPair().');
+  return { publicJwk: publicJwk,
+           privateJwk: Object.assign({}, publicJwk, privateMembers) };
+}
+
+// The public JWK of a private one, for a realm key read back from the store.
+/**
+ * Returns the public half of a KEM private JWK.
+ *
+ * @param privateJwk - an AKP, EC or OKP private JWK
+ * @returns a copy without `priv` or `d`
+ */
+function publicJweKemJwk(privateJwk) {
+  log.debug('Entering publicJweKemJwk().');
+  const out = Object.assign({}, privateJwk || {});
+  delete out.priv;
+  delete out.d;
+  log.debug('Leaving publicJweKemJwk().');
+  return out;
+}
+
+// What the console and the crypto-metadata document say about each alg: the
+// family, the KEM, the KDF, the AEAD and the draft it comes from.
+/**
+ * Describes an ML-KEM or HPKE alg for the console and the metadata.
+ *
+ * @param alg - a JWE `alg`
+ * @returns its family, KEM, KDF, AEAD, mode and draft, or null
+ */
+function describeJweKemAlg(alg) {
+  log.debug('Entering describeJweKemAlg(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[String(alg)];
+  if (!row) {
+    log.debug('Leaving describeJweKemAlg(). Not one of these.');
+    return null;
+  }
+  if (row.family === 'mlkem') {
+    log.debug('Leaving describeJweKemAlg(). ML-KEM.');
+    return { alg: alg, family: 'ML-KEM', kem: row.set, kdf: 'KMAC256',
+             keyWrap: row.kwBytes ? 'A' + (row.kwBytes * 8) + 'KW' : '',
+             mode: row.kwBytes ? 'Key Agreement with Key Wrapping'
+               : 'Direct Key Agreement',
+             keyType: 'AKP', postQuantum: true, hybrid: false,
+             spec: row.spec };
+  }
+  log.debug('Leaving describeJweKemAlg(). HPKE.');
+  return { alg: alg, family: 'HPKE', kem: HPKE_KEMS[row.kem].name,
+           kdf: HPKE_KDFS[row.kdf].name, aead: HPKE_AEADS[row.aead].name,
+           mode: row.integrated ? 'Integrated Encryption' : 'Key Encryption',
+           keyType: row.keyType + (row.crv ? ' ' + row.crv : ''),
+           postQuantum: row.postQuantum, hybrid: row.hybrid,
+           spec: row.spec };
 }
 
 // ===========================================================================
@@ -3606,6 +5502,7 @@ function verifyJwsAsync(token, key, opts) {
 // A128CBC-HS256 for you. A service that spoke only AES-GCM would refuse the
 // commonest encrypted response there is, and would look to the client like it
 // had refused the request.
+/** The JWE content encryption algorithms, AES-GCM and AES-CBC-HMAC. */
 const JWE_ENCS = {
   A128GCM: { bits: 128, cipher: 'aes-128-gcm', cekBytes: 16, mode: 'gcm' },
   A192GCM: { bits: 192, cipher: 'aes-192-gcm', cekBytes: 24, mode: 'gcm' },
@@ -3627,6 +5524,7 @@ const JWE_ENCS = {
 // stack predates the -256 variant registers, and this is a service for testing
 // other people's clients. ECDH-ES and its three key-wrapping variants are here
 // because a recipient with an EC key has no RSA one to offer.
+/** The default JWE key management algorithm: RSA-OAEP-256. */
 const JWE_ALG = 'RSA-OAEP-256';
 // ---------------------------------------------------------------------------
 // **THE SYMMETRIC FAMILIES JOINED THIS LIST ON 2026-09-10 AND THE DECRYPT LIST
@@ -3656,13 +5554,16 @@ const JWE_ALG = 'RSA-OAEP-256';
 // mock and it will not carry that path. A caller that sends one is told the
 // name and the reason, which is more useful than a list it has to diff.
 // ---------------------------------------------------------------------------
+/** The RSA-OAEP key management algorithms. */
 const JWE_RSA_ALGS = ['RSA-OAEP-256', 'RSA-OAEP'];
+/** The ECDH-ES key management algorithms. */
 const JWE_ECDH_ALGS = ['ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A192KW',
                        'ECDH-ES+A256KW'];
 const JWE_AESKW_ALGS = ['A128KW', 'A192KW', 'A256KW'];
 const JWE_AESGCMKW_ALGS = ['A128GCMKW', 'A192GCMKW', 'A256GCMKW'];
 const JWE_PBES2_ALGS = ['PBES2-HS256+A128KW', 'PBES2-HS384+A192KW',
                         'PBES2-HS512+A256KW'];
+/** The symmetric JWE key management algorithms, `dir` among them. */
 const JWE_SYMMETRIC_ALGS = JWE_AESKW_ALGS.concat(JWE_AESGCMKW_ALGS,
                                                  JWE_PBES2_ALGS, ['dir']);
 // The families that encrypt to a RECIPIENT'S PUBLIC KEY. Kept as a name of
@@ -3672,7 +5573,20 @@ const JWE_SYMMETRIC_ALGS = JWE_AESKW_ALGS.concat(JWE_AESGCMKW_ALGS,
 // JWKS and no shared secret. Advertising the symmetric families there would be
 // a metadata member a client could register and this service would then try to
 // satisfy by deriving a key from the JSON of a public key.
-const JWE_ASYMMETRIC_ALGS = JWE_RSA_ALGS.concat(JWE_ECDH_ALGS);
+//
+// **THE POST-QUANTUM AND HPKE FAMILIES JOINED IT ON 2026-09-27 (#82)** —
+// section 4a's table, all of it: the six ML-KEM algorithms and HPKE-0 to
+// HPKE-16 with their Key Encryption forms. Every one encrypts to a
+// recipient's PUBLIC key, which is this list's whole definition, and a
+// client registers one the way it registers RSA-OAEP-256. What this service
+// can DECRYPT with them is a different question — it needs a key of its own
+// for the alg, and those are an administrator's opt-in per realm (rcbj's
+// decision on #82), so the discovery lists that describe decryption are
+// narrowed to the keys held rather than read from here.
+/** The key management algorithms that encrypt to a recipient's public key. */
+const JWE_ASYMMETRIC_ALGS = JWE_RSA_ALGS.concat(JWE_ECDH_ALGS, JWE_MLKEM_ALGS,
+                                                JWE_HPKE_ALGS);
+/** Every JWE key management algorithm this service speaks. */
 const JWE_ALGS = JWE_ASYMMETRIC_ALGS.concat(JWE_SYMMETRIC_ALGS);
 // **THE SAME LIST, AND THAT IS THE CHANGE.** It was `['RSA-OAEP-256']` on the
 // argument that what arrives here is encrypted to the RSA key this service
@@ -3681,6 +5595,7 @@ const JWE_ALGS = JWE_ASYMMETRIC_ALGS.concat(JWE_SYMMETRIC_ALGS);
 // to a key of its own choosing. A caller now picks by what it HOLDS rather
 // than by what this table permits, and `decryptJweCompact()` refuses by name
 // when it was handed no key of the right kind.
+/** The JWE key management algorithms this service decrypts: all of them. */
 const JWE_DECRYPT_ALGS = JWE_ALGS.slice();
 const ECDH_KW_BYTES = { 'ECDH-ES+A128KW': 16, 'ECDH-ES+A192KW': 24,
                         'ECDH-ES+A256KW': 32 };
@@ -3703,6 +5618,12 @@ const PBES2_DEFAULT_ITERATIONS = 8192;
 const EC_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
                     'P-521': 'secp521r1' };
 
+/**
+ * Encodes bytes as base64url.
+ *
+ * @param buf - the bytes
+ * @returns the base64url text
+ */
 function b64u(buf) {
   log.debug("Entering b64u().");
   log.debug("Leaving b64u().");
@@ -3827,6 +5748,16 @@ function jweContentSpec(enc) {
   return spec;
 }
 
+/**
+ * Encrypts JWE content under a named `enc`.
+ *
+ * @param enc - the content encryption algorithm
+ * @param cek - the content encryption key
+ * @param iv - the initialization vector
+ * @param aad - the additional authenticated data
+ * @param plaintext - the plaintext
+ * @returns `{ ciphertext, tag }`
+ */
 function sealJweContent(enc, cek, iv, aad, plaintext) {
   log.debug('Entering sealJweContent(). enc=' + enc);
   const out = sealContent(jweContentSpec(enc), Buffer.from(cek),
@@ -3836,6 +5767,17 @@ function sealJweContent(enc, cek, iv, aad, plaintext) {
   return out;
 }
 
+/**
+ * Decrypts JWE content under a named `enc`.
+ *
+ * @param enc - the content encryption algorithm
+ * @param cek - the content encryption key
+ * @param iv - the initialization vector
+ * @param aad - the additional authenticated data
+ * @param ciphertext - the ciphertext
+ * @param tag - the authentication tag
+ * @returns the plaintext
+ */
 function openJweContent(enc, cek, iv, aad, ciphertext, tag) {
   log.debug('Entering openJweContent(). enc=' + enc);
   const out = openContent(jweContentSpec(enc), Buffer.from(cek),
@@ -3901,6 +5843,13 @@ const AES_KW_IV = Buffer.from('A6A6A6A6A6A6A6A6', 'hex');
 // `id-aes*-wrap` unwrapped an EMPTY value to an empty key until Wycheproof's
 // InvalidWrappingSize vectors (#202, 2026-09-24); both directions refuse a
 // size the RFC does not define before the cipher is asked.
+/**
+ * Wraps a key with AES Key Wrap (RFC 3394).
+ *
+ * @param kek - the key-encryption key
+ * @param plaintextKey - the key to wrap, at least two 64-bit semiblocks
+ * @returns the wrapped key
+ */
 function aesKeyWrap(kek, plaintextKey) {
   log.debug('Entering aesKeyWrap().');
   if (plaintextKey.length < 16 || plaintextKey.length % 8) {
@@ -3916,6 +5865,13 @@ function aesKeyWrap(kek, plaintextKey) {
   return out;
 }
 
+/**
+ * Unwraps a key wrapped with AES Key Wrap (RFC 3394).
+ *
+ * @param kek - the key-encryption key
+ * @param wrapped - the wrapped key, at least 24 octets
+ * @returns the key
+ */
 function aesKeyUnwrap(kek, wrapped) {
   log.debug('Entering aesKeyUnwrap().');
   if (wrapped.length < 24 || wrapped.length % 8) {
@@ -3963,6 +5919,16 @@ function secretBytes(secret) {
 // RFC 7518 section 4.8.1.1: the salt input is `alg || 0x00 || p2s`, and
 // leaving the algorithm name out of it is the classic mistake — it makes one
 // password produce the same key for three different key sizes.
+/**
+ * Derives a PBES2 key (RFC 7518 section 4.8.1.1), the algorithm name in the
+ * salt input.
+ *
+ * @param alg - the PBES2 algorithm
+ * @param password - the password
+ * @param saltInput - the `p2s` salt input
+ * @param iterations - the `p2c` count
+ * @returns the key
+ */
 function pbes2Key(alg, password, saltInput, iterations) {
   log.debug('Entering pbes2Key(). alg=' + alg);
   const salt = Buffer.concat([Buffer.from(alg, 'utf8'), Buffer.alloc(1),
@@ -4027,12 +5993,19 @@ function symmetricKek(alg, secret, header, forEncrypt) {
   return bytes;
 }
 
-function wrapCek(alg, recipientJwk, cek, header) {
+function wrapCek(alg, recipientJwk, cek, header, options) {
   log.debug('Entering wrapCek(). alg=' + alg);
   if (JWE_ALGS.indexOf(alg) === -1) {
     log.debug('Leaving wrapCek(). Unknown alg.');
     throw new Error('encryptJweCompact: unsupported alg "' + alg +
       '"; this service encrypts with ' + JWE_ALGS.join(', ') + '.');
+  }
+  // ML-KEM and HPKE Key Encryption (section 4a). Before the symmetric
+  // families and before `createPublicKey()`, which cannot read an AKP key.
+  if (JWE_PQ_KEM_TABLE[alg]) {
+    const out = wrapCekPq(alg, recipientJwk, cek, header, options);
+    log.debug('Leaving wrapCek(). ' + alg + '.');
+    return out;
   }
 
   // ---------------------------------------------------------------------
@@ -4114,11 +6087,30 @@ function wrapCek(alg, recipientJwk, cek, header) {
   return { cek: cek, encryptedKey: aesKeyWrap(kek, cek) };
 }
 
+/**
+ * Encrypts a plaintext as a compact JWE.
+ *
+ * @param plaintext - the plaintext
+ * @param opts - `alg` (`JWE_ALG` by default; ML-KEM and HPKE since #82),
+ *   `enc` (left out for HPKE Integrated Encryption), `jwk` (the recipient's
+ *   key) or `secret`, `typ`, `cty`, `zip`, and `psk` / `pskId` for HPKE
+ * @returns the compact JWE
+ * @throws Error for an unsupported `alg`, `enc` or key
+ */
 function encryptJweCompact(plaintext, opts) {
   log.debug("Entering encryptJweCompact().");
   const options = opts || {};
   log.debug('Entering encryptJweCompact(). alg=' + (options.alg || JWE_ALG) +
             ', enc=' + options.enc);
+  // HPKE INTEGRATED ENCRYPTION HAS NO `enc` (jose-hpke-encrypt-22 section
+  // 5), so it is answered before the `enc` check below — a caller that
+  // passes the `enc` a client registered beside an Integrated alg (OpenID
+  // Connect Registration defaults one) gets it left out, not refused.
+  if (isIntegratedJweAlg(options.alg)) {
+    const out = encryptJweIntegrated(plaintext, options);
+    log.debug('Leaving encryptJweCompact(). HPKE Integrated Encryption.');
+    return out;
+  }
   const spec = JWE_ENCS[options.enc];
   if (!spec) {
     log.debug('Leaving encryptJweCompact(). Unknown enc.');
@@ -4165,7 +6157,7 @@ function encryptJweCompact(plaintext, opts) {
   // header is serialised after it and not before — the AAD has to be the bytes
   // that actually go out, and an epk added after the AAD was taken would make
   // every tag fail at the far end.
-  const wrapped = wrapCek(alg, keyMaterial, random, header);
+  const wrapped = wrapCek(alg, keyMaterial, random, header, options);
   const headerB64 = b64u(Buffer.from(JSON.stringify(header), 'utf8'));
 
   const sealed = sealContent(spec, wrapped.cek, iv,
@@ -4174,6 +6166,44 @@ function encryptJweCompact(plaintext, opts) {
   const compact = [headerB64, b64u(wrapped.encryptedKey), b64u(iv),
                    b64u(sealed.ciphertext), b64u(sealed.tag)].join('.');
   log.debug('Leaving encryptJweCompact(). ' + compact.length + ' characters.');
+  return compact;
+}
+
+// ---------------------------------------------------------------------------
+// HPKE INTEGRATED ENCRYPTION, AS A COMPACT JWE (#82): the header has `alg`
+// and no `enc`; the second segment is the encapsulated secret; the IV and
+// tag segments are EMPTY; the ciphertext is HPKE's (with its tag inside).
+// `zip` works as it does for any other alg — the plaintext is compressed
+// before it is sealed (jose-hpke-encrypt-22 section 7.1, step 12).
+// ---------------------------------------------------------------------------
+function encryptJweIntegrated(plaintext, options) {
+  log.debug('Entering encryptJweIntegrated(). alg=' + options.alg);
+  const header = { alg: options.alg, typ: options.typ || 'JWT' };
+  if (options.cty) {
+    header.cty = options.cty;
+  }
+  let body = Buffer.from(plaintext, 'utf8');
+  if (options.zip !== undefined && options.zip !== null &&
+      options.zip !== '') {
+    if (options.zip !== 'DEF') {
+      log.debug('Leaving encryptJweIntegrated(). Unsupported zip.');
+      throw new Error('encryptJweCompact: unsupported zip "' + options.zip +
+                      '"; this service compresses with DEF only.');
+    }
+    header.zip = 'DEF';
+    body = zlib.deflateRawSync(body);
+  }
+  if (options.jwk && options.jwk.kid) {
+    header.kid = options.jwk.kid;
+  }
+  const psk = joseHpkePsk(options, header, true);
+  const headerB64 = b64u(Buffer.from(JSON.stringify(header), 'utf8'));
+  const sealed = hpkeIntegratedSeal(options.alg, options.jwk, headerB64, body,
+                                    options, psk);
+  const compact = [headerB64, b64u(sealed.encryptedKey), '',
+                   b64u(sealed.ciphertext), ''].join('.');
+  log.debug('Leaving encryptJweIntegrated(). ' + compact.length +
+            ' characters.');
   return compact;
 }
 
@@ -4241,6 +6271,14 @@ function unwrapCek(header, encryptedKey, options, spec) {
     return out;
   }
 
+  // ML-KEM and HPKE Key Encryption (section 4a): the private key is an AKP
+  // JWK (`privateJwk`) or, for the classical HPKE suites, an EC or OKP key.
+  if (JWE_PQ_KEM_TABLE[alg]) {
+    const out = unwrapCekPq(alg, header, encryptedKey, options, spec);
+    log.debug('Leaving unwrapCek(). ' + alg + '.');
+    return out;
+  }
+
   if (!options.privateKey) {
     throw new Error('alg "' + alg + '" is encrypted to a PRIVATE KEY and ' +
       'this caller was given none.');
@@ -4300,7 +6338,13 @@ function unwrapCek(header, encryptedKey, options, spec) {
 // DECRYPT A COMPACT JWE. `opts`:
 //
 //   privateKey    a node KeyObject — RSA for the two RSA-OAEP algorithms, EC
-//                 for the four ECDH-ES ones.
+//                 for the four ECDH-ES ones, EC or X25519/X448 for the
+//                 classical HPKE suites.
+//   privateJwk    a private JWK, for section 4a's algorithms (#82): the AKP
+//                 key (`priv` the seed) an ML-KEM or post-quantum HPKE alg
+//                 is decrypted with, or an EC / OKP JWK for classical HPKE.
+//   psk           HPKE mode_psk only: the pre-shared key, or a function of
+//                 the header's decoded `psk_id` returning it.
 //   secret        the shared key for the symmetric families: a Buffer, an oct
 //                 JWK, or a string whose UTF-8 bytes are the key (which is
 //                 what a `client_secret` is). See secretBytes().
@@ -4320,6 +6364,16 @@ function unwrapCek(header, encryptedKey, options, spec) {
 // failure here is the far end's document being wrong and the OID4VCI error
 // responses quote the message directly.
 // ---------------------------------------------------------------------------
+/**
+ * Decrypts a compact JWE.
+ *
+ * @param compact - the compact JWE
+ * @param opts - `privateKey` (a KeyObject), `privateJwk` (an ML-KEM or HPKE
+ *   key, #82) or `secret`; `allowedAlg`, `allowedEnc`, `expectedKid`, and
+ *   `psk` for HPKE mode_psk. An HPKE Integrated JWE carries no `enc`.
+ * @returns `{ header, plaintext }`
+ * @throws Error with a sentence a caller can hand to a client
+ */
 function decryptJweCompact(compact, opts) {
   log.debug("Entering decryptJweCompact().");
   const options = opts || {};
@@ -4366,6 +6420,15 @@ function decryptJweCompact(compact, opts) {
     throw new Error('this endpoint accepts alg ' +
       options.allowedAlg.join(', ') +
       '; the request used "' + header.alg + '".');
+  }
+  // HPKE INTEGRATED ENCRYPTION (#82) has no `enc` and no CEK: after the
+  // alg refusals above and the kid check, it is opened whole by section 4a.
+  // A caller's `allowedEnc` does not apply to it — there is nothing for it
+  // to narrow — and its `allowedAlg` already has.
+  if (isIntegratedJweAlg(header.alg)) {
+    const integrated = decryptJweIntegrated(parts, header, options);
+    log.debug('Leaving decryptJweCompact(). HPKE Integrated Encryption.');
+    return integrated;
   }
   const allowed = options.allowedEnc || Object.keys(JWE_ENCS);
   if (allowed.indexOf(header.enc) === -1) {
@@ -4441,6 +6504,39 @@ function decryptJweCompact(compact, opts) {
   return { header: header, plaintext: plaintext };
 }
 
+// The Integrated half of `decryptJweCompact()`: the same refusals in the
+// same order as the rest of it (zip, kid, strict segments), then HPKE.
+function decryptJweIntegrated(parts, header, options) {
+  log.debug('Entering decryptJweIntegrated(). alg=' + header.alg);
+  if (header.zip) {
+    log.debug('Leaving decryptJweIntegrated(). Compressed.');
+    throw new Error('this service advertises no zip_values_supported, so a ' +
+      'compressed request cannot be read.');
+  }
+  if (options.expectedKid && header.kid !== options.expectedKid) {
+    log.debug('Leaving decryptJweIntegrated(). Wrong kid.');
+    throw new Error('the JWE kid "' + (header.kid || '(absent)') + '" is not ' +
+      'this service\'s current encryption key "' + options.expectedKid +
+      '". Re-read the metadata.');
+  }
+  for (let i = 1; i < 5; i++) {
+    strictBase64url(parts[i], ['', 'JWE encrypted key', 'JWE IV',
+                               'JWE ciphertext', 'JWE tag'][i]);
+  }
+  let plaintext;
+  try {
+    plaintext = hpkeIntegratedOpen(String(header.alg), header, parts[0],
+                                   parts, options).toString('utf8');
+  } catch (e) {
+    log.debug('Leaving decryptJweIntegrated(). Did not open: ' + e.message);
+    throw new Error('the HPKE Integrated Encryption JWE did not decrypt: ' +
+                    e.message);
+  }
+  log.debug('Leaving decryptJweIntegrated(). ' + plaintext.length +
+            ' characters.');
+  return { header: header, plaintext: plaintext };
+}
+
 // ===========================================================================
 // SECTION 5 — KEYS, CERTIFICATES, THUMBPRINTS
 // ===========================================================================
@@ -4454,6 +6550,13 @@ function decryptJweCompact(compact, opts) {
 // which would hand every receiver a string nobody asked it to hold. '' for no
 // header, which leaves the member out.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a User-Agent's fingerprint for CAEP's `fp_ua`: the base64url
+ * SHA-256 of the header as it arrived.
+ *
+ * @param userAgent - the header's value
+ * @returns the fingerprint, or empty for no header
+ */
 function userAgentFingerprint(userAgent) {
   log.debug('Entering userAgentFingerprint().');
   const text = String(userAgent || '');
@@ -4475,6 +6578,13 @@ function userAgentFingerprint(userAgent) {
 // be the same one, and it has no business holding the identifier itself —
 // a session row is copied into logs, pages and the change log. '' for none.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a credential's fingerprint for the authentication event: the
+ * base64url SHA-256 of its identifier.
+ *
+ * @param identifier - a WebAuthn credential id or certificate thumbprint
+ * @returns the fingerprint, or empty for none
+ */
 function credentialFingerprint(identifier) {
   log.debug('Entering credentialFingerprint().');
   const text = String(identifier || '');
@@ -4502,6 +6612,13 @@ function credentialFingerprint(identifier) {
 // (`common/breached_passwords.ts`, k-anonymity). Here because every digest of
 // a secret this service computes is computed in this file.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the SHA-1 digest of a password the Have I Been Pwned corpus is
+ * indexed by; only its first five characters ever leave this process.
+ *
+ * @param password - the password
+ * @returns the upper-case hex digest
+ */
 function pwnedPasswordDigest(password) {
   log.debug('Entering pwnedPasswordDigest().');
   log.debug('Leaving pwnedPasswordDigest().');
@@ -4509,6 +6626,13 @@ function pwnedPasswordDigest(password) {
     .digest('hex').toUpperCase();
 }
 
+/**
+ * Returns the first `chars` hex characters of a SHA-256, as JA4 uses.
+ *
+ * @param text - the text hashed, as UTF-8
+ * @param chars - how many characters, at most 64
+ * @returns the truncated digest
+ */
 function truncatedSha256Hex(text, chars) {
   log.debug('Entering truncatedSha256Hex().');
   const hex = nodeCrypto.createHash('sha256')
@@ -4533,6 +6657,14 @@ function truncatedSha256Hex(text, chars) {
 // a certificate; it never throws, because every caller is reporting a change
 // that has already happened.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the issuer, serial and subject a receiver matches a certificate
+ * on. Never throws.
+ *
+ * @param pem - the certificate
+ * @returns `{ issuer, serial, subject }`, empty strings for anything that is
+ *   not a certificate
+ */
 function certificateIdentifiers(pem) {
   log.debug('Entering certificateIdentifiers().');
   let cert = null;
@@ -4598,6 +6730,13 @@ function certificateIdentifiers(pem) {
 // for all three, which keeps the DER INTEGER positive without the leading zero
 // byte some parsers then report as a seventeen-byte serial.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a random certificate serial number, its first byte the caller's
+ * prefix, kept positive.
+ *
+ * @param prefixHex - the leading byte(s), as hex; none when omitted
+ * @returns the serial, as hex
+ */
 function certificateSerial(prefixHex) {
   log.debug('Entering certificateSerial(). prefix=' + (prefixHex || '(none)'));
   let prefix = String(prefixHex === undefined || prefixHex === null
@@ -4654,6 +6793,15 @@ function rsaPairFromPem(pem) {
            publicKey: forge.pki.setRsaPublicKey(privateKey.n, privateKey.e) };
 }
 
+/**
+ * Makes a self-signed RSA certificate, and its key pair.
+ *
+ * @param opts - `commonName`, `organizationName`, `bits`, `years`,
+ *   `extensions`, `serialNumber` or `serialPrefix`, and `rsaPrivateKeyPem`
+ *   to certify an existing key
+ * @returns `{ privateKeyPem, publicKeyPem, certPem, certB64, notBefore,
+ *   notAfter }`
+ */
 function selfSignedRsaCertificate(opts) {
   log.debug("Entering selfSignedRsaCertificate().");
   const options = opts || {};
@@ -4739,6 +6887,7 @@ function selfSignedRsaCertificate(opts) {
 // a key it cannot represent — which is the same capability gap
 // `spiffe/spiffe_ca.ts` records for EC keys, one algorithm generation later.
 // ---------------------------------------------------------------------------
+/** The ML-DSA parameter sets' object identifiers. */
 const ML_DSA_OIDS = {
   'ml-dsa-44': '2.16.840.1.101.3.4.3.17',
   'ml-dsa-65': '2.16.840.1.101.3.4.3.18',
@@ -4769,6 +6918,12 @@ const ML_DSA_OIDS = {
 // ---------------------------------------------------------------------------
 let mlDsaProbe = null;
 
+/**
+ * Says whether this runtime can generate ML-DSA keys; the reason it cannot
+ * is logged once.
+ *
+ * @returns true when it can
+ */
 function mlDsaAvailable() {
   log.debug('Entering mlDsaAvailable().');
   if (mlDsaProbe === null) {
@@ -4786,10 +6941,9 @@ function mlDsaAvailable() {
                e.message + '). Node ' + process.versions.node +
                ' is linked against OpenSSL ' + process.versions.openssl +
                '; ML-DSA needs OpenSSL 3.5, which is node 24 — this ' +
-               'repository pins 24.16.0 in its Dockerfile. Everything else ' +
-               'here is unaffected: the POST-QUANTUM JOSE algorithms come ' +
-               'from @noble/post-quantum and work on every runtime. It is ' +
-               'the CERTIFICATE that needs OpenSSL.');
+               'repository pins 24.16.0 in its Dockerfile. Every ' +
+               'post-quantum algorithm here needs it since #363, the JOSE ' +
+               'ones included (common/pq_native.js).');
     }
   }
   log.debug('Leaving mlDsaAvailable(). ' + mlDsaProbe);
@@ -4818,6 +6972,15 @@ const DN_TYPES = {
   countryName: { oid: '2.5.4.6', printable: true }
 };
 
+/**
+ * Makes an ML-DSA key pair and a self-signed certificate over it (FIPS 204,
+ * RFC 9881). Needs a runtime that can generate ML-DSA keys.
+ *
+ * @param opts - `algorithm`, `commonName`, `organizationName`, `dnsNames`,
+ *   `ipAddresses`, `years`, and `serialNumber` or `serialPrefix`
+ * @returns `{ algorithm, privateKeyPem, publicKeyPem, certPem, certB64,
+ *   notBefore, notAfter }`
+ */
 function selfSignedMlDsaCertificate(opts) {
   log.debug("Entering selfSignedMlDsaCertificate().");
   const options = opts || {};
@@ -4835,9 +6998,8 @@ function selfSignedMlDsaCertificate(opts) {
                     ' key, so no ML-DSA certificate can be built here. Node ' +
                     process.versions.node + ' is linked against OpenSSL ' +
                     process.versions.openssl + '; ML-DSA needs OpenSSL 3.5, ' +
-                    'which is node 24 — this repository pins 24.16.0. The ' +
-                    'post-quantum JOSE algorithms are unaffected: they come ' +
-                    'from @noble/post-quantum and need nothing of OpenSSL.');
+                    'which is node 24 — this repository pins 24.16.0, and ' +
+                    'every post-quantum algorithm here needs it (#363).');
   }
   // `any`: the algorithm is a variable, and the overloads want literals.
   const pair = /** @type {any} */ (nodeCrypto.generateKeyPairSync)(algorithm);
@@ -5017,6 +7179,13 @@ function selfSignedMlDsaCertificate(opts) {
 
 // PEM armour off, whitespace out. What goes inside a <ds:X509Certificate>, and
 // what a DER digest is taken over.
+/**
+ * Takes the PEM armour and whitespace off: what goes inside a
+ * `<ds:X509Certificate>`.
+ *
+ * @param pem - the PEM
+ * @returns the base64 body
+ */
 function stripPem(pem) {
   log.debug("Entering stripPem().");
   log.debug("Leaving stripPem().");
@@ -5065,6 +7234,13 @@ const THUMBPRINT_MEMBERS = {
 // ordered, no whitespace. Built by hand rather than with JSON.stringify over an
 // object, so the order is a property of this list and not of how somebody
 // happened to type an object literal.
+/**
+ * Returns the canonical JSON RFC 7638 hashes: the required members, in
+ * order, no whitespace.
+ *
+ * @param jwk - the key
+ * @returns the canonical JSON
+ */
 function canonicalJwk(jwk) {
   log.debug('Entering canonicalJwk().');
   if (!jwk || !jwk.kty) {
@@ -5092,6 +7268,13 @@ function canonicalJwk(jwk) {
 // within a JWKS, and a shorter one is readable in a log. DPoP's `jkt` must
 // never be truncated: it is compared byte for byte against a value the client
 // computed, so it takes the default.
+/**
+ * Returns a JWK's RFC 7638 thumbprint, SHA-256, base64url.
+ *
+ * @param jwk - the key
+ * @param opts - `truncate`, for a `kid`; never for DPoP's `jkt`
+ * @returns the thumbprint
+ */
 function jwkThumbprint(jwk, opts) {
   log.debug("Entering jwkThumbprint().");
   const options = opts || {};
@@ -5104,9 +7287,16 @@ function jwkThumbprint(jwk, opts) {
 // RFC 9278 section 3: the JWK Thumbprint URI. Always SHA-256 and never
 // truncated — the URI is compared as a whole string, and a shortened digest
 // under a `sha-256` label would name a hash nobody can reproduce.
+/** The RFC 9278 JWK Thumbprint URI prefix, SHA-256. */
 const JWK_THUMBPRINT_URI_PREFIX =
   'urn:ietf:params:oauth:jwk-thumbprint:sha-256:';
 
+/**
+ * Returns a JWK's RFC 9278 thumbprint URI, never truncated.
+ *
+ * @param jwk - the key
+ * @returns the URI
+ */
 function jwkThumbprintUri(jwk) {
   log.debug("Entering jwkThumbprintUri().");
   const uri = JWK_THUMBPRINT_URI_PREFIX + jwkThumbprint(jwk);
@@ -5146,6 +7336,14 @@ function jwkThumbprintUri(jwk) {
 // The first certificate is the leaf, which is what those sockets present and
 // what every consumer of a chain reads; the rest are the path to it.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a certificate's SHA-256 thumbprint over its DER, in the spelling
+ * the specification asking for it uses.
+ *
+ * @param certificate - the certificate, or a chain whose first is the leaf
+ * @param opts - `format` and `truncate`
+ * @returns the thumbprint
+ */
 function certificateThumbprint(certificate, opts) {
   log.debug("Entering certificateThumbprint().");
   const options = opts || {};
@@ -5201,6 +7399,14 @@ function certificateThumbprint(certificate, opts) {
 // Throws for anything that is not a certificate; the one caller refuses the
 // key with its own code and sentence.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the SHA-256 of a certificate's SubjectPublicKeyInfo DER,
+ * base64url: its key, not the certificate.
+ *
+ * @param certificate - the certificate
+ * @returns the thumbprint
+ * @throws Error for anything that is not a certificate
+ */
 function certificateSpkiThumbprint(certificate) {
   log.debug("Entering certificateSpkiThumbprint().");
   const text = String(certificate == null ? '' : certificate);
@@ -5242,6 +7448,14 @@ function certificateSpkiThumbprint(certificate) {
 // client secret is not the secret, and there is no constant-time comparison of
 // two strings of different lengths to be had.
 // ---------------------------------------------------------------------------
+/**
+ * Compares two secrets in constant time; only a length difference is
+ * found in variable time.
+ *
+ * @param a - one value
+ * @param b - the other
+ * @returns true when they are equal
+ */
 function constantTimeEquals(a, b) {
   log.debug("Entering constantTimeEquals().");
   const left = Buffer.from(String(a == null ? '' : a), 'utf8');
@@ -5306,6 +7520,7 @@ function constantTimeEquals(a, b) {
 // The other two are offered because the specification defines them and a
 // client author may be testing exactly that, and `/admin/totp` says the above
 // beside the setting rather than leaving somebody to discover it.
+/** The digests an authenticator app may be asked for; SHA-1 is the default. */
 const HOTP_ALGS = {
   SHA1: { hash: 'sha1', bytes: 20,
           note: 'RFC 6238 section 1.2\'s default, and what every ' +
@@ -5320,6 +7535,13 @@ const HOTP_ALGS = {
             note: 'RFC 6238 section 1.2, same caveat as SHA-256.' }
 };
 
+/**
+ * Returns the HOTP digest an algorithm name names.
+ *
+ * @param algorithm - `SHA1` (the default), `SHA256` or `SHA512`
+ * @returns `{ name, hash }`
+ * @throws Error for any other name
+ */
 function hotpSpec(algorithm) {
   log.debug("Entering hotpSpec().");
   const name = String(algorithm || 'SHA1').toUpperCase();
@@ -5335,6 +7557,14 @@ function hotpSpec(algorithm) {
 // RFC 4226 section 5.3. `key` is the shared secret as BYTES — the base32 an
 // authenticator app is given is an encoding of it and is `totp.js`'s business,
 // not this function's.
+/**
+ * Computes an HOTP code (RFC 4226 section 5.3).
+ *
+ * @param key - the shared secret, as bytes
+ * @param counter - the counter
+ * @param opts - `digits` and `algorithm`
+ * @returns the code
+ */
 function hotpCode(key, counter, opts) {
   log.debug('Entering hotpCode(). counter=' + String(counter));
   const options = opts || {};
@@ -5455,6 +7685,11 @@ function clampInt(value, low, high, fallback) {
   return Math.max(low, Math.min(high, Math.floor(n)));
 }
 
+/**
+ * Returns the scrypt cost the settings name now, clamped.
+ *
+ * @returns `{ N, r, p, keylen, maxmem }`
+ */
 function scryptParameters() {
   log.debug("Entering scryptParameters().");
   const logN = clampInt(config.value('security.passwordHashLogN'),
@@ -5538,6 +7773,13 @@ const KEK_KEY_BYTES = 32;     // AES-256.
 // Stretching a short secret would let a four-character password protect every
 // signing key this service holds while the log said AES-256, which is exactly
 // the kind of comfortable lie this repository refuses everywhere else.
+/**
+ * Returns the key-encryption key as bytes, from raw bytes, hex or base64.
+ *
+ * @param value - the key as a provider handed it back
+ * @returns the bytes
+ * @throws Error for a key shorter than 32 bytes
+ */
 function kekBytes(value) {
   log.debug('Entering kekBytes().');
   if (Buffer.isBuffer(value)) {
@@ -5668,6 +7910,12 @@ function countKek(label, what, plainBytes, cipherBytes) {
 // much of it. A DEEP COPY, because a caller that could mutate the tally could
 // make this service under-report its own cryptography — and the one caller is
 // a console page, which has no business holding a reference to a counter.
+/**
+ * Returns what has been encrypted and decrypted under the key-encryption
+ * key, and how much: a deep copy.
+ *
+ * @returns the tally by label
+ */
 function kekAccounting() {
   log.debug("Entering kekAccounting().");
   const labels = Object.keys(kekTally.byLabel).map(function (id) {
@@ -5700,6 +7948,7 @@ function kekAccounting() {
 // on the page. `/admin/crypto-metadata`'s rule one layer along: an algorithm
 // this service performs must be in a table here, so that a page describing it
 // cannot go on looking complete while being wrong.
+/** The parameters of the key-encryption key's encryption, for the pages. */
 const KEK_PARAMETERS = {
   envelope: '$aesgcm$1$salt$iv$tag$ciphertext, each field base64',
   version: '1',
@@ -5713,6 +7962,15 @@ const KEK_PARAMETERS = {
   perRecordSubkey: true
 };
 
+/**
+ * Encrypts a value under the key-encryption key: AES-256-GCM under an
+ * HKDF-SHA-256 subkey, as `$aesgcm$1$salt$iv$tag$body`, and counted.
+ *
+ * @param kek - the key-encryption key
+ * @param plaintext - the value
+ * @param label - what it is, for the accounting
+ * @returns the stored form
+ */
 function encryptWithKek(kek, plaintext, label) {
   log.debug('Entering encryptWithKek().');
   const master = kekBytes(kek);
@@ -5737,12 +7995,28 @@ function encryptWithKek(kek, plaintext, label) {
   return out;
 }
 
+/**
+ * Says whether a stored value is one `encryptWithKek()` wrote.
+ *
+ * @param stored - the value
+ * @returns true when it is
+ */
 function isEncryptedWithKek(stored) {
   log.debug("Entering isEncryptedWithKek().");
   log.debug("Leaving isEncryptedWithKek().");
   return /^\$aesgcm\$/.test(String(stored || ''));
 }
 
+/**
+ * Decrypts a value `encryptWithKek()` wrote, and counts it.
+ *
+ * @param kek - the key-encryption key
+ * @param stored - the stored form
+ * @param label - what it is, for the accounting
+ * @returns the plaintext
+ * @throws Error for a value this service did not write, an unknown version,
+ *   or the wrong key
+ */
 function decryptWithKek(kek, stored, label) {
   log.debug('Entering decryptWithKek().');
   const parts = String(stored || '').split('$');
@@ -5811,13 +8085,12 @@ function decryptWithKek(kek, stored, label) {
 // socket. That is not the 14.6 seconds an SLH-DSA signature costs, but it is
 // paid on EVERY authentication — the sign-in screen, an LDAP bind, SCIM
 // Basic, WS-Trust, the portal's password form — rather than on the few a
-// client points at a post-quantum algorithm. See common/worker.js.
+// client points at a post-quantum algorithm. See common/pq_native.js.
 //
-// The sync door is kept and is not deprecated: `workers.count = 0` is a
-// supported configuration, the parent project loads this tree in process, and
-// a caller that cannot be made asynchronous is better off blocking than
-// wrong. Both doors produce the same stored form, because there is one
-// definition of it.
+// The sync door is kept and is not deprecated: the parent project loads this
+// tree in process, and a caller that cannot be made asynchronous is better off
+// blocking than wrong. Both doors produce the same stored form, because there
+// is one definition of it.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -5847,6 +8120,17 @@ function decryptWithKek(kek, stored, label) {
 // ---------------------------------------------------------------------------
 // `...parts` rather than `arguments` (#50): the same inputs, in the same
 // order, and a signature the type checker can read.
+/**
+ * Derives a credential several processes of this service must arrive at
+ * independently: an HMAC-SHA-256 of the label and parts under a shared
+ * secret.
+ *
+ * @param secret - the shared secret
+ * @param label - what the credential is for, so one purpose's credential is
+ *   never another's
+ * @param parts - further inputs, each separated by a NUL
+ * @returns the credential, base64url
+ */
 function deriveSharedCredential(secret, label, ...parts) {
   log.debug('Entering deriveSharedCredential(). label=' + label);
   const mac = nodeCrypto.createHmac('sha256', Buffer.from(String(secret || ''),
@@ -5915,6 +8199,13 @@ function decodeStoredSecret(stored) {
            keylen: expected.length, maxmem: 128 * n * r * 2 };
 }
 
+/**
+ * Hashes a password or client secret with scrypt, in the self-describing
+ * `$scrypt$N$r$p$salt$hash` form, at the cost the settings name now.
+ *
+ * @param plaintext - the secret
+ * @returns the stored form
+ */
 function hashSecret(plaintext) {
   log.debug('Entering hashSecret().');
   const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
@@ -5932,44 +8223,44 @@ function hashSecret(plaintext) {
   return out;
 }
 
-// The one line that goes to a worker, and the only place either async door
-// differs from its sync twin. `opts.session` is the pool's routing hint and
-// may be omitted — see worker_pool.js; it is a preference and never a
-// correctness requirement, because a worker remembers nothing.
-function deriveAsync(plaintext, spec, opts) {
+// The one line that runs off this thread, and the only place either async
+// door differs from its sync twin: node's asynchronous scrypt, on libuv's
+// thread pool (#363; `common/worker_pool.js`'s `scrypt.derive` job until
+// then, a forked process for 68 ms of native work).
+function deriveAsync(plaintext, spec) {
   log.debug('Entering deriveAsync(). N=' + spec.N);
-  log.debug("Leaving deriveAsync().");
-  return workerPool.run('scrypt.derive', {
-    plaintext: String(plaintext == null ? '' : plaintext),
-    salt: Buffer.from(spec.salt), keylen: spec.keylen,
-    N: spec.N, r: spec.r, p: spec.p, maxmem: spec.maxmem
-  }, opts).then(function (result) {
-    log.debug('Leaving deriveAsync(). ' + result.derived.length + ' bytes.');
-    return Buffer.from(result.derived);
+  log.debug('Leaving deriveAsync(). On libuv.');
+  return new Promise(function (resolve, reject) {
+    nodeCrypto.scrypt(String(plaintext == null ? '' : plaintext),
+      Buffer.from(spec.salt), spec.keylen,
+      { N: spec.N, r: spec.r, p: spec.p, maxmem: spec.maxmem },
+      function (err, derived) {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(derived);
+      });
   });
 }
 
-function hashSecretAsync(plaintext, opts) {
+/**
+ * Hashes a secret as `hashSecret()` does, on libuv's thread pool.
+ *
+ * @param plaintext - the secret
+ * @returns a promise of the stored form
+ */
+function hashSecretAsync(plaintext) {
   log.debug('Entering hashSecretAsync().');
   const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
-  // Read ONCE, here, and carried in the job — the worker holds no policy and
-  // must be handed every parameter, and reading the setting again when the
-  // answer comes back could encode different parameters from the ones the
-  // derivation actually used.
+  // Read ONCE, here: reading the setting again when the answer comes back
+  // could encode different parameters from the ones the derivation used.
   const cost = scryptParameters();
   const spec = { N: cost.N, r: cost.r, p: cost.p, salt: salt,
                  keylen: cost.keylen, maxmem: cost.maxmem };
-  log.debug('Leaving hashSecretAsync(). Handed to the pool.');
-  return deriveAsync(plaintext, spec, opts).then(function (derived) {
+  log.debug('Leaving hashSecretAsync(). On libuv.');
+  return deriveAsync(plaintext, spec).then(function (derived) {
     return encodeStoredSecret(spec.N, spec.r, spec.p, salt, derived);
-  }, function (e) {
-    // THE POOL FAILED, SO IT IS COMPUTED HERE INSTEAD — see the block in
-    // verifySecretAsync() below for why that is the right answer rather than
-    // a fallback that hides something.
-    log.warn(errorCodes.tag('STS-KEYS-0006') +
-             'crypto: the worker pool could not derive a password hash and ' +
-             'it is being computed in this process instead: ' + e.message);
-    return hashSecret(plaintext);
   });
 }
 
@@ -5977,12 +8268,26 @@ function hashSecretAsync(plaintext, opts) {
 // may hold a `userPassword` in any of the forms RFC 4519 permits — including
 // plaintext — and a verification that treated one of those as a scrypt string
 // would refuse a correct password rather than saying it cannot read the value.
+/**
+ * Says whether a stored value is one of this service's scrypt forms.
+ *
+ * @param stored - the value
+ * @returns true when it is
+ */
 function isHashedSecret(stored) {
   log.debug("Entering isHashedSecret().");
   log.debug("Leaving isHashedSecret().");
   return /^\$scrypt\$/.test(String(stored || ''));
 }
 
+/**
+ * Verifies a secret against a stored scrypt form, in constant time.
+ *
+ * @param plaintext - the presented secret
+ * @param stored - the stored form
+ * @returns true when it matches; false for no match or a value it cannot
+ *   read
+ */
 function verifySecret(plaintext, stored) {
   log.debug('Entering verifySecret().');
   const spec = decodeStoredSecret(stored);
@@ -6016,41 +8321,31 @@ function verifySecret(plaintext, stored) {
 // value that does not match and for one it cannot read, and rejects for
 // nothing — the sync twin returns false in both cases, and a door that threw
 // where the other returned would be two answers to one question.
-function verifySecretAsync(plaintext, stored, opts) {
+/**
+ * Verifies as `verifySecret()` does, on libuv's thread pool. Never rejects.
+ *
+ * @param plaintext - the presented secret
+ * @param stored - the stored form
+ * @returns a promise of true or false
+ */
+function verifySecretAsync(plaintext, stored) {
   log.debug('Entering verifySecretAsync().');
   const spec = decodeStoredSecret(stored);
   if (!spec) {
     log.debug('Leaving verifySecretAsync(). Nothing readable is stored.');
     return Promise.resolve(false);
   }
-  log.debug('Leaving verifySecretAsync(). Handed to the pool.');
-  return deriveAsync(plaintext, spec, opts).then(function (derived) {
+  log.debug('Leaving verifySecretAsync(). On libuv.');
+  return deriveAsync(plaintext, spec).then(function (derived) {
     return constantTimeEquals(derived, spec.expected);
   }, function (e) {
-    // ---------------------------------------------------------------------
-    // THE POOL FAILED, SO THE COMPARISON IS MADE HERE, and the alternative
-    // that was written first is worth recording because it looked right.
-    //
-    // Answering `false` matches the sync twin's return shape — it answers
-    // false for a stored value it cannot recompute — so it read as the
-    // consistent choice. It is not: the sync twin has no worker to lose, so
-    // `false` there always means "this password does not match this value",
-    // while `false` here would ALSO mean "a child process died". That is a
-    // person told their correct password is wrong, counted against the
-    // sign-in rate limiter, on a service that is working.
-    //
-    // Computing it here is the answer the pool's own design already gives.
-    // A worker holds no state, so a job it did not finish can simply be run
-    // again — `workers.count = 0` runs every job in this process and is a
-    // SUPPORTED configuration producing identical bytes, so this is that
-    // configuration for one job. It blocks for 68ms, which is the cost of
-    // being right.
-    // ---------------------------------------------------------------------
-    log.warn(errorCodes.tag('STS-KEYS-0006') +
-             'crypto: the worker pool could not recompute a stored secret, ' +
-             'so the comparison is being made in this process instead: ' +
-             e.message);
-    return verifySecret(plaintext, stored);
+    // Parameters this node cannot satisfy — verifySecret()'s case, answered
+    // as it answers it.
+    log.warn(errorCodes.tag('STS-KEYS-0005') +
+             'crypto: a stored secret names scrypt parameters this process ' +
+             'cannot compute and is being treated as no match: ' +
+             ((e && e.message) || e));
+    return false;
   });
 }
 
@@ -6086,6 +8381,7 @@ function verifySecretAsync(plaintext, stored, opts) {
 const pqcX509 = require('./vendored/pqc_x509');
 
 // The families `verifyRawSignature()` understands.
+/** The families `verifyRawSignature()` understands. */
 const RAW_SIGNATURE_FAMILIES = ['rsa-pkcs1', 'rsa-pss', 'ecdsa', 'eddsa',
                                 'pq'];
 
@@ -6097,6 +8393,14 @@ const ECDSA_BYTES = { 'prime256v1': 32, 'secp384r1': 48, 'secp521r1': 66 };
 // KeyObject where node can read one, `curve` for EC, and `pqAlgorithm` (the
 // vendored engine's name, 'ML-DSA-65') for a post-quantum key. `kind` is ''
 // for anything else. Never throws.
+/**
+ * Reads a SubjectPublicKeyInfo as a caller choosing a scheme needs it.
+ * Never throws.
+ *
+ * @param spkiDer - the DER
+ * @returns `{ kind, key, curve, pqAlgorithm }`, `kind` empty for anything
+ *   unknown
+ */
 function publicKeyFromSpki(spkiDer) {
   log.debug("Entering publicKeyFromSpki().");
   const der = Buffer.from(spkiDer || []);
@@ -6140,6 +8444,17 @@ function publicKeyFromSpki(spkiDer) {
 // `key` is a node KeyObject, anything `createPublicKey()` takes, or — for the
 // pq family, and for any family — a `publicKeyFromSpki()` answer. Resolves
 // true or false; a malformed signature or a key of the wrong kind is false.
+/**
+ * Verifies a signature over raw bytes: the one primitive for it.
+ *
+ * @param scheme - `family`, `hash`, `encoding` (ECDSA) and `saltLength`
+ *   (RSA-PSS)
+ * @param key - a KeyObject, anything `createPublicKey()` takes, or a
+ *   `publicKeyFromSpki()` answer
+ * @param data - the bytes signed
+ * @param signature - the signature
+ * @returns a promise of true or false
+ */
 async function verifyRawSignature(scheme, key, data, signature) {
   const s = scheme || {};
   log.debug("Entering verifyRawSignature(). " + s.family + "/" +
@@ -6207,9 +8522,19 @@ async function verifyRawSignature(scheme, key, data, signature) {
 // Data Integrity cryptosuites that sign bytes rather than a JWS: the RDFC
 // suites, and ecdsa-sd-2023's base and per-statement signatures. Same
 // `scheme` (families 'ecdsa' and 'eddsa' only — nothing here signs raw bytes
-// with RSA, and a post-quantum signature goes through `pq_jose`'s pool);
+// with RSA, and a post-quantum signature goes through `pq_jose`);
 // `privateKey` is a node KeyObject or a private JWK. Throws for a key of the
 // wrong kind, because a signer handed the wrong key is a bug, not an input.
+/**
+ * Signs raw bytes with ECDSA or EdDSA, for the Data Integrity
+ * cryptosuites.
+ *
+ * @param scheme - as for `verifyRawSignature()`
+ * @param privateKey - a KeyObject or a private JWK
+ * @param data - the bytes to sign
+ * @returns the signature
+ * @throws Error for a key of the wrong kind
+ */
 function signRawSignature(scheme, privateKey, data) {
   const s = scheme || {};
   log.debug("Entering signRawSignature(). " + s.family + "/" +
@@ -6237,6 +8562,13 @@ function signRawSignature(scheme, privateKey, data) {
 
 // HMAC-SHA-256 of `data` under `key` — ecdsa-sd-2023's blank node labels
 // (vc-di-ecdsa section 3.4.4, createHmacIdLabelMapFunction).
+/**
+ * Returns HMAC-SHA-256 of data under a key.
+ *
+ * @param key - the key
+ * @param data - the data
+ * @returns the MAC
+ */
 function hmacSha256(key, data) {
   log.debug("Entering hmacSha256().");
   const out = nodeCrypto.createHmac('sha256', Buffer.from(key || []))
@@ -6248,6 +8580,13 @@ function hmacSha256(key, data) {
 // A fresh key pair of a kind `generateKeyPairSync()` names ('ec' with a
 // namedCurve, 'ed25519') — ecdsa-sd-2023's proof-scoped key, made and thrown
 // away inside one signature.
+/**
+ * Makes a fresh key pair of a kind `generateKeyPairSync()` names.
+ *
+ * @param kind - `ec` or `ed25519`
+ * @param curve - the named curve, for `ec`
+ * @returns the key pair
+ */
 function ephemeralKeyPair(kind, curve) {
   log.debug("Entering ephemeralKeyPair(). " + kind + " " + (curve || ''));
   const pair = nodeCrypto.generateKeyPairSync(kind,
@@ -6260,6 +8599,14 @@ function ephemeralKeyPair(kind, curve) {
 // big.Int.Bytes(), an SSH mpint), as the r||s the primitive above takes.
 // `curve` is node's name ('prime256v1'). null when either integer is longer
 // than the curve allows.
+/**
+ * Turns an ECDSA signature held as its two integers into r||s.
+ *
+ * @param curve - node's curve name
+ * @param r - r, big-endian and unpadded
+ * @param s - s, big-endian and unpadded
+ * @returns the r||s bytes, or null when either is too long for the curve
+ */
 function ecdsaIntegersToP1363(curve, r, s) {
   log.debug("Entering ecdsaIntegersToP1363(). curve=" + curve);
   const size = ECDSA_BYTES[String(curve || '')];
@@ -6278,6 +8625,17 @@ function ecdsaIntegersToP1363(curve, r, s) {
 
 // TPM 2.0 KDFa (Library Part 1, section 11.4.10.2), as go-tpm computes it:
 // counter-mode HMAC over label ‖ 0x00 ‖ contextU ‖ contextV ‖ bits.
+/**
+ * Computes TPM 2.0 KDFa: counter-mode HMAC over label, contexts and bits.
+ *
+ * @param hash - the hash
+ * @param key - the key
+ * @param label - the label
+ * @param contextU - the first context
+ * @param contextV - the second context
+ * @param bits - the output size in bits
+ * @returns the derived bytes
+ */
 function tpmKdfa(hash, key, label, contextU, contextV, bits) {
   log.debug("Entering tpmKdfa(). label=" + label);
   const bytes = Math.ceil(bits / 8);
@@ -6310,6 +8668,17 @@ function tpmKdfa(hash, key, label, contextU, contextV, bits) {
 // Returns the contents of TPM2B_ID_OBJECT (`credential`) and
 // TPM2B_ENCRYPTED_SECRET (`secret`). Only a TPM holding the EK's private key,
 // activating FOR that AK, recovers `secret`.
+/**
+ * Performs TPM2_MakeCredential in software, for an RSA endorsement key.
+ *
+ * @param akName - the attestation key's Name
+ * @param ekPublicKey - the endorsement key
+ * @param seedBytes - the endorsement key's symmetric key size in bytes
+ * @param secret - what the TPM must give back
+ * @param hash - the Name's hash
+ * @returns `{ credential, secret }`, the TPM2B_ID_OBJECT and
+ *   TPM2B_ENCRYPTED_SECRET contents
+ */
 function tpmMakeCredential(akName, ekPublicKey, seedBytes, secret, hash) {
   log.debug("Entering tpmMakeCredential().");
   const seed = nodeCrypto.randomBytes(seedBytes);
@@ -6349,6 +8718,15 @@ function tpmMakeCredential(akName, ekPublicKey, seedBytes, secret, hash) {
 // Resolves `{ ok, content, signerDer, embeddedDers, why }`. Never rejects.
 // It checks the signature and nothing about the certificate: whether the
 // signer is one to believe is the caller's question (`pki.js`).
+/**
+ * Verifies a PKCS#7 / CMS SignedData with its content attached: the one
+ * SignerInfo's signature under the signer's certificate. Never rejects.
+ *
+ * @param der - the SignedData
+ * @param options - `certificates`, the signer's certificates (DER), where
+ *   the SignedData carries none
+ * @returns a promise of `{ ok, content, signerDer, embeddedDers, why }`
+ */
 async function verifyPkcs7SignedData(der, options) {
   log.debug("Entering verifyPkcs7SignedData().");
   const opts = options || {};
@@ -6425,6 +8803,11 @@ async function verifyPkcs7SignedData(der, options) {
 // on its way to disk rather than read a second time afterwards — a file of
 // several hundred megabytes read twice is the cost this saves. `update()` is
 // a hot path (one call per chunk of the upload), so it logs nothing.
+/**
+ * Returns a SHA-256 fed as bytes arrive.
+ *
+ * @returns `{ update(chunk), hex() }`
+ */
 function sha256Digester() {
   log.debug("Entering sha256Digester().");
   const hash = nodeCrypto.createHash('sha256');
@@ -6449,6 +8832,13 @@ function sha256Digester() {
 // `limit` bytes when `limit` is above 0 (SPIRE's `util.GetSHA256Digest()`,
 // which the unix workload attestor hashes an executable with, #40). Rejects
 // with a sentence.
+/**
+ * Returns the SHA-256 of a file, streamed, lower-case hex.
+ *
+ * @param file - the file's path
+ * @param limit - the largest size accepted, when above 0
+ * @returns a promise of the digest; rejects with a sentence
+ */
 async function sha256OfFile(file, limit) {
   log.debug("Entering sha256OfFile().");
   const fs = require('fs');
@@ -6504,6 +8894,7 @@ async function sha256OfFile(file, limit) {
 
 // The enctypes the PRF is defined for here, with their key size and PRF output
 // size in bytes. Anything else is refused by name.
+/** The Kerberos enctypes the PRF is defined for, with their sizes. */
 const KRB5_PRF_ETYPES = {
   17: { keyBytes: 16, prfBytes: 16, family: 'aes-sha1', aes: 'aes-128-cbc' },
   18: { keyBytes: 32, prfBytes: 16, family: 'aes-sha1', aes: 'aes-256-cbc' },
@@ -6528,6 +8919,13 @@ function krb5PrfProfile(etype) {
 // RFC 3961 section 5.1's n-fold, in bytes: MIT's krb5int_nfold(), which
 // rotates the input 13 bits per copy and adds the copies with end-around
 // carry. The RFC's own section A.1 vectors hold it.
+/**
+ * Computes RFC 3961 section 5.1's n-fold, in bytes.
+ *
+ * @param input - the input
+ * @param outBytes - the output size
+ * @returns the folded bytes
+ */
 function krb5Nfold(input, outBytes) {
   log.debug("Entering krb5Nfold(). in=" + input.length + " out=" + outBytes);
   const inBytes = Buffer.from(input);
@@ -6596,6 +8994,14 @@ function aesSha1DerivedKey(profile, key, constant) {
 
 // RFC 3961 pseudo-random(key, octets) for `etype`. Answers a Buffer of that
 // enctype's PRF length.
+/**
+ * Computes RFC 3961's pseudo-random function for an enctype.
+ *
+ * @param etype - the enctype
+ * @param key - the key
+ * @param octets - the input
+ * @returns the enctype's PRF output
+ */
 function krb5Prf(etype, key, octets) {
   log.debug("Entering krb5Prf(). etype=" + etype);
   const profile = krb5PrfProfile(etype);
@@ -6631,6 +9037,15 @@ function krb5Prf(etype, key, octets) {
 
 // RFC 6113 section 5.1's PRF+: pseudo-random(key, 1 || info) ||
 // pseudo-random(key, 2 || info) || ..., the counter one octet, truncated.
+/**
+ * Computes RFC 6113 section 5.1's PRF+.
+ *
+ * @param etype - the enctype
+ * @param key - the key
+ * @param info - the input
+ * @param outBytes - the output size
+ * @returns the bytes
+ */
 function krb5PrfPlus(etype, key, info, outBytes) {
   log.debug("Entering krb5PrfPlus().");
   const parts = [];
@@ -6656,6 +9071,15 @@ function krb5PrfPlus(etype, key, info, outBytes) {
 // and key size. The keys are `{ etype, key }`, the peppers strings or bytes;
 // the answer is `{ etype, key }` (random-to-key is the identity for every
 // enctype above).
+/**
+ * Computes RFC 6113 section 5.1's KRB-FX-CF2.
+ *
+ * @param key1 - `{ etype, key }`
+ * @param key2 - `{ etype, key }`
+ * @param pepper1 - the first pepper
+ * @param pepper2 - the second pepper
+ * @returns `{ etype, key }`
+ */
 function krbFxCf2(key1, key2, pepper1, pepper2) {
   log.debug("Entering krbFxCf2(). etypes " + key1.etype + "/" + key2.etype);
   const size = krb5PrfProfile(key1.etype).keyBytes;
@@ -6678,6 +9102,16 @@ function krbFxCf2(key1, key2, pepper1, pepper2) {
 // on every octet: UTF-8, single spaces, no padding. A fresh salt when none is
 // given, which is every authorization response.
 // ---------------------------------------------------------------------------
+/**
+ * Computes OpenID Connect Session Management's `session_state`: SHA-256 over
+ * `client_id origin browser_state salt`, base64url, then "." and the salt.
+ *
+ * @param clientId - the client
+ * @param origin - the relying party's origin
+ * @param browserState - the OP browser state
+ * @param salt - the salt; a fresh one when omitted
+ * @returns the `session_state` value
+ */
 function sessionStateHash(clientId, origin, browserState, salt) {
   log.debug('Entering sessionStateHash().');
   const chosen = salt || nodeCrypto.randomBytes(16).toString('base64url');
@@ -6729,6 +9163,7 @@ function sessionStateHash(clientId, origin, browserState, salt) {
 // above.
 // ===========================================================================
 
+/** The COSE signature algorithms WebAuthn verifies, by identifier. */
 const COSE_SIGNATURE_ALGS = {
   '-7': { name: 'ES256', family: 'ecdsa', hash: 'sha256', kty: 'EC' },
   '-35': { name: 'ES384', family: 'ecdsa', hash: 'sha384', kty: 'EC' },
@@ -6749,6 +9184,12 @@ const COSE_SIGNATURE_ALGS = {
 };
 
 // The COSE entry for an identifier, or null.
+/**
+ * Returns the COSE entry for an algorithm identifier.
+ *
+ * @param coseAlg - the identifier
+ * @returns the entry, or null
+ */
 function coseSignatureAlg(coseAlg) {
   log.debug("Entering coseSignatureAlg(). alg=" + coseAlg);
   log.debug("Leaving coseSignatureAlg().");
@@ -6794,6 +9235,16 @@ function nodePublicKeyOf(key) {
 // or the raw public key bytes. A key of the wrong kind for the algorithm is
 // false, never a throw: an RSA key under ES256 is a signature that does not
 // verify, and the caller says so.
+/**
+ * Says whether a signature verifies under a COSE algorithm, synchronously;
+ * a key of the wrong kind is false, never a throw.
+ *
+ * @param coseAlg - the COSE algorithm identifier
+ * @param key - the public key, or for ML-DSA an AKP JWK or the raw bytes
+ * @param data - the bytes signed
+ * @param signature - the signature
+ * @returns true when it verifies
+ */
 function verifyCoseSignature(coseAlg, key, data, signature) {
   log.debug("Entering verifyCoseSignature(). alg=" + coseAlg);
   const spec = coseSignatureAlg(coseAlg);
@@ -6869,6 +9320,7 @@ function verifyCoseSignature(coseAlg, key, data, signature) {
 // ----- TPM 2.0 (Library Part 2) --------------------------------------------
 
 // TPM_ALG_ID (Part 2, table 9) — the values the structures below name.
+/** TPM_ALG_ID values the TPM structures name. */
 const TPM_ALG = {
   RSA: 0x0001, SHA1: 0x0004, HMAC: 0x0005, AES: 0x0006, KEYEDHASH: 0x0008,
   SHA256: 0x000b, SHA384: 0x000c, SHA512: 0x000d, NULL: 0x0010,
@@ -6883,7 +9335,9 @@ const TPM_CURVES = { 0x0003: { crv: 'P-256', bytes: 32 },
                      0x0004: { crv: 'P-384', bytes: 48 },
                      0x0005: { crv: 'P-521', bytes: 66 } };
 // TPM_GENERATED_VALUE and TPM_ST_ATTEST_CERTIFY (Part 2, tables 7 and 19).
+/** TPM_GENERATED_VALUE, the magic of a TPMS_ATTEST. */
 const TPM_GENERATED_VALUE = 0xff544347;
+/** TPM_ST_ATTEST_CERTIFY, the type of a certify attestation. */
 const TPM_ST_ATTEST_CERTIFY = 0x8017;
 
 // A reader over a TPM structure. Every read throws on a short buffer, and the
@@ -6929,6 +9383,13 @@ function tpmReader(bytes) {
 }
 
 // The node digest name of a TPM hash algorithm; throws for one not here.
+/**
+ * Returns node's digest name for a TPM hash algorithm.
+ *
+ * @param algId - the TPM_ALG_ID
+ * @returns the digest name
+ * @throws Error for one not known here
+ */
 function tpmHashName(algId) {
   log.debug("Entering tpmHashName(). alg=" + algId);
   const name = TPM_HASHES[Number(algId)];
@@ -6948,6 +9409,13 @@ function tpmHashName(algId) {
 // kdf, modulus, x, y, raw, jwk }`, `raw` being the bytes a Name hashes and
 // `jwk` the public key. A TPM2B_PUBLIC's size prefix is NOT accepted:
 // section 8.3 says the two bytes must be removed. Throws a sentence.
+/**
+ * Parses a TPMT_PUBLIC for an RSA or ECC object.
+ *
+ * @param bytes - the structure, without a TPM2B size prefix
+ * @returns its fields, `raw` (the bytes a Name hashes) and `jwk`
+ * @throws Error with a sentence
+ */
 function tpmParsePublic(bytes) {
   log.debug("Entering tpmParsePublic().");
   const raw = Buffer.from(bytes || []);
@@ -7034,6 +9502,13 @@ function tpmParsePublic(bytes) {
 // resetCount, restartCount, safe, firmwareVersion, name, qualifiedName }`;
 // `name` and `qualifiedName` only for TPM_ST_ATTEST_CERTIFY. Throws a
 // sentence; the caller checks the values.
+/**
+ * Parses a TPMS_ATTEST.
+ *
+ * @param bytes - the structure
+ * @returns its fields, with `name` and `qualifiedName` for a certify
+ * @throws Error with a sentence
+ */
 function tpmParseAttest(bytes) {
   log.debug("Entering tpmParseAttest().");
   const r = tpmReader(bytes);
@@ -7061,6 +9536,13 @@ function tpmParseAttest(bytes) {
 // signature as DER. null when `bytes` is not exactly one such structure,
 // which is how the verifier tells it from a bare signature (see
 // `webauthn_attestation.ts`).
+/**
+ * Parses a TPMT_SIGNATURE.
+ *
+ * @param bytes - the structure
+ * @returns `{ sigAlg, hash, signature }`, or null when it is not exactly
+ *   one such structure
+ */
 function tpmParseSignature(bytes) {
   log.debug("Entering tpmParseSignature().");
   try {
@@ -7098,6 +9580,13 @@ function tpmParseSignature(bytes) {
 
 // TPM2B_NAME's contents for an object (Part 1, section 16): nameAlg ‖
 // H_nameAlg(TPMT_PUBLIC).
+/**
+ * Returns an object's TPM2B_NAME contents: nameAlg and the hash of its
+ * TPMT_PUBLIC.
+ *
+ * @param parsedPublic - `tpmParsePublic()`'s answer
+ * @returns the Name
+ */
 function tpmName(parsedPublic) {
   log.debug("Entering tpmName().");
   const alg = Buffer.alloc(2);
@@ -7122,6 +9611,12 @@ function berOf(bytes) {
 // id-fido-gen-ce-aaguid (1.3.6.1.4.1.45724.1.1.4, section 8.2.1): the
 // extension's value is an OCTET STRING of the 16-byte AAGUID. Answers the
 // AAGUID or null.
+/**
+ * Reads the id-fido-gen-ce-aaguid extension's AAGUID.
+ *
+ * @param extnValue - the extension's value
+ * @returns the AAGUID, or null
+ */
 function fidoAaguidExtension(extnValue) {
   log.debug("Entering fidoAaguidExtension().");
   const read = berOf(extnValue);
@@ -7136,6 +9631,12 @@ function fidoAaguidExtension(extnValue) {
 
 // Apple's anonymous attestation nonce (1.2.840.113635.100.8.2, section
 // 8.8): SEQUENCE { [1] EXPLICIT OCTET STRING }. Answers the nonce or null.
+/**
+ * Reads Apple's anonymous attestation nonce extension.
+ *
+ * @param extnValue - the extension's value
+ * @returns the nonce, or null
+ */
 function appleAttestationNonce(extnValue) {
   log.debug("Entering appleAttestationNonce().");
   const read = berOf(extnValue);
@@ -7169,6 +9670,14 @@ function appleAttestationNonce(extnValue) {
 // attestationSecurityLevel, attestationChallenge, softwareEnforced,
 // teeEnforced }` with each list as `{ purpose: [], allApplications,
 // origin }`, or throws a sentence.
+/**
+ * Reads Android's KeyDescription extension.
+ *
+ * @param extnValue - the extension's value
+ * @returns `{ attestationVersion, attestationSecurityLevel,
+ *   attestationChallenge, softwareEnforced, teeEnforced }`
+ * @throws Error with a sentence
+ */
 function androidKeyDescription(extnValue) {
   log.debug("Entering androidKeyDescription().");
   const read = berOf(extnValue);
@@ -7249,13 +9758,22 @@ function androidKeyDescription(extnValue) {
 //     tpmTPublic OCTET STRING OPTIONAL }
 //
 // These answer the structures; `common/device_attestation.ts` verifies them.
+/** The id-aa-attestation attribute's OID. */
 const ID_AA_ATTESTATION = '1.2.840.113549.1.9.16.2.59';
+/** The tcg-attest-tpm-certify statement type's OID. */
 const TCG_ATTEST_TPM_CERTIFY = '2.23.133.20.1';
 
 // An AttestationBundle's DER as `{ attestations: [{ type, stmt }], certs:
 // [der], otherCerts }` — `stmt` the DER of the statement's value, `certs`
 // the X.509 certificates, `otherCerts` how many `other` formats were carried
 // (none is read). Throws a sentence on anything else.
+/**
+ * Reads a certificate request's AttestationBundle.
+ *
+ * @param der - the attribute value's DER
+ * @returns `{ attestations: [{ type, stmt }], certs, otherCerts }`
+ * @throws Error with a sentence
+ */
 function csrAttestationBundle(der) {
   log.debug("Entering csrAttestationBundle().");
   const read = berOf(der);
@@ -7315,6 +9833,13 @@ function csrAttestationBundle(der) {
 // the attester sends "TPM2B_ATTEST in binary format" and "TPM2B_PUBLIC"
 // while the signature and the Name are over the contents, so both spellings
 // are read, as WebAuthn's tpm format reads `sig` both ways.
+/**
+ * Returns a TPM2B's contents when the bytes are exactly one TPM2B, else the
+ * bytes unchanged.
+ *
+ * @param bytes - the bytes
+ * @returns the contents
+ */
 function tpm2bContents(bytes) {
   log.debug("Entering tpm2bContents().");
   const buf = Buffer.from(bytes || []);
@@ -7326,6 +9851,13 @@ function tpm2bContents(bytes) {
 // Tcg-csr-tpm-certify's DER as `{ tpmSAttest, signature, tpmTPublic }`,
 // each a Buffer (tpmTPublic null when absent), with TPM2B size prefixes
 // taken off. Throws a sentence.
+/**
+ * Reads a Tcg-csr-tpm-certify statement, TPM2B size prefixes taken off.
+ *
+ * @param der - the statement's DER
+ * @returns `{ tpmSAttest, signature, tpmTPublic }`
+ * @throws Error with a sentence
+ */
 function tcgTpmCertifyStatement(der) {
   log.debug("Entering tcgTpmCertifyStatement().");
   const read = berOf(der);
@@ -7385,6 +9917,14 @@ function tcgTpmCertifyStatement(der) {
 // A HOT PATH: it recurses once per value in a metadata document, so no
 // Entering/Leaving pair — one would drown the log in thousands of lines per
 // refresh.
+/**
+ * Serializes a value as securesystemslib's canonical JSON: what a TUF
+ * signature covers.
+ *
+ * @param value - the value
+ * @returns the canonical JSON
+ * @throws Error for a value with no canonical form
+ */
 function olpcCanonicalJson(value) {
   if (value === null) {
     return 'null';
@@ -7418,6 +9958,12 @@ function olpcCanonicalJson(value) {
 // UTF-16 code units — which is JavaScript's own string comparison. A HOT
 // PATH for the same reason as the function above: no Entering/Leaving pair
 // in a function that recurses per value would drown the log.
+/**
+ * Serializes a value as RFC 8785 (JCS) canonical JSON.
+ *
+ * @param value - the value
+ * @returns the canonical JSON
+ */
 function jcsCanonicalJson(value) {
   if (value === null || typeof value === 'boolean' ||
       typeof value === 'string') {
@@ -7447,6 +9993,12 @@ function jcsCanonicalJson(value) {
 // The DER SubjectPublicKeyInfo of a PEM `PUBLIC KEY` (or a bare base64
 // body), or null. Read as bytes rather than through node, so a post-quantum
 // key node cannot parse is still one.
+/**
+ * Returns the DER SubjectPublicKeyInfo of a PEM public key, read as bytes.
+ *
+ * @param pem - a `PUBLIC KEY` PEM, or a bare base64 body
+ * @returns the DER, or null
+ */
 function spkiFromPublicKeyPem(pem) {
   log.debug("Entering spkiFromPublicKeyPem().");
   const text = String(pem || '');
@@ -7465,6 +10017,12 @@ function spkiFromPublicKeyPem(pem) {
 
 // The PEM of a DER SubjectPublicKeyInfo, as cosign writes one
 // (`cryptoutils.MarshalPublicKeyToPEM`).
+/**
+ * Returns the PEM of a DER SubjectPublicKeyInfo, as cosign writes one.
+ *
+ * @param spkiDer - the DER
+ * @returns the PEM
+ */
 function publicKeyPemOfSpki(spkiDer) {
   log.debug("Entering publicKeyPemOfSpki().");
   const b64 = Buffer.from(spkiDer || []).toString('base64');
@@ -7477,6 +10035,16 @@ function publicKeyPemOfSpki(spkiDer) {
 // ONE SIGNATURE UNDER A KEY HELD AS AN SPKI, with the scheme cosign uses for
 // that kind of key (see the section head). `ecdsaEncoding` is 'der' (cosign,
 // Rekor, TUF, CT) unless a caller says 'p1363'.
+/**
+ * Verifies one signature under a key held as an SPKI, with the scheme
+ * cosign uses for that kind of key.
+ *
+ * @param spkiDer - the key's SPKI
+ * @param data - the bytes signed
+ * @param signature - the signature
+ * @param ecdsaEncoding - `der` (the default) or `p1363`
+ * @returns a promise of true or false
+ */
 async function verifyWithPublicKey(spkiDer, data, signature, ecdsaEncoding) {
   log.debug("Entering verifyWithPublicKey().");
   const described = publicKeyFromSpki(spkiDer);
@@ -7503,6 +10071,12 @@ async function verifyWithPublicKey(spkiDer, data, signature, ecdsaEncoding) {
 // A TUF key (`{ keytype, scheme, keyval: { public } }`) as an SPKI, or null.
 // ecdsa and rsa keys carry a PEM; an ed25519 key carries the 32 raw bytes as
 // hex, which is wrapped in the fixed Ed25519 SPKI prefix (RFC 8410).
+/**
+ * Returns a TUF key as an SPKI.
+ *
+ * @param key - `{ keytype, scheme, keyval: { public } }`
+ * @returns the DER, or null
+ */
 function tufKeySpki(key) {
   log.debug("Entering tufKeySpki().");
   const type = String((key && key.keytype) || '');
@@ -7525,6 +10099,15 @@ function tufKeySpki(key) {
 // `{ keyids, threshold }` and `keys` the root's key table. Resolves
 // `{ ok, valid, threshold }`; `ok` only when at least `threshold` distinct
 // keyids of the role verified.
+/**
+ * Applies TUF's threshold rule over one role's signatures.
+ *
+ * @param signed - the signed metadata
+ * @param signatures - the signatures
+ * @param keys - the root's key table
+ * @param role - `{ keyids, threshold }`
+ * @returns a promise of `{ ok, valid, threshold }`
+ */
 async function verifyThresholdSignatures(signed, signatures, keys, role) {
   log.debug("Entering verifyThresholdSignatures().");
   const threshold = Number((role && role.threshold) || 0);
@@ -7564,6 +10147,14 @@ async function verifyThresholdSignatures(signed, signatures, keys, role) {
 // logIndex, logID }`, `set` the signed entry timestamp's bytes, `logs` the
 // trusted Rekor logs `[{ logIdHex, spki }]`. Resolves '' when it verifies,
 // otherwise why not.
+/**
+ * Verifies a Rekor signed entry timestamp: cosign's VerifySET().
+ *
+ * @param payload - `{ body, integratedTime, logIndex, logID }`
+ * @param set - the signed entry timestamp's bytes
+ * @param logs - the trusted Rekor logs `[{ logIdHex, spki }]`
+ * @returns a promise of empty when it verifies, otherwise why not
+ */
 async function verifyRekorSet(payload, set, logs) {
   log.debug("Entering verifyRekorSet().");
   const p = payload || {};
@@ -7594,6 +10185,13 @@ async function verifyRekorSet(payload, set, logs) {
 
 // DSSE v1 pre-authentication encoding: "DSSEv1" SP LEN(type) SP type SP
 // LEN(body) SP body, the lengths in ASCII decimal bytes.
+/**
+ * Returns the DSSE v1 pre-authentication encoding.
+ *
+ * @param payloadType - the payload type
+ * @param payload - the payload
+ * @returns the encoded bytes
+ */
 function dssePae(payloadType, payload) {
   log.debug("Entering dssePae().");
   const type = Buffer.from(String(payloadType || ''), 'utf8');
@@ -7608,11 +10206,23 @@ function dssePae(payloadType, payload) {
 // metadata and Rekor entries name. HOT PATHS: called per blob and per
 // metadata file, one line each, so no Entering/Leaving pair — it would
 // drown the log.
+/**
+ * Returns the lower-case hex SHA-256 of bytes.
+ *
+ * @param bytes - the bytes
+ * @returns the digest
+ */
 function sha256Hex(bytes) {
   return nodeCrypto.createHash('sha256').update(Buffer.from(bytes || []))
     .digest('hex');
 }
 
+/**
+ * Returns the lower-case hex SHA-512 of bytes.
+ *
+ * @param bytes - the bytes
+ * @returns the digest
+ */
 function sha512Hex(bytes) {
   return nodeCrypto.createHash('sha512').update(Buffer.from(bytes || []))
     .digest('hex');
@@ -7643,6 +10253,7 @@ function sha512Hex(bytes) {
 // SHA-256 of the canonicalized header data, NOT over the data itself). DKIM
 // has no post-quantum algorithm registered; when one is, it is a row below.
 // ===========================================================================
+/** The DKIM algorithms this service signs with. */
 const DKIM_ALGORITHMS = ['rsa-sha256', 'ed25519-sha256'];
 
 // The headers signed when present, in this order (section 5.4.1's list, less
@@ -7656,6 +10267,13 @@ const DKIM_SIGNED_HEADERS = ['from', 'reply-to', 'subject', 'date', 'to',
 // Section 3.4.4: WSP runs to one SP, trailing WSP off every line, every
 // trailing empty line off the body, and a non-empty body ends in CRLF. An
 // empty body canonicalizes to the empty string.
+/**
+ * Canonicalizes a message body with DKIM's relaxed algorithm (RFC 6376
+ * section 3.4.4).
+ *
+ * @param body - the body
+ * @returns the canonical body; empty for an empty body
+ */
 function dkimRelaxedBody(body) {
   log.debug('Entering dkimRelaxedBody().');
   const text = Buffer.isBuffer(body) ? body.toString('binary')
@@ -7673,6 +10291,14 @@ function dkimRelaxedBody(body) {
 
 // Section 3.4.2: the name lower-cased, the value unfolded, WSP runs to one
 // SP, WSP off both ends of the value, no WSP around the colon.
+/**
+ * Canonicalizes one header field with DKIM's relaxed algorithm (RFC 6376
+ * section 3.4.2).
+ *
+ * @param name - the field name
+ * @param value - the field value
+ * @returns the canonical `name:value`
+ */
 function dkimRelaxedHeader(name, value) {
   log.debug('Entering dkimRelaxedHeader().');
   const unfolded = String(value == null ? '' : value)
@@ -7712,6 +10338,15 @@ function dkimSplitMessage(raw) {
 // Where a header occurs more than once, section 5.4.2 signs the LAST
 // instance for each name listed once — and the list here names each once.
 // ---------------------------------------------------------------------------
+/**
+ * Signs a message with DKIM (RFC 6376, RFC 8463).
+ *
+ * @param raw - the whole message as it will be sent
+ * @param opts - `privateKeyPem`, `selector`, `domain`, `algorithm` and
+ *   `timestamp`
+ * @returns the complete `DKIM-Signature:` field, without a trailing CRLF
+ * @throws Error on a key or an option that cannot make a valid signature
+ */
 function dkimSign(raw, opts) {
   log.debug('Entering dkimSign().');
   const o = opts || {};
@@ -7789,6 +10424,14 @@ function dkimSign(raw, opts) {
 // because this service receives no mail. `publicKeyPem` is the selector's key
 // (the p= of its DNS record, as a PEM). Answers `{ ok, why }`.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies a DKIM signature on a message, for this service's own tests and
+ * the console's key check; never for mail somebody else sent.
+ *
+ * @param raw - the whole signed message
+ * @param publicKeyPem - the selector's public key
+ * @returns `{ ok, why }`
+ */
 function dkimVerify(raw, publicKeyPem) {
   log.debug('Entering dkimVerify().');
   const message = dkimSplitMessage(raw);
@@ -7901,6 +10544,7 @@ function dkimVerify(raw, publicKeyPem) {
 // The fewest bits `randomToken()` will make. NIST SP 800-63B-4 asks 64 of a
 // look-up secret and RFC 6749 section 10.10 128 of a token an attacker could
 // guess at; this section takes the larger for everything it makes.
+/** The fewest bits `randomToken()` will make: 128. */
 const RANDOM_TOKEN_MIN_BITS = 128;
 
 // forge's `random` context, answering from node's generator in forge's
@@ -7909,6 +10553,12 @@ const RANDOM_TOKEN_MIN_BITS = 128;
 // this module is loading, BEFORE the logger below exists, so it has no
 // Entering/Leaving pair — `common/config_file.js`'s situation — and it
 // cannot fail: every member it sets is a plain function.
+/**
+ * Makes forge's `random` context answer from node's CSPRNG.
+ *
+ * Runs while this module loads, before the logger exists, and cannot fail.
+ * @param forgeModule - the node-forge module
+ */
 function installForgeRandom(forgeModule) {
   const ctx = forgeModule.random;
   const draw = function (count) {
@@ -7942,21 +10592,47 @@ function installForgeRandom(forgeModule) {
 
 // `n` bytes from node's CSPRNG. The one spelling, so the source test has one
 // thing to allow.
+/**
+ * Returns `n` bytes from node's CSPRNG: the one spelling of it.
+ *
+ * @param n - how many bytes
+ * @returns the bytes
+ */
 function randomBytes(n) {
   return nodeCrypto.randomBytes(n);
 }
 
 // An integer in [min, max), uniform — node's `randomInt`, rejection-sampled.
+/**
+ * Returns a uniform integer in [min, max), from node's `randomInt`.
+ *
+ * @param min - the lowest value, inclusive
+ * @param max - the bound, exclusive
+ * @returns the integer
+ */
 function randomInt(min, max) {
   return nodeCrypto.randomInt(min, max);
 }
 
 // A random v4 UUID (RFC 9562 section 5.4).
+/**
+ * Returns a random v4 UUID (RFC 9562 section 5.4).
+ *
+ * @returns the UUID
+ */
 function randomUuid() {
   return nodeCrypto.randomUUID();
 }
 
 // At least `bits` of randomness (rounded up to whole bytes), base64url.
+/**
+ * Returns at least `bits` of randomness, rounded up to whole bytes, as
+ * base64url.
+ *
+ * @param bits - how many bits; 256 when omitted
+ * @returns the token
+ * @throws Error when fewer than `RANDOM_TOKEN_MIN_BITS` are asked for
+ */
 function randomToken(bits) {
   const want = bits === undefined ? 256 : Number(bits);
   if (!Number.isInteger(want) || want < RANDOM_TOKEN_MIN_BITS) {
@@ -7971,6 +10647,15 @@ function randomToken(bits) {
 // An alphabet with a repeated character is refused, because a repeat is a
 // bias of its own that no sampling can undo — the character is simply twice
 // as likely.
+/**
+ * Returns `length` characters, each drawn uniformly from `alphabet`.
+ *
+ * @param alphabet - the characters to draw from, each once
+ * @param length - how many to draw
+ * @returns the string
+ * @throws Error for an alphabet of fewer than two distinct characters, a
+ *   repeated character, or a length that is not a whole number
+ */
 function randomString(alphabet, length) {
   const chars = Array.from(String(alphabet || ''));
   const n = Number(length);
@@ -7989,6 +10674,15 @@ function randomString(alphabet, length) {
   return out;
 }
 
+/**
+ * The one place this service signs, verifies, encrypts and decrypts.
+ *
+ * XML Signature and Encryption, JWS and JWE, keys and certificates, password
+ * hashing, the key-encryption key, raw signatures, TPM and attestation
+ * structures, the Kerberos PRF, DKIM and random values. A leaf library that
+ * may never require `helpers` back.
+ * @namespace
+ */
 module.exports = {
   // --- section 13: random values (#65) ---
   RANDOM_TOKEN_MIN_BITS: RANDOM_TOKEN_MIN_BITS,
@@ -8042,8 +10736,8 @@ module.exports = {
   // --- JWS / JWT ---
   signJws: signJws,
   verifyJws: verifyJws,
-  // The three that hand a post-quantum computation to the worker pool and
-  // resolve with exactly what their synchronous namesakes return. See
+  // The three that compute a post-quantum signature on libuv's thread pool
+  // and resolve with exactly what their synchronous namesakes return. See
   // signJwsAsync() for which callers use them and why the others do not.
   signJwsAsync: signJwsAsync,
   verifyJwsAsync: verifyJwsAsync,
@@ -8098,6 +10792,64 @@ module.exports = {
   JWE_ENCS: JWE_ENCS,
   encryptJweCompact: encryptJweCompact,
   decryptJweCompact: decryptJweCompact,
+  // --- post-quantum and HPKE key establishment (section 4a, #82) ---
+  // The families, each a list of `alg` values: ML-KEM (pqc-kem-05), HPKE
+  // (both drafts), the Integrated subset (no `enc`), the post-quantum subset
+  // (ML-KEM and HPKE-8 to 16) and the PQ/T hybrids.
+  JWE_MLKEM_ALGS: JWE_MLKEM_ALGS,
+  JWE_HPKE_ALGS: JWE_HPKE_ALGS,
+  JWE_HPKE_INTEGRATED_ALGS: JWE_HPKE_INTEGRATED_ALGS,
+  JWE_POST_QUANTUM_ALGS: JWE_POST_QUANTUM_ALGS,
+  JWE_HYBRID_ALGS: JWE_HYBRID_ALGS,
+  isIntegratedJweAlg: isIntegratedJweAlg,
+  jweRecipientKeyFits: jweRecipientKeyFits,
+  jweRecipientKeyNeed: jweRecipientKeyNeed,
+  describeJweKemAlg: describeJweKemAlg,
+  generateJweKemKeyPair: generateJweKemKeyPair,
+  deriveJweKemKeyPair: deriveJweKemKeyPair,
+  publicJweKemJwk: publicJweKemJwk,
+  // EXPORTED FOR THE VECTORS: tests/jwe_pq_kem.js holds the KEMs, the key
+  // schedule and the KMAC derivation to draft-ietf-hpke-pq-05's,
+  // draft-irtf-cfrg-concrete-hybrid-kems's and jose-hpke-encrypt-22's
+  // published answers, and a round trip through this file's own encrypt and
+  // decrypt would agree with itself whatever the construction was.
+  hpke: {
+    KEMS: HPKE_KEMS,
+    KDFS: HPKE_KDFS,
+    AEADS: HPKE_AEADS,
+    deriveKeyPair: hpkeDeriveKeyPair,
+    generateKeyPair: hpkeGenerateKeyPair,
+    encap: hpkeEncap,
+    decap: hpkeDecap,
+    setupSender: hpkeSetupSender,
+    setupReceiver: hpkeSetupReceiver,
+    hybridExpand: hybridExpand,
+    hybridEncaps: hybridEncaps,
+    hybridDecaps: hybridDecaps,
+    mlkemCheckEncapsulationKey: mlkemCheckEncapsulationKey,
+    // The encapsulation key of a seed (FIPS 203 KeyGen_internal), and the
+    // X25519 / X448 exchange with RFC 7748's all-zero refusal — for
+    // Wycheproof's ML-KEM keygen and XDH files.
+    mlkemEncapsulationKeyOf: function (set, seed) {
+      log.debug('Entering hpke.mlkemEncapsulationKeyOf().');
+      log.debug('Leaving hpke.mlkemEncapsulationKeyOf().');
+      return mlkemFromSeed(set, seed).ek;
+    },
+    montgomeryDh: montgomeryDh,
+    // The suite AEADs, by id, for Wycheproof's ChaCha20-Poly1305 file.
+    aeadSeal: function (aeadId, key, nonce, aad, pt) {
+      log.debug('Entering hpke.aeadSeal().');
+      log.debug('Leaving hpke.aeadSeal().');
+      return hpkeAeadSeal(HPKE_AEADS[aeadId], key, nonce, aad, pt);
+    },
+    aeadOpen: function (aeadId, key, nonce, aad, ct) {
+      log.debug('Entering hpke.aeadOpen().');
+      log.debug('Leaving hpke.aeadOpen().');
+      return hpkeAeadOpen(HPKE_AEADS[aeadId], key, nonce, aad, ct);
+    },
+    mlkemJoseKdf: mlkemJoseKdf,
+    recipientStructure: joseHpkeRecipientStructure
+  },
   // --- keys, certificates, thumbprints ---
   // Exported for a caller that mints a certificate through neither generator
   // below, so that the one reason a serial is random is written down once.
@@ -8186,12 +10938,19 @@ module.exports = {
   tcgTpmCertifyStatement: tcgTpmCertifyStatement,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
+  /** The XML Signature namespace. */
   DS_NS: xmldsig.DS_NS,
+  /** The XML Encryption namespace. */
   XENC_NS: xmldsig.XENC_NS,
+  /** The XML Encryption 1.1 namespace. */
   XENC11_NS: xmldsig.XENC11_NS,
+  /** The exclusive canonicalization algorithm URI. */
   C14N_EXCLUSIVE: xmldsig.C14N_EXCLUSIVE,
+  /** The enveloped-signature transform URI. */
   TRANSFORM_ENVELOPED: xmldsig.TRANSFORM_ENVELOPED,
+  /** The RSA-SHA256 signature method URI. */
   SIG_RSA_SHA256: xmldsig.SIG_ALG_RSA_SHA256,
+  /** The SHA-256 digest method URI. */
   DIGEST_SHA256: xmldsig.XENC_NS + 'sha256',
   // The vendored engine itself, for the two pages that expose a general XML
   // signature tool and need its algorithm tables. Everything else here should
