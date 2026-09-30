@@ -6047,7 +6047,20 @@ function autoCreateUser(detail) {
   // creates entries, and a missing entry is still left missing for
   // `authn.startSession()` to refuse.
   // ---------------------------------------------------------------------
-  if (!autocreateUsers()) {
+  // **EXCEPT A FEDERATED SIGN-IN WHOSE RELATIONSHIP MAY CREATE (#325, rcbj
+  // 2026-09-29).** `fedAutocreateUsers` is the operator's own switch, per
+  // partner, and federation/CLAUDE.md's switch table says on means "the
+  // first sign-in CREATES the person's entry — no SCIM needed", with no
+  // exception for product mode; this gate made product the exception
+  // silently, and a product cluster refused every federated newcomer 403
+  // "has not been provisioned" (sts_oidfed on testidp). subjectDecision()
+  // answered `create` from that switch, so it is honoured here in every
+  // mode. Nothing else creates in product mode, and what is created there
+  // carries no invented value: namePlan() and applyVcAttributes() ask
+  // `mode.inventsClaimValues()`.
+  const federationMayCreate = !!(info.federation &&
+                                 info.federation.create === true);
+  if (!autocreateUsers() && !federationMayCreate) {
     if (existing &&
         applyFederatedAttributes(existing, info, { created: false })) {
       existing.attributes.modifytimestamp = [generalizedTime()];
@@ -6230,7 +6243,9 @@ function autoCreateUser(detail) {
               attributes: Object.keys(created.attributes).join(', '),
               entriesNow: totalEntries(),
               note: 'created by this service, not by an LDAP client; ' +
-                    'ldap.autocreateUsers is on' }
+                    (autocreateUsers() ? 'ldap.autocreateUsers is on'
+                      : 'the federation relationship\'s fedAutocreateUsers ' +
+                        'is on') }
   });
   log.debug('Leaving autoCreateUser(). The entry was created.');
   return created;

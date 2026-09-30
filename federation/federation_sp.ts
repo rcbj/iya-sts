@@ -2269,8 +2269,8 @@ class FederationSp {
         'The assertion verified and the partner is configured, but this ' +
         'service holds no directory entry for ' + username + ', and ' +
         (federation.boolOf(record.fedAutocreateUsers, true)
-          ? 'the directory would not create one (product mode creates ' +
-            'nobody, ldap.autocreateUsers is off, or it is full).'
+          ? 'the directory would not create one (the subject policy ' +
+            'refused it, or the directory is full).'
           : 'dynamic provisioning (fedAutocreateUsers) is off on this ' +
             'relationship, so the person has to be created here first — ' +
             'through SCIM, /admin/users/new or the management API — and ' +
