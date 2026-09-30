@@ -612,6 +612,33 @@ Three things about it are this directory's:
   ending the SIGN-ON session ends the portal's with it. **WHICH IS WHY THE SIGN
   OUT BUTTON ENDS BOTH** — see below.
 
+## A LIVE CONSOLE SESSION IS ADOPTED, AND THE BULLET ABOVE HAS ONE EXCEPTION (2026-09-30)
+
+**Observed on a product deployment:** an administrator followed the console's
+account-menu link here and was asked to choose a realm and then to sign in
+again. The console session outlives its sign-on session by renewing its own
+tokens (`common/oidc_rp.ts` section 4), so this portal's code flow met no
+sign-on session. rcbj decided that the portal reads the realm and the
+authenticated session from the console session. `adoptConsoleSession()`, called
+by `requireSignIn()` before the chooser, makes a portal session of this
+surface's own from it through `authn.adoptRelyingPartySession()`. The session
+has the same person and the same authentication record. It lives in the
+console session's identity realm (`derivedFromRealm`, the same answer the
+account-menu link uses). Its PARENT is the console session, so it ends with
+that session through the cascade and through the reader. A realm
+administrator at the bare `/portal` is REDIRECTED to their realm's portal,
+built from the registry and never echoed. Under another realm's prefix, or
+with a `?realm=` naming another realm, nothing is adopted. **ONE DIRECTION:**
+nothing here writes `sts_admin`. The access policy still decides.
+`POST /portal/signout` on an adopted session ends the console session and its
+sign-on session as well, for this file's own reason: otherwise the next page
+adopts again. What stops an adoption (STS-PORTAL-0098, -0099) leaves the old
+path exactly as it was. `tests/portal_adopts_console.js` holds it.
+**The bullet *A PERSON WHO SIGNED IN ELSEWHERE IS NOT SILENTLY IN THEIR
+ACCOUNT PAGE* still holds for every sign-on session. The one thing that
+opens the portal without a flow is this service's own console, which the
+person is already signed in to as themselves.**
+
 ## Two sign-outs, and they are two different acts (2026-09-06)
 
 **They were on one page when this was written and the page split under
