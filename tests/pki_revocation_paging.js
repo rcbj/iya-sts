@@ -1,0 +1,269 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
+'use strict';
+
+// ===========================================================================
+// tests/pki_revocation_paging.js — PROTOCOLS → PKI PAGES EACH AUTHORITY'S
+// LISTS AND DOES PER-ROW WORK FOR THE PAGE ONLY (#370, 2026-09-30).
+//
+// The revocation pane listed every certificate each authority had signed,
+// each with a Revoke form, and every revoked serial with no certificate left
+// — lists that every issue and every rotation make longer. #352's rule is
+// *page before per-row work*, and each claim here is a COUNT against a
+// population much larger than a page, never a time:
+//
+//   A. The model: with 5,000 issued certificates and 1,200 revocations on one
+//      authority, the page holds 25 issued rows and 25 orphans, with the
+//      totals and the paging beside them; `describeEntry()` runs for the
+//      rows of the page only; `issuedHere()` — a rebuild of the issued list —
+//      is never called; `issuedList()` and `listFor()` once per authority.
+//   B. The revocation state on each row of the page is the register's:
+//      revoked, held, or good, and a page past the end is the last page.
+//   C. Each authority pages on its own parameter, and `per` is shared.
+//   D. The pane draws the page's rows and a pager per list, and every Revoke
+//      form carries `back` and the list it is in; `pkiReturnTo()` sends the
+//      reader back to that list, and only to a name this file writes.
+//
+// The revocation register and the tree are stand-ins handed to a PkiAdmin of
+// this file's own, because what is counted is what the page asks of them;
+// everything else is the service's own.
+// ===========================================================================
+
+delete process.env.CONFIG_FILE;
+
+const realRevocation = require('../common/pki_revocation');
+const pkiAdminModule = require('../admin-ui/pki_admin');
+
+const log = require('bunyan').createLogger({
+  name: 'pki_revocation_paging',
+  level: process.env.LOG_LEVEL || 'info' });
+
+const ISSUED = 5000;
+const REVOKED_ISSUED = 400;
+const ORPHANS = 800;
+const PER = 25;
+
+function hex(n) {
+  log.debug("Entering hex().");
+  log.debug("Leaving hex().");
+  return (0x100000 + n).toString(16);
+}
+
+// Two authorities: `jose` with the big lists, `root` with a few rows, so that
+// one authority's page parameter can be seen not to move the other.
+function register() {
+  log.debug("Entering register().");
+  const calls = { issuedList: 0, listFor: 0, describeEntry: 0,
+                  issuedHere: 0 };
+  const issued = { jose: [], root: [] };
+  const revoked = { jose: [], root: [] };
+  for (let i = 0; i < ISSUED; i++) {
+    issued.jose.push({ serialHex: hex(i), subject: 'CN=leaf ' +
+                         String(i).padStart(5, '0'),
+                       notAfter: '2030-01-01T00:00:00Z', kind: 'leaf',
+                       label: '', expired: false });
+  }
+  for (let i = 0; i < REVOKED_ISSUED; i++) {
+    revoked.jose.push({ serialHex: hex(i * 7 % ISSUED),
+                        revokedAt: '2026-09-30T00:00:00Z',
+                        reason: i % 5 === 0 ? 'certificateHold' : 'superseded',
+                        reasonCode: i % 5 === 0 ? 6 : 4, subject: '' });
+  }
+  for (let i = 0; i < ORPHANS; i++) {
+    revoked.jose.push({ serialHex: 'ff' + hex(i),
+                        revokedAt: '2026-09-29T00:00:00Z',
+                        reason: 'superseded', reasonCode: 4,
+                        subject: 'CN=gone ' + i });
+  }
+  for (let i = 0; i < 3; i++) {
+    issued.root.push({ serialHex: 'aa' + i, subject: 'CN=ca ' + i,
+                       notAfter: '2030-01-01T00:00:00Z',
+                       kind: 'intermediate-ca', label: '', expired: false });
+  }
+  const stub = Object.assign({}, realRevocation, {
+    authorities: function () {
+      return [
+        { scope: '*process', ca: 'root', label: 'Root CA',
+          tier: { subject: 'CN=Root', notAfter: '2040-01-01T00:00:00Z' } },
+        { scope: '', ca: 'jose', label: 'JOSE Issuing CA',
+          tier: { subject: 'CN=JOSE', notAfter: '2030-01-01T00:00:00Z' } }
+      ];
+    },
+    distributionPoints: function () {
+      return { http: 'http://x/crl', ldap: 'ldap://x/crl',
+               ocsp: 'http://x/ocsp', caIssuers: 'http://x/ca', dn: 'cn=x' };
+    },
+    scopeSegment: function (scope) {
+      return scope === '*process' ? 'process' : 'default';
+    },
+    issuedList: function (scope, ca) {
+      calls.issuedList++;
+      return issued[ca].slice();
+    },
+    listFor: function (scope, ca) {
+      calls.listFor++;
+      return revoked[ca].slice();
+    },
+    describeEntry: function (one) {
+      calls.describeEntry++;
+      return realRevocation.describeEntry(one);
+    },
+    issuedHere: function () {
+      calls.issuedHere++;
+      return false;
+    }
+  });
+  log.debug("Leaving register().");
+  return { stub: stub, calls: calls, issued: issued, revoked: revoked };
+}
+
+function adminWith(stub) {
+  log.debug("Entering adminWith().");
+  const deps = pkiAdminModule.PkiAdmin.defaultDeps();
+  deps.pkiRevocation = stub;
+  deps.pki = Object.assign({}, deps.pki, { PROCESS_SCOPE: '*process' });
+  log.debug("Leaving adminWith().");
+  return new pkiAdminModule.PkiAdmin(deps);
+}
+
+async function run(t) {
+  log.debug("Entering run().");
+  const r = register();
+  const admin = adminWith(r.stub);
+
+  t.log.info('=== A. the model holds one page, and per-row work is the ' +
+             'page\'s ===');
+  const model = admin['revocationModel']({});
+  const jose = model.authorities.filter(function (one) {
+    return one.ca === 'jose';
+  })[0];
+  t.check(!!jose, 'the big authority is in the model');
+  t.equal(jose.issued.length, PER, 'its issued list is one page');
+  t.equal(jose.issuedTotal, ISSUED, 'with the whole count beside it');
+  t.equal(jose.revokedNotIssued.length, PER, 'its orphans are one page');
+  t.equal(jose.revokedNotIssuedTotal, ORPHANS, 'with their whole count');
+  t.equal(jose.revokedTotal, REVOKED_ISSUED + ORPHANS,
+          'and the whole revocation count');
+  t.equal(model.totalRevoked, REVOKED_ISSUED + ORPHANS,
+          'the model\'s total counts every authority\'s whole list');
+  t.equal(JSON.stringify(jose.issuedPaging),
+          JSON.stringify({ page: 1, pages: ISSUED / PER, perPage: PER,
+                           firstRow: 1, lastRow: PER, total: ISSUED }),
+          'issuedPaging says what the page holds');
+  t.equal(jose.orphansPaging.total, ORPHANS, 'orphansPaging too');
+  t.check(r.calls.describeEntry <= 2 * PER,
+          'describeEntry() ran for the rows of the page only, not the ' +
+          (REVOKED_ISSUED + ORPHANS) + ' revocations',
+          String(r.calls.describeEntry));
+  t.equal(r.calls.issuedHere, 0,
+          'issuedHere() — a rebuild of the issued list — was not called');
+  t.equal(r.calls.issuedList, 2, 'issuedList() once per authority');
+  t.equal(r.calls.listFor, 2, 'listFor() once per authority');
+  t.check(!Object.prototype.propertyIsEnumerable.call(jose, 'pagingRaw'),
+          'the renderer\'s paging objects are not published');
+
+  t.log.info('=== B. each row\'s state is the register\'s ===');
+  const bySerial = {};
+  r.revoked.jose.forEach(function (entry) {
+    bySerial[entry.serialHex] = entry;
+  });
+  const wrong = jose.issued.filter(function (row) {
+    const entry = bySerial[row.serialHex] || null;
+    return row.revoked !== !!entry ||
+      row.held !== (!!entry && entry.reason === 'certificateHold') ||
+      (entry && row.revokedReason !== entry.reason);
+  });
+  t.equal(wrong.length, 0, 'every row on the page says what the register ' +
+          'says about its serial');
+  t.check(jose.issued.some(function (row) { return row.revoked; }) &&
+          jose.issued.some(function (row) { return !row.revoked; }),
+          'the page holds revoked and good rows alike');
+  const describedOnPage = jose.revoked.every(function (entry) {
+    return jose.issued.some(function (row) {
+      return row.revoked && row.serialHex === entry.serialHex;
+    });
+  });
+  t.check(describedOnPage && jose.revoked.length ===
+          jose.issued.filter(function (row) { return row.revoked; }).length,
+          '`revoked` is the page\'s revocations, described');
+  const last = admin['revocationModel'](
+    { 'ca-default-jose-issuedPage': '9999' });
+  const lastJose = last.authorities.filter(function (one) {
+    return one.ca === 'jose';
+  })[0];
+  t.equal(lastJose.issuedPaging.page, ISSUED / PER,
+          'a page past the end is the last page');
+  t.equal(lastJose.issued[lastJose.issued.length - 1].serialHex,
+          r.issued.jose[ISSUED - 1].serialHex,
+          'and it ends at the last certificate');
+
+  t.log.info('=== C. one parameter per list, `per` shared ===');
+  const moved = admin['revocationModel']({ 'ca-default-jose-issuedPage': '3',
+                                           per: '10' });
+  const movedJose = moved.authorities.filter(function (one) {
+    return one.ca === 'jose';
+  })[0];
+  const movedRoot = moved.authorities.filter(function (one) {
+    return one.ca === 'root';
+  })[0];
+  t.equal(movedJose.issuedPaging.page, 3, 'the jose list moved to page 3');
+  t.equal(movedJose.issued[0].serialHex, r.issued.jose[20].serialHex,
+          'and page 3 of 10 starts at the 21st certificate');
+  t.equal(movedJose.orphansPaging.page, 1,
+          'its orphans list stayed on page 1');
+  t.equal(movedRoot.issuedPaging.page, 1, 'the root list stayed on page 1');
+  t.equal(movedRoot.issuedPaging.perPage, 10, 'per is shared by every list');
+
+  t.log.info('=== D. the pane and the way back ===');
+  const query = { 'ca-default-jose-issuedPage': '2', personsPage: '4',
+                  'ca-bogus': '7', 'evil-issuedPage': '2' };
+  const view = admin['keyPairListView'](query);
+  t.check(view['ca-default-jose-issuedPage'] === '2' &&
+          view.personsPage === '4' && !('ca-bogus' in view) &&
+          !('evil-issuedPage' in view),
+          'the list view carries the authority lists\' parameters and no ' +
+          'name this file does not write', JSON.stringify(view));
+  const json = { revocation: admin['revocationModel'](query) };
+  const html = admin['revocationPane'](json, view);
+  const revokeForms =
+    (html.match(/name="action" value="revoke-certificate"/g) || []).length;
+  const releaseForms = (html.match(/name="action" value="release-hold"/g) ||
+                        []).length;
+  const joseModel = json.revocation.authorities.filter(function (one) {
+    return one.ca === 'jose';
+  })[0];
+  const expectedForms = joseModel.issued.filter(function (row) {
+    return !row.revoked;
+  }).length + 3;
+  t.equal(revokeForms, expectedForms,
+          'a Revoke form for each unrevoked row on the page, and no more');
+  t.equal(releaseForms, joseModel.issued.filter(function (row) {
+    return row.held;
+  }).length, 'a Release form for each held row on the page');
+  t.check(html.indexOf('id="list-ca-default-jose-issuedPage"') >= 0 &&
+          html.indexOf('id="list-ca-default-jose-orphansPage"') >= 0,
+          'each of the big authority\'s lists has a pager');
+  t.check(html.indexOf('ca-default-jose-issuedPage=3') >= 0,
+          'the pager links to the next page of that list');
+  t.check(/name="list" value="ca-default-jose-issuedPage"/.test(html) &&
+          /name="back" value="\?[^"]*ca-default-jose-issuedPage=2/.test(html),
+          'every form carries the list it is in and the page it is on');
+  t.equal(admin.pkiReturnTo({ back: '?ca-default-jose-issuedPage=2',
+                              list: 'ca-default-jose-issuedPage' }),
+          '/admin/pki?ca-default-jose-issuedPage=2' +
+          '#list-ca-default-jose-issuedPage',
+          'a revoke goes back to that page of that list');
+  t.equal(admin.pkiReturnTo({ back: '?ca-default-jose-issuedPage=2',
+                              list: 'https://evil.example/' }),
+          '/admin/pki?ca-default-jose-issuedPage=2#pki-applications',
+          'and a list name this file does not write is not echoed');
+  log.debug("Leaving run().");
+}
+
+module.exports = {
+  name: 'pki_revocation_paging',
+  describe: '#370: Protocols → PKI pages each authority\'s issued and ' +
+            'revoked lists and does per-row work for the page only',
+  run: run
+};

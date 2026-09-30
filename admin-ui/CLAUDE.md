@@ -1945,8 +1945,36 @@ not the console's fifty, because this page carries eight sections), with one
 * **EVERY TAKE-OFF BUTTON CARRIES BOTH TABLES' STATE AS `back`**, and
   `pkiReturnTo()` rebuilds it — the three names, positive integers only — into a
   303 to the same pages at `#pki-applications` or `#pki-people`. A control that
-  carries no `back` (Build, the pane, the revocation pane) still gets the bare
-  page.
+  carries no `back` (Build, the pane) still gets the bare page.
+
+### EACH AUTHORITY'S LISTS IN THE REVOCATION PANE ARE PAGED (#370, 2026-09-30)
+
+What each authority SIGNED — a row per certificate, each with a Revoke form —
+and the revoked serials with no certificate left grow with every issue and
+every rotation, and the pane drew them whole. Each is now a list paged on a
+parameter of its own, `ca-<scope segment>-<ca>-issuedPage` and
+`…-orphansPage` (`listNameOf()`; `REVOCATION_LIST_PARAM` is the only shape
+`keyPairListView()` carries), sharing the page's `per`, twenty-five by default.
+
+* **PAGE BEFORE PER-ROW WORK** (#352's rule). `revocationModel()` reads each
+  authority's issued list and revocation list once, sorts nothing new, slices,
+  and only then gives the page's rows their revocation state and describes
+  the page's orphans. "Is this serial issued here" is one set per authority —
+  it was `issuedHere()` per revoked serial, a rebuild of the issued list each
+  time, quadratic in the two lists.
+* **`GET /admin-api/pki` IS PAGED THE SAME WAY**, unlike the key-pair tables
+  above: each authority carries `issued` and `revokedNotIssued` as pages, with
+  `issuedPaging` / `orphansPaging` and `issuedTotal`, `revokedTotal` and
+  `revokedNotIssuedTotal`, and `revoked` is the page's revocations described.
+  A caller revoking a certificate names its serial and does not need the list;
+  the jobs that pick one pick the first, which is on page 1.
+* **EVERY REVOKE AND RELEASE FORM CARRIES `back` AND `list`**, and
+  `pkiReturnTo()` sends the reader to that page of that list (`#list-<param>`,
+  the pager's own anchor) — `list` only when `REVOCATION_LIST_PARAM` accepts
+  it, since it ends up in a `Location` header.
+
+`tests/pki_revocation_paging.js` counts it against 5,000 issued certificates
+and 1,200 revocations.
 
 `tests/pki_key_pair_paging.js` pins all of it.
 
