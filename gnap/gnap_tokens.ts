@@ -287,7 +287,7 @@ class GnapTokens {
   // The two Ed25519 suites use the realm's Ed25519 unit, as biscuits do. The
   // post-quantum ones use the realm's `jose:ML-DSA-44` or
   // `jose:SLH-DSA-SHA2-128s` unit — keys the realm already makes, publishes
-  // in its JWKS and rotates (#42), brought into being in the worker pool by
+  // in its JWKS and rotates (#42), brought into being on libuv's thread pool by
   // `allSigningKeysAsync()` on first use, which is why this is asynchronous.
   // -------------------------------------------------------------------------
   /**

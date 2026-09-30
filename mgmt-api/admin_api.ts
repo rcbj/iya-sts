@@ -686,16 +686,27 @@ class AdminApi {
    * Returns a request schema ready for ajv: `structureOnly()` of it, with the
    * document's named schemas as `components`.
    *
+   * **`components` IS PASSED IN, AND EVERY CALLER PASSES THE SAME ONE (#365,
+   * 2026-09-30).** It used to be `structureOnly(spec.SCHEMAS)` made here, a
+   * fresh deep copy of the whole components table (about 170 KB) for each of
+   * the 363 validators — and ajv keeps every root it compiled in its cache
+   * for the life of the process, so the copies were never collected: about
+   * 60 MB of every process's heap. The copy is made once, in
+   * `compileRequestSchemas()`, and each root points at it. ajv reads a schema
+   * and never writes to it, so a shared subtree is exactly what the copies
+   * were, 363 times fewer; what each validator accepts and refuses, and the
+   * words it refuses in, are unchanged.
+   *
    * @param schema - an operation's request schema
+   * @param components - the one `{ schemas: structureOnly(spec.SCHEMAS) }`
    * @returns the schema to compile
    */
-  compilable(schema) {
-    const { log, spec } = this.deps;
+  compilable(schema, components) {
+    const { log } = this.deps;
     log.debug("Entering AdminApi.compilable().");
     log.debug("Leaving AdminApi.compilable().");
     return Object.assign({}, this.structureOnly(schema),
-                         { components: { schemas: this.structureOnly(
-                             spec.SCHEMAS) } });
+                         { components: components });
   }
 
   /**
@@ -721,10 +732,13 @@ class AdminApi {
    * @returns how many validators were built
    */
   compileRequestSchemas() {
-    const { log, errorCodes } = this.deps;
+    const { log, errorCodes, spec } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.compileRequestSchemas().");
     let built = 0;
+    // ONE copy of the enforced components for every root below (#365; see
+    // `compilable()`).
+    const components = { schemas: self.structureOnly(spec.SCHEMAS) };
     ROUTES.forEach(function (entry) {
       const route = entry.route || entry.path;
       const rows = entry.actions || [];
@@ -734,7 +748,8 @@ class AdminApi {
         }
         try {
           validators.set(self.validatorKeyOf(route, action.action),
-                         ajv.compile(self.compilable(action.requestBody)));
+                         ajv.compile(self.compilable(action.requestBody,
+                                                     components)));
           built = built + 1;
         } catch (e) {
           // A schema this repository wrote that ajv will not compile. Logged by
@@ -750,7 +765,8 @@ class AdminApi {
       if (entry.requestBody) {
         try {
           validators.set(self.validatorKeyOf(route, ''),
-                         ajv.compile(self.compilable(entry.requestBody)));
+                         ajv.compile(self.compilable(entry.requestBody,
+                                                     components)));
           built = built + 1;
         } catch (e) {
           log.error(errorCodes.tag('STS-API-0010') +
@@ -4091,35 +4107,34 @@ class AdminApi {
       // ---------------------------------------------------------------------
       { method: 'GET', path: BASE + '/worker-pools', tag: 'Service',
         operationId: 'getWorkerPools',
-        summary: 'The request, hosted-surface and post-quantum worker ' +
-                 'pools of this node',
+        summary: 'The request and hosted-surface worker pools of this node',
         description: 'Always `generatedAt`, `node`, `pid` (the front ' +
-                     'process that answered), `scope` (`node`) and ' +
-                     '`scopeText`; then `pools`, three of them, `id` ' +
-                     '`request`, `surface` and `post-quantum`, each with ' +
-                     '`title`, `module`, `setting`, `state` (`off`, ' +
-                     '`not-started`, `not-dispatching`, `running`, ' +
-                     '`given-up`, or `not-forked` for the post-quantum ' +
-                     'pool) and `stateText` saying it in a sentence, ' +
-                     '`maxWorkers` (the configured count), ' +
-                     '`initialWorkers` (what the pool started with; for ' +
-                     'the lazy post-quantum pool, what its first fork ' +
-                     'brought up), `currentWorkers`, `busyWorkers`, ' +
-                     '`freeWorkers`, `restarts` (`forked`, `crashed` — an ' +
-                     'exit nobody asked for — `failedStarts` among them, ' +
-                     'and `replaced` and `stopped` for a request pool, ' +
-                     '`retired` for the post-quantum one) and ' +
-                     '`responseTime` (a request pool: `answered`, ' +
+                     'process that answered), `mainThread` (true: drawn ' +
+                     'on its main thread, which holds the pools), ' +
+                     '`scope` (`node`) and `scopeText`; then `pools`, ' +
+                     'two of them, `id` ' +
+                     '`request` and `surface`, each with `title`, ' +
+                     '`module`, `setting`, `state` (`off`, ' +
+                     '`not-started`, `not-dispatching`, `running` or ' +
+                     '`given-up`) and `stateText` saying it in a ' +
+                     'sentence, `maxWorkers` (the configured count), ' +
+                     '`initialWorkers` (what the pool started with), ' +
+                     '`currentWorkers`, `busyWorkers`, `freeWorkers`, ' +
+                     '`restarts` (`forked`, `crashed` — an exit nobody ' +
+                     'asked for — `failedStarts` among them, `replaced` ' +
+                     'and `stopped`) and `responseTime` (`answered`, ' +
                      '`averageMs`, `recentAverageMs`, `maxMs`, dispatch to ' +
-                     'answer; the post-quantum pool: `jobs`, `averageMs`, ' +
-                     '`maxMs`, `failed`, `timedOut`, `inProcessJobs`). A ' +
-                     'request pool lists its `workers` (`pid`, `slot`, ' +
-                     '`ready`, `busy`, `inFlight`, `served`, `upSeconds`); ' +
-                     'the post-quantum pool, which every process has one ' +
-                     'of, lists `processes` — the front process and each ' +
-                     'request worker that answered within a second, each ' +
-                     'with the same figures — and `unanswered`, and its ' +
-                     'pool-level figures are their totals. Every count is ' +
+                     'answer), and its `workers` — each a worker THREAD ' +
+                     'of the front process since #364 — (`threadId`, ' +
+                     '`slot`, `ready`, `busy`, `inFlight`, `served`, ' +
+                     '`upSeconds`). `restarts.forked` counts the threads ' +
+                     'started. A request pool at the default ' +
+                     '`workers.requestCount` of 1 is `off` where the ' +
+                     'store cannot coordinate, and `stateText` says so. ' +
+                     'There is ' +
+                     'no post-quantum pool since #363: post-quantum ' +
+                     'signing and scrypt run on libuv\'s thread pool ' +
+                     'inside each process. Every count is ' +
                      'since the process started. THE FIGURES ARE THIS ' +
                      'NODE\'S at the top level (`node` names it; never a ' +
                      'host or an address). In a cluster, `nodes` has a ' +
@@ -4142,7 +4157,7 @@ class AdminApi {
                          'one section. An unknown name is 404 with the ' +
                          'names there are (#332).' }
         ],
-        responseDescription: 'The three pools.',
+        responseDescription: 'The two pools.',
         responseSchema: { type: 'object',
           description: '`generatedAt`, `node`, `pid`, `scope`, `scopeText`, ' +
                        '`pools`, `answeredBy`, `state`, `cluster`, `nodes` ' +
@@ -4182,7 +4197,8 @@ class AdminApi {
       { method: 'GET', path: BASE + '/node-health', tag: 'Service',
         operationId: 'getNodeHealth',
         summary: 'The CPU and memory of this node\'s container, and the ' +
-                 'Node.js memory of each of its processes',
+                 'Node.js memory of each of its processes and worker ' +
+                 'threads',
         description: 'Always `generatedAt`, `node`, `pid` (the front ' +
                      'process that answered), `scope` (`node`), ' +
                      '`scopeText` and `cgroup` (the cgroup v2 directory ' +
@@ -4205,17 +4221,28 @@ class AdminApi {
                      '(`memory.max`; null for none), ' +
                      '`utilisationPercent`, `peakBytes`, `anonBytes`, ' +
                      '`fileBytes`, `kernelBytes` and `oomKills`. ' +
-                     '`processes`: `rows` — the front process and each ' +
-                     'request and hosted-surface worker that answered ' +
-                     'within a second (`process.memoryUsage()`: ' +
-                     '`rssBytes`, `heapUsedBytes`, `heapTotalBytes`, ' +
-                     '`externalBytes`, `arrayBuffersBytes`, and CPU time), ' +
-                     'and each post-quantum child and the debugger\'s api ' +
-                     'child, the same figures when it answered within half ' +
+                     '`processes`: `rows`, each with `kind` (`process` or ' +
+                     '`thread`), `pid` and `threadId` — the front process ' +
+                     '(`process.memoryUsage()`: `rssBytes`, ' +
+                     '`heapUsedBytes`, `heapTotalBytes`, `externalBytes`, ' +
+                     '`arrayBuffersBytes`, and CPU time; its resident ' +
+                     'size and CPU time are the whole process\'s, every ' +
+                     'thread\'s included, `processWide` says so); each ' +
+                     'request and hosted-surface worker THREAD of it ' +
+                     '(#364) that answered within a second, with its own ' +
+                     'heap figures and `rssBytes` and CPU time null, ' +
+                     'because in a thread those are the process\'s; and ' +
+                     'the debugger\'s api child, the five figures ' +
+                     'when it answered within half ' +
                      'a second, and otherwise `rssBytes` and ' +
                      '`peakRssBytes` from `/proc/<pid>/status`, the heap ' +
                      'figures null and `notReported` saying why — ' +
-                     '`unanswered`, and `totals`. `ecs`: the ECS task ' +
+                     '`unanswered` (worker threads that did not answer, by ' +
+                     '`threadId`; a thread has no /proc entry to fall ' +
+                     'back on), and `totals` (`rows`, `processes`, ' +
+                     '`workerThreads`, `rssBytes` over processes only, ' +
+                     '`processesWithRss`, the heap sums over every ' +
+                     'isolate and `isolatesWithHeap`). `ecs`: the ECS task ' +
                      'metadata endpoint\'s `taskLimits` and `stats` where ' +
                      '`ECS_CONTAINER_METADATA_URI_V4` is set, and ' +
                      '`available: false` with a sentence where it is not. ' +
@@ -4230,7 +4257,8 @@ class AdminApi {
                      '`stale` past 45 s, `gone` from cluster membership, ' +
                      '`no-snapshot`), `stateText`, `ageSeconds` and `view` ' +
                      '— and `totals` sums container memory and its limit, ' +
-                     'CPU and the processes over the nodes not gone; ' +
+                     'CPU, the processes and the worker threads over the ' +
+                     'nodes not gone; ' +
                      '`cluster` says whether there is one. `answeredBy` ' +
                      'names the node that answered (#332). A service ' +
                      'operation: a realm\'s own administrator is refused ' +

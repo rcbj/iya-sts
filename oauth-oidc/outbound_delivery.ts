@@ -64,6 +64,9 @@
 
 import os = require('os');
 import helpers = require('../common/helpers');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 type Json = any;
 
@@ -77,7 +80,7 @@ const STATES = ['pending', 'sent', 'dead'];
 /**
  * This process's name, written on a row it is sending.
  */
-const HOLDER = os.hostname() + ':' + process.pid;
+const HOLDER = os.hostname() + ':' + WorkerChannel.processTag();
 
 // The configuration keys a kind's numbers are read from.
 interface DeliverySettings {

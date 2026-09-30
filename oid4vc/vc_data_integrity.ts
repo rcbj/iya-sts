@@ -138,7 +138,7 @@
 // leaves (`helpers` for the logger, `crypto` for the clock allowance,
 // `pq_jose` for ML-DSA), so any module in this directory can require it
 // without a cycle. ML-DSA goes through `pq_jose`'s asynchronous pair, so a
-// verification happens in the worker pool where one is running.
+// verification happens on libuv's thread pool.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');

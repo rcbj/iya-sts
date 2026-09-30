@@ -6704,16 +6704,14 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin/worker-pools', group: 'Admin',
     name: 'The worker pools of this node',
     specs: [],
-    what: 'NON-SPEC (#327). Filed under Monitoring. The three pools of ' +
-          'child processes this node runs — the request workers ' +
-          '(workers.requestCount), the console and portal\'s own ' +
-          '(workers.surfaceCount) and the post-quantum job pool ' +
-          '(workers.count), which every process forks on its first ' +
-          'post-quantum job — each with its workers now, busy and free, its ' +
+    what: 'NON-SPEC (#327). Filed under Monitoring. The pools of workers ' +
+          'this node runs — the request workers (workers.requestCount) and ' +
+          'the console and portal\'s own (workers.surfaceCount) — each ' +
+          'with its workers now, busy and free, its ' +
           'maximum and initial size, how many crashed (and never started) ' +
           'against how many were stopped, and its average response time. A ' +
           'pool that is off says so. Always drawn by the front process, ' +
-          'which asks each request worker for its own post-quantum pool. ' +
+          'which asks each request worker for its own figures. ' +
           'In a cluster, a section per node by name (#332) — this one ' +
           'live, every other from its snapshot in the shared store, marked ' +
           'stale or gone — and the totals; ?node= narrows it to one. A ' +
@@ -8281,8 +8279,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'is a receiver that asked for it at POST /ssf/stream — an API that ' +
           'could mint one would be a second, ungated door onto the outbound ' +
           'request. It is also the ONE action handler in this API that ' +
-          'awaits: transmitting signs a JWS, possibly on the worker pool, ' +
-          'and then POSTs it, and answering before either had happened would ' +
+          'awaits: transmitting signs a JWS, possibly on libuv\'s thread ' +
+          'pool, and then POSTs it, and answering before either had happened would ' +
           'be reporting "sent" about nothing.' },
   { path: '/admin-api/spiffe', group: 'Management API', name: 'The SPIFFE ' +
       'trust domain',

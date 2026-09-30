@@ -2930,7 +2930,9 @@ const UUID_SHAPED =
 function clusteredNode() {
   log.debug("Entering clusteredNode().");
   const cluster = require('../cluster/cluster');
-  const workers = (Number(config.value('workers.requestCount')) || 0) > 0 &&
+  // The #364 rule: the default of one worker is none on a store that
+  // cannot coordinate.
+  const workers = require('../common/process_memory').requestWorkers() > 0 &&
     String(config.value('workers.dispatch') || '').trim() !== '';
   log.debug("Leaving clusteredNode().");
   return cluster.mode() !== 'off' || workers;

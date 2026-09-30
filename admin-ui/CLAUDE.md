@@ -6588,42 +6588,57 @@ way *Policies* is shared; the sections tell them apart. The fourth view,
 
 ---
 
-## `/admin/worker-pools`: THE THREE POOLS OF THIS NODE (#327, 2026-09-28)
+## `/admin/worker-pools`: THE TWO POOLS OF THIS NODE (#327, 2026-09-28)
 
-Monitoring → Worker Pools, drawn by `worker_pools_admin.ts` (18r) from the
-pools' own `stats()` — `common/CLAUDE.md` argues both pools and the counters
-#327 added to them. One section per pool: the request pool
-(`workers.requestCount`), the hosted-surface pool (`workers.surfaceCount`, the
-"admin" pool) and the post-quantum pool (`workers.count`). Each carries the
-seven figures rcbj asked for — current workers, busy, free, maximum (the
-setting), initial (what `start()` forked; for the lazy post-quantum pool, what
-its first fork brought up), restarts and crashes, and the average response
-time — plus a `state` and a sentence.
+Monitoring → Worker Pools, drawn by `worker_pools_admin.ts` (18r) from
+`request_pool.js`'s own `stats()` — `common/CLAUDE.md` argues the pool and the
+counters #327 added to it. One section per pool: the request pool
+(`workers.requestCount`) and the hosted-surface pool (`workers.surfaceCount`,
+the "admin" pool). Each carries the seven figures rcbj asked for — current
+workers, busy, free, maximum (the setting), initial (what `start()` started),
+restarts and crashes, and the average response time — plus a `state` and a
+sentence.
 
-Five decisions:
+**EVERY WORKER IS A THREAD SINCE #364 (2026-09-30)**: a `worker_threads`
+Worker of the front process, where it was a forked process. Every thread
+has the process's pid, so a worker row is `threadId` (the pool's `pid` for
+it, `common/CLAUDE.md`) and never `pid`; the page's table is *Worker
+threads*, by *Thread*; the view carries `mainThread: true`, which is what
+the HTTP job holds instead of "the answering pid is no worker's" — a
+comparison that means nothing when pids and thread ids are different
+numbering. The pool's counter keeps its name (`restarts.forked`); the page
+says "started".
+
+**THERE WAS A THIRD, THE POST-QUANTUM POOL, UNTIL #363 (2026-09-30).**
+`common/worker_pool.js` forked processes to compute post-quantum signatures
+and scrypt, sized by `workers.count` and `workers.countInRequestWorkers`, and
+this page drew it with a row per process, because every request worker had
+one of its own. The pool and both settings are gone: post-quantum operations
+run on node's OpenSSL (`common/pq_native.js`) and scrypt is node's
+asynchronous `crypto.scrypt`, both on libuv's thread pool inside whichever
+process asked, which has nothing of its own to draw. The page says so in its
+*What this page is* note, and asks no request worker anything any more.
+
+Four decisions:
 
 * **A POOL THAT IS OFF SAYS SO IN WORDS.** `off`, `not-started`,
-  `not-dispatching` (forked, and `workers.dispatch` names nothing), `given-up`,
-  `running`, and `not-forked` for a post-quantum pool that has had no job. An
+  `not-dispatching` (started, and `workers.dispatch` names nothing — no
+  longer the default, which is `*` since #364), `given-up` and `running`. An
   off pool draws its sentence and no table, so no row of zeros reads as a
-  broken pool.
+  broken pool. **And it says WHICH off (#364)**: `workers.requestCount`
+  defaults to 1, and that default is none on a store that cannot coordinate
+  (`process_memory.requestWorkers()`), so the sentence says "at its default
+  of 1, which means none where the store cannot coordinate" rather than the
+  untrue "is 0" — the page asks the setting's layer (`config.sourceOf()`).
 * **A CRASH IS NOT A STOP.** Each pool counts an exit nobody asked for apart
-  from one it asked for (`stop()`'s drain; `retire()` on a lowered
-  `workers.count`), and the failed starts among the crashes. A request pool's
-  `replaced` is `request_pool.js`'s own count, beside them.
-* **THE FRONT PROCESS DRAWS IT, ALWAYS.** Both paths are in `request_pool.js`'s
-  `NEVER_DISPATCHED`, the debugger page's arrangement: a worker's copy of that
-  module forked nothing and would report every request pool off. Not the
+  from one it asked for (`stop()`'s drain), and the failed starts among the
+  crashes. `replaced` is `request_pool.js`'s own count, beside them.
+* **THE FRONT PROCESS DRAWS IT, ALWAYS** — on its main thread. Both paths are
+  in `request_pool.js`'s `NEVER_DISPATCHED`, the debugger page's arrangement:
+  a worker thread's copy of that module started nothing and would report
+  every request pool off. Not the
   caches page's cluster snapshot — that carries only what a heartbeat can
   afford, and exists only with a cluster.
-* **THE POST-QUANTUM POOL HAS A ROW PER PROCESS.** Every request worker loads
-  `common/crypto.js` and so forks a post-quantum pool of its own, where most
-  such jobs run once dispatch is on. The front process asks each ready worker
-  over the channel (`askWorkerPoolStatus()`, one `{ poolStatus }` message,
-  answered with that worker's `worker_pool.stats()`, bounded at a second); a
-  worker that does not answer is listed under `unanswered` rather than holding
-  the page. The pool's own figures are the rows' totals; its maximum is per
-  process.
 * **THIS NODE'S, AND A SERVICE PAGE.** The page names the host and pid that
   drew it and says another node has pools of its own. It is in
   `SERVICE_PAGES`, so a realm administrator is refused it; it has no control,
@@ -6635,7 +6650,7 @@ and `tests/vendored/sts_worker_pools.js` cover it.
 
 ---
 
-## `/admin/node-health`: THE CONTAINER AND EVERY PROCESS OF THIS NODE (#329, 2026-09-28)
+## `/admin/node-health`: THE CONTAINER AND EVERY PROCESS AND WORKER THREAD OF THIS NODE (#329, 2026-09-28)
 
 Monitoring → Node Health, beside Worker Pools, drawn by `node_health_admin.ts`
 (18s). rcbj asked for the container's CPU utilisation, its total memory, and
@@ -6649,24 +6664,38 @@ what shows WHICH process grows. Four sections and the machine's own figures:
 * **Memory** — `memory.current` against `memory.max`; `memory.stat`'s `anon`,
   `file` and `kernel`, `memory.peak` and `memory.events`' `oom_kill`. No limit
   gives no percentage.
-* **Processes** — the front process's own `process.memoryUsage()` and
-  `cpuUsage()`; each request and hosted-surface worker's, asked over #327's
-  `{ poolStatus }` exchange (`common/CLAUDE.md`), bounded at a second, a
-  silent one under `unanswered`; and the same figures from every child —
-  each post-quantum child of the front process
-  (`worker_pool.askMemoryStatus()`, a control message `worker.js` answers
-  before its job table and never a job, `common/CLAUDE.md`), of each request
-  worker (which asks its own when the question carries `childMemory`, and
-  answers with `pqMemory`), and the debugger's api child
+* **Processes and worker threads** — the front process's own
+  `process.memoryUsage()` and `cpuUsage()`; each request and hosted-surface
+  worker THREAD's heap, asked over #327's `{ poolStatus }` exchange
+  (`common/CLAUDE.md`), bounded at a second, a silent one under
+  `unanswered`; and the same five figures from the debugger's api child
   (`debugger_api_process.askMemory()`, answered by the preload
-  `debugger_api_status.ts`, `debugger/CLAUDE.md`), each bounded at half a
-  second so a worker's answer fits inside the front process's second. **A
-  child that does not answer** — a post-quantum worker computing a job reads
-  no message until it returns, and a worker that did not ask its children —
-  keeps a row with its resident size (`VmRSS`, `VmHWM`) from
-  `/proc/<pid>/status`, the heap figures null, and `notReported` saying why.
-  The totals sum the rows and say that shared pages are counted once per
-  process.
+  `debugger_api_status.ts`, `debugger/CLAUDE.md`), bounded at half a second.
+  **A child that does not answer** keeps a row with its resident size
+  (`VmRSS`, `VmHWM`) from `/proc/<pid>/status`, the heap figures null, and
+  `notReported` saying why. The totals sum the rows and say that shared pages
+  are counted once per process. **There are no post-quantum children since
+  #363 (2026-09-30)**: until then the front process and each request worker
+  had some (`worker_pool.askMemoryStatus()`, `childMemory`, `pqMemory`), and
+  now post-quantum signing and scrypt run on libuv's thread pool, so their
+  memory is the asking process's own — the totals' sentence says so.
+
+  **A WORKER IS A THREAD OF THE FRONT PROCESS SINCE #364 (2026-09-30), and
+  that decides what a row may say.** In a thread, `process.memoryUsage().rss`
+  and `process.cpuUsage()` are the WHOLE PROCESS's — the same numbers in every
+  thread — and `/proc/<pid>` is the whole process too; only `heapUsed`,
+  `heapTotal`, `external` and `arrayBuffers` are per V8 isolate. So every row
+  has a `kind` (`process` or `thread`), a `pid` and a `threadId`: the front
+  process's row carries the process's resident size and CPU time — every
+  thread's — and its main thread's heap, with `processWide` saying so; a
+  worker thread's row (`protocol worker thread 3`, `hosted-surface worker
+  thread 5`) carries its own heap and `null` resident size and CPU time,
+  because repeating the process's would count it once per thread; the
+  resident total adds processes alone (the front and the debugger's child)
+  and the heap total every isolate (`isolatesWithHeap`), with `processes` and
+  `workerThreads` counted apart. **A worker thread that does not answer is
+  only said to have not answered** — it has no `/proc` entry of its own to
+  fall back on, and `/proc/<pid>` is already the front's row.
 * **ECS** — where `ECS_CONTAINER_METADATA_URI_V4` is set, the container
   document, `/task` (limits) and `/task/stats` (this container's entry, by its
   `DockerId`), each with a one-second bound, as a cross-check. No IAM. Dialled
@@ -6711,15 +6740,15 @@ Five decisions:
   container sharing the host's namespace); the root otherwise (a container
   with a cgroup namespace of its own, where the root is the container).
 * **THE FRONT PROCESS DRAWS IT, ALWAYS** — `NEVER_DISPATCHED`, 18r's reason:
-  only it knows every worker.
+  only it knows every worker thread.
 * **THIS NODE'S, AND A SERVICE PAGE** — it names the host and pid, it is in
   `SERVICE_PAGES`, and it has no control.
 
 The locations (`cgroupRoot`, `procRoot`), the clock, `sleep`, the pools and
 `fetchJson` are constructor dependencies, which is how
-`tests/node_health_page.js` hands it a cgroup of its own; its section 8 holds
-a real post-quantum child to its answer, and `tests/debugger_api_process.js`
-section F the preload.
+`tests/node_health_page.js` hands it a cgroup of its own (its section 8, a
+real post-quantum child, went with #363), and `tests/debugger_api_process.js`
+section F holds the preload.
 `GET /admin-api/node-health` answers the same `nodeHealthView()` (rule 7); a
 view that could not be built is `STS-CORE-0124`.
 `tests/vendored/sts_node_health.js` is the HTTP half.

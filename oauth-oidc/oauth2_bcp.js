@@ -2521,7 +2521,7 @@ function credentialOnFile(registered) {
 // `private_key_jwt` assertion may be signed with one of the eleven
 // post-quantum algorithms this service advertises for client authentication —
 // seconds of computation on the thread that owns every listener here. See
-// common/worker.js. What this function DECIDES is unchanged: the policy is
+// common/pq_native.js. What this function DECIDES is unchanged: the policy is
 // still this module's and the mechanics are still client_auth.js's.
 // ---------------------------------------------------------------------------
 // WHAT THIS REQUEST DEMONSTRATED ABOUT THE CLIENT — AN OBSERVATION, NEVER A

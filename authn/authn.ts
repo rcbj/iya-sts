@@ -12464,7 +12464,7 @@ class Authn {
       // screen.
       //
       // `common/credentials.ts`'s `verifyBackupCodeAsync()` puts the candidates
-      // on the worker pool in parallel and refuses in exactly the order the
+      // on libuv's thread pool in parallel and refuses in exactly the order the
       // synchronous door does, because both go through one `backupPrepare()`.
       credentials.verifyBackupCodeAsync(step.username, String(body.code || ''))
         .then(function (verdict) {

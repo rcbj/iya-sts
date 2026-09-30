@@ -4399,14 +4399,14 @@ class OAuth2Server {
   // chosen out of `id_token_signing_alg_values_supported`, which is the WHOLE
   // shared table — all eleven post-quantum and composite entries included — and
   // one of those signatures takes seconds on the thread that owns every
-  // listener this service has. See common/worker.js.
+  // listener this service has. See common/pq_native.js.
   //
   // The RS256 default below does not go near the pool and is not deferred: it
   // is microseconds, and it is the branch that records the token in the
   // console's count.
   /**
    * Mints an ID Token for a client, with the claims its scope and claims
-   * request ask for, signed by its registered algorithm (on the worker pool
+   * request ask for, signed by its registered algorithm (on libuv's thread pool
    * where slow) and encrypted where it registered that.
    *
    * @param base - the authorization server's base URL
@@ -4686,12 +4686,8 @@ class OAuth2Server {
                               { kind: 'id_token' }),
                 { certificateHeader: 'id-token', algorithm: idAlg,
                   header: boundTyp })
-      // `session` is the pool's routing hint — this person's `sub`, so that one
-      // session's signatures queue behind each other rather than across the
-      // pool.
       : await signJwtAsAsync(payloadWithCustom, idAlg, registered.client_secret,
-                             { session: opts.user && opts.user.sub,
-                               certificateHeader: 'id-token',
+                             { certificateHeader: 'id-token',
                                header: boundTyp });
     // OIDC Core section 10.2 (2026-09-17): SIGNED, THEN ENCRYPTED, when the
     // client registered `id_token_encrypted_response_alg` — a Nested JWT with
@@ -9917,11 +9913,11 @@ class OAuth2Server {
       log.debug("Leaving the authorization endpoint. The session stands, so " +
                 "the response goes out now.");
       // A CATCH RATHER THAN AN `async` HANDLER. That function became
-      // asynchronous when the ID Token's signature moved to the worker pool,
-      // and its return value was never used — but a promise nobody catches is a
-      // request that hangs where a throw used to be a 500, so the rejection is
-      // turned back into an answer here. Everything else in this handler still
-      // throws synchronously, which express still catches.
+      // asynchronous when the ID Token's signature moved to libuv's thread
+      // pool, and its return value was never used — but a promise nobody
+      // catches is a request that hangs where a throw used to be a 500, so the
+      // rejection is turned back into an answer here. Everything else in this
+      // handler still throws synchronously, which express still catches.
       if (stepUpAssessed) {
         stepUp.record(q.client_id, stepUpHonoured ? 'stepup.met_after_sign_in'
                                                   : 'stepup.met_by_session');
@@ -10648,7 +10644,7 @@ class OAuth2Server {
   // `userinfo_signing_alg_values_supported`, which advertises all eleven
   // post-quantum and composite algorithms — and an SLH-DSA-SHAKE-128s signature
   // took 14.6 and 15.4 seconds on 2026-08-29, during which this service
-  // answered nobody at all. See common/worker.js. Every other algorithm
+  // answered nobody at all. See common/pq_native.js. Every other algorithm
   // resolves without leaving this process; signJwtAsAsync() decides which is
   // which, not this endpoint.
   private async signUserinfo(body: Json, alg: Json, registered: Json,
@@ -10664,12 +10660,8 @@ class OAuth2Server {
     // WHICH KEY signs which algorithm is helpers.js's answer and not this
     // endpoint's — see signJwtAs(). It was written out here first and the ID
     // Token endpoint would have copied it.
-    //
-    // `session` is the pool's routing hint: this token's own `sub`, so that one
-    // person's signatures queue behind each other rather than across the pool.
     const signed = await signJwtAsAsync(payload, alg, registered.client_secret,
-                                        { session: claims.sub,
-                                          certificateHeader: 'userinfo' });
+                                        { certificateHeader: 'userinfo' });
     log.debug("Leaving OAuth2Server.signUserinfo().");
     return signed;
   }
@@ -11444,7 +11436,7 @@ class OAuth2Server {
   // registered, and a `private_key_jwt` client assertion signed with one. Both
   // take SECONDS of pure computation, and until they were moved to the worker
   // pool this service answered nothing at all — not another caller, not the KDC
-  // on port 88 — for the length of each. See common/worker.js.
+  // on port 88 — for the length of each. See common/pq_native.js.
   //
   // It is registered through a wrapper that catches, at the foot of this
   // section: an `async` handler's throw is a rejected promise, which express 4

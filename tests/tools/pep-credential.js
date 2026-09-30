@@ -512,7 +512,7 @@ async function main() {
 
 // Guarded so that a test can require this file for `mint()` and `trustAnchor()`
 // without it parsing arguments and writing files — the same guard
-// `xacml-pep/pep.js` and `common/worker.js` carry, for the same reason.
+// `xacml-pep/pep.js` and `common/request_worker.ts` carry, for the same reason.
 if (require.main === module) {
   main().catch(function (error) {
     process.stderr.write((error && error.stack ? error.stack : String(error)) +

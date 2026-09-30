@@ -290,9 +290,9 @@ class VcDid {
     return { alg: alg, key: signer.key, kid: signer.kid };
   }
 
-  // The same answer, with a post-quantum key set generated in the worker pool
-  // rather than on this thread (#38's follow-ups: credentials may be signed
-  // with ML-DSA, and the DID document must publish that key).
+  // The same answer, with a post-quantum key set generated on libuv's thread
+  // pool rather than on this thread (#38's follow-ups: credentials may be
+  // signed with ML-DSA, and the DID document must publish that key).
   private async didSignerAsync(): Promise<{ alg: string; key: any;
                                             kid: string }> {
     const { log, config, STS, signingKeyForAsync } = this.deps;

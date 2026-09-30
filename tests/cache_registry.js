@@ -54,6 +54,9 @@ const app = require('../common/app');
 // registered here. The console shell comes first, as in the composition root.
 require('../admin-ui/admin').registerRoutes(app);
 const cachesAdmin = require('../admin-ui/caches_admin');
+// What names this process's figures since #364: pid, and the thread in a
+// worker thread (`processTag()`), because every thread shares the pid.
+const WorkerChannel = require('../common/worker_channel');
 cachesAdmin.registerRoutes(app);
 
 const log = require('bunyan').createLogger({
@@ -64,7 +67,6 @@ const log = require('bunyan').createLogger({
 // the module that registers it — the caches and the replay stores alike.
 const OWNERS = {
   '../common/tls_client_certificates': ['tls.client-certificate-identities'],
-  '../common/worker_pool': ['workers.crypto-affinity'],
   '../common/request_pool': ['workers.request-affinity'],
   '../persistence/persistence': ['persistence.write-shadow'],
   '../common/used_assertions': ['oauth2.used-assertions'],
@@ -400,10 +402,12 @@ function claimFive(t) {
   t.check(Array.isArray(list.caches) && list.totals.caches ===
           list.caches.length && list.notListed.length === 3 &&
           Array.isArray(list.otherProcesses) &&
-          typeof list.pid === 'number',
+          list.pid === WorkerChannel.processTag() &&
+          list.pid === String(process.pid),
           'with no cache named, the reply is the list, its totals, the ' +
           'three things this process does not hold, and the other ' +
-          'processes\' figures');
+          'processes\' figures — named by processTag(), which is the bare ' +
+          'pid in the main thread (#364)', JSON.stringify(list.pid));
   t.check(list.notListed.every(function (n) {
     return !/client_address|version\.js|persistence_minted/.test(n.where);
   }), 'no memo that is now a registered cache is still listed as left out');
@@ -558,7 +562,8 @@ function claimSeven(t) {
   const full = registry.report(NOW).filter(function (c) {
     return c.name === 'jose.kid-thumbprint-uris';
   })[0];
-  t.check(snap.pid === process.pid && !!row && row.size === full.size &&
+  t.check(snap.pid === WorkerChannel.processTag() && !!row &&
+          row.size === full.size &&
           row.maxEntries === full.maxEntries && row.hits === full.hits &&
           JSON.stringify(snap).indexOf('cache-registry-test-kid') < 0,
           'the cluster snapshot carries every store\'s figures and no row');

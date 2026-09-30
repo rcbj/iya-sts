@@ -94,6 +94,8 @@ const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
 const errorCodes = require('./error_codes');
+// This thread's identity (#364); see common/worker_channel.ts.
+const WorkerChannel = require('./worker_channel');
 
 const log = bunyan.createLogger({ name: 'sts-cache-registry' });
 config.registerLogger(log);
@@ -488,7 +490,7 @@ function snapshot(now) {
             c.hits, c.misses, c.evictions, c.refusals];
   });
   log.debug("Leaving snapshot().");
-  return { at: at, pid: process.pid, caches: out };
+  return { at: at, pid: WorkerChannel.processTag(), caches: out };
 }
 
 // The reverse of `snapshot()`'s rows, for the page.

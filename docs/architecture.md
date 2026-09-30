@@ -37,35 +37,50 @@ store is the one exception: if it can't be opened, the service doesn't start.
 
 ## The request dispatcher and the worker pools
 
-The dispatcher hands work from the leader to three pools of child processes:
+The dispatcher hands work from the leader to worker threads — each a
+`worker_threads` Worker inside the same process, with its own JavaScript heap
+and event loop (#364; they were separate child processes until then):
 
 | Pool | What a worker runs | Setting | Default |
 |---|---|---|---|
-| **Crypto** | Post-quantum signing and verification, key generation, password hashing: slow computations that would otherwise freeze every listener | `workers.count` in the front process, `workers.countInRequestWorkers` in a request or surface worker | 5 and 0, forked only when the first such job arrives; 0 computes in the process itself |
-| **Admin** | Only the admin console and the user portal | `workers.surfaceCount` | 0 (off) |
-| **Request** | The whole protocol stack | `workers.requestCount` | 0 (off) |
+| **Request** | The whole protocol stack, the admin console and the user portal included | `workers.requestCount` | 1 where the store coordinates (PostgreSQL); 0 on the memory or LDIF store |
+| **Admin** | Only the admin console and the user portal, when you want them kept apart from protocol traffic | `workers.surfaceCount` | 0 (off: they go to the request workers) |
+
+`workers.dispatch` (default `*`, everything) says what goes to a worker, and
+`workers.readYourWrite` (default on) makes a worker catch up with what the
+leader wrote before it answers. Every worker is a whole second copy of the
+service's memory, so one is the default; add more only where the node has
+the cores to use them.
+
+Post-quantum signing, verification and key generation, and password
+hashing, are not a pool. They run natively on Node's OpenSSL, on libuv's
+thread pool, so they neither freeze the listeners nor start a process of
+their own (#363; a third pool of forked processes did this until then).
 
 With the admin and request pools off, the leader answers every request itself.
 When they are on, **their workers start one at a time**
 (`workers.startConcurrency`, default 1), because each one loads the whole
 store into its own memory as it starts. The listener opens once the first
-worker of each pool is up, and the rest start behind it. **Every process has a
+worker of each pool is up, and the rest start behind it. **Every thread has a
 heap limit** derived from the container's memory limit and the number of
-processes (`workers.heapLimitMb`: 0 to derive, -1 for none). Each process logs its memory
-every five minutes (the `process.memory-report` job). A worker that runs out of
-memory is reported with a code that says whether the heap or the kernel ended
-it.
+threads (`workers.heapLimitMb`: 0 to derive, -1 for none). Each thread logs its
+memory every five minutes (the `process.memory-report` job). A worker whose
+heap reaches its limit ends on its own and is replaced, and the service goes
+on (`STS-WORKER-0046`); a container that reaches its memory limit loses the
+whole process, which is why few threads are better than many.
 
 Monitoring → Worker Pools (`/admin/worker-pools`) shows each pool of the node:
 its workers now, busy and free, its maximum and initial size, its crashes and
 restarts, and its average response time. Monitoring → Node Health
-(`/admin/node-health`) shows the container's CPU and memory and the memory of
-every one of those processes.
+(`/admin/node-health`) shows the container's CPU and memory, the process's,
+and each worker thread's heap.
 
-When they are on, the processes share state through the persistence store and
-not through memory. For that reason, turning dispatch on without
+When they are on, the leader and the workers share state through the
+persistence store and not through memory. For that reason, asking for workers
+explicitly without
 [coordination](persistence.md#processes-against-one-store-coordinate) is refused
-at startup: it would give wrong answers, not just slow ones.
+at startup: it would give wrong answers, not just slow ones. The default of one
+worker simply becomes none on a store that can't coordinate.
 
 **Several nodes work the same way.** A cluster is several containers against
 one PostgreSQL store. [A cluster in AWS](aws-cluster.md) shows three of them

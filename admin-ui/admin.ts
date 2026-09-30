@@ -808,6 +808,9 @@ import validation = require('../common/validation');
 // require in the ordinary direction, not a slot: neither calls the other.
 import closedSets = require('../common/closed_sets');
 import InstanceSlot = require('../common/instance_slot');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -4573,7 +4576,9 @@ class AdminConsole {
     log.debug("Entering AdminConsole.runtimeFacts().");
     const facts: Record<string, any> = {};
     try {
-      const count = parseInt(config.value('workers.requestCount'), 10) || 0;
+      // The #364 rule: the default of one worker is none without a store
+      // that coordinates.
+      const count = require('../common/process_memory').requestWorkers();
       const rawDispatch = config.value('workers.dispatch');
       const dispatch = (Array.isArray(rawDispatch) ? rawDispatch
                                                    : String(rawDispatch || '')
@@ -4592,7 +4597,8 @@ class AdminConsole {
           (surfaceCount
             ? ' + ' + surfaceCount + ' for the console and portal' : '') +
           (process.env.STS_REQUEST_WORKER
-            ? '; this page from ' + pool + 'worker ' + process.pid : '') + ')'
+            ? '; this page from ' + pool + 'worker ' + WorkerChannel.id()
+            : '') + ')'
         : 'single process';
     } catch (e) {
       log.debug("Caught in AdminConsole.runtimeFacts(): " +
@@ -41755,10 +41761,10 @@ class AdminConsole {
       log.debug("Entering the admin Shared Signals action endpoint.");
       const body = parseBody(req);
       // The one action handler in this console that awaits. Signing a Security
-      // Event Token may be an ML-DSA or SLH-DSA signature on the worker pool,
-      // and delivering it is a POST to somebody else's endpoint; answering
-      // before either had happened would be this page reporting "sent" about
-      // nothing.
+      // Event Token may be an ML-DSA or SLH-DSA signature on libuv's thread
+      // pool, and delivering it is a POST to somebody else's endpoint;
+      // answering before either had happened would be this page reporting
+      // "sent" about nothing.
       ssfAction(body).then(function (result) {
         self.respondToAction(req, res, '/admin/ssf', result);
         log.debug("Leaving the admin Shared Signals action endpoint.");
@@ -45916,7 +45922,7 @@ let truststore = null;
 // refuses a partial filler in order to avoid.
 //
 // `action` RETURNS A PROMISE, like the eighth's: emitting a CAEP event signs a
-// JWS — possibly on the worker pool — and then POSTs it to somebody else's
+// JWS — possibly on libuv's thread pool — and then POSTs it to somebody else's
 // endpoint.
 // ---------------------------------------------------------------------------
 let caepReporter = null;

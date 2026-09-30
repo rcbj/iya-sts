@@ -19,10 +19,13 @@
 // QUICK_EXIT_LIMIT failed starts in a row.
 //
 // The decision is asserted directly (section 1). The rest drives the REAL
-// fork() and reap() with real child processes, running a STUB worker this
-// file writes to the temp directory: it answers the same channel — `begin`
-// in, `ready` out, an HTTP server on the socket it is given — without loading
-// the protocol stack, which is not what is being tested.
+// fork() and reap() with real worker THREADS (#364: a worker is a
+// `worker_threads` Worker of the front process, and fork() still names the
+// act), running a STUB worker this file writes to the temp directory: it
+// answers the same channel — `begin` in, `ready` out, an HTTP server on the
+// socket it is given — without loading the protocol stack, which is not what
+// is being tested. A worker "killed" is a thread terminated: `kill()` is
+// `terminate()` since #364, and a thread receives no signal.
 // ===========================================================================
 
 const fs = require('fs');
@@ -39,29 +42,38 @@ const log = require('bunyan').createLogger({ name: 'request_worker_replacement',
 const PROTO = pool.PROTOCOL_POOL;
 const SURFACES = pool.SURFACE_POOL;
 
-// The stub. STUB_MODE=fail answers `ready: false`, as a worker whose state
-// could not be brought up does; anything else listens and says ready, after
-// STUB_DELAY_MS when that is set (a slow start, for the start gate). GET
-// /die makes it exit on its own, as a crash does.
+// The stub, a WORKER THREAD since #364 as the real worker is. It speaks the
+// thread's channel — `parentPort`, which is what WorkerChannel wraps — and
+// answers its `threadId`, the id the pool names a worker by now that every
+// thread has the process's pid. STUB_MODE=fail answers `ready: false`, as a
+// worker whose state could not be brought up does; anything else listens and
+// says ready, after STUB_DELAY_MS when that is set (a slow start, for the
+// start gate). GET /die makes it exit on its own, as a crash does:
+// `process.exit()` in a thread ends the thread and nothing else. `stop` is
+// what a drain sends.
 const STUB = [
   "'use strict';",
   "const http = require('http');",
-  "process.on('message', function (m) {",
+  "const wt = require('worker_threads');",
+  "wt.parentPort.on('message', function (m) {",
+  "  if (m && m.stop) { process.exit(0); }",
   "  if (!m || !m.begin) { return; }",
   "  if (process.env.STUB_MODE === 'fail') {",
-  "    process.send({ ready: false, error: 'the stub cannot start' });",
+  "    wt.parentPort.postMessage({ ready: false,",
+  "                                error: 'the stub cannot start' });",
   "    return;",
   "  }",
   "  const server = http.createServer(function (req, res) {",
   "    if (req.url === '/die') { process.exit(3); }",
-  "    res.end(String(process.pid));",
+  "    res.end(String(wt.threadId));",
   "  });",
   "  const delay = Number(process.env.STUB_DELAY_MS) || 0;",
   "  setTimeout(function () {",
-  "    server.listen(m.socket, function () { process.send({ ready: true }); });",
+  "    server.listen(m.socket, function () {",
+  "      wt.parentPort.postMessage({ ready: true });",
+  "    });",
   "  }, delay);",
   "});",
-  "process.on('disconnect', function () { process.exit(0); });",
   ""
 ].join('\n');
 
@@ -102,7 +114,8 @@ function statsOf(poolName) {
   })[0];
 }
 
-// GET / on a worker's own socket answers its pid.
+// GET / on a worker's own socket answers its threadId, which is the pool's
+// `pid` for it (#364).
 function ask(entry, urlPath) {
   log.debug("Entering ask().");
   log.debug("Leaving ask().");
@@ -231,13 +244,17 @@ async function checkADeadWorkerIsReplaced(t, stubPath) {
       return one.slot === 0;
     })[0];
 
-    first.child.kill('SIGKILL');
+    t.equal(await ask(first), String(first.pid),
+            'a worker is named by its threadId: the stub answers the id the ' +
+            'pool holds for it');
+    first.child.kill();
     t.check(await waitFor(function () {
       const now = ready(PROTO);
       return now.length === 2 && now.every(function (one) {
         return one.pid !== first.pid;
       });
-    }, 10000), 'a SIGKILLed worker is replaced, and the pool is back to two',
+    }, 10000), 'a terminated worker thread is replaced, and the pool is ' +
+    'back to two',
     JSON.stringify(ready(PROTO).map(function (one) { return one.pid; })));
     const replacement = ready(PROTO).filter(function (one) {
       return one.slot === 0;
@@ -280,8 +297,11 @@ async function checkStoppingReplacesNothing(t, stubPath) {
     await sleep(500);
     t.equal(pool.workerTable().length, 0,
             'after stop() no worker is left and none was forked');
-    t.check(one.child.exitCode !== null || one.child.signalCode !== null,
-            'and the worker it drained has exited', '');
+    t.check(one.child.exitCode === 0 && one.child.signalCode === null,
+            'and the worker thread it drained has exited on its own, with ' +
+            'code 0 and no signal (a thread receives none)',
+            JSON.stringify({ exitCode: one.child.exitCode,
+                             signalCode: one.child.signalCode }));
   });
   log.debug("Leaving checkStoppingReplacesNothing().");
 }
@@ -386,8 +406,8 @@ async function checkWorkersStartOneAtATime(t, stubPath) {
       startedAt: got.entries.map(function (one) { return one.startedAt; }),
       settledAt: got.settledAt }));
 
-    // TWO DEATHS AT ONCE, as an OOM kill does: the replacements go through
-    // the same gate rather than starting together.
+    // TWO DEATHS AT ONCE, as two threads out of heap at once would be: the
+    // replacements go through the same gate rather than starting together.
     const before = pool.stats().pools[0].replaced;
     let peak = 0;
     const sampler = setInterval(function () {
@@ -395,7 +415,7 @@ async function checkWorkersStartOneAtATime(t, stubPath) {
     }, 5);
     const doomed = ready(PROTO).slice(0, 2);
     doomed.forEach(function (one) {
-      one.child.kill('SIGKILL');
+      one.child.kill();
     });
     const back = await waitFor(function () {
       const now = ready(PROTO);
@@ -404,7 +424,7 @@ async function checkWorkersStartOneAtATime(t, stubPath) {
       });
     }, 15000);
     clearInterval(sampler);
-    t.check(back, 'both SIGKILLed workers are replaced', '');
+    t.check(back, 'both terminated workers are replaced', '');
     t.equal(pool.stats().pools[0].replaced - before, 2,
             'two replacements, not more');
     t.equal(peak, 1, 'and they started one at a time too');
@@ -456,9 +476,10 @@ async function run(t) {
 
 module.exports = {
   name: 'request_worker_replacement',
-  describe: 'that a request worker which dies is replaced in its pool and ' +
-            'slot, not while stopping, not past the configured size, and a ' +
-            'worker that cannot start is ended and retried a bounded number ' +
-            'of times, and that workers are started one at a time (#342)',
+  describe: 'that a request worker thread which dies is replaced in its ' +
+            'pool and slot, not while stopping, not past the configured ' +
+            'size, and a worker that cannot start is ended and retried a ' +
+            'bounded number of times, and that workers are started one at ' +
+            'a time (#342)',
   run: run
 };

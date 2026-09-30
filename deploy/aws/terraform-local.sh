@@ -160,6 +160,11 @@ then
     awk -F, '{ for (i = 1; i <= NF; i++) if ($i != "") printf "%s\"%s\"", (n++ ? "," : ""), $i }')"
   echo "==> The load balancer will admit ${ALLOWED_CIDR}" >&2
   TF_VARS=(-e "TF_VAR_image_tag=${IMAGE_TAG}" -e "TF_VAR_allowed_cidrs=[${ALLOWED_JSON}]")
+  # A single-region RESTORE (environment/variables.tf): named on the one apply
+  # that restores, never in the env file.
+  for v in TF_VAR_db_snapshot_identifier TF_VAR_carryover_secret; do
+    [ -z "${!v:-}" ] || TF_VARS+=(-e "${v}=${!v}")
+  done
 fi
 
 if [ "${TF_STACK}" = "spiffe-realm" ];

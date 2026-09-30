@@ -954,8 +954,9 @@ class SsfHttp {
   // with `Promise.all()`, and a directory write is two events — so a SCIM
   // bulk load against forty-two push streams asked for eighty-four pushes per
   // person, all at once. Most were to this service's OWN receivers, which is
-  // a request back into the worker pool, so the burst was load on the service
-  // itself and it stopped answering. The cap makes that fan-out a queue.
+  // a request back into the request-worker pool, so the burst was load on the
+  // service itself and it stopped answering. The cap makes that fan-out a
+  // queue.
   //
   // **A PUSH THAT CANNOT WAIT IS NOT MADE**, and says so with a code: the SET
   // is dead-lettered by `transmit()`, which is where the bound on memory comes
