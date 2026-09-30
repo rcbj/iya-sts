@@ -52,6 +52,12 @@
 #     heavier suite jobs at 684 MB peak in a 1 GiB container; so one request
 #     worker, no surface worker, 0.5 vCPU / 1 GiB (Fargate's smallest CPU for
 #     1 GiB is 0.25 vCPU; 0.5 because the front and the thread share it).
+#     AND THEN NO WORKER AT ALL, THE SAME DAY: with one thread the derived
+#     budget is two equal shares of (1024 − 256) MiB, 336 MiB of old space
+#     for the front, and the front ran out of heap at 330 MiB restoring
+#     testidp's database (STS FATAL "Ineffective mark-compacts near heap
+#     limit", exit 139, every node). Alone, the front is one isolate with
+#     ~720 MiB in the same 1 GiB; #366 measured a front alone at 558 MB peak.
 #   * no suite runner. Backups are deleted with the environment: it is
 #     rebuilt many times over the coming weeks, and kept backups would pile up, billed.
 # ---------------------------------------------------------------------------
@@ -97,7 +103,7 @@ extra_environment = {
 }
 
 sts_mode                = "product"
-workers_request_count   = 1
+workers_request_count   = 0
 workers_surface_count   = 0
 workers_dispatch        = "*"
 workers_read_your_write = true
