@@ -11,9 +11,10 @@ Dockerfile removes this directory from the image.
 | `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
-| `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction, VPC CIDR and pinned countries, and which cell holds the global database's writer. Its presence is what makes an environment multi-cell; `testidpna` is the one there is | the deployer role |
+| `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction and VPC CIDR, which cell holds the global database's writer, and (since #367) each jurisdiction's pinned countries. Its presence is what makes an environment multi-cell; `testidpna` (two cells) and `globalidp` (six, the target test case) are the two there are | the deployer role |
 | `environment/envs/<env>.conversion.tfvars.json` | per conversion | **a single-region environment converted into this one's cells (#98)**: which old environment, each converted cell's source snapshot and the copy it restores from, and the carry-over secret. Laid over the cells file by `entrypoint.sh` ONLY with `TF_CONVERT=1` (*Converting a single-region environment into cells*, below); `testidpna`'s converts `testidp` | the deployer role |
 | `convert-to-cells.sh` | per conversion | the conversion's runbook: checks (read only, the default), `--carry-secrets`, `--copy-snapshot`, and the `terraform-local.sh` commands in order — never an apply or a destroy itself | a person |
+| `*/tests/render.tftest.hcl` | — | **offline renders (#367)** of `foundation/`, `global/` and `environment/`: `terraform test` with nothing asked of AWS — the region rule, the mesh, the DNS tree (*What was checked*, below) | a person, after changing a stack |
 | `global/` | per multi-cell environment | the global tier of a multi-cell environment (#98): the global PostgreSQL writer and a cross-region read replica per other cell, the global secrets and their replicas, the peering mesh and the inter-cell name associations — state at `environment/<env>/global.tfstate` (*Cells*, below) | the deployer role, through `entrypoint.sh` |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
@@ -544,8 +545,10 @@ variable file, so the two cannot disagree — and `envs/<env>.tfvars` holds
 what every cell shares, as it does for a single-cell environment. `testidpna`
 is the first: `usw2` (us-west-2, jurisdiction `us`, `10.61.0.0/16`, the
 primary) and `cac1` (ca-central-1, `ca`, `10.62.0.0/16`, Canada pinned).
-`euc1` and `apse1` are a map entry each — region, jurisdiction, a CIDR of
-their own, and for euc1 the EU and EEA country codes.
+`globalidp` is the second and the target test case: six cells on three
+continents (*globalidp*, below). **A cell in another region is a map entry**
+— region, jurisdiction, a CIDR of its own — once `foundation/` permits the
+region (*Adding a region*, below).
 
 **`cell` EMPTY IS THE STACK THAT WAS, TO THE LETTER.** Every addition is
 conditional on it; every name is spelt as it was; the state key, the task
@@ -573,6 +576,11 @@ database's addresses before they can start. So a new cell is applied twice,
 and `entrypoint.sh` (`orchestrate_cells`) does it when `environment` is
 applied with no `TF_CELL`:
 
+0. **every cell's region checked** (`preflight_regions`, #367): enabled on
+   the account (an opt-in region refuses every call until it is), permitted
+   to the deployer (a region-fence refusal means `foundation/` was not
+   re-applied with it), and offering PostgreSQL at the cells' version on
+   their instance class — before anything is made;
 1. **each cell with no state yet, `cell_phase = base`, primary first** —
    everything but running nodes (every ECS service at a desired count of 0),
    including the subnet group, security group and Cloud Map namespace the
@@ -599,6 +607,22 @@ into a cell's VPC, which would not otherwise delete), then each cell in
 `base` so that its destroy reads no global state that is gone. `plan` and
 `output` do every cell and then global; `output-json`, `init`, `validate` and
 `import` want a `TF_CELL` (or `TF_STACK=global`).
+
+**AFTER THE PRIMARY, A STEP'S CELLS RUN AT ONCE (#367, 2026-09-30)** —
+`TF_CELL_PARALLEL` at a time (6), each this script again with its own state,
+lock, region and `TF_DATA_DIR`, its lines prefixed `[<cell>]`; the provider
+is fetched into a shared plugin cache first (`warm_plugin_cache`), because
+filling the cache from several inits at once is not promised safe. Six cells
+one after another — a cell database and its replica each in `base` — did not
+fit in the deployer's four-hour session. The primary still goes first and
+alone in steps 1 and 3: its image is what ECR replicates from, and its nodes
+make the global schema. A failed cell lets the others FINISH and then stops
+the apply naming it; a cell whose conversion is pending is applied alone,
+after the rest. Destroy takes every cell at once, after `global/`. **An
+interrupt reaches the children as TERM**: a background command in a script
+starts with SIGINT ignored and cannot trap it (measured), so `step()`'s INT
+relay had never reached its child either — both send TERM, which the
+child's `tf` turns into terraform's interrupt.
 
 **REMOTE STATE, NOT SSM PARAMETERS, carries the global endpoints to the
 cells.** The values are known at plan time, so a cell's plan shows the task
@@ -665,16 +689,26 @@ is told its own as `STS_CELL_HOSTNAME` so the cell leaf can name it.
 
 ### Route 53 (D7)
 
-`test-idp.iyasec.io` becomes a record tree: GEOLOCATION records for the
-countries a cell's `geolocation_countries` pins (`CA` → cac1; later the EU
-and EEA → euc1, `SG` → apse1), and a DEFAULT geolocation record (`*`,
-written by the primary cell) that aliases `cells.test-idp.iyasec.io`, a
-LATENCY set with one record per cell. Every cell writes its own records, so
-none reads another's state for DNS. **A pinned country has no health check**:
+The public name becomes a record tree: GEOLOCATION records for the
+countries a JURISDICTION pins (`jurisdictions` in the cells file) aliasing
+that jurisdiction's LATENCY set, `<jurisdiction>.cells.<name>`, with one
+record per cell of the jurisdiction; and a DEFAULT geolocation record (`*`,
+written by the primary cell) aliasing `cells.<name>`, a LATENCY set with one
+record per cell. `CA` → `ca.cells.test-idp.iyasec.io` (cac1 alone); in
+globalidp the 27 EU countries and IS, LI, NO → `eu.cells.global-idp.iyasec.io`
+(euc1 or euw1, whichever is nearer and healthy), `SG` → sg, `MY` → my.
+**Pinned to a jurisdiction, not a cell, since #367**: the law that asks for
+the pin names a place, and with two EU cells a pin to one of them would
+never fail over to the other. Each cell writes its two latency records;
+a jurisdiction's pins are written by its first cell by id; so none reads
+another's state for DNS. **A pinned country's record does not evaluate its target's health**:
 Route 53 answers an unhealthy geolocation record with the default, which
-would send Canada to the United States the moment cac1 was down, and the law
-that asks for the pin does not lapse with the cell (fail closed; the service,
-not DNS, is authoritative on residency anyway). **The latency records do**,
+would send the EU to the United States the moment every EU cell was down,
+and the law that asks for the pin does not lapse with the cells (fail
+closed; the service, not DNS, is authoritative on residency anyway). Inside
+the jurisdiction's set the health checks count — one EU cell fails over to
+the other — and a set whose every record is unhealthy is answered with all
+of them. **The latency records carry the health checks**,
 an HTTPS GET of `/healthcheck` on 443 of each cell's NLB from three checker
 regions. The NLB admits `allowed_cidrs` only, so **the Route 53 health
 checkers' published ranges for those three regions are admitted on 443 and
@@ -734,12 +768,14 @@ environment is applied and destroyed together, so nothing idles unbilled.
 ### What `foundation/` must be re-applied with first
 
 **By an administrator, with `permitted_regions` listing every cell's region**
-(`["us-west-2", "ca-central-1"]` for `testidpna`) — which replaces the
+(its default since #367: the two `testidpna` needs and the five more
+`globalidp` does) — which replaces the
 one-region fence (`OnlyUsWest2ForRegionalServices` → the same deny over the
-list), writes every regional ARN in the deployer's policy and both boundaries
-once per region, and makes each region's keys, log group and repository
-replica. The default, `["us-west-2"]`, renders the fence and every ARN as
-before and adds only the global key and us-west-2's cell key. A fourth
+list, inside both boundaries too since #367 — the ARNs name any region and
+the fence holds them to the list), and makes each region's keys, log group
+and repository replica. **For `globalidp` it also adds `global-idp.iyasec.io`
+and its wildcard to `public_dns`**, and ap-southeast-5 must be enabled on the
+account first. A fourth
 deployer policy, `mock-sts-deploy-cells`, holds what only cells do: the
 peering (accepted in the other region, where the connection arrives
 untagged, so scoped to this account's VPCs instead), Route 53 health checks
@@ -749,12 +785,98 @@ makes — a Deny keeps the public zones out of reach of `DeleteHostedZone`.
 configuration**; nothing else in the account replicates today, and a project
 that needs to must add its rule there.
 
-**FOUR REGIONS, WRITTEN OUT.** Terraform cannot make a provider per list
-element, so `foundation/` and `global/` each carry a provider block for
-us-west-2, ca-central-1, eu-central-1 and ap-southeast-1, and a module block
-per region (and per pair, for the peering) that exists only when used. A cell
-in a fifth region is those blocks plus a row in `cell_of_region`, then the
-map entry — and is refused by validation until then.
+**ANY REGION, BY ONE LIST (#367, 2026-09-30).** Until then `foundation/`
+and `global/` carried a provider block per region a cell could be in — four,
+written out, because Terraform cannot make a provider per list element — a
+module block per region, and `global/` a peering block per PAIR. AWS
+provider 6 gives every regional resource a `region` argument, so each is one
+`for_each` through one provider: `modules/region` over `permitted_regions`,
+the replicas over the non-primary cells, the peerings over every pair (the
+primary first, then the rest by id, so adding a cell re-orients no existing
+pair). `moved` blocks carry the old instances to the new addresses — a
+foundation plan that DESTROYED a cell key would schedule the deletion of
+every cell database sealed under it — and **the first plan of each stack
+after this change must show no destroy** before anything is applied.
+
+**A cell's id is its region shortened by rule**, not a table: the area, the
+direction's initials and the number — us-west-2 = usw2, us-east-2 = use2,
+eu-west-1 = euw1, ap-southeast-5 = apse5 (`foundation/locals.tf`,
+`cell_of_region`; the same rule is in the `cells` validation of
+`environment/` and `global/`, because a validation sees no local — keep the
+three in step). A region must be `area-direction-digit`, which keeps an id
+within five characters.
+
+**NO DEPLOYER POLICY GROWS WITH THE REGIONS.** They named every regional
+ARN once per permitted region, and at seven regions `deploy-data` rendered
+8,804 characters against IAM's 6,144 for a managed policy (5,621 at two — it
+was near the edge already). Since #367 those ARNs carry a `*` region
+(`locals.tf`, `rarn`) and the region FENCE — the deployer's `region-fence`
+Deny, and the same Deny now inside both boundaries — is the one place the
+regions are named. Rendered offline: every deployer policy is the same size
+at 2, 7 and 15 regions; the boundaries grow by a few hundred characters (the
+fence's list, and a cell key ARN per region).
+
+### Adding a region
+
+1. If it is an opt-in region (every one launched since 2019), an
+   administrator enables it on the account and waits for `ENABLED`.
+2. The region in `foundation/variables.tf`'s `permitted_regions`, and an
+   administrator re-applies `foundation/` — its cell key, global-key replica,
+   log group and repository replica are made, and the fence opens. The plan
+   stops at `aws_regions.enabled` if step 1 was skipped.
+3. The cell in the environment's cells file: its id (the rule), region,
+   jurisdiction, a CIDR no other cell of the environment uses, and the
+   jurisdiction's pinned countries if it is a new one.
+4. `IMAGE_TAG=<tag> deploy/aws/terraform-local.sh <env> apply`. The
+   preflight asks the region first; the new cell takes its `base`, the
+   global stack adds its replica, peerings and zone associations, and every
+   cell's `full` gives the others the new peer.
+
+Nothing in `global/`, `environment/` or `entrypoint.sh` names a region.
+
+### `globalidp`: the six-region test case (#367, 2026-09-30)
+
+**rcbj's target test case for cells**: six cells on three continents behind
+`global-idp.iyasec.io` — a name of its own, so it can stand beside `testidp`
+or `testidpna` (they share `test-idp.iyasec.io` and cannot) — each cell's
+console at `<cell>.global-idp.iyasec.io`.
+
+| Cell | Region | Jurisdiction | VPC | Pinned |
+|---|---|---|---|---|
+| `usw2` | us-west-2 | `us` | 10.71.0.0/16 | — (the **primary**, the global writer) |
+| `use2` | us-east-2 | `us` | 10.72.0.0/16 | — |
+| `euc1` | eu-central-1 (Frankfurt) | `eu` | 10.73.0.0/16 | the EU 27 and IS, LI, NO, to the `eu` set |
+| `euw1` | eu-west-1 (Ireland) | `eu` | 10.74.0.0/16 | (the same set) |
+| `apse1` | ap-southeast-1 (Singapore) | `sg` | 10.75.0.0/16 | SG |
+| `apse5` | ap-southeast-5 (Malaysia) | `my` | 10.76.0.0/16 | MY |
+
+**Malaysia because there is no AWS region in the Philippines** (rcbj's first
+choice): Manila is a Local Zone of ap-southeast-1, not a region, and cannot
+be a cell. ap-southeast-5 is an **opt-in region**, which an administrator
+enables on the account before `foundation/` is re-applied (*Adding a
+region*). It is the region most likely to lack something: RDS offers
+PostgreSQL on db.t4g there (AWS, 2025-05), which the preflight confirms at
+the cells' version; Fargate, Cloud Map, an exportable ACM certificate and
+Route 53 latency routing to it were not confirmed ahead and show up as
+apse5's own `base` or `full` failing.
+
+**Two cells in one jurisdiction is what this environment tests that
+testidpna cannot**: a person homed in usw2 served by use2 crosses no
+jurisdiction (`cells.permittedTransfers` needs no entry), and an EU client
+fails over between euc1 and euw1 without leaving the EU (the DNS above).
+`envs/globalidp.tfvars` carries testidpna's #361 transfer choice to every
+pair of the four jurisdictions, so each region's console serves an
+administrator homed in another; delete the line to test the strict default.
+
+**What it costs**: six cells at *What it costs*'s figure — about **$3 an
+hour** idle before transfer, with five global read replicas (one stream each
+from the writer) and fifteen peerings; about $2,200 a month if left up.
+Estimated, not measured.
+
+**Written and checked offline only**, like the rest of *Cells*: the renders
+(*What was checked*), `terraform validate` in every stack, shellcheck (no new
+finding) and the parallel runner exercised with stub children (a failure,
+and an interrupt). The first apply is its test, and it waits for rcbj.
 
 ### Converting a single-region environment into cells (2026-09-28)
 
@@ -888,6 +1010,18 @@ refused for storage (`db_allocated_storage` below the snapshot's); and the
 conversion task's own log, `<env>-<cell>-convert/cell-convert/<task id>`.
 
 ### What was checked, and what to look at first
+
+**Since #367 the renders are in the repository**, `<stack>/tests/render.tftest.hcl`
+in `foundation/`, `global/` and `environment/`, reading the real cells files:
+`terraform -chdir=deploy/aws/<stack> init -backend=false`, then `test`. No
+credential is needed and nothing is asked of AWS. They hold the region rule
+and its refusals, globalidp's fifteen peerings, five replicas and thirty zone
+associations, testidpna keeping its pair and replica under the `moved`
+blocks' addresses, the DNS tree cell by cell, and a single-cell environment
+rendering no cell record. They are not run by the suite or CI. What they
+cannot show is a plan against the real states — the `moved` blocks meeting
+what the states hold — which is the zero-destroy plan owed before the first
+apply (*Any region, by one list*). The paragraphs below are #98's.
 
 `terraform fmt -check`, `init -backend=false` and `validate` in all five
 stacks; shellcheck on the scripts (no new findings); actionlint on the two

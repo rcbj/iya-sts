@@ -3,7 +3,7 @@
 #
 # ---------------------------------------------------------------------------
 # WHAT EVERY PERMITTED REGION HOLDS (#98, 2026-09-28) — modules/region, once
-# per region, with the provider for that region.
+# per region, every resource of it made in that region.
 #
 #   a CELL key          single-region, never replicated: the cell's own
 #                       key-encryption key, its database, its upload volumes
@@ -14,10 +14,11 @@
 #   the image repository  a replica of ecr.tf's (not in the home region),
 #                       which the replication configuration below fills
 #
-# FOUR BLOCKS, NOT A for_each, because a module's provider cannot be chosen
-# per element (providers.tf). Each exists only when `permitted_regions` names
-# its region, so the default — the home region alone — adds one module
-# instance: the home region's cell key.
+# ONE MODULE BLOCK, A for_each OVER `permitted_regions` (#367, 2026-09-30).
+# It was four blocks, one per region the #98 design named, each bound to a
+# provider of its own; AWS provider 6's per-resource `region` argument lets
+# one provider reach every region, so the module takes its region as a
+# variable and a new region is an entry in the list.
 # ---------------------------------------------------------------------------
 locals {
   region_common = {
@@ -31,50 +32,58 @@ locals {
   }
 }
 
-module "region_usw2" {
-  source    = "./modules/region"
-  count     = contains(local.regions, "us-west-2") ? 1 : 0
-  providers = { aws = aws.usw2 }
+# EVERY PERMITTED REGION IS ENABLED ON THE ACCOUNT, or nothing is planned.
+# An opt-in region (ap-southeast-5, and every one launched since 2019) that
+# an administrator has not enabled refuses every call, and the apply would
+# stop half way with a KMS key made in some regions and not others. This
+# asks EC2 which regions the account may use — the enabled ones, which is
+# what `aws_regions` answers by default — and stops the plan first.
+data "aws_regions" "enabled" {
+  lifecycle {
+    postcondition {
+      condition     = length(setsubtract(local.regions, self.names)) == 0
+      error_message = "permitted_regions names regions this account has not enabled: ${join(", ", setsubtract(local.regions, self.names))}. An administrator enables an opt-in region first (Account -> AWS Regions, or `aws account enable-region --region-name <r>`), and waits until `aws account get-region-opt-status` says ENABLED."
+    }
+  }
+}
 
-  region = "us-west-2"
-  cell   = local.cell_of_region["us-west-2"]
+module "region" {
+  source   = "./modules/region"
+  for_each = toset(local.regions)
+
+  region = each.key
+  cell   = local.cell_of_region[each.key]
   common = local.region_common
 }
 
-module "region_cac1" {
-  source    = "./modules/region"
-  count     = contains(local.regions, "ca-central-1") ? 1 : 0
-  providers = { aws = aws.cac1 }
-
-  region = "ca-central-1"
-  cell   = local.cell_of_region["ca-central-1"]
-  common = local.region_common
+# THE FOUR BLOCKS' INSTANCES ARE THIS ONE'S NOW, NOT NEW ONES. Without these
+# a plan would destroy every region's cell key (a thirty-day deletion that
+# strands every cell database, secret and upload volume sealed under it) and
+# make another. A `moved` from an instance the state never had is ignored.
+moved {
+  from = module.region_usw2[0]
+  to   = module.region["us-west-2"]
 }
 
-module "region_euc1" {
-  source    = "./modules/region"
-  count     = contains(local.regions, "eu-central-1") ? 1 : 0
-  providers = { aws = aws.euc1 }
-
-  region = "eu-central-1"
-  cell   = local.cell_of_region["eu-central-1"]
-  common = local.region_common
+moved {
+  from = module.region_cac1[0]
+  to   = module.region["ca-central-1"]
 }
 
-module "region_apse1" {
-  source    = "./modules/region"
-  count     = contains(local.regions, "ap-southeast-1") ? 1 : 0
-  providers = { aws = aws.apse1 }
+moved {
+  from = module.region_euc1[0]
+  to   = module.region["eu-central-1"]
+}
 
-  region = "ap-southeast-1"
-  cell   = local.cell_of_region["ap-southeast-1"]
-  common = local.region_common
+moved {
+  from = module.region_apse1[0]
+  to   = module.region["ap-southeast-1"]
 }
 
 locals {
   # Every region's module, as one list, for the statements that name a key,
   # a log group or a repository in each permitted region.
-  region_modules = concat(module.region_usw2, module.region_cac1, module.region_euc1, module.region_apse1)
+  region_modules = values(module.region)
 
   cell_key_arns        = [for m in local.region_modules : m.cell_key_arn]
   global_replica_arns  = compact([for m in local.region_modules : m.global_replica_key_arn])

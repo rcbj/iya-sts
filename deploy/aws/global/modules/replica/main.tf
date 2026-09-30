@@ -3,7 +3,8 @@
 #
 # ---------------------------------------------------------------------------
 # ONE CROSS-REGION READ REPLICA OF THE GLOBAL DATABASE, IN ONE CELL'S VPC
-# (issue #98, D3). The provider passed in is the cell's region's.
+# (issue #98, D3). Every resource here names the cell's region itself
+# (AWS provider 6's per-resource `region`, #367); there is one provider.
 #
 # Asynchronous streaming replication from the writer in the primary cell's
 # region, read-only: the cell's nodes READ the global tier here
@@ -26,6 +27,11 @@ terraform {
 
 variable "cell" {
   description = "The cell this replica is in."
+  type        = string
+}
+
+variable "region" {
+  description = "The cell's region, where the replica and everything here is made."
   type        = string
 }
 
@@ -53,12 +59,14 @@ variable "db_security_group_id" {
 }
 
 data "aws_kms_key" "global" {
+  region = var.region
   key_id = "alias/${var.common.name}-global"
 }
 
 # A parameter group is regional, so each replica's region has its own: the
 # same TLS floor as the writer's.
 resource "aws_db_parameter_group" "global" {
+  region      = var.region
   name        = "${var.common.prefix}-${var.cell}-pg18"
   family      = var.common.parameter_family
   description = "mock-sts ${var.common.environment}: the global database's replica in ${var.cell}, TLS required"
@@ -81,6 +89,7 @@ resource "aws_db_parameter_group" "global" {
 }
 
 resource "aws_db_instance" "replica" {
+  region     = var.region
   identifier = "${var.common.prefix}-${var.cell}"
   # CROSS-REGION: the source is named by its ARN, which is what tells RDS (and
   # the provider, which signs the request in the source's region) that the

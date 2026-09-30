@@ -68,10 +68,5 @@ output "global_kms_key_arn" {
 
 output "cell_kms_key_arns" {
   description = "Each permitted region's single-region CELL key (alias/<name>-cell-<cell>), by region (#98)."
-  value = merge(
-    { for m in module.region_usw2 : "us-west-2" => m.cell_key_arn },
-    { for m in module.region_cac1 : "ca-central-1" => m.cell_key_arn },
-    { for m in module.region_euc1 : "eu-central-1" => m.cell_key_arn },
-    { for m in module.region_apse1 : "ap-southeast-1" => m.cell_key_arn },
-  )
+  value       = { for r, m in module.region : r => m.cell_key_arn }
 }

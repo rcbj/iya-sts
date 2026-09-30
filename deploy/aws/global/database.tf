@@ -87,9 +87,13 @@ resource "aws_db_instance" "primary" {
 }
 
 # ---------------------------------------------------------------------------
-# ONE REPLICA PER NON-PRIMARY CELL, each through the provider of its region
-# (providers.tf). A block per region the design names, present only when that
-# region holds a cell that is not the primary one.
+# ONE REPLICA PER NON-PRIMARY CELL, in that cell's region — one `for_each`
+# (#367) where there was a block per region the #98 design named.
+#
+# FIVE AT SIX CELLS, which is within RDS for PostgreSQL's fifteen read
+# replicas of one source (cross-region ones count toward it); each is a
+# separate replication stream from the writer, so the writer's outbound
+# transfer grows with the cell count, not the load.
 # ---------------------------------------------------------------------------
 locals {
   replica_common = {
@@ -103,48 +107,37 @@ locals {
   }
 }
 
-module "replica_usw2" {
-  source    = "./modules/replica"
-  count     = contains(keys(local.replica_cells), "usw2") ? 1 : 0
-  providers = { aws = aws.usw2 }
+module "replica" {
+  source   = "./modules/replica"
+  for_each = local.replica_cells
 
-  cell                 = "usw2"
+  cell                 = each.key
+  region               = each.value.region
   common               = local.replica_common
-  db_subnet_group      = try(local.cell["usw2"].global_db_subnet_group, "")
-  db_security_group_id = try(local.cell["usw2"].global_db_security_group_id, "")
+  db_subnet_group      = local.cell[each.key].global_db_subnet_group
+  db_security_group_id = local.cell[each.key].global_db_security_group_id
 }
 
-module "replica_cac1" {
-  source    = "./modules/replica"
-  count     = contains(keys(local.replica_cells), "cac1") ? 1 : 0
-  providers = { aws = aws.cac1 }
-
-  cell                 = "cac1"
-  common               = local.replica_common
-  db_subnet_group      = try(local.cell["cac1"].global_db_subnet_group, "")
-  db_security_group_id = try(local.cell["cac1"].global_db_security_group_id, "")
+# The four per-region blocks' instances are this one's: testidpna's cac1
+# replica is kept, not rebuilt (a replica is most of an hour to make).
+moved {
+  from = module.replica_usw2[0]
+  to   = module.replica["usw2"]
 }
 
-module "replica_euc1" {
-  source    = "./modules/replica"
-  count     = contains(keys(local.replica_cells), "euc1") ? 1 : 0
-  providers = { aws = aws.euc1 }
-
-  cell                 = "euc1"
-  common               = local.replica_common
-  db_subnet_group      = try(local.cell["euc1"].global_db_subnet_group, "")
-  db_security_group_id = try(local.cell["euc1"].global_db_security_group_id, "")
+moved {
+  from = module.replica_cac1[0]
+  to   = module.replica["cac1"]
 }
 
-module "replica_apse1" {
-  source    = "./modules/replica"
-  count     = contains(keys(local.replica_cells), "apse1") ? 1 : 0
-  providers = { aws = aws.apse1 }
+moved {
+  from = module.replica_euc1[0]
+  to   = module.replica["euc1"]
+}
 
-  cell                 = "apse1"
-  common               = local.replica_common
-  db_subnet_group      = try(local.cell["apse1"].global_db_subnet_group, "")
-  db_security_group_id = try(local.cell["apse1"].global_db_security_group_id, "")
+moved {
+  from = module.replica_apse1[0]
+  to   = module.replica["apse1"]
 }
 
 locals {
@@ -152,9 +145,6 @@ locals {
   # itself in the primary cell (which has no replica of its own).
   read_addresses = merge(
     { (var.primary_cell) = aws_db_instance.primary.address },
-    { for m in module.replica_usw2 : "usw2" => m.address },
-    { for m in module.replica_cac1 : "cac1" => m.address },
-    { for m in module.replica_euc1 : "euc1" => m.address },
-    { for m in module.replica_apse1 : "apse1" => m.address },
+    { for id, m in module.replica : id => m.address },
   )
 }

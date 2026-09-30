@@ -29,6 +29,9 @@
 #     cell and the global stack, in order (entrypoint.sh, orchestrate_cells)
 #   deploy/aws/terraform-local.sh testidpna destroy                  # likewise
 #   TF_CELL=cac1 deploy/aws/terraform-local.sh testidpna output      # one cell
+#   IMAGE_TAG=<tag> deploy/aws/terraform-local.sh globalidp apply    # the
+#     six-region test case (#367); after the primary, each step's cells at
+#     once — TF_CELL_PARALLEL=<n> to take fewer at a time (6)
 #   TF_STACK=global deploy/aws/terraform-local.sh testidpna output   # global
 #   TF_CELL=cac1 TF_STACK=spiffe-realm REALM=default … testidpna apply
 #   TF_CONVERT=1 IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply
@@ -223,6 +226,7 @@ trap relay INT TERM
   -e TF_CELL_PHASE="${TF_CELL_PHASE:-}" \
   -e TF_CONVERT="${TF_CONVERT:-}" \
   -e TF_CONVERT_TIMEOUT="${TF_CONVERT_TIMEOUT:-}" \
+  -e TF_CELL_PARALLEL="${TF_CELL_PARALLEL:-}" \
   -e TF_IMPORT_ADDRESS="${TF_IMPORT_ADDRESS:-}" \
   -e TF_IMPORT_ID="${TF_IMPORT_ID:-}" \
   "${TF_VARS[@]}" \

@@ -160,15 +160,18 @@ each cell's region.
 
 **How clients reach a cell**:
 
-- Clients in a country that has been pinned to a cell always go to that cell,
-  even when it is down. Canada is pinned to `cac1`.
+- A country can be **pinned to a jurisdiction** (a legal area, such as the
+  EU). Its clients always go to one of that jurisdiction's cells: the nearest
+  healthy one, or, if they are all down, one of them anyway, never a cell
+  elsewhere. Canada is pinned to `ca` (cell `cac1`).
 - Everyone else goes to the nearest cell that passes its health check.
 - The cells reach one another on port 8446, over VPC peering, by private
   names. That port is on no public load balancer.
 
 **Before the first apply**, an administrator re-applies `foundation/` with
-every cell's region in `permitted_regions`, for example
-`["us-west-2", "ca-central-1"]`.
+every cell's region in `permitted_regions`. Its default lists every region
+`testidpna` and `globalidp` use. A region launched since 2019 is *opt-in*:
+it must be enabled on the account first (Account → AWS Regions).
 
 **Building and removing it**: a multi-cell environment is described by
 `deploy/aws/environment/envs/<env>.cells.tfvars.json`. The first one,
@@ -187,8 +190,54 @@ You can also use the **testidp deploy** and **testidp destroy** workflows with
 **`testidp` and `testidpna` cannot both exist**, because they use the same
 public name. Destroy one before you apply the other.
 
+After the first cell, the cells of each step are applied at the same time
+(six at once by default; set `TF_CELL_PARALLEL` to change it). Each cell's
+output lines start with its id, for example `[euw1]`.
+
 **Cost**: each cell costs about as much as `testidp`, roughly $0.50 an hour.
 Add a global replica per extra cell and data sent between regions.
+
+### globalidp: six regions
+
+`globalidp` is the six-region test case, at `global-idp.iyasec.io`. It has
+its own name, so it can exist beside `testidp` or `testidpna`.
+
+| Cell | Region | Jurisdiction | Pinned countries |
+|---|---|---|---|
+| `usw2` | us-west-2 (Oregon) | `us` | none (holds the global database) |
+| `use2` | us-east-2 (Ohio) | `us` | none |
+| `euc1` | eu-central-1 (Frankfurt) | `eu` | the EU countries, Iceland, Liechtenstein, Norway |
+| `euw1` | eu-west-1 (Ireland) | `eu` | (the same) |
+| `apse1` | ap-southeast-1 (Singapore) | `sg` | Singapore |
+| `apse5` | ap-southeast-5 (Malaysia) | `my` | Malaysia |
+
+Each region's own console is at `<cell>.global-idp.iyasec.io`, for example
+`euw1.global-idp.iyasec.io`.
+
+```bash
+IMAGE_TAG=<tag> deploy/aws/terraform-local.sh globalidp apply
+deploy/aws/terraform-local.sh globalidp destroy
+```
+
+Before the first apply, an administrator enables ap-southeast-5 on the
+account (it is an opt-in region) and re-applies `foundation/`. It costs
+about $3 an hour while it exists.
+
+### Adding a region
+
+1. If the region is opt-in, enable it on the account.
+2. Add it to `permitted_regions` in `deploy/aws/foundation/variables.tf`, and
+   have an administrator re-apply `foundation/`.
+3. Add a cell to the environment's `.cells.tfvars.json`. Its id is the
+   region's name shortened: the area, the first letter of each direction
+   word, and the number. `eu-west-1` is `euw1` and `ap-southeast-5` is
+   `apse5`. Give it a jurisdiction and a VPC CIDR that no other cell uses.
+   To pin countries to a new jurisdiction, add them under `jurisdictions`.
+4. Apply the environment.
+
+Before anything is created, the apply checks each cell's region: that it is
+enabled, that the deployer may use it, and that it offers the database
+version.
 
 ### Converting testidp into testidpna without losing its data
 
