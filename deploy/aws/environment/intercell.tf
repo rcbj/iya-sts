@@ -67,6 +67,15 @@ resource "aws_service_discovery_service" "nodes" {
   # ECS reports each task's health from its container health check, so a
   # node that is starting or failing is not answered for.
   health_check_custom_config {}
+
+  # The provider reads an empty health_check_custom_config back as absent,
+  # so every plan wanted to REPLACE this service — and once a cell's nodes
+  # are registered in it the delete fails (ResourceInUse), stopping the
+  # apply (testidpna, 2026-09-30). The block can only be set at creation, so
+  # ignoring the phantom diff loses nothing.
+  lifecycle {
+    ignore_changes = [health_check_custom_config]
+  }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "nodes_from_cells" {
