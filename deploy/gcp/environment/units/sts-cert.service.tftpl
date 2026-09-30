@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# mock-sts: the public certificate and its key, where the node reads them —
+# AWS's cert-init. Read from the foundation's secret; node-a issues or renews
+# it through ACME first when it must. deploy/gcp/node-init/cert.sh.
+[Unit]
+Description=mock-sts: public certificate
+Requires=sts-registry.service
+After=sts-registry.service sts-secrets.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOME=/var/lib/sts
+ExecStartPre=/bin/mkdir -p ${tls_dir}
+ExecStartPre=/usr/bin/docker pull ${init_image}
+ExecStart=/usr/bin/docker run --rm --name sts-cert \
+  -v ${tls_dir}:${tls_dir} \
+  -e STS_TLS_DIR=${tls_dir} \
+  -e STS_TLS_SECRET=${tls_secret} \
+  -e STS_TLS_HOSTNAME=${hostname} \
+  -e STS_CERT_ISSUER=${issuer} \
+  -e STS_ACME_SERVER=${acme_server} \
+  -e STS_ACME_EMAIL=${acme_email} \
+  -e STS_ACME_RENEW_DAYS=${renew_days} \
+  -e GCE_PROJECT=${project} \
+  -e GCE_ZONE_ID=${dns_zone} \
+  ${init_image} sts-cert

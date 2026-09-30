@@ -16,10 +16,13 @@
 #   STS_DB_APP_USER              the least-privilege role to create or update
 #   STS_DB_APP_PASSWORD          its password, from the project's secret
 #   STS_DB_SCHEMA                the schema the tables go in (default sts)
+#   STS_SCHEMA_SSLMODE           verify-full (the default) or verify-ca —
+#                                GCP's Cloud SQL only (deploy/gcp/, #95)
 #
-# `PGSSLMODE=verify-full` and `PGSSLROOTCERT` are set here rather than trusted
-# to the caller: this is the one connection that carries the master password,
-# and a caller that forgot them would send it to whatever answered.
+# `PGSSLMODE` and `PGSSLROOTCERT` are set here rather than trusted to the
+# caller: this is the one connection that carries the master password, and a
+# caller that forgot them would send it to whatever answered. A caller may
+# choose verify-ca and nothing weaker.
 #
 # **IT RETRIES THE FIRST CONNECTION**, because a task can start moments after
 # RDS reports available and before the endpoint's DNS or security group rule
@@ -36,7 +39,19 @@ set -euo pipefail
 
 export PGPORT="${PGPORT:-5432}"
 export PGDATABASE="${PGDATABASE:-sts}"
-export PGSSLMODE=verify-full
+# VERIFY-FULL unless the deployment says verify-ca, and nothing weaker: the
+# GCP pattern (deploy/gcp/, #95) runs this same script against Cloud SQL,
+# whose server certificate names the instance with a trailing dot libpq does
+# not match, and says so with STS_SCHEMA_SSLMODE=verify-ca. The CA is
+# verified either way. AWS sets nothing and is unchanged.
+case "${STS_SCHEMA_SSLMODE:-verify-full}" in
+  verify-full|verify-ca) export PGSSLMODE="${STS_SCHEMA_SSLMODE:-verify-full}" ;;
+  *)
+    echo "sts-schema: STS_SCHEMA_SSLMODE='${STS_SCHEMA_SSLMODE}' is neither" \
+         "verify-full nor verify-ca." >&2
+    exit 1
+    ;;
+esac
 export PGSSLROOTCERT=/usr/local/share/sts/database-ca.pem
 export PGCONNECT_TIMEOUT=10
 

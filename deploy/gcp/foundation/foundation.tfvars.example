@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# Copy to foundation.auto.tfvars (ignored by git) and fill in.
+project_id       = "iyasec-mock-sts"
+deployer_members = ["user:someone@example.com"]

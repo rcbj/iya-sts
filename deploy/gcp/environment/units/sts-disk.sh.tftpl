@@ -1,0 +1,22 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# THE RISK-DATASET UPLOAD DISK (#214 on AWS): the instance's second disk,
+# formatted the first time and EMPTIED on every start. AWS's EBS volume is
+# made when the task starts and deleted when it stops, so it holds nothing
+# from a previous run; a persistent disk survives a reboot of the same VM,
+# and a file left by a node that died mid-import would outlive the import —
+# the opposite of what the `risk.stalled-imports` job assumes. Emptying it
+# here makes it temporary space again.
+set -euo pipefail
+dev=/dev/disk/by-id/google-${device}
+dir=${mount_dir}
+if ! blkid "$${dev}" > /dev/null 2>&1;
+then
+  mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0,discard "$${dev}"
+fi
+mkdir -p "$${dir}"
+mountpoint -q "$${dir}" || mount -o discard,defaults,nosuid,nodev "$${dev}" "$${dir}"
+find "$${dir}" -mindepth 1 -delete
+chmod 0700 "$${dir}"
