@@ -681,8 +681,12 @@ async function resetApplications(base, token, dryRun, failed) {
   let removed = 0;
   await eachBounded(found, concurrency(), async function (identifier) {
     log.debug('Entering the application delete.');
-    const r = await request('POST', base + '/admin-api/applications/forget',
-                            token, { identifier: identifier });
+    // The operation's member is `application` (mgmt-api/admin_api.ts,
+    // deleteApplication), and its schema refuses any other since #86: run 8's
+    // reset was answered 400 for all 418 when this sent `identifier`.
+    const r = await requestRetrying('POST',
+                                    base + '/admin-api/applications/forget',
+                                    token, { application: identifier });
     if (r.status === 200) {
       removed += 1;
     } else if (!/no application called/i.test(r.text)) {
