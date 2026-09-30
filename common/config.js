@@ -2908,6 +2908,23 @@ const SETTINGS = [
                  'and the rest), NOT `keys.kekRegion`: the cell key has no ' +
                  'fallback of any kind.' },
 
+  // THE CELL KEY'S KEY VAULT (#96, 2026-09-30). The `azure` provider needs a
+  // vault URL beside the secret's name, and the cell key had no row for one:
+  // it borrows nothing from the service key (above), so a cell on Azure had
+  // no vault to read its key from and could not start. An Azure cell keeps
+  // its key in its own region's vault (deploy/azure/), which this names.
+  { key: 'keys.cellKekVault', group: 'Key material',
+    label: 'Key Vault URL of the cell key',
+    env: 'STS_CELL_KEK_VAULT', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net) ' +
+                 'or the HashiCorp Vault endpoint the cell key is read ' +
+                 'from — the cell\'s own. Empty uses NOTHING of ' +
+                 '`keys.kekVault`: the cell key has no fallback of any ' +
+                 'kind, so the `azure` provider refuses to read it without ' +
+                 'this.' },
+
   // -------------------------------------------------------------------------
   // THE MODE. What this service IS, rather than what any one surface requires.
   //
