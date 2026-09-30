@@ -38,8 +38,13 @@
 #     Every process holds the whole directory and every store, so five idled
 #     at 76-87 % of 8 GiB after a few suite runs and a restart was OOM-killed
 #     (#339). Two vCPUs gain little from more than 1 + task_cpu / 1024
-#     processes. With no surface pool the console and portal go to the
-#     request workers. deploy/aws/CLAUDE.md, *Sizing a node*.
+#     processes. deploy/aws/CLAUDE.md, *Sizing a node*.
+#     THE HOSTED-SURFACE WORKER IS BACK, ONE (rcbj, 2026-09-29): #349 makes a
+#     request or surface worker hold the directory as a bounded window onto
+#     the store rather than all of it, so a fourth process no longer costs a
+#     whole copy of the directory. /admin and /portal go to it, so a page an
+#     administrator is waiting on no longer queues behind a bulk load on the
+#     protocol workers.
 #   * no suite runner. Backups are deleted with the environment: it is
 #     rebuilt many times over the coming weeks, and kept backups would pile up, billed.
 # ---------------------------------------------------------------------------
@@ -82,7 +87,7 @@ extra_environment = {
 
 sts_mode                = "product"
 workers_request_count   = 2
-workers_surface_count   = 0
+workers_surface_count   = 1
 workers_dispatch        = "*"
 workers_read_your_write = true
 
