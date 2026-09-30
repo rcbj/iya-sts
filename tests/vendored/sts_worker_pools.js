@@ -18,9 +18,11 @@
 //      and a pool that is off says so in a sentence. There is no third,
 //      post-quantum pool since #363: post-quantum signing and scrypt run on
 //      libuv's thread pool inside each process;
-//   2. IT IS THE FRONT PROCESS THAT ANSWERS: the pid that drew the report is
-//      none of the request workers it lists — a worker answering would have
-//      reported every request pool off;
+//   2. IT IS THE FRONT PROCESS THAT ANSWERS: the report was drawn on the
+//      front process's MAIN thread (`mainThread`), and every worker it lists
+//      is a thread named by its threadId (#364) — a worker answering would
+//      have reported every request pool off. It compared the answering pid
+//      with the workers' until #364, which every thread now shares;
 //   3. THE PAGE draws the same two pools, and its `?format=json` agrees
 //      with the API on each pool's state and maximum;
 //   4. A REALM'S OWN TOKEN is refused it (403): the pools are the process's.
@@ -165,12 +167,19 @@ function theFrontProcessAnswered(body) {
   const workers = [];
   ["request", "surface"].forEach(function (id) {
     (poolOf(body, id).workers || []).forEach(function (w) {
-      workers.push(w.pid);
+      workers.push(w);
     });
   });
-  check("the answering pid (" + body.pid + ") is none of the " +
-        workers.length + " request worker(s) it lists", function () {
-    assert.ok(workers.indexOf(body.pid) < 0, JSON.stringify(workers));
+  check("it was drawn on the front process's main thread (pid " + body.pid +
+        ")", function () {
+    assert.strictEqual(body.mainThread, true,
+                       JSON.stringify(body).slice(0, 300));
+  });
+  check("and each of the " + workers.length + " worker(s) it lists is a " +
+        "thread, by its threadId", function () {
+    workers.forEach(function (w) {
+      assert.ok(Number(w.threadId) > 0 && !("pid" in w), JSON.stringify(w));
+    });
   });
   log.debug("Leaving theFrontProcessAnswered().");
 }

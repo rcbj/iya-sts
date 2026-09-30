@@ -838,13 +838,16 @@ async function body(t, dir) {
           'and a flush writes rows the other workers can read',
           String(poolDriver.rows.size) + ' row(s)');
 
-  delete process.env.STS_WORKERS_DISPATCH;
+  // AN EMPTY LIST, NAMED: since #364 `workers.dispatch` defaults to `*`, so
+  // unsetting it would dispatch everything rather than nothing.
+  process.env.STS_WORKERS_DISPATCH = '';
   minted.reset();
   minted.setDriver(fakeDriver('process-a'), 'postgres');
   t.equal(minted.enabled(), false,
           'and WORKERS ALONE ARE NOT THE CONDITION — with nothing dispatched ' +
           'the children answer no request, so there is no second process to ' +
           'disagree with and the promise above is unchanged');
+  delete process.env.STS_WORKERS_DISPATCH;
   delete process.env.STS_WORKERS_REQUEST_COUNT;
 
   // -------------------------------------------------------------------------
