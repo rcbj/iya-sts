@@ -144,6 +144,51 @@ resource "random_password" "krb5_service" {
 # (they are resources without a `count`, and giving them one would move them
 # in every single-cell state); nothing stores or reads them there.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# A SINGLE-CELL ENVIRONMENT RESTORED FROM A SNAPSHOT CARRIES ITS SECRETS IN
+# (2026-09-30), exactly as global/secrets.tf does for a converted cell and for
+# the same four values — that file argues each, and the two not carried
+# (krb5-krbtgt-password, the database passwords). Read ONCE into
+# `terraform_data.carryover` and kept (`ignore_changes`), so a later apply
+# that names no carry-over, or runs after the secret was deleted, keeps the
+# KEK the rows are sealed under; and REFUSED on an environment whose secrets
+# were already generated without it, whose rows are sealed under those.
+# ---------------------------------------------------------------------------
+data "aws_secretsmanager_secret_version" "carryover" {
+  count     = !local.multi && var.carryover_secret != "" ? 1 : 0
+  secret_id = var.carryover_secret
+}
+
+locals {
+  carried_keys = [
+    "kek", "admin-api-client-secret", "bootstrap-admin-password",
+    "krb5-service-password",
+  ]
+  carried_now = !local.multi && var.carryover_secret != "" ? {
+    for k, v in jsondecode(data.aws_secretsmanager_secret_version.carryover[0].secret_string) :
+    k => tostring(v) if contains(local.carried_keys, k)
+  } : {}
+}
+
+resource "terraform_data" "carryover" {
+  input = local.carried_now
+
+  lifecycle {
+    ignore_changes = [input]
+    precondition {
+      condition = local.multi || var.carryover_secret == "" || alltrue([
+        for k in ["kek", "admin-api-client-secret"] :
+        contains(nonsensitive(keys(local.carried_now)), k)
+      ])
+      error_message = "carryover_secret names a secret without `kek` and `admin-api-client-secret`."
+    }
+  }
+}
+
+locals {
+  carried = terraform_data.carryover.output
+}
+
 resource "random_bytes" "cell_kek" {
   count  = local.multi ? 1 : 0
   length = 32
@@ -162,14 +207,14 @@ locals {
     db-master-password = random_password.db_master.result
     cell-kek           = random_bytes.cell_kek[0].base64
     } : merge({
-      kek                     = random_bytes.kek.base64
+      kek                     = lookup(local.carried, "kek", random_bytes.kek.base64)
       db-app-password         = random_password.db_app.result
       db-master-password      = random_password.db_master.result
-      admin-api-client-secret = random_password.admin_api_client_secret.result
+      admin-api-client-secret = lookup(local.carried, "admin-api-client-secret", random_password.admin_api_client_secret.result)
       }, local.bootstrap_secret ? {
-      bootstrap-admin-password = random_password.bootstrap_admin[0].result
+      bootstrap-admin-password = lookup(local.carried, "bootstrap-admin-password", random_password.bootstrap_admin[0].result)
       krb5-krbtgt-password     = random_password.krb5_krbtgt[0].result
-      krb5-service-password    = random_password.krb5_service[0].result
+      krb5-service-password    = lookup(local.carried, "krb5-service-password", random_password.krb5_service[0].result)
   } : {})
 
   # THE SECRETS EVERY CELL SHARES, by name: this stack's own in a single-cell
@@ -196,4 +241,13 @@ resource "aws_secretsmanager_secret_version" "main" {
   for_each      = local.secrets
   secret_id     = aws_secretsmanager_secret.main[each.key].id
   secret_string = each.value
+
+  lifecycle {
+    # A carry-over named on an environment that already generated its KEK
+    # would replace the key every row is sealed under (the header above).
+    precondition {
+      condition     = local.multi || var.carryover_secret == "" || length(nonsensitive(keys(local.carried))) > 0
+      error_message = "carryover_secret is set, but this environment's secrets were already generated without it; carrying values in now would replace the KEK its rows are sealed under. Destroy the environment first, or apply without TF_VAR_carryover_secret."
+    }
+  }
 }

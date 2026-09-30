@@ -166,7 +166,7 @@ output "db_snapshot_identifier" {
 
 output "conversion_task_definition" {
   description = "The conversion task's definition ARN, in a restored cell's `full` phase; empty otherwise."
-  value       = local.restored && local.full ? aws_ecs_task_definition.convert[0].arn : ""
+  value       = local.converted && local.full ? aws_ecs_task_definition.convert[0].arn : ""
 }
 
 output "conversion_network" {

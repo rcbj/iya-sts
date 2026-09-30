@@ -45,6 +45,13 @@
 #     whole copy of the directory. /admin and /portal go to it, so a page an
 #     administrator is waiting on no longer queues behind a bulk load on the
 #     protocol workers.
+#     ONE WORKER THREAD IN A 1 GiB TASK SINCE 2026-09-30 (#364, #366): the
+#     request and surface workers are worker THREADS of the front process
+#     now, each isolate with a share of one heap budget derived from the
+#     task's memory. #366 measured a front and one worker thread under the
+#     heavier suite jobs at 684 MB peak in a 1 GiB container; so one request
+#     worker, no surface worker, 0.5 vCPU / 1 GiB (Fargate's smallest CPU for
+#     1 GiB is 0.25 vCPU; 0.5 because the front and the thread share it).
 #   * no suite runner. Backups are deleted with the environment: it is
 #     rebuilt many times over the coming weeks, and kept backups would pile up, billed.
 # ---------------------------------------------------------------------------
@@ -73,12 +80,11 @@ extra_environment = {
   # this cluster that passed the 60 s default after a day of suite runs — the
   # pools gave up and every node ran on its front process alone.
   STS_WORKERS_START_TIMEOUT_MS = "300000"
-  # NO V8 HEAP LIMIT YET (#341, rcbj 2026-09-29): -1 turns the derived limit
-  # off. Each process still logs its memory every five minutes
-  # (`process.memory-report`) and a kernel OOM kill is reported as
-  # STS-WORKER-0047. Set 0 (derive) once those reports show what each
-  # process really needs.
-  STS_WORKERS_HEAP_LIMIT_MB = "-1"
+  # THE HEAP BUDGET IS DERIVED (2026-09-30, #366): 0 splits the task's memory
+  # between the front and its worker thread, each isolate's young
+  # generation inside its share — what #366 measured fitting in 1 GiB. It
+  # was -1 (no limit) while the task was 8 GiB (#341).
+  STS_WORKERS_HEAP_LIMIT_MB = "0"
   # Minted rows kept two hours past expiry, not the default (rcbj,
   # 2026-09-29): here rather than as a runtime override, which the suite's
   # reset-environment.js clears before every run.
@@ -91,13 +97,13 @@ extra_environment = {
 }
 
 sts_mode                = "product"
-workers_request_count   = 2
-workers_surface_count   = 1
+workers_request_count   = 1
+workers_surface_count   = 0
 workers_dispatch        = "*"
 workers_read_your_write = true
 
-task_cpu    = 2048
-task_memory = 8192
+task_cpu    = 512
+task_memory = 1024
 
 delete_automated_backups = true
 vpc_cidr                 = "10.52.0.0/16"
