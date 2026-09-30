@@ -1709,6 +1709,10 @@ class RequestWorker {
         require('../ldap/ldap_server').setConnectionMirror(
             later.ldapConnections);
       }
+      // THE FRONT PROCESS'S SPIFFE LISTENERS (#337), after a reconcile.
+      if (later && later.spiffeBindings) {
+        require('../spiffe/spiffe_server').adoptBindings(later.spiffeBindings);
+      }
     });
     try {
       this.start(message.socket || '');
@@ -1719,6 +1723,12 @@ class RequestWorker {
       // front process took when it forked this worker; every later change
       // arrives on the listener above.
       this.installDirectoryMirror(message.ldapConnections || []);
+      // And the SPIFFE listeners as they were at fork (#337); every later
+      // reconcile arrives on the listener above.
+      if (message.spiffeBindings) {
+        require('../spiffe/spiffe_server').adoptBindings(
+          message.spiffeBindings);
+      }
     } catch (e) {
       this.report({ ready: false, error: e.message });
     }

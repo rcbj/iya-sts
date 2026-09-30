@@ -148,6 +148,16 @@ const BUNDLE_PATH = config.value('spiffe.bundlePath') || '/spiffe/bundle';
 // this service uses, so `''` is a realm here rather than a missing value.
 const listeners = new Map();
 let started = false;
+// WHAT THE FRONT PROCESS HOLDS, IN A PROCESS THAT HOLDS NONE (#337). A socket
+// is held by one process and reachable from no other, so a request worker —
+// which answers `/admin/spiffe` and `/admin-api/spiffe`, both dispatched on
+// purpose (tests/request_routing.js) — has no listeners of its own and
+// reported none. The front process hands its bindings down as a snapshot, at
+// fork and on every reconcile (common/request_pool.js), the way it hands down
+// the directory's connections; `bindingsNow()` answers from it in a process
+// that never started listening.
+let handedBindings: any = null;
+let bindingsWatcher: any = null;
 
 // What `SpiffeServer` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -1867,10 +1877,62 @@ class SpiffeServer {
                 'SPIFFE socket.');
       return Promise.resolve([]);
     }
+    const self = this;
     pending = pending.then(this.reconcileNow.bind(this),
-                           this.reconcileNow.bind(this));
+                           this.reconcileNow.bind(this))
+      .then(function (entries) {
+        self.tellBindingsWatcher();
+        return entries;
+      });
     log.debug('Leaving SpiffeServer.reconcile(). Queued.');
     return pending;
+  }
+
+  /**
+   * Hands the current bindings to whoever asked to be told (the request
+   * pool, which passes them to its workers — #337). A watcher that throws
+   * costs a snapshot, never a reconcile.
+   */
+  tellBindingsWatcher() {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.tellBindingsWatcher().');
+    if (typeof bindingsWatcher === 'function') {
+      try {
+        bindingsWatcher(this.bindingsNow());
+      } catch (e) {
+        log.debug('Caught in SpiffeServer.tellBindingsWatcher(): ' +
+                  ((e && e.message) || e));
+      }
+    }
+    log.debug('Leaving SpiffeServer.tellBindingsWatcher().');
+  }
+
+  /**
+   * Installs the function told the bindings after every reconcile.
+   *
+   * @param fn - called with `{ workload, api, broker }`
+   */
+  setBindingsWatcher(fn) {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.setBindingsWatcher().');
+    bindingsWatcher = typeof fn === 'function' ? fn : null;
+    log.debug('Leaving SpiffeServer.setBindingsWatcher().');
+  }
+
+  /**
+   * Takes the front process's bindings, in a process that binds none (#337).
+   *
+   * @param snapshot - `{ workload, api, broker }` as `bindingsNow()` answers
+   */
+  adoptBindings(snapshot) {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.adoptBindings().');
+    handedBindings = snapshot && typeof snapshot === 'object'
+      ? { workload: Array.isArray(snapshot.workload) ? snapshot.workload : [],
+          api: Array.isArray(snapshot.api) ? snapshot.api : [],
+          broker: Array.isArray(snapshot.broker) ? snapshot.broker : [] }
+      : null;
+    log.debug('Leaving SpiffeServer.adoptBindings().');
   }
 
   /**
@@ -1954,6 +2016,10 @@ class SpiffeServer {
   bindingsNow() {
     const { log } = this.deps;
     log.debug("Entering SpiffeServer.bindingsNow().");
+    if (!started && handedBindings) {
+      log.debug("Leaving SpiffeServer.bindingsNow(). The front process's.");
+      return handedBindings;
+    }
     const workloadAll = [];
     const apiAll = [];
     const brokerAll = [];
@@ -2297,6 +2363,9 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   listen: slot.forward('listen'),
   close: slot.forward('close'),
+  // The front process's bindings, handed to a request worker (#337).
+  setBindingsWatcher: slot.forward('setBindingsWatcher'),
+  adoptBindings: slot.forward('adoptBindings'),
   description: slot.forward('description'),
   // What is attested on the Workload API, for `server.js`'s startup line as
   // well as `/spiffe` (#40): a banner that ASSERTS what this service checks

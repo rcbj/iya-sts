@@ -2038,6 +2038,50 @@ function directory() {
   return require('../ldap/ldap_server');
 }
 
+// THE SPIFFE LISTENERS, THE SAME WAY (#337). The front process binds the
+// Workload, Server and Broker API sockets; a worker answering /admin/spiffe
+// or /admin-api/spiffe has none, and reported "no listeners". The snapshot is
+// sent at fork (`begin`) and after every reconcile, and the worker's
+// spiffe_server answers from it. Lazily required for directory()'s reason.
+function spiffe() {
+  log.debug("Entering spiffe().");
+  log.debug("Leaving spiffe().");
+  return require('../spiffe/spiffe_server');
+}
+
+function spiffeBindingsNow() {
+  log.debug("Entering spiffeBindingsNow().");
+  try {
+    const now = spiffe().bindings();
+    log.debug("Leaving spiffeBindingsNow().");
+    return now;
+  } catch (e) {
+    // SPIFFE not loaded in this process (an in-process test of the pool): a
+    // worker then reports its own, which is none.
+    log.debug("Caught in spiffeBindingsNow(): " + ((e && e.message) || e));
+    log.debug("Leaving spiffeBindingsNow(). None.");
+    return null;
+  }
+}
+
+function publishSpiffeBindings(snapshot) {
+  log.debug("Entering publishSpiffeBindings().");
+  workers.forEach(function (one) {
+    if (!one.child || !one.child.connected) {
+      return;
+    }
+    try {
+      one.child.send({ spiffeBindings: snapshot || null });
+    } catch (e) {
+      // A worker on its way out; its replacement is handed the snapshot at
+      // fork.
+      log.debug('request_pool: could not publish the SPIFFE listeners to ' +
+                'worker ' + one.pid + ': ' + e.message);
+    }
+  });
+  log.debug("Leaving publishSpiffeBindings().");
+}
+
 function publishDirectoryConnections(rows) {
   log.debug("Entering publishDirectoryConnections().");
   const snapshot = rows || [];
@@ -2605,7 +2649,9 @@ function fork(pool, slot) {
                  // would answer a sign-out for a connection made before it
                  // existed with "there is nothing to end" — which is the bug
                  // this whole mechanism is about, narrowed to one worker.
-                 ldapConnections: directory().connectionSnapshot() });
+                 ldapConnections: directory().connectionSnapshot(),
+                 // AND THE SPIFFE LISTENERS THIS PROCESS HOLDS (#337).
+                 spiffeBindings: spiffeBindingsNow() });
   } catch (e) {
     log.error(errorCodes.tag('STS-WORKER-0016') +
               'request_pool: could not start worker ' + child.pid + ': ' +
@@ -4042,6 +4088,14 @@ function start() {
   directory().setConnectionWatcher(function (rows) {
     publishDirectoryConnections(rows);
   });
+  // AND THE SPIFFE LISTENERS (#337): told after every reconcile, which is
+  // after `listen()` binds them — later than this pool's fork.
+  try {
+    spiffe().setBindingsWatcher(publishSpiffeBindings);
+  } catch (e) {
+    log.debug('request_pool: no SPIFFE listeners to watch: ' +
+              ((e && e.message) || e));
+  }
   log.info('request_pool: starting ' + wanted + ' request worker(s) — ' +
            wantedByPool[PROTOCOL_POOL] + ' for the protocols and ' +
            wantedByPool[SURFACE_POOL] + ' for the hosted surfaces (' +
