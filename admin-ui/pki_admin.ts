@@ -208,6 +208,30 @@ interface PkiAdminDeps {
 const KEY_PAIR_PER_PAGE = 25;
 const KEY_PAIR_LIST_PARAMS = ['per', 'issuedPage', 'personsPage'];
 
+// ---------------------------------------------------------------------------
+// EACH AUTHORITY'S TWO LISTS IN THE REVOCATION PANE ARE PAGED TOO (#370,
+// 2026-09-30).
+//
+// What an authority SIGNED — each row with a Revoke control — and the serials
+// on its list with no certificate left to show grow for ever: every issue
+// adds to the first and every rotation to both. Each is a list with a page
+// parameter of its own, named from the authority (`listNameOf()`), and they
+// share this page's `per` with the key-pair tables. **PAGE BEFORE PER-ROW
+// WORK** (#352's rule, learned on Directory → Users): the issued list is
+// sorted and sliced first, and only the rows of the page are given their
+// revocation state; only the page of orphans is described; and "is this
+// serial issued here" is one set per authority, where it was a rebuild of
+// the whole issued list per revoked serial. `GET /admin-api/pki` answers the
+// same pages, with the paging and the totals beside each list.
+//
+// A parameter looks like `ca-default-jose-issuedPage`: the scope segment and
+// the CA id, restricted to `[a-z0-9_-]`, then the list. `listNameOf()` makes
+// the name and `REVOCATION_LIST_PARAM` is what `keyPairListView()` accepts,
+// so a link can carry only names this file writes.
+// ---------------------------------------------------------------------------
+const REVOCATION_PER_PAGE = 25;
+const REVOCATION_LIST_PARAM = /^ca-[a-z0-9_-]{1,120}-(issued|orphans)Page$/;
+
 // The actions this page's form can post. The refusal sentence names every one
 // of them and the count comes from this list rather than being written out —
 // `ssf/CLAUDE.md` records that a handler phrasing that sentence its own way
@@ -359,7 +383,13 @@ class PkiAdmin {
     const { log } = this.deps;
     log.debug("Entering PkiAdmin.keyPairListView().");
     const out = {};
-    KEY_PAIR_LIST_PARAMS.forEach(function (name) {
+    // The key-pair tables' names, and every authority list's (#370): only
+    // names this file writes, so a link carries nothing a browser made up.
+    const names = KEY_PAIR_LIST_PARAMS.concat(Object.keys(query || {})
+      .filter(function (name) {
+        return REVOCATION_LIST_PARAM.test(name);
+      }).sort());
+    names.forEach(function (name) {
       const raw = (query || {})[name];
       const first = Array.isArray(raw) ? raw[0] : raw;
       const value = first == null ? '' : String(first);
@@ -793,7 +823,7 @@ class PkiAdmin {
       // could read an empty list as "nothing is revoked here" and would be
       // right; a caller that had only the second could not tell whether
       // anything had been.
-      revocation: self.revocationModel(),
+      revocation: self.revocationModel(req && req.query),
       revocationNote: report.revocation,
       residency: report.residency,
       encoder: report.encoder,
@@ -4034,8 +4064,8 @@ class PkiAdmin {
 
   // The model. Built by `pkiJson()` and rendered by `revocationPane()`, so that
   // `GET /admin-api/pki` carries exactly what the page draws (rule 7).
-  private revocationModel() {
-    const { log, config, pki, pkiRevocation } = this.deps;
+  private revocationModel(query?: Json) {
+    const { log, config, pki, pkiRevocation, adminViews } = this.deps;
     const self = this;
     log.debug('Entering PkiAdmin.revocationModel().');
     // THE SAME SCOPES THE TREE DRAWS, AND FOR ITS REASON (2026-09-11): the
@@ -4056,68 +4086,118 @@ class PkiAdmin {
     // not there.
     const scopes = [pki.PROCESS_SCOPE, self.currentRealmScope()]
       .filter(function (id, i, all) { return all.indexOf(id) === i; });
+    const q = query || {};
+    let totalRevoked = 0;
     const authorities = pkiRevocation.authorities(scopes).map(function (one) {
       const points = pkiRevocation.distributionPoints(one.scope, one.ca);
-      const revoked = pkiRevocation.listFor(one.scope, one.ca)
-        .map(pkiRevocation.describeEntry);
+      const scopeSegment = pkiRevocation.scopeSegment(one.scope);
+      const listName = self.listNameOf(scopeSegment, one.ca);
+      // THE WHOLE LISTS AS THE REGISTER HOLDS THEM, undecorated: the issued
+      // rows are small records already sorted by subject, and the revocation
+      // entries are the stored ones. Nothing below is done per row of these
+      // but building two sets (#370).
+      const issuedAll = pkiRevocation.issuedList(one.scope, one.ca);
+      const revokedAll = pkiRevocation.listFor(one.scope, one.ca);
+      totalRevoked = totalRevoked + revokedAll.length;
       const revokedBySerial = Object.create(null);
-      revoked.forEach(function (entry) {
-        revokedBySerial[entry.serialHex] = entry;
+      revokedAll.forEach(function (entry) {
+        revokedBySerial[pkiRevocation.normalSerial(entry.serialHex)] = entry;
       });
-      return {
+      const issuedSerials = Object.create(null);
+      issuedAll.forEach(function (cert) {
+        issuedSerials[cert.serialHex] = true;
+      });
+      // A SERIAL ON THE LIST THAT THIS AUTHORITY DID NOT ISSUE IS LEGAL AND
+      // IS REPORTED SEPARATELY. RFC 5280 does not require a CA to still hold
+      // a record of what it signed in order to revoke it, and this service
+      // genuinely reaches that state: a leaf superseded by a rotation is
+      // revoked and then REPLACED in the register, so the old serial is on
+      // the list with nothing left to point at. Drawing it in the issued
+      // table would be inventing a certificate; dropping it would hide most
+      // of what the list actually holds. One set lookup each (#370), where
+      // it was `issuedHere()` — a rebuild of the issued list — per serial.
+      const orphansAll = revokedAll.filter(function (entry) {
+        return !issuedSerials[pkiRevocation.normalSerial(entry.serialHex)];
+      });
+      const issuedPage = adminViews.pagedRows(q, issuedAll,
+        { name: listName + '-issued', noun: 'certificates',
+          defaultPer: REVOCATION_PER_PAGE });
+      const orphansPage = adminViews.pagedRows(q, orphansAll,
+        { name: listName + '-orphans', noun: 'revoked serials',
+          defaultPer: REVOCATION_PER_PAGE });
+      // WHAT IT SIGNED, THE PAGE OF IT, each row carrying whether it is
+      // already on the list — computed HERE rather than by the renderer,
+      // because "is this revoked" is a statement about the register and a
+      // page holding a second opinion about it would eventually offer a
+      // Revoke button for something already revoked and a Release for
+      // something that was never held.
+      const issued = issuedPage.shown.map(function (cert) {
+        const entry = revokedBySerial[cert.serialHex] || null;
+        return Object.assign({}, cert, {
+          revoked: !!entry,
+          revokedAt: entry ? entry.revokedAt : null,
+          revokedReason: entry ? entry.reason : null,
+          held: !!entry && entry.reason === 'certificateHold'
+        });
+      });
+      const out: Json = {
         scope: one.scope,
-        scopeSegment: pkiRevocation.scopeSegment(one.scope),
+        scopeSegment: scopeSegment,
         ca: one.ca,
         label: one.label,
         subject: one.tier.subject,
         notAfter: one.tier.notAfter,
-        // WHAT IT SIGNED, each row carrying whether it is already on the list —
-        // computed HERE rather than by the renderer, because "is this revoked"
-        // is a statement about the register and a page holding a second opinion
-        // about it would eventually offer a Revoke button for something already
-        // revoked and a Release for something that was never held.
-        issued: pkiRevocation.issuedList(one.scope,
-                                         one.ca).map(function (cert) {
-          const entry = revokedBySerial[cert.serialHex] || null;
-          return Object.assign({}, cert, {
-            revoked: !!entry,
-            revokedAt: entry ? entry.revokedAt : null,
-            revokedReason: entry ? entry.reason : null,
-            held: !!entry && entry.reason === 'certificateHold'
-          });
+        issued: issued,
+        issuedTotal: issuedAll.length,
+        issuedPaging: adminViews.pagingJson(issuedPage.paging),
+        // THE REVOCATIONS THE PAGE'S ROWS CARRY, described — the whole list
+        // is `revokedTotal` long and is the CRL's to publish, not this
+        // reply's (#370).
+        revoked: issued.filter(function (cert) {
+          return cert.revoked;
+        }).map(function (cert) {
+          return pkiRevocation.describeEntry(revokedBySerial[cert.serialHex]);
         }),
-        revoked: revoked,
-        // A SERIAL ON THE LIST THAT THIS AUTHORITY DID NOT ISSUE IS LEGAL AND
-        // IS REPORTED SEPARATELY. RFC 5280 does not require a CA to still hold
-        // a record of what it signed in order to revoke it, and this service
-        // genuinely reaches that state: a leaf superseded by a rotation is
-        // revoked and then REPLACED in the register, so the old serial is on
-        // the list with nothing left to point at. Drawing it in the issued
-        // table would be inventing a certificate; dropping it would hide most
-        // of what the list actually holds.
-        revokedNotIssued: revoked.filter(function (entry) {
-          return !pkiRevocation.issuedHere(one.scope, one.ca, entry.serialHex);
-        }),
+        revokedTotal: revokedAll.length,
+        revokedNotIssued: orphansPage.shown.map(pkiRevocation.describeEntry),
+        revokedNotIssuedTotal: orphansAll.length,
+        orphansPaging: adminViews.pagingJson(orphansPage.paging),
         crl: { http: points.http, ldap: points.ldap },
         ocsp: points.ocsp,
         caIssuers: points.caIssuers,
         directoryDn: points.dn
       };
+      // The paging objects the renderer builds its links from; not published.
+      Object.defineProperty(out, 'pagingRaw', {
+        value: { issued: issuedPage.paging, orphans: orphansPage.paging },
+        enumerable: false });
+      return out;
     });
     const out = {
       reasons: pkiRevocation.REASONS.map(function (one) {
         return { id: one.id, code: one.code, what: one.what };
       }),
       authorities: authorities,
-      totalRevoked: authorities.reduce(function (n, one) {
-        return n + one.revoked.length;
-      }, 0),
+      totalRevoked: totalRevoked,
       crlLifetimeMinutes: Number(config.value('pki.crlLifetimeMinutes')),
       publishedToDirectory: !!config.value('pki.publishCrlToDirectory')
     };
     log.debug('Leaving PkiAdmin.revocationModel(). ' + authorities.length +
               ' authority(ies), ' + out.totalRevoked + ' revoked.');
     return out;
+  }
+
+  // The name an authority's two lists page under (#370): its scope segment
+  // and CA id, restricted to what `REVOCATION_LIST_PARAM` accepts.
+  private listNameOf(scopeSegment: Json, caId: Json) {
+    const { log } = this.deps;
+    log.debug("Entering PkiAdmin.listNameOf().");
+    const clean = function (text: Json) {
+      return String(text || 'default').toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '_').slice(0, 58);
+    };
+    log.debug("Leaving PkiAdmin.listNameOf().");
+    return 'ca-' + clean(scopeSegment) + '-' + clean(caId);
   }
 
   private reasonSelect(name: Json) {
@@ -4137,11 +4217,11 @@ class PkiAdmin {
       }).join('') + '</select>';
   }
 
-  private issuedRevocationRows(authority: Json) {
+  private issuedRevocationRows(authority: Json, carry: string) {
     const { log, admin, esc } = this.deps;
     const self = this;
     log.debug("Entering PkiAdmin.issuedRevocationRows().");
-    if (!authority.issued.length) {
+    if (!authority.issuedTotal) {
       log.debug("Leaving PkiAdmin.issuedRevocationRows().");
       return '<tr><td colspan="4"><em>This authority has issued nothing this ' +
              'process can still see.</em></td></tr>';
@@ -4158,6 +4238,7 @@ class PkiAdmin {
         ? (cert.held
             ? '<form method="post" action="/admin/pki">' +
               '<input type="hidden" name="action" value="release-hold">' +
+              carry +
               '<input type="hidden" name="scope" value="' +
                 esc(authority.scope) + '">' +
               '<input type="hidden" name="ca" value="' + esc(authority.ca) +
@@ -4175,6 +4256,7 @@ class PkiAdmin {
             : '<span class="muted">permanent</span>')
         : '<form method="post" action="/admin/pki">' +
           '<input type="hidden" name="action" value="revoke-certificate">' +
+          carry +
           '<input type="hidden" name="scope" value="' + esc(authority.scope) +
           '"><input ' +
           'type="hidden" name="ca" value="' + esc(authority.ca) + '">' +
@@ -4201,13 +4283,25 @@ class PkiAdmin {
     }).join('');
   }
 
-  private authorityBlock(authority: Json) {
-    const { log, admin, esc } = this.deps;
+  private authorityBlock(authority: Json, listView: Json) {
+    const { log, admin, adminViews, esc } = this.deps;
     const self = this;
     log.debug("Entering PkiAdmin.authorityBlock().");
-    const orphans = authority.revokedNotIssued.length
+    // THIS AUTHORITY'S TWO PAGERS (#370), and every link carries every
+    // list's state; so does every Revoke and Release form, as `back` with
+    // the list it was pressed in, so the reader lands on the page they were
+    // reading rather than on page 1 of everything.
+    const issuedNav = admin.pageNavPair('/admin/pki', listView,
+                                        authority.pagingRaw.issued);
+    const orphansNav = admin.pageNavPair('/admin/pki', listView,
+                                         authority.pagingRaw.orphans);
+    const carry = '<input type="hidden" name="back" value="' +
+      esc(adminViews.queryWith(listView, {})) + '">' +
+      '<input type="hidden" name="list" value="' +
+      esc(authority.pagingRaw.issued.param) + '">';
+    const orphans = authority.revokedNotIssuedTotal
       ? admin.note(
-          '<p><strong>' + authority.revokedNotIssued.length + ' serial(s) on ' +
+          '<p><strong>' + authority.revokedNotIssuedTotal + ' serial(s) on ' +
           'this list name a certificate this process no longer holds a ' +
           'record of.</strong> That is the ORDINARY case rather than an ' +
           'error: a certificate superseded by a rotation is revoked and then ' +
@@ -4215,7 +4309,7 @@ class PkiAdmin {
           'with nothing left to point at. RFC 5280 does not ask a CA to ' +
           'still hold what it signed in order to revoke it &mdash; and a ' +
           'validator checking one of these is checking exactly the ' +
-          'certificate it was meant to.</p><table ' +
+          'certificate it was meant to.</p>' + orphansNav.head + '<table ' +
           'class="grid"><thead><tr><th>Serial</th><th>Revoked</th>' +
           '<th>Reason</th><th>Subject ' +
           'as recorded</th></tr></thead><tbody>' +
@@ -4226,29 +4320,29 @@ class PkiAdmin {
                    (entry.note ? '<br><span class="muted">' + esc(entry.note) +
                                  '</span>' : '') + '</td>' +
                    '<td>' + esc(entry.subject || '—') + '</td></tr>';
-          }).join('') + '</tbody></table>',
-          authority.revokedNotIssued.length + ' revoked serial(s) with no ' +
+          }).join('') + '</tbody></table>' + orphansNav.foot,
+          authority.revokedNotIssuedTotal + ' revoked serial(s) with no ' +
           'certificate left to show')
       : '';
 
     log.debug("Leaving PkiAdmin.authorityBlock().");
     return '<h4>' + esc(authority.label) + '</h4>' +
       '<p><code>' + esc(authority.subject) + '</code></p>' +
-      '<p class="muted">' + authority.issued.length + ' issued, ' +
-      authority.revoked.length + ' revoked. A client reads this ' +
+      '<p class="muted">' + authority.issuedTotal + ' issued, ' +
+      authority.revokedTotal + ' revoked. A client reads this ' +
       'authority&rsquo;s answer at ' +
       '<code>' + esc(authority.crl.http) + '</code> (HTTP), ' +
       '<code>' + esc(authority.crl.ldap) + '</code> (LDAP) or ' +
       '<code>' + esc(authority.ocsp) + '</code> (OCSP). ' +
       'Every certificate this authority signs names all three inside ' +
-      'itself.</p>' +
+      'itself.</p>' + issuedNav.head +
       '<table class="grid"><thead><tr><th>Serial</th><th>Subject</th>' +
       '<th>Status</th><th></th></tr></thead><tbody>' +
-      self.issuedRevocationRows(authority) +
-      '</tbody></table>' + orphans;
+      self.issuedRevocationRows(authority, carry) +
+      '</tbody></table>' + issuedNav.foot + orphans;
   }
 
-  private revocationPane(json: Json) {
+  private revocationPane(json: Json, listView: Json) {
     const { log, admin, esc } = this.deps;
     const self = this;
     log.debug('Entering PkiAdmin.revocationPane().');
@@ -4333,7 +4427,7 @@ class PkiAdmin {
               ' authority(ies).');
     return '<h3>Revoking a certificate</h3>' + what + rotation + reasons +
       model.authorities.map(function (authority) {
-        return self.authorityBlock(authority);
+        return self.authorityBlock(authority, listView);
       }).join('');
   }
 
@@ -4793,7 +4887,7 @@ class PkiAdmin {
                   issuedRows +
                   personForm +
                   '<h3 id="pki-people">People</h3>' + personRows +
-                  self.revocationPane(json) +
+                  self.revocationPane(json, listView) +
                   self.certificatePane(json, json.workbench.draft) +
                   admin.configFormsFor('/admin/pki') +
                   (certificate
@@ -4839,17 +4933,23 @@ class PkiAdmin {
       return admin.userReturnTo(body, identifier, '#credentials');
     }
     // A TAKE-OFF BUTTON IN ONE OF THIS PAGE'S TWO PAGED TABLES (2026-09-13),
-    // which carries `back` so the reader lands on the page of the table they
-    // pressed it in rather than on page 1 of both, several screens above it.
-    // Only those buttons carry the field; every other control here posts
-    // without it and gets the bare page, as before.
+    // or a Revoke / Release button in an authority's list (#370), which
+    // carries `back` so the reader lands on the page of the table they
+    // pressed it in rather than on page 1 of every table, several screens
+    // above it. Only those buttons carry the field; every other control here
+    // posts without it and gets the bare page, as before.
     if (body && Object.prototype.hasOwnProperty.call(body, 'back')) {
       log.debug("Leaving PkiAdmin.pkiReturnTo(). This page, at a key-pair " +
                 "table.");
+      // A Revoke or Release button in an authority's list (#370) names that
+      // list, and goes back to it — the name only when it is one this file
+      // writes, since it ends up in a `Location` header.
+      const list = String(body.list || '');
       return '/admin/pki' +
              adminViews.queryWith(self.keyPairListViewFromBack(body.back), {}) +
-             (String(body.target || '') === 'person' ? '#pki-people'
-                                                     : '#pki-applications');
+             (REVOCATION_LIST_PARAM.test(list) ? '#list-' + list
+               : String(body.target || '') === 'person' ? '#pki-people'
+                                                         : '#pki-applications');
     }
     log.debug("Leaving PkiAdmin.pkiReturnTo(). This page.");
     return '/admin/pki';

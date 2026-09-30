@@ -15114,10 +15114,18 @@ class AdminApi {
                          'the page drew.' }
         ])),
         responseDescription: 'The hierarchy, the algorithm vocabularies, the ' +
-                             'two assertion profiles, and one row per ' +
+                             'two assertion profiles, one row per ' +
                              'application per profile for those holding an ' +
                              'issued key pair, with `issuedPaging` and ' +
-                             '`personsPaging` beside the two lists.',
+                             '`personsPaging` beside the two lists, and each ' +
+                             'authority\'s revocation lists as pages (#370): ' +
+                             '`issued` and `revokedNotIssued` on each ' +
+                             'authority are one page each, twenty-five by ' +
+                             'default with `per`, on the query parameters ' +
+                             '`ca-<scope segment>-<ca>-issuedPage` and ' +
+                             '`…-orphansPage`, with `issuedPaging`, ' +
+                             '`orphansPaging`, `issuedTotal`, `revokedTotal` ' +
+                             'and `revokedNotIssuedTotal` beside them.',
         handler: function (req, res) {
           log.debug("Entering the management API PKI endpoint.");
           self.sendJson(res, 200, pkiAdmin.pkiView(req));
