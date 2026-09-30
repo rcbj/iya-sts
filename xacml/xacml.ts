@@ -1432,16 +1432,24 @@ class XacmlSurface {
   // in flight this shares, rather than a second transaction started
   // mid-request. A commit that fails still nudges — the nudge is an
   // optimisation, and the PEP's pull then converges as it would have.
-  // Everywhere else (one node, the cluster off, a dispatched pool) nothing
-  // changes: the nudge goes at once.
+  // A dispatched pool's worker waits the same way (below). Everywhere else
+  // (one process, the cluster off) the nudge goes at once.
   // ---------------------------------------------------------------------------
   private afterCommit(dispatch: () => void): void {
     const { log, errorCodes, loadBarrier, loadPersistence } = this.deps;
     log.debug("Entering XacmlSurface.afterCommit().");
     const barrier = loadBarrier();
-    if (!barrier.isActive()) {
-      log.debug("Leaving XacmlSurface.afterCommit(). Not active-active; " +
-                "at once.");
+    // A REQUEST WORKER WAITS TOO (2026-09-30). In the single-node mode the
+    // PEP's pull is dispatched to whichever worker the front process picks,
+    // and the nudge left from this worker before its write was committed —
+    // before the request that made the change had even answered, so the
+    // front process's read barrier held no ticket for it. The other worker
+    // answered the old sync token and the PEP converged on its next
+    // heartbeat (sts_xacml_remote_pep, 1959ms). After the commit the
+    // barrier makes that worker catch up before it answers.
+    if (!barrier.isActive() && !process.env.STS_REQUEST_WORKER) {
+      log.debug("Leaving XacmlSurface.afterCommit(). One process, not " +
+                "active-active; at once.");
       dispatch();
       return;
     }
