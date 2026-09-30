@@ -4597,7 +4597,8 @@ class AdminConsole {
           (surfaceCount
             ? ' + ' + surfaceCount + ' for the console and portal' : '') +
           (process.env.STS_REQUEST_WORKER
-            ? '; this page from ' + pool + 'worker ' + WorkerChannel.id() : '') + ')'
+            ? '; this page from ' + pool + 'worker ' + WorkerChannel.id()
+            : '') + ')'
         : 'single process';
     } catch (e) {
       log.debug("Caught in AdminConsole.runtimeFacts(): " +

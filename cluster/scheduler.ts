@@ -1113,9 +1113,9 @@ class Scheduler {
     this.scheduleProcessTick(0);
     if (perProcessOnly) {
       log.info('scheduler: running ' + this.perProcessJobs().length +
-               ' per-process job(s) in this process (' + WorkerChannel.processTag() +
-               '). Cluster jobs run on the scheduler\'s leader, which a ' +
-               'request worker never is.');
+               ' per-process job(s) in this process (' +
+               WorkerChannel.processTag() + '). Cluster jobs run on the ' +
+               'scheduler\'s leader, which a request worker never is.');
       log.debug("Leaving Scheduler.start(). Per-process only.");
       return true;
     }

@@ -3251,8 +3251,8 @@ const SETTINGS = [
                  'console page walking the directory never holds a protocol ' +
                  'worker. 0 — the default — means there is no second pool ' +
                  'and those paths go to the request workers with the rest ' +
-                 'of workers.dispatch. Nothing is sent to these workers unless ' +
-                 'workers.dispatch names the paths too. **It REQUIRES ' +
+                 'of workers.dispatch. Nothing is sent to these workers ' +
+                 'unless workers.dispatch names the paths too. **It REQUIRES ' +
                  'workers.readYourWrite**: signing in to the console now ' +
                  'crosses two workers (the sign-in in a protocol worker, ' +
                  'the console session in one of these), and without the ' +

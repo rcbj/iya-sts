@@ -1124,8 +1124,8 @@ class RequestWorker {
       this.bindSocket();
     }).catch((err) => {
       log.error(errorCodes.tag('STS-WORKER-0019') +
-                'request_worker ' + WorkerChannel.id() + ': the state could not be ' +
-                'brought up: ' + err.message);
+                'request_worker ' + WorkerChannel.id() + ': the state could ' +
+                'not be brought up: ' + err.message);
       this.report({ ready: false, error: 'the state could not be brought ' +
                     'up: ' + err.message });
     });
@@ -1180,7 +1180,8 @@ class RequestWorker {
       log.info('request_worker ' + WorkerChannel.id() + ': ready on ' +
                this.socketPath + '. It holds NO protocol port — every ' +
                'listener is the front process\'s.');
-      this.report({ ready: true, pid: WorkerChannel.id(), socket: this.socketPath });
+      this.report({ ready: true, pid: WorkerChannel.id(),
+                    socket: this.socketPath });
     });
     log.debug('Leaving RequestWorker.bindSocket().');
   }
@@ -1232,8 +1233,8 @@ class RequestWorker {
     }
     this.server.close(() => {
       this.cleanup();
-      log.info('request_worker ' + WorkerChannel.id() + ': served ' + this.served +
-               ' request(s); exiting.');
+      log.info('request_worker ' + WorkerChannel.id() + ': served ' +
+               this.served + ' request(s); exiting.');
       process.exit(0);
     });
     // `close()` waits for open keep-alive connections, and the front process
@@ -1334,9 +1335,10 @@ class RequestWorker {
       // ticket rather than arming it — exactly as proxy() does for a request
       // a worker never answered. Announcing here would arm a ticket for a
       // flush that covers nothing.
-      WorkerChannel.send({ operation: true, id: message.id, ok: false, ran: false,
-        error: 'this worker does not answer to the "' + message.kind + '" ' +
-          'operation. It answers to: ' +
+      WorkerChannel.send({ operation: true, id: message.id, ok: false,
+        ran: false,
+        error: 'this worker does not answer to the "' + message.kind +
+          '" operation. It answers to: ' +
           (Array.from(this.operations.keys()).join(', ') || '(nothing)') +
           '.',
         errorName: 'Error' });
@@ -1351,7 +1353,8 @@ class RequestWorker {
       // It RAN, so it is announced: a handler that threw part way through may
       // still have written.
       this.operationFinished(ticket);
-      WorkerChannel.send({ operation: true, id: message.id, ok: false, ran: true,
+      WorkerChannel.send({ operation: true, id: message.id, ok: false,
+                           ran: true,
                      error: e.message, errorName: e.name || 'Error' });
       log.debug('Leaving RequestWorker.handleOperation(). It threw.');
       return;
@@ -1362,7 +1365,8 @@ class RequestWorker {
                      result: value });
     }, (e) => {
       this.operationFinished(ticket);
-      WorkerChannel.send({ operation: true, id: message.id, ok: false, ran: true,
+      WorkerChannel.send({ operation: true, id: message.id, ok: false,
+                           ran: true,
                      error: e.message, errorName: e.name || 'Error' });
     });
     log.debug('Leaving RequestWorker.handleOperation(). Running.');
@@ -1613,7 +1617,8 @@ class RequestWorker {
     });
     keystore.setPkiPublisher(function (realmId: string, chain: unknown) {
       try {
-        WorkerChannel.send({ publishPki: { realm: realmId, chain: chain || null } });
+        WorkerChannel.send({ publishPki: { realm: realmId,
+                                           chain: chain || null } });
       } catch (e) {
         // Same case, same answer: the parent has gone and this worker is on
         // its way out.
