@@ -686,16 +686,27 @@ class AdminApi {
    * Returns a request schema ready for ajv: `structureOnly()` of it, with the
    * document's named schemas as `components`.
    *
+   * **`components` IS PASSED IN, AND EVERY CALLER PASSES THE SAME ONE (#365,
+   * 2026-09-30).** It used to be `structureOnly(spec.SCHEMAS)` made here, a
+   * fresh deep copy of the whole components table (about 170 KB) for each of
+   * the 363 validators — and ajv keeps every root it compiled in its cache
+   * for the life of the process, so the copies were never collected: about
+   * 60 MB of every process's heap. The copy is made once, in
+   * `compileRequestSchemas()`, and each root points at it. ajv reads a schema
+   * and never writes to it, so a shared subtree is exactly what the copies
+   * were, 363 times fewer; what each validator accepts and refuses, and the
+   * words it refuses in, are unchanged.
+   *
    * @param schema - an operation's request schema
+   * @param components - the one `{ schemas: structureOnly(spec.SCHEMAS) }`
    * @returns the schema to compile
    */
-  compilable(schema) {
-    const { log, spec } = this.deps;
+  compilable(schema, components) {
+    const { log } = this.deps;
     log.debug("Entering AdminApi.compilable().");
     log.debug("Leaving AdminApi.compilable().");
     return Object.assign({}, this.structureOnly(schema),
-                         { components: { schemas: this.structureOnly(
-                             spec.SCHEMAS) } });
+                         { components: components });
   }
 
   /**
@@ -721,10 +732,13 @@ class AdminApi {
    * @returns how many validators were built
    */
   compileRequestSchemas() {
-    const { log, errorCodes } = this.deps;
+    const { log, errorCodes, spec } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.compileRequestSchemas().");
     let built = 0;
+    // ONE copy of the enforced components for every root below (#365; see
+    // `compilable()`).
+    const components = { schemas: self.structureOnly(spec.SCHEMAS) };
     ROUTES.forEach(function (entry) {
       const route = entry.route || entry.path;
       const rows = entry.actions || [];
@@ -734,7 +748,8 @@ class AdminApi {
         }
         try {
           validators.set(self.validatorKeyOf(route, action.action),
-                         ajv.compile(self.compilable(action.requestBody)));
+                         ajv.compile(self.compilable(action.requestBody,
+                                                     components)));
           built = built + 1;
         } catch (e) {
           // A schema this repository wrote that ajv will not compile. Logged by
@@ -750,7 +765,8 @@ class AdminApi {
       if (entry.requestBody) {
         try {
           validators.set(self.validatorKeyOf(route, ''),
-                         ajv.compile(self.compilable(entry.requestBody)));
+                         ajv.compile(self.compilable(entry.requestBody,
+                                                     components)));
           built = built + 1;
         } catch (e) {
           log.error(errorCodes.tag('STS-API-0010') +
