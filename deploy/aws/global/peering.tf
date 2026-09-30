@@ -9,12 +9,14 @@
 # and each cell's writes to the global database's writer in the primary
 # cell. RDS's own replication does not; it is carried by RDS.
 #
-# INTER-REGION VPC PEERING, A FULL MESH, rather than a transit gateway: two to
-# four cells make one to six peerings, each free to hold and billed only for
-# the bytes that cross it (the same inter-region rate a transit gateway adds
+# INTER-REGION VPC PEERING, A FULL MESH, rather than a transit gateway: n
+# cells make n(n-1)/2 peerings — one at two cells, fifteen at globalidp's six
+# (#367) — each free to hold and billed only for the bytes that cross it (the same inter-region rate a transit gateway adds
 # its own per-attachment hour and per-GB charge on top of). Peering is not
-# transitive, which is what a mesh needs and what residency wants: cac1's
-# traffic to euc1 never passes through usw2.
+# transitive, which is what a mesh needs and what residency wants: apse1's
+# traffic to euc1 never passes through usw2. The quotas are far off: a VPC
+# holds fifty active peerings by default, and each of a cell's two route
+# tables one route per other cell, under their default of fifty.
 #
 # HERE, AND NOT IN THE CELLS, because a peering names two VPCs and so exists
 # only once both do — which is the reason this stack is applied after every
@@ -24,22 +26,30 @@
 # zone associated with each VPC below, not a resolution of the other VPC's
 # private host names.
 #
-# A BLOCK PER PAIR, SIX FOR THE FOUR REGIONS the design names, each present
-# only when both its cells are (providers.tf says why they are written out).
-# The requester is the pair's first cell in the fixed order usw2, cac1, euc1,
-# apse1, so a pair has one peering and never two.
+# ONE `for_each` OVER EVERY PAIR (#367, 2026-09-30); it was a module block
+# per pair of the four regions #98 named, each with a provider per side. The
+# REQUESTER of a pair is whichever of its two cells comes first in the
+# order: the primary cell, then the rest by id — so a pair has one peering
+# and never two, and adding a cell adds pairs without re-orienting (and so
+# replacing) any that exist. Changing `primary_cell` does re-orient the
+# primary's pairs, which replaces those peerings; the apply that moves the
+# writer is an outage anyway.
 # ---------------------------------------------------------------------------
 locals {
-  # A pair's two cells, or null when either is not in this environment.
-  pair = {
-    for p in [
-      ["usw2", "cac1"], ["usw2", "euc1"], ["usw2", "apse1"],
-      ["cac1", "euc1"], ["cac1", "apse1"], ["euc1", "apse1"],
-    ] :
-    "${p[0]}_${p[1]}" => (contains(keys(var.cells), p[0]) && contains(keys(var.cells), p[1])) ? {
-      requester = merge(local.cell[p[0]], { id = p[0] })
-      accepter  = merge(local.cell[p[1]], { id = p[1] })
-    } : null
+  cell_order = concat(
+    [var.primary_cell],
+    sort([for id in keys(var.cells) : id if id != var.primary_cell]),
+  )
+  pairs = {
+    for p in flatten([
+      for i, a in local.cell_order : [
+        for j, b in local.cell_order : { requester = a, accepter = b } if j > i
+      ]
+    ]) :
+    "${p.requester}_${p.accepter}" => {
+      requester = merge(local.cell[p.requester], { id = p.requester })
+      accepter  = merge(local.cell[p.accepter], { id = p.accepter })
+    }
   }
   peering_common = {
     prefix     = local.prefix
@@ -47,52 +57,45 @@ locals {
   }
 }
 
-module "peering_usw2_cac1" {
-  source    = "./modules/peering"
-  count     = local.pair["usw2_cac1"] != null ? 1 : 0
-  providers = { aws.requester = aws.usw2, aws.accepter = aws.cac1 }
-  pair      = local.pair["usw2_cac1"]
-  common    = local.peering_common
+module "peering" {
+  source   = "./modules/peering"
+  for_each = local.pairs
+
+  pair   = each.value
+  common = local.peering_common
 }
 
-module "peering_usw2_euc1" {
-  source    = "./modules/peering"
-  count     = local.pair["usw2_euc1"] != null ? 1 : 0
-  providers = { aws.requester = aws.usw2, aws.accepter = aws.euc1 }
-  pair      = local.pair["usw2_euc1"]
-  common    = local.peering_common
+# The six per-pair blocks' instances are this one's (testidpna's usw2_cac1
+# among them): kept, not replaced, which would cut the inter-cell channel
+# and the writes to the global writer for as long as a peering takes.
+moved {
+  from = module.peering_usw2_cac1[0]
+  to   = module.peering["usw2_cac1"]
 }
 
-module "peering_usw2_apse1" {
-  source    = "./modules/peering"
-  count     = local.pair["usw2_apse1"] != null ? 1 : 0
-  providers = { aws.requester = aws.usw2, aws.accepter = aws.apse1 }
-  pair      = local.pair["usw2_apse1"]
-  common    = local.peering_common
+moved {
+  from = module.peering_usw2_euc1[0]
+  to   = module.peering["usw2_euc1"]
 }
 
-module "peering_cac1_euc1" {
-  source    = "./modules/peering"
-  count     = local.pair["cac1_euc1"] != null ? 1 : 0
-  providers = { aws.requester = aws.cac1, aws.accepter = aws.euc1 }
-  pair      = local.pair["cac1_euc1"]
-  common    = local.peering_common
+moved {
+  from = module.peering_usw2_apse1[0]
+  to   = module.peering["usw2_apse1"]
 }
 
-module "peering_cac1_apse1" {
-  source    = "./modules/peering"
-  count     = local.pair["cac1_apse1"] != null ? 1 : 0
-  providers = { aws.requester = aws.cac1, aws.accepter = aws.apse1 }
-  pair      = local.pair["cac1_apse1"]
-  common    = local.peering_common
+moved {
+  from = module.peering_cac1_euc1[0]
+  to   = module.peering["cac1_euc1"]
 }
 
-module "peering_euc1_apse1" {
-  source    = "./modules/peering"
-  count     = local.pair["euc1_apse1"] != null ? 1 : 0
-  providers = { aws.requester = aws.euc1, aws.accepter = aws.apse1 }
-  pair      = local.pair["euc1_apse1"]
-  common    = local.peering_common
+moved {
+  from = module.peering_cac1_apse1[0]
+  to   = module.peering["cac1_apse1"]
+}
+
+moved {
+  from = module.peering_euc1_apse1[0]
+  to   = module.peering["euc1_apse1"]
 }
 
 # ---------------------------------------------------------------------------

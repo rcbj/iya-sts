@@ -110,8 +110,19 @@ data "aws_iam_policy_document" "workload_boundary" {
   # IN EVERY PERMITTED REGION (#98): a cell's task reads its own secrets and
   # the global ones replicated to its region, decrypts them with its cell key
   # or its replica of the global key, pulls from its region's repository and
-  # logs to its region's group. With one permitted region each list is the one
-  # ARN it always was.
+  # logs to its region's group. The ARNs name any region and the fence below
+  # holds them to the permitted ones (locals.tf, `rarn`, #367).
+  statement {
+    sid         = "OnlyPermittedRegionsForRegionalServices"
+    effect      = "Deny"
+    not_actions = local.fence_exempt
+    resources   = ["*"]
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:RequestedRegion"
+      values   = local.regions
+    }
+  }
   statement {
     sid       = "ReadProjectSecrets"
     actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
@@ -207,6 +218,18 @@ resource "aws_iam_policy" "workload_boundary" {
 # is the intersection.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "ecs_infrastructure_boundary" {
+  # The region fence, as in the workload boundary above (#367).
+  statement {
+    sid         = "OnlyPermittedRegionsForRegionalServices"
+    effect      = "Deny"
+    not_actions = local.fence_exempt
+    resources   = ["*"]
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:RequestedRegion"
+      values   = local.regions
+    }
+  }
   statement {
     sid       = "CreateAndTagOnlyEcsManagedVolumes"
     actions   = ["ec2:CreateVolume", "ec2:CreateTags"]
@@ -246,7 +269,7 @@ data "aws_iam_policy_document" "ecs_infrastructure_boundary" {
   statement {
     sid       = "AttachDetachAtTheFargateHost"
     actions   = ["ec2:AttachVolume", "ec2:DetachVolume"]
-    resources = [for r in local.regions : "arn:${local.partition}:ec2:${r}:*:instance/*"]
+    resources = ["arn:${local.partition}:ec2:*:*:instance/*"]
   }
   # A single-cell environment's volumes are sealed under the project key, a
   # cell's under its CELL key (#98) — resident data, never the global key.
@@ -1131,14 +1154,16 @@ resource "aws_iam_role_policy_attachment" "deployer" {
 
 # EVERYTHING THE DEPLOYER DOES IS CONFINED TO THE PERMITTED REGIONS. It was
 # one region, `OnlyUsWest2ForRegionalServices`, until #98 (2026-09-28); the
-# list is `permitted_regions`, and with its default the fence is the one it
-# was under a new name.
+# list is `permitted_regions`. SINCE #367 (2026-09-30) THIS IS THE ONLY
+# PLACE THE DEPLOYER'S REGIONS ARE NAMED: its statements' ARNs carry a `*`
+# region (locals.tf, `rarn`), so that adding a region grows no policy, and
+# the two boundaries carry this same Deny for the roles the deployer makes.
 data "aws_iam_policy_document" "region_fence" {
   # Route53 is global, and its requests carry us-east-1.
   statement {
     sid         = "OnlyPermittedRegionsForRegionalServices"
     effect      = "Deny"
-    not_actions = ["iam:*", "sts:*", "s3:*", "route53:*"]
+    not_actions = local.fence_exempt
     resources   = ["*"]
     condition {
       test     = "StringNotEquals"

@@ -7,9 +7,11 @@
 # log group and a replica of the image repository. ../../regions.tf argues
 # why each is here; this file argues the details.
 #
-# No provider block: the caller passes the one for this region. Every name
-# matches what the home region's resources are called, so an environment in
-# any region finds them by the same lookup.
+# No provider block, and no provider per region: every resource names
+# `var.region` itself (AWS provider 6's per-resource `region`, #367), so the
+# caller's one provider makes them all. Every name matches what the home
+# region's resources are called, so an environment in any region finds them
+# by the same lookup.
 # ---------------------------------------------------------------------------
 terraform {
   required_providers {
@@ -20,12 +22,12 @@ terraform {
 }
 
 variable "region" {
-  description = "The region this instance is for; the provider passed in must be for it."
+  description = "The region this instance is for; every resource here is made in it."
   type        = string
 }
 
 variable "cell" {
-  description = "The cell this region holds (usw2, cac1, euc1, apse1)."
+  description = "The cell this region holds: its id by the rule in ../../locals.tf (us-west-2 is usw2, ap-southeast-5 apse5)."
   type        = string
 }
 
@@ -99,6 +101,7 @@ data "aws_iam_policy_document" "cell" {
 }
 
 resource "aws_kms_key" "cell" {
+  region                  = var.region
   description             = "mock-sts cell ${var.cell} (issue #98): the cell KEK and resident data; single-region, never replicated"
   multi_region            = false
   enable_key_rotation     = true
@@ -107,6 +110,7 @@ resource "aws_kms_key" "cell" {
 }
 
 resource "aws_kms_alias" "cell" {
+  region        = var.region
   name          = "alias/${var.common.name}-cell-${var.cell}"
   target_key_id = aws_kms_key.cell.key_id
 }
@@ -132,6 +136,7 @@ data "aws_iam_policy_document" "global" {
 
 resource "aws_kms_replica_key" "global" {
   count                   = local.home ? 0 : 1
+  region                  = var.region
   description             = "mock-sts (issue #98): replica of the GLOBAL multi-region key"
   primary_key_arn         = var.common.global_key_arn
   deletion_window_in_days = 30
@@ -140,6 +145,7 @@ resource "aws_kms_replica_key" "global" {
 
 resource "aws_kms_alias" "global" {
   count         = local.home ? 0 : 1
+  region        = var.region
   name          = "alias/${var.common.name}-global"
   target_key_id = aws_kms_replica_key.global[0].key_id
 }
@@ -152,6 +158,7 @@ resource "aws_kms_alias" "global" {
 # way wherever it runs.
 # ---------------------------------------------------------------------------
 resource "aws_cloudwatch_log_group" "containers" {
+  region            = var.region
   count             = local.home ? 0 : 1
   name              = "/${var.common.name}/containers"
   retention_in_days = var.common.log_retention_days
@@ -170,6 +177,7 @@ resource "aws_cloudwatch_log_group" "containers" {
 # home repository's KMS encryption is kept for the one that is pushed to.
 # ---------------------------------------------------------------------------
 resource "aws_ecr_repository" "replica" {
+  region               = var.region
   count                = local.home ? 0 : 1
   name                 = var.common.name
   image_tag_mutability = "MUTABLE"
@@ -184,6 +192,7 @@ resource "aws_ecr_repository" "replica" {
 }
 
 resource "aws_ecr_lifecycle_policy" "replica" {
+  region     = var.region
   count      = local.home ? 0 : 1
   repository = aws_ecr_repository.replica[0].name
   policy     = var.common.ecr_lifecycle_policy

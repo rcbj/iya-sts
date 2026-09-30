@@ -41,12 +41,5 @@ output "master_secret_arn" {
 
 output "peering_connection_ids" {
   description = "Every inter-cell peering, by pair."
-  value = merge(
-    { for m in module.peering_usw2_cac1 : "usw2_cac1" => m.peering_connection_id },
-    { for m in module.peering_usw2_euc1 : "usw2_euc1" => m.peering_connection_id },
-    { for m in module.peering_usw2_apse1 : "usw2_apse1" => m.peering_connection_id },
-    { for m in module.peering_cac1_euc1 : "cac1_euc1" => m.peering_connection_id },
-    { for m in module.peering_cac1_apse1 : "cac1_apse1" => m.peering_connection_id },
-    { for m in module.peering_euc1_apse1 : "euc1_apse1" => m.peering_connection_id },
-  )
+  value       = { for k, m in module.peering : k => m.peering_connection_id }
 }

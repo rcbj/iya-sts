@@ -13,45 +13,12 @@ provider "aws" {
 }
 
 # ---------------------------------------------------------------------------
-# ONE PROVIDER PER REGION A CELL MAY BE IN. Terraform cannot make a provider
-# per element of `cells`, so the four regions issue #98 names are written out
-# (the same four foundation/ permits), and each module block in
-# database.tf and peering.tf exists only when its cells do. A cell in any
-# other region is refused by the validation in variables.tf; adding one is a
-# provider here, a replica block in database.tf, and a peering block per pair
-# in peering.tf.
+# ONE PROVIDER, EVERY CELL'S REGION (#367, 2026-09-30). This file carried a
+# provider block per region a cell could be in — four, written out — and
+# database.tf and peering.tf a module block per region and per PAIR of
+# regions, until AWS provider 6's per-resource `region` argument let one
+# provider reach them all. The replicas and the peerings are one `for_each`
+# each now, over `cells`, and a cell in a new region needs nothing here.
 # ---------------------------------------------------------------------------
-provider "aws" {
-  alias  = "usw2"
-  region = "us-west-2"
-  default_tags {
-    tags = local.tags
-  }
-}
-
-provider "aws" {
-  alias  = "cac1"
-  region = "ca-central-1"
-  default_tags {
-    tags = local.tags
-  }
-}
-
-provider "aws" {
-  alias  = "euc1"
-  region = "eu-central-1"
-  default_tags {
-    tags = local.tags
-  }
-}
-
-provider "aws" {
-  alias  = "apse1"
-  region = "ap-southeast-1"
-  default_tags {
-    tags = local.tags
-  }
-}
-
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}

@@ -65,22 +65,23 @@ variable "cell" {
 variable "cells" {
   description = <<-EOT
     Every cell of the environment, by id — from `envs/<env>.cells.tfvars.json`.
-    A cell's id names its region (usw2 = us-west-2, cac1 = ca-central-1,
-    euc1 = eu-central-1, apse1 = ap-southeast-1); `jurisdiction` is the legal
-    boundary it sits in (issue #98, section 2); `vpc_cidr` is its VPC, which
-    must not overlap another cell's; `geolocation_countries` are the ISO 3166
-    country codes whose clients Route 53 PINS to this cell because the law
-    requires it (dns_cells.tf) — empty for a cell that is reached only through
-    the latency set; `db_snapshot_identifier`, empty but for a cell CONVERTED
-    from a single-region environment, is the RDS snapshot the cell database
-    is restored from (conversion.tf) — in the cell's region and under the
-    cell's own key, and read once, when the database is created.
+    A cell's id names its region, by foundation/locals.tf's rule (#367): the
+    area, the direction's initials and the number — us-west-2 = usw2,
+    us-east-2 = use2, eu-west-1 = euw1, ap-southeast-5 = apse5.
+    `jurisdiction` is the legal boundary it sits in (issue #98, section 2),
+    and several cells may share one (globalidp's two `us` and two `eu`);
+    `vpc_cidr` is its VPC, which must not overlap another cell's;
+    `db_snapshot_identifier`, empty but for a cell CONVERTED from a
+    single-region environment, is the RDS snapshot the cell database is
+    restored from (conversion.tf) — in the cell's region and under the cell's
+    own key, and read once, when the database is created. The countries
+    Route 53 pins are a JURISDICTION's, not a cell's (`jurisdictions`,
+    below; they were a cell's `geolocation_countries` until #367).
   EOT
   type = map(object({
     region                 = string
     jurisdiction           = string
     vpc_cidr               = string
-    geolocation_countries  = optional(list(string), [])
     db_snapshot_identifier = optional(string, "")
   }))
   default = {}
@@ -93,10 +94,62 @@ variable "cells" {
     error_message = "one cell per region: a cell is its region's unit of residency."
   }
   validation {
+    # EACH CELL IN THE REGION ITS ID NAMES — foundation/locals.tf's rule,
+    # `cell_of_region` (#367; keep the copies in step). The id is at most
+    # five characters, which the names it goes into (32 at most) need, and a
+    # one-digit region number guarantees.
     condition = alltrue([
-      for id, c in var.cells : can(regex("^[a-z][a-z0-9]{1,4}$", id)) && can(cidrnetmask(c.vpc_cidr))
+      for id, c in var.cells :
+      can(cidrnetmask(c.vpc_cidr)) &&
+      can(regex("^[a-z]{2}-(north|south|east|west|central|northeast|northwest|southeast|southwest)-[1-9]$", c.region)) &&
+      id == join("", [
+        split("-", c.region)[0],
+        lookup({
+          north     = "n", south = "s", east = "e", west = "w", central = "c",
+          northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw",
+        }, split("-", c.region)[1], "?"),
+        split("-", c.region)[2],
+      ])
     ])
-    error_message = "a cell id is 2-5 lower-case letters and digits (it goes into names limited to 32 characters), and vpc_cidr is a CIDR."
+    error_message = "each cell's id must be its region shortened by rule (us-west-2 is usw2, eu-central-1 euc1, ap-southeast-5 apse5), in a commercial region of the form area-direction-digit, and vpc_cidr a CIDR."
+  }
+}
+
+variable "jurisdictions" {
+  description = <<-EOT
+    The environment's jurisdictions, by code, and the ISO 3166 countries whose
+    clients Route 53 PINS to each because the law requires it (dns_cells.tf,
+    #367) — globalidp's `eu` holds the EU and EEA countries, answered by
+    whichever of its two cells is nearer and never by a cell outside it. A
+    jurisdiction with no pinned country needs no entry. From the cells file.
+  EOT
+  type = map(object({
+    geolocation_countries = optional(list(string), [])
+  }))
+  default = {}
+  validation {
+    condition = alltrue([
+      for j, v in var.jurisdictions :
+      length(v.geolocation_countries) == 0 ||
+      contains([for c in values(var.cells) : c.jurisdiction], j)
+    ])
+    error_message = "a jurisdiction that pins countries must have a cell: Route 53 would have nowhere to send them."
+  }
+  validation {
+    condition = length(flatten([
+      for v in values(var.jurisdictions) : v.geolocation_countries
+      ])) == length(distinct(flatten([
+        for v in values(var.jurisdictions) : v.geolocation_countries
+    ])))
+    error_message = "a country is pinned to one jurisdiction at most: Route 53 holds one geolocation record per country."
+  }
+  validation {
+    condition = alltrue([
+      for v in values(var.jurisdictions) : alltrue([
+        for c in v.geolocation_countries : can(regex("^[A-Z]{2}$", c))
+      ])
+    ])
+    error_message = "a pinned country is an ISO 3166-1 alpha-2 code, upper case (DE, SG)."
   }
 }
 
