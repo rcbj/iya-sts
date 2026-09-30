@@ -645,10 +645,22 @@ const APPLICATIONS = [
     group: function (g) {
       return { kem: MLKEM_KEM_ID[g.parameterSet] };
     },
+    // A VALID vector is an encapsulation with its own m (Encaps_internal),
+    // which node's OpenSSL does not take (#363), so its bytes cannot be
+    // reproduced; an INVALID one is an encapsulation key the FIPS 203
+    // section 7.2 check must refuse, which is still held — with our own
+    // randomness, since the refusal is about the key.
+    expect: function (c, t) {
+      if (t.result === 'valid') {
+        return { expect: 'skip', why: 'an encapsulation with the vector\'s ' +
+          'm (Encaps_internal): node\'s OpenSSL takes no randomness' };
+      }
+      return null;
+    },
     run: function (c, t) {
       return refusesOnThrow(function () {
-        const out = crypto.hpke.encap(c.kem, hex(t.ek), hex(t.m));
-        return out.enc.equals(hex(t.c)) && out.ss.equals(hex(t.K));
+        const out = crypto.hpke.encap(c.kem, hex(t.ek));
+        return out.enc.length > 0;
       });
     } },
   { door: 'ML-KEM key generation from the seed',
