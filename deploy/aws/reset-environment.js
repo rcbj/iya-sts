@@ -649,6 +649,114 @@ async function resetDirectory(base, token, dryRun, failed) {
 }
 
 // ---------------------------------------------------------------------------
+// THE RISK DATASETS (#311).
+// ---------------------------------------------------------------------------
+// sts_admin_risk and sts_admin_risk_upload import versions of the operator
+// lists into the default realm and leave the last one ACTIVE. On testidp that
+// replaced rcbj's own deny list, and the next run's sts_admin_risk was then
+// refused by the shrink guard against a 2,500-row suite version. The jobs now
+// put back what they found; this is the backstop for a job that was killed.
+//
+// A version is the SUITE'S when
+//   * its name has a suite job's prefix (`run-`, `two-`, `bomb-`), or
+//   * it was loaded within SUITE_NEIGHBOUR_MS of such a version (the upload
+//     job's own versions are named by their SHA-256 on purpose, and always
+//     land seconds after sts_admin_risk's), or
+//   * it was loaded within SUITE_WINDOW_MS after a run's start, which the
+//     launcher marks by uploading `suite-<run>` to iplist.operator-allow.
+// `suite-<run>` itself is the launcher's allow list for THIS run and is
+// never displaced. For every other dataset whose active version is the
+// suite's, the newest version that is not, and that loaded (not refused,
+// not deleted), is made active again. A dataset with no such version is
+// left alone and reported.
+const SUITE_VERSION_PREFIX = /^(run|two|bomb)-/;
+const SUITE_NEIGHBOUR_MS = 60 * 1000;
+const SUITE_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+function suiteVersionTest(datasets) {
+  log.debug('Entering suiteVersionTest().');
+  const named = [];
+  const windows = [];
+  datasets.forEach(function (d) {
+    (d.versions || []).forEach(function (v) {
+      const at = Number(v.loadedAt) || 0;
+      if (SUITE_VERSION_PREFIX.test(String(v.version))) {
+        named.push(at);
+      }
+      if (/^suite-/.test(String(v.version))) {
+        windows.push(at);
+      }
+    });
+  });
+  log.debug('Leaving suiteVersionTest().');
+  return function (v) {
+    const name = String(v.version || '');
+    const at = Number(v.loadedAt) || 0;
+    if (SUITE_VERSION_PREFIX.test(name) || /^suite-/.test(name)) {
+      return true;
+    }
+    return named.some(function (t) {
+      return Math.abs(at - t) <= SUITE_NEIGHBOUR_MS;
+    }) || windows.some(function (t) {
+      return at >= t && at - t <= SUITE_WINDOW_MS;
+    });
+  };
+}
+
+async function resetRiskDatasets(base, token, dryRun, failed) {
+  log.debug('Entering resetRiskDatasets().');
+  const r = await requestRetrying('GET', base + '/admin-api/risk', token);
+  if (r.status !== 200 || !r.json || !Array.isArray(r.json.datasets)) {
+    log.debug('Leaving resetRiskDatasets().');
+    throw new Error('GET /admin-api/risk answered ' + brief(r));
+  }
+  const datasets = r.json.datasets;
+  const isSuite = suiteVersionTest(datasets);
+  let restored = 0;
+  for (const d of datasets) {
+    const active = String(d.activeVersion || '');
+    if (!active || /^suite-/.test(active)) {
+      continue;
+    }
+    const current = (d.versions || []).filter(function (v) {
+      return String(v.version) === active;
+    })[0] || { version: active, loadedAt: 0 };
+    if (!isSuite(current)) {
+      continue;
+    }
+    const operator = (d.versions || []).filter(function (v) {
+      return !isSuite(v) &&
+        ['superseded', 'ready', 'active'].indexOf(String(v.state)) >= 0;
+    }).sort(function (a, b) {
+      return (Number(b.loadedAt) || 0) - (Number(a.loadedAt) || 0);
+    })[0];
+    if (!operator) {
+      say(d.dataset + ': the suite\'s ' + active + ' is active and no ' +
+          'operator version is held; left as it is.');
+      continue;
+    }
+    if (dryRun) {
+      say(d.dataset + ': would make ' + operator.version + ' active again ' +
+          'in place of the suite\'s ' + active + '.');
+      continue;
+    }
+    const a = await requestRetrying('POST',
+                                    base + '/admin-api/risk/activate', token,
+                                    { dataset: d.dataset,
+                                      version: operator.version });
+    if (a.status === 200) {
+      restored += 1;
+      say(d.dataset + ': ' + operator.version + ' is active again in place ' +
+          'of the suite\'s ' + active + '.');
+    } else {
+      failed.push('risk dataset ' + d.dataset + ' (' + brief(a) + ')');
+    }
+  }
+  say('restored ' + restored + ' risk dataset(s) to the operator\'s version.');
+  log.debug('Leaving resetRiskDatasets().');
+}
+
+// ---------------------------------------------------------------------------
 // THE APPLICATIONS.
 // ---------------------------------------------------------------------------
 async function resetApplications(base, token, dryRun, failed) {
@@ -758,6 +866,7 @@ async function main(argv) {
   await resetRealms(base, token, dryRun, failed);
   await resetDirectory(base, token, dryRun, failed);
   await resetApplications(base, token, dryRun, failed);
+  await resetRiskDatasets(base, token, dryRun, failed);
   await resetOverrides(base, token, dryRun, failed);
   if (failed.length) {
     process.stderr.write('reset-environment: not reset: ' +
@@ -775,6 +884,7 @@ module.exports = {
   isSuitePerson: isSuitePerson,
   isSuiteGroup: isSuiteGroup,
   isSuiteApplication: isSuiteApplication,
+  suiteVersionTest: suiteVersionTest,
   BULK_DOORS: BULK_DOORS
 };
 

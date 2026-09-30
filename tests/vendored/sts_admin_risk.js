@@ -532,21 +532,64 @@ async function theBadge(cookie, admin) {
   log.debug("Leaving theBadge().");
 }
 
+// WHAT THIS JOB FOUND IS WHAT IT LEAVES (#311). Every version this job
+// imports into the default realm becomes ACTIVE, and on a shared environment
+// that replaced the operator's own list for good — the next run's
+// sts_admin_risk was then refused by the shrink guard against a suite
+// version. So the active version of each dataset this job touches is read
+// before it starts and made active again when it ends, pass or fail.
+// deploy/aws/reset-environment.js is the backstop for a job that is killed.
+async function activeVersions(datasets) {
+  log.debug("Entering activeVersions().");
+  const r = await call("GET", base + "/admin-api/risk");
+  const found = {};
+  ((r.body && r.body.datasets) || []).forEach(function (d) {
+    if (datasets.indexOf(d.dataset) >= 0) {
+      found[d.dataset] = String(d.activeVersion || "");
+    }
+  });
+  log.debug("Leaving activeVersions().");
+  return found;
+}
+
+async function putBack(saved) {
+  log.debug("Entering putBack().");
+  const now = await activeVersions(Object.keys(saved));
+  for (const dataset of Object.keys(saved)) {
+    const was = saved[dataset];
+    if (!was || now[dataset] === was) {
+      continue;
+    }
+    const r = await call("POST", base + "/admin-api/risk/activate",
+                         { headers: { "Content-Type": "application/json" },
+                           body: JSON.stringify({ dataset: dataset,
+                                                  version: was }) });
+    log.info("put " + dataset + " back to " + was + " (it was " +
+             (now[dataset] || "none") + "): " + r.status);
+  }
+  log.debug("Leaving putBack().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "risk-admin-" + STAMP;
   const cookie = await signin.signInToTheConsole(base, admin, log,
                                                  { grant: "write" });
-  await theView(cookie || "");
-  await importAndLookUp();
-  await aVersionIsVerified();
-  await aSecondVersionThenRollback();
-  await ruleSeven();
-  await theTermsAreAccepted();
-  await theFailureHistory();
-  await signInsAreAssessed(cookie);
-  await theScoringMeasured(cookie);
-  await theBadge(cookie, admin);
+  const saved = await activeVersions([DATASET, "iplist.reputation"]);
+  try {
+    await theView(cookie || "");
+    await importAndLookUp();
+    await aVersionIsVerified();
+    await aSecondVersionThenRollback();
+    await ruleSeven();
+    await theTermsAreAccepted();
+    await theFailureHistory();
+    await signInsAreAssessed(cookie);
+    await theScoringMeasured(cookie);
+    await theBadge(cookie, admin);
+  } finally {
+    await putBack(saved);
+  }
   log.info("sts_admin_risk: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }
