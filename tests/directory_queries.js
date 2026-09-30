@@ -137,6 +137,20 @@ function builders(t) {
             [['default', 'acme'], [users, 'ou=devices,x']]),
           'A13. residentOnly leaves out what is strictly under each windowed ' +
           'container, per realm', JSON.stringify(r.values));
+  const cls = queries.classesUnder('r', users, ['groupOfNames', 'posixGroup']);
+  t.check(/class_keys \?\| \$3::text\[\]/.test(cls.text) &&
+          JSON.stringify(cls.values[2]) === '["groupofnames","posixgroup"]',
+          'A12b. classesUnder asks class_keys for any of the classes, ' +
+          'lower-cased', cls.text);
+  const names = queries.namesUnder('r', users, 'uid=a', 10);
+  t.check(/SELECT dn_key, dn, origin, attrs->'uid'->>0 AS uid/.test(
+    names.text) && !/attrs,/.test(names.text),
+          'A12c. namesUnder reads the key, the DN, the origin and the first ' +
+          'uid, and never the entry', names.text);
+  t.equal(JSON.stringify(queries.answerOf('namesUnder',
+    [{ dn_key: 'k', dn: 'D', origin: null, uid: null }])),
+          '[{"key":"k","dn":"D","origin":"","uid":""}]',
+          'A12d. a name row is { key, dn, origin, uid }');
   let threw = false;
   try {
     queries.build('dropTables', []);
@@ -210,9 +224,9 @@ async function schema(t) {
     return c.table === 'sts_ldap_entries';
   });
   const names = ['parent_key', 'rdn_value', 'name_keys', 'mail_keys',
-                 'uuid_keys'];
+                 'uuid_keys', 'class_keys'];
   t.equal(columns.map(function (c) { return c.column; }).join(','),
-          names.join(','), 'C2. SCHEMA_COLUMNS adds the five lookup columns');
+          names.join(','), 'C2. SCHEMA_COLUMNS adds the six lookup columns');
   columns.forEach(function (c) {
     const definition = c.statement.replace(
       'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ', '');
@@ -222,12 +236,12 @@ async function schema(t) {
             'the CREATE TABLE and the ALTER alike');
   });
   const indexes = postgres.SCHEMA_OBJECTS.filter(function (o) {
-    return /^sts_ldap_entries_(parent|rdn|names|mails|uuids|attrs)$/
+    return /^sts_ldap_entries_(parent|rdn|names|mails|uuids|attrs|classes)$/
       .test(o.name);
   });
-  t.check(indexes.length === 6 && indexes.every(function (o) {
+  t.check(indexes.length === 7 && indexes.every(function (o) {
     return o.afterColumns === true;
-  }), 'C4. the six lookup indexes wait for the column step',
+  }), 'C4. the seven lookup indexes wait for the column step',
           indexes.map(function (o) { return o.name; }).join(', '));
 
   // AN OLD TABLE: every object present except the six indexes, and the
@@ -237,8 +251,9 @@ async function schema(t) {
     if (/to_regclass/.test(sql)) {
       const row = {};
       params.forEach(function (name, i) {
-        row['o' + i] = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|attrs)$/
-          .test(name) ? null : name;
+        row['o' + i] =
+          /^sts_ldap_entries_(parent|rdn|names|mails|uuids|attrs|classes)$/
+            .test(name) ? null : name;
       });
       return [row];
     }
@@ -265,9 +280,9 @@ async function schema(t) {
   const firstIndex = ddl.findIndex(function (sql) {
     return /^CREATE INDEX/.test(sql);
   });
-  t.check(ddl.length === 11 && lastAlter === 4 && firstIndex === 5,
-          'C5. against an old table open() adds the five columns, THEN ' +
-          'builds the six indexes', ddl.map(function (sql) {
+  t.check(ddl.length === 13 && lastAlter === 5 && firstIndex === 6,
+          'C5. against an old table open() adds the six columns, THEN ' +
+          'builds the seven indexes', ddl.map(function (sql) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {

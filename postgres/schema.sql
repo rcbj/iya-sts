@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS sts_ldap_entries (
   name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'uid', '[]'::jsonb)::text)::jsonb) STORED,
   mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'mail', '[]'::jsonb)::text)::jsonb) STORED,
   uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(attrs->'entryuuid', '[]'::jsonb) || COALESCE(attrs->'stsentryuuidalias', '[]'::jsonb))::text)::jsonb) STORED,
+  class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'objectclass', '[]'::jsonb)::text)::jsonb) STORED,
   PRIMARY KEY (realm, dn_key));
 
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
@@ -159,7 +160,8 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
 -- `ldap/ldap_server.js`: `parent_key` is `parentDn()` of the key (everything
 -- after the first comma — the key splits on every comma, escapes unread);
 -- `rdn_value` the first RDN's value; `name_keys`, `mail_keys` and
--- `uuid_keys` the `uid`, `mail` and entryUUID (and alias) values,
+-- `uuid_keys` the `uid`, `mail` and entryUUID (and alias) values, and
+-- `class_keys` the object classes,
 -- lower-cased, as a JSON array for `@>`. `persistence/directory_queries.js`
 -- builds every statement that reads them. Added separately as well, for
 -- `sts_realms.domain`'s reason.
@@ -168,6 +170,7 @@ ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS rdn_value text GENERATED A
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'uid', '[]'::jsonb)::text)::jsonb) STORED;
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'mail', '[]'::jsonb)::text)::jsonb) STORED;
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(attrs->'entryuuid', '[]'::jsonb) || COALESCE(attrs->'stsentryuuidalias', '[]'::jsonb))::text)::jsonb) STORED;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'objectclass', '[]'::jsonb)::text)::jsonb) STORED;
 
 -- The children of a container in key order, and the RDN value there (a login
 -- name); the lower-cased `uid`, `mail` and entryUUID values; and every
@@ -178,6 +181,9 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin 
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_attrs ON sts_ldap_entries USING gin (attrs jsonb_path_ops);
+-- The object classes, with the default GIN operator class, for `?|`: a group
+-- placed under `ou=users` or `ou=devices` found without a walk.
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries USING gin (class_keys);
 
 CREATE TABLE IF NOT EXISTS sts_realms (
   id          text PRIMARY KEY,

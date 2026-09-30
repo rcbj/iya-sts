@@ -1454,11 +1454,12 @@ function eachEntryInRealm(fn) {
 // Outside a windowed worker each is exactly the walk it replaced.
 //
 //   * `eachResidentEntry()`: a walk whose filter can only match an entry
-//     OUTSIDE `ou=users` and `ou=devices` — a container's children, the
-//     groups. **A group placed under `ou=users` is therefore not seen in a
-//     windowed worker**, where `groupRuleFor()` is placement-blind on purpose
-//     everywhere else: the one thing this changes, and the price of groups
-//     staying resident (rcbj's decision on #349).
+//     OUTSIDE `ou=users` and `ou=devices` — a container's children.
+//   * `eachGroupEntry()`: the group walks. `groupRuleFor()` is
+//     placement-blind on purpose, so a group may sit under `ou=users`; the
+//     resident entries are walked and the windowed containers are ASKED for
+//     their entries with a group class, so a windowed worker's answers are
+//     a whole directory's (rcbj, 2026-09-29).
 //   * `windowedFind()`: an indexed question to the store
 //     (`persistence/directory_queries.js`) for the windowed entries, each
 //     answer read back through the window and asked the service's own rule.
@@ -1466,6 +1467,30 @@ function eachEntryInRealm(fn) {
 //     of some attributes — resident ones walked, windowed ones asked of the
 //     store.
 // ---------------------------------------------------------------------------
+// Every entry that may be a GROUP, handed to `fn`: the resident entries, and
+// in a windowed worker the entries under `ou=users` and `ou=devices` whose
+// object classes name a group class, asked of the store (`classesUnder`,
+// the GIN index over `class_keys`) and read back through the window with
+// this process's own changes. So a group placed under a windowed container
+// is in every group walk, the group index included, with the answers a
+// process holding the whole directory gives (#349).
+function eachGroupEntry(fn) {
+  log.debug("Entering eachGroupEntry().");
+  eachResidentEntry(fn);
+  if (directoryWindow) {
+    const realmId = realms.currentId();
+    windowedContainersOf(realmId).forEach(function (container) {
+      directoryWindow.findWindowed(realmId, 'classesUnder',
+        [realmId, container, GROUP_CLASSES], function (entry) {
+          return !!groupRuleFor(entry);
+        }).forEach(function (hit) {
+        fn(hit.entry, hit.key);
+      });
+    });
+  }
+  log.debug("Leaving eachGroupEntry().");
+}
+
 function eachResidentEntry(fn) {
   log.debug("Entering eachResidentEntry().");
   if (directoryWindow) {
@@ -4282,11 +4307,27 @@ const directoryHooks = {
   // A ROW ANOTHER PROCESS WROTE, FOR A WINDOWED KEY (#349): the held copy is
   // dropped and read again when next asked for, and the indexes are told, as
   // `applyEntry()` tells them.
-  forgetEntry: function (realmId, key) {
+  //
+  // `row` is the entry the store now holds (null for a delete), read by the
+  // applier as `applyEntry()`'s caller reads it; `keep` is true for a key
+  // this process is busy with, which is marked stale by the caller and not
+  // forgotten here. Either way a PERSON the store now holds is noted in the
+  // identity register as `created`, exactly as `applyEntry()` notes one a
+  // process holding the whole directory applies: `/admin/users` in a
+  // windowed worker must list who another process just made.
+  forgetEntry: function (realmId, key, row, keep) {
     log.debug('Entering forgetEntry(). realmId=' + realmId + ', key=' + key);
-    if (directoryWindow) {
+    if (directoryWindow && !keep) {
       directoryWindow.forget(realmId, key);
       touchDirectory(key);
+    }
+    if (row && row.dn && row.origin !== 'seed') {
+      realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
+        if (isPersonEntry(row)) {
+          const uid = ((row.attributes || {}).uid || [])[0];
+          stats.noteKnownIdentity(uid || row.dn, 'created');
+        }
+      });
     }
     log.debug('Leaving forgetEntry().');
   },
@@ -4390,6 +4431,25 @@ const directoryHooks = {
           people++;
         }
       });
+      // -----------------------------------------------------------------
+      // A WINDOWED WORKER'S PEOPLE ARE NOT IN `restored` (#349): it read the
+      // resident entries back and none of the people. The register is filled
+      // from the STORE instead, a page of NAMES at a time — the key, the DN,
+      // the origin and the first `uid`, which is everything the loop above
+      // reads of a person — so the register holds what it holds in a process
+      // that restored the whole directory, and no entry is read whole or
+      // kept. Same rule: under `ou=users`, not seeded, `uid` or else the DN.
+      // -----------------------------------------------------------------
+      if (directoryWindow && directoryWindow.attached()) {
+        people += directoryWindow.eachName(realmId, normalizeDn(usersDn()),
+          function (name) {
+            if (name.origin === 'seed') {
+              return false;
+            }
+            return !!stats.noteKnownIdentity(name.uid || name.dn,
+                                             'restored');
+          });
+      }
       log.info('ldap: ' + people + ' restored person/people in the "' +
                realmId + '" realm are known to /admin/users, marked as ' +
                'restored rather than as having authenticated here — they ' +
@@ -7486,7 +7546,7 @@ function groupsFor(dn) {
 
   const groups = [];
   const sortKeys = new Map();
-  eachResidentEntry(function (entry) {
+  eachGroupEntry(function (entry) {
     const rule = groupRuleFor(entry);
     if (!rule) {
       return;
@@ -7701,7 +7761,7 @@ function buildGroupIndex() {
   log.debug('Entering buildGroupIndex().');
   const byMember = new Map();
   const byDn = new Map();
-  eachResidentEntry(function (entry) {
+  eachGroupEntry(function (entry) {
     const rule = groupRuleFor(entry);
     if (!rule) {
       return;
@@ -12940,7 +13000,7 @@ function membershipsNaming(dn) {
   const uid = (splitRdns(dn)[0] || '').toLowerCase().indexOf('uid=') === 0
     ? unescapeDnValue(rdnPairs(splitRdns(dn)[0])[0].value) : '';
   let count = 0;
-  eachResidentEntry(function (entry) {
+  eachGroupEntry(function (entry) {
     const names = MEMBER_ATTRIBUTES.some(function (attribute) {
       return (entry.attributes[attribute.name] || []).some(function (value) {
         return attribute.holds === 'uid'
@@ -12974,7 +13034,7 @@ function dropMemberships(dn) {
   const uid = (splitRdns(dn)[0] || '').toLowerCase().indexOf('uid=') === 0
     ? unescapeDnValue(rdnPairs(splitRdns(dn)[0])[0].value).toLowerCase() : '';
   const rewrites = [];
-  eachResidentEntry(function (entry) {
+  eachGroupEntry(function (entry) {
     let changed = false;
     const next = {};
     Object.keys(entry.attributes).forEach(function (name) {
@@ -18830,7 +18890,7 @@ function logBatchDangling(batch) {
   });
   let values = 0;
   // The groups hold membership values, and groups are resident (#349).
-  eachResidentEntry(function (entry) {
+  eachGroupEntry(function (entry) {
     MEMBER_ATTRIBUTES.forEach(function (attribute) {
       (entry.attributes[attribute.name] || []).forEach(function (value) {
         if (attribute.holds === 'uid'
@@ -19078,7 +19138,7 @@ function deletePerson(dn, options) {
 function allGroupEntries() {
   log.debug('Entering allGroupEntries().');
   const rows = [];
-  eachResidentEntry(function (stored) {
+  eachGroupEntry(function (stored) {
     if (groupRuleFor(stored)) {
       rows.push(stored);
     }
@@ -21738,6 +21798,10 @@ module.exports = {
   populateVcAttributesAt: populateVcAttributesAt,
   // THIS REALM's entries, not the Map's. See realmEntryCount().
   entryCount: realmEntryCount,
+  // THE PERSISTENCE HOOKS (#349), exported for `tests/directory_window.js`
+  // alone: it restores and applies the same rows in a process holding the
+  // whole directory and in a windowed one, and compares what each answers.
+  directoryHooks: directoryHooks,
   // THE WINDOW (#349), or null outside a windowed worker. Exported for
   // `tests/directory_window.js`, which gives it a stand-in bridge to hold
   // this module's own lookups to what they answer through a window; nothing

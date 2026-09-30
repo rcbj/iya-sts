@@ -27,7 +27,7 @@ twenty-eight since the thirteen `sts_risk_*` tables of risk scoring arrived with
 version 7 (#62, 2026-09-22), and twenty-nine since `sts_risk_terms_acceptances`
 arrived with version 8 (2026-09-23) — version 10 (#262) added a column,
 `sts_realms.retiring_at`, and no table, and version 13 (#349, after #333's
-12) five GENERATED lookup columns on `sts_ldap_entries` and six indexes over
+12) six GENERATED lookup columns on `sts_ldap_entries` and seven indexes over
 them, for a request worker that holds the people and devices as a window
 (`persistence/directory_queries.js`); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —

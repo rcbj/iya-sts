@@ -47,7 +47,7 @@ which shape is on disk.
 | 8 | `sts_risk_terms_acceptances` |
 | 9 | the columns `sts_risk_assessments.feedback` and `.feedback_at` |
 | 10 | the column `sts_realms.retiring_at` (#262) |
-| 13 | five generated lookup columns on `sts_ldap_entries` and six indexes over them (#349). Versions 11 and 12 are #98's `sts_cell_routing` and #333's `sts_minted.expires_at` |
+| 13 | six generated lookup columns on `sts_ldap_entries` and seven indexes over them (#349). Versions 11 and 12 are #98's `sts_cell_routing` and #333's `sts_minted.expires_at` |
 
 ### The application role
 
@@ -122,17 +122,19 @@ The [LDAP directory](ldap.md) has one row per entry, for every realm. The
 | `name_keys` | jsonb, generated | the `uid` values, lower-cased, as a JSON array |
 | `mail_keys` | jsonb, generated | the `mail` values, lower-cased |
 | `uuid_keys` | jsonb, generated | the `entryUUID` and `stsEntryUuidAlias` values, lower-cased |
+| `class_keys` | jsonb, generated | the `objectClass` values, lower-cased — how a group placed under `ou=users` is found |
 
 Primary key `(realm, dn_key)`, with an index on `realm`.
 
-**The five generated columns (schema version 13, #349)** are computed by the
+**The six generated columns (schema version 13, #349)** are computed by the
 database from `dn_key` and `attrs`, so nothing writes them. They exist for a
 request worker with `ldap.workerDirectory=postgres-lru`, which holds the
 people and devices as a bounded window and asks the store instead of keeping
 an index in memory. They are indexed: `(realm, parent_key, dn_key)` for a
 container's children, `(realm, parent_key, rdn_value)` for a login name, GIN
-(`jsonb_path_ops`) over `name_keys`, `mail_keys` and `uuid_keys`, and GIN over
-`attrs` for a value as written (a DID, a SPIFFE ID). Adding the columns to a
+(`jsonb_path_ops`) over `name_keys`, `mail_keys` and `uuid_keys`, GIN over
+`attrs` for a value as written (a DID, a SPIFFE ID), and GIN (the default
+operator class, for `?|`) over `class_keys`. Adding the columns to a
 table that already has rows rewrites it once; running `postgres/schema.sql`
 again as the owner does it.
 

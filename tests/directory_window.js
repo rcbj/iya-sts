@@ -135,6 +135,22 @@ function fakeBridge(rows) {
         }).indexOf(args[1]) >= 0;
       }).map(queries.rowOf);
     }
+    if (name === 'classesUnder') {
+      return sorted(args[0]).filter(function (r) {
+        return under(r.dn_key, args[1]) &&
+          (r.attrs.objectclass || []).some(function (c) {
+            return args[2].indexOf(String(c).toLowerCase()) >= 0;
+          });
+      }).map(queries.rowOf);
+    }
+    if (name === 'namesUnder') {
+      return sorted(args[0]).filter(function (r) {
+        return under(r.dn_key, args[1]) && r.dn_key > args[2];
+      }).slice(0, args[3]).map(function (r) {
+        return { key: r.dn_key, dn: r.dn, origin: r.origin || '',
+                 uid: String((r.attrs.uid || [])[0] || '') };
+      });
+    }
     if (name === 'byAttribute') {
       return sorted(args[0]).filter(function (r) {
         return (r.attrs[args[1]] || []).indexOf(args[2]) >= 0;
@@ -688,7 +704,11 @@ async function throughPersistence(t) {
     },
     applyEntry: function (realmId, key, r) { w.adopt(realmId, key, r); },
     removeEntry: function (realmId, key) { w.forget(realmId, key); },
-    forgetEntry: function (realmId, key) { w.forget(realmId, key); },
+    forgetEntry: function (realmId, key, row, keep) {
+      if (!keep) {
+        w.forget(realmId, key);
+      }
+    },
     windowedContainers: function () { return [USERS, DEVICES]; },
     window: w
   });
@@ -842,6 +862,103 @@ function throughTheDirectory(t) {
   log.debug("Leaving throughTheDirectory().");
 }
 
+// J AND K: ONE DIRECTORY, TWO MODES, THE SAME ANSWERS (rcbj, 2026-09-29).
+// The same rows restored — whole in a process holding the directory, the
+// resident ones only in a windowed worker, whose store is a table of all of
+// them — and the same row applied as another process's write; then the
+// group answers (J) and the identity register (K) are collected, and the
+// parent compares the two children's answers.
+function scenarioRows(base) {
+  log.debug("Entering scenarioRows().");
+  const users = 'ou=users,' + base;
+  const groups = 'ou=groups,' + base;
+  const devices = 'ou=devices,' + base;
+  const e = function (dn, origin, attributes) {
+    return { dn: dn, origin: origin, createdAt: '20260929000000Z',
+             modifiedAt: '20260929000000Z', attributes: attributes };
+  };
+  const ann = 'uid=ann,' + users;
+  log.debug("Leaving scenarioRows().");
+  return [
+    e(base, 'seed', { objectclass: ['top', 'domain'] }),
+    e(users, 'seed', { objectclass: ['organizationalUnit'], ou: ['users'] }),
+    e(groups, 'seed', { objectclass: ['organizationalUnit'], ou: ['groups'] }),
+    e(devices, 'seed', { objectclass: ['organizationalUnit'],
+                         ou: ['devices'] }),
+    e(ann, 'scim', { objectclass: ['inetOrgPerson'], uid: ['ann'],
+                     cn: ['Ann'] }),
+    e('uid=ben,' + users, 'seed', { objectclass: ['inetOrgPerson'],
+                                    uid: ['ben'], cn: ['Ben'] }),
+    e('cn=Carl Ng,' + users, 'console', { objectclass: ['inetOrgPerson'],
+                                          cn: ['Carl Ng'] }),
+    e('cn=ops,' + groups, 'console', { objectclass: ['groupOfNames'],
+                                       cn: ['ops'], member: [ann] }),
+    // THE CASE rcbj named: groups under the windowed containers.
+    e('cn=team,' + users, 'ldap add', { objectclass: ['groupOfNames'],
+                                        cn: ['team'], member: [ann] }),
+    e('cn=kiosk,' + devices, 'ldap add',
+      { objectclass: ['groupOfUniqueNames'], cn: ['kiosk'],
+        uniquemember: [ann] })
+  ];
+}
+
+function twoModes() {
+  log.debug("Entering twoModes().");
+  const ldap = require('../ldap/ldap_server');
+  const stats = require('../common/admin_stats');
+  const base = ldap.baseDn().toLowerCase();
+  const rows = scenarioRows(base);
+  const w = ldap.directoryWindow;
+  let restoredRows = rows;
+  if (w) {
+    const table = new Map();
+    rows.forEach(function (one) {
+      table.set('default\n' + one.dn.toLowerCase(),
+                { realm: 'default', dn_key: one.dn.toLowerCase(),
+                  dn: one.dn, attrs: one.attributes, origin: one.origin,
+                  created_at: one.createdAt, modified_at: one.modifiedAt });
+    });
+    w.attach(fakeBridge(table));
+    // What the residentOnly restore answers: nothing under the windowed
+    // containers.
+    restoredRows = rows.filter(function (one) {
+      return !w.isWindowed('default', one.dn.toLowerCase());
+    });
+  }
+  ldap.directoryHooks.replaceRealm('default', restoredRows);
+  // ANOTHER PROCESS CREATES A PERSON: applied whole here, or read and
+  // forgotten by a windowed worker.
+  const dee = { dn: 'uid=dee,ou=users,' + base, origin: 'scim',
+                createdAt: '20260929000000Z', modifiedAt: '20260929000000Z',
+                attributes: { objectclass: ['inetOrgPerson'], uid: ['dee'] } };
+  if (w) {
+    ldap.directoryHooks.forgetEntry('default', dee.dn.toLowerCase(), dee,
+                                    false);
+  } else {
+    ldap.directoryHooks.applyEntry('default', dee.dn.toLowerCase(), dee);
+  }
+  const ann = 'uid=ann,ou=users,' + base;
+  const groupsOfAnn = ldap.groupsOfUser('ann').groups.map(function (g) {
+    return String(g.dn || g).toLowerCase();
+  }).sort();
+  const allGroups = ldap.allGroupEntries().map(function (g) {
+    return g.dn.toLowerCase();
+  }).sort();
+  const listed = (ldap.groupsFor('').groups || []).map(function (g) {
+    return g.dn.toLowerCase();
+  }).sort();
+  const team = ldap.groupsFor('cn=team,ou=users,' + base);
+  const register = stats.userRows().map(function (row) {
+    return row.key + ':' + row.knownBy;
+  }).sort();
+  log.debug("Leaving twoModes().");
+  return { windowed: !!w, ann: ann, groupsOfAnn: groupsOfAnn,
+           allGroups: allGroups, listed: listed,
+           teamFound: !!team.found, teamMembers: team.group
+             ? (team.group.members || []).length : -1,
+           register: register };
+}
+
 async function childMain() {
   log.debug("Entering childMain().");
   delete process.env.CONFIG_FILE;
@@ -860,7 +977,14 @@ async function childMain() {
   };
   let threw = '';
   try {
-    if (process.env.DW_PART === 'ldap') {
+    if (process.env.DW_PART === 'mode-memory' ||
+        process.env.DW_PART === 'mode-lru') {
+      const answers = twoModes();
+      fs.writeFileSync(process.env.PROBE_OUT,
+                       JSON.stringify({ answers: answers, seen: [],
+                                        threw: '' }));
+      process.exit(0);
+    } else if (process.env.DW_PART === 'ldap') {
       throughTheDirectory(t);
     } else if (process.env.DW_PART === 'refusal') {
       process.env.STS_PERSISTENCE_MODE = 'memory';
@@ -886,6 +1010,82 @@ async function childMain() {
   process.exit(0);
 }
 
+function answersOf(t, part) {
+  log.debug("Entering answersOf().");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-dw-'));
+  const outFile = path.join(dir, 'out.json');
+  const env = Object.assign({}, process.env, { PROBE_OUT: outFile,
+                                               LOG_LEVEL: 'fatal',
+                                               DW_PART: part });
+  env[CHILD_FLAG] = '1';
+  delete env.CONFIG_FILE;
+  delete env.LDAP_WORKER_DIRECTORY;
+  delete env.STS_REQUEST_WORKER;
+  if (part === 'mode-lru') {
+    env.STS_REQUEST_WORKER = '1';
+    env.LDAP_WORKER_DIRECTORY = 'postgres-lru';
+    env.STS_PERSISTENCE_MODE = 'postgres';
+    env.LDAP_WORKER_CACHE_ENTRIES = '100';
+  }
+  const child = childProcess.spawnSync(process.execPath, [__filename],
+    { cwd: path.join(__dirname, '..'), env: env, encoding: 'utf8',
+      timeout: 120000 });
+  let result = null;
+  try {
+    result = JSON.parse(fs.readFileSync(outFile, 'utf8')).answers;
+  } catch (e) {
+    log.debug("Caught in answersOf(): " + ((e && e.message) || e));
+    t.bad('the ' + part + ' child reported nothing', 'status ' +
+          child.status + ': ' + String(child.stderr || '').slice(-2000));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  log.debug("Leaving answersOf().");
+  return result;
+}
+
+function sameAnswers(t) {
+  log.debug("Entering sameAnswers().");
+  const memory = answersOf(t, 'mode-memory');
+  const lru = answersOf(t, 'mode-lru');
+  if (!memory || !lru) {
+    log.debug("Leaving sameAnswers(). A child failed.");
+    return;
+  }
+  t.check(!memory.windowed && lru.windowed,
+          'J0. one child holds the whole directory and the other a window');
+  t.check(memory.groupsOfAnn.some(function (dn) {
+    return /^cn=team,ou=users,/.test(dn);
+  }) && memory.groupsOfAnn.some(function (dn) {
+    return /^cn=kiosk,ou=devices,/.test(dn);
+  }), 'J1. (whole directory) ann is in the groups under ou=users and ' +
+          'ou=devices', JSON.stringify(memory.groupsOfAnn));
+  t.equal(JSON.stringify(lru.groupsOfAnn), JSON.stringify(memory.groupsOfAnn),
+          'J2. a GROUP UNDER A WINDOWED CONTAINER counts in a windowed ' +
+          'worker: ann\'s groups are the same in both modes');
+  t.equal(JSON.stringify(lru.allGroups), JSON.stringify(memory.allGroups),
+          'J3. and every group is listed the same (allGroupEntries)');
+  t.equal(JSON.stringify(lru.listed), JSON.stringify(memory.listed),
+          'J4. and the console\'s group list is the same (groupsFor)');
+  t.check(lru.teamFound && lru.teamMembers === memory.teamMembers &&
+          memory.teamFound,
+          'J5. and the group under ou=users is found by its DN, with its ' +
+          'members', JSON.stringify({ memory: memory.teamMembers,
+                                      lru: lru.teamMembers }));
+  t.check(memory.register.indexOf('ann:restored') >= 0 &&
+          memory.register.some(function (row) {
+            return /^cn=carl ng.*:restored$/i.test(row);
+          }) && memory.register.indexOf('dee:created') >= 0 &&
+          !memory.register.some(function (row) { return /^ben:/.test(row); }),
+          'K1. (whole directory) a restored person is known as restored, ' +
+          'one with no uid by DN, a seeded one not at all, and one another ' +
+          'process made as created', JSON.stringify(memory.register));
+  t.equal(JSON.stringify(lru.register), JSON.stringify(memory.register),
+          'K2. THE IDENTITY REGISTER IS THE SAME in a windowed worker, ' +
+          'knownBy and all');
+  log.debug("Leaving sameAnswers().");
+}
+
 function inChild(t, part, minimum) {
   log.debug("Entering inChild().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-dw-'));
@@ -897,7 +1097,7 @@ function inChild(t, part, minimum) {
   delete env.CONFIG_FILE;
   delete env.LDAP_WORKER_DIRECTORY;
   delete env.STS_REQUEST_WORKER;
-  if (part === 'ldap') {
+  if (part === 'ldap' || part === 'mode-lru') {
     env.STS_REQUEST_WORKER = '1';
     env.LDAP_WORKER_DIRECTORY = 'postgres-lru';
     env.STS_PERSISTENCE_MODE = 'postgres';
@@ -974,6 +1174,8 @@ function run(t) {
   inChild(t, 'refusal', 1);
   t.log.info('=== H. the directory\'s own lookups through a window ===');
   inChild(t, 'ldap', 10);
+  t.log.info('=== J, K. the same directory in both modes ===');
+  sameAnswers(t);
   log.debug("Leaving run().");
 }
 

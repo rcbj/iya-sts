@@ -289,6 +289,50 @@ function anyWithAttribute(realm, attribute) {
 }
 
 /**
+ * The entries strictly under a base holding any of the given object classes
+ * (lower-cased), through the GIN index over `class_keys`: the groups a
+ * windowed worker must see although it does not hold their container.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param classes - the object classes, lower-cased
+ * @returns the statement
+ */
+function classesUnder(realm, baseKey, classes) {
+  log.debug("Entering classesUnder().");
+  log.debug("Leaving classesUnder().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND ' + underClause(2, 4, false) + ' AND ' +
+                 'class_keys ?| $3::text[] ORDER BY dn_key',
+           values: [String(realm), String(baseKey),
+                    (classes || []).map(function (one) {
+                      return String(one).toLowerCase();
+                    }), suffixLength(baseKey)] };
+}
+
+/**
+ * One page of the entries under a base as NAMES only — the key, the DN as
+ * written, the origin and the first `uid` — for the identity register a
+ * windowed worker fills at start without reading a single entry whole.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param afterKey - the last key of the previous page, or ''
+ * @param limit - the page size (at most 1,000)
+ * @returns the statement
+ */
+function namesUnder(realm, baseKey, afterKey, limit) {
+  log.debug("Entering namesUnder().");
+  log.debug("Leaving namesUnder().");
+  return { text: 'SELECT dn_key, dn, origin, attrs->\'uid\'->>0 AS uid ' +
+                 'FROM sts_ldap_entries WHERE realm = $1 AND ' +
+                 underClause(2, 5, false) + ' AND dn_key > $3 ORDER BY ' +
+                 'dn_key LIMIT $4',
+           values: [String(realm), String(baseKey), String(afterKey || ''),
+                    pageSize(limit), suffixLength(baseKey)] };
+}
+
+/**
  * Every entry EXCEPT those strictly under the given containers, for the
  * restore of a worker that holds those containers as a window.
  *
@@ -343,6 +387,14 @@ function answerOf(name, rows) {
     log.debug("Leaving answerOf(). A yes or a no.");
     return list.length > 0;
   }
+  if (name === 'namesUnder') {
+    log.debug("Leaving answerOf(). Names.");
+    return list.map(function (row) {
+      return { key: row.dn_key, dn: row.dn, origin: row.origin || '',
+               uid: row.uid === null || row.uid === undefined
+                 ? '' : String(row.uid) };
+    });
+  }
   log.debug("Leaving answerOf().");
   return list.map(rowOf);
 }
@@ -360,6 +412,8 @@ const QUERIES = {
   hasChild: hasChild,
   withAttribute: withAttribute,
   anyWithAttribute: anyWithAttribute,
+  classesUnder: classesUnder,
+  namesUnder: namesUnder,
   residentOnly: residentOnly
 };
 
@@ -400,5 +454,7 @@ module.exports = {
   hasChild: hasChild,
   withAttribute: withAttribute,
   anyWithAttribute: anyWithAttribute,
+  classesUnder: classesUnder,
+  namesUnder: namesUnder,
   residentOnly: residentOnly
 };

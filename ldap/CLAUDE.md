@@ -599,6 +599,13 @@ whole directory.
 * **A row another process wrote** is `forgetEntry()`-ed (read again next
   time) unless the key is busy here, in which case this process's own flush
   goes first and the store merges.
+* **The identity register is a whole directory's** (rcbj, 2026-09-29).
+  `replaceRealm()` fills it from the store in a windowed worker — a page of
+  NAMES at a time (`namesUnder`: key, DN, origin, first `uid`), the same
+  rule as the loop over restored entries, no entry read whole — and
+  `forgetEntry()`, handed the row the applier read, notes a person another
+  process made as `created`, as `applyEntry()` does. Section K of the test
+  compares the two modes.
 * **The hooks** use `adopt()` (a row the store holds, not a write) in
   `applyEntry()` and `replaceRealm()`, `forget()` in `removeEntry()`;
   `realmEntries()` and `entryAt()` answer the RESIDENT half only, so the write
@@ -613,12 +620,21 @@ whole directory.
 * **The walks that can say what they want do** (phase 5), and each is the old
   walk outside a windowed worker:
   - `eachResidentEntry()` for a filter that cannot match a person or device:
-    the federations, policies, roles, PEPs, trust anchors, SPIFFE, and the
-    GROUPS (`groupsFor()`, `buildGroupIndex()`, `allGroupEntries()`,
-    `membershipsNaming()`, `dropMemberships()`). **A group placed under
-    `ou=users` or `ou=devices` is not seen in a windowed worker** —
-    `groupRuleFor()` is placement-blind everywhere else — the price of groups
-    staying resident.
+    the federations, policies, roles, PEPs and trust anchors, and SPIFFE.
+  - `eachGroupEntry()` for the GROUPS (`groupsFor()`, `buildGroupIndex()`,
+    `allGroupEntries()`, `membershipsNaming()`, `dropMemberships()`,
+    `logBatchDangling()`): the resident entries, and the windowed
+    containers' entries with a group class, asked of the store
+    (`classesUnder`, the GIN index over the generated `class_keys`) and read
+    back through the window. `groupRuleFor()` is placement-blind, so **a
+    group under `ou=users` or `ou=devices` is seen**, and the membership
+    lookups, the group index, the listings and a search answer as a whole
+    directory does (rcbj, 2026-09-29; `tests/directory_window.js` section J
+    compares the two modes).
+  - `memberOfClaims()` (#352's claims index), `holdingAny()` and
+    `holdersWithValues()` visit the holders only (`eachHolderOfAny()`);
+    `personRows()` pages `ou=users` read-only; `batchHasChildren()` asks
+    `hasChildren()`; `countDeviceEntries()` is `countUnder()`.
   - `windowedFind()` for an indexed question (`directory_queries.js`), each
     answer read back through the window and asked the service's own rule, the
     entries changed here and not yet written added: `existingUserEntry()`

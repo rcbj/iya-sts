@@ -3088,20 +3088,29 @@ function applyDirectoryChange(change) {
   // -------------------------------------------------------------------------
   if (directory.window && directory.window.isWindowed(change.realm,
                                                       change.key)) {
-    if (directory.window.busy(change.realm, change.key)) {
-      // Dropped once this process's own flush has let it go.
-      directory.window.markStale(change.realm, change.key);
-    } else if (typeof directory.forgetEntry === 'function') {
-      const was = restoring;
-      restoring = true;
-      try {
-        directory.forgetEntry(change.realm, change.key);
-      } finally {
-        restoring = was;
-      }
-    }
+    // The row is READ, as a whole directory's applier reads it: nothing of
+    // it is kept, but a person another process made is noted in this
+    // worker's identity register from it (`forgetEntry()`), which is what
+    // `applyEntry()` does in a process holding the whole directory.
     log.debug("Leaving applyDirectoryChange(). A windowed key.");
-    return Promise.resolve(true);
+    return driver.readEntry(change.realm, change.key).then(function (row) {
+      const busy = directory.window.busy(change.realm, change.key);
+      if (busy) {
+        // Dropped once this process's own flush has let it go.
+        directory.window.markStale(change.realm, change.key);
+      }
+      if (typeof directory.forgetEntry === 'function') {
+        const was = restoring;
+        restoring = true;
+        try {
+          directory.forgetEntry(change.realm, change.key,
+                                row ? row.entry : null, busy);
+        } finally {
+          restoring = was;
+        }
+      }
+      return true;
+    });
   }
   log.debug("Leaving applyDirectoryChange().");
   // The stored key is the NORMALISED DN, which is what `sts_ldap_entries` is

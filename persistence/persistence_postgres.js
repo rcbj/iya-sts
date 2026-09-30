@@ -207,7 +207,7 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // `realms.retire()` sets before it ends anything, which every process reads
 // to refuse new sign-ins in a realm being removed. 11 SINCE 2026-09-28, for
 // `sts_cell_routing` (#98): where each person is homed, in the global tier.
-// 13 SINCE 2026-09-29, for the five generated lookup columns of
+// 13 SINCE 2026-09-29, for the six generated lookup columns of
 // `sts_ldap_entries` and their indexes (#349): what a request worker holding
 // the directory as a window asks the store instead of an index in memory.
 // 12 IS #333's (`sts_minted.expires_at`), and this must merge after it.
@@ -265,7 +265,9 @@ const DEAD_NODE_RETENTION_MS = 24 * 60 * 60 * 1000;
 //   * `name_keys`, `mail_keys`: the `uid` and `mail` values lower-cased, as a
 //     JSON array: `lower()` over the array's own JSON text, then read back as
 //     JSON, since a set-returning function is not allowed here;
-//   * `uuid_keys`: `entryUUID` and `stsEntryUuidAlias` the same way.
+//   * `uuid_keys`: `entryUUID` and `stsEntryUuidAlias` the same way;
+//   * `class_keys`: the `objectClass` values the same way — how a GROUP
+//     placed under `ou=users` or `ou=devices` is found without a walk.
 // ---------------------------------------------------------------------------
 const LDAP_GENERATED = {
   parent_key: 'parent_key text GENERATED ALWAYS AS (CASE WHEN ' +
@@ -279,7 +281,9 @@ const LDAP_GENERATED = {
     'attrs->\'mail\', \'[]\'::jsonb)::text)::jsonb) STORED',
   uuid_keys: 'uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(' +
     'attrs->\'entryuuid\', \'[]\'::jsonb) || COALESCE(' +
-    'attrs->\'stsentryuuidalias\', \'[]\'::jsonb))::text)::jsonb) STORED'
+    'attrs->\'stsentryuuidalias\', \'[]\'::jsonb))::text)::jsonb) STORED',
+  class_keys: 'class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
+    'attrs->\'objectclass\', \'[]\'::jsonb)::text)::jsonb) STORED'
 };
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
@@ -343,6 +347,7 @@ const SCHEMA_OBJECTS = [
   '  ' + LDAP_GENERATED.name_keys + ',' +
   '  ' + LDAP_GENERATED.mail_keys + ',' +
   '  ' + LDAP_GENERATED.uuid_keys + ',' +
+  '  ' + LDAP_GENERATED.class_keys + ',' +
   '  PRIMARY KEY (realm, dn_key))' },
   // The one index worth having beyond the primary key: every enumerator in
   // this service walks one realm.
@@ -381,6 +386,12 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries_attrs', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attrs ON sts_ldap_entries ' +
   'USING gin (attrs jsonb_path_ops)' },
+  // The object classes, GIN with the DEFAULT operator class: `?|` (any of
+  // the group classes) is what it is asked, and `jsonb_path_ops` answers
+  // only containment.
+  { name: 'sts_ldap_entries_classes', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries ' +
+  'USING gin (class_keys)' },
   { name: 'sts_realms', statement:
   'CREATE TABLE IF NOT EXISTS sts_realms (' +
   '  id          text PRIMARY KEY,' +
@@ -985,7 +996,7 @@ const SCHEMA_COLUMNS = [
   { table: 'sts_risk_assessments', column: 'feedback_at', statement:
   'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback_at ' +
   'bigint NOT NULL DEFAULT 0' },
-  // The directory's five generated lookup columns (#349, schema version 13).
+  // The directory's six generated lookup columns (#349, schema version 13).
   // Adding a STORED generated column rewrites the table once and fills every
   // existing row, which is the whole of the migration.
   { table: 'sts_ldap_entries', column: 'parent_key', statement:
@@ -1002,7 +1013,10 @@ const SCHEMA_COLUMNS = [
   LDAP_GENERATED.mail_keys },
   { table: 'sts_ldap_entries', column: 'uuid_keys', statement:
   'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.uuid_keys }
+  LDAP_GENERATED.uuid_keys },
+  { table: 'sts_ldap_entries', column: 'class_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.class_keys }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing

@@ -217,6 +217,56 @@ class DirectoryWindow {
   }
 
   /**
+   * Whether the store can be asked yet.
+   *
+   * @returns true once `attach()` has run
+   */
+  attached(): boolean {
+    log.debug("Entering DirectoryWindow.attached().");
+    log.debug("Leaving DirectoryWindow.attached().");
+    return !!this.bridge;
+  }
+
+  /**
+   * Hands `fn` the NAMES of the entries under a base in the store, a page
+   * at a time — `{ key, dn, origin, uid }`, no entry read whole — and counts
+   * the ones `fn` answers true for. For the identity register a windowed
+   * worker fills at start (#349).
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @param fn - called with each name; its truthy answers are counted
+   * @returns how many `fn` answered true for
+   */
+  eachName(realmId: string, base: string,
+           fn: (name: { key: string; dn: string; origin: string;
+                        uid: string }) => boolean): number {
+    log.debug("Entering DirectoryWindow.eachName(). " + base);
+    let counted = 0;
+    let after = '';
+    while (this.bridge) {
+      const names = this.bridge.query('namesUnder',
+        [realmId, base, after, PAGE]) as Array<{ key: string; dn: string;
+                                                 origin: string;
+                                                 uid: string }>;
+      if (!names || !names.length) {
+        break;
+      }
+      names.forEach(function (name) {
+        if (fn(name)) {
+          counted += 1;
+        }
+      });
+      after = names[names.length - 1].key;
+      if (names.length < PAGE) {
+        break;
+      }
+    }
+    log.debug("Leaving DirectoryWindow.eachName(). " + counted + '.');
+    return counted;
+  }
+
+  /**
    * Whether a key of a realm is windowed: strictly under one of its
    * windowed containers.
    *
