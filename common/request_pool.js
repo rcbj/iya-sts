@@ -5875,18 +5875,14 @@ function removeSocketDir() {
 }
 
 // ---------------------------------------------------------------------------
-// EACH WORKER'S OWN POST-QUANTUM POOL, ASKED FOR (#327).
+// EACH WORKER'S OWN MEMORY AND CPU TIME, ASKED FOR (#327, #329).
 //
-// A request worker loads the whole stack, `common/crypto.js` with it, and so
-// has a `worker_pool.js` of its OWN: a post-quantum job computed while a
-// worker answers a request goes to children that worker forks, lazily, and
-// that nothing in this process can see. With dispatch on, that is where most
-// such jobs run. Monitoring → Worker Pools asks for them through the channel
-// every other exchange here uses: one `{ poolStatus }` message to each ready
-// worker, answered with that worker's `worker_pool.stats()` — and, since #329,
-// its `process.memoryUsage()` and `process.cpuUsage()` for Monitoring → Node
-// Health, which asks the same question — the answers
-// awaited for at most `timeoutMs`. A worker that does not answer in time is
+// Monitoring → Worker Pools and Node Health ask for what only a worker can
+// read about itself through the channel every other exchange here uses: one
+// `{ poolStatus }` message to each ready worker, answered with its
+// `process.memoryUsage()` and `process.cpuUsage()`, the answers awaited for at
+// most `timeoutMs`. (Until #363 the answer also carried each worker's own
+// post-quantum pool, which is gone.) A worker that does not answer in time is
 // reported as not having answered, and the page is drawn without it rather
 // than waiting — a worker busy for seconds is exactly the one whose numbers
 // would say why, and a page that hung on it would say nothing.
@@ -5907,14 +5903,11 @@ function receivePoolStatus(entry, message) {
   }
   // `memory`, `cpu` and `uptimeS` for Monitoring → Node Health (#329): the
   // worker's own `process.memoryUsage()` and `process.cpuUsage()`.
-  waiter.answers[entry.pid] = { pq: message.pq || null,
-                                error: message.error || null,
+  waiter.answers[entry.pid] = { error: message.error || null,
                                 memory: message.memory || null,
                                 cpu: message.cpu || null,
                                 uptimeS: message.uptimeS === undefined
-                                  ? null : message.uptimeS,
-                                // Its post-quantum children's, when asked.
-                                pqMemory: message.pqMemory || null };
+                                  ? null : message.uptimeS };
   waiter.left--;
   if (waiter.left <= 0) {
     waiter.finish();
@@ -5923,18 +5916,13 @@ function receivePoolStatus(entry, message) {
 }
 
 /**
- * Asks every ready request worker for its own post-quantum pool's stats.
+ * Asks every ready request worker for its own memory and CPU time.
  *
  * @param timeoutMs - how long to wait for the answers; 1000 when omitted
- * @param options - `{ childMemory: ms }` asks each worker to ask its own
- *   post-quantum children for their memory within `ms` too (#329); the
- *   answers then carry `pqMemory`
- * @returns a promise of
- *   `{ [pid]: { pq, error, memory, cpu, uptimeS, pqMemory } }` (the last
- *   four for Monitoring → Node Health, #329); a worker that did not answer
- *   in time is absent
+ * @returns a promise of `{ [pid]: { error, memory, cpu, uptimeS } }`; a
+ *   worker that did not answer in time is absent
  */
-function askWorkerPoolStatus(timeoutMs, options) {
+function askWorkerPoolStatus(timeoutMs) {
   log.debug("Entering askWorkerPoolStatus().");
   const asked = workers.filter(function (one) {
     return one.ready && one.child && one.child.connected;
@@ -5967,10 +5955,7 @@ function askWorkerPoolStatus(timeoutMs, options) {
     poolStatusWaiters.set(id, waiter);
     asked.forEach(function (one) {
       try {
-        one.child.send({ poolStatus: true, id: id,
-                         childMemory: !!(options && options.childMemory),
-                         childMemoryMs: (options && options.childMemory) ||
-                           0 });
+        one.child.send({ poolStatus: true, id: id });
       } catch (e) {
         log.debug("Caught in askWorkerPoolStatus(): " +
                   ((e && e.message) || e));

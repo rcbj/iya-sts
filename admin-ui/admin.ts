@@ -41755,10 +41755,10 @@ class AdminConsole {
       log.debug("Entering the admin Shared Signals action endpoint.");
       const body = parseBody(req);
       // The one action handler in this console that awaits. Signing a Security
-      // Event Token may be an ML-DSA or SLH-DSA signature on the worker pool,
-      // and delivering it is a POST to somebody else's endpoint; answering
-      // before either had happened would be this page reporting "sent" about
-      // nothing.
+      // Event Token may be an ML-DSA or SLH-DSA signature on libuv's thread
+      // pool, and delivering it is a POST to somebody else's endpoint;
+      // answering before either had happened would be this page reporting
+      // "sent" about nothing.
       ssfAction(body).then(function (result) {
         self.respondToAction(req, res, '/admin/ssf', result);
         log.debug("Leaving the admin Shared Signals action endpoint.");
@@ -45916,7 +45916,7 @@ let truststore = null;
 // refuses a partial filler in order to avoid.
 //
 // `action` RETURNS A PROMISE, like the eighth's: emitting a CAEP event signs a
-// JWS — possibly on the worker pool — and then POSTs it to somebody else's
+// JWS — possibly on libuv's thread pool — and then POSTs it to somebody else's
 // endpoint.
 // ---------------------------------------------------------------------------
 let caepReporter = null;

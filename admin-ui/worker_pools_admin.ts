@@ -6,7 +6,7 @@
 // File: worker_pools_admin.ts
 //
 // ===========================================================================
-// MONITORING → WORKER POOLS (#327, 2026-09-28): THE THREE POOLS OF CHILD
+// MONITORING → WORKER POOLS (#327, 2026-09-28): THE TWO POOLS OF CHILD
 // PROCESSES THIS NODE RUNS, AND HOW WELL EACH IS DOING.
 //
 // `GET /admin/worker-pools` draws one section per pool —
@@ -15,9 +15,13 @@
 //     workers that run the whole protocol stack;
 //   * the HOSTED-SURFACE pool (the same module, `workers.surfaceCount`): the
 //     console's and the portal's own workers, the "admin" pool;
-//   * the POST-QUANTUM pool (`common/worker_pool.js`, `workers.count`): the
-//     job table — post-quantum signing and verification, key generation,
-//     scrypt — forked lazily on the first such job;
+//
+// There was a THIRD until #363 (2026-09-30): the post-quantum pool
+// (`common/worker_pool.js`), processes forked to compute post-quantum
+// signatures and scrypt off the main thread. It is gone — post-quantum
+// operations run on node's own OpenSSL (`common/pq_native.js`) and scrypt is
+// node's asynchronous `crypto.scrypt`, both on libuv's thread pool, which is
+// not a pool of processes and has nothing of its own to draw here.
 //
 // and for each: the workers it has now, the most it may have and the number
 // it started with, how many are busy and how many free, how many died unasked
@@ -33,9 +37,8 @@
 // initial size) are in the pool beside what they count, not kept here.
 //
 // **A POOL THAT IS OFF SAYS SO IN WORDS.** Both request pools are off by
-// default and the post-quantum pool forks nothing until its first job; a row
-// of zeros would read as a pool that is broken rather than one that is not
-// there, so each pool carries a `state` and a sentence.
+// default; a row of zeros would read as a pool that is broken rather than
+// one that is not there, so each pool carries a `state` and a sentence.
 //
 // **EVERY NODE, BY NAME (#332, 2026-09-28).** In a cluster the page draws a
 // section per node — this node's live, every other's from the snapshot its
@@ -50,11 +53,8 @@
 // IT**: both paths are in `request_pool.js`'s `NEVER_DISPATCHED`, the
 // debugger's arrangement, because a request worker's copy of that module
 // forked nothing and would report every pool off on a service running eight
-// workers. The post-quantum pool is the one that is NOT the front process's
-// alone: every request worker has one of its own (it loads `common/crypto.js`
-// like any process), so the front process asks each ready worker for its
-// `worker_pool.stats()` over the channel (`askWorkerPoolStatus()`, bounded)
-// and the section has a row per process and a total.
+// workers. Nothing here is asked of a request worker since #363: the only
+// pool a worker held of its own was the post-quantum one.
 //
 // **A SERVICE PAGE** (`admin_scope.ts`): the pools belong to the process, so
 // a realm's own administrator is refused it. No control and no POST — the
@@ -84,21 +84,15 @@ type Json = any;
  */
 const PAGE = '/admin/worker-pools';
 
-// How long the page waits for the request workers to say what their own
-// post-quantum pools are doing. A worker that is not answering in a second is
-// drawn as not having answered; see `askWorkerPoolStatus()`.
-const ASK_WORKERS_MS = 1000;
-
 interface WorkerPoolsAdminDeps {
   log: typeof helpers.log;
   admin: typeof admin;
   errorCodes: typeof errorCodes;
-  // LAZY, both of them. `request_pool.js` pulls the keystore and the
-  // persistence layer in at load, and `cluster/cluster.js` reaches it lazily
-  // for that reason; by the time a page is drawn both pools are in node's
-  // module cache and this is a lookup.
+  // LAZY. `request_pool.js` pulls the keystore and the persistence layer in
+  // at load, and `cluster/cluster.js` reaches it lazily for that reason; by
+  // the time a page is drawn it is in node's module cache and this is a
+  // lookup.
   requestPool: () => any;
-  workerPool: () => any;
   now: () => number;
   pid: number;
   // This node's NAME, never its host or address (#332).
@@ -108,8 +102,8 @@ interface WorkerPoolsAdminDeps {
 }
 
 /**
- * Monitoring → Worker Pools: the request, hosted-surface and post-quantum
- * pools of this node, each with its workers now, its bounds, how many are
+ * Monitoring → Worker Pools: the request and hosted-surface pools of this
+ * node, each with its workers now, its bounds, how many are
  * busy and free, its crashes and stops, and its response time.
  */
 class WorkerPoolsAdmin {
@@ -121,7 +115,7 @@ class WorkerPoolsAdmin {
   /**
    * Builds an instance over the modules it depends on.
    *
-   * @param deps - the logger, the console, and the two pool modules
+   * @param deps - the logger, the console, and the request pool module
    */
   constructor(private readonly deps: WorkerPoolsAdminDeps) {
     deps.log.debug("Entering WorkerPoolsAdmin.constructor().");
@@ -144,11 +138,6 @@ class WorkerPoolsAdmin {
         helpers.log.debug("Entering requestPool().");
         helpers.log.debug("Leaving requestPool().");
         return require('../common/request_pool');
-      },
-      workerPool: function workerPool(): any {
-        helpers.log.debug("Entering workerPool().");
-        helpers.log.debug("Leaving workerPool().");
-        return require('../common/worker_pool');
       },
       now: Date.now,
       pid: process.pid,
@@ -285,242 +274,38 @@ class WorkerPoolsAdmin {
     return view;
   }
 
-  // One process's post-quantum pool, from its `worker_pool.stats()`.
-  /**
-   * Builds one process's row of the post-quantum pool.
-   *
-   * @param pq - that process's `worker_pool.stats()`
-   * @param pid - the process
-   * @param role - `front process` or the request pool it is a worker of
-   * @returns the row
-   */
-  pqProcessView(pq: Json, pid: number, role: string): Json {
-    const { log } = this.deps;
-    log.debug("Entering WorkerPoolsAdmin.pqProcessView(). " + pid);
-    const c = pq.counts || {};
-    const configured = Number(pq.configured) || 0;
-    const running = Number(pq.running) || 0;
-    let state: string;
-    let stateText: string;
-    if (pq.gaveUp) {
-      state = 'given-up';
-      stateText = 'Given up (STS-WORKER-0003): jobs are computed in this ' +
-        'process.';
-    } else if (!configured && !running) {
-      state = 'off';
-      // A request or surface worker's pool is sized by its own setting
-      // (#347), which `stats().setting` names.
-      stateText = 'Off: ' + String(pq.setting || 'workers.count') +
-        ' is 0, so every job is computed in this process.';
-    } else if (!running && !c.forked) {
-      state = 'not-forked';
-      stateText = 'Not forked yet: the pool forks on the first ' +
-        'post-quantum job, and this process has had none.';
-    } else {
-      state = 'running';
-      stateText = running + ' of ' + configured + ' worker(s).';
-    }
-    const row = {
-      pid: pid,
-      role: role,
-      state: state,
-      stateText: stateText,
-      maxWorkers: configured,
-      initialWorkers: Number(c.firstForked) || 0,
-      firstForkAt: c.firstForkAt ? new Date(c.firstForkAt).toISOString()
-                                 : null,
-      currentWorkers: running,
-      busyWorkers: Number(pq.busy) || 0,
-      freeWorkers: Number(pq.free) || 0,
-      restarts: {
-        forked: Number(c.forked) || 0,
-        crashed: Number(c.crashed) || 0,
-        failedStarts: Number(c.failedStarts) || 0,
-        retired: Number(c.retired) || 0
-      },
-      responseTime: {
-        jobs: Number(c.jobs) || 0,
-        averageMs: pq.averageJobMs === undefined ? null : pq.averageJobMs,
-        maxMs: c.jobs ? Number(c.maxJobMs) || 0 : null,
-        failed: Number(c.failed) || 0,
-        timedOut: Number(c.timedOut) || 0,
-        inProcessJobs: Number(c.inProcess) || 0
-      }
-    };
-    log.debug("Leaving WorkerPoolsAdmin.pqProcessView(). " + state);
-    return row;
-  }
-
-  // The post-quantum pool: a row per process and their total.
-  /**
-   * Builds the post-quantum pool's section from the front process's own
-   * `worker_pool.stats()` and each request worker's answer.
-   *
-   * @param own - this process's `worker_pool.stats()`
-   * @param answers - `{ [pid]: { pq, error } }` from the request workers
-   * @param asked - the request workers asked, `{ pid, pool }`
-   * @returns the pool's view
-   */
-  pqPoolView(own: Json, answers: Json, asked: Json[]): Json {
-    const { log, pid } = this.deps;
-    const self = this;
-    log.debug("Entering WorkerPoolsAdmin.pqPoolView().");
-    const processes = [this.pqProcessView(own, pid, 'front process')];
-    const unanswered: Json[] = [];
-    asked.forEach(function (one: Json): void {
-      const answer = answers[one.pid];
-      if (answer && answer.pq) {
-        processes.push(self.pqProcessView(answer.pq, one.pid,
-                                          one.pool + ' worker'));
-      } else {
-        unanswered.push({ pid: one.pid, pool: one.pool,
-                          why: answer && answer.error
-                            ? String(answer.error)
-                            : 'did not answer within ' + ASK_WORKERS_MS +
-                              'ms' });
-      }
-    });
-    const sum = function (pick: (row: Json) => number): number {
-      log.debug("Entering sum().");
-      log.debug("Leaving sum().");
-      return processes.reduce(function (n: number, row: Json): number {
-        return n + (pick(row) || 0);
-      }, 0);
-    };
-    const jobs = sum(function (r: Json): number {
-      return r.responseTime.jobs;
-    });
-    const jobMs = sum(function (r: Json): number {
-      return (r.responseTime.averageMs || 0) * r.responseTime.jobs;
-    });
-    const anyForked = processes.some(function (r: Json): boolean {
-      return r.state === 'running' || r.restarts.forked > 0;
-    });
-    const allOff = processes.every(function (r: Json): boolean {
-      return r.state === 'off';
-    });
-    const front = processes[0];
-    let state: string;
-    let stateText: string;
-    if (allOff) {
-      state = 'off';
-      stateText = front.stateText;
-    } else if (!anyForked) {
-      state = 'not-forked';
-      stateText = 'Not forked yet: each process forks its pool on its ' +
-        'first post-quantum job, and ' + (processes.length === 1
-          ? 'this process has' : 'none of these ' + processes.length +
-            ' processes has') + ' had one.';
-    } else {
-      state = 'running';
-      stateText = processes.filter(function (r: Json): boolean {
-        return r.currentWorkers > 0;
-      }).length + ' of ' + processes.length + ' process(es) holding ' +
-        'workers.';
-    }
-    const view = {
-      id: 'post-quantum',
-      title: 'Post-quantum pool',
-      module: 'common/worker_pool.js',
-      // Two settings size it (#347): `workers.count` in the front process,
-      // `workers.countInRequestWorkers` in each request or surface worker.
-      setting: 'workers.count, workers.countInRequestWorkers',
-      state: state,
-      stateText: stateText,
-      perProcess: true,
-      // The most any ONE process may fork; each process has its own pool.
-      maxWorkers: front.maxWorkers,
-      initialWorkers: front.initialWorkers,
-      currentWorkers: sum(function (r: Json): number {
-        return r.currentWorkers;
-      }),
-      busyWorkers: sum(function (r: Json): number {
-        return r.busyWorkers;
-      }),
-      freeWorkers: sum(function (r: Json): number {
-        return r.freeWorkers;
-      }),
-      restarts: {
-        forked: sum(function (r: Json): number {
-          return r.restarts.forked;
-        }),
-        crashed: sum(function (r: Json): number {
-          return r.restarts.crashed;
-        }),
-        failedStarts: sum(function (r: Json): number {
-          return r.restarts.failedStarts;
-        }),
-        retired: sum(function (r: Json): number {
-          return r.restarts.retired;
-        })
-      },
-      responseTime: {
-        jobs: jobs,
-        averageMs: jobs ? Math.round(jobMs / jobs) : null,
-        maxMs: jobs ? Math.max.apply(null, processes.map(function (r: Json):
-          number {
-          return r.responseTime.maxMs || 0;
-        })) : null,
-        failed: sum(function (r: Json): number {
-          return r.responseTime.failed;
-        }),
-        timedOut: sum(function (r: Json): number {
-          return r.responseTime.timedOut;
-        }),
-        inProcessJobs: sum(function (r: Json): number {
-          return r.responseTime.inProcessJobs;
-        })
-      },
-      processes: processes,
-      unanswered: unanswered
-    };
-    log.debug("Leaving WorkerPoolsAdmin.pqPoolView(). " + state);
-    return view;
-  }
-
   // This node's own view: what the page drew before #332, and what its
   // snapshot carries to the other nodes.
   /**
-   * Answers this node's three pools, asked of the pools when called.
+   * Answers this node's two pools, asked of the pool module when called.
+   * A promise still, because the snapshot job (#332) awaits whatever a page
+   * provides.
    *
    * @returns a promise of the view
    */
   localView(): Promise<Json> {
-    const { log, requestPool, workerPool, now, pid, nodeName } = this.deps;
-    const self = this;
+    const { log, requestPool, now, pid, nodeName } = this.deps;
     log.debug("Entering WorkerPoolsAdmin.localView().");
     const node = nodeName();
-    const pool = requestPool();
-    const stats = pool.stats();
-    const asked = (stats.workers || []).filter(function (one: Json):
-      boolean {
-      return one.ready;
-    }).map(function (one: Json): Json {
-      return { pid: one.pid, pool: one.pool || 'protocol' };
-    });
-    const ask = asked.length ? pool.askWorkerPoolStatus(ASK_WORKERS_MS)
-                             : Promise.resolve({});
-    log.debug("Leaving WorkerPoolsAdmin.localView(). Asked " +
-              asked.length + " worker(s).");
-    return ask.then(function (answers: Json): Json {
-      const at = now();
-      return {
-        generatedAt: new Date(at).toISOString(),
-        node: node,
-        pid: pid,
-        scope: 'node',
-        scopeText: 'These are the pools of the node ' + node + ', held ' +
-          'by its front process, pid ' + pid + '. Every ' +
-          'node of a cluster has pools of its own, and a request worker ' +
-          'has a post-quantum pool of its own too, which is why that ' +
-          'section has a row per process.',
-        pools: [
-          self.requestPoolView(stats, 'protocol', at),
-          self.requestPoolView(stats, 'surfaces', at),
-          self.pqPoolView(workerPool().stats(), answers || {}, asked)
-        ]
-      };
-    });
+    const stats = requestPool().stats();
+    const at = now();
+    const view = {
+      generatedAt: new Date(at).toISOString(),
+      node: node,
+      pid: pid,
+      scope: 'node',
+      scopeText: 'These are the pools of the node ' + node + ', held ' +
+        'by its front process, pid ' + pid + '. Every node of a cluster ' +
+        'has pools of its own. Post-quantum signing and scrypt have had no ' +
+        'pool of processes since #363: they run on libuv\'s thread pool, ' +
+        'inside whichever process asked.',
+      pools: [
+        this.requestPoolView(stats, 'protocol', at),
+        this.requestPoolView(stats, 'surfaces', at)
+      ]
+    };
+    log.debug("Leaving WorkerPoolsAdmin.localView().");
+    return Promise.resolve(view);
   }
 
   /**
@@ -695,7 +480,7 @@ class WorkerPoolsAdmin {
   }
 
   // The seven figures of one pool, as a table of two columns.
-  private figures(p: Json, pq: boolean): string {
+  private figures(p: Json): string {
     const { log, admin } = this.deps;
     log.debug("Entering WorkerPoolsAdmin.figures().");
     const r = p.restarts;
@@ -709,39 +494,26 @@ class WorkerPoolsAdmin {
     };
     const html = '<table class="grid"><tbody>' +
       row('Current workers', admin.esc(p.currentWorkers),
-          pq ? 'forked now, across every process below'
-             : 'forked now, ' + admin.esc(p.readyWorkers) + ' of them ' +
-               'ready') +
-      row('Busy', admin.esc(p.busyWorkers),
-          'with ' + (pq ? 'a job' : 'a request') + ' in flight') +
-      row('Free', admin.esc(p.freeWorkers),
-          pq ? 'forked and idle' : 'ready and idle') +
+          'forked now, ' + admin.esc(p.readyWorkers) + ' of them ready') +
+      row('Busy', admin.esc(p.busyWorkers), 'with a request in flight') +
+      row('Free', admin.esc(p.freeWorkers), 'ready and idle') +
       row('Maximum workers', admin.esc(p.maxWorkers),
-          '<code>' + admin.esc(p.setting) + '</code>' +
-          (pq ? ', per process' : '')) +
+          '<code>' + admin.esc(p.setting) + '</code>') +
       row('Initial workers', admin.esc(p.initialWorkers),
-          pq ? 'what the front process\'s first fork brought up (the pool ' +
-               'is lazy)'
-             : 'what the pool was started with') +
+          'what the pool was started with') +
       row('Restarts and crashes',
           admin.esc(r.crashed) + ' crashed' +
           (r.failedStarts ? ' (' + admin.esc(r.failedStarts) + ' never ' +
                             'started)' : '') + ', ' +
-          (pq ? admin.esc(r.retired) + ' retired'
-              : admin.esc(r.replaced) + ' replaced, ' +
-                admin.esc(r.stopped) + ' stopped'),
+          admin.esc(r.replaced) + ' replaced, ' +
+          admin.esc(r.stopped) + ' stopped',
           admin.esc(r.forked) + ' forked in all; a crash is an exit ' +
-          'nobody asked for' + (pq ? ', and the next job forks the ' +
-          'replacement' : '')) +
+          'nobody asked for') +
       row('Average response time',
-          this.ms(t.averageMs) + (pq ? '' : ' (recent ' +
-            this.ms(t.recentAverageMs) + ')'),
-          pq ? admin.esc(t.jobs) + ' job(s), send to reply; worst ' +
-               this.ms(t.maxMs) + '; ' + admin.esc(t.failed) + ' failed, ' +
-               admin.esc(t.timedOut) + ' timed out, ' +
-               admin.esc(t.inProcessJobs) + ' computed in process'
-             : admin.esc(t.answered) + ' answered, dispatch to answer; ' +
-               'worst ' + this.ms(t.maxMs)) +
+          this.ms(t.averageMs) + ' (recent ' +
+            this.ms(t.recentAverageMs) + ')',
+          admin.esc(t.answered) + ' answered, dispatch to answer; ' +
+          'worst ' + this.ms(t.maxMs)) +
       '</tbody></table>';
     log.debug("Leaving WorkerPoolsAdmin.figures().");
     return html;
@@ -764,7 +536,6 @@ class WorkerPoolsAdmin {
       '<a href="/admin/config">Configuration</a>; this page changes ' +
       'nothing.</p>', 'What this page is');
     const sections = json.pools.map(function (p: Json): string {
-      const pq = p.id === 'post-quantum';
       const head = '<h2 id="pool-' + admin.esc(p.id) + '">' +
         admin.esc(p.title) + '</h2><p><code>' + admin.esc(p.module) +
         '</code> · <code>' + admin.esc(p.setting) + '</code> · <strong>' +
@@ -773,29 +544,7 @@ class WorkerPoolsAdmin {
         return head;
       }
       let detail = '';
-      if (pq) {
-        detail = '<h3>By process</h3><table class="grid"><thead><tr>' +
-          '<th>Process</th><th>State</th><th>Workers</th><th>Busy</th>' +
-          '<th>Free</th><th>Crashed</th><th>Jobs</th><th>Average</th>' +
-          '</tr></thead><tbody>' +
-          p.processes.map(function (r: Json): string {
-            return '<tr><td>pid ' + admin.esc(r.pid) + '<br><small>' +
-              admin.esc(r.role) + '</small></td><td>' + admin.esc(r.state) +
-              '</td><td>' + admin.esc(r.currentWorkers) + ' of ' +
-              admin.esc(r.maxWorkers) + '</td><td>' +
-              admin.esc(r.busyWorkers) + '</td><td>' +
-              admin.esc(r.freeWorkers) + '</td><td>' +
-              admin.esc(r.restarts.crashed) + '</td><td>' +
-              admin.esc(r.responseTime.jobs) + '</td><td>' +
-              self.ms(r.responseTime.averageMs) + '</td></tr>';
-          }).join('') + '</tbody></table>' +
-          (p.unanswered.length ? admin.warn(
-            p.unanswered.length + ' request worker(s) did not report: ' +
-            p.unanswered.map(function (u: Json): string {
-              return 'pid ' + admin.esc(u.pid) + ' (' + admin.esc(u.why) +
-                ')';
-            }).join(', ') + '.') : '');
-      } else if (p.workers.length) {
+      if (p.workers.length) {
         detail = '<h3>Workers</h3><table class="grid"><thead><tr>' +
           '<th>pid</th><th>Slot</th><th>State</th><th>In flight</th>' +
           '<th>Served</th><th>Up</th></tr></thead><tbody>' +
@@ -810,7 +559,7 @@ class WorkerPoolsAdmin {
               '</td></tr>';
           }).join('') + '</tbody></table>';
       }
-      return head + self.figures(p, pq) + detail;
+      return head + self.figures(p) + detail;
     }).join('');
     log.debug("Leaving WorkerPoolsAdmin.html().");
     return tiles + about + sections;
@@ -866,8 +615,8 @@ const slot = new InstanceSlot<WorkerPoolsAdmin>(
 slot.buildNowUnlessDeferred();
 
 /**
- * Monitoring → Worker Pools, `/admin/worker-pools`: the request,
- * hosted-surface and post-quantum pools of this node. A service page with
+ * Monitoring → Worker Pools, `/admin/worker-pools`: the request and
+ * hosted-surface pools of this node. A service page with
  * no control and no POST.
  * @namespace
  */

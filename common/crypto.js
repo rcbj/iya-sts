@@ -101,26 +101,6 @@ const bunyan = require('bunyan');
 const config = require('./config');
 const pqJose = require('./pq_jose');
 
-// ---------------------------------------------------------------------------
-// REQUIRED FOR ITS EFFECT, and the effect is the point: loading the pool is
-// what hands pq_jose.js the pool to use, so this line is why signJwsAsync()
-// below computes in a child process rather than in this one. See the foot of
-// common/worker_pool.js, which explains why the reference goes that way round
-// and why a worker process is never armed by it.
-//
-// This module is where the line belongs because this module is what routes an
-// `alg` to pq_jose.js in the first place — every path that can reach a
-// post-quantum signature comes through here.
-//
-// **THE VALUE IS KEPT NOW, AND WAS DISCARDED UNTIL 2026-09-07.** The effect
-// above is still the reason the line is here, but `hashSecretAsync()` below
-// hands the pool a job DIRECTLY rather than through pq_jose.js — a scrypt
-// derivation is not a JOSE operation and routing it through that module would
-// have put a password in a file about post-quantum signing. Requiring it twice
-// would be the same module object either way; naming it says that this file
-// uses the pool as well as arming it.
-// ---------------------------------------------------------------------------
-const workerPool = require('./worker_pool');
 const xmldom = require('@xmldom/xmldom');
 // THE FAILURE CODES. A LEAF with no requires, so this file stays one (rule 3r).
 // A verdict that refuses carries its code NON-ENUMERABLY — `errorCodes.mark()`
@@ -3053,31 +3033,28 @@ function signJws(payload, key, opts) {
 // ---------------------------------------------------------------------------
 // THE SAME SIGNATURE, WITHOUT HOLDING THE EVENT LOOP.
 //
-// Post-quantum signing is the one thing this service does that takes SECONDS —
-// 14.6 and 15.4 of them were measured for a single SLH-DSA-SHAKE-128s token on
-// 2026-08-29 — and node runs this service's six listener families on one
-// thread, so for those seconds it answers nobody: not another HTTP caller, not
-// the KDC on port 88. See common/worker.js.
+// Post-quantum signing is the one thing this service does that takes long
+// enough to matter — SLH-DSA-SHAKE-128s costs about 640 ms even natively
+// (#363's measurement; 14.6 s on the JavaScript implementation this replaced)
+// — and node runs every listener on one thread, so for that time a
+// synchronous signature answers nobody: not another HTTP caller, not the KDC
+// on port 88.
 //
 // So the four call paths that can reach a post-quantum `alg` — the ID Token,
-// the signed UserInfo response, a client assertion and an OID4VCI proof — call
-// this instead, and it hands the computation to the pool. **EVERY OTHER
+// the signed UserInfo response, a client assertion and an OID4VCI proof —
+// call this instead, and `pq_jose.signAsync()` computes on libuv's thread
+// pool (#363; a pool of forked processes until then). **EVERY OTHER
 // ALGORITHM IS UNCHANGED AND IS NOT DEFERRED**: an RS256 signature is
-// microseconds, so sending it to a child process would cost an IPC round trip
-// to save nothing. Those resolve with the value signJws() computed, which is
+// microseconds. Those resolve with the value signJws() computed, which is
 // what lets a caller be written one way and not two.
-//
-// `opts.session` is passed through as the routing hint — see worker_pool.js.
-// It is a preference and never a correctness requirement, so a caller with no
-// session to name simply omits it.
 // ---------------------------------------------------------------------------
 /**
- * Signs as `signJws()` does, with a post-quantum signature computed on the
- * worker pool; every other algorithm is signed here.
+ * Signs as `signJws()` does, with a post-quantum signature computed on
+ * libuv's thread pool; every other algorithm is signed in place.
  *
  * @param payload - the claims
  * @param key - the signing key
- * @param opts - as for `signJws()`, and `session`, the pool's routing hint
+ * @param opts - as for `signJws()`
  * @returns a promise of the compact JWS
  */
 function signJwsAsync(payload, key, opts) {
@@ -3097,7 +3074,7 @@ function signJwsAsync(payload, key, opts) {
   }
   if (spec.family !== 'pq') {
     // Not deferred, and the throw is turned into a rejection so that a caller
-    // never has to know which algorithms go to the pool.
+    // never has to know which algorithms are computed off the thread.
     try {
       const signed = signJws(payload, key, opts);
       log.debug('Leaving signJwsAsync(). ' + algorithm + ', in process.');
@@ -3108,9 +3085,8 @@ function signJwsAsync(payload, key, opts) {
     }
   }
   const input = pqSigningInput(payload, algorithm, options);
-  log.debug('Leaving signJwsAsync(). ' + algorithm + ', handed to the pool.');
-  return pqJose.signAsync(algorithm, key, Buffer.from(input, 'ascii'),
-                          { session: options.session })
+  log.debug('Leaving signJwsAsync(). ' + algorithm + ', on libuv.');
+  return pqJose.signAsync(algorithm, key, Buffer.from(input, 'ascii'))
     .then(function (signature) {
       return input + '.' + b64u(signature);
     });
@@ -3188,7 +3164,7 @@ function tokenClockSkew() {
 // Reading the token, choosing the algorithm and refusing an unacceptable one
 // are the same in both directions; only the one line that actually checks the
 // bytes differs, and for a composite ML-DSA verification that line took 17.8
-// and 23.3 seconds on 2026-08-29 (see common/worker.js). So:
+// and 23.3 seconds on 2026-08-29 (see common/pq_native.js). So:
 //
 //   prepareVerification()  everything up to the check — and every refusal that
 //                          is about the TOKEN rather than about the signature
@@ -3198,7 +3174,7 @@ function tokenClockSkew() {
 //
 // `verifyCompactJws()` below runs the three in a row exactly as it always did.
 // `verifyCompactJwsAsync()` runs the same three with the post-quantum check
-// handed to the pool. THE ORDER OF THE REFUSALS IS PART OF THE CONTRACT: a
+// on libuv's thread pool. THE ORDER OF THE REFUSALS IS PART OF THE CONTRACT: a
 // token whose `alg` is not in the caller's list is refused for that and never
 // for its signature, whichever entry point was used.
 // ---------------------------------------------------------------------------
@@ -3477,17 +3453,10 @@ function jwsSignatureValid(alg, key, signingInput, signature) {
 // ---------------------------------------------------------------------------
 // THE SIGNATURE A JWS CARRIES, OVER OCTETS A CALLER NAMES — for the
 // algorithms this file signs ITSELF: EdDSA and ES256K (the `ownSigner` rows)
-// and every post-quantum one. `signJws()` signs through this, so the
-// deterministic ML-DSA and SLH-DSA signatures NIST and Wycheproof publish
-// can be compared with what this service actually produces. The rows
+// and every post-quantum one. `signJws()` signs through this. The rows
 // `jsonwebtoken` signs are refused by name: this function would otherwise
 // be a second signer for them that nothing in the service uses.
 // ---------------------------------------------------------------------------
-//
-// `internal.deterministic` (#203) asks pq_jose for FIPS 204/205's
-// DETERMINISTIC variant instead of the hedged one every other caller gets.
-// It exists for `tests/acvp_pqc.js`, which compares with NIST's
-// deterministic vectors, and is not a setting: signJws() never passes it.
 /**
  * Signs octets as a JWS signature, for the algorithms this file signs
  * itself: EdDSA, ES256K and the post-quantum ones.
@@ -3495,16 +3464,14 @@ function jwsSignatureValid(alg, key, signingInput, signature) {
  * @param alg - the algorithm
  * @param key - the signing key
  * @param signingInput - the octets to sign
- * @param internal - `deterministic`, for the NIST test vectors only
  * @returns the signature
  */
-function jwsSignatureOver(alg, key, signingInput, internal) {
+function jwsSignatureOver(alg, key, signingInput) {
   log.debug('Entering jwsSignatureOver(). alg=' + alg);
   const spec = jwsSpec(alg);
   const input = Buffer.from(signingInput);
   if (spec.family === 'pq') {
-    const pqSig = Buffer.from(pqJose.sign(alg, key, input,
-      { deterministic: !!(internal && internal.deterministic === true) }));
+    const pqSig = Buffer.from(pqJose.sign(alg, key, input));
     log.debug('Leaving jwsSignatureOver(). Post-quantum.');
     return pqSig;
   }
@@ -3621,13 +3588,12 @@ function verifyCompactJws(token, key, opts) {
   return out;
 }
 
-// The same verification with the post-quantum check handed to the pool. Every
-// other algorithm resolves with what verifyCompactJws() computed, for the
-// reason signJwsAsync() gives: an RS256 check is microseconds, and an IPC round
-// trip to save that would be a cost with no saving.
+// The same verification with the post-quantum check on libuv's thread pool.
+// Every other algorithm resolves with what verifyCompactJws() computed, for
+// the reason signJwsAsync() gives: an RS256 check is microseconds.
 /**
  * Verifies as `verifyCompactJws()` does, with a post-quantum signature
- * checked on the worker pool.
+ * checked on libuv's thread pool.
  *
  * @param token - the compact JWS
  * @param key - the verification key
@@ -3655,10 +3621,9 @@ function verifyCompactJwsAsync(token, key, opts) {
       return Promise.reject(e);
     }
   }
-  log.debug('Leaving verifyCompactJwsAsync(). Handed to the pool.');
+  log.debug('Leaving verifyCompactJwsAsync(). On libuv.');
   return pqJose.verifyAsync(prepared.header.alg, prepared.pub,
-                            prepared.signingInput, prepared.signature,
-                            { session: options.session })
+                            prepared.signingInput, prepared.signature)
     .then(function (ok) {
       return finishVerification(prepared, ok);
     });
@@ -3805,7 +3770,7 @@ function verifyJws(token, key, opts) {
 // ---------------------------------------------------------------------------
 /**
  * Verifies as `verifyJws()` does, with a post-quantum signature checked on
- * the worker pool, and the same claim checks.
+ * libuv's thread pool, and the same claim checks.
  *
  * @param token - the compact JWS
  * @param key - the verification key
@@ -3826,9 +3791,8 @@ function verifyJwsAsync(token, key, opts) {
   }
   if (peeked && JWS_ALGS[peeked.alg] && JWS_ALGS[peeked.alg].family === 'pq') {
     const allowed = options.algorithms || [peeked.alg];
-    log.debug('Leaving verifyJwsAsync(). Handed to the pool.');
-    return verifyCompactJwsAsync(token, key,
-        { algorithms: allowed, session: options.session })
+    log.debug('Leaving verifyJwsAsync(). On libuv.');
+    return verifyCompactJwsAsync(token, key, { algorithms: allowed })
       .then(function (verified) {
         return checkJwtClaims(verified.claims, options);
       });
@@ -3898,29 +3862,32 @@ function verifyJwsAsync(token, key, opts) {
 //     draft-irtf-cfrg-hybrid-kems-12. hpke-pq-05's and the concrete draft's
 //     published vectors are what `tests/jwe_pq_kem.js` holds this to.
 //
-// **WHAT RUNS WHERE.** ML-KEM is `@noble/post-quantum` — already a
-// dependency, and the same library `vendored/pqc.js` rests on — because it
-// takes the 64-octet seed the key format is defined in. It does NOT check an
-// encapsulation key (FIPS 203 section 7.2's modulus check), which HPKE-PQ
-// section 3 requires, so `mlkemCheckEncapsulationKey()` below does. The
+// **WHAT RUNS WHERE.** ML-KEM is node's OpenSSL through
+// `common/pq_native.js` (#363; @noble/post-quantum until then), which takes
+// the 64-octet seed the key format is defined in. FIPS 203 section 7.2's
+// modulus check on an encapsulation key, which HPKE-PQ section 3 requires,
+// is made by `mlkemCheckEncapsulationKey()` below whatever the primitive
+// does, so the requirement is visible here rather than assumed of a
+// library. The
 // traditional half of every hybrid, every DHKEM, AES-GCM, ChaCha20-Poly1305,
 // HKDF, SHA3-256 and SHAKE are node's OpenSSL; KMAC256 and TurboSHAKE, which
 // node does not offer, are `@noble/hashes`.
 //
-// **NOT ON THE WORKER POOL, AND THAT WAS MEASURED** (#82's note). A whole
-// JWE — encrypt and decrypt, key expansion from the seed included — costs,
-// on the development machine: RSA-OAEP-256 0.5 ms, ML-KEM-768 1.3 ms,
-// X-Wing (HPKE-10-KE) 3.4 ms, ML-KEM-1024 + P-384 (HPKE-12-KE) 7.4 ms, the
-// hybrids paying for the curve operations beside the lattice. Milliseconds,
-// once per token: `worker_pool.js` exists for SLH-DSA signing, which costs
-// SECONDS, and a pool round trip would add a process hop and the
-// serialisation of a kilobyte-sized key and ciphertext to each of these,
-// while `workers.requestCount` already spreads whole requests across
-// processes. `tests/jwe_pq_kem.js` prints the figures on every run and
-// `common/CLAUDE.md` records the decision.
+// **SYNCHRONOUS, AND THAT WAS MEASURED** (#82's note). A whole JWE —
+// encrypt and decrypt, key expansion from the seed included — cost
+// milliseconds on the JavaScript ML-KEM this used until #363 (RSA-OAEP-256
+// 0.5 ms, ML-KEM-768 1.3 ms, X-Wing 3.4 ms, ML-KEM-1024 + P-384 7.4 ms), and
+// ML-KEM on node's OpenSSL (`common/pq_native.js`, #363) is a fraction of
+// that. `tests/jwe_pq_kem.js` prints the figures on every run.
+//
+// **THE PUBLISHED VECTORS ARE CHECKED FROM THE RECEIVING SIDE** since #363.
+// FIPS 203's Encaps_internal takes the encapsulation randomness m as an
+// input, and the vectors are made with it; node's OpenSSL does not take it,
+// so `mlkemEncaps()` refuses a given `randomness` rather than ignoring it,
+// and the vector tests decapsulate the vector's ciphertext instead.
 // ---------------------------------------------------------------------------
 
-const nobleMlKem = require('@noble/post-quantum/ml-kem.js');
+const nobleMlKem = require('./pq_native');
 const nobleSha3Addons = require('@noble/hashes/sha3-addons');
 
 // ---------------------------------------------------------------------------
@@ -6974,10 +6941,9 @@ function mlDsaAvailable() {
                e.message + '). Node ' + process.versions.node +
                ' is linked against OpenSSL ' + process.versions.openssl +
                '; ML-DSA needs OpenSSL 3.5, which is node 24 — this ' +
-               'repository pins 24.16.0 in its Dockerfile. Everything else ' +
-               'here is unaffected: the POST-QUANTUM JOSE algorithms come ' +
-               'from @noble/post-quantum and work on every runtime. It is ' +
-               'the CERTIFICATE that needs OpenSSL.');
+               'repository pins 24.16.0 in its Dockerfile. Every ' +
+               'post-quantum algorithm here needs it since #363, the JOSE ' +
+               'ones included (common/pq_native.js).');
     }
   }
   log.debug('Leaving mlDsaAvailable(). ' + mlDsaProbe);
@@ -7032,9 +6998,8 @@ function selfSignedMlDsaCertificate(opts) {
                     ' key, so no ML-DSA certificate can be built here. Node ' +
                     process.versions.node + ' is linked against OpenSSL ' +
                     process.versions.openssl + '; ML-DSA needs OpenSSL 3.5, ' +
-                    'which is node 24 — this repository pins 24.16.0. The ' +
-                    'post-quantum JOSE algorithms are unaffected: they come ' +
-                    'from @noble/post-quantum and need nothing of OpenSSL.');
+                    'which is node 24 — this repository pins 24.16.0, and ' +
+                    'every post-quantum algorithm here needs it (#363).');
   }
   // `any`: the algorithm is a variable, and the overloads want literals.
   const pair = /** @type {any} */ (nodeCrypto.generateKeyPairSync)(algorithm);
@@ -8120,13 +8085,12 @@ function decryptWithKek(kek, stored, label) {
 // socket. That is not the 14.6 seconds an SLH-DSA signature costs, but it is
 // paid on EVERY authentication — the sign-in screen, an LDAP bind, SCIM
 // Basic, WS-Trust, the portal's password form — rather than on the few a
-// client points at a post-quantum algorithm. See common/worker.js.
+// client points at a post-quantum algorithm. See common/pq_native.js.
 //
-// The sync door is kept and is not deprecated: `workers.count = 0` is a
-// supported configuration, the parent project loads this tree in process, and
-// a caller that cannot be made asynchronous is better off blocking than
-// wrong. Both doors produce the same stored form, because there is one
-// definition of it.
+// The sync door is kept and is not deprecated: the parent project loads this
+// tree in process, and a caller that cannot be made asynchronous is better off
+// blocking than wrong. Both doors produce the same stored form, because there
+// is one definition of it.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -8259,52 +8223,44 @@ function hashSecret(plaintext) {
   return out;
 }
 
-// The one line that goes to a worker, and the only place either async door
-// differs from its sync twin. `opts.session` is the pool's routing hint and
-// may be omitted — see worker_pool.js; it is a preference and never a
-// correctness requirement, because a worker remembers nothing.
-function deriveAsync(plaintext, spec, opts) {
+// The one line that runs off this thread, and the only place either async
+// door differs from its sync twin: node's asynchronous scrypt, on libuv's
+// thread pool (#363; `common/worker_pool.js`'s `scrypt.derive` job until
+// then, a forked process for 68 ms of native work).
+function deriveAsync(plaintext, spec) {
   log.debug('Entering deriveAsync(). N=' + spec.N);
-  log.debug("Leaving deriveAsync().");
-  return workerPool.run('scrypt.derive', {
-    plaintext: String(plaintext == null ? '' : plaintext),
-    salt: Buffer.from(spec.salt), keylen: spec.keylen,
-    N: spec.N, r: spec.r, p: spec.p, maxmem: spec.maxmem
-  }, opts).then(function (result) {
-    log.debug('Leaving deriveAsync(). ' + result.derived.length + ' bytes.');
-    return Buffer.from(result.derived);
+  log.debug('Leaving deriveAsync(). On libuv.');
+  return new Promise(function (resolve, reject) {
+    nodeCrypto.scrypt(String(plaintext == null ? '' : plaintext),
+      Buffer.from(spec.salt), spec.keylen,
+      { N: spec.N, r: spec.r, p: spec.p, maxmem: spec.maxmem },
+      function (err, derived) {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(derived);
+      });
   });
 }
 
 /**
- * Hashes a secret as `hashSecret()` does, on the worker pool; computed here
- * if the pool fails.
+ * Hashes a secret as `hashSecret()` does, on libuv's thread pool.
  *
  * @param plaintext - the secret
- * @param opts - the pool's routing hint
  * @returns a promise of the stored form
  */
-function hashSecretAsync(plaintext, opts) {
+function hashSecretAsync(plaintext) {
   log.debug('Entering hashSecretAsync().');
   const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
-  // Read ONCE, here, and carried in the job — the worker holds no policy and
-  // must be handed every parameter, and reading the setting again when the
-  // answer comes back could encode different parameters from the ones the
-  // derivation actually used.
+  // Read ONCE, here: reading the setting again when the answer comes back
+  // could encode different parameters from the ones the derivation used.
   const cost = scryptParameters();
   const spec = { N: cost.N, r: cost.r, p: cost.p, salt: salt,
                  keylen: cost.keylen, maxmem: cost.maxmem };
-  log.debug('Leaving hashSecretAsync(). Handed to the pool.');
-  return deriveAsync(plaintext, spec, opts).then(function (derived) {
+  log.debug('Leaving hashSecretAsync(). On libuv.');
+  return deriveAsync(plaintext, spec).then(function (derived) {
     return encodeStoredSecret(spec.N, spec.r, spec.p, salt, derived);
-  }, function (e) {
-    // THE POOL FAILED, SO IT IS COMPUTED HERE INSTEAD — see the block in
-    // verifySecretAsync() below for why that is the right answer rather than
-    // a fallback that hides something.
-    log.warn(errorCodes.tag('STS-KEYS-0006') +
-             'crypto: the worker pool could not derive a password hash and ' +
-             'it is being computed in this process instead: ' + e.message);
-    return hashSecret(plaintext);
   });
 }
 
@@ -8366,48 +8322,30 @@ function verifySecret(plaintext, stored) {
 // nothing — the sync twin returns false in both cases, and a door that threw
 // where the other returned would be two answers to one question.
 /**
- * Verifies as `verifySecret()` does, on the worker pool. Never rejects.
+ * Verifies as `verifySecret()` does, on libuv's thread pool. Never rejects.
  *
  * @param plaintext - the presented secret
  * @param stored - the stored form
- * @param opts - the pool's routing hint
  * @returns a promise of true or false
  */
-function verifySecretAsync(plaintext, stored, opts) {
+function verifySecretAsync(plaintext, stored) {
   log.debug('Entering verifySecretAsync().');
   const spec = decodeStoredSecret(stored);
   if (!spec) {
     log.debug('Leaving verifySecretAsync(). Nothing readable is stored.');
     return Promise.resolve(false);
   }
-  log.debug('Leaving verifySecretAsync(). Handed to the pool.');
-  return deriveAsync(plaintext, spec, opts).then(function (derived) {
+  log.debug('Leaving verifySecretAsync(). On libuv.');
+  return deriveAsync(plaintext, spec).then(function (derived) {
     return constantTimeEquals(derived, spec.expected);
   }, function (e) {
-    // ---------------------------------------------------------------------
-    // THE POOL FAILED, SO THE COMPARISON IS MADE HERE, and the alternative
-    // that was written first is worth recording because it looked right.
-    //
-    // Answering `false` matches the sync twin's return shape — it answers
-    // false for a stored value it cannot recompute — so it read as the
-    // consistent choice. It is not: the sync twin has no worker to lose, so
-    // `false` there always means "this password does not match this value",
-    // while `false` here would ALSO mean "a child process died". That is a
-    // person told their correct password is wrong, counted against the
-    // sign-in rate limiter, on a service that is working.
-    //
-    // Computing it here is the answer the pool's own design already gives.
-    // A worker holds no state, so a job it did not finish can simply be run
-    // again — `workers.count = 0` runs every job in this process and is a
-    // SUPPORTED configuration producing identical bytes, so this is that
-    // configuration for one job. It blocks for 68ms, which is the cost of
-    // being right.
-    // ---------------------------------------------------------------------
-    log.warn(errorCodes.tag('STS-KEYS-0006') +
-             'crypto: the worker pool could not recompute a stored secret, ' +
-             'so the comparison is being made in this process instead: ' +
-             e.message);
-    return verifySecret(plaintext, stored);
+    // Parameters this node cannot satisfy — verifySecret()'s case, answered
+    // as it answers it.
+    log.warn(errorCodes.tag('STS-KEYS-0005') +
+             'crypto: a stored secret names scrypt parameters this process ' +
+             'cannot compute and is being treated as no match: ' +
+             ((e && e.message) || e));
+    return false;
   });
 }
 
@@ -8584,7 +8522,7 @@ async function verifyRawSignature(scheme, key, data, signature) {
 // Data Integrity cryptosuites that sign bytes rather than a JWS: the RDFC
 // suites, and ecdsa-sd-2023's base and per-statement signatures. Same
 // `scheme` (families 'ecdsa' and 'eddsa' only — nothing here signs raw bytes
-// with RSA, and a post-quantum signature goes through `pq_jose`'s pool);
+// with RSA, and a post-quantum signature goes through `pq_jose`);
 // `privateKey` is a node KeyObject or a private JWK. Throws for a key of the
 // wrong kind, because a signer handed the wrong key is a bug, not an input.
 /**
@@ -10798,8 +10736,8 @@ module.exports = {
   // --- JWS / JWT ---
   signJws: signJws,
   verifyJws: verifyJws,
-  // The three that hand a post-quantum computation to the worker pool and
-  // resolve with exactly what their synchronous namesakes return. See
+  // The three that compute a post-quantum signature on libuv's thread pool
+  // and resolve with exactly what their synchronous namesakes return. See
   // signJwsAsync() for which callers use them and why the others do not.
   signJwsAsync: signJwsAsync,
   verifyJwsAsync: verifyJwsAsync,

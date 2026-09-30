@@ -261,9 +261,6 @@ var config = {
 
   // --- Global ----------------------------------------------------------
   workers: {
-    count: 5,                                                      // Worker processes
-    countInRequestWorkers: 0,                                      // Worker processes in each request worker
-    jobTimeoutS: 120,                                              // Worker job timeout (seconds)
     startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
     requestCount: 0,                                               // Request worker processes; restart to apply
     heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply

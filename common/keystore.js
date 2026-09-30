@@ -79,10 +79,10 @@
 // request object encryption keys.
 //
 // **This section used to say NOT the post-quantum keys**, as a decision: they
-// are generated on the worker pool because generating them is expensive, and
-// were reachable only through the process's own cache. The blob carries them
-// now; `common/CLAUDE.md` (*AND THE POST-QUANTUM HALF WAS WRITTEN AND NEVER
-// READ BACK*) records what that took.
+// are generated on libuv's thread pool because generating them is expensive,
+// and were reachable only through the process's own cache. The blob carries
+// them now; `common/CLAUDE.md` (*AND THE POST-QUANTUM HALF WAS WRITTEN AND
+// NEVER READ BACK*) records what that took.
 //
 // **NOT the TLS server certificate and NOT the SPIFFE JWT authority.** Both are
 // held by their own modules and are shared across realms. The SPIFFE X.509

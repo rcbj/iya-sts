@@ -1208,17 +1208,17 @@ class Credentials {
   // the KDC does not answer, the LDAP socket does not answer and every other
   // request waits. It is a smaller number than an SLH-DSA signature's 14.6
   // seconds and it is paid FAR more often: once per authentication, in five
-  // protocols. See common/worker.js.
-  //
-  // `opts.session` is the pool's routing hint and is passed straight through.
+  // protocols. So the comparison runs on libuv's thread pool, through
+  // `crypto.verifySecretAsync()` (#363; a pool of forked processes until
+  // then).
   // ---------------------------------------------------------------------------
   /**
    * Verifies a presented password as `verify()` does, with the scrypt
-   * comparison on the worker pool rather than the event loop.
+   * comparison on libuv's thread pool rather than the event loop.
    *
    * @param username - the name as presented
    * @param password - the password
-   * @param opts - as for `verify()`, and `session`, the pool's routing hint
+   * @param opts - as for `verify()`
    * @returns a promise of `{ ok, reason, … }`
    */
   verifyAsync(username, password, opts?) {
@@ -1234,9 +1234,9 @@ class Credentials {
                   'Decided without a derivation.');
         return Promise.resolve(ready.done);
       }
-      log.debug('Leaving Credentials.verifyAsync() password step. Handed ' +
-                'to the pool.');
-      return crypto.verifySecretAsync(password, ready.stored, opts)
+      log.debug('Leaving Credentials.verifyAsync() password step. On ' +
+                'libuv.');
+      return crypto.verifySecretAsync(password, ready.stored)
         .then((ok) => {
           const finished = this.verifyFinish(ok, ready.name, ready.via);
           const answer = this.resetRefusal(finished, ready.name, opts) ||
@@ -4161,7 +4161,7 @@ class Credentials {
   // 72ms on this machine and a WRONG code must be compared against every code
   // in the set, which measured **906ms of blocked event loop** for a default
   // set of ten. So `verifyBackupCodeAsync()` exists and the sign-in door uses
-  // it — the candidates go to the WORKER POOL, in parallel.
+  // it — the candidates go to libuv's THREAD POOL, in parallel.
   //
   // **A SET WRITTEN BY AN OLDER BUILD STILL WORKS**, and that is not
   // compatibility for its own sake: somebody is holding it on paper, and the
@@ -5013,17 +5013,17 @@ class Credentials {
   // this.
   //
   // **THE CANDIDATES GO IN PARALLEL**, which the password door does not do and
-  // does not need to: it has one hash to check and this has ten. Five workers
-  // turn 906ms of blocked loop into about 150ms of wall time during which this
+  // does not need to: it has one hash to check and this has ten. libuv's
+  // thread pool (four threads by default, `UV_THREADPOOL_SIZE`) turns 906ms
+  // of blocked loop into a fraction of that in wall time, during which this
   // service keeps answering.
   //
-  // The synchronous door above is KEPT and is not deprecated: `workers.count =
-  // 0` is a supported configuration that computes the same jobs in this
-  // process, `npm test` drives the sync door, and a caller that cannot be made
-  // asynchronous is better off blocking than wrong.
+  // The synchronous door above is KEPT and is not deprecated: `npm test`
+  // drives it, and a caller that cannot be made asynchronous is better off
+  // blocking than wrong.
   // ---------------------------------------------------------------------------
   /**
-   * Verifies a recovery code with the scrypt comparisons on the worker pool,
+   * Verifies a recovery code with the scrypt comparisons on libuv's pool,
    * and spends it across the cluster; the door the sign-in screen uses.
    *
    * @param username - the person

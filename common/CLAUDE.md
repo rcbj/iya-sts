@@ -56,7 +56,8 @@ UNGUARDED and would die with `MODULE_NOT_FOUND` naming a path nobody typed, and
 the eleven guarded readers would quietly fall back to `info`. So the variable is
 made absolute once, in place, before anything reads it. Five callers require it
 first and between them cover every way this service is loaded — `server.js`,
-`worker.js`, `request_worker.ts`, `config.js` and `helpers.js` — and it is
+`request_worker.ts`, `config.js` and `helpers.js` (and `worker.js` until #363
+removed it) — and it is
 idempotent, so all of them calling costs nothing. Those counts are from
 2026-08-23; on 2026-09-16 nineteen modules read the file directly and sixteen of
 them are VENDORED (the `common/vendored/` modules and the Kerberos codec copies)
@@ -629,9 +630,10 @@ every outward encryption: ID and Logout Tokens, UserInfo, JARM and
 introspection. OID4VCI's response checks it directly.
 
 **WHERE THE PRIMITIVES COME FROM.**
-* ML-KEM is `@noble/post-quantum`, because it takes the seed. It does NOT do
-  FIPS 203's encapsulation-key modulus check, so `mlkemCheckEncapsulationKey()`
-  here does it.
+* ML-KEM is node's OpenSSL through `pq_native.js` (#363; `@noble/post-quantum`
+  until then), which takes the seed. FIPS 203's encapsulation-key modulus
+  check is made by `mlkemCheckEncapsulationKey()` here whatever the primitive
+  does.
 * Curves, AES-GCM, ChaCha20-Poly1305, HKDF and SHA-3 are node's OpenSSL.
   KMAC256 and TurboSHAKE are `@noble/hashes`.
 * **Not the worker pool, and that was measured.** One encrypt+decrypt costs
@@ -888,153 +890,93 @@ it vouches for that it does not serve (the parent debugger in a test stack).
 **`tests/cors.js`** drives the decision over HTTP through the real middlewares;
 nothing drives it against the running container yet.
 
-## `worker.js` and `worker_pool.js`: the computation that must not run here
+## `pq_native.js`: the computation that must not run here, on libuv's thread pool (#363, 2026-09-30)
 
-Node runs this service's six listener families on ONE THREAD, so a synchronous
-computation does not slow it down, it STOPS it. Post-quantum signing is that
-computation — stalls of 14.6, 15.4, 17.8 and 23.3 seconds were measured on
-2026-08-29 — and the cross-cutting argument and the table of those stalls are
-immediately below, moved from the root `CLAUDE.md`'s *One listener process, N
-stateless workers*. Everything else about the pool is here, including the
-five things to know, which used to be over there.
+**This service is one node process and it owns every listener** — the express
+app (on the main port and on the plain-HTTP revocation port), the KDC on TCP
+and UDP 88, the Kerberos service on 8888, the LDAP directory, the gRPC
+surfaces and the embedded debugger's listener — and node runs all of them on
+ONE THREAD, so a synchronous computation does not slow it down, it STOPS it.
+**A KDC that does not answer looks from the outside exactly like a KDC that is
+not there.**
 
-**This service is one node process and it owns six listener families** — the
-express app (on the main port and on the plain-HTTP revocation port), the KDC
-on TCP and UDP 88, the Kerberos service on 8888, the LDAP directory, two gRPC
-surfaces and the embedded debugger's listener. (The two HTTPS endpoints on 8443
-and 9443 were the sixth until they were deleted on 2026-09-16.) Node runs all
-of them on ONE THREAD, so a synchronous computation does not slow this service
-down, it STOPS it.
+Post-quantum signing was that computation. On `@noble/post-quantum`, the
+JavaScript implementation this service used until #363, stalls of 14.6, 15.4,
+17.8 and 23.3 SECONDS were measured on 2026-08-29 (two SLH-DSA-SHAKE-128s
+signatures and two composite verifications), and from 2026-08-30 to #363 the
+answer was `common/worker_pool.js`: a pool of forked node processes, each a
+whole runtime of about 90 MB, running a job table of four leaf computations
+(`pq.sign`, `pq.verify`, `pq.generate`, `scrypt.derive`). Every request
+worker forked one of its own (#347 turned that off by default). #339 measured
+what that cost a node in memory.
 
-Post-quantum signing is that computation, and until 2026-08-30 it ran on that
-thread. Stalls measured on 2026-08-29 while the parent project's suite ran:
+**#363 REMOVED THE POOL, AND THE ANSWER IS NATIVE CODE ON LIBUV'S THREADS.**
+Node 24 is built on OpenSSL 3.5, which implements ML-DSA (FIPS 204), SLH-DSA
+(FIPS 205) and ML-KEM (FIPS 203) in C. `common/pq_native.js` is those three on
+node's crypto, in `@noble/post-quantum` 0.4.1's shape (argument order
+included), so `pq_jose.js`, `crypto.js`, `vendored/pqc.js` and
+`vendored/pqc_x509.js` each changed a require and not their callers. Measured
+in the service image (node 24.16, OpenSSL 3.5.6):
 
-| Stall | Operation |
+| Operation | Native |
 |---|---|
-| 23.3s | a composite `verify()` |
-| 17.8s | a composite `verify()` |
-| 15.4s | `signJwtAs()` SLH-DSA-SHAKE-128s |
-| 14.6s | `signJwtAs()` SLH-DSA-SHAKE-128s |
+| ML-DSA keygen / sign | 1-2 ms / ~1 ms |
+| ML-KEM keygen | 0.1-0.3 ms |
+| SLH-DSA-SHA2-128s sign | 234 ms |
+| SLH-DSA-SHAKE-128s sign | 637 ms |
 
-For those seconds this service answered nobody, and **a KDC that does not answer
-looks from the outside exactly like a KDC that is not there** — which is why not
-one of the failures they caused named one. They were a Kerberos reply that never
-came, a Populate button never drawn, a login screen that never arrived, and a
-refresh request whose socket this service closed on its way back out. The parent
-project marked two of its jobs `EXCLUSIVE` to work around it (its issue #268)
-and this is what that marking was interim to.
+The SLH-DSA `s` sets are slow by design, in C too, so the `*Async` doors
+(`pq_jose.signAsync()` / `verifyAsync()` / `generateAsync()`, and
+`crypto.hashSecretAsync()` / `verifySecretAsync()` for scrypt) run on
+**libuv's thread pool** through node's own asynchronous crypto
+(`crypto.sign(..., callback)`, `generateKeyPair()`, `crypto.scrypt()`):
+native threads, no second V8 heap, no process hop, no key or signature
+serialised across a channel. A 662 ms SLH-DSA signature let the event loop
+tick 65 times while it ran. libuv's pool has four threads unless
+`UV_THREADPOOL_SIZE` says otherwise, and it is shared with node's own file
+and DNS work.
 
-**The design is one front process and N stateless children.** This process keeps
-every socket AND ALL THE STATE; a child is handed everything it needs in the job
-and hands back everything it produced.
+**Five things to know before touching it:**
 
-**Workers hold no state, and that is load-bearing rather than a
-simplification.** The state here is read and written ACROSS sessions, not within
-one: `operatorConfig`, `realms`, the KDC `replayCache`, `digestNonces` /
-`hobaChallenges` / `hobaSeen`, `principals`, the SPIFFE registry, and the tokens
-this service mints — minted on one worker and introspected from another. Split
-N ways those fail SILENTLY: replay detection that stops detecting, a config
-change that lands on one worker of four, an introspection 404 for a token that
-exists. Session affinity narrows that window; it does not close it. So nothing
-is split, and **two workers can never disagree about anything because neither
-remembers anything.**
+1. **THE KEY FORMS ARE THE STANDARDS', UNCHANGED**, which is what made this a
+   drop-in for keys product mode had already stored. Checked against
+   `@noble/post-quantum` before it was removed: from the same 32-octet ML-DSA
+   seed, 64-octet ML-KEM seed (d || z) or SLH-DSA secret key, OpenSSL derives
+   the same public key, and each verifies the other's signatures and
+   decapsulates the other's ciphertexts. `secretKey` is the EXPANDED key for
+   ML-DSA and ML-KEM, exactly as noble returned it; the seeds stay the stored
+   form (RFC 9964 section 3.2, pqc-kem section 8).
+2. **HEDGED, ALWAYS.** OpenSSL signs FIPS 204/205's hedged variant — the one
+   both standards recommend — and node has no switch. `pq_jose.js`'s
+   `deterministic` option (#203), which existed only to reproduce NIST's
+   deterministic vectors, is gone; `tests/acvp_pqc.js` and
+   `tests/wycheproof.js` verify NIST's signatures and hold the service's own
+   hedged ones to NIST's public keys instead.
+3. **THREE THINGS NOBLE HAD ARE REFUSED, NOT APPROXIMATED**: derandomized
+   encapsulation (FIPS 203 Encaps_internal with a given m — only vectors
+   passed it; `tests/jwe_pq_kem.js` and the ACVP ML-KEM groups now check the
+   receiving side), SLH-DSA key generation from given seeds, and the pre-hash
+   variants (HashML-DSA, HashSLH-DSA). Nothing in the service asked for any of
+   them; each throws naming what it is.
+4. **node's type declarations lag node.** The `raw-public`, `raw-private` and
+   `raw-seed` key formats and the PQ key types are node 24's documented API
+   but not in the `@types/node` this repository checks against, so
+   `pq_native.js` holds node's crypto as `any` and says why.
+5. **`pq_jose.js` STAYS INDEPENDENT OF THE ENGINE the PKI uses** — it builds
+   the composite construction, the AKP JWK and the traditional halves from the
+   specifications — and since #363 its lattice primitive is OpenSSL where the
+   debugger's is `@noble/post-quantum`, so the cross-check now covers ML-DSA
+   itself too.
 
-**`worker.js` is the child process AND the job table**, and it is one file for
-that reason: the table it exports is what the pool runs in THIS process when
-`workers.count` is 0, so "a pooled signature and an unpooled one are the same
-bytes" is true by construction rather than by a test that happens to pass. The
-wiring that makes a process a worker is guarded on `require.main === module`, so
-requiring this file to reach the table does not turn the requiring process into
-a worker. FOUR jobs since 2026-09-07: `pq.sign`, `pq.verify`, `pq.generate`
-and `scrypt.derive`. Each is
-**synchronous on purpose** — blocking is what a worker is for, and a table of
-promises would invite a second job onto a process that is already computing,
-which does not make it finish sooner and makes the pool's idea of "least loaded"
-a fiction.
+### scrypt is the other slow thing, and it is on libuv's thread pool too
 
-**`worker_pool.js` is fork, route, restart and drain**, and four of its
-decisions are worth knowing before changing any of them.
-
-* **The pool is lazy and re-read per job.** Nothing is forked until the first
-  post-quantum job, which is what keeps every in-process loader of this tree —
-  the parent project's Kerberos jobs, `npm test`, `env/generate_defaults.js` —
-  free of children they would never use. Re-reading `workers.count` on every
-  call is what makes it genuinely runtime rather than runtime-in-the-table.
-
-* **A worker is REFERENCED only while it is owed an answer, and BOTH halves have
-  to be** — the child process handle and the IPC channel. This is the one that
-  cost an afternoon: with the process handle left unreferenced, node drained its
-  event loop the instant a worker was SIGKILLed, so the `exit` that fails that
-  worker's jobs was never delivered and the promise never settled. It looked
-  like a hang, and it was **LOG-LEVEL DEPENDENT** — at `debug`, bunyan's writes
-  to a piped stdout were themselves enough to hold the loop open, so the same
-  code passed at one level and hung at another.
-
-* **A worker that dies FAILS its jobs, with a sentence.** A promise nobody
-  settles is a request that hangs, which is the symptom this whole module
-  exists to remove. The replacement is forked by the next job rather than
-  immediately, and after `QUICK_EXIT_LIMIT` short-lived exits in a row the pool
-  **gives up on children and computes here** — a child that cannot start is a
-  broken `CONFIG_FILE` or a machine out of memory, and forking it forever would
-  turn a service that works slowly into one that does nothing but fork. One
-  finished job resets the count.
-
-* **Affinity is a preference and never a correctness requirement.** A worker
-  remembers nothing, so forgetting a session costs a re-route and nothing else —
-  which is why the map is capped and drops its oldest entry rather than growing
-  for as long as a test suite mints sessions.
-
-**Requiring `worker_pool.js` is what arms `pq_jose.js`.** The reference is
-handed down from the foot of that file, because the pool requires `worker.js`
-which requires `pq_jose.js` and a require back up would close a cycle (rule 2).
-The side effect is the point, and it is the shape rule 1 had until #50's R1 —
-requiring a protocol module was what registered its routes (it still is for the
-JavaScript ones; a converted module now waits for `common/protocol_stack.ts` to
-call its `registerRoutes(app)`). **A worker is never armed**,
-because a child requires `worker.js` and `worker.js` does not require the pool.
-
-`common/crypto.js` is what requires it, because that is the module that routes
-an `alg` to `pq_jose.js` in the first place. `crypto.js` gained
-`signJwsAsync()`, `verifyCompactJwsAsync()` and `verifyJwsAsync()` beside their
-synchronous namesakes rather than in place of them: every other caller in this
-service verifies RS256 in microseconds and has nothing to gain from a promise.
-`verifyCompactJws()` was split into `prepareVerification()` / `verifyBytes()` /
-`finishVerification()` so that both entry points run the same reading of the
-token and refuse in the same ORDER — a token whose `alg` is not in the caller's
-list is refused for that and never for its signature, whichever was used.
-
-### `scrypt.derive` is the fourth job and the first that is not post-quantum (2026-09-07)
-
-It earns its place on the same measurement the other three do, with a different
-shape. `crypto.js` sets scrypt's N to 2^15 deliberately, so **one password hash
-or one verification measured 68ms on this machine** — and for those 68ms this
-process answers nobody: not the next HTTP caller, not the KDC on port 88, not
-the LDAP socket. That is not the 14.6 seconds an SLH-DSA signature costs, and it
-is paid FAR more often: **once per authentication, in five protocols** — the
-sign-in screen, an LDAP bind, SCIM Basic, WS-Trust and the portal's password
-form — rather than on the few signatures a client points at a post-quantum
-algorithm.
-
-Measured with ten hashes back to back, with a 5ms heartbeat running: the
-synchronous path took 616ms wall and **the event loop ticked zero times**; the
-pooled path took 154ms and it ticked 29. The wall-clock difference is the five
-workers computing at once; the tick count is the whole point.
-
-**THE JOB IS A PRIMITIVE AND HOLDS NO POLICY, AND THAT IS WHAT LETS IT BE THERE
-AT ALL.** `crypto.js` remains the one place this service decides the cost
-parameters, the stored form, how it is parsed and how the comparison is made,
-and NONE of that is in `worker.js`. Every parameter travels in the job, exactly
-as `pq.sign` is handed the key it is to use.
-
-**The reason it must be that way round is a hard constraint rather than
-tidiness.** `crypto.js` requires `worker_pool.js` — that require is what arms
-the pool — so a worker that required `crypto.js` back would reach the line at
-the foot of `worker_pool.js` and **start forking children of its own**. So the
-derivation is written out in `worker.js` against node's own crypto, which that
-file may require freely because it is a leaf. It is also why `crypto.js` hands
-the pool this job DIRECTLY rather than through `pq_jose.js`: a scrypt
-derivation is not a JOSE operation, and routing it there would have put a
-password in a file about post-quantum signing.
+`crypto.js` sets scrypt's N to 2^15 deliberately, so **one password hash or
+one verification measured 68ms on this machine** — paid **once per
+authentication, in five protocols** (the sign-in screen, an LDAP bind, SCIM
+Basic, WS-Trust and the portal's password form). The async doors compute it
+with node's `crypto.scrypt()`, on libuv's thread pool; a recovery code's ten
+comparisons go in parallel there. `crypto.js` remains the one place that
+decides the cost parameters, the stored form and the comparison.
 
 ### The cost of a NEW hash is a setting, and nothing already stored moves (2026-09-12)
 
@@ -1044,9 +986,9 @@ the NEXT hash is written under; the constants are the defaults and N's floor is
 thing this file must never do is write a hash cheaper than it promises. N is set
 as its logarithm because scrypt accepts only a power of two. **Every stored hash
 keeps verifying** — `$scrypt$N$r$p$salt$hash` names its own parameters, which is
-why the stored form was made self-describing — and the worker-pool job is handed
-the parameters read ONCE, so the encoded value always names the cost the
-derivation really used. `tests/password_policy.js` pins both halves.
+why the stored form was made self-describing — and the async door reads the
+parameters ONCE, so the encoded value always names the cost the derivation
+really used. `tests/password_policy.js` pins both halves.
 
 ### The four scrypt functions are one implementation with two doors
 
@@ -1070,148 +1012,9 @@ file exists to prevent: `verify()` is the one place a presented password is
 checked, and two copies of "when do we say no" would eventually say it in two
 different sets of circumstances.
 
-**THE SYNC DOORS ARE KEPT AND ARE NOT DEPRECATED.** `workers.count = 0` is a
-supported configuration, the parent project loads this tree in process, and a
-caller that cannot be made asynchronous is better off blocking than wrong.
-
-**WHAT IS NOT DONE YET, SAID PLAINLY: no protocol surface calls the async door.**
-Eleven call sites still reach the synchronous one — `scim/scim_auth.ts`,
-`authn/authn.ts`, `ldap/ldap_server.js`, `ws-trust/wstrust.ts`, `portal/portal.ts`
-(three) and `admin-ui/admin.ts` (four) — and every one of them needs its
-enclosing handler chain made asynchronous first. That is not incidental: it is
-the same prerequisite the whole move-request-processing-to-workers plan needs,
-so it is phase 1 of that plan rather than eleven separate conversions, and
-converting some of them now would leave one policy behaving two ways across
-five protocols.
-
-### Six things to know before touching any of it
-
-**These moved here from the root `CLAUDE.md` when that file was broken up.** The
-root keeps what is genuinely cross-cutting — that this process owns six listener
-families on one thread, and the stalls that measured — and this is the rest.
-
-1. **NOTHING IS FORKED UNTIL THE FIRST POST-QUANTUM JOB.** A process that never
-   signs one never pays for a pool, which is what keeps the parent project's
-   in-process Kerberos jobs, this repository's own `npm test` and
-   `node env/generate_defaults.js` free of children they would never use and
-   would then have to wait for. It also makes `workers.count` genuinely runtime:
-   the pool is reconciled with the setting on the NEXT job, so raising it forks
-   the difference and setting it to 0 drains the pool and computes here.
-
-2. **`workers.count = 0` IS A SUPPORTED CONFIGURATION AND PRODUCES THE SAME
-   BYTES.** The pool runs the SAME job table in this process — `worker.js`
-   exports it, and the child wiring below it is guarded on
-   `require.main === module` — so "a pooled signature and an unpooled one agree"
-   is true by construction rather than by a test that happens to pass. Nine of
-   the eleven algorithms sign deterministically and `tests/worker_pool.js`
-   asserts byte equality for those; the three composite ECDSA ones cannot be
-   equal (node's ECDSA is randomized, and it must be) and are held to
-   cross-verification instead.
-
-3. **REQUIRING `common/worker_pool.js` IS WHAT ARMS `common/pq_jose.js`.** The
-   pool requires `worker.js`, which requires `pq_jose.js`, so pq_jose.js cannot
-   require the pool back without closing a cycle (rule 2) — the reference is
-   handed DOWN, from the foot of worker_pool.js. That also means **a worker
-   process is never armed**, because a child requires worker.js and worker.js
-   does not require the pool: `signAsync()` inside a worker computes in the
-   worker, which is what a worker is for and what stops a child forking a pool
-   of its own. `common/crypto.js` filled that slot for one afternoon, and a
-   process that required pq_jose.js WITHOUT crypto.js then computed everything
-   in itself while reporting no pool and no error.
-
-4. **FOUR CALL PATHS ARE ASYNCHRONOUS BECAUSE OF THIS AND NO OTHERS.** They are
-   the four a CLIENT can point at a post-quantum algorithm: the ID Token
-   (`id_token_signed_response_alg`), the signed UserInfo response
-   (`userinfo_signed_response_alg`), a `private_key_jwt` client assertion, and
-   an OID4VCI proof of possession — plus the JWKS, which is where a realm's
-   eleven post-quantum keys are GENERATED. Everything else still signs and
-   verifies synchronously on purpose: an RS256 signature is microseconds, and an
-   IPC round trip to save that would be a cost with no saving. The token
-   endpoint and `issueAuthorizationResponse()` became `async` as a consequence,
-   and the token endpoint is now registered through **a wrapper that catches** —
-   express 4 does not look at what a handler returns, so an `async` handler's
-   throw is an unhandled rejection and a request that hangs where it used to be
-   a 500.
-
-5. **A REALM MAY NOT CARRY `workers.count`.** It is the first setting marked
-   `perProcess`, which is a SECOND rule beside the `realms.*` prefix rather than
-   the same one spelt twice: a pool belongs to the OS process, and one realm
-   resizing it would resize every other realm's too. Both ends go through
-   `config.isPerProcess()` — the reading end in `config.js`'s `realmFor()` and
-   the writing end in `realms.js`'s `checkRealmOverride()` — because the two
-   ends of the `realms.*` rule were written separately and disagreed within the
-   hour.
-
-6. **A REQUEST OR SURFACE WORKER SIZES ITS POOL WITH A SETTING OF ITS OWN,
-   `workers.countInRequestWorkers`, AND IT IS 0 (#347, 2026-09-29).** Item 3's
-   "a worker process is never armed" is about THIS pool's children; a request
-   worker is a different kind of worker (the table below) and runs the whole
-   stack, `crypto.js` and so this module included. It read `workers.count`
-   like the front process did, so a node with three request workers and one
-   surface worker could fork 5 + 4 × 5 = 25 crypto children, each a whole
-   node footprint — part of what put testidp's nodes at 80 % of their memory
-   idle (#339). The pool's reason is the thread that holds the listeners, and
-   a request worker holds none: a sign there delays only the requests it is
-   answering, and the front process sends the next one to another worker. So
-   `size()` reads `workers.countInRequestWorkers` when `STS_REQUEST_WORKER` is
-   set — the variable `request_pool.js` gives both pools' workers — and
-   `stats().setting` names which one sized the pool. Both are `perProcess`
-   and runtime. `tests/worker_pool.js` section H drives it in a child.
-
-**A REALM'S ELEVEN KEYS ARE MADE WHEN THE REALM IS**, and that is the pool's
-second consequence rather than a sixth thing to know about it. One of the
-eleven is expensive out of all proportion: an SLH-DSA-SHAKE-128s KEY GENERATION
-is about 5.1 of the 5.8 seconds the whole set takes, and it is one indivisible
-job that no pool size divides. That put a realm's first JWKS fetch a little
-over five seconds — and `federation.outboundTimeoutMs` is FIVE, deliberately,
-because a browser is waiting on that request.
-
-It never failed, and why it never failed is the part worth keeping: while the
-generation was SYNCHRONOUS it blocked this process's event loop, so the timer
-enforcing that budget could not fire until the keys were already made. **The
-response won a race the timeout was never allowed to run in.** The moment the
-computation moved to a worker and the loop stayed free, the timer fired
-correctly at five seconds and aborted a fetch three tenths of a second from
-finishing — one federated sign-in in the parent project's suite, reporting
-"the JWKS could not be fetched", which is a sentence about a service that was
-working perfectly.
-
-So `helpers.js` warms a realm's post-quantum keys on `realms.onChange`'s
-`create`, through `stsKeysFor.of(id)` because a watcher has no ambient realm.
-That was not affordable before — eager generation meant 5.8 seconds of a
-stopped service per realm, which is exactly why they were lazy — and it is the
-point rather than a workaround: **the pool does not merely move the cost off
-the request that pays it, it makes paying it EARLY free.** Measured: a realm
-created through `/admin-api/realms/create` answers its first JWKS in 8ms.
-
-**THE WATCHER WAS REMOVED ON 2026-08-30 AND THE PARAGRAPH ABOVE IS HISTORY.**
-Test suites create realms constantly and never sign a post-quantum token in
-them, so eager generation spent minutes of worker time on keys nobody asked
-for. `warmPqKeys()` is now called for the DEFAULT realm alone, from
-`server.js`'s `announce()`; a realm created at runtime makes its keys on first
-use. `helpers.js`'s block below `warmPqKeys()` carries the measurement.
-
-`tests/worker_pool.js` has the four contracts and the measurement that shows the
-loop is free.
-
-**ONE QUESTION A WORKER ANSWERS THAT IS NOT A JOB: ITS OWN MEMORY (#329).**
-Monitoring → Node Health lists every process with its
-`process.memoryUsage()`, which only the process can read.
-`worker_pool.askMemoryStatus(timeoutMs)` sends each worker
-`{ memoryStatus: true, id }`, and `worker.js` answers it BEFORE its job table
-with `{ memoryStatus, id, pid, memory, cpu, uptimeS }`. **The pool is still
-crypto-only**: this computes nothing (three reads of the process's own
-counters), is not a row of `JOBS` — so it is never run in process when
-`workers.count` is 0, where it would describe the wrong process — has no
-entry in `inFlight`, and is not counted among the jobs Worker Pools reports.
-It is not queued behind anything in the pool, but it cannot interrupt a job
-the worker is COMPUTING, since a job is synchronous: the wait is bounded and
-a busy worker is simply absent from the answer, which the page draws as a
-`/proc` row saying so. The channel is held (`refWhileWorking()`) while a
-question is out and released at the bound, because an idle worker's channel
-is unreferenced and a process with nothing else to do drained its loop before
-the answer arrived — `tests/node_health_page.js` found it.
-
+**THE SYNC DOORS ARE KEPT AND ARE NOT DEPRECATED.** The parent project loads
+this tree in process, and a caller that cannot be made asynchronous is better
+off blocking than wrong.
 
 ## `protocol_stack.ts`: THE REQUIRE ORDER MOVED OUT OF `server.js` (2026-09-07), AND BECAME THE COMPOSITION ROOT (2026-09-16)
 
@@ -1341,18 +1144,21 @@ and the process-wide `deferToRoot()` that first fixed that broke the
 in-process suite, where several files require this module. `request_pool.js` forks `request_worker.js`, which is the COMPILED
 file and the only one in the image; a source-reading test reads the `.ts`.
 
-| | `common/worker_pool.js` | `common/request_pool.js` |
-|---|---|---|
-| A worker runs | a JOB TABLE — four leaf computations | THE SERVICE — the whole protocol stack |
-| Handed | everything the job needs | an HTTP request |
-| Speaks | the IPC channel, structured clone | real HTTP over a unix socket |
-| Forked | LAZILY, on the first post-quantum job | EAGERLY, ONE AT A TIME (#342); the listener binds once each pool's first has settled |
-| Setting | `workers.count` (5); `workers.countInRequestWorkers` (0) inside a request or surface worker | `workers.requestCount` (0) |
-| Off by default | no | **yes, and nothing is dispatched until `workers.dispatch` names a path** |
+| | `common/request_pool.js` |
+|---|---|
+| A worker runs | THE SERVICE — the whole protocol stack |
+| Handed | an HTTP request |
+| Speaks | real HTTP over a unix socket |
+| Forked | EAGERLY, ONE AT A TIME (#342); the listener binds once each pool's first has settled |
+| Setting | `workers.requestCount` (0) |
+| Off by default | **yes, and nothing is dispatched until `workers.dispatch` names a path** |
 
-**The goal of the second one is one sentence: the front process should be doing
-request/response I/O and nothing else.** The first moved four computations off
-that thread; every handler still ran on it.
+(Until #363 there was a first pool, `common/worker_pool.js`, of processes
+running four leaf computations; *`pq_native.js`*, above, says what replaced
+it.)
+
+**The goal is one sentence: the front process should be doing
+request/response I/O and nothing else.**
 
 **ROUTING IS THE PART TO GET RIGHT AND THE CUT IS NOT THE OBVIOUS ONE.** It is
 **sessionless versus session-bearing**, not stateless versus stateful.
@@ -1877,21 +1683,13 @@ minutes. rcbj asked for batch throughput balanced against everything else.
 `tests/request_batch_lane.js` pins it, four mutants caught and one equivalent
 removed.
 
-### WHAT BOTH POOLS COUNT, FOR MONITORING → WORKER POOLS (#327, 2026-09-28)
+### WHAT THE POOLS COUNT, FOR MONITORING → WORKER POOLS (#327, 2026-09-28)
 
 `stats()` answered what each pool IS; #327's page (`admin-ui/CLAUDE.md`,
-`/admin/worker-pools`) also needs what has HAPPENED to it, and neither pool
-kept that. Each now keeps it beside what it counts, cumulative from the
-process's start and cleared only by the test-only `reset()`:
+`/admin/worker-pools`) also needs what has HAPPENED to it. Each pool keeps it
+beside what it counts, cumulative from the process's start and cleared only
+by the test-only `reset()`:
 
-* **`worker_pool.js`: `stats().counts`** — `forked`; `firstForked` and
-  `firstForkAt`, what the first fork brought up, which is the lazy pool's
-  initial size; `crashed` (an exit nobody asked for) apart from `retired` (a
-  worker `retire()` marked `leaving`, or any exit after `stop()`), and the
-  `failedStarts` among the crashes, counted for good where `quickExits` is a
-  run one job resets; `jobs`, `jobMs`, `maxJobMs` and `failed` from the send
-  to the reply, `timedOut`, and `inProcess` / `inProcessMs` for a job with no
-  worker to go to. Plus `busy`, `free` and `averageJobMs`.
 * **`request_pool.js`: `stats().pools[].history`** — `initial` and
   `startedAt` (what `start()` forked into the pool), `forked`, `crashed`
   apart from `stoppedExits` (`stop()` sets `retiring`), `failedStarts`, and
@@ -1904,29 +1702,23 @@ process's start and cleared only by the test-only `reset()`:
 
 **THE HOT PATH PAYS ONE `Date.now()` AND FOUR ADDITIONS PER DISPATCHED
 REQUEST** (`noteAnswered()`, which carries no Entering/Leaving pair and says
-why) and a handful per post-quantum job, whose own cost is milliseconds at
-the least; nothing is a list, nothing grows.
+why); nothing is a list, nothing grows.
 
-**AND A REQUEST WORKER'S OWN POST-QUANTUM POOL IS ASKED FOR.** Every worker
-loads `crypto.js` and so has a `worker_pool.js` of its own, invisible to the
-front process. `askWorkerPoolStatus(timeoutMs)` sends each ready worker one
-`{ poolStatus, id }` message; `request_worker.ts`'s `reportPoolStatus()`
-answers `{ poolStatus, id, pq }` with its `worker_pool.stats()`, and what has
-not answered by the bound is simply absent. It is a message and not the
+**AND A REQUEST WORKER IS ASKED FOR WHAT ONLY IT CAN READ.**
+`askWorkerPoolStatus(timeoutMs)` sends each ready worker one `{ poolStatus,
+id }` message; `request_worker.ts`'s `reportPoolStatus()` answers, and what
+has not answered by the bound is simply absent. (Until #363 the answer
+carried the worker's own post-quantum pool too.) It is a message and not the
 SIGUSR2 status `request_worker.ts` already answers, because a signal to a
 worker that has not installed its handler ends it and that reply overwrites
 `served` with the worker's own tally. And `/admin/worker-pools` with its API
 are in `NEVER_DISPATCHED`: only the front process has the request pools.
 
-**THE SAME QUESTION CARRIES EACH WORKER'S OWN MEMORY (#329).** Monitoring →
-Node Health asks it too, and the answer grew rather than a second message:
-`{ poolStatus, id, pq, memory, cpu, uptimeS }` — the worker's
-`process.memoryUsage()`, `process.cpuUsage()` and uptime, which nothing
-outside the process can read (the heap is in no `/proc` file) — and
-`askWorkerPoolStatus()` hands them back beside `pq`. Asked with
-`{ childMemory: ms }`, each worker also asks its OWN post-quantum children
-(`worker_pool.askMemoryStatus(ms)`, above) and answers with `pqMemory`; Worker
-Pools does not ask, and so never waits on it. Node Health's paths are in
+**THE QUESTION CARRIES EACH WORKER'S OWN MEMORY (#329).** Monitoring → Node
+Health asks it too: `{ poolStatus, id, error, memory, cpu, uptimeS }` — the
+worker's `process.memoryUsage()`, `process.cpuUsage()` and uptime, which
+nothing outside the process can read (the heap is in no `/proc` file). Node
+Health's paths are in
 `NEVER_DISPATCHED` for the same reason as Worker Pools'.
 
 ### A RATE-LIMIT COUNT IS WRITTEN DOWN EVERY TIME IT MOVES (2026-09-14)
@@ -5785,9 +5577,10 @@ thread and its lifetime*, has the numbers either side of the fix).
   drill-down on both admin surfaces, and `settleSigningKeys()`. A read reached
   another way — an LDAP bind, a KDC exchange, a background sweep — still
   generates on the thread, one realm.
-* **Not `worker_pool.js`**: RSA and EC generation is node's own OpenSSL with an
-  asynchronous door of its own, which costs no IPC and no child. 3aa's reason
-  for keeping `pki_authoring.ts` off the pool is about the post-quantum
+* **Node's own asynchronous door**: RSA and EC generation is node's OpenSSL
+  with an asynchronous door of its own, on libuv's thread pool, which costs no
+  IPC and no child — the door the post-quantum keys use too since #363. 3aa's
+  reason for keeping `pki_authoring.ts` synchronous is about the post-quantum
   encoders and is untouched — and that pane's SLH-DSA signature (13.7s
   measured) is what `cluster.nodeTtlMs`'s new default is sized against.
 
@@ -7453,10 +7246,11 @@ refusal names the line rather than the field.
 
 ### The cost that is stated rather than discovered
 
-Generating a post-quantum key pair is slow and it runs on this thread.
-**`common/worker_pool.js` is deliberately not used**: that pool's job table runs
-`common/pq_jose.js`, which is this service's OWN reading of the post-quantum
-constructions and is independent of the vendored one on purpose — and handing a
+Generating a post-quantum key pair can be slow (an SLH-DSA `s` set takes
+hundreds of milliseconds even natively) and it runs on this thread.
+**`pq_jose.generateAsync()` is deliberately not used**: `common/pq_jose.js` is
+this service's OWN reading of the post-quantum constructions and is
+independent of the engine's on purpose — and handing a
 key generated by one to an encoder that expects the other's byte layout is
 exactly the class of defect that independence exists to expose.
 `common/vendored/CLAUDE.md` argues the same thing from the other end.
@@ -7864,32 +7658,6 @@ published. Bounded at three retries, then refused with `STS-PKI-0186`.
 `tests/pki_rebuild_recertifies.js` section B drives it deterministically by
 replacing the authority from inside a wrapped encoder.
 
-### The pool had no bound on a job, only on a worker's life (2026-09-11)
-
-`worker_pool.js`'s header states the principle — *a promise nobody settles is
-a request that hangs* — and `reap()` honours it for a worker that DIES: every
-job in flight is rejected with a sentence naming the pid. **Nothing covered a
-worker that stays alive and never answers.**
-
-One did. Five idle children, no CPU anywhere in the process tree, the service
-answering every other request in eleven milliseconds, and a single HTTP request
-parked until the test runner's 300-second watchdog killed the job. Twice per
-mode, in every mode, which is ten minutes a run.
-
-`workers.jobTimeoutS` is the bound, 120 seconds by default and `0` to remove
-it. The default is generous deliberately: the stalls this pool exists to move
-off the event loop were measured at 15 to 23 seconds, so two minutes is far
-beyond any real job and far short of a watchdog.
-
-**It is a backstop and not a diagnosis.** Why a reply goes missing is not
-known; what changed is that the caller is told instead of waiting for ever. The
-worker is left alone when it fires — it is alive, and it holds no state, so it
-is kept for the next job. `tests/worker_pool.js` section F drives it, and the
-way that test first passed for the wrong reason is written down beside it: an
-earlier section leaves the pool computing in the FRONT process, where there is
-no worker to time out, so a bound cannot fire and the assertion recorded a
-resolve.
-
 ## 3y. `backup_codes.ts`: the third second factor, the only mechanism here that no specification defines — and the one whose design REVERSED on 2026-09-11
 
 A short list of single-use strings that stands in for whichever second factor a
@@ -7973,10 +7741,10 @@ listener families on one thread, so that is not a slow request; it is a service
 that answers nobody for most of a second, every time somebody mistypes ten
 characters off a printed list.
 
-So `credentials.verifyBackupCodeAsync()` puts the candidates on the worker pool
-in parallel — **263ms, with the loop ticking 56 times** — and `/authn/backup-code`
-uses it. The synchronous door is kept for `workers.count = 0`, for `npm test`,
-and because a caller that cannot be made asynchronous is better off blocking
+So `credentials.verifyBackupCodeAsync()` puts the candidates on libuv's thread
+pool in parallel (the forked worker pool until #363, measured then at **263ms,
+with the loop ticking 56 times**) and `/authn/backup-code` uses it. The
+synchronous door is kept for `npm test`, and because a caller that cannot be made asynchronous is better off blocking
 than wrong. Both go through one `backupPrepare()`, so they refuse in the same
 ORDER: a password typed into the code box is refused on its SHAPE and costs no
 hashing at all.

@@ -27,10 +27,10 @@
 // OOM-kill attribution (STS-WORKER-0047) work the same with it off. At 0, the
 // default, the limit is DERIVED:
 //
-//     (container limit − headroom) ÷ (1 + requestCount + surfaceCount + 1)
+//     (container limit − headroom) ÷ (1 + requestCount + surfaceCount)
 //
-// The last 1 is the allowance for the post-quantum computation children
-// (`worker_pool.js`), which are small and have no limit of their own. The
+// (Until #363 the divisor carried one more share, for the post-quantum
+// computation children of `worker_pool.js`; that pool is gone.) The
 // headroom is 15 % of the limit and at least 256 MiB. It is what a process
 // holds OUTSIDE the old space the flag bounds: the young generation, code,
 // Buffers and native memory. The result is floored at 256 MiB. With no
@@ -42,7 +42,7 @@
 // 192 MiB in node 24 whatever the old space is (300 gives 492, measured in
 // tests/process_memory.js). The young generation rarely grows to its
 // ceiling, and the headroom is what it comes out of. On testidp's 8 GiB
-// node with 3 + 1 workers the budget is 1160 MiB of old space per process.
+// node with 3 + 1 workers the budget is 1392 MiB of old space per process.
 //
 // **WHERE THE CONTAINER LIMIT IS READ FROM, IN ORDER.** cgroup v2's
 // `memory.max`; cgroup v1's `memory.limit_in_bytes`, then its `memory.stat`
@@ -136,8 +136,6 @@ const UNLIMITED = Math.pow(2, 60);
 const HEADROOM_SHARE = 0.15;
 const HEADROOM_MIN = 256 * MIB;
 const MIN_MB = 256;
-// One share of the budget for the post-quantum computation children.
-const CRYPTO_ALLOWANCE = 1;
 // How long the ECS task metadata endpoint is given.
 const ECS_TIMEOUT_MS = 3000;
 const REEXEC_MARKER = 'STS_HEAP_REEXEC';
@@ -336,7 +334,7 @@ class ProcessMemory {
                          surfaceCount: number }): Budget {
     log.debug("Entering ProcessMemory.derive().");
     const processes = 1 + Math.max(0, input.requestCount || 0) +
-      Math.max(0, input.surfaceCount || 0) + CRYPTO_ALLOWANCE;
+      Math.max(0, input.surfaceCount || 0);
     if (input.configuredMb < 0) {
       log.debug("Leaving ProcessMemory.derive(). Off.");
       return { mb: 0, off: true,
@@ -469,8 +467,7 @@ class ProcessMemory {
                        source: FLAG + ' set on the command line or in ' +
                                'NODE_OPTIONS',
                        limitBytes: null,
-                       processes: 1 + s.requestCount + s.surfaceCount +
-                                  CRYPTO_ALLOWANCE };
+                       processes: 1 + s.requestCount + s.surfaceCount };
       log.debug("Leaving ProcessMemory.budget(). The operator's.");
       return cachedBudget;
     }

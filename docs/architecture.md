@@ -37,13 +37,17 @@ store is the one exception: if it can't be opened, the service doesn't start.
 
 ## The request dispatcher and the worker pools
 
-The dispatcher hands work from the leader to three pools of child processes:
+The dispatcher hands work from the leader to two pools of child processes:
 
 | Pool | What a worker runs | Setting | Default |
 |---|---|---|---|
-| **Crypto** | Post-quantum signing and verification, key generation, password hashing: slow computations that would otherwise freeze every listener | `workers.count` in the front process, `workers.countInRequestWorkers` in a request or surface worker | 5 and 0, forked only when the first such job arrives; 0 computes in the process itself |
 | **Admin** | Only the admin console and the user portal | `workers.surfaceCount` | 0 (off) |
 | **Request** | The whole protocol stack | `workers.requestCount` | 0 (off) |
+
+Post-quantum signing, verification and key generation, and password
+hashing, are not a pool. They run natively on Node's OpenSSL, on libuv's
+thread pool, so they neither freeze the listeners nor start a process of
+their own (#363; a third pool of forked processes did this until then).
 
 With the admin and request pools off, the leader answers every request itself.
 When they are on, **their workers start one at a time**

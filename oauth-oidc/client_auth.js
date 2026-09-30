@@ -313,7 +313,7 @@ function keysFrom(jwksText) {
 // composite algorithms are advertised in
 // `token_endpoint_auth_signing_alg_values_supported`, and verifying a composite
 // ML-DSA assertion took 17.8 and 23.3 seconds on 2026-08-29 — on the one thread
-// that also answers the KDC. See common/worker.js.
+// that also answers the KDC. See common/pq_native.js.
 //
 // Nothing else about it changed: the order of the checks is the order it was,
 // the signature is still verified BEFORE the claims for the reason stated

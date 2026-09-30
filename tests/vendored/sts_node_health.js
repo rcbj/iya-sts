@@ -16,10 +16,10 @@
 //      with its figures in range, or unavailable with a sentence and no
 //      figure — and a row per process with `process.memoryUsage()`'s five
 //      figures for every Node.js process that reports one, the front process
-//      first, and totals that are the sum of the rows; every child process
-//      (post-quantum, the debugger's api) with its own figures or the reason
-//      it has none, and the debugger's api child, where it runs, answering
-//      through its preload (#329);
+//      first, and totals that are the sum of the rows; the debugger's api
+//      child, where it runs, with its own figures (answering through its
+//      preload) or the reason it has none (#329; the post-quantum children
+//      went with their pool in #363);
 //   2. IT IS THE FRONT PROCESS THAT ANSWERS, AND IT LISTS THE WORKERS: every
 //      request and hosted-surface worker `/admin-api/worker-pools` lists is a
 //      row or is listed as unanswered — on one node, where both reads reach
@@ -179,7 +179,7 @@ async function theApiAnswers() {
     });
   });
   const children = p.rows.filter(function (row) {
-    return /^post-quantum worker|^protocol debugger api$/.test(row.role);
+    return /^protocol debugger api$/.test(row.role);
   });
   check("each of the " + children.length + " child process(es) reports its " +
         "own memory, or says why it did not", function () {

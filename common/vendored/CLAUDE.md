@@ -1,6 +1,18 @@
 # common/vendored/
 
-**Every file in this directory is somebody else's. DO NOT EDIT THEM HERE.**
+**Every file in this directory is somebody else's. DO NOT EDIT THEM HERE —
+except three, which are this service's own since #363 (2026-09-30).**
+
+`pqc.js`, `pqc_x509.js` and `xmldsig.js` STOPPED BEING COPIES on rcbj's
+decision on #363: "this is its own project that has different requirements."
+They are edited here, follow this repository's rules (they carry its SPDX
+lines), and are NOT re-synced from the parent. They stay at these paths
+because `key_material.js` and `x509.js`, which ARE still copies, require
+`./pqc` and `./pqc_x509` by relative path — moving them would mean editing
+those two as well. `pqc.js` and `pqc_x509.js` rest on `common/pq_native.js`
+(ML-DSA, SLH-DSA and ML-KEM on node's OpenSSL) rather than on
+`@noble/post-quantum`; `common/CLAUDE.md` argues it. A re-sync from the
+parent must skip these three.
 
 They are byte-identical copies of files in the parent project
 (`../id-proto-debugger`), and two of the parent's tests exist to keep them
@@ -13,13 +25,13 @@ arrives as a signature that does not verify rather than as a diff.
 | File | Why it is vendored |
 |---|---|
 | `x509.js` | Certificate building and parsing. `node-forge`, which `helpers.js` and `tls/tls_server.js` use, **cannot sign with an EC key at all**, and SPIFFE issues P-256. Since 2026-09-10 it also carries PKCS#10 and the post-quantum encodings — see the re-sync below. |
-| `pqc.js`, `pqc_x509.js` | **New on 2026-09-10.** The post-quantum algorithms and their ASN.1, which `key_material.js` and `x509.js` rest on. **They are NOT what signs a JWS here** — that is `common/pq_jose.js`, deliberately independent, and the section at the foot of this file argues the difference. |
+| `pqc.js`, `pqc_x509.js` | **THIS SERVICE'S OWN since #363 — not copies.** The post-quantum algorithms and their ASN.1, which `key_material.js` and `x509.js` rest on, on node's OpenSSL through `common/pq_native.js`. **They are NOT what signs a JWS here** — that is `common/pq_jose.js`, deliberately independent, and the section at the foot of this file argues the difference. |
 | `symmetric_crypto.js` | The AES paths `jose_jwe.js` rests on. |
 | `key_material.js` | Key generation and JWK/PEM conversion. What `x509.js` rests on. |
 | `jose_jwe.js` | JWE, for the same reason. |
 | `crypto_bytes.js` | The byte-level helpers those three rest on. |
 | `bbs2023.js` | The bbs-2023 Data Integrity cryptosuite, for `ldp_vc`. |
-| `xmldsig.js` | **XML Signature and XML Encryption, and since 2026-08-27 the signer behind every signed document this service emits.** It is not a library somebody found — it is the OTHER END of most of these exchanges: the debugger signs, verifies, encrypts and decrypts with this exact file on its WS-Trust, SAML and Digital Signature pages. Both ends of a SAML exchange now canonicalize with the same code, which matters because a disagreement about c14n is invisible until it is a signature that verifies on one side and not the other. |
+| `xmldsig.js` | **THIS SERVICE'S OWN since #363 — not a copy.** **XML Signature and XML Encryption, and since 2026-08-27 the signer behind every signed document this service emits.** It is not a library somebody found — it is the OTHER END of most of these exchanges: the debugger signs, verifies, encrypts and decrypts with this exact file on its WS-Trust, SAML and Digital Signature pages. Both ends of a SAML exchange now canonicalize with the same code, which matters because a disagreement about c14n is invisible until it is a signature that verifies on one side and not the other. |
 | `contexts/` | The three JSON-LD contexts `bbs2023.js` reads. |
 
 **`contexts/` is inside this directory because `bbs2023.js` resolves

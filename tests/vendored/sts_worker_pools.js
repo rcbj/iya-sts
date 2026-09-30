@@ -12,14 +12,16 @@
 // `GET /admin-api/worker-pools` — in `memory` (both request pools off),
 // `single-node` (request workers on) and `cluster`:
 //
-//   1. THE API answers three pools — request, surface, post-quantum — each
-//      with the seven figures #327 asked for, and a figure set that adds up:
-//      busy and free are the ready workers, no pool holds more than its
-//      maximum, and a pool that is off says so in a sentence;
+//   1. THE API answers two pools — request and surface — each with the
+//      seven figures #327 asked for, and a figure set that adds up: busy
+//      and free are the ready workers, no pool holds more than its maximum,
+//      and a pool that is off says so in a sentence. There is no third,
+//      post-quantum pool since #363: post-quantum signing and scrypt run on
+//      libuv's thread pool inside each process;
 //   2. IT IS THE FRONT PROCESS THAT ANSWERS: the pid that drew the report is
 //      none of the request workers it lists — a worker answering would have
 //      reported every request pool off;
-//   3. THE PAGE draws the same three pools, and its `?format=json` agrees
+//   3. THE PAGE draws the same two pools, and its `?format=json` agrees
 //      with the API on each pool's state and maximum;
 //   4. A REALM'S OWN TOKEN is refused it (403): the pools are the process's.
 //
@@ -55,7 +57,7 @@ const base = String(process.env.OID4VCI_ISSUER_URL ||
 const EXPECTED_NODES = Number(process.env.STS_TEST_CLUSTER_NODES || 1);
 const STAMP = Date.now().toString(36);
 const REALM = "pools-" + STAMP;
-const POOL_IDS = ["request", "surface", "post-quantum"];
+const POOL_IDS = ["request", "surface"];
 const FIGURES = ["currentWorkers", "busyWorkers", "freeWorkers",
                  "maxWorkers", "initialWorkers"];
 
@@ -106,9 +108,9 @@ function poolOf(body, id) {
   })[0];
 }
 
-async function theApiAnswersThreePools() {
-  log.debug("Entering theApiAnswersThreePools().");
-  log.info("=== 1. GET /admin-api/worker-pools: three pools, seven " +
+async function theApiAnswersTwoPools() {
+  log.debug("Entering theApiAnswersTwoPools().");
+  log.info("=== 1. GET /admin-api/worker-pools: two pools, seven " +
            "figures ===");
   const r = await api("GET", "/admin-api/worker-pools");
   check("it answers 200", function () {
@@ -120,6 +122,12 @@ async function theApiAnswersThreePools() {
     assert.ok(Number(body.pid) > 0 && body.node && !("host" in body),
               JSON.stringify(body).slice(0, 300));
   });
+  check("and there are exactly the two pools, none post-quantum (#363)",
+        function () {
+          assert.deepStrictEqual((body.pools || []).map(function (one) {
+            return one.id;
+          }), POOL_IDS);
+        });
   POOL_IDS.forEach(function (id) {
     const p = poolOf(body, id);
     check("the " + id + " pool carries the figures", function () {
@@ -142,21 +150,12 @@ async function theApiAnswersThreePools() {
               assert.ok(/^Off:/.test(p.stateText), p.stateText);
               return;
             }
-            if (id !== "post-quantum") {
-              assert.ok(p.currentWorkers <= p.maxWorkers,
-                        JSON.stringify(p));
-              assert.strictEqual(p.busyWorkers + p.freeWorkers,
-                                 p.readyWorkers, JSON.stringify(p));
-            } else {
-              assert.strictEqual(p.busyWorkers + p.freeWorkers,
-                                 p.currentWorkers, JSON.stringify(p));
-              assert.ok(p.processes.length >= 1 &&
-                        p.processes[0].role === "front process",
-                        JSON.stringify(p.processes));
-            }
+            assert.ok(p.currentWorkers <= p.maxWorkers, JSON.stringify(p));
+            assert.strictEqual(p.busyWorkers + p.freeWorkers,
+                               p.readyWorkers, JSON.stringify(p));
           });
   });
-  log.debug("Leaving theApiAnswersThreePools().");
+  log.debug("Leaving theApiAnswersTwoPools().");
   return body;
 }
 
@@ -173,10 +172,6 @@ function theFrontProcessAnswered(body) {
         workers.length + " request worker(s) it lists", function () {
     assert.ok(workers.indexOf(body.pid) < 0, JSON.stringify(workers));
   });
-  const pq = poolOf(body, "post-quantum");
-  check("and the post-quantum pool's first row is that process", function () {
-    assert.strictEqual(pq.processes[0].pid, body.pid);
-  });
   log.debug("Leaving theFrontProcessAnswered().");
 }
 
@@ -187,10 +182,11 @@ async function thePageAgrees(cookie, body) {
                           { headers: { Cookie: cookie } });
   check("the page answers 200 and draws each pool", function () {
     assert.strictEqual(page.status, 200, page.text.slice(0, 300));
-    ["pool-request", "pool-surface", "pool-post-quantum"].forEach(
-      function (anchor) {
-        assert.ok(page.text.indexOf('id="' + anchor + '"') >= 0, anchor);
-      });
+    ["pool-request", "pool-surface"].forEach(function (anchor) {
+      assert.ok(page.text.indexOf('id="' + anchor + '"') >= 0, anchor);
+    });
+    assert.ok(page.text.indexOf('id="pool-post-quantum"') < 0,
+              "a post-quantum pool is still drawn");
   });
   const json = await call("GET", base + "/admin/worker-pools?format=json",
                           { headers: { Cookie: cookie } });
@@ -202,10 +198,9 @@ async function thePageAgrees(cookie, body) {
       const b = poolOf(json.body, id);
       assert.ok(b, "no " + id + " pool on the page");
       assert.strictEqual(b.maxWorkers, a.maxWorkers, id);
-      if (EXPECTED_NODES < 2 && id !== "post-quantum") {
+      if (EXPECTED_NODES < 2) {
         // One node: the same front process answered both, and a request
-        // pool's state does not move between two reads. (The post-quantum
-        // pool may fork its first worker between them.)
+        // pool's state does not move between two reads.
         assert.strictEqual(b.state, a.state, id);
       }
     });
@@ -331,7 +326,7 @@ async function main() {
   const admin = "pools-admin-" + STAMP;
   const cookie = await signin.signInToTheConsole(base, admin, log,
                                                  { grant: "read" });
-  const body = await theApiAnswersThreePools();
+  const body = await theApiAnswersTwoPools();
   theFrontProcessAnswered(body);
   await thePageAgrees(cookie || "", body);
   await everyNodeByName();

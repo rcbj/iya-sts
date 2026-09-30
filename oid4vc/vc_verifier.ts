@@ -274,14 +274,14 @@ const ISSUER_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.filter(function (alg) {
 });
 
 // ---------------------------------------------------------------------------
-// AND EVERY ASYMMETRIC ALGORITHM, POST-QUANTUM INCLUDED (#38's follow-ups),
-// for the checks that are asynchronous now: this realm's issuer may sign with
+// AND EVERY ASYMMETRIC ALGORITHM, POST-QUANTUM INCLUDED (#38's follow-ups), for
+// the checks that are asynchronous now: this realm's issuer may sign with
 // ML-DSA, SLH-DSA or a composite (`oid4vci.credentialSigningAlgorithm`), and a
-// holder may bind a credential to such a key, so the issuer signature, the
-// Key Binding JWT and the VP JWT are verified through `common/crypto.js`'s
-// asynchronous verifier, which hands a post-quantum check to the worker pool.
-// ISSUER_ALGS above is what a CONFIGURED trusted issuer certificate may sign
-// with — a certificate's key is a node KeyObject, and node has no ML-DSA
+// holder may bind a credential to such a key, so the issuer signature, the Key
+// Binding JWT and the VP JWT are verified through `common/crypto.js`'s
+// asynchronous verifier, which hands a post-quantum check to libuv's thread
+// pool. ISSUER_ALGS above is what a CONFIGURED trusted issuer certificate may
+// sign with — a certificate's key is a node KeyObject, and node has no ML-DSA
 // KeyObject this service could be handed.
 // ---------------------------------------------------------------------------
 const ALL_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.slice();
@@ -685,11 +685,11 @@ class VcVerifier {
   // THE SAME QUESTION FOR A POST-QUANTUM SIGNATURE (#38's follow-ups).
   //
   // `oid4vci.credentialSigningAlgorithm` may name ML-DSA, SLH-DSA or a
-  // composite, and a credential this realm signed that way must be accepted
-  // as this realm's. Its key is one of the realm's post-quantum keys (an AKP
-  // JWK, made in the worker pool, `helpers.allSigningKeysAsync()`), found by
-  // `alg` and `kid` as the curve keys are, and the check runs in the pool
-  // with the same claim rules — `exp`, `nbf`, the clock skew — as every other
+  // composite, and a credential this realm signed that way must be accepted as
+  // this realm's. Its key is one of the realm's post-quantum keys (an AKP JWK,
+  // made on libuv's thread pool, `helpers.allSigningKeysAsync()`), found by
+  // `alg` and `kid` as the curve keys are, and the check runs in the pool with
+  // the same claim rules — `exp`, `nbf`, the clock skew — as every other
   // (`stsCrypto.verifyJwsAsync()`). A trusted issuer CERTIFICATE is not tried
   // for these algorithms: its key would have to be a node KeyObject, and this
   // service reads no ML-DSA certificate key into one.
@@ -2395,7 +2395,7 @@ class VcVerifier {
   // API (OpenID4VP B.1.3.1.5), and may be a string or an array holding it
   // (RFC 7519 section 4.1.3). The signature checks — the credential's and
   // the presentation's — are asynchronous, so a post-quantum issuer or
-  // holder key is verified in the worker pool like any other.
+  // holder key is verified on libuv's thread pool like any other.
   private async verifyVpJwt(presentation: any, record: any, ctx?: any) {
     const { log, logArtifact, jsonFromB64u, nowSec, stsCrypto } = this.deps;
     log.debug("Entering VcVerifier.verifyVpJwt().");

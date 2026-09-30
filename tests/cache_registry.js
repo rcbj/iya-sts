@@ -64,7 +64,6 @@ const log = require('bunyan').createLogger({
 // the module that registers it — the caches and the replay stores alike.
 const OWNERS = {
   '../common/tls_client_certificates': ['tls.client-certificate-identities'],
-  '../common/worker_pool': ['workers.crypto-affinity'],
   '../common/request_pool': ['workers.request-affinity'],
   '../persistence/persistence': ['persistence.write-shadow'],
   '../common/used_assertions': ['oauth2.used-assertions'],
