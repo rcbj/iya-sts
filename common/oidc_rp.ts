@@ -461,7 +461,19 @@ const PAR_PATH = '/oauth2/par';
 // handle and every fact about the request stays on this side. The `returnTo`
 // in particular must never ride in a parameter, because a return address a
 // caller can write is an open redirect operated by whoever can forge a state.
-const flows = realms.map({ persist: 'oidc_rp.flows', retain: 'age' });
+// `expiresAt` (#333): a flow lives `authn.pendingTtlS` from `startedAt`
+// (flowTtlMs(), FLOW_TTL_MS when that is not a positive number).
+const flows = realms.map({
+  persist: 'oidc_rp.flows',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (flow: any): number | null {
+    const at = Number(flow && flow.startedAt);
+    const ttlS = Number(config.value('authn.pendingTtlS'));
+    const ttl = isFinite(ttlS) && ttlS > 0 ? ttlS * 1000 : FLOW_TTL_MS;
+    return at > 0 ? at + ttl : null;
+  }
+});
 // In flight at once, per realm rather than per process, for the reason
 // `federation_sp.ts` gives about a shared cap: one realm's flood would
 // otherwise evict another realm's in-flight sign-ins. `oidcRp.maxFlows` since

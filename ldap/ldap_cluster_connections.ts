@@ -218,6 +218,12 @@ const connectionsByNode = realms.sharedMap({
 // identity key -> { key, at, node, nonce }
 const signOuts = realms.sharedMap({
   persist: 'ldap.clusterSignOuts',
+  // #333: an instruction lives INSTRUCTION_TTL_MS from its `at`.
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: any): number | null {
+    const at = Number(row && row.at);
+    return at > 0 ? at + INSTRUCTION_TTL_MS : null;
+  },
   reconcile: {
     restore: function (key, incoming, held) {
       log.debug("Entering restore().");

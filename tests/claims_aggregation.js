@@ -169,6 +169,12 @@ async function body(t) {
       store: store.call
     }));
 
+  // --- 0. the refresh job has nothing to do in a realm with no provider ---
+  // (#338): it ran every minute in every realm, and recorded each run.
+  t.check(lib.idleIn('ca-' + RUN) === true,
+          '0a. with no Claims Provider registered and no link request ' +
+          'pending, the refresh job is idle in the realm');
+
   // --- 1. the register ----------------------------------------------------
   const good = { id: 'cp', issuer: ISSUER,
     authorizationEndpoint: ISSUER + '/authorize',
@@ -184,6 +190,8 @@ async function body(t) {
           '1a. an invalid id, a URL the outbound policy refuses and no claims ' +
           'are refused');
   t.equal(lib.save(good, 's3cret'), '', '1b. a valid provider is written');
+  t.check(lib.idleIn('ca-' + RUN) === false,
+          '0b. and once one is registered it is not');
   const held = store.call('listClaimProviderEntries', [])[0].attributes;
   t.check(/^\$aesgcm\$/.test(held.stsclaimprovidersecret[0]) &&
           lib.view().providers[0].hasSecret === true &&

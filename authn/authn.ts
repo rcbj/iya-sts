@@ -462,7 +462,9 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // authn id -> { returnTo, details, ... }
-const pending = realms.map({ persist: 'authn.pending', retain: 'age' });
+const pending = realms.map({ persist: 'authn.pending', retain: 'age',
+                             // #333: the sign-in's `expires`, ms.
+                             expiresAt: realms.expiryField('expires', 1) });
 
 // ONE DEVICE RECOGNITION PER REQUEST AND CREDENTIAL (#164 phase 5): see
 // `registeredDeviceFor()`. Keyed WEAKLY by the request object, so it lives
@@ -562,14 +564,18 @@ import totp = require('../common/totp');
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pendingMfa = realms.map({ persist: 'authn.pendingMfa', retain: 'age' });
+const pendingMfa = realms.map({ persist: 'authn.pendingMfa', retain: 'age',
+                                // #333: the step's `expires`, ms.
+                                expiresAt: realms.expiryField('expires', 1) });
 // change id -> { authn, username, secondFactor, expires }. A password that must
 // be changed before the sign-in it opened goes any further (2026-09-13). A
 // store of its own rather than a `factor` on the one above: that register is
 // "a sign-in waiting for a SECOND FACTOR", and a new password is not one — the
 // person has presented one factor and is being asked to replace it.
 const pendingPasswordChange = realms.map({
-  persist: 'authn.pendingPasswordChange', retain: 'age' });
+  persist: 'authn.pendingPasswordChange', retain: 'age',
+  // #333: the step's `expires`, ms.
+  expiresAt: realms.expiryField('expires', 1) });
 // How long a second-factor step waits. `authn.mfaStepTtlS` since 2026-09-12;
 // this is its default.
 const MFA_TTL_MS = 5 * 60 * 1000;

@@ -212,6 +212,10 @@ interface SchedulerDeps {
   // How many connections the store's pool holds, or 0 where there is no
   // pool (the memory store); the runs are kept to fewer than this.
   storeConnections?: () => number;
+  // Resolves once what this process has journalled is written down: the
+  // history purge waits on it between batches, so one flush never carries
+  // more than one batch of deletes (#338). Optional; a test has no store.
+  settle?: () => Promise<Json>;
   host: string;
   pid: number;
   isRequestWorker: () => boolean;
@@ -266,11 +270,47 @@ const runStore = realms.map({
     helpers.log.debug("Entering mergeRow().");
     helpers.log.debug("Leaving mergeRow().");
     return compareRows(mine, theirs) > 0 ? mine : theirs;
+  },
+  // WHEN A ROW IS PAST EVERY BOUND THE HISTORY PURGE KEEPS (#338), so a
+  // start does not read it back (#333's hook). The process's own scheduler
+  // answers, because the bound depends on the job's interval; it is reached
+  // at FLUSH time, long after the declaration, so the forward reference is
+  // safe. See `Scheduler.expiryOf()`.
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: Json): number | null {
+    return scheduler ? scheduler.expiryOf(row) : null;
   }
 });
 
 // A quiet job's run is recorded at most this often while its outcome holds.
 const QUIET_RECORD_MS = 60000;
+
+// ---------------------------------------------------------------------------
+// THE RUN HISTORY'S BOUND (#338). Measured on testidp on 2026-09-29: 126,160
+// run rows and a thousand more every few minutes, restored into every
+// process at every start, because the only bound was 5000 runs PER REALM and
+// thirty days — and a per-minute job in each of 135 realms is 194,000 runs
+// a day. The bound is per JOB now: its last `scheduler.runHistoryCount` runs
+// or its last `scheduler.runHistoryHours`, whichever keeps more, and always
+// its latest run. `purgeHistory()` enforces it in bounded batches; the
+// constants below are its bounds and the margins of the restore's expiry.
+// ---------------------------------------------------------------------------
+// The history job's interval.
+const HISTORY_PURGE_MS = 10 * 60 * 1000;
+// Deletes per batch, and batches per run: a backlog larger than a run is the
+// next run's, and a start skips most of it meanwhile (the expiry below).
+const HISTORY_BATCH = 2000;
+const HISTORY_MAX_BATCHES = 25;
+// The expiry a row is written with is this far past the instant the purge
+// would first be free to delete it, so a job that runs on every slot never
+// has a kept row near its expiry — see `expiryOf()`.
+const EXPIRY_SLACK_MS = 2 * 60 * 60 * 1000;
+// A KEPT row whose expiry is closer than this is PINNED: rewritten with
+// `keepUntil` PIN_FOR_MS ahead, so a start does not skip a row the purge
+// would keep — the latest run of a job that stopped running, a setting
+// raised after the row was written.
+const PIN_AHEAD_MS = 60 * 60 * 1000;
+const PIN_FOR_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The one scheduler for every periodic job (#49): a cluster job runs once for
@@ -348,6 +388,15 @@ class Scheduler {
       claims: clusterClaims,
       store: runStore,
       dbNow: Scheduler.databaseNow,
+      settle: function (): Promise<Json> {
+        // LAZILY, for storeConnections()'s reason. With nothing persisted
+        // there is nothing to wait for.
+        const minted = require('../persistence/persistence_minted');
+        if (!minted.enabled()) {
+          return Promise.resolve(null);
+        }
+        return minted.flushThrough(minted.generation());
+      },
       storeConnections: function (): number {
         if (config.value('persistence.mode') !== 'postgres') {
           return 0;
@@ -938,6 +987,14 @@ class Scheduler {
   private writeRow(realmId: string, row: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Scheduler.writeRow(). " + row.runId + " " + row.state);
+    // NEVER INTO A REALM THAT IS GONE (#338): `realmMap()` of a removed id
+    // makes a fresh partition, so a run that ended after its realm was
+    // removed would put the realm's history back, with nothing left to ever
+    // delete it.
+    if (!this.realmDefined(realmId)) {
+      log.debug("Leaving Scheduler.writeRow(). The realm is gone.");
+      return Object.assign({}, row);
+    }
     const map = this.storeOf(realmId);
     const held = map.get(row.runId);
     row.updatedAt = Math.max(this.nowMs(),
@@ -949,6 +1006,56 @@ class Scheduler {
     map.set(row.runId, Object.assign({}, row));
     log.debug("Leaving Scheduler.writeRow().");
     return row;
+  }
+
+  // Whether a realm is defined in this process: the default one always.
+  private realmDefined(realmId: string): boolean {
+    const { log, realms } = this.deps;
+    log.debug("Entering Scheduler.realmDefined().");
+    const id = String(realmId || realms.DEFAULT_ID);
+    log.debug("Leaving Scheduler.realmDefined().");
+    return id === realms.DEFAULT_ID || !!realms.get(id);
+  }
+
+  // -------------------------------------------------------------------------
+  // A REALM WAS REMOVED (#338). A realm job is not registered per realm — it
+  // is registered once and runs in every realm `realms.list()` names — so a
+  // removed realm stops having scheduled runs the moment it leaves the list,
+  // in every process that applies the removal (`realms.remove()`, called
+  // here for a removal made on another node by `persistence.js`). Its run
+  // history is its own partition of the run store, which the removal purges
+  // with every other store's. What is left is this process's own memory of
+  // the realm, and a run of it still going here: forgotten and fenced out
+  // respectively, so the run's outcome cannot write the realm back.
+  // -------------------------------------------------------------------------
+  /**
+   * Forgets a removed realm: its per-process slots and quiet records, and
+   * fences out any run of it still going in this process.
+   *
+   * @param realmId - the removed realm's id
+   * @returns how many runs in flight were fenced out
+   */
+  forgetRealm(realmId: string): number {
+    const { log } = this.deps;
+    const id = String(realmId || '');
+    log.debug("Entering Scheduler.forgetRealm(). " + id);
+    let fenced = 0;
+    this.inFlight.forEach(function (flight: Json): void {
+      if (flight.realm === id) {
+        flight.realmGone = true;
+        fenced += 1;
+      }
+    });
+    const suffix = '|' + id;
+    [this.processSlots, this.quietRecorded].forEach(function (m) {
+      Array.from(m.keys()).forEach(function (key: string): void {
+        if (key.endsWith(suffix)) {
+          m.delete(key);
+        }
+      });
+    });
+    log.debug("Leaving Scheduler.forgetRealm(). " + fenced + " fenced.");
+    return fenced;
   }
 
   private runIdFor(job: JobSpec, realmId: string, slot: number): string {
@@ -1395,6 +1502,19 @@ class Scheduler {
     const { log, audit, realms, setTimer, clearTimer, claims } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.runClaimed(). " + row.runId);
+    // A REALM REMOVED BETWEEN THE TICK AND THE CLAIM (#338): nothing is run
+    // for it. It used to run in the DEFAULT realm instead (`realms.get()`
+    // answering null fell back to it), so a removed realm's krbtgt rotation
+    // would have rotated the default realm's.
+    if (!this.realmDefined(realmId)) {
+      this.inFlight.delete(row.runId);
+      claims.release(answer.handle);
+      log.info(errorCodes.tag('STS-SCHED-0018') + 'scheduler: run ' +
+               row.runId + ' of ' + job.id + ' was not started: the realm "' +
+               realmId + '" has been removed.');
+      log.debug("Leaving Scheduler.runClaimed(). The realm is gone.");
+      return Promise.resolve();
+    }
     const fence = Number(answer.claimedAt) || this.nowMs();
     const stored = this.storeOf(realmId).get(row.runId) || row;
     const me = this.who();
@@ -1439,8 +1559,8 @@ class Scheduler {
       params: running.params || null,
       stillOwner: function (): boolean {
         const live = self.storeOf(realmId).get(row.runId);
-        return self.leading && !flight.timedOut && !!live &&
-               Number(live.fenceAt) === fence;
+        return self.leading && !flight.timedOut && !flight.realmGone &&
+               !!live && Number(live.fenceAt) === fence;
       },
       nowMs: function (): number {
         return self.nowMs();
@@ -1475,6 +1595,13 @@ class Scheduler {
         self.tick();
       }
       const endedAt = self.nowMs();
+      if (flight.realmGone || !self.realmDefined(realmId)) {
+        log.info(errorCodes.tag('STS-SCHED-0018') + 'scheduler: the ' +
+                 'outcome of run ' + row.runId + ' of ' + job.id + ' is not ' +
+                 'written: the realm "' + realmId + '" was removed while it ' +
+                 'ran.');
+        return;
+      }
       const live = self.storeOf(realmId).get(row.runId);
       if (!live || Number(live.fenceAt) !== fence) {
         log.warn(errorCodes.tag('STS-SCHED-0003') + 'scheduler: the ' +
@@ -1838,69 +1965,266 @@ class Scheduler {
   }
 
   // -------------------------------------------------------------------------
-  // HISTORY. Finished runs older than `scheduler.historyDays` go, and past
-  // `scheduler.maxRuns` per realm the oldest finished ones go first — never a
-  // queued or running row, and never a job's latest run.
+  // THE RUN HISTORY, BOUNDED PER JOB (#338).
+  //
+  // A run row is KEPT while any of these holds, and deleted otherwise:
+  //
+  //   * it is one of its job's last `scheduler.runHistoryCount` finished
+  //     runs in its realm, or the LATEST of them whatever the setting says
+  //     (a job that runs every ninety days still shows when it last ran);
+  //   * it ended within `scheduler.runHistoryHours` — which is what keeps a
+  //     FAILED run inside the window: nothing in the window is ever dropped
+  //     to make room;
+  //   * it is not finished: a queued or running row is never touched.
+  //
+  // Whichever of the first two keeps more, per job — the owner's rule on
+  // #338. A run of a job no process here registers (a build that dropped
+  // it) keeps only the time rule: there is no job to show a latest run for.
+  // A command row goes once finished and past the window; a per-process
+  // row once it has not been written for the window or three of its
+  // intervals, whichever is longer (a process that stopped leaves its row
+  // behind, keyed by its pid); the leader's row never. And a row in the
+  // default realm's partition that names a realm no longer defined — a
+  // per-process realm job's row — goes whatever its age: that is the
+  // orphan half of the sweep.
+  //
+  // It is a CLUSTER job, `scheduler.history`, every HISTORY_PURGE_MS. The
+  // deletes are journalled like any other write, so every process drops the
+  // rows from memory as it applies them; they go in batches of
+  // HISTORY_BATCH, the job waiting for each to be written down before the
+  // next, and at most HISTORY_MAX_BATCHES a run. What a run leaves is the
+  // next run's.
+  //
+  // THE START READS LESS THAN THE STORE HOLDS: each row carries an expiry
+  // (`expiryOf()`, #333's hook) past the instant this purge could first
+  // drop it, so a start skips a row the purge has not got to yet. The one
+  // thing that could make a start skip a row the purge would KEEP is a job
+  // that stopped running (its rows age by time and no newer run pushes them
+  // out of the count) or a bound raised after the row was written; the
+  // purge PINS such a row — rewrites it with `keepUntil` a day ahead —
+  // before its expiry is within PIN_AHEAD_MS.
   // -------------------------------------------------------------------------
+  private historyBounds(): Json {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.historyBounds().");
+    const count = this.setting('scheduler.runHistoryCount');
+    const hours = this.setting('scheduler.runHistoryHours');
+    log.debug("Leaving Scheduler.historyBounds().");
+    return { count: count >= 1 ? Math.floor(count) : 1,
+             keepMs: hours > 0 ? hours * 3600000 : 0 };
+  }
+
+  // The interval a per-process row is rewritten at, at the least.
+  private processEveryMs(job: JobSpec): number {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.processEveryMs().");
+    log.debug("Leaving Scheduler.processEveryMs().");
+    return job.quiet ? Math.max(QUIET_RECORD_MS, this.intervalMs(job))
+      : (this.intervalMs(job) || this.tickMs());
+  }
+
+  // The instant a row ended, for every rule here. A HOT PATH — once per row
+  // of every flush and every purge — so no Entering/Leaving pair.
+  private static endedOf(row: Json): number {
+    return Number(row.endedAt) || Number(row.queuedAt) ||
+           Number(row.updatedAt) || 0;
+  }
+
   /**
-   * Removes finished runs older than `scheduler.historyDays`, then the oldest
-   * past `scheduler.maxRuns` per realm; never a queued or running row, and
-   * never a job's latest run.
+   * The instant after which a run-store row is past every bound the history
+   * purge keeps, for the store's `expiresAt` hook (#333): a start does not
+   * read it back. Never earlier than the purge would delete it, give or take
+   * the pinning `purgeHistory()` does for a job that stopped running.
    *
-   * @param at - the time to prune at; now by default
-   * @returns how many rows were removed
+   * @param row - the stored row
+   * @returns epoch milliseconds, or null for a row that does not expire —
+   *   the leader's, a queued or running one, one of a job not registered
+   *   here, one of a job with no interval
    */
-  prune(at?: number): number {
+  expiryOf(row: Json): number | null {
+    // A HOT PATH: every row a flush writes. No Entering/Leaving pair.
+    if (!row || typeof row !== 'object') {
+      return null;
+    }
+    const pinned = Number(row.keepUntil) || 0;
+    const ended = Scheduler.endedOf(row);
+    const bounds = this.historyBounds();
+    let at: number | null = null;
+    if (row.kind === 'command') {
+      at = row.state === 'queued' || !ended ? null
+        : ended + bounds.keepMs + EXPIRY_SLACK_MS;
+    } else if (row.kind === 'process') {
+      const job = this.jobs.get(String(row.jobId));
+      at = job && ended ? ended + Math.max(bounds.keepMs,
+                                           3 * this.processEveryMs(job)) +
+                          EXPIRY_SLACK_MS : null;
+    } else if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0 &&
+               ended) {
+      const job = this.jobs.get(String(row.jobId));
+      const every = job && !job.manualOnly && !job.cron
+        ? this.intervalMs(job) : 0;
+      // The count rule lets the row go once `count` newer runs have ended,
+      // which a job on its schedule does in (count + 1) intervals at the
+      // soonest; a manual run only makes that sooner, which keeps longer.
+      at = every > 0 ? ended + Math.max(bounds.keepMs,
+                                        (bounds.count + 1) * every) +
+                       EXPIRY_SLACK_MS : null;
+    }
+    if (at === null) {
+      return null;
+    }
+    return Math.max(at, pinned);
+  }
+
+  // What the purge would do now, without doing it: `{ deletes, pins }`, each
+  // a list of `{ realm, key, row }`.
+  private historyPlan(now: number): Json {
     const { log, realms } = this.deps;
     const self = this;
-    log.debug("Entering Scheduler.prune().");
-    const now = at || this.nowMs();
-    const keepMs = Math.max(1, this.setting('scheduler.historyDays')) *
-                   86400000;
-    const cap = Math.max(100, this.setting('scheduler.maxRuns'));
-    let removed = 0;
-    realms.list().forEach(function (realm: Json): void {
-      const map = self.storeOf(String(realm.id));
-      const latest = new Map<string, Json>();
-      const finished: Json[] = [];
-      map.forEach(function (row: Json, key: string): void {
-        if (!row || (row.kind !== 'run' && row.kind !== 'command' &&
-                     row.kind !== 'process')) {
+    log.debug("Entering Scheduler.historyPlan().");
+    const bounds = this.historyBounds();
+    const deletes: Json[] = [];
+    const pins: Json[] = [];
+    const defined = new Set<string>(realms.list().map(function (r: Json) {
+      return String(r.id);
+    }));
+    // A HOT PATH, once per kept row: no Entering/Leaving pair.
+    const keep = function (realmId: string, key: string, row: Json): void {
+      const expiry = self.expiryOf(row);
+      if (expiry !== null && expiry < now + PIN_AHEAD_MS) {
+        pins.push({ realm: realmId, key: key, row: row });
+      }
+    };
+    defined.forEach(function (realmId: string): void {
+      const byJob = new Map<string, Json[]>();
+      self.storeOf(realmId).forEach(function (row: Json, key: string): void {
+        if (!row || row.kind === 'leader' || key === LEADER_KEY) {
           return;
         }
-        const job = row.jobId || row.command || '';
-        const ended = Number(row.endedAt) || 0;
-        const held = latest.get(job + '|' + row.realm);
-        if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0 &&
-            (!held || ended > (Number(held.endedAt) || 0))) {
-          latest.set(job + '|' + row.realm, row);
-        }
-        if (FINAL.indexOf(row.state) >= 0 || row.kind === 'process') {
-          finished.push({ key: key, row: row, ended: ended ||
-                          Number(row.updatedAt) || 0 });
-        }
-      });
-      const protectedKeys = new Set<string>();
-      latest.forEach(function (row: Json): void {
-        protectedKeys.add(row.runId);
-      });
-      finished.sort(function (a: Json, b: Json): number {
-        return a.ended - b.ended;
-      });
-      let over = map.size - cap;
-      finished.forEach(function (one: Json): void {
-        if (protectedKeys.has(one.key)) {
+        const ended = Scheduler.endedOf(row);
+        // THE ORPHANS: a row naming a realm that is gone.
+        if (row.realm && !defined.has(String(row.realm)) &&
+            (row.kind === 'process' || FINAL.indexOf(row.state) >= 0)) {
+          deletes.push({ realm: realmId, key: key, row: row });
           return;
         }
-        if (now - one.ended > keepMs || over > 0) {
-          map.delete(one.key);
-          removed += 1;
-          over -= 1;
+        if (row.kind === 'command') {
+          if (row.state !== 'queued' && now - ended > bounds.keepMs) {
+            deletes.push({ realm: realmId, key: key, row: row });
+          } else {
+            keep(realmId, key, row);
+          }
+          return;
         }
+        if (row.kind === 'process') {
+          const job = self.jobs.get(String(row.jobId));
+          const window = job ? Math.max(bounds.keepMs,
+                                        3 * self.processEveryMs(job))
+            : bounds.keepMs;
+          if (now - ended > window) {
+            deletes.push({ realm: realmId, key: key, row: row });
+          } else {
+            keep(realmId, key, row);
+          }
+          return;
+        }
+        if (row.kind !== 'run' || FINAL.indexOf(row.state) < 0) {
+          return;
+        }
+        const group = String(row.jobId) + '|' + String(row.realm || realmId);
+        if (!byJob.has(group)) {
+          byJob.set(group, []);
+        }
+        byJob.get(group).push({ key: key, row: row, ended: ended });
+      });
+      byJob.forEach(function (rows: Json[]): void {
+        rows.sort(function (a: Json, b: Json): number {
+          return (b.ended - a.ended) ||
+                 ((Number(b.row.updatedAt) || 0) -
+                  (Number(a.row.updatedAt) || 0));
+        });
+        const registered = self.jobs.has(String(rows[0].row.jobId));
+        rows.forEach(function (one: Json, i: number): void {
+          const byCount = registered && i < bounds.count;
+          const byTime = now - one.ended <= bounds.keepMs;
+          if (byCount || byTime) {
+            keep(realmId, one.key, one.row);
+          } else {
+            deletes.push({ realm: realmId, key: one.key, row: one.row });
+          }
+        });
       });
     });
-    log.debug("Leaving Scheduler.prune(). " + removed + " removed.");
-    return removed;
+    log.debug("Leaving Scheduler.historyPlan(). " + deletes.length +
+              " to delete, " + pins.length + " to pin.");
+    return { deletes: deletes, pins: pins };
+  }
+
+  /**
+   * Deletes the run history past its bound — per job, the last
+   * `scheduler.runHistoryCount` runs or the last `scheduler.runHistoryHours`,
+   * whichever keeps more, and always the latest — with the rows that name a
+   * removed realm, in batches written down one at a time; and pins a kept
+   * row whose expiry is near. The body of the `scheduler.history` job.
+   *
+   * @param opts - `at`, the instant (now by default); `stillOwner()`, asked
+   *   between batches; `batch` and `maxBatches`, for a test
+   * @returns a promise of `{ removed, orphaned, pinned, more, batches }`
+   */
+  async purgeHistory(opts?: Json): Promise<Json> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.purgeHistory().");
+    const o = opts || {};
+    const now = Number(o.at) || this.nowMs();
+    const batch = Number(o.batch) > 0 ? Number(o.batch) : HISTORY_BATCH;
+    const maxBatches = Number(o.maxBatches) > 0 ? Number(o.maxBatches)
+      : HISTORY_MAX_BATCHES;
+    const stillOwner = typeof o.stillOwner === 'function' ? o.stillOwner
+      : function (): boolean { return true; };
+    const settle = this.deps.settle || function (): Promise<Json> {
+      return Promise.resolve(null);
+    };
+    const plan = this.historyPlan(now);
+    const defined = new Set<string>(this.deps.realms.list().map(
+      function (r: Json): string { return String(r.id); }));
+    const out = { removed: 0, orphaned: 0, pinned: 0, more: false,
+                  batches: 0 };
+    let next = 0;
+    while (next < plan.deletes.length) {
+      if (out.batches >= maxBatches || !stillOwner()) {
+        out.more = true;
+        break;
+      }
+      const slice = plan.deletes.slice(next, next + batch);
+      next += slice.length;
+      out.batches += 1;
+      slice.forEach(function (one: Json): void {
+        self.storeOf(one.realm).delete(one.key);
+        out.removed += 1;
+        if (one.row.realm && !defined.has(String(one.row.realm))) {
+          out.orphaned += 1;
+        }
+      });
+      // ONE BATCH PER FLUSH: what was journalled is written down before the
+      // next batch is, so no transaction carries the whole backlog.
+      await settle();
+    }
+    // THE PINS, bounded like a batch: rare by construction (see above).
+    plan.pins.slice(0, batch).forEach(function (one: Json): void {
+      if (!stillOwner()) {
+        return;
+      }
+      self.writeRow(one.realm, Object.assign({}, one.row, {
+        keepUntil: now + PIN_FOR_MS }));
+      out.pinned += 1;
+    });
+    if (out.pinned) {
+      await settle();
+    }
+    log.debug("Leaving Scheduler.purgeHistory(). " + out.removed +
+              " removed, " + out.pinned + " pinned.");
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -2340,20 +2664,48 @@ class Scheduler {
  */
 const scheduler = new Scheduler(Scheduler.defaultDeps());
 
-// The scheduler's own housekeeping is a job like any other.
+// The scheduler's own housekeeping is a job like any other: the run
+// history's bound, and the rows of removed realms (#338).
 scheduler.register({
   id: 'scheduler.history',
   title: 'Scheduler run history',
-  describe: 'Removes finished runs older than scheduler.historyDays, and ' +
-            'the oldest past scheduler.maxRuns per realm; the latest run of ' +
-            'each job is always kept.',
+  describe: 'Keeps, per job, its last scheduler.runHistoryCount runs or its ' +
+            'last scheduler.runHistoryHours, whichever is more, and always ' +
+            'its latest run; deletes the rest — and every row naming a ' +
+            'realm that was removed — in batches of ' + HISTORY_BATCH +
+            ', at most ' + HISTORY_MAX_BATCHES + ' a run.',
   owner: 'cluster/scheduler.ts',
   everyMs: function (): number {
-    return 60 * 60 * 1000;
+    return HISTORY_PURGE_MS;
   },
-  run: function (): Json {
-    return { removed: scheduler.prune() };
+  run: function (ctx: RunContext): Promise<Json> {
+    return scheduler.purgeHistory({ stillOwner: ctx.stillOwner })
+      .then(function (result: Json): Json {
+        if (result.removed || result.pinned) {
+          helpers.log.info('scheduler: ' + result.removed + ' run row(s) ' +
+                           'past the history bound deleted (' +
+                           result.orphaned + ' of removed realms), ' +
+                           result.pinned + ' kept row(s) pinned' +
+                           (result.more ? '; more remain for the next run'
+                             : '') + '.');
+        }
+        return result;
+      }, function (e: Json): Json {
+        helpers.log.warn(errorCodes.tag('STS-SCHED-0017') + 'scheduler: ' +
+                         'purging the run history failed: ' +
+                         ((e && e.message) || e) + '. The next run tries ' +
+                         'again.');
+        throw e;
+      });
   }
+});
+
+// A REALM THAT GOES TAKES ITS RUNS WITH IT (#338): its partition of the run
+// store is purged with every other store's; what this process remembers of
+// it, and a run of it going here, are `forgetRealm()`'s. Fired in every
+// process that applies the removal, the one that made it and every other.
+realms.onRemove(function (id: string): void {
+  scheduler.forgetRealm(id);
 });
 
 // ---------------------------------------------------------------------------

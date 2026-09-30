@@ -235,11 +235,24 @@ async function test() {
     })[0];
   const pinned = String((pinnedRow && pinnedRow.value) || "").trim()
     .replace(/\/+$/, "");
+  // WHAT THE DEPLOYMENT CONFIGURED (#311): testidp sets `ses` for the whole
+  // service, and a new realm inherits it. Only `default` is product's `off`.
+  const transportRow = ((settings.json && settings.json.groups) || [])
+    .reduce(function (all, g) {
+      return all.concat(g.settings || []);
+    }, ((settings.json && settings.json.settings) || []))
+    .filter(function (row) {
+      return row.key === "mail.transport";
+    })[0];
+  const configured = String((transportRow && transportRow.value) ||
+                            "default");
+  const expected = configured === "default" ? "off" : configured;
   r = await call("GET", realmBase() + "/admin-api/mail");
-  check("product: with nothing configured the transport is off, and a " +
-        "link is mailed only under a pinned base", function () {
+  check("product: the transport is the one configured (" + expected +
+        "; off when nothing is), and a link is mailed only under a " +
+        "pinned base", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.strictEqual(r.json.transport, "off");
+    assert.strictEqual(r.json.transport, expected);
     assert.strictEqual(r.json.linkBase, pinned
       ? pinned + "/realm/" + REALM : "",
       pinned ? "the pinned base and the realm's prefix"

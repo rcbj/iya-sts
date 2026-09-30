@@ -241,8 +241,15 @@ CREATE TABLE IF NOT EXISTS sts_keys (
 -- here is queryable by SQL and that is the trade, taken deliberately: what
 -- wants querying is `sts_ldap_entries`, which is JSONB and is not sealed.
 --
+-- `expires_at` IS THE RECORD'S OWN EXPIRY (2026-09-28, schema version 12,
+-- #333), in epoch milliseconds, as the store's `expiresAt` hook answered it
+-- when the row was written; NULL for a record that does not expire and for a
+-- tombstone. A start reads no row whose instant has passed, and the
+-- `persistence.minted-expiry-purge` job deletes them in batches.
+--
 -- `written_at` IS WHAT RETENTION READS — `persistence.mintedRetention`, seven
--- days by default. A row older than that is neither restored nor kept.
+-- days by default — for a short-lived store's row that has NO expiry. A row
+-- older than that is neither restored nor kept.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sts_minted (
   handle     text        NOT NULL,
@@ -250,10 +257,18 @@ CREATE TABLE IF NOT EXISTS sts_minted (
   key        text        NOT NULL,
   body       text        NOT NULL,
   written_at timestamptz NOT NULL DEFAULT now(),
+  expires_at bigint,
   PRIMARY KEY (handle, realm, key));
+
+-- Added separately as well, for `sts_realms.domain`'s reason: a table built by
+-- an older version of this file has no such column. Existing rows get NULL.
+ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint;
 
 CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, realm);
 CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at);
+-- Partial: the purge looks rows up by it only where there is an expiry, and
+-- every INSERT into this, the busiest table, pays for an index.
+CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted (expires_at) WHERE expires_at IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- THE CHANGE LOG (2026-09-06), which is what makes several processes against
@@ -398,6 +413,17 @@ CREATE TABLE IF NOT EXISTS sts_cluster_windows (
   PRIMARY KEY (scope, realm, key));
 
 CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON sts_cluster_windows (window_ends_at);
+
+-- WHAT EACH NODE LAST SAID ABOUT ITSELF (#332, schema version 11): its own
+-- Monitoring → Worker Pools and → Node Health views, written every fifteen
+-- seconds by its front process and read by whichever node draws those pages.
+-- One row per node NAME, overwritten, so it never grows with time.
+-- `cluster/node_snapshots.ts` argues it.
+CREATE TABLE IF NOT EXISTS sts_node_snapshots (
+  name     text   PRIMARY KEY,
+  node_id  text   NOT NULL DEFAULT '',
+  taken_at bigint NOT NULL,
+  body     jsonb  NOT NULL DEFAULT '{}'::jsonb);
 
 -- WHERE EVERY PROCESS READING THE CHANGE LOG HAS GOT TO (#46 section 8): the
 -- low-water mark each coordinating process reports, which `sts_changes` is

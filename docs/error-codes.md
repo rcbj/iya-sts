@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3874** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3883** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -51,12 +51,12 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 67
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 47
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 68
+* [Service core (`STS-CORE`)](#sts-core) — 72
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 48
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 70
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 85
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 16
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 53
@@ -140,7 +140,7 @@ Raised from: common/proxy_protocol.ts, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -210,13 +210,18 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0121` | A sign-in or an issuance was refused because its trust realm is being removed (#262): realms.retire() marks the realm retiring before it ends its sessions and announces the removal, and from then on no session, token, authorization code, assertion, ticket, credential, certificate or SVID is started or issued in it, in either mode. Also logged once, as information, when the mark is set. | the protocol's own refusal — invalid_grant at the token endpoint, access_denied at the authorization endpoint, credential_request_denied at OpenID4VCI, a SAML Responder / RequestDenied status, a SOAP fault, a 503 problem at ACME, EST and SCEP, and a refused session at every sign-in door |
 | `STS-CORE-0122` | A trust realm's removal was refused because a removal of it is already in progress (#294): realms.retire() marked it less than realms.removalDeliveryTimeoutS plus a 30-second margin ago, or is running in this process. Starting a second one would end and announce everything twice. Once that time has passed the removal is taken to be interrupted, and removing the realm again finishes it. | none — the console and /admin-api refuse the remove action |
 | `STS-CORE-0123` | A trust realm is stuck half removed (#294): it carries the retiring mark (#262) from longer ago than a removal can take, so the process that was removing it stopped before it finished. Every new sign-in and issuance in it is refused (STS-CORE-0121) until an administrator removes it again, from another realm. Logged when such a realm is restored at start, and when the removal is finished. | none — logged; /admin/realms and GET /admin-api/realms show it |
+| `STS-CORE-0124` | The /admin/node-health page or GET /admin-api/node-health could not build its report of the node's container and processes (#329). | HTTP 500 page or JSON |
+| `STS-CORE-0125` | ECS_CONTAINER_METADATA_URI_V4 is set, but the ECS task metadata endpoint did not answer Monitoring → Node Health within its bound, or answered with an error (#329). Logged when it starts failing, not on every page; the page says so in a sentence and draws the cgroup figures without the cross-check. | none — the page and GET /admin-api/node-health still answer 200 |
+| `STS-CORE-0126` | Monitoring → Worker Pools or → Node Health, or their management API operations, were asked about a node (?node=) that is neither this node nor any node with a snapshot or a membership row (#332). | HTTP 404, with the names there are |
+| `STS-CORE-0127` | A cluster node's snapshot of Monitoring → Worker Pools and → Node Health could not be written to the shared store, or the other nodes' snapshots could not be read from it (#332). Logged when it starts failing, not on every run or page; the page draws this node alone and says why. | none — the pages and their API still answer 200 |
+| `STS-CORE-0128` | The hourly cluster.node-snapshot-purge job could not delete the snapshots of nodes that are no longer live cluster members (#332). Logged when it starts failing, not on every run; the rows stay, and the pages go on drawing those nodes as gone. | none — the scheduler records the failed run |
 | `STS-CORE-0140` | A package this service requires at first use rather than at start (common/lazy_module.ts, #348) — the gRPC runtime, its proto loader, jsonld through the vendored bbs2023.js — failed to load when it was first needed, so the call that needed it fails. The image is missing or has a broken copy of the package. | none — logged; the call fails as it would have at start |
 
 ## STS-WORKER
 
 **Worker pools.** The child processes post-quantum signing runs in, and the request workers the whole protocol stack can be dispatched to.
 
-Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.ts, common/service_state.ts.
+Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.ts, common/service_state.ts, admin-ui/worker_pools_admin.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -263,6 +268,7 @@ Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, co
 | `STS-WORKER-0041` | A batch request (workers.batch) waited workers.batchQueueTimeoutS for the pool's batch lane and was refused. | HTTP 503 with Retry-After |
 | `STS-WORKER-0042` | The connection to a request worker failed before any byte of a dispatched request reached it, and the request was sent again on a new connection (#77). | Nothing: the client gets the worker's answer |
 | `STS-WORKER-0043` | A request worker exited (or could not start) and a replacement was forked into its pool and slot. | Nothing directly: requests in flight on the dead worker were answered 502 (STS-WORKER-0030) |
+| `STS-WORKER-0044` | The /admin/worker-pools page or GET /admin-api/worker-pools could not build its report of the worker pools (#327). | HTTP 500 page or JSON |
 | `STS-WORKER-0045` | A request worker could not be forked at all (the fork call threw); the start gate moved on to the next (#342). | — |
 | `STS-WORKER-0046` | A request worker was aborted (SIGABRT), which is how V8 ends a process whose heap reached its limit (--max-old-space-size, workers.heapLimitMb); V8's own "JavaScript heap out of memory" line precedes it in the log (#341). | Nothing directly: requests in flight on it were answered 502 |
 | `STS-WORKER-0047` | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). | Nothing directly: requests in flight on it were answered 502 |
@@ -300,7 +306,7 @@ Raised from: persistence/.
 | `STS-STORE-0022` | The service refused to start: minted state is persisted but no key-encryption key is available to open it. | — |
 | `STS-STORE-0023` | An earlier run's unreadable minted rows could not be cleared from the store. | — |
 | `STS-STORE-0024` | A store refused a minted row restored at startup; the row was dropped. | — |
-| `STS-STORE-0025` | Minted rows older than persistence.mintedRetention could not be purged from the store. | — |
+| `STS-STORE-0025` *(retired)* | Minted rows older than persistence.mintedRetention could not be purged from the store at startup. Retired (#333): a start deletes nothing; the persistence.minted-expiry-purge job does, and its failure is STS-STORE-0065. | — |
 | `STS-STORE-0026` | The service refused to start: the minted state in the store could not be read. | — |
 | `STS-STORE-0027` | The service refused to start: persistence.mode is postgres and persistence.databaseUrl was set to empty. | — |
 | `STS-STORE-0028` | The service refused to start: persistence.mode is postgres and the pg package is not installed. | — |
@@ -339,6 +345,8 @@ Raised from: persistence/.
 | `STS-STORE-0061` | A process lost the claim on its persistence origin while running — another process took it — and exits rather than go on refusing every write. | none — logged, then the process exits |
 | `STS-STORE-0062` | The claim on this process's persistence origin could not be renewed because the store did not answer. Not fatal: the claim outlives a short outage and every write checks it. | none — logged |
 | `STS-STORE-0063` | A minted store journalled a key holding a NUL character, which PostgreSQL text cannot hold; the row is left out of the write rather than failing every write after it. | none — logged |
+| `STS-STORE-0064` | A minted store's expiresAt hook threw while its row was being written; the row is written as not expiring, so it is restored and kept until the store deletes it. Said once per store. | none — logged |
+| `STS-STORE-0065` | The persistence.minted-expiry-purge job could not delete the expired, orphaned or stale minted rows; a start skips them anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
 | `STS-STORE-0066` | A request changed the store and the commit of that change failed, so it was answered 503 with Retry-After instead of its success (#351); the change is still in memory and its write is retried. | RFC 9110 section 15.6.4 |
 | `STS-STORE-0067` | An LDAP operation changed the store and the commit of that change failed, so it was answered unavailable (52) instead of its result (#351); the change is still in memory and its write is retried. | RFC 4511 section 4.1.9 |
 | `STS-STORE-0068` | This process's event loop was blocked past the warning threshold in the last report window; timers such as the origin renewal and the cluster heartbeat ran that late too. | none — logged |
@@ -500,6 +508,8 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0014` | The scheduler's leader could not stand down; its lease expires on its own. | — |
 | `STS-SCHED-0015` | A per-process job's run in this process threw or rejected; its row for this process says so, and it runs again at its next slot. | — |
 | `STS-SCHED-0016` | A run was asked for that does not exist (an unknown run id). | — |
+| `STS-SCHED-0017` | Purging the scheduler's run history past its bound (scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the rows stay until the next run of scheduler.history, and a start still skips the ones past their expiry. | — |
+| `STS-SCHED-0018` | A run of a realm job was not started, or its outcome not written, because its trust realm was removed; nothing is run for a removed realm, and nothing is written back into it. | — |
 
 ## STS-KEYS
 

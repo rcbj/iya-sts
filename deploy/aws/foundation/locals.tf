@@ -60,4 +60,16 @@ locals {
     state_bucket = "arn:${local.partition}:s3:::${local.state_bucket}"
     reports      = "arn:${local.partition}:s3:::${local.reports_bucket}"
   }
+
+  # The SES identities an environment may create and send as (#311): every
+  # public name in `public_dns` that is a name rather than a wildcard.
+  ses_identity_arns = [
+    for n in distinct(flatten(values(var.public_dns))) :
+    "arn:${local.partition}:ses:${local.region}:${local.account_id}:identity/${n}"
+    if !startswith(n, "*")
+  ]
+  ses_from_patterns = [
+    for n in distinct(flatten(values(var.public_dns))) : "*@${n}"
+    if !startswith(n, "*")
+  ]
 }

@@ -3138,6 +3138,19 @@ const SETTINGS = [
   // said `runtime: true` and meant "on restart" is the lie this file refuses
   // to tell about a bound port.
   // ---------------------------------------------------------------------
+  { key: 'workers.startTimeoutMs', group: 'Global',
+    label: 'Request worker start limit (ms)',
+    env: 'STS_WORKERS_START_TIMEOUT_MS', type: 'int', dflt: 60000,
+    min: 5000, max: 900000, runtime: false, perProcess: true,
+    restartReason: 'a worker reads it once, when it starts',
+    description: 'How long a request or surface worker may take to bring its ' +
+                 'state up (the store, the keys, the minted rows and ' +
+                 'coordination) before it reports that it could not start. ' +
+                 'Three failures in a row and the pool stops forking and ' +
+                 'answers everything in the process that holds the sockets. ' +
+                 'Raise it where a worker\'s start is slow — a large realm ' +
+                 'key set that every start re-certifies, a cold database ' +
+                 '(#311).' },
   { key: 'workers.requestCount', group: 'Global',
     label: 'Request worker processes',
     env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 0, min: 0, max: 32,
@@ -14775,10 +14788,13 @@ const SETTINGS = [
     dflt: 7 * 24 * 60 * 60 * 1000, runtime: true,
     description: 'How long a row of a SHORT-LIVED persisted store — a ' +
                  'nonce, a code, a pending flow, an in-flight transaction ' +
-                 '(`retain: \'age\'`) — is kept. Such a row older than this ' +
-                 'was left behind by a process that stopped before sweeping ' +
-                 'it; it is neither restored nor kept, and is deleted on the ' +
-                 'start that skipped it. Every other persisted store — ' +
+                 '(`retain: \'age\'`) — that carries NO expiry of its own ' +
+                 'is kept. A row whose store says when it expires is kept ' +
+                 'until then and no longer, whatever this says (#333). Such ' +
+                 'a row older than this was left behind by a process that ' +
+                 'stopped before sweeping it; no start reads it, and the ' +
+                 'persistence.minted-expiry-purge job deletes it. Every ' +
+                 'other persisted store — ' +
                  'configuration, accounts, sessions, tokens, the audit log ' +
                  'and the counters — is KEPT until the store itself deletes ' +
                  'a row, however old it is (2026-09-18: until then this ' +
@@ -14889,6 +14905,18 @@ const SETTINGS = [
                  'name, which in a container is the container id. It ' +
                  'identifies nothing: membership is a UUID made at every ' +
                  'start, so two nodes given one name are still two nodes.' },
+
+  { key: 'cluster.nodeSnapshotRetentionHours', group: 'Cluster',
+    label: 'Keep a gone node\'s snapshot (hours)',
+    env: 'STS_CLUSTER_NODE_SNAPSHOT_RETENTION_HOURS', type: 'int', dflt: 24,
+    min: 1, max: 8760, runtime: true, perProcess: true,
+    description: 'How long Monitoring → Worker Pools and → Node Health keep ' +
+                 'showing a node that is no longer a live cluster member, ' +
+                 'from its last snapshot (#332). The hourly ' +
+                 'cluster.node-snapshot-purge job deletes its row once the ' +
+                 'snapshot is older than this; a live member\'s row is ' +
+                 'never deleted, however old, and nothing is deleted while ' +
+                 'membership cannot be read. rcbj chose a day.' },
 
   { key: 'cluster.heartbeatMs', group: 'Cluster',
     label: 'Heartbeat interval (ms)',
@@ -15250,25 +15278,33 @@ const SETTINGS = [
                  'is late by, and the most a Run now waits before it starts. ' +
                  'Read at every tick.' },
 
-  { key: 'scheduler.historyDays', group: 'Scheduler',
-    label: 'How long a finished run is kept (days)',
-    env: 'STS_SCHEDULER_HISTORY_DAYS', type: 'int', dflt: 30, min: 1,
-    max: 3650, runtime: true, perProcess: true,
-    description: 'A run that succeeded, failed or was abandoned is kept this ' +
-                 'long and then removed by the scheduler\'s own history job. ' +
-                 'The last run of every job is kept whatever its age, so a ' +
-                 'job that runs every 90 days still shows when it last ran. ' +
-                 'Queued and running rows are never removed by age.' },
+  // THE RUN HISTORY'S BOUND IS PER JOB (#338). It was thirty days and 5000
+  // runs PER REALM, and testidp held 126,160 run rows — a per-minute job in
+  // each of 135 realms is 194,000 runs a day — which every process restored
+  // at every start. `cluster/scheduler.ts`'s `purgeHistory()` argues the rule.
+  { key: 'scheduler.runHistoryCount', group: 'Scheduler',
+    label: 'Runs kept per job',
+    env: 'STS_SCHEDULER_RUN_HISTORY_COUNT', type: 'int', dflt: 100, min: 1,
+    max: 100000, runtime: true, perProcess: true,
+    description: 'How many of each job\'s most recent finished runs are ' +
+                 'kept, in each trust realm it runs in, whatever their age. ' +
+                 'A run is kept if it is one of these OR it ended within ' +
+                 'scheduler.runHistoryHours, so whichever of the two keeps ' +
+                 'more applies; the latest run of every job is always kept, ' +
+                 'and a queued or running one is never removed. The ' +
+                 'scheduler.history job deletes the rest, in batches, every ' +
+                 'ten minutes, and a start does not read back a run past ' +
+                 'the bound.' },
 
-  { key: 'scheduler.maxRuns', group: 'Scheduler',
-    label: 'Most runs kept per realm',
-    env: 'STS_SCHEDULER_MAX_RUNS', type: 'int', dflt: 5000, min: 100,
-    max: 1000000, runtime: true, perProcess: true,
-    description: 'The bound on the run history of one trust realm (the ' +
-                 'service-wide jobs\' runs are the default realm\'s). Past ' +
-                 'it the oldest FINISHED run goes first; a queued or running ' +
-                 'one, and the last run of each job, are never dropped to ' +
-                 'make room.' },
+  { key: 'scheduler.runHistoryHours', group: 'Scheduler',
+    label: 'Runs kept for (hours)',
+    env: 'STS_SCHEDULER_RUN_HISTORY_HOURS', type: 'int', dflt: 24, min: 0,
+    max: 8760, runtime: true, perProcess: true,
+    description: 'Every run that ended within this many hours is kept — a ' +
+                 'failed one included — beside each job\'s last ' +
+                 'scheduler.runHistoryCount runs, whichever keeps more. A ' +
+                 'job that runs every minute therefore keeps a day of runs ' +
+                 'in each realm it runs in. 0 keeps the count alone.' },
 
   { key: 'scheduler.disabledJobs', group: 'Scheduler',
     label: 'Jobs switched off',

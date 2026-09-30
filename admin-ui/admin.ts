@@ -2552,6 +2552,34 @@ const SECTIONS = [
                'and no control: a cache is emptied by the settings that ' +
                'bound it, not by a button. The figures are the answering ' +
                'process\'s own.' },
+      // THE WORKER POOLS (#327, 2026-09-28), after the caches and before the
+      // scheduler: one more page whose subject is the process itself — what
+      // it has forked to do its work, and how that is going. Drawn by
+      // `admin-ui/worker_pools_admin.ts` out of the two pool modules.
+      { path: '/admin/worker-pools', label: 'Worker pools',
+        blurb: 'The three pools of child processes this node runs &mdash; ' +
+               'the request workers, the console and portal\'s own ' +
+               'workers, and the post-quantum workers every process forks ' +
+               'on its first post-quantum job &mdash; each with its workers ' +
+               'now, busy and free, its maximum and initial size, how many ' +
+               'crashed or never started against how many were stopped, ' +
+               'and its average response time. A pool that is off says ' +
+               'so. <strong>The figures are this node\'s</strong>, drawn ' +
+               'by its front process; no control.' },
+      // NODE HEALTH (#329, 2026-09-28), beside the worker pools: the
+      // container they all run in — its CPU and memory from the cgroup — and
+      // the memory of every one of those processes. Drawn by
+      // `admin-ui/node_health_admin.ts`.
+      { path: '/admin/node-health', label: 'Node health',
+        blurb: 'The container this node runs in &mdash; its CPU ' +
+               'utilisation against its quota and its memory against its ' +
+               'limit, from its cgroup &mdash; and the Node.js memory of ' +
+               'every process in it: the front process, each request and ' +
+               'console worker, each post-quantum child, with the total. ' +
+               'The ECS task metadata endpoint beside them where there is ' +
+               'one. A source that is not there says so. <strong>The ' +
+               'figures are this node\'s</strong>, drawn by its front ' +
+               'process; no control.' },
       // THE SCHEDULER (2026-09-22, #49), after the caches and before the
       // audit log: the last page whose subject is the process itself, and the
       // one that says whether the background work is being DONE. Drawn by

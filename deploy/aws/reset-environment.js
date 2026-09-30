@@ -252,7 +252,8 @@ function request(method, url, token, body, contentType) {
         } catch (e) {
           log.debug('Caught in request(): ' + ((e && e.message) || e));
         }
-        resolve({ status: res.statusCode, json: json, text: text });
+        resolve({ status: res.statusCode, json: json, text: text,
+                  retryAfter: res.headers['retry-after'] || '' });
       });
     });
     req.on('timeout', function () {
@@ -264,6 +265,48 @@ function request(method, url, token, body, contentType) {
     }
     req.end();
   });
+}
+
+// A REQUEST THAT FAILED ON THE WAY IS ASKED AGAIN (#311). Every request this
+// script makes may be repeated — a GET, and a DELETE (in a Bulk or alone),
+// whose 404 is the outcome wanted — and on testidp's first reset of 29,600
+// leftovers one page out of a 37-minute listing failed with `read ETIMEDOUT`
+// and threw the whole listing away. So is a 503: since #351 a write the
+// service could not commit is answered 503 with a Retry-After rather than a
+// 204 it might lose, and a 502 is a request worker that went away without
+// answering. Any other answer is the service speaking, and the caller judges
+// it.
+async function requestRetrying(method, url, token, body, contentType) {
+  log.debug('Entering requestRetrying(). ' + method + ' ' + url);
+  let last = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const answer = await request(method, url, token, body, contentType);
+      if ((answer.status === 503 || answer.status === 502) && attempt < 3) {
+        const after = parseInt(String(answer.retryAfter || ''), 10);
+        const waitS = isFinite(after) && after > 0 ? Math.min(after, 60) :
+          5 * attempt;
+        say(method + ' answered ' + answer.status + ', attempt ' + attempt +
+            ' of 3; asking again in ' + waitS + 's.');
+        await new Promise(function (resolve) {
+          setTimeout(resolve, waitS * 1000);
+        });
+        continue;
+      }
+      log.debug('Leaving requestRetrying().');
+      return answer;
+    } catch (e) {
+      log.debug('Caught in requestRetrying(): ' + ((e && e.message) || e));
+      last = e;
+      say(method + ' failed (' + ((e && e.message) || e) + '), attempt ' +
+          attempt + ' of 3.');
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 5000 * attempt);
+      });
+    }
+  }
+  log.debug('Leaving requestRetrying(). Gave up.');
+  throw last;
 }
 
 function say(line) {
@@ -393,7 +436,7 @@ async function scimList(base, scim, type, attribute, wanted) {
     const url = base + '/scim/v2/' + type + '?filter=' +
       encodeURIComponent(attribute + ' sw "bulk-"') +
       '&attributes=' + attribute + '&count=1000&startIndex=' + start;
-    const r = await request('GET', url, scim);
+    const r = await requestRetrying('GET', url, scim);
     if (r.status !== 200 || !r.json || !Array.isArray(r.json.Resources)) {
       log.debug('Leaving scimList().');
       throw new Error('GET /scim/v2/' + type + ' answered ' + brief(r));
@@ -431,7 +474,20 @@ async function bulkLimit(base, scim) {
     return 0;
   }
   log.debug('Leaving bulkLimit(). ' + most);
-  return Math.min(most, 1000);
+  return Math.min(most, bulkBatchSize());
+}
+
+// HOW MANY DELETES ONE BULK REQUEST CARRIES (#311). A person's delete ends
+// everything they held (common/CLAUDE.md, *A deleted person ends the same
+// way*), so a Bulk of 1,000 people ran past this script's 120 s request
+// timeout on testidp's first reset of 29,600 leftovers and the run stopped
+// before its first job. 100 is well inside it; STS_RESET_BULK_SIZE moves it,
+// never past the service's own advertised bulk.maxOperations.
+function bulkBatchSize() {
+  log.debug('Entering bulkBatchSize().');
+  const asked = parseInt(String(process.env.STS_RESET_BULK_SIZE || ''), 10);
+  log.debug('Leaving bulkBatchSize().');
+  return isFinite(asked) && asked > 0 ? Math.min(asked, 1000) : 100;
 }
 
 // Deletes `rows` of `type`, in Bulk requests when the service offers them and
@@ -456,8 +512,8 @@ async function scimDelete(base, scim, type, rows, perBatch, failed) {
           return { method: 'DELETE', path: '/' + type + '/' + row.id };
         })
       };
-      const r = await request('POST', base + '/scim/v2/Bulk', scim, body,
-                              'application/scim+json');
+      const r = await requestRetrying('POST', base + '/scim/v2/Bulk', scim,
+                                      body, 'application/scim+json');
       if (r.status !== 200 || !r.json || !Array.isArray(r.json.Operations)) {
         failed.push(type + ' bulk of ' + batch.length + ' (' + brief(r) + ')');
       } else {
@@ -474,8 +530,9 @@ async function scimDelete(base, scim, type, rows, perBatch, failed) {
       }
     } else {
       for (const row of batch) {
-        const r = await request('DELETE', base + '/scim/v2/' + type + '/' +
-                                encodeURIComponent(row.id), scim);
+        const r = await requestRetrying('DELETE', base + '/scim/v2/' + type +
+                                        '/' + encodeURIComponent(row.id),
+                                        scim);
         if (r.status === 204 || r.status === 200 || r.status === 404) {
           deleted += 1;
         } else {
@@ -495,39 +552,208 @@ async function scimDelete(base, scim, type, rows, perBatch, failed) {
   return deleted;
 }
 
+// THE PEOPLE ARE DELETED A PAGE AT A TIME, AS THEY ARE LISTED (#311). A
+// filtered SCIM page costs the service ~15 s at testidp's size, so listing
+// 29,600 leftovers before deleting any took 37 minutes and deleted nothing
+// when the run stopped. Here each page is deleted before the next is asked
+// for, and the next is asked for from the front again — what was deleted is
+// no longer there — skipping only the rows kept (a `bulk-` name
+// `isSuitePerson()` does not recognise) and rows already tried, which a node
+// that has not yet heard of the delete may still list. Progress survives a
+// stop, and the next reset starts where this one ended.
+async function scimSweep(base, scim, type, attribute, wanted, perBatch,
+                         failed) {
+  log.debug('Entering scimSweep(). ' + type);
+  const tried = new Set();
+  let skipped = 0;
+  let deleted = 0;
+  let total = 0;
+  for (;;) {
+    const url = base + '/scim/v2/' + type + '?filter=' +
+      encodeURIComponent(attribute + ' sw "bulk-"') +
+      '&attributes=' + attribute + '&count=1000&startIndex=' + (skipped + 1);
+    const r = await requestRetrying('GET', url, scim);
+    if (r.status !== 200 || !r.json || !Array.isArray(r.json.Resources)) {
+      log.debug('Leaving scimSweep().');
+      throw new Error('GET /scim/v2/' + type + ' answered ' + brief(r));
+    }
+    total = Number(r.json.totalResults) || 0;
+    const rows = r.json.Resources;
+    // Past the last result there is nothing left to look at. testidp's SCIM
+    // answers a startIndex beyond totalResults with the last rows again
+    // rather than the empty page RFC 7644 section 3.4.2.4 describes, so an
+    // empty page alone never came: run 8's reset skipped the same four kept
+    // rows for good, silently. This stops on the count whatever comes back.
+    if (!rows.length || skipped >= total) {
+      break;
+    }
+    const batch = [];
+    rows.forEach(function (row) {
+      const name = String(row[attribute] || '');
+      if (!row.id || !wanted(name) || tried.has(String(row.id))) {
+        skipped += 1;
+      } else {
+        tried.add(String(row.id));
+        batch.push({ id: String(row.id), name: name });
+      }
+    });
+    if (batch.length) {
+      const before = failed.length;
+      await scimDelete(base, scim, type, batch, perBatch, failed);
+      deleted += batch.length - (failed.length - before);
+      say('deleted ' + deleted + ' ' + type + ' so far; ' +
+          Math.max(0, total - skipped - batch.length) + ' left to look at.');
+    }
+  }
+  say('deleted ' + deleted + ' ' + type + ' (' + skipped + ' kept or ' +
+      'already tried).');
+  log.debug('Leaving scimSweep(). ' + deleted + ' deleted.');
+  return deleted;
+}
+
 async function resetDirectory(base, token, dryRun, failed) {
   log.debug('Entering resetDirectory().');
   const scim = await scimToken(base, token, dryRun);
   const groups = await scimList(base, scim, 'Groups', 'displayName',
                                 isSuiteGroup);
+  if (!dryRun) {
+    const perBatch = await bulkLimit(base, scim);
+    const started = Date.now();
+    say(groups.length + ' bulk-load group(s) in the default realm.');
+    await scimDelete(base, scim, 'Groups', groups, perBatch, failed);
+    await scimSweep(base, scim, 'Users', 'userName', isSuitePerson, perBatch,
+                    failed);
+    say('the directory took ' + Math.round((Date.now() - started) / 1000) +
+        's.');
+    log.debug('Leaving resetDirectory().');
+    return;
+  }
   const people = await scimList(base, scim, 'Users', 'userName',
                                 isSuitePerson);
   say(groups.length + ' bulk-load group(s) and ' + people.length +
       ' bulk-load person/people in the default realm.');
-  if (dryRun) {
-    const sample = function (rows) {
-      log.debug('Entering sample().');
-      log.debug('Leaving sample().');
-      return rows.slice(0, 5).map(function (row) {
-        return row.name;
-      }).join(', ') + (rows.length > 5 ? ', …' : '');
-    };
-    if (groups.length) {
-      say('  groups, e.g. ' + sample(groups));
-    }
-    if (people.length) {
-      say('  people, e.g. ' + sample(people));
-    }
-    log.debug('Leaving resetDirectory(). Dry run.');
-    return;
+  const sample = function (rows) {
+    log.debug('Entering sample().');
+    log.debug('Leaving sample().');
+    return rows.slice(0, 5).map(function (row) {
+      return row.name;
+    }).join(', ') + (rows.length > 5 ? ', …' : '');
+  };
+  if (groups.length) {
+    say('  groups, e.g. ' + sample(groups));
   }
-  const perBatch = await bulkLimit(base, scim);
-  const started = Date.now();
-  await scimDelete(base, scim, 'Groups', groups, perBatch, failed);
-  await scimDelete(base, scim, 'Users', people, perBatch, failed);
-  say('the directory took ' + Math.round((Date.now() - started) / 1000) +
-      's.');
-  log.debug('Leaving resetDirectory().');
+  if (people.length) {
+    say('  people, e.g. ' + sample(people));
+  }
+  log.debug('Leaving resetDirectory(). Dry run.');
+}
+
+// ---------------------------------------------------------------------------
+// THE RISK DATASETS (#311).
+// ---------------------------------------------------------------------------
+// sts_admin_risk and sts_admin_risk_upload import versions of the operator
+// lists into the default realm and leave the last one ACTIVE. On testidp that
+// replaced rcbj's own deny list, and the next run's sts_admin_risk was then
+// refused by the shrink guard against a 2,500-row suite version. The jobs now
+// put back what they found; this is the backstop for a job that was killed.
+//
+// A version is the SUITE'S when
+//   * its name has a suite job's prefix (`run-`, `two-`, `bomb-`), or
+//   * it was loaded within SUITE_NEIGHBOUR_MS of such a version (the upload
+//     job's own versions are named by their SHA-256 on purpose, and always
+//     land seconds after sts_admin_risk's), or
+//   * it was loaded within SUITE_WINDOW_MS after a run's start, which the
+//     launcher marks by uploading `suite-<run>` to iplist.operator-allow.
+// `suite-<run>` itself is the launcher's allow list for THIS run and is
+// never displaced. For every other dataset whose active version is the
+// suite's, the newest version that is not, and that loaded (not refused,
+// not deleted), is made active again. A dataset with no such version is
+// left alone and reported.
+const SUITE_VERSION_PREFIX = /^(run|two|bomb)-/;
+const SUITE_NEIGHBOUR_MS = 60 * 1000;
+const SUITE_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+function suiteVersionTest(datasets) {
+  log.debug('Entering suiteVersionTest().');
+  const named = [];
+  const windows = [];
+  datasets.forEach(function (d) {
+    (d.versions || []).forEach(function (v) {
+      const at = Number(v.loadedAt) || 0;
+      if (SUITE_VERSION_PREFIX.test(String(v.version))) {
+        named.push(at);
+      }
+      if (/^suite-/.test(String(v.version))) {
+        windows.push(at);
+      }
+    });
+  });
+  log.debug('Leaving suiteVersionTest().');
+  return function (v) {
+    const name = String(v.version || '');
+    const at = Number(v.loadedAt) || 0;
+    if (SUITE_VERSION_PREFIX.test(name) || /^suite-/.test(name)) {
+      return true;
+    }
+    return named.some(function (t) {
+      return Math.abs(at - t) <= SUITE_NEIGHBOUR_MS;
+    }) || windows.some(function (t) {
+      return at >= t && at - t <= SUITE_WINDOW_MS;
+    });
+  };
+}
+
+async function resetRiskDatasets(base, token, dryRun, failed) {
+  log.debug('Entering resetRiskDatasets().');
+  const r = await requestRetrying('GET', base + '/admin-api/risk', token);
+  if (r.status !== 200 || !r.json || !Array.isArray(r.json.datasets)) {
+    log.debug('Leaving resetRiskDatasets().');
+    throw new Error('GET /admin-api/risk answered ' + brief(r));
+  }
+  const datasets = r.json.datasets;
+  const isSuite = suiteVersionTest(datasets);
+  let restored = 0;
+  for (const d of datasets) {
+    const active = String(d.activeVersion || '');
+    if (!active || /^suite-/.test(active)) {
+      continue;
+    }
+    const current = (d.versions || []).filter(function (v) {
+      return String(v.version) === active;
+    })[0] || { version: active, loadedAt: 0 };
+    if (!isSuite(current)) {
+      continue;
+    }
+    const operator = (d.versions || []).filter(function (v) {
+      return !isSuite(v) &&
+        ['superseded', 'ready', 'active'].indexOf(String(v.state)) >= 0;
+    }).sort(function (a, b) {
+      return (Number(b.loadedAt) || 0) - (Number(a.loadedAt) || 0);
+    })[0];
+    if (!operator) {
+      say(d.dataset + ': the suite\'s ' + active + ' is active and no ' +
+          'operator version is held; left as it is.');
+      continue;
+    }
+    if (dryRun) {
+      say(d.dataset + ': would make ' + operator.version + ' active again ' +
+          'in place of the suite\'s ' + active + '.');
+      continue;
+    }
+    const a = await requestRetrying('POST',
+                                    base + '/admin-api/risk/activate', token,
+                                    { dataset: d.dataset,
+                                      version: operator.version });
+    if (a.status === 200) {
+      restored += 1;
+      say(d.dataset + ': ' + operator.version + ' is active again in place ' +
+          'of the suite\'s ' + active + '.');
+    } else {
+      failed.push('risk dataset ' + d.dataset + ' (' + brief(a) + ')');
+    }
+  }
+  say('restored ' + restored + ' risk dataset(s) to the operator\'s version.');
+  log.debug('Leaving resetRiskDatasets().');
 }
 
 // ---------------------------------------------------------------------------
@@ -563,8 +789,12 @@ async function resetApplications(base, token, dryRun, failed) {
   let removed = 0;
   await eachBounded(found, concurrency(), async function (identifier) {
     log.debug('Entering the application delete.');
-    const r = await request('POST', base + '/admin-api/applications/forget',
-                            token, { identifier: identifier });
+    // The operation's member is `application` (mgmt-api/admin_api.ts,
+    // deleteApplication), and its schema refuses any other since #86: run 8's
+    // reset was answered 400 for all 418 when this sent `identifier`.
+    const r = await requestRetrying('POST',
+                                    base + '/admin-api/applications/forget',
+                                    token, { application: identifier });
     if (r.status === 200) {
       removed += 1;
     } else if (!/no application called/i.test(r.text)) {
@@ -636,6 +866,7 @@ async function main(argv) {
   await resetRealms(base, token, dryRun, failed);
   await resetDirectory(base, token, dryRun, failed);
   await resetApplications(base, token, dryRun, failed);
+  await resetRiskDatasets(base, token, dryRun, failed);
   await resetOverrides(base, token, dryRun, failed);
   if (failed.length) {
     process.stderr.write('reset-environment: not reset: ' +
@@ -653,6 +884,7 @@ module.exports = {
   isSuitePerson: isSuitePerson,
   isSuiteGroup: isSuiteGroup,
   isSuiteApplication: isSuiteApplication,
+  suiteVersionTest: suiteVersionTest,
   BULK_DOORS: BULK_DOORS
 };
 

@@ -166,8 +166,21 @@ const learned = realms.map({ persist: 'oauth2.commandMetadata' });
 // every minted flush failed from the first command onward (2026-09-27).
 const issuerLearned = realms.map({ persist: 'oauth2.commandIssuer' });
 const callbacks = realms.map({ persist: 'oauth2.commandCallbacks',
-                               retain: 'age' });
-const runs = realms.map({ persist: 'oauth2.tenantCommandRuns' });
+                               retain: 'age',
+                               // #333: the callback token's own expiry, ms.
+                               expiresAt: realms.expiryField('expiresAt', 1) });
+// `expiresAt` (#333): the sweep's rule — a finished run is kept
+// `oauth2.commandRetentionS` past its end; a running one never expires.
+const runs = realms.map({
+  persist: 'oauth2.tenantCommandRuns',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (run: Json): number | null {
+    const ended = Number(run && (run.finishedAt || run.startedAt));
+    const keepS = Number(config.value('oauth2.commandRetentionS'));
+    return run && run.state !== 'running' && ended > 0 && keepS > 0
+      ? ended + keepS * 1000 : null;
+  }
+});
 
 interface ProviderCommandsDeps {
   log: typeof helpers.log;

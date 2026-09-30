@@ -136,8 +136,11 @@ const REFERENCE_BYTES = 32;
 const DEFAULT_AUTHORIZATION_SERVER = 'default';
 
 // request_uri -> the pushed request. See the header for the shape.
+// `expiresAt` (#333): the record's own expiry — see common/realms.js.
 const pushedRequests = realms.map({ persist: 'oauth2.pushedRequests',
-                                    retain: 'age' });
+                                    retain: 'age',
+                                    expiresAt: realms.expiryField('expiresAt',
+                                                                  1) });
 
 /**
  * The store of RFC 9126 pushed authorization requests and the request_uri each

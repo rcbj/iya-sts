@@ -51,6 +51,11 @@ output "ci_user_name" {
   value       = aws_iam_user.ci.name
 }
 
+output "inside_zone_ids" {
+  description = "The private zone per public name (dns_inside.tf), which an environment's VPC is associated with so its nodes reach the load balancer by the public name."
+  value       = { for n, z in aws_route53_zone.inside : n => z.zone_id }
+}
+
 output "permitted_regions" {
   description = "Every region an environment may deploy to (#98); the deployer's region fence."
   value       = local.regions

@@ -210,7 +210,8 @@ interface SsfHttpDeps {
   userAgent: string;
   // `tls/tls_server.js`, required when first asked for. See `pushSet()`.
   loadTlsServer(): {
-    serverCertificate(): { trustAnchorPem?: string };
+    serverCertificate(): { trustAnchorPem?: string;
+                          fingerprint256?: string };
   };
 }
 
@@ -652,12 +653,18 @@ class SsfHttp {
     // loaded and it is a cache hit.
     // -----------------------------------------------------------------------
     let anchor = null;
+    let ownLeaf = '';
     if (ours && secure) {
       try {
         // THE ANCHOR AND NOT THE CERTIFICATE — see common/oidc_rp.ts's
         // back channel, which pinned the leaf and stopped being able to reach
         // this service at all the hour that leaf acquired an issuer.
         anchor = loadTlsServer().serverCertificate().trustAnchorPem;
+        // The leaf's fingerprint, for a SUPPLIED certificate with no anchor
+        // (#311, below) — read as its own call so the anchor read above keeps
+        // the one shape tests/tls_trust_anchor.js holds every pin to.
+        ownLeaf = String(loadTlsServer().serverCertificate().fingerprint256 ||
+                         '');
       } catch (e) {
         // Reported as a push failure rather than thrown, like every other
         // outcome here: the stream's log is where a receiver's operator finds
@@ -695,7 +702,13 @@ class SsfHttp {
     // node's store and `ssf.pushCaFile`, and skipped only where development
     // mode and `ssf.pushSkipTlsVerification` both say so. Not asked for one
     // of our own receivers: the pin above is what that connection checks.
-    const policy = secure && !anchor
+    // Nor for one of our own with NO anchor (#311): a SUPPLIED, publicly
+    // issued certificate (testidp's ACM leaf) has none, and the ordinary
+    // policy then checked its name against 127.0.0.1, which it never
+    // carries — every push to this service's own two receivers failed and
+    // both streams were declared dead. Such a push is verified below against
+    // the system's store AND held to this process's own leaf.
+    const policy = secure && !anchor && !ours
       ? OutboundTls.tlsVerdict(PUSH_TRANSPORT, target.origin) : null;
     if (policy && !policy.ok) {
       log.debug("Leaving SsfHttp.pushSet(). " + policy.why);
@@ -765,6 +778,24 @@ class SsfHttp {
       if (anchor) {
         requestOptions.checkServerIdentity = function () {
           return undefined;
+        };
+      } else if (ours && secure) {
+        // THIS PROCESS, WITH A SUPPLIED CERTIFICATE (#311): the chain is
+        // verified against the system's store (rejectUnauthorized, above,
+        // with no `ca`), and in place of a name the loopback address cannot
+        // match, the peer must present EXACTLY the leaf this process serves
+        // — stronger than a name, and the same leaf the front process handed
+        // a request worker.
+        requestOptions.rejectUnauthorized = true;
+        requestOptions.checkServerIdentity = function (host: string,
+            cert: { fingerprint256?: string }) {
+          const norm = function (f: string): string {
+            return String(f || '').replace(/:/g, '').toLowerCase();
+          };
+          return ownLeaf && norm(cert && cert.fingerprint256) === norm(ownLeaf)
+            ? undefined
+            : new Error('the loopback peer did not present this ' +
+                        'process\'s own certificate');
         };
       } else if (policy && policy.checkServerIdentity) {
         // The host check, and the verified chain held to the path rules

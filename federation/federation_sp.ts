@@ -323,7 +323,9 @@ const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 // which is the denial of service the cap exists to bound arriving through the
 // door it was meant to close.
 const contexts = realms.map({ persist: 'federation_sp.contexts',
-                              retain: 'age' });
+                              retain: 'age',
+                              // #333: the context's `expires`, ms.
+                              expiresAt: realms.expiryField('expires', 1) });
 
 // ---------------------------------------------------------------------------
 // PAGES. This module draws two: a refusal and an index. Both are plain HTML
@@ -2267,8 +2269,8 @@ class FederationSp {
         'The assertion verified and the partner is configured, but this ' +
         'service holds no directory entry for ' + username + ', and ' +
         (federation.boolOf(record.fedAutocreateUsers, true)
-          ? 'the directory would not create one (product mode creates ' +
-            'nobody, ldap.autocreateUsers is off, or it is full).'
+          ? 'the directory would not create one (the subject policy ' +
+            'refused it, or the directory is full).'
           : 'dynamic provisioning (fedAutocreateUsers) is off on this ' +
             'relationship, so the person has to be created here first — ' +
             'through SCIM, /admin/users/new or the management API — and ' +

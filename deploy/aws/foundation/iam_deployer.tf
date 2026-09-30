@@ -169,6 +169,22 @@ data "aws_iam_policy_document" "workload_boundary" {
     actions   = ["acm:ExportCertificate"]
     resources = [for p in local.rarn.acm : "${p}:certificate/*"]
   }
+  # MAIL THROUGH SES (#311): send FROM an address at a public name an
+  # environment may use (environment/mail.tf), and nothing else in SES — no
+  # identity management, no account settings. Any identity, because the SES
+  # sandbox authorizes against the RECIPIENT's verified identity too; the
+  # `ses:FromAddress` condition is the scope. The environment's task role
+  # names its one From address; this is the ceiling over every environment.
+  statement {
+    sid       = "SendMailFromAnEnvironmentAddress"
+    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = ["arn:${local.partition}:ses:${local.region}:${local.account_id}:identity/*"]
+    condition {
+      test     = "StringLike"
+      variable = "ses:FromAddress"
+      values   = local.ses_from_patterns
+    }
+  }
 }
 
 resource "aws_iam_policy" "workload_boundary" {
@@ -479,6 +495,44 @@ data "aws_iam_policy_document" "deploy_network" {
       variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
       values   = distinct(flatten(values(var.public_dns)))
     }
+  }
+
+  # AN SES IDENTITY FOR MAIL (#311, environment/mail.tf): the public names
+  # only, so an environment can verify the name it serves and no other domain
+  # in the account. Its DKIM CNAMEs fall under the names already allowed
+  # above (`*.<name>`).
+  statement {
+    sid = "SesIdentityOnlyForTheListedNames"
+    actions = [
+      "ses:CreateEmailIdentity", "ses:GetEmailIdentity",
+      "ses:DeleteEmailIdentity", "ses:PutEmailIdentityDkimAttributes",
+      "ses:PutEmailIdentityDkimSigningAttributes",
+      "ses:PutEmailIdentityMailFromAttributes",
+      "ses:PutEmailIdentityFeedbackAttributes",
+      "ses:PutEmailIdentityConfigurationSetAttributes",
+      "ses:TagResource", "ses:UntagResource", "ses:ListTagsForResource",
+    ]
+    resources = local.ses_identity_arns
+  }
+
+  # THE PRIVATE ZONE PER PUBLIC NAME (#311, dns_inside.tf): an environment
+  # associates its VPC with it and writes its record there. This zone's ARN
+  # only — never a create or a delete of any zone.
+  statement {
+    sid = "Route53TheInsideZones"
+    actions = [
+      "route53:GetHostedZone", "route53:ListResourceRecordSets",
+      "route53:ListTagsForResource", "route53:ChangeResourceRecordSets",
+      "route53:AssociateVPCWithHostedZone",
+      "route53:DisassociateVPCFromHostedZone",
+    ]
+    resources = [for z in aws_route53_zone.inside : z.arn]
+  }
+
+  statement {
+    sid       = "Route53ListZonesByVpc"
+    actions   = ["route53:ListHostedZonesByVPC"]
+    resources = ["*"]
   }
 
   statement {

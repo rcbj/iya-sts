@@ -163,7 +163,10 @@ const TRANSACTION_TTL_MS = 24 * 3600 * 1000;
 const MAX_TRANSACTIONS = 1000;
 
 const transactions = realms.map({ persist: 'scep.transactions',
-                                  retain: 'age' });
+                                  retain: 'age',
+                                  // #333: its `expiresAtMs`.
+                                  expiresAt: realms.expiryField('expiresAtMs',
+                                                                1) });
 
 // One transaction at a time per (realm, transactionID) in this process, so a
 // client that retries before the first reply arrives meets the stored result

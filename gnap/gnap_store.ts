@@ -116,7 +116,25 @@ interface GnapStoreDeps {
   replayBound: () => number;
 }
 
-const grants = realms.map({ persist: 'gnap.grants' });
+// `expiresAt` (#333): prune()'s rule, in epoch SECONDS — a FINALIZED grant
+// a day after it last moved, a grant neither approved nor finalized an hour
+// past its interaction's expiry. An APPROVED grant never expires here.
+const grants = realms.map({
+  persist: 'gnap.grants',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (grant: any): number | null {
+    if (!grant || typeof grant !== 'object') {
+      return null;
+    }
+    if (grant.state === STATE.FINALIZED) {
+      const moved = Number(grant.updatedAt);
+      return moved > 0 ? (moved + 86400) * 1000 : null;
+    }
+    const until = Number(grant.expiresAt);
+    return grant.state !== STATE.APPROVED && until > 0
+      ? (until + 3600) * 1000 : null;
+  }
+});
 const continuations = realms.map({ persist: 'gnap.continuations',
                                    retain: 'age' });
 const interactions = realms.map({ persist: 'gnap.interactions',
@@ -134,7 +152,9 @@ const resources = realms.map({ persist: 'gnap.resources' });
 // reasonably short time period"). Persisted for the reason the DPoP replay
 // cache is: across request workers a proof refused by one and accepted by
 // another is the replay the cache exists to stop.
-const replay = realms.map({ persist: 'gnap.replay', retain: 'age' });
+const replay = realms.map({ persist: 'gnap.replay', retain: 'age',
+                            // #333: its `until`, epoch seconds.
+                            expiresAt: realms.expiryField('until', 1000) });
 
 // Described to `/admin/caches` (#74, rule 3ap). The key is already a digest
 // of the signature; `until` is in seconds.

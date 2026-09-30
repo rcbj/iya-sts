@@ -584,20 +584,38 @@ async function test() {
     "-f", path.join(work, "t.pem"), "-N", subject, "-L", tls.challenge,
     "-I", "tls", "-w", "--wait-timeout", "60"], "request (https)");
   const overTls = await listed("tls");
-  C.check("over HTTPS certmonger fetches the CA with -R, and its " +
-          "PKIOperation fails curl error 60: scep-submit sends that " +
-          "request with no CA file (the documented exception)", function () {
-    assert.ok(tlsCa && /AES/.test(tlsCa.ca_capabilities || ""),
-              "the CA was not fetched over TLS");
-    assert.strictEqual(overTls.status, "CA_UNREACHABLE",
-                       JSON.stringify(overTls));
-    assert.ok(/^Error 60 connecting to https:/.test(overTls["ca-error"]),
-              overTls["ca-error"]);
-    const bad = problems(logSince(mark)).filter(function (line) {
-      return !/Error 60 connecting to https:/.test(line);
+  // A PUBLICLY ISSUED MAIN-PORT CERTIFICATE (#311): scep-submit's PKIOperation
+  // uses only the system's store, which cannot verify the service Root a local
+  // stack presents (the documented exception below) — but DOES verify a
+  // deployment's public certificate (testidp's ACM leaf), so there the
+  // enrolment simply completes. STS_TEST_SHARED_LEAF says which this is.
+  if (process.env.STS_TEST_SHARED_LEAF === "1") {
+    C.check("over HTTPS against a publicly issued certificate, certmonger " +
+            "fetches the CA with -R and enrolls: the system store verifies " +
+            "the PKIOperation too", function () {
+      assert.ok(tlsCa && /AES/.test(tlsCa.ca_capabilities || ""),
+                "the CA was not fetched over TLS");
+      assert.strictEqual(overTls.status, "MONITORING",
+                         JSON.stringify(overTls));
+      assert.ok(certAt(path.join(work, "t.pem")));
+      assert.deepStrictEqual(problems(logSince(mark)), []);
     });
-    assert.deepStrictEqual(bad, [], bad.join("\n"));
-  });
+  } else {
+    C.check("over HTTPS certmonger fetches the CA with -R, and its " +
+            "PKIOperation fails curl error 60: scep-submit sends that " +
+            "request with no CA file (the documented exception)", function () {
+      assert.ok(tlsCa && /AES/.test(tlsCa.ca_capabilities || ""),
+                "the CA was not fetched over TLS");
+      assert.strictEqual(overTls.status, "CA_UNREACHABLE",
+                         JSON.stringify(overTls));
+      assert.ok(/^Error 60 connecting to https:/.test(overTls["ca-error"]),
+                overTls["ca-error"]);
+      const bad = problems(logSince(mark)).filter(function (line) {
+        return !/Error 60 connecting to https:/.test(line);
+      });
+      assert.deepStrictEqual(bad, [], bad.join("\n"));
+    });
+  }
   await getcert(["stop-tracking", "-i", "tls"], "stop-tracking tls");
   await stopDaemon();
 

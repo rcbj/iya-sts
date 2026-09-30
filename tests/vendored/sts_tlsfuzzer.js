@@ -44,6 +44,8 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const kit = require("./enroll_clients_kit.js");
 const fuzzer = require("./tlsfuzzer_kit.js");
+const tls = require("tls");
+const expectation = require("./expectation.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -155,9 +157,54 @@ async function clientCertificates() {
   return { dir: dir, certificates: certificates };
 }
 
+// The key type of the certificate a listener presents ("rsa", "ec", ...),
+// or "" when the handshake fails.
+function presentedKeyType(host, port) {
+  log.debug("Entering presentedKeyType().");
+  return new Promise(function (resolve) {
+    const socket = tls.connect({ host: host, port: Number(port),
+      servername: host, rejectUnauthorized: false }, function () {
+        let type = "";
+        try {
+          const raw = socket.getPeerCertificate(false).raw;
+          type = String(new nodeCrypto.X509Certificate(raw).publicKey
+            .asymmetricKeyType || "");
+        } catch (e) {
+          log.debug("Caught in presentedKeyType(): " +
+                    ((e && e.message) || e));
+          type = "";
+        }
+        socket.end();
+        log.debug("Leaving presentedKeyType(). " + type);
+        resolve(type);
+      });
+    socket.on("error", function (e) {
+      log.debug("Caught in presentedKeyType(): " + ((e && e.message) || e));
+      log.debug("Leaving presentedKeyType(). No handshake.");
+      resolve("");
+    });
+  });
+}
+
 async function test() {
   log.debug("Entering test().");
   const where = targets();
+  // THE PLAN IS WRITTEN FOR RSA LISTENERS (#311). The listeners this service
+  // issues for itself present RSA, and tlsfuzzer_kit.js's plan runs the
+  // RSA-server scripts and skips the ECDSA-server ones on that basis. A
+  // deployment presenting a supplied certificate of another type — testidp's
+  // ACM leaf is ECDSA P-256 — fails the RSA scripts for a reason that is the
+  // plan's, not the service's; that is a skip until the plan has a variant
+  // for it.
+  const presented = await presentedKeyType(where.host, where.main);
+  if (presented && presented !== "rsa") {
+    expectation.declineToRun(log, "the main port presents a " + presented +
+      " certificate (a supplied one, e.g. a public ACM leaf), and this plan " +
+      "is written for the RSA certificate this service issues itself; an " +
+      "ECDSA plan is a separate piece of work");
+    log.debug("Leaving test(). Skipped.");
+    return;
+  }
   log.info("tlsfuzzer " + fs.readFileSync(path.join(fuzzer.TLSFUZZER_DIR,
     "tlsfuzzer", "COMMIT"), "utf8").trim() + ", tlslite-ng " +
     fs.readFileSync(path.join(fuzzer.TLSFUZZER_DIR, "tlslite-ng", "COMMIT"),

@@ -74,6 +74,11 @@ output "load_balancer_ports" {
   value       = local.published_ports
 }
 
+output "spiffe_default_ports" {
+  description = "The default realm's SPIFFE ports on the load balancer (spiffe_default.tf): workload and server."
+  value       = local.spiffe_default_ports
+}
+
 output "reports_bucket" {
   description = "Where the suite task uploads its report, under <environment>/<run id>/."
   value       = local.reports_bucket

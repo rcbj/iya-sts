@@ -2765,7 +2765,10 @@ const slot = new InstanceSlot<SpiffeApi>(
  * The realm's unspent join tokens, keyed by a SHA-256 of the token, never the
  * token itself.
  */
-const joinTokens = realms.map({ persist: 'spiffe.joinTokens' });
+const joinTokens = realms.map({ persist: 'spiffe.joinTokens',
+                                // #333: its `expiresAt`, epoch seconds.
+                                expiresAt: realms.expiryField('expiresAt',
+                                                              1000) });
 
 // ===========================================================================
 // WHAT THIS SURFACE IMPLEMENTS, for the pages that describe it.

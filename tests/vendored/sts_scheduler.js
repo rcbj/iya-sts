@@ -28,6 +28,10 @@
 //      every slot of the session-expiry job is one run however many nodes
 //      could have run it. In every other mode a step-down is refused
 //      (STS-SCHED-0010): there is nobody to hand to.
+//   7. A REMOVED REALM'S JOBS GO WITH IT (#338): a realm created for the
+//      purpose has its realm jobs listed, and once it is removed no answer —
+//      through the balancer, from every node — lists a job or a run in it,
+//      and the history job is a cluster job every ten minutes.
 //
 // No sleep waits for a job: each wait is a bounded poll on the condition, at
 // the tick the service runs at (`scheduler.tickS`).
@@ -593,16 +597,18 @@ async function theClusterAgrees() {
     log.debug("Leaving theClusterAgrees(). One node.");
     return;
   }
-  log.info("=== 6. two nodes agree, and hand over ===");
+  // EVERY node, not two (#311): the AWS environments run three, and
+  // STS_TEST_CLUSTER_NODES says how many; the local cluster mode sets 2.
+  log.info("=== 6. " + EXPECTED_NODES + " nodes agree, and hand over ===");
   const seen = {};
   const answers = [];
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 8 * EXPECTED_NODES; i++) {
     const r = await report();
     seen[r.answeredBy.node] = true;
     answers.push(r);
   }
-  check("both nodes answered through the balancer", function () {
-    assert.strictEqual(Object.keys(seen).length, 2,
+  check("every node answered through the balancer", function () {
+    assert.strictEqual(Object.keys(seen).length, EXPECTED_NODES,
                        JSON.stringify(Object.keys(seen)));
   });
   check("and every answer names the same leader", function () {
@@ -646,6 +652,67 @@ async function theClusterAgrees() {
   log.debug("Leaving theClusterAgrees().");
 }
 
+async function aRemovedRealmsJobsGo() {
+  log.debug("Entering aRemovedRealmsJobsGo().");
+  log.info("=== 7. a removed realm's jobs go with it (#338) ===");
+  const gone = "sched-gone-" + STAMP;
+  const made = await api("POST", "/admin-api/realms/create",
+                         { id: gone, domain: gone + ".example.net",
+                           name: "Scheduler removal test " + STAMP });
+  assert.ok(made.status === 200, "precondition: creating " + gone +
+            " answered " + made.status + " " + made.text.slice(0, 300));
+  await until("every node to list the new realm's jobs", async function () {
+    for (let i = 0; i < 4 * EXPECTED_NODES; i++) {
+      const r = await report();
+      if (!jobOf(r, "signing.rotate", gone)) {
+        return null;
+      }
+    }
+    return true;
+  });
+  check("the new realm's realm jobs are listed on every node", function () {
+    assert.ok(true);
+  });
+  const removed = await api("POST", "/admin-api/realms/remove", { id: gone });
+  check("the realm is removed (200)", function () {
+    assert.strictEqual(removed.status, 200, removed.text.slice(0, 300));
+  });
+  await until("no node to list a job in the removed realm", async function () {
+    for (let i = 0; i < 4 * EXPECTED_NODES; i++) {
+      const r = await report();
+      const left = (r.jobs || []).filter(function (j) {
+        return j.realm === gone;
+      });
+      if (left.length) {
+        return null;
+      }
+    }
+    return true;
+  });
+  check("no answer lists a job in the removed realm", function () {
+    assert.ok(true);
+  });
+  const runs = await api("GET", "/admin-api/scheduler?per=500&realm=" +
+                         encodeURIComponent(gone));
+  check("nor a run in it", function () {
+    const inGone = ((runs.body && runs.body.runs) || []).filter(function (r) {
+      return r.realm === gone;
+    });
+    assert.strictEqual(inGone.length, 0, JSON.stringify(inGone.slice(0, 3)));
+  });
+  const queued = await api("POST", "/admin-api/scheduler/run",
+                           { job: "signing.rotate-now", realm: gone });
+  check("and a Run now in it is refused", function () {
+    assert.strictEqual(queued.status, 400, queued.text.slice(0, 300));
+  });
+  const history = jobOf(await report(), "scheduler.history");
+  check("the history job is a cluster job every ten minutes", function () {
+    assert.ok(history && history.kind === "cluster" &&
+              history.schedule.everyMs === 600000, JSON.stringify(history));
+  });
+  log.debug("Leaving aRemovedRealmsJobsGo().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "sched-admin-" + STAMP;
@@ -658,6 +725,7 @@ async function main() {
   await adminReadRunsNothing();
   await aRealmTokenIsConfined();
   await theClusterAgrees();
+  await aRemovedRealmsJobsGo();
   log.info("sts_scheduler: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

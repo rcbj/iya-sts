@@ -683,6 +683,37 @@ function childMain() {
     note(riskEngine.riskOf(known).knownContext === true,
          'K2. the session carries the known context, so the rescore job ' +
          'caps what a list gained later can raise it to');
+
+    // --- L. an allow-listed network is not counted as hostile (#311) -------
+    // `network-failures` is refused passwords from anybody behind the
+    // address; an operator who allow-listed it declared it trusted.
+    const riskStore = require(ROOT + '/risk/risk_store');
+    config.setOverride('risk.networkFailureThreshold', 1);
+    await riskStore.recordFailure({ realm: 'default', at: Date.now(),
+      door: 'a test', subject: '', nameHmac: 'rd-l', addressSealed: '',
+      addressPrefix: riskStore.prefixOf('127.0.0.1'),
+      asn: 0, errorCode: 'STS-AUTHN-0054' }, false);
+    ldap.createUser('rd-ian', { invent: false });
+    const before = await riskEngine.assess(contextOf('rd-ian'));
+    const allowed = await riskDatasets.importVersion({
+      dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+      content: '127.0.0.1\n', version: 'rd-allow-1', source: 'upload' });
+    ldap.createUser('rd-jon', { invent: false });
+    const after = await riskEngine.assess(contextOf('rd-jon'));
+    const named = function (a, id) {
+      return !!a && (a.signals || []).some(function (one) {
+        return one.signal === id;
+      });
+    };
+    note(named(before, 'network-failures') && allowed && allowed.ok &&
+         named(after, 'operator-allow') &&
+         !named(after, 'network-failures'),
+         'L1. refused passwords from the network count against a newcomer ' +
+         'until the operator allow-lists it, and not after',
+         JSON.stringify({ before: before && before.signals.map(function (x) {
+           return x.signal; }), after: after && after.signals.map(function (x) {
+           return x.signal; }), allowed: allowed && allowed.errors }));
+    config.clearOverride('risk.networkFailureThreshold');
     config.setOverride('risk.minimumHistory', 5);
 
     server.close();

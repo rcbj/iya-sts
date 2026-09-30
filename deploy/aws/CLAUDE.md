@@ -8,7 +8,7 @@ Dockerfile removes this directory from the image.
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` — and since #98, for every region in `permitted_regions`, a single-region CELL key, a replica of the multi-region GLOBAL key, a log group and a replica of the repository (`modules/region`), with ECR replication to them (*Cells*, below) | an administrator |
-| `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
+| `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction, VPC CIDR and pinned countries, and which cell holds the global database's writer. Its presence is what makes an environment multi-cell; `testidpna` is the one there is | the deployer role |
@@ -357,6 +357,46 @@ re-applied); and **every node replaced on the first apply**, which is expected
 — a new task definition revision in `dev` and `ci` too, because the volume is
 unconditional: the upload job runs against every environment the suite is
 pointed at.
+
+## Mail: an SES identity per environment that asks for one (#311, 2026-09-28)
+
+**`mail_ses_domain` turns it on, and only `testidp` sets it** (to its public
+name). `environment/mail.tf` creates the SES v2 domain identity with Easy
+DKIM and writes its three `._domainkey` CNAMEs; the task role may
+`ses:SendEmail` from that one address — scoped by `ses:FromAddress` over
+`identity/*`, because the SANDBOX also authorizes against the recipient's
+identity and a policy naming only the domain's ARN was refused (the first
+send, 2026-09-28); the nodes get `STS_MAIL_TRANSPORT=ses`,
+`STS_MAIL_FROM` (`no-reply@<domain>` unless `mail_from` says otherwise) and
+the region. Credentials are the task role's — `mail.sesRegion`'s description
+says the transport never reads one from a setting. `dev` and `ci` set nothing
+and plan no change.
+
+* **The domain is the public host name, not the zone.** The DKIM names then
+  fall under `*.test-idp.iyasec.io`, which the deployer could already write,
+  and the zone's own mail records are out of reach. DMARC aligns on the DKIM
+  `d=`, so SES's own envelope sender does not matter.
+* **The foundation owes two statements**, so an administrator re-applies it
+  first: `ses:SendEmail`/`SendRawEmail` in the WORKLOAD BOUNDARY from an
+  address at a `public_dns` name (`local.ses_from_patterns`), and the identity
+  actions for the deployer on identities named there
+  (`local.ses_identity_arns`).
+* **The image needs `@aws-sdk/client-sesv2` in `STS_CLOUD_SDKS`**, or a
+  product node refuses to start (`STS-MAIL-0002`). `testidp-deploy.yml` and
+  *Running it by hand* build it that way.
+* **The account's SES sandbox is not Terraform's.** While the account is in
+  it, SES sends only to VERIFIED recipient addresses (`aws sesv2
+  create-email-identity --email-identity <address>`, then click the link);
+  leaving it is a support request a person makes. A refused recipient is a
+  dead letter on Monitoring → Mail outbox, not a silent loss.
+* **`mail_allowed_recipients` limits whom it may mail** (testidp:
+  `*@iyasec.io`), as an IAM `ses:Recipients` condition. The suite's people
+  have invented addresses and every one is sent security notices; refused by
+  IAM they cost no quota and cannot bounce against the account's reputation,
+  and they dead-letter in the outbox with the AccessDenied as the reason.
+* **The identity is destroyed with the environment**, like the certificate,
+  and re-verified from the CNAMEs on the next build. Mail queued before it
+  verifies waits in the outbox and is retried by `mail.deliver`.
 
 ## A deployment beside the tests: `testidp` (2026-09-16)
 
@@ -901,17 +941,44 @@ It is the one suite for every environment since 2026-09-21: `run-suite-in-aws.sh
 and `environment/runner.tf`, which `aws-cluster.yml` used for `dev` and `ci`,
 were deleted that day.
 
-## A realm's SPIFFE ports: `spiffe-realm/` (2026-09-18)
-
-**Nothing published SPIFFE until this stack.** `published_ports` has no
-SPIFFE row, so even the default realm's 8092 and 8181 were reachable only
-inside the VPC. `spiffe-realm/` publishes ONE realm's two gRPC ports, the
-same number outside and inside, and is applied once per realm, after the
-realm exists and after `environment/`:
+**OR THE WHOLE SUITE IN THE TASK: `STS_SUITE_IN_AWS=1` (#311, 2026-09-28).**
+rcbj's call, the reverse of the design above for a long run: from a machine
+on the internet a full run takes most of a day, one fresh TLS connection per
+request. With it set nothing runs locally; the callback task (sized 4 vCPU /
+16 GiB for Chrome and the bulk loads) runs every job, resets the previous
+run's realms itself, and its report is the run's
+(`tests/report/aws-<env>/latest`). The task may run eight hours
+(`STS_SUITE_TASK_TIMEOUT_SECS`).
 
 ```bash
-TF_STACK=spiffe-realm REALM=default WORKLOAD_PORT=8092 SERVER_PORT=8181 \
-  deploy/aws/terraform-local.sh testidp apply
+STS_SUITE_IN_AWS=1 ./run-tests.sh --target=aws:testidp
+```
+
+**What still cannot run there, and says so rather than failing:** the jobs
+whose peer is a container the local stack brings up beside the service and
+shares a volume with — the mail catcher (`sts_mail`), the outbound test CA
+(#171), the OpenID conformance suite and the four SAML peers — and SPIFFE
+unless its realm stack is applied and named (`STS_SPIFFE_WORKLOAD_URL`). Each
+reads its variable as empty and reports itself skipped with the reason.
+
+## A realm's SPIFFE ports: the default realm's in `environment/`, any other realm's in `spiffe-realm/`
+
+**THE DEFAULT REALM'S TWO PORTS ARE PART OF EVERY ENVIRONMENT (#311,
+2026-09-28, rcbj): not optional and not a separate stack.**
+`environment/spiffe_default.tf` publishes 8092 (Workload API) and 8181 (SPIRE
+Server API) — `spiffe_workload_port` / `spiffe_server_port` — with the same
+address registration, rules and caveats as below, and outputs
+`spiffe_default_ports`, which `run-suite.sh` reads to count SPIFFE as
+published. Until that date it was `spiffe-realm/` with `REALM=default`, and a
+build nobody applied it to skipped both SPIFFE jobs. **`spiffe-realm/` is for
+ADDITIONAL realms only and refuses `default`** (a resource precondition, so an
+old `REALM=default` state still destroys).
+
+`spiffe-realm/` publishes ONE additional realm's two gRPC ports, the same
+number outside and inside, and is applied once per realm, after the realm
+exists and after `environment/`:
+
+```bash
 TF_STACK=spiffe-realm REALM=acme WORKLOAD_PORT=9092 SERVER_PORT=9181 \
   deploy/aws/terraform-local.sh testidp apply
 TF_STACK=spiffe-realm REALM=acme deploy/aws/terraform-local.sh testidp destroy
@@ -1064,7 +1131,7 @@ terraform -chdir=deploy/aws/foundation init -backend-config=bucket=mock-sts-terr
 terraform -chdir=deploy/aws/foundation apply          # once, administrator
 
 # as the deployer role, from here on
-docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
+docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-sesv2" \
   --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem .
 docker build -t <repo>:schema-<tag> -f deploy/aws/schema-init/Dockerfile .
 docker build -t <repo>:cert-<tag> -f deploy/aws/cert-init/Dockerfile .   # only with a public name

@@ -264,6 +264,7 @@ var config = {
     count: 5,                                                      // Worker processes
     countInRequestWorkers: 0,                                      // Worker processes in each request worker
     jobTimeoutS: 120,                                              // Worker job timeout (seconds)
+    startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
     requestCount: 0,                                               // Request worker processes; restart to apply
     heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply
     startConcurrency: 1,                                           // Request workers starting at once; restart to apply
@@ -1216,11 +1217,12 @@ var config = {
 
   // --- Cluster ---------------------------------------------------------
   cluster: {
-    mode: "auto",                  // Cluster mode; restart to apply
-    nodeName: "",                  // Node name; restart to apply
-    heartbeatMs: 2000,             // Heartbeat interval (ms); restart to apply
-    nodeTtlMs: 30000,              // Node lifetime (ms); restart to apply
-    acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
+    mode: "auto",                   // Cluster mode; restart to apply
+    nodeName: "",                   // Node name; restart to apply
+    nodeSnapshotRetentionHours: 24, // Keep a gone node's snapshot (hours)
+    heartbeatMs: 2000,              // Heartbeat interval (ms); restart to apply
+    nodeTtlMs: 30000,               // Node lifetime (ms); restart to apply
+    acceptMissingCapabilities: ""   // Capabilities accepted as missing; restart to apply
   },
 
   // --- Cells -----------------------------------------------------------
@@ -1258,8 +1260,8 @@ var config = {
   scheduler: {
     enabled: true,        // Run scheduled jobs
     tickS: 15,            // How often the leader looks for due jobs (seconds)
-    historyDays: 30,      // How long a finished run is kept (days)
-    maxRuns: 5000,        // Most runs kept per realm
+    runHistoryCount: 100, // Runs kept per job
+    runHistoryHours: 24,  // Runs kept for (hours)
     disabledJobs: "",     // Jobs switched off
     runTimeoutS: 600,     // The longest a run may take (seconds)
     maxConcurrentRuns: 2  // Most runs going at once

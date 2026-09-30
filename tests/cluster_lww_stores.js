@@ -230,8 +230,10 @@ function fakeDatabase() {
     if (/^INSERT INTO sts_minted/.test(text)) {
       const k = eid(p[0], eid(p[1], p[2]));
       const had = db.minted.get(k);
-      if (had && /WHERE sts_minted.body <> \$5/.test(text) &&
-          had.body === p[4]) {
+      // The guard's tombstone is the sixth parameter since #333 added
+      // `expires_at` as the fifth.
+      if (had && /WHERE sts_minted.body <> \$6/.test(text) &&
+          had.body === p[5]) {
         return Promise.resolve({ rows: [], rowCount: 0 });
       }
       db.minted.set(k, { handle: p[0], realm: p[1], key: p[2], body: p[3],
@@ -802,7 +804,8 @@ async function sectionE(t, db, dir) {
   await minted.flush();
   t.equal(db.minted.get('test.lww.sessions\ndefault\nmerged').body, TOMBSTONE,
           'a delete of a tombstoned store leaves a tombstone, not an absence');
-  const rows = await driver.loadMinted();
+  const rows = await driver.loadMinted({ realms: ['', 'default'],
+                                         nowMs: Date.now() });
   t.check(!rows.some(function (row) { return row.body === TOMBSTONE; }),
           'and no reader ever sees one: a restore skips it');
   log.debug("Leaving sectionE().");

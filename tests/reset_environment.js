@@ -143,11 +143,48 @@ function applications(t) {
   log.debug("Leaving applications().");
 }
 
+// THE RISK DATASETS (#311): which versions are the suite's, from testidp's
+// own history on 2026-09-29 — rcbj's 3-row deny list was replaced by the
+// upload job's SHA-256-named versions, which carry no suite prefix.
+function riskVersions(t) {
+  log.debug("Entering riskVersions().");
+  const run7 = 1790710983663;
+  const deny = [
+    { version: 'aa2c5ce7a2b44bcb', loadedAt: 1790589990187 },
+    { version: 'run-mul6riks89a293-a', loadedAt: 1790596235309 },
+    { version: 'd6a1d45d6c972775', loadedAt: 1790596243055 },
+    { version: '27d9f87b7c781b6f', loadedAt: 1790714581970 },
+    { version: 'two-mun57v5p1dc55a', loadedAt: 1790714584382 }
+  ];
+  const isSuite = reset.suiteVersionTest([
+    { dataset: 'iplist.operator-deny', versions: deny },
+    { dataset: 'iplist.operator-allow',
+      versions: [{ version: 'suite-2026-09-29T19-38-03', loadedAt: run7 }] }
+  ]);
+  t.check(!isSuite(deny[0]), 'the operator\'s own list is not the suite\'s');
+  t.check(isSuite(deny[1]) && isSuite(deny[4]),
+          'a version with a suite job\'s prefix is the suite\'s');
+  t.check(isSuite(deny[2]),
+          'a SHA-256-named version loaded beside a run- version is the ' +
+          'suite\'s, from before runs marked their start');
+  t.check(isSuite(deny[3]),
+          'a SHA-256-named version loaded inside a run\'s window is the ' +
+          'suite\'s');
+  t.check(isSuite({ version: 'suite-2026-09-29T19-38-03', loadedAt: run7 }),
+          'the launcher\'s own allow list is the suite\'s (and is never ' +
+          'displaced, by the caller)');
+  t.check(!isSuite({ version: 'ffffffffffffffff',
+                     loadedAt: run7 + 13 * 3600 * 1000 }),
+          'a version loaded long after a run started is the operator\'s');
+  log.debug("Leaving riskVersions().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   bulkNames(t);
   nothingElse(t);
   applications(t);
+  riskVersions(t);
   log.debug("Leaving run().");
 }
 

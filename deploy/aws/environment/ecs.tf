@@ -102,6 +102,14 @@ locals {
       STS_TLS_CERT_FILE = local.tls_cert
       STS_TLS_KEY_FILE  = local.tls_keyfile
     } : {},
+    # OUTBOUND MAIL, WHERE AN SES IDENTITY IS DECLARED (#311, mail.tf). The
+    # task role is the credential; the region is this one, where the identity
+    # is.
+    local.mail_ses ? {
+      STS_MAIL_TRANSPORT  = "ses"
+      STS_MAIL_FROM       = local.mail_from
+      STS_MAIL_SES_REGION = local.region
+    } : {},
     # A CELL'S CONTRACT WITH THE SERVICE (cells.tf, #98): which cell, its
     # peers, the global database and the cell's own key-encryption key. Empty
     # in a single-cell environment.

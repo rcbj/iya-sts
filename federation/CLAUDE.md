@@ -1625,9 +1625,14 @@ cluster node could not read.
 funnel carries `create` and `autoCreateUser()` makes nobody without it, so a
 sign-in sent to an existing person can never create one because the entry
 went in between. Every entry a sign-in creates is namespaced — rcbj's
-"development's auto-create becomes this shape". Product still creates nobody
-(`mode.autoCreates()`), so in product `jit-namespaced` refuses an unlinked
-subject exactly as `STS-FED-0090` always did.
+"development's auto-create becomes this shape". **Product mode creates too,
+since 2026-09-29 (#325, rcbj)**, for a relationship whose `fedAutocreateUsers`
+is on: that switch is the operator's own, per partner, and until then
+`autoCreateUser()`'s `mode.autoCreates()` gate made product refuse every
+federated newcomer `STS-FED-0090` whatever the switch said. Nothing else
+creates in product mode, and an entry created there carries only the
+identity and what the partner sent — no invented value
+(`mode.inventsClaimValues()`).
 
 **UNLINKING** — the console's *Federation links* panel, `POST /admin-api/users/
 federation-unlink`, SCIM, `ldapmodify` — goes through the directory's write

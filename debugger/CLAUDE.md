@@ -74,6 +74,23 @@ the browser.
 above. This process's environment holds a deployment's secrets; a child whose
 job is making requests a caller describes holds none of them.
 
+**AND ONE PRELOAD, WHICH IS THIS SIDE'S AND NOT THE CONTRACT'S (#329,
+2026-09-28).** Monitoring → Node Health lists every process of the node with
+its `process.memoryUsage()`, which only the process itself can read, and the
+api listens for no message — the channel carries `debugger-api-listening` out
+and `disconnect` in, nothing else. So `debugger_api_process.ts` forks it with
+`--require debugger/debugger_api_status.js` (compiled beside it; left off
+where it is not there, so the fork is otherwise unchanged), which answers
+`{ type: 'sts-memory-status', id }` on that same channel with the child's
+`memoryUsage()`, `cpuUsage()` and uptime; `askMemory(ms)` asks, bounded, and
+Node Health falls back to the child's `/proc` row when it gets no answer.
+**Nothing is opened**: no socket, no route on the listener, no change to the
+gate or the access token; it requires nothing, so this service's
+configuration never loads into the api. The debugger project is not edited
+for it. It carries no logger — it runs in that project's process — which is
+the code style's exemption for code that is not this service's to run.
+`tests/debugger_api_process.js` section F holds it.
+
 ## The gate, and why each exemption passes the test
 
 A request meets, in order: the security headers; `GET /_sts/callback` (ungated

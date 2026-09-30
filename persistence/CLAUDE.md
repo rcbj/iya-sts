@@ -1140,9 +1140,10 @@ where it was:
   `'keep'`, the default, is never dropped by age; `'age'` is the short-lived
   stores — nonces, codes, pending flows, in-flight transactions — whose rows
   are left behind only by a process that stopped before sweeping them, and
-  whose every lifetime is far below the retention. `purgeMinted(cutoff,
-  handles)` deletes only those handles; without the list it is the
-  ephemeral-key clear, where nothing in the table can be opened anyway. An
+  whose every lifetime is far below the retention. (Since #333 the restore
+  only SKIPS those rows, in its query, and the `persistence.minted-expiry-purge`
+  job deletes them — see the next section; `purgeMinted(before)` is now only
+  the ephemeral-key clear, where nothing in the table can be opened anyway.) An
   unknown word is `STS-CORE-0098` and read as `'keep'`: a retention policy
   that fails must keep data. Forty-three stores are `'age'`.
 * **A RESTARTED PROCESS WAS A NEW ORIGIN.** The origin was `pid-<uuid>` per
@@ -1183,6 +1184,113 @@ where it was:
 `tests/persistence_origin.js` holds B, C and D against a fake `pg` whose
 claims table two drivers share; `tests/minted_persistence.js` section 6 holds
 retention both ways. Ten mutants across the two, all caught.
+
+## A START READS ONLY LIVE ROWS OF DEFINED REALMS (2026-09-28, #333)
+
+Measured on testidp (build c8a2327b): each process — front, three request
+workers and a surface worker, on every node — spent **31 s** in
+`persistence_minted.restore()` reading `127131 minted row(s) … across 138
+declared store(s)`, which pushed a request worker's start past its 60 s limit
+and made the pool give up. `loadMinted()` was a `SELECT` of the whole of
+`sts_minted` with no `WHERE`; every row was fetched, decrypted and parsed, and
+the only filter was in JavaScript — `retain: 'age'`'s seven days of WRITE age.
+Rows of the 132 realms the suite had left behind, and every code, nonce and
+pending flow that had expired days earlier but was written within the week,
+were all read back.
+
+rcbj's decision: **the startup query asks only for currently valid data in
+currently defined realms.** Four parts:
+
+* **The read says what it wants.** `restoreFilter()` in
+  `persistence_minted.js` hands `loadMinted(filter)` the realm partitions that
+  exist (`''` for the shared stores, the default realm, and `realms.list()` —
+  the registry `persistence.start()` has already loaded), the instant, and the
+  `retain: 'age'` handles with the retention cutoff. The driver turns it into
+  `realm = ANY($2) AND (expires_at IS NULL OR expires_at > $3) AND NOT
+  (expires_at IS NULL AND handle = ANY($4) AND written_at < $5)`. The filter is
+  REQUIRED: a caller that does not say what it wants is refused rather than
+  handed the table. A realm created on another node in the seconds between
+  this process loading the registry and reading its rows is not in the list;
+  that window is the one that already existed between the restore and
+  `coordinate()`'s starting sequence number, and the realm's later writes
+  arrive through the change log as before.
+* **A row carries its own expiry.** A store declares `expiresAt(value, key)`
+  beside `retain` (`common/realms.js`; `realms.expiryField(field, scale)` is
+  the common shape), the flush writes its answer to `sts_minted.expires_at`
+  (epoch ms on the writing process's clock, compared with the reading
+  process's `Date.now()` — `sts_used_assertions`' arrangement), a merged row
+  writes the MERGED record's answer, and a tombstone writes NULL so only its
+  own purge ever takes it. The hook runs inside the row's realm, so a lifetime
+  setting is read for the realm the row belongs to. A hook that throws writes
+  NULL (`STS-STORE-0064`, once per store): kept is the safe failure. **The rule
+  a hook must keep: never earlier than the store itself would drop the row.**
+  So a store that keeps a record past its expiry on purpose answers that later
+  instant — `admin_stats.tokens` its `exp` plus the skew plus
+  `oauth2.expiredTokenRetentionS`, CIBA and device codes a finished request's
+  end plus their hour of retention — and a record whose ending does something
+  has NO hook: a pending CIBA request (its expiry sends the push client
+  `expired_token`), `authn.sessions` (the sweep audits, signals CAEP and plans
+  back-channel logout for each), the three outbound delivery queues and
+  `mail.outbox` (a stale pending row becomes a dead letter, audited, first),
+  `gnap.tokens` (RFC 9635 section 6.1.1 lets an EXPIRED token be rotated,
+  and this AS does), and `vc_status.entries` (a dropped entry would publish
+  its bit as VALID). Those stores' own sweeps delete their rows, and each
+  delete reaches the table like any other write.
+* **The restore deletes nothing.** It used to purge stale rows in EVERY
+  process at every start; now the CLUSTER job `persistence.minted-expiry-purge`
+  does (every five minutes): expired rows, rows of a realm not in `sts_realms`
+  written over an hour ago (a realm another node is creating writes its minted
+  rows and its registry row in two transactions, and the grace covers the
+  gap), and stale short-lived rows with no expiry. Each batch is one `DELETE …
+  WHERE ctid = ANY(ARRAY(SELECT ctid … LIMIT 5000))`, so a row rewritten
+  between the two halves has a new ctid and is left alone; at most twenty
+  batches of each kind per run, the rest left for the next — a start skips
+  them meanwhile, so a backlog costs disk and never start-up time. One summary
+  line per run that deleted anything; `STS-STORE-0065` when it fails.
+  `STS-STORE-0025` (the restore's purge failing) is retired.
+* **A removed realm's rows.** `realms.remove()` already deletes its
+  `sts_minted` rows in the directory transaction (`saveDirectory()`'s
+  `removedRealms`), for a realm this process removed. What could still leave
+  one behind is another process's flush in flight for that realm; the
+  orphan clause of the job collects it.
+
+**Schema version 12**: `sts_minted.expires_at bigint` and the partial index
+`sts_minted_expires ON sts_minted (expires_at) WHERE expires_at IS NOT NULL`
+(`postgres/CLAUDE.md` for the upgrade). Existing rows get NULL and fall under
+the write-age rule once; there is no other migration. The index is partial
+because the rows with no expiry are never looked up by it, and every INSERT
+into this, the busiest table, pays for an index.
+
+**`scheduler.runs` has a hook too, and it is not a record's own expiry
+(#338).** A run row has no lifetime of its own; what ends it is the history's
+BOUND — per job, its last `scheduler.runHistoryCount` runs or its last
+`scheduler.runHistoryHours`, whichever keeps more — and `scheduler.history`,
+not the expiry purge, deletes it, through the store (tombstoned, so every
+process drops it). The hook answers an instant past the first moment that
+purge could delete the row, so a start skips most of what it has not got to
+yet, and the purge PINS (`keepUntil`) a kept row whose instant is near — a job
+that stopped running, a bound raised later — so the hook's rule, never
+earlier than the store would drop the row, holds. `cluster/CLAUDE.md`, *The
+scheduler*, argues it. Rows written before #338 carry NULL and are read until
+the purge has deleted them.
+
+**What is still read whole, and why.** The `merge: 'own'` accumulators —
+`audit.events` above all — carry no expiry: a row is a process's share of a
+ring or a counter, not a record with a lifetime. `audit.events` is one row per
+32-event segment, per realm, per ORIGIN, up to `audit.maxEvents` (5000) events
+each — about 157 rows per origin per realm that has any events — and a start
+decrypts every origin's: its own into its ring, every other origin's into the
+replication fan-in (`replication.contribute()`), which the console reads. With
+five processes per node, a three-node cluster has fifteen origins, and a
+random origin left by a process that could not take its stable one is never
+aged out. That is kept as it is here and reported on #333.
+
+`tests/minted_persistence.js` sections 6 and 6b hold it against a stub driver
+that applies the same WHERE: the filter's realms, cutoff and short-lived
+handles; an expired row not restored, a live one and a non-expiring one
+restored; the undefined realm's row left out and purged; the hook's value
+written, NULL for a hook that throws; the job a cluster
+job; one run bounded at 100,000 rows with `more`, the next finishing.
 
 ## Adding a driver
 
@@ -1369,6 +1477,26 @@ write ever clears one, and `restoreRealms()` hands it to a replicated
 and not finished). This module's `realms.onRetire()` hook is a `mark` that
 flushes, so the row and its change-log row are committed before `retire()`
 ends anything. The ldif driver needs nothing: it writes the rows as JSON.
+
+### Each node's snapshot is a table of its own (#332, schema version 11)
+
+`sts_node_snapshots` holds each cluster node's latest Monitoring → Worker
+Pools and → Node Health views, one row per node NAME, overwritten every
+fifteen seconds by `cluster/node_snapshots.ts`'s per-process job and read by
+whichever node draws those pages. The driver's `putNodeSnapshot()` (one
+upsert at the database's clock), `nodeSnapshots()` (every row, at most 64,
+with the database's `now`) and `purgeNodeSnapshots(olderThanMs, keepNames)`
+(one DELETE of the rows older than the age by the database's clock whose name
+is not kept, answering the names; an empty keep list is refused, because it
+means a membership read that failed) are the whole interface, reached through
+`clusterStore()`; memory and ldif have neither, and the pages say there is
+no cluster store. **Not `sts_cluster_nodes.info`**, which is where another
+node's cache figures ride: that column is rewritten on every heartbeat and
+read, for every retained row, on every heartbeat — a snapshot is kilobytes,
+and the heartbeat is what a node's life depends on. The write is not fenced:
+it is a report, not state anything acts on, and its age is drawn.
+`schema.sql` adds it with `CREATE TABLE IF NOT EXISTS`, and the grants on
+every table in the schema cover it.
 
 ### The schema version moved to 2
 

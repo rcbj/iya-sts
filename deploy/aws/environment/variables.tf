@@ -202,6 +202,51 @@ variable "extra_environment" {
   default     = {}
 }
 
+variable "mail_ses_domain" {
+  description = <<-EOT
+    A domain to send mail as through Amazon SES (#311). EMPTY (the default)
+    leaves `mail.transport` at the mode's default, which in product mode sends
+    nothing. SET, it must be `public_hostname` or a name under it: the
+    environment creates the SES identity with Easy DKIM and its three CNAMEs
+    (mail.tf), lets the task role send as it, and sets `mail.transport=ses`.
+    The image must be built with `@aws-sdk/client-sesv2` in STS_CLOUD_SDKS, or
+    a product node refuses to start (STS-MAIL-0002).
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "spiffe_workload_port" {
+  description = "The default realm's SPIFFE Workload API port, the same on the load balancer and the node (spiffe.workloadPort; spiffe_default.tf)."
+  type        = number
+  default     = 8092
+}
+
+variable "spiffe_server_port" {
+  description = "The default realm's SPIRE Server API port, the same on the load balancer and the node (spiffe.serverPort; spiffe_default.tf)."
+  type        = number
+  default     = 8181
+}
+
+variable "mail_allowed_recipients" {
+  description = <<-EOT
+    Where set, the only recipient addresses the task role may send to through
+    SES (IAM `ses:Recipients`, StringLike patterns such as `*@iyasec.io`).
+    Empty (the default) restricts nothing. Mail to anybody else is refused by
+    IAM before SES counts or delivers it, and dead-letters in the service's
+    outbox — which is what keeps a test suite's invented addresses from using
+    the SES quota or bouncing (#311).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "mail_from" {
+  description = "The From address when mail_ses_domain is set. Empty means `no-reply@<mail_ses_domain>`."
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags beside Project = STS and Environment, which are always added."
   type        = map(string)

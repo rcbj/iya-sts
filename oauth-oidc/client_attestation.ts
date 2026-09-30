@@ -187,8 +187,17 @@ const ANSWERED = Symbol('sts.clientAttestation.answered');
 // what is minted, `dpop.issuedNonces`' arrangement: a challenge handed out by
 // one process is presented to another, and the barrier makes the write land
 // before the retry can be asked about it.
-const challenges = realms.map({ persist: 'oauth2.attestationChallenges',
-                                retain: 'age' });
+// `expiresAt` (#333): the value is when the challenge was ISSUED, in epoch
+// seconds; it lives `oauth2.clientAttestationChallengeTtlS` from then.
+const challenges = realms.map({
+  persist: 'oauth2.attestationChallenges',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (issuedS: unknown): number | null {
+    const at = Number(issuedS);
+    return at > 0 ? (at + challengeTtlS()) * 1000 : null;
+  }
+});
 
 function challengeTtlS(): number {
   helpers.log.debug("Entering challengeTtlS().");

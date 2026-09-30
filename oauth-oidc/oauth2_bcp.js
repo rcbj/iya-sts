@@ -1935,7 +1935,9 @@ function maxTransactions() {
 // this behaves as the plain Map it replaced. See common/realms.js.
 // 'pkce:x' / 'nonce:x' -> record
 const transactions = realms.map({ persist: 'oauth2_bcp.transactions',
-                                  retain: 'age' });
+                                  retain: 'age',
+                                  // #333: the sweep's `forget`, ms.
+                                  expiresAt: realms.expiryField('forget', 1) });
 
 function forgetStaleTransactions() {
   log.debug("Entering forgetStaleTransactions().");
@@ -2916,6 +2918,8 @@ function maxRefreshTokens() {
 // record back as unrotated, which would make the replay it marks undetectable.
 const refreshTokens = realms.map({
   persist: 'oauth2_bcp.refreshTokens', tombstone: true,
+  // #333: the sweep's `forget`, ms.
+  expiresAt: realms.expiryField('forget', 1),
   mergeRow: function (mine, theirs) {
     log.debug("Entering mergeRow().");
     log.debug("Leaving mergeRow().");
@@ -2933,7 +2937,12 @@ const refreshTokens = realms.map({
 // this behaves as the plain Map it replaced. See common/realms.js.
 // family -> { clientId, forget, lastUsedAt } — no `members` array since #46
 // (see `membersOf()`); a row restored from an older build may still carry one.
-const refreshFamilies = realms.map({ persist: 'oauth2_bcp.refreshFamilies' });
+// `expiresAt` (#333): the family's absolute `forget`, ms, moved forward at
+// every issuance — the idle rule refuses earlier but deletes nothing.
+const refreshFamilies = realms.map({
+  persist: 'oauth2_bcp.refreshFamilies',
+  expiresAt: realms.expiryField('forget', 1)
+});
 
 function forgetStaleRefreshTokens() {
   log.debug("Entering forgetStaleRefreshTokens().");
@@ -3142,7 +3151,9 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
 // ---------------------------------------------------------------------------
 // refresh jti -> { family, access, clientId, forget }
 const grantTokens = realms.map({ persist: 'oauth2_bcp.grantTokens',
-                                 tombstone: true });
+                                 tombstone: true,
+                                 // #333: the sweep's `forget`, ms.
+                                 expiresAt: realms.expiryField('forget', 1) });
 
 function forgetStaleGrantTokens() {
   log.debug("Entering forgetStaleGrantTokens().");

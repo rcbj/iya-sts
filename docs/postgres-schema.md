@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 10**: 26 tables in a schema of their own, `sts`.
+**Schema version 12**: 27 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -47,7 +47,9 @@ which shape is on disk.
 | 8 | `sts_risk_terms_acceptances` |
 | 9 | the columns `sts_risk_assessments.feedback` and `.feedback_at` |
 | 10 | the column `sts_realms.retiring_at` (#262) |
-| 13 | six generated lookup columns on `sts_ldap_entries` and seven indexes over them (#349). Versions 11 and 12 are #98's `sts_cell_routing` and #333's `sts_minted.expires_at` |
+| 11 | `sts_node_snapshots`: each cluster node's latest Worker Pools and Node Health views (#332); on develop the same number is #98's `sts_cell_routing` — both tables are created by name |
+| 12 | the column `sts_minted.expires_at` and its partial index `sts_minted_expires` (#333) |
+| 13 | six generated lookup columns on `sts_ldap_entries` and seven indexes over them (#349) |
 
 ### The application role
 
@@ -93,7 +95,7 @@ unqualified table names.
  sts_keys          (sealed)     change log              sts_cluster_secrets (sealed)
                                 ──────────              sts_cluster_counters
  bookkeeping                    sts_changes             sts_cluster_windows
- ───────────                    sts_change_readers
+ ───────────                    sts_change_readers      sts_node_snapshots
  sts_schema                                             risk scoring: 14 × sts_risk_*
 ```
 
@@ -210,10 +212,16 @@ only, and `persistence.minted` turns it off.
 | `realm` | text | the realm id, or `''` for a store shared by the whole process (`realms.sharedMap()`) |
 | `key` | text | the key within that store |
 | `body` | text | **always ciphertext**, `$aesgcm$1$…` |
-| `written_at` | timestamptz | used by retention: a row older than `persistence.mintedRetention` (7 days) is neither restored nor kept |
+| `written_at` | timestamptz | when the row was last written. A short-lived store's row with no `expires_at` that is older than `persistence.mintedRetention` (7 days) is neither restored nor kept |
+| `expires_at` | bigint | **the record's own expiry**, in epoch milliseconds, as the store computed it when it wrote the row, or NULL for a record that does not expire (and for a tombstone). A start reads no row whose expiry has passed, and the `persistence.minted-expiry-purge` job deletes such rows in batches (schema version 12, #333) |
 
-Primary key `(handle, realm, key)`, with indexes on `(handle, realm)` and
-`written_at`.
+Primary key `(handle, realm, key)`, with indexes on `(handle, realm)`,
+`written_at`, and `expires_at` where it is not NULL.
+
+A start reads only the rows of the realms that exist: `''` (the shared
+stores), the default realm, and every realm in `sts_realms`. Rows of a realm
+that is no longer defined are deleted by the same job once they are an hour
+old.
 
 **There is one table rather than one per family**, so that persisting a new
 store costs one word at its declaration and no DDL. The price is that nothing
@@ -315,6 +323,7 @@ Every time is the database clock in milliseconds.
 | `sts_cluster_secrets` | `name` | a secret every node must agree on. **The first writer wins**, and `material` is sealed before it is inserted. The names are `csrf`, `acme-nonce`, `ssf-receiver`, `oidc-pairwise` and `oidfed-page` (`cluster/cluster_secrets.ts`). Each can instead come from its `STS_*_SECRET` environment variable |
 | `sts_cluster_counters` | `(scope, realm, key)` | **a value that only goes up**, advanced by one conditional upsert, so a lower value never overwrites a higher one. Used for a WebAuthn signature counter and the last RFC 6238 time step spent |
 | `sts_cluster_windows` | `(scope, realm, key)` | **a count inside a fixed window**: the rate limiter's buckets, one budget shared by every node. Holds `count` and `window_ends_at` (indexed) |
+| `sts_node_snapshots` | `name` | **what each node last said about itself** (#332): the node's own Monitoring → Worker Pools and → Node Health views as `body` (JSONB), written every 15 s by its front process, with the `node_id` that wrote it and `taken_at`. One row per node NAME, overwritten, so it never grows with time; a node that left keeps its row, drawn as gone, until the hourly `cluster.node-snapshot-purge` deletes it once it is older than `cluster.nodeSnapshotRetentionHours` (24). A live member's row is never deleted |
 
 `cluster/CLAUDE.md` explains why each of these is a separate table and why a
 row in `sts_minted` would not do.

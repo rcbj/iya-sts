@@ -59,7 +59,22 @@ const REDEEM_SCOPE = 'oauth.device';
 const RETENTION_MS = 60 * 60 * 1000;
 const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ';
 
-const codes = realms.map({ persist: 'oauth2.deviceCodes', retain: 'age' });
+// `expiresAt` (#333): the sweep's rule for a FINISHED `d|` row — kept
+// RETENTION_MS past its end, so a late poll hears `expired_token` rather than
+// nothing. A PENDING one has none (the sweep marks it expired first), and a
+// `u|` row is a bare pointer with none: both fall to `retain: 'age'`.
+const codes = realms.map({
+  persist: 'oauth2.deviceCodes',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: Json): number | null {
+    if (!row || typeof row !== 'object' || row.state === 'pending') {
+      return null;
+    }
+    const ended = Number(row.finishedAt || row.redeemedAt || row.expiresAt);
+    return ended > 0 ? ended + RETENTION_MS : null;
+  }
+});
 
 interface DeviceDeps {
   log: typeof helpers.log;

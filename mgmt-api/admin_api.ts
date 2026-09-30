@@ -220,6 +220,9 @@ import cachesAdmin = require('../admin-ui/caches_admin');
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // Server configuration → Mode (#181): its one view, rule 7.
 import modeAdmin = require('../admin-ui/mode_admin');
+import workerPoolsAdmin = require('../admin-ui/worker_pools_admin');
+// Monitoring → Node Health (#329): its one view, rule 7.
+import nodeHealthAdmin = require('../admin-ui/node_health_admin');
 // Server configuration → Cells (#98): `cellsView()` and `peopleOf()`.
 import cellsAdmin = require('../admin-ui/cells_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
@@ -4068,6 +4071,200 @@ class AdminApi {
           log.debug("Entering the management API caches endpoint.");
           self.sendJson(res, 200, cachesAdmin.cachesView(req.query));
           log.debug("Leaving the management API caches endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // THE WORKER POOLS (#327). `workerPoolsAdmin.workerPoolsView()` — the
+      // function `/admin/worker-pools?format=json` answers — and nothing
+      // else. Pinned to the front process with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED), because only it holds the
+      // pools.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/worker-pools', tag: 'Service',
+        operationId: 'getWorkerPools',
+        summary: 'The request, hosted-surface and post-quantum worker ' +
+                 'pools of this node',
+        description: 'Always `generatedAt`, `node`, `pid` (the front ' +
+                     'process that answered), `scope` (`node`) and ' +
+                     '`scopeText`; then `pools`, three of them, `id` ' +
+                     '`request`, `surface` and `post-quantum`, each with ' +
+                     '`title`, `module`, `setting`, `state` (`off`, ' +
+                     '`not-started`, `not-dispatching`, `running`, ' +
+                     '`given-up`, or `not-forked` for the post-quantum ' +
+                     'pool) and `stateText` saying it in a sentence, ' +
+                     '`maxWorkers` (the configured count), ' +
+                     '`initialWorkers` (what the pool started with; for ' +
+                     'the lazy post-quantum pool, what its first fork ' +
+                     'brought up), `currentWorkers`, `busyWorkers`, ' +
+                     '`freeWorkers`, `restarts` (`forked`, `crashed` — an ' +
+                     'exit nobody asked for — `failedStarts` among them, ' +
+                     'and `replaced` and `stopped` for a request pool, ' +
+                     '`retired` for the post-quantum one) and ' +
+                     '`responseTime` (a request pool: `answered`, ' +
+                     '`averageMs`, `recentAverageMs`, `maxMs`, dispatch to ' +
+                     'answer; the post-quantum pool: `jobs`, `averageMs`, ' +
+                     '`maxMs`, `failed`, `timedOut`, `inProcessJobs`). A ' +
+                     'request pool lists its `workers` (`pid`, `slot`, ' +
+                     '`ready`, `busy`, `inFlight`, `served`, `upSeconds`); ' +
+                     'the post-quantum pool, which every process has one ' +
+                     'of, lists `processes` — the front process and each ' +
+                     'request worker that answered within a second, each ' +
+                     'with the same figures — and `unanswered`, and its ' +
+                     'pool-level figures are their totals. Every count is ' +
+                     'since the process started. THE FIGURES ARE THIS ' +
+                     'NODE\'S at the top level (`node` names it; never a ' +
+                     'host or an address). In a cluster, `nodes` has a ' +
+                     'section per node — this one live, every other from ' +
+                     'the snapshot it writes every 15 s, each with ' +
+                     '`name`, `self`, `state` (`live`, `stale` past 45 s, ' +
+                     '`gone` from cluster membership, `no-snapshot`), ' +
+                     '`stateText`, `ageSeconds` and `view` — and `totals` ' +
+                     'sums each pool over the nodes not gone; `cluster` ' +
+                     'says whether there is one. `answeredBy` names the ' +
+                     'node that answered (#332). A service operation: a ' +
+                     'realm\'s own administrator is refused it.',
+        mirrors: 'GET /admin/worker-pools',
+        parameters: [
+          { name: 'node', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
+                         'node-a, node-b, …), to answer about that node ' +
+                         'alone: its view at the top, `nodes` holding its ' +
+                         'one section. An unknown name is 404 with the ' +
+                         'names there are (#332).' }
+        ],
+        responseDescription: 'The three pools.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `node`, `pid`, `scope`, `scopeText`, ' +
+                       '`pools`, `answeredBy`, `state`, `cluster`, `nodes` ' +
+                       'and `totals`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API worker pools endpoint.");
+          workerPoolsAdmin.workerPoolsView({ node: req.query && req.query.node
+            ? String(req.query.node) : '' }).then(function (view) {
+            if (view.notFound) {
+              errorCodes.mark(res, 'STS-CORE-0126');
+              self.sendJson(res, 404, { ok: false, errors: [
+                'There is no node named ' + view.notFound + '.'],
+                nodes: view.nodeNames });
+              return;
+            }
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API worker pools " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-WORKER-0044') + 'The worker ' +
+                      'pools report could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-WORKER-0044');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The worker pools report could not be built.'] });
+          });
+          log.debug("Leaving the management API worker pools endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // NODE HEALTH (#329). `nodeHealthAdmin.nodeHealthView()` — the
+      // function `/admin/node-health?format=json` answers — and nothing
+      // else. Pinned to the front process with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED), because only it knows every
+      // process of the node.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/node-health', tag: 'Service',
+        operationId: 'getNodeHealth',
+        summary: 'The CPU and memory of this node\'s container, and the ' +
+                 'Node.js memory of each of its processes',
+        description: 'Always `generatedAt`, `node`, `pid` (the front ' +
+                     'process that answered), `scope` (`node`), ' +
+                     '`scopeText` and `cgroup` (the cgroup v2 directory ' +
+                     'read, or null). `cpu`: `available`, and either ' +
+                     '`unavailableText` or `utilisationPercent` — CPU time ' +
+                     'from `cpu.stat` over `windowSeconds` (`sampled` ' +
+                     '`since-previous-sample` or `fresh-sample`), as a ' +
+                     'share of `percentOfVcpus` — `coresUsed`, ' +
+                     '`limitVcpus` (from `cpu.max`; null for no quota, ' +
+                     'when the share is of `os.availableParallelism()`, ' +
+                     'which `limitText` says), `usageSeconds`, ' +
+                     '`userSeconds`, `systemSeconds` and `throttling`. ' +
+                     'Both say which cgroup they came from ' +
+                     '(`cgroupVersion`, 2 or 1); a limit that means none ' +
+                     'is the ECS task\'s where the agent answers ' +
+                     '(`limitSource` `ecs-task`), and with no cgroup at ' +
+                     'all the figures are the agent\'s (`fromEcs`). ' +
+                     '`memory`: `available`, and either `unavailableText` ' +
+                     'or `currentBytes` (`memory.current`), `limitBytes` ' +
+                     '(`memory.max`; null for none), ' +
+                     '`utilisationPercent`, `peakBytes`, `anonBytes`, ' +
+                     '`fileBytes`, `kernelBytes` and `oomKills`. ' +
+                     '`processes`: `rows` — the front process and each ' +
+                     'request and hosted-surface worker that answered ' +
+                     'within a second (`process.memoryUsage()`: ' +
+                     '`rssBytes`, `heapUsedBytes`, `heapTotalBytes`, ' +
+                     '`externalBytes`, `arrayBuffersBytes`, and CPU time), ' +
+                     'and each post-quantum child and the debugger\'s api ' +
+                     'child, the same figures when it answered within half ' +
+                     'a second, and otherwise `rssBytes` and ' +
+                     '`peakRssBytes` from `/proc/<pid>/status`, the heap ' +
+                     'figures null and `notReported` saying why — ' +
+                     '`unanswered`, and `totals`. `ecs`: the ECS task ' +
+                     'metadata endpoint\'s `taskLimits` and `stats` where ' +
+                     '`ECS_CONTAINER_METADATA_URI_V4` is set, and ' +
+                     '`available: false` with a sentence where it is not. ' +
+                     '`machine`: `os.loadavg()`, `os.totalmem()`, ' +
+                     '`os.freemem()` and the CPU count, which describe the ' +
+                     'machine (on Fargate the micro-VM) and NOT the ' +
+                     'container. THE TOP-LEVEL FIGURES ARE THIS NODE\'S ' +
+                     '(`node` names it; never a host or an address). In a ' +
+                     'cluster, `nodes` has a section per node — this one ' +
+                     'live, every other from the snapshot it writes every ' +
+                     '15 s, each with `name`, `self`, `state` (`live`, ' +
+                     '`stale` past 45 s, `gone` from cluster membership, ' +
+                     '`no-snapshot`), `stateText`, `ageSeconds` and `view` ' +
+                     '— and `totals` sums container memory and its limit, ' +
+                     'CPU and the processes over the nodes not gone; ' +
+                     '`cluster` says whether there is one. `answeredBy` ' +
+                     'names the node that answered (#332). A service ' +
+                     'operation: a realm\'s own administrator is refused ' +
+                     'it.',
+        mirrors: 'GET /admin/node-health',
+        parameters: [
+          { name: 'node', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
+                         'node-a, node-b, …), to answer about that node ' +
+                         'alone: its view at the top, `nodes` holding its ' +
+                         'one section. An unknown name is 404 with the ' +
+                         'names there are (#332).' }
+        ],
+        responseDescription: 'The container and its processes.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `node`, `pid`, `scope`, `scopeText`, ' +
+                       '`cgroup`, `cpu`, `memory`, `processes`, `ecs`, ' +
+                       '`machine`, `answeredBy`, `state`, `cluster`, ' +
+                       '`nodes` and `totals`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API node health endpoint.");
+          nodeHealthAdmin.nodeHealthView({ node: req.query && req.query.node
+            ? String(req.query.node) : '' }).then(function (view) {
+            if (view.notFound) {
+              errorCodes.mark(res, 'STS-CORE-0126');
+              self.sendJson(res, 404, { ok: false, errors: [
+                'There is no node named ' + view.notFound + '.'],
+                nodes: view.nodeNames });
+              return;
+            }
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API node health " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-CORE-0124') + 'The node health ' +
+                      'report could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-CORE-0124');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The node health report could not be built.'] });
+          });
+          log.debug("Leaving the management API node health endpoint.");
         } },
 
       // ---------------------------------------------------------------------

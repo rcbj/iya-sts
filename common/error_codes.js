@@ -159,12 +159,15 @@ const SUBSYSTEMS = [
   { id: 'CORE', label: 'Service core',
     where: 'server.js, common/protocol_stack.ts, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
-           'common/mode.js, common/version.js, sts_metadata.ts, home/',
+           'common/mode.js, common/version.js, sts_metadata.ts, home/, ' +
+           'admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts ' +
+           '(STS-CORE-0126), cluster/node_snapshots.ts',
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
     where: 'common/worker_pool.js, common/worker.js, common/request_pool.js, ' +
-           'common/request_worker.ts, common/service_state.ts',
+           'common/request_worker.ts, common/service_state.ts, ' +
+           'admin-ui/worker_pools_admin.ts',
     what: 'The child processes post-quantum signing runs in, and the request ' +
           'workers the whole protocol stack can be dispatched to.' },
   { id: 'STORE', label: 'Persistence and coordination',
@@ -883,6 +886,37 @@ const CODES = [
       'administrator removes it again, from another realm. Logged when ' +
       'such a realm is restored at start, and when the removal is finished.',
     spec: 'none — logged; /admin/realms and GET /admin-api/realms show it' },
+  { code: 'STS-CORE-0124',
+    summary: 'The /admin/node-health page or GET /admin-api/node-health ' +
+      'could not build its report of the node\'s container and processes ' +
+      '(#329).',
+    spec: 'HTTP 500 page or JSON' },
+  { code: 'STS-CORE-0125',
+    summary: 'ECS_CONTAINER_METADATA_URI_V4 is set, but the ECS task ' +
+      'metadata endpoint did not answer Monitoring → Node Health within ' +
+      'its bound, or answered with an error (#329). Logged when it starts ' +
+      'failing, not on every page; the page says so in a sentence and ' +
+      'draws the cgroup figures without the cross-check.',
+    spec: 'none — the page and GET /admin-api/node-health still answer 200' },
+  { code: 'STS-CORE-0126',
+    summary: 'Monitoring → Worker Pools or → Node Health, or their ' +
+      'management API operations, were asked about a node (?node=) that ' +
+      'is neither this node nor any node with a snapshot or a membership ' +
+      'row (#332).',
+    spec: 'HTTP 404, with the names there are' },
+  { code: 'STS-CORE-0127',
+    summary: 'A cluster node\'s snapshot of Monitoring → Worker Pools and → ' +
+      'Node Health could not be written to the shared store, or the other ' +
+      'nodes\' snapshots could not be read from it (#332). Logged when it ' +
+      'starts failing, not on every run or page; the page draws this node ' +
+      'alone and says why.',
+    spec: 'none — the pages and their API still answer 200' },
+  { code: 'STS-CORE-0128',
+    summary: 'The hourly cluster.node-snapshot-purge job could not delete ' +
+      'the snapshots of nodes that are no longer live cluster members ' +
+      '(#332). Logged when it starts failing, not on every run; the rows ' +
+      'stay, and the pages go on drawing those nodes as gone.',
+    spec: 'none — the scheduler records the failed run' },
   { code: 'STS-CORE-0140',
     summary: 'A package this service requires at first use rather than at ' +
       'start (common/lazy_module.ts, #348) — the gRPC runtime, its proto ' +
@@ -1093,6 +1127,10 @@ const CODES = [
       'replacement was forked into its pool and slot.',
     spec: 'Nothing directly: requests in flight on the dead worker were ' +
       'answered 502 (STS-WORKER-0030)' },
+  { code: 'STS-WORKER-0044',
+    summary: 'The /admin/worker-pools page or GET /admin-api/worker-pools ' +
+      'could not build its report of the worker pools (#327).',
+    spec: 'HTTP 500 page or JSON' },
   { code: 'STS-WORKER-0045',
     summary: 'A request worker could not be forked at all (the fork call ' +
       'threw); the start gate moved on to the next (#342).',
@@ -1216,8 +1254,10 @@ const CODES = [
     spec: '' },
   { code: 'STS-STORE-0025',
     summary: 'Minted rows older than persistence.mintedRetention could not ' +
-      'be purged from the store.',
-    spec: '' },
+      'be purged from the store at startup. Retired (#333): a start deletes ' +
+      'nothing; the persistence.minted-expiry-purge job does, and its ' +
+      'failure is STS-STORE-0065.',
+    spec: '', retired: true },
   { code: 'STS-STORE-0026',
     summary: 'The service refused to start: the minted state in the store ' +
       'could not be read.',
@@ -1387,6 +1427,16 @@ const CODES = [
       'PostgreSQL text cannot hold; the row is left out of the write rather ' +
       'than failing every write after it.',
     spec: 'none — logged' },
+  { code: 'STS-STORE-0064',
+    summary: 'A minted store\'s expiresAt hook threw while its row was being ' +
+      'written; the row is written as not expiring, so it is restored and ' +
+      'kept until the store deletes it. Said once per store.',
+    spec: 'none — logged' },
+  { code: 'STS-STORE-0065',
+    summary: 'The persistence.minted-expiry-purge job could not delete the ' +
+      'expired, orphaned or stale minted rows; a start skips them anyway, ' +
+      'and the next run tries again.',
+    spec: 'none — logged, and the job run is recorded as failed' },
   { code: 'STS-STORE-0066',
     summary: 'A request changed the store and the commit of that change ' +
       'failed, so it was answered 503 with Retry-After instead of its ' +
@@ -2024,6 +2074,17 @@ const CODES = [
     spec: '' },
   { code: 'STS-SCHED-0016',
     summary: 'A run was asked for that does not exist (an unknown run id).',
+    spec: '' },
+  { code: 'STS-SCHED-0017',
+    summary: 'Purging the scheduler\'s run history past its bound ' +
+      '(scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the ' +
+      'rows stay until the next run of scheduler.history, and a start still ' +
+      'skips the ones past their expiry.',
+    spec: '' },
+  { code: 'STS-SCHED-0018',
+    summary: 'A run of a realm job was not started, or its outcome not ' +
+      'written, because its trust realm was removed; nothing is run for a ' +
+      'removed realm, and nothing is written back into it.',
     spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',

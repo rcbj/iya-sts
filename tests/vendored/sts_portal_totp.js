@@ -92,6 +92,11 @@ var api = base + "/admin-api";
 var OWNER = usernameFor("totp-owner");
 var INTRUDER = usernameFor("totp-intruder");
 var NEWCOMER = usernameFor("totp-newcomer");
+// SECTION 5'S OWN PERSON (#311): the owner has a TOTP replay on record from
+// section 2 by then, which a deployment's risk engine scores (`totp-replay`)
+// into a step-up the owner — their factor just cleared — cannot answer. A
+// local stack sets the MEDIUM threshold out of reach; a deployment does not.
+var CLEARED = usernameFor("totp-cleared");
 
 var checks = 0;
 function check(what, fn) {
@@ -860,10 +865,35 @@ async function anActivationLinkCanSetOneUp() {
 // signing in with a password ALONE. A read-back saying `totp: false` would pass
 // on a service that had stopped asking for the code for some other reason.
 // ===========================================================================
+// An authenticator app enrolled for `who` at /portal/mfa, with no wrong code
+// and no replay on their record. Section 1 argues each step; this only does
+// them.
+async function enrolledPerson(who) {
+  log.debug("Entering enrolledPerson(). who=" + who);
+  const b = await signIn("/portal/mfa", who);
+  let page = await b.go("GET", "/portal/mfa");
+  let r = await b.go("POST", "/portal/mfa",
+                     form({ action: "start", csrf_token: csrfOf(page.text) }));
+  // The start REDIRECTS (section 1 says why); the secret is on the page it
+  // lands on, and so is the token the confirmation carries.
+  assert.ok(r.status === 303 || r.status === 302,
+            "starting " + who + "'s enrolment answered " + r.status);
+  page = await b.go("GET", "/portal/mfa");
+  const secret = secretShownOn(page.text);
+  assert.ok(secret, "no secret was shown when enrolling " + who);
+  r = await b.go("POST", "/portal/mfa",
+                 form({ action: "confirm", code: codeFor(secret),
+                        csrf_token: csrfOf(page.text) }));
+  assert.ok(r.status < 400, "confirming " + who + "'s enrolment answered " +
+            r.status);
+  log.debug("Leaving enrolledPerson().");
+}
+
 async function anOperatorCanClearIt() {
   log.debug("Entering anOperatorCanClearIt().");
   log.info("=== 5. clearing an authenticator through /admin-api ===");
-  const cleared = await apiPost("/mfa/clear-totp", { username: OWNER });
+  await enrolledPerson(CLEARED);
+  const cleared = await apiPost("/mfa/clear-totp", { username: CLEARED });
   check("POST /admin-api/mfa/clear-totp accepts it", function () {
     assert.strictEqual(cleared.status, 200,
       "it answered " + cleared.status + " " +
@@ -872,7 +902,7 @@ async function anOperatorCanClearIt() {
                        String(cleared.raw).slice(0, 200));
   });
 
-  const again = await apiPost("/mfa/clear-totp", { username: OWNER });
+  const again = await apiPost("/mfa/clear-totp", { username: CLEARED });
   check("and clearing one nobody holds is a 400 rather than a silent 200 — " +
         "the caller asked to clear a specific thing and it was not there",
         function () {
@@ -881,7 +911,7 @@ async function anOperatorCanClearIt() {
 
   // THE TRANSITION. `signIn` with no handler ASSERTS that the password alone
   // was enough, so this one call is the whole claim.
-  const b = await signIn(PORTAL_DOOR, OWNER);
+  const b = await signIn(PORTAL_DOOR, CLEARED);
   const page = await b.go("GET", "/portal");
   check("AND THE PASSWORD ALONE SIGNS THEM IN AGAIN — the transition, which " +
         "is the only shape of assertion that can tell 'the factor was " +
@@ -900,8 +930,8 @@ async function anOperatorCanClearIt() {
     const events = (rows.body.events || rows.body.rows || []);
     assert.ok(events.some(function (e) {
       return e.action === "admin.mfa.totp.cleared" &&
-             JSON.stringify(e.detail || {}).indexOf(OWNER) >= 0;
-    }), "no admin.mfa.totp.cleared row naming " + OWNER + ".");
+             JSON.stringify(e.detail || {}).indexOf(CLEARED) >= 0;
+    }), "no admin.mfa.totp.cleared row naming " + CLEARED + ".");
   });
   log.debug("Leaving anOperatorCanClearIt().");
 }

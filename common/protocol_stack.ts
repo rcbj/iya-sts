@@ -1100,6 +1100,9 @@ class ProtocolStack {
     require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
     require('../persistence/persistence_minted')
       .ensureTombstoneJob(jobScheduler);
+    // And the expired-row purge (#333), for the same reason.
+    require('../persistence/persistence_minted')
+      .ensureExpiryPurgeJob(jobScheduler);
     // AND THE MEMORY REPORT (#341): `process.memory-report`, a per-process
     // job every process registers here for the same reason, whose owner is
     // a leaf `server.js` loads before the stack.
@@ -1243,6 +1246,32 @@ class ProtocolStack {
                'AttributeSourcesAdmin');
     this.register(app, require('../attribute-sources/attribute_sources_admin'),
                   'attribute-sources/attribute_sources_admin');
+    // THE NODE SNAPSHOTS (#332, 2026-09-28), a library the two pages below
+    // hand their views to: built here, before them, so the instance they
+    // reach is the root's. It registers its scheduler job when the first
+    // page hands over its view, in 18s's register().
+    this.build('cluster/node_snapshots', require('../cluster/node_snapshots'),
+               'NodeSnapshots');
+    // 18s. THE WORKER POOLS' PAGE (#327, 2026-09-28). `/admin/worker-pools` —
+    // the request, hosted-surface and post-quantum pools of this node. 18a's
+    // placement and 18a's reason: the console's shell is here, the two pool
+    // modules are libraries it reaches lazily when a page is drawn, and
+    // `mgmt-api/admin_api` requires it in the ordinary direction.
+    require('../admin-ui/worker_pools_admin');
+    this.build('admin-ui/worker_pools_admin',
+               require('../admin-ui/worker_pools_admin'), 'WorkerPoolsAdmin');
+    this.register(app, require('../admin-ui/worker_pools_admin'),
+                  'admin-ui/worker_pools_admin');
+    // 18t. NODE HEALTH (#329, 2026-09-28). `/admin/node-health` — the
+    // container's CPU and memory from its cgroup, and every process of this
+    // node. 18s's placement and 18a's reason: the console's shell, the pools
+    // and the debugger's api reached lazily when a page is drawn, and
+    // `mgmt-api/admin_api` requires it in the ordinary direction.
+    require('../admin-ui/node_health_admin');
+    this.build('admin-ui/node_health_admin',
+               require('../admin-ui/node_health_admin'), 'NodeHealthAdmin');
+    this.register(app, require('../admin-ui/node_health_admin'),
+                  'admin-ui/node_health_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

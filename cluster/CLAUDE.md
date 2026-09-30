@@ -20,6 +20,7 @@ the barrier that makes one node see what another committed.
 | `cluster_secrets.ts` | The secrets every node must agree on (the CSRF key, the ACME nonce key, the SSF receiver secret, and the BBS key pair), sealed in the store, first writer wins. |
 | `cluster_barrier.js` | The middleware that makes a request wait for other nodes' commits, and holds a writing response until its own commit lands. Active-active only. |
 | `scheduler.ts` | **The one scheduler every periodic job runs on** (#49, 2026-09-22): a leader on the `ops.scheduler` lease, a claim and a fence per run, slots by the database clock, manual runs and a step-down as command rows in the store, cluster and per-process jobs. `/admin/scheduler` draws it. See *The scheduler*, below. |
+| `node_snapshots.ts` | **Every node on Monitoring → Worker Pools and → Node Health** (#332, 2026-09-28): the per-process job `cluster.node-snapshot` that writes this node's own views to `sts_node_snapshots` every 15 s, one row per node name, and the read every page does — this node live, every other from its row, marked `stale` past 45 s, `gone` when membership has no live row by the name, `no-snapshot` when it has written none; never dropped. Names, never addresses: a name that is an address is drawn as a digest, and IPv4 literals are scrubbed from what is written and answered. See *Every node on two pages*, below. |
 
 The SQL is `persistence/persistence_postgres.js`'s — the driver owns every
 statement, as it does for `/admin/database` — and the six tables
@@ -597,6 +598,75 @@ remembers a failure as a success.
   latest per-process run, and the command rows. A manual run or a step-down
   asked of any node is a row the leader obeys at its next tick.
 
+**THE RUN HISTORY'S BOUND IS PER JOB (2026-09-29, #338).** Measured on
+testidp: 126,160 run rows, growing by about a thousand every few minutes, and
+every process restored all of them at every start. The only bound had been
+thirty days and 5000 runs PER REALM, and `oauth2.claim-sources-refresh` —
+every minute, in every realm — is 1440 runs a day in each of 135 realms. Now
+a finished run is KEPT while it is one of its job's last
+`scheduler.runHistoryCount` (100) runs in its realm, or it ended within
+`scheduler.runHistoryHours` (24), whichever keeps more; the latest run of
+every job is always kept (a job that runs every ninety days still shows when
+it last ran), so is every run inside the window, failed ones included, and a
+queued or running row is never touched. A run of a job this build does not
+register keeps the time rule only. A command row goes once finished and past
+the window; a per-process row once it has not been written for the window or
+three of its intervals (a stopped process leaves its pid-keyed row); the
+leader's row never. `scheduler.historyDays` and `scheduler.maxRuns` are gone.
+
+* **`scheduler.history` does the deleting**, a CLUSTER job every ten minutes
+  (`purgeHistory()`): the deletes are journalled like any other write, so
+  every process drops the rows as it applies them, in batches of 2000 with
+  the job waiting for each to be written down (`deps.settle`, a
+  `flushThrough()`) before the next, at most 25 a run and asking
+  `ctx.stillOwner()` between them. What a run leaves is the next run's. One
+  summary line per run that did anything; `STS-SCHED-0017` when it fails.
+* **A start reads less than the table holds**: the run store declares #333's
+  `expiresAt`, answered by `Scheduler.expiryOf()` — for a finished run, its
+  end plus the longer of the window and `(count + 1)` of its job's
+  intervals, plus two hours of slack; for a command, its end plus the window
+  and the slack; for a per-process row, the longer of the window and three
+  intervals, plus the slack; nothing for the leader's row, a queued or
+  running run, a run of an on-demand job or of a job not registered here.
+  That is never earlier than the purge would first be free to delete the
+  row — as long as the job runs on its slots. **A job that stopped running**
+  (switched off, its setting at 0) has no newer runs to push its old ones out
+  of the count, and a bound RAISED after a row was written moves the purge's
+  line past the row's expiry; so the purge PINS every kept row whose expiry
+  is within an hour — rewrites it with `keepUntil` a day ahead, which the
+  hook takes the later of. A regularly running job never has a pinned row:
+  the slack is what keeps its rows out of the pin window.
+* **Rows written before #338 carry no expiry** and are all restored until the
+  purge has been through them: on testidp, with its backlog, that is a few
+  runs of the job after the deploy.
+
+**A REMOVED REALM'S JOBS GO WITH IT (#338).** A realm job is registered ONCE
+and runs in every realm `realms.list()` names (`realmIdsFor()`), so there is
+no per-realm registration to undo: a realm that leaves the list — in the
+process that removed it, and in every other through `persistence.js`'s
+replicated removal, which calls `realms.remove()` there too — has no
+scheduled run, no row on the report and no Run now (`STS-SCHED-0012`) from
+that moment. Its run history is its own partition of `scheduler.runs`, purged
+in memory by the removal and deleted from `sts_minted` in the same
+transaction as the registry row (#333's orphan clause collects a flush that
+was in flight). What #338 added is the rest: `realms.onRemove()` calls
+`forgetRealm()` in every process, which forgets its per-process slots and
+fences out a run of that realm still going there, so its outcome is not
+written — `writeRow()` refuses any row for a realm that is not defined,
+because `realmMap()` of a removed id makes a new partition that nothing would
+ever delete; a run whose realm went between the tick and the claim is not
+started at all (it used to run in the DEFAULT realm, `realms.get()` answering
+null) — both `STS-SCHED-0018`. And the history purge deletes, whatever their
+age, the rows in a defined realm's partition that name a realm that is gone.
+
+**What testidp showed, read against that** (2026-09-29): the 2,458 job rows
+were `realms.list()` of the process that answered — 135 realms × the realm
+jobs, plus the service jobs — so that process held 135 realms. A realm
+removed from `sts_realms` is not in any process's list after a restart, so
+after the deploy only realms still in the registry have job rows; if 135
+remain, the suite run after the removal left them (it leaves its realms
+standing), and they are live realms whose jobs ought to run.
+
 **The step-down** (`POST /admin-api/scheduler/step-down`, D10) is
 `cluster.stepDown('ops.scheduler')`: the lease is expired at the token held,
 `onLose()` fires, and this node does not campaign for the role again for three
@@ -609,7 +679,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 |---|---|---|
 | `authn.session-expiry` | cluster, service | `authn/authn.ts`, `authn/CLAUDE.md` |
 | `pki.crl-directory-refresh` | cluster, service | `common/pki_revocation.js` |
-| `scheduler.history` | cluster, service | `cluster/scheduler.ts` |
+| `scheduler.history` | cluster, service; every ten minutes — the run history past its bound (per job, `scheduler.runHistoryCount` runs or `scheduler.runHistoryHours`, whichever keeps more, the latest always) and every row naming a removed realm, in batches of 2000, at most 25 a run, each written down before the next; pins a kept row whose expiry is near (#338) | `cluster/scheduler.ts`, *The run history's bound*, above |
 | `signing.rotate` | cluster, realm; hourly, deciding per unit from the NEXT key's age | `common/signing_rotation.ts` (#42) |
 | `signing.retire` | cluster, realm; hourly | `common/signing_rotation.ts` (#42) |
 | `signing.rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/keys` and `POST /admin-api/keys/rotate` queue | `common/signing_rotation.ts` (#48) |
@@ -617,7 +687,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `krb5.krbtgt-rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/kerberos/principals` and `POST /admin-api/kerberos/principals/{rotate-krbtgt,rotate-krbtgt-invalidate}` queue; `params.invalidate` keeps nothing | `kerberos/krb5_krbtgt_rotation.ts` (#169) |
 | `oauth2.backchannel-logout-sweep` | cluster, service; `oauth2.backchannelLogoutSweepS` | `oauth-oidc/backchannel_logout.ts` (P5) |
 | `oauth2.ephemeral-subjects-purge` | cluster, realm; hourly — removes each ephemeral subject mapping past the longest token or session of its authentication (#149) | `oauth-oidc/pairwise_subjects.ts` |
-| `oauth2.claim-sources-refresh` | cluster, realm; every minute — refreshes each person's Claims Provider token five minutes before it expires and drops link requests older than ten minutes (#147) | `oauth-oidc/claims_providers.ts` |
+| `oauth2.claim-sources-refresh` | cluster, realm; every minute — refreshes each person's Claims Provider token five minutes before it expires and drops link requests older than ten minutes (#147); off in a realm with no Claims Provider registered and no link request pending (#338) | `oauth-oidc/claims_providers.ts` |
 | `attribute-sources.refresh` | cluster, realm; every minute — for each attribute source whose scheduled interval is due (or asked for by Read everyone now), reads the next `attributeSources.refreshBatch` people after its cursor onto their entries (#94) | `attribute-sources/attribute_sources.ts` |
 | `oauth2.grant-management-purge` | cluster, realm; hourly — removes each Grant Management grant past its last token's exp, and each token row past its own (#142) | `oauth-oidc/grant_management.ts` |
 | `oauth2.ciba-sweep` | cluster, service; `oauth2.cibaSweepS` | `oauth-oidc/ciba.ts` (#131): CIBA pings and pushes due, requests nobody answered expired |
@@ -640,8 +710,11 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `persistence.change-log-pull` | per-process, **quiet**; `persistence.pollInterval` | `persistence/persistence_replication.js` (P5) |
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |
 | `persistence.tombstone-purge` | cluster, service; ten minutes, registered at the first flush | `persistence/persistence_minted.js` (P5) |
+| `persistence.minted-expiry-purge` | cluster, service; five minutes, registered at start-up in every process, off where minted state is not persisted — deletes from `sts_minted`, in batches of 5000 and at most 20 batches of each kind per run, the rows no start reads any more: past their own `expires_at`, of a realm no longer in `sts_realms` (written over an hour ago), and a `retain: 'age'` store's rows with no expiry older than `persistence.mintedRetention`. The restore used to do the last of these in every process at every start (#333) | `persistence/persistence_minted.js` |
 | `persistence.event-loop-lag` | per-process, quiet; ten seconds, in every process that started its store (any mode) — reads and resets `perf_hooks.monitorEventLoopDelay()`, keeps the window for `/admin/persistence`, warns STS-STORE-0068 past 5 s (#351) | `persistence/persistence.js` |
 | `cluster.cache-report` | per-process, quiet; front processes that joined | `cluster/cluster.js` (P5) |
+| `cluster.node-snapshot` | per-process, quiet; every 15 s, joined front processes of a cluster whose store is shared — writes the node's Worker Pools and Node Health views to `sts_node_snapshots` (#332) | `cluster/node_snapshots.ts` |
+| `cluster.node-snapshot-purge` | cluster, service; hourly, off with no cluster store — deletes the row of a node that is not a live member once its snapshot is older than `cluster.nodeSnapshotRetentionHours` (24); never a live member's, nothing while membership cannot be read (#332) | `cluster/node_snapshots.ts` |
 | `cluster.claims-purge` | cluster, service; a minute, registered at the first claim against a database | `cluster/cluster_claims.js` (P5) |
 | `cluster.rate-window-purge` | cluster, service; a minute, registered at the first shared count | `cluster/cluster_counters.js` (P5) |
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
@@ -677,6 +750,48 @@ stands on, and one-shot timeouts and debounces.
 **A job registered at first use** (the four purges) requires the scheduler
 LAZILY, at that use: `scheduler.ts` requires `cluster_claims.js`, and
 `used_assertions.js` is in the parent project's Kerberos COPY closure.
+
+## Every node on two pages (#332, 2026-09-28)
+
+Monitoring → Worker Pools (#327) and → Node Health (#329) describe the node
+that draws them, and rcbj asked for every node on both, named and never
+addressed. **No request crosses between nodes** — there is no channel but the
+store, and no node's address is published — so each node's FRONT process
+writes its own views every fifteen seconds (`cluster.node-snapshot`, a quiet
+per-process job, off in a request worker and with no cluster) and whichever
+node draws a page reads every row.
+
+* **ONE ROW PER NODE NAME, IN A TABLE OF ITS OWN** (`sts_node_snapshots`,
+  schema version 11), not on the membership row: `info` is rewritten on every
+  heartbeat and read with every retained row on every beat, and a snapshot is
+  kilobytes; `persistence/CLAUDE.md` has the driver half. The name is
+  `cluster.nodeName` (`STS_CLUSTER_NODE_NAME`), which survives a restart
+  where the membership UUID does not, so the table is as long as the list of
+  names and never grows with time.
+* **MARKED, NEVER SILENTLY DROPPED.** Every age is the database's clock
+  (`taken_at` against the query's `now`). `stale` past three intervals,
+  `gone` when membership has no live row by the name (its last snapshot kept
+  and drawn, saying when it will be removed), `no-snapshot` for a live member
+  that has written none; when membership cannot be read, nobody is called
+  gone.
+* **A GONE NODE EXPIRES AFTER A DAY** (rcbj's answer on #332):
+  `cluster.node-snapshot-purge`, a CLUSTER job run hourly on the scheduler's
+  leader, deletes every row older than `cluster.nodeSnapshotRetentionHours`
+  (24, at least 1) by the database's clock whose name is not a live member's.
+  The names to keep are read FRESH (`cluster.state()`), with this node's own
+  added; a read that fails, or a state with no membership, deletes nothing
+  and says so in the run's summary. The driver refuses an empty keep list for
+  the same reason. Each deletion is logged once at info, by name; a delete
+  that fails is `STS-CORE-0128`, logged when it starts failing, and thrown so
+  the scheduler records the run as failed.
+* **THE ANSWERING NODE IS LIVE.** Its own section is its live view; its own
+  row is never drawn. The totals are over the nodes not gone.
+* **NAMES, NEVER ADDRESSES.** Neither page carries a host name any more — it
+  carries `node`. A name that is itself an address (the host name a node
+  falls back to, `ip-10-…` on Fargate) is drawn as `node-` and a digest, and
+  every IPv4 literal in what is written or answered is replaced.
+* **With no cluster nothing changes**: one section, and a sentence saying
+  there is no cluster (or no store every node shares).
 
 ## What is done and what is not (2026-09-14)
 

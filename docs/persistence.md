@@ -63,8 +63,18 @@ past its lifetime. Nothing is deleted just because it has not been written for
 a while, so configuration, accounts, the audit log and the statistics survive
 any number of restarts. The one exception is short-lived rows (nonces, codes,
 flows in progress) left behind by a process that stopped before it cleaned
-them up: those are removed at the next start once they are older than
-`persistence.mintedRetention` (7 days).
+them up.
+
+**A start reads only what is still live.** Each row is written with its own
+expiry where the thing it holds has one — a code, a nonce, a pending sign-in,
+a refresh-token family, a finished CIBA request. When a process starts it reads
+only the rows of the realms that exist, leaves out every row whose expiry has
+passed, and leaves out a short-lived row with no expiry once it is older than
+`persistence.mintedRetention` (7 days). Starting takes as long as the live state
+takes to read, not as long as everything that was ever written. The
+`persistence.minted-expiry-purge` job then deletes those rows from the database
+in batches every five minutes, together with any row left behind by a realm
+that has been removed. You can see it on Monitoring → Scheduler.
 
 **A restarted node carries on where it left off.** Each node writes its own
 share of the audit log and the statistics. When a container restarts under the

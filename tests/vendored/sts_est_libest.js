@@ -238,9 +238,16 @@ async function scenarios(ctx, bundle, other) {
   }
   ctx.cacerts = cacerts;
   ctx.anchors = path.join(work, ctx.tag + "-cacerts.pem");
+  // THE EXPLICIT TRUST ANCHORS, AND THE IMPLICIT ONES BESIDE THEM (#311).
+  // RFC 7030 section 3.6.1 lets a client authenticate the SERVER against an
+  // Implicit TA database too. A local stack's TLS certificate is under the
+  // service Root, which /cacerts carries, so the explicit database alone was
+  // enough; a deployment with a public name presents a publicly issued one
+  // (testidp's ACM leaf), which only the implicit database — the bundle's
+  // system roots — verifies.
   fs.writeFileSync(ctx.anchors, cacerts.map(function (x) {
     return x.toString();
-  }).join("\n"));
+  }).join("\n") + "\n" + fs.readFileSync(bundle.file, "utf8"));
 
   // -------------------------------------------------------------------------
   log.info("=== 2. tls-server: /csrattrs and a host certificate" + where +

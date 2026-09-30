@@ -232,7 +232,17 @@ if (logLevelProblem) {
 // backstop against a worker that will never come up rather than a tuned value,
 // and the front process waits for the message rather than for the clock.
 // ---------------------------------------------------------------------------
-const START_TIMEOUT_MS = 60000;
+//
+// **A SETTING SINCE 2026-09-28 (#311), `workers.startTimeoutMs`, default the
+// same sixty seconds.** On the 3-node testidp cluster every request worker of
+// every node took longer than that — each re-certifies the realm's signing
+// keys and writes the certificate authority at start, and the key set had
+// grown with every suite run's rotations — and after three in a row the pool
+// gave up for good, leaving each node on its front process alone. The root
+// cause (a start should not re-certify unchanged keys) is its own issue; this
+// is the room to start in, which a deployment can widen.
+const START_TIMEOUT_MS = Math.max(5000,
+  Number(config.value('workers.startTimeoutMs')));
 
 // ---------------------------------------------------------------------------
 // THE RESPONSE THIS WORKER IS CURRENTLY WRITING (2026-09-09), AND THE ONE
@@ -1412,6 +1422,10 @@ class RequestWorker {
       }
       if (message && message.operation) {
         this.handleOperation(message);
+        return;
+      }
+      if (message && message.poolStatus) {
+        this.reportPoolStatus(message);
       }
     });
 
@@ -1429,6 +1443,82 @@ class RequestWorker {
                     served: this.served });
     });
     log.debug("Leaving RequestWorker.listen().");
+  }
+
+  // THIS WORKER'S OWN POST-QUANTUM POOL, for Monitoring → Worker Pools
+  // (#327). The front process asks every ready worker at once, because a job
+  // computed while a worker answers a request goes to children THIS process
+  // forks (`common/worker_pool.js` is loaded here with `common/crypto.js`),
+  // and nothing else can see them. Required lazily: by the time a worker is
+  // ready the stack has loaded it, so this is a module-cache lookup; a worker
+  // that cannot reach it answers with the reason rather than not at all.
+  //
+  // **AND THIS PROCESS'S OWN MEMORY AND CPU TIME (#329, 2026-09-28)**, for
+  // Monitoring → Node Health: `process.memoryUsage()` and
+  // `process.cpuUsage()`, which only the process itself can read — the heap
+  // figures in particular are nowhere in `/proc`. The same one message, so
+  // the front process asks every worker one question for both pages, and a
+  // worker that cannot read one answers without it rather than not at all.
+  /**
+   * Answers the front process's `{ poolStatus }` question with this
+   * process's `worker_pool.stats()`, its `process.memoryUsage()` and its
+   * `process.cpuUsage()`.
+   *
+   * @param message - the question, carrying the id to answer under
+   */
+  reportPoolStatus(message: any): void {
+    const { log } = this.deps;
+    log.debug("Entering RequestWorker.reportPoolStatus().");
+    let pq: unknown = null;
+    let error = '';
+    try {
+      pq = require('./worker_pool').stats();
+    } catch (e) {
+      log.debug("Caught in RequestWorker.reportPoolStatus(): " +
+                ((e && e.message) || e));
+      error = String((e && e.message) || e);
+    }
+    let memory: unknown = null;
+    let cpu: unknown = null;
+    try {
+      memory = process.memoryUsage();
+      cpu = process.cpuUsage();
+    } catch (e) {
+      log.debug("Caught in RequestWorker.reportPoolStatus(): " +
+                ((e && e.message) || e));
+      // `memoryUsage()` reads /proc on Linux and can fail for want of a
+      // file descriptor; the pool's figures still go back, and whichever of
+      // these two was read before the throw.
+    }
+    const answer = { poolStatus: true, id: message.id, pid: process.pid,
+                     pq: pq, error: error || null, memory: memory, cpu: cpu,
+                     uptimeS: Math.round(process.uptime()),
+                     pqMemory: null as unknown };
+    // THIS WORKER'S OWN POST-QUANTUM CHILDREN'S MEMORY, only when Node
+    // Health asks (`childMemory`, #329): they answer this process and no
+    // other, so it asks them — `worker_pool.askMemoryStatus()`, bounded by
+    // `childMemoryMs`, which the front process keeps under its own bound —
+    // and answers with what came back. Worker Pools does not ask, and so
+    // does not wait on it.
+    if (!message.childMemory || !pq) {
+      this.report(answer);
+      log.debug("Leaving RequestWorker.reportPoolStatus().");
+      return;
+    }
+    const self = this;
+    require('./worker_pool').askMemoryStatus(Number(message.childMemoryMs) ||
+                                             500)
+      .then(function (children: unknown): void {
+        answer.pqMemory = children;
+        self.report(answer);
+      }, function (e: any): void {
+        log.debug("Caught in RequestWorker.reportPoolStatus(): " +
+                  ((e && e.message) || e));
+        // The children's memory is a courtesy; the rest still goes back.
+        self.report(answer);
+      });
+    log.debug("Leaving RequestWorker.reportPoolStatus(). Asking the " +
+              "children.");
   }
 
   // ---------------------------------------------------------------------------
@@ -1619,6 +1709,10 @@ class RequestWorker {
         require('../ldap/ldap_server').setConnectionMirror(
             later.ldapConnections);
       }
+      // THE FRONT PROCESS'S SPIFFE LISTENERS (#337), after a reconcile.
+      if (later && later.spiffeBindings) {
+        require('../spiffe/spiffe_server').adoptBindings(later.spiffeBindings);
+      }
     });
     try {
       this.start(message.socket || '');
@@ -1629,6 +1723,12 @@ class RequestWorker {
       // front process took when it forked this worker; every later change
       // arrives on the listener above.
       this.installDirectoryMirror(message.ldapConnections || []);
+      // And the SPIFFE listeners as they were at fork (#337); every later
+      // reconcile arrives on the listener above.
+      if (message.spiffeBindings) {
+        require('../spiffe/spiffe_server').adoptBindings(
+          message.spiffeBindings);
+      }
     } catch (e) {
       this.report({ ready: false, error: e.message });
     }

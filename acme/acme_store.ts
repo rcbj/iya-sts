@@ -66,14 +66,30 @@ const accounts = realms.map({ persist: 'acme.accounts' });
 // thumbprint -> account id. An account IS its key (section 7.3.1), and a key
 // bound to one account may not be bound to a second (section 7.3.5).
 const accountKeys = realms.map({ persist: 'acme.accountKeys' });
-const orders = realms.map({ persist: 'acme.orders' });
+// `expiresAt` (#333): pruneOrders()'s rule — an order that never became
+// VALID goes a day after its `expires` (an ISO string), with its
+// authorizations; a valid one is kept while its account lists it. An
+// authorization follows the same rule, being deleted only with its order.
+function unlessValid(record: any): number | null {
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  if (!record || record.status === 'valid') {
+    return null;
+  }
+  const at = Date.parse(String(record.expires || ''));
+  return isFinite(at) && at > 0 ? at + 86400000 : null;
+}
+const orders = realms.map({ persist: 'acme.orders',
+                            expiresAt: unlessValid });
 const authorizations = realms.map({ persist: 'acme.authorizations',
-                                    retain: 'age' });
+                                    retain: 'age',
+                                    expiresAt: unlessValid });
 const certificates = realms.map({ persist: 'acme.certificates' });
 // RFC 9773 certID -> certificate id.
 const renewals = realms.map({ persist: 'acme.renewalInfo' });
 // The random part of every Replay-Nonce already presented, with its expiry.
-const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age' });
+const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age',
+                                // #333: the value IS the expiry, seconds.
+                                expiresAt: realms.expiryField(null, 1000) });
 
 // A realm holding this many spent nonces refuses to remember more by dropping
 // the ones that have expired first; a nonce is only useful until it expires, so

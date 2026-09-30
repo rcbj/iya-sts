@@ -100,3 +100,53 @@ resource "aws_route53_record" "public" {
   ttl     = 300
   records = [aws_lb.main.dns_name]
 }
+
+# ---------------------------------------------------------------------------
+# AND THE SAME NAME INSIDE THE VPC (#311): the load balancer's PRIVATE
+# addresses, in the private zone foundation/dns_inside.tf made for this name.
+# A node dialling its own public name (a Shared Signals receiver reading this
+# service's configuration, a Provider Command to its own mock relying party)
+# otherwise left through the internet gateway with a public address the load
+# balancer does not admit, and timed out. From inside, it arrives from a
+# node's private address, which security.tf's `nlb_from_nodes` admits — and,
+# as the PROXY header says, from a node: `STS_TRUSTED_PROXIES` is the public
+# subnets, where these addresses are.
+#
+# The load balancer's interfaces are found one per public subnet by their
+# description, so the count is known at plan time and the addresses are read
+# once the load balancer exists.
+# ---------------------------------------------------------------------------
+data "aws_route53_zone" "inside" {
+  count        = local.public_name ? 1 : 0
+  name         = var.public_hostname
+  private_zone = true
+}
+
+resource "aws_route53_zone_association" "inside" {
+  count   = local.public_name ? 1 : 0
+  zone_id = data.aws_route53_zone.inside[0].zone_id
+  vpc_id  = aws_vpc.main.id
+}
+
+data "aws_network_interface" "nlb" {
+  count = local.public_name ? length(aws_subnet.public) : 0
+  filter {
+    name   = "description"
+    values = ["ELB ${aws_lb.main.arn_suffix}"]
+  }
+  filter {
+    name   = "subnet-id"
+    values = [aws_subnet.public[count.index].id]
+  }
+}
+
+resource "aws_route53_record" "inside" {
+  count           = local.public_name ? 1 : 0
+  zone_id         = data.aws_route53_zone.inside[0].zone_id
+  name            = var.public_hostname
+  type            = "A"
+  ttl             = 60
+  records         = data.aws_network_interface.nlb[*].private_ip
+  allow_overwrite = true
+  depends_on      = [aws_route53_zone_association.inside]
+}

@@ -92,6 +92,45 @@ data "aws_iam_policy_document" "task" {
       resources = [aws_acm_certificate.public[0].arn]
     }
   }
+
+  # The mail channel's SES transport (#311, mail.tf), and only FROM this
+  # environment's own address. SCOPED BY `ses:FromAddress`, NOT BY THE
+  # IDENTITY'S ARN: while the account is in the SES sandbox, SES authorizes a
+  # send against EVERY identity it involves — the recipient's verified
+  # identity as well as the sender's — so a policy naming only
+  # `identity/<domain>` was refused on `identity/tester1@iyasec.io` (the first
+  # testidp send, 2026-09-28, STS-MAIL-0008). The condition is what keeps it
+  # narrow: any identity, only this From address. The transport always sets
+  # `FromEmailAddress` (common/mail_transports.ts), which is what the key reads.
+  dynamic "statement" {
+    for_each = local.mail_ses ? [1] : []
+    content {
+      sid       = "SendMailFromTheEnvironmentsOwnAddress"
+      actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+      resources = ["arn:${local.partition}:ses:${local.region}:${local.account_id}:identity/*"]
+      condition {
+        test     = "StringEquals"
+        variable = "ses:FromAddress"
+        values   = [local.mail_from]
+      }
+      # AND ONLY TO THESE RECIPIENTS, where the environment names any
+      # (`mail_allowed_recipients`, 2026-09-28). The suite creates people
+      # with addresses like `x@suite.example.test`, and every one of them is
+      # sent a security notice: in the SES sandbox SES rejects those, and out
+      # of it SES would try to deliver them and each would hard-bounce against
+      # the account's reputation. Refused here, IAM answers AccessDenied before
+      # SES sees the message — no quota, no bounce — and the service
+      # dead-letters it (STS-MAIL-0008) with that reason on Monitoring → Mail.
+      dynamic "condition" {
+        for_each = length(var.mail_allowed_recipients) > 0 ? [1] : []
+        content {
+          test     = "ForAllValues:StringLike"
+          variable = "ses:Recipients"
+          values   = var.mail_allowed_recipients
+        }
+      }
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "task" {
