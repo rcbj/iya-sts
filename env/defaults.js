@@ -256,7 +256,8 @@ var config = {
     cellKekProvider: "none",         // Where the cell key-encryption key is read from; restart to apply
     cellKekRef: "",                  // The cell key-encryption key's location; restart to apply
     cellKekField: "",                // The field the cell key is in; restart to apply
-    cellKekRegion: ""                // AWS region of the cell key; restart to apply
+    cellKekRegion: "",               // AWS region of the cell key; restart to apply
+    cellKekVault: ""                 // Key Vault URL of the cell key; restart to apply
   },
 
   // --- Global ----------------------------------------------------------

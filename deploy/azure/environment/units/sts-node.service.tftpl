@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# mock-sts: the node. Every init unit must have succeeded — a node that
+# could not get its certificate must not start and serve a self-signed one
+# under a public name (AWS's `dependsOn: SUCCESS`). Its logs go to journald,
+# rsyslog and the Azure Monitor agent, into the region's workspace.
+[Unit]
+Description=mock-sts: ${node}
+Requires=${requires}
+After=${requires}
+
+[Service]
+Environment=HOME=/var/lib/sts
+ExecStartPre=-/usr/bin/docker rm -f mock-sts
+ExecStartPre=/bin/bash /etc/sts/registry-login.sh
+ExecStartPre=/usr/bin/docker pull ${image}
+ExecStart=/usr/bin/docker run --rm --name mock-sts \
+  --env-file /etc/sts/node.env \
+  --env-file ${run_dir}/node-secrets.env \
+  ${extra_hosts} \
+  ${ports} \
+  -v ${upload_host}:${upload_container} \
+  ${tls_mount} \
+  --ulimit nofile=65536:65536 \
+  --label sts.environment=${environment} \
+  --label sts.node=${node} \
+  --log-driver=journald \
+  --log-opt tag=mock-sts/${environment}/${node} \
+  ${image}
+ExecStop=/usr/bin/docker stop -t 30 mock-sts
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

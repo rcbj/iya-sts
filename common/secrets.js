@@ -265,7 +265,9 @@ const CELL_KEK = {
   field: 'keys.cellKekField',
   defaultField: '',
   fallbackRef: null,
-  vault: null,
+  // Its own vault row (#96): an Azure cell's key is in the cell's vault, and
+  // with no fallback there is nowhere else to find the URL.
+  vault: 'keys.cellKekVault',
   region: 'keys.cellKekRegion',
   token: null
 };

@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# mock-sts: the risk-dataset upload disk, mounted and emptied (#214).
+[Unit]
+Description=mock-sts: the upload disk
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash /etc/sts/disk.sh
