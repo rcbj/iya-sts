@@ -15739,6 +15739,18 @@ const CODES = [
       'not yet valid, so clients that check will refuse the handshake.',
     spec: '' },
   // ===== ADMIN =============================================================
+  { code: 'STS-XPEP-0033',
+    summary: 'The remote XACML PEP met an uncaught exception after it had ' +
+      'started, and contained it rather than exiting (#355): it carries on ' +
+      'enforcing the policy it last pulled. The line carries the stack; a ' +
+      'distinct fault is logged at occurrences 1, 2, 3 and each power of ' +
+      'ten.',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0034',
+    summary: 'The remote XACML PEP met a promise rejection nobody handled ' +
+      'after it had started, and contained it rather than exiting (#355), ' +
+      'throttled as STS-XPEP-0033 is.',
+    spec: 'none — logged; the PEP carries on' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

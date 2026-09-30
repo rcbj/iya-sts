@@ -1162,7 +1162,74 @@ async function start() {
     reloadListenerPair();
     setInterval(reloadListenerPair, options.httpsReloadIntervalMs).unref();
   }
+  // STARTED: from here an unexpected error is contained, not an exit (#355).
+  installFaultHandlers();
   log.debug("Leaving start().");
+}
+
+// ---------------------------------------------------------------------------
+// AN UNEXPECTED ERROR IS LOGGED AND CONTAINED ONCE THIS PEP HAS STARTED
+// (#355). The mock's own `common/fault_boundary.ts` is TypeScript and this
+// image compiles none, so its process half is repeated here, small: an
+// uncaught exception (STS-XPEP-0033) or an unhandled rejection
+// (STS-XPEP-0034) is logged with its stack and the PEP carries on enforcing
+// the policy it last pulled, rather than exiting and enforcing nothing until
+// its container is restarted. Installed at the end of start(), so a failure
+// while starting is still fatal (STS-XPEP-0013). Throttled as the mock's is:
+// a distinct fault is logged at occurrences 1, 2, 3 and each power of ten.
+// ---------------------------------------------------------------------------
+const faultsSeen = new Map();
+
+function containFault(code, kind, err) {
+  try {
+    log.debug("Entering containFault(). " + kind);
+    const message = String((err && err.message) || err);
+    const stack = String((err && err.stack) || message);
+    const signature = kind + '|' + message.slice(0, 200) + '|' +
+      (stack.split('\n')[1] || '').trim();
+    const count = (faultsSeen.get(signature) || 0) + 1;
+    faultsSeen.delete(signature);
+    faultsSeen.set(signature, count);
+    if (faultsSeen.size > 500) {
+      faultsSeen.delete(faultsSeen.keys().next().value);
+    }
+    let v = count;
+    while (v >= 10 && v % 10 === 0) {
+      v = v / 10;
+    }
+    if (count > 3 && v !== 1) {
+      log.debug("Leaving containFault(). Throttled: " + count);
+      return;
+    }
+    // error-code: none — `code` is STS-XPEP-0033 or 0034, passed in below
+    log.error(tag(code) + 'xacml-pep: an unexpected error (' + kind +
+              ') was contained; the PEP carries on. Seen ' + count +
+              ' time(s). ' + stack);
+    log.debug("Leaving containFault().");
+  } catch (e) {
+    // Logging itself failed, inside the process's last handler: a throw here
+    // would be the exit this exists to prevent, so it goes to stderr.
+    process.stderr.write('xacml-pep: could not log a contained fault: ' +
+                         ((e && e.message) || e) + '\n');
+  }
+}
+
+let faultHandlersInstalled = false;
+
+function installFaultHandlers() {
+  log.debug("Entering installFaultHandlers().");
+  if (faultHandlersInstalled) {
+    log.debug("Leaving installFaultHandlers(). Already.");
+    return;
+  }
+  faultHandlersInstalled = true;
+  process.on('uncaughtException', function (err) {
+    containFault('STS-XPEP-0033', 'uncaughtException', err);
+  });
+  process.on('unhandledRejection', function (reason) {
+    containFault('STS-XPEP-0034', 'unhandledRejection', reason);
+  });
+  log.debug("Leaving installFaultHandlers().");
 }
 
 // Guarded so that `tests/xacml_pep.js` can require this file for `enforce()`

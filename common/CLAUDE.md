@@ -1325,7 +1325,8 @@ wrapping ~14.7k functions, which would log each fault once per stack frame):
   and `handle_error` with the same code plus an observer on the returned
   promise: a rejection is logged (`STS-CORE-0143`) and handed to `next()` as a
   PLAIN 500 (the final handler writes an error's stack into the page outside
-  `NODE_ENV=production`, and the thrown road still does). **Nothing is routed
+  `NODE_ENV=production`, which the image now sets for the thrown road too —
+  the `Dockerfile` says why it is not `global.mode`). **Nothing is routed
   when the handler already answered or already called `next()`** — the chain
   would run twice — it is only logged. One prototype, so it covers every
   express app in the process, the debugger's included; a Layer of another
@@ -1335,6 +1336,9 @@ wrapping ~14.7k functions, which would log each fault once per stack frame):
 occurrences 1, 2, 3 and each power of ten with the count — never a line per
 request, and no timer (a summary would be a scheduler job). `figures()` has
 the totals.
+
+**The remote PEP has its own copy of the process half** (`xacml-pep/pep.js`,
+`STS-XPEP-0033`/`0034`): its image compiles no TypeScript.
 
 **Not from `app.js` or at `worker.js`'s top**, which are both in the parent
 project's Kerberos COPY closure (`kerberos/CLAUDE.md`): `server.js` and

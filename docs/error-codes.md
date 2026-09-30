@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3878** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3880** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 83
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 211
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
@@ -3770,6 +3770,8 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0030` | The HTTPS certificate and key files could not be read, are not PEM, or do not belong together. A listener already serving keeps the pair it has; one not yet started waits for a usable pair. | — |
 | `STS-XPEP-0031` | The HTTPS listener could not bind its port (commonly the port is taken). Plain HTTP and enforcement are unaffected. | — |
 | `STS-XPEP-0032` | The certificate the HTTPS listener is serving is expired or not yet valid, so clients that check will refuse the handshake. | — |
+| `STS-XPEP-0033` | The remote XACML PEP met an uncaught exception after it had started, and contained it rather than exiting (#355): it carries on enforcing the policy it last pulled. The line carries the stack; a distinct fault is logged at occurrences 1, 2, 3 and each power of ten. | none — logged; the PEP carries on |
+| `STS-XPEP-0034` | The remote XACML PEP met a promise rejection nobody handled after it had started, and contained it rather than exiting (#355), throttled as STS-XPEP-0033 is. | none — logged; the PEP carries on |
 
 ## STS-ADMIN
 
