@@ -202,6 +202,20 @@ the gap, which is the true sentence. `GET
 /admin-api/cluster` answers the same rows under `status.nodes[]`, `info`
 included (rule 7).
 
+### Folded by name, and every cell's (2026-09-30, #311, #361)
+
+A restarted node joins under a fresh node id, so its old rows stayed for the
+24-hour sweep and the page counted each as a node that had left or expired
+(testidpna drew 24 beside three healthy members). `foldMembers()` reads the
+rows by NAME — the persistence origin's and the Worker Pools pages' key: a
+dead row whose name is running is that node's restart history, counted on
+its running row; only a name with no running row is listed, once, with its
+earlier lives. `GET /admin-api/cluster` carries it as `status.members`. A
+cell conversion (`persistence/cell_convert.js`) forgets the dead membership
+rows a restored database carries, and keeps the leases (their fencing
+tokens). And in a service of several cells the page also draws every other
+cell's cluster, asked over the inter-cell channel — `common/CLAUDE.md`, 3bx.
+
 ## Leases and the fence
 
 A lease is a named role one node holds, with a **fencing token that goes up

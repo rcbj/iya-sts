@@ -33,6 +33,22 @@ extra_environment = {
   KRB5_REALM              = "IYASEC.IO"
   KRB5_SERVICE_PRINCIPAL  = "HTTP/test-idp.iyasec.io"
   STS_SPIFFE_TRUST_DOMAIN = "iyasec.io"
+  # AS ON testidp (#311): room for a worker to start after a day of runs, no
+  # V8 heap limit while memory is measured (#341), minted rows kept two hours
+  # past expiry (rcbj). NOT testidp's LDAP_WORKER_DIRECTORY=postgres-lru: the
+  # directory window requires a single cell (ldap.workerDirectory), so the
+  # surface worker stays at 0 here, as each extra process holds the whole
+  # directory. NOT its mail either: a cell has no SES identity of its own yet
+  # (deploy/aws/CLAUDE.md, *Cells*).
+  STS_WORKERS_START_TIMEOUT_MS     = "300000"
+  STS_WORKERS_HEAP_LIMIT_MB        = "-1"
+  STS_PERSISTENCE_MINTED_RETENTION = "7200000"
+  # rcbj, 2026-09-30 (#361): a person's session may be held in the other
+  # region, both ways, so each region's own console (Server configuration ->
+  # Cells) serves an administrator homed in the other. A realm-level
+  # loosening of #98 D4's strict default; the credential-free profile is
+  # what is held.
+  STS_CELL_PERMITTED_TRANSFERS = "us>ca,ca>us"
 }
 
 sts_mode                = "product"

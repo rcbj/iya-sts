@@ -2159,17 +2159,28 @@ class Authn {
   // partitions with the same `derivedFrom` would be ended by a sign-out it has
   // nothing to do with. An absent `derivedFromRealm` means "my own partition",
   // which is what every session made before this field existed meant.
+  //
+  // **AND A THIRD, NAMED BY THE CALLER (2026-09-30).** A portal session ADOPTED
+  // from a console session (`adoptRelyingPartySession()`) is a child of that
+  // console session, which lives in the default partition, while the portal
+  // session lives in the realm its person signed in through — which is the
+  // console session's own `derivedFromRealm`. So `dropSession()` names that
+  // one realm when the session being ended is a console session, and this
+  // walks it as well. It is the "another named partition" the paragraph above
+  // asked for, and still not a walk over `realms.list()`.
   /**
-   * Lists the relying-party sessions derived from one sign-on session.
+   * Lists the relying-party sessions derived from one session.
    *
-   * It looks in the given partition and in the default realm's, and a child
-   * found in the other partition must name this parent's realm.
+   * It looks in the given partition, in the default realm's, and in `alsoRealm`
+   * when named; a child found outside the ambient partition must name this
+   * parent's realm.
    *
-   * @param parentId - the sign-on session id
+   * @param parentId - the parent session id
    * @param store - the partition to look in; the ambient one by default
+   * @param alsoRealm - one further realm whose partition is walked
    * @returns the derived sessions found
    */
-  derivedFrom(parentId, store?) {
+  derivedFrom(parentId, store?, alsoRealm?) {
     const { realms, log } = this.deps;
     log.debug("Entering Authn.derivedFrom(). parentId=" + parentId);
     const here = realms.currentId();
@@ -2192,6 +2203,11 @@ class Authn {
     scan(here, store || sessions.realmMap());
     if (here !== realms.DEFAULT_ID) {
       scan(realms.DEFAULT_ID, sessions.realmMap(realms.DEFAULT_ID));
+    }
+    const also = String(alsoRealm || '');
+    if (also && also !== here && also !== realms.DEFAULT_ID &&
+        realms.get(also)) {
+      scan(also, sessions.realmMap(also));
     }
     log.debug("Leaving Authn.derivedFrom(). " + found.length +
               " derived session(s).");
@@ -2493,6 +2509,145 @@ class Authn {
              '. No authentication was recorded here — the authorization ' +
              'endpoint already counted it.');
     log.debug("Leaving Authn.startRelyingPartySession(). " + sessionId);
+    return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ADOPTING ANOTHER SURFACE'S SESSION (2026-09-30). The one other way a
+  // relying-party session is made, and ONE DIRECTION ONLY: the user portal
+  // establishing its own session from a LIVE console session in the same
+  // browser (`portal/portal.ts`'s `adoptConsoleSession()`, which is the one
+  // caller and argues why).
+  //
+  // What it was for, observed on a product deployment: an administrator
+  // followed the console's link to their own account and was asked to sign in
+  // AGAIN, because the sign-on session behind the console had run out
+  // (`authn.sessionLifetimeS`, absolute) while the console session renewed its
+  // own tokens past it (`common/oidc_rp.ts` section 4). The portal's code flow
+  // then met no sign-on session. The owner's decision was that the portal reads
+  // the realm and the authentication from the console session.
+  //
+  // **IT INVENTS NOTHING.** Everything on the new row comes off the console
+  // row, which was itself made from an ID Token this service verified — the
+  // person, the authentication time, `amr`, `acr`, whether they authenticated,
+  // and the authority that vouched for the sign-in. So the export list's rule
+  // ("a caller that wanted to create one of these without going through the
+  // code flow would be a caller inventing a session out of nothing") still
+  // holds one step removed: the code flow ran, for the console.
+  //
+  // **ITS PARENT IS THE CONSOLE SESSION, AND IT DIES WITH IT** — `derivedFrom`
+  // names it and `derivedFromRealm` says it is in the default partition, so:
+  //   * the reader (`relyingPartySessionOf()`) ends it on the first request
+  //     after the console session is gone, for whatever reason;
+  //   * `dropSession()`'s cascade ends it WITH the console session, in any
+  //     realm (see `derivedFrom()`'s `alsoRealm`);
+  //   * it holds NO TOKENS, so it never renews and "a parent that ran out" is
+  //     never an excuse to outlive it; and its expiry is the console
+  //     session's at the moment it was adopted.
+  //
+  // It records no authentication, for `startRelyingPartySession()`'s reason.
+  // It writes a `session.start` row that says it was adopted, and announces an
+  // `established` session, because a new session is what it is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Creates a surface's relying-party session from another surface's live
+   * relying-party session in the same browser — the user portal adopting the
+   * console's. Created in the ambient realm's partition.
+   *
+   * @param spec - `{ res, source, sourceRealm, surface, label, clientId,
+   *   cookie, req }`: the response the cookie is set on, the live session
+   *   adopted and the realm whose partition holds it, and the adopting
+   *   surface's identity
+   * @returns the new session
+   */
+  adoptRelyingPartySession(spec) {
+    const { realms, log, randomId, userFor, audit } = this.deps;
+    log.debug("Entering Authn.adoptRelyingPartySession(). surface=" +
+              spec.surface);
+    const source = spec.source;
+    const sourceRealm = String(spec.sourceRealm || realms.currentId());
+    const username = String(source.user.username);
+    const sessionId = randomId(24);
+    const store = sessions.realmMap();
+    const session: SessionRow = {
+      id: sessionId,
+      // Built HERE, in the realm the portal session lives in, which is the
+      // realm the person signed in through: the console row's own `user` was
+      // built in the default partition and names that realm's view of them.
+      user: userFor(username),
+      authTime: source.authTime,
+      expires: Number(source.expires) || 0,
+      authenticated: source.authenticated !== false,
+      amr: Array.isArray(source.amr) ? source.amr.slice() : [],
+      acr: source.acr || '',
+      via: spec.label || spec.surface,
+      signInAuthority: source.signInAuthority || '',
+      derivedFrom: source.id,
+      derivedFromRealm: sourceRealm,
+      rpSurface: String(spec.surface || ''),
+      rpLabel: String(spec.label || spec.surface || ''),
+      rpClientId: String(spec.clientId || ''),
+      // The sign-on session's `sid` the console was told, so a front-channel
+      // logout naming that sign-on session names this one too.
+      rpSid: String(source.rpSid || ''),
+      // WHICH SURFACE IT WAS ADOPTED FROM, and the one field no code-flow row
+      // carries — what `/admin/sessions` and the portal's sign-out read to
+      // tell the two kinds apart.
+      rpAdoptedFrom: String(source.rpSurface || ''),
+      // No tokens: it never renews, and see relyingPartySessionOf() for why
+      // that is what makes a missing parent always end it.
+      rpTokens: null,
+      rpRenewableUntil: 0,
+      rpRenewals: 0,
+      rpRenewedAt: 0,
+      derivedFromExpires: 0,
+      credentialKey: null,
+      lastSeenAt: Date.now(),
+      calls: 1
+    };
+    const cookieValue = this.mintSessionHandle(session);
+    this.makeRoomForSession(store, sessionId);
+    store.set(sessionId, session);
+    this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
+                                                          cookieValue));
+    audit.audit({
+      action: 'session.start',
+      actor: username,
+      protocol: 'OAuth 2.0 / OIDC',
+      channel: 'http',
+      target: sessionId,
+      summary: username + ' was signed in to the ' +
+               (spec.label || spec.surface) + ' from their live ' +
+               (source.rpLabel || source.rpSurface) + ' session ' +
+               source.id + '; session ' + sessionId + ' was created',
+      detail: {
+        sessionId: sessionId,
+        sub: session.user.sub,
+        client_id: session.rpClientId,
+        derivedFrom: session.derivedFrom,
+        derivedFromRealm: sourceRealm,
+        adoptedFrom: session.rpAdoptedFrom,
+        surface: session.rpSurface,
+        amr: (session.amr || []).join(', '),
+        acr: session.acr || '',
+        authTime: session.authTime,
+        expiresAt: new Date(session.expires).toISOString(),
+        note: 'A RELYING PARTY session ADOPTED from another surface\'s live ' +
+              'session in the same browser. Nobody authenticated here and no ' +
+              'code flow ran: the authentication is the one behind ' +
+              source.id + ', and this session ends when that one does.'
+      }
+    });
+    session.firstPresentationIsTheSignIn = true;
+    this.notifySession('established', session,
+                       { via: spec.label || spec.surface,
+                         req: spec.req || null });
+    log.info('authn: ' + username + ' holds a ' + (spec.label || spec.surface) +
+             ' session (' + sessionId + ') in realm ' + realms.currentId() +
+             ', adopted from their ' + (source.rpLabel || source.rpSurface) +
+             ' session ' + source.id + ' in realm ' + sourceRealm +
+             '. No authentication was recorded and no code flow ran.');
+    log.debug("Leaving Authn.adoptRelyingPartySession(). " + sessionId);
     return session;
   }
 
@@ -5315,8 +5470,19 @@ class Authn {
     // partition, so recursing without re-entering the child's realm would
     // delete nothing at all and the console session would survive the sign-out
     // — the exact defect the cascade exists to prevent, moved one layer along.
+    // **AND ONE LEVEL FURTHER SINCE 2026-09-30**, which the paragraph above
+    // said this service had no way to create: a portal session ADOPTED from a
+    // console session (`adoptRelyingPartySession()`) is a relying party's
+    // child of a relying party. The recursion below already reaches it — the
+    // child's own `dropSession()` walks the child's children — and the one
+    // thing it needed is where to look: a console session's adopted children
+    // live in the realm the console session's person signed in through, which
+    // is the console session's own `derivedFromRealm`, named here.
     if (id && session) {
-      this.derivedFrom(id).forEach(function (child) {
+      this.derivedFrom(id, undefined,
+                       session.rpSurface === 'admin'
+                         ? session.derivedFromRealm : '')
+        .forEach(function (child) {
         log.info('authn: ending the ' + (child.session.rpSurface || 'relying ' +
             'party') +
                  ' session ' + child.id + ' (realm ' + child.realm + ') with ' +
@@ -12477,6 +12643,9 @@ export = {
   // flow would be a caller inventing a session out of nothing, which is the
   // thing moving these surfaces onto OIDC was for.
   startRelyingPartySession: slot.forward('startRelyingPartySession'),
+  // And the one exception, which starts from a session the code flow already
+  // made (2026-09-30): the portal adopting a live console session.
+  adoptRelyingPartySession: slot.forward('adoptRelyingPartySession'),
   renewRelyingPartySession: slot.forward('renewRelyingPartySession'),
   tokensExpireAt: slot.forward('tokensExpireAt'),
   relyingPartySessionOf: slot.forward('relyingPartySessionOf'),

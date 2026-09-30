@@ -3046,6 +3046,10 @@ type RouteApp = typeof app;
  * of its own and one of two roles.
  */
 class AdminConsole {
+  // What the Cluster page's `prepare` step last read from the other cells
+  // (#361): `{ at, rows, error? }`, or null in single-cell mode.
+  peerClustersNow: any = null;
+
   /**
    * Builds the console over the given modules.
    *
@@ -28152,6 +28156,132 @@ class AdminConsole {
   // worse than one that says "as of two seconds ago".
   // ===========================================================================
   /**
+   * The Cluster page's section on every OTHER cell's cluster (#361), from
+   * what `prepareClusterPage()` read: each cell's running members (folded
+   * by name, with their restarts), its leases and each node's worker
+   * pools; a cell that did not answer is drawn as unreachable, with why.
+   * Times are the answering cell's database clock, shown relative to the
+   * moment it answered.
+   *
+   * @returns `{ html, json }`; both empty in single-cell mode
+   */
+  otherCellsBlock() {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.otherCellsBlock().");
+    const held = this.peerClustersNow;
+    if (!held) {
+      log.debug("Leaving AdminConsole.otherCellsBlock(). Single cell.");
+      return { html: '', json: null };
+    }
+    const agoFrom = function (at, t) {
+      if (!t) {
+        return '—';
+      }
+      const ms = at - t;
+      return ms >= 0 ? self.esc(self.durationText(ms)) + ' ago'
+                     : 'in ' + self.esc(self.durationText(-ms));
+    };
+    const sections = (held.rows || []).map(function (row) {
+      const head = '<h3>Cell <code>' + self.esc(row.cell) + '</code> (' +
+        self.esc(row.jurisdiction || '?') + ')</h3>';
+      if (!row.reachable) {
+        return head + self.warn('<strong>This cell did not answer.</strong> ' +
+          self.esc(row.error || '') + ' Its members may be running; the ' +
+          'inter-cell channel could not ask them.');
+      }
+      const sum = row.summary || {};
+      const at = Number(sum.at) || 0;
+      if (!sum.clustered) {
+        return head + self.note('Answered in ' +
+          self.esc(String(row.answeredMs)) + 'ms; it is not clustered ' +
+          '(<code>cluster.mode</code> ' + self.esc(sum.mode || 'off') +
+          ').');
+      }
+      const members = sum.members || { live: [], restarts: {}, gone: [] };
+      const restarts = members.restarts || {};
+      const live = (members.live || []).map(function (n) {
+        const r = restarts[n.name] || null;
+        return '<tr><td><strong>' + self.esc(n.name) + '</strong></td><td>' +
+          self.esc(n.mode) + '</td><td>' + self.esc(n.version || 'unknown') +
+          '</td><td>' + (n.uptimeMs
+            ? self.esc(self.durationText(n.uptimeMs)) : '—') +
+          (r ? '<br><span class="sub">restarted ' + self.esc(String(r.count)) +
+               ' time(s), the last life ended ' + agoFrom(at, r.lastEndedAt) +
+               '</span>' : '') +
+          '</td><td>' + agoFrom(at, n.heartbeatAt) +
+          (n.lastStallMs ? '<br><strong>last stall ' +
+            self.esc(String(Math.round(n.lastStallMs / 100) / 10)) +
+            's</strong>' : '') +
+          '</td><td>' + self.esc(String(n.workers || 0)) + '</td><td>' +
+          ((n.leases || []).map(function (l) {
+            return '<code>' + self.esc(l) + '</code>';
+          }).join('<br>') || 'none') + '</td><td>' +
+          (n.agrees === null ? 'not known there'
+            : n.agrees ? 'yes' : '<strong>NO</strong>') + '</td></tr>';
+      }).join('');
+      const gone = (members.gone || []).map(function (n) {
+        return '<tr><td>' + self.esc(n.name || '(no name)') + '</td><td>' +
+          self.esc(n.version || 'unknown') + '</td><td>' +
+          (n.how === 'left' ? 'left cleanly ' : '<strong>expired</strong> ') +
+          agoFrom(at, n.endedAt) + (n.earlierLives
+            ? '<br><span class="sub">and ' + self.esc(String(n.earlierLives)) +
+              ' earlier life/lives</span>' : '') + '</td></tr>';
+      }).join('');
+      const pools = (sum.pools || []).map(function (node) {
+        return (node.pools || []).map(function (p) {
+          return '<tr><td>' + self.esc(node.name) +
+            (node.state && node.state !== 'live'
+              ? ' <em>(' + self.esc(node.state) + ')</em>' : '') +
+            '</td><td>' + self.esc(p.title || p.id) + '</td><td>' +
+            self.esc(p.state || '') + '</td><td>' +
+            self.esc(String(p.currentWorkers)) + '</td><td>' +
+            self.esc(String(p.busyWorkers)) + '</td><td>' +
+            self.esc(String(p.freeWorkers)) + '</td><td>' +
+            self.esc(String(p.crashed)) + '</td><td>' +
+            self.esc(String(p.failedStarts)) + '</td></tr>';
+        }).join('');
+      }).join('');
+      return head + '<div class="tiles">' +
+        self.tile((members.live || []).length, 'running') +
+        self.tile((sum.leases || []).length, 'leases held') +
+        self.tile((members.gone || []).length, 'left or expired') +
+        '</div><p class="sub">Mode ' + self.esc(sum.mode) +
+        '; answered in ' + self.esc(String(row.answeredMs)) + 'ms. Times ' +
+        'are that cell\'s database clock, relative to when it answered.</p>' +
+        self.wideTable('Running members of cell ' + row.cell,
+          '<table><tr><th>Node</th><th>Mode</th><th>Version</th><th>Up</th>' +
+          '<th>Last seen</th><th>Request workers</th><th>Leases</th>' +
+          '<th>Settings agree</th></tr>' +
+          (live || '<tr><td colspan="8">no running members</td></tr>') +
+          '</table>') +
+        (gone ? '<details class="fold"><summary>' +
+          self.esc(String((members.gone || []).length)) + ' node name(s) ' +
+          'that have left or expired</summary><div class="foldbody">' +
+          self.wideTable('Left or expired in cell ' + row.cell,
+            '<table><tr><th>Node</th><th>Version</th><th>Ended</th></tr>' +
+            gone + '</table>') + '</div></details>' : '') +
+        (pools ? self.wideTable('Worker pools of cell ' + row.cell,
+          '<table><tr><th>Node</th><th>Pool</th><th>State</th>' +
+          '<th>Workers</th><th>Busy</th><th>Free</th><th>Crashed</th>' +
+          '<th>Failed starts</th></tr>' + pools + '</table>')
+          : (sum.poolsError ? self.note('Its worker pools could not be ' +
+              'read: ' + self.esc(sum.poolsError)) : ''));
+    }).join('');
+    const html = '<h2>The other cells</h2>' +
+      self.note('This service runs as several cells, each its own cluster ' +
+        'against its own database; the list above is this cell\'s. Each ' +
+        'other cell was asked over the inter-cell channel for its members ' +
+        'and pools when this page was drawn — names and counts only, never ' +
+        'an address.') +
+      (held.error ? self.warn(self.esc(held.error)) : '') +
+      (sections || self.note('No other cell is configured.'));
+    log.debug("Leaving AdminConsole.otherCellsBlock().");
+    return { html: html, json: { askedAt: held.at, cells: held.rows || [],
+                                 error: held.error || null } };
+  }
+
+  /**
    * Describes this node, the cluster's members and leases, what
    * active-active still waits for and the shared secrets, for
    * /admin/cluster. The member tables are a snapshot, and say how old.
@@ -28261,13 +28391,16 @@ class AdminConsole {
     // =======================================================================
     const nodes = state ? state.nodes : [];
     const now = state ? state.now : 0;
-    const isLive = function (node) {
-      return !node.leftAt && node.expiresAt > now;
-    };
-    const live = nodes.filter(isLive);
-    const gone = nodes.filter(function (node) {
-      return !isLive(node);
-    });
+    // FOLDED BY NAME (2026-09-30, `cluster.foldMembers()`): a dead row whose
+    // name has a live row is that node's restart history and is counted on
+    // its live row; only a name with no live row has left or expired, drawn
+    // once. A snapshot from an older build carries no `members`, so it is
+    // folded here from the rows.
+    const folded = (state && state.members) ||
+                   cluster.foldMembers(nodes, now);
+    const live = folded.live;
+    const gone = folded.gone;
+    const restarts = folded.restarts || {};
 
     // WHICH LEASES EACH NODE STILL HOLDS, by holder. A lapsed row is left out:
     // a released lease is expired and never deleted (the fencing token must
@@ -28330,10 +28463,17 @@ class AdminConsole {
     // only used where the node said nothing.
     const upOf = function (node) {
       const info = node.info || {};
+      const r = restarts[node.name || ''];
+      const history = r
+        ? '<br><span class="sub">restarted ' +
+          consoleSelf.esc(String(r.count)) + ' time(s), the last life ended ' +
+          ago(r.lastEndedAt) + '</span>'
+        : '';
       if (info.uptimeMs) {
-        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs));
+        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs)) +
+               history;
       }
-      return 'joined ' + ago(node.startedAt);
+      return 'joined ' + ago(node.startedAt) + history;
     };
 
     // WHEN ANYTHING LAST HEARD FROM IT, and — where the node reported one —
@@ -28396,12 +28536,21 @@ class AdminConsole {
         '</td><td>' + (node.leftAt
           ? 'left cleanly ' + ago(node.leftAt)
           : '<strong>expired</strong> ' + ago(node.expiresAt)) +
+        (node.earlierLives
+          ? '<br><span class="sub">and ' +
+            consoleSelf.esc(String(node.earlierLives)) +
+            ' earlier life/lives under this name</span>'
+          : '') +
         '</td></tr>';
     }).join('');
 
     const goneTable = !gone.length ? ''
       : '<details class="fold"><summary>' + this.esc(String(gone.length)) +
         ' node(s) that have left or expired</summary><div class="foldbody">' +
+        '<p>One row per NODE NAME with no running member: a name that is ' +
+        'running again is that node restarted, counted on its running row ' +
+        'above rather than listed here, and a name that ended several ' +
+        'times is shown once, as its latest life.</p>' +
         '<p>A node that stopped cleanly released its leases on the way out, ' +
         'so another member took them over within one heartbeat. A node that ' +
         'EXPIRED did not, and its leases waited out their lifetime — and it ' +
@@ -28509,6 +28658,7 @@ class AdminConsole {
           consoleSelf.esc(one.what) + '</td></tr>';
       }).join('') + '</table>';
 
+    const otherCells = this.otherCellsBlock();
     const html = '<h2>Right now</h2>' +
       (off ? this.note('This process is not clustered: ' +
                        '<code>cluster.mode</code> resolved to ' +
@@ -28519,15 +28669,28 @@ class AdminConsole {
       rows.map(function (row) {
         return '<tr><th>' + consoleSelf.esc(row[0]) + '</th><td>' + row[1] +
                '</td></tr>';
-      }).join('') + '</table>' + nodeTable + capabilityTable + secretTable;
+      }).join('') + '</table>' + nodeTable + otherCells.html + capabilityTable +
+      secretTable;
 
     log.debug("Leaving AdminConsole.clusterStatusBlock(). mode=" + self.mode);
     return {
       html: html,
       json: { self: self, snapshotAgeMs: snap.ageMs,
               nodes: state ? state.nodes : [],
+              // The page's reading of `nodes`, folded by name (rule 7).
+              members: state ? {
+                running: live.map(function (node) {
+                  return node.nodeId;
+                }),
+                restarts: restarts,
+                leftOrExpired: gone.map(function (node) {
+                  return { nodeId: node.nodeId, name: node.name,
+                           earlierLives: node.earlierLives || 0 };
+                })
+              } : null,
               leases: state ? state.leases : [],
               databaseNow: state ? state.now : null,
+              otherCells: otherCells.json,
               secrets: secrets, barrier: barrier }
     };
   }
@@ -29203,6 +29366,67 @@ class AdminConsole {
     }
     log.debug("Leaving AdminConsole.protocolSettingsJsonFor().");
     return this.protocolSettingsJson(row);
+  }
+
+  /**
+   * `protocolSettingsJsonFor()` after the row's `prepare` step, for a page
+   * whose status block draws something asynchronous (the Cluster page's
+   * other cells, #361). A failed step is the block's to report.
+   *
+   * @param path - the page's console path
+   * @returns a promise of the page's JSON
+   */
+  preparedSettingsJsonFor(path) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.preparedSettingsJsonFor().");
+    const row = PROTOCOL_SETTINGS_PAGES.filter(function (item) {
+      return item.path === path;
+    })[0];
+    const ready = row && typeof row.prepare === 'function'
+      ? Promise.resolve().then(function () {
+        return row.prepare();
+      }).catch(function (e) {
+        log.debug("Caught in AdminConsole.preparedSettingsJsonFor(): " +
+                  ((e && e.message) || e));
+      })
+      : Promise.resolve();
+    log.debug("Leaving AdminConsole.preparedSettingsJsonFor().");
+    return ready.then(function () {
+      return self.protocolSettingsJsonFor(path);
+    });
+  }
+
+  /**
+   * The Cluster page's `prepare` (#361): asks every other cell for its
+   * cluster summary, for `clusterStatusBlock()` to draw. Single-cell
+   * mode asks nothing.
+   *
+   * @returns a promise settled when the answers (or failures) are held
+   */
+  prepareClusterPage() {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.prepareClusterPage().");
+    const cells = require('../common/cells');
+    if (!cells.isMulti()) {
+      self.peerClustersNow = null;
+      log.debug("Leaving AdminConsole.prepareClusterPage(). Single cell.");
+      return Promise.resolve();
+    }
+    // A LAZY require: cells_admin draws with this module's shell, so it is
+    // loaded by the time any page is asked for, and a load-time require
+    // would close that cycle.
+    const cellsAdmin = require('./cells_admin');
+    log.debug("Leaving AdminConsole.prepareClusterPage().");
+    return Promise.resolve(cellsAdmin.peerClusters()).then(function (rows) {
+      self.peerClustersNow = { at: Date.now(), rows: rows || [] };
+    }, function (e) {
+      log.debug("Caught in AdminConsole.prepareClusterPage(): " +
+                ((e && e.message) || e));
+      self.peerClustersNow = { at: Date.now(), rows: [],
+                               error: String((e && e.message) || e) };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -43017,10 +43241,23 @@ class AdminConsole {
     PROTOCOL_SETTINGS_PAGES.forEach(function (row) {
       app.get(row.path, function (req, res) {
         log.debug("Entering the admin " + row.title + " page.");
-        self.respond(req, res, self.protocolSettingsJson(row), row.title,
-                     row.path,
-                     self.protocolSettingsPage(req, row));
-        log.debug("Leaving the admin " + row.title + " page.");
+        // A row with a `prepare` (the Cluster page, #361) is asked for what
+        // its synchronous status block draws first; a failure there is the
+        // block's to draw, never a page that does not answer.
+        const ready = typeof row.prepare === 'function'
+          ? Promise.resolve().then(function () {
+            return row.prepare();
+          }).catch(function (e) {
+            log.debug("Caught in the admin " + row.title + " page: " +
+                      ((e && e.message) || e));
+          })
+          : Promise.resolve();
+        ready.then(function () {
+          self.respond(req, res, self.protocolSettingsJson(row), row.title,
+                       row.path,
+                       self.protocolSettingsPage(req, row));
+          log.debug("Leaving the admin " + row.title + " page.");
+        });
       });
     });
 
@@ -46262,6 +46499,9 @@ const PROTOCOL_SETTINGS_PAGES = [
            'that differs does not start, because two nodes with different ' +
            'krbtgt keys seal tickets neither can open for the other.'],
     status: slot.forward('clusterStatusBlock'),
+    // EVERY OTHER CELL'S CLUSTER (#361): asked before the page is drawn,
+    // because the status block is synchronous and the other cells are not.
+    prepare: slot.forward('prepareClusterPage'),
     links: [['/admin/persistence', 'the store the cluster is built on'],
             ['/admin/database', 'the database itself'],
             ['/admin/secrets', 'where the key-encryption key comes from'],
@@ -46730,6 +46970,7 @@ const consoleExports = {
   // `POST /admin-api/config/set-many` already mirrors. A second POST per page
   // would be that many more doors onto one function.
   protocolSettingsJsonFor: slot.forward('protocolSettingsJsonFor'),
+  preparedSettingsJsonFor: slot.forward('preparedSettingsJsonFor'),
   // Where each group of settings is drawn, for the API's own /config resource
   // and for anything that wants to send a person to the right page.
   /**

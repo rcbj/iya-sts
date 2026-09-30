@@ -1929,7 +1929,12 @@ class AdminApi {
                      'count of processes answering requests there, and ' +
                      '`lastStallMs`, the event-loop stall that explains a ' +
                      'late heartbeat), which is what the console draws its ' +
-                     'member list from; the capability ' +
+                     'member list from, and `status.members`, the same rows ' +
+                     'folded BY NAME as the console draws them (`running` ' +
+                     'node ids; `restarts`, per running name, how many ' +
+                     'earlier rows it left and when the last ended; ' +
+                     '`leftOrExpired`, one row per name with no running ' +
+                     'member, with `earlierLives`); the capability ' +
                      'table active-active mode is held to ' +
                      '(`status.self.capabilities`, with `missing` and ' +
                      '`acceptedMissing`); where each shared secret\'s value ' +
@@ -2015,10 +2020,14 @@ class AdminApi {
                handler: function (req, res) {
                  log.debug("Entering the management API " + row.console + " " +
                      "endpoint.");
-                 self.sendJson(res, 200,
-                               admin.protocolSettingsJsonFor(row.console));
-                 log.debug("Leaving the management API " + row.console + " " +
-                     "endpoint.");
+                 // Through the row's `prepare` step, which the Cluster page
+                 // has (#361): the same answer the console draws.
+                 admin.preparedSettingsJsonFor(row.console).then(
+                   function (json) {
+                     self.sendJson(res, 200, json);
+                     log.debug("Leaving the management API " + row.console +
+                               " endpoint.");
+                   });
                } };
     });
     log.debug("Leaving AdminApi.buildProtocolSettingsOperations().");

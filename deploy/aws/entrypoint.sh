@@ -713,7 +713,12 @@ tf() {
 say "terraform init"
 if [ "${TF_STACK}" != "foundation" ];
 then
-  terraform init -input=false -no-color \
+  # -reconfigure: a multi-cell apply runs every cell's step in ONE container,
+  # over one .terraform directory, and each step names its own state key —
+  # without it the second cell's init stopped at "Backend configuration
+  # changed" (testidpna, 2026-09-30). The state is always in S3, so there is
+  # nothing to migrate; the key is simply the one this step is for.
+  terraform init -input=false -no-color -reconfigure \
     -backend-config="bucket=${bucket}" -backend-config="key=${STATE_KEY}" >&2
 else
   terraform init -input=false -no-color \

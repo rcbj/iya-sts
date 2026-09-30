@@ -762,6 +762,69 @@ class OidcRelyingParty {
     return baseUrlOf(req);
   }
 
+  // -------------------------------------------------------------------------
+  // A CELL'S OWN CONSOLE ADDRESS (#361, 2026-09-30). With `global.
+  // publicBaseUrl` set, every redirect URI is on the shared public name —
+  // which DNS sends to whichever cell is nearest — so a console opened at a
+  // cell's own name (`cells.consoleUrl`, `https://cac1.<public name>`)
+  // signed in and came back to a different cell. For the CONSOLE, a request
+  // whose Host is a configured cell console address signs in AT that
+  // address: its callback and its authorization request stay on it. The
+  // address is configuration, never the request's choice — a Host that is
+  // not one of them gets the public name as before.
+  // -------------------------------------------------------------------------
+  /**
+   * The console's base at a cell's own console address, when the request
+   * arrived at one; '' otherwise and for every other surface.
+   *
+   * @param req - the request
+   * @param surface - the surface signing in
+   * @returns the configured origin plus the realm prefix, or ''
+   */
+  private cellConsoleBase(req: any, surface: Surface): string {
+    const { log, realms } = this.deps;
+    log.debug("Entering OidcRelyingParty.cellConsoleBase().");
+    if (surface.id !== 'admin') {
+      log.debug("Leaving OidcRelyingParty.cellConsoleBase(). Not the " +
+                "console.");
+      return '';
+    }
+    const cells = require('./cells');
+    const host = String((req && req.headers && req.headers.host) || '');
+    const hit = cells.consoleOfHost(host);
+    log.debug("Leaving OidcRelyingParty.cellConsoleBase(). " +
+              (hit ? hit.id : 'none'));
+    return hit ? hit.consoleUrl + realms.currentPrefix() : '';
+  }
+
+  /**
+   * Tells whether a redirect URI is the console's callback at a CONFIGURED
+   * cell console address (`cells.consoleUrl` of this cell or a peer).
+   *
+   * @param surface - the surface
+   * @param uri - the redirect URI
+   * @returns true when it is
+   */
+  private isConfiguredCellCallback(surface: Surface, uri: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering OidcRelyingParty.isConfiguredCellCallback().");
+    if (surface.id !== 'admin') {
+      log.debug("Leaving OidcRelyingParty.isConfiguredCellCallback(). No.");
+      return false;
+    }
+    const cells = require('./cells');
+    const out = cells.all().some(function (one: any) {
+      if (!one.consoleUrl) {
+        return false;
+      }
+      const at = String(uri || '');
+      return at.indexOf(one.consoleUrl + '/') === 0 &&
+             at.slice(-surface.callbackPath.length) === surface.callbackPath;
+    });
+    log.debug("Leaving OidcRelyingParty.isConfiguredCellCallback(). " + out);
+    return out;
+  }
+
   /**
    * Returns the origin this process dials itself on for the back channel: the
    * loopback address and this service's port.
@@ -918,6 +981,32 @@ class OidcRelyingParty {
       return { ok: true, learnt: false };
     }
     const pinned = !!helpers.pinnedBaseUrl();
+    // A CELL'S OWN CONSOLE CALLBACK IS CONFIGURATION (#361): it is built
+    // from `cells.consoleUrl` / `cells.peers`, never from a Host header, so
+    // it is REGISTERED on the entry in either mode — as an operator's value,
+    // not an observed one — the first time the console signs in there.
+    if (this.isConfiguredCellCallback(surface, uri)) {
+      const added = applications.updateApplication(surface.clientId, {
+        attribute: 'oauthRedirectUri', mode: 'add', value: uri,
+        actor: 'the ' + surface.label + ' (a configured cell console ' +
+               'address)'
+      });
+      if (!added || added.ok === false) {
+        const why = uri + ' is a configured cell console address, but it ' +
+                    'could not be registered on "' + surface.clientId +
+                    '": ' + ((added && (added.errors || []).join(' ')) ||
+                             'no reason given') + '.';
+        log.warn(errorCodes.tag('STS-AUTHN-0115') + 'oidc_rp: ' + why);
+        log.debug('Leaving OidcRelyingParty.ensureRedirectUri(). A cell ' +
+                  'console callback could not be registered.');
+        return this.coded('STS-AUTHN-0115', { ok: false, why: why });
+      }
+      log.info('oidc_rp: "' + surface.clientId + '" registered ' + uri +
+               ', a configured cell console address (#361).');
+      log.debug('Leaving OidcRelyingParty.ensureRedirectUri(). A cell ' +
+                'console callback, registered.');
+      return { ok: true, learnt: false, registered: true };
+    }
     // -----------------------------------------------------------------------
     // AN ADDRESS DEVELOPMENT LEARNT IS NOT A REGISTERED ONE (2026-09-12).
     // `client.redirect_uris` comes from `applications.clientConfigOf()`,
@@ -2272,7 +2361,9 @@ class OidcRelyingParty {
                           { ok: false, why: found.why, reason: 'no-client' },
                           res);
       }
-      const publicBase = opts.callbackBase || self.publicBaseOf(req);
+      const publicBase = opts.callbackBase ||
+                         self.cellConsoleBase(req, surface) ||
+                         self.publicBaseOf(req);
       const redirectUri = publicBase + surface.callbackPath;
       const registered = self.ensureRedirectUri(surface, found.client,
                                                 redirectUri);
@@ -2506,7 +2597,9 @@ class OidcRelyingParty {
       // The authorization server's base, which is the request's own for the
       // console and the portal and the main port's for the debugger — see
       // the surface table.
-      const publicBase = opts.authorizationBase || self.publicBaseOf(req);
+      const publicBase = opts.authorizationBase ||
+                         self.cellConsoleBase(req, surface) ||
+                         self.publicBaseOf(req);
       const host = self.hostHeaderFrom(publicBase);
 
       // ---------------------------------------------------------------------

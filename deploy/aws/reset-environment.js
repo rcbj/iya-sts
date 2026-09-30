@@ -743,7 +743,13 @@ async function resetRiskDatasets(base, token, dryRun, failed) {
     const a = await requestRetrying('POST',
                                     base + '/admin-api/risk/activate', token,
                                     { dataset: d.dataset,
-                                      version: operator.version });
+                                      version: operator.version,
+                                      // The versions are held per realm, and
+                                      // an activate naming none looked in
+                                      // realm '' and answered "not recorded"
+                                      // for rcbj's own list (run 9).
+                                      realm: String(operator.realm ||
+                                                    d.realm || 'default') });
     if (a.status === 200) {
       restored += 1;
       say(d.dataset + ': ' + operator.version + ' is active again in place ' +

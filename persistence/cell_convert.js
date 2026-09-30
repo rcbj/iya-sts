@@ -339,6 +339,23 @@ function sqlStore(options) {
         }
         log.debug("Leaving remove().");
         return removed;
+      },
+      // THE OLD DEPLOYMENT'S MEMBERSHIP (2026-09-30): a restored database
+      // carries the membership rows of the nodes that wrote it, every one of
+      // them dead — the conversion runs while the cell's nodes are held at
+      // zero — and the new cell's Cluster page drew them as nodes that had
+      // "left or expired" (testidpna: testidp's ten, beside its own three).
+      // Only a row whose lifetime has passed, by the database's clock, is
+      // deleted, so a node somebody started early is never touched. Leases
+      // are kept: a released lease is never deleted, or its fencing token
+      // would go back to 1 (cluster/CLAUDE.md).
+      forgetDeadMembers: async function () {
+        log.debug("Entering forgetDeadMembers().");
+        const r = await client.query(
+          'DELETE FROM sts_cluster_nodes WHERE left_at <> 0 OR expires_at < ' +
+          '(extract(epoch from clock_timestamp()) * 1000)::bigint');
+        log.debug("Leaving forgetDeadMembers().");
+        return (r && r.rowCount) || 0;
       }
     };
     log.debug("Leaving transactionOps().");
@@ -645,7 +662,9 @@ function summaryOf(verb, cellId, plan, riskCounts, extra) {
     (plan.counts.projections ? ', ' + plan.counts.projections +
       ' projections' : '') + '), sts_minted ' + extra.cellMinted +
     (extra.unclassified ? ' (' + extra.unclassified + ' unclassified)' : '') +
-    '; sts_risk_* untouched: ' + (risk || 'none') + '.';
+    '; sts_risk_* untouched: ' + (risk || 'none') +
+    (extra.deadMembers ? '; ' + extra.deadMembers + ' dead cluster ' +
+      'member row(s) of the old deployment forgotten' : '') + '.';
   log.debug("Leaving summaryOf().");
   return out;
 }
@@ -731,7 +750,8 @@ async function convert(options) {
       cellMinted += cellMintedBy[handle];
     }
   });
-  const extra = { cellMinted: cellMinted, unclassified: unclassified };
+  const extra = { cellMinted: cellMinted, unclassified: unclassified,
+                  deadMembers: 0 };
   const hasSource = source.sts_realms.length + source.sts_keys.length > 0;
 
   // 3. WHICH OF THE THREE STATES.
@@ -824,6 +844,7 @@ async function convert(options) {
       if (plan.cellUpdate.sts_ldap_entries.length) {
         await tx.upsert('sts_ldap_entries', plan.cellUpdate.sts_ldap_entries);
       }
+      extra.deadMembers = await tx.forgetDeadMembers();
     });
   } catch (e) {
     log.debug("Caught in convert(): " + ((e && e.message) || e));

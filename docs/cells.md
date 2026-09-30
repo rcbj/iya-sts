@@ -104,6 +104,24 @@ A cell refuses to start when:
 
 `docs/error-codes.md` lists every `STS-CELL-*` code.
 
+## Seeing every cell from one console
+
+The console you sign in to is one cell's: the shared public name goes to
+whichever cell is nearest. Two things let you see the rest:
+
+- **Monitoring → Cluster** lists this cell's nodes, then **every other
+  cell's** — its running nodes (a node restarted under the same name is
+  shown once, with how often it restarted), its leases and its worker pools,
+  asked over the inter-cell channel when the page is drawn. A cell that does
+  not answer is shown as unreachable, with the reason. `GET
+  /admin-api/cluster` answers the same (`status.otherCells`). Names and
+  counts only: no cell's addresses cross.
+- **Server configuration → Cells** links **each cell's own console**, at an
+  address that reaches that cell and no other (`cells.consoleUrl`; on AWS
+  `https://<cell>.<public name>`). The console there signs you in at that
+  address and shows that cell. This page is the one place a cell's address
+  is shown.
+
 ## Where people live, and moving them
 
 * **A new person** is homed in the realm's `cells.homeCell`, or in the cell

@@ -1954,6 +1954,11 @@ const CODES = [
       'cells\' settings disagree); it is refused 400 rather than relayed ' +
       'again, and nothing is created.',
     spec: '' },
+  { code: 'STS-CELL-0194',
+    summary: 'Another cell did not answer cluster-summary (#361): the ' +
+      'Cluster page and GET /admin-api/cluster draw that cell as ' +
+      'unreachable, with the reason, and every other cell as it answered.',
+    spec: '' },
   { code: 'STS-CELL-0200',
     summary: 'The one-time conversion of a single-cell store into a cell ' +
       '(persistence/cell_convert.js) was refused before it read anything: ' +
@@ -17330,6 +17335,17 @@ const CODES = [
     summary: 'Answering a device sign-in on /portal/device failed ' +
       'unexpectedly (#150).',
     spec: 'none (a portal page, HTTP 500)' },
+  { code: 'STS-PORTAL-0098',
+    summary: 'A live admin console session in the same browser was not ' +
+      'adopted by /portal — it names nobody, the realm it was signed in ' +
+      'through is no longer defined, its tokens ran out beyond renewal, or ' +
+      'its person is homed in another cell — so the portal signs in the ' +
+      'ordinary way.',
+    spec: 'none (the portal runs its own sign-in)' },
+  { code: 'STS-PORTAL-0099',
+    summary: 'Adopting a live admin console session on /portal threw; the ' +
+      'portal signs in the ordinary way.',
+    spec: 'none (the portal runs its own sign-in)' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

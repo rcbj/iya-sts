@@ -42,11 +42,14 @@ data "aws_route53_zone" "public" {
 }
 
 resource "aws_acm_certificate" "public" {
-  count             = local.public_name ? 1 : 0
-  domain_name       = var.public_hostname
-  validation_method = "DNS"
-  key_algorithm     = "EC_prime256v1"
-  tags              = { Name = var.public_hostname }
+  count       = local.public_name ? 1 : 0
+  domain_name = var.public_hostname
+  # A cell's certificate also names its own console name (#361), which the
+  # node presents to a browser that asked for it.
+  subject_alternative_names = local.cell_console_host != "" ? [local.cell_console_host] : []
+  validation_method         = "DNS"
+  key_algorithm             = "EC_prime256v1"
+  tags                      = { Name = var.public_hostname }
 
   # THE WHOLE POINT: without this ACM will not release the private key, and a
   # certificate whose key cannot leave ACM can only ever be presented by an

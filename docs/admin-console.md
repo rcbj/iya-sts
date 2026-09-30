@@ -41,6 +41,18 @@ console session is tied to the sign-on session it came from and ends with it;
 **Sign out** ends both. See [Sessions](sessions.md) and
 [Signing out](signing-out.md).
 
+**Your own account is one click away, with no second sign-in.** The account
+menu links to the user portal of the realm you signed in through. When the
+portal has no session of its own in your browser but finds a live console
+session, it makes its own from it: the same person, the same realm, and the
+same record of how you signed in. It does this even after the sign-on session
+behind the console has run out, which the console outlives by renewing its
+tokens. You are not asked to choose a realm or to sign in. A realm's own
+administrator who opens the plain `/portal` is sent to their realm's portal.
+That portal session ends when the console session does, and **Sign out** in
+the portal ends the console session too. It works one way only: a portal
+session never signs anybody in to the console.
+
 **There is no setting that turns the gate off.** What `global.mode` changes is
 whether the password typed at the sign-in screen is *checked*:
 

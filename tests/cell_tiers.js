@@ -170,7 +170,14 @@ function stubDriver(name) {
       return Promise.resolve({ outcomes: [] });
     },
     readEntry: function () { return Promise.resolve(null); },
-    loadMinted: function () { return Promise.resolve(minted.slice()); },
+    // Refuses a read with no filter, as the postgres driver does (#333).
+    loadMinted: function (filter) {
+      calls.push({ op: 'loadMinted', filter: filter });
+      if (!filter || !Array.isArray(filter.realms)) {
+        return Promise.reject(new Error('loadMinted() needs a filter'));
+      }
+      return Promise.resolve(minted.slice());
+    },
     saveMinted: function (u, d) {
       calls.push({ op: 'saveMinted', upserts: u, deletes: d });
       return Promise.resolve({ refused: [], merged: [] });
@@ -390,6 +397,19 @@ async function tieredDriver(t) {
           'of its membership');
   t.check(loaded[''].some(function (e) { return e.dn === alice.entry.dn; }),
           'and the cell\'s person');
+
+  // A minted read carries its filter to BOTH tiers: dropping it made every
+  // node of testidpna refuse to start (STS-STORE-0026).
+  const filter = { realms: [''], staleBefore: 0, ageHandles: [] };
+  let readRefused = null;
+  await d.loadMinted(filter).catch(function (e) { readRefused = e; });
+  const reads = g.calls.concat(c.calls).filter(function (x) {
+    return x.op === 'loadMinted';
+  });
+  t.check(!readRefused && reads.length === 2 &&
+          reads.every(function (x) { return x.filter === filter; }),
+          'loadMinted() hands its filter to the global and the cell tier',
+          readRefused ? readRefused.message : reads.length + ' read(s)');
 
   // Minted rows by handle.
   await d.saveMinted([{ handle: 'dpop.seenJtis', realm: '', key: 'j' },

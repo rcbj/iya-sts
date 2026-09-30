@@ -89,14 +89,23 @@ data "aws_network_interfaces" "nodes" {
   depends_on = [aws_ecs_service.first, aws_ecs_service.others]
 }
 
+# ONLY WHILE THE NODES RUN (#311, #98): a cell's `base` phase and a converted
+# cell's held `full` phase set every node service to 0, so there is no
+# interface to register and indexing an empty list failed the first
+# testidpna apply. `spiffe_nodes` is the node count when they run, 0 when
+# they are held; the next unheld apply registers them.
+locals {
+  spiffe_nodes = local.node_desired_count > 0 ? var.node_count : 0
+}
+
 data "aws_network_interface" "node" {
-  count = var.node_count
+  count = local.spiffe_nodes
   id    = sort(data.aws_network_interfaces.nodes.ids)[count.index]
 }
 
 resource "aws_lb_target_group_attachment" "spiffe_default" {
   for_each = {
-    for pair in setproduct(keys(local.spiffe_default_ports), range(var.node_count)) :
+    for pair in setproduct(keys(local.spiffe_default_ports), range(local.spiffe_nodes)) :
     "${pair[0]}-${pair[1]}" => { port = pair[0], node = pair[1] }
   }
   target_group_arn = aws_lb_target_group.spiffe_default[each.value.port].arn

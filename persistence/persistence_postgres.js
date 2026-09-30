@@ -4515,12 +4515,19 @@ function create(options) {
       const o = opts || {};
       const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
       const retentionMs = Math.max(0, Math.floor(Number(o.retentionMs) || 0));
+      // `nodeLiveness: false` judges a reader by its report's age alone: the
+      // GLOBAL change log's readers are nodes of other databases' clusters,
+      // whose membership rows this database does not hold.
+      const byMembership = o.nodeLiveness !== false;
       log.debug("Leaving purgeChangeLog().");
       return pool.query(
         'WITH gone AS (DELETE FROM sts_change_readers r WHERE ' +
-        'r.reported_at < ' + DB_NOW + ' - $1::bigint OR (r.node_id <> \'\' ' +
-        'AND NOT EXISTS (SELECT 1 FROM sts_cluster_nodes n WHERE n.node_id = ' +
-        'r.node_id AND n.left_at = 0 AND n.expires_at > ' + DB_NOW + ')) ' +
+        'r.reported_at < ' + DB_NOW + ' - $1::bigint' +
+        (byMembership
+          ? ' OR (r.node_id <> \'\' AND NOT EXISTS (SELECT 1 FROM ' +
+            'sts_cluster_nodes n WHERE n.node_id = r.node_id AND ' +
+            'n.left_at = 0 AND n.expires_at > ' + DB_NOW + '))'
+          : '') + ' ' +
         'RETURNING r.origin), ' +
         'live AS (SELECT min(r.applied) AS low, count(*) AS readers FROM ' +
         'sts_change_readers r WHERE NOT EXISTS (SELECT 1 FROM gone g WHERE ' +

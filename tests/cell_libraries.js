@@ -156,9 +156,61 @@ function projection(t) {
   log.debug("Leaving projection().");
 }
 
+// EACH CELL'S OWN CONSOLE (#361): the one address the Cells page draws,
+// recognised on a request's Host, and refused when it is not an origin.
+function consoles(t) {
+  log.debug("Entering consoles().");
+  const peers = JSON.stringify([
+    { id: 'cellb', jurisdiction: 'ca', url: 'https://b.internal:8446',
+      consoleUrl: 'https://cellb.idp.example/' },
+    { id: 'celle', jurisdiction: 'eu', url: 'https://e.internal:8446' }]);
+  const a = mapOver({ 'cells.id': 'cella', 'cells.jurisdiction': 'us',
+                      'cells.peers': peers,
+                      'cells.consoleUrl': 'https://cella.idp.example' });
+  const urls = a.all().map(function (c) {
+    return c.id + '=' + c.consoleUrl;
+  }).join(' ');
+  t.check(urls === 'cella=https://cella.idp.example ' +
+                   'cellb=https://cellb.idp.example celle=',
+          'each cell carries its own console origin, a trailing slash off, ' +
+          'and one with none configured carries none', urls);
+  t.check(a.consoleOfHost('cellb.idp.example').id === 'cellb' &&
+          a.consoleOfHost('CELLA.idp.example:443').id === 'cella' &&
+          a.consoleOfHost('idp.example') === null &&
+          a.consoleOfHost('') === null,
+          'a request\'s Host is recognised as a cell\'s console only when ' +
+          'it is one of the configured origins');
+  t.check(mapOver({ 'cells.consoleUrl': 'https://x.example' })
+            .consoleOfHost('x.example') === null,
+          'single-cell mode recognises no console address');
+  const described = JSON.stringify(a.describe());
+  t.check(described.indexOf('cellb.idp.example') > 0 &&
+          described.indexOf('internal') < 0,
+          'the description carries the console origins and still no ' +
+          'channel address');
+  const bad = mapOver({ 'cells.id': 'cella', 'cells.jurisdiction': 'us',
+                        'cells.consoleUrl': 'http://cella.idp.example/admin',
+                        'cells.peers': JSON.stringify([
+                          { id: 'cellb', jurisdiction: 'ca',
+                            url: 'https://b.internal:8446',
+                            consoleUrl: 'https://x/y' }]) });
+  let refusal = '';
+  try {
+    bad.validate();
+  } catch (e) {
+    refusal = String((e && e.message) || e);
+  }
+  t.check(/cells\.consoleUrl "http:/.test(refusal) &&
+          /cells\.peers\[0\]\.consoleUrl/.test(refusal),
+          'a console address that is not an https origin is refused, this ' +
+          'cell\'s and a peer\'s', refusal.slice(0, 200));
+  log.debug("Leaving consoles().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   cellMap(t);
+  consoles(t);
   locator(t);
   projection(t);
   log.debug("Leaving run().");

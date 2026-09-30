@@ -202,7 +202,19 @@ locals {
   # The global stack's outputs, or — in `base`, and in a single-cell stack —
   # empty values that nothing reads, so the expressions below need no second
   # condition.
-  global = local.multi && local.full ? data.terraform_remote_state.global[0].outputs : {
+  # The fields are picked one by one rather than taking the outputs whole:
+  # a conditional needs both results to have one type, and the global stack
+  # has outputs this stack does not read (peering_connection_ids), so the
+  # whole object and this fallback differed and every full phase failed.
+  global = local.multi && local.full ? {
+    primary_address   = data.terraform_remote_state.global[0].outputs.primary_address
+    db_port           = data.terraform_remote_state.global[0].outputs.db_port
+    db_name           = data.terraform_remote_state.global[0].outputs.db_name
+    db_app_user       = data.terraform_remote_state.global[0].outputs.db_app_user
+    read_addresses    = data.terraform_remote_state.global[0].outputs.read_addresses
+    secret_arns       = data.terraform_remote_state.global[0].outputs.secret_arns
+    master_secret_arn = data.terraform_remote_state.global[0].outputs.master_secret_arn
+    } : {
     primary_address   = ""
     db_port           = 5432
     db_name           = ""
@@ -248,12 +260,16 @@ locals {
     STS_CELL_PORT         = tostring(local.intercell_port)
     STS_CELL_HOSTNAME     = local.intercell_hostname
     STS_CELL_PEERS = jsonencode([
-      for id in sort(keys(local.peers)) : {
+      for id in sort(keys(local.peers)) : merge({
         id           = id
         jurisdiction = local.peers[id].jurisdiction
         url          = "https://nodes.${id}.${var.environment}.${var.name}.internal:${local.intercell_port}"
-      }
+        }, local.cell_console_host != "" ? {
+        consoleUrl = "https://${id}.${var.public_hostname}"
+      } : {})
     ])
+    # THIS CELL'S OWN CONSOLE ADDRESS (#361), '' without a public name.
+    STS_CELL_CONSOLE_URL  = local.cell_console_host != "" ? "https://${local.cell_console_host}" : ""
     STS_CELL_KEK_PROVIDER = "aws"
     STS_CELL_KEK_REF      = aws_secretsmanager_secret.main["cell-kek"].arn
     STS_CELL_KEK_REGION   = local.region

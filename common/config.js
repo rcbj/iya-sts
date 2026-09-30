@@ -15021,7 +15021,10 @@ const SETTINGS = [
                  'is an address on a private network between cells and is ' +
                  'never published anywhere. Empty with `cells.id` set is a ' +
                  'service of ONE cell that still runs the tiered stores, ' +
-                 'which is how the tiers are tested alone.' },
+                 'which is how the tiers are tested alone. An entry may ' +
+                 'also carry `consoleUrl`, that cell\'s own ' +
+                 '`cells.consoleUrl` (#361), which Server configuration → ' +
+                 'Cells links to.' },
 
   { key: 'cells.port', group: 'Cells', label: 'Inter-cell port',
     env: 'STS_CELL_PORT', type: 'port', dflt: 8446,
@@ -15047,6 +15050,27 @@ const SETTINGS = [
                  'the private network between cells, to one address per ' +
                  'node, and is never published. Empty means the node\'s own ' +
                  'host name.' },
+
+  // THE ONE PLACE A CELL IS PUBLISHED (#361, 2026-09-30, rcbj): its own
+  // administrators' door, on Server configuration → Cells. #98's rule — no
+  // page names a cell — holds everywhere else.
+  { key: 'cells.consoleUrl', group: 'Cells',
+    label: 'This cell\'s own console address',
+    env: 'STS_CELL_CONSOLE_URL', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the console client\'s redirect addresses are ' +
+                   'registered for it when the service starts',
+    description: 'The public origin that reaches THIS cell\'s load ' +
+                 'balancer and no other — `https://<cell>.<public name>` ' +
+                 'on an AWS deployment — so an administrator can open this ' +
+                 'cell\'s own console from another cell\'s. Server ' +
+                 'configuration → Cells links every cell\'s, and the ' +
+                 'console signs in AT that address (its callback is ' +
+                 'registered for the console\'s client) rather than being ' +
+                 'sent back to the shared public name. It is drawn on that ' +
+                 'page and nowhere else: no token, metadata document or ' +
+                 'error names a cell. Empty — the default, and single-cell ' +
+                 'mode — draws no link.' },
 
   { key: 'cells.relayTimeoutMs', group: 'Cells',
     label: 'Inter-cell request timeout (ms)',

@@ -1232,6 +1232,7 @@ var config = {
     peers: "",                      // The other cells; restart to apply
     port: 8446,                     // Inter-cell port; restart to apply
     hostname: "",                   // This cell's inter-cell host name; restart to apply
+    consoleUrl: "",                 // This cell's own console address; restart to apply
     relayTimeoutMs: 10000,          // Inter-cell request timeout (ms)
     deliveryAttempts: 12,           // Inter-cell delivery attempts
     deliveryBackoffMs: 2000,        // Inter-cell delivery backoff (ms)

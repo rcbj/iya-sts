@@ -70,6 +70,9 @@ function memoryStore(name, version, hooks) {
   const h = hooks || {};
   let data = {};
   let risk = {};
+  // sts_cluster_nodes, which the conversion never copies — only its dead
+  // rows are forgotten (forgetDeadMembers()) — so it is not in TABLES.
+  let members = [];
   const keyOf = function (table, row) {
     return convertTool.TABLES[table].key.map(function (c) {
       return String(row[c] === undefined || row[c] === null ? '' : row[c]);
@@ -91,6 +94,12 @@ function memoryStore(name, version, hooks) {
       rows.forEach(function (row) {
         tableOf(data, table)[keyOf(table, row)] = clone(row);
       });
+    },
+    setMembers: function (rows) {
+      members = clone(rows);
+    },
+    members: function () {
+      return clone(members);
     },
     setRisk: function (counts) {
       risk = clone(counts);
@@ -134,6 +143,7 @@ function memoryStore(name, version, hooks) {
     },
     transaction: async function (fn) {
       const work = clone(data);
+      let workMembers = clone(members);
       const check = function (table, op) {
         if (typeof h.fail === 'function' && h.fail(table, op)) {
           throw new Error('injected failure: ' + op + ' ' + table);
@@ -169,10 +179,20 @@ function memoryStore(name, version, hooks) {
             }
           });
           return n;
+        },
+        forgetDeadMembers: async function () {
+          check('sts_cluster_nodes', 'forgetDeadMembers');
+          const now = Date.now();
+          const before = workMembers.length;
+          workMembers = workMembers.filter(function (row) {
+            return !row.left_at && row.expires_at >= now;
+          });
+          return before - workMembers.length;
         }
       };
       const out = await fn(ops);
       data = work;
+      members = workMembers;
       return out;
     },
     close: function () {
@@ -602,6 +622,7 @@ async function statements(t) {
                                                  digest: 'd', cell: 'c',
                                                  written_at: '1' }]);
     await tx.remove('sts_realms', [{ id: 'x' }]);
+    await tx.forgetDeadMembers();
   });
   const text = seen.map(function (s) {
     return s.sql;
@@ -625,6 +646,11 @@ async function statements(t) {
   t.check(text.some(function (s) {
     return s === 'DELETE FROM sts_realms WHERE id = $1';
   }), 'a delete is by primary key');
+  t.check(text.some(function (s) {
+    return /^DELETE FROM sts_cluster_nodes WHERE left_at <> 0 OR expires_at < \(extract\(epoch from clock_timestamp\(\)\) \* 1000\)::bigint$/
+      .test(s);
+  }), 'the old deployment\'s membership is forgotten by the database clock, ' +
+      'dead rows only');
   log.debug("Leaving statements().");
 }
 
@@ -694,6 +720,41 @@ async function asTheConvertTask(t) {
   log.debug("Leaving asTheConvertTask().");
 }
 
+// 6b. The old deployment's membership (2026-09-30): the dead rows a restored
+// database carries are forgotten in the clean-up, and a live one is kept.
+async function deadMembers(t) {
+  log.debug("Entering deadMembers().");
+  const cell = singleCellStore();
+  const now = Date.now();
+  cell.setMembers([
+    { node_id: 'left', name: 'node-a', left_at: now - 60000,
+      expires_at: now + 60000 },
+    { node_id: 'expired', name: 'node-b', left_at: 0,
+      expires_at: now - 60000 },
+    { node_id: 'live', name: 'node-c', left_at: 0,
+      expires_at: now + 600000 }]);
+  const r = await run1(cell, emptyGlobal());
+  const ids = cell.members().map(function (row) {
+    return row.node_id;
+  });
+  t.check(r.state === 'converted' && ids.join() === 'live',
+          'a conversion forgets the dead member rows and keeps a live one',
+          ids.join() || 'none');
+  t.check(/2 dead cluster member row\(s\) of the old deployment forgotten/
+            .test(r.summary), 'and says how many in its summary', r.summary);
+  const failing = singleCellStore({
+    fail: function (table) {
+      return table === 'sts_cluster_nodes';
+    }
+  });
+  failing.setMembers([{ node_id: 'x', name: 'n', left_at: 1,
+                        expires_at: 1 }]);
+  const refused = await refusedWith(run1(failing, emptyGlobal()));
+  t.check(/STS-CELL-0206/.test(refused) && failing.members().length === 1,
+          'a failure there rolls the whole clean-up back', refused);
+  log.debug("Leaving deadMembers().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const converted = await split(t);
@@ -702,6 +763,7 @@ async function run(t) {
   await failures(t);
   await refusals(t);
   await statements(t);
+  await deadMembers(t);
   await asTheConvertTask(t);
   log.debug("Leaving run().");
 }
