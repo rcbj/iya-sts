@@ -108,20 +108,29 @@ function checkTheCgroup(t) {
 // ---------------------------------------------------------------------------
 function checkTheBudget(t) {
   log.debug("Entering checkTheBudget().");
-  t.log.info('=== the budget: (limit − headroom) ÷ processes ===');
+  t.log.info('=== the budget: (limit − headroom) ÷ isolates − the young ' +
+             'generation ===');
   let b = pm.derive({ configuredMb: 0, limitBytes: 8192 * MIB,
                       requestCount: 3, surfaceCount: 1 });
-  // 15 % of 8192 is 1228.8 MiB of headroom; five processes (front, three
-  // protocol, one surface).
+  // 15 % of 8192 is 1228.8 MiB of headroom; five isolates (front, three
+  // protocol, one surface); each gives 48 MiB of its share to its young
+  // generation (#366).
   t.equal(b.processes, 5, 'front + 3 + 1');
-  t.equal(b.mb, Math.floor((8192 - 1228.8) / 5),
-          'testidp\'s 8 GiB node: 1392 MiB per process');
+  t.equal(b.mb, Math.floor((8192 - 1228.8) / 5) - 48,
+          'testidp\'s 8 GiB node: 1344 MiB of old space per isolate');
+  t.equal(b.youngMb, 48, 'and 48 MiB of young generation beside it');
   b = pm.derive({ configuredMb: 0, limitBytes: 1024 * MIB,
+                  requestCount: 1, surfaceCount: 0 });
+  t.check(b.mb === 336 && 2 * (b.mb + b.youngMb) + 256 <= 1024,
+          'a 1 GiB container with the front and one worker thread: 336 MiB ' +
+          'of old space each, and the two isolates\' whole heaps and the ' +
+          'headroom fit the container', JSON.stringify(b));
+  b = pm.derive({ configuredMb: 0, limitBytes: 512 * MIB,
                   requestCount: 0, surfaceCount: 0 });
-  t.equal(b.mb, 768, 'a 1 GiB single process: (1024 − 256) ÷ 1');
+  t.equal(b.mb, 208, 'a 512 MiB container, one isolate: (512 − 256) − 48');
   b = pm.derive({ configuredMb: 0, limitBytes: 512 * MIB,
                   requestCount: 4, surfaceCount: 2 });
-  t.equal(b.mb, 256, 'never below the 256 MiB floor');
+  t.equal(b.mb, 192, 'never below the 192 MiB floor');
   b = pm.derive({ configuredMb: 0, limitBytes: null,
                   requestCount: 3, surfaceCount: 1 });
   t.equal(b.mb, 0, 'no visible limit: nothing is set');

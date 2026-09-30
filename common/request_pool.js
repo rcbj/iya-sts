@@ -2640,7 +2640,10 @@ function fork(pool, slot) {
     // -------------------------------------------------------------------
     resourceLimits: processMemory.budget().off || !processMemory.budget().mb
       ? undefined
-      : { maxOldGenerationSizeMb: processMemory.budget().mb }
+      : { maxOldGenerationSizeMb: processMemory.budget().mb,
+          // Its young generation too (#366): part of the same share.
+          maxYoungGenerationSizeMb: processMemory.budget().youngMb ||
+            undefined }
   });
   const entry = { child: child, pid: child.pid, pool: which, socket: socket,
                   ready: false,
