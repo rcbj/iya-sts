@@ -28,12 +28,15 @@
 // default, the limit is DERIVED:
 //
 //     (container limit − headroom) ÷ (1 + requestCount + surfaceCount)
+//       − 48 MiB of young generation
 //
-// (Until #363 the divisor carried one more share, for the post-quantum
-// computation children of `worker_pool.js`; that pool is gone.) The
-// headroom is 15 % of the limit and at least 256 MiB. It is what a process
-// holds OUTSIDE the old space the flag bounds: the young generation, code,
-// Buffers and native memory. The result is floored at 256 MiB. With no
+// — one share per ISOLATE, the front's and each worker thread's (#364),
+// and each isolate's young generation set to 48 MiB and taken out of its
+// share (#366; see YOUNG_MB). (Until #363 the divisor carried one more
+// share, for the post-quantum computation children of `worker_pool.js`;
+// that pool is gone.) The headroom is 15 % of the limit and at least 256
+// MiB. It is what the process holds OUTSIDE the isolates' heaps: code,
+// Buffers and native memory. The old space is floored at 192 MiB. With no
 // visible limit (`max` on cgroup v2, the v1 "unlimited" value, no ECS task
 // limit), NOTHING is set, which is how this service ran before.
 //
@@ -133,15 +136,37 @@ const MIB = 1024 * 1024;
 // (9223372036854771712 on a 4 KiB page).
 const UNLIMITED = Math.pow(2, 60);
 // See the header: 15 % of the limit and at least 256 MiB stays outside every
-// old space, and no process is given less than 256 MiB.
+// isolate's heap, and no isolate is given less than MIN_MB of old space.
 const HEADROOM_SHARE = 0.15;
 const HEADROOM_MIN = 256 * MIB;
-const MIN_MB = 256;
+// 192 since #366, where it was 256: the floor on OLD space, and with the
+// young generation now inside the share a 512 MiB container with one
+// isolate derives 208 MiB, which a floor of 256 would have pushed past the
+// container. A fresh isolate's live heap is about 100 MiB since #365.
+const MIN_MB = 192;
 // How long the ECS task metadata endpoint is given.
 const ECS_TIMEOUT_MS = 3000;
 const REEXEC_MARKER = 'STS_HEAP_REEXEC';
 const BUDGET_ENV = 'STS_HEAP_BUDGET';
 const FLAG = '--max-old-space-size';
+// ---------------------------------------------------------------------------
+// THE YOUNG GENERATION IS PART OF THE SHARE (#366, 2026-09-30).
+//
+// `--max-old-space-size` bounds the OLD space only, and V8's young
+// generation comes on top of it: 192 MiB in node 24 whatever the old space
+// is. That was tolerable at one isolate per process with 15 % headroom
+// under it, and it is not at two isolates in a 1 GiB container (#364): two
+// shares of 384 MiB of old space each carried 192 MiB of young ceiling on
+// top, 1152 MiB of possible heap in a 1024 MiB container. So each isolate's
+// young generation is set too — 48 MiB, V8's three semi-spaces of 16 MiB,
+// `--max-semi-space-size` for the front and `maxYoungGenerationSizeMb` for a
+// worker thread — and it comes OUT of the isolate's share: old space is the
+// share less 48 MiB. A young generation of 48 MiB scavenges more often than
+// one of 192 MiB, and each scavenge is shorter.
+// ---------------------------------------------------------------------------
+const YOUNG_MB = 48;
+const SEMI_FLAG = '--max-semi-space-size';
+const SEMI_MB = YOUNG_MB / 3;
 const REPORT_JOB = 'process.memory-report';
 const REPORT_EVERY_MS = 5 * 60 * 1000;
 
@@ -158,6 +183,9 @@ interface ContainerLimit {
  */
 interface Budget {
   mb: number;
+  // The young generation each isolate is given beside `mb` (#366); 0 when
+  // no budget applies.
+  youngMb?: number;
   // workers.heapLimitMb is -1: no limit is applied, and nothing is stripped.
   off?: boolean;
   source: string;
@@ -344,7 +372,7 @@ class ProcessMemory {
     }
     if (input.configuredMb > 0) {
       log.debug("Leaving ProcessMemory.derive(). Configured.");
-      return { mb: Math.floor(input.configuredMb),
+      return { mb: Math.floor(input.configuredMb), youngMb: YOUNG_MB,
                source: 'workers.heapLimitMb', limitBytes: input.limitBytes,
                processes: processes };
     }
@@ -357,14 +385,16 @@ class ProcessMemory {
     const headroom = Math.max(HEADROOM_MIN,
                               input.limitBytes * HEADROOM_SHARE);
     const share = Math.floor((input.limitBytes - headroom) / processes / MIB);
+    const old = share - YOUNG_MB;
     log.debug("Leaving ProcessMemory.derive(). Derived.");
-    return { mb: Math.max(MIN_MB, share),
+    return { mb: Math.max(MIN_MB, old), youngMb: YOUNG_MB,
              source: 'derived: (' + Math.round(input.limitBytes / MIB) +
                      ' MiB from ' + (input.source || 'the container') +
                      ' − ' + Math.round(headroom / MIB) + ' MiB headroom) ÷ ' +
-                     processes + ' processes' +
-                     (share < MIN_MB ? ', raised to the ' + MIN_MB +
-                                       ' MiB floor' : ''),
+                     processes + ' isolates − ' + YOUNG_MB + ' MiB young ' +
+                     'generation each' +
+                     (old < MIN_MB ? ', raised to the ' + MIN_MB +
+                                     ' MiB floor' : ''),
              limitBytes: input.limitBytes, processes: processes };
   }
 
@@ -601,7 +631,8 @@ class ProcessMemory {
     env[REEXEC_MARKER] = '1';
     env[BUDGET_ENV] = JSON.stringify(budget);
     const args = [process.execPath, FLAG + '=' + budget.mb]
-      .concat(process.execArgv, process.argv.slice(1));
+      .concat(budget.youngMb ? [SEMI_FLAG + '=' + SEMI_MB] : [],
+              process.execArgv, process.argv.slice(1));
     log.info('process_memory: restarting the front process with ' + FLAG +
              '=' + budget.mb + ' (' + budget.source + ').');
     try {

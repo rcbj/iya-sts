@@ -3101,8 +3101,9 @@ const SETTINGS = [
                  'goes on. The default, 0, DERIVES it from the container: ' +
                  '(the memory limit − 15 % headroom, at least 256 MiB) ÷ ' +
                  '(1 + workers.requestCount + workers.surfaceCount) — every ' +
-                 'thread has a V8 heap of its own — and never less than ' +
-                 '256 MiB. The limit is read from ' +
+                 'thread has a V8 heap of its own — less the 48 MiB young ' +
+                 'generation each isolate is also given, and never less ' +
+                 'than 192 MiB. The limit is read from ' +
                  'cgroup v2, then cgroup v1, then the ECS task metadata ' +
                  'endpoint. With no visible limit nothing is set. A worker ' +
                  'thread whose heap reaches the limit is ended by V8 and ' +
