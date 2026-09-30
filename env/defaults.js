@@ -252,7 +252,11 @@ var config = {
     kekField: "value",               // Vault secret field; restart to apply
     kekToken: "",                    // Vault token; restart to apply
     storeProbeTimeoutMs: 5000,       // Secret store probe timeout (ms)
-    kekRegion: ""                    // AWS region; restart to apply
+    kekRegion: "",                   // AWS region; restart to apply
+    cellKekProvider: "none",         // Where the cell key-encryption key is read from; restart to apply
+    cellKekRef: "",                  // The cell key-encryption key's location; restart to apply
+    cellKekField: "",                // The field the cell key is in; restart to apply
+    cellKekRegion: ""                // AWS region of the cell key; restart to apply
   },
 
   // --- Global ----------------------------------------------------------
@@ -847,6 +851,9 @@ var config = {
     tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
     autocreateUsers: true,                                                                                                                      // Auto-create users
     maxEntries: 2000,                                                                                                                           // Maximum entries
+    workerDirectory: "memory",                                                                                                                  // Directory in request workers; restart to apply
+    workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
+    workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
     sizeLimit: 500,                                                                                                                             // Search size limit
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
     selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
@@ -1181,25 +1188,31 @@ var config = {
 
   // --- Persistence -----------------------------------------------------
   persistence: {
-    mode: "memory",                                       // Persistence mode; restart to apply
-    metricsTimeoutMs: 5000,                               // Database metrics statement timeout (ms)
-    dataDir: "./data",                                    // Data directory; restart to apply
-    databaseUrl: "postgres://sts:sts@localhost:5432/sts", // Database connection string; restart to apply
-    databasePasswordProvider: "none",                     // Where the database password is read from; restart to apply
-    databasePasswordRef: "",                              // The database password's location; restart to apply
-    databasePasswordField: "databasePassword",            // The field the password is in; restart to apply
-    databasePasswordVault: "",                            // Vault or Key Vault URL for the database password; restart to apply
-    databasePasswordRegion: "",                           // AWS region for the database password; restart to apply
-    databasePasswordToken: "",                            // Vault token for the database password; restart to apply
-    databaseTlsRejectUnauthorized: false,                 // Verify the database certificate; restart to apply
-    writeDelay: 1500,                                     // Write delay (ms)
-    realms: true,                                         // Persist the realm registry; restart to apply
-    appconfig: true,                                      // Persist runtime setting changes; restart to apply
-    minted: true,                                         // Persist sessions, tokens and the audit log; restart to apply
-    mintedRetention: 604800000,                           // Minted state retention (ms)
-    coordinate: true,                                     // Coordinate with other processes; restart to apply
-    pollInterval: 5000,                                   // Change poll interval (ms)
-    changeLogRetentionS: 3600                             // Change log retention (s)
+    mode: "memory",                                        // Persistence mode; restart to apply
+    metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
+    dataDir: "./data",                                     // Data directory; restart to apply
+    databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
+    databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
+    databasePasswordRef: "",                               // The database password's location; restart to apply
+    databasePasswordField: "databasePassword",             // The field the password is in; restart to apply
+    databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
+    databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
+    databasePasswordToken: "",                             // Vault token for the database password; restart to apply
+    databaseTlsRejectUnauthorized: false,                  // Verify the database certificate; restart to apply
+    globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
+    globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
+    globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply
+    globalDatabasePasswordRef: "",                         // The global database password's location; restart to apply
+    globalDatabasePasswordField: "globalDatabasePassword", // The field the global database password is in; restart to apply
+    globalDatabasePasswordRegion: "",                      // AWS region of the global database password; restart to apply
+    writeDelay: 1500,                                      // Write delay (ms)
+    realms: true,                                          // Persist the realm registry; restart to apply
+    appconfig: true,                                       // Persist runtime setting changes; restart to apply
+    minted: true,                                          // Persist sessions, tokens and the audit log; restart to apply
+    mintedRetention: 604800000,                            // Minted state retention (ms)
+    coordinate: true,                                      // Coordinate with other processes; restart to apply
+    pollInterval: 5000,                                    // Change poll interval (ms)
+    changeLogRetentionS: 3600                              // Change log retention (s)
   },
 
   // --- Cluster ---------------------------------------------------------
@@ -1210,6 +1223,30 @@ var config = {
     heartbeatMs: 2000,              // Heartbeat interval (ms); restart to apply
     nodeTtlMs: 30000,               // Node lifetime (ms); restart to apply
     acceptMissingCapabilities: ""   // Capabilities accepted as missing; restart to apply
+  },
+
+  // --- Cells -----------------------------------------------------------
+  cells: {
+    id: "",                         // This cell; restart to apply
+    jurisdiction: "",               // This cell's jurisdiction; restart to apply
+    peers: "",                      // The other cells; restart to apply
+    port: 8446,                     // Inter-cell port; restart to apply
+    hostname: "",                   // This cell's inter-cell host name; restart to apply
+    relayTimeoutMs: 10000,          // Inter-cell request timeout (ms)
+    deliveryAttempts: 12,           // Inter-cell delivery attempts
+    deliveryBackoffMs: 2000,        // Inter-cell delivery backoff (ms)
+    deliveryRetentionS: 86400,      // Inter-cell delivery retention (s)
+    deliveryMaxRows: 100000,        // Inter-cell deliveries held
+    deliveryConcurrency: 8,         // Inter-cell deliveries at once
+    deliverySummaryS: 300,          // Inter-cell delivery summary interval (s)
+    deliverySweepS: 30,             // Inter-cell delivery sweep interval (s)
+    homeUnreachable: "fail-closed", // When a person's home cell cannot be reached
+    failOpenGraceS: 900,            // Fail-open grace (s)
+    subjectCheckS: 60,              // Subject state check interval (s)
+    homeCell: "",                   // Default home cell for new people
+    jurisdictions: "",              // Jurisdictions people may be homed in
+    permittedTransfers: "",         // Transfers this realm permits
+    hardGeofence: false             // Refuse rather than relay
   },
 
   // --- Signing keys ----------------------------------------------------
@@ -1228,6 +1265,12 @@ var config = {
     disabledJobs: "",     // Jobs switched off
     runTimeoutS: 600,     // The longest a run may take (seconds)
     maxConcurrentRuns: 2  // Most runs going at once
+  },
+
+  // --- Attribute sources -----------------------------------------------
+  attributeSources: {
+    hostPatterns: "",  // Hosts an attribute source may name
+    refreshBatch: 200  // People per scheduled refresh
   },
 
   // --- Mail ------------------------------------------------------------

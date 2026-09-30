@@ -746,6 +746,18 @@ class ProtocolStack {
     this.build('oidfed/entity_collection',
                require('../oidfed/entity_collection'), 'EntityCollection');
     this.register(app, require('../oidfed/oidfed'), 'oidfed/oidfed');
+    // -------------------------------------------------------------------------
+    // 14c. WHICH CELL ANSWERS A KERBEROS REQUEST OVER MS-KKDCP (#98): a
+    // `POST /KdcProxy` of its own, registered JUST BEFORE the KDC is
+    // required so it runs first — it relays a request whose client is homed
+    // in another cell and calls next() for everything else, after which the
+    // KDC's own handler answers exactly as it did. The KDC is one of the
+    // parent project's locked files and cannot be given the check itself.
+    // It requires only the vendored codec (a leaf set) at load and the
+    // principal database lazily, so nothing moves and no cycle closes.
+    // -------------------------------------------------------------------------
+    require('../kerberos/krb5_home');
+    this.register(app, require('../kerberos/krb5_home'), 'kerberos/krb5_home');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
     // — it is one of the parent project's locked JavaScript files, which still
     // register at require (rule 1) — but NOT the raw TCP/UDP listeners on port
@@ -1145,6 +1157,17 @@ class ProtocolStack {
                'ModeAdmin');
     this.register(app, require('../admin-ui/mode_admin'),
                   'admin-ui/mode_admin');
+    // 18k-ii. CELLS (#98, 2026-09-28). `/admin/cells` — the cell map, the
+    // store's tiers, the channel, the Cells settings and another cell's
+    // residents. 18a's placement and 18a's reason: the console's shell and
+    // the cell libraries (loaded by `app.js` and persistence far above) are
+    // here, and `mgmt-api/admin_api` requires it in the ordinary direction.
+    // Its registerRoutes() also registers its two inter-cell operations.
+    require('../admin-ui/cells_admin');
+    this.build('admin-ui/cells_admin', require('../admin-ui/cells_admin'),
+               'CellsAdmin');
+    this.register(app, require('../admin-ui/cells_admin'),
+                  'admin-ui/cells_admin');
     // 18l. MAIL (#63, 2026-09-22): Server configuration → Mail and
     // Monitoring → Mail outbox, one module for both. 18a's placement and 18a's
     // reason: the console's shell and the channel (built with the portal,
@@ -1207,13 +1230,29 @@ class ProtocolStack {
                'DevicesAdmin');
     this.register(app, require('../admin-ui/devices_admin'),
                   'admin-ui/devices_admin');
+    // 18r. ATTRIBUTE SOURCES (#94): Directory → Attribute sources. The
+    // library first — a register whose wire step puts the
+    // `attribute-sources.refresh` job on the scheduler (built at 18i), and
+    // whose directory slot `ldap/ldap_server.js` fills at 21 into a holder of
+    // its own, so that order cannot matter — then the page, 18a's placement
+    // and 18a's reason. `mgmt-api/admin_api` spreads `attribute_sources_api`'s
+    // routes, built below with the other API modules.
+    this.build('attribute-sources/attribute_sources',
+               require('../attribute-sources/attribute_sources'),
+               'AttributeSources');
+    require('../attribute-sources/attribute_sources_admin');
+    this.build('attribute-sources/attribute_sources_admin',
+               require('../attribute-sources/attribute_sources_admin'),
+               'AttributeSourcesAdmin');
+    this.register(app, require('../attribute-sources/attribute_sources_admin'),
+                  'attribute-sources/attribute_sources_admin');
     // THE NODE SNAPSHOTS (#332, 2026-09-28), a library the two pages below
     // hand their views to: built here, before them, so the instance they
     // reach is the root's. It registers its scheduler job when the first
-    // page hands over its view, in 18r's register().
+    // page hands over its view, in 18s's register().
     this.build('cluster/node_snapshots', require('../cluster/node_snapshots'),
                'NodeSnapshots');
-    // 18r. THE WORKER POOLS' PAGE (#327, 2026-09-28). `/admin/worker-pools` —
+    // 18s. THE WORKER POOLS' PAGE (#327, 2026-09-28). `/admin/worker-pools` —
     // the request, hosted-surface and post-quantum pools of this node. 18a's
     // placement and 18a's reason: the console's shell is here, the two pool
     // modules are libraries it reaches lazily when a page is drawn, and
@@ -1223,9 +1262,9 @@ class ProtocolStack {
                require('../admin-ui/worker_pools_admin'), 'WorkerPoolsAdmin');
     this.register(app, require('../admin-ui/worker_pools_admin'),
                   'admin-ui/worker_pools_admin');
-    // 18s. NODE HEALTH (#329, 2026-09-28). `/admin/node-health` — the
+    // 18t. NODE HEALTH (#329, 2026-09-28). `/admin/node-health` — the
     // container's CPU and memory from its cgroup, and every process of this
-    // node. 18r's placement and 18a's reason: the console's shell, the pools
+    // node. 18s's placement and 18a's reason: the console's shell, the pools
     // and the debugger's api reached lazily when a page is drawn, and
     // `mgmt-api/admin_api` requires it in the ordinary direction.
     require('../admin-ui/node_health_admin');
@@ -1260,6 +1299,9 @@ class ProtocolStack {
     this.build('oauth-oidc/claims_providers_api',
                require('../oauth-oidc/claims_providers_api'),
                'ClaimsProvidersApi');
+    this.build('attribute-sources/attribute_sources_api',
+               require('../attribute-sources/attribute_sources_api'),
+               'AttributeSourcesApi');
     this.build('oauth-oidc/provider_commands_api',
                require('../oauth-oidc/provider_commands_api'),
                'ProviderCommandsApi');
@@ -1514,6 +1556,17 @@ class ProtocolStack {
     this.build('oauth-oidc/oauth_grant_signals',
                require('../oauth-oidc/oauth_grant_signals'),
                'OAuthGrantSignals');
+    // 23b-vii. A SESSION HELD AWAY FROM ITS PERSON'S HOME (#98): a library,
+    // loaded by `app.js` for its middleware long before this line, whose
+    // install() registers its operations on the inter-cell channel and no
+    // route. After `ssf/ssf` and the grant signals, beside which it belongs
+    // for a reader — everything it reaches (the session store, the directory,
+    // the sign-out) it reaches lazily, and in single-cell mode no operation it
+    // registers is ever called.
+    require('./cell_sessions').install();
+    // And re-homing's receiving half (#98 §8.8): `adopt-person`, the same
+    // arrangement — a library whose install() registers one operation.
+    require('./cell_rehome').install();
     // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
     // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
     // signingKeyRotated() it calls (lazily, so the order is for a reader).

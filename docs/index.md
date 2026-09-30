@@ -60,6 +60,7 @@ configuration recipes, in the console and through the API, for each
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·
 [Mail](mail.md) ·
+[Attribute sources](attribute-sources.md) ·
 [CAEP events](caep-events.md) ·
 [Signals received](signals-received.md)
 
@@ -69,7 +70,9 @@ configuration recipes, in the console and through the API, for each
 [LDAP schema](ldap-schema.md) ·
 [Encryption at rest](encryption-at-rest.md) ·
 [Caches](caches.md) ·
-[A cluster in AWS](aws-cluster.md)
+[A cluster in AWS](aws-cluster.md) ·
+[Several regions (cells)](cells.md) ·
+[How cells work](cells-concepts.md)
 
 **For contributors** —
 [Repository layout](layout.md) ·

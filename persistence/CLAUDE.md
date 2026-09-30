@@ -1079,6 +1079,50 @@ the list merge, the session rank).
 * The capability `ops.change-log-retention` is provided by
   `persistence_replication.js`, not `persistence.js` as the row first named.
 
+## A WINDOWED WORKER'S DIRECTORY (#349, 2026-09-29)
+
+With `ldap.workerDirectory=postgres-lru` the directory slot carries a
+`window` (`ldap/directory_window.ts`) and a `forgetEntry()`, and this module
+does four things differently. `ldap/CLAUDE.md` argues the window itself.
+
+* **`start()` refuses** postgres-lru without a postgres store or with cells
+  (`STS-LDAP-0133`), in every process, before anything is opened; and on
+  postgres it hands the window its bridge (`common/sync_query.ts`, dialled
+  with the driver's `bridgeConnection()`) BEFORE the restore. `stop()` ends
+  the bridge's thread after the last flush.
+* **The flush asks the window first** — `collect()`, with the journal or null
+  for a write that named nothing — before deciding whether anything is dirty:
+  an entry edited in place is found only by comparison, and the window lets go
+  of what it handed out only when a flush has looked. Its upserts (each with
+  its own base) and deletes go in the SAME `saveDirectory()` transaction as the
+  resident diff; `committed()` or `failed()` answers them, and the write
+  shadow is never advanced by them (a windowed key is never in it:
+  `realmEntries()` and `entryAt()` answer the resident half).
+* **`directoryTouched()`** is a fifth door: an entry was handed out, so a
+  flush is scheduled; it marks nothing and moves no generation, because a
+  read is not a write and the barrier must not wait on one.
+* **`applyDirectoryChange()` merges nothing for a windowed key**: it reads
+  the row, as it always does, and hands it to `forgetEntry()` — which notes a
+  person another process made in the identity register, as `applyEntry()`
+  does — and a busy key (changed, in flight or handed out) is left for this
+  process's own flush, which the store merges against the window's base,
+  while any other is forgotten and read again when asked for.
+  `applyDirectoryOutcomes()` leaves windowed
+  keys to `committed()`.
+
+* **The restore reads the RESIDENT entries only** (`loadDirectoryRows()`,
+  the `residentOnly` question with each realm's windowed containers from the
+  slot's `windowedContainers()`): the people and devices are read when first
+  asked for, which takes the directory out of a worker's start (#333 measured
+  it at a fifth of a sixty-eight-second start). The identity register is
+  still filled with every restored person: `replaceRealm()` reads their
+  NAMES from the store a page at a time (`ldap/CLAUDE.md`). A realm's seed is
+  still built at require time in every process.
+
+`tests/directory_window.js` section F drives all of it through this module
+over a `pg` double, including a change made here and one made there to the
+same entry both surviving, and the resident-only restore.
+
 ## WHAT A RESTART MUST NOT LOSE (2026-09-18)
 
 A redeploy of the testidp cluster showed `/admin/users` with one authenticated
@@ -1652,3 +1696,137 @@ entry through the real directory and reading it back from a second process.
 **AND THE DIRECTORY NOW CARRIES THE CLIENT TRUSTSTORE'S RUNTIME ANCHORS**, in
 `ou=trustAnchors` in the default realm — so "the embedded directory persists"
 includes them. `tls/CLAUDE.md` argues it.
+
+## TIERS: A CELL'S STORE IS TWO DATABASES (#98, 2026-09-28)
+
+**A service deployed as cells** (`common/cells.ts`, `cells.id` set) keeps its
+store in two places per cell, and this directory is where the split lives.
+The design and its decisions are issue #98's body; this section is the part a
+maintainer of this directory has to know.
+
+| Tier | Where | What |
+|---|---|---|
+| GLOBAL | one writer for the service (`persistence.globalDatabaseUrl`), read from this cell's replica (`…ReadUrl`) | realms, settings, signing keys and the certificate authorities, the shared cluster secrets, the used-assertion history, the routing index, applications, policies and the other configuration entries, and the minted stores `tiers.js` lists as global |
+| CELL | this cell's own database (`persistence.databaseUrl`) | the people homed here and their devices, group membership of those people, and everything this cell mints — sessions, codes, tokens, deliveries, the audit log, risk history, the cluster's membership and leases |
+
+**`tiers.js` IS THE ONE PLACE A STORE'S TIER IS DECIDED, AND EVERY STORE IS
+IN IT.** A directory entry's tier comes from where it sits (below `ou=users`
+is a person, cell tier; a device by its owner's kind; a group is SPLIT — its
+definition global, its person members in their cell — `splitGroup()` and
+`joinGroup()`); a minted store's from its handle, listed global or cell by
+name. `tests/cell_tiers.js` reads every `persist:` in the tree and fails on
+one in neither list: a default tier would be a default answer to a residency
+question, and the wrong default is a person's data in another country with
+nothing failing. A GLOBAL minted store is the exception that is argued beside
+its name — configuration, a revocation every cell must see, or a replay set a
+CLIENT chooses the keys of (a DPoP `jti`, a Kerberos authenticator), which a
+per-cell set would accept once per cell.
+
+**`persistence_tiered.js` IS THE DRIVER THE SERVICE SEES**, with the postgres
+driver's whole interface: the cell driver's methods bound by default (the
+cluster is the cell's), the global ones over them, and the directory and the
+minted rows split row by row. Three things it does beyond routing:
+
+* **The routing index** (`sts_cell_routing`, schema version 11) is kept at the
+  flush, the one place every person passes: a person written for the first
+  time claims their login name and entryUUID as keyed digests
+  (`common/cell_routing.ts` makes them), a delete releases both, and a claim
+  answered with another cell is counted (STS-CELL-0020) rather than failing
+  the flush — creation paths claim first, and this is the race that check
+  cannot close.
+* **A projected entry is never written here** (origin `projection:<home>`,
+  `common/cell_sessions.ts`); a change to one is handed to the sessions module,
+  which sends it home. `persistence.materializeEntry()` is how a projection
+  enters the directory without becoming a row: `restoring` set and the shadow
+  advanced, exactly as a replicated entry is applied.
+* **What is not atomic across the two databases** is said in its header: a
+  flush touching both tiers is two transactions, global first, and a failure
+  between them is written by the next flush because the shadow only advances
+  on success. A global write is not fenced by the cell's membership.
+
+**TWO CHANGE LOGS, TWO FOLLOWERS.** `persistence_replication.js` is a factory
+since #98: the module's own exports are the instance for the process's main
+log (the cell's, or the only one), and `persistence.js`'s `coordinate()`
+builds `createReplication('global')` on the global driver itself, so its own
+rows are skipped by the origin the global driver stamps. Its pull and trim
+jobs carry `global` in their ids. The two may pull at once; the one thing they
+share, `persistence_minted.js`'s page prefetch, never answers across them
+because a handle is in exactly one tier. **The read barrier waits on the
+cell's log only**: a global change made in another cell arrives after the
+replica's lag, which `/admin/cells` shows — a barrier on it would put a
+cross-region round trip on every request, which #98 D3 declined.
+
+**THE READ POOL.** `persistence_postgres.js` takes a `readUrl`: every
+statement that only reads (the restore, the change log, the row a change
+points at, the routing lookups) goes to it, and everything that writes, locks
+or claims stays on the writer. A change row and its data row are read from the
+same replica, which replays the writer's commits whole and in order, so a
+pointer is never read ahead of what it points at.
+
+**A GLOBAL JOB RUNS IN ONE CELL, NOT IN EVERY CELL.** A cluster job claims its
+run in its cluster's database, and a cell is a cluster — so a job whose work
+is the global tier's (a realm signing-key rotation, the krbtgt key, a SPIFFE
+authority, the OpenID Federation key, a client secret's expiry, the global
+used-assertion purge; `tiers.js`'s `GLOBAL_JOBS`) claimed there would run once
+per cell. In multi-cell mode the scheduler claims those runs under
+`scheduler.run.global` (`tiers.GLOBAL_RUN_SCOPE`), and the tiered driver keeps
+that scope in the global database (`claimTierOf()`); `purgeClaims()` runs on
+both. A new job that writes global state belongs on that list.
+
+**SEALING BY TIER.** A cell-tier minted row is sealed under the cell's own
+key-encryption key (`keys.cellKek*`, `keystore.seal(…, 'cell')`), which lives
+only in the cell's region and has no fallback; `keystore.open()` tries the
+cell key and then the service key, since AES-GCM's tag makes the wrong one
+fail rather than answer. Single-cell mode seals everything under the service
+key, as it always did.
+
+**WHAT A CELL REFUSES AT START** (`checkCells()`): inconsistent cell settings
+(STS-CELL-0001), a store that is not postgres or no global database (0002), no
+cell key in product mode (0003), keys that are not persisted or no operator
+key-encryption key (0004 — every cell must sign with the same realm keys, #98
+D8), and no `global.publicBaseUrl` (0005 — a relayed request reaches the
+owning cell under a private name).
+
+### Converting a single-cell store (#98, 2026-09-28)
+
+**`cell_convert.js` turns a single-cell deployment's database into a cell,
+ONCE** — `node persistence/cell_convert.js [--dry-run]`, run in the image and
+configured exactly as the cell it becomes (`cells.id`, the cell's
+`databaseUrl` pointing at the old database, the global database built empty,
+the service KEK). It dials both through `databaseConnection()`,
+`globalDatabaseConnection()` and the driver's `dialOptions()`, and holds the
+KEK through `keystore.start()`, which also proves that key opens the stored
+key sets — a routing digest under the wrong key would route nobody.
+
+**IT WRITES WHAT THE TIERED DRIVER WOULD HAVE.** Every row of the tables
+whose methods are in `GLOBAL_METHODS` moves (realms, appconfig, keys, used
+assertions, cluster secrets), the directory is split by
+`tiers.directoryTierOf()`, a group into its `splitGroup()` halves (a cell half
+that is empty is DELETED, as `splitChange()` deletes it), a minted row moves
+when `mintedTierOf()` says global (an unclassified handle stays, as
+`byHandleTier()` keeps it), and a `scheduler.run.global` claim moves. The
+routing index is backfilled through `persistence.routingDigest()` — the one
+digest, now also the one the tiered driver is built with — from
+`persistence_tiered.loginNameOf()` and `uuidOf()`, so a backfilled row is the
+row `indexPeople()` writes. Rows are copied verbatim, jsonb as parsed values
+and timestamps as UTC text; nothing is re-sealed (`keystore.open()` falls back
+to the service key). `sts_risk_*` is only ever counted.
+
+**COPY, VERIFY, THEN DELETE**, one transaction each on the global and then
+the cell database, so the only states a failure leaves are *not started*
+(global empty), *copied* (global holds exactly the cell's realms and keys: a
+re-run copies again and finishes) and *converted* (the cell holds no realm and
+no key: nothing moves, a missing index row is claimed, exit 0). A global
+database whose realms or keys differ, or whose index names another cell, is a
+second source and is refused (STS-CELL-0203); STS-CELL-0200 to 0209 are its
+codes.
+
+**THE CHANGE LOGS ARE NOT COPIED.** Nothing runs across a conversion, and a
+process that starts restores the tables and follows each log from its end —
+so the global database's `sts_changes` and `sts_change_readers` start empty,
+and the old deployment's readers and nodes in the cell database are dropped
+by the next trim and the dead-node purge like any dead node's.
+
+`tests/cell_convert.js` holds the rules over two in-memory databases;
+`tests/tools/rehearse-cell-conversion.sh` rehearses it against real
+PostgreSQL (`tests/CLAUDE.md`).

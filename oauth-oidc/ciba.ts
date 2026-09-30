@@ -60,6 +60,9 @@
 // ===========================================================================
 
 import nodeCrypto = require('crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -445,7 +448,9 @@ class Ciba {
     const expiresIn = asked > 0 ? Math.min(Math.floor(asked), maxExpiry) :
       Math.min(this.setting('oauth2.cibaDefaultExpiryS'), maxExpiry);
     const record = {
-      id: nodeCrypto.randomBytes(32).toString('base64url'),
+      // Stamped with the minting cell (#98 D10): the client polls the cell
+      // nearest it, which relays here.
+      id: cellLocator.stamp(nodeCrypto.randomBytes(32).toString('base64url')),
       state: 'pending',
       clientId: String(spec.clientId),
       clientName: String(spec.clientName || spec.clientId),

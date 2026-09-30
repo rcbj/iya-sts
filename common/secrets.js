@@ -220,6 +220,57 @@ const DATABASE_PASSWORD = {
 };
 
 // ---------------------------------------------------------------------------
+// THE GLOBAL TIER'S DATABASE PASSWORD AND THE CELL KEY (#98, 2026-09-28).
+//
+// A service of several cells has TWO databases per cell — the cell's own and
+// the global tier's replica — and a key of its own for what the cell stores
+// (`persistence/CLAUDE.md`, *Tiers*). The password is shaped exactly like the
+// database password, with the key's location as its fallback.
+//
+// **THE CELL KEY HAS NO FALLBACK, AND THAT IS THE POINT OF IT.** It exists so
+// that one cell's rows opened anywhere else open nothing; a descriptor that
+// fell back to the service key's location would read the SERVICE key under a
+// second name, and the residency it is for would be a label. So an empty
+// location with a provider set is refused (`readCellKek()`), and a location
+// equal to the service key's is refused too.
+// ---------------------------------------------------------------------------
+/**
+ * The global tier database password's descriptor (#98), with the
+ * key-encryption key's location and store as the fallback.
+ */
+const GLOBAL_DATABASE_PASSWORD = {
+  id: 'global-database-password',
+  label: 'the global tier database password',
+  provider: 'persistence.globalDatabasePasswordProvider',
+  file: 'persistence.globalDatabasePasswordRef',
+  ref: 'persistence.globalDatabasePasswordRef',
+  field: 'persistence.globalDatabasePasswordField',
+  defaultField: 'globalDatabasePassword',
+  fallbackRef: KEK,
+  vault: null,
+  region: 'persistence.globalDatabasePasswordRegion',
+  token: null
+};
+
+/**
+ * The cell key-encryption key's descriptor (#98): its own provider, location,
+ * field and region, and NO fallback location.
+ */
+const CELL_KEK = {
+  id: 'cell-kek',
+  label: 'the cell key-encryption key',
+  provider: 'keys.cellKekProvider',
+  file: 'keys.cellKekRef',
+  ref: 'keys.cellKekRef',
+  field: 'keys.cellKekField',
+  defaultField: '',
+  fallbackRef: null,
+  vault: null,
+  region: 'keys.cellKekRegion',
+  token: null
+};
+
+// ---------------------------------------------------------------------------
 // THE MAIL CHANNEL'S FOUR SECRETS (#63, 2026-09-22), shaped exactly like the
 // database password: a provider, one location row, a field, and the KEY's
 // location, vault, region and token when their own are empty — so one JSON
@@ -302,12 +353,27 @@ const MAIL_GMAIL_KEY = mailSecret('mail-gmail-key',
  * @param which - 'vault', 'region' or 'token'
  * @returns the configured value, or an empty string when none is set
  */
+// ONE MEMBER OF A DESCRIPTOR (#94). A descriptor's members name SETTINGS,
+// read here; a descriptor built at run time for one attribute source carries
+// its own literal `values` instead, because a register of sources has no
+// setting row per source. Every reader below asks through this, so the two
+// kinds of descriptor are read by one set of providers.
+function specValue(spec, which) {
+  log.debug("Entering specValue(). " + which);
+  if (spec && spec.values &&
+      Object.prototype.hasOwnProperty.call(spec.values, which)) {
+    log.debug("Leaving specValue(). A literal.");
+    return spec.values[which];
+  }
+  log.debug("Leaving specValue().");
+  return spec && spec[which] ? config.value(spec[which]) : undefined;
+}
+
 function reachOf(spec, which) {
   log.debug("Entering reachOf().");
   const secret = spec || KEK;
   // A secret with NO ROW for it (the mail secrets have none) reads the KEY's.
-  const own = secret[which]
-    ? String(config.value(secret[which]) || '').trim() : '';
+  const own = String(specValue(secret, which) || '').trim();
   if (own || secret === KEK || !secret.fallbackRef) {
     log.debug("Leaving reachOf().");
     return own;
@@ -321,7 +387,7 @@ function reachOf(spec, which) {
 // path-shaped provider and a name-shaped one.
 function locationOf(spec, which) {
   log.debug("Entering locationOf().");
-  const own = String(config.value(spec[which]) || '').trim();
+  const own = String(specValue(spec, which) || '').trim();
   if (own) {
     log.debug("Leaving locationOf().");
     return { where: own, borrowed: false };
@@ -330,7 +396,7 @@ function locationOf(spec, which) {
     log.debug("Leaving locationOf().");
     return { where: '', borrowed: false };
   }
-  const lent = String(config.value(spec.fallbackRef[which]) || '').trim();
+  const lent = String(specValue(spec.fallbackRef, which) || '').trim();
   log.debug("Leaving locationOf().");
   return { where: lent, borrowed: !!lent };
 }
@@ -338,7 +404,7 @@ function locationOf(spec, which) {
 // The field to take out of a JSON value, where the secret names one.
 function fieldOf(spec) {
   log.debug("Entering fieldOf().");
-  const named = String(config.value(spec.field) || '').trim();
+  const named = String(specValue(spec, 'field') || '').trim();
   log.debug("Leaving fieldOf().");
   return named || spec.defaultField || '';
 }
@@ -913,7 +979,7 @@ function providerFor(id) {
 function current(spec) {
   log.debug("Entering current().");
   log.debug("Leaving current().");
-  return providerFor(config.value((spec || KEK).provider));
+  return providerFor(specValue(spec || KEK, 'provider'));
 }
 
 // Is a secret configured to come from a provider at all? Only the database
@@ -929,7 +995,7 @@ function current(spec) {
  */
 function configuredFor(spec) {
   log.debug("Entering configuredFor().");
-  const named = String(config.value(spec.provider) || '').trim();
+  const named = String(specValue(spec, 'provider') || '').trim();
   log.debug("Leaving configuredFor().");
   return !!named && named !== 'none';
 }
@@ -943,7 +1009,7 @@ async function read(spec) {
   const provider = current(spec);
   if (!provider) {
     const bad = errorCodes.mark(new Error(spec.provider + ' is "' +
-                          config.value(spec.provider) +
+                          specValue(spec, 'provider') +
                           '", which is not one of: ' + PROVIDER_IDS.join(', ') +
                           '.'), 'STS-KEYS-0050');
     recordRead(spec, null, 0, bad);
@@ -1051,6 +1117,86 @@ async function readDatabasePassword() {
 }
 
 // ---------------------------------------------------------------------------
+// THE GLOBAL TIER'S PASSWORD (#98): the database password's rule, for the
+// second database. `null` when no provider is configured.
+// ---------------------------------------------------------------------------
+/**
+ * Reads the global tier database password from its configured provider,
+ * decoded as text and trimmed.
+ *
+ * @returns the password, or null when no provider is configured
+ * @throws an Error when the read fails or finds an empty value
+ */
+async function readGlobalDatabasePassword() {
+  log.debug('Entering readGlobalDatabasePassword().');
+  if (!configuredFor(GLOBAL_DATABASE_PASSWORD)) {
+    log.debug('Leaving readGlobalDatabasePassword(). Not configured.');
+    return null;
+  }
+  const value = await read(GLOBAL_DATABASE_PASSWORD);
+  const text = (Buffer.isBuffer(value) ? value.toString('utf8')
+                                       : String(value == null ? '' :
+                                                value)).trim();
+  if (!text) {
+    throw new Error(errorCodes.tag('STS-CELL-0010') +
+                    GLOBAL_DATABASE_PASSWORD.provider + ' is "' +
+                    config.value(GLOBAL_DATABASE_PASSWORD.provider) +
+                    '" and what it read is empty. This service will not ' +
+                    'dial the global tier with an empty password.');
+  }
+  log.debug('Leaving readGlobalDatabasePassword(). ' + text.length +
+            ' character(s).');
+  return text;
+}
+
+// ---------------------------------------------------------------------------
+// THE CELL KEY (#98). `null` when `keys.cellKekProvider` is `none`, which
+// means the cell tier is sealed under the service key — single-cell mode, a
+// test, or a development deployment. Refused, rather than read, when the
+// location is empty or is the service key's own: either would hand back the
+// service key under the cell key's name (see the descriptor).
+// ---------------------------------------------------------------------------
+/**
+ * Reads this cell's key-encryption key.
+ *
+ * @returns the key as the provider returned it, or null when
+ *   `keys.cellKekProvider` is `none`
+ * @throws an Error (STS-CELL-0011) when its location is empty or is the
+ *   service key's, or the provider's error when the read fails
+ */
+async function readCellKek() {
+  log.debug('Entering readCellKek().');
+  if (!configuredFor(CELL_KEK)) {
+    log.debug('Leaving readCellKek(). Not configured.');
+    return null;
+  }
+  const provider = String(config.value(CELL_KEK.provider) || '');
+  const serviceProvider = String(config.value(KEK.provider) || '');
+  // The service key's location is `keys.kekFile` for a file and
+  // `keys.kekRef` otherwise (see KEK); the cell key has one row for both.
+  const own = locationOf(CELL_KEK, provider === 'file' ? 'file' : 'ref');
+  const service = locationOf(KEK, serviceProvider === 'file' ? 'file'
+                                                             : 'ref');
+  if (!own.where) {
+    throw new Error(errorCodes.tag('STS-CELL-0011') + CELL_KEK.provider +
+                    ' is "' + provider + '" and keys.cellKekRef is empty. ' +
+                    'The cell key has no fallback location: falling back ' +
+                    'would read the service key under the cell key\'s name.');
+  }
+  if (provider === serviceProvider && own.where === service.where &&
+      String(config.value(CELL_KEK.field) || '') ===
+      String(config.value(KEK.field) || '')) {
+    throw new Error(errorCodes.tag('STS-CELL-0011') + 'keys.cellKekRef ' +
+                    'names the same secret as the service key-encryption ' +
+                    'key. A cell key that IS the service key keeps nothing ' +
+                    'in its cell.');
+  }
+  const value = await read(CELL_KEK);
+  log.debug('Leaving readCellKek().');
+  return value;
+}
+
+// ---------------------------------------------------------------------------
 // ONE OF THE MAIL SECRETS AS TEXT (#63): `null` when its provider is `none`,
 // and otherwise what is stored, decoded and trimmed — the database
 // password's rule, and for its reason. A read that finds nothing is refused
@@ -1082,11 +1228,62 @@ async function readSecretText(spec) {
                                                 value)).trim();
   if (!text) {
     throw errorCodes.mark(new Error(errorCodes.tag(spec.emptyCode) +
-                    spec.provider + ' is "' + config.value(spec.provider) +
+                    spec.provider + ' is "' + specValue(spec, 'provider') +
                     '" and what it read for ' + spec.label + ' is empty.'),
                     spec.emptyCode);
   }
   log.debug('Leaving readSecretText(). ' + text.length + ' character(s).');
+  return text;
+}
+
+// AN ATTRIBUTE SOURCE'S PASSWORD (#94). A source is a row in a register, not
+// a setting, so its descriptor is built here from the source's own triple —
+// `provider`, `ref` (a path for `file`, a name for the others) and `field` —
+// and carries them as literal `values` (specValue() above). Like the mail
+// secrets it falls back to the KEK's location for what it does not name (the
+// vault address, the region, the token), and `none` means no password. The
+// ledger records it under `attribute-source:<realm>:<id>`, so two sources
+// never share a row.
+/**
+ * Reads an attribute source's password as text, decoded and trimmed.
+ *
+ * @param source - `{ realm, id, provider, ref, field }`
+ * @returns the text, or null when the provider is `none` or empty
+ * @throws an Error carrying STS-ATTR-0006 when the read fails, or
+ *   STS-ATTR-0007 when it finds an empty value
+ */
+async function readSourceSecret(source) {
+  const given = source || {};
+  log.debug('Entering readSourceSecret(). source=' + given.id);
+  const spec = {
+    id: 'attribute-source:' + String(given.realm || '') + ':' +
+        String(given.id || ''),
+    label: 'the password of attribute source ' + String(given.id || ''),
+    provider: 'attribute source ' + String(given.id || '') + ' provider',
+    file: 'attribute source ' + String(given.id || '') + ' ref',
+    ref: 'attribute source ' + String(given.id || '') + ' ref',
+    field: 'attribute source ' + String(given.id || '') + ' field',
+    fallbackRef: KEK,
+    failureCode: 'STS-ATTR-0006',
+    emptyCode: 'STS-ATTR-0007',
+    values: { provider: String(given.provider || 'none'),
+              file: String(given.ref || ''), ref: String(given.ref || ''),
+              field: String(given.field || '') }
+  };
+  if (!configuredFor(spec)) {
+    log.debug('Leaving readSourceSecret(). No password.');
+    return null;
+  }
+  const value = await read(spec);
+  const text = (Buffer.isBuffer(value) ? value.toString('utf8')
+                                       : String(value == null ? '' :
+                                                value)).trim();
+  if (!text) {
+    throw errorCodes.mark(new Error(errorCodes.tag(spec.emptyCode) +
+                    'what ' + spec.values.provider + ' read for ' +
+                    spec.label + ' is empty.'), spec.emptyCode);
+  }
+  log.debug('Leaving readSourceSecret(). ' + text.length + ' character(s).');
   return text;
 }
 
@@ -1095,7 +1292,7 @@ async function readSecretText(spec) {
 // single worst thing this service could draw.
 function describeSecret(spec) {
   log.debug("Entering describeSecret().");
-  const named = String(config.value(spec.provider) || '');
+  const named = String(specValue(spec, 'provider') || '');
   const provider = current(spec);
   const configured = configuredFor(spec);
   log.debug("Leaving describeSecret().");
@@ -1112,7 +1309,7 @@ function describeSecret(spec) {
     // location row means *wherever the key is*, and a page that printed the
     // empty row would be reporting that nothing is configured.
     shared: configured && !!spec.fallbackRef &&
-            !String(config.value(spec.ref) || '').trim(),
+            !String(specValue(spec, 'ref') || '').trim(),
     field: fieldOf(spec) || undefined,
     providers: PROVIDERS.map(function (one) {
       return { id: one.id, label: one.label };
@@ -1214,7 +1411,7 @@ function recordRead(spec, provider, tookMs, error) {
     label: spec.label,
     at: new Date().toISOString(),
     provider: provider ? provider.id :
-              String(config.value(spec.provider) || ''),
+              String(specValue(spec, 'provider') || ''),
     tookMs: tookMs,
     ok: !error,
     error: error ? String(error.message || error) : undefined
@@ -2187,7 +2384,8 @@ const MAIL_SECRETS = [MAIL_SMTP_PASSWORD, MAIL_DKIM_KEY,
  * Every secret this service reads: the key-encryption key, the database
  * password and the four mail secrets.
  */
-const SECRETS = [KEK, DATABASE_PASSWORD].concat(MAIL_SECRETS);
+const SECRETS = [KEK, DATABASE_PASSWORD, GLOBAL_DATABASE_PASSWORD, CELL_KEK]
+  .concat(MAIL_SECRETS);
 
 // Which store a secret lives in, as a key that is equal for two secrets in the
 // same place. The location is part of it for `file` — two mounted files are
@@ -2394,6 +2592,11 @@ module.exports = {
   // rules directly — they are the part of this file with no other way in.
   KEK: KEK,
   DATABASE_PASSWORD: DATABASE_PASSWORD,
+  // The global tier's password and the cell key (#98).
+  GLOBAL_DATABASE_PASSWORD: GLOBAL_DATABASE_PASSWORD,
+  CELL_KEK: CELL_KEK,
+  readGlobalDatabasePassword: readGlobalDatabasePassword,
+  readCellKek: readCellKek,
   // The mail channel's four (#63), and the one reader they share.
   MAIL_SMTP_PASSWORD: MAIL_SMTP_PASSWORD,
   MAIL_DKIM_KEY: MAIL_DKIM_KEY,
@@ -2401,6 +2604,7 @@ module.exports = {
   MAIL_GMAIL_KEY: MAIL_GMAIL_KEY,
   MAIL_SECRETS: MAIL_SECRETS,
   readSecretText: readSecretText,
+  readSourceSecret: readSourceSecret,
   readDatabasePassword: readDatabasePassword,
   describeDatabasePassword: describeDatabasePassword,
   configuredFor: configuredFor,

@@ -194,7 +194,7 @@ function writeConfig(dir, implementation, settings) {
 // A MOCHA RUN. `files` are paths under the suite (default: tests/). Answers
 // `{ tests: [{ title, state, message }], stats }`.
 // ---------------------------------------------------------------------------
-function runMocha(dir, ctx, opts) {
+async function runMocha(dir, ctx, opts) {
   log.debug("Entering runMocha(). " + dir);
   const o = opts || {};
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "vc-suite-")),
@@ -211,9 +211,39 @@ function runMocha(dir, ctx, opts) {
     NODE_PATH: [path.join(__dirname, "..", "node_modules"),
                 process.env.NODE_PATH || ""].join(path.delimiter)
   }, o.env || {});
-  const done = childProcess.spawnSync(process.execPath, args, {
-    cwd: dir, env: env, encoding: "utf8", maxBuffer: 256 * 1024 * 1024,
-    timeout: o.wallMs || 20 * 60 * 1000 });
+  // ASYNCHRONOUS, NOT spawnSync (2026-09-28): a blocked event loop never
+  // processed the service closing this job's idle keep-alive connection
+  // while mocha ran, and the job's next fetch() went out on the dead socket
+  // (`fetch failed`, sts_vc_di_ecdsa_suite's section 2 in single-node).
+  // enroll_clients_kit.js's run() is the same fix for the same failure.
+  const done = await new Promise(function (resolve) {
+    const child = childProcess.spawn(process.execPath, args,
+                                     { cwd: dir, env: env });
+    let stdout = "";
+    let stderr = "";
+    let failed = null;
+    const wall = setTimeout(function () {
+      failed = new Error("mocha ran past " + (o.wallMs || 20 * 60 * 1000) +
+                         " ms");
+      child.kill("SIGKILL");
+    }, o.wallMs || 20 * 60 * 1000);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", function (chunk) {
+      stdout += chunk;
+    });
+    child.stderr.on("data", function (chunk) {
+      stderr += chunk;
+    });
+    child.on("error", function (e) {
+      failed = e;
+    });
+    child.on("close", function (status) {
+      clearTimeout(wall);
+      resolve({ error: failed, status: status, stdout: stdout,
+                stderr: stderr });
+    });
+  });
   if (done.error) {
     throw new Error("mocha could not be run: " + done.error.message);
   }

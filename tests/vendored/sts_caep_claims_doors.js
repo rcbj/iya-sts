@@ -517,6 +517,50 @@ async function test() {
       assert.ok(found.hit, JSON.stringify(found.seen).slice(0, 1200));
     });
 
+  log.info("=== e-ii. an attribute claim (#94) ===");
+  // A claim carrying ANY directory attribute, under a name the administrator
+  // chose: a write that moves the attribute moves the claim, and a token
+  // issued after it carries the value.
+  const secret = await postJson(realmApi + "/claims/add-attribute-claim",
+    { set: "access_token", name: "c94_secret", attribute: "userPassword" });
+  check("an attribute claim may not carry a secret", function () {
+    assert.strictEqual(secret.status, 400, String(secret.raw).slice(0, 300));
+  });
+  await ok(realmApi + "/claims/add-attribute-claim", { set: "access_token",
+    name: "c94_dept", attribute: "departmentNumber" },
+    "added an attribute claim");
+  await ok(realmApi + "/users/set-attribute", { user: ALICE,
+    attribute: "departmentNumber", value: "D-94" },
+    "wrote the attribute onto the person");
+  found = await waitFor(token, streamId, "attribute claim", function (set) {
+    const claims = claimsAbout(set);
+    return !!claims && claims.c94_dept === "D-94";
+  });
+  check("token-claims-change carries the attribute claim's new value",
+    function () {
+      assert.ok(found.hit, JSON.stringify(found.seen).slice(0, 1200));
+    });
+  // ITS OWN nonce AND PKCE PAIR (2026-09-28): RFC 9700 mode refuses a
+  // state, code_challenge or nonce used for a code already redeemed
+  // (STS-OAUTH-0125), and the single-node and cluster modes run in it.
+  r = await authorize(b, Object.assign({}, params, { state: "st94",
+    nonce: "n94-" + STAMP,
+    code_challenge: nodeCrypto.createHash("sha256").update("w".repeat(43))
+      .digest("base64url") }), ALICE);
+  const code94 = r.location ? new URL(absolute(r.location)).searchParams
+    .get("code") : "";
+  const again = await send(realmBase + "/oauth2/token", { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form({ grant_type: "authorization_code", code: code94,
+                 redirect_uri: REDIRECT, client_id: RECEIVER,
+                 client_secret: SECRET, code_verifier: "w".repeat(43) }) });
+  check("an access token issued after it carries the attribute claim",
+    function () {
+      assert.strictEqual(again.status, 200, again.raw.slice(0, 300));
+      const claims = decode(again.body.access_token);
+      assert.strictEqual(claims.c94_dept, "D-94", JSON.stringify(claims));
+    });
+
   log.info("=== f. GET /ssf states the tightened-policy limitation ===");
   const page = await send(realmBase + "/ssf", {});
   check("GET /ssf says a tightened authentication policy sends nothing",

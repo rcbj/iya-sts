@@ -561,7 +561,7 @@ class AzureImdsAttestor {
       this.deps;
     log.debug("Entering AzureImdsAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     let tenants = null;
     let template = null;
     try {

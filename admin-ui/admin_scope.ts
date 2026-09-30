@@ -146,7 +146,10 @@ const SERVICE_PAGES = [
  */
 const SERVICE_SETTING_PREFIXES = [
   'admin.', 'adminApi.', 'realms.', 'workers.', 'persistence.', 'debugger.',
-  'tls.', 'keys.', 'security.passwordHash', 'risk.'
+  'tls.', 'keys.', 'security.passwordHash', 'risk.',
+  // Which hosts a realm's attribute sources may name (#94): the service's
+  // bound on its realm administrators, so not theirs to widen.
+  'attributeSources.hostPatterns'
 ];
 
 /**

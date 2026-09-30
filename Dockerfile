@@ -443,4 +443,8 @@ EXPOSE 8181
 # The embedded protocol debugger's listener (debugger.port), when it is
 # embedded and installed. See debugger/CLAUDE.md.
 EXPOSE 8444
+# The inter-cell channel (cells.port), bound only when the service is deployed
+# as cells (#98). A private address between cells; never publish it. See
+# docs/cells.md.
+EXPOSE 8446
 CMD [ "node", "server.js" ]

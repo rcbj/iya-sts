@@ -107,25 +107,30 @@ resource "aws_iam_role" "deployer" {
 # more is inert.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "workload_boundary" {
+  # IN EVERY PERMITTED REGION (#98): a cell's task reads its own secrets and
+  # the global ones replicated to its region, decrypts them with its cell key
+  # or its replica of the global key, pulls from its region's repository and
+  # logs to its region's group. With one permitted region each list is the one
+  # ARN it always was.
   statement {
     sid       = "ReadProjectSecrets"
     actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = ["${local.arn.secret}:${local.secret_prefix}*"]
+    resources = [for p in local.rarn.secretsmanager : "${p}:secret:${local.secret_prefix}*"]
   }
   statement {
     sid       = "DecryptWithTheProjectKeyThroughSecretsManager"
     actions   = ["kms:Decrypt"]
-    resources = [aws_kms_key.main.arn]
+    resources = local.all_project_key_arns
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
-      values   = ["secretsmanager.${local.region}.amazonaws.com"]
+      values   = [for r in local.regions : "secretsmanager.${r}.amazonaws.com"]
     }
   }
   statement {
     sid       = "PullTheProjectImage"
     actions   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"]
-    resources = [aws_ecr_repository.main.arn]
+    resources = local.all_ecr_arns
   }
   statement {
     sid       = "EcrLogin"
@@ -135,7 +140,7 @@ data "aws_iam_policy_document" "workload_boundary" {
   statement {
     sid       = "WriteContainerLogs"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = ["${aws_cloudwatch_log_group.containers.arn}:*"]
+    resources = [for a in local.all_log_group_arns : "${a}:*"]
   }
   # The suite task (environment/runner.tf) uploads its report. Objects only:
   # no listing, no reading, no deleting another run's report.
@@ -162,7 +167,7 @@ data "aws_iam_policy_document" "workload_boundary" {
   statement {
     sid       = "ExportThePublicCertificate"
     actions   = ["acm:ExportCertificate"]
-    resources = [local.arn.acm]
+    resources = [for p in local.rarn.acm : "${p}:certificate/*"]
   }
   # MAIL THROUGH SES (#311): send FROM an address at a public name an
   # environment may use (environment/mail.tf), and nothing else in SES — no
@@ -205,7 +210,7 @@ data "aws_iam_policy_document" "ecs_infrastructure_boundary" {
   statement {
     sid       = "CreateAndTagOnlyEcsManagedVolumes"
     actions   = ["ec2:CreateVolume", "ec2:CreateTags"]
-    resources = ["${local.arn.ec2}:volume/*"]
+    resources = [for p in local.rarn.ec2 : "${p}:volume/*"]
     condition {
       test     = "StringEquals"
       variable = "aws:RequestTag/AmazonECSManaged"
@@ -214,7 +219,7 @@ data "aws_iam_policy_document" "ecs_infrastructure_boundary" {
     condition {
       test     = "ArnLike"
       variable = "aws:RequestTag/AmazonECSCreated"
-      values   = ["${local.arn.ecs}:task/${var.name}-*/*"]
+      values   = [for p in local.rarn.ecs : "${p}:task/${var.name}-*/*"]
     }
   }
   statement {
@@ -225,7 +230,7 @@ data "aws_iam_policy_document" "ecs_infrastructure_boundary" {
   statement {
     sid       = "AttachDetachDeleteOnlyEcsManagedVolumes"
     actions   = ["ec2:AttachVolume", "ec2:DetachVolume", "ec2:DeleteVolume"]
-    resources = ["${local.arn.ec2}:volume/*"]
+    resources = [for p in local.rarn.ec2 : "${p}:volume/*"]
     condition {
       test     = "StringEquals"
       variable = "aws:ResourceTag/AmazonECSManaged"
@@ -234,28 +239,30 @@ data "aws_iam_policy_document" "ecs_infrastructure_boundary" {
     condition {
       test     = "ArnLike"
       variable = "aws:ResourceTag/AmazonECSCreated"
-      values   = ["${local.arn.ecs}:task/${var.name}-*/*"]
+      values   = [for p in local.rarn.ecs : "${p}:task/${var.name}-*/*"]
     }
   }
   # The Fargate host is in an account that is not this one.
   statement {
     sid       = "AttachDetachAtTheFargateHost"
     actions   = ["ec2:AttachVolume", "ec2:DetachVolume"]
-    resources = ["arn:${local.partition}:ec2:${local.region}:*:instance/*"]
+    resources = [for r in local.regions : "arn:${local.partition}:ec2:${r}:*:instance/*"]
   }
+  # A single-cell environment's volumes are sealed under the project key, a
+  # cell's under its CELL key (#98) — resident data, never the global key.
   statement {
     sid       = "DescribeTheProjectKey"
     actions   = ["kms:DescribeKey"]
-    resources = [aws_kms_key.main.arn]
+    resources = concat([aws_kms_key.main.arn], local.cell_key_arns)
   }
   statement {
     sid       = "UseTheProjectKeyForEbsThroughEc2"
     actions   = ["kms:GenerateDataKeyWithoutPlaintext", "kms:CreateGrant"]
-    resources = [aws_kms_key.main.arn]
+    resources = concat([aws_kms_key.main.arn], local.cell_key_arns)
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
-      values   = ["ec2.${local.region}.amazonaws.com"]
+      values   = [for r in local.regions : "ec2.${r}.amazonaws.com"]
     }
   }
 }
@@ -267,7 +274,7 @@ resource "aws_iam_policy" "ecs_infrastructure_boundary" {
 }
 
 # ---------------------------------------------------------------------------
-# DEPLOY POLICY 1 OF 3: THE NETWORK AND THE LOAD BALANCER.
+# DEPLOY POLICY 1 OF 4: THE NETWORK AND THE LOAD BALANCER.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "deploy_network" {
   statement {
@@ -300,7 +307,7 @@ data "aws_iam_policy_document" "deploy_network" {
     actions = [
       "ec2:CreateSubnet", "ec2:CreateRouteTable", "ec2:CreateSecurityGroup",
     ]
-    resources = ["arn:${local.partition}:ec2:${local.region}:${local.account_id}:vpc/*"]
+    resources = [for p in local.rarn.ec2 : "${p}:vpc/*"]
     condition {
       test     = "StringEquals"
       variable = "aws:ResourceTag/Project"
@@ -314,10 +321,9 @@ data "aws_iam_policy_document" "deploy_network" {
   statement {
     sid     = "Ec2NatGatewayFromProjectAddressAndSubnet"
     actions = ["ec2:CreateNatGateway"]
-    resources = [
-      "arn:${local.partition}:ec2:${local.region}:${local.account_id}:elastic-ip/*",
-      "arn:${local.partition}:ec2:${local.region}:${local.account_id}:subnet/*",
-    ]
+    resources = flatten([
+      for p in local.rarn.ec2 : ["${p}:elastic-ip/*", "${p}:subnet/*"]
+    ])
     condition {
       test     = "StringEquals"
       variable = "aws:ResourceTag/Project"
@@ -336,7 +342,7 @@ data "aws_iam_policy_document" "deploy_network" {
         "CreateVpc", "CreateSubnet", "CreateInternetGateway",
         "CreateRouteTable", "CreateSecurityGroup",
         "AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress",
-        "AllocateAddress", "CreateNatGateway",
+        "AllocateAddress", "CreateNatGateway", "CreateVpcPeeringConnection",
       ]
     }
   }
@@ -358,6 +364,9 @@ data "aws_iam_policy_document" "deploy_network" {
       "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
       "ec2:DeleteSecurityGroup", "ec2:CreateTags", "ec2:DeleteTags",
       "ec2:DeleteNatGateway", "ec2:ReleaseAddress", "ec2:DisassociateAddress",
+      # The inter-cell peering (#98), from either side once it is tagged.
+      "ec2:DeleteVpcPeeringConnection", "ec2:RejectVpcPeeringConnection",
+      "ec2:ModifyVpcPeeringConnectionOptions",
     ]
     resources = ["*"]
     condition {
@@ -380,7 +389,7 @@ data "aws_iam_policy_document" "deploy_network" {
     actions = [
       "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress",
     ]
-    resources = ["arn:${local.partition}:ec2:${local.region}:${local.account_id}:security-group-rule/*"]
+    resources = [for p in local.rarn.ec2 : "${p}:security-group-rule/*"]
     condition {
       test     = "StringEquals"
       variable = "aws:RequestTag/Project"
@@ -415,11 +424,13 @@ data "aws_iam_policy_document" "deploy_network" {
       "elasticloadbalancing:AddTags",
       "elasticloadbalancing:RemoveTags",
     ]
-    resources = [
-      "${local.arn.elb}:loadbalancer/net/${var.name}-*",
-      "${local.arn.elb}:targetgroup/${var.name}-*",
-      "${local.arn.elb}:listener/net/${var.name}-*",
-    ]
+    resources = flatten([
+      for p in local.rarn.elasticloadbalancing : [
+        "${p}:loadbalancer/net/${var.name}-*",
+        "${p}:targetgroup/${var.name}-*",
+        "${p}:listener/net/${var.name}-*",
+      ]
+    ])
   }
 
   # A PUBLIC CERTIFICATE (environment/dns.tf). An ACM certificate's ARN is a
@@ -546,7 +557,7 @@ data "aws_iam_policy_document" "deploy_network" {
 }
 
 # ---------------------------------------------------------------------------
-# DEPLOY POLICY 2 OF 3: THE DATABASE, THE SECRETS, THE KEY, THE STATE.
+# DEPLOY POLICY 2 OF 4: THE DATABASE, THE SECRETS, THE KEY, THE STATE.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "deploy_data" {
   statement {
@@ -568,16 +579,46 @@ data "aws_iam_policy_document" "deploy_data" {
       "rds:DeleteDBInstanceAutomatedBackup",
       "rds:AddTagsToResource", "rds:RemoveTagsFromResource",
     ]
-    resources = [
-      "${local.arn.rds}:db:${var.name}-*",
-      "${local.arn.rds}:subgrp:${var.name}-*",
-      "${local.arn.rds}:pg:${var.name}-*",
-      "${local.arn.rds}:auto-backup:*",
-      # The default option group, which a PostgreSQL instance is placed in and
-      # which CreateDBInstance names as a resource of the call. Using it
-      # changes nothing about it.
-      "${local.arn.rds}:og:default:postgres-18",
+    # In every permitted region (#98): a cell's database, and the global
+    # database's cross-region read replicas, which name the primary's ARN in
+    # its region as the source of the call.
+    resources = flatten([
+      for p in local.rarn.rds : [
+        "${p}:db:${var.name}-*",
+        "${p}:subgrp:${var.name}-*",
+        "${p}:pg:${var.name}-*",
+        "${p}:auto-backup:*",
+        # The default option group, which a PostgreSQL instance is placed in
+        # and which CreateDBInstance names as a resource of the call. Using it
+        # changes nothing about it.
+        "${p}:og:default:postgres-18",
+      ]
+    ])
+  }
+
+  # A CELL CONVERTED FROM A SINGLE-REGION ENVIRONMENT (#98, 2026-09-28):
+  # its database is RESTORED from a snapshot of the old one's, and that
+  # snapshot is first COPIED under the cell's key, because a restore keeps
+  # the snapshot's key (environment/conversion.tf,
+  # deploy/aws/convert-to-cells.sh). Only project-named snapshots and
+  # instances. **NO DeleteDBSnapshot**: the snapshot is the record of the
+  # database that was destroyed to make the cell, and removing it is an
+  # administrator's decision, taken after the cell is known to be good.
+  statement {
+    sid = "RdsRestoreAndCopyProjectSnapshots"
+    actions = [
+      "rds:RestoreDBInstanceFromDBSnapshot", "rds:CopyDBSnapshot",
+      "rds:AddTagsToResource",
     ]
+    resources = flatten([
+      for p in local.rarn.rds : [
+        "${p}:snapshot:${var.name}-*",
+        "${p}:db:${var.name}-*",
+        "${p}:subgrp:${var.name}-*",
+        "${p}:pg:${var.name}-*",
+        "${p}:og:default:postgres-18",
+      ]
+    ])
   }
 
   statement {
@@ -588,8 +629,13 @@ data "aws_iam_policy_document" "deploy_data" {
       "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecret",
       "secretsmanager:TagResource", "secretsmanager:UntagResource",
       "secretsmanager:GetResourcePolicy", "secretsmanager:RestoreSecret",
+      # The global secrets' replicas in each cell region (#98). A replica is
+      # made by Secrets Manager with the CALLER's rights in the replica's
+      # region, which the ARNs below already cover in every permitted region.
+      "secretsmanager:ReplicateSecretToRegions",
+      "secretsmanager:RemoveRegionsFromReplication",
     ]
-    resources = ["${local.arn.secret}:${local.secret_prefix}*"]
+    resources = [for p in local.rarn.secretsmanager : "${p}:secret:${local.secret_prefix}*"]
   }
 
   statement {
@@ -602,19 +648,22 @@ data "aws_iam_policy_document" "deploy_data" {
   # it on the deployer's behalf (the grant is how RDS keeps using it), and
   # Terraform reads its description. Rotation, policy and deletion stay with an
   # administrator.
+  #
+  # The keys (#98): the project key, the global multi-region key and its
+  # replicas, and each permitted region's cell key — used, never administered.
   statement {
     sid = "UseTheProjectKey"
     actions = [
       "kms:DescribeKey", "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*",
       "kms:GenerateDataKey*",
     ]
-    resources = [aws_kms_key.main.arn]
+    resources = local.all_project_key_arns
   }
 
   statement {
     sid       = "GrantTheProjectKeyToAwsServicesOnly"
     actions   = ["kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant"]
-    resources = [aws_kms_key.main.arn]
+    resources = local.all_project_key_arns
     condition {
       test     = "Bool"
       variable = "kms:GrantIsForAWSResource"
@@ -672,16 +721,28 @@ data "aws_iam_policy_document" "deploy_data" {
     resources = [aws_ecr_repository.main.arn]
   }
 
+  # A cell region's replica of the repository (#98): read, never pushed to —
+  # the home repository is the one images are pushed to, and ECR copies them.
+  statement {
+    sid = "EcrReadTheRegionalReplicas"
+    actions = [
+      "ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer", "ecr:DescribeImages",
+      "ecr:DescribeRepositories", "ecr:ListTagsForResource",
+    ]
+    resources = local.all_ecr_arns
+  }
+
   statement {
     sid       = "ReadTheContainerLogs"
     actions   = ["logs:GetLogEvents", "logs:FilterLogEvents", "logs:DescribeLogStreams"]
-    resources = ["${aws_cloudwatch_log_group.containers.arn}:*"]
+    resources = [for a in local.all_log_group_arns : "${a}:*"]
   }
 
   statement {
     sid       = "ReadTheContainerLogGroupTags"
     actions   = ["logs:ListTagsForResource"]
-    resources = [aws_cloudwatch_log_group.containers.arn]
+    resources = local.all_log_group_arns
   }
 
   statement {
@@ -692,7 +753,7 @@ data "aws_iam_policy_document" "deploy_data" {
 }
 
 # ---------------------------------------------------------------------------
-# DEPLOY POLICY 3 OF 3: ECS, AND THE ROLES ITS TASKS RUN AS.
+# DEPLOY POLICY 3 OF 4: ECS, AND THE ROLES ITS TASKS RUN AS.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "deploy_compute" {
   statement {
@@ -724,12 +785,14 @@ data "aws_iam_policy_document" "deploy_compute" {
       "ecs:CreateService", "ecs:UpdateService", "ecs:DeleteService",
       "ecs:StopTask", "ecs:TagResource", "ecs:UntagResource",
     ]
-    resources = [
-      "${local.arn.ecs}:cluster/${var.name}-*",
-      "${local.arn.ecs}:service/${var.name}-*",
-      "${local.arn.ecs}:task/${var.name}-*",
-      "${local.arn.ecs}:task-definition/${var.name}-*",
-    ]
+    resources = flatten([
+      for p in local.rarn.ecs : [
+        "${p}:cluster/${var.name}-*",
+        "${p}:service/${var.name}-*",
+        "${p}:task/${var.name}-*",
+        "${p}:task-definition/${var.name}-*",
+      ]
+    ])
   }
 
   # The suite runs as a one-off task (environment/runner.tf), started by
@@ -738,11 +801,11 @@ data "aws_iam_policy_document" "deploy_compute" {
   statement {
     sid       = "EcsRunTheSuiteTask"
     actions   = ["ecs:RunTask"]
-    resources = ["${local.arn.ecs}:task-definition/${var.name}-*"]
+    resources = [for p in local.rarn.ecs : "${p}:task-definition/${var.name}-*"]
     condition {
       test     = "ArnLike"
       variable = "ecs:cluster"
-      values   = ["${local.arn.ecs}:cluster/${var.name}-*"]
+      values   = [for p in local.rarn.ecs : "${p}:cluster/${var.name}-*"]
     }
   }
 
@@ -855,6 +918,171 @@ data "aws_iam_policy_document" "deploy_compute" {
   }
 }
 
+# ---------------------------------------------------------------------------
+# DEPLOY POLICY 4 OF 4: WHAT ONLY A MULTI-CELL ENVIRONMENT DOES (#98,
+# 2026-09-28) — the peering between cell VPCs, the health checks behind the
+# latency records, and the private names the cells find each other by. A
+# policy of its own because a managed policy holds 6,144 characters and the
+# network policy, with every ARN now written once per permitted region, is
+# the one closest to it; and so that what a single-cell environment can do is
+# still read in the first three.
+# ---------------------------------------------------------------------------
+data "aws_iam_policy_document" "deploy_cells" {
+  # ---- THE INTER-CELL PEERING (#98, 2026-09-28): the global/ stack joins
+  # every pair of cell VPCs, across regions. -------------------------------
+  #
+  # REQUESTED only tagged, and only between the project's own VPCs: the
+  # request names both VPCs as resources, and each must carry Project = STS.
+  # This is the one statement here that asks a tag of a resource in ANOTHER
+  # region (the accepter VPC); if the first multi-cell apply answers
+  # AccessDenied on the accepter's `vpc/…`, that condition is what to narrow
+  # to `ec2:AccepterVpc`, keeping the requester's tag.
+  statement {
+    sid       = "Ec2PeeringRequestedTagged"
+    actions   = ["ec2:CreateVpcPeeringConnection"]
+    resources = [for p in local.rarn.ec2 : "${p}:vpc-peering-connection/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "Ec2PeeringBetweenProjectVpcs"
+    actions   = ["ec2:CreateVpcPeeringConnection"]
+    resources = [for p in local.rarn.ec2 : "${p}:vpc/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  # ACCEPTED in the other region, where the connection arrives UNTAGGED — tags
+  # are per region, and the requester's do not travel — so it cannot be
+  # scoped by tag. It is scoped instead to a connection both of whose VPCs are
+  # in this account and a permitted region; only the statements above can
+  # create one from a project VPC. The accepter then tags its side, which is
+  # what lets the change-only-tagged statement above delete it.
+  statement {
+    sid       = "Ec2PeeringAcceptedBetweenThisAccountsVpcs"
+    actions   = ["ec2:AcceptVpcPeeringConnection"]
+    resources = [for p in local.rarn.ec2 : "${p}:vpc-peering-connection/*"]
+    condition {
+      test     = "ArnLike"
+      variable = "ec2:RequesterVpc"
+      values   = [for p in local.rarn.ec2 : "${p}:vpc/*"]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "ec2:AccepterVpc"
+      values   = [for p in local.rarn.ec2 : "${p}:vpc/*"]
+    }
+  }
+
+  statement {
+    sid       = "Ec2PeeringTagTheAccepterSide"
+    actions   = ["ec2:CreateTags"]
+    resources = [for p in local.rarn.ec2 : "${p}:vpc-peering-connection/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "ec2:RequesterVpc"
+      values   = [for p in local.rarn.ec2 : "${p}:vpc/*"]
+    }
+  }
+
+  # A MULTI-CELL ENVIRONMENT'S HEALTH CHECKS (#98): one per cell, on its load
+  # balancer, behind that cell's latency record. A health check has no name
+  # and no tag it can be created with, so it cannot be scoped the way the
+  # records are; it can only make HTTPS requests to an address, which is what
+  # it is for.
+  statement {
+    sid       = "Route53CreateHealthChecks"
+    actions   = ["route53:CreateHealthCheck"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "Route53HealthChecks"
+    actions = [
+      "route53:GetHealthCheck", "route53:UpdateHealthCheck",
+      "route53:DeleteHealthCheck", "route53:ChangeTagsForResource",
+      "route53:ListTagsForResource", "route53:GetHealthCheckStatus",
+    ]
+    resources = ["arn:${local.partition}:route53:::healthcheck/*"]
+  }
+
+  # THE INTER-CELL NAMES (#98): each cell's nodes register, through ECS, in
+  # a Cloud Map private DNS namespace — a PRIVATE hosted zone Cloud Map makes
+  # with the caller's rights — and the global/ stack associates each cell's
+  # zone with the other cells' VPCs, so the name resolves only inside the
+  # peered VPCs and in no public zone (environment/intercell.tf argues it
+  # against an internal load balancer). A zone Cloud Map creates has an id
+  # nobody can know in advance, so these name every hosted zone; the Deny
+  # below keeps the public zones in `public_dns` out of reach of the deletion.
+  statement {
+    sid = "Route53PrivateZonesForCloudMap"
+    actions = [
+      "route53:CreateHostedZone", "route53:DeleteHostedZone",
+      "route53:GetHostedZone", "route53:ListHostedZonesByName",
+      "route53:AssociateVPCWithHostedZone",
+      "route53:DisassociateVPCFromHostedZone",
+      "route53:ListResourceRecordSets", "route53:ChangeTagsForResource",
+      "route53:ListTagsForResource", "route53:ListHostedZonesByVPC",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "Route53NeverDeleteThePublicZones"
+    effect    = "Deny"
+    actions   = ["route53:DeleteHostedZone", "route53:AssociateVPCWithHostedZone"]
+    resources = [for z in data.aws_route53_zone.public : z.arn]
+  }
+
+  statement {
+    sid       = "CloudMapCreateTagged"
+    actions   = ["servicediscovery:CreatePrivateDnsNamespace", "servicediscovery:CreateService", "servicediscovery:TagResource"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid = "CloudMapChangeOnlyTagged"
+    actions = [
+      "servicediscovery:DeleteNamespace", "servicediscovery:DeleteService",
+      "servicediscovery:UpdateService",
+      "servicediscovery:UpdatePrivateDnsNamespace",
+      "servicediscovery:TagResource", "servicediscovery:UntagResource",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid = "CloudMapRead"
+    actions = [
+      "servicediscovery:Get*", "servicediscovery:List*",
+      "servicediscovery:DiscoverInstances",
+    ]
+    resources = ["*"]
+  }
+}
+
 resource "aws_iam_policy" "deploy_network" {
   name   = "${var.name}-deploy-network"
   policy = data.aws_iam_policy_document.deploy_network.json
@@ -870,28 +1098,37 @@ resource "aws_iam_policy" "deploy_compute" {
   policy = data.aws_iam_policy_document.deploy_compute.json
 }
 
+resource "aws_iam_policy" "deploy_cells" {
+  name   = "${var.name}-deploy-cells"
+  policy = data.aws_iam_policy_document.deploy_cells.json
+}
+
 resource "aws_iam_role_policy_attachment" "deployer" {
   for_each = {
     network = aws_iam_policy.deploy_network.arn
     data    = aws_iam_policy.deploy_data.arn
     compute = aws_iam_policy.deploy_compute.arn
+    cells   = aws_iam_policy.deploy_cells.arn
   }
   role       = aws_iam_role.deployer.name
   policy_arn = each.value
 }
 
-# Everything the deployer does is confined to one region.
+# EVERYTHING THE DEPLOYER DOES IS CONFINED TO THE PERMITTED REGIONS. It was
+# one region, `OnlyUsWest2ForRegionalServices`, until #98 (2026-09-28); the
+# list is `permitted_regions`, and with its default the fence is the one it
+# was under a new name.
 data "aws_iam_policy_document" "region_fence" {
   # Route53 is global, and its requests carry us-east-1.
   statement {
-    sid         = "OnlyUsWest2ForRegionalServices"
+    sid         = "OnlyPermittedRegionsForRegionalServices"
     effect      = "Deny"
     not_actions = ["iam:*", "sts:*", "s3:*", "route53:*"]
     resources   = ["*"]
     condition {
       test     = "StringNotEquals"
       variable = "aws:RequestedRegion"
-      values   = [local.region]
+      values   = local.regions
     }
   }
 }

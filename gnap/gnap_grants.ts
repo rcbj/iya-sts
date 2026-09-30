@@ -1176,7 +1176,7 @@ class GnapGrants {
         audience.push(base + '/gnap/rs/resource');
       }
       const model = {
-        jti: store.mint(16),
+        jti: store.handle(16),
         iss: grant.grantEndpoint,
         sub: username ? helpers.userFor(username).sub : null,
         aud: audience,
@@ -1488,12 +1488,13 @@ class GnapGrants {
     const interaction = { modes: {} as Record<string, any>, finish: finish,
                           serverNonce: null, expiresAt: nowSec() + lifetime,
                           started: null, decided: false, decision: null,
-                          interactRef: null, approvalId: store.mint(18), hints:
-                          interact.hints };
+                          interactRef: null,
+                          approvalId: store.handle(18),
+                          hints: interact.hints };
     store.putInteraction('approve:' + interaction.approvalId, grant.id);
     usable.forEach((mode) => {
       if (mode === 'redirect' || mode === 'app') {
-        const id = store.mint(18);
+        const id = store.handle(18);
         interaction.modes[mode] = { id: id, used: false };
         store.putInteraction(mode + ':' + id, grant.id);
         out[mode] = base + '/gnap/' + (mode === 'redirect' ? 'interact' :
@@ -1668,7 +1669,7 @@ class GnapGrants {
     const response: Record<string, any> = {};
     if (config.value('gnap.instanceIds') !== false && !caller.instanceId &&
         caller.descriptor.format !== 'reference') {
-      const instanceId = store.mint(18);
+      const instanceId = store.handle(18);
       store.putInstance(instanceId, { identifier: identifier, key:
                                       caller.descriptor.value });
       response.instance_id = instanceId;
@@ -2628,7 +2629,7 @@ class GnapGrants {
     const lifetime = Math.max(1, (record.exp || iat) - (record.iat || iat)) ||
       (Number(config.value('gnap.accessTokenLifetimeS')) || 3600);
     const cnf = newDescriptor ? keys.confirmationOf(newDescriptor) : record.cnf;
-    const model = { jti: store.mint(16), iss: record.iss, sub: record.sub,
+    const model = { jti: store.handle(16), iss: record.iss, sub: record.sub,
                     aud: record.aud,
                     instanceId: record.instanceId, access: record.access,
                     flags: record.flags,

@@ -36,6 +36,9 @@
 // ===========================================================================
 
 import nodeCrypto = require('crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -188,7 +191,10 @@ class DeviceAuthorization {
     }
     const lifetime = Number(config.value('oauth2.deviceCodeLifetimeS'));
     const record = {
-      deviceCode: nodeCrypto.randomBytes(32).toString('base64url'),
+      // Stamped with the minting cell (#98 D10): a device polls the cell
+      // nearest IT, which relays to this one.
+      deviceCode: cellLocator.stamp(nodeCrypto.randomBytes(32)
+                                      .toString('base64url')),
       userCode: userCode, clientId: clientId,
       clientName: clientName || clientId, scope: scope,
       dpopJkt: dpopJkt || '', state: 'pending', createdAt: now(),

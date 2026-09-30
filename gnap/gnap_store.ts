@@ -71,6 +71,7 @@ import capabilities = require('../cluster/cluster_capabilities');
 import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
 import config = require('../common/config');
+import cellLocator = require('../common/cell_locator');
 
 // The parts of a `realms.map()` store this module uses. Rows are JSON
 // (header), so `any`.
@@ -263,6 +264,37 @@ class GnapStore {
     return randomId(bytes || 24);
   }
 
+  // A HANDLE SOMEBODY PRESENTS LATER, POSSIBLY TO ANOTHER CELL (#98 D10):
+  // `mint()` with the minting cell's keyed tag appended
+  // (`common/cell_locator.ts`), so whichever cell it reaches can send the
+  // request to the one that holds it. Still base64url — twelve characters
+  // longer — so section 4.2's unreserved alphabet and every `vt.base64url`
+  // path check hold. In single-cell mode it is `mint()` exactly.
+  //
+  // Stamped: the grant id (the continuation URI's last segment), the
+  // interaction start and approval handles (the `redirect` / `app` URIs and
+  // `/gnap/approve/…`), the management handle (the management URI), an
+  // access token's `jti` (read at the edge from a `jwt-signed` token), and an
+  // instance identifier (a later request's `client` or `resource_server`).
+  // NOT stamped: a user code (a person types it; `gnap_cells.ts` asks the
+  // other cells), an opaque user reference (deterministic per person by
+  // design), a continuation token and the finish nonces and interaction
+  // reference (each travels with a URI that is stamped already), and a
+  // resource set reference (the global tier's — `persistence/tiers.js`).
+  /**
+   * Mints a random base64url handle stamped with this cell's locator.
+   *
+   * @param bytes - how many random bytes (24 by default)
+   * @returns the value, with the cell's twelve-character tag in multi-cell
+   *   mode
+   */
+  handle(bytes?: number): string {
+    const { log } = this.deps;
+    log.debug("Entering GnapStore.handle().");
+    log.debug("Leaving GnapStore.handle().");
+    return cellLocator.stamp(this.mint(bytes));
+  }
+
   // -------------------------------------------------------------------------
   // GRANTS.
   // -------------------------------------------------------------------------
@@ -279,7 +311,7 @@ class GnapStore {
     log.debug("Entering GnapStore.newGrant().");
     const now = nowSec();
     const grant = Object.assign({
-      id: this.mint(18),
+      id: this.handle(18),
       state: STATE.PROCESSING,
       createdAt: now,
       updatedAt: now,
@@ -369,6 +401,124 @@ class GnapStore {
     log.debug("Entering GnapStore.deleteGrant().");
     grants.delete(id);
     log.debug("Leaving GnapStore.deleteGrant().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A GRANT MOVED BETWEEN CELLS (#98 D9, `gnap_cells.ts`). A grant still
+  // waiting for its resource owner is handed to the cell the browser is
+  // pinned to, with the rows that find it — its continuation token, its
+  // interaction handles and its user codes — and forgotten here. Only a grant
+  // that has issued nothing moves: tokens, management handles and the
+  // consent they rest on stay in the cell that minted them.
+  // -------------------------------------------------------------------------
+  /**
+   * Gathers a grant and the rows that find it, for another cell to adopt.
+   *
+   * @param grant - the grant
+   * @returns `{ grant, continuation, interactions, userCodes }`
+   */
+  exportGrant(grant: any): any {
+    const { log } = this.deps;
+    const { continuations, interactions, userCodes } = this.deps.stores;
+    log.debug("Entering GnapStore.exportGrant(). grant=" + grant.id);
+    const out: any = { grant: grant, continuation: null, interactions: {},
+                       userCodes: {} };
+    if (grant.continuationHash && continuations.has(grant.continuationHash)) {
+      out.continuation = { hash: grant.continuationHash,
+                           row: continuations.get(grant.continuationHash) };
+    }
+    interactions.forEach(function (row, key) {
+      if (row && row.grantId === grant.id) {
+        out.interactions[key] = row;
+      }
+    });
+    userCodes.forEach(function (row, key) {
+      if (row && row.grantId === grant.id) {
+        out.userCodes[key] = row;
+      }
+    });
+    log.debug("Leaving GnapStore.exportGrant().");
+    return out;
+  }
+
+  /**
+   * Stores a grant another cell handed over, with the rows that find it.
+   *
+   * @param bundle - what `exportGrant()` gathered
+   * @returns the grant
+   */
+  importGrant(bundle: any): any {
+    const { log } = this.deps;
+    const { grants, continuations, interactions,
+            userCodes } = this.deps.stores;
+    log.debug("Entering GnapStore.importGrant().");
+    const grant = bundle.grant;
+    grants.set(grant.id, grant);
+    if (bundle.continuation && bundle.continuation.hash) {
+      continuations.set(String(bundle.continuation.hash),
+                        bundle.continuation.row);
+    }
+    Object.keys(bundle.interactions || {}).forEach(function (key) {
+      interactions.set(key, bundle.interactions[key]);
+    });
+    Object.keys(bundle.userCodes || {}).forEach(function (key) {
+      userCodes.set(key, bundle.userCodes[key]);
+    });
+    log.debug("Leaving GnapStore.importGrant(). grant=" + grant.id);
+    return grant;
+  }
+
+  /**
+   * Forgets a grant handed to another cell, and every row that found it.
+   *
+   * @param bundle - what `exportGrant()` gathered for it
+   */
+  forgetGrant(bundle: any): void {
+    const { log } = this.deps;
+    const { grants, continuations, interactions,
+            userCodes } = this.deps.stores;
+    log.debug("Entering GnapStore.forgetGrant().");
+    if (bundle.continuation && bundle.continuation.hash) {
+      continuations.delete(String(bundle.continuation.hash));
+    }
+    Object.keys(bundle.interactions || {}).forEach(function (key) {
+      interactions.delete(key);
+    });
+    Object.keys(bundle.userCodes || {}).forEach(function (key) {
+      userCodes.delete(key);
+    });
+    grants.delete(bundle.grant.id);
+    log.debug("Leaving GnapStore.forgetGrant().");
+  }
+
+  /**
+   * Tells whether this cell holds an access token, by the digest of its
+   * value — what another cell asks (`gnap_cells.ts`).
+   *
+   * @param valueDigest - `digest()` of the token's value
+   * @returns true when it is held here
+   */
+  holdsTokenDigest(valueDigest: string): boolean {
+    const { log } = this.deps;
+    const { tokenValues } = this.deps.stores;
+    log.debug("Entering GnapStore.holdsTokenDigest().");
+    log.debug("Leaving GnapStore.holdsTokenDigest().");
+    return !!valueDigest && tokenValues.has(String(valueDigest));
+  }
+
+  /**
+   * Tells whether this cell holds a user reference, by its digest — what
+   * another cell asks (`gnap_cells.ts`); the references are indexed so.
+   *
+   * @param referenceDigest - `digest()` of the reference
+   * @returns true when it is held here
+   */
+  holdsUserRefDigest(referenceDigest: string): boolean {
+    const { log } = this.deps;
+    const { userRefs } = this.deps.stores;
+    log.debug("Entering GnapStore.holdsUserRefDigest().");
+    log.debug("Leaving GnapStore.holdsUserRefDigest().");
+    return !!referenceDigest && userRefs.has(String(referenceDigest));
   }
 
   // -------------------------------------------------------------------------
@@ -645,7 +795,7 @@ class GnapStore {
       manageValues.delete(record.manageHash);
     }
     if (!record.manageHandle) {
-      record.manageHandle = this.mint(12);
+      record.manageHandle = this.handle(12);
       manageHandles.set(record.manageHandle, { jti: record.jti });
     }
     const value = this.mint(24);
@@ -1170,6 +1320,12 @@ export = {
   unspend: slot.forward('unspend'),
   digest: slot.forward('digest'),
   mint: slot.forward('mint'),
+  handle: slot.forward('handle'),
+  exportGrant: slot.forward('exportGrant'),
+  importGrant: slot.forward('importGrant'),
+  forgetGrant: slot.forward('forgetGrant'),
+  holdsTokenDigest: slot.forward('holdsTokenDigest'),
+  holdsUserRefDigest: slot.forward('holdsUserRefDigest'),
   newGrant: slot.forward('newGrant'),
   getGrant: slot.forward('getGrant'),
   saveGrant: slot.forward('saveGrant'),

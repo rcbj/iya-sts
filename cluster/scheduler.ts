@@ -123,6 +123,11 @@ const COMMAND_PREFIX = 'command|';
 const STATES = ['queued', 'running', 'succeeded', 'failed', 'abandoned'];
 const FINAL = ['succeeded', 'failed', 'abandoned'];
 
+// How many (job, realm) pairs `tickOnce()` asks about before it lets the
+// event loop run (2026-09-29): each costs the job's own `off()`, a hash and a
+// store read, so fifty is a few milliseconds.
+const TICK_YIELD_EVERY = 50;
+
 // A job id: lower-case words joined by dots and hyphens, as the ones in the
 // plan are (`authn.session-expiry`, `signing.rotate`).
 const JOB_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
@@ -870,31 +875,64 @@ class Scheduler {
    * @returns the reason, or '' when the job is on
    */
   offReason(job: JobSpec, realmId?: string): string {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Scheduler.offReason(). " + job.id);
+    const whole = this.serviceOffReason(job);
+    if (whole) {
+      log.debug("Leaving Scheduler.offReason(). " + whole);
+      return whole;
+    }
+    const own = this.ownOffReason(job, realmId);
+    log.debug("Leaving Scheduler.offReason(). " + (own || 'on'));
+    return own;
+  }
+
+  // The first three of `offReason()`'s reasons, which are the same in every
+  // realm — so `tickOnce()` asks them once per job rather than once per job
+  // AND realm. With four hundred realms that was a quarter of a minute of
+  // setting resolution on the thread at every slot boundary (2026-09-29).
+  /**
+   * Says why a job is off in every realm: the scheduler disabled, the job
+   * named in `scheduler.disabledJobs`, or an interval of 0.
+   *
+   * @param job - the job
+   * @returns the reason, or '' when none of the three holds
+   */
+  serviceOffReason(job: JobSpec): string {
+    const { log, config } = this.deps;
+    log.debug("Entering Scheduler.serviceOffReason(). " + job.id);
     if (!config.value('scheduler.enabled')) {
-      log.debug("Leaving Scheduler.offReason(). The scheduler is off.");
+      log.debug("Leaving Scheduler.serviceOffReason(). The scheduler is off.");
       return 'scheduler.enabled is off';
     }
     if (this.disabledIds().indexOf(job.id) >= 0) {
-      log.debug("Leaving Scheduler.offReason(). Listed.");
+      log.debug("Leaving Scheduler.serviceOffReason(). Listed.");
       return 'named in scheduler.disabledJobs';
     }
     if (!job.manualOnly && !job.cron && !(this.intervalMs(job) > 0)) {
-      log.debug("Leaving Scheduler.offReason(). No interval.");
+      log.debug("Leaving Scheduler.serviceOffReason(). No interval.");
       return (job.everySetting || 'its interval') + ' is 0';
     }
+    log.debug("Leaving Scheduler.serviceOffReason(). None.");
+    return '';
+  }
+
+  // The job's own `off()` for one realm — the only reason that can differ
+  // from one realm to the next.
+  private ownOffReason(job: JobSpec, realmId?: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.ownOffReason(). " + job.id);
     let own = '';
     if (typeof job.off === 'function') {
       try {
         own = String(job.off(String(realmId || realms.DEFAULT_ID)) || '');
       } catch (e) {
-        log.debug("Caught in Scheduler.offReason(): " +
+        log.debug("Caught in Scheduler.ownOffReason(): " +
                   ((e && e.message) || e));
         own = 'its own check failed: ' + ((e && e.message) || e);
       }
     }
-    log.debug("Leaving Scheduler.offReason(). " + (own || 'on'));
+    log.debug("Leaving Scheduler.ownOffReason(). " + (own || 'on'));
     return own;
   }
 
@@ -1309,20 +1347,40 @@ class Scheduler {
         line.push({ job: job, realm: pair.realm, row: pair.row });
       }
     });
+    // WHAT IS DUE, ASKED WITHOUT HOLDING THE THREAD (2026-09-29). Every
+    // realm job is asked about in every realm, so this loop is jobs × realms
+    // long; with four hundred realms it held the event loop for 16–36 s at
+    // each minute's boundary, and a request that arrived then failed as
+    // "fetch failed" once the server's keep-alive timer fired late. So what
+    // is the same in every realm — the three service-wide reasons and the
+    // slot — is asked once per job, and the loop yields to the event loop
+    // every TICK_YIELD_EVERY realms. `at` is fixed above, so a yield changes
+    // no slot; a claim is still fenced, so a leadership lost meanwhile
+    // changes nothing either.
     const scheduled: Json[] = [];
-    this.clusterJobs().forEach(function (job: JobSpec): void {
-      self.realmIdsFor(job).forEach(function (realmId: string): void {
-        if (self.offReason(job, realmId)) {
-          return;
+    let since = 0;
+    for (const job of this.clusterJobs()) {
+      if (this.serviceOffReason(job)) {
+        continue;
+      }
+      const slot = this.slotAt(job, at);
+      if (!slot || slot.slot === null) {
+        continue;
+      }
+      for (const realmId of this.realmIdsFor(job)) {
+        if (++since >= TICK_YIELD_EVERY) {
+          since = 0;
+          await new Promise(function (resolve: (v?: unknown) => void): void {
+            setImmediate(resolve);
+          });
         }
-        const slot = self.slotAt(job, at);
-        if (!slot || slot.slot === null) {
-          return;
+        if (this.ownOffReason(job, realmId)) {
+          continue;
         }
-        const runId = self.runIdFor(job, realmId, slot.slot);
-        const row = self.storeOf(realmId).get(runId);
+        const runId = this.runIdFor(job, realmId, slot.slot);
+        const row = this.storeOf(realmId).get(runId);
         if (row && FINAL.indexOf(row.state) >= 0) {
-          return;
+          continue;
         }
         scheduled.push({ job: job, realm: realmId, row: row || {
           runId: runId, kind: 'run', jobId: job.id, realm: realmId,
@@ -1330,8 +1388,8 @@ class Scheduler {
           params: null, requestedBy: '', state: 'queued', attempt: 0,
           fenceAt: 0, queuedAt: at
         } });
-      });
-    });
+      }
+    }
     scheduled.sort(function (a: Json, b: Json): number {
       return (Number(a.row.dueAt) || 0) - (Number(b.row.dueAt) || 0);
     });
@@ -1372,6 +1430,33 @@ class Scheduler {
   }
 
   // -------------------------------------------------------------------------
+  // THE SCOPE A RUN IS CLAIMED UNDER (#98). A cluster job claims its run in
+  // its own cell's database; a job whose work is the GLOBAL tier's
+  // (`persistence/tiers.js`, GLOBAL_JOBS) claims it under the global run
+  // scope when the service is deployed as cells, which the tiered driver
+  // keeps in the global database — so one cell runs each slot rather than
+  // every cell rotating the same key. Required lazily: the scheduler is a
+  // library loaded before the cells are.
+  // -------------------------------------------------------------------------
+  private runScopeOf(job: JobSpec): string {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.runScopeOf().");
+    const tiers = require('../persistence/tiers');
+    let multi = false;
+    try {
+      multi = require('../common/cells').isMulti();
+    } catch (e) {
+      log.debug("Caught in Scheduler.runScopeOf(): " +
+                (((e as Json) && (e as Json).message) || e));
+    }
+    const scope = multi && tiers.isGlobalJob(job.id) ?
+      tiers.GLOBAL_RUN_SCOPE :
+      RUN_SCOPE;
+    log.debug("Leaving Scheduler.runScopeOf(). " + scope);
+    return scope;
+  }
+
+  // -------------------------------------------------------------------------
   // ONE ATTEMPT AT ONE RUN: claim it, write it running with the claim's time
   // as its fence, run it with a time limit, and write the outcome only if
   // the fence still stands. Not awaited by the tick: a slow job does not
@@ -1389,7 +1474,8 @@ class Scheduler {
     // Held while the claim is being asked, so the next tick does not ask too.
     this.inFlight.set(row.runId, { fence: 0, realm: realmId,
                                    timedOut: false, asking: true });
-    claims.claim({ scope: RUN_SCOPE, value: row.runId, realm: realmId,
+    claims.claim({ scope: this.runScopeOf(job), value: row.runId,
+                   realm: realmId,
                    ttlMs: timeoutMs + 1000 }).then(function (answer: Json) {
       if (!answer.ok) {
         self.inFlight.delete(row.runId);

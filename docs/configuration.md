@@ -1356,6 +1356,7 @@ are refused at both ends.
 | `workers.batchConcurrency` | `STS_WORKERS_BATCH_CONCURRENCY` | `8` | yes (per process) | Batch requests in flight per lane worker, per pool; the rest wait in the front process in order. `0` keeps the lane and removes the cap. |
 | `workers.batchQueueLimit` | `STS_WORKERS_BATCH_QUEUE_LIMIT` | `5000` | yes (per process) | How many batch requests may wait; past it they are answered 503 with Retry-After. |
 | `workers.batchQueueTimeoutS` | `STS_WORKERS_BATCH_QUEUE_TIMEOUT_S` | `60` | yes (per process) | A batch request that waited this long is answered 503 with Retry-After. |
+| `workers.countInRequestWorkers` | `STS_WORKERS_COUNT_IN_REQUEST_WORKERS` | `0` | yes — as `workers.count` | `workers.count` for each request or surface worker (`workers.requestCount`, `workers.surfaceCount`). `0` computes in the worker itself: it holds no listener, so a slow signature there delays only the requests that worker is answering, and the front process sends the next one to another worker. Every request worker forks its own pool, and each child is a whole node process, so a value here is multiplied by the number of workers — at 5 with four workers, twenty children beside the front process's own. **A realm may not carry this.** |
 
 ### GNAP
 
@@ -1972,7 +1973,10 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `ldap.port` | `LDAP_PORT` | `389` | **restart** — the socket is bound when the process starts | The plain LDAP listener. 389 is privileged, so a host run that is not root fails to bind it — recorded rather than thrown, and reported by GET /admin/ldap/service. |
 | `ldap.tlsPort` | `LDAPS_PORT` | `636` | **restart** — the socket is bound when the process starts | The LDAPS listener, which serves the certificate the TLS module generated. It binds independently of 389, so "389 is up and 636 is not" is an ordinary outcome and each reports itself separately. |
 | `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | When on, an entry appears at uid=<name>,ou=users,<base> the first time anybody authenticates to this service through ANY protocol. On by default: a directory that fills up as you use the other protocols is the thing this one is here to show. |
-| `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow. A ceiling rather than a target: entries appear for anybody who authenticates through any protocol here. |
+| `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow. A ceiling rather than a target: entries appear for anybody who authenticates through any protocol here. Counted over every realm this process holds; in a request worker with `ldap.workerDirectory=postgres-lru`, over the realm's rows in the store instead. |
+| `ldap.workerDirectory` | `LDAP_WORKER_DIRECTORY` | `memory` | **restart** — the directory's store is chosen when the process loads it | How a request or surface worker holds the directory. `memory` (the default): every entry, in every process. `postgres-lru`: the people and devices as a window of at most `ldap.workerCacheEntries` entries, the rest read from PostgreSQL when asked for — a worker's memory no longer grows with the directory, and a miss costs one database round trip. Requires `persistence.mode=postgres` and a single cell (`STS-LDAP-0133` otherwise); the front process always holds the whole directory. |
+| `ldap.workerCacheEntries` | `LDAP_WORKER_CACHE_ENTRIES` | `10000` | yes | With `ldap.workerDirectory=postgres-lru`, how many people and devices a request worker holds at once (about 2.5 KB each), the least recently read dropped first. An entry it changed and has not yet written is never dropped. |
+| `ldap.workerDirectoryTimeoutMs` | `LDAP_WORKER_DIRECTORY_TIMEOUT_MS` | `2000` | yes | With `ldap.workerDirectory=postgres-lru`, how long a request worker waits for the database when it needs a directory entry it does not hold. The worker does nothing else while it waits, so this is also the longest a database outage can hold one of its requests; past it the request is refused (503, `STS-LDAP-0130`). |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side size limit for a search, which is what produces LDAP_SIZE_LIMIT_EXCEEDED. |
 | `ldap.plainListener` | `LDAP_PLAIN_LISTENER` | `true` | **restart** — the socket is bound when the process starts | Whether the unencrypted listener on `ldap.port` starts at all. Off leaves LDAPS as the only way in — what a product deployment, whose binds are verified, wants; product mode with it on logs a warning that 389 carries passwords in the clear. |
 | `ldap.selfWritableAttributes` | `LDAP_SELF_WRITABLE_ATTRIBUTES` | `telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword` | yes | In **product** mode, the attributes a connection bound as a person may change on that person's own entry with an LDAP modify. Every other write — another entry, any add, delete or rename, any attribute not listed — needs a connection bound as somebody holding Admin Write in the default realm, and an anonymous connection writes nothing (result code 50). `userPassword` still meets the password policy. Development authorizes no LDAP write. |
@@ -2411,6 +2415,19 @@ owned by a person or by an application, and the keys each is recognised by.
 | `devices.requireCompliantDevice` | `STS_DEVICES_REQUIRE_COMPLIANT_DEVICE` | `false` | yes | OFF BY DEFAULT IN BOTH MODES. On, the issuance policy refuses anything that did not come from the subject's own (or an application's) registered device, compliant and not compromised (STS-DEVICE-0037). The console and the portal are exempt in the built-in policy. |
 | `devices.compliantDeviceAttested` | `STS_DEVICES_COMPLIANT_DEVICE_ATTESTED` | `false` | yes | On, a device counts as a compliant registered device — for the rule above and for the `urn:sts:acr:compliant-device` acr — only when it is also attested. |
 | `devices.refuseCompromised` | `STS_DEVICES_REFUSE_COMPROMISED` | `true` | yes | ON BY DEFAULT. The issuance policy refuses anything asked for from a registered device marked compromised, for every application (STS-DEVICE-0038). Off, a compromised device is only a risk signal. |
+
+### Attribute sources
+
+The operators' SQL databases a realm reads people's attributes from, onto
+their directory entries (#94). The sources themselves are a register, drawn
+and edited on Directory → **Attribute sources** (`/admin/attribute-sources`);
+these two settings bound them. [Attribute sources](attribute-sources.md) is
+the guide.
+
+| Setting | Environment | Default | Change while running | What it does |
+|---|---|---|---|---|
+| `attributeSources.hostPatterns` | `STS_ATTRIBUTE_SOURCES_HOST_PATTERNS` | *(empty)* | yes | The database hosts this realm's sources may connect to, comma-separated, `*` for any run of characters. **Empty allows any host**, and a realm administrator manages their realm's sources, so an empty list lets them make this service connect to any host its network reaches. Only a service administrator may change it. |
+| `attributeSources.refreshBatch` | `STS_ATTRIBUTE_SOURCES_REFRESH_BATCH` | `200` | yes | How many people each source reads per run of the scheduled refresh. |
 
 ### Mail
 

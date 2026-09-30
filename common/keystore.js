@@ -137,6 +137,13 @@ const capabilities = require('../cluster/cluster_capabilities');
 // `decryptWithKek()` take it as an argument and this is the only variable in
 // the service that holds it.
 let kek = null;
+// THE CELL KEY (#98, 2026-09-28), read beside it when `keys.cellKekProvider`
+// names one: what a cell stores of its own — the people homed in it and what
+// it mints — is sealed under this and never under `kek`, so a copy of the
+// cell's rows opens nowhere else (`persistence/tiers.js`). Null in
+// single-cell mode and wherever no cell key is configured, and then the cell
+// tier is sealed under `kek`: the same code path with one key.
+let cellKek = null;
 
 // ---------------------------------------------------------------------------
 // realm id -> what this process is holding for that realm. Serves `helpers.js`
@@ -1097,6 +1104,46 @@ function deserialise(blob, nodeCrypto) {
  * @throws Error (STS-KEYS-0027 to STS-KEYS-0029) when the store or the
  * key-encryption key cannot be used
  */
+// ---------------------------------------------------------------------------
+// THE CELL KEY, READ ONCE (#98). `secrets.readCellKek()` refuses a location
+// that is empty or is the service key's; this refuses a key whose BYTES are
+// the service key's, which the location check cannot see (two secrets holding
+// one value). A product-mode service of several cells with no cell key is
+// refused by `persistence.js` before this runs (STS-CELL-0003).
+// ---------------------------------------------------------------------------
+async function readCellKey() {
+  log.debug("Entering readCellKey().");
+  const read = await secrets.readCellKek();
+  if (read === null || read === undefined) {
+    cellKek = null;
+    log.debug("Leaving readCellKey(). None configured.");
+    return;
+  }
+  const bytes = crypto.kekBytes(read);
+  if (kek && Buffer.compare(bytes, crypto.kekBytes(kek)) === 0) {
+    throw new Error(errorCodes.tag('STS-CELL-0012') + 'the cell ' +
+                    'key-encryption key is the same key as the service ' +
+                    'key-encryption key. A cell key that is the service ' +
+                    'key keeps nothing in its cell.');
+  }
+  cellKek = read;
+  log.info('keystore: this cell\'s own key-encryption key is held; what ' +
+           'the cell stores of its own is sealed under it and opens in no ' +
+           'other cell.');
+  log.debug("Leaving readCellKey().");
+}
+
+/**
+ * Tells whether a cell key is held separately from the service key (#98).
+ *
+ * @returns true when `keys.cellKekProvider` supplied one
+ */
+function hasCellKek() {
+  log.debug("Entering hasCellKek().");
+  log.debug("Leaving hasCellKek().");
+  return !!cellKek;
+}
+
 async function start() {
   log.debug('Entering start().');
   if (!persists()) {
@@ -1118,6 +1165,17 @@ async function start() {
   // Fail here rather than at the first decrypt, so the message names the KEK
   // rather than a record.
   crypto.kekBytes(kek);
+  // ONLY WHERE A CELL KEY IS CONFIGURED (#98). An `await` here, even one that
+  // answers "none" at once, yields to the event loop in the middle of every
+  // start — and a key write another caller left pending then landed in the
+  // store this start had just been handed (tests/key_residency.js after
+  // tests/key_generations.js, 2026-09-28). A single-cell service starts
+  // exactly as it did before cells.
+  if (secrets.configuredFor(secrets.CELL_KEK)) {
+    await readCellKey();
+  } else {
+    cellKek = null;
+  }
   let rows = [];
   try {
     rows = (await store.loadKeys()) || [];
@@ -2477,6 +2535,41 @@ let ephemeral = false;
  * @param hex - the key, in hex
  * @returns true when installed
  */
+// ---------------------------------------------------------------------------
+// A CELL KEY FOR A PROCESS THAT PERSISTS NOTHING (#98) — the development and
+// test counterpart of `useEphemeralKek()`, refused for the same reason when
+// the keystore persists: a persisting cell's key is the operator's
+// (`keys.cellKekProvider`). An empty value drops it, so the cell tier falls
+// back to the service key, which is what `tests/cell_tiers.js` asserts a
+// cell-tier row does NOT survive.
+// ---------------------------------------------------------------------------
+/**
+ * Installs a cell key-encryption key in a process that persists nothing.
+ *
+ * @param hex - the key, or '' to drop the one held
+ * @returns true when installed or dropped, false when refused
+ */
+function useEphemeralCellKek(hex) {
+  log.debug("Entering useEphemeralCellKek().");
+  if (persists()) {
+    log.error(errorCodes.tag('STS-KEYS-0038') +
+              'keystore: an ephemeral cell key-encryption key was offered ' +
+              'while the keystore persists. Refused.');
+    log.debug("Leaving useEphemeralCellKek(). Refused.");
+    return false;
+  }
+  const bytes = String(hex || '');
+  if (!bytes) {
+    cellKek = null;
+    log.debug("Leaving useEphemeralCellKek(). Dropped.");
+    return true;
+  }
+  crypto.kekBytes(bytes);
+  cellKek = bytes;
+  log.debug("Leaving useEphemeralCellKek().");
+  return true;
+}
+
 function useEphemeralKek(hex) {
   log.debug("Entering useEphemeralKek().");
   if (persists()) {
@@ -2624,16 +2717,21 @@ function keyedDigest(label, text) {
  * @param plaintext - the text
  * @param label - what kind of data it is, for `/admin/encryption`'s accounting
  * only
+ * @param tier - 'cell' to seal under the cell key where one is held (#98);
+ * anything else seals under the service key
  * @returns the ciphertext, or null without a key-encryption key
  */
-function seal(plaintext, label) {
+function seal(plaintext, label, tier) {
   log.debug('Entering seal().');
   if (!kek) {
     log.debug('Leaving seal(). No key-encryption key.');
     return null;
   }
+  // THE CELL TIER UNDER THE CELL KEY (#98) when there is one; everything
+  // else, and everything in single-cell mode, under the service key.
+  const under = tier === 'cell' && cellKek ? cellKek : kek;
   try {
-    const out = crypto.encryptWithKek(kek, String(plaintext), label);
+    const out = crypto.encryptWithKek(under, String(plaintext), label);
     log.debug('Leaving seal(). Sealed.');
     return out;
   } catch (e) {
@@ -2657,6 +2755,21 @@ function open(ciphertext, label) {
   if (!kek) {
     log.debug('Leaving open(). No key-encryption key.');
     return null;
+  }
+  // THE CELL KEY FIRST, THEN THE SERVICE KEY (#98). The envelope does not say
+  // which key sealed it — `$aesgcm$1$` is one shape for both, deliberately,
+  // so every `isSealed()` prefix test in the service still holds — and
+  // AES-GCM's tag makes the wrong key fail rather than answer, so trying
+  // both is exact. A caller never has to know the tier of what it opens.
+  if (cellKek) {
+    try {
+      const inCell = crypto.decryptWithKek(cellKek, ciphertext, label);
+      log.debug('Leaving open(). Opened under the cell key.');
+      return inCell;
+    } catch (e) {
+      log.debug("Caught in open(): not under the cell key (" +
+                ((e && e.message) || e) + "); trying the service key.");
+    }
   }
   try {
     const out = crypto.decryptWithKek(kek, ciphertext, label);
@@ -2684,14 +2797,14 @@ function open(ciphertext, label) {
 // memo must be keyed on is the key set, and the key set is the one thing this
 // file never hands out.
 //
-// So it hands out a COUNTER instead: it moves whenever `kek` is not the
-// value it was when last asked — `start()`, an ephemeral key installed
+// So it hands out a COUNTER instead: it moves whenever `kek` or `cellKek` is
+// not the value it was when last asked — `start()`, an ephemeral key installed
 // or dropped by a test, `reset()` — and a verdict remembered under an older
 // number is a verdict about keys this process no longer holds. The values are
 // compared by identity inside this file and nothing derived from them leaves:
 // no digest, no fingerprint, only how many times they have changed.
 // ---------------------------------------------------------------------------
-let epochSeen = { kek: null, epoch: 0 };
+let epochSeen = { kek: null, cellKek: null, epoch: 0 };
 
 /**
  * Returns a number that changes whenever the keys `open()` tries change, for
@@ -2701,8 +2814,8 @@ let epochSeen = { kek: null, epoch: 0 };
  */
 function kekEpoch() {
   log.debug("Entering kekEpoch().");
-  if (epochSeen.kek !== kek) {
-    epochSeen = { kek: kek, epoch: epochSeen.epoch + 1 };
+  if (epochSeen.kek !== kek || epochSeen.cellKek !== cellKek) {
+    epochSeen = { kek: kek, cellKek: cellKek, epoch: epochSeen.epoch + 1 };
   }
   log.debug("Leaving kekEpoch().");
   return epochSeen.epoch;
@@ -3107,7 +3220,16 @@ function arbitrates() {
   }
   let clustered = false;
   try {
-    clustered = require('../cluster/cluster').mode() !== 'off';
+    // OR A SERVICE OF SEVERAL CELLS (#98 D8), whose realm keys and
+    // certificate authorities are ONE set in the global tier that every cell
+    // writes — each cell is a single node (`cluster.mode=off`) and still one
+    // of several writers of these rows. Without it, a realm created at one
+    // cell got keys generated by both, each cell upserting its own over the
+    // other's, and a token minted at one cell did not verify against the
+    // other's key set (the `cells` mode's first run, 2026-09-28,
+    // tests/vendored/sts_cells_traveller.js).
+    clustered = require('../cluster/cluster').mode() !== 'off' ||
+      require('./cells').isMulti();
   } catch (e) {
     log.debug("Caught in arbitrates(): " + ((e && e.message) || e));
     clustered = false;
@@ -3901,6 +4023,7 @@ function reset() {
   purgeAll();
   material.clear();
   kek = null;
+  cellKek = null;
   log.debug('Leaving reset().');
 }
 
@@ -3919,6 +4042,7 @@ module.exports = {
   // sharedFor().
   setKeyPublisher: setKeyPublisher,
   useEphemeralKek: useEphemeralKek,
+  useEphemeralCellKek: useEphemeralCellKek,
   hasEphemeralKek: hasEphemeralKek,
   ephemeralKek: ephemeralKek,
   onAdopt: onAdopt,
@@ -3949,6 +4073,7 @@ module.exports = {
   setStore: setStore,
   persists: persists,
   sealed: sealed,
+  hasCellKek: hasCellKek,
   keyedDigest: keyedDigest,
   seal: seal,
   open: open,

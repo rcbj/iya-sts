@@ -96,6 +96,7 @@ import rs = require('./gnap_rs');
 import tokens = require('./gnap_tokens');
 import zcap = require('./token_zcap');
 import signals = require('./gnap_signals');
+import gnapCells = require('./gnap_cells');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -342,6 +343,14 @@ class GnapRoutes {
         log.debug("Leaving the grant endpoint. Off.");
         return undefined;
       }
+      // WHICH CELL (#98): before the caller's key proof is verified or its
+      // nonce spent — the owning cell does both (`gnap_cells.ts`). A named
+      // authorization server was `ensure()`d above, which every cell does
+      // alike and which is configuration, not the request's.
+      if (await gnapCells.placeGrantRequest(req, res)) {
+        log.debug("Leaving the grant endpoint. Relayed to its cell.");
+        return undefined;
+      }
       const result: any = await grants.createGrant(req, asId);
       if (!result.ok) {
         log.debug("Leaving the grant endpoint. Refused: " + result.why);
@@ -486,6 +495,16 @@ class GnapRoutes {
         log.debug("Leaving the demonstration RS. RS-first challenge.");
         return;
       }
+      // WHICH CELL (#98): the one holding the token — before its key proof
+      // is verified and its nonce spent. A `jwt-signed` token was placed at
+      // the edge already; the other formats are found here.
+      const presented = /^GNAP\s+(\S+)$/i.exec(
+        String(req.headers.authorization).trim());
+      if (presented && await gnapCells.placeToken(req, res, presented[1],
+                                                  'gnap:resource')) {
+        log.debug("Leaving the demonstration RS. Relayed to its cell.");
+        return;
+      }
       const required = [{ type: DEMO_TYPE, actions: [action] }];
       const judged: any = await rs.authenticate(req, { audience: selfUri,
                                                        base: base });
@@ -566,6 +585,12 @@ class GnapRoutes {
                        'URI does not identify a grant request.');
         return;
       }
+      // WHICH CELL (#98): the grant's, before the continuation token or the
+      // key proof is checked there.
+      if (await gnapCells.placeContinuation(req, res, params.value.grant)) {
+        log.debug("Leaving the continuation endpoint. Relayed to its cell.");
+        return;
+      }
       const result: any = await grants.continueGrant(req,
                                                      params.value.grant);
       if (!result.ok) {
@@ -629,6 +654,12 @@ class GnapRoutes {
         log.debug("Leaving the introspection endpoint. Off.");
         return;
       }
+      // WHICH CELL (#98): the one holding the token, before the resource
+      // server's proof is verified.
+      if (await gnapCells.placeIntrospection(req, res)) {
+        log.debug("Leaving the introspection endpoint. Relayed to its cell.");
+        return;
+      }
       const result = await rs.introspect(req);
       if (!result.ok) {
         log.debug("Leaving the introspection endpoint. Refused: " +
@@ -646,6 +677,13 @@ class GnapRoutes {
       log.debug("Entering the resource registration endpoint.");
       if (self.offCheck(res)) {
         log.debug("Leaving the resource registration endpoint. Off.");
+        return;
+      }
+      // WHICH CELL (#98): the one holding the resource server's instance,
+      // when it names itself by one.
+      if (gnapCells.placeResourceServer(req, res)) {
+        log.debug("Leaving the resource registration endpoint. Relayed to " +
+                  "its cell.");
         return;
       }
       const result = await rs.register(req);

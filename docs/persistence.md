@@ -380,6 +380,43 @@ worst-case convergence lag when a notification is lost.
 `/admin/persistence` reports all of it, and `status.replication` carries it in
 the JSON.
 
+### Request workers can hold the directory as a window
+
+By default every process — the front process and each request and surface
+worker — holds the whole directory in memory, so a node's memory grows with
+the directory times the number of processes. With
+**`ldap.workerDirectory=postgres-lru`** (restart-only, off by default) each
+worker holds only:
+
+* every entry that is **not** a person or a device — the containers, groups,
+  applications, federation relationships, policies and roles — in full, as
+  before;
+* **the people and devices it read most recently**, at most
+  `ldap.workerCacheEntries` (10,000, about 2.5 KB each), and any it changed
+  and has not yet written.
+
+Anything else is read from PostgreSQL when it is asked for. The directory
+behaves the same way to every protocol; what changes is where the answer comes
+from:
+
+* **A miss costs one database round trip**, during which that worker does
+  nothing else. `ldap.workerDirectoryTimeoutMs` (2,000) bounds it; past it, or
+  when the database refuses, the request is answered **503 with
+  `Retry-After`** (`STS-LDAP-0130`, `STS-LDAP-0131`) rather than from a
+  directory that cannot say what it is missing.
+* **A walk of the people** — an LDAP subtree search, a console list — reads
+  them from the database a page at a time.
+* **A worker's writes are its own**, as before: an entry it changed is kept
+  until its flush has written it, and the store merges it with a change
+  another process made meanwhile.
+* **The front process always holds the whole directory**: it owns the LDAP
+  listener and its own writes.
+
+It needs `persistence.mode=postgres` and a single cell; otherwise the service
+does not start (`STS-LDAP-0133`). Schema version 13 adds the columns and
+indexes the lookups use — run `postgres/schema.sql` again as the owner on an
+older database. [PostgreSQL schema](postgres-schema.md) lists them.
+
 ## Checking on it
 
 `/admin/persistence` in the console, `GET /admin-api/persistence` over JSON, and

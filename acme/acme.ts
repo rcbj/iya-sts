@@ -83,6 +83,12 @@ import store = require('./acme_store');
 // `persistence.js` lazily; see the finalize handler.
 import claims = require('../cluster/cluster_claims');
 import InstanceSlot = require('../common/instance_slot');
+// WHICH CELL ANSWERS (#98 D10): the cell map, the placement helpers and the
+// channel the fan-out lookup below goes over. Libraries; each is a no-op in a
+// single-cell service.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
+import cellChannel = require('../common/cell_channel');
 
 /**
  * The enrollment family's name: `acme`.
@@ -163,6 +169,9 @@ interface AcmeDeps {
   jws: typeof jws;
   store: typeof store;
   claims: typeof claims;
+  cells: typeof cells;
+  cellPlacement: typeof cellPlacement;
+  cellChannel: typeof cellChannel;
 }
 
 type RouteApp = typeof app;
@@ -211,7 +220,10 @@ class Acme {
       validation: validation,
       jws: jws,
       store: store,
-      claims: claims
+      claims: claims,
+      cells: cells,
+      cellPlacement: cellPlacement,
+      cellChannel: cellChannel
     };
   }
 
@@ -1266,6 +1278,230 @@ class Acme {
     return self;
   }
 
+  // ---------------------------------------------------------------------------
+  // WHICH CELL ANSWERS AN ACME REQUEST (#98 D10), decided FIRST — before the
+  // gate, the throttle, the JWS's signature or its nonce — because everything
+  // an ACME request touches is the cell's that made it (`acme.*` is cell
+  // tier) and a Replay-Nonce and an EAB key are spent where they are checked.
+  // Four ways, one per thing a request can carry:
+  //
+  //   * **A path** naming an account, order, authorization, challenge or
+  //     certificate: the edge reads its tag (the placement table's
+  //     `/enroll/acme/<kind>` rows) and this is never reached elsewhere.
+  //   * **A `kid`** — every request after newAccount — names the account's
+  //     URL, whose last segment carries the tag of the cell that holds it:
+  //     newOrder, keyChange, revokeCert by account, an account's orders.
+  //   * **A newAccount's External Account Binding** names the entry its key
+  //     was issued for (`cert_enrollment.ts`'s `credentialId()`): a person's
+  //     request goes to their home cell, where the key is and where the
+  //     account will be bound for life; an application's to the cell that
+  //     minted the key, which holds its binding claim.
+  //   * **Nothing that says where**: a newAccount with no binding (RFC 8555
+  //     section 7.3.1's "find the account for this key"), a revokeCert
+  //     signed by the certificate's own key, and RFC 9773's renewal-info.
+  //     The first and last are asked of every other cell over the channel
+  //     (`acme-held`, a lookup that spends nothing) and relayed to the one
+  //     that holds the row; a revokeCert by the certificate's key goes to
+  //     the home of the entry the certificate names. If a cell cannot be
+  //     asked, the request is refused 503 rather than answered "no such
+  //     account" by a cell that could not know (#98 D6, fail-closed).
+  //
+  // Everything read here is READ, NOT BELIEVED: a header, a payload member,
+  // a certificate's subjectAltName. It chooses only where the request is
+  // checked, and the cell it is sent to checks all of it. The one thing a
+  // relay changes is the nonce: a Replay-Nonce is valid only in the cell
+  // that issued it (`acme_jws.ts`'s `nonceMac()`), so the owning cell
+  // answers `badNonce` with one of its own the first time, and the client's
+  // retry — placed on the same cell by the same rule — is accepted. A
+  // single-cell service places nothing.
+  // ---------------------------------------------------------------------------
+  /**
+   * Relays an ACME request to the cell that holds what it is about, when
+   * that is another cell.
+   *
+   * @param req - the request, its body read
+   * @param res - the response
+   * @returns a promise of true when the request was answered here (relayed,
+   *   or refused because a cell could not be asked)
+   */
+  async placeRequest(req, res): Promise<boolean> {
+    const { log, jws, core, store, realms, helpers, cells,
+            cellPlacement } = this.deps;
+    log.debug("Entering Acme.placeRequest().");
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Acme.placeRequest(). Here.");
+      return false;
+    }
+    const realmId = realms.currentId();
+    const path = String(req.path || '');
+    if (req.method === 'GET' && /^\/renewal-info\/[^/]+$/.test(path)) {
+      const certId = jws.parseCertId(decodeURIComponent(path.slice(14)));
+      if (!certId || store.certificateByCertId(certId.certId)) {
+        log.debug("Leaving Acme.placeRequest(). renewal-info here.");
+        return false;
+      }
+      log.debug("Leaving Acme.placeRequest(). renewal-info: asking.");
+      return this.relayToHolder(req, res, realmId, 'certId', certId.certId,
+                                'acme:renewal-info');
+    }
+    if (req.method !== 'POST') {
+      log.debug("Leaving Acme.placeRequest(). Not a signed request.");
+      return false;
+    }
+    const parts = jws.parseBody(req.body);
+    const read = parts.ok ? jws.parseProtectedHeader(parts) : null;
+    if (!read || !read.ok) {
+      log.debug("Leaving Acme.placeRequest(). Unreadable; refused here.");
+      return false;
+    }
+    const header = read.header;
+    if (typeof header.kid === 'string') {
+      const m = /\/account\/([A-Za-z0-9_-]{8,64})$/.exec(header.kid);
+      log.debug("Leaving Acme.placeRequest(). By the account.");
+      return m ? cellPlacement.relayIfElsewhere(req, res, m[1],
+                                                'acme:account')
+               : false;
+    }
+    if (header.jwk === undefined) {
+      log.debug("Leaving Acme.placeRequest(). No key; refused here.");
+      return false;
+    }
+    const payload = jws.readPayload(parts);
+    const body = payload.ok && payload.value &&
+      typeof payload.value === 'object' ? payload.value : {};
+    if (path === '/new-account') {
+      const key = jws.checkAccountKey(header.jwk, header.alg);
+      if (!key.ok) {
+        log.debug("Leaving Acme.placeRequest(). A bad key; refused here.");
+        return false;
+      }
+      if (body.externalAccountBinding) {
+        const eab = jws.parseEab(body.externalAccountBinding,
+                                 helpers.baseUrlOf(req) + PREFIX +
+                                 '/new-account', key.thumbprint);
+        const entry = eab.ok ? core.entryOfCredentialId('eab', eab.kid)
+                             : null;
+        if (!entry) {
+          log.debug("Leaving Acme.placeRequest(). An EAB refused here.");
+          return false;
+        }
+        log.debug("Leaving Acme.placeRequest(). By the EAB key.");
+        return entry.kind === 'person'
+          ? cellPlacement.relayToHome(req, res, realmId, 'name', entry.id,
+                                      'acme:eab')
+          : cellPlacement.relayIfElsewhere(req, res, eab.kid, 'acme:eab');
+      }
+      if (store.accountByThumbprint(key.thumbprint)) {
+        log.debug("Leaving Acme.placeRequest(). The account is here.");
+        return false;
+      }
+      log.debug("Leaving Acme.placeRequest(). An account by key: asking.");
+      return this.relayToHolder(req, res, realmId, 'thumbprint',
+                                key.thumbprint, 'acme:account-by-key');
+    }
+    if (path === '/revoke-cert' && typeof body.certificate === 'string') {
+      const der = jws.decodeB64url(body.certificate, false);
+      const entry = der ? core.entryNamedByCertificate(der) : null;
+      log.debug("Leaving Acme.placeRequest(). By the certificate's entry.");
+      return entry && entry.kind === 'person'
+        ? cellPlacement.relayToHome(req, res, realmId, 'name', entry.id,
+                                    'acme:revoke-cert')
+        : false;
+    }
+    log.debug("Leaving Acme.placeRequest(). Here.");
+    return false;
+  }
+
+  /**
+   * Asks every other cell whether it holds an account for a key or a
+   * certificate for an RFC 9773 identifier, and relays the request to the
+   * one that does.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param realmId - the realm
+   * @param kind - `thumbprint` or `certId`
+   * @param value - the account key's thumbprint, or the certificate's id
+   * @param reason - what it is, for the log
+   * @returns a promise of true when the request was answered here
+   */
+  async relayToHolder(req, res, realmId, kind, value,
+                      reason): Promise<boolean> {
+    const { log, jws, cells, cellChannel, cellPlacement,
+            errorCodes } = this.deps;
+    log.debug("Entering Acme.relayToHolder(). " + kind);
+    let unreachable = false;
+    const answers = await Promise.all(cells.peers().map(function (peer) {
+      return cellChannel.call(peer.id, 'acme-held', {
+        realm: realmId, kind: kind, value: value
+      }).then(function (answer: any) {
+        return answer && answer.held === true ? peer.id : '';
+      }, function (err: any) {
+        log.warn(errorCodes.tag('STS-CELL-0100') + 'acme: cell "' + peer.id +
+                 '" could not be asked whether it holds the ACME ' +
+                 (kind === 'thumbprint' ? 'account' : 'certificate') +
+                 ' a request names (' + ((err && err.message) || err) +
+                 ').');
+        unreachable = true;
+        return '';
+      });
+    }));
+    const holder = answers.filter(function (one) {
+      return !!one;
+    })[0];
+    if (holder) {
+      log.debug("Leaving Acme.relayToHolder(). Relayed to " + holder + ".");
+      await cellChannel.relay(req, res, holder, {
+        reason: reason, body: cellPlacement.serialisedBody(req) });
+      return true;
+    }
+    if (unreachable) {
+      log.debug("Leaving Acme.relayToHolder(). A cell could not be asked.");
+      // Sent without `acmeProblem()`'s count against the caller: a region
+      // this service cannot reach is not the client's refusal to be
+      // throttled for.
+      const ctx = this.contextOf(req, res, 'placement');
+      res.set('Retry-After', '30');
+      this.sendProblem(ctx, 503, 'STS-CELL-0100', {
+        type: jws.ERROR_PREFIX + 'serverInternal', status: 503,
+        detail: 'This service cannot reach every region that might hold ' +
+                'that ' + (kind === 'thumbprint' ? 'account' : 'certificate') +
+                ' just now. Retry shortly.' });
+      return true;
+    }
+    log.debug("Leaving Acme.relayToHolder(). Nobody holds it; here.");
+    return false;
+  }
+
+  /**
+   * Answers another cell's `acme-held` question: whether this cell holds an
+   * account for a key, or a certificate for an RFC 9773 identifier, in a
+   * realm. A lookup; it spends and records nothing.
+   *
+   * @param body - `realm`, `kind` (`thumbprint` or `certId`) and `value`
+   * @returns `{ held }`
+   */
+  answerHeld(body): { held: boolean } {
+    const { log, realms, store } = this.deps;
+    log.debug("Entering Acme.answerHeld().");
+    const asked = String((body && body.realm) || '');
+    const realm = realms.get(asked) ||
+      (asked ? null : realms.get(realms.DEFAULT_ID));
+    const value = String((body && body.value) || '');
+    if (!realm || !value) {
+      log.debug("Leaving Acme.answerHeld(). No realm or value.");
+      return { held: false };
+    }
+    let held = false;
+    realms.run(realm, function () {
+      held = body.kind === 'thumbprint' ? !!store.accountByThumbprint(value)
+        : body.kind === 'certId' ? !!store.certificateByCertId(value)
+          : false;
+    });
+    log.debug("Leaving Acme.answerHeld(). " + held);
+    return { held: held };
+  }
+
   // THE ROUTES, registered where they always were: the module exports
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order
@@ -1281,6 +1517,28 @@ class Acme {
             nodeCrypto, claims, realms, stsCrypto } = this.deps;
     const self = this;
     log.debug("Entering Acme.registerRoutes().");
+    // WHICH CELL ANSWERS (#98 D10) — see `placeRequest()`. Above every ACME
+    // route, so nothing below runs in a cell that does not hold the request.
+    // The lookup other cells ask of this one goes on the channel beside it.
+    this.deps.cellChannel.registerOp('acme-held', function (body: any) {
+      return self.answerHeld(body);
+    });
+    app.use(PREFIX, function (req: any, res: any, next: () => void): void {
+      log.debug("Entering the ACME cell placement.");
+      self.placeRequest(req, res).then(function (answered: boolean) {
+        log.debug("Leaving the ACME cell placement. " +
+                  (answered ? 'Answered.' : 'Here.'));
+        if (!answered) {
+          next();
+        }
+      }, function (e: any) {
+        log.debug("Caught in the ACME cell placement: " +
+                  ((e && e.message) || e));
+        // A placement that failed is served here, which is what an unknown
+        // account or entry is: the route refuses it for its own reasons.
+        next();
+      });
+    });
     app.get(PREFIX + '/directory', this.guarded('directory', function (ctx) {
       log.debug("Entering the ACME directory.");
       self.record(ctx, { outcome: 'answered', status: 200 });

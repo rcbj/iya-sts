@@ -233,6 +233,45 @@ back, which two nodes both did inside the change log's window:
   cost: the same account retrying newAccount at a second node before the
   binding has replicated is refused once as a second account.
 
+## Cells: where an ACME request is served (#98 D10, 2026-09-28)
+
+Everything ACME mints is **cell tier** (`acme.*` in `persistence/tiers.js`):
+an account, its orders, authorizations and certificates live in the cell that
+made them. A request that reaches another cell is sent there WHOLE, before the
+gate, the throttle, the signature or the nonce — because a Replay-Nonce and an
+EAB key are spent where they are checked. Single-cell mode does none of it.
+
+* **Every identifier is stamped.** `acme_store.newId()` appends
+  `cell_locator.ts`'s twelve-character tag, so an account, order,
+  authorization, challenge and certificate id names its cell (28 or 32
+  characters, inside `ID_PATTERN`). The placement table's
+  `/enroll/acme/<kind>` rows read it off the path at the edge.
+* **`Acme.placeRequest()`** is the `/enroll` handler row: a `kid` names the
+  account's cell; a newAccount's EAB key id names the entry it was issued for
+  (`common/cert_enrollment.ts`'s `credentialId()`) — a person's request goes
+  to their HOME, an application's to the cell that minted the key, whose
+  binding claim is held there; a revokeCert signed by the certificate's own
+  key goes to the home of the person its `urn:sts:person:` names.
+* **Two requests carry nothing that says where**: a newAccount naming only
+  its key (RFC 8555 section 7.3.1, `onlyReturnExisting`) and RFC 9773's
+  renewal-info (its certID is AKI and serial). Both are asked of every other
+  cell over the channel — the `acme-held` operation, a lookup that spends and
+  records nothing — and relayed to the one that holds the row. A cell that
+  cannot be asked makes it **503 `STS-CELL-0100`**, not "no such account":
+  a cell that could not know must not say so (#98 D6). The renewal-info row
+  was `local` and wrong — the certificate is looked up in the issuing cell's
+  store — and is a handler row now.
+* **THE REPLAY-NONCE IS BOUND TO ITS CELL** (`AcmeJws.nonceMac()` folds the
+  cell id in, multi-cell only). The MAC secret is the global tier's and the
+  spent set each cell's own, so without it one nonce could be spent once per
+  cell. The cost is one retry per move between cells: a request relayed to
+  the owning cell carries a nonce another cell issued, is answered
+  `badNonce` there **with a Replay-Nonce of that cell** (every problem
+  carries one, and the relay pipes the headers back untouched), and the
+  client's retry — placed on the same cell by the same rule — is accepted.
+  That is RFC 8555 section 6.5's own recovery, and every client implements
+  it; a client that stays on one cell never pays it.
+
 ## The console pages before it decorates (#352, 2026-09-29)
 
 `/admin/acme` sorted and counted its three lists whole — which is what the

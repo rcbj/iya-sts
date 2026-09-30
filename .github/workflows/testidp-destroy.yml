@@ -26,6 +26,12 @@ name: testidp destroy
 # does not delete a running deployment. It shares `testidp-deploy.yml`'s
 # concurrency group, so it waits for an apply in progress rather than racing it.
 #
+# `environment: testidpna` (#98, 2026-09-28) destroys the multi-cell form:
+# the entrypoint takes every cell's dependent stacks down first, then the
+# global stack (the global database's replicas and writer, the peerings, the
+# replicated secrets), then each cell — `confirm` must then be typed as
+# `testidpna`.
+#
 # NOTE: a workflow_dispatch workflow can only be dispatched once the file is on
 # the default branch.
 # ---------------------------------------------------------------------------
@@ -33,8 +39,15 @@ name: testidp destroy
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: "testidp (one region) or testidpna (cells usw2 + cac1, #98)"
+        type: choice
+        options:
+          - testidp
+          - testidpna
+        default: testidp
       confirm:
-        description: "Type testidp to confirm the environment and all its data are deleted"
+        description: "Type the environment's name again to confirm it and all its data are deleted"
         type: string
         required: true
 
@@ -47,14 +60,15 @@ concurrency:
 
 env:
   AWS_REGION: us-west-2
-  TF_ENV: testidp
+  TF_ENV: ${{ github.event.inputs.environment }}
   TF_IMAGE: mock-sts-terraform
 
 jobs:
   destroy:
-    if: ${{ github.event.inputs.confirm == 'testidp' }}
+    if: ${{ github.event.inputs.confirm == github.event.inputs.environment }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Longer for cells (#98): the global stack's replicas, then each cell.
+    timeout-minutes: ${{ github.event.inputs.environment == 'testidpna' && 180 || 90 }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -62,7 +76,7 @@ jobs:
       - name: Build terraform image
         run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
 
-      - name: Terraform destroy (testidp)
+      - name: Terraform destroy (${{ github.event.inputs.environment }})
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -78,13 +92,13 @@ jobs:
       - name: Say so if it did not come down
         if: failure()
         run: |
-          echo "::error::terraform destroy failed; testidp may still be running and billing. Re-run this workflow."
+          echo "::error::terraform destroy failed; ${TF_ENV} may still be running and billing. Re-run this workflow."
 
   refused:
-    if: ${{ github.event.inputs.confirm != 'testidp' }}
+    if: ${{ github.event.inputs.confirm != github.event.inputs.environment }}
     runs-on: ubuntu-latest
     steps:
       - name: Refuse
         run: |
-          echo "::error::confirm must be exactly 'testidp'; nothing was destroyed."
+          echo "::error::confirm must be exactly '${TF_ENV}'; nothing was destroyed."
           exit 1

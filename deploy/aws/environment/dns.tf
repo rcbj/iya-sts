@@ -90,8 +90,10 @@ resource "aws_acm_certificate_validation" "public" {
   validation_record_fqdns = [for r in aws_route53_record.certificate_validation : r.fqdn]
 }
 
+# A CELL WRITES THE RECORD TREE IN dns_cells.tf INSTEAD (#98): a CNAME may not
+# share its name with any other record, so the two are exclusive.
 resource "aws_route53_record" "public" {
-  count   = local.public_name ? 1 : 0
+  count   = local.public_name && !local.multi ? 1 : 0
   zone_id = data.aws_route53_zone.public[0].zone_id
   name    = var.public_hostname
   type    = "CNAME"

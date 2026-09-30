@@ -169,6 +169,12 @@ import monitor = require('./xacml_monitor');
 // a decider this family itself installs at 23c.
 import roles = require('../common/roles');
 import accessGate = require('../common/access_gate');
+// WHICH CELL ANSWERS A PIP QUERY (#98): the cell map, the placement helper
+// and the ambient realm. Libraries that register nothing; the placement's
+// own requires are lazy.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
+import realms = require('../common/realms');
 // THE CONSOLE PAGES. Required from here rather than from
 // `common/protocol_stack.ts` so that the require order has ONE line for this
 // family: this module is 23c and the pages are part of it. Requiring them
@@ -1134,6 +1140,49 @@ class XacmlSurface {
   // because a read of a named person's directory attributes by another process
   // is exactly what an audit log is for.
   // ===========================================================================
+
+  /**
+   * How the routing index keys the subject a PIP query names (#98): a
+   * `urn:uuid:` subject by its entryUUID, a DN by its RDN value, anything
+   * else as a login name. Read leniently — any failure is null, and the query
+   * is then served where it arrived and refused there in its own words.
+   *
+   * @param req - the request, its body read as text
+   * @returns `{ kind, value }`, or null when no subject can be read
+   */
+  pipSubjectKey(req: any): { kind: string; value: string } | null {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.pipSubjectKey().');
+    const raw = typeof req.body === 'string' ? req.body
+      : (Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '');
+    let subject = '';
+    try {
+      const parsed = validation.parseXml(raw, 'PIP query',
+                                         { max: validation.CAP.LARGE });
+      const root = parsed.ok ? parsed.value.documentElement : null;
+      const node = root && xml.localName(root) === 'PIPRequest'
+        ? xml.firstNamed(root, 'Request') : null;
+      subject = node ? String(pip.subjectOf(xml.readRequest(node)) || '') : '';
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.pipSubjectKey(): ' +
+                ((e && e.message) || e));
+      subject = '';
+    }
+    subject = subject.trim();
+    if (!subject || subject.length > validation.CAP.NAME) {
+      log.debug('Leaving XacmlSurface.pipSubjectKey(). No subject.');
+      return null;
+    }
+    const uuid = /^urn:uuid:([0-9a-f-]{36})$/i.exec(subject);
+    if (uuid) {
+      log.debug('Leaving XacmlSurface.pipSubjectKey(). A UUID.');
+      return { kind: 'uuid', value: uuid[1].toLowerCase() };
+    }
+    const rdn = /^[A-Za-z][A-Za-z0-9-]*=([^,+]+)[,+]/.exec(subject);
+    log.debug('Leaving XacmlSurface.pipSubjectKey().');
+    return { kind: 'name',
+             value: rdn ? rdn[1].replace(/\\(.)/g, '$1').trim() : subject };
+  }
 
   /**
    * Returns the most designators one `POST /xacml/pip` query may carry,
@@ -2283,6 +2332,35 @@ class XacmlSurface {
       if (self.remotePepOffCheck(res)) {
         log.debug('Leaving POST /xacml/pip. Off.');
         return;
+      }
+      // ---------------------------------------------------------------------
+      // WHICH CELL ANSWERS (#98 D10), BEFORE THE IDENTITY, THE RATE LIMIT
+      // AND THE ACCESS CHECK. What comes back is a person's directory
+      // attributes, and a person's entry exists only in the cell they are
+      // homed in — so a query about somebody homed elsewhere is sent there
+      // WHOLE, and that cell counts it, checks the PEP's certificate (the
+      // channel carries it, `cell_channel.ts`) and audits the read. Read
+      // leniently here: a query that does not parse is refused where it is
+      // served, in its own words. Single-cell mode does not ask.
+      // ---------------------------------------------------------------------
+      if (cells.isMulti() && !req.stsCellRelay) {
+        const key = self.pipSubjectKey(req);
+        if (key) {
+          let relayed = false;
+          try {
+            relayed = await cellPlacement.relayToHome(req, res,
+              realms.currentId(), key.kind, key.value, 'xacml-pip');
+          } catch (e) {
+            // A lookup that failed is served here, as an unknown subject is.
+            log.debug('Caught in POST /xacml/pip: ' +
+                      ((e && e.message) || e));
+            relayed = false;
+          }
+          if (relayed) {
+            log.debug('Leaving POST /xacml/pip. Relayed to the home cell.');
+            return;
+          }
+        }
       }
       // ---------------------------------------------------------------------
       // THE IDENTITY IS READ ONCE, HERE, BEFORE ANYTHING ELSE.

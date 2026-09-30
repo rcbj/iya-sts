@@ -517,6 +517,141 @@ function checkScopes(request) {
   return { verdicts: verdicts, why: '', policy: answer.policy || '' };
 }
 
+// ---------------------------------------------------------------------------
+// THE TRANSFER QUESTIONS (#98 D4, the design's section 6): action-ids
+// `hold-session`, `serve-request` and `release-attributes`, asked by
+// `common/cell_transfer.ts` when the service is deployed as cells.
+// `hold-session`: may a session of a subject homed in one jurisdiction be
+// HELD by a cell in another? `serve-request`: may a request about them be
+// served from that cell at all, even by relaying it home?
+// `release-attributes` (#98 D11): may residents' personal data be RELEASED
+// to a reader at a cell in another jurisdiction?
+//
+// **NOT MEMBERS OF `ISSUANCE`**, for `DELEGATE`'s reason and the scope
+// question's: neither issues anything — holding a session somewhere is a
+// question about WHERE a session already decided on lives, and serving a
+// request or releasing a directory listing is not an issuance at all — and
+// every reader of `KINDS` lists
+// issuances (the /admin/roles preview, `/admin-api`'s closed set of issuance
+// kinds, the realm-retiring test that refuses each one). They are still
+// action-ids of the ISSUANCE POLICY, spelt in the verb-noun shape of the
+// kinds above, and a realm's policy writes rules against them exactly as it
+// does against `issue-scope`.
+//
+// `request`: `{ action, subject, home, serving, clientCountry, listed,
+// hardGeofence, category, realm, purpose }` — FACTS, gathered by
+// `cell_transfer.ts`; the answer is `{ verdict, decidedBy, why }`, verdict
+// `hold` / `relay`, `serve` / `refuse` or `release` / `withhold`.
+//
+// **WITH NO DECIDER THE BUILT-IN POLICY STILL DECIDES**, the scope question's
+// arrangement (rcbj's decision on #305): the engine's libraries are loaded
+// here lazily and asked the built-in document, and a decider that THROWS is
+// a defect and the built-in policy is asked the same way. A process that
+// cannot load the engine at all falls to the strict reading of the same rule
+// (`xacml_transfer_verdicts.js`'s `strictReading()`), STS-CELL-0181 — never
+// to something looser.
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids of the three transfer questions (#98). Not members of
+ * `ISSUANCE`.
+ */
+const TRANSFER = {
+  HOLD_SESSION: 'hold-session',
+  SERVE_REQUEST: 'serve-request',
+  RELEASE_ATTRIBUTES: 'release-attributes'
+};
+
+function builtInTransferVerdict(asked, why) {
+  log.debug('Entering builtInTransferVerdict().');
+  let out;
+  try {
+    const verdicts = require('../xacml/xacml_transfer_verdicts');
+    out = verdicts.decide(asked, null, {});
+  } catch (error) {
+    log.error(errorCodes.tag('STS-CELL-0181') + 'issuance_gate: the ' +
+              'built-in issuance policy could not be evaluated for ' +
+              String(asked.action) + '; the strict default decides. ' +
+              ((error && error.message) || error));
+    out = { verdict: strictTransferReading(asked), decidedBy: 'none' };
+  }
+  log.debug('Leaving builtInTransferVerdict(). ' + out.verdict);
+  return Object.assign({ why: why }, out);
+}
+
+// The strict default read from the facts — the built-in rule, for the one
+// case where not even the engine can be loaded. A copy of
+// `xacml_transfer_verdicts.js`'s `strictReading()`, because this is exactly
+// the process that cannot load that module; `tests/cell_transfer.js` holds
+// the two to the same truth table.
+function strictTransferReading(asked) {
+  log.debug('Entering strictTransferReading().');
+  const q = asked || {};
+  const same = !!q.home && !!q.serving && q.home === q.serving;
+  const permitted = same || !!q.listed;
+  let verdict;
+  if (q.action === TRANSFER.SERVE_REQUEST) {
+    verdict = q.hardGeofence && !permitted ? 'refuse' : 'serve';
+  } else if (q.action === TRANSFER.RELEASE_ATTRIBUTES) {
+    verdict = permitted ? 'release' : 'withhold';
+  } else {
+    verdict = permitted ? 'hold' : 'relay';
+  }
+  log.debug('Leaving strictTransferReading(). ' + verdict);
+  return verdict;
+}
+
+/**
+ * Puts a transfer question (#98) to the issuance policy: `hold-session`,
+ * `serve-request` or `release-attributes`, with the facts
+ * `common/cell_transfer.ts` gathered.
+ *
+ * Never throws and never returns a promise. With no decider, or a decider
+ * that throws or answers nothing, the built-in policy decides.
+ *
+ * @param request - `{ action, subject, home, serving, clientCountry, listed,
+ * hardGeofence, category, realm, purpose }`
+ * @returns `{ verdict, decidedBy, why }`
+ */
+function checkTransfer(request) {
+  log.debug('Entering checkTransfer().');
+  const asked = Object.assign({}, request || {});
+  if (!decider) {
+    log.debug('Leaving checkTransfer(). No decider: the built-in policy.');
+    return builtInTransferVerdict(asked, 'No XACML family is loaded in this ' +
+                                  'process; the built-in policy decided.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: asked.action,
+      application: '',
+      subject: { kind: 'user', name: String(asked.subject || ''),
+                 authenticated: true },
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      transferQuestion: asked
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on a transfer question; the ' +
+              'built-in policy decides instead. This is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug('Leaving checkTransfer(). The decider threw.');
+    return builtInTransferVerdict(asked, 'The embedded PEP threw: ' +
+                                  error.message);
+  }
+  const transfer = answer && answer.transfer;
+  if (!transfer || !transfer.verdict) {
+    log.debug('Leaving checkTransfer(). The PEP answered no verdict.');
+    return builtInTransferVerdict(asked, 'The embedded PEP answered no ' +
+                                  'transfer verdict.');
+  }
+  log.debug('Leaving checkTransfer(). ' + transfer.verdict);
+  return { verdict: transfer.verdict, decidedBy: transfer.decidedBy || '',
+           why: answer.why || '' };
+}
+
 function riskFactsOf(asked) {
   log.debug("Entering riskFactsOf().");
   if (Object.prototype.hasOwnProperty.call(asked, 'risk')) {
@@ -670,5 +805,8 @@ module.exports = {
   deviceFactsOf: deviceFactsOf,
   deviceRequirementOf: deviceRequirementOf,
   DELEGATE: DELEGATE,
-  checkDelegation: checkDelegation
+  checkDelegation: checkDelegation,
+  TRANSFER: TRANSFER,
+  checkTransfer: checkTransfer,
+  strictTransferReading: strictTransferReading
 };

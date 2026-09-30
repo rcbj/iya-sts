@@ -122,6 +122,9 @@ const nodeCrypto = require('crypto');
 // A LEAF with no requires: the three-way merge a directory upsert is written
 // through when another node has changed the row (#46 section 3).
 const directoryMerge = require('./directory_merge');
+// The directory's lookups as SQL (#349): one builder for this driver and the
+// bridge's thread. A leaf.
+const directoryQueries = require('./directory_queries');
 // The table of what active-active mode depends on (#46). A LEAF but for bunyan
 // and config, and it reads no setting at require time. The two rows this
 // driver provides are provided at the foot of this file.
@@ -207,10 +210,15 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // Monitoring → Worker Pools and → Node Health, one row per node NAME. 12
 // SINCE 2026-09-28, for `sts_minted.expires_at` and its partial index (#333):
 // a minted row's own expiry, so a start reads only live rows.
+// `sts_cell_routing` (#98): where each person is homed, in the global tier.
+// 13 SINCE 2026-09-29, for the six generated lookup columns of
+// `sts_ldap_entries` and their indexes (#349): what a request worker holding
+// the directory as a window asks the store instead of an index in memory.
+// 12 IS #333's (`sts_minted.expires_at`), and this merged after it.
 /**
  * The version of the schema this driver creates, recorded in `sts_schema`.
  */
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -246,6 +254,41 @@ const TOMBSTONE = '$tombstone$1';
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
 // node that went away. A join purges older ones.
 const DEAD_NODE_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// THE DIRECTORY'S GENERATED LOOKUP COLUMNS (#349, schema version 13), each a
+// column definition spelt ONCE, for the CREATE TABLE and the ADD COLUMN that
+// brings an older table level. Every expression is IMMUTABLE — the database
+// refuses a generated column otherwise — and mirrors a rule of
+// `ldap/ldap_server.js`, which `persistence/directory_queries.js`'s header
+// states one by one:
+//
+//   * `parent_key`: `parentDn()` of the key, everything after the first comma
+//     (`normalizeDn()` splits on every comma, so this does too);
+//   * `rdn_value`: the first RDN's value — lower-cased, because the key is;
+//   * `name_keys`, `mail_keys`: the `uid` and `mail` values lower-cased, as a
+//     JSON array: `lower()` over the array's own JSON text, then read back as
+//     JSON, since a set-returning function is not allowed here;
+//   * `uuid_keys`: `entryUUID` and `stsEntryUuidAlias` the same way;
+//   * `class_keys`: the `objectClass` values the same way — how a GROUP
+//     placed under `ou=users` or `ou=devices` is found without a walk.
+// ---------------------------------------------------------------------------
+const LDAP_GENERATED = {
+  parent_key: 'parent_key text GENERATED ALWAYS AS (CASE WHEN ' +
+    'strpos(dn_key, \',\') > 0 THEN substr(dn_key, strpos(dn_key, \',\') ' +
+    '+ 1) ELSE \'\' END) STORED',
+  rdn_value: 'rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ' +
+    '\',\', 1), strpos(split_part(dn_key, \',\', 1), \'=\') + 1)) STORED',
+  name_keys: 'name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
+    'attrs->\'uid\', \'[]\'::jsonb)::text)::jsonb) STORED',
+  mail_keys: 'mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
+    'attrs->\'mail\', \'[]\'::jsonb)::text)::jsonb) STORED',
+  uuid_keys: 'uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(' +
+    'attrs->\'entryuuid\', \'[]\'::jsonb) || COALESCE(' +
+    'attrs->\'stsentryuuidalias\', \'[]\'::jsonb))::text)::jsonb) STORED',
+  class_keys: 'class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
+    'attrs->\'objectclass\', \'[]\'::jsonb)::text)::jsonb) STORED'
+};
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
 // than a migration table, and that is a decision rather than laziness: this is
@@ -303,12 +346,56 @@ const SCHEMA_OBJECTS = [
   '  origin      text,' +
   '  created_at  text,' +
   '  modified_at text,' +
+  '  ' + LDAP_GENERATED.parent_key + ',' +
+  '  ' + LDAP_GENERATED.rdn_value + ',' +
+  '  ' + LDAP_GENERATED.name_keys + ',' +
+  '  ' + LDAP_GENERATED.mail_keys + ',' +
+  '  ' + LDAP_GENERATED.uuid_keys + ',' +
+  '  ' + LDAP_GENERATED.class_keys + ',' +
   '  PRIMARY KEY (realm, dn_key))' },
   // The one index worth having beyond the primary key: every enumerator in
   // this service walks one realm.
   { name: 'sts_ldap_entries_realm', statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries ' +
   '(realm)' },
+  // -------------------------------------------------------------------------
+  // THE DIRECTORY'S LOOKUP INDEXES (#349, schema version 13): what a request
+  // worker holding the people and devices as a bounded window asks instead
+  // of an index in memory — `persistence/directory_queries.js` builds every
+  // statement that reads them. Each is over a GENERATED column (above), so no
+  // writer maintains it and a row that existed before the column gets it when
+  // the column is added. `afterColumns`: on an older table the columns come
+  // from SCHEMA_COLUMNS, so these can only be built after that step.
+  //   * the children of a container, in key order (listings, paging, the
+  //     `ou=users` a login name is looked for under) and the RDN value there;
+  //   * the lower-cased `uid`, `mail` and entryUUID values, GIN over a JSON
+  //     array (`@>`), and every attribute value as written, GIN over `attrs`
+  //     (a DID, a SPIFFE ID, a federation link).
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_entries_parent', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries ' +
+  '(realm, parent_key, dn_key)' },
+  { name: 'sts_ldap_entries_rdn', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries ' +
+  '(realm, parent_key, rdn_value)' },
+  { name: 'sts_ldap_entries_names', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
+  'USING gin (name_keys jsonb_path_ops)' },
+  { name: 'sts_ldap_entries_mails', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries ' +
+  'USING gin (mail_keys jsonb_path_ops)' },
+  { name: 'sts_ldap_entries_uuids', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries ' +
+  'USING gin (uuid_keys jsonb_path_ops)' },
+  { name: 'sts_ldap_entries_attrs', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attrs ON sts_ldap_entries ' +
+  'USING gin (attrs jsonb_path_ops)' },
+  // The object classes, GIN with the DEFAULT operator class: `?|` (any of
+  // the group classes) is what it is asked, and `jsonb_path_ops` answers
+  // only containment.
+  { name: 'sts_ldap_entries_classes', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries ' +
+  'USING gin (class_keys)' },
   { name: 'sts_realms', statement:
   'CREATE TABLE IF NOT EXISTS sts_realms (' +
   '  id          text PRIMARY KEY,' +
@@ -888,6 +975,28 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_risk_terms_acceptances_provider', statement:
   'CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON ' +
   'sts_risk_terms_acceptances (provider, accepted_at)' },
+  // -------------------------------------------------------------------------
+  // WHERE EACH PERSON IS HOMED (#98, 2026-09-28, schema version 11). The
+  // routing index of a service deployed as cells: in the GLOBAL tier, so
+  // every cell can ask it, and holding NO name and NO identifier in the
+  // clear — `digest` is a keyed digest (`keystore.keyedDigest()`, under the
+  // service key every cell holds) of a login name (`kind` 'name') or of an
+  // entryUUID (`kind` 'uuid'). The row says which cell holds the person and
+  // nothing else about them. It is also what keeps a login name unique in a
+  // realm across cells: the PRIMARY KEY is the claim.
+  //
+  // Present in every database this driver opens, and empty in single-cell
+  // mode and in a cell's own database; one schema everywhere is cheaper than
+  // two schemas and a rule about which is where.
+  // -------------------------------------------------------------------------
+  { name: 'sts_cell_routing', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cell_routing (' +
+  '  realm      text   NOT NULL,' +
+  '  kind       text   NOT NULL,' +
+  '  digest     text   NOT NULL,' +
+  '  cell       text   NOT NULL,' +
+  '  written_at bigint NOT NULL,' +
+  '  PRIMARY KEY (realm, kind, digest))' },
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -927,7 +1036,28 @@ const SCHEMA_COLUMNS = [
   // NULL — no expiry — and so falls under the write-age rule once, which is
   // the whole of the migration.
   { table: 'sts_minted', column: 'expires_at', statement:
-  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint' }
+  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint' },
+  // The directory's six generated lookup columns (#349, schema version 13).
+  // Adding a STORED generated column rewrites the table once and fills every
+  // existing row, which is the whole of the migration.
+  { table: 'sts_ldap_entries', column: 'parent_key', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.parent_key },
+  { table: 'sts_ldap_entries', column: 'rdn_value', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.rdn_value },
+  { table: 'sts_ldap_entries', column: 'name_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.name_keys },
+  { table: 'sts_ldap_entries', column: 'mail_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.mail_keys },
+  { table: 'sts_ldap_entries', column: 'uuid_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.uuid_keys },
+  { table: 'sts_ldap_entries', column: 'class_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.class_keys }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -1281,6 +1411,55 @@ const ORIGIN_SCOPE = 'persistence.origin';
 // ---------------------------------------------------------------------------
 const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
 
+// ---------------------------------------------------------------------------
+// HOW A CONNECTION STRING BECOMES WHAT `pg` IS GIVEN — the one place, shared
+// by this driver's writer pool, its LISTEN client, its read pool and, since
+// #98's conversion tool (`persistence/cell_convert.js`), a process that is
+// not the service and dials the same databases. `create()` argues the two
+// decisions it holds: TLS is wanted when the string's `sslmode` asks for it,
+// and the parameter is then STRIPPED so that `pg`'s own reading of it cannot
+// disagree with the `ssl` option built here. A libpq keyword/value string,
+// which cannot be edited safely, is passed through untouched.
+//
+// A PURE FUNCTION with no log line, for `poolMax()`'s reason: this module's
+// logger arrives with create(). `notUrl` carries why a string that asked for
+// TLS could not be edited, so the caller can say so on its own logger.
+// ---------------------------------------------------------------------------
+/**
+ * Returns what `pg` is given to dial a connection string the way this driver
+ * does.
+ *
+ * @param url - the connection string
+ * @param verifyTls - whether the server's certificate is verified
+ * @returns `{ connectionString, ssl, wantsTls, notUrl }`; `notUrl` is '' or
+ * the reason the string could not be edited
+ */
+function dialOptions(url, verifyTls) {
+  const raw = String(url || '');
+  const wantsTls = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
+    .test(raw);
+  let connectionString = raw;
+  let notUrl = '';
+  if (wantsTls) {
+    try {
+      const parsed = new URL(raw);
+      parsed.searchParams.delete('sslmode');
+      connectionString = parsed.toString();
+    } catch (e) {
+      // Not a URL: see the header. Carried on the answer rather than
+      // logged, because there is no logger here.
+      notUrl = String((e && e.message) || e) || 'not a URL';
+      connectionString = raw;
+    }
+  }
+  return {
+    connectionString: connectionString,
+    ssl: wantsTls ? { rejectUnauthorized: !!verifyTls } : undefined,
+    wantsTls: wantsTls,
+    notUrl: notUrl
+  };
+}
+
 /**
  * Creates the postgres persistence driver.
  *
@@ -1447,8 +1626,10 @@ function create(options) {
   // make `sslmode=disable` mean its opposite — a connection string saying one
   // thing and the client doing another, which is the shape of bug this whole
   // change exists to remove.
-  const wantsTls = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
-    .test(url);
+  // `dialOptions()`, above create(), is the one reading of it (#98): this
+  // driver's pools and an out-of-process tool dial the same way.
+  const dial = dialOptions(url, options.verifyTls);
+  const wantsTls = dial.wantsTls;
   const verify = !!options.verifyTls;
   if (wantsTls) {
     log.info('persistence: the database connection is TLS (sslmode in the ' +
@@ -1480,24 +1661,16 @@ function create(options) {
   // string SAYS — it is read above to decide whether TLS is wanted at all, and
   // it is what an operator writes — but there is exactly one place that turns
   // it into a socket option, which is what stops the two disagreeing again.
-  const dialled = (function () {
-    if (!wantsTls) {
-      return url;
-    }
-    try {
-      const parsed = new URL(url);
-      parsed.searchParams.delete('sslmode');
-      return parsed.toString();
-    } catch (e) {
-      log.debug("Caught in a callback in create(): " + ((e && e.message) || e));
-      // A libpq keyword/value string rather than a URL. `pg` accepts those and
-      // this cannot edit one safely, so it is passed through untouched and
-      // whatever it says about ssl is what happens.
-      log.debug('persistence: the connection string is not a URL, so its ' +
-                'sslmode was left as it is.');
-      return url;
-    }
-  })();
+  // That place is `dialOptions()` since #98, so a process that is not the
+  // service dials the same way.
+  const dialled = dial.connectionString;
+  if (dial.notUrl) {
+    // A libpq keyword/value string rather than a URL. `pg` accepts those and
+    // this cannot edit one safely, so it is passed through untouched and
+    // whatever it says about ssl is what happens.
+    log.debug('persistence: the connection string is not a URL, so its ' +
+              'sslmode was left as it is.');
+  }
 
   // ONE PLACE THE CONNECTION IS DESCRIBED, because the pool and the change
   // listener have to dial the same database the same way — and a listener that
@@ -1527,6 +1700,66 @@ function create(options) {
     connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 30000
   });
+
+  // -------------------------------------------------------------------------
+  // THE READ POOL (#98, 2026-09-28). The global tier of a service deployed as
+  // cells has ONE writer and a read replica in every cell; `options.readUrl`
+  // is this cell's replica, and every statement that only reads — the
+  // restore at start, every pull of the change log, the row a change points
+  // at — goes to it, so a cell far from the writer reads at local latency.
+  // Everything that writes, locks or claims stays on `pool`.
+  //
+  // **A READ AND THE CHANGE LOG ROW IT FOLLOWS COME FROM THE SAME REPLICA**,
+  // which is what keeps this correct: a replica replays the writer's commits
+  // whole and in order, so a change row visible there has its data row
+  // visible there too. Mixing the two — the log from the replica and the row
+  // from the writer, or the reverse — is the one arrangement that could read
+  // a pointer to something not yet there, and nothing here does it.
+  //
+  // Without `readUrl` it IS `pool`: every other store — a cell's own
+  // database, single-cell mode, ldif's neighbour — has one database and
+  // reads where it writes, exactly as before.
+  // -------------------------------------------------------------------------
+  const readUrl = String(options.readUrl || '').trim();
+  // The read pool's connection options when it is a pool of its own, for
+  // the bridge's thread (#349) — `readClientOptions()` below.
+  let readOptions = null;
+  const readPool = (function () {
+    if (!readUrl || readUrl === url) {
+      return pool;
+    }
+    const readDial = dialOptions(readUrl, verify);
+    readOptions = {
+      connectionString: readDial.connectionString,
+      ssl: readDial.ssl,
+      connectionTimeoutMillis: 5000
+    };
+    const made = new Pool({
+      connectionString: readDial.connectionString,
+      ssl: readDial.ssl,
+      max: Number(options.poolMax) > 0 ? Number(options.poolMax)
+        : POOL_FLOOR,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 30000
+    });
+    made.on('error', function (err) {
+      log.error(errorCodes.tag('STS-STORE-0030') +
+                'persistence: an idle postgres client of the read replica ' +
+                'errored: ' + err.message + '. The pool will make a new one ' +
+                'on the next read.');
+    });
+    log.info('persistence: reads of this store go to its read replica; ' +
+             'writes go to its writer.');
+    return made;
+  })();
+
+  // The options a client of the READ side dials with: the replica's when
+  // there is one, the writer's otherwise (#349's bridge thread).
+  function readClientOptions() {
+    log.debug("Entering readClientOptions().");
+    log.debug("Leaving readClientOptions().");
+    return readOptions ? Object.assign({}, readOptions) : clientOptions();
+  }
 
   pool.on('error', function (err) {
     // A pooled client that died while idle. Logged rather than thrown — an
@@ -2063,7 +2296,7 @@ function create(options) {
             return !row['o' + index];
           });
           // AN OBJECT BUILT ON A COLUMN THAT SCHEMA_COLUMNS MAY STILL HAVE TO
-          // ADD (#333) waits for the column step below.
+          // ADD (#333, #349) waits for the column step below.
           late = missing.filter(function (object) {
             return object.afterColumns === true;
           });
@@ -2356,6 +2589,9 @@ function create(options) {
       const live = liveClient;
       liveClient = null;
       return pool.end().then(function () {
+        // The read replica's pool, when it is a pool of its own (#98).
+        return readPool !== pool ? readPool.end() : null;
+      }).then(function () {
         // The liveness connection, last: leaving the cluster and giving the
         // origin back were its final statements.
         return live ? Promise.resolve(live.end()).catch(function (e) {
@@ -2369,7 +2605,7 @@ function create(options) {
     loadDirectory: function () {
       log.debug('Entering the postgres driver loadDirectory().');
       log.debug("Leaving loadDirectory().");
-      return pool.query(
+      return readPool.query(
         'SELECT realm, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries ORDER BY realm, dn_key'
       ).then(function (result) {
@@ -2403,7 +2639,7 @@ function create(options) {
     loadRealms: function () {
       log.debug('Entering the postgres driver loadRealms().');
       log.debug("Leaving loadRealms().");
-      return pool.query(
+      return readPool.query(
         'SELECT id, name, description, created_at, overrides, domain, ' +
         'retiring_at FROM sts_realms ' +
         'ORDER BY created_at NULLS FIRST, id'
@@ -2436,7 +2672,7 @@ function create(options) {
     loadOverrides: function () {
       log.debug('Entering the postgres driver loadOverrides().');
       log.debug("Leaving loadOverrides().");
-      return pool.query('SELECT key, value FROM sts_appconfig')
+      return readPool.query('SELECT key, value FROM sts_appconfig')
         .then(function (result) {
           if (!result.rows.length) {
             log.debug('Leaving loadOverrides(). The table is empty.');
@@ -2866,7 +3102,7 @@ function create(options) {
     loadKeys: function () {
       log.debug('Entering the postgres driver loadKeys().');
       log.debug("Leaving loadKeys().");
-      return pool.query('SELECT realm, material FROM sts_keys')
+      return readPool.query('SELECT realm, material FROM sts_keys')
                  .then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return { realm: row.realm, material: row.material };
@@ -2956,7 +3192,7 @@ function create(options) {
         ? filter.ageHandles.map(String) : [];
       const aged = staleBefore > 0 && shortLived.length > 0;
       log.debug("Leaving loadMinted().");
-      return pool.query(
+      return readPool.query(
         'SELECT handle, realm, key, body, (extract(epoch from written_at) ' +
         '* 1000)::bigint AS written_ms, expires_at FROM sts_minted ' +
         'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
@@ -3256,7 +3492,7 @@ function create(options) {
         binds.push(String(ref.handle), String(ref.realm), String(ref.key));
       });
       log.debug("Leaving readMintedMany().");
-      return pool.query(
+      return readPool.query(
         'SELECT m.handle, m.realm, m.key, m.body, ' +
         '(extract(epoch from m.written_at) * 1000)::bigint AS written_ms ' +
         'FROM sts_minted m JOIN (VALUES ' + values.join(', ') +
@@ -3423,7 +3659,7 @@ function create(options) {
     latestChangeSeq: function () {
       log.debug('Entering the postgres driver latestChangeSeq().');
       log.debug("Leaving latestChangeSeq().");
-      return pool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
+      return readPool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
         .then(function (r) {
           const seq = Number((r.rows[0] || {}).seq || 0);
           log.debug('Leaving the postgres driver latestChangeSeq(). ' + seq);
@@ -3470,7 +3706,7 @@ function create(options) {
       // the second. `applyRows()` skips this process's own rows itself — it
       // always did — so nothing is applied twice.
       // ---------------------------------------------------------------------
-      return pool.query(
+      return readPool.query(
         'SELECT seq, origin, kind, realm, key FROM sts_changes ' +
         'WHERE seq > $1 ORDER BY seq ASC LIMIT $2',
         [Number(afterSeq) || 0, Number(limit) || 500]
@@ -3491,7 +3727,7 @@ function create(options) {
     changeCeiling: function () {
       log.debug("Entering changeCeiling().");
       log.debug("Leaving changeCeiling().");
-      return pool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
+      return readPool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
         .then(function (r) { return Number((r.rows[0] || {}).seq || 0); });
     },
 
@@ -3500,7 +3736,7 @@ function create(options) {
     readEntry: function (realmId, dnKey) {
       log.debug("Entering readEntry().");
       log.debug("Leaving readEntry().");
-      return pool.query(
+      return readPool.query(
         'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
         [realmId, dnKey]
@@ -3515,11 +3751,49 @@ function create(options) {
       });
     },
 
+    // -----------------------------------------------------------------------
+    // THE DIRECTORY'S LOOKUPS (#349 phase 2). `name` is one of
+    // `persistence/directory_queries.js`'s queries and `args` its arguments;
+    // the answer is its rows in the directory's own shape, `{ realm, key,
+    // entry }`, or for `count` the number and for `hasChild` a boolean. On
+    // the read pool, like `readEntry()`: every one only reads. A request
+    // worker's synchronous path runs the same statements through the bridge
+    // (`common/sync_query.ts`) on a connection of its own; this is the async
+    // door, and what the in-process tests drive.
+    // -----------------------------------------------------------------------
+    directoryQuery: function (name, args) {
+      log.debug("Entering directoryQuery(). " + name);
+      let statement;
+      try {
+        statement = directoryQueries.build(name, args);
+      } catch (e) {
+        log.debug("Caught in directoryQuery(): " + ((e && e.message) || e));
+        log.debug("Leaving directoryQuery(). Unknown query.");
+        return Promise.reject(e);
+      }
+      log.debug("Leaving directoryQuery().");
+      return readPool.query(statement.text, statement.values)
+        .then(function (r) {
+          return directoryQueries.answerOf(name, r.rows || []);
+        });
+    },
+
+    // WHAT THE BRIDGE'S THREAD DIALS (#349 phase 3): the read pool's own
+    // connection options — the same database, the same TLS decision — so
+    // the thread is one more client of this store and never a second,
+    // differently configured way into it. It holds the password when the
+    // URL does; it is handed to a thread of this process and nowhere else.
+    bridgeConnection: function () {
+      log.debug("Entering bridgeConnection().");
+      log.debug("Leaving bridgeConnection().");
+      return readClientOptions();
+    },
+
     // One minted row, same reason.
     readMinted: function (handle, realmId, key) {
       log.debug("Entering readMinted().");
       log.debug("Leaving readMinted().");
-      return pool.query(
+      return readPool.query(
         'SELECT handle, realm, key, body,        (extract(epoch from ' +
         'written_at) * 1000)::bigint AS written_ms FROM sts_minted WHERE ' +
         'handle = $1 AND realm = $2 AND key = $3',
@@ -3677,7 +3951,7 @@ function create(options) {
         return Promise.resolve([]);
       }
       log.debug("Leaving changesAt().");
-      return pool.query(
+      return readPool.query(
         'SELECT seq, origin, kind, realm, key FROM sts_changes ' +
         'WHERE seq = ANY($1::bigint[]) ORDER BY seq ASC', [list]
       ).then(function (r) {
@@ -4292,10 +4566,147 @@ function create(options) {
     // `sts_changes` only when the row actually moved, so a merge that decided
     // "keep what is there" wakes no other process.
     // =====================================================================
+    // -----------------------------------------------------------------------
+    // THE ROUTING INDEX (#98): where each person is homed, in the global
+    // tier. See `sts_cell_routing` in SCHEMA_OBJECTS. `kind` is 'name' or
+    // 'uuid' and `digest` is a keyed digest the caller made; this driver
+    // never sees a name.
+    //
+    // A CLAIM IS THE UNIQUENESS: the insert does nothing when the row is
+    // there, and the answer is whichever cell holds it — this one when the
+    // claim took, another when a person of that name is already homed
+    // elsewhere. A single statement on the pool, unfenced, like every other
+    // claim (`cluster/CLAUDE.md`, *What is NOT fenced*).
+    // -----------------------------------------------------------------------
+    routeClaim: function (realmId, kind, digest, cell) {
+      log.debug("Entering routeClaim().");
+      log.debug("Leaving routeClaim().");
+      return pool.query(
+        'WITH put AS (INSERT INTO sts_cell_routing ' +
+        '  (realm, kind, digest, cell, written_at) ' +
+        '  VALUES ($1, $2, $3, $4, ' + DB_NOW + ') ' +
+        '  ON CONFLICT (realm, kind, digest) DO NOTHING RETURNING cell) ' +
+        'SELECT cell, true AS claimed FROM put UNION ALL ' +
+        'SELECT cell, false AS claimed FROM sts_cell_routing ' +
+        'WHERE realm = $1 AND kind = $2 AND digest = $3 ' +
+        '  AND NOT EXISTS (SELECT 1 FROM put)',
+        [String(realmId || ''), String(kind), String(digest), String(cell)]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || null;
+        return row ? { cell: String(row.cell), claimed: !!row.claimed }
+                   : { cell: '', claimed: false };
+      });
+    },
+
+    // Where a digest is homed, or '' — read from the REPLICA like every other
+    // read of this tier: an index row written in another cell is visible here
+    // after the replica's lag, and a caller that must not miss one it just
+    // wrote is the cell that wrote it, which already knows.
+    routeLookup: function (realmId, kind, digest) {
+      log.debug("Entering routeLookup().");
+      log.debug("Leaving routeLookup().");
+      return readPool.query(
+        'SELECT cell FROM sts_cell_routing WHERE realm = $1 AND kind = $2 ' +
+        'AND digest = $3', [String(realmId || ''), String(kind),
+                            String(digest)]
+      ).then(function (r) {
+        const row = (r.rows || [])[0];
+        return row ? String(row.cell) : '';
+      });
+    },
+
+    // Ends a row, only while it still names `cell` — a cell cannot release a
+    // name another cell holds.
+    routeRelease: function (realmId, kind, digest, cell) {
+      log.debug("Entering routeRelease().");
+      log.debug("Leaving routeRelease().");
+      return pool.query(
+        'DELETE FROM sts_cell_routing WHERE realm = $1 AND kind = $2 AND ' +
+        'digest = $3 AND cell = $4',
+        [String(realmId || ''), String(kind), String(digest), String(cell)]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // Re-homing (#98 §8.8): moves a row from one cell to another, only while
+    // it still names the one it is moving from.
+    routeMove: function (realmId, kind, digest, fromCell, toCell) {
+      log.debug("Entering routeMove().");
+      log.debug("Leaving routeMove().");
+      return pool.query(
+        'UPDATE sts_cell_routing SET cell = $5, written_at = ' + DB_NOW +
+        ' WHERE realm = $1 AND kind = $2 AND digest = $3 AND cell = $4',
+        [String(realmId || ''), String(kind), String(digest),
+         String(fromCell), String(toCell)]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // How many people each cell holds, per realm — `/admin/cells`' count.
+    routeCounts: function () {
+      log.debug("Entering routeCounts().");
+      log.debug("Leaving routeCounts().");
+      return readPool.query(
+        'SELECT realm, cell, count(*)::int AS people FROM sts_cell_routing ' +
+        'WHERE kind = \'uuid\' GROUP BY realm, cell ORDER BY realm, cell'
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { realm: String(row.realm), cell: String(row.cell),
+                   people: Number(row.people) || 0 };
+        });
+      });
+    },
+
+    // Every row of a realm's index held by one cell — the reconciliation of a
+    // cell's residents against the index at start (`cell_routing.ts`).
+    routeRowsOf: function (realmId, cell) {
+      log.debug("Entering routeRowsOf().");
+      log.debug("Leaving routeRowsOf().");
+      return pool.query(
+        'SELECT kind, digest FROM sts_cell_routing WHERE realm = $1 AND ' +
+        'cell = $2', [String(realmId || ''), String(cell)]
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { kind: String(row.kind), digest: String(row.digest) };
+        });
+      });
+    },
+
+    // Drops a whole realm's index — the realm was removed.
+    routeRemoveRealm: function (realmId) {
+      log.debug("Entering routeRemoveRealm().");
+      log.debug("Leaving routeRemoveRealm().");
+      return pool.query('DELETE FROM sts_cell_routing WHERE realm = $1',
+                        [String(realmId || '')]).then(function (r) {
+        return r.rowCount;
+      });
+    },
+
+    // The replica's lag behind its writer, in milliseconds, or null where
+    // this is not a replica or the question cannot be asked — `/admin/cells`.
+    replicaLagMs: function () {
+      log.debug("Entering replicaLagMs().");
+      if (readPool === pool) {
+        log.debug("Leaving replicaLagMs(). No replica.");
+        return Promise.resolve(null);
+      }
+      log.debug("Leaving replicaLagMs().");
+      return readPool.query(
+        'SELECT CASE WHEN pg_is_in_recovery() THEN ' +
+        '(extract(epoch from (now() - pg_last_xact_replay_timestamp())) ' +
+        '* 1000)::bigint ELSE 0 END AS lag'
+      ).then(function (r) {
+        const row = (r.rows || [])[0];
+        return row && row.lag !== null ? Number(row.lag) : null;
+      });
+    },
+
     loadKey: function (realmId) {
       log.debug("Entering loadKey(). realm=" + realmId);
       log.debug("Leaving loadKey().");
-      return pool.query('SELECT material FROM sts_keys WHERE realm = $1',
+      return readPool.query('SELECT material FROM sts_keys WHERE realm = $1',
                         [String(realmId)]).then(function (r) {
         const row = (r.rows || [])[0];
         return row ? row.material : null;
@@ -5672,5 +6083,9 @@ module.exports = {
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
   SCHEMA_VERSION: SCHEMA_VERSION,
-  poolMax: poolMax
+  poolMax: poolMax,
+  // What `pg` is given for a connection string (#98): for
+  // `persistence/cell_convert.js`, which dials the service's databases
+  // without being the service.
+  dialOptions: dialOptions
 };

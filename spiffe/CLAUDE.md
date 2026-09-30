@@ -121,9 +121,24 @@ socket gets THAT realm's trust domain back from `FetchX509Bundles`.
 ---
 
 `protos/` holds the SPIFFE project's own `workloadapi.proto` and
-`brokerapi.proto` (#170) and the `spire-api-sdk`'s, VERBATIM. `spiffe_grpc.ts` reads them at module scope through
+`brokerapi.proto` (#170) and the `spire-api-sdk`'s, VERBATIM. `spiffe_grpc.ts` reads them through
 `path.join(__dirname, 'protos')`, so they moved into this directory with it; a
 missing one is not a degraded SPIFFE feature, it is a service that does not start.
+
+**THEY AND THE gRPC RUNTIME ARE LOADED AT FIRST USE SINCE #348 (2026-09-29)**,
+not at require: every request worker loads this module and none binds a
+SPIFFE socket, so `@grpc/grpc-js`, `@grpc/proto-loader` and the protos were
+about 5 MB of heap and 13 MB of resident memory in each for nothing
+(`common/lazy_module.ts`, `common/CLAUDE.md`). `spiffe_server.ts`'s `listen()`
+calls `rpc.services()` synchronously before anything binds, so the FRONT
+process still loads them at start and a missing proto still stops it there.
+What a worker does need is the status NUMBERS a dispatched method refuses
+with, and `rpc.status` is grpc-js's own table (`build/src/constants.js`,
+which requires nothing — the same object as `grpc.status`); **use
+`rpc.status`, never `rpc.grpc.status`, in anything a worker can run**, or
+the first refusal loads the runtime into that worker. A worker that renders
+`/spiffe` or `/admin/sts-metadata` loads the protos then (`methodsOf()`), and
+not the runtime.
 The wire matching what a real client expects is the entire reason
 `@grpc/grpc-js` is a dependency here, so a local edit to one of these would give
 that up silently.

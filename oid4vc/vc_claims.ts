@@ -987,6 +987,26 @@ class VcClaims {
     log.debug("Leaving VcClaims.setDirectory().");
   }
 
+  // ONE PERSON'S ENTRY, AS THE DIRECTORY HOLDS IT (#94): every attribute,
+  // lower-cased, or null. For the claim sets' attribute claims, which name
+  // any attribute rather than a catalogue row, and which read only the
+  // directory — never the persona, so an attribute the entry lacks is a
+  // claim that is absent, in both modes.
+  /**
+   * Returns one person's directory entry: every attribute, lower-cased.
+   *
+   * @param name - the person, by any name the identity funnel files them
+   *   under
+   * @returns the attributes, or null when there is no entry or no directory
+   */
+  entryAttributes(name: unknown): Record<string, unknown[]> | null {
+    const { log } = this.deps;
+    log.debug("Entering VcClaims.entryAttributes().");
+    log.debug("Leaving VcClaims.entryAttributes().");
+    return String(name == null ? '' : name).trim()
+      ? this.directoryAttributes(name) : null;
+  }
+
   private directoryAttributes(name: unknown) {
     const { log, stats, errorCodes } = this.deps;
     log.debug("Entering VcClaims.directoryAttributes().");
@@ -1572,6 +1592,7 @@ export = {
   generatedFor: slot.forward('generatedFor'),
   // Filled by ldap_server.js at its require time; see the note above it.
   setDirectory: slot.forward('setDirectory'),
+  entryAttributes: slot.forward('entryAttributes'),
   populateDirectory: slot.forward('populateDirectory'),
   subjectClaimsFor: slot.forward('subjectClaimsFor'),
   updatedAtOf: slot.forward('updatedAtOf'),

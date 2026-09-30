@@ -141,9 +141,49 @@ CREATE TABLE IF NOT EXISTS sts_ldap_entries (
   origin      text,
   created_at  text,
   modified_at text,
+  parent_key text GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED,
+  rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED,
+  name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'uid', '[]'::jsonb)::text)::jsonb) STORED,
+  mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'mail', '[]'::jsonb)::text)::jsonb) STORED,
+  uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(attrs->'entryuuid', '[]'::jsonb) || COALESCE(attrs->'stsentryuuidalias', '[]'::jsonb))::text)::jsonb) STORED,
+  class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'objectclass', '[]'::jsonb)::text)::jsonb) STORED,
   PRIMARY KEY (realm, dn_key));
 
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
+
+-- THE DIRECTORY'S LOOKUP COLUMNS (#349, schema version 13, 2026-09-29): what
+-- a request worker holding the people and devices as a bounded window asks
+-- the store instead of an index in memory. Each is GENERATED from `dn_key`
+-- and `attrs` by an immutable expression, so no writer maintains it, and
+-- adding one to a table that already has rows rewrites the table once and
+-- fills them — the whole of the migration. What each mirrors in
+-- `ldap/ldap_server.js`: `parent_key` is `parentDn()` of the key (everything
+-- after the first comma — the key splits on every comma, escapes unread);
+-- `rdn_value` the first RDN's value; `name_keys`, `mail_keys` and
+-- `uuid_keys` the `uid`, `mail` and entryUUID (and alias) values, and
+-- `class_keys` the object classes,
+-- lower-cased, as a JSON array for `@>`. `persistence/directory_queries.js`
+-- builds every statement that reads them. Added separately as well, for
+-- `sts_realms.domain`'s reason.
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS parent_key text GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'uid', '[]'::jsonb)::text)::jsonb) STORED;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'mail', '[]'::jsonb)::text)::jsonb) STORED;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(attrs->'entryuuid', '[]'::jsonb) || COALESCE(attrs->'stsentryuuidalias', '[]'::jsonb))::text)::jsonb) STORED;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'objectclass', '[]'::jsonb)::text)::jsonb) STORED;
+
+-- The children of a container in key order, and the RDN value there (a login
+-- name); the lower-cased `uid`, `mail` and entryUUID values; and every
+-- attribute value as written (a DID, a SPIFFE ID, a federation link).
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries (realm, parent_key, dn_key);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries (realm, parent_key, rdn_value);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_attrs ON sts_ldap_entries USING gin (attrs jsonb_path_ops);
+-- The object classes, with the default GIN operator class, for `?|`: a group
+-- placed under `ou=users` or `ou=devices` found without a walk.
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries USING gin (class_keys);
 
 CREATE TABLE IF NOT EXISTS sts_realms (
   id          text PRIMARY KEY,
@@ -651,6 +691,19 @@ CREATE TABLE IF NOT EXISTS sts_risk_terms_acceptances (
 
 CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON sts_risk_terms_acceptances (provider, accepted_at);
 
+-- WHERE EACH PERSON IS HOMED (#98, schema version 11, 2026-09-28): the
+-- routing index of a service deployed as cells, in the global tier. Keyed
+-- digests of a login name or an entryUUID and the cell that holds the person;
+-- no name and no identifier in the clear. The primary key is what keeps a
+-- login name unique in a realm across cells.
+CREATE TABLE IF NOT EXISTS sts_cell_routing (
+  realm      text   NOT NULL,
+  kind       text   NOT NULL,
+  digest     text   NOT NULL,
+  cell       text   NOT NULL,
+  written_at bigint NOT NULL,
+  PRIMARY KEY (realm, kind, digest));
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -658,7 +711,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (12) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (13) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

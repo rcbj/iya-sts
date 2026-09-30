@@ -495,6 +495,22 @@ function announce() {
               'Every http:// CRL and OCSP address in this service\'s ' +
               'certificates will answer nothing.');
   });
+  // THE CHANNEL BETWEEN CELLS (#98, 2026-09-28): mutual TLS on cells.port,
+  // bound only when this service is deployed as cells, in this process only
+  // (a request worker dials and never listens). A relayed request it takes
+  // is served by the same app as the public port. Recorded rather than
+  // thrown, as every socket here is: without it this cell still answers
+  // what it owns, and the other cells fail closed on what they relay here.
+  require('./common/cell_channel').listen(app).whenReady.then(
+    function (ready) {
+      if (ready.port) {
+        log.info('cells: the inter-cell channel is on port ' + ready.port +
+                 ', mutual TLS, for the other cells of this service only.');
+      }
+    }).catch(function (err) {
+    log.error(errorCodes.tag('STS-CELL-0033') + 'cells: the inter-cell ' +
+              'listener could not start: ' + err.message);
+  });
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13): its own listener, then its
   // api child. Recorded rather than thrown like every socket here — and a
   // debugger that is not embedded, or not installed, says why on
@@ -553,6 +569,33 @@ function announce() {
 // ---------------------------------------------------------------------------
 let stopping = false;
 
+// ---------------------------------------------------------------------------
+// THE BOOTSTRAP ADMINISTRATOR IS THE SERVICE'S, NOT EACH CELL'S (#98,
+// 2026-09-28; found by tests/tools/rehearse-cell-conversion.sh). The
+// bootstrap asks "does anybody in THIS directory hold a credential", and a
+// cell's directory holds only the people homed in it — so every cell but the
+// first found nobody and created a second `admin.bootstrapUsername` of its
+// own beside the one homed in the first cell: an entry the routing index
+// refused by name (STS-CELL-0020), indexed by its entryUUID, with a password
+// printed that sign-in routing never reaches. A cell now asks the index
+// first, and a realm whose bootstrap account is homed in another cell is not
+// bootstrapped here. Single-cell mode never asks.
+// ---------------------------------------------------------------------------
+function bootstrapHomedElsewhere(realmId, username) {
+  log.debug('Entering bootstrapHomedElsewhere(). realm=' + realmId);
+  const cells = require('./common/cells');
+  if (!cells.isMulti() || !username) {
+    log.debug('Leaving bootstrapHomedElsewhere(). Single-cell.');
+    return Promise.resolve('');
+  }
+  log.debug('Leaving bootstrapHomedElsewhere(). Asking the index.');
+  return require('./common/cell_routing')
+    .homeOf(realmId, 'name', String(username))
+    .then(function (home) {
+      return home && home !== cells.id() ? String(home) : '';
+    });
+}
+
 function shutdown(signal) {
   log.debug('Entering shutdown(). signal=' + signal);
   if (stopping) {
@@ -587,6 +630,11 @@ function shutdown(signal) {
   // A run in progress is left to finish or be fenced out; its claim lapses
   // and the next leader takes it over.
   require('./cluster/scheduler').stop();
+  // The inter-cell listener (#98): nothing drains through it that the
+  // request pool below does not already finish.
+  require('./common/cell_channel').close().catch(function (e) {
+    log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
+  });
   debuggerServer.close().catch(function (e) {
     log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
   }).then(function () {
@@ -767,15 +815,32 @@ serviceState.start().then(function (both) {
   const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
   });
-  const bootstrapped = realms.run(realms.DEFAULT_REALM, function () {
-    return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
-      adminRbac.seedBootstrapAdministrator();
-      // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
-      // never opens it to whoever signs in, so a realm left with no bootstrap
-      // administrator and an empty roster is logged under STS-ADMIN-0798
-      // rather than discovered by being refused.
-      adminRbac.reportClosedConsole();
-      return credentials.bootstrap({ username: bootstrapUsername });
+  // In a service of several cells, a realm whose bootstrap account is homed
+  // in another cell is not bootstrapped here: see bootstrapHomedElsewhere().
+  const unlessHomedElsewhere = function (realmId, bootstrap) {
+    return bootstrapHomedElsewhere(realmId, bootstrapUsername)
+      .then(function (home) {
+        if (home) {
+          log.info('credentials: the "' + realmId + '" realm\'s bootstrap ' +
+                   'account "' + bootstrapUsername + '" is homed in cell "' +
+                   home + '"; this cell bootstraps no administrator of its ' +
+                   'own.');
+          return { ran: false, why: 'homed in cell ' + home };
+        }
+        return bootstrap();
+      });
+  };
+  const bootstrapped = unlessHomedElsewhere(realms.DEFAULT_ID, function () {
+    return realms.run(realms.DEFAULT_REALM, function () {
+      return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
+        adminRbac.seedBootstrapAdministrator();
+        // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
+        // never opens it to whoever signs in, so a realm left with no
+        // bootstrap administrator and an empty roster is logged under
+        // STS-ADMIN-0798 rather than discovered by being refused.
+        adminRbac.reportClosedConsole();
+        return credentials.bootstrap({ username: bootstrapUsername });
+      });
     });
   }).then(function () {
     // AND EVERY TRUST REALM THIS PROCESS STARTED WITH (2026-09-14, #32): each
@@ -786,11 +851,13 @@ serviceState.start().then(function (both) {
     // realm above — and one realm at a time, each under its own claim.
     return otherRealms.reduce(function (chain, realm) {
       return chain.then(function () {
-        return realms.run(realm, function () {
-          return credentials.bootstrapOnce(realm.id, function () {
-            adminRbac.seedBootstrapAdministrator(realm.id);
-            adminRbac.reportClosedConsole(realm.id);
-            return credentials.bootstrap({ username: bootstrapUsername });
+        return unlessHomedElsewhere(realm.id, function () {
+          return realms.run(realm, function () {
+            return credentials.bootstrapOnce(realm.id, function () {
+              adminRbac.seedBootstrapAdministrator(realm.id);
+              adminRbac.reportClosedConsole(realm.id);
+              return credentials.bootstrap({ username: bootstrapUsername });
+            });
           });
         });
       });

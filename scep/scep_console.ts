@@ -102,9 +102,11 @@ const ACTION_SCHEMAS = {
     profile: vt.opt(PROFILE_TEXT),
     lifetimeS: vt.opt(vt.integer(60, 2592000))
   })),
+  // The random part may carry the minting cell's twelve-character tag (#98,
+  // `cert_enrollment.ts`'s `credentialId()`).
   'delete-challenge': vz.object({
     id: vz.string().min(1).max(600)
-      .regex(/^scep-[pa]-[A-Za-z0-9_-]{1,400}-[0-9a-f]{16}$/,
+      .regex(/^scep-[pa]-[A-Za-z0-9_-]{1,400}-[0-9a-f]{16}(?:[A-Za-z0-9_-]{12})?$/,
              'must be a SCEP challenge id')
   }),
   'reissue-ra': vz.object({}),

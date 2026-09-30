@@ -9,6 +9,11 @@
 # MACHINE (issue #51; reworked 2026-09-18).
 #
 #   deploy/aws/run-suite.sh <environment>        # e.g. testidp, dev, ci
+#   TF_CELL=cac1 deploy/aws/run-suite.sh testidpna   # ONE CELL of a multi-cell
+#     environment (#98): its outputs, its load balancer's ports and its
+#     callback stack, in its region. `service_url` is the one public name, so
+#     which cell the jobs reach is DNS's choice (geolocation, then latency)
+#     from this machine — the cell named here is where the callback task runs.
 #
 # Needs docker, node and the AWS CLI on this machine, AWS credentials (the
 # deployer user's key, role credentials, or an `aws login` session), and THIS
@@ -136,6 +141,13 @@ out() {
       (typeof v === "string" ? v : JSON.stringify(v)));' "${ENV_JSON}" "$1"
 }
 URL="$(out service_url)"
+# THE ENVIRONMENT'S OWN REGION, for the ECS, Secrets Manager and CloudWatch
+# calls below: a cell's, in a multi-cell environment (#98). An environment
+# applied before the output existed has none, and is in the home region.
+# AWS_REGION stays the home region, where the images are pushed and the
+# report bucket is.
+ENV_REGION="$(out aws_region)"
+ENV_REGION="${ENV_REGION:-${AWS_REGION}}"
 SECRET_ARN="$(out admin_api_client_secret_arn)"
 NLB_DNS="$(out nlb_dns_name)"
 LDAP_PORT="$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).ldap.listener))' "$(out load_balancer_ports)")"
@@ -285,7 +297,7 @@ cleanup() {
   trap - EXIT INT TERM
   if [ -n "${TASK_ARN}" ] && [ -n "${CLUSTER}" ];
   then
-    aws ecs stop-task --cluster "${CLUSTER}" --task "${TASK_ARN}" \
+    aws ecs stop-task --region "${ENV_REGION}" --cluster "${CLUSTER}" --task "${TASK_ARN}" \
       --reason "run-suite cleanup" >/dev/null 2>&1 || true
   fi
   if [ -n "${APPLY_PID}" ];
@@ -336,7 +348,7 @@ do
 done
 say "${URL}/healthcheck answers."
 
-CLIENT_SECRET="$(aws secretsmanager get-secret-value --secret-id "${SECRET_ARN}" \
+CLIENT_SECRET="$(aws secretsmanager get-secret-value --region "${ENV_REGION}" --secret-id "${SECRET_ARN}" \
   --query SecretString --output text)"
 
 EXCLUDE="${CALLBACK_JOBS}${STS_SUITE_EXCLUDE:+,${STS_SUITE_EXCLUDE}}"
@@ -457,7 +469,7 @@ then
     attempt=1
     while :;
     do
-      TASK_ARN="$(aws ecs run-task --cluster "${CLUSTER}" --task-definition "${FAMILY}" \
+      TASK_ARN="$(aws ecs run-task --region "${ENV_REGION}" --cluster "${CLUSTER}" --task-definition "${FAMILY}" \
         --launch-type FARGATE --count 1 \
         --network-configuration "awsvpcConfiguration={subnets=[${SUBNET}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
         --overrides "${OVERRIDES}" \
@@ -465,7 +477,7 @@ then
         --query 'tasks[0].taskArn' --output text)"
       [ -n "${TASK_ARN}" ] && [ "${TASK_ARN}" != "None" ] || die "ecs run-task started nothing."
       TASK_ID="${TASK_ARN##*/}"
-      say "callback task ${TASK_ID}; logs: aws logs tail ${LOG_GROUP} --log-stream-names ${ENVIRONMENT}-callbacks/suite/${TASK_ID} --follow"
+      say "callback task ${TASK_ID}; logs: aws logs tail --region ${ENV_REGION} ${LOG_GROUP} --log-stream-names ${ENVIRONMENT}${TF_CELL:+-${TF_CELL}}-callbacks/suite/${TASK_ID} --follow"
       tdefault=3600
       if [ "${IN_AWS}" = "1" ];
       then
@@ -474,20 +486,20 @@ then
       tdeadline=$(( $(date +%s) + ${STS_SUITE_TASK_TIMEOUT_SECS:-${tdefault}} ))
       while :;
       do
-        status="$(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+        status="$(aws ecs describe-tasks --region "${ENV_REGION}" --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
           --query 'tasks[0].lastStatus' --output text)"
         [ "${status}" = "STOPPED" ] && break
         if [ "$(date +%s)" -ge "${tdeadline}" ];
         then
           say "the callback task ran past STS_SUITE_TASK_TIMEOUT_SECS; stopping it."
-          aws ecs stop-task --cluster "${CLUSTER}" --task "${TASK_ARN}" \
+          aws ecs stop-task --region "${ENV_REGION}" --cluster "${CLUSTER}" --task "${TASK_ARN}" \
             --reason "run-suite timeout" >/dev/null 2>&1 || true
         fi
         sleep 20
       done
-      stop_code="$(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+      stop_code="$(aws ecs describe-tasks --region "${ENV_REGION}" --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
         --query 'tasks[0].stopCode' --output text)"
-      stop_reason="$(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+      stop_reason="$(aws ecs describe-tasks --region "${ENV_REGION}" --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
         --query 'tasks[0].stoppedReason' --output text)"
       if [ "${stop_code}" = "TaskFailedToStart" ] && [ "${attempt}" -lt 3 ] &&
          echo "${stop_reason}" | grep -q CannotPullContainerError;
@@ -499,7 +511,7 @@ then
       fi
       break
     done
-    read -r code reason < <(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+    read -r code reason < <(aws ecs describe-tasks --region "${ENV_REGION}" --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
       --query 'tasks[0].[containers[?name==`suite`].exitCode | [0], stoppedReason]' --output text)
     TASK_ARN=""
     say "the callback task stopped (${reason}); its suite exited ${code}."

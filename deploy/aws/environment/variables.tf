@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 variable "aws_region" {
-  description = "The one region this project deploys to."
+  description = "The region of a single-cell environment. A cell's is `cells[cell].region` (cells.tf, #98)."
   type        = string
   default     = "us-west-2"
 }
@@ -191,7 +191,7 @@ variable "delete_automated_backups" {
 }
 
 variable "vpc_cidr" {
-  description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16."
+  description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16. A cell's is `cells[cell].vpc_cidr` (#98)."
   type        = string
   default     = "10.51.0.0/16"
 }

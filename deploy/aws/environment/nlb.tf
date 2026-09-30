@@ -49,6 +49,17 @@ resource "aws_lb" "main" {
   security_groups                  = [aws_security_group.nlb.id]
   enable_cross_zone_load_balancing = true
   enable_deletion_protection       = false
+
+  # A load balancer's and a target group's names are limited to 32
+  # characters, and a target group is `<prefix>-<port>`; a cell's prefix
+  # carries the cell (#98), so an environment name and a cell id that are
+  # each within their own limits can still be too long together.
+  lifecycle {
+    precondition {
+      condition     = length(local.prefix) <= 27
+      error_message = "The name prefix ${local.prefix} is over 27 characters, so a target group name (<prefix>-<port>) would pass 32. Shorten the environment name or the cell id."
+    }
+  }
 }
 
 resource "aws_lb_target_group" "nodes" {

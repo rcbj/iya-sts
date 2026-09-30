@@ -755,6 +755,25 @@ function opensTestControls() {
   return !isProduct();
 }
 
+// Must a CELL hold a key-encryption key of its own (#98, 2026-09-28)? What a
+// cell stores of its own — the people homed there and what it mints — is
+// sealed under a key that lives only in the cell, so a copy of its rows
+// opens in no other. Product answers yes and a cell without one does not
+// start (STS-CELL-0003). Development answers no: a test of cells on one
+// machine is allowed one key for everything, which is also what single-cell
+// mode always does.
+/**
+ * Tells whether a service deployed as cells must hold a cell
+ * key-encryption key in each cell.
+ *
+ * @returns true in product mode
+ */
+function requiresCellKek() {
+  log.debug("Entering requiresCellKek().");
+  log.debug("Leaving requiresCellKek().");
+  return isProduct();
+}
+
 // Does the console's BOOTSTRAP WINDOW open the console to anybody who signs in
 // (2026-09-22, #103)? Until a realm's bootstrap administrator first signs in
 // to `/admin` — or, where none was seeded, while its roster is empty — the
@@ -1905,6 +1924,17 @@ function observesSignalsOnly() {
  * `/admin/mode` and the management API render it.
  */
 const REQUIREMENTS = [
+  { id: 'cell-key',
+    what: 'Each cell of a service deployed as cells seals what it stores ' +
+          'under a key of its own',
+    development: 'A cell with no keys.cellKekProvider seals its rows under ' +
+                 'the service key-encryption key, so its rows would open in ' +
+                 'any cell — acceptable for cells tested on one machine.',
+    product: 'A cell with no cell key does not start (STS-CELL-0003). The ' +
+             'people homed in a cell and what it mints are sealed under a ' +
+             'key that lives only in its region, and opens in no other ' +
+             'cell (#98). Single-cell mode is unaffected.',
+    where: 'persistence/persistence.js, common/keystore.js' },
   { id: 'credentials',
     what: 'A presented password is verified',
     development: 'No password is checked in any protocol. The sign-in screen ' +
@@ -3493,6 +3523,7 @@ module.exports = {
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
+  requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
   opensConsoleToAnyone: opensConsoleToAnyone,
   authorizesDirectoryWrites: authorizesDirectoryWrites,

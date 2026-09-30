@@ -112,6 +112,10 @@ import claims = require('../cluster/cluster_claims');
 import cms = require('./scep_cms');
 import ra = require('./scep_ra');
 import InstanceSlot = require('../common/instance_slot');
+// WHICH CELL ANSWERS (#98 D10): the cell map and the placement helpers.
+// Libraries; each is a no-op in a single-cell service.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
 
 const vz = validation.z;
 const vt = validation.types;
@@ -216,6 +220,8 @@ interface ScepDeps {
   claims: typeof claims;
   cms: typeof cms;
   ra: typeof ra;
+  cells: typeof cells;
+  cellPlacement: typeof cellPlacement;
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
   loadPersistence(): typeof import('../persistence/persistence');
@@ -266,6 +272,8 @@ class Scep {
       claims: claims,
       cms: cms,
       ra: ra,
+      cells: cells,
+      cellPlacement: cellPlacement,
       loadPersistence: function () {
         return require('../persistence/persistence');
       },
@@ -1298,6 +1306,81 @@ class Scep {
     return bytes;
   }
 
+  // ---------------------------------------------------------------------------
+  // WHICH CELL ANSWERS A PKIOperation (#98 D10), decided once the message is
+  // opened just far enough to say whose it is — and before its signature is
+  // checked, its transaction claimed or its challenge spent, all of which
+  // happen in the cell that holds the entry. The RA key that opens the
+  // envelope is in the realm's PKI row, the global tier's, so every cell can
+  // read what a message names; only the entry's home can act on it:
+  //
+  //   * **signed by a certificate this realm issued** (RenewalReq, GetCert,
+  //     GetCRL, and a PKCSReq in the historical renewal form) — the person
+  //     its `urn:sts:person:` subjectAltName names goes to their home cell;
+  //   * **a PKCSReq under a challenge password** — the challenge names the
+  //     entry it was issued for (`cert_enrollment.ts`'s `credentialId()`): a
+  //     person's request goes to their home cell, where the challenge is
+  //     and where the certificate will be written; an application's to the
+  //     cell that minted the challenge, which holds its spend claim.
+  //
+  // Everything read here is READ, NOT BELIEVED — the signer is not yet
+  // verified and the challenge not yet compared — and chooses only where the
+  // owning cell checks it. A message that cannot be read that far is served
+  // here and refused here. A retried PKCSReq under the same transactionID
+  // carries the same challenge and so reaches the same cell, which holds the
+  // completed transaction. **CertPoll is the documented exception**: it
+  // carries neither, and is answered by the cell it reaches — which is
+  // harmless here, because nothing is ever answered PENDING, so a client
+  // that follows RFC 8894 section 3.3.3 never polls (`scep/CLAUDE.md`).
+  // ---------------------------------------------------------------------------
+  /**
+   * Relays a PKIOperation to the home cell of the entry its signer or its
+   * challenge names, when that is another cell.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param message - the parsed pkiMessage, its signature not yet verified
+   * @param keys - the RA's certificate and private key
+   * @returns a promise of true when the request was relayed
+   */
+  async placeMessage(req, res, message, keys): Promise<boolean> {
+    const { log, cms, core, realms, cells, cellPlacement } = this.deps;
+    log.debug("Entering Scep.placeMessage().");
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Scep.placeMessage(). Here.");
+      return false;
+    }
+    const realmId = realms.currentId();
+    const signed = message.signer && message.signer.selfIssued === false
+      ? core.entryNamedByCertificate(message.signer.pem) : null;
+    if (signed) {
+      log.debug("Leaving Scep.placeMessage(). By the signer's entry.");
+      return signed.kind === 'person'
+        ? cellPlacement.relayToHome(req, res, realmId, 'name', signed.id,
+                                    'scep:signer')
+        : false;
+    }
+    if (cms.MESSAGE_TYPES[message.messageType] !== 'PKCSReq') {
+      log.debug("Leaving Scep.placeMessage(). Nothing names an entry.");
+      return false;
+    }
+    const opened = cms.openEnvelope(message.content, keys.certificatePem,
+                                    keys.privateKeyPem);
+    const csr = opened.ok ? await core.parseCsr(opened.content) : null;
+    const password = csr && csr.ok ? String(csr.challengePassword || '') : '';
+    const id = password.slice(0, Math.max(0, password.lastIndexOf('.')));
+    const entry = id ? core.entryOfCredentialId('scep', id) : null;
+    if (!entry) {
+      log.debug("Leaving Scep.placeMessage(). No challenge names an entry.");
+      return false;
+    }
+    log.debug("Leaving Scep.placeMessage(). By the challenge.");
+    return entry.kind === 'person'
+      ? cellPlacement.relayToHome(req, res, realmId, 'name', entry.id,
+                                  'scep:challenge')
+      : cellPlacement.relayIfElsewhere(req, res, id, 'scep:challenge');
+  }
+
   /**
    * Answers a PKIOperation: reads, verifies and answers the pkiMessage with a
    * signed CertRep.
@@ -1349,6 +1432,10 @@ class Scep {
                     errorCode: code });
       this.scepError(res, 503, code, (keys.errors || [])[0]);
       log.debug("Leaving Scep.pkiOperation(). No RA.");
+      return;
+    }
+    if (await this.placeMessage(req, res, message, keys)) {
+      log.debug("Leaving Scep.pkiOperation(). Relayed to another cell.");
       return;
     }
     const result = await this.answerMessage({ req: req, message: message,

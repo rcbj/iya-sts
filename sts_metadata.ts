@@ -6137,6 +6137,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'the picture), the Kerberos policy, and `delegationPolicy` — the ' +
           'WS-Trust and token-exchange one, paged as GET ' +
           '/admin-api/delegation/policy pages it.' },
+  { path: '/admin/attribute-sources', group: 'Admin',
+    name: 'Attribute sources', specs: [],
+    what: 'NON-SPEC PAGE (#94). The SQL databases this realm reads people\'s ' +
+          'attributes from, onto their directory entries: each source\'s ' +
+          'database, the one row it reads (a table or view, the key column ' +
+          'and the person\'s attribute it matches), the columns it writes ' +
+          'onto which attributes, when it reads — at sign-in, once, on a ' +
+          'schedule, on demand — and what a failure does, with its status. ' +
+          'Add, change, test (read one row, write nothing), read everyone ' +
+          'now, read one person now, remove. TLS always verified; the ' +
+          'password read from where the source names, never stored.' },
   { path: '/admin/roles', group: 'Admin', name: 'Roles',
     // XACML because the decision is a XACML one, and rfc6749/oidc/saml because
     // those are the issuances a role gates. NOT the delegation page's four:
@@ -7059,6 +7070,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'exactly wrong for the one endpoint whose purpose is to land you ' +
           'in a different one. 303, so the reload after it is a GET.' },
 
+  { path: '/admin/cells', group: 'Admin', name: 'Cells',
+    specs: [],
+    what: 'NON-SPEC (#98). One service deployed as several cells: this ' +
+          'cell and its jurisdiction, every other cell and whether it ' +
+          'answers (never where it is), the global tier\'s replica lag, how ' +
+          'many people each cell holds, the sessions held away from home, ' +
+          'the inter-cell channel, the Cells settings, and — with ?people= — ' +
+          'another cell\'s residents where its release policy permits. Add ' +
+          '?format=json.' },
   { path: '/admin/mode', group: 'Admin', name: 'Mode',
     specs: [],
     what: 'NON-SPEC (#181). What global.mode changes and what is in force ' +
@@ -8434,6 +8454,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'not revoke the grants naming it — they become dangling, because ' +
           'tidying them would be one call writing to entries it did not ' +
           'name.' },
+  { path: '/admin-api/attribute-sources', group: 'Management API',
+    name: 'Attribute sources', specs: ['openapi'],
+    what: 'NON-SPEC (#94). What GET /admin/attribute-sources draws, out of ' +
+          'the same call: every source with its status, and the rules a ' +
+          'definition is held to. Never a password.' },
+  { path: '/admin-api/attribute-sources/:action', group: 'Management API',
+    name: 'Change the attribute sources', specs: ['openapi'],
+    what: 'NON-SPEC (#94). add-source, update-source, remove-source, ' +
+          'test-source, refresh-source and refresh-person: the console\'s ' +
+          'six acts, each audited.' },
   { path: '/admin-api/roles', group: 'Management API', name: 'Roles',
     specs: ['openapi', 'xacml30'],
     what: 'NON-SPEC. The role register, both relations. `roles` is ' +
@@ -8621,6 +8651,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'existing — and the default realm cannot be removed at all, since ' +
           'every URL this service published before realms existed is a URL ' +
           'in it.' },
+  { path: '/admin-api/cells', group: 'Management API', name: 'Cells',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98). GET /admin/cells over JSON: the cell map, the ' +
+          'store\'s tiers, the channel and the sessions held across cells.' },
+  { path: '/admin-api/cells/:action', group: 'Management API',
+    name: 'Re-home a person',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98 §8.8). Moves a person homed in this cell to ' +
+          'another: ended everywhere first, the entry with its entryUUID, ' +
+          'devices and memberships sent, credentials sealed again there, the ' +
+          'routing index moved, and the person taken out of this cell.' },
+  { path: '/admin-api/cells/people', group: 'Management API',
+    name: 'Cell residents',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
+          'answered by that cell only where its release policy permits.' },
   { path: '/admin-api/mode', group: 'Management API', name: 'Mode',
     specs: ['openapi'],
     what: 'NON-SPEC (#181). GET /admin/mode over JSON: the realm\'s mode, ' +

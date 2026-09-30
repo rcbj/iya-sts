@@ -478,6 +478,10 @@ function checkNothingRequiresItEarly(t) {
                    // gate state only — who acted — required LAZILY in the
                    // request; the page is 18n, after the console.
                    'oauth-oidc/claims_providers_admin.ts',
+                   // The attribute sources page (#94), for the gate state
+                   // only — who acted — required LAZILY in the request; the
+                   // page is 18r, after the console.
+                   'attribute-sources/attribute_sources_admin.ts',
                    // The Provider Commands and Outbound deliveries pages
                    // (#151, 2026-09-26), for the gate state only — who
                    // acted — required LAZILY in the request; the page is
@@ -487,6 +491,10 @@ function checkNothingRequiresItEarly(t) {
                    // for the gate state only — who acted — required LAZILY
                    // in the request; the page is 18p, after the console.
                    'ssf/ssf_transmitters_admin.ts',
+                   // The Cells page (#98, 2026-09-28), for the gate state
+                   // only — who moved a person's home — required LAZILY in
+                   // the request; the page is 18k-ii, after the console.
+                   'admin-ui/cells_admin.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

@@ -27,9 +27,14 @@ twenty-eight since the thirteen `sts_risk_*` tables of risk scoring arrived with
 version 7 (#62, 2026-09-22), and twenty-nine since `sts_risk_terms_acceptances`
 arrived with version 8 (2026-09-23) — version 10 (#262) added a column,
 `sts_realms.retiring_at`, and no table, and thirty since
-`sts_node_snapshots` arrived with version 11 (#332, 2026-09-28) — and version
+`sts_node_snapshots` arrived with version 11 (#332, 2026-09-28) — which
+develop's version 11 also numbers `sts_cell_routing` (#98); the two were
+merged on 2026-09-29 and both tables are created by name — and version
 12 (#333) added a column, `sts_minted.expires_at`, with the partial index
-`sts_minted_expires`, and no table; `sts_app` holds
+`sts_minted_expires`, and no table, and version 13 (#349, after #333's
+12) six GENERATED lookup columns on `sts_ldap_entries` and seven indexes over
+them, for a request worker that holds the people and devices as a window
+(`persistence/directory_queries.js`); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.

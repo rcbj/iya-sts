@@ -23,6 +23,19 @@
 #   TF_STACK=foundation deploy/aws/terraform-local.sh dev apply # administrator
 #   TF_STACK=spiffe-realm REALM=acme WORKLOAD_PORT=9092 SERVER_PORT=9181 \
 #     deploy/aws/terraform-local.sh testidp apply  # a realm's SPIFFE ports
+#
+# A MULTI-CELL ENVIRONMENT (#98) — one with environment/envs/<env>.cells.tfvars.json:
+#   IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply    # every
+#     cell and the global stack, in order (entrypoint.sh, orchestrate_cells)
+#   deploy/aws/terraform-local.sh testidpna destroy                  # likewise
+#   TF_CELL=cac1 deploy/aws/terraform-local.sh testidpna output      # one cell
+#   TF_STACK=global deploy/aws/terraform-local.sh testidpna output   # global
+#   TF_CELL=cac1 TF_STACK=spiffe-realm REALM=default … testidpna apply
+#   TF_CONVERT=1 IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply
+#     (the one apply that CONVERTS a single-region environment into its cells:
+#     envs/testidpna.conversion.tfvars.json laid over the cells file —
+#     deploy/aws/convert-to-cells.sh prints the whole sequence)
+#     (a stack built on a cell names the cell)
 #     (deploy/aws/CLAUDE.md, *A realm's SPIFFE ports*; `destroy` needs REALM
 #     only)
 #     (the env name is not used by `foundation`, but entrypoint.sh still
@@ -193,7 +206,7 @@ echo "==> Building ${IMAGE_NAME}" >&2
 # and killing the client leaves the container running without this script's
 # credentials endpoint. `wait` returns early on a trapped signal, hence the
 # loop.
-CONTAINER_NAME="mock-sts-terraform-${TF_ENV}${REALM:+-${REALM}}-$$"
+CONTAINER_NAME="mock-sts-terraform-${TF_ENV}${TF_CELL:+-${TF_CELL}}${REALM:+-${REALM}}-$$"
 relay() {
   echo "==> Interrupted: telling terraform to stop cleanly and release the lock" >&2
   "${DOCKER_CMD[@]}" kill --signal INT "${CONTAINER_NAME}" >/dev/null 2>&1 || true
@@ -206,6 +219,10 @@ trap relay INT TERM
   -e TF_STACK="${TF_STACK}" \
   -e TF_ENV="${TF_ENV}" \
   -e TF_ACTION="${TF_ACTION}" \
+  -e TF_CELL="${TF_CELL:-}" \
+  -e TF_CELL_PHASE="${TF_CELL_PHASE:-}" \
+  -e TF_CONVERT="${TF_CONVERT:-}" \
+  -e TF_CONVERT_TIMEOUT="${TF_CONVERT_TIMEOUT:-}" \
   -e TF_IMPORT_ADDRESS="${TF_IMPORT_ADDRESS:-}" \
   -e TF_IMPORT_ID="${TF_IMPORT_ID:-}" \
   "${TF_VARS[@]}" \

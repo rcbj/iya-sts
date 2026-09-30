@@ -1034,8 +1034,13 @@ derived from the same table, so what is advertised is what is accepted.
 **Protocols → OAuth2 / OIDC → Custom claims** says what to add to every access
 token and every ID Token issued **from now on**. There are two sets because the
 two tokens go to different readers (a resource server and a client). Each set
-takes typed claims, LDAP attribute types ticked from those found under
-`ou=users`, and the groups claim.
+takes:
+* typed claims;
+* LDAP attribute types ticked from those found under `ou=users`;
+* **directory-attribute claims**, a claim name of your choosing carrying any
+  attribute of the person's entry (#94, see
+  [the admin console](admin-console.md));
+* the groups claim.
 
 Custom claims are **additive only**. A name the protocol sets itself (`exp`,
 `scope`, `iss` and the rest) is refused when you configure it, because a

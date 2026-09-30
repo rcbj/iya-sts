@@ -467,6 +467,13 @@ program
   .parse(process.argv);
 
 test().catch(function (e) {
-  log.error(e.stack || e.message);
+  // THE CAUSE TOO (2026-09-29): undici's `fetch failed` says nothing
+  // about which request or why; its `cause` does (ECONNRESET, other side
+  // closed, a timeout). CI run 36553670107 logged only the first.
+  const cause = e && e.cause
+    ? " — cause: " + ((e.cause.code ? e.cause.code + " " : "") +
+                      (e.cause.message || String(e.cause)))
+    : "";
+  log.error((e.stack || e.message) + cause);
   process.exit(1);
 });

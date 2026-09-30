@@ -69,13 +69,21 @@
 // document happened to be read.
 //
 // A LIBRARY (rule 3): no route. It requires `jsonld` (a dependency already,
-// for bbs2023.js) and `common/` leaves.
+// for bbs2023.js) at first use, and `common/` leaves.
 // ---------------------------------------------------------------------------
 
 import fs = require('fs');
 import path = require('path');
-import jsonld = require('jsonld');
 import helpers = require('../common/helpers');
+import LazyModule = require('../common/lazy_module');
+// `jsonld` IS REQUIRED AT FIRST USE (#348): a canonicalization is the first
+// use, and most processes of this service — every request worker that never
+// signs or verifies a Data Integrity proof — make none. See
+// `common/lazy_module.ts`.
+type JsonLd = typeof import('jsonld');
+const jsonld: JsonLd = LazyModule.of('jsonld', function () {
+  return require('jsonld') as JsonLd;
+}, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 
 interface VcJsonLdDeps {

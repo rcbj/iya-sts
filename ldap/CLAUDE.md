@@ -570,6 +570,97 @@ the ceiling was never the intention; `hasChildren()`, a question about one DN in
 the realm being asked; and the realm purge, which now deletes nothing at all
 because `realms.map()` drops the whole store with the realm.
 
+### IN A REQUEST WORKER, `entries` MAY BE A WINDOW ONTO THE STORE (#349, 2026-09-29)
+
+**rcbj's decisions on #349**: with `ldap.workerDirectory=postgres-lru` a
+request or surface worker holds `ldap/directory_window.ts` as `entries` — the
+same Map shape, answering the ambient realm, with `realmMap(id)` — so not one
+reader or writer in this file changed. The front process always holds the
+whole directory.
+
+* **Resident**: every entry NOT strictly under a realm's `ou=users` or
+  `ou=devices` (`windowedContainersOf()`), held whole — groups stay resident,
+  so the group index is unchanged.
+* **Windowed**: the people and devices, in a bounded LRU
+  (`ldap.workerCacheEntries`); a key not held is read through the synchronous
+  bridge (`common/sync_query.ts`), an absence is held too.
+* **Walks** (`forEach`, `values`, `keys`, `for…of`) page through the store;
+  `hasChildren()` asks it (`hasChildIn()`). Correct and O(n) in rows — the hot
+  walks become indexed questions in #349's phase 5.
+* **Writes stay local and are PINNED until flushed.** What changed is found by
+  comparing each candidate's JSON with its BASE — the JSON it had when loaded
+  or last written, kept for held entries only, and the base of the store's
+  three-way merge. The candidates are what was set or deleted, what was HANDED
+  OUT since the last flush (an in-place edit with no `touchDirectory()` DN is
+  still found), what the journal names, and — for a write that named nothing —
+  everything held plus every EVICTED entry a caller still holds (a WeakRef).
+  A digest could say "changed" and could not be that base, which is why #343's
+  digest is not used here.
+* **A row another process wrote** is `forgetEntry()`-ed (read again next
+  time) unless the key is busy here, in which case this process's own flush
+  goes first and the store merges.
+* **The identity register is a whole directory's** (rcbj, 2026-09-29).
+  `replaceRealm()` fills it from the store in a windowed worker — a page of
+  NAMES at a time (`namesUnder`: key, DN, origin, first `uid`), the same
+  rule as the loop over restored entries, no entry read whole — and
+  `forgetEntry()`, handed the row the applier read, notes a person another
+  process made as `created`, as `applyEntry()` does. Section K of the test
+  compares the two modes.
+* **The hooks** use `adopt()` (a row the store holds, not a write) in
+  `applyEntry()` and `replaceRealm()`, `forget()` in `removeEntry()`;
+  `realmEntries()` and `entryAt()` answer the RESIDENT half only, so the write
+  shadow never holds a windowed key; `storedFromRow()` is the one construction
+  of a stored entry from a row.
+* **`size`** is resident + the store's count when first asked + this process's
+  own net: a change detector beside `directoryVersion`, not a cap.
+* **`ldap.maxEntries` is a PER-REALM cap on the STORE in a windowed worker**
+  (rcbj): `cappedEntries()` asks the window's `capCount()` — the realm's rows
+  counted by the store at most ten seconds ago, plus this process's net since.
+  Everywhere else it is `totalEntries()`, what the process holds, as before.
+* **The walks that can say what they want do** (phase 5), and each is the old
+  walk outside a windowed worker:
+  - `eachResidentEntry()` for a filter that cannot match a person or device:
+    the federations, policies, roles, PEPs and trust anchors, and SPIFFE.
+  - `eachGroupEntry()` for the GROUPS (`groupsFor()`, `buildGroupIndex()`,
+    `allGroupEntries()`, `membershipsNaming()`, `dropMemberships()`,
+    `logBatchDangling()`): the resident entries, and the windowed
+    containers' entries with a group class, asked of the store
+    (`classesUnder`, the GIN index over the generated `class_keys`) and read
+    back through the window. `groupRuleFor()` is placement-blind, so **a
+    group under `ou=users` or `ou=devices` is seen**, and the membership
+    lookups, the group index, the listings and a search answer as a whole
+    directory does (rcbj, 2026-09-29; `tests/directory_window.js` section J
+    compares the two modes).
+  - `memberOfClaims()` (#352's claims index), `holdingAny()` and
+    `holdersWithValues()` visit the holders only (`eachHolderOfAny()`);
+    `personRows()` pages `ou=users` read-only; `batchHasChildren()` asks
+    `hasChildren()`; `countDeviceEntries()` is `countUnder()`.
+  - `windowedFind()` for an indexed question (`directory_queries.js`), each
+    answer read back through the window and asked the service's own rule, the
+    entries changed here and not yet written added: `existingUserEntry()`
+    (`byName`, replacing the username index there), `entryByUuid()` (`byUuid`
+    after a RESIDENT-only index), `entryByDidSubject()`,
+    `entryBySpiffeSubject()`, `locateEntry()`'s `x509subject`, `objectFor()`'s
+    `alsoNamed` (`byAttribute`), `peopleByMail()` (`byMail`),
+    `peopleByFederationLink()`.
+  - `eachHolderOfAny()` for a walk that acts only on holders of an attribute
+    (`withAttribute`, paged): consent, claim-source tokens, self-issued
+    subjects, federation links, claimed memberships, delegation flags, a
+    person attribute's holders, Kerberos key infos; `anybodyHoldsACredential()`
+    asks `anyWithAttribute`.
+  - `personCount()` is the store's count; `allPersons()` pages `ou=users`
+    alone; `entriesUnder()` pages a windowed container and does NOT cache it;
+    the LDAP search walks only what its base reaches, read-only and lazily, so
+    a size limit stops the paging.
+  - **Still whole walks, correct and paged**: `populateVcAttributes()`
+    (development only), `ldapDirectoryView()`, the realm-retirement
+    announcement and the seed; `buildUsernameIndex()` is not reached.
+* **A bridge failure inside an LDAP operation** answers `unavailable` (52),
+  `STS-LDAP-0130`/`0131`, from `performOperation()`; over HTTP the worker's
+  last error middleware answers 503 (`common/CLAUDE.md`).
+
+`tests/directory_window.js`, section H loading this file as a windowed worker.
+
 ### The socket picks a store, and it picks it from the DN
 
 There is no ambient realm on port 389 — no path, no header, nothing but the
@@ -3005,3 +3096,31 @@ this JavaScript module registers `/admin/ldap/*` when required.
 every code from `STS-LDAP-0102` to `0109`, the formats, untouched neighbours,
 the observer, the view and the page. `tests/vendored/sts_person_attributes.js`
 covers the API over HTTP in a realm of its own.
+
+## CELLS: A BIND AS A PERSON HOMED IN ANOTHER CELL (#98, 2026-09-28)
+
+**The password is verified in the person's home cell and only the verdict comes
+back** (`verifyInHomeCell()`, and the `ldap-bind` inter-cell operation
+`answerCellBind()` answers). That is D2 — a traveller's credential is relayed
+to the home cell over the mutual-TLS channel — which D9 replaced for browsers
+only, because a browser flow's state lives where it started; an LDAP bind has
+no flow, and the connection (the session, RFC 4511 section 4.2) is here. The
+two alternatives and why they lost are in the code's header: a referral is a
+result almost no client chases on a bind and would publish a cell's address,
+and a local copy of the credential is the person's data outside their
+jurisdiction. The password crosses inside the channel, is compared by
+`credentials.verify()` with `door: 'ldap'` at home (second factors, app
+passwords, a disabled account — the same rules), and is stored and logged
+nowhere.
+
+Only a DN this cell holds no entry for, in multi-cell mode, is sent; a DN the
+routing index does not know is verified here as always. **What stays here**:
+the refusals before a password is read, this cell's rate-limit buckets (a
+guesser spreading across cells gets each cell's budget — said, not hidden), the
+audit rows and the connection. A bound traveller reads what any bound identity
+without a local entry may — their group memberships are resident at home, so
+they hold no role here — and **a search answers this cell's residents** (D11).
+A home cell that cannot be asked is LDAP_UNAVAILABLE (52), `STS-CELL-0147`,
+fail-closed and not counted as a failed bind. LDAP writes act on this cell's
+residents only; the console's and `/admin-api`'s `?cell=` selector is the
+cross-cell door.

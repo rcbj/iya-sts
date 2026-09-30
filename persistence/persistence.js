@@ -244,6 +244,17 @@ const cluster = require('../cluster/cluster');
 // the postgres driver applies inside its transaction and this module applies
 // again to a local write that raced a flush or a replicated row (#46 sec. 3).
 const directoryMerge = require('./directory_merge');
+// WHICH CELL THIS IS (#98). A LEAF (config, error codes, a logger), so a
+// require from here closes nothing; it is how start() knows the store is two
+// databases.
+const cells = require('../common/cells');
+// The store over those two databases, and the second change-log follower it
+// needs. Both LIBRARIES that register nothing.
+const tiered = require('./persistence_tiered');
+// The GLOBAL tier's change-log follower (#98): built by coordinate() when the
+// store is tiered, null otherwise. The module's own `replication` follows the
+// cell's log, which is the only log a single-cell store has.
+let globalReplication = null;
 
 const log = bunyan.createLogger({ name: 'sts-persistence' });
 config.registerLogger(log);
@@ -311,6 +322,8 @@ function setDirectory(hooks) {
 
 // The chosen driver, or null in memory mode and before start().
 let driver = null;
+// The directory bridge of a windowed worker (#349), or null.
+let bridge = null;
 // Which mode start() actually ran in. Read rather than re-derived, so that
 // "what is this process doing" and "what is the setting set to" cannot
 // disagree after a start that fell back.
@@ -759,6 +772,30 @@ function mintedChanged() {
   }
   schedule();
   log.debug("Leaving mintedChanged().");
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// A FIFTH DOOR, FOR THE DIRECTORY WINDOW (#349): an entry was HANDED OUT, so
+// the next flush must look at it — an entry edited in place is found by
+// comparing it with what it was, and the window holds what it handed out
+// only until a flush has looked. It marks nothing and moves no generation (a
+// read is not a write, and the barrier must not wait on one); the flush
+// decides whether anything changed.
+// ---------------------------------------------------------------------------
+/**
+ * Schedules a flush because a windowed worker handed out directory entries,
+ * marking nothing.
+ * @returns true when a flush was scheduled, false before the store is open
+ */
+function directoryTouched() {
+  log.debug("Entering directoryTouched().");
+  if (!enabled() || restoring) {
+    log.debug("Leaving directoryTouched(). Not yet.");
+    return false;
+  }
+  schedule();
+  log.debug("Leaving directoryTouched().");
   return true;
 }
 
@@ -1257,6 +1294,10 @@ function applyDirectoryOutcomes(changes, outcomes) {
     sentJson.set(row.realm + '\n' + row.key, row.json);
   });
   outcomes.forEach(function (one) {
+    // A windowed key's outcome is the window's (#349): `committed()` took it.
+    if (directory.window && directory.window.isWindowed(one.realm, one.key)) {
+      return;
+    }
     const sent = sentJson.get(one.realm + '\n' + one.key);
     const live = entryAt(one.realm, one.key);
     const moved = !!live && JSON.stringify(live) !== sent;
@@ -1366,6 +1407,23 @@ function flush() {
     log.debug('Leaving flush(). One is already running; waiting for it.');
     return flushQueued;
   }
+  // ---------------------------------------------------------------------
+  // THE WINDOW'S OWN CHANGES (#349), asked for before anything else decides
+  // whether there is work: an entry edited in place is found only by
+  // comparing it with what it was, and `collect()` is that comparison. It
+  // also lets go of every entry handed out and left unchanged, which is why
+  // it runs on a flush scheduled by a read alone.
+  // ---------------------------------------------------------------------
+  const win = directory && directory.window ? directory.window : null;
+  const windowed = win && activeMode === 'postgres'
+    ? win.collect(dirtyEverything ? null : dirtyDns) : null;
+  const windowWrites = !!windowed &&
+    (windowed.upserts.length > 0 || windowed.deletes.length > 0);
+  if (windowWrites && !directoryDirty) {
+    // An edit no writer reported: a write all the same.
+    directoryDirty = true;
+    dirGeneration += 1;
+  }
   if (!directoryDirty && !realmsDirty && !configDirty && !minted.dirty()) {
     // Nothing in flight and nothing dirty: every generation has committed, or
     // its failure put a dirty bit back.
@@ -1389,8 +1447,11 @@ function flush() {
   // THE JOURNAL, TAKEN AND CLEARED BEFORE THE WRITE for the same reason the
   // dirty bits above are: a change made while this flush is in flight has to
   // start a new journal and get its own flush, not be swallowed by this one.
+  // In a windowed worker a journal that names only windowed keys is still a
+  // journal: the resident half has nothing to walk (#349).
   const wanted = (wantDirectory && !dirtyEverything && dirtyDns.size)
-    ? dirtyDns : null;
+    ? dirtyDns
+    : (wantDirectory && !dirtyEverything && windowWrites ? new Set() : null);
   if (wantDirectory) {
     dirtyDns = new Set();
     dirtyEverything = false;
@@ -1416,7 +1477,7 @@ function flush() {
       return null;
     }
     if (!changes.upserts.length && !changes.deletes.length &&
-        !changes.removedRealms.length) {
+        !changes.removedRealms.length && !windowWrites) {
       return null;
     }
     // ---------------------------------------------------------------------
@@ -1451,14 +1512,31 @@ function flush() {
     changes.upserts.forEach(function (row) {
       inFlightDirectory.set(row.realm + '\n' + row.key, row.json);
     });
+    // THE WINDOW'S ROWS GO IN THE SAME TRANSACTION (#349), each with the base
+    // the window kept — the store merges against it exactly as against the
+    // shadow's — and the shadow is never advanced by them.
+    const sentUpserts = windowWrites
+      ? changes.upserts.concat(windowed.upserts) : changes.upserts;
+    const sentDeletes = windowWrites
+      ? changes.deletes.concat(windowed.deletes.map(function (row) {
+        return { realm: row.realm, key: row.key };
+      })) : changes.deletes;
+    const sentTouched = windowWrites
+      ? Array.from(new Set(changes.touched.concat(
+        windowed.upserts.concat(windowed.deletes).map(function (row) {
+          return row.realm;
+        })))) : changes.touched;
     return driver.saveDirectory({
-      upserts: changes.upserts,
-      deletes: changes.deletes,
-      touched: changes.touched,
+      upserts: sentUpserts,
+      deletes: sentDeletes,
+      touched: sentTouched,
       removedRealms: changes.removedRealms,
       all: live
     }).then(function (result) {
       advanceShadow(changes, changes.removedRealms);
+      if (windowWrites) {
+        win.committed(windowed, result && result.outcomes);
+      }
       applyDirectoryOutcomes(changes, result && result.outcomes);
     });
   }).then(function () {
@@ -1533,6 +1611,10 @@ function flush() {
     // and nothing is lost. Logged below as STS-STORE-0002.
     failures++;
     lastError = err.message;
+    if (windowWrites) {
+      // The window's keys are still changed; the next flush takes them.
+      win.failed(windowed);
+    }
     directoryDirty = directoryDirty || wantDirectory;
     realmsDirty = realmsDirty || wantRealms;
     configDirty = configDirty || wantConfig;
@@ -1789,6 +1871,24 @@ function start() {
     log.debug('Leaving start(). The mode was not recognised.');
     return Promise.resolve({ mode: 'memory' });
   }
+  // THE DIRECTORY WINDOW NEEDS A POSTGRES STORE AND ONE CELL (#349). Refused
+  // in every process, the front included, so a misconfigured deployment
+  // fails at once and not only when a worker starts.
+  if (String(config.value('ldap.workerDirectory')) === 'postgres-lru' &&
+      (chosen !== 'postgres' || cells.isMulti())) {
+    activeMode = 'memory';
+    lastError = 'ldap.workerDirectory=postgres-lru cannot work here';
+    log.debug('Leaving start(). The directory window was refused.');
+    return Promise.reject(new Error(errorCodes.tag('STS-LDAP-0133') +
+      'ldap.workerDirectory is "postgres-lru" and ' +
+      (chosen !== 'postgres'
+        ? 'persistence.mode is "' + chosen + '": a request worker\'s window ' +
+          'onto the directory reads the rest from PostgreSQL, and there is ' +
+          'none. Set persistence.mode=postgres, or ldap.workerDirectory=memory.'
+        : 'this service is deployed as cells: a person\'s entry may be in ' +
+          'another cell\'s database, which a window cannot read. Set ' +
+          'ldap.workerDirectory=memory.')));
+  }
   if (chosen === 'memory') {
     activeMode = 'memory';
     log.info('persistence: off (persistence.mode=memory). Everything this ' +
@@ -1834,11 +1934,182 @@ function start() {
   //
   // Only postgres has a password to resolve; ldif has a directory.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // A CELL KEEPS ITS STORE IN TWO DATABASES (#98), and every way that cannot
+  // work is refused here, before anything is dialled: see checkCells().
+  // -------------------------------------------------------------------------
+  if (cells.isMulti()) {
+    try {
+      checkCells(chosen);
+    } catch (err) {
+      activeMode = 'memory';
+      lastError = err.message;
+      log.debug('Leaving start(). The cell settings were refused.');
+      return Promise.reject(err);
+    }
+  }
   return chosen === 'postgres'
     ? resolveDatabaseUrl().then(function (url) {
-      return openStore(chosen, url);
+      if (!cells.isMulti()) {
+        return openStore(chosen, url, null);
+      }
+      return resolveGlobalUrls().then(function (globalUrls) {
+        return openStore(chosen, url, globalUrls);
+      });
     })
-    : openStore(chosen, '');
+    : openStore(chosen, '', null);
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A CELL NEEDS BEFORE IT OPENS ANYTHING (#98). Four refusals, each for
+// a deployment that would run and be wrong:
+//
+//   * inconsistent cell settings (`cells.validate()`, STS-CELL-0001);
+//   * a store that is not postgres, or no global database (STS-CELL-0002) —
+//     a cell that kept its global rows in its own database would be a second
+//     service with the same name;
+//   * keys that are not persisted, or no operator key-encryption key
+//     (STS-CELL-0004) — every cell must sign with the SAME realm keys (#98
+//     D8) and open the same global rows, which a key generated per start or
+//     per process cannot do; active-active refuses the same thing for the
+//     same reason (STS-CLUSTER-0008);
+//   * no cell key where `mode.requiresCellKek()` says one is required
+//     (STS-CELL-0003) — product mode, where a copy of one cell's rows must
+//     open in no other.
+// ---------------------------------------------------------------------------
+function checkCells(chosen) {
+  log.debug("Entering checkCells().");
+  cells.validate();
+  if (chosen !== 'postgres') {
+    throw new Error(errorCodes.tag('STS-CELL-0002') + 'cells.id is "' +
+                    cells.id() + '" and persistence.mode is "' + chosen +
+                    '". A cell keeps its store in two postgres databases — ' +
+                    'its own and the global tier\'s — and no other store ' +
+                    'can.');
+  }
+  if (!String(config.value('persistence.globalDatabaseUrl') || '').trim()) {
+    throw new Error(errorCodes.tag('STS-CELL-0002') + 'cells.id is "' +
+                    cells.id() + '" and persistence.globalDatabaseUrl is ' +
+                    'empty. Every cell reads and writes the global tier ' +
+                    '(realms, settings, applications, keys, the routing ' +
+                    'index) in one shared database; set it, and ' +
+                    'persistence.globalDatabaseReadUrl to this cell\'s ' +
+                    'replica.');
+  }
+  // EVERY ADDRESS THE SERVICE PUBLISHES IS THE SERVICE'S (STS-CELL-0005):
+  // a relayed request reaches the owning cell under the peer's private name,
+  // so an address built from the request would name a cell — which nothing
+  // here may ever publish.
+  if (!String(config.value('global.publicBaseUrl') || '').trim()) {
+    throw new Error(errorCodes.tag('STS-CELL-0005') + 'cells.id is "' +
+                    cells.id() + '" and global.publicBaseUrl is empty. Every ' +
+                    'issuer and address a cell publishes must be the ' +
+                    'service\'s public name, whichever cell built it.');
+  }
+  if (!keystore.persists() || !secrets.configuredFor(secrets.KEK)) {
+    throw new Error(errorCodes.tag('STS-CELL-0004') + 'cells.id is "' +
+                    cells.id() + '" and ' + (!keystore.persists()
+                      ? 'the signing keys are not persisted (keys.source)'
+                      : 'no operator key-encryption key is configured ' +
+                        '(keys.kekProvider)') + '. Every cell signs with ' +
+                    'the same realm keys and opens the same global rows, ' +
+                    'which a key made per start or per process cannot do.');
+  }
+  if (require('../common/mode').requiresCellKek() &&
+      !secrets.configuredFor(secrets.CELL_KEK)) {
+    throw new Error(errorCodes.tag('STS-CELL-0003') + 'cells.id is "' +
+                    cells.id() + '" and keys.cellKekProvider is "none". ' +
+                    'What a cell stores of its own is sealed under a key ' +
+                    'that lives only in the cell, so a copy of its rows ' +
+                    'opens in no other; without one it would open in every ' +
+                    'cell. Configure keys.cellKekProvider and ' +
+                    'keys.cellKekRef.');
+  }
+  log.debug("Leaving checkCells().");
+}
+
+// ---------------------------------------------------------------------------
+// THE GLOBAL TIER'S TWO CONNECTION STRINGS (#98), with the global password
+// put into both the way `resolveDatabaseUrl()` puts the cell's into its one.
+// The read URL defaults to the writer's.
+// ---------------------------------------------------------------------------
+function resolveGlobalUrls() {
+  log.debug("Entering resolveGlobalUrls().");
+  const writer = String(config.value('persistence.globalDatabaseUrl') || '')
+    .trim();
+  const reader = String(config.value('persistence.globalDatabaseReadUrl') ||
+                        '').trim() || writer;
+  log.debug("Leaving resolveGlobalUrls().");
+  return secrets.readGlobalDatabasePassword().then(function (password) {
+    const inject = function (raw) {
+      if (!password) {
+        return raw;
+      }
+      let parsed = null;
+      try {
+        parsed = new URL(raw);
+      } catch (e) {
+        log.debug("Caught in resolveGlobalUrls(): " + ((e && e.message) || e));
+        throw new Error(errorCodes.tag('STS-STORE-0005') +
+                        'persistence.globalDatabasePasswordProvider is set, ' +
+                        'so the password has to be put into the global ' +
+                        'database URLs, and one of them is not a URL this ' +
+                        'service can edit. Write them as ' +
+                        'postgres://user@host:5432/database.');
+      }
+      parsed.password = encodeURIComponent(password);
+      return parsed.toString();
+    };
+    return { url: inject(writer), readUrl: inject(reader) };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE GLOBAL TIER, DIALLED THE WAY A CELL DIALS IT (#98), for a process that
+// is not the service: `databaseConnection()`'s arrangement for the global
+// database. `persistence/cell_convert.js`, the one-time conversion of a
+// single-cell store into a cell, writes the global tier through the writer
+// URL this answers, so the two cannot disagree about how the connection is
+// made. Rejects as `resolveGlobalUrls()` does.
+// ---------------------------------------------------------------------------
+/**
+ * Returns what a process needs to dial the global tier's database the way a
+ * cell does.
+ *
+ * @returns a promise of `{ url, readUrl, verifyTls }`
+ */
+function globalDatabaseConnection() {
+  log.debug("Entering globalDatabaseConnection().");
+  log.debug("Leaving globalDatabaseConnection().");
+  return resolveGlobalUrls().then(function (urls) {
+    return { url: urls.url, readUrl: urls.readUrl,
+             verifyTls: verifiesDatabaseTls() };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE ROUTING INDEX'S DIGEST (#98), ONE DEFINITION: the keyed digest under
+// the service key that `persistence_tiered.js` claims a person's name and
+// entryUUID with at the flush, and that `persistence/cell_convert.js`
+// backfills the index with for a converted store — so a backfilled row is
+// the row the flush would have written. `common/cell_routing.ts`' own
+// `digest()` makes the same value for a lookup (it lower-cases and trims
+// the value, which the flush's callers have already done). Null without a
+// key-encryption key.
+// ---------------------------------------------------------------------------
+/**
+ * The keyed digest a routing index row is keyed by.
+ *
+ * @param realmId - the realm
+ * @param kind - 'name' or 'uuid'
+ * @param value - the login name or entryUUID, already lower-cased
+ * @returns the digest, or null without a key-encryption key
+ */
+function routingDigest(realmId, kind, value) {
+  log.debug("Entering routingDigest().");
+  log.debug("Leaving routingDigest().");
+  return keystore.keyedDigest('cell-routing', String(realmId) + '\n' +
+                              String(kind) + '\n' + String(value));
 }
 
 // The half of `start()` that runs once the connection string is final. Split
@@ -2111,7 +2382,7 @@ function originStatus() {
     : null;
 }
 
-function openStore(chosen, resolvedUrl) {
+function openStore(chosen, resolvedUrl, globalUrls) {
   log.debug('Entering openStore(). mode=' + chosen);
   try {
     driver = chosen === 'postgres'
@@ -2124,6 +2395,45 @@ function openStore(chosen, resolvedUrl) {
           poolMax: require('./persistence_postgres').poolMax(workerCount())
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
+    // A CELL'S STORE IS TWO DATABASES (#98): the one just made is the cell's
+    // own, and the global tier's is made beside it — its writer, and this
+    // cell's replica for every read — and the two are one driver from here
+    // on. The routing index's digest is made under the service key, which
+    // every cell holds, so every cell computes the same one.
+    if (globalUrls) {
+      const globalDriver = require('./persistence_postgres').create({
+        url: globalUrls.url, readUrl: globalUrls.readUrl, log: log,
+        verifyTls: verifiesDatabaseTls(),
+        poolMax: require('./persistence_postgres').poolMax(workerCount())
+      });
+      driver = tiered.create({
+        global: globalDriver, cell: driver, cellId: cells.id(),
+        digest: routingDigest
+      });
+      // WHAT A CELL'S SESSIONS MODULE IS TOLD (#98 D4): reached lazily at
+      // each call, because `common/cell_sessions.ts` is built with the
+      // protocol stack, long after this store is opened.
+      driver.setCellHooks({
+        projectionWrite: function (realmId, key, entry, base) {
+          log.debug("Entering projectionWrite().");
+          require('../common/cell_sessions').onProjectionWrite(realmId, key,
+                                                               entry, base);
+          log.debug("Leaving projectionWrite().");
+        },
+        personWritten: function (realmId, key, entry) {
+          log.debug("Entering personWritten().");
+          require('../common/cell_sessions').onPersonWritten(realmId, key,
+                                                             entry);
+          log.debug("Leaving personWritten().");
+        }
+      });
+      log.info('persistence: this is cell "' + cells.id() + '" (' +
+               cells.jurisdiction() + '). Its store is two databases: its ' +
+               'own, for the people homed here and what it mints, and the ' +
+               'global tier\'s, read from ' +
+               (globalUrls.readUrl !== globalUrls.url ? 'this cell\'s replica'
+                                                      : 'the writer') + '.');
+    }
   } catch (err) {
     // The postgres driver's `require('pg')` is the realistic way to get here —
     // an image built without the dependency. Named, because "cannot find
@@ -2254,6 +2564,23 @@ function openStore(chosen, resolvedUrl) {
     // And the schedule: a minted write alone is a reason to flush. See
     // mintedChanged().
     minted.setScheduler(mintedChanged);
+    // AND A WINDOWED WORKER'S DIRECTORY ITS BRIDGE (#349), before anything is
+    // restored: from here a key the window does not hold is asked of this
+    // store, through a thread with a connection of its own.
+    if (directory && directory.window && chosen === 'postgres' &&
+        typeof driver.bridgeConnection === 'function') {
+      const SyncQuery = require('../common/sync_query');
+      bridge = new SyncQuery({
+        connection: driver.bridgeConnection(),
+        timeoutMs: function () {
+          return Number(config.value('ldap.workerDirectoryTimeoutMs'));
+        }
+      });
+      directory.window.attach(bridge);
+      log.info('persistence: this worker reads the people and devices it ' +
+               'does not hold from the store, through the directory bridge ' +
+               '(ldap.workerDirectory=postgres-lru).');
+    }
     // -------------------------------------------------------------------
     // AND THE USED-ASSERTION HISTORY ITS STORE, BEFORE ANYTHING IS SERVED.
     // A file store is READ here: a token request answered from an empty copy
@@ -2301,7 +2628,7 @@ function openStore(chosen, resolvedUrl) {
         }
       });
     }
-    return driver.loadDirectory();
+    return loadDirectoryRows();
   }).then(function (byRealm) {
     let loaded = [];
     if (byRealm) {
@@ -2516,6 +2843,46 @@ function shadowRowOf(row) {
                             ? Number(row.retiringSince) : null });
 }
 
+// ---------------------------------------------------------------------------
+// WHAT A WINDOWED WORKER READS BACK AT START (#349 phase 6): the RESIDENT
+// entries only. The people and devices are read when first asked for, which
+// is the whole point — a worker used to read, parse and hold every one of
+// them before it could serve (#333 measured the directory at a fifth of a
+// sixty-eight-second start). Every other process reads the whole table as it
+// always did.
+// ---------------------------------------------------------------------------
+function loadDirectoryRows() {
+  log.debug("Entering loadDirectoryRows().");
+  if (!directory || !directory.window ||
+      typeof directory.windowedContainers !== 'function' ||
+      typeof driver.directoryQuery !== 'function') {
+    log.debug("Leaving loadDirectoryRows(). The whole directory.");
+    return driver.loadDirectory();
+  }
+  const windowed = [];
+  realms.list().forEach(function (realm) {
+    directory.windowedContainers(realm.id).forEach(function (baseKey) {
+      windowed.push({ realm: realm.id, baseKey: baseKey });
+    });
+  });
+  log.debug("Leaving loadDirectoryRows(). The resident entries.");
+  return driver.directoryQuery('residentOnly', [windowed])
+    .then(function (rows) {
+      if (!rows.length) {
+        return null;
+      }
+      const byRealm = {};
+      rows.forEach(function (row) {
+        (byRealm[row.realm] = byRealm[row.realm] || []).push(row.entry);
+      });
+      log.info('persistence: this worker read ' + rows.length + ' resident ' +
+               'directory entry/entries; the people and devices are read ' +
+               'from the store when first asked for ' +
+               '(ldap.workerDirectory=postgres-lru).');
+      return byRealm;
+    });
+}
+
 // The entries, per realm, replacing what was seeded. A realm the store has
 // nothing for keeps its seed — that is a realm created since the last write,
 // or a first run.
@@ -2634,6 +3001,8 @@ function stop() {
   stopLagMonitor();
   log.debug("Leaving stop().");
   return replication.stop().then(function () {
+    return globalReplication ? globalReplication.stop() : null;
+  }).then(function () {
     return flush();
   }).then(function () {
     // AFTER the flush above rather than inside it, because that one returns
@@ -2668,6 +3037,10 @@ function stop() {
         return false;
       })
       : false;
+  }).then(function () {
+    // The directory bridge's thread (#349), after the last flush that could
+    // have read through it.
+    return bridge ? bridge.stop() : null;
   }).then(function () {
     stopped = true;
     return driver.close();
@@ -2705,6 +3078,39 @@ function applyDirectoryChange(change) {
       typeof driver.readEntry !== 'function') {
     log.debug("Leaving applyDirectoryChange().");
     return Promise.resolve(false);
+  }
+  // -------------------------------------------------------------------------
+  // A WINDOWED KEY (#349). Nothing is merged here: a key this process has
+  // changed, is writing or handed out since the last flush is left alone —
+  // its own flush writes it against the base it kept, and the store merges
+  // (`saveDirectory()`), after which the window lets it go — and any other
+  // is forgotten and read again when next asked for.
+  // -------------------------------------------------------------------------
+  if (directory.window && directory.window.isWindowed(change.realm,
+                                                      change.key)) {
+    // The row is READ, as a whole directory's applier reads it: nothing of
+    // it is kept, but a person another process made is noted in this
+    // worker's identity register from it (`forgetEntry()`), which is what
+    // `applyEntry()` does in a process holding the whole directory.
+    log.debug("Leaving applyDirectoryChange(). A windowed key.");
+    return driver.readEntry(change.realm, change.key).then(function (row) {
+      const busy = directory.window.busy(change.realm, change.key);
+      if (busy) {
+        // Dropped once this process's own flush has let it go.
+        directory.window.markStale(change.realm, change.key);
+      }
+      if (typeof directory.forgetEntry === 'function') {
+        const was = restoring;
+        restoring = true;
+        try {
+          directory.forgetEntry(change.realm, change.key,
+                                row ? row.entry : null, busy);
+        } finally {
+          restoring = was;
+        }
+      }
+      return true;
+    });
   }
   log.debug("Leaving applyDirectoryChange().");
   // The stored key is the NORMALISED DN, which is what `sts_ldap_entries` is
@@ -3034,7 +3440,7 @@ function coordinate() {
     return Promise.resolve({ coordinating: false });
   }
   log.debug("Leaving coordinate().");
-  return replication.start(driver, {
+  const appliers = {
     directory: applyDirectoryChange,
     realms: applyRealmsChange,
     appconfig: applyAppconfigChange,
@@ -3083,6 +3489,34 @@ function coordinate() {
           log.debug("Leaving done().");
           return minted.endPrefetch();
         } })
+  };
+  // -------------------------------------------------------------------------
+  // THE GLOBAL TIER'S LOG, FOLLOWED BY AN INSTANCE OF ITS OWN (#98), on the
+  // global driver itself so its origin — the one it skips — is the one the
+  // global driver stamps. The appliers are the same functions: each reads
+  // the row back through the tiered driver, which asks the right database.
+  //
+  // THE TWO FOLLOWERS MAY PULL AT ONCE, and the one thing they share is
+  // `persistence_minted.js`'s page prefetch, which each replaces. That is
+  // correct only because the two logs never name the same minted row — a
+  // handle is in exactly one tier (`tiers.js`) — so one page's prefetch never
+  // answers for the other's rows, and a row missing from it is read alone.
+  //
+  // THE CELL'S LOG IS THE ONE THE BARRIER WAITS ON. A global change made in
+  // another cell arrives here after the replica's lag; a read barrier on it
+  // would put a cross-region round trip on every request, which is the cost
+  // #98 D3 declined. /admin/cells shows the lag.
+  // -------------------------------------------------------------------------
+  const started = replication.start(driver, appliers);
+  if (!driver || !driver.tiered) {
+    return started;
+  }
+  globalReplication = replication.createReplication('global');
+  return started.then(function (fromCell) {
+    return globalReplication.start(driver.globalDriver(), appliers)
+      .then(function (fromGlobal) {
+        return Object.assign({}, fromCell, { global: fromGlobal });
+      });
   });
 }
 
@@ -3138,6 +3572,14 @@ function status() {
     // AND WHAT IT SHARES WITH OTHER PROCESSES. One report from the module that
     // does the work, for the same reason as the line above.
     replication: replication.status(),
+    // THE CELL'S VIEW OF ITS TWO DATABASES (#98), null in single-cell mode.
+    cells: driver && driver.tiered ? {
+      cell: cells.id(),
+      jurisdiction: cells.jurisdiction(),
+      globalReplication: globalReplication ? globalReplication.status()
+                                           : null,
+      routing: driver.routingStatus()
+    } : null,
     // This process's persistence origin, and whether it is the stable one
     // its node name and slot give it (2026-09-18, adoptStableOrigin()).
     origin: originStatus(),
@@ -3344,7 +3786,88 @@ realms.onRetire({
  * coordinates several processes through its change log.
  * @namespace
  */
+// ---------------------------------------------------------------------------
+// A PROJECTED ENTRY (#98 D4, D9): a credential-free copy of a person homed in
+// another cell, held here for as long as a session of theirs is, and put into
+// the in-memory directory WITHOUT becoming something this store writes. It
+// goes in as a replicated entry does — `restoring` set, so no journal entry —
+// and the shadow is set to it, so no flush diffs it into a row. A later
+// LOCAL write to it (a consent recorded, say) does diff, and the tiered
+// driver sends that home instead of writing it here (`projectionWrite`).
+// `common/cell_sessions.ts` is the one caller.
+// ---------------------------------------------------------------------------
+/**
+ * Puts a projected entry into the directory without persisting it.
+ *
+ * @param realmId - the realm
+ * @param key - the entry's normalised DN
+ * @param row - `{ dn, attributes, origin }`
+ * @returns true when it was applied
+ */
+function materializeEntry(realmId, key, row) {
+  log.debug("Entering materializeEntry().");
+  if (!directory || typeof directory.applyEntry !== 'function') {
+    log.debug("Leaving materializeEntry(). No directory.");
+    return false;
+  }
+  const was = restoring;
+  restoring = true;
+  try {
+    directory.applyEntry(realmId, key, row);
+  } finally {
+    restoring = was;
+  }
+  const rows = shadow.get(realmId) || new Map();
+  const stored = entryAt(realmId, key);
+  if (stored) {
+    rows.set(key, JSON.stringify(stored));
+  }
+  shadow.set(realmId, rows);
+  log.debug("Leaving materializeEntry().");
+  return true;
+}
+
+/**
+ * Takes a projected entry out of the directory without writing a delete.
+ *
+ * @param realmId - the realm
+ * @param key - the entry's normalised DN
+ * @returns true when it was removed
+ */
+function dematerializeEntry(realmId, key) {
+  log.debug("Entering dematerializeEntry().");
+  if (!directory || typeof directory.removeEntry !== 'function') {
+    log.debug("Leaving dematerializeEntry(). No directory.");
+    return false;
+  }
+  const was = restoring;
+  restoring = true;
+  try {
+    directory.removeEntry(realmId, key);
+  } finally {
+    restoring = was;
+  }
+  const rows = shadow.get(realmId);
+  if (rows) {
+    rows.delete(key);
+  }
+  log.debug("Leaving dematerializeEntry().");
+  return true;
+}
+
+// THE STORE ITSELF, for a module that asks a question of a driver method no
+// wrapper here exposes — the routing index (`common/cell_routing.ts`) and
+// `/admin/cells` (#98). Null until `start()` has opened one.
+function currentDriver() {
+  log.debug("Entering currentDriver().");
+  log.debug("Leaving currentDriver().");
+  return enabled() ? driver : null;
+}
+
 module.exports = {
+  currentDriver: currentDriver,
+  materializeEntry: materializeEntry,
+  dematerializeEntry: dematerializeEntry,
   // FOR `tests/database_password.js` ONLY, and it is worth saying why a
   // private function is exported at all. The claim this feature makes is that
   // a password read from a secret store REACHES THE CONNECTION STRING — and
@@ -3356,6 +3879,10 @@ module.exports = {
   // The connection an out-of-process tool dials the database with, made the
   // way this service makes its own (#213) — see databaseConnection().
   databaseConnection: databaseConnection,
+  // The same for the global tier, and the routing index's one digest (#98):
+  // what `persistence/cell_convert.js` converts a single-cell store with.
+  globalDatabaseConnection: globalDatabaseConnection,
+  routingDigest: routingDigest,
   verifiesDatabaseTls: verifiesDatabaseTls,
   MODES: MODES,
   mode: mode,
@@ -3371,6 +3898,18 @@ module.exports = {
   enabled: enabled,
   dataDir: dataDir,
   setDirectory: setDirectory,
+  // A windowed worker handed out directory entries (#349): see the block
+  // above directoryTouched().
+  directoryTouched: directoryTouched,
+  /**
+   * The directory bridge's figures in a windowed worker (#349), or null.
+   * @returns `SyncQuery.stats()`, or null
+   */
+  directoryBridgeStats: function () {
+    log.debug("Entering directoryBridgeStats().");
+    log.debug("Leaving directoryBridgeStats().");
+    return bridge ? bridge.stats() : null;
+  },
   start: start,
   stop: stop,
   flush: flush,

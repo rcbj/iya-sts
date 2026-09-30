@@ -207,7 +207,7 @@ class HttpChallengeAttestor {
     const { log, crypto, spiffeId, rpc, outbound, lookup } = this.deps;
     log.debug("Entering HttpChallengeAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const s = this.settings();
     if (s.problem) {
       log.debug("Leaving HttpChallengeAttestor.attest(). Not configured.");

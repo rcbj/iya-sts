@@ -172,6 +172,38 @@ const SECRET_NOTES = {
               'PostgreSQL, and restart. Nothing this service has written ' +
               'depends on its value.'
   },
+  // THE CELLS' TWO (#98). Neither is asked for without `cells.id`.
+  'global-database-password': {
+    heading: 'The global database password',
+    what: 'The password this cell dials the GLOBAL tier with &mdash; the ' +
+          'one writable database every cell shares for realms, settings, ' +
+          'applications, policies, signing keys and the routing index, and ' +
+          'its replica in this cell ' +
+          '(<code>persistence.globalDatabaseUrl</code>, ' +
+          '<code>persistence.globalDatabaseReadUrl</code>).',
+    without: 'Nothing in single-cell mode. A cell (<code>cells.id</code> ' +
+             'set) cannot open the global tier without it where the URL ' +
+             'carries none, and a cell with no global tier does not start.',
+    rotating: 'Ordinary: change it in the store and in PostgreSQL, then ' +
+              'restart every cell. Nothing written depends on its value.'
+  },
+  'cell-kek': {
+    heading: 'This cell\'s key-encryption key',
+    what: 'The AES-256 key the rows RESIDENT in this cell are sealed under ' +
+          '&mdash; a person\'s credentials, devices, sessions and everything ' +
+          'else minted about the people homed here. It lives only in this ' +
+          'cell\'s region, so another jurisdiction holding a copy of the ' +
+          'database still cannot read them. It must not be the service ' +
+          'key-encryption key, and is refused if it is.',
+    without: 'In PRODUCT mode a cell does not start without it, and there ' +
+             'is no fallback to the service key: that would put the ' +
+             'people of every jurisdiction under one key. In development ' +
+             'mode, and in single-cell mode, it is never asked for.',
+    rotating: 'Written once and never replaced, for the same reason as the ' +
+              'service key: this service has no re-sealing pass. A person ' +
+              're-homed to another cell is sealed again under THAT cell\'s ' +
+              'key as they move.'
+  },
   // THE MAIL CHANNEL'S FOUR (#63). Each is optional and unconfigured by
   // default; each is read when `common/mail.ts` builds the transport that
   // needs it, never at startup except in product mode's check that the

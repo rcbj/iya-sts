@@ -204,7 +204,7 @@ class TpmDevidAttestor {
     const self = this;
     log.debug("Entering TpmDevidAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const devidRoots = pki.certificateBundle(String(
       config.value('spiffe.tpmDevidCaBundle') || '')).certificates;
     const ekRoots = pki.certificateBundle(String(

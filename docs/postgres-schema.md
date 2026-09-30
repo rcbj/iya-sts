@@ -47,8 +47,9 @@ which shape is on disk.
 | 8 | `sts_risk_terms_acceptances` |
 | 9 | the columns `sts_risk_assessments.feedback` and `.feedback_at` |
 | 10 | the column `sts_realms.retiring_at` (#262) |
-| 11 | `sts_node_snapshots`: each cluster node's latest Worker Pools and Node Health views (#332) |
+| 11 | `sts_node_snapshots`: each cluster node's latest Worker Pools and Node Health views (#332); on develop the same number is #98's `sts_cell_routing` — both tables are created by name |
 | 12 | the column `sts_minted.expires_at` and its partial index `sts_minted_expires` (#333) |
+| 13 | six generated lookup columns on `sts_ldap_entries` and seven indexes over them (#349) |
 
 ### The application role
 
@@ -118,8 +119,26 @@ The [LDAP directory](ldap.md) has one row per entry, for every realm. The
 | `attrs` | jsonb | `{ "attributeName": ["value", …] }`: every value is an array, as in LDAP, and operational attributes are included |
 | `origin` | text | how the entry came to exist: `seed`, `console`, `ldap add`, `scim`, … (the `# sts-origin:` comment in an LDIF export) |
 | `created_at`, `modified_at` | text | RFC 4517 generalized time (`20260827192200Z`), **byte-identical** to `createTimestamp` / `modifyTimestamp` in `attrs` |
+| `parent_key` | text, generated | the parent's key: everything after the first comma of `dn_key` |
+| `rdn_value` | text, generated | the first RDN's value (lower-case, as `dn_key` is) |
+| `name_keys` | jsonb, generated | the `uid` values, lower-cased, as a JSON array |
+| `mail_keys` | jsonb, generated | the `mail` values, lower-cased |
+| `uuid_keys` | jsonb, generated | the `entryUUID` and `stsEntryUuidAlias` values, lower-cased |
+| `class_keys` | jsonb, generated | the `objectClass` values, lower-cased — how a group placed under `ou=users` is found |
 
 Primary key `(realm, dn_key)`, with an index on `realm`.
+
+**The six generated columns (schema version 13, #349)** are computed by the
+database from `dn_key` and `attrs`, so nothing writes them. They exist for a
+request worker with `ldap.workerDirectory=postgres-lru`, which holds the
+people and devices as a bounded window and asks the store instead of keeping
+an index in memory. They are indexed: `(realm, parent_key, dn_key)` for a
+container's children, `(realm, parent_key, rdn_value)` for a login name, GIN
+(`jsonb_path_ops`) over `name_keys`, `mail_keys` and `uuid_keys`, GIN over
+`attrs` for a value as written (a DID, a SPIFFE ID), and GIN (the default
+operator class, for `?|`) over `class_keys`. Adding the columns to a
+table that already has rows rewrites it once; running `postgres/schema.sql`
+again as the owner does it.
 
 **It is the one table you can query with SQL, and that is deliberate.** An
 entry is a document without a fixed schema, and JSONB lets Postgres index into
@@ -217,15 +236,16 @@ tests):
 |---|---|
 | Sign-in | `authn.sessions`, `authn.pending`, `authn.pendingMfa`, `authn.pendingPasswordChange`, `authn.webauthnCredentials`, `credentials.pendingBackupCodes`, `credentials.pendingKeys`, `credentials.pendingTotp`, `spnego.pending`, `oidc_rp.flows` |
 | OAuth / OIDC | `oauth2.authzCodes`, `oauth2.redeemedCodes`, `oauth2.pushedRequests`, `oauth2.attestationChallenges`, `oauth2.backchannelDeliveries`, `oauth2.cibaRequests`, `oauth2.cibaDeliveries`, `oauth2_bcp.refreshTokens`, `oauth2_bcp.refreshFamilies`, `oauth2_bcp.grantTokens`, `oauth2_bcp.transactions`, `oauth2.grants`, `oauth2.grantIssued`, `oauth2_monitor.counters`, `consent_screen.pending`, `authorization_details.consented`, `authorization_servers.profiles`, `dpop.issuedNonces`, `dpop.seenJtis` |
-| SAML, WS-* and federation | `saml2_sso.artifacts`, `saml2_sso.pendingRequests`, `saml2_sso.spContexts`, `saml2.mdqRefusals`, `saml11_sso.artifacts`, `saml11_sso.assertionsById`, `saml11_sso.pendingFlows`, `wsfed.rpContexts`, `federation_sp.contexts`, `delegation.acts` |
+| SAML, WS-* and federation | `saml2_sso.artifacts`, `saml2_sso.pendingRequests`, `saml2_sso.spContexts`, `saml2.mdqRefusals`, `saml11_sso.artifacts`, `saml11_sso.assertionsById`, `saml11_sso.pendingFlows`, `wsfed.rpContexts`, `federation_sp.contexts`, `federation.unmapped`, `delegation.acts` |
 | Verifiable credentials | `vc_offers.credentialOffers`, `vc_offers.preAuthorizedCodes`, `vc_offers.issuerStates`, `vc_offers.deferredAccessTokens`, `vc_offers.deferredTransactions`, `vc_issuer.vciNonces`, `vc_issuer.notificationIds`, `vc_issuer.lastCredentialRequest`, `vc_issued.credentials`, `vc_status.entries`, `vc_claims.state`, `vc_verifier.vpRequests`, `vc_verifier.vpTransactions`, `vc_verifier_config.state` |
-| GNAP | `gnap.grants`, `gnap.continuations`, `gnap.interactions`, `gnap.tokens`, `gnap.tokenValues`, `gnap.instances`, `gnap.approvers`, `gnap.resources`, `gnap.manageHandles`, `gnap.manageValues`, `gnap.userCodes`, `gnap.userRefs`, `gnap.replay`, `gnap_monitor.counters` |
+| GNAP | `gnap.grants`, `gnap.continuations`, `gnap.interactions`, `gnap.tokens`, `gnap.tokenValues`, `gnap.instances`, `gnap.approvers`, `gnap.resources`, `gnap.manageHandles`, `gnap.manageValues`, `gnap.userCodes`, `gnap.userRefs`, `gnap.replay`, `gnap.movedGrants`, `gnap_monitor.counters` |
 | Kerberos | `krb5.principals`, `krb5.replayCache` |
 | Certificate enrollment | `acme.accounts`, `acme.accountKeys`, `acme.orders`, `acme.authorizations`, `acme.certificates`, `acme.renewalInfo`, `acme.usedNonces`, `scep.transactions`, `enrollment_monitor.*` |
 | SPIFFE | `spiffe.authorities`, `spiffe.federatedBundles`, `spiffe.joinTokens`, `spiffe.recordedConnections`, `spiffe.sigstoreTuf` |
 | SCIM | `scim.digestNonces`, `scim.digestCounts`, `scim.hobaChallenges`, `scim.hobaSeen` |
 | Shared Signals | `ssf_streams.streams`, `ssf_streams.queued`, `ssf_streams.received`, `ssf_streams.deadLetters`, `ssf_receivers.inbox`, `ssf_dead_letter_report.sweeps`, `caep.register`, `risc.register` |
 | Mail | `mail.outbox`, `mail.preferences`, `mail.templates` |
+| Attribute sources | `attribute_sources.status` |
 | Devices | `devices.events` |
 | OpenID Federation | `oidfed.registerGeneration` |
 | Console statistics and audit | `admin_stats.tokens`, `admin_stats.artifacts`, `admin_stats.revokedArtifacts`, `admin_stats.revokedJtis`, `admin_stats.claimSets`, `admin_stats.users`, `admin_stats.calls`, `admin_stats.nums`, `admin_stats.scimCounts`, `claim_attributes.selections`, `xacml_monitor.counters`, `audit.events`, `audit.nums` |

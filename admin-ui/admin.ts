@@ -1844,6 +1844,15 @@ const SECTIONS = [
                'compliance, and when it was last used. Click one to edit ' +
                'it, add or remove a key, give it to another owner or remove ' +
                'it; register one by hand at the foot of the list.' },
+      // ATTRIBUTE SOURCES (#94): in Directory because what they write is
+      // on people's directory entries, and the register is `ou=
+      // attributesources` in this realm's directory.
+      { path: '/admin/attribute-sources', label: 'Attribute sources',
+        blurb: 'The SQL databases this realm reads people\'s attributes ' +
+               'from, onto their entries: each source\'s database, the row ' +
+               'it reads and the columns it writes, when it reads (at ' +
+               'sign-in, once, on a schedule, on demand) and what a ' +
+               'failure does, with its status, a test and a read-now.' },
       // -------------------------------------------------------------------
       // POLICIES (2026-09-12), asked for by rcbj as *Directory → Policies*,
       // with the password policy as the first kind of policy it configures.
@@ -2729,6 +2738,16 @@ const SECTIONS = [
                'which lease, and what active-active mode still refuses to ' +
                'start without. Every clustered write is fenced by the ' +
                'node\'s membership, and a node that loses it exits.' },
+      // CELLS (#98, 2026-09-28), beside Cluster: one service deployed as
+      // several cells in several jurisdictions. Drawn by
+      // `admin-ui/cells_admin.ts`.
+      { path: '/admin/cells', label: 'Cells',
+        blurb: 'One service deployed as several cells, each a copy of the ' +
+               'whole stack in one legal jurisdiction: which cell this is, ' +
+               'which others there are and whether they answer, the global ' +
+               'tier\'s replica lag, how many people each cell holds, the ' +
+               'sessions held away from home, and another cell\'s residents ' +
+               'where its release policy permits.' },
       // MAIL (#63, 2026-09-22), beside Cluster: how this service SENDS
       // mail — the transport, where a link points, the realm's wording of
       // each message, a test message, and the Mail settings group. Drawn by
@@ -23556,6 +23575,15 @@ class AdminConsole {
                     (isUserinfo ? 'UserInfo responses' : 'tokens');
     const extraHeader = isSaml2 ? '<th>NameFormat</th>' :
                         (isSaml11 ? '<th>AttributeNamespace</th>' : '');
+    // ATTRIBUTE CLAIMS' THREE HELPS (#94), from the model the /admin-api
+    // replies carry too: what each attribute row would carry for the
+    // previewed person, which partners' release lists withhold a claim, and
+    // the attributes worth offering in the form's pick-list.
+    const who = previewUser || 'alice';
+    const previewRows = adminViews.attributeClaimPreview(setId, who);
+    const lists = adminViews.releaseWithholding();
+    const withheld = adminViews.withheldFor(claims, lists);
+    const choices = adminViews.attributeClaimChoices();
 
     const rows = claims.map(function (claim) {
       const extraCell = isSaml2 ? '<td>' + self.esc(claim.nameFormat || '—') +
@@ -23565,7 +23593,33 @@ class AdminConsole {
                          '</td>' : '');
       return '<tr><td><code>' + self.esc(claim.name) + '</code></td>' +
              extraCell +
-        '<td><code>' + self.esc(claim.value) + '</code></td>' +
+        // AN ATTRIBUTE CLAIM (#94) shows where its value comes from.
+        '<td>' + (claim.attribute
+          ? '&larr; <code>' + self.esc(claim.attribute) + '</code>' +
+            '<span class="sub"> directory attribute' +
+            (claim.multi ? ', every value' : '') +
+            (claim.type && claim.type !== 'string'
+              ? ', as ' + self.esc(claim.type) : '') + '</span>'
+          : '<code>' + self.esc(claim.value) + '</code>') +
+        // WHAT IT WOULD CARRY FOR THE PREVIEWED PERSON (#94).
+        (claim.attribute ? (function () {
+          const seen = previewRows.filter(function (one) {
+            return one.name === claim.name;
+          })[0];
+          return '<br><span class="sub">for <code>' + self.esc(who) +
+            '</code>: ' + (seen && seen.carried
+              ? '<code>' + self.esc(JSON.stringify(seen.value)) + '</code>'
+              : 'nothing &mdash; their entry has no ' +
+                self.esc(claim.attribute)) + '</span>';
+        })() : '') +
+        // WHO WOULD NOT GET IT (#94): a partner whose release list does not
+        // name it.
+        (withheld[claim.name] ? '<br><span class="state-revoked">withheld ' +
+          'from ' + withheld[claim.name].map(function (id) {
+            return '<a href="/admin/federation?relationship=' +
+                   encodeURIComponent(id) + '">' + self.esc(id) + '</a>';
+          }).join(', ') + '</span><span class="sub"> &mdash; not on ' +
+          'their release list</span>' : '') + '</td>' +
         '<td><form method="post" action="' + self.esc(pageUrl) +
         '" class="inline">' +
         '<input type="hidden" name="action" value="remove">' +
@@ -23616,6 +23670,53 @@ class AdminConsole {
         '<input type="text" id="v-' + setId + '" name="value" size="28">' +
         '<button>Add</button>' +
         '</div></form>' +
+      // AN ATTRIBUTE CLAIM (#94): any directory attribute, under a name of
+      // the administrator's choosing — where the half below offers only the
+      // catalogue, under the names the catalogue fixes.
+      '<form method="post" action="' + this.esc(pageUrl) + '"><div ' +
+        'class="formrow">' +
+        '<input type="hidden" name="action" value="add-attribute-claim">' +
+        '<input type="hidden" name="set" value="' + this.esc(setId) + '">' +
+        '<label for="an-' + setId + '">Name</label>' +
+        '<input type="text" id="an-' + setId + '" name="name" size="20">' +
+        '<label for="aa-' + setId + '">from the attribute</label>' +
+        '<input type="text" id="aa-' + setId + '" name="attribute" ' +
+        'size="20" placeholder="e.g. costCenter" list="ac-' + setId + '">' +
+        // THE PICK-LIST (#94): what this realm's attribute sources and
+        // federation mappings write, so a name is chosen rather than
+        // guessed; any other name may still be typed.
+        '<datalist id="ac-' + setId + '">' + choices.map(function (one) {
+          return '<option value="' + self.esc(one.attribute) + '" label="' +
+                 self.esc(one.attribute + ' (' + one.from.join(', ') + ')') +
+                 '">';
+        }).join('') + '</datalist>' +
+        '<label><input type="checkbox" name="multi" value="true"> every ' +
+        'value</label>' +
+        (isSaml ? '' : '<label for="at-' + setId + '">as</label><select ' +
+          'id="at-' + setId + '" name="type">' +
+          ['string', 'number', 'boolean', 'json'].map(function (type) {
+            return '<option value="' + type + '">' + type + '</option>';
+          }).join('') + '</select>') +
+        '<button>Add</button></div></form>' +
+      '<p class="sub">A ' + noun + ' from a directory attribute carries ' +
+      'the value on the entry of the person the ' +
+      (isSaml ? 'assertion' : (isUserinfo ? 'response' : 'token')) +
+      ' is about &mdash; any attribute, not only the catalogue below. Only ' +
+      'the directory: a person whose entry lacks it gets none. A secret, a ' +
+      'binary value or an attribute this service keeps is refused.' +
+      (choices.length ? ' The attribute field offers the ' + choices.length +
+        ' this realm\'s attribute sources and federation mappings write.'
+                      : '') + '</p>' +
+      // THE RELEASE WARNING (#94), where it applies: a claim added here does
+      // not reach a partner whose release list does not name it.
+      (lists.length ? this.warn('<strong>' + lists.length + ' federation ' +
+        'partner(s) have a release list</strong> (' +
+        lists.map(function (one) {
+          return '<a href="/admin/federation?relationship=' +
+                 encodeURIComponent(one.id) + '">' + self.esc(one.id) +
+                 '</a>';
+        }).join(', ') + '): a ' + noun + ' added here reaches them only ' +
+        'once its name is added to their <code>fedRelease</code>.') : '') +
       (claims.length
         ? '<form method="post" action="' + this.esc(pageUrl) +
           '" class="inline">' +
@@ -30336,6 +30437,53 @@ class AdminConsole {
       'verifies.');
   }
 
+  // WHAT THE PARTNER SENT AND NOTHING WROTE (#94), under the mapping it
+  // would take to keep one: a name no mapping names, or a name mapped onto an
+  // attribute no partner may write (with why). Each row carries a Map form
+  // with the name filled in, so keeping one is naming its attribute.
+  /**
+   * Draws the names a relationship's partner sent that were not written,
+   * each with a form to map it.
+   *
+   * @param row - the relationship's view
+   * @param unmapped - `federation.unmappedOf()`
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML, or '' when there is nothing to show
+   */
+  federationUnmappedSection(row, unmapped, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationUnmappedSection(). id=" +
+              row.id);
+    if (!unmapped.length) {
+      log.debug("Leaving AdminConsole.federationUnmappedSection(). None.");
+      return '';
+    }
+    log.debug("Leaving AdminConsole.federationUnmappedSection().");
+    return '<h3 id="unmapped">Sent and not written</h3>' +
+      this.note('Names this partner sent at a sign-in that were NOT ' +
+        'written to the directory: nothing maps them, or a mapping sends ' +
+        'them onto an attribute no partner may write. The newest first; a ' +
+        'name is kept for ' + 'as long as minted state is (' +
+        '<code>persistence.mintedRetention</code>).') +
+      '<table><tr><th>Name</th><th>Why</th><th>Last sent</th><th>Map it' +
+      '</th></tr>' +
+      unmapped.map(function (one) {
+        return '<tr><td class="who"><code>' + self.esc(one.name) +
+          '</code></td><td class="sub">' +
+          (one.refused ? self.esc(one.refused) : 'nothing maps it') +
+          '</td><td class="sub">' + self.esc(one.last) + '</td><td><form ' +
+          'method="post" action="/admin/federation"><div class="formrow">' +
+          carryBack +
+          '<input type="hidden" name="action" value="add-value">' +
+          '<input type="hidden" name="id" value="' + self.esc(row.id) +
+          '"><input type="hidden" name="field" value="fedAttributeMap">' +
+          '<input type="text" name="value" size="30" value="' +
+          self.esc(one.name + '=') + '"><button type="submit">Map' +
+          '</button></div></form></td></tr>';
+      }).join('') + '</table>';
+  }
+
   // The drill-down. It is the page that actually does the work, because a
   // relationship is configured field by field and the fields differ by role and
   // by protocol — which is why the form is BUILT from the schema rather than
@@ -30526,7 +30674,11 @@ class AdminConsole {
         (field.name === 'fedAttributeMap' ? 'incoming name=ldapAttribute'
           : (field.name === 'fedRelease' ? 'a claim or attribute name' :
              'a value')) + '"><button ' +
-        'type="submit">Add</button></div></form>';
+        'type="submit">Add</button></div></form>' +
+        (field.name === 'fedAttributeMap'
+          ? self.federationUnmappedSection(row, view.unmapped || [],
+                                           carryBack)
+          : '');
     }).join('');
 
     const inner = this.messagesOf(req) +
@@ -43484,6 +43636,9 @@ const SETTING_HOMES = [
   // `cluster.acceptMissingCapabilities` read anywhere but beside the list of
   // what is missing would be a list of ids with no meaning.
   { group: 'Cluster', pages: ['/admin/cluster'] },
+  // THE CELLS' SETTINGS (#98), on the page that shows the cell map they
+  // configure and the realm's transfer choices they decide about.
+  { group: 'Cells', pages: ['/admin/cells'] },
   // SIGNER ROTATION (2026-09-22, #42/#48), on /admin/keys — the page that
   // shows every unit's current, next and retired keys and carries the
   // Rotate controls (rcbj's D5).
@@ -43492,6 +43647,7 @@ const SETTING_HOMES = [
   // jobs they switch and the ticks they time.
   { group: 'Scheduler', pages: ['/admin/scheduler'] },
   { group: 'Mail', pages: ['/admin/mail'] },
+  { group: 'Attribute sources', pages: ['/admin/attribute-sources'] },
   // THE DEVICE REGISTER'S BOUNDS (#218): on the page that says how a device
   // arrives, beside the enrolment methods those bounds limit.
   { group: 'Devices', pages: ['/admin/device-registration'] },
@@ -46380,6 +46536,8 @@ const consoleExports = {
   // second way is the one that goes stale.
   // ---------------------------------------------------------------------
   respondToAction: slot.forward('respondToAction'),
+  // A claim set's section, for tests/attribute_claims.js (#94).
+  claimSetSection: slot.forward('claimSetSection'),
   // For `admin-ui/pki_admin.ts`, whose key-pair controls are drawn on an
   // application's page too — see applicationReturnTo().
   applicationReturnTo: slot.forward('applicationReturnTo'),

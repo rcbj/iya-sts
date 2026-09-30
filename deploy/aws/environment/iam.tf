@@ -57,15 +57,22 @@ data "aws_iam_policy_document" "task" {
   statement {
     sid     = "ReadTheKeyAndTheDatabasePassword"
     actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = [
-      aws_secretsmanager_secret.main["kek"].arn,
+    # In a cell (#98) the key is the global/ stack's replica here, and the
+    # node also reads its CELL key-encryption key and the global database's
+    # password. `compact`, because a cell's `base` phase has no global
+    # secrets yet and runs no node to read them.
+    resources = compact(concat([
+      local.shared_secret_arns["kek"],
       aws_secretsmanager_secret.main["db-app-password"].arn,
-    ]
+      ], local.multi ? [
+      aws_secretsmanager_secret.main["cell-kek"].arn,
+      lookup(local.global_secret_arns, "global-db-app-password", ""),
+    ] : []))
   }
   statement {
     sid       = "DecryptThemThroughSecretsManager"
     actions   = ["kms:Decrypt"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = compact([local.kms_key_arn, local.global_kms_key_arn])
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
@@ -158,11 +165,28 @@ data "aws_iam_policy_document" "execution" {
   statement {
     sid     = "InjectTheThreeEnvironmentSecrets"
     actions = ["secretsmanager:GetSecretValue"]
-    resources = [
-      aws_secretsmanager_secret.main["admin-api-client-secret"].arn,
+    # The first is the global/ stack's replica in a cell (#98); `compact`
+    # for a cell's `base` phase, as in the task role.
+    resources = compact([
+      local.shared_secret_arns["admin-api-client-secret"],
       aws_secretsmanager_secret.main["db-master-password"].arn,
       aws_secretsmanager_secret.main["db-app-password"].arn,
-    ]
+    ])
+  }
+
+  # THE GLOBAL SCHEMA'S TWO (#98), in the primary cell only: its
+  # `global-schema-init` container runs as the global database's master user
+  # and sets the `sts_app` role's password there (ecs.tf).
+  dynamic "statement" {
+    for_each = local.global_schema_init ? [1] : []
+    content {
+      sid     = "InjectTheGlobalSchemaSecrets"
+      actions = ["secretsmanager:GetSecretValue"]
+      resources = [
+        local.global.master_secret_arn,
+        lookup(local.global_secret_arns, "global-db-app-password", ""),
+      ]
+    }
   }
 
   # THE PRODUCT-MODE THREE (2026-09-17, the KDC's two 2026-09-18): the
@@ -175,22 +199,25 @@ data "aws_iam_policy_document" "execution" {
   # the policy `dev` and `ci` render is the policy they rendered before —
   # their whole job is to be the unchanged standard, and even a sid that says
   # "three" when it means four is a diff on their next apply.
+  #
+  # In a cell (#98) they are the global/ stack's replicas here, and absent in
+  # a cell's `base` phase, which runs no node.
   dynamic "statement" {
-    for_each = local.bootstrap_secret ? [1] : []
+    for_each = local.product && local.full ? [1] : []
     content {
       sid     = "InjectTheProductModeSecrets"
       actions = ["secretsmanager:GetSecretValue"]
       resources = [
-        aws_secretsmanager_secret.main["bootstrap-admin-password"].arn,
-        aws_secretsmanager_secret.main["krb5-krbtgt-password"].arn,
-        aws_secretsmanager_secret.main["krb5-service-password"].arn,
+        local.shared_secret_arns["bootstrap-admin-password"],
+        local.shared_secret_arns["krb5-krbtgt-password"],
+        local.shared_secret_arns["krb5-service-password"],
       ]
     }
   }
   statement {
     sid       = "DecryptThemThroughSecretsManager"
     actions   = ["kms:Decrypt"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = compact([local.kms_key_arn, local.global_kms_key_arn])
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
@@ -345,12 +372,12 @@ data "aws_iam_policy_document" "ecs_infrastructure" {
   statement {
     sid       = "DescribeTheProjectKey"
     actions   = ["kms:DescribeKey"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = [local.kms_key_arn]
   }
   statement {
     sid       = "EncryptTheVolumeThroughEc2"
     actions   = ["kms:GenerateDataKeyWithoutPlaintext"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = [local.kms_key_arn]
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
@@ -365,7 +392,7 @@ data "aws_iam_policy_document" "ecs_infrastructure" {
   statement {
     sid       = "GrantTheKeyToTheVolumeThroughEc2"
     actions   = ["kms:CreateGrant"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = [local.kms_key_arn]
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"

@@ -82,6 +82,8 @@ const audit = require('./audit');
 // throw log it with one; a refused claim-set change carries its code on the
 // audit row and, NON-ENUMERABLY, on the result a caller serialises.
 const errorCodes = require('./error_codes');
+// Which attributes a claim may carry out (#94). A leaf.
+const SourcedAttributes = require('./sourced_attributes');
 // THE FEDERATION RELEASE FILTER, and it is a plain require in the ordinary
 // direction rather than a hook. Rule 3e's test both ways round: that module
 // registers no route, and it requires only helpers.js, config.js, realms.js,
@@ -3178,6 +3180,120 @@ function resolvedJwtClaims(id, context) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// ATTRIBUTE CLAIMS (#94): a claim-set row whose value is a directory
+// attribute of the person the artifact is about. The entry is read through
+// the same resolver slot the catalogue's attributes are (`entryAttributes`,
+// filled by `claim_attributes.ts`), once per artifact and only when the set
+// has such a row, and wrapped for resolvedJwtClaims()'s reason: a directory
+// that throws costs the claims and never the issuance.
+//
+// **ONLY THE DIRECTORY.** No persona is invented for an attribute claim in
+// either mode: an attribute the entry lacks is a row that adds nothing, and
+// a lower layer (the catalogue's claim of the same name, the groups or roles
+// claim) still answers under that name if it has a value.
+// ---------------------------------------------------------------------------
+function resolvedEntryAttributes(context) {
+  log.debug("Entering resolvedEntryAttributes().");
+  if (!attributeResolver ||
+      typeof attributeResolver.entryAttributes !== 'function') {
+    log.debug("Leaving resolvedEntryAttributes(). No resolver.");
+    return null;
+  }
+  try {
+    log.debug("Leaving resolvedEntryAttributes().");
+    return attributeResolver.entryAttributes(context) || null;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-REG-0042') +
+              'the claim-attribute resolver threw reading the entry and was ' +
+              'ignored; the artifact is issued without its attribute ' +
+              'claims: ' + e.message);
+    log.debug("Leaving resolvedEntryAttributes().");
+    return null;
+  }
+}
+
+// An attribute's values off an entry, as text, empty ones dropped. The entry
+// is keyed lower-cased (`vc_claims.entryAttributes()`).
+function attributeValuesOf(entry, attribute) {
+  log.debug("Entering attributeValuesOf(). " + attribute);
+  const held = entry ? entry[String(attribute).toLowerCase()] : null;
+  log.debug("Leaving attributeValuesOf().");
+  return (Array.isArray(held) ? held : (held == null ? [] : [held]))
+    .map(function (one) { return String(one); })
+    .filter(function (one) { return one !== ''; });
+}
+
+// One value as the row's JSON type; null for a value that is not one (it is
+// left out rather than sent as the wrong type). Called once per value while a
+// token is built, so no Entering/Leaving pair — the hot-path exception.
+function typedAttributeValue(value, type) {
+  if (type === 'number') {
+    const n = Number(value);
+    return value.trim() !== '' && isFinite(n) ? n : null;
+  }
+  if (type === 'boolean') {
+    const lower = value.trim().toLowerCase();
+    return lower === 'true' ? true : (lower === 'false' ? false : null);
+  }
+  if (type === 'json') {
+    try {
+      return JSON.parse(value);
+    } catch (e) {
+      log.debug("Caught in typedAttributeValue(): " +
+                ((e && e.message) || e));
+      // Not JSON: left out, as a number that is not one is.
+      return null;
+    }
+  }
+  return value;
+}
+
+// A JWT attribute claim's value: every value typed (`multi`), or the first,
+// or undefined when the entry has none.
+function jwtAttributeClaimValue(entry, claim) {
+  log.debug("Entering jwtAttributeClaimValue(). " + claim.name);
+  const typed = attributeValuesOf(entry, claim.attribute)
+    .map(function (one) {
+      return typedAttributeValue(one, claim.type || 'string');
+    }).filter(function (one) {
+      return one !== null;
+    });
+  if (!typed.length) {
+    log.debug("Leaving jwtAttributeClaimValue(). No value.");
+    return undefined;
+  }
+  log.debug("Leaving jwtAttributeClaimValue().");
+  return claim.multi ? typed : typed[0];
+}
+
+// Every attribute claim row in the ambient realm's claim sets (#94), for CAEP:
+// a directory write that moves one of these attributes moves the claim, as a
+// catalogue attribute's write does. One row per claim name and attribute.
+/**
+ * Lists the attribute claims of every claim set in the ambient realm.
+ *
+ * @returns `[{ name, attribute, multi, type }]`, one per claim name and
+ *   attribute
+ */
+function attributeClaimRows() {
+  log.debug("Entering attributeClaimRows().");
+  const out = [];
+  const seen = new Set();
+  CLAIM_SET_IDS.forEach(function (id) {
+    claimSet(id).forEach(function (claim) {
+      const key = claim.name + '\n' + String(claim.attribute || '');
+      if (claim.attribute && !seen.has(key)) {
+        seen.add(key);
+        out.push({ name: claim.name, attribute: claim.attribute,
+                   multi: !!claim.multi, type: claim.type || 'string' });
+      }
+    });
+  });
+  log.debug("Leaving attributeClaimRows(). " + out.length + " row(s).");
+  return out;
+}
+
 function resolvedSamlAttributes(id, context) {
   log.debug("Entering resolvedSamlAttributes().");
   if (!attributeResolver ||
@@ -3550,6 +3666,10 @@ function reservedNames(set) {
           [];
 }
 
+// The JSON types an attribute claim's values become in a JWT (#94). A SAML
+// attribute's values are text whatever this says.
+const ATTRIBUTE_CLAIM_TYPES = ['string', 'number', 'boolean', 'json'];
+
 // Validate and install a whole set at once. Returns the errors rather than
 // throwing, because the caller is a form handler that has to redisplay them.
 /**
@@ -3557,7 +3677,8 @@ function reservedNames(set) {
  * of live artifacts built from it.
  *
  * @param id - the claim set id
- * @param entries - the claims, each `name`, `value` and optionally a type
+ * @param entries - the claims: a typed claim is `name` and `value`, an
+ *   attribute claim (#94) is `name`, `attribute`, `multi` and `type`
  * @returns `ok`, or `ok: false` with `errors` when the set is unknown or an
  *   entry is invalid
  */
@@ -3604,9 +3725,41 @@ function setClaimSet(id, entries) {
       return;
     }
     seen.add(name);
-    const claim = { name: name,
-                    value: String((entry && entry.value) != null ? entry.value :
-                                  '') };
+    // AN ATTRIBUTE CLAIM (#94): the value is a directory attribute of the
+    // person the artifact is about, rather than a template. `multi` carries
+    // every value; `type` (JWT and UserInfo sets) says what JSON type each
+    // becomes. Refused for a secret, a binary value or what this service
+    // keeps (`SourcedAttributes.releaseRefusal()`).
+    const attribute = String((entry && entry.attribute) || '').trim();
+    let claim;
+    if (attribute) {
+      const problem = !/^[A-Za-z][A-Za-z0-9-]*$/.test(attribute)
+        ? '"' + attribute + '" is not an attribute name'
+        : SourcedAttributes.releaseRefusal(attribute);
+      if (problem) {
+        errors.push('"' + name + '" cannot carry an attribute: ' + problem +
+                    '.');
+        code = code || 'STS-REG-0200';
+        return;
+      }
+      const type = String((entry && entry.type) || 'string');
+      if (set.kind !== 'saml2' && set.kind !== 'saml11' &&
+          ATTRIBUTE_CLAIM_TYPES.indexOf(type) < 0) {
+        errors.push('"' + name + '" has type "' + type + '", which is not ' +
+                    'one of ' + ATTRIBUTE_CLAIM_TYPES.join(', ') + '.');
+        code = code || 'STS-REG-0201';
+        return;
+      }
+      claim = { name: name, attribute: attribute,
+                multi: entry.multi === true || entry.multi === 'true' };
+      if (set.kind !== 'saml2' && set.kind !== 'saml11') {
+        claim.type = type;
+      }
+    } else {
+      claim = { name: name,
+                value: String((entry && entry.value) != null ? entry.value :
+                              '') };
+    }
     if (set.kind === 'saml2' &&
         entry.nameFormat) claim.nameFormat = String(entry.nameFormat);
     if (set.kind === 'saml11') claim.namespace = String(
@@ -3792,7 +3945,18 @@ function jwtClaims(id, context) {
   const out = resolvedRoleClaims(context);
   Object.assign(out, resolvedGroupClaims(id, context));
   Object.assign(out, resolvedJwtClaims(id, context));
-  claimSet(id).forEach(function (claim) {
+  const configured = claimSet(id);
+  // Read once, and only when a row needs it (#94).
+  const entry = configured.some(function (claim) { return !!claim.attribute; })
+    ? resolvedEntryAttributes(context) : null;
+  configured.forEach(function (claim) {
+    if (claim.attribute) {
+      const value = jwtAttributeClaimValue(entry, claim);
+      if (value !== undefined) {
+        out[claim.name] = value;
+      }
+      return;
+    }
     out[claim.name] = typedValue(expandValue(claim.value, context));
   });
   // ---------------------------------------------------------------------
@@ -3841,14 +4005,33 @@ function jwtClaims(id, context) {
  */
 function samlAttributes(id, context) {
   log.debug("Entering samlAttributes(). id=" + id);
-  const typed = claimSet(id).map(function (claim) {
-    const attribute = { name: claim.name,
-                        value: expandValue(claim.value, context) };
+  const configured = claimSet(id);
+  // Read once, and only when a row needs it (#94).
+  const entry = configured.some(function (claim) { return !!claim.attribute; })
+    ? resolvedEntryAttributes(context) : null;
+  const typed = configured.map(function (claim) {
+    let attribute;
+    if (claim.attribute) {
+      // AN ATTRIBUTE CLAIM (#94): one <Attribute> with an <AttributeValue>
+      // per value when `multi`, else the first; none when the entry has
+      // none, so a lower layer may still answer under the name.
+      const values = attributeValuesOf(entry, claim.attribute);
+      if (!values.length) {
+        return null;
+      }
+      attribute = { name: claim.name,
+                    values: claim.multi ? values : [values[0]] };
+    } else {
+      attribute = { name: claim.name,
+                    value: expandValue(claim.value, context) };
+    }
     if (id === 'saml2' &&
         claim.nameFormat) attribute.nameFormat = claim.nameFormat;
     if (id === 'saml11') attribute.namespace = claim.namespace ||
                                                DEFAULT_SAML11_NAMESPACE;
     return attribute;
+  }).filter(function (attribute) {
+    return attribute !== null;
   });
   // The same precedence jwtClaims() applies, but it has to be written as a
   // FILTER rather than as an assignment order: an assertion is a list of
@@ -5727,6 +5910,7 @@ module.exports = {
   isRevoked: isRevoked,
   revokedCount: revokedCount,
   claimSet: claimSet,
+  attributeClaimRows: attributeClaimRows,
   setClaimSet: setClaimSet,
   // Filled by claim_attributes.js at its require time; see the note above it.
   // The inversion is what keeps the four issuance sites unchanged.

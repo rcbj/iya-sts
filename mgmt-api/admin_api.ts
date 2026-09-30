@@ -223,6 +223,8 @@ import modeAdmin = require('../admin-ui/mode_admin');
 import workerPoolsAdmin = require('../admin-ui/worker_pools_admin');
 // Monitoring → Node Health (#329): its one view, rule 7.
 import nodeHealthAdmin = require('../admin-ui/node_health_admin');
+// Server configuration → Cells (#98): `cellsView()` and `peopleOf()`.
+import cellsAdmin = require('../admin-ui/cells_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The mail channel's two pages (#63), mirrored below (rule 7).
@@ -491,6 +493,9 @@ interface AdminApiDeps {
   loadOauth2MonitorApi(): typeof import('../oauth-oidc/oauth2_monitor_api');
   loadGrantManagementApi(): typeof import('../oauth-oidc/grant_management_api');
   loadClaimsProvidersApi(): typeof import('../oauth-oidc/claims_providers_api');
+  // The attribute source operations (#94).
+  loadAttributeSourcesApi():
+    typeof import('../attribute-sources/attribute_sources_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
   loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
@@ -597,6 +602,9 @@ class AdminApi {
       },
       loadOauth2MonitorApi: function () {
         return require('../oauth-oidc/oauth2_monitor_api');
+      },
+      loadAttributeSourcesApi: function () {
+        return require('../attribute-sources/attribute_sources_api');
       },
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
@@ -1372,6 +1380,48 @@ class AdminApi {
           required: ['set', 'name'],
           examples: [{ set: family.example, name: 'dept',
                        value: 'engineering' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The set as it now stands, in `claims`.' },
+
+      { action: 'add-attribute-claim', operationId: family.ids.addAttribute,
+        summary: 'Add one ' + noun + ' carrying a directory attribute',
+        description: 'The ' + noun + '\'s value is `attribute` on the ' +
+                     'entry of the person the ' + family.carrier + ' is ' +
+                     'about (#94) — any attribute, where the directory-' +
+                     'attribute half of a set offers only the fixed ' +
+                     'catalogue, under the name given here. Only the ' +
+                     'directory, never an invented value: a person whose ' +
+                     'entry lacks it gets no such ' + noun + ', and a lower ' +
+                     'layer of the same name still answers. `multi` ' +
+                     'carries every value. A secret, a binary value or an ' +
+                     'attribute this service keeps (sts*, hoba*, app*, ' +
+                     'pwd*) is refused. Removed by `remove`, by name. The ' +
+                     'same reserved names are refused as for `add`, and a ' +
+                     'directory write that moves the attribute sends CAEP ' +
+                     'token-claims-change to holders of live tokens.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            set: setField,
+            name: { type: 'string' },
+            attribute: { type: 'string',
+                         description: 'The directory attribute.' },
+            multi: { type: 'boolean',
+                     description: 'Every value rather than the first.' },
+            type: { type: 'string',
+                    enum: ['string', 'number', 'boolean', 'json'],
+                    description: 'The JSON type of each value, in a JWT or ' +
+                                 'UserInfo set. Ignored by the SAML sets.' },
+            nameFormat: { type: 'string',
+                          description: 'The SAML 2.0 set only.' },
+            namespace: { type: 'string',
+                         description: 'The SAML 1.1 set only.' }
+          },
+          required: ['set', 'name', 'attribute'],
+          examples: [{ set: family.example, name: 'cost_center',
+                       attribute: 'costCenter' }],
           additionalProperties: false
         },
         responseDescription: 'The set as it now stands, in `claims`.' },
@@ -2202,6 +2252,7 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
+            loadAttributeSourcesApi,
             loadProviderCommandsApi, loadSsfTransmittersApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
@@ -2433,6 +2484,154 @@ class AdminApi {
           self.sendJson(res, 200, encryptionAdmin.encryptionView());
           log.debug("Leaving the management API encryption report endpoint.");
         } },
+
+      // ---------------------------------------------------------------------
+      // CELLS (#98). `cellsAdmin.cellsView()` — the function `/admin/cells`
+      // draws — and `peopleOf()`, another cell's residents under its release
+      // policy. Neither changes anything; the Cells settings are written
+      // through `POST /admin-api/config/set`. A call naming `?cell=` on any
+      // operation is relayed to that cell whole (common/cell_placement.ts).
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/cells', tag: 'Service',
+        operationId: 'getCells',
+        summary: 'The cells of this service, the store\'s tiers and the ' +
+                 'channel between cells',
+        description: 'What this cell knows about the deployment (#98): ' +
+                     '`multi` (false in single-cell mode), `cell`, ' +
+                     '`jurisdiction`, `peers` (each `id`, `jurisdiction`, ' +
+                     '`reachable` and `answeredMs` or `error` — never an ' +
+                     'address), `store` (`tiered`, `globalReplicaLagMs`, ' +
+                     'the global change-log follower, the routing index\'s ' +
+                     'counters and `peoplePerCell`), `channel` (the ' +
+                     'listener, this process\'s certificate, the operations ' +
+                     'and the counters), `placement` (requests relayed and ' +
+                     'served here), `sessions` (projections held here and ' +
+                     'exports made from here) and `settings`.',
+        mirrors: 'GET /admin/cells',
+        responseDescription: 'The cell map.',
+        responseSchema: { type: 'object',
+          description: 'As described above.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API cells endpoint.");
+          cellsAdmin.cellsView().then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API cells endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API cells endpoint: " +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-CELL-0191');
+            self.sendJson(res, 500, { error: 'server_error',
+                                      error_description: String(
+                                        (e && e.message) || e) });
+          });
+        } },
+      { method: 'GET', path: BASE + '/cells/people', tag: 'Service',
+        operationId: 'getCellPeople',
+        summary: 'A page of another cell\'s residents, where its release ' +
+                 'policy permits',
+        description: 'Asks cell `cell` for a page of the people homed ' +
+                     'there in the realm of the call (#98 D11), after the ' +
+                     'login name `after`. The answering cell releases them ' +
+                     'only when its release policy permits its people to be ' +
+                     'listed from this cell\'s jurisdiction; otherwise ' +
+                     '`refused` says why. Each person is `name`, `uuid` ' +
+                     'and `displayName` and nothing else.',
+        mirrors: 'GET /admin/cells?people=',
+        parameters: [
+          { name: 'cell', in: 'query', required: true,
+            schema: { type: 'string', minLength: 1, maxLength: 16 },
+            description: 'The other cell\'s id.' },
+          { name: 'after', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'The last login name of the previous page.' }
+        ],
+        responseDescription: '`{ cell, people, next }` or `{ cell, ' +
+                             'refused }`.',
+        responseSchema: { type: 'object',
+          description: 'A page of people, or a refusal.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API cell people endpoint.");
+          // The cell that relayed this call here, when it did (`?cell=`
+          // naming this one, D11): this cell then answers its own residents.
+          cellsAdmin.peopleOf(String((req.query && req.query.cell) || ''),
+                              String((req.query && req.query.after) || ''),
+                              String((req.stsCellRelay &&
+                                      req.stsCellRelay.from) || ''))
+            .then(function (view) {
+              self.sendJson(res, 200, view);
+              log.debug("Leaving the management API cell people endpoint.");
+            });
+        } },
+
+      // AN ACTION RESOURCE RATHER THAN A BARE POST (2026-09-28), for
+      // `/keys/:action`'s reason: `sts_admin_api_operations.js` probes every
+      // POST resource with an action nobody has heard of and requires a 400
+      // naming the ones that exist, and a literal `/cells/rehome` answered
+      // Express's 404. One action today.
+      { method: 'POST', route: BASE + '/cells/:action', tag: 'Service',
+        mirrors: 'POST /admin/cells (action=rehome)',
+        handler: function (req, res) {
+          log.debug("Entering the management API rehome endpoint.");
+          const body = self.withAction(req, parseBody(req));
+          if (body.action !== 'rehome') {
+            // The sentence the suite reads — `/keys/:action`'s shape.
+            errorCodes.mark(res, 'STS-API-0014');
+            self.sendJson(res, 400, { ok: false, errors: [
+              'Unknown action "' + body.action + '". The actions here are: ' +
+              'rehome.'] });
+            log.debug("Leaving the management API rehome endpoint. " +
+                      "Unknown action.");
+            return;
+          }
+          cellsAdmin.rehomeAction(String((body && body.username) || ''),
+                                  String((body && body.target) || ''),
+                                  'the management API')
+            .then(function (result) {
+              if (!result.ok) {
+                // The refusal's own code, from cell_rehome.ts.
+                errorCodes.mark(res, result.code || 'STS-CELL-0192');
+                self.sendJson(res, 400, result);
+                log.debug("Leaving the management API rehome endpoint. " +
+                          "Refused.");
+                return;
+              }
+              self.sendJson(res, 200, result);
+              log.debug("Leaving the management API rehome endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API rehome endpoint: " +
+                        ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-CELL-0192');
+              self.sendJson(res, 500, { ok: false, errors: [String(
+                (e && e.message) || e)] });
+            });
+        },
+        actions: [
+          { action: 'rehome', operationId: 'rehomePerson',
+            summary: 'Move a person homed in this cell to another cell',
+            description: 'Re-homing (#98): everything the person holds is ' +
+                         'ended first — here and in every cell holding an ' +
+                         'export of their session — then their entry, ' +
+                         'devices and group memberships are sent to ' +
+                         '`target` with their entryUUID kept and their ' +
+                         'credentials sealed again under that cell\'s key, ' +
+                         'the routing index is moved, and they are taken ' +
+                         'out of this cell. Call it at the cell that holds ' +
+                         'them (name it with `?cell=` from anywhere). ' +
+                         '`target` must be in a jurisdiction the realm may ' +
+                         'place people in.',
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string', minLength: 1, maxLength: 256 },
+                target: { type: 'string', minLength: 1, maxLength: 16 }
+              },
+              required: ['username', 'target'],
+              examples: [{ username: 'alice', target: 'cac1' }],
+              additionalProperties: false
+            },
+            responseDescription: '`{ ok: true, target }`, or a refusal ' +
+                                 'naming why.' }
+        ] },
 
       // ---------------------------------------------------------------------
       // THE MODE (#181). `modeAdmin.modeView()` — `common/mode.js`'s
@@ -5224,7 +5423,27 @@ class AdminApi {
                                         'it cannot be mailed the link is ' +
                                         'returned as with `show` (the ' +
                                         'default), with `mailError` saying ' +
-                                        'why.' }
+                                        'why.' },
+                // THE HOME CELL (#98 D1), which `cell_placement.ts`'s
+                // creation claim reads before this operation runs: a cell
+                // other than the serving one is relayed there whole. It was
+                // read there and refused HERE — not a member of this schema —
+                // at the cell it was relayed to, so no creation naming
+                // another cell could succeed until the `cells` mode's first
+                // run (2026-09-28, tests/vendored/sts_cells_routing.js).
+                homeCell: { type: 'string', maxLength: 16,
+                            description: 'Only when this service is ' +
+                                         'deployed as cells (#98): the id ' +
+                                         'of the cell the person is homed ' +
+                                         'in. Empty means the realm\'s ' +
+                                         '`cells.homeCell`, or the cell ' +
+                                         'that answers. Another cell\'s ' +
+                                         'id makes the creation THERE; a ' +
+                                         'cell the service does not have, ' +
+                                         'or one in a jurisdiction the ' +
+                                         'realm does not allow, is ' +
+                                         'refused 400. Ignored in ' +
+                                         'single-cell mode.' }
               },
               required: ['username'],
               examples: [{ username: 'rcbj' },
@@ -19256,6 +19475,9 @@ class AdminApi {
       // CLAIMS PROVIDERS (#147): /admin/claim-providers' twin, in the same
       // shape.
       ...loadClaimsProvidersApi().ROUTES,
+      // THE ATTRIBUTE SOURCES (#94): the register and its six acts, the
+      // console's own (`attribute-sources/attribute_sources_api.ts`).
+      ...loadAttributeSourcesApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,
@@ -20471,7 +20693,8 @@ const JWT_CLAIM_FAMILY = {
   carrier: 'token',
   example: 'id_token',
   reserved: true,
-  ids: { add: 'addClaim', remove: 'removeClaim', clear: 'clearClaims',
+  ids: { add: 'addClaim', addAttribute: 'addAttributeClaim',
+         remove: 'removeClaim', clear: 'clearClaims',
          replace: 'replaceClaims', attributes: 'setClaimAttributes',
          all: 'selectAllClaimAttributes', none: 'clearClaimAttributes' }
 };
@@ -20495,7 +20718,9 @@ const USERINFO_CLAIM_FAMILY = {
   carrier: 'UserInfo response',
   example: 'userinfo',
   reserved: true,
-  ids: { add: 'addUserInfoClaim', remove: 'removeUserInfoClaim',
+  ids: { add: 'addUserInfoClaim',
+         addAttribute: 'addUserInfoAttributeClaim',
+         remove: 'removeUserInfoClaim',
          clear: 'clearUserInfoClaims', replace: 'replaceUserInfoClaims',
          attributes: 'setUserInfoClaimAttributes',
          all: 'selectAllUserInfoClaimAttributes',
@@ -20508,7 +20733,9 @@ const SAML_CLAIM_FAMILY = {
   carrier: 'assertion',
   example: 'saml11',
   reserved: false,
-  ids: { add: 'addSamlAttribute', remove: 'removeSamlAttribute',
+  ids: { add: 'addSamlAttribute',
+         addAttribute: 'addSamlDirectoryAttributeClaim',
+         remove: 'removeSamlAttribute',
          clear: 'clearSamlAttributes', replace: 'replaceSamlAttributes',
          attributes: 'setSamlDirectoryAttributes',
          all: 'selectAllSamlDirectoryAttributes',

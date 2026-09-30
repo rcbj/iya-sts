@@ -7,10 +7,14 @@ Dockerfile removes this directory from the image.
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
-| `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` | an administrator |
+| `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` — and since #98, for every region in `permitted_regions`, a single-region CELL key, a replica of the multi-region GLOBAL key, a log group and a replica of the repository (`modules/region`), with ECR replication to them (*Cells*, below) | an administrator |
 | `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
+| `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction, VPC CIDR and pinned countries, and which cell holds the global database's writer. Its presence is what makes an environment multi-cell; `testidpna` is the one there is | the deployer role |
+| `environment/envs/<env>.conversion.tfvars.json` | per conversion | **a single-region environment converted into this one's cells (#98)**: which old environment, each converted cell's source snapshot and the copy it restores from, and the carry-over secret. Laid over the cells file by `entrypoint.sh` ONLY with `TF_CONVERT=1` (*Converting a single-region environment into cells*, below); `testidpna`'s converts `testidp` | the deployer role |
+| `convert-to-cells.sh` | per conversion | the conversion's runbook: checks (read only, the default), `--carry-secrets`, `--copy-snapshot`, and the `terraform-local.sh` commands in order — never an apply or a destroy itself | a person |
+| `global/` | per multi-cell environment | the global tier of a multi-cell environment (#98): the global PostgreSQL writer and a cross-region read replica per other cell, the global secrets and their replicas, the peering mesh and the inter-cell name associations — state at `environment/<env>/global.tfstate` (*Cells*, below) | the deployer role, through `entrypoint.sh` |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
 | `runner/` | per image | the suite runner image (the tests image plus the S3 client) and the two scripts its task runs | built by CI |
@@ -505,13 +509,396 @@ the console and portal are answered by the request workers, which is what the
 service does whenever the count is 0. `workers_read_your_write` stays on with
 two or more request workers — the surface pool refuses to start without it
 (`STS-WORKER-0038`), and a caller writing through one request worker and
-reading back through another needs it just the same. `testidp` runs 2 + 0 on 2048 / 8192 (three processes); they ran 3 + 1 (five)
+reading back through another needs it just the same. `testidp` and
+`testidpna` run 2 + 0 on 2048 / 8192 (three processes); they ran 3 + 1 (five)
 until #340.
 
 The test modes are a different question and keep their counts:
 `tests/tools/modes.sh`'s `single-node` and `cluster` run three request workers
 and one surface worker ON PURPOSE, because one worker cannot show a routing
 mistake and one surface worker crosses the pools on every console sign-in.
+
+## Cells: one environment in several regions (#98, 2026-09-28)
+
+**Issue #98's design, its AWS half.** The design and its decisions (D1–D8)
+are in the issue; the code half — store tiers, the routing index, the
+inter-cell operations — is `feature/98`'s. What is here is the infrastructure
+that design runs on, and the one contract the two halves share: the
+container environment below. **Written and checked statically only, by
+instruction** (`terraform fmt -check`, `init -backend=false` and `validate`
+in every stack, and the offline renders described under *What was checked*);
+nothing was applied or planned against AWS. The first `testidpna` apply is
+its test.
+
+**A CELL IS `environment/` APPLIED ONCE PER REGION**, with `cell` set: its own
+VPC, NLB, nodes, cell PostgreSQL (primary and same-region replica, exactly as
+before), exportable ACM certificate for the SAME public name, and logs. The
+unit of failure and of data residency. **The design also gives each cell an
+SES identity, and there is none**: no environment here has one today, so
+there was nothing to make per cell. A per-cell identity needs its
+DKIM records' names in `foundation/`'s `public_dns` and `ses:*` in the
+deployer's policy and the workload boundary — its own change. An environment's cells are
+one JSON file, `environment/envs/<env>.cells.tfvars.json` — JSON so that
+`entrypoint.sh` can read it with jq and Terraform can read the same file as a
+variable file, so the two cannot disagree — and `envs/<env>.tfvars` holds
+what every cell shares, as it does for a single-cell environment. `testidpna`
+is the first: `usw2` (us-west-2, jurisdiction `us`, `10.61.0.0/16`, the
+primary) and `cac1` (ca-central-1, `ca`, `10.62.0.0/16`, Canada pinned).
+`euc1` and `apse1` are a map entry each — region, jurisdiction, a CIDR of
+their own, and for euc1 the EU and EEA country codes.
+
+**`cell` EMPTY IS THE STACK THAT WAS, TO THE LETTER.** Every addition is
+conditional on it; every name is spelt as it was; the state key, the task
+definition, the policies, the secrets and the DNS record are unchanged for
+`dev`, `ci` and `testidp`. Set, every globally unique name carries the cell —
+resources `mock-sts-<env>-<cell>-…`, IAM roles `mock-sts-env-<env>-<cell>-…`
+(IAM is global, so two cells would otherwise claim one role), secrets
+`mock-sts/<env>/<cell>/…` — and the state key is
+`environment/<env>/<cell>.tfstate`. A cell id is at most five characters and
+the NLB checks that the prefix stays within the 27 a target group name
+leaves room for.
+
+**THE ENVIRONMENT NAME IS `testidpna`, NOT `testidp-na`**: an environment
+name is 2–12 lower-case letters and digits everywhere it is checked, and
+relaxing that for one name was not worth the audit. **It cannot run beside
+`testidp`** — both answer to test-idp.iyasec.io, and a CNAME cannot share a
+name with a geolocation record — so the two share one concurrency group in
+the workflows, and one is destroyed before the other is applied.
+
+### The apply order, and why it is two passes
+
+A cell and the global tier need each other: the global database's writer
+and replicas live IN the cells' VPCs, and a cell's nodes need the global
+database's addresses before they can start. So a new cell is applied twice,
+and `entrypoint.sh` (`orchestrate_cells`) does it when `environment` is
+applied with no `TF_CELL`:
+
+1. **each cell with no state yet, `cell_phase = base`, primary first** —
+   everything but running nodes (every ECS service at a desired count of 0),
+   including the subnet group, security group and Cloud Map namespace the
+   global stack needs; no read of the global state;
+2. **`global/`** — reads every cell's state and builds the global database,
+   the global secrets, the peering and its routes, the name associations;
+3. **every cell, `full`, primary first** — the nodes, told where the global
+   tier is. The primary cell's nodes run `global-schema-init` against the
+   writer (the same schema image and file as the cell's), so every other
+   cell's nodes start against a schema that exists; a replica takes the
+   schema, the `sts_app` role and its password by replication.
+
+A cell that already has state skips step 1, because `base` scales its nodes
+to zero and on a running cell that is an outage. Every later apply is steps
+2 and 3. **A cell CONVERTED from a single-region environment** takes step 3
+twice, with its nodes held at 0 and a one-off conversion task between
+(*Converting a single-region environment into cells*, below). **Destroy** reverses it: every cell's dependent stacks
+(`spiffe-realm`, `suite-callbacks` — whose state is under
+`environment/<env>/<cell>/` now — the 2026-09-20 lesson, kept), then
+`global/` while the cells it reads still exist (routes, peerings, zone
+associations, the replicas and then the writer, which RDS will not delete
+while it has replicas, the secrets and their replicas — everything it put
+into a cell's VPC, which would not otherwise delete), then each cell in
+`base` so that its destroy reads no global state that is gone. `plan` and
+`output` do every cell and then global; `output-json`, `init`, `validate` and
+`import` want a `TF_CELL` (or `TF_STACK=global`).
+
+**REMOTE STATE, NOT SSM PARAMETERS, carries the global endpoints to the
+cells.** The values are known at plan time, so a cell's plan shows the task
+definition its nodes will get; the deployer already reads every state under
+`environment/` and needs no new right, where parameters would need `ssm:*` in
+every region and a second copy of every value; and the order it imposes —
+global before a cell's `full` — is one the database imposes anyway. The
+peers' inter-cell names need no read at all: they are deterministic.
+
+### What is replicated, and what deliberately is not
+
+| | Where | Replicated to the other cells |
+|---|---|---|
+| the global KEK (`mock-sts/<env>/kek`, `STS_KEYS_KEK_*`) | global/, primary region | **yes**, under the multi-region key's replica in each region |
+| the global database's password, the management client's secret, product mode's bootstrap, krbtgt and service passwords | global/ | **yes** — every cell must hold the same values, and a per-cell value would be a different one in each, all but the first refused by the global tier |
+| the global database's master password | global/ | no — only the primary cell's `global-schema-init` uses it |
+| the global database | global/: writer in the primary cell's VPC | **yes**: one RDS cross-region read replica per other cell (D3) |
+| the images | foundation/: pushed to the home region | **yes**: ECR replication into a repository made first in each region, so it carries the lifecycle policy |
+| **the cell KEK (`mock-sts/<env>/<cell>/cell-kek`, `STS_CELL_KEK_*`)** | the cell | **NO, and never**: sealed under the cell's single-region key, which AWS will not replicate. A copy of the cell's rows taken elsewhere cannot be read there — the residency line of issue #98, §3 |
+| **the cell database** | the cell | **NO**: its primary and same-region replica, as before, under the cell key |
+| the cell's logs | the cell's region's log group | no — a log is personal data as much as a row is |
+
+**THE KEYS ARE LONG-LIVED AND PER REGION, IN `foundation/`**, for the reason
+the project key is: a key per environment would leave a seven-day
+pending-deletion key behind every teardown. `alias/mock-sts-global` is a
+multi-region key (primary in the home region, a replica in every other
+permitted region) and seals only what every region may hold;
+`alias/mock-sts-cell-<cell>` is single-region and seals the cell's own
+secrets, database, upload volumes and log group. The project key stays what
+single-cell environments use, and cannot be made multi-region after creation.
+
+### The inter-cell channel: peering, and 8446 by a private name
+
+**The cell VPCs are a full mesh of inter-region VPC peerings** (`global/`,
+one module block per pair of the four regions the design names), each with
+routes both ways from both route tables — the public one the nodes use and a
+new PRIVATE one the databases use, which a cell has in place of the VPC's
+main table because the main table is untagged and the deployer may route only
+through tagged ones. What crosses it: the inter-cell listener and every
+cell's writes to the global writer. RDS carries its own replication.
+
+**8446 IS THE INTER-CELL MUTUAL-TLS LISTENER**, on the service's own `cell`
+Issuing CA's certificates, so there is nothing here to issue. It is admitted
+on the nodes' own security group from the OTHER cells' CIDRs only, and is on
+no load balancer and in no public zone.
+
+**IT IS REACHED THROUGH A CLOUD MAP NAME, NOT AN INTERNAL NLB — the one place
+this departs from the brief.** An internal NLB was the first choice and ECS
+rules it out: a service may carry five target groups and every cell's node
+service already carries all five on the public load balancer (https, ldap,
+ldaps, pki, kerberos). Registering the nodes in a sixth by address, as
+`spiffe-realm/` does, goes stale at every task restart, and a stale
+inter-cell target is a traveller who cannot sign in (D6 fails closed). So
+each node service registers its tasks in a Cloud Map PRIVATE DNS namespace
+(`service_registries`, which is not a target group):
+`nodes.<cell>.<env>.mock-sts.internal`, one A record per healthy task, kept
+by ECS. The namespace is a Route 53 private zone; `global/` associates each
+cell's zone with every other cell's VPC, so the name resolves inside the
+cells and nowhere else. It costs $0.50 a month per cell against an NLB's
+hour and LCUs; it gives up a single stable address, since a peer is several A
+records the service must try in turn. **The URL in `STS_CELL_PEERS` is
+therefore `https://nodes.<cell>.<env>.mock-sts.internal:8446`**, and each node
+is told its own as `STS_CELL_HOSTNAME` so the cell leaf can name it.
+
+### Route 53 (D7)
+
+`test-idp.iyasec.io` becomes a record tree: GEOLOCATION records for the
+countries a cell's `geolocation_countries` pins (`CA` → cac1; later the EU
+and EEA → euc1, `SG` → apse1), and a DEFAULT geolocation record (`*`,
+written by the primary cell) that aliases `cells.test-idp.iyasec.io`, a
+LATENCY set with one record per cell. Every cell writes its own records, so
+none reads another's state for DNS. **A pinned country has no health check**:
+Route 53 answers an unhealthy geolocation record with the default, which
+would send Canada to the United States the moment cac1 was down, and the law
+that asks for the pin does not lapse with the cell (fail closed; the service,
+not DNS, is authoritative on residency anyway). **The latency records do**,
+an HTTPS GET of `/healthcheck` on 443 of each cell's NLB from three checker
+regions. The NLB admits `allowed_cidrs` only, so **the Route 53 health
+checkers' published ranges for those three regions are admitted on 443 and
+on no other port**, in a cell with a public name only — three regions,
+Route 53's minimum, to keep that list short. A single-cell environment keeps
+the one CNAME. Every cell requests a certificate for the same name, and ACM
+validates it with the same record in every region, so each cell writes it
+with `allow_overwrite` and a cell destroyed ALONE takes it with it; the cells
+are destroyed together.
+
+### The contract with the code half
+
+Every node of a cell is given, beside everything a single-cell node already
+is (`environment/cells.tf`, `cell_environment`):
+
+| Variable | Value |
+|---|---|
+| `STS_CELL_ID`, `STS_CELL_JURISDICTION` | the cell, e.g. `usw2`, `us` (empty/unset: single-cell) |
+| `STS_CELL_PORT` | `8446` |
+| `STS_CELL_PEERS` | JSON array of `{ "id", "jurisdiction", "url" }` for every OTHER cell, `url` = `https://nodes.<cell>.<env>.mock-sts.internal:8446` |
+| `STS_CELL_HOSTNAME` | **(added)** this cell's own inter-cell host name, the host of the `url` its peers are given |
+| `STS_GLOBAL_DATABASE_URL` | the global writer, `sslmode=require`, no password |
+| `STS_GLOBAL_DATABASE_READ_URL` | the replica in this cell's region; the writer in the primary cell |
+| `STS_GLOBAL_DATABASE_PASSWORD_PROVIDER`, `_REF`, `_REGION` | `aws`, the replica of the password secret in this region, this region |
+| `STS_CELL_KEK_PROVIDER`, `_REF`, `_REGION` | `aws`, the cell's own KEK secret, this region |
+
+`STS_KEYS_KEK_*` keep naming the key-encryption key — the global one,
+replicated into this region — `STS_DATABASE_URL` stays the cell database, and
+`STS_PUBLIC_BASE_URL` stays the one public name in every cell. The global
+variables appear only in `full`; a `base` cell runs no node.
+
+### What it costs
+
+Per cell, roughly `testidp` again: three 2 vCPU / 8 GB Fargate nodes (about
+$0.35 an hour in us-west-2, some ten per cent more in ca-central-1), the cell
+database and its replica (about $0.07), the NLB ($0.0225 plus LCUs), and for
+every cell but the primary one a global read replica (about $0.035) — about
+**$0.47–0.52 an hour a cell idle**, before storage (about $10 a month) and
+inter-region transfer ($0.02 a GB on the peering and on the replication).
+The primary cell also carries the global writer (about $0.035 an hour). The
+small monthly items: a health check ($1.50 with HTTPS), a private zone
+($0.50), six replicated secrets per non-primary cell ($2.40), and in
+`foundation/` a cell key and a global-key replica per permitted region ($2).
+Estimated from 2026-09 on-demand list prices and not measured; the whole
+environment is applied and destroyed together, so nothing idles unbilled.
+
+### What `foundation/` must be re-applied with first
+
+**By an administrator, with `permitted_regions` listing every cell's region**
+(`["us-west-2", "ca-central-1"]` for `testidpna`) — which replaces the
+one-region fence (`OnlyUsWest2ForRegionalServices` → the same deny over the
+list), writes every regional ARN in the deployer's policy and both boundaries
+once per region, and makes each region's keys, log group and repository
+replica. The default, `["us-west-2"]`, renders the fence and every ARN as
+before and adds only the global key and us-west-2's cell key. A fourth
+deployer policy, `mock-sts-deploy-cells`, holds what only cells do: the
+peering (accepted in the other region, where the connection arrives
+untagged, so scoped to this account's VPCs instead), Route 53 health checks
+(which have no name to scope by), and Cloud Map with the private zones it
+makes — a Deny keeps the public zones out of reach of `DeleteHostedZone`.
+**`aws_ecr_replication_configuration` is the registry's WHOLE replication
+configuration**; nothing else in the account replicates today, and a project
+that needs to must add its rule there.
+
+**FOUR REGIONS, WRITTEN OUT.** Terraform cannot make a provider per list
+element, so `foundation/` and `global/` each carry a provider block for
+us-west-2, ca-central-1, eu-central-1 and ap-southeast-1, and a module block
+per region (and per pair, for the peering) that exists only when used. A cell
+in a fifth region is those blocks plus a row in `cell_of_region`, then the
+map entry — and is refused by validation until then.
+
+### Converting a single-region environment into cells (2026-09-28)
+
+**`testidp` becomes cell `usw2` of `testidpna` WITH ITS DATABASE** — the
+risk datasets and their history in `sts_risk_*` above all, which take days
+to import again and, for the refused-password and sign-in history, cannot be
+imported at all. Everything a new cell does, it does; what differs is three
+things in `environment/`, one in `global/`, one in the orchestration and a
+runbook. **Written and checked statically only, by instruction**, like the
+rest of *Cells*; nothing was planned or applied, and the first
+`TF_CONVERT=1` apply is its test.
+
+**THE TWO THINGS A DESTROY OF THE OLD ENVIRONMENT TAKES WITH IT, AND WHAT
+KEEPS EACH.** `rds.tf` has `skip_final_snapshot = true` and
+`delete_automated_backups`, so the database goes with no record; the
+secrets have `recovery_window_in_days = 0`, so they go at once — and every
+sealed row opens only under the old key-encryption key. So both are copied
+OUT first, by `convert-to-cells.sh`, which refuses nothing and destroys
+nothing and whose default run only reads:
+
+* **the snapshot, RE-ENCRYPTED UNDER THE CELL KEY.** RDS restores a snapshot
+  under the snapshot's own KMS key — `RestoreDBInstanceFromDBSnapshot` has no
+  key parameter (RDS API reference) — and a copy is the only way to change
+  it: `CopyDBSnapshot` with `KmsKeyId` "encrypt[s] the copy with a new KMS
+  key" (RDS API reference, *CopyDBSnapshot*). `testidp`'s snapshot is under
+  the project key; a cell's database is under `alias/mock-sts-cell-<cell>`
+  (the residency line). Restoring the project-key snapshot as it is would
+  put the cell's data under a key it must not be under, and the instance's
+  `kms_key_id` would disagree with the config on every plan — the provider's
+  answer to which is to REPLACE the database. `--copy-snapshot` makes
+  `<source>-<cell>` under the cell key, in the cell's region (cross-region
+  with `--source-region` for a cell elsewhere), and waits for it.
+* **the carry-over secret**, `mock-sts/carryover/<old env>`: one JSON secret
+  under the project key with the four values the restored rows depend on —
+  the KEK, the management client's secret, the bootstrap administrator's
+  password and the Kerberos service password. `global/secrets.tf`, *A
+  converted environment's secrets*, argues each against the code and the
+  two NOT carried: the krbtgt password (product mode does not read it since
+  #169; the key is sealed on the directory entry and travels in the
+  snapshot) and the database passwords (new ones, set on the restored
+  instance and role). `--carry-secrets` reads each value into a file of its
+  own process and never prints one.
+
+**THE CONVERSION FILE IS AN OVERLAY, NOT AN EDIT OF THE CELLS FILE** —
+`envs/testidpna.conversion.tfvars.json`, which `entrypoint.sh` lays over the
+cells file only with `TF_CONVERT=1` (jq's deep merge, restricted to each
+cell's `db_snapshot_identifier`, so it can add a snapshot and never a cell),
+and whose `carryover_secret` it hands to `global/` alone. The cells file
+could carry `db_snapshot_identifier` itself — the field is part of the cells
+object — and deliberately does not for `testidpna`: every fresh apply of the
+environment by anybody would then restore from a snapshot of a database that
+stopped being current the day it was taken, run a conversion nobody asked
+for, and FAIL on the day the snapshot or the carry-over secret was deleted.
+A conversion is one event; the overlay is named on the one apply that is it.
+
+**WHAT MAKES A LATER APPLY WITHOUT THE OVERLAY SAFE.** Two things read their
+input once and keep it:
+
+* `aws_db_instance.primary` IGNORES `snapshot_identifier` after creation
+  (`lifecycle`). It forces a new instance when it changes, so without that
+  the first apply after the conversion — which names no snapshot — would
+  destroy the converted database and make an empty one. Ignored in every
+  environment; null stays null for all the others.
+* `global/`'s `terraform_data.carryover` takes the carried values when the
+  global stack is first created and ignores its input from then on, so a
+  later apply keeps the old KEK rather than putting a generated one in its
+  place. **A carry-over named on a global stack that already generated its
+  secrets is refused at plan**: its rows were sealed under the generated
+  KEK, and carrying one in would lose them.
+
+**WHERE THE CONVERSION RUNS, IN `orchestrate_cells`.** For a cell with a
+snapshot and no state yet:
+
+1. **a marker, `environment/<env>/<cell>.conversion.json`, set PENDING**,
+   before anything is made;
+2. `base` — the cell database is a `base` resource, so the RESTORE happens
+   here (tens of minutes for the risk tables), then the same-region replica
+   from it;
+3. `global/` as always, with the carried secrets;
+4. the cell's `full` **twice**: first with `TF_CELL_HOLD` (`cell_hold_nodes`
+   — the task definitions, the global tier's addresses and a conversion task
+   definition, and every node service at 0); then the conversion task, run
+   once and waited for (`convert_cell`, up to `TF_CONVERT_TIMEOUT`, 7200 s);
+   then the marker set DONE and `full` as usual, which starts the nodes.
+
+**The conversion task** (`environment/conversion.tf`) is a node's task with
+the service replaced by `node persistence/cell_convert.js`: the same roles,
+image, subnet, security group, environment and secrets — less the public
+certificate's two paths, since no `cert-init` runs and the tool binds
+nothing — and the two schema inits first, in the same task, so the tool
+opens two databases at the current schema with `sts_app` already on THIS
+environment's password (schema-init ALTERs a role that exists, `postgres/
+schema.sql`). A task definition of its own rather than the node's with a
+command override: the node's declares the upload volume
+`configure_at_launch`, which a RunTask would have to configure, and an
+override of one container's command cannot put the schema inits before it.
+
+**On failure** — the tool exits non-zero, a schema init fails, the task
+cannot start — the apply STOPS: the cell's nodes stay at 0, the marker stays
+PENDING, the cells after it are not applied, and the message names the task,
+each container's exit and the log stream. The tool leaves its sources in
+place, so the same `TF_CONVERT=1` command is the retry. **On re-apply**:
+PENDING runs the held apply and the conversion again (the tool is
+idempotent); a conversion task still RUNNING from an interrupted apply is
+waited for rather than doubled; DONE skips it, reading nothing; and PENDING
+without `TF_CONVERT` REFUSES rather than starting nodes on unconverted rows.
+A snapshot named for a cell that already existed restored nothing and is
+said so. The marker is deleted with the cell. Other cells are untouched by
+any of it — `cac1` is made empty, exactly as before.
+
+**The deployer's two new RDS actions** (`foundation/iam_deployer.tf`,
+`RdsRestoreAndCopyProjectSnapshots`): `RestoreDBInstanceFromDBSnapshot`,
+which the provider calls in place of `CreateDBInstance`, and
+`CopyDBSnapshot`, for the runbook — on `mock-sts-*` snapshots and instances
+only, and **no `DeleteDBSnapshot`**: the snapshot is the only record of the
+database the conversion destroyed, and removing it is an administrator's
+call. So `foundation/` is re-applied before the conversion, as it already
+must be for any cell (*What foundation/ must be re-applied with first*).
+
+**What it costs and what it loses.** The service is DOWN from the old
+environment's destroy until the converted cell's nodes are healthy — a
+destroy, a restore and a first cell apply, most of an hour. Anything written
+after the snapshot was taken is lost; the runbook prints how to stop the old
+environment's nodes and snapshot its primary first when that matters.
+
+If the first conversion fails, look first at: `kms_key_id` planned to change
+on `aws_db_instance.primary` (the snapshot named is not under the cell key —
+stop, it would replace the database); an AccessDenied on
+`RestoreDBInstanceFromDBSnapshot` (`foundation/` not re-applied); a restore
+refused for storage (`db_allocated_storage` below the snapshot's); and the
+conversion task's own log, `<env>-<cell>-convert/cell-convert/<task id>`.
+
+### What was checked, and what to look at first
+
+`terraform fmt -check`, `init -backend=false` and `validate` in all five
+stacks; shellcheck on the scripts (no new findings); actionlint on the two
+workflows. And **offline renders with `terraform test`**, in a scratch copy,
+with every data source that calls AWS overridden and a provider that makes no
+call: `testidp` and `dev` rendered IDENTICALLY before and after this change —
+the three task definitions, role names, secret names and keys, load
+balancer, target groups, listeners, rule sets, subnets, databases, services
+and the DNS record (the task and execution policies are deferred to apply in
+a plan and were checked by reading); `testidpna`'s two cells in both phases
+and its global stack rendered the contract above, the replica in cac1, the
+routes both ways and the zone associations.
+
+If the first apply fails, look first at: an AccessDenied on the ACCEPTER
+side's `vpc/…` in `CreateVpcPeeringConnection` (the tag condition on a VPC in
+another region — narrow it to `ec2:AccepterVpc`, keeping the requester's
+tag); a Cloud Map `CreatePrivateDnsNamespace` AccessDenied naming a Route 53
+or EC2 action the namespace needs on the caller's behalf; a cac1 task that
+cannot pull its image because replication had not finished (ECS retries;
+the primary cell is applied first for exactly this); and the global replica
+taking longer than the four-hour deployer session allows on a first build.
 
 ## Running the suite from this machine: `run-suite.sh` (2026-09-18)
 
@@ -669,7 +1056,9 @@ the environment's remote state and finds the load balancer by name.
 
 `foundation/iam_deployer.tf`'s header is the argument: names where ARNs are
 predictable, the `Project = STS` tag where they are not (EC2), a permissions
-boundary on every role the deployer creates, one region. **A missing action
+boundary on every role the deployer creates, and the regions in
+`permitted_regions` — one, us-west-2, until an environment has cells (*Cells*,
+above). **A missing action
 shows up as an AccessDenied naming it on plan or apply**; add it to the right
 statement, keeping its scope, and have an administrator re-apply `foundation/`
 — the deployer cannot widen its own policy, by design.

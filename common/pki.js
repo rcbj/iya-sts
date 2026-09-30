@@ -277,6 +277,34 @@ const USE_CASES = [
           'PROCESS-scoped because those sockets are: one certificate answers ' +
           'every realm, so a realm\'s Intermediate signing it would make one ' +
           'realm vouch for every other realm\'s front door.' },
+  // **THE CHANNEL BETWEEN CELLS (#98, 2026-09-28).** A service deployed as
+  // cells talks to itself across regions — a request relayed to the cell
+  // that owns it, a subject's state asked of its home, a revocation pushed
+  // to every cell — over mutual TLS on `cells.port`. Every node of every cell
+  // presents a leaf from THIS authority, in both roles, and accepts a peer
+  // only when its leaf came from here: "chains to the service Root" is true
+  // of every certificate this service issues, a person's TLS client
+  // certificate included, and is not a statement that the peer is a cell.
+  // PROCESS-scoped for `tls`'s reason — the channel answers for the service,
+  // not a realm — and the process branch is in the global tier, so every
+  // cell holds the same authority. Its leaves are SHORT-LIVED and never
+  // recorded (`issueUnder()`, the SVID arrangement): a node re-mints its own
+  // on a scheduler job, and a lost node's leaf simply expires.
+  //
+  // **BUILT ONLY IN A SERVICE DEPLOYED AS CELLS** (`multiCellOnly`,
+  // `useCasesFor()`): a single-cell service has no channel, and an authority
+  // it never used made every stored process branch incomplete on its next
+  // start — a top-up write nobody asked for (tests/key_residency.js found the
+  // stray `pki:default` row). Turning cells on tops the branch up.
+  { id: 'cell', scope: 'process', label: 'Inter-cell channel',
+    multiCellOnly: true,
+    cn: 'Inter-cell Issuing CA',
+    what: 'The certificates the nodes of a service deployed as cells ' +
+          'present to each other on the inter-cell channel (cells.port), as ' +
+          'server and as client, each naming its cell in a urn:sts:cell: ' +
+          'subjectAltName. Short-lived, re-minted by each node, and never ' +
+          'recorded. A peer is accepted only with a leaf from this ' +
+          'authority. Unused in single-cell mode.' },
   // **THE ONE USE CASE WITH ROOM BENEATH IT (2026-09-11).** Every other
   // Issuing CA here signs LEAVES and nothing else, which is what `pathLen: 0`
   // in the `issuing-ca` profile says. This one signs leaves AND, for
@@ -402,8 +430,18 @@ function useCase(id) {
  */
 function useCasesFor(kind) {
   log.debug("Entering useCasesFor().");
+  let multiCell = false;
+  try {
+    // Lazily: this library is below the cell map in the require order.
+    multiCell = require('./cells').isMulti();
+  } catch (e) {
+    log.debug("Caught in useCasesFor(): " + ((e && e.message) || e));
+    multiCell = false;
+  }
   log.debug("Leaving useCasesFor().");
-  return USE_CASES.filter(function (one) { return one.scope === kind; });
+  return USE_CASES.filter(function (one) {
+    return one.scope === kind && (!one.multiCellOnly || multiCell);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -11015,6 +11053,45 @@ function certificateBundle(pemText) {
   return { certificates: certificates, unreadable: unreadable };
 }
 
+// WHAT AN OPERATOR'S TRUST ANCHORS ARE, for a page that shows them (#94): each
+// certificate in a PEM bundle as a person reads it — subject, issuer,
+// validity, whether it is a CA, its SHA-256 fingerprint — and how many blocks
+// did not parse. The bundle is read by certificateBundle() above; this only
+// describes it, so every page that shows an operator's pasted chain shows it
+// the same way.
+/**
+ * Describes each certificate in a PEM bundle for a page: subject, issuer,
+ * validity, CA or not, and SHA-256 fingerprint.
+ *
+ * @param pemText - the PEM text
+ * @param nowMs - the instant `expired` and `notYetValid` are judged at
+ * @returns `{ certificates, unreadable }`
+ */
+function describeCertificateBundle(pemText, nowMs) {
+  log.debug("Entering describeCertificateBundle().");
+  const now = typeof nowMs === 'number' ? nowMs : Date.now();
+  const read = certificateBundle(pemText);
+  const certificates = read.certificates.map(function (one) {
+    const x = one.x509;
+    const from = new Date(x.validFrom).getTime();
+    const to = new Date(x.validTo).getTime();
+    return {
+      subject: String(x.subject || '').replace(/\n/g, ', '),
+      issuer: String(x.issuer || '').replace(/\n/g, ', '),
+      notBefore: new Date(from).toISOString(),
+      notAfter: new Date(to).toISOString(),
+      expired: to < now,
+      notYetValid: from > now,
+      ca: x.ca === true,
+      selfSigned: String(x.subject) === String(x.issuer),
+      sha256: String(x.fingerprint256 || '').toLowerCase()
+    };
+  });
+  log.debug("Leaving describeCertificateBundle(). " + certificates.length +
+            " certificate(s).");
+  return { certificates: certificates, unreadable: read.unreadable };
+}
+
 // A certificate's SubjectPublicKeyInfo, read with pkijs so that a key node
 // cannot read (a post-quantum one) is still there to describe —
 // `stsCrypto.publicKeyFromSpki()` takes it. null when it cannot be read.
@@ -12615,6 +12692,7 @@ module.exports = {
   // --- somebody else's certificates (#40) ---
   certificateFromDer: certificateFromDer,
   certificateBundle: certificateBundle,
+  describeCertificateBundle: describeCertificateBundle,
   rsaKeyBits: rsaKeyBits,
   spkiOf: spkiOf,
   keyUsageOf: keyUsageOf,

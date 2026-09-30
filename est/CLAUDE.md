@@ -167,6 +167,28 @@ records `appPassword` when one was used. `authn/CLAUDE.md` owns the rule.
 * Every requested key usage, extended key usage and basic constraint in a CSR is
   ignored: the profile decides.
 
+## Cells: where an enrollment is served (#98 D10, 2026-09-28)
+
+`Est.placeRequest()` runs first in `enrollmentRequest()` — before the
+throttle, the credential and the body — and relays the request WHOLE to the
+home cell of the person its credential names: an HTTP Basic username, or,
+with no Authorization header, the `urn:sts:person:` of the TLS client
+certificate (read, not verified; the channel forwards the certificate, so
+the home cell checks it as its own). An application's client_id is served
+where it arrives: its entry is the global tier's. The certificate is then
+issued and written onto the entry in the cell that holds it
+(`common/cert_enrollment.ts`'s `issue()`), which is the only cell whose
+directory has it. `cacerts` and `csrattrs` are the same everywhere and are
+never relayed.
+
+**The documented exception — an administrator enrolling for a person homed
+in another cell.** The request is placed by the ADMINISTRATOR's credential,
+checked at the administrator's home; the certificate must be written at the
+TARGET's. One relay cannot reach both, so it is refused **403
+`STS-CELL-0101`** with a sentence saying why (rather than
+`STS-ENROLL-0012`'s "no such person", which would be false). The person
+enrolls as themselves, or an administrator homed in their region does it.
+
 ## The monitor counts; the console decorates its page (#352, 2026-09-29)
 
 `/admin/est/monitor`'s four certificate tiles (held, valid, revoked, expired)
