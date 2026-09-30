@@ -140,6 +140,40 @@ function child() {
                                      'authorize?') === 0,
          'C6. only the CONSOLE signs in at a cell\'s address; the portal ' +
          'keeps the shared name', portal.res.location.slice(0, 120));
+    // C7-C9 — what rcbj met at the cac1 console on 2026-09-30.
+    const adminModule = require('../admin-ui/admin');
+    const drawer = Object.create(adminModule.AdminConsole.prototype);
+    drawer.deps = adminModule.AdminConsole.defaultDeps();
+    note(drawer.realmRoot(fakeReq('cella.idp.example')) ===
+           'https://cella.idp.example' &&
+         drawer.realmRoot(fakeReq('cellb.idp.example')) ===
+           'https://cellb.idp.example' &&
+         drawer.realmRoot(fakeReq('evil.example')) === 'https://idp.example',
+         'C7. the console\'s absolute links (the realm switcher, the ' +
+         'portal) stay on a cell\'s own console address, and a Host that is ' +
+         'no configured address gets the public name',
+         drawer.realmRoot(fakeReq('cella.idp.example')));
+    note(drawer.defaultRealmSignInUrl(fakeReq('cella.idp.example')) ===
+           'https://cella.idp.example/admin',
+         'C8. so does the console\'s sign-in address');
+    const authn = require('../authn/authn');
+    const credentialFrom = function (origin) {
+      return { response: { clientDataJSON: Buffer.from(JSON.stringify(
+        { type: 'webauthn.get', origin: origin })).toString('base64url') } };
+    };
+    const base = 'https://idp.example';
+    note(authn.expectedOriginFor(base, credentialFrom(
+           'https://cella.idp.example')) === 'https://cella.idp.example' &&
+         authn.expectedOriginFor(base, credentialFrom(
+           'https://cellb.idp.example')) === 'https://cellb.idp.example' &&
+         authn.expectedOriginFor(base, credentialFrom(
+           'https://idp.example')) === 'https://idp.example',
+         'C9. a passkey used at a cell\'s own console address is verified ' +
+         'against that origin, as at the public name');
+    note(authn.expectedOriginFor(base, credentialFrom(
+           'https://evil.example')) === 'https://idp.example',
+         'C10. and any other origin is answered with the public name\'s, so ' +
+         'the verifier refuses it');
   } catch (e) {
     note(false, 'the child ran to the end', (e && e.stack) || String(e));
   }
@@ -292,7 +326,7 @@ function signInAtACell(t) {
       log.debug("Caught in signInAtACell(): " + ((e && e.message) || e));
     }
   }
-  t.check(findings.length >= 6, 'the child reported every finding',
+  t.check(findings.length >= 10, 'the child reported every finding',
           String(findings.length));
   findings.forEach(function (one) {
     t.check(one.ok, one.what, one.detail);

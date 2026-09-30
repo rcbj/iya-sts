@@ -4027,6 +4027,21 @@ class AdminConsole {
   realmRoot(req) {
     const { log, baseUrlOf, realms } = this.deps;
     log.debug("Entering AdminConsole.realmRoot().");
+    // AT A CELL'S OWN CONSOLE ADDRESS, THAT ADDRESS (#361, 2026-09-30).
+    // baseUrlOf() is the pinned public name, so the realm switcher, the
+    // portal link and every other absolute URL built here sent a console
+    // opened at `https://cac1.<public name>` back to the shared name —
+    // another host, no session, a second sign-in, and (rcbj found) a
+    // passkey then refused for the wrong origin. The address is one the
+    // service is configured with (`cells.consoleUrl`), never the Host's say.
+    const cells = require('../common/cells');
+    const hit = cells.consoleOfHost(String((req && req.headers &&
+                                            req.headers.host) || ''));
+    if (hit) {
+      log.debug("Leaving AdminConsole.realmRoot(). The cell's own console " +
+                "address.");
+      return hit.consoleUrl;
+    }
     const withRealm = baseUrlOf(req);
     log.debug("Leaving AdminConsole.realmRoot().");
     return withRealm.slice(0, withRealm.length - realms.currentPrefix().length);
@@ -6056,6 +6071,14 @@ class AdminConsole {
     const { log, realms, baseUrlOf } = this.deps;
     log.debug("Entering AdminConsole.defaultRealmSignInUrl().");
     log.debug("Leaving AdminConsole.defaultRealmSignInUrl().");
+    // At a cell's own console address, that address (#361): realmRoot()'s
+    // reason. The default realm's console is at its root.
+    const cells = require('../common/cells');
+    const hit = cells.consoleOfHost(String((req && req.headers &&
+                                            req.headers.host) || ''));
+    if (hit) {
+      return hit.consoleUrl + '/admin';
+    }
     return realms.run(realms.DEFAULT_REALM, function () {
       return baseUrlOf(req) + '/admin';
     });

@@ -9910,10 +9910,27 @@ class Authn {
   expectedOriginFor(base, credential) {
     const { log } = this.deps;
     log.debug("Entering Authn.expectedOriginFor().");
-    const list = this.allowedOrigins();
-    if (!list.length) {
-      log.debug("Leaving Authn.expectedOriginFor(). Derived from the base.");
-      return this.originOf(base);
+    let list = this.allowedOrigins();
+    // EACH CELL'S OWN CONSOLE ADDRESS (#361, 2026-09-30). With no list, the
+    // base's origin was the only one — the shared public name wherever
+    // `global.publicBaseUrl` is pinned — so a passkey used at a cell's own
+    // console address (`cells.consoleUrl`, `https://cac1.<public name>`) was
+    // refused as another origin, even though its RP ID, the public name, is
+    // a valid parent of that host for the browser. Those addresses are
+    // configuration, so with no list of its own the base's origin and every
+    // configured cell console origin are accepted; a list, where set, is
+    // still the whole answer.
+    const implicit = !list.length;
+    if (implicit) {
+      const cells = require('../common/cells');
+      list = [this.originOf(base)].concat(cells.all().map(function (one) {
+        return String(one.consoleUrl || '');
+      }).filter(Boolean));
+      if (list.length === 1) {
+        log.debug("Leaving Authn.expectedOriginFor(). Derived from the " +
+                  "base.");
+        return list[0];
+      }
     }
     let claimed = '';
     try {
@@ -9936,7 +9953,8 @@ class Authn {
       return claimed;
     }
     log.debug("Leaving Authn.expectedOriginFor(). Not on the list; the " +
-              "verifier refuses.");
+              "verifier refuses." + (implicit ? " (The base's origin and " +
+              "the cells' console origins.)" : ''));
     return list[0];
   }
 
