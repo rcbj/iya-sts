@@ -28261,13 +28261,16 @@ class AdminConsole {
     // =======================================================================
     const nodes = state ? state.nodes : [];
     const now = state ? state.now : 0;
-    const isLive = function (node) {
-      return !node.leftAt && node.expiresAt > now;
-    };
-    const live = nodes.filter(isLive);
-    const gone = nodes.filter(function (node) {
-      return !isLive(node);
-    });
+    // FOLDED BY NAME (2026-09-30, `cluster.foldMembers()`): a dead row whose
+    // name has a live row is that node's restart history and is counted on
+    // its live row; only a name with no live row has left or expired, drawn
+    // once. A snapshot from an older build carries no `members`, so it is
+    // folded here from the rows.
+    const folded = (state && state.members) ||
+                   cluster.foldMembers(nodes, now);
+    const live = folded.live;
+    const gone = folded.gone;
+    const restarts = folded.restarts || {};
 
     // WHICH LEASES EACH NODE STILL HOLDS, by holder. A lapsed row is left out:
     // a released lease is expired and never deleted (the fencing token must
@@ -28330,10 +28333,17 @@ class AdminConsole {
     // only used where the node said nothing.
     const upOf = function (node) {
       const info = node.info || {};
+      const r = restarts[node.name || ''];
+      const history = r
+        ? '<br><span class="sub">restarted ' +
+          consoleSelf.esc(String(r.count)) + ' time(s), the last life ended ' +
+          ago(r.lastEndedAt) + '</span>'
+        : '';
       if (info.uptimeMs) {
-        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs));
+        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs)) +
+               history;
       }
-      return 'joined ' + ago(node.startedAt);
+      return 'joined ' + ago(node.startedAt) + history;
     };
 
     // WHEN ANYTHING LAST HEARD FROM IT, and — where the node reported one —
@@ -28396,12 +28406,21 @@ class AdminConsole {
         '</td><td>' + (node.leftAt
           ? 'left cleanly ' + ago(node.leftAt)
           : '<strong>expired</strong> ' + ago(node.expiresAt)) +
+        (node.earlierLives
+          ? '<br><span class="sub">and ' +
+            consoleSelf.esc(String(node.earlierLives)) +
+            ' earlier life/lives under this name</span>'
+          : '') +
         '</td></tr>';
     }).join('');
 
     const goneTable = !gone.length ? ''
       : '<details class="fold"><summary>' + this.esc(String(gone.length)) +
         ' node(s) that have left or expired</summary><div class="foldbody">' +
+        '<p>One row per NODE NAME with no running member: a name that is ' +
+        'running again is that node restarted, counted on its running row ' +
+        'above rather than listed here, and a name that ended several ' +
+        'times is shown once, as its latest life.</p>' +
         '<p>A node that stopped cleanly released its leases on the way out, ' +
         'so another member took them over within one heartbeat. A node that ' +
         'EXPIRED did not, and its leases waited out their lifetime — and it ' +
@@ -28526,6 +28545,17 @@ class AdminConsole {
       html: html,
       json: { self: self, snapshotAgeMs: snap.ageMs,
               nodes: state ? state.nodes : [],
+              // The page's reading of `nodes`, folded by name (rule 7).
+              members: state ? {
+                running: live.map(function (node) {
+                  return node.nodeId;
+                }),
+                restarts: restarts,
+                leftOrExpired: gone.map(function (node) {
+                  return { nodeId: node.nodeId, name: node.name,
+                           earlierLives: node.earlierLives || 0 };
+                })
+              } : null,
               leases: state ? state.leases : [],
               databaseNow: state ? state.now : null,
               secrets: secrets, barrier: barrier }

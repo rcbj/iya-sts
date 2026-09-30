@@ -1929,7 +1929,12 @@ class AdminApi {
                      'count of processes answering requests there, and ' +
                      '`lastStallMs`, the event-loop stall that explains a ' +
                      'late heartbeat), which is what the console draws its ' +
-                     'member list from; the capability ' +
+                     'member list from, and `status.members`, the same rows ' +
+                     'folded BY NAME as the console draws them (`running` ' +
+                     'node ids; `restarts`, per running name, how many ' +
+                     'earlier rows it left and when the last ended; ' +
+                     '`leftOrExpired`, one row per name with no running ' +
+                     'member, with `earlierLives`); the capability ' +
                      'table active-active mode is held to ' +
                      '(`status.self.capabilities`, with `missing` and ' +
                      '`acceptedMissing`); where each shared secret\'s value ' +
