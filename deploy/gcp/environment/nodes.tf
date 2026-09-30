@@ -46,7 +46,7 @@ locals {
     STS_KEYS_SOURCE             = "persisted"
     STS_CLUSTER_MODE            = "active-active"
     STS_PUBLIC_BASE_URL         = local.public_base_url
-    STS_TLS_HOSTNAMES           = join(",", distinct(compact([local.public_name ? var.public_hostname : "", "localhost"])))
+    STS_TLS_HOSTNAMES           = join(",", distinct(compact([local.public_name ? var.public_hostname : "", local.cell_console_host, "localhost"])))
     STS_TLS_IPS                 = join(",", ["127.0.0.1", local.lb_address])
     STS_WORKERS_REQUEST_COUNT   = tostring(var.workers_request_count)
     STS_WORKERS_SURFACE_COUNT   = tostring(var.workers_surface_count)
@@ -63,7 +63,7 @@ locals {
     # through common/secrets.js — the path issue #51 exists to exercise, on
     # the `gcp` provider. The rest arrive in the env file (secrets.tf).
     STS_KEYS_KEK_PROVIDER          = "gcp"
-    STS_KEYS_KEK_REF               = local.secret_names["kek"]
+    STS_KEYS_KEK_REF               = local.shared_secret_names["kek"]
     STS_DATABASE_PASSWORD_PROVIDER = "gcp"
     STS_DATABASE_PASSWORD_REF      = local.secret_names["db-app-password"]
 
@@ -89,21 +89,52 @@ locals {
       STS_TLS_CERT_FILE = local.tls_cert
       STS_TLS_KEY_FILE  = local.tls_keyfile
     } : {},
+    # A CELL'S CONTRACT WITH THE SERVICE (#97, cells.tf); empty otherwise.
+    local.cell_environment,
   var.extra_environment)
 
   # `KEY=projects/…/secrets/…` pairs, comma-separated, for node-init's
   # secrets.sh. Resource names hold no comma.
   node_secret_map   = join(",", [for k, v in local.node_secret_env : "${k}=${v}"])
   schema_secret_map = join(",", [for k, v in local.schema_secret_env : "${k}=${v}"])
+  # A cell's subscriber init (#97); '' elsewhere, and the unit then reads
+  # nothing for it.
+  global_schema_secret_map = join(",", [for k, v in local.global_schema_secret_env : "${k}=${v}"])
+
+  # THE GLOBAL TIER'S COPY, IN A CELL'S `full` PHASE (#97): its init runs
+  # before the node, and the node dials it by the name its certificate
+  # carries, mapped to its private-services address as the cell database's
+  # name is mapped to its endpoint.
+  global_copy = local.multi && local.full
 
   node_requires = join(" ", concat(
     ["sts-disk.service", "sts-secrets.service", "sts-schema.service"],
     local.public_name ? ["sts-cert.service"] : [],
+    local.global_copy ? ["sts-global-schema.service"] : [],
   ))
 
-  node_ports = join(" \\\n  ", [
-    for p in values(local.all_ports) : "-p ${p.listener}:${p.container}"
-  ])
+  node_ports = join(" \\\n  ", concat(
+    [for p in values(local.all_ports) : "-p ${p.listener}:${p.container}"],
+    # The inter-cell listener, behind the internal load balancer (#97).
+    local.multi ? ["-p ${local.intercell_port}:${local.intercell_port}"] : [],
+  ))
+
+  # --add-host for every private name a container dials by a name its peer's
+  # certificate carries: the cell database, and in a cell the global copy.
+  extra_hosts = join(" \\\n  ", concat(
+    ["--add-host ${local.db_hostname}:${google_compute_address.database.address}"],
+    local.global_copy ? ["--add-host ${local.global.copy_host}:${local.global.copy_address}"] : [],
+  ))
+
+  # EVERY DATABASE CA A NODE VERIFIES, IN ONE FILE (NODE_EXTRA_CA_CERTS takes
+  # one): the cell database's; and in a cell, the global copy's and the RDS
+  # writer's region bundle (deploy/multicloud/gcp-global fetched it). All
+  # public certificates.
+  db_ca_bundle = join("\n", compact([
+    local.db_ca_pem,
+    local.global_copy ? local.global.copy_ca_pem : "",
+    local.global_copy ? local.global.writer_ca_pem : "",
+  ]))
 
   unit_files = {
     for node, i in local.nodes : node => merge({
@@ -112,10 +143,11 @@ locals {
         registry_host = local.registry_host
       })
       "sts-secrets.service" = templatefile("${path.module}/units/sts-secrets.service.tftpl", {
-        run_dir           = local.host_run_dir
-        init_image        = local.init_image
-        node_secret_map   = local.node_secret_map
-        schema_secret_map = local.schema_secret_map
+        run_dir                  = local.host_run_dir
+        init_image               = local.init_image
+        node_secret_map          = local.node_secret_map
+        schema_secret_map        = local.schema_secret_map
+        global_schema_secret_map = local.global_schema_secret_map
       })
       "sts-schema.service" = templatefile("${path.module}/units/sts-schema.service.tftpl", {
         run_dir      = local.host_run_dir
@@ -135,8 +167,7 @@ locals {
         requires         = local.node_requires
         run_dir          = local.host_run_dir
         image            = local.service_image
-        db_host          = local.db_hostname
-        db_address       = google_compute_address.database.address
+        extra_hosts      = local.extra_hosts
         ports            = local.node_ports
         upload_host      = local.host_upload_dir
         upload_container = local.risk_upload_dir
@@ -152,12 +183,34 @@ locals {
         tls_dir     = local.host_tls_dir
         tls_secret  = data.google_secret_manager_secret.tls[0].id
         hostname    = var.public_hostname
+        alt_names   = local.cell_console_host
         issuer      = node == "node-a" ? "true" : "false"
         acme_server = var.acme_server
         acme_email  = var.acme_email
         renew_days  = var.acme_renew_days
         project     = var.project_id
         dns_zone    = data.google_dns_managed_zone.public[0].name
+      })
+      } : {}, local.global_copy ? {
+      # THE CELL'S COPY OF THE GLOBAL TIER (#97): the schema, the
+      # application role made read-only, and the subscription to the RDS
+      # writer's publication — deploy/aws/schema-init/apply.sh, as its
+      # master user.
+      "sts-global-schema.service" = templatefile("${path.module}/units/sts-global-schema.service.tftpl", {
+        run_dir      = local.host_run_dir
+        schema_image = local.schema_image
+        db_host      = local.global.copy_host
+        db_address   = local.global.copy_address
+        db_port      = local.global.db_port
+        db_name      = local.global.db_name
+        db_user      = local.db_master_user
+        db_app_user  = local.global.db_app_user
+        sslmode      = var.schema_init_sslmode
+        db_ca        = local.host_db_ca
+        writer       = local.global.writer_address
+        publication  = local.global.publication
+        repl_user    = local.global.repl_user
+        subscription = "${local.global.publication}_${var.cell}"
       })
     } : {})
   }
@@ -189,7 +242,7 @@ locals {
             path        = local.host_db_ca
             permissions = "0644"
             owner       = "root"
-            content     = local.db_ca_pem
+            content     = local.db_ca_bundle
           },
           {
             path        = "/etc/sts/disk.sh"
@@ -215,7 +268,7 @@ resource "google_compute_instance_template" "node" {
 
   name_prefix  = "${local.prefix}-${each.key}-"
   machine_type = var.machine_type
-  region       = var.region
+  region       = local.region
   description  = "mock-sts ${var.environment} ${each.key}, image ${var.image_tag}"
 
   # The boot disk: Container-Optimized OS, under the project key.
@@ -281,8 +334,10 @@ resource "google_compute_instance_template" "node" {
       condition     = !local.public_name || var.acme_email != ""
       error_message = "public_hostname needs acme_email: the ACME account's contact address."
     }
+    # A cell's name is in Route 53 (#97); its ACME challenge is delegated
+    # into dns_zone_name by CNAME (deploy/multicloud/interconnect).
     precondition {
-      condition     = !local.public_name || endswith(var.public_hostname, ".${var.dns_zone_name}")
+      condition     = !local.public_name || local.multi || endswith(var.public_hostname, ".${var.dns_zone_name}")
       error_message = "public_hostname must be a name inside dns_zone_name."
     }
   }
@@ -303,7 +358,8 @@ resource "google_compute_instance_group_manager" "first" {
   name               = "${local.prefix}-node-a"
   zone               = local.zones[0]
   base_instance_name = "${local.prefix}-node-a"
-  target_size        = 1
+  # 0 in a new cell's `base` phase (#97), before the global tier exists.
+  target_size = local.full ? 1 : 0
 
   version {
     instance_template = google_compute_instance_template.node["node-a"].self_link_unique
@@ -349,7 +405,8 @@ resource "google_compute_instance_group_manager" "others" {
   name               = "${local.prefix}-${each.key}"
   zone               = local.zones[each.value]
   base_instance_name = "${local.prefix}-${each.key}"
-  target_size        = 1
+  # 0 in a new cell's `base` phase (#97), before the global tier exists.
+  target_size = local.full ? 1 : 0
 
   version {
     instance_template = google_compute_instance_template.node[each.key].self_link_unique

@@ -177,3 +177,33 @@ output "conversion_network" {
     assign_public_ip = "ENABLED"
   }
 }
+
+# ---------------------------------------------------------------------------
+# WHAT deploy/multicloud/interconnect READS OF AN AWS CELL (#97): where its
+# VPN attaches and routes, where its inbound resolver sits, and what the
+# Route 53 tree aliases and checks.
+# ---------------------------------------------------------------------------
+output "private_subnet_ids" {
+  description = "The cell's private subnets (the databases; the inbound resolver endpoint of a multi-cloud cell)."
+  value       = aws_subnet.private[*].id
+}
+
+output "private_subnet_cidrs" {
+  description = "The private subnets' CIDRs, in order: the resolver endpoint's fixed addresses are .53 of the first two."
+  value       = aws_subnet.private[*].cidr_block
+}
+
+output "nlb_zone_id" {
+  description = "The load balancer's Route 53 zone, for an alias record to it."
+  value       = aws_lb.main.zone_id
+}
+
+output "route53_health_check_id" {
+  description = "This cell's HTTPS health check on its load balancer; empty without a public name or outside a cell."
+  value       = local.cells_dns ? aws_route53_health_check.cell[0].id : ""
+}
+
+output "cloud" {
+  description = "Which cloud this environment (or cell) is in, for a script reading several (#97)."
+  value       = "aws"
+}

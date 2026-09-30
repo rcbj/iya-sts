@@ -45,6 +45,16 @@ ISSUER="${STS_CERT_ISSUER:-false}"
 RENEW_DAYS="${STS_ACME_RENEW_DAYS:-30}"
 ACME_SERVER="${STS_ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
 ATTEMPTS="${STS_CERT_WAIT_ATTEMPTS:-40}"
+# EVERY NAME THE CERTIFICATE MUST CARRY: the host name, and in a cell of a
+# multi-cloud environment (#97) its own console name too (comma-separated).
+# The cell's names are in Route 53, and each `_acme-challenge.<name>` there is
+# a CNAME into the Cloud DNS zone (deploy/multicloud/interconnect), which
+# lego follows — so the challenge is written here, with this VM's rights.
+NAMES=("${STS_TLS_HOSTNAME}")
+IFS=',' read -r -a alt_names <<< "${STS_TLS_ALT_NAMES:-}"
+for n in "${alt_names[@]}"; do
+  [ -n "${n}" ] && NAMES+=("${n}")
+done
 
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
@@ -58,8 +68,11 @@ usable() {
   openssl x509 -in "${bundle}" -out "${leaf}" 2> /dev/null || return 1
   openssl x509 -in "${leaf}" -noout -checkend "$((RENEW_DAYS * 86400))" \
     > /dev/null || return 1
-  openssl x509 -in "${leaf}" -noout -checkhost "${STS_TLS_HOSTNAME}" |
-    grep -q 'does match' || return 1
+  local n
+  for n in "${NAMES[@]}"; do
+    openssl x509 -in "${leaf}" -noout -checkhost "${n}" |
+      grep -q 'does match' || return 1
+  done
 }
 
 # Splits a bundle into the two files the node reads.
@@ -118,7 +131,11 @@ fi
 # node-a: issue. A fresh ACME account each time — nothing about the account
 # is worth keeping between issuances sixty days apart, and not keeping it
 # means no account key to store.
-echo "sts-cert: obtaining a certificate for ${STS_TLS_HOSTNAME} from ${ACME_SERVER}."
+echo "sts-cert: obtaining a certificate for ${NAMES[*]} from ${ACME_SERVER}."
+domain_args=()
+for n in "${NAMES[@]}"; do
+  domain_args+=(--domains "${n}")
+done
 email_args=()
 [ -z "${STS_ACME_EMAIL:-}" ] || email_args=(--email "${STS_ACME_EMAIL}")
 # GCE_ZONE_ID names the zone, so lego need not LIST the project's zones —
@@ -130,7 +147,7 @@ GCE_POLLING_INTERVAL="${GCE_POLLING_INTERVAL:-10}" \
     --path "${work}/lego" \
     --key-type ec256 \
     --dns gcloud \
-    --domains "${STS_TLS_HOSTNAME}" \
+    "${domain_args[@]}" \
     run
 
 crt="${work}/lego/certificates/${STS_TLS_HOSTNAME}.crt"
@@ -139,7 +156,7 @@ bundle="${work}/bundle.pem"
 # The key FIRST, then lego's .crt, which is the leaf followed by its issuers.
 cat "${key}" "${crt}" > "${bundle}"
 usable "${bundle}" || {
-  echo "sts-cert: the new certificate does not name ${STS_TLS_HOSTNAME} or is already near expiry." >&2
+  echo "sts-cert: the new certificate does not name ${NAMES[*]} or is already near expiry." >&2
   exit 1
 }
 

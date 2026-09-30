@@ -155,17 +155,25 @@ locals {
       name      = "global-schema-init"
       image     = "${local.ecr_repository_url}:${local.schema_image_tag}"
       essential = false
-      environment = [
+      environment = concat([
         { name = "PGHOST", value = local.global.primary_address },
         { name = "PGPORT", value = tostring(local.global.db_port) },
         { name = "PGDATABASE", value = local.global.db_name },
         { name = "PGUSER", value = local.db_master_user },
         { name = "STS_DB_APP_USER", value = local.global.db_app_user },
-      ]
-      secrets = [
+        ], local.multi_cloud ? [
+        # THE PUBLICATION THE GCP CELLS SUBSCRIBE TO (#97), made by the same
+        # idempotent run: every table but sts_schema, which each database
+        # seeds for itself (deploy/aws/schema-init/apply.sh).
+        { name = "STS_DB_PUBLICATION", value = local.global.publication },
+        { name = "STS_DB_REPL_USER", value = local.global.repl_user },
+      ] : [])
+      secrets = concat([
         { name = "PGPASSWORD", valueFrom = local.global.master_secret_arn },
         { name = "STS_DB_APP_PASSWORD", valueFrom = lookup(local.global_secret_arns, "global-db-app-password", "") },
-      ]
+        ], local.multi_cloud ? [
+        { name = "STS_DB_REPL_PASSWORD", valueFrom = lookup(local.global_secret_arns, "global-db-repl-password", "") },
+      ] : [])
       logConfiguration = local.container_log[t]
     }
   }

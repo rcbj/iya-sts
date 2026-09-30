@@ -53,3 +53,18 @@ output "log_bucket" {
   description = "Where container logs are kept."
   value       = google_logging_project_bucket_config.containers.id
 }
+
+output "multicell_networks" {
+  description = "Each multi-cloud environment's shared GCP network (#97)."
+  value       = { for e, n in google_compute_network.multicell : e => n.name }
+}
+
+output "cell_service_accounts" {
+  description = "Each GCP cell's node service account, by <env>-<cell> (#97)."
+  value       = { for k, s in google_service_account.cell : k => s.email }
+}
+
+output "kms_keys" {
+  description = "The project key in every region that has one, by region (#97)."
+  value       = local.kms_keys
+}

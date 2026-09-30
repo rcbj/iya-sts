@@ -57,8 +57,8 @@ variable "cell" {
   type        = string
   default     = ""
   validation {
-    condition     = var.cell == "" || contains(keys(var.cells), var.cell)
-    error_message = "cell must be empty (a single-cell environment) or a key of cells."
+    condition     = var.cell == "" || try(var.cells[var.cell].cloud, "") == "aws"
+    error_message = "cell must be empty (a single-cell environment) or an AWS cell of cells: a GCP cell is deploy/gcp/environment's."
   }
 }
 
@@ -76,14 +76,29 @@ variable "cells" {
     is restored from (conversion.tf) — in the cell's region and under the
     cell's own key, and read once, when the database is created.
   EOT
+  #
+  # A MULTI-CLOUD ENVIRONMENT (#97, 2026-09-30) lists its GCP cells here too,
+  # from deploy/multicloud/envs/<env>.cells.tfvars.json: `cloud` is `gcp`,
+  # `region` a GCP region, `coordinates` where Route 53's geoproximity places
+  # it, and `global_db_cidr` the private-services range its Cloud SQL copy of
+  # the global tier dials the writer from. This stack applies only the AWS
+  # cells; the GCP ones are PEERS — their CIDRs admitted on 8446 and by the
+  # global database, and their names in STS_CELL_PEERS.
   type = map(object({
     region                 = string
     jurisdiction           = string
     vpc_cidr               = string
     geolocation_countries  = optional(list(string), [])
     db_snapshot_identifier = optional(string, "")
+    cloud                  = optional(string, "aws")
+    coordinates            = optional(object({ latitude = string, longitude = string }))
+    global_db_cidr         = optional(string, "")
   }))
   default = {}
+  validation {
+    condition     = alltrue([for c in values(var.cells) : contains(["aws", "gcp"], c.cloud)])
+    error_message = "a cell's cloud is aws or gcp."
+  }
   validation {
     condition     = length(distinct([for c in values(var.cells) : c.vpc_cidr])) == length(var.cells)
     error_message = "every cell's vpc_cidr must be distinct: the cells are peered, and peered VPCs may not overlap."
@@ -153,9 +168,17 @@ locals {
   this_cell = local.multi ? var.cells[var.cell] : null
   # Every OTHER cell of the environment: the ones this cell's nodes talk to on
   # 8446, whose CIDRs it admits, and which the service is told about.
-  peers      = local.multi ? { for id, c in var.cells : id => c if id != var.cell } : {}
-  is_primary = local.multi && var.cell == var.primary_cell
-  full       = var.cell_phase == "full"
+  peers = local.multi ? { for id, c in var.cells : id => c if id != var.cell } : {}
+  # A MULTI-CLOUD ENVIRONMENT (#97): some cells are GCP's. They are peers
+  # like any other (STS_CELL_PEERS, 8446, the global database), and the
+  # public name's Route 53 tree is written by deploy/multicloud/interconnect
+  # instead of by each cell (dns_cells.tf), because a GCP cell cannot write it.
+  multi_cloud = local.multi && anytrue([for c in values(var.cells) : c.cloud != "aws"])
+  # The private-services ranges GCP's copies of the global tier subscribe
+  # from (#97): admitted by the global database's security group.
+  gcp_global_db_cidrs = compact([for c in values(var.cells) : c.global_db_cidr if c.cloud == "gcp"])
+  is_primary          = local.multi && var.cell == var.primary_cell
+  full                = var.cell_phase == "full"
 
   # A single-cell stack is always `full`. A cell in `base` runs no node, and
   # neither does a restored cell while its conversion is pending
@@ -214,6 +237,10 @@ locals {
     read_addresses    = data.terraform_remote_state.global[0].outputs.read_addresses
     secret_arns       = data.terraform_remote_state.global[0].outputs.secret_arns
     master_secret_arn = data.terraform_remote_state.global[0].outputs.master_secret_arn
+    # A multi-cloud environment's publication (#97); an AWS-only global
+    # stack has no such outputs, and nothing reads these there.
+    publication = try(data.terraform_remote_state.global[0].outputs.publication, "")
+    repl_user   = try(data.terraform_remote_state.global[0].outputs.repl_user, "")
     } : {
     primary_address   = ""
     db_port           = 5432
@@ -222,6 +249,8 @@ locals {
     read_addresses    = {}
     secret_arns       = {}
     master_secret_arn = ""
+    publication       = ""
+    repl_user         = ""
   }
   global_secret_arns = local.multi ? try(local.global.secret_arns[var.cell], {}) : {}
   global_read_host   = local.multi ? try(local.global.read_addresses[var.cell], "") : ""

@@ -21,7 +21,10 @@
 # NO ROUTE IS WRITTEN: a VPC's default internet route and its subnet routes
 # are what AWS writes by hand.
 # ---------------------------------------------------------------------------
+# A CELL MAKES NO NETWORK (#97): it makes its subnets in the environment's
+# shared global VPC, which the foundation made (network_multicell.tf there).
 resource "google_compute_network" "main" {
+  count                   = local.multi ? 0 : 1
   name                    = local.prefix
   auto_create_subnetworks = false
   routing_mode            = "REGIONAL"
@@ -30,16 +33,31 @@ resource "google_compute_network" "main" {
 
 resource "google_compute_subnetwork" "nodes" {
   name                     = "${local.prefix}-nodes"
-  network                  = google_compute_network.main.id
-  region                   = var.region
+  network                  = local.network_id
+  region                   = local.region
   ip_cidr_range            = local.nodes_cidr
   private_ip_google_access = true
 }
 
 resource "google_compute_subnetwork" "private" {
   name                     = "${local.prefix}-private"
-  network                  = google_compute_network.main.id
-  region                   = var.region
+  network                  = local.network_id
+  region                   = local.region
   ip_cidr_range            = local.private_cidr
   private_ip_google_access = true
+}
+
+data "google_compute_network" "shared" {
+  count = local.multi ? 1 : 0
+  name  = local.shared_network
+}
+
+locals {
+  network_id   = local.multi ? data.google_compute_network.shared[0].id : google_compute_network.main[0].id
+  network_name = local.multi ? data.google_compute_network.shared[0].name : google_compute_network.main[0].name
+}
+
+moved {
+  from = google_compute_network.main
+  to   = google_compute_network.main[0]
 }

@@ -54,7 +54,7 @@ output "database_replica" {
 
 output "admin_api_client_secret" {
   description = "The secret the suite mints its /admin-api token with (AWS: admin_api_client_secret_arn)."
-  value       = local.secret_names["admin-api-client-secret"]
+  value       = local.shared_secret_names["admin-api-client-secret"]
 }
 
 output "secrets" {
@@ -84,7 +84,7 @@ output "image_tag" {
 
 output "region" {
   description = "The region this environment is in (AWS: aws_region)."
-  value       = var.region
+  value       = local.region
 }
 
 output "cloud" {
@@ -95,4 +95,37 @@ output "cloud" {
 output "container_logs" {
   description = "Where the nodes' container logs are: the log name, and the bucket the foundation's sink routes it to."
   value       = "projects/${var.project_id}/logs/gcplogs-docker-driver (bucket ${var.name}-containers)"
+}
+
+# ---------------------------------------------------------------------------
+# WHAT deploy/multicloud/interconnect READS OF A GCP CELL (#97).
+# ---------------------------------------------------------------------------
+output "cell" {
+  description = "This cell's id; empty for a single-cell environment."
+  value       = var.cell
+}
+
+output "cell_jurisdiction" {
+  description = "This cell's jurisdiction; empty for a single-cell environment."
+  value       = local.multi ? local.this_cell.jurisdiction : ""
+}
+
+output "vpc_cidr" {
+  description = "The CIDR the cell's subnets are cut from."
+  value       = local.vpc_cidr
+}
+
+output "intercell_address" {
+  description = "The inter-cell listener's fixed private address (intercell.tf); empty outside a cell."
+  value       = local.multi ? google_compute_address.intercell[0].address : ""
+}
+
+output "intercell_url" {
+  description = "Where the other cells reach this one: https://nodes.<cell>.<env>.mock-sts.internal:8446; empty outside a cell."
+  value       = local.multi ? "https://${local.intercell_hostname}:${local.intercell_port}" : ""
+}
+
+output "network" {
+  description = "The network the cell's nodes are on (the environment's shared one, in a cell)."
+  value       = local.network_name
 }

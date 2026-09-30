@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# mock-sts: THIS CELL'S COPY OF THE GLOBAL TIER (#97) — the schema, the
+# application role made read-only, and the subscription to the RDS writer's
+# publication across the HA VPN, as the copy's master user. Idempotent, and
+# run on every start: a table the writer gained is copied from the next one
+# (deploy/aws/schema-init/apply.sh). Not the writer's schema-init, which the
+# primary AWS cell runs: a logical replica takes no DDL.
+[Unit]
+Description=mock-sts: global tier copy
+Requires=sts-secrets.service
+After=sts-secrets.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOME=/var/lib/sts
+ExecStartPre=/usr/bin/docker pull ${schema_image}
+ExecStart=/usr/bin/docker run --rm --name sts-global-schema \
+  --add-host ${db_host}:${db_address} \
+  --env-file ${run_dir}/global-schema-secrets.env \
+  -e PGHOST=${db_host} \
+  -e PGPORT=${db_port} \
+  -e PGDATABASE=${db_name} \
+  -e PGUSER=${db_user} \
+  -e STS_DB_APP_USER=${db_app_user} \
+  -e STS_SCHEMA_SSLMODE=${sslmode} \
+  -e STS_DB_PUBLICATION=${publication} \
+  -e STS_DB_REPL_USER=${repl_user} \
+  -e STS_DB_SUBSCRIBE_HOST=${writer} \
+  -e STS_DB_SUBSCRIBE_PORT=${db_port} \
+  -e STS_DB_SUBSCRIBE_DBNAME=${db_name} \
+  -e STS_DB_SUBSCRIPTION=${subscription} \
+  -v ${db_ca}:/usr/local/share/sts/database-ca.pem:ro \
+  ${schema_image}

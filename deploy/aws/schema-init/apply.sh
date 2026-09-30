@@ -19,6 +19,21 @@
 #   STS_SCHEMA_SSLMODE           verify-full (the default) or verify-ca —
 #                                GCP's Cloud SQL only (deploy/gcp/, #95)
 #
+# AND, IN A MULTI-CLOUD ENVIRONMENT (#97) ONLY, one of two more steps after
+# the schema — the global tier crossing from RDS to Cloud SQL by PostgreSQL's
+# own logical replication (deploy/multicloud/CLAUDE.md):
+#
+#   STS_DB_PUBLICATION, STS_DB_REPL_USER, STS_DB_REPL_PASSWORD
+#       on the global WRITER (AWS's primary cell): the replication role and
+#       the publication — every table in the schema but `sts_schema`, which
+#       every database seeds with its own row and which would collide
+#   STS_DB_SUBSCRIBE_HOST (+ _PORT, _DBNAME), STS_DB_SUBSCRIPTION, and the
+#   three above
+#       on a GCP cell's COPY of the global tier: the application role made
+#       READ-ONLY there (a write to a logical replica diverges it silently,
+#       where a physical one refuses), and the subscription made, or
+#       re-pointed and refreshed so that a table the writer gained is copied
+#
 # `PGSSLMODE` and `PGSSLROOTCERT` are set here rather than trusted to the
 # caller: this is the one connection that carries the master password, and a
 # caller that forgot them would send it to whatever answered. A caller may
@@ -79,4 +94,113 @@ psql --no-psqlrc -v ON_ERROR_STOP=1 \
      -v sts_app_role="${APP_ROLE}" \
      -v sts_app_password="${STS_DB_APP_PASSWORD}" \
      -f /usr/local/share/sts/schema.sql
+
+# ---------------------------------------------------------------------------
+# THE PUBLICATION, ON THE GLOBAL WRITER (#97). Idempotent like the schema:
+# the role is made or its password reset, and every table the publication
+# does not hold yet is added — so a table a later schema adds is published at
+# the next start of the primary cell's nodes. `rds_replication` is RDS's
+# grant for a replication login, because RDS's master may not set the
+# REPLICATION attribute; anywhere else the attribute is what a walsender asks
+# for (the first run of this against a plain PostgreSQL 18 said so).
+# ---------------------------------------------------------------------------
+if [ -n "${STS_DB_PUBLICATION:-}" ] && [ -z "${STS_DB_SUBSCRIBE_HOST:-}" ];
+then
+  : "${STS_DB_REPL_USER:?STS_DB_REPL_USER is required with STS_DB_PUBLICATION}"
+  : "${STS_DB_REPL_PASSWORD:?STS_DB_REPL_PASSWORD is required with STS_DB_PUBLICATION}"
+  echo "sts-schema: publication ${STS_DB_PUBLICATION} for ${STS_DB_REPL_USER}."
+  psql --no-psqlrc -v ON_ERROR_STOP=1 \
+       -v sts_schema="${APP_SCHEMA}" \
+       -v publication="${STS_DB_PUBLICATION}" \
+       -v repl_user="${STS_DB_REPL_USER}" \
+       -v repl_password="${STS_DB_REPL_PASSWORD}" <<'SQL'
+SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'repl_user', :'repl_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'repl_user')
+\gexec
+SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'repl_user', :'repl_password')
+\gexec
+SELECT format('GRANT rds_replication TO %I', :'repl_user')
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rds_replication')
+\gexec
+SELECT format('ALTER ROLE %I REPLICATION', :'repl_user')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rds_replication')
+\gexec
+SELECT format('GRANT USAGE ON SCHEMA %I TO %I', :'sts_schema', :'repl_user')
+\gexec
+SELECT format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO %I', :'sts_schema', :'repl_user')
+\gexec
+SELECT format('CREATE PUBLICATION %I', :'publication')
+WHERE NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = :'publication')
+\gexec
+SELECT format('ALTER PUBLICATION %I ADD TABLE %I.%I', :'publication', t.schemaname, t.tablename)
+FROM pg_tables t
+WHERE t.schemaname = :'sts_schema'
+  AND t.tablename <> 'sts_schema'
+  AND NOT EXISTS (SELECT 1 FROM pg_publication_tables p
+                  WHERE p.pubname = :'publication'
+                    AND p.schemaname = t.schemaname
+                    AND p.tablename = t.tablename)
+\gexec
+SQL
+fi
+
+# ---------------------------------------------------------------------------
+# THE SUBSCRIPTION, ON A GCP CELL'S COPY OF THE GLOBAL TIER (#97).
+#
+# READ-ONLY FIRST: schema.sql has just granted the application role its
+# writes, and on a logical replica a write is not refused, it DIVERGES the
+# copy. The service writes the global tier only through the writer's URL; this
+# makes a mistake there an error rather than a silent fork.
+#
+# A NEW SUBSCRIPTION EMPTIES THE TABLES IT WILL FILL: its initial copy
+# inserts every row, and a table that already holds rows (a subscription
+# dropped after its slot was lost, and made again) would stop the copy on
+# the first duplicate key. It is a replica; the writer is the record.
+#
+# `sslmode=require`, not verify-full: a Cloud SQL instance cannot be given
+# the RDS CA to verify with, so the writer is not authenticated by
+# certificate here — the connection runs inside the HA VPN, whose tunnels
+# are, and it is encrypted either way (deploy/multicloud/CLAUDE.md).
+# ---------------------------------------------------------------------------
+if [ -n "${STS_DB_SUBSCRIBE_HOST:-}" ];
+then
+  : "${STS_DB_SUBSCRIPTION:?STS_DB_SUBSCRIPTION is required with STS_DB_SUBSCRIBE_HOST}"
+  : "${STS_DB_PUBLICATION:?STS_DB_PUBLICATION is required with STS_DB_SUBSCRIBE_HOST}"
+  : "${STS_DB_REPL_USER:?STS_DB_REPL_USER is required with STS_DB_SUBSCRIBE_HOST}"
+  : "${STS_DB_REPL_PASSWORD:?STS_DB_REPL_PASSWORD is required with STS_DB_SUBSCRIBE_HOST}"
+  conninfo="host=${STS_DB_SUBSCRIBE_HOST} port=${STS_DB_SUBSCRIBE_PORT:-5432}"
+  conninfo="${conninfo} dbname=${STS_DB_SUBSCRIBE_DBNAME:-${PGDATABASE}}"
+  conninfo="${conninfo} user=${STS_DB_REPL_USER} password=${STS_DB_REPL_PASSWORD}"
+  conninfo="${conninfo} sslmode=require"
+  echo "sts-schema: subscription ${STS_DB_SUBSCRIPTION} to" \
+       "${STS_DB_PUBLICATION} on ${STS_DB_SUBSCRIBE_HOST} (the password is not shown)."
+  psql --no-psqlrc -v ON_ERROR_STOP=1 \
+       -v sts_schema="${APP_SCHEMA}" \
+       -v sts_app_role="${APP_ROLE}" \
+       -v publication="${STS_DB_PUBLICATION}" \
+       -v subscription="${STS_DB_SUBSCRIPTION}" \
+       -v conninfo="${conninfo}" <<'SQL'
+SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA %I FROM %I',
+              :'sts_schema', :'sts_app_role')
+\gexec
+SELECT format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM %I',
+              :'sts_schema', :'sts_app_role')
+\gexec
+SELECT format('TRUNCATE %s', string_agg(format('%I.%I', schemaname, tablename), ', '))
+FROM pg_tables
+WHERE schemaname = :'sts_schema' AND tablename <> 'sts_schema'
+  AND NOT EXISTS (SELECT 1 FROM pg_subscription WHERE subname = :'subscription')
+HAVING count(*) > 0
+\gexec
+SELECT format('CREATE SUBSCRIPTION %I CONNECTION %L PUBLICATION %I',
+              :'subscription', :'conninfo', :'publication')
+WHERE NOT EXISTS (SELECT 1 FROM pg_subscription WHERE subname = :'subscription')
+\gexec
+SELECT format('ALTER SUBSCRIPTION %I CONNECTION %L', :'subscription', :'conninfo')
+\gexec
+SELECT format('ALTER SUBSCRIPTION %I REFRESH PUBLICATION', :'subscription')
+\gexec
+SQL
+fi
+
 echo "sts-schema: done."

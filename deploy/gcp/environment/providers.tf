@@ -7,7 +7,9 @@
 # labels are for the bill and for a reader.
 provider "google" {
   project = var.project_id
-  region  = var.region
+  # A CELL IS IN ITS OWN REGION (#97, cells.tf); a single-cell environment in
+  # `region`.
+  region = var.cell != "" ? var.cells[var.cell].region : var.region
 
   default_labels = merge(var.labels, {
     project     = "sts"

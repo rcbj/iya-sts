@@ -32,7 +32,7 @@ locals {
   rarn = {
     for svc in [
       "secretsmanager", "logs", "rds", "ecs", "ec2", "elasticloadbalancing",
-      "acm", "ecr", "servicediscovery",
+      "acm", "ecr", "servicediscovery", "route53resolver",
     ] : svc => [for r in local.regions : "arn:${local.partition}:${svc}:${r}:${local.account_id}"]
   }
 

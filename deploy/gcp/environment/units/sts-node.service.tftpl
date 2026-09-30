@@ -16,7 +16,7 @@ ExecStartPre=/usr/bin/docker pull ${image}
 ExecStart=/usr/bin/docker run --rm --name mock-sts \
   --env-file /etc/sts/node.env \
   --env-file ${run_dir}/node-secrets.env \
-  --add-host ${db_host}:${db_address} \
+  ${extra_hosts} \
   ${ports} \
   -v ${upload_host}:${upload_container} \
   -v ${db_ca}:${db_ca_container}:ro \

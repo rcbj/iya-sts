@@ -28,7 +28,7 @@ variable "permitted_regions" {
     fifth region is those two blocks and a row in `locals.tf`'s
     `cell_of_region`, then an entry here.
   EOT
-  type = list(string)
+  type        = list(string)
   # BOTH REGIONS SINCE 2026-09-29 (#311): the foundation was applied with
   # ca-central-1 for testidpna's cac1 cell, and this is the value the account
   # now holds. A default of us-west-2 alone would make the next foundation

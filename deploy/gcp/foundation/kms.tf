@@ -80,3 +80,44 @@ resource "google_kms_crypto_key_iam_member" "service_agents" {
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
   member        = each.value
 }
+
+# ---------------------------------------------------------------------------
+# A RING AND A KEY IN EVERY OTHER REGION A GCP CELL IS IN (#97): the same
+# name in each, because a ring's name is per location. A cell's database,
+# disks, secrets and certificate are sealed under ITS region's key, and a key
+# is never replicated — the residency line #98 draws with AWS's single-region
+# cell keys. The home region keeps the key above, under its own address.
+# ---------------------------------------------------------------------------
+resource "google_kms_key_ring" "regional" {
+  for_each = local.other_regions
+  name     = var.name
+  location = each.key
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_kms_crypto_key" "regional" {
+  for_each        = local.other_regions
+  name            = var.name
+  key_ring        = google_kms_key_ring.regional[each.key].id
+  purpose         = "ENCRYPT_DECRYPT"
+  rotation_period = var.kms_rotation_period
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+locals {
+  regional_kms_users = {
+    for pair in setproduct(tolist(local.other_regions), keys(local.kms_users)) :
+    "${pair[0]}-${pair[1]}" => { region = pair[0], member = local.kms_users[pair[1]] }
+  }
+}
+
+resource "google_kms_crypto_key_iam_member" "regional_service_agents" {
+  for_each      = local.regional_kms_users
+  crypto_key_id = google_kms_crypto_key.regional[each.value.region].id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = each.value.member
+}

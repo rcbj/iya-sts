@@ -20,8 +20,10 @@
 # backend VM by the guest agent, so a node dialling its own public name is
 # answered by itself without leaving the VM, and no rule has to admit it.
 # ---------------------------------------------------------------------------
+# A CELL WRITES NO RECORD HERE (#97): its public name is in Route 53, in the
+# tree deploy/multicloud/interconnect writes over every cell of both clouds.
 resource "google_dns_record_set" "public" {
-  count        = local.public_name ? 1 : 0
+  count        = local.public_name && !local.multi ? 1 : 0
   managed_zone = data.google_dns_managed_zone.public[0].name
   name         = "${var.public_hostname}."
   type         = "A"

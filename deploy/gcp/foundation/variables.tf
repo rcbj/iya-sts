@@ -98,3 +98,17 @@ variable "kms_rotation_period" {
   type        = string
   default     = "7776000s"
 }
+
+variable "multicell_environments" {
+  description = <<-EOT
+    THE MULTI-CELL, MULTI-CLOUD ENVIRONMENTS (#97), by name. Each is read from
+    deploy/multicloud/envs/<env>.cells.tfvars.json — the one file every stack
+    of the environment reads — and gets here what the deployer may not make:
+    a node service account and a certificate secret per GCP cell, a key ring
+    in each GCP cell's region, the one global VPC the GCP cells share, its
+    private-services ranges (the global tier's Cloud SQL copies), and the
+    private DNS zones the cells find each other by (network_multicell.tf).
+  EOT
+  type        = list(string)
+  default     = ["testidpmc"]
+}

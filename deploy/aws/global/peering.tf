@@ -36,7 +36,7 @@ locals {
       ["usw2", "cac1"], ["usw2", "euc1"], ["usw2", "apse1"],
       ["cac1", "euc1"], ["cac1", "apse1"], ["euc1", "apse1"],
     ] :
-    "${p[0]}_${p[1]}" => (contains(keys(var.cells), p[0]) && contains(keys(var.cells), p[1])) ? {
+    "${p[0]}_${p[1]}" => (contains(keys(local.aws_cells), p[0]) && contains(keys(local.aws_cells), p[1])) ? {
       requester = merge(local.cell[p[0]], { id = p[0] })
       accepter  = merge(local.cell[p[1]], { id = p[1] })
     } : null
@@ -108,7 +108,7 @@ module "peering_euc1_apse1" {
 # ---------------------------------------------------------------------------
 resource "aws_route53_zone_association" "intercell" {
   for_each = {
-    for p in setproduct(keys(var.cells), keys(var.cells)) :
+    for p in setproduct(keys(local.aws_cells), keys(local.aws_cells)) :
     "${p[0]}-in-${p[1]}" => { zone = p[0], vpc = p[1] } if p[0] != p[1]
   }
 

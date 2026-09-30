@@ -90,8 +90,13 @@ resource "aws_route53_health_check" "cell" {
   tags              = { Name = "${local.prefix}-https" }
 }
 
+# IN A MULTI-CLOUD ENVIRONMENT (#97) THE TREE IS NOT THE CELLS' TO WRITE:
+# deploy/multicloud/interconnect writes it, over every cell of both clouds,
+# with geoproximity where this file has latency (Route 53's latency routing
+# knows only AWS regions). Each AWS cell still makes its health check, which
+# that stack reads, and its own console name.
 resource "aws_route53_record" "latency" {
-  count          = local.cells_dns ? 1 : 0
+  count          = local.cells_dns && !local.multi_cloud ? 1 : 0
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = local.latency_name
   type           = "A"
@@ -111,7 +116,7 @@ resource "aws_route53_record" "latency" {
 }
 
 resource "aws_route53_record" "pinned" {
-  for_each       = local.pinned_places
+  for_each       = local.multi_cloud ? toset([]) : local.pinned_places
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = var.public_hostname
   type           = "A"
@@ -129,7 +134,7 @@ resource "aws_route53_record" "pinned" {
 }
 
 resource "aws_route53_record" "default" {
-  count          = local.cells_dns && local.is_primary ? 1 : 0
+  count          = local.cells_dns && local.is_primary && !local.multi_cloud ? 1 : 0
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = var.public_hostname
   type           = "A"

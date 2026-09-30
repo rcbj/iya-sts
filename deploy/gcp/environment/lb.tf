@@ -37,7 +37,7 @@
 # ---------------------------------------------------------------------------
 resource "google_compute_address" "lb" {
   name         = "${local.prefix}-lb"
-  region       = var.region
+  region       = local.region
   address_type = "EXTERNAL"
   network_tier = "PREMIUM"
   description  = "mock-sts ${var.environment}: the load balancer's address"
@@ -45,7 +45,7 @@ resource "google_compute_address" "lb" {
 
 resource "google_compute_region_health_check" "https" {
   name   = "${local.prefix}-https"
-  region = var.region
+  region = local.region
 
   check_interval_sec  = 10
   timeout_sec         = 5
@@ -67,7 +67,7 @@ resource "google_compute_region_health_check" "https" {
 
 resource "google_compute_region_backend_service" "nodes" {
   name                  = "${local.prefix}-nodes"
-  region                = var.region
+  region                = local.region
   load_balancing_scheme = "EXTERNAL"
   protocol              = "TCP"
   health_checks         = [google_compute_region_health_check.https.id]
@@ -86,7 +86,7 @@ resource "google_compute_region_backend_service" "nodes" {
 
 resource "google_compute_forwarding_rule" "published" {
   name                  = "${local.prefix}-published"
-  region                = var.region
+  region                = local.region
   load_balancing_scheme = "EXTERNAL"
   ip_protocol           = "TCP"
   ip_address            = google_compute_address.lb.address
@@ -97,7 +97,7 @@ resource "google_compute_forwarding_rule" "published" {
 
 resource "google_compute_forwarding_rule" "spiffe_default" {
   name                  = "${local.prefix}-spiffe"
-  region                = var.region
+  region                = local.region
   load_balancing_scheme = "EXTERNAL"
   ip_protocol           = "TCP"
   ip_address            = google_compute_address.lb.address

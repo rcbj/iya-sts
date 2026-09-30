@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: MIT
 
 locals {
-  # Every name starts `mock-sts-<environment>`, as on AWS.
-  prefix      = "${var.name}-${var.environment}"
-  secret_path = "${var.name}-${var.environment}"
+  # Every name starts `mock-sts-<environment>`, as on AWS — and carries the
+  # cell in a cell (#97, cells.tf).
+  prefix      = local.multi ? "${var.name}-${var.environment}-${var.cell}" : "${var.name}-${var.environment}"
+  secret_path = local.prefix
 
   # THE REGION'S FIRST THREE ZONES, one node in each (nodes.tf) — AWS's
   # first three availability zones.
@@ -14,8 +15,12 @@ locals {
   # the first (AWS's public subnets), the database endpoint in number 10
   # (AWS's private subnets). A GCP subnet is REGIONAL, so one of each covers
   # all three zones.
-  nodes_cidr   = cidrsubnet(var.vpc_cidr, 8, 0)
-  private_cidr = cidrsubnet(var.vpc_cidr, 8, 10)
+  #
+  # A CELL'S ARE CUT FROM ITS OWN CIDR in the cells file, distinct from every
+  # other cell's on both clouds, because they share routes over the VPN.
+  vpc_cidr     = local.multi ? local.this_cell.vpc_cidr : var.vpc_cidr
+  nodes_cidr   = cidrsubnet(local.vpc_cidr, 8, 0)
+  private_cidr = cidrsubnet(local.vpc_cidr, 8, 10)
 
   nodes = { for i in range(var.node_count) : "node-${substr("abc", i, 1)}" => i }
 
@@ -89,7 +94,7 @@ locals {
 }
 
 data "google_compute_zones" "available" {
-  region = var.region
+  region = local.region
   status = "UP"
 }
 
@@ -97,7 +102,7 @@ data "google_compute_zones" "available" {
 # never changes them.
 data "google_kms_key_ring" "main" {
   name     = var.name
-  location = var.region
+  location = local.region
 }
 
 data "google_kms_crypto_key" "main" {
@@ -108,7 +113,7 @@ data "google_kms_crypto_key" "main" {
 # The node account the foundation made for this environment. Not finding it
 # means the environment is not in the foundation's `environments`.
 data "google_service_account" "nodes" {
-  account_id = "${var.name}-env-${var.environment}"
+  account_id = local.multi ? "${var.name}-env-${var.environment}-${var.cell}" : "${var.name}-env-${var.environment}"
 }
 
 data "google_dns_managed_zone" "public" {
@@ -118,7 +123,7 @@ data "google_dns_managed_zone" "public" {
 
 data "google_secret_manager_secret" "tls" {
   count     = local.public_name ? 1 : 0
-  secret_id = "${var.name}-${var.environment}-tls"
+  secret_id = "${local.prefix}-tls"
 }
 
 # Container-Optimized OS, the stable channel: Google maintains the OS, Docker

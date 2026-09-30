@@ -74,7 +74,7 @@ locals {
 
 resource "google_sql_database_instance" "primary" {
   name                = "${local.prefix}-primary-${local.db_suffix}"
-  region              = var.region
+  region              = local.region
   database_version    = var.db_version
   encryption_key_name = data.google_kms_crypto_key.main.id
   deletion_protection = false
@@ -132,7 +132,7 @@ resource "google_sql_database_instance" "primary" {
 
 resource "google_sql_database_instance" "replica" {
   name                 = "${local.prefix}-replica-${local.db_suffix}"
-  region               = var.region
+  region               = local.region
   database_version     = var.db_version
   master_instance_name = google_sql_database_instance.primary.name
   encryption_key_name  = data.google_kms_crypto_key.main.id
@@ -196,7 +196,7 @@ resource "google_sql_user" "master" {
 # ---------------------------------------------------------------------------
 resource "google_compute_address" "database" {
   name         = "${local.prefix}-database"
-  region       = var.region
+  region       = local.region
   subnetwork   = google_compute_subnetwork.private.id
   address_type = "INTERNAL"
   address      = cidrhost(local.private_cidr, 10)
@@ -205,8 +205,8 @@ resource "google_compute_address" "database" {
 
 resource "google_compute_forwarding_rule" "database" {
   name                  = "${local.prefix}-database"
-  region                = var.region
-  network               = google_compute_network.main.id
+  region                = local.region
+  network               = local.network_id
   ip_address            = google_compute_address.database.id
   target                = google_sql_database_instance.primary.psc_service_attachment_link
   load_balancing_scheme = ""

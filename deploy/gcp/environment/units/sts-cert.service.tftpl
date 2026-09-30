@@ -20,6 +20,7 @@ ExecStart=/usr/bin/docker run --rm --name sts-cert \
   -e STS_TLS_DIR=${tls_dir} \
   -e STS_TLS_SECRET=${tls_secret} \
   -e STS_TLS_HOSTNAME=${hostname} \
+  -e STS_TLS_ALT_NAMES=${alt_names} \
   -e STS_CERT_ISSUER=${issuer} \
   -e STS_ACME_SERVER=${acme_server} \
   -e STS_ACME_EMAIL=${acme_email} \

@@ -29,6 +29,14 @@ variable "cells" {
     vpc_cidr               = string
     geolocation_countries  = optional(list(string), [])
     db_snapshot_identifier = optional(string, "") # the cell's; unread here
+    # A MULTI-CLOUD ENVIRONMENT'S GCP CELLS (#97): unread here but for
+    # `cloud`, which keeps them out of everything this stack does with an
+    # AWS cell — its state, its replica, its peering and its secret replicas.
+    # Their copies of the global tier subscribe to the publication below and
+    # are deploy/multicloud/gcp-global's.
+    cloud          = optional(string, "aws")
+    coordinates    = optional(object({ latitude = string, longitude = string }))
+    global_db_cidr = optional(string, "")
   }))
   validation {
     condition     = length(var.cells) >= 2
@@ -38,14 +46,14 @@ variable "cells" {
     # The cells this stack has a provider for (providers.tf), and each in
     # the region its id names.
     condition = alltrue([
-      for id, c in var.cells : lookup({
+      for id, c in var.cells : c.cloud != "aws" || lookup({
         usw2  = "us-west-2"
         cac1  = "ca-central-1"
         euc1  = "eu-central-1"
         apse1 = "ap-southeast-1"
       }, id, "") == c.region
     ])
-    error_message = "each cell must be one of usw2 (us-west-2), cac1 (ca-central-1), euc1 (eu-central-1), apse1 (ap-southeast-1), in the region its id names."
+    error_message = "each AWS cell must be one of usw2 (us-west-2), cac1 (ca-central-1), euc1 (eu-central-1), apse1 (ap-southeast-1), in the region its id names."
   }
 }
 
@@ -53,8 +61,8 @@ variable "primary_cell" {
   description = "The cell whose VPC holds the global database's writer (issue #98, D3)."
   type        = string
   validation {
-    condition     = contains(keys(var.cells), var.primary_cell)
-    error_message = "primary_cell must be a key of cells."
+    condition     = try(var.cells[var.primary_cell].cloud, "") == "aws"
+    error_message = "primary_cell must be an AWS cell of cells: the global writer is RDS (#97 keeps it there)."
   }
 }
 
@@ -119,4 +127,17 @@ variable "tags" {
   default = {
     ManagedBy = "terraform"
   }
+}
+
+variable "max_slot_wal_keep_size_mb" {
+  description = <<-EOT
+    A MULTI-CLOUD ENVIRONMENT ONLY (#97): the most WAL the writer keeps for a
+    logical replication slot that has fallen behind — a GCP cell's subscriber
+    that is down, or that was destroyed without dropping its subscription.
+    Past it the slot is invalidated and that subscriber must be re-synced
+    (its node's schema-init drops and re-creates the subscription), rather
+    than the writer's disk filling and every cell losing its global writes.
+  EOT
+  type        = number
+  default     = 10240
 }

@@ -42,7 +42,7 @@ locals {
 
 resource "google_compute_firewall" "clients" {
   name        = "${local.prefix}-clients"
-  network     = google_compute_network.main.id
+  network     = local.network_id
   description = "The published ports, from allowed_cidrs, to the load balancer's address"
   direction   = "INGRESS"
   priority    = 1000
@@ -59,7 +59,7 @@ resource "google_compute_firewall" "clients" {
 
 resource "google_compute_firewall" "health_checks" {
   name        = "${local.prefix}-health-checks"
-  network     = google_compute_network.main.id
+  network     = local.network_id
   description = "Google's load balancer and autohealing health checks, on 443"
   direction   = "INGRESS"
   priority    = 1000
@@ -75,7 +75,7 @@ resource "google_compute_firewall" "health_checks" {
 
 resource "google_compute_firewall" "egress_https" {
   name        = "${local.prefix}-egress-https"
-  network     = google_compute_network.main.id
+  network     = local.network_id
   description = "Google APIs, Artifact Registry, the ACME server"
   direction   = "EGRESS"
   priority    = 1000
@@ -92,7 +92,7 @@ resource "google_compute_firewall" "egress_https" {
 resource "google_compute_firewall" "egress_dns" {
   count       = local.public_name ? 1 : 0
   name        = "${local.prefix}-egress-dns"
-  network     = google_compute_network.main.id
+  network     = local.network_id
   description = "The ACME client asking the zone's name servers whether the DNS-01 record has propagated"
   direction   = "EGRESS"
   priority    = 1000
@@ -113,7 +113,7 @@ resource "google_compute_firewall" "egress_dns" {
 
 resource "google_compute_firewall" "egress_database" {
   name        = "${local.prefix}-egress-database"
-  network     = google_compute_network.main.id
+  network     = local.network_id
   description = "PostgreSQL over TLS, to the database's Private Service Connect endpoint"
   direction   = "EGRESS"
   priority    = 1000
@@ -129,7 +129,7 @@ resource "google_compute_firewall" "egress_database" {
 
 resource "google_compute_firewall" "egress_deny" {
   name        = "${local.prefix}-egress-deny"
-  network     = google_compute_network.main.id
+  network     = local.network_id
   description = "Nothing else leaves a node"
   direction   = "EGRESS"
   priority    = 65000
@@ -139,5 +139,67 @@ resource "google_compute_firewall" "egress_deny" {
 
   deny {
     protocol = "all"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# A CELL'S OWN TRAFFIC (#97): the inter-cell listener, both ways, with every
+# OTHER cell of both clouds (their CIDRs arrive over the VPN or the shared
+# network); and the global tier — the RDS writer in the primary AWS cell,
+# across the VPN, and this cell's Cloud SQL copy in its private-services
+# range. The internal load balancer's health checks come from the ranges the
+# public one's do (health_checks, above), on 8446.
+# ---------------------------------------------------------------------------
+resource "google_compute_firewall" "intercell_in" {
+  count       = local.multi ? 1 : 0
+  name        = "${local.prefix}-intercell-in"
+  network     = local.network_id
+  description = "The inter-cell listener, from every other cell (#97)"
+  direction   = "INGRESS"
+  priority    = 1000
+
+  source_ranges           = concat(local.peer_cidrs, local.health_check_ranges)
+  target_service_accounts = local.node_accounts
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(local.intercell_port)]
+  }
+}
+
+resource "google_compute_firewall" "intercell_out" {
+  count       = local.multi ? 1 : 0
+  name        = "${local.prefix}-intercell-out"
+  network     = local.network_id
+  description = "The inter-cell listener of every other cell (#97)"
+  direction   = "EGRESS"
+  priority    = 1000
+
+  destination_ranges      = local.peer_cidrs
+  target_service_accounts = local.node_accounts
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(local.intercell_port)]
+  }
+}
+
+resource "google_compute_firewall" "egress_global_database" {
+  count       = local.multi ? 1 : 0
+  name        = "${local.prefix}-egress-global-db"
+  network     = local.network_id
+  description = "The global tier: the RDS writer across the VPN, and this cell's Cloud SQL copy (#97)"
+  direction   = "EGRESS"
+  priority    = 1000
+
+  destination_ranges = compact([
+    var.cells[var.primary_cell].vpc_cidr,
+    local.this_cell.global_db_cidr,
+  ])
+  target_service_accounts = local.node_accounts
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(local.db_port)]
   }
 }

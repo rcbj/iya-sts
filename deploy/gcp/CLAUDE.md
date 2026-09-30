@@ -139,7 +139,12 @@ verify-ca; AWS sets nothing and is unchanged).
   `service_url` like any environment, but the two callback jobs need a
   GCP task of their own. The outputs keep AWS's names where there is a
   counterpart so the port is mostly the callback stack.
-* **Cells (`global/`, #98).** This is the standard single-region pattern.
+* **Cells (`global/`, #98) on GCP alone.** This is the standard
+  single-region pattern. **A GCP cell of a multi-cloud environment is this
+  stack with `cell` set (#97)** — the shared network, a region's key, the
+  inter-cell load balancer, the Cloud SQL copy of the global tier —
+  `deploy/multicloud/CLAUDE.md` argues it; `cell` empty renders what is
+  described above.
 * **Mail.** GCP has no mail-sending service; the service's SMTP, ACS and Gmail
   transports can be configured through `extra_environment`.
 * **`spiffe-realm/` for additional realms.** A realm's ports would be one more

@@ -20,6 +20,9 @@ locals {
     "iamcredentials.googleapis.com",
     "logging.googleapis.com",
     "secretmanager.googleapis.com",
+    # Private services access, for the global tier's Cloud SQL copies in a
+    # multi-cloud environment (#97).
+    "servicenetworking.googleapis.com",
     "serviceusage.googleapis.com",
     "sqladmin.googleapis.com",
     "storage.googleapis.com",
