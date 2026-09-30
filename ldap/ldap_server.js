@@ -6059,15 +6059,15 @@ function autoCreateUser(detail) {
   // carries no invented value: namePlan() and applyVcAttributes() ask
   // `mode.inventsClaimValues()`.
   //
-  // WHAT IS LIFTED IS THE MODE'S GATE AND NOT THE OPERATOR'S (2026-09-30).
-  // `ldap.autocreateUsers` off is an explicit "this realm creates nobody", for
-  // every protocol, and a relationship's switch does not overrule it:
-  // `tests/federation_provisioning.js` 7c holds a newcomer refused there with
-  // the relationship's switch on. The first version of this exception
-  // bypassed both, and that check failed on the merged develop.
+  // AND IT OVERRIDES `ldap.autocreateUsers` TOO (rcbj, 2026-09-30). The
+  // realm setting is the default for the protocols with no switch of their
+  // own; a relationship with `fedAutocreateUsers` on is the operator saying,
+  // for that partner, that its newcomers are created — so it wins over the
+  // realm's "create nobody" in either mode. A relationship with the switch
+  // off still creates nobody, and every other door still reads the realm
+  // setting. `tests/federation_provisioning.js` 7c holds it.
   const federationMayCreate = !!(info.federation &&
-                                 info.federation.create === true) &&
-    !!config.value('ldap.autocreateUsers');
+                                 info.federation.create === true);
   if (!autocreateUsers() && !federationMayCreate) {
     if (existing &&
         applyFederatedAttributes(existing, info, { created: false })) {
