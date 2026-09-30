@@ -262,10 +262,10 @@ var config = {
   // --- Global ----------------------------------------------------------
   workers: {
     startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
-    requestCount: 0,                                               // Request worker processes; restart to apply
+    requestCount: 1,                                               // Request worker threads; restart to apply
     heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply
     startConcurrency: 1,                                           // Request workers starting at once; restart to apply
-    dispatch: "",                                                  // Handled in a request worker; restart to apply
+    dispatch: "*",                                                 // Handled in a request worker; restart to apply
     fanout: "/scim,/xacml,/admin-api",                             // Dispatched paths with no session affinity; restart to apply
     surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply
     surfaces: "/admin,/portal",                                    // Paths handled by the hosted-surface workers; restart to apply
@@ -275,7 +275,7 @@ var config = {
     batchQueueLimit: 5000,                                         // Batch requests waiting
     batchQueueTimeoutS: 60,                                        // Longest a batch request waits (seconds)
     maxSockets: 64,                                                // Connections per request worker; restart to apply
-    readYourWrite: false,                                          // Read-your-write across request workers
+    readYourWrite: true,                                           // Read-your-write across request workers
     socketDir: ""                                                  // Request worker socket directory; restart to apply
   },
 

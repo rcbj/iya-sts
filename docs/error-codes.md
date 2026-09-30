@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3879** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3878** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -270,8 +270,8 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0043` | A request worker exited (or could not start) and a replacement was forked into its pool and slot. | Nothing directly: requests in flight on the dead worker were answered 502 (STS-WORKER-0030) |
 | `STS-WORKER-0044` | The /admin/worker-pools page or GET /admin-api/worker-pools could not build its report of the worker pools (#327). | HTTP 500 page or JSON |
 | `STS-WORKER-0045` | A request worker could not be forked at all (the fork call threw); the start gate moved on to the next (#342). | — |
-| `STS-WORKER-0046` | A request worker was aborted (SIGABRT), which is how V8 ends a process whose heap reached its limit (--max-old-space-size, workers.heapLimitMb); V8's own "JavaScript heap out of memory" line precedes it in the log (#341). | Nothing directly: requests in flight on it were answered 502 |
-| `STS-WORKER-0047` | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). | Nothing directly: requests in flight on it were answered 502 |
+| `STS-WORKER-0046` | A request worker ran out of heap: its heap reached its limit (workers.heapLimitMb, #341) — ERR_WORKER_OUT_OF_MEMORY for a worker thread since #364, a SIGABRT of a worker process before. | Nothing directly: requests in flight on it were answered 502 |
+| `STS-WORKER-0047` *(retired)* | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). Retired by #364: a worker is a thread, and the kernel's OOM killer ends the whole process. | — |
 | `STS-WORKER-0048` | A heap limit was due for the front process and it could not restart itself with one (no process.execve, or the call failed), so it runs without a limit; its request workers still get one (#341). | — |
 
 ## STS-STORE
