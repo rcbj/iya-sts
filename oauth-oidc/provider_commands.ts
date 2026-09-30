@@ -568,6 +568,36 @@ class ProviderCommands {
     return found ? found.slice(prefix.length) : '';
   }
 
+  // COMMITTED BEFORE IT IS HANDED OUT (2026-09-30). A callback token is
+  // found by its `oauth2.commandCallbacks` row, which this process writes
+  // into its own store and flushes later; the Command Token carrying the
+  // token went out at once. A relying party calling back to ANOTHER process
+  // or node — a request worker, or the other node behind the balancer —
+  // then presented a token nobody there had, and was answered 401:
+  // `sts_provider_commands` waited thirty seconds for `suspended` in
+  // single-node twice. So what hands a token out waits for the minted
+  // flush first, as `oidc_rp.ts` waits before it signs with a key it has
+  // just issued. A flush that fails is reported by persistence.js; the
+  // command goes out anyway, and a callback it cannot find is a 401 the
+  // relying party can retry.
+  /**
+   * Runs `fn` once the rows this process has minted are committed.
+   *
+   * @param fn - what to do then
+   * @returns a promise of what `fn` returns
+   */
+  private afterMintedCommit(fn: () => unknown): Promise<unknown> {
+    const { log } = this.deps;
+    log.debug("Entering ProviderCommands.afterMintedCommit().");
+    log.debug("Leaving ProviderCommands.afterMintedCommit().");
+    return Promise.resolve().then(function () {
+      return require('../persistence/persistence').flushMinted();
+    }).catch(function (e: Json) {
+      log.debug("Caught in ProviderCommands.afterMintedCommit(): " +
+                ((e && e.message) || e));
+    }).then(fn);
+  }
+
   // A callback token, minted and stored hashed with what it answers for.
   private mintCallback(fields: Json): string {
     const { log, now } = this.deps;
@@ -941,7 +971,10 @@ class ProviderCommands {
         purpose: 'refresh', clientId: String(clientId), command: cmd });
     }
     const queued = this.outbox.queue(fields);
-    this.outbox.dispatch([queued.row]).catch(function (e) {
+    const outbox = this.outbox;
+    this.afterMintedCommit(function () {
+      return outbox.dispatch([queued.row]);
+    }).catch(function (e) {
       log.debug("Caught in ProviderCommands.send(): " +
                 ((e && e.message) || e));
     });
@@ -1006,13 +1039,16 @@ class ProviderCommands {
     }
     runs.set(run.id, run);
     const realm = realms.current();
-    setImmediate(function () {
+    this.afterMintedCommit(function () {
       realms.run(realm, function () {
         return self.executeRun(run.id).catch(function (e) {
           log.debug("Caught in ProviderCommands.startTenant(): " +
                     ((e && e.message) || e));
         });
       });
+    }).catch(function (e) {
+      log.debug("Caught in ProviderCommands.startTenant(): " +
+                ((e && e.message) || e));
     });
     audit.audit({
       action: 'oauth2.command.tenant', actor: run.actor,
