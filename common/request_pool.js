@@ -2761,7 +2761,7 @@ function fork(pool, slot) {
         // died — counted as a failed start, so a worker that can never start
         // is tried QUICK_EXIT_LIMIT times and then given up on.
         try {
-          child.kill('SIGKILL');
+          child.kill();
         } catch (e) {
           log.debug('request_pool: could not end worker ' + entry.pid +
                     ', which could not start: ' + ((e && e.message) || e));
@@ -2822,7 +2822,7 @@ function fork(pool, slot) {
 // A worker that has gone. Unlike the computation pool there is nothing to
 // reject: a request in flight is an open socket, and the proxy below fails it
 // when the connection drops, with the pid in the sentence.
-function reap(entry, code, signal) {
+function reap(entry, code, reason) {
   log.debug('Entering reap(). pid=' + entry.pid);
   workers = workers.filter(function (one) { return one !== entry; });
   // ITS AGENT GOES WITH IT. The agent holds sockets to a socket PATH that has
@@ -2883,10 +2883,14 @@ function reap(entry, code, signal) {
     log.debug("Caught in reap(): " + ((e && e.message) || e));
   }
   failOperations(entry);
-  const how = signal ? 'was killed with ' + signal : 'exited with code ' + code;
+  // `reason` is startThread()'s exit cause (#364): a thread receives no
+  // signal, and the one cause it can name is its heap.
+  const how = reason === 'ERR_WORKER_OUT_OF_MEMORY'
+    ? 'ran out of heap (ERR_WORKER_OUT_OF_MEMORY)'
+    : 'exited with code ' + code;
   // WHY IT DIED, WHERE THIS PROCESS CAN TELL (#341): a heap that reached its
-  // limit, or the kernel's OOM killer. See exitCause().
-  noteExit(entry, code, signal);
+  // limit. See exitCause().
+  noteExit(entry, code, reason);
   // A FAILED START: a worker that never became ready, however long it took
   // to fail, or one that went within QUICK_EXIT_MS of being forked having
   // served nothing. A worker that was ready resets the count (fork()), so
@@ -3002,15 +3006,17 @@ function lastReport(entry) {
     return ' It had sent no memory report.';
   }
   log.debug("Leaving lastReport().");
+  // Its HEAP figures only: a thread's `rssMb` is the whole process's (#364),
+  // and would read as what this worker used.
   return ' Its last memory report, ' +
     Math.round((Date.now() - (m.at || Date.now())) / 1000) + 's before: ' +
-    'rss ' + m.rssMb + ' MiB, heap ' + m.heapUsedMb + ' of ' + m.heapTotalMb +
-    ' MiB (limit ' + m.heapLimitMb + '), external ' + m.externalMb + ' MiB.';
+    'heap ' + m.heapUsedMb + ' of ' + m.heapTotalMb + ' MiB (limit ' +
+    m.heapLimitMb + '), external ' + m.externalMb + ' MiB.';
 }
 
-function noteExit(entry, code, signal) {
+function noteExit(entry, code, reason) {
   log.debug("Entering noteExit(). pid=" + entry.pid);
-  const cause = exitCause(signal);
+  const cause = exitCause(reason);
   const pool = entry.pool || PROTOCOL_POOL;
   const budget = processMemory.budget();
   if (cause === 'STS-WORKER-0046') {
@@ -3021,7 +3027,7 @@ function noteExit(entry, code, signal) {
                          : ', V8\'s own default') + '.' + lastReport(entry));
   }
   recentExits.push({ pid: entry.pid, pool: pool, code: code,
-                     signal: signal || null, cause: cause || null,
+                     reason: reason || null, cause: cause || null,
                      at: Date.now(), memory: entry.memory || null });
   if (recentExits.length > EXITS_KEPT) {
     recentExits = recentExits.slice(-EXITS_KEPT);
@@ -5866,7 +5872,7 @@ function stop(timeoutMs) {
           log.warn(errorCodes.tag('STS-WORKER-0031') +
                    'request_pool: worker ' + entry.pid + ' did not finish ' +
                    'within ' + limit + 'ms and was killed.');
-          entry.child.kill('SIGKILL');
+          entry.child.kill();
         }
       });
       done();

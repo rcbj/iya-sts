@@ -1456,6 +1456,9 @@ class RequestWorker {
   reportPoolStatus(message: any): void {
     const { log } = this.deps;
     log.debug("Entering RequestWorker.reportPoolStatus().");
+    // IN A THREAD (#364) `rss` and the CPU time are the WHOLE PROCESS's, the
+    // same in every thread; only the heap figures are this isolate's. They
+    // are sent as read, and Node Health draws a thread's heap only.
     let memory: unknown = null;
     let cpu: unknown = null;
     let error = '';
