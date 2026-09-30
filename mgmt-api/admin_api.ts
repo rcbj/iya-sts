@@ -4093,8 +4093,10 @@ class AdminApi {
         operationId: 'getWorkerPools',
         summary: 'The request and hosted-surface worker pools of this node',
         description: 'Always `generatedAt`, `node`, `pid` (the front ' +
-                     'process that answered), `scope` (`node`) and ' +
-                     '`scopeText`; then `pools`, two of them, `id` ' +
+                     'process that answered), `mainThread` (true: drawn ' +
+                     'on its main thread, which holds the pools), ' +
+                     '`scope` (`node`) and `scopeText`; then `pools`, ' +
+                     'two of them, `id` ' +
                      '`request` and `surface`, each with `title`, ' +
                      '`module`, `setting`, `state` (`off`, ' +
                      '`not-started`, `not-dispatching`, `running` or ' +
@@ -4106,8 +4108,14 @@ class AdminApi {
                      'asked for — `failedStarts` among them, `replaced` ' +
                      'and `stopped`) and `responseTime` (`answered`, ' +
                      '`averageMs`, `recentAverageMs`, `maxMs`, dispatch to ' +
-                     'answer), and its `workers` (`pid`, `slot`, `ready`, ' +
-                     '`busy`, `inFlight`, `served`, `upSeconds`). There is ' +
+                     'answer), and its `workers` — each a worker THREAD ' +
+                     'of the front process since #364 — (`threadId`, ' +
+                     '`slot`, `ready`, `busy`, `inFlight`, `served`, ' +
+                     '`upSeconds`). `restarts.forked` counts the threads ' +
+                     'started. A request pool at the default ' +
+                     '`workers.requestCount` of 1 is `off` where the ' +
+                     'store cannot coordinate, and `stateText` says so. ' +
+                     'There is ' +
                      'no post-quantum pool since #363: post-quantum ' +
                      'signing and scrypt run on libuv\'s thread pool ' +
                      'inside each process. Every count is ' +
@@ -4173,7 +4181,8 @@ class AdminApi {
       { method: 'GET', path: BASE + '/node-health', tag: 'Service',
         operationId: 'getNodeHealth',
         summary: 'The CPU and memory of this node\'s container, and the ' +
-                 'Node.js memory of each of its processes',
+                 'Node.js memory of each of its processes and worker ' +
+                 'threads',
         description: 'Always `generatedAt`, `node`, `pid` (the front ' +
                      'process that answered), `scope` (`node`), ' +
                      '`scopeText` and `cgroup` (the cgroup v2 directory ' +
@@ -4196,17 +4205,28 @@ class AdminApi {
                      '(`memory.max`; null for none), ' +
                      '`utilisationPercent`, `peakBytes`, `anonBytes`, ' +
                      '`fileBytes`, `kernelBytes` and `oomKills`. ' +
-                     '`processes`: `rows` — the front process and each ' +
-                     'request and hosted-surface worker that answered ' +
-                     'within a second (`process.memoryUsage()`: ' +
-                     '`rssBytes`, `heapUsedBytes`, `heapTotalBytes`, ' +
-                     '`externalBytes`, `arrayBuffersBytes`, and CPU time), ' +
-                     'and the debugger\'s api child, the same figures ' +
+                     '`processes`: `rows`, each with `kind` (`process` or ' +
+                     '`thread`), `pid` and `threadId` — the front process ' +
+                     '(`process.memoryUsage()`: `rssBytes`, ' +
+                     '`heapUsedBytes`, `heapTotalBytes`, `externalBytes`, ' +
+                     '`arrayBuffersBytes`, and CPU time; its resident ' +
+                     'size and CPU time are the whole process\'s, every ' +
+                     'thread\'s included, `processWide` says so); each ' +
+                     'request and hosted-surface worker THREAD of it ' +
+                     '(#364) that answered within a second, with its own ' +
+                     'heap figures and `rssBytes` and CPU time null, ' +
+                     'because in a thread those are the process\'s; and ' +
+                     'the debugger\'s api child, the five figures ' +
                      'when it answered within half ' +
                      'a second, and otherwise `rssBytes` and ' +
                      '`peakRssBytes` from `/proc/<pid>/status`, the heap ' +
                      'figures null and `notReported` saying why — ' +
-                     '`unanswered`, and `totals`. `ecs`: the ECS task ' +
+                     '`unanswered` (worker threads that did not answer, by ' +
+                     '`threadId`; a thread has no /proc entry to fall ' +
+                     'back on), and `totals` (`rows`, `processes`, ' +
+                     '`workerThreads`, `rssBytes` over processes only, ' +
+                     '`processesWithRss`, the heap sums over every ' +
+                     'isolate and `isolatesWithHeap`). `ecs`: the ECS task ' +
                      'metadata endpoint\'s `taskLimits` and `stats` where ' +
                      '`ECS_CONTAINER_METADATA_URI_V4` is set, and ' +
                      '`available: false` with a sentence where it is not. ' +
@@ -4221,7 +4241,8 @@ class AdminApi {
                      '`stale` past 45 s, `gone` from cluster membership, ' +
                      '`no-snapshot`), `stateText`, `ageSeconds` and `view` ' +
                      '— and `totals` sums container memory and its limit, ' +
-                     'CPU and the processes over the nodes not gone; ' +
+                     'CPU, the processes and the worker threads over the ' +
+                     'nodes not gone; ' +
                      '`cluster` says whether there is one. `answeredBy` ' +
                      'names the node that answered (#332). A service ' +
                      'operation: a realm\'s own administrator is refused ' +
