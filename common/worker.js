@@ -319,6 +319,18 @@ function startWorker() {
     log.debug('worker ' + process.pid + ': the channel closed; exiting.');
     process.exit(0);
   });
+  // AN UNEXPECTED ERROR IS CONTAINED, NOT THE END OF THIS WORKER (#355):
+  // an exit fails every job in flight. Required HERE and guarded, rather
+  // than at the top, because this file is in the parent project's Kerberos
+  // COPY closure (kerberos/CLAUDE.md): a copy of this tree that lacks
+  // fault_boundary.js starts this worker exactly as it did before.
+  try {
+    require('./fault_boundary')
+      .installProcessHandlers('computation worker', log);
+  } catch (e) {
+    log.debug('Caught in startWorker(): ' + ((e && e.message) || e) +
+              '. Unexpected errors are not contained in this worker.');
+  }
   log.info('worker ' + process.pid + ': ready. ' + JOB_KINDS.length +
            ' job kind(s): ' + JOB_KINDS.join(', ') + '.');
   log.debug('Leaving startWorker().');

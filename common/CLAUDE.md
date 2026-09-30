@@ -1301,6 +1301,53 @@ if any deferred package is in the require cache — one top-level `require` of
 it anywhere in the stack would bring it back into every worker with nothing
 else failing.
 
+### `fault_boundary.ts`: NO STARTED PROCESS EXITS OVER AN UNEXPECTED ERROR (#355, 2026-09-29)
+
+**rcbj: a worker or leader process exiting "severely impacts availability of
+the cluster … It needs to recover gracefully."** Until #355 nothing listened
+for `uncaughtException` or `unhandledRejection`, so one bug in a timer
+callback, an unlistened `'error'` event, a promise chain with no `.catch()` or
+a failing `async` Express handler (Express 4 does not see a rejection) ended
+the front process — listeners, open connections, the scheduler's leadership —
+or a worker with its requests in flight.
+
+**Two boundaries, not a `try` in every function** (rcbj chose this over
+wrapping ~14.7k functions, which would log each fault once per stack frame):
+
+* `installProcessHandlers(role, log)` — logs under `STS-CORE-0141` (uncaught
+  exception) / `STS-CORE-0142` (unhandled rejection) WITH THE STACK, and the
+  process carries on. **Installed only once a process has STARTED**: the front
+  process in `server.js`'s `announce()`, a request worker once
+  `service_state.start()` is up, a computation worker in `startWorker()`. A
+  failure while starting stays fatal, as it always was: a process that could
+  not come up must not present itself as one that did.
+* `guardExpress(log)` — replaces express 4.22's `Layer.prototype.handle_request`
+  and `handle_error` with the same code plus an observer on the returned
+  promise: a rejection is logged (`STS-CORE-0143`) and handed to `next()` as a
+  PLAIN 500 (the final handler writes an error's stack into the page outside
+  `NODE_ENV=production`, and the thrown road still does). **Nothing is routed
+  when the handler already answered or already called `next()`** — the chain
+  would run twice — it is only logged. One prototype, so it covers every
+  express app in the process, the debugger's included; a Layer of another
+  shape is `STS-CORE-0144` and no guard.
+
+**Throttled per distinct fault** (kind, name, message, first frame): logged at
+occurrences 1, 2, 3 and each power of ten with the count — never a line per
+request, and no timer (a summary would be a scheduler job). `figures()` has
+the totals.
+
+**Not from `app.js` or at `worker.js`'s top**, which are both in the parent
+project's Kerberos COPY closure (`kerberos/CLAUDE.md`): `server.js` and
+`request_worker.ts` call the guard, and `worker.js` requires the module inside
+`startWorker()` in a `try`, so a copy without it starts as before.
+
+**What it does not change**: every existing `catch`, its line and its code.
+The AST audit that went with it (every `catch`, `.catch()` and `.then(ok,
+fail)` that neither logs, rethrows nor reads its error) found ten: two here,
+now logged (`risk/risk_failures.ts`'s ASN fallback, `scep/scep.ts`'s turn
+guard), and eight in the vendored Kerberos codecs, which are the parent
+project's to change. `tests/fault_boundary.js` holds both halves, in children.
+
 ## `request_pool.js` and `request_worker.ts`: THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER
 
 **This moved here from the root `CLAUDE.md` when that file was broken up.** The

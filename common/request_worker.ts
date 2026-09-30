@@ -191,6 +191,9 @@ import errorCodes = require('./error_codes');
 // Requires only bunyan and `config`, both already loaded above: every
 // dispatched request's close lingers (the server's request handler below).
 import lingeringClose = require('./lingering_close');
+// Requires only the error-code table above: an unexpected error in this
+// worker is logged and contained rather than ending it (#355).
+import faultBoundary = require('./fault_boundary');
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -790,6 +793,9 @@ class RequestWorker {
 
     // THE WHOLE SERVICE, in the one order there is. See protocol_stack.ts.
     const app = require('./app');
+    // A rejected `async` handler is a 500 and not this worker's end (#355),
+    // guarded before the socket can take a request. See fault_boundary.ts.
+    faultBoundary.guardExpress(log);
 
     // -------------------------------------------------------------------------
     // THE FRONT PROCESS IS A TRUSTED PROXY, AND SAYING SO IS NOT OPTIONAL.
@@ -1108,6 +1114,11 @@ class RequestWorker {
       // and not at the top, for `service_state`'s reason above: nothing of
       // the stack is loaded before the stack is.
       require('../cluster/scheduler').start('per-process');
+      // STARTED: from here an uncaught exception or unhandled rejection is
+      // logged and contained, and this worker keeps serving (#355). A
+      // failure before this point still ends it, as it always did — the
+      // front process is told and replaces it.
+      faultBoundary.installProcessHandlers('request worker', log);
       this.bindSocket();
     }).catch((err) => {
       log.error(errorCodes.tag('STS-WORKER-0019') +

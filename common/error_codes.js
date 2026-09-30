@@ -890,6 +890,32 @@ const CODES = [
       'when it was first needed, so the call that needed it fails. The ' +
       'image is missing or has a broken copy of the package.',
     spec: 'none — logged; the call fails as it would have at start' },
+  { code: 'STS-CORE-0141',
+    summary: 'An uncaught exception reached a started process — the front ' +
+      'process, a request worker or a computation worker — and was ' +
+      'contained there rather than ending it (#355, ' +
+      'common/fault_boundary.ts). The line carries the stack. Logged at ' +
+      'the first three occurrences of each distinct fault and then at each ' +
+      'power of ten, with the count.',
+    spec: 'none — logged; the process carries on' },
+  { code: 'STS-CORE-0142',
+    summary: 'A promise rejection nobody handled reached a started process ' +
+      'and was contained there rather than ending it (#355). The line ' +
+      'carries the stack, throttled as STS-CORE-0141 is.',
+    spec: 'none — logged; the process carries on' },
+  { code: 'STS-CORE-0143',
+    summary: 'An Express handler returned a promise that rejected (an ' +
+      '`async` handler that failed, #355). The request is answered with a ' +
+      'plain 500 through Express\'s final handler, as a thrown error is, ' +
+      'unless the handler had already answered or called next(); the ' +
+      'line carries the stack, throttled as STS-CORE-0141 is.',
+    spec: 'HTTP 500 Internal Server Error, with no detail' },
+  { code: 'STS-CORE-0144',
+    summary: 'The Express guard (#355) could not be installed, because ' +
+      'express/lib/router/layer is missing or not the shape it knows: a ' +
+      'rejected async handler reaches the process handlers ' +
+      '(STS-CORE-0142) instead of being answered with a 500.',
+    spec: 'none — logged at start' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

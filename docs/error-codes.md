@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3874** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3878** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 67
+* [Service core (`STS-CORE`)](#sts-core) — 71
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 47
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 68
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -211,6 +211,10 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0122` | A trust realm's removal was refused because a removal of it is already in progress (#294): realms.retire() marked it less than realms.removalDeliveryTimeoutS plus a 30-second margin ago, or is running in this process. Starting a second one would end and announce everything twice. Once that time has passed the removal is taken to be interrupted, and removing the realm again finishes it. | none — the console and /admin-api refuse the remove action |
 | `STS-CORE-0123` | A trust realm is stuck half removed (#294): it carries the retiring mark (#262) from longer ago than a removal can take, so the process that was removing it stopped before it finished. Every new sign-in and issuance in it is refused (STS-CORE-0121) until an administrator removes it again, from another realm. Logged when such a realm is restored at start, and when the removal is finished. | none — logged; /admin/realms and GET /admin-api/realms show it |
 | `STS-CORE-0140` | A package this service requires at first use rather than at start (common/lazy_module.ts, #348) — the gRPC runtime, its proto loader, jsonld through the vendored bbs2023.js — failed to load when it was first needed, so the call that needed it fails. The image is missing or has a broken copy of the package. | none — logged; the call fails as it would have at start |
+| `STS-CORE-0141` | An uncaught exception reached a started process — the front process, a request worker or a computation worker — and was contained there rather than ending it (#355, common/fault_boundary.ts). The line carries the stack. Logged at the first three occurrences of each distinct fault and then at each power of ten, with the count. | none — logged; the process carries on |
+| `STS-CORE-0142` | A promise rejection nobody handled reached a started process and was contained there rather than ending it (#355). The line carries the stack, throttled as STS-CORE-0141 is. | none — logged; the process carries on |
+| `STS-CORE-0143` | An Express handler returned a promise that rejected (an `async` handler that failed, #355). The request is answered with a plain 500 through Express's final handler, as a thrown error is, unless the handler had already answered or called next(); the line carries the stack, throttled as STS-CORE-0141 is. | HTTP 500 Internal Server Error, with no detail |
+| `STS-CORE-0144` | The Express guard (#355) could not be installed, because express/lib/router/layer is missing or not the shape it knows: a rejected async handler reaches the process handlers (STS-CORE-0142) instead of being answered with a 500. | none — logged at start |
 
 ## STS-WORKER
 

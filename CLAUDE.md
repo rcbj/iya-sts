@@ -359,6 +359,11 @@ the front process (`tls/CLAUDE.md`), and the client-certificate truststore took
 a pin (`tls/CLAUDE.md`). **Dispatch without coordination is refused and the
 service does not start**, because it answers WRONGLY rather than slowly.
 
+**No STARTED process exits over an unexpected error (#355)**: a new kind of
+process installs `common/fault_boundary.ts`'s handlers once it has started,
+and a new express app is covered by the guard already —
+`common/CLAUDE.md` (`fault_boundary.ts`).
+
 ## Anything periodic is a scheduler job
 
 **rcbj's architectural directive, 2026-09-21: anything that has to be done
