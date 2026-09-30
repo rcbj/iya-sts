@@ -58,10 +58,22 @@
 // Kerberos codec files — ARE stripped, in the image only: what may not be
 // edited is the repository's copy, and that one is untouched.
 //
-// It also reports which of the files it leaves are still TWO-BYTE — a
-// character above U+00FF left in a string literal or a regular expression —
-// because V8 stores those as UTF-16 whatever this does. It does not rewrite
-// them: a string literal is behaviour.
+// AND IT WRITES THE CHARACTERS ABOVE U+00FF AS ESCAPES, IN STRINGS AND
+// REGULAR EXPRESSIONS (#369, 2026-09-30). After the comments go, what keeps
+// a file two-byte is string literals — 8,103 em-dashes among 8,435 such
+// characters in 283 files, about 20 MB of heap per isolate. So each is
+// written as `\uXXXX` (a surrogate pair as two, which means the same code
+// point in a string, in a regular expression without the `u` flag and in
+// one with it). A character that was already escaped (`\—`) becomes the
+// escape itself; a backslash before U+2028 or U+2029 is a line continuation,
+// which contributes nothing to the value, and is left as it is. **Template
+// literals are not touched**: a tagged template's `.raw` and `String.raw`
+// see the source text, so an escape there would change a value. **And this
+// is proved too**: a string token must have the same cooked value before
+// and after, a regular expression the same flags and the same pattern once
+// both are written with the same escapes, and every other token the same
+// text. The files still two-byte after it — a template literal, an
+// identifier or a line continuation — are named in the report.
 //
 // Usage: node tests/tools/strip-comments.js <root> [--report=N]
 // ---------------------------------------------------------------------------
@@ -202,6 +214,146 @@ function strip(text) {
   return { text: out, comments: removed };
 }
 
+// ---------------------------------------------------------------------------
+// ESCAPING (#369). `escapeWide()` rewrites one string or regex token's text;
+// `escapeLiterals()` does every such token of a file and proves it.
+// ---------------------------------------------------------------------------
+function hex4(code) {
+  log.debug("Entering hex4().");
+  log.debug("Leaving hex4().");
+  return '\\u' + code.toString(16).toUpperCase().padStart(4, '0');
+}
+
+// HOT PATH: once per string and regex token of every shipped file; no
+// Entering/Leaving pair, which would drown the build log.
+/**
+ * A string or regex-literal token's source text with every UTF-16 unit
+ * above U+00FF written as `\uXXXX`, whether it stood alone or after a
+ * backslash; a backslash before U+2028 or U+2029 (a line continuation) is
+ * left as it was.
+ *
+ * @param {string} tokenText - the token's source text
+ * @returns {string}
+ */
+function escapeWide(tokenText) {
+  let out = '';
+  for (let i = 0; i < tokenText.length; i++) {
+    const ch = tokenText[i];
+    const code = tokenText.charCodeAt(i);
+    if (ch === '\\' && i + 1 < tokenText.length) {
+      const next = tokenText.charCodeAt(i + 1);
+      if (next > 0xff && next !== 0x2028 && next !== 0x2029) {
+        out += hex4(next);
+      } else {
+        out += ch + tokenText[i + 1];
+      }
+      i++;
+      continue;
+    }
+    out += code > 0xff ? hex4(code) : ch;
+  }
+  return out;
+}
+
+// The pattern of a regular expression with every `\uXXXX` above U+00FF
+// written as the character, for comparing two spellings of one pattern: the
+// two sides are normalised the same way, so an escape the original already
+// had and one this wrote compare equal, and nothing else does.
+function widePattern(pattern) {
+  log.debug("Entering widePattern().");
+  let out = '';
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern[i] === '\\') {
+      const m = /^u([0-9A-Fa-f]{4})/.exec(pattern.slice(i + 1, i + 6));
+      if (m && parseInt(m[1], 16) > 0xff) {
+        out += String.fromCharCode(parseInt(m[1], 16));
+        i += 5;
+        continue;
+      }
+      // An identity escape of a wide character (`\\—`) is that character.
+      if (i + 1 < pattern.length && pattern.charCodeAt(i + 1) > 0xff) {
+        out += pattern[i + 1];
+        i++;
+        continue;
+      }
+      out += pattern[i] + (pattern[i + 1] || '');
+      i++;
+      continue;
+    }
+    out += pattern[i];
+  }
+  log.debug("Leaving widePattern().");
+  return out;
+}
+
+/**
+ * Returns `text` with the characters above U+00FF in its string and regex
+ * literals written as escapes, and proves every token's meaning unchanged.
+ *
+ * @param {string} text - a JavaScript file's text (already stripped)
+ * @returns {{ text: string, escaped: number }}
+ */
+function escapeLiterals(text) {
+  log.debug("Entering escapeLiterals().");
+  if (!isTwoByte(text)) {
+    log.debug("Leaving escapeLiterals(). One-byte already.");
+    return { text: text, escaped: 0 };
+  }
+  const parsed = parse(text);
+  let out = '';
+  let cursor = 0;
+  let escaped = 0;
+  parsed.tokens.forEach(function (t) {
+    const label = t.type && t.type.label;
+    if (label !== 'string' && label !== 'regexp') {
+      return;
+    }
+    const raw = text.slice(t.start, t.end);
+    if (!isTwoByte(raw)) {
+      return;
+    }
+    const written = escapeWide(raw);
+    if (written === raw) {
+      return;
+    }
+    out += text.slice(cursor, t.start) + written;
+    cursor = t.end;
+    escaped = escaped + 1;
+  });
+  out += text.slice(cursor);
+  if (!escaped) {
+    log.debug("Leaving escapeLiterals(). Nothing in a literal.");
+    return { text: text, escaped: 0 };
+  }
+  const again = parse(out);
+  if (again.tokens.length !== parsed.tokens.length) {
+    log.debug("Leaving escapeLiterals(). Token count changed.");
+    throw new Error('escaping changed the token count from ' +
+                    parsed.tokens.length + ' to ' + again.tokens.length);
+  }
+  for (let i = 0; i < parsed.tokens.length; i++) {
+    const a = parsed.tokens[i];
+    const b = again.tokens[i];
+    const label = a.type && a.type.label;
+    let same;
+    if (label === 'string') {
+      same = b.type === a.type && a.value === b.value;
+    } else if (label === 'regexp') {
+      same = b.type === a.type && a.value.flags === b.value.flags &&
+        widePattern(a.value.pattern) === widePattern(b.value.pattern);
+    } else {
+      same = text.slice(a.start, a.end) === out.slice(b.start, b.end);
+    }
+    if (!same) {
+      log.debug("Leaving escapeLiterals(). A token changed.");
+      throw new Error('escaping changed token ' + i + ' (' + label + ') ' +
+                      JSON.stringify(text.slice(a.start, a.end).slice(0, 80)));
+    }
+  }
+  log.debug("Leaving escapeLiterals().");
+  return { text: out, escaped: escaped };
+}
+
 /**
  * Is this string one V8 must store as UTF-16: does it hold a character
  * above U+00FF?
@@ -261,6 +413,7 @@ function main(root, report) {
   let before = 0;
   let after = 0;
   let comments = 0;
+  let literals = 0;
   const failed = [];
   const twoByte = [];
   files.forEach(function (rel) {
@@ -278,9 +431,21 @@ function main(root, report) {
       after = after + Buffer.byteLength(text);
       return;
     }
-    if (result.comments) {
-      fs.writeFileSync(full, result.text);
+    let escaped = null;
+    try {
+      escaped = escapeLiterals(result.text);
+    } catch (e) {
+      log.debug("Caught in main(): " + ((e && e.message) || e));
+      // As a failed strip: recorded, and the build failed below.
+      failed.push(rel + ': ' + ((e && e.message) || e));
+      after = after + Buffer.byteLength(text);
+      return;
     }
+    if (result.comments || escaped.escaped) {
+      fs.writeFileSync(full, escaped.text);
+    }
+    literals = literals + escaped.escaped;
+    result = { text: escaped.text, comments: result.comments };
     comments = comments + result.comments;
     after = after + Buffer.byteLength(result.text);
     if (isTwoByte(result.text)) {
@@ -291,8 +456,9 @@ function main(root, report) {
     return (n / 1048576).toFixed(1) + ' MB';
   };
   console.log('strip-comments.js: ' + files.length + ' file(s), ' +
-              comments + ' comment(s) removed, ' + MB(before) + ' -> ' +
-              MB(after));
+              comments + ' comment(s) removed, ' + literals + ' string or ' +
+              'regular-expression literal(s) escaped to one-byte, ' +
+              MB(before) + ' -> ' + MB(after));
   twoByte.sort(function (a, b) {
     return b.bytes - a.bytes;
   });
@@ -301,7 +467,9 @@ function main(root, report) {
   }, 0);
   console.log('strip-comments.js: ' + twoByte.length + ' file(s), ' +
               MB(twoByteBytes) + ', still hold a character above U+00FF ' +
-              '(stored as UTF-16 by V8); the largest:');
+              'outside a string or regular expression — a template ' +
+              'literal, an identifier or a line continuation — (stored as ' +
+              'UTF-16 by V8); the largest:');
   twoByte.slice(0, report).forEach(function (one) {
     console.log('  ' + (one.bytes / 1024).toFixed(0).padStart(6) + ' KB  ' +
                 one.rel);
@@ -318,6 +486,7 @@ function main(root, report) {
 }
 
 module.exports = { strip: strip, isTwoByte: isTwoByte,
+                   escapeLiterals: escapeLiterals, escapeWide: escapeWide,
                    filesUnder: filesUnder, SKIP_TOP: SKIP_TOP,
                    SKIP_PATHS: SKIP_PATHS };
 

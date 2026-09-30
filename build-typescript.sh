@@ -41,8 +41,11 @@
 #      Names, whitespace between tokens and every line break are kept, so a
 #      line number in a stack trace from the image is the repository's; the
 #      tool proves each file's token stream unchanged and fails the build
-#      otherwise. Its header says what it skips and why. The tests image
-#      does not strip here either: its tests read the sources as text.
+#      otherwise. Since #369 it also writes every character above U+00FF in
+#      a string or regular-expression literal as a \uXXXX escape (proved the
+#      same value), so V8 stores the script one-byte: another ~20 MB per
+#      isolate. Its header says what it skips and why. The tests image does
+#      not strip here either: its tests read the sources as text.
 #
 # The compiler is `tests/node_modules/.bin/tsc`, a dependency of
 # `tests/package.json` for `.npmrc`'s reason; the caller installs it first.

@@ -140,7 +140,10 @@ break is kept, so **a line number in a stack trace from the image is the line
 number in the repository** — read the comments there. A column number can
 differ on a line that had a comment in the middle of it. The copyright and
 licence headers go with the other comments; `LICENSES/` and `REUSE.toml` are
-still in the image.
+still in the image. The build also writes characters such as `—` in string
+literals as `\u2014` escapes, which gives the same strings and halves the
+memory Node needs for each file's source; a line in the image can therefore
+read differently from the repository while meaning the same.
 
 The Workload API's Unix socket is inside the container. To reach it from the host
 or another container, mount its directory as a volume — publishing 8092 is the

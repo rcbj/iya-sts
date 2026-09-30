@@ -60,7 +60,10 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # in JavaScript, keeping every name and every line break
 # (`tests/tools/strip-comments.js` argues it). V8 holds each script's source
 # for the life of the process, and this repository's comments were 79 MB of
-# every process's heap. The repository and the tests image keep them.
+# every process's heap. Since #369 it also escapes the characters above
+# U+00FF left in string and regular-expression literals, so V8 stores each
+# script one-byte (another ~20 MB per isolate). The repository and the tests
+# image keep both as written.
 #
 # The installs are the final stage's (for the types of what the service
 # requires) and `tests/package.json`'s (the compiler, and the parser the
