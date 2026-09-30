@@ -672,10 +672,14 @@ function create(options) {
       });
   };
 
-  driver.loadMinted = function () {
+  // The FILTER is passed to both tiers (#333 made the postgres driver refuse
+  // a read that does not say which realms and which instant it wants; the
+  // tiered driver dropped it, and every node of a cell refused to start).
+  driver.loadMinted = function (filter) {
     log.debug("Entering tiered loadMinted().");
     log.debug("Leaving tiered loadMinted().");
-    return Promise.all([globalDriver.loadMinted(), cellDriver.loadMinted()])
+    return Promise.all([globalDriver.loadMinted(filter),
+                        cellDriver.loadMinted(filter)])
       .then(function (both) {
         const g = byHandleTier(both[0]).global;
         const c = byHandleTier(both[1]).cell;
