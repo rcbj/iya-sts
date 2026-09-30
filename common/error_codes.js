@@ -3508,6 +3508,11 @@ const CODES = [
       'supplied with it has a keyUsage without keyEncipherment, and an xml ' +
       'pin is also the key partners encrypt to (#263).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0218',
+    summary: 'A certificate authority branch finished building for a realm ' +
+      'that had been removed while it was built, and was discarded rather ' +
+      'than saved.',
+    spec: 'none (logged; the realm is gone)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

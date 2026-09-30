@@ -2851,14 +2851,35 @@ function create(options) {
           });
         }
 
-        merging.forEach(function (row) {
-          chain = chain.then(function () {
-            return settle(row, stored.get(idOf(row.realm, row.key)) || null,
-                          true);
-          });
+        // **EVERY ROW WRITTEN IN ONE PRIMARY-KEY ORDER, MERGED AND BLIND
+        // TOGETHER (2026-09-30).** The locks above are in key order, but the
+        // writes that followed were every merged row and then every blind
+        // one, the blind ones in journal order. An INSERT of a row that does
+        // not exist yet locks nothing until it runs, so two nodes writing the
+        // same new entries — a new realm's `ou=crl` and its CRL entries,
+        // published by both nodes at once — took those locks in two different
+        // orders and PostgreSQL killed one with `deadlock detected`
+        // (STS-STORE-0002). Since #351 the request whose change was in that
+        // flush is answered 503 (STS-STORE-0066): CI run 36762417779's
+        // cluster job, sts_ldap_read_authorization. saveMinted() gave its
+        // table one order on 2026-09-12 for the same reason.
+        const writes = merging.map(function (row) {
+          return { row: row, merge: true };
+        }).concat(blind.map(function (row) {
+          return { row: row, merge: false };
+        })).sort(function (a, b) {
+          return byKey(a.row, b.row);
         });
 
-        blind.forEach(function (row) {
+        writes.forEach(function (one) {
+          const row = one.row;
+          if (one.merge) {
+            chain = chain.then(function () {
+              return settle(row, stored.get(idOf(row.realm, row.key)) || null,
+                            true);
+            });
+            return;
+          }
           chain = chain.then(function () {
             // **`row.key` AND NOT `row.entry.dn` (2026-09-07).** A change row
             // is a POINTER, and the receiver dereferences it with
