@@ -13,10 +13,14 @@
 //   A. draft-ietf-hpke-pq-05's published vectors — every suite in the file:
 //      ML-KEM-512/768/1024, the three PQ/T hybrids (X-Wing among them) and
 //      the classical DHKEMs, over HKDF, SHAKE and TurboSHAKE, with AES-GCM
-//      and ChaCha20-Poly1305: DeriveKeyPair, deterministic Encap, the key
-//      schedule, every encryption and every export.
+//      and ChaCha20-Poly1305: DeriveKeyPair, Decap of the vector's `enc`,
+//      the key schedule, every decryption and every export — from the
+//      RECEIVING side since #363, because the vectors' Encap used a given
+//      ikmE and ML-KEM on node's OpenSSL takes no randomness — and a round
+//      trip through an Encap with our own.
 //   B. draft-irtf-cfrg-concrete-hybrid-kems' vectors: key expansion from the
-//      seed, deterministic encapsulation, decapsulation.
+//      seed, decapsulation of the vector's ciphertext, and a round trip
+//      (the same reason as A).
 //   C. The JOSE working group's HPKE JWEs (draft-ietf-jose-hpke-encrypt-22's
 //      repository): each compact JWE decrypted through `decryptJweCompact()`
 //      with the vector's key — HPKE-0 to HPKE-7, Integrated and Key
@@ -25,7 +29,9 @@
 //      applicable: this service speaks the compact serialisation only.
 //   D. node's own OpenSSL ML-KEM (node 24): a ciphertext node encapsulated
 //      decapsulates here to node's key, and one encapsulated here decapsulates
-//      in node — the independent implementation, both ways.
+//      in node. Since #363 the primitive here IS node's OpenSSL, so this
+//      holds the key and ciphertext plumbing around it (the seed, the
+//      encapsulation key check) rather than a second implementation.
 //   E. Every post-quantum and HPKE alg against every `enc`, through the two
 //      public functions, and the refusals a wrong key or a malformed JWE gets.
 //   F. pqc-kem-05's KMAC256 derivation rebuilt here from the draft's own
@@ -94,30 +100,34 @@ function hpkePq(t) {
       const kp = h.deriveKeyPair(v.kem_id, hex(v.ikmR));
       const suite = { kem: v.kem_id, kdf: v.kdf_id, aead: v.aead_id };
       const psk = v.psk ? { psk: hex(v.psk), pskId: hex(v.psk_id) } : {};
-      const s = h.setupSender(suite, kp.pk, Object.assign({
-        info: hex(v.info), ikmE: hex(v.ikmE) }, psk));
-      const r = h.setupReceiver(suite, s.enc, kp.sk,
+      // FROM THE RECEIVING SIDE since #363: the vectors' `enc` is made with
+      // a given ikmE, and ML-KEM on node's OpenSSL takes no randomness, so
+      // the receiver is set up on the vector's `enc` and must reach the
+      // vector's secret, key schedule, plaintexts and exports; a sender with
+      // its own randomness must then round-trip with that receiver's key.
+      const r = h.setupReceiver(suite, hex(v.enc), kp.sk,
                                 Object.assign({ info: hex(v.info) }, psk));
+      const s = h.setupSender(suite, kp.pk, Object.assign({
+        info: hex(v.info) }, psk));
+      const back = h.setupReceiver(suite, s.enc, kp.sk,
+                                   Object.assign({ info: hex(v.info) }, psk));
       const checks = [
         ['skRm', kp.sk.equals(hex(v.skRm))],
         ['pkRm', kp.pk.equals(hex(v.pkRm))],
-        ['enc', s.enc.equals(hex(v.enc))],
-        ['shared_secret', s.sharedSecret.equals(hex(v.shared_secret)) &&
-                          r.sharedSecret.equals(hex(v.shared_secret))],
-        ['key', s.context.key.equals(hex(v.key))],
-        ['base_nonce', s.context.baseNonce.equals(hex(v.base_nonce))],
-        ['exporter_secret', s.context.exporterSecret
-          .equals(hex(v.exporter_secret))]
+        ['shared_secret', r.sharedSecret.equals(hex(v.shared_secret))],
+        ['key', r.context.key.equals(hex(v.key))],
+        ['base_nonce', r.context.baseNonce.equals(hex(v.base_nonce))],
+        ['exporter_secret', r.context.exporterSecret
+          .equals(hex(v.exporter_secret))],
+        ['round trip', s.sharedSecret.equals(back.sharedSecret)]
       ];
       (v.encryptions || []).forEach(function (e, i) {
-        s.context.seq = typeof e.seq === 'number' ? e.seq : i;
-        r.context.seq = s.context.seq;
-        const ct = s.context.seal(hex(e.aad), hex(e.pt));
-        checks.push(['ct ' + i, ct.equals(hex(e.ct)) &&
-                     r.context.open(hex(e.aad), ct).equals(hex(e.pt))]);
+        r.context.seq = typeof e.seq === 'number' ? e.seq : i;
+        checks.push(['ct ' + i,
+                     r.context.open(hex(e.aad), hex(e.ct)).equals(hex(e.pt))]);
       });
       (v.exports || []).forEach(function (x, i) {
-        checks.push(['export ' + i, s.context.exportSecret(
+        checks.push(['export ' + i, r.context.exportSecret(
           hex(x.exporter_context), x.L).equals(hex(x.exported_value))]);
       });
       const bad = checks.filter(function (c) {
@@ -136,7 +146,8 @@ function hpkePq(t) {
     }
   });
   t.check(pass > 0 && !failures.length, 'draft-ietf-hpke-pq-05: ' + pass +
-          ' suite(s) reproduced, key pair to export', failures.join('; '));
+          ' suite(s) reproduced from the receiving side, key pair to ' +
+          'export', failures.join('; '));
   log.debug('Leaving hpkePq().');
 }
 
@@ -163,12 +174,14 @@ function concreteHybrids(t) {
       try {
         const seed = hex(v.seed);
         const x = h.hybridExpand(name, seed);
-        const e = h.hybridEncaps(name, x.ek, hex(v.randomness));
+        // The vector's ciphertext is decapsulated (#363: its encapsulation
+        // used given randomness, which node's ML-KEM does not take), and an
+        // encapsulation with our own randomness must round-trip.
+        const e = h.hybridEncaps(name, x.ek);
         const ok = x.ek.equals(hex(v.encapsulation_key)) &&
-                   e.ct.equals(hex(v.ciphertext)) &&
-                   e.ss.equals(hex(v.shared_secret)) &&
-                   h.hybridDecaps(name, seed, e.ct)
-                     .equals(hex(v.shared_secret));
+                   h.hybridDecaps(name, seed, hex(v.ciphertext))
+                     .equals(hex(v.shared_secret)) &&
+                   h.hybridDecaps(name, seed, e.ct).equals(e.ss);
         if (ok) {
           pass++;
         } else {
@@ -181,7 +194,7 @@ function concreteHybrids(t) {
       }
     });
     t.check(pass > 0 && !failures.length, 'concrete hybrid KEM ' + name + ': ' +
-            pass + ' vector(s), keys, encapsulation and decapsulation',
+            pass + ' vector(s), keys, decapsulation and a round trip',
             failures.join('; '));
   });
   log.debug('Leaving concreteHybrids().');

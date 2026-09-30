@@ -13,7 +13,10 @@
 // the channel and the ECS task metadata endpoint. Its constructor takes each
 // of those as a dependency, so this file hands it a cgroup of its own — a
 // temporary directory of cgroup v2 files it rewrites between samples — a
-// clock it moves, and pools that answer what it says. Nine claims:
+// clock it moves, and pools that answer what it says. Eight claims,
+// numbered as they were: the eighth, a real post-quantum child answering its
+// memory, went with that pool in #363 — post-quantum signing and scrypt run
+// on libuv's thread pool now, inside each process, and have no children.
 //
 //   1. CPU UTILISATION is CPU time over wall time against `cpu.max`'s
 //      quota: two samples taken for a first page, the kept sample used by a
@@ -29,19 +32,20 @@
 //      and never a zero.
 //   4. THE PROCESS'S OWN CGROUP is found through `/proc/self/cgroup` when the
 //      root is a host's.
-//   5. EVERY PROCESS IS COUNTED: the front process, each worker that
-//      answered and its post-quantum children from `/proc`, a worker that did
-//      not answer listed as such, the debugger's api child, and the totals.
+//   5. EVERY PROCESS AND WORKER THREAD IS COUNTED: the front process with
+//      the process's resident size and CPU time, each worker THREAD that
+//      answered with its own heap and neither of those (#364: they are the
+//      process's in a thread), a worker that did not answer listed as such
+//      with nothing read from `/proc`, the debugger's api child — from its
+//      own answer, or from `/proc` when it gave none — and totals that add
+//      the resident size of processes only; and no post-quantum child.
 //   6. THE ECS FIGURES are the container's own stats in `/task/stats`,
 //      against `/task`'s limits.
-//   7. THE REAL CHANNEL carries a worker's `process.memoryUsage()` back
-//      (`request_pool.askWorkerPoolStatus()` over a stub worker), the REAL
-//      `request_worker.ts` sends it, and the page is drawn, pinned to the
-//      front process and refused to a realm's own administrator.
-//   8. A REAL POST-QUANTUM CHILD answers `worker_pool.askMemoryStatus()`
-//      with its own figures, the question is not counted as a job, a child
-//      computing a job is absent from a bounded answer, and the page draws
-//      the child from its answer.
+//   7. THE REAL CHANNEL carries a worker thread's `process.memoryUsage()`
+//      back (`request_pool.askWorkerPoolStatus()` over a stub worker thread,
+//      keyed by its threadId), the REAL `request_worker.ts` sends it, and the
+//      page is drawn, pinned to the front process and refused to a realm's
+//      own administrator.
 //   9. CGROUP V1 (Fargate's): cpuacct.usage against cfs_quota_us /
 //      cfs_period_us, usage_in_bytes against limit_in_bytes and the rest,
 //      found through controller-named hierarchies; v1's "no limit" sentinel
@@ -49,10 +53,10 @@
 //      cgroup at all on ECS drawn from the agent's figures, labelled; and
 //      the cluster totals adding whichever each node reported.
 //
-// Section 5 also holds the children's rows: one that answered with its own
-// five figures, the debugger's api child likewise, a busy one kept as a
-// /proc row saying why. `tests/debugger_api_process.js` holds the preload
-// that makes the debugger's api child answer.
+// Section 5 also holds the child's rows: the debugger's api child with its
+// own five figures when it answered, and a /proc row saying why when it did
+// not. `tests/debugger_api_process.js` holds the preload that makes the
+// debugger's api child answer.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -60,9 +64,7 @@ delete process.env.CONFIG_FILE;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const config = require('../common/config');
 const requestPool = require('../common/request_pool');
-const workerPool = require('../common/worker_pool');
 const app = require('../common/app');
 // Loading a module registers nothing since #50's R1, so the page's route is
 // registered here. The console shell comes first, as in the composition root.
@@ -79,25 +81,27 @@ const log = require('bunyan').createLogger({
   name: 'node_health_page',
   level: process.env.LOG_LEVEL || 'info' });
 
-// The stub request worker: `begin` in, `ready` out; `{ poolStatus }` answered
-// with a post-quantum pool of one child and a memory of its own.
+// The stub request worker, a THREAD as the real one is since #364: `begin`
+// in, `ready` out over `parentPort`; `{ poolStatus }` answered with its
+// memory and its threadId, as `request_worker.ts` answers it.
 const STUB = [
   "'use strict';",
   "const http = require('http');",
-  "process.on('message', function (m) {",
+  "const wt = require('worker_threads');",
+  "wt.parentPort.on('message', function (m) {",
   "  if (m && m.poolStatus) {",
-  "    process.send({ poolStatus: true, id: m.id, pid: process.pid,",
-  "      pq: { configured: 1, running: 0, workers: [] },",
-  "      memory: process.memoryUsage(), cpu: process.cpuUsage(),",
-  "      uptimeS: 1 });",
+  "    wt.parentPort.postMessage({ poolStatus: true, id: m.id,",
+  "      pid: wt.threadId, memory: process.memoryUsage(),",
+  "      cpu: process.cpuUsage(), uptimeS: 1 });",
   "    return;",
   "  }",
   "  if (m && m.stop) { process.exit(0); }",
   "  if (!m || !m.begin) { return; }",
   "  const server = http.createServer(function (req, res) { res.end(''); });",
-  "  server.listen(m.socket, function () { process.send({ ready: true }); });",
+  "  server.listen(m.socket, function () {",
+  "    wt.parentPort.postMessage({ ready: true });",
+  "  });",
   "});",
-  "process.on('disconnect', function () { process.exit(0); });",
   ""
 ].join('\n');
 
@@ -171,7 +175,7 @@ function aCgroup(overrides) {
   return tree(files);
 }
 
-// Pools that answer nothing: no request worker, no post-quantum child.
+// A pool that answers nothing, and no debugger child.
 function quietPools() {
   log.debug("Entering quietPools().");
   log.debug("Leaving quietPools().");
@@ -181,11 +185,6 @@ function quietPools() {
         return { workers: [] };
       }, askWorkerPoolStatus: function () {
         return Promise.resolve({});
-      } };
-    },
-    workerPool: function () {
-      return { stats: function () {
-        return { workers: [] };
       } };
     },
     debuggerProcess: function () {
@@ -432,16 +431,21 @@ function memoryOf(rss, heap) {
 
 async function checkEveryProcess(t) {
   log.debug("Entering checkEveryProcess().");
-  t.log.info('=== 5. the front process, every worker, every child, and ' +
-             'the totals ===');
+  t.log.info('=== 5. the front process, every worker thread, the ' +
+             'debugger\'s child, and the totals ===');
   const status = function (kb) {
     return 'Name:\tnode\nVmHWM:\t' + (kb * 2) + ' kB\nVmRSS:\t' + kb +
       ' kB\n';
   };
   const proc = tree({ 'self/cgroup': '0::/\n',
-                      '9000/status': status(10 * 1024),
-                      '9001/status': status(20 * 1024) });
+                      '9002/status': status(20 * 1024) });
   const asked = {};
+  // The debugger's api child answers only while `debuggerAnswers` is set.
+  let debuggerAnswers = true;
+  // The pool's workers are THREADS of pid 4242 (#364), and the pool's `pid`
+  // for each is its threadId: 3 to 6 here. Each answers with what a thread's
+  // process.memoryUsage() gives — a resident size that is the PROCESS's (the
+  // page must not add it again) and a heap that is its own.
   const made = anInstance(aCgroup(), {
     procRoot: proc,
     pid: 4242,
@@ -455,38 +459,20 @@ async function checkEveryProcess(t) {
       return {
         stats: function () {
           return { workers: [
-            { pid: 5001, pool: 'protocol', ready: true },
-            { pid: 5002, pool: 'protocol', ready: true },
-            { pid: 5003, pool: 'surfaces', ready: true },
-            { pid: 5004, pool: 'protocol', ready: false }] };
+            { pid: 3, pool: 'protocol', ready: true },
+            { pid: 4, pool: 'protocol', ready: true },
+            { pid: 5, pool: 'surfaces', ready: true },
+            { pid: 6, pool: 'protocol', ready: false }] };
         },
-        askWorkerPoolStatus: function (ms, options) {
+        askWorkerPoolStatus: function (ms) {
           asked.workers = ms;
-          asked.childMemory = options && options.childMemory;
+          asked.arguments = arguments.length;
           return Promise.resolve({
-            // Asked its children, and the one it has was busy.
-            5001: { pq: { workers: [{ pid: 9001, inFlight: 1 }] },
-                    pqMemory: {},
-                    memory: memoryOf(80 * MIB, 30 * MIB),
-                    cpu: { user: 1000000, system: 0 }, uptimeS: 60 },
-            // Answered without asking its child (an older worker).
-            5003: { pq: { workers: [{ pid: 9003, inFlight: 0 }] },
-                    memory: memoryOf(70 * MIB, 20 * MIB),
-                    cpu: null, uptimeS: 60 }
+            3: { memory: memoryOf(100 * MIB, 30 * MIB),
+                 cpu: { user: 2000000, system: 500000 }, uptimeS: 60 },
+            5: { memory: memoryOf(100 * MIB, 20 * MIB),
+                 cpu: null, uptimeS: 60 }
           });
-        }
-      };
-    },
-    workerPool: function () {
-      return {
-        stats: function () {
-          return { workers: [{ pid: 9000, inFlight: 0 }] };
-        },
-        askMemoryStatus: function (ms) {
-          asked.ownChildren = ms;
-          return Promise.resolve({
-            9000: { memory: memoryOf(15 * MIB, 5 * MIB),
-                    cpu: { user: 300000, system: 100000 }, uptimeS: 30 } });
         }
       };
     },
@@ -497,82 +483,114 @@ async function checkEveryProcess(t) {
         },
         askMemory: function (ms) {
           asked.debugger = ms;
-          return Promise.resolve({ pid: 9002,
-                                   memory: memoryOf(50 * MIB, 25 * MIB),
-                                   cpu: { user: 0, system: 0 },
-                                   uptimeS: 90 });
+          return Promise.resolve(debuggerAnswers
+            ? { pid: 9002, memory: memoryOf(50 * MIB, 25 * MIB),
+                cpu: { user: 0, system: 0 }, uptimeS: 90 }
+            : null);
         }
       };
     }
   });
-  const view = await made.instance.nodeHealthView();
-  const p = view.processes;
+  let view = await made.instance.nodeHealthView();
+  let p = view.processes;
   const byPid = function (pid) {
     return p.rows.filter(function (r) {
-      return r.pid === pid;
+      return r.pid === pid && r.kind === 'process';
+    })[0];
+  };
+  const byThread = function (threadId) {
+    return p.rows.filter(function (r) {
+      return r.threadId === threadId;
     })[0];
   };
   const roles = p.rows.map(function (r) {
-    return r.pid + ':' + r.role;
+    return r.role;
   });
-  t.check(asked.workers === 1000 && asked.childMemory === 500 &&
-          asked.ownChildren === 500 && asked.debugger === 500,
-          'the workers are asked within a second, and told to ask their ' +
-          'children within half of one; the front process\'s children and ' +
-          'the debugger within half a second', JSON.stringify(asked));
+  t.check(asked.workers === 1000 && asked.arguments === 1 &&
+          asked.debugger === 500,
+          'the workers are asked within a second, with nothing to ask of ' +
+          'children of their own; the debugger within half a second',
+          JSON.stringify(asked));
   t.check(p.rows[0].pid === 4242 && p.rows[0].role === 'front process' &&
+          p.rows[0].kind === 'process' &&
+          p.rows[0].rssBytes === 100 * MIB &&
           p.rows[0].heapUsedBytes === 40 * MIB &&
-          p.rows[0].cpuUserSeconds === 2,
-          'the front process is first, with its own memoryUsage() and CPU',
-          JSON.stringify(p.rows[0]));
-  t.check(roles.indexOf('5001:request worker') >= 0 &&
-          roles.indexOf('5003:hosted-surface worker') >= 0,
-          'each worker that answered is a row, by its pool', roles.join());
-  t.check(roles.indexOf('9000:post-quantum worker of pid 4242') >= 0 &&
-          roles.indexOf('9001:post-quantum worker of pid 5001') >= 0 &&
-          roles.indexOf('9003:post-quantum worker of pid 5003') >= 0 &&
-          roles.indexOf('9002:protocol debugger api') >= 0,
-          'the post-quantum children of the front process and of each ' +
-          'worker, and the debugger\'s api, are rows', roles.join());
-  const own = byPid(9000);
-  t.check(own.source === 'process.memoryUsage()' &&
-          own.rssBytes === 15 * MIB && own.heapUsedBytes === 5 * MIB &&
-          own.heapTotalBytes === 10 * MIB && own.externalBytes === 1024 &&
-          own.arrayBuffersBytes === 512 && own.cpuUserSeconds === 0.3 &&
-          own.uptimeSeconds === 30,
-          'a post-quantum child that answered reports its own five figures, ' +
-          'CPU time and uptime', JSON.stringify(own));
+          p.rows[0].cpuUserSeconds === 2 && !!p.rows[0].processWide,
+          'the front process is first, with the process\'s resident size ' +
+          'and CPU time — every thread\'s — and its main thread\'s heap, ' +
+          'and says so', JSON.stringify(p.rows[0]));
+  t.check(roles.indexOf('protocol worker thread 3') >= 0 &&
+          roles.indexOf('hosted-surface worker thread 5') >= 0 &&
+          roles.indexOf('protocol debugger api') >= 0,
+          'each worker thread that answered is a row, named as a thread of ' +
+          'its pool, and so is the debugger\'s api', roles.join());
+  const w3 = byThread(3);
+  const w5 = byThread(5);
+  t.check(!!w3 && w3.kind === 'thread' && w3.pid === 4242 &&
+          w3.heapUsedBytes === 30 * MIB && w3.heapTotalBytes === 60 * MIB &&
+          w3.externalBytes === 1024 && w3.arrayBuffersBytes === 512 &&
+          w3.uptimeSeconds === 60 && !!w5 && w5.heapUsedBytes === 20 * MIB,
+          'a worker thread\'s row carries its own isolate\'s heap figures, ' +
+          'as a thread of the front process', JSON.stringify(w3));
+  t.check(!!w3 && w3.rssBytes === null && w3.cpuUserSeconds === null &&
+          w3.cpuSystemSeconds === null && /front process/.test(
+            w3.processWide || ''),
+          'and NOT the resident size or CPU time it answered, which are the ' +
+          'process\'s: it says where they are instead', JSON.stringify(w3));
+  t.check(!roles.some(function (r) {
+    return /post-quantum/.test(r);
+  }), 'and no process is a post-quantum child (#363)', roles.join());
   const dbg = byPid(9002);
-  t.check(dbg.source === 'process.memoryUsage()' &&
-          dbg.heapUsedBytes === 25 * MIB && dbg.rssBytes === 50 * MIB,
-          'so does the debugger\'s api child', JSON.stringify(dbg));
-  const busy = byPid(9001);
-  t.check(busy.rssBytes === 20 * MIB && busy.peakRssBytes === 40 * MIB &&
-          busy.heapUsedBytes === null &&
-          busy.source === '/proc/9001/status' &&
-          /computing a job/.test(busy.notReported) &&
-          /did not answer within 500ms/.test(busy.notReported),
-          'a child that was busy keeps its /proc row, heap null not zero, ' +
-          'and says why', JSON.stringify(busy));
-  const unasked = byPid(9003);
-  t.check(unasked.rssBytes === null &&
-          /could not be read/.test(unasked.unreadable) &&
-          /its parent did not ask it/.test(unasked.notReported),
-          'a child its worker did not ask, whose /proc entry cannot be ' +
-          'read, says both', JSON.stringify(unasked));
-  t.check(p.unanswered.length === 1 && p.unanswered[0].pid === 5002 &&
-          /did not answer within 1000ms/.test(p.unanswered[0].why),
-          'the worker that did not answer is listed as unanswered, and one ' +
-          'not yet ready is not asked', JSON.stringify(p.unanswered));
-  t.equal(p.totals.processes, 7, 'seven processes in all');
-  t.equal(p.totals.rssBytes, (100 + 80 + 70 + 15 + 20 + 50) * MIB,
-          'the resident total is the sum of every size that was read');
-  t.equal(p.totals.processesWithRss, 6, 'six of them had a size');
-  t.equal(p.totals.heapUsedBytes, (40 + 30 + 20 + 5 + 25) * MIB,
-          'the heap total is the five processes that reported one');
-  t.equal(p.totals.processesWithHeap, 5, 'five reported a heap');
-  t.check(/counted once for each/.test(p.totalsText),
-          'and the page says shared pages are counted more than once', '');
+  t.check(dbg.source === 'process.memoryUsage()' && dbg.kind === 'process' &&
+          dbg.rssBytes === 50 * MIB && dbg.heapUsedBytes === 25 * MIB &&
+          dbg.heapTotalBytes === 50 * MIB && dbg.externalBytes === 1024 &&
+          dbg.arrayBuffersBytes === 512 && dbg.uptimeSeconds === 90,
+          'the debugger\'s api child that answered reports its own five ' +
+          'figures and uptime', JSON.stringify(dbg));
+  t.check(p.unanswered.length === 1 && p.unanswered[0].threadId === 4 &&
+          p.unanswered[0].pid === 4242 &&
+          /did not answer within 1000ms/.test(p.unanswered[0].why) &&
+          /no \/proc entry of its own/.test(p.unanswered[0].why) &&
+          !byThread(4),
+          'the worker thread that did not answer is listed as unanswered — ' +
+          'no /proc row, since a thread has none of its own — and one not ' +
+          'yet ready is not asked', JSON.stringify(p.unanswered));
+  t.equal(p.totals.rows, 4, 'four rows in all');
+  t.equal(p.totals.processes, 2,
+          'two of them processes: the front and the debugger\'s api');
+  t.equal(p.totals.workerThreads, 2, 'and two worker threads');
+  t.equal(p.totals.rssBytes, (100 + 50) * MIB,
+          'the resident total adds the PROCESSES only — the threads\' ' +
+          'answers carried the process\'s size again, and are not summed');
+  t.equal(p.totals.processesWithRss, 2, 'two of them had a size');
+  t.equal(p.totals.heapUsedBytes, (40 + 30 + 20 + 25) * MIB,
+          'the heap total is every isolate that reported one');
+  t.equal(p.totals.isolatesWithHeap, 4, 'four isolates reported a heap');
+  t.check(/counted once for each/.test(p.totalsText) &&
+          /THREADS of the front process/.test(p.totalsText),
+          'and the page says shared pages are counted more than once, and ' +
+          'that a thread\'s size is its process\'s', p.totalsText);
+  t.check(/libuv/.test(p.totalsText),
+          'and where post-quantum signing and scrypt went', p.totalsText);
+  const html = made.instance.html(view);
+  t.check(/thread 3 of pid 4242/.test(html) &&
+          /1 worker thread\(s\) did not report: thread 4/.test(html),
+          'the page names each worker as a thread of the front process, and ' +
+          'the silent one by its thread', '');
+
+  debuggerAnswers = false;
+  view = await made.instance.nodeHealthView();
+  p = view.processes;
+  const silent = byPid(9002);
+  t.check(!!silent && silent.rssBytes === 20 * MIB &&
+          silent.peakRssBytes === 40 * MIB &&
+          silent.heapUsedBytes === null &&
+          silent.source === '/proc/9002/status' &&
+          /did not answer within 500ms/.test(silent.notReported),
+          'a child PROCESS that did not answer keeps its /proc row, heap ' +
+          'null not zero, and says why', JSON.stringify(silent));
+  t.equal(p.totals.isolatesWithHeap, 3,
+          'and it is not counted among those that reported a heap');
   log.debug("Leaving checkEveryProcess().");
 }
 
@@ -702,17 +720,29 @@ async function checkTheChannelAndThePage(t) {
         return one.ready;
       });
     }, 10000), 'a stub worker comes up', '');
+    const entry = requestPool.workerTable().filter(function (w) {
+      return w.ready;
+    })[0];
     const answers = await requestPool.askWorkerPoolStatus(1000);
-    const pids = Object.keys(answers);
-    const one = pids.length === 1 ? answers[pids[0]] : null;
-    t.check(!!one && one.memory && one.memory.rss > 0 &&
-            one.memory.heapUsed > 0 && !!one.cpu && one.uptimeS === 1,
-            'askWorkerPoolStatus() hands back the worker\'s memory, CPU ' +
-            'time and uptime', JSON.stringify(answers));
+    const ids = Object.keys(answers);
+    const one = ids.length === 1 ? answers[ids[0]] : null;
+    t.check(!!one && one.memory && one.memory.heapUsed > 0 && !!one.cpu &&
+            one.uptimeS === 1,
+            'askWorkerPoolStatus() hands back the worker thread\'s memory, ' +
+            'CPU time and uptime', JSON.stringify(answers));
+    t.check(!!entry && ids[0] === String(entry.pid) &&
+            entry.pid !== process.pid,
+            'keyed by its threadId, the pool\'s id for it — not the pid ' +
+            'every thread shares',
+            JSON.stringify({ ids: ids, pid: entry && entry.pid }));
     const view = await nodeHealthAdmin.nodeHealthView();
     t.check(view.processes.rows.some(function (r) {
-      return r.role === 'request worker' && r.rssBytes > 0;
-    }), 'the real page lists that worker with its memory',
+      return r.kind === 'thread' &&
+             r.role === 'protocol worker thread ' + (entry && entry.pid) &&
+             r.pid === process.pid && r.heapUsedBytes > 0 &&
+             r.rssBytes === null;
+    }), 'the real page lists that worker as a thread of this process, with ' +
+    'its heap and not the process\'s resident size again',
     JSON.stringify(view.processes.rows));
   } finally {
     await requestPool.stop(3000);
@@ -738,9 +768,10 @@ async function checkTheChannelAndThePage(t) {
   const at = source.search(/reportPoolStatus\(message[^)]*\)[^{;]*\{/);
   const body = at < 0 ? '' : source.slice(at);
   t.check(/process\.memoryUsage\(\)/.test(body.slice(0, 3000)) &&
-          /memory:\s*memory,\s*cpu:\s*cpu/.test(body.slice(0, 3000)),
+          /memory:\s*memory,\s*cpu:\s*cpu/.test(body.slice(0, 3000)) &&
+          /pid:\s*WorkerChannel\.id\(\)/.test(body.slice(0, 3000)),
           'request_worker.ts answers { poolStatus } with its memoryUsage() ' +
-          'and cpuUsage()', '');
+          'and cpuUsage(), under its thread\'s id (#364)', '');
 
   const page = await draw({});
   t.check(!!page && page.status === 200 && /id="cpu"/.test(page.body) &&
@@ -784,65 +815,6 @@ async function checkTheChannelAndThePage(t) {
   t.check(!!refusal && refusal.reason === 'service_page',
           'a realm administrator is refused it', JSON.stringify(refusal));
   log.debug("Leaving checkTheChannelAndThePage().");
-}
-
-// ---------------------------------------------------------------------------
-// 8. A REAL POST-QUANTUM CHILD ANSWERS ITS MEMORY — AND A BUSY ONE DOES NOT.
-// ---------------------------------------------------------------------------
-function scryptJob(n) {
-  log.debug("Entering scryptJob().");
-  log.debug("Leaving scryptJob().");
-  return { plaintext: 'node-health', salt: Buffer.from('0123456789abcdef'),
-           keylen: 16, N: n, r: 8, p: 1, maxmem: 256 * 1024 * 1024 };
-}
-
-async function checkRealPqChild(t) {
-  log.debug("Entering checkRealPqChild().");
-  t.log.info('=== 8. a real post-quantum child answers its memory status, ' +
-             'which is not a job; a busy one does not ===');
-  await workerPool.stop(3000);
-  workerPool.reset();
-  config.setOverride('workers.count', '1');
-  try {
-    await workerPool.run('scrypt.derive', scryptJob(1024));
-    const before = workerPool.stats();
-    const child = before.workers[0].pid;
-    const answers = await workerPool.askMemoryStatus(2000);
-    const one = answers[child];
-    t.check(!!one && one.memory && one.memory.rss > 0 &&
-            one.memory.heapUsed > 0 && one.memory.heapTotal > 0 &&
-            typeof one.memory.external === 'number' &&
-            typeof one.memory.arrayBuffers === 'number' && !!one.cpu &&
-            typeof one.uptimeS === 'number',
-            'the child answers with its own memoryUsage(), cpuUsage() and ' +
-            'uptime', JSON.stringify(answers));
-    const after = workerPool.stats();
-    t.check(after.counts.jobs === before.counts.jobs &&
-            after.counts.inProcess === before.counts.inProcess,
-            'and the question is not counted as a job',
-            JSON.stringify(after.counts));
-    // A job of about 64 MiB of scrypt keeps the child computing well past a
-    // 20 ms bound; the question sent after it is read only when it returns.
-    const job = workerPool.run('scrypt.derive', scryptJob(65536));
-    const busy = await workerPool.askMemoryStatus(20);
-    t.check(!busy[child], 'a child computing a job is absent from an ' +
-            'answer bounded shorter than the job', JSON.stringify(busy));
-    await job;
-    const view = await nodeHealthAdmin.nodeHealthView();
-    const row = view.processes.rows.filter(function (r) {
-      return r.pid === child;
-    })[0];
-    t.check(!!row && row.source === 'process.memoryUsage()' &&
-            row.heapUsedBytes > 0 &&
-            row.role === 'post-quantum worker of pid ' + process.pid,
-            'the page draws it with its own figures, not /proc\'s',
-            JSON.stringify(row));
-  } finally {
-    config.clearOverride('workers.count');
-    await workerPool.stop(3000);
-    workerPool.reset();
-  }
-  log.debug("Leaving checkRealPqChild().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1032,7 +1004,6 @@ async function run(t) {
   await checkV1AndEcs(t);
   try {
     await checkTheChannelAndThePage(t);
-    await checkRealPqChild(t);
   } finally {
     tempDirs.forEach(function (dir) {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1045,9 +1016,10 @@ module.exports = {
   name: 'node_health_page',
   describe: 'Monitoring → Node Health (#329): CPU utilisation from cpu.stat ' +
             'against cpu.max, memory against memory.max, a source that is ' +
-            'not there said in words, every process of the node counted ' +
-            'with its memory, the ECS cross-check, the channel, and the page ' +
-            'pinned to the front process and refused to a realm ' +
-            'administrator',
+            'not there said in words, every process and worker thread of ' +
+            'the node counted with its memory — a thread\'s heap its own, ' +
+            'its resident size and CPU the process\'s (#364), the ECS ' +
+            'cross-check, the channel, and the page pinned to the front ' +
+            'process and refused to a realm administrator',
   run: run
 };

@@ -27,13 +27,16 @@
 // OOM-kill attribution (STS-WORKER-0047) work the same with it off. At 0, the
 // default, the limit is DERIVED:
 //
-//     (container limit − headroom) ÷ (1 + requestCount + surfaceCount + 1)
+//     (container limit − headroom) ÷ (1 + requestCount + surfaceCount)
+//       − 48 MiB of young generation
 //
-// The last 1 is the allowance for the post-quantum computation children
-// (`worker_pool.js`), which are small and have no limit of their own. The
-// headroom is 15 % of the limit and at least 256 MiB. It is what a process
-// holds OUTSIDE the old space the flag bounds: the young generation, code,
-// Buffers and native memory. The result is floored at 256 MiB. With no
+// — one share per ISOLATE, the front's and each worker thread's (#364),
+// and each isolate's young generation set to 48 MiB and taken out of its
+// share (#366; see YOUNG_MB). (Until #363 the divisor carried one more
+// share, for the post-quantum computation children of `worker_pool.js`;
+// that pool is gone.) The headroom is 15 % of the limit and at least 256
+// MiB. It is what the process holds OUTSIDE the isolates' heaps: code,
+// Buffers and native memory. The old space is floored at 192 MiB. With no
 // visible limit (`max` on cgroup v2, the v1 "unlimited" value, no ECS task
 // limit), NOTHING is set, which is how this service ran before.
 //
@@ -42,7 +45,7 @@
 // 192 MiB in node 24 whatever the old space is (300 gives 492, measured in
 // tests/process_memory.js). The young generation rarely grows to its
 // ceiling, and the headroom is what it comes out of. On testidp's 8 GiB
-// node with 3 + 1 workers the budget is 1160 MiB of old space per process.
+// node with 3 + 1 workers the budget is 1392 MiB of old space per process.
 //
 // **WHERE THE CONTAINER LIMIT IS READ FROM, IN ORDER.** cgroup v2's
 // `memory.max`; cgroup v1's `memory.limit_in_bytes`, then its `memory.stat`
@@ -109,6 +112,7 @@ import childProcess = require('child_process');
 import bunyan = require('bunyan');
 import config = require('./config');
 import errorCodes = require('./error_codes');
+import WorkerChannel = require('./worker_channel');
 
 let logLevelProblem: any = null;
 const log = bunyan.createLogger({
@@ -132,17 +136,37 @@ const MIB = 1024 * 1024;
 // (9223372036854771712 on a 4 KiB page).
 const UNLIMITED = Math.pow(2, 60);
 // See the header: 15 % of the limit and at least 256 MiB stays outside every
-// old space, and no process is given less than 256 MiB.
+// isolate's heap, and no isolate is given less than MIN_MB of old space.
 const HEADROOM_SHARE = 0.15;
 const HEADROOM_MIN = 256 * MIB;
-const MIN_MB = 256;
-// One share of the budget for the post-quantum computation children.
-const CRYPTO_ALLOWANCE = 1;
+// 192 since #366, where it was 256: the floor on OLD space, and with the
+// young generation now inside the share a 512 MiB container with one
+// isolate derives 208 MiB, which a floor of 256 would have pushed past the
+// container. A fresh isolate's live heap is about 100 MiB since #365.
+const MIN_MB = 192;
 // How long the ECS task metadata endpoint is given.
 const ECS_TIMEOUT_MS = 3000;
 const REEXEC_MARKER = 'STS_HEAP_REEXEC';
 const BUDGET_ENV = 'STS_HEAP_BUDGET';
 const FLAG = '--max-old-space-size';
+// ---------------------------------------------------------------------------
+// THE YOUNG GENERATION IS PART OF THE SHARE (#366, 2026-09-30).
+//
+// `--max-old-space-size` bounds the OLD space only, and V8's young
+// generation comes on top of it: 192 MiB in node 24 whatever the old space
+// is. That was tolerable at one isolate per process with 15 % headroom
+// under it, and it is not at two isolates in a 1 GiB container (#364): two
+// shares of 384 MiB of old space each carried 192 MiB of young ceiling on
+// top, 1152 MiB of possible heap in a 1024 MiB container. So each isolate's
+// young generation is set too — 48 MiB, V8's three semi-spaces of 16 MiB,
+// `--max-semi-space-size` for the front and `maxYoungGenerationSizeMb` for a
+// worker thread — and it comes OUT of the isolate's share: old space is the
+// share less 48 MiB. A young generation of 48 MiB scavenges more often than
+// one of 192 MiB, and each scavenge is shorter.
+// ---------------------------------------------------------------------------
+const YOUNG_MB = 48;
+const SEMI_FLAG = '--max-semi-space-size';
+const SEMI_MB = YOUNG_MB / 3;
 const REPORT_JOB = 'process.memory-report';
 const REPORT_EVERY_MS = 5 * 60 * 1000;
 
@@ -159,6 +183,9 @@ interface ContainerLimit {
  */
 interface Budget {
   mb: number;
+  // The young generation each isolate is given beside `mb` (#366); 0 when
+  // no budget applies.
+  youngMb?: number;
   // workers.heapLimitMb is -1: no limit is applied, and nothing is stripped.
   off?: boolean;
   source: string;
@@ -336,7 +363,7 @@ class ProcessMemory {
                          surfaceCount: number }): Budget {
     log.debug("Entering ProcessMemory.derive().");
     const processes = 1 + Math.max(0, input.requestCount || 0) +
-      Math.max(0, input.surfaceCount || 0) + CRYPTO_ALLOWANCE;
+      Math.max(0, input.surfaceCount || 0);
     if (input.configuredMb < 0) {
       log.debug("Leaving ProcessMemory.derive(). Off.");
       return { mb: 0, off: true,
@@ -345,7 +372,7 @@ class ProcessMemory {
     }
     if (input.configuredMb > 0) {
       log.debug("Leaving ProcessMemory.derive(). Configured.");
-      return { mb: Math.floor(input.configuredMb),
+      return { mb: Math.floor(input.configuredMb), youngMb: YOUNG_MB,
                source: 'workers.heapLimitMb', limitBytes: input.limitBytes,
                processes: processes };
     }
@@ -358,14 +385,16 @@ class ProcessMemory {
     const headroom = Math.max(HEADROOM_MIN,
                               input.limitBytes * HEADROOM_SHARE);
     const share = Math.floor((input.limitBytes - headroom) / processes / MIB);
+    const old = share - YOUNG_MB;
     log.debug("Leaving ProcessMemory.derive(). Derived.");
-    return { mb: Math.max(MIN_MB, share),
+    return { mb: Math.max(MIN_MB, old), youngMb: YOUNG_MB,
              source: 'derived: (' + Math.round(input.limitBytes / MIB) +
                      ' MiB from ' + (input.source || 'the container') +
                      ' − ' + Math.round(headroom / MIB) + ' MiB headroom) ÷ ' +
-                     processes + ' processes' +
-                     (share < MIN_MB ? ', raised to the ' + MIN_MB +
-                                       ' MiB floor' : ''),
+                     processes + ' isolates − ' + YOUNG_MB + ' MiB young ' +
+                     'generation each' +
+                     (old < MIN_MB ? ', raised to the ' + MIN_MB +
+                                     ' MiB floor' : ''),
              limitBytes: input.limitBytes, processes: processes };
   }
 
@@ -375,6 +404,75 @@ class ProcessMemory {
    * @returns `{ configuredMb, requestCount, surfaceCount }`, all 0 with no
    *   configuration; `configuredMb` is -1 when the limit is off
    */
+  // -------------------------------------------------------------------------
+  // ONE REQUEST WORKER BY DEFAULT, WHERE THE STORE CAN COORDINATE (#364,
+  // rcbj).
+  //
+  // `workers.requestCount` defaults to 1, `workers.dispatch` to `*` and
+  // `workers.readYourWrite` to on. A worker needs a store that coordinates —
+  // persistence.mode postgres with persistence.coordinate on — because it
+  // holds its own copy of every store and learns the others' writes from the
+  // change log. On the memory or ldif store the DEFAULT therefore means none:
+  // a development service is one thread, as it always was, and says so once.
+  // An OPERATOR's value is theirs: `workers.requestCount` set explicitly
+  // without coordination is still refused at startup (STS-WORKER-0024,
+  // `request_pool.js`'s start()).
+  //
+  // HERE rather than in `request_pool.js`, which asks it for its size:
+  // this file divides the heap budget by the same count, and runs first of
+  // all — before the store is opened and before the pool is loaded — so the
+  // rule is decided from the settings alone and written once.
+  // -------------------------------------------------------------------------
+  /**
+   * How many request worker threads this process runs: `workers.requestCount`,
+   * except that its default of 1 is 0 where the store cannot coordinate.
+   *
+   * @returns the count, 0 or more
+   */
+  static requestWorkers(): number {
+    log.debug("Entering ProcessMemory.requestWorkers().");
+    let wanted = 0;
+    let byDefault = false;
+    let coordinates = false;
+    let mode = '';
+    try {
+      wanted = parseInt(config.value('workers.requestCount'), 10);
+      const source = config.sourceOf('workers.requestCount');
+      byDefault = source === 'default' || source === 'defaults';
+      mode = String(config.value('persistence.mode'));
+      coordinates = mode === 'postgres' &&
+        config.value('persistence.coordinate') !== false;
+    } catch (e) {
+      log.debug("Caught in ProcessMemory.requestWorkers(): " +
+                ((e && e.message) || e));
+      // No configuration at all (an in-process test): no worker, which is
+      // the right answer for a module loaded on its own.
+      log.debug("Leaving ProcessMemory.requestWorkers(). No settings; 0.");
+      return 0;
+    }
+    if (!(wanted > 0)) {
+      log.debug("Leaving ProcessMemory.requestWorkers(). 0.");
+      return 0;
+    }
+    if (byDefault && !coordinates) {
+      if (!ProcessMemory.noCoordinationNoted) {
+        ProcessMemory.noCoordinationNoted = true;
+        log.info('process_memory: no request worker — ' +
+                 'workers.requestCount is at its default and the store ' +
+                 '(persistence.mode "' + mode + '") does not coordinate, so ' +
+                 'every request is handled in the front thread.');
+      }
+      log.debug("Leaving ProcessMemory.requestWorkers(). The default, " +
+                "without coordination; 0.");
+      return 0;
+    }
+    log.debug("Leaving ProcessMemory.requestWorkers(). " + wanted + ".");
+    return wanted;
+  }
+
+  // Whether requestWorkers() has said once that the default means none.
+  private static noCoordinationNoted = false;
+
   static settings(): { configuredMb: number; requestCount: number;
                        surfaceCount: number } {
     log.debug("Entering ProcessMemory.settings().");
@@ -394,7 +492,7 @@ class ProcessMemory {
     };
     log.debug("Leaving ProcessMemory.settings().");
     return { configuredMb: read('workers.heapLimitMb', true),
-             requestCount: read('workers.requestCount'),
+             requestCount: ProcessMemory.requestWorkers(),
              surfaceCount: read('workers.surfaceCount') };
   }
 
@@ -469,8 +567,7 @@ class ProcessMemory {
                        source: FLAG + ' set on the command line or in ' +
                                'NODE_OPTIONS',
                        limitBytes: null,
-                       processes: 1 + s.requestCount + s.surfaceCount +
-                                  CRYPTO_ALLOWANCE };
+                       processes: 1 + s.requestCount + s.surfaceCount };
       log.debug("Leaving ProcessMemory.budget(). The operator's.");
       return cachedBudget;
     }
@@ -534,7 +631,8 @@ class ProcessMemory {
     env[REEXEC_MARKER] = '1';
     env[BUDGET_ENV] = JSON.stringify(budget);
     const args = [process.execPath, FLAG + '=' + budget.mb]
-      .concat(process.execArgv, process.argv.slice(1));
+      .concat(budget.youngMb ? [SEMI_FLAG + '=' + SEMI_MB] : [],
+              process.execArgv, process.argv.slice(1));
     log.info('process_memory: restarting the front process with ' + FLAG +
              '=' + budget.mb + ' (' + budget.source + ').');
     try {
@@ -549,34 +647,6 @@ class ProcessMemory {
     return { reexec: false, why: 'process.execve failed' };
   }
 
-  /**
-   * The `execArgv` a request worker is forked with: this process's own,
-   * without any heap flag, and the budget's.
-   *
-   * @param base - the options to start from (`process.execArgv`)
-   * @param mb - the limit in MiB; 0 adds none
-   * @returns the options
-   */
-  static workerExecArgv(base: string[], mb: number): string[] {
-    log.debug("Entering ProcessMemory.workerExecArgv().");
-    const out: string[] = [];
-    const list = base || [];
-    for (let i = 0; i < list.length; i++) {
-      if (list[i].indexOf(FLAG + '=') === 0) {
-        continue;
-      }
-      if (list[i] === FLAG) {
-        i++;
-        continue;
-      }
-      out.push(list[i]);
-    }
-    if (mb > 0) {
-      out.push(FLAG + '=' + mb);
-    }
-    log.debug("Leaving ProcessMemory.workerExecArgv().");
-    return out;
-  }
 
   /**
    * How many processes the kernel's OOM killer has killed in this
@@ -649,7 +719,11 @@ class ProcessMemory {
       return Math.round((n || 0) / MIB);
     };
     log.debug("Leaving ProcessMemory.snapshot().");
-    return { role: ProcessMemory.role(), pid: process.pid, rssMb: mb(m.rss),
+    // `pid` is the worker's THREAD id in a request worker (#364), and
+    // `rssMb` the whole process's there: RSS is process-wide, and only the
+    // heap figures are this isolate's own.
+    return { role: ProcessMemory.role(), pid: WorkerChannel.id(),
+             rssMb: mb(m.rss),
              heapUsedMb: mb(m.heapUsed), heapTotalMb: mb(m.heapTotal),
              externalMb: mb(m.external), arrayBuffersMb: mb(m.arrayBuffers),
              heapLimitMb: ProcessMemory.heapLimitMb(), at: Date.now() };
@@ -681,10 +755,9 @@ class ProcessMemory {
     log.debug("Entering ProcessMemory.report().");
     const s = ProcessMemory.snapshot();
     log.info('process_memory: ' + ProcessMemory.describe(s) + '.');
-    if (process.env.STS_REQUEST_WORKER && typeof process.send === 'function' &&
-        process.connected) {
+    if (process.env.STS_REQUEST_WORKER && WorkerChannel.inWorkerThread()) {
       try {
-        process.send({ memoryReport: s });
+        WorkerChannel.send({ memoryReport: s });
       } catch (e) {
         log.debug("Caught in ProcessMemory.report(): " +
                   ((e && e.message) || e));

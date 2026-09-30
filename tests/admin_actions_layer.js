@@ -296,9 +296,14 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 // functions that could have moved and should not have. A fifth name appearing
 // here is either something that belongs in the layer, or a decision somebody
 // should have to write down next to this list.
+//
+// `preparedSettingsJsonFor` REPLACED `protocolSettingsJsonFor` HERE ON
+// 2026-09-30 (#361): it is the same answer after the row's `prepare` step
+// (a page whose settings read the cell's own state first), and it calls
+// `protocolSettingsJsonFor()` itself. Still the console describing itself.
 // ---------------------------------------------------------------------------
 const MAY_STAY_ON_THE_CONSOLE = ['consoleJson', 'configJson',
-  'protocolSettingsJsonFor', 'listField'];
+  'preparedSettingsJsonFor', 'listField'];
 
 function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
   log.debug("Entering checkOnlyTheConsolesOwnKnowledgeIsLeft().");

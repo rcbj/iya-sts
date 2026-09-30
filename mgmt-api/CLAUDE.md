@@ -1942,3 +1942,24 @@ deliberate:
 exception out of the gate's source. `admin-ui/devices_admin.ts`'s `mdmFeed()`
 is the handler, shared with development's test control at
 `/devices/test/compliance` (`mode.opensTestControls()`).
+
+## ONE COPY OF THE COMPONENTS BEHIND EVERY VALIDATOR (#365, 2026-09-30)
+
+Each request schema is compiled wrapped in a root that carries the
+document's named schemas as `components`, so a `$ref` into them resolves
+(`admin_api.ts`, above `NOT_ENFORCED_HERE`). Until #365 `compilable()` built
+that wrapper with a fresh `structureOnly(spec.SCHEMAS)` each time — a deep
+copy of the whole components table, about 170 KB, for each of the 363
+validators — and ajv keeps every root it compiled for the life of the
+process. **A heap snapshot of a fresh front process put 61 MB of its 190 MB
+under this module.** `compileRequestSchemas()` now makes the copy once and
+every root points at it; ajv reads a schema and never writes to it, so the
+shared subtree is the same value the copies were. Measured on the service
+image: the module's retained size 60.9 MB → 1.9 MB, the live heap 190.5 MB
+→ 131.3 MB. What each validator accepts and refuses, and the sentence it
+refuses in, did not change.
+
+**Do not make the wrapper per operation again** — not by cloning "to be
+safe", and not by giving an operation a components table of its own. A
+second shared copy costs 170 KB once; a per-validator one costs it 363
+times, in every process (#339).

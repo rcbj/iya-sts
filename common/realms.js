@@ -1400,8 +1400,8 @@ function update(id, changes) {
 //
 // THE SECOND REFUSAL IS `perProcess`, AND IT IS A DIFFERENT RULE. A setting
 // carrying that flag is a property of the OS PROCESS rather than of the
-// service's behaviour — `workers.count`, the size of the child-process pool the
-// post-quantum signing is handed to, is the first — so one realm's value would
+// service's behaviour — `workers.requestCount`, the size of the request pool,
+// is one — so one realm's value would
 // silently be every realm's. The predicate is config.js's own
 // `isPerProcess()` and not a copy of it, for the reason this whole function
 // exists: the reading end and the writing end of one rule, written separately,

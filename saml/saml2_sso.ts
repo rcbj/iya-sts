@@ -1506,8 +1506,9 @@ class Saml2Sso {
   // gigabytes.
   //
   // **AND IT IS SYNCHRONOUS ON THE THREAD THAT OWNS EVERY SOCKET.** That is the
-  // argument `common/CLAUDE.md` makes about post-quantum signing and the whole
-  // reason `common/worker_pool.js` exists: this process runs every listener
+  // argument `common/CLAUDE.md` makes about post-quantum signing, and why that
+  // runs on libuv's thread pool (`common/pq_native.js`): this process runs
+  // every listener
   // family on one thread, so a computation like this does not slow the service
   // down, it STOPS it — the KDC stops answering, the directory stops answering,
   // and from the outside that is indistinguishable from a service that is not

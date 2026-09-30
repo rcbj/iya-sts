@@ -3002,136 +3002,31 @@ const SETTINGS = [
                  'with. That is ASN.1 and crypto tracing rather than this ' +
                  'service\'s account of what it did.' },
 
-  // --- The worker pool -----------------------------------------------------
+  // --- The request pool ----------------------------------------------------
   //
-  // THE ONLY SETTING HERE THAT CHANGES HOW MANY PROCESSES THIS SERVICE IS.
-  //
-  // Node runs every listener this service owns on one thread, so a
-  // synchronous computation does not slow it down, it STOPS it — and
-  // post-quantum signing is that computation. Stalls of 14.6, 15.4, 17.8 and
-  // 23.3 seconds were measured on 2026-08-29, during which this service
-  // answered nobody at all: not another HTTP caller, not the KDC on port 88.
-  // See common/worker.js.
-  //
-  // TWO, and not the core count — which is what this paragraph argued when the
-  // default was two; it is FIVE since 2026-09-06, and the note at the row says
-  // why. The property being bought is that the front
-  // process's event loop stays FREE, and one worker buys all of it; the second
-  // is what stops a caller's SLH-DSA signature queueing behind a stranger's.
-  // Beyond that the return falls off quickly and the cost does not — each
-  // worker is a node process — and this is a mock that commonly runs several
-  // to a machine under a test suite. Raising it is one setting, and the pool
-  // resizes on the next signature rather than at the next restart.
-  //
-  // NOTHING IS FORKED UNTIL THE FIRST POST-QUANTUM JOB, whatever this says, so
-  // a process that never signs one never pays for a pool. That is what keeps
-  // the parent project's in-process Kerberos jobs, this repository's own tests
-  // and `node env/generate_defaults.js` free of child processes they would
-  // never use and would have to wait for.
-  { key: 'workers.count', group: 'Global', label: 'Worker processes',
-    // FIVE SINCE 2026-09-06, where it was two. The pool is what keeps a
-    // post-quantum signature off the thread holding every listener —
-    // an SLH-DSA sign measured at 15 SECONDS on this hardware — and two
-    // workers means the third concurrent one waits behind them. Five is a
-    // working default for a machine with more than four cores and still costs
-    // nothing until the first post-quantum job, because the pool is lazy and
-    // forks nothing before then.
-    env: 'STS_WORKERS_COUNT', type: 'int', dflt: 5, min: 0, max: 32,
-    runtime: true, perProcess: true,
-    description: 'How many child processes the post-quantum signing, ' +
-                 'verification and key generation are handed to, so that the ' +
-                 'process holding the sockets is never the one computing an ' +
-                 'SLH-DSA signature — which takes SECONDS, during which node ' +
-                 'answers nothing at all. 0 means compute in this process, ' +
-                 'which is what this service did before the pool existed: ' +
-                 'correct, identical byte for byte, and blocking for as long ' +
-                 'as each signature takes. The pool is forked lazily, so a ' +
-                 'process that never signs post-quantum never forks anything ' +
-                 'whatever this is set to, and it is re-read per job, so ' +
-                 'changing it here takes effect on the next signature. A ' +
-                 'REALM MAY NOT CARRY THIS: a pool belongs to the process, ' +
-                 'and a realm resizing it would be resizing every other ' +
-                 'realm\'s too.' },
-
-  // THE SAME POOL INSIDE A REQUEST OR SURFACE WORKER (#347, 2026-09-29). Such
-  // a worker runs the whole stack and so has a post-quantum pool of its own,
-  // sized by workers.count until this row: a node with three request workers
-  // and one surface worker could fork 5 + 4 x 5 = 25 crypto children (#339).
-  // Zero by default because the pool's reason is the thread holding the
-  // listeners, and a request worker holds none: a sign there blocks only the
-  // requests that worker is answering, and the front process sends the next
-  // one to another worker. common/worker_pool.js's size() chooses the row.
-  { key: 'workers.countInRequestWorkers', group: 'Global',
-    label: 'Worker processes in each request worker',
-    env: 'STS_WORKERS_COUNT_IN_REQUEST_WORKERS', type: 'int', dflt: 0,
-    min: 0, max: 32, runtime: true, perProcess: true,
-    description: 'workers.count for a request or surface worker ' +
-                 '(workers.requestCount, workers.surfaceCount): how many ' +
-                 'child processes EACH such worker hands its post-quantum ' +
-                 'signing, verification and key generation to. 0, the ' +
-                 'default, computes in the worker itself — which holds no ' +
-                 'listener, so an SLH-DSA sign there delays only the ' +
-                 'requests that worker is answering, and the front process ' +
-                 'sends the next one to another worker. Each child is a ' +
-                 'whole node process, and every request worker forks its ' +
-                 'own, so raising this multiplies by the number of workers. ' +
-                 'The front process keeps workers.count. Forked lazily and ' +
-                 're-read per job, as workers.count is. A REALM MAY NOT ' +
-                 'CARRY THIS.' },
-
+  // (Until #363 this section began with `workers.count`,
+  // `workers.countInRequestWorkers` and `workers.jobTimeoutS`, the pool of
+  // forked processes that computed post-quantum signatures and scrypt. Those
+  // run on libuv's thread pool now — `common/pq_native.js` — and the three
+  // settings are gone.)
   // ---------------------------------------------------------------------
-  // HOW LONG A POST-QUANTUM JOB MAY TAKE BEFORE THE POOL GIVES UP ON IT
-  // (2026-09-11).
+  // THE REQUEST POOL. These configure workers that run THE SERVICE: each
+  // loads the whole protocol stack in the same order, binds no protocol port,
+  // and answers HTTP on a unix socket the front process proxies to. Since
+  // #364 a worker is a THREAD of the front process (`worker_threads`), not a
+  // forked process. `common/request_pool.js` argues it.
   //
-  // **`worker_pool.js` HAD NO BOUND AT ALL, AND ITS OWN HEADER SAYS WHY THAT
-  // IS THE WORST AVAILABLE FAILURE.** It rejects every job on a worker that
-  // DIES — "a promise nobody settles is a request that hangs" — and covers
-  // nothing for a worker that stays alive and simply never answers. One was
-  // observed doing exactly that: five idle children, no CPU anywhere, the
-  // service answering everything else in eleven milliseconds, and one HTTP
-  // request parked for ever. The suite's own 300s watchdog was the only thing
-  // that ended it, which is five minutes per occurrence and says nothing about
-  // what happened.
+  // **THREE DEFAULTS CHANGED WITH IT (rcbj, #364)**: one request worker,
+  // `workers.dispatch` `*` and `workers.readYourWrite` on. A worker needs a
+  // store that coordinates (postgres), so when the store cannot and those
+  // values are still the DEFAULTS, the pool quietly runs none — a
+  // development service on the memory store is one thread, as it always
+  // was. An operator's explicit value without coordination is still refused
+  // at startup (`STS-WORKER-0024`); `request_pool.js`'s `autoOff` is the
+  // rule.
   //
-  // **IT IS A BACKSTOP AND NOT A DIAGNOSIS.** Why a reply goes missing is not
-  // known; what this does is turn an unbounded hang into a named failure the
-  // caller can report, which is the same trade `reap()` already makes for the
-  // death case.
-  //
-  // **THE DEFAULT IS GENEROUS ON PURPOSE.** The stalls this pool was built to
-  // move off the event loop were measured at 15 to 23 seconds — a composite
-  // verify, an SLH-DSA-SHAKE-128s signature — and a machine running the whole
-  // suite under docker is slower than the one they were measured on. Two
-  // minutes is far beyond any of them and far short of a watchdog. Zero turns
-  // the bound off and restores the old behaviour exactly.
-  { key: 'workers.jobTimeoutS', group: 'Global',
-    label: 'Worker job timeout (seconds)',
-    path: 'workers.jobTimeoutS', env: 'STS_WORKERS_JOB_TIMEOUT_S',
-    type: 'int', dflt: 120, runtime: true, min: 0, max: 3600,
-    description: 'How long the post-quantum worker pool waits for a job it ' +
-                 'has sent to a child before failing it. **It exists because ' +
-                 'there was no bound**: a worker that dies has its jobs ' +
-                 'rejected, and a worker that stays alive and never answers ' +
-                 'left the request hanging for ever — observed, with an idle ' +
-                 'pool and a service answering everything else normally. A ' +
-                 'failed job is reported to the caller and the request fails ' +
-                 'with a reason; nothing is retried, because a worker holds ' +
-                 'no state and the caller can simply ask again.\n\n' +
-                 '**Generous on purpose.** The stalls this pool exists to ' +
-                 'move off the event loop were 15 to 23 seconds, so two ' +
-                 'minutes is far beyond any real job and far short of a test ' +
-                 'runner\'s watchdog. `0` turns the bound off.' },
-
-  // ---------------------------------------------------------------------
-  // THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER FROM THE ONE ABOVE.
-  //
-  // `workers.count` forks children that run a JOB TABLE — four leaf
-  // computations handed everything they need. These three configure children
-  // that run THE SERVICE: each loads the whole protocol stack in the same
-  // order, binds no protocol port, and answers HTTP on a unix socket the front
-  // process proxies to. `common/request_pool.js` argues it.
-  //
-  // All three are `perProcess` for `workers.count`'s reason, and
+  // All are `perProcess` — a pool belongs to the process, and a realm
+  // resizing it would be resizing every other realm's too — and
   // restart-only rather than runtime: a request worker takes seconds to start
   // because it loads the service, and the pool is brought up BEFORE the
   // listener binds so that cost is paid where nobody is waiting. A table that
@@ -3152,19 +3047,24 @@ const SETTINGS = [
                  'key set that every start re-certifies, a cold database ' +
                  '(#311).' },
   { key: 'workers.requestCount', group: 'Global',
-    label: 'Request worker processes',
-    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 0, min: 0, max: 32,
+    label: 'Request worker threads',
+    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 1, min: 0, max: 32,
     runtime: false, perProcess: true,
     restartReason: 'the pool is forked before the listener binds, and the ' +
                    'check that refuses to dispatch without a coordinating ' +
                    'store runs once, there',
-    description: 'How many child processes REQUESTS are handled in, so that ' +
-                 'the process holding the sockets is doing request and ' +
-                 'response I/O and not running handlers. Each worker loads ' +
-                 'the whole protocol stack in the same order and binds no ' +
-                 'protocol port. 0 — the default — means every request is ' +
-                 'handled in the process that holds the sockets, which is ' +
-                 'what this service has always done. Nothing is dispatched ' +
+    description: 'How many worker THREADS requests are handled in, so that ' +
+                 'the thread holding the sockets is doing request and ' +
+                 'response I/O and not running handlers. Each worker is a ' +
+                 'thread of this process with its own V8 heap: it loads the ' +
+                 'whole protocol stack in the same order and binds no ' +
+                 'protocol port. 1 — the default — is one worker when the ' +
+                 'store coordinates (postgres); with the memory or ldif ' +
+                 'store and this left at its default the pool runs none, ' +
+                 'and every request is handled in the thread that holds the ' +
+                 'sockets. 0 is that everywhere. Every worker costs a whole ' +
+                 'copy of the service\'s heap, so more than one is for a ' +
+                 'node with the cores to use them. Nothing is dispatched ' +
                  'whatever this is set to until workers.dispatch names a ' +
                  'path.' },
 
@@ -3193,21 +3093,23 @@ const SETTINGS = [
     restartReason: 'V8 reads the heap limit when a process starts: the front ' +
                    'process restarts itself with it before it loads ' +
                    'anything, and each request worker is forked with it',
-    description: 'The V8 heap limit (--max-old-space-size) of the front ' +
-                 'process and of every request worker. -1 turns it OFF: no ' +
-                 'limit is applied, the front process is not restarted with ' +
-                 'one and no worker is forked with one, while the memory ' +
-                 'report and the OOM-kill attribution go on. The default, 0, ' +
-                 'DERIVES it from the container: (the memory limit − 15 % ' +
-                 'headroom, at least 256 MiB) ÷ (1 + workers.requestCount + ' +
-                 'workers.surfaceCount + 1 for the post-quantum children), ' +
-                 'and never less than 256 MiB. The limit is read from ' +
+    description: 'The V8 heap limit of the front thread ' +
+                 '(--max-old-space-size) and of every request worker thread ' +
+                 '(its resourceLimits). -1 turns it OFF: no limit is ' +
+                 'applied, the front process is not restarted with one and ' +
+                 'no worker is started with one, while the memory report ' +
+                 'goes on. The default, 0, DERIVES it from the container: ' +
+                 '(the memory limit − 15 % headroom, at least 256 MiB) ÷ ' +
+                 '(1 + workers.requestCount + workers.surfaceCount) — every ' +
+                 'thread has a V8 heap of its own — less the 48 MiB young ' +
+                 'generation each isolate is also given, and never less ' +
+                 'than 192 MiB. The limit is read from ' +
                  'cgroup v2, then cgroup v1, then the ECS task metadata ' +
-                 'endpoint. With no visible limit nothing is set. A process ' +
-                 'whose heap reaches the limit is ended by V8 with a line ' +
-                 'that says so, and a request worker\'s exit is reported as ' +
-                 'STS-WORKER-0046, where the alternative was an anonymous ' +
-                 'SIGKILL from the kernel. A flag an operator set on the ' +
+                 'endpoint. With no visible limit nothing is set. A worker ' +
+                 'thread whose heap reaches the limit is ended by V8 and ' +
+                 'reported as STS-WORKER-0046, and the process carries on; ' +
+                 'the front\'s own heap reaching it ends the process with ' +
+                 'a line that says so. A flag an operator set on the ' +
                  'command line or in NODE_OPTIONS is left alone and used for ' +
                  'every process. Read before the store is opened.' },
 
@@ -3245,7 +3147,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'workers.dispatch', group: 'Global',
     label: 'Handled in a request worker',
-    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '',
+    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '*',
     runtime: false, perProcess: true,
     restartReason: 'dispatching is REFUSED at startup unless this process is ' +
                    'coordinating, and that check runs once, before the ' +
@@ -3265,9 +3167,12 @@ const SETTINGS = [
                  'writes the reply) and the worker does the work.\n- ' +
                  '**"*"**, which is EVERYTHING of both kinds — how "run the ' +
                  'service in the pool" is said, and the only spelling that ' +
-                 'cannot go stale the next time a family is added.\n\nEMPTY ' +
-                 'IS THE DEFAULT AND MEANS NOTHING IS DISPATCHED, which is ' +
-                 'what makes the pool inert until it is asked for. /tls is ' +
+                 'cannot go stale the next time a family is added.\n\n"*" IS ' +
+                 'THE DEFAULT (#364): with a coordinating store every ' +
+                 'request goes to the request worker. With the memory or ' +
+                 'ldif store and workers.requestCount at its default there ' +
+                 'is no worker, and nothing is dispatched. Empty means ' +
+                 'nothing is dispatched anywhere. /tls is ' +
                  'never dispatched whatever this says, because its whole ' +
                  'content is what the server saw of the connection the ' +
                  'request arrived on.\n\n**Nothing is dispatched unless this ' +
@@ -3338,7 +3243,7 @@ const SETTINGS = [
     restartReason: 'the pool is forked before the listener binds, and the ' +
                    'checks that refuse it without coordination and without ' +
                    'read-your-write run once, there',
-    description: 'How many request workers are kept for this service\'s OWN ' +
+    description: 'How many worker threads are kept for this service\'s OWN ' +
                  'two hosted surfaces — the admin console and the user ' +
                  'portal, or whatever workers.surfaces names — separately ' +
                  'from the workers.requestCount workers that run the ' +
@@ -3346,11 +3251,11 @@ const SETTINGS = [
                  'queues behind protocol traffic on the same worker, and a ' +
                  'console page walking the directory never holds a protocol ' +
                  'worker. 0 — the default — means there is no second pool ' +
-                 'and those paths go wherever the rest of workers.dispatch ' +
-                 'goes. Nothing is sent to these workers unless ' +
-                 'workers.dispatch names the paths too. **It REQUIRES ' +
+                 'and those paths go to the request workers with the rest ' +
+                 'of workers.dispatch. Nothing is sent to these workers ' +
+                 'unless workers.dispatch names the paths too. **It REQUIRES ' +
                  'workers.readYourWrite**: signing in to the console now ' +
-                 'crosses two processes (the sign-in in a protocol worker, ' +
+                 'crosses two workers (the sign-in in a protocol worker, ' +
                  'the console session in one of these), and without the ' +
                  'barrier the second would intermittently read a store the ' +
                  'first had not yet written — so the service refuses to ' +
@@ -3479,7 +3384,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'workers.readYourWrite', group: 'Global',
     label: 'Read-your-write across request workers',
-    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: false,
+    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: true,
     runtime: true, perProcess: true,
     description: 'Whether a request worker must catch up with what the other ' +
                  'workers have written before it serves. Coordination makes ' +
@@ -3492,10 +3397,12 @@ const SETTINGS = [
                  'there land anywhere. With it on, the pool counts writes ' +
                  'and a worker that is behind pulls before it answers — so ' +
                  'the cost falls on the first read after a write on each ' +
-                 'worker, and on nothing while nothing is being written. OFF ' +
-                 'BY DEFAULT because that is the behaviour that existed ' +
-                 'before it, and because whether the wait is worth it is a ' +
-                 'question about the callers rather than about the pool.' },
+                 'worker, and on nothing while nothing is being written. ON ' +
+                 'BY DEFAULT since #364, when a request worker became the ' +
+                 'default: the front thread still answers what is never ' +
+                 'dispatched, so a caller would otherwise see its own write ' +
+                 'go missing between two requests. It must be on for a ' +
+                 'surface pool (workers.surfaceCount).' },
 
   { key: 'workers.socketDir', group: 'Global',
     label: 'Request worker socket directory',
@@ -7518,9 +7425,9 @@ const SETTINGS = [
                  'worked because this service USED TO BLOCK while it ' +
                  'answered: with the event loop stopped, the timer ' +
                  'enforcing that budget could not fire until the response ' +
-                 'was already made. The keys are ' +
-                 'generated in worker processes now (common/worker.js) and ' +
-                 'warmed when a realm is created, so the ordinary fetch is ' +
+                 'was already made. The keys are generated on libuv\'s ' +
+                 'thread pool now (common/pq_native.js) and warmed when a ' +
+                 'realm is created, so the ordinary fetch is ' +
                  'milliseconds — this is the budget for the one that arrives ' +
                  'while a realm is still being born.' },
 
@@ -8494,8 +8401,8 @@ const SETTINGS = [
                  '/oauth2/jwks under the kid in the header. Asymmetric and ' +
                  'classical only: an HMAC would need a secret this exchange ' +
                  'does not have, and a post-quantum signature is computed on ' +
-                 'the worker pool, which this synchronous endpoint does not ' +
-                 'reach.' },
+                 'libuv\'s thread pool, which this synchronous endpoint does ' +
+                 'not reach.' },
 
   certificateHeaderSetting('wstrust.jwtCertificateHeader', 'WS-Trust',
     'STS_WSTRUST_JWT_CERTIFICATE_HEADER', 'JWT certificate header',
@@ -9019,7 +8926,7 @@ const SETTINGS = [
     env: 'OID4VCI_CREDENTIAL_SIGNING_ALGORITHM', type: 'enum',
     // THE POST-QUANTUM ALGORITHMS SINCE #38's FOLLOW-UPS: the credential
     // builders sign asynchronously now, so an ML-DSA, SLH-DSA or composite
-    // signature is made in the worker pool, and the Verifier accepts one as
+    // signature is made on libuv's thread pool, and the Verifier accepts one as
     // this realm's (vc_verifier.ts, verifyIssuerSignatureAsync()).
     enumValues: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
                  'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA',
@@ -9264,8 +9171,8 @@ const SETTINGS = [
                  'ES256 by default, which OpenID4VC HAIP requires a wallet ' +
                  'to accept. A post-quantum algorithm is not offered yet: ' +
                  'the Request Object is signed on the request path, and ' +
-                 'this realm\'s post-quantum keys sign in the worker pool ' +
-                 '(oid4vc/CLAUDE.md, the x509 prefixes).' },
+                 'this realm\'s post-quantum keys sign on libuv\'s thread ' +
+                 'pool (oid4vc/CLAUDE.md, the x509 prefixes).' },
 
   { key: 'oid4vp.verifierAttestation', group: 'OID4VP',
     label: 'Verifier Attestation JWT',
@@ -11152,7 +11059,7 @@ const SETTINGS = [
                  'a SET records that something happened and RFC 8417 ' +
                  'section 4.1.4 forbids it to expire, so it is read long ' +
                  'after it was written. Note an SLH-DSA signature takes ' +
-                 'seconds — it runs on the worker pool, so this service ' +
+                 'seconds — it runs on libuv\'s thread pool, so this service ' +
                  'answers throughout, but the receiver waits.' },
 
   certificateHeaderSetting('ssf.setCertificateHeader', 'SSF',
@@ -16248,9 +16155,9 @@ function setRealmContext(fn) {
 //     the day somebody remembers this function.
 //   * `perProcess` on the row — a setting that is a property of the OS PROCESS
 //     rather than of the service's behaviour, so that one realm's value would
-//     silently be every realm's. `workers.count` is the first: a pool of child
-//     processes is forked once, by this process, and a realm resizing it would
-//     be resizing every other realm's too.
+//     silently be every realm's. The request pool's settings are the
+//     example: a pool is started once, by this process, and a realm resizing
+//     it would be resizing every other realm's too.
 //
 // The flag is read off the table rather than matched by name, which is what
 // makes the second rule as forgettable as the first. `byKey` rather than
@@ -17107,9 +17014,10 @@ function describe(setting) {
     // and then refuses it under a realm prefix is telling half the truth, and
     // it is the half a caller acts on: `tests/vendored/
     // sts_admin_api_operations.js` walks this table for a runtime integer to
-    // drive a realm override with, and picked `workers.count` the day it was
-    // added — a setting a realm may not carry, so the write landed on the
-    // process and the row it read back said so.
+    // drive a realm override with, and picked `workers.count` (a setting
+    // removed by #363) the day it was added — a setting a realm may not
+    // carry, so the write landed on the process and the row it read back
+    // said so.
     //
     // `perProcess` and the `realms.*` prefix are the two reasons, and both are
     // config.js's own to state — see realmFor() and realms.js's

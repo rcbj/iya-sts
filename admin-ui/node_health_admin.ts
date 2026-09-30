@@ -7,7 +7,7 @@
 //
 // ===========================================================================
 // MONITORING → NODE HEALTH (#329, 2026-09-28): THE CONTAINER'S CPU AND
-// MEMORY, AND THE MEMORY OF EVERY NODE.JS PROCESS IN IT.
+// MEMORY, AND THE MEMORY OF EVERY NODE.JS PROCESS AND WORKER THREAD IN IT.
 //
 // `GET /admin/node-health` draws four things, each from the one source that
 // actually describes it:
@@ -20,17 +20,36 @@
 //   * MEMORY OF THE CONTAINER — `memory.current` against `memory.max`, and
 //     `memory.stat`'s `anon`, `file` and `kernel`, which say whether what is
 //     in use is the processes' own or page cache the kernel will give back.
-//   * THE NODE.JS MEMORY OF EVERY PROCESS — `process.memoryUsage()` of the
-//     front process and of each request and hosted-surface worker, which
-//     answer over the channel #327 added (`{ poolStatus }`, bounded at a
-//     second, a silent worker listed as unanswered); and the same figures
-//     from every post-quantum child and the debugger's api child, each asked
-//     over its own channel (`worker_pool.askMemoryStatus()` — a control
-//     message, not a job — and `debugger_api_process.askMemory()`, answered
-//     by a preload), bounded at half a second. A child that does not answer
-//     in time — a post-quantum worker computing a job cannot — is drawn with
-//     its resident size from `/proc/<pid>/status` and the reason. The totals
-//     across them.
+//   * THE NODE.JS MEMORY OF EVERY PROCESS AND WORKER THREAD —
+//     `process.memoryUsage()` of the front process; the heap of each request
+//     and hosted-surface worker THREAD, which answers over the channel #327
+//     added (`{ poolStatus }`, bounded at a second, a silent worker listed
+//     as unanswered); and the same figures from the debugger's api child,
+//     asked over its own channel (`debugger_api_process.askMemory()`,
+//     answered by a preload), bounded at half a second. A child PROCESS that
+//     does not answer in time is drawn with its resident size from
+//     `/proc/<pid>/status` and the reason. The totals across them. There
+//     were post-quantum children too until #363 (2026-09-30); post-quantum
+//     signing and scrypt now run on libuv's thread pool inside each process,
+//     so their memory is that process's.
+//
+// **A WORKER IS A THREAD OF THE FRONT PROCESS SINCE #364 (2026-09-30), AND
+// THAT DECIDES WHAT EACH ROW MAY SAY.** Until then each worker was a forked
+// process with a resident size and a CPU time of its own. In a thread,
+// `process.memoryUsage().rss` and `process.cpuUsage()` are the WHOLE
+// PROCESS's — the same numbers in every thread — and `/proc/<pid>` is the
+// whole process too; only the heap figures (`heapUsed`, `heapTotal`,
+// `external`, `arrayBuffers`) are per V8 isolate. So:
+//
+//   - the front process's row carries the process's resident size and CPU
+//     time, every worker thread's included, and its MAIN thread's heap;
+//   - a worker thread's row carries its own heap and NOT a resident size or
+//     a CPU time (`null`, with `processWide` saying where they are), because
+//     repeating the process's figure per thread would count it N+1 times;
+//   - the resident total adds processes only (the front and the debugger's
+//     api child), and the heap total adds every isolate;
+//   - a worker that did not answer is said to have not answered, and nothing
+//     more: a thread has no `/proc` entry of its own to fall back on.
 //   * THE ECS TASK METADATA ENDPOINT, where the platform sets
 //     `ECS_CONTAINER_METADATA_URI_V4` — its `/task/stats` and `/task`, as a
 //     cross-check of the cgroup figures from the agent's side. It needs no
@@ -89,9 +108,7 @@
 // of its own; the page names the node and the front process that drew it, and
 // it is ALWAYS the front process: both paths are in `request_pool.js`'s
 // `NEVER_DISPATCHED` beside Worker Pools', because only the front process
-// knows the workers and can ask them. A request worker asks its OWN
-// post-quantum children when the front process asks it (`childMemory`),
-// within ASK_CHILDREN_MS, which is under the front process's bound.
+// knows the workers and can ask them.
 //
 // **A SERVICE PAGE** (`admin_scope.ts`): the container is the process's, so a
 // realm's own administrator is refused it. No control and no POST.
@@ -136,9 +153,7 @@ const PAGE = '/admin/node-health';
 // How long the page waits for the request workers, and for each request to
 // the ECS task metadata endpoint.
 const ASK_WORKERS_MS = 1000;
-// How long a post-quantum child or the debugger's api child is waited for,
-// by the front process and by each request worker for its own children —
-// under ASK_WORKERS_MS, so a worker's answer can include its children's.
+// How long the debugger's api child is waited for.
 const ASK_CHILDREN_MS = 500;
 const ECS_TIMEOUT_MS = 1000;
 // The interval between two CPU samples taken for one page, and the ages
@@ -153,10 +168,9 @@ interface NodeHealthAdminDeps {
   log: typeof helpers.log;
   admin: typeof admin;
   errorCodes: typeof errorCodes;
-  // LAZY, all three, as in `worker_pools_admin.ts`: by the time a page is
-  // drawn each is in node's module cache.
+  // LAZY, both, as in `worker_pools_admin.ts`: by the time a page is drawn
+  // each is in node's module cache.
   requestPool: () => any;
-  workerPool: () => any;
   debuggerProcess: () => any;
   // A file's text, or a rejection (ENOENT for a file that is not there).
   readFile: (file: string) => Promise<string>;
@@ -229,11 +243,6 @@ class NodeHealthAdmin {
         log.debug("Entering requestPool().");
         log.debug("Leaving requestPool().");
         return require('../common/request_pool');
-      },
-      workerPool: function workerPool(): any {
-        log.debug("Entering workerPool().");
-        log.debug("Leaving workerPool().");
-        return require('../common/worker_pool');
       },
       debuggerProcess: function debuggerProcess(): any {
         log.debug("Entering debuggerProcess().");
@@ -952,14 +961,16 @@ class NodeHealthAdmin {
              why: rss === null ? 'its status file has no VmRSS' : '' };
   }
 
-  // A row for a process that reported `process.memoryUsage()` itself.
+  // A row for a process that reported `process.memoryUsage()` itself: its
+  // resident size and CPU time are its own, every thread's included.
   private reportedRow(pid: number, role: string, memory: Json, cpu: Json,
                       uptimeS: number | null): Json {
     const { log } = this.deps;
     log.debug("Entering NodeHealthAdmin.reportedRow(). " + pid);
     log.debug("Leaving NodeHealthAdmin.reportedRow().");
     return {
-      pid: pid, role: role, source: 'process.memoryUsage()',
+      pid: pid, threadId: null, kind: 'process', role: role,
+      source: 'process.memoryUsage()',
       rssBytes: Number(memory.rss) || 0,
       heapUsedBytes: Number(memory.heapUsed) || 0,
       heapTotalBytes: Number(memory.heapTotal) || 0,
@@ -973,6 +984,33 @@ class NodeHealthAdmin {
     };
   }
 
+  // A row for a worker THREAD of the front process (#364): its own isolate's
+  // heap figures, and no resident size or CPU time — in a thread those are
+  // the process's, the same numbers in every thread, and they are on the
+  // front process's row already.
+  private threadRow(pid: number, threadId: number, role: string,
+                    memory: Json, uptimeS: number | null): Json {
+    const { log } = this.deps;
+    log.debug("Entering NodeHealthAdmin.threadRow(). " + threadId);
+    log.debug("Leaving NodeHealthAdmin.threadRow().");
+    return {
+      pid: pid, threadId: threadId, kind: 'thread', role: role,
+      source: 'process.memoryUsage(), in the thread (heap figures only)',
+      rssBytes: null,
+      heapUsedBytes: Number(memory.heapUsed) || 0,
+      heapTotalBytes: Number(memory.heapTotal) || 0,
+      externalBytes: Number(memory.external) || 0,
+      arrayBuffersBytes: Number(memory.arrayBuffers) || 0,
+      peakRssBytes: null,
+      cpuUserSeconds: null,
+      cpuSystemSeconds: null,
+      processWide: 'a thread\'s resident size and CPU time are the whole ' +
+        'process\'s, so they are on the front process\'s row (pid ' + pid +
+        ') and not repeated here',
+      uptimeSeconds: uptimeS
+    };
+  }
+
   // A row for a child read from `/proc`, which has no heap to report.
   private async procRow(pid: number, role: string): Promise<Json> {
     const { log } = this.deps;
@@ -980,7 +1018,8 @@ class NodeHealthAdmin {
     const m = await this.procMemory(pid);
     log.debug("Leaving NodeHealthAdmin.procRow().");
     return {
-      pid: pid, role: role, source: '/proc/' + pid + '/status',
+      pid: pid, threadId: null, kind: 'process', role: role,
+      source: '/proc/' + pid + '/status',
       rssBytes: m.rss, heapUsedBytes: null, heapTotalBytes: null,
       externalBytes: null, arrayBuffersBytes: null, peakRssBytes: m.hwm,
       cpuUserSeconds: null, cpuSystemSeconds: null, uptimeSeconds: null,
@@ -991,7 +1030,7 @@ class NodeHealthAdmin {
   // A child that answered its memory status: its own figures. One that did
   // not: its resident size from /proc, and why there is no heap.
   private async childRow(pid: number, role: string, answer: Json,
-                         busy: boolean, noAnswer: string): Promise<Json> {
+                         noAnswer: string): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering NodeHealthAdmin.childRow(). " + pid);
     if (answer && answer.memory) {
@@ -1004,72 +1043,62 @@ class NodeHealthAdmin {
     row.notReported = answer
       ? 'it answered without its memory, so only its resident size is ' +
         'shown, from /proc'
-      : (busy ? 'it was computing a job, which reads no message until it ' +
-                'returns, and '
-              : '') + noAnswer + ', so only its resident size is shown, ' +
-        'from /proc';
+      : noAnswer + ', so only its resident size is shown, from /proc';
     log.debug("Leaving NodeHealthAdmin.childRow(). From /proc.");
     return row;
   }
 
   /**
-   * Every process of the node and its memory: the front process, each
-   * request and hosted-surface worker that answered, the post-quantum
-   * children of each of them, and the debugger's api child — each child
+   * Every process and worker thread of the node and its memory: the front
+   * process, each request and hosted-surface worker thread that answered
+   * (its heap only, since #364), and the debugger's api child — the child
    * with its own `process.memoryUsage()` when it answered its memory status
    * (#329), and its resident size from /proc when it did not.
    *
-   * @param stats - `request_pool.stats()`
-   * @param answers - `{ [pid]: { pq, memory, cpu, uptimeS, pqMemory } }`
-   *   from the workers
-   * @param ownChildren - `{ [pid]: { memory, cpu, uptimeS } }` from this
-   *   process's post-quantum children
+   * @param stats - `request_pool.stats()`, whose worker `pid` is a threadId
+   * @param answers - `{ [threadId]: { memory, cpu, uptimeS, error } }` from
+   *   the worker threads
    * @param debuggerAnswer - the debugger's api child's answer, or null
    * @returns the processes view
    */
-  async processesView(stats: Json, answers: Json, ownChildren?: Json,
+  async processesView(stats: Json, answers: Json,
                       debuggerAnswer?: Json): Promise<Json> {
-    const { log, pid, memoryUsage, cpuUsage, uptimeS, workerPool,
+    const { log, pid, memoryUsage, cpuUsage, uptimeS,
             debuggerProcess } = this.deps;
     const self = this;
     log.debug("Entering NodeHealthAdmin.processesView().");
     const rows: Json[] = [];
     const unanswered: Json[] = [];
     const children: Promise<Json>[] = [];
-    rows.push(this.reportedRow(pid, 'front process', memoryUsage(),
-                               cpuUsage(), uptimeS()));
-    const pqChildren = function (pq: Json, reported: Json,
-                                 parent: number, parentAnswered: boolean):
-      void {
-      log.debug("Entering pqChildren(). " + parent);
-      ((pq && pq.workers) || []).forEach(function (w: Json): void {
-        children.push(self.childRow(w.pid, 'post-quantum worker of pid ' +
-                                    parent, (reported || {})[w.pid],
-                                    Number(w.inFlight) > 0,
-                                    parentAnswered
-                                      ? 'it did not answer within ' +
-                                        ASK_CHILDREN_MS + 'ms'
-                                      : 'its parent did not ask it'));
-      });
-      log.debug("Leaving pqChildren().");
-    };
-    pqChildren(workerPool().stats(), ownChildren, pid, true);
+    const front = this.reportedRow(pid, 'front process', memoryUsage(),
+                                   cpuUsage(), uptimeS());
+    front.processWide = 'its resident size and CPU time are the whole ' +
+      'process\'s, every worker thread\'s included; its heap figures are ' +
+      'its main thread\'s';
+    rows.push(front);
+    // EACH WORKER IS A THREAD OF THIS PROCESS (#364): the pool's `pid` for it
+    // is its threadId, and its row is its isolate's heap alone.
     (stats.workers || []).filter(function (one: Json): boolean {
       return one.ready;
     }).forEach(function (one: Json): void {
-      const role = (one.pool || 'protocol') === 'surfaces'
-        ? 'hosted-surface worker' : 'request worker';
+      const role = ((one.pool || 'protocol') === 'surfaces'
+        ? 'hosted-surface worker thread ' : 'protocol worker thread ') +
+        one.pid;
       const answer = answers[one.pid];
       if (answer && answer.memory) {
-        rows.push(self.reportedRow(one.pid, role, answer.memory, answer.cpu,
-                                   answer.uptimeS));
-        pqChildren(answer.pq, answer.pqMemory, one.pid, !!answer.pqMemory);
+        rows.push(self.threadRow(pid, one.pid, role, answer.memory,
+                                 answer.uptimeS === undefined
+                                   ? null : answer.uptimeS));
       } else {
-        unanswered.push({ pid: one.pid, role: role,
-                          why: answer
+        // NOTHING TO FALL BACK ON: a thread has no /proc entry of its own,
+        // and /proc/<pid> is the whole process, already on the front row.
+        unanswered.push({ pid: pid, threadId: one.pid, role: role,
+                          why: (answer
                             ? 'it answered without its memory'
                             : 'it did not answer within ' + ASK_WORKERS_MS +
-                              'ms' });
+                              'ms') + '; a thread has no /proc entry of its ' +
+                            'own, so its heap cannot be read from outside ' +
+                            'it' });
       }
     });
     let debuggerNote: string | null = null;
@@ -1078,7 +1107,7 @@ class NodeHealthAdmin {
       if (status && status.pid) {
         children.push(this.childRow(status.pid, 'protocol debugger api',
           debuggerAnswer && debuggerAnswer.pid === status.pid
-            ? debuggerAnswer : null, false,
+            ? debuggerAnswer : null,
           'it did not answer within ' + ASK_CHILDREN_MS + 'ms (its ' +
           'memory preload, debugger_api_status.js, answers when it is ' +
           'installed)'));
@@ -1102,36 +1131,57 @@ class NodeHealthAdmin {
         return n + (typeof row[key] === 'number' ? row[key] : 0);
       }, 0);
     };
-    const withRss = rows.filter(function (row: Json): boolean {
+    const count = function (test: (row: Json) => boolean): number {
+      log.debug("Entering count().");
+      log.debug("Leaving count().");
+      return rows.filter(test).length;
+    };
+    // A THREAD'S rssBytes IS NULL, so the resident sum below adds processes
+    // alone: summing the process's size once per thread would count it N+1
+    // times.
+    const withRss = count(function (row: Json): boolean {
       return typeof row.rssBytes === 'number';
-    }).length;
-    const withHeap = rows.filter(function (row: Json): boolean {
+    });
+    const withHeap = count(function (row: Json): boolean {
       return typeof row.heapUsedBytes === 'number';
-    }).length;
+    });
+    const threads = count(function (row: Json): boolean {
+      return row.kind === 'thread';
+    });
     const view = {
       rows: rows,
       unanswered: unanswered,
       debuggerNote: debuggerNote,
       totals: {
-        processes: rows.length,
+        rows: rows.length,
+        processes: rows.length - threads,
+        workerThreads: threads,
         rssBytes: sum('rssBytes'),
         processesWithRss: withRss,
         heapUsedBytes: sum('heapUsedBytes'),
         heapTotalBytes: sum('heapTotalBytes'),
         externalBytes: sum('externalBytes'),
-        processesWithHeap: withHeap
+        isolatesWithHeap: withHeap
       },
-      totalsText: 'The resident total is the sum over the ' + withRss +
-        ' process(es) whose size could be read, so pages shared between ' +
-        'processes (node\'s own code among them) are counted once for each ' +
-        'and it can exceed the container\'s memory.current. The heap ' +
-        'figures are the ' + withHeap + ' process(es) that reported ' +
-        'process.memoryUsage() themselves; a child that did not answer in ' +
-        'time — a post-quantum worker computing a job cannot — is shown ' +
-        'with its resident size from /proc and no heap, and says why.'
+      totalsText: 'The request and hosted-surface workers are THREADS of ' +
+        'the front process (#364), so their resident size and CPU time are ' +
+        'the front process\'s own figures and are counted once, on its row. ' +
+        'The resident total is the sum over the ' + withRss + ' process(es) ' +
+        'whose size could be read — the front process and the debugger\'s ' +
+        'api child — so pages the two share (node\'s own code among them) ' +
+        'are counted once for each and it can exceed the container\'s ' +
+        'memory.current. The heap figures are the ' + withHeap + ' V8 ' +
+        'isolate(s) that reported process.memoryUsage() themselves: the ' +
+        'front process\'s main thread, each worker thread, and the child; a ' +
+        'child process that did not answer in time is shown with its ' +
+        'resident size from /proc and no heap, and a worker thread that did ' +
+        'not is listed as unanswered, since a thread has no /proc entry of ' +
+        'its own. Post-quantum signing and scrypt have had no processes ' +
+        'of their own since #363: they run on libuv\'s thread pool, and ' +
+        'their memory is counted in the process that asked.'
     };
     log.debug("Leaving NodeHealthAdmin.processesView(). " + rows.length +
-              " process(es).");
+              " row(s), " + threads + " of them thread(s).");
     return view;
   }
 
@@ -1250,21 +1300,6 @@ class NodeHealthAdmin {
     return view;
   }
 
-  // This process's post-quantum children's memory, or none at all.
-  private askOwnChildren(): Promise<Json> {
-    const { log, workerPool } = this.deps;
-    log.debug("Entering NodeHealthAdmin.askOwnChildren().");
-    log.debug("Leaving NodeHealthAdmin.askOwnChildren().");
-    return Promise.resolve().then(function (): Json {
-      return workerPool().askMemoryStatus(ASK_CHILDREN_MS);
-    }).catch(function (e: any): Json {
-      log.debug("Caught in NodeHealthAdmin.askOwnChildren(): " +
-                ((e && e.message) || e));
-      // The children are then drawn from /proc, each saying why.
-      return {};
-    });
-  }
-
   // The debugger's api child's memory, or null.
   private askDebugger(): Promise<Json> {
     const { log, debuggerProcess } = this.deps;
@@ -1300,15 +1335,13 @@ class NodeHealthAdmin {
     const got = await Promise.all([
       this.cpuView(where),
       this.memoryView(where),
-      asking ? pool.askWorkerPoolStatus(ASK_WORKERS_MS,
-                                        { childMemory: ASK_CHILDREN_MS })
+      asking ? pool.askWorkerPoolStatus(ASK_WORKERS_MS)
              : Promise.resolve({}),
       this.ecsView(),
-      this.askOwnChildren(),
       this.askDebugger()
     ]);
     const processes = await this.processesView(stats, got[2] || {},
-                                               got[4] || {}, got[5]);
+                                               got[4]);
     // The ECS task's limits where the cgroup has none, and the agent's own
     // figures where there is no cgroup to read (#329, Fargate).
     const container = NodeHealthAdmin.withEcs(got[0], got[1], got[3]);
@@ -1357,6 +1390,7 @@ class NodeHealthAdmin {
     let cpus = 0;
     let cpuNodes = 0;
     let processes = 0;
+    let threads = 0;
     let rss = 0;
     let heap = 0;
     counted.forEach(function (n: Json): void {
@@ -1374,6 +1408,7 @@ class NodeHealthAdmin {
       }
       const t = (v.processes && v.processes.totals) || {};
       processes += Number(t.processes) || 0;
+      threads += Number(t.workerThreads) || 0;
       rss += Number(t.rssBytes) || 0;
       heap += Number(t.heapUsedBytes) || 0;
     });
@@ -1391,6 +1426,7 @@ class NodeHealthAdmin {
       cpuOf: cpuNodes ? cpus : null,
       cpuPercent: cpus ? Math.round(1000 * cores / cpus) / 10 : null,
       processes: processes,
+      workerThreads: threads,
       rssBytes: rss,
       heapUsedBytes: heap,
       text: 'Over the ' + counted.length + ' node(s) that are not gone ' +
@@ -1560,39 +1596,50 @@ class NodeHealthAdmin {
     const self = this;
     log.debug("Entering NodeHealthAdmin.processesHtml().");
     const t = p.totals;
-    const html = '<h2 id="processes">Node.js processes</h2>' +
+    const html = '<h2 id="processes">Node.js processes and worker threads' +
+      '</h2>' +
       this.rows([
         ['Processes', admin.esc(t.processes), 'listed below'],
+        ['Worker threads', admin.esc(t.workerThreads || 0),
+         'request and hosted-surface workers, threads of the front process'],
         ['Resident, in all', admin.esc(this.mib(t.rssBytes)),
-         'across ' + admin.esc(t.processesWithRss) + ' process(es)'],
+         'across ' + admin.esc(t.processesWithRss) + ' process(es); a ' +
+         'thread\'s is its process\'s'],
         ['Heap used, in all', admin.esc(this.mib(t.heapUsedBytes)),
          'of ' + admin.esc(this.mib(t.heapTotalBytes)) + ' allocated, ' +
-         'across ' + admin.esc(t.processesWithHeap) + ' process(es)']
+         'across ' + admin.esc(t.isolatesWithHeap) + ' V8 isolate(s)']
       ]) + admin.note(admin.esc(p.totalsText), 'How the totals add up') +
-      '<table class="grid"><thead><tr><th>Process</th><th>Resident</th>' +
-      '<th>Heap used</th><th>Heap total</th><th>External</th>' +
-      '<th>Array buffers</th><th>CPU time</th></tr></thead><tbody>' +
+      '<table class="grid"><thead><tr><th>Process or thread</th>' +
+      '<th>Resident</th><th>Heap used</th><th>Heap total</th>' +
+      '<th>External</th><th>Array buffers</th><th>CPU time</th></tr>' +
+      '</thead><tbody>' +
       p.rows.map(function (r: Json): string {
-        return '<tr><td>pid ' + admin.esc(r.pid) + '<br><small>' +
+        const thread = r.kind === 'thread';
+        return '<tr><td>' + (thread ? 'thread ' + admin.esc(r.threadId) +
+                             ' of pid ' + admin.esc(r.pid)
+                           : 'pid ' + admin.esc(r.pid)) + '<br><small>' +
           admin.esc(r.role) + '</small></td><td>' +
-          (r.unreadable ? '<small>' + admin.esc(r.unreadable) + '</small>'
-                        : admin.esc(self.mib(r.rssBytes))) +
+          (thread ? '<small>the process\'s</small>'
+           : r.unreadable ? '<small>' + admin.esc(r.unreadable) + '</small>'
+             : admin.esc(self.mib(r.rssBytes))) +
           (r.notReported ? '<br><small>' + admin.esc(r.notReported) +
                            '</small>' : '') +
           '</td><td>' + admin.esc(self.mib(r.heapUsedBytes)) + '</td><td>' +
           admin.esc(self.mib(r.heapTotalBytes)) + '</td><td>' +
           admin.esc(self.mib(r.externalBytes)) + '</td><td>' +
           admin.esc(self.mib(r.arrayBuffersBytes)) + '</td><td>' +
-          (r.cpuUserSeconds === null ? '—'
+          (thread ? '<small>the process\'s</small>'
+           : r.cpuUserSeconds === null ? '—'
              : admin.esc(NodeHealthAdmin.round1(r.cpuUserSeconds +
                                                 r.cpuSystemSeconds)) +
-               ' s') + '</td></tr>';
+               ' s' + (r.processWide ? '<br><small>every thread\'s' +
+                                       '</small>' : '')) + '</td></tr>';
       }).join('') + '</tbody></table>' +
       (p.unanswered.length ? admin.warn(
-        p.unanswered.length + ' worker(s) did not report: ' +
+        p.unanswered.length + ' worker thread(s) did not report: ' +
         p.unanswered.map(function (u: Json): string {
-          return 'pid ' + admin.esc(u.pid) + ', ' + admin.esc(u.role) +
-            ' (' + admin.esc(u.why) + ')';
+          return 'thread ' + admin.esc(u.threadId) + ', ' +
+            admin.esc(u.role) + ' (' + admin.esc(u.why) + ')';
         }).join('; ') + '.') : '') +
       (p.debuggerNote ? '<p><small>' + admin.esc(p.debuggerNote) +
                         '</small></p>' : '');
@@ -1648,11 +1695,14 @@ class NodeHealthAdmin {
       admin.tile(this.mib(json.processes.totals.rssBytes),
                  'Resident, all processes') +
       admin.tile(String(json.processes.totals.processes), 'Processes') +
+      admin.tile(String(json.processes.totals.workerThreads || 0),
+                 'Worker threads') +
       '</div>';
     const about = admin.note(
       '<p>' + admin.esc(json.scopeText) + '</p><p>The container\'s CPU and ' +
-      'memory are read from its cgroup (v2), each process\'s from the ' +
-      'process itself, when the page is drawn; nothing is kept but the ' +
+      'memory are read from its cgroup (v2), each process\'s and worker ' +
+      'thread\'s from the process or thread itself, when the page is ' +
+      'drawn; nothing is kept but the ' +
       'previous CPU sample. This page changes nothing.</p>',
       'What this page is');
     const m = json.machine;
@@ -1707,8 +1757,9 @@ class NodeHealthAdmin {
          t.cpuPercent === null ? 'not measured'
            : admin.esc(this.pct(t.cpuPercent)) + ' of ' +
              admin.esc(t.cpuOf) + ' CPU(s)'],
-        ['Processes', admin.esc(t.processes),
-         admin.esc(this.mib(t.rssBytes)) + ' resident, ' +
+        ['Processes', admin.esc(t.processes) + ' and ' +
+           admin.esc(t.workerThreads || 0) + ' worker thread(s)',
+         admin.esc(this.mib(t.rssBytes)) + ' resident (processes only), ' +
          admin.esc(this.mib(t.heapUsedBytes)) + ' of heap used']
       ]) + '<p><small>' + admin.esc(t.text) + '</small></p>' +
       '<table class="grid"><thead><tr><th>Node</th><th>State</th>' +

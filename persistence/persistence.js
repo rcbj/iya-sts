@@ -1837,7 +1837,8 @@ function databaseConnection() {
 // postgres pool is sized from (`persistence_postgres.js`, poolMax()).
 function workerCount() {
   log.debug("Entering workerCount().");
-  const n = Math.max(0, Number(config.value('workers.requestCount')) || 0) +
+  // The #364 rule for the request pool; see common/process_memory.ts.
+  const n = require('../common/process_memory').requestWorkers() +
             Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
   log.debug("Leaving workerCount().");
   return n;

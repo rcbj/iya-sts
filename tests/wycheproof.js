@@ -610,21 +610,18 @@ const APPLICATIONS = [
     },
     run: function (c, t) {
       return refusesOnThrow(function () {
-        const randomized = (t.flags || []).indexOf('Randomized') >= 0;
-        // Deterministic (the internal parameter, #203) where the vector is;
-        // a Randomized vector is held to verification of our hedged one.
-        const sig = crypto.jwsSignatureOver(c.alg, c.seed, hex(t.msg),
-                                            { deterministic: !randomized });
-        if ((t.flags || []).indexOf('Randomized') >= 0) {
-          // A hedged vector: its bytes cannot be reproduced, so ours is held
-          // to the vector's public key by the vendored engine instead.
-          const spki = require('../common/vendored/pqc_x509')
-            .encodeSpki(c.alg, c.pub);
-          return nodeCrypto.verify(null, hex(t.msg),
-            nodeCrypto.createPublicKey({ key: Buffer.from(spki),
-                                         format: 'der', type: 'spki' }), sig);
-        }
-        return sig.equals(hex(t.sig));
+        // Hedged since #363 (node's OpenSSL has no deterministic switch),
+        // so no vector's bytes can be reproduced: our signature from the
+        // vector's seed must verify under the vector's public key, and the
+        // vector's own signature must verify too.
+        const sig = crypto.jwsSignatureOver(c.alg, c.seed, hex(t.msg));
+        const spki = require('../common/vendored/pqc_x509')
+          .encodeSpki(c.alg, c.pub);
+        const pub = nodeCrypto.createPublicKey({ key: Buffer.from(spki),
+                                                 format: 'der',
+                                                 type: 'spki' });
+        return nodeCrypto.verify(null, hex(t.msg), pub, sig) &&
+          nodeCrypto.verify(null, hex(t.msg), pub, hex(t.sig));
       });
     } },
   // ----- ML-KEM and XDH (#82) --------------------------------------------
@@ -648,10 +645,22 @@ const APPLICATIONS = [
     group: function (g) {
       return { kem: MLKEM_KEM_ID[g.parameterSet] };
     },
+    // A VALID vector is an encapsulation with its own m (Encaps_internal),
+    // which node's OpenSSL does not take (#363), so its bytes cannot be
+    // reproduced; an INVALID one is an encapsulation key the FIPS 203
+    // section 7.2 check must refuse, which is still held — with our own
+    // randomness, since the refusal is about the key.
+    expect: function (c, t) {
+      if (t.result === 'valid') {
+        return { expect: 'skip', why: 'an encapsulation with the vector\'s ' +
+          'm (Encaps_internal): node\'s OpenSSL takes no randomness' };
+      }
+      return null;
+    },
     run: function (c, t) {
       return refusesOnThrow(function () {
-        const out = crypto.hpke.encap(c.kem, hex(t.ek), hex(t.m));
-        return out.enc.equals(hex(t.c)) && out.ss.equals(hex(t.K));
+        const out = crypto.hpke.encap(c.kem, hex(t.ek));
+        return out.enc.length > 0;
       });
     } },
   { door: 'ML-KEM key generation from the seed',

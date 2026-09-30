@@ -8,22 +8,23 @@
 // ===========================================================================
 // MONITORING → WORKER POOLS (#327): THE NUMBERS, AND WHERE THEY COME FROM.
 //
-// `admin-ui/worker_pools_admin.ts` draws three pools from their own modules,
-// and #327 added to each module what it had never counted. Six claims:
+// `admin-ui/worker_pools_admin.ts` draws two pools from their own module,
+// and #327 added to it what it had never counted. Five claims, numbered as
+// they were: the first, the post-quantum pool's counters, went with that
+// pool in #363 — post-quantum signing and scrypt run on libuv's thread pool
+// now, and there is no pool of processes to count.
 //
-//   1. THE POST-QUANTUM POOL COUNTS its first fork (the lazy pool's initial
-//      size), each job's time, a crash (a worker SIGKILLed under it) apart
-//      from a retirement (a lowered `workers.count`), and a job computed in
-//      process — driving the REAL `common/worker_pool.js` with real children
-//      and a cheap `scrypt.derive`.
 //   2. A REQUEST POOL COUNTS its forks, a crash apart from a stop, and the
 //      time from dispatch to answer of a request `proxy()` really streamed —
-//      the REAL fork(), reap() and proxy() over a STUB worker, as
-//      `tests/request_worker_replacement.js` does.
-//   3. THE PAGE ASKS EACH REQUEST WORKER for its own post-quantum pool, and a
-//      worker that does not answer is drawn as not having answered rather
-//      than holding the page.
-//   4. A POOL THAT IS OFF SAYS SO IN WORDS — the page and its JSON.
+//      the REAL fork(), reap() and proxy() over a STUB worker THREAD (#364),
+//      as `tests/request_worker_replacement.js` does.
+//   3. THE PAGE DRAWS EACH REQUEST WORKER THREAD from the pool's own table,
+//      by its threadId and called a thread, asks no worker anything — a
+//      worker that would not answer does not hold the page — and has no
+//      post-quantum section.
+//   4. A POOL THAT IS OFF SAYS SO IN WORDS — the page and its JSON — and
+//      says WHICH off: `workers.requestCount` at its default of 1 is none on
+//      a store that cannot coordinate (#364), which is not "is 0".
 //   5. The page and the API are PINNED to the front process
 //      (`NEVER_DISPATCHED`) even with `workers.dispatch=*`.
 //   6. It is a SERVICE page: a realm's own administrator is refused it.
@@ -36,9 +37,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const express = require('express');
-const config = require('../common/config');
 const requestPool = require('../common/request_pool');
-const workerPool = require('../common/worker_pool');
 const app = require('../common/app');
 // Loading a module registers nothing since #50's R1, so the page's route is
 // registered here. The console shell comes first, as in the composition root.
@@ -53,33 +52,32 @@ const log = require('bunyan').createLogger({
 
 const PROTO = requestPool.PROTOCOL_POOL;
 
-// The stub request worker: `begin` in, `ready` out, an HTTP server on the
-// socket it is given; GET / answers its pid after 30ms, so a response time is
-// something to measure. It answers `{ poolStatus }` with a fixed
-// post-quantum pool of its own — unless STUB_MODE=mute, which is a worker
-// that never answers the question — and exits when a drain says `stop`.
+// The stub request worker, a THREAD as the real one is since #364: `begin`
+// in, `ready` out over `parentPort`, an HTTP server on the socket it is
+// given; GET / answers its threadId (the pool's id for it) after 30ms, so a
+// response time is something to measure. It answers `{ poolStatus }` —
+// unless STUB_MODE=mute, which is a worker that never answers the question —
+// and exits when a drain says `stop`; `process.exit()` ends the thread alone.
 const STUB = [
   "'use strict';",
   "const http = require('http');",
-  "process.on('message', function (m) {",
+  "const wt = require('worker_threads');",
+  "wt.parentPort.on('message', function (m) {",
   "  if (m && m.poolStatus) {",
   "    if (process.env.STUB_MODE === 'mute') { return; }",
-  "    process.send({ poolStatus: true, id: m.id, pq: {",
-  "      configured: 2, running: 1, busy: 0, free: 1, gaveUp: false,",
-  "      averageJobMs: 10, counts: { forked: 1, firstForked: 1,",
-  "      firstForkAt: 1, crashed: 0, retired: 0, failedStarts: 0,",
-  "      jobs: 4, failed: 0, timedOut: 0, jobMs: 40, maxJobMs: 20,",
-  "      inProcess: 0, inProcessMs: 0 } } });",
+  "    wt.parentPort.postMessage({ poolStatus: true, id: m.id,",
+  "      pid: wt.threadId, memory: process.memoryUsage() });",
   "    return;",
   "  }",
   "  if (m && m.stop) { process.exit(0); }",
   "  if (!m || !m.begin) { return; }",
   "  const server = http.createServer(function (req, res) {",
-  "    setTimeout(function () { res.end(String(process.pid)); }, 30);",
+  "    setTimeout(function () { res.end(String(wt.threadId)); }, 30);",
   "  });",
-  "  server.listen(m.socket, function () { process.send({ ready: true }); });",
+  "  server.listen(m.socket, function () {",
+  "    wt.parentPort.postMessage({ ready: true });",
+  "  });",
   "});",
-  "process.on('disconnect', function () { process.exit(0); });",
   ""
 ].join('\n');
 
@@ -214,69 +212,6 @@ function draw(query) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. THE POST-QUANTUM POOL'S COUNTERS, WITH REAL CHILDREN.
-// ---------------------------------------------------------------------------
-function scryptJob() {
-  log.debug("Entering scryptJob().");
-  log.debug("Leaving scryptJob().");
-  return { plaintext: 'worker-pools', salt: Buffer.from('0123456789abcdef'),
-           keylen: 16, N: 1024, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
-}
-
-async function checkThePqPool(t) {
-  log.debug("Entering checkThePqPool().");
-  t.log.info('=== 1. the post-quantum pool counts forks, jobs, crashes, ' +
-             'retirements and in-process jobs ===');
-  // Whatever an earlier file in the run left forked is drained first, so
-  // the first job here is the pool's first fork.
-  await workerPool.stop(3000);
-  workerPool.reset();
-  config.setOverride('workers.count', '1');
-  try {
-    await workerPool.run('scrypt.derive', scryptJob());
-    let s = workerPool.stats();
-    t.equal(s.counts.forked, 1, 'the first job forks the one worker');
-    t.equal(s.counts.firstForked, 1,
-            'and that first fork is the lazy pool\'s initial size');
-    t.check(s.counts.firstForkAt > 0, 'with when it happened',
-            String(s.counts.firstForkAt));
-    t.equal(s.counts.jobs, 1, 'one job answered by a worker');
-    t.check(typeof s.averageJobMs === 'number' && s.averageJobMs >= 0,
-            'and its time is averaged', String(s.averageJobMs));
-    t.equal(s.busy + s.free, s.running, 'busy and free add up to running');
-
-    const pid = s.workers[0].pid;
-    process.kill(pid, 'SIGKILL');
-    t.check(await waitFor(function () {
-      return workerPool.stats().counts.crashed === 1;
-    }, 10000), 'a worker SIGKILLed under the pool is counted as a crash',
-    JSON.stringify(workerPool.stats().counts));
-    await workerPool.run('scrypt.derive', scryptJob());
-    s = workerPool.stats();
-    t.equal(s.counts.forked, 2, 'the next job forks its replacement');
-    t.equal(s.counts.firstForked, 1,
-            'which does not change the initial size');
-
-    config.setOverride('workers.count', '0');
-    await workerPool.run('scrypt.derive', scryptJob());
-    t.check(await waitFor(function () {
-      return workerPool.stats().counts.retired === 1;
-    }, 10000), 'lowering workers.count retires the worker, and that is ' +
-       'counted as retired, not crashed',
-    JSON.stringify(workerPool.stats().counts));
-    s = workerPool.stats();
-    t.equal(s.counts.crashed, 1, 'the crash count is unchanged by it');
-    t.equal(s.counts.inProcess, 1,
-            'and the job with no worker was computed in process, counted');
-  } finally {
-    config.clearOverride('workers.count');
-    await workerPool.stop(3000);
-    workerPool.reset();
-  }
-  log.debug("Leaving checkThePqPool().");
-}
-
-// ---------------------------------------------------------------------------
 // 2. A REQUEST POOL'S COUNTERS, WITH STUB WORKERS AND THE REAL PROXY.
 // ---------------------------------------------------------------------------
 function proxyThrough(entry) {
@@ -335,7 +270,7 @@ async function checkARequestPool(t, stubPath) {
         const entry = readyProto()[0];
         const body = await proxyThrough(entry);
         t.equal(body, String(entry.pid), 'a request proxied to a worker is ' +
-                'answered by it');
+                'answered by it — the thread whose threadId the pool holds');
         s = protoStats();
         t.equal(s.history.answered, 1, 'and counted as answered');
         t.check(s.averageMs >= 25 && s.recentAverageMs >= 25,
@@ -345,11 +280,12 @@ async function checkARequestPool(t, stubPath) {
 
         // The worker that served the request: one that served nothing within
         // QUICK_EXIT_MS of its fork is a failed start by the pool's own rule.
-        entry.child.kill('SIGKILL');
+        entry.child.kill();
         t.check(await waitFor(function () {
           return protoStats().history.crashed === 1 &&
                  readyProto().length === 2;
-        }, 10000), 'a SIGKILLed worker is a crash, and is replaced',
+        }, 10000), 'a worker thread terminated unasked is a crash, and is ' +
+        'replaced',
         JSON.stringify(protoStats().history));
         s = protoStats();
         t.equal(s.replaced, 1, 'one replacement');
@@ -371,12 +307,12 @@ async function checkARequestPool(t, stubPath) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. THE PAGE ASKS EACH WORKER FOR ITS OWN POST-QUANTUM POOL.
+// 3. THE PAGE DRAWS EACH WORKER, AND ASKS NONE OF THEM ANYTHING.
 // ---------------------------------------------------------------------------
-async function checkThePageAsksTheWorkers(t, stubPath) {
-  log.debug("Entering checkThePageAsksTheWorkers().");
-  t.log.info('=== 3. the page reports each request worker\'s own ' +
-             'post-quantum pool ===');
+async function checkThePageDrawsTheWorkers(t, stubPath) {
+  log.debug("Entering checkThePageDrawsTheWorkers().");
+  t.log.info('=== 3. the page draws each request worker, asks none, and ' +
+             'has no post-quantum pool ===');
   await withEnv({ STS_WORKERS_REQUEST_COUNT: '2', STUB_MODE: 'ok' },
     async function () {
       requestPool.reset();
@@ -391,18 +327,47 @@ async function checkThePageAsksTheWorkers(t, stubPath) {
         const request = poolOf(json, 'request');
         t.equal(request.currentWorkers, 2, 'the request pool has two workers');
         t.equal(request.maxWorkers, 2, 'its maximum is the configured two');
-        t.equal(request.state, 'not-dispatching',
-                'and with workers.dispatch empty it says it is idle by ' +
-                'configuration');
+        t.check(request.state === 'running' &&
+                /^2 of 2 worker thread\(s\) serving\.$/.test(
+                  request.stateText),
+                'and with workers.dispatch at its default of * (#364) it ' +
+                'says they are serving, as threads',
+                request.state + ': ' + request.stateText);
+        await withEnv({ STS_WORKERS_DISPATCH: '' }, async function () {
+          const idle = poolOf(await workerPoolsAdmin.workerPoolsView(),
+                              'request');
+          t.equal(idle.state, 'not-dispatching',
+                  'with workers.dispatch empty it says it is idle by ' +
+                  'configuration');
+        });
         t.equal(request.workers.length, 2, 'each worker is listed');
-        const pq = poolOf(json, 'post-quantum');
-        t.equal(pq.processes.length, 3,
-                'the post-quantum pool has a row for the front process and ' +
-                'for each worker that answered');
-        t.equal(pq.unanswered.length, 0, 'and none failed to answer');
-        t.check(pq.responseTime.jobs >= 8 && pq.currentWorkers >= 2,
-                'its totals include the workers\' own pools',
-                JSON.stringify(pq.responseTime));
+        const ids = readyProto().map(function (one) {
+          return one.pid;
+        }).sort().join(',');
+        t.check(request.workers.map(function (w) {
+          return w.threadId;
+        }).sort().join(',') === ids && request.workers.every(function (w) {
+          return !('pid' in w) && w.threadId !== process.pid;
+        }), 'each by its threadId — the pool\'s id for a thread — and ' +
+        'never by the pid every thread shares', JSON.stringify(
+          request.workers));
+        t.check(json.mainThread === true && json.pid === process.pid,
+                'drawn by the front process\'s main thread, which holds the ' +
+                'pools', JSON.stringify({ mainThread: json.mainThread,
+                                          pid: json.pid }));
+        const page = await draw({});
+        t.check(!!page && /<h3>Worker threads<\/h3>/.test(page.body) &&
+                /<th>Thread<\/th>/.test(page.body) &&
+                /Each worker is a thread of that process/.test(page.body),
+                'the page lists them as worker threads, by thread', '');
+        t.check(json.pools.length === 2 && !poolOf(json, 'post-quantum'),
+                'and there are two pools, none of them post-quantum (#363)',
+                JSON.stringify(json.pools.map(function (one) {
+                  return one.id;
+                })));
+        t.check(/libuv/.test(json.scopeText),
+                'the page says where post-quantum signing went',
+                json.scopeText);
       } finally {
         await requestPool.stop(3000);
         requestPool.reset();
@@ -419,18 +384,17 @@ async function checkThePageAsksTheWorkers(t, stubPath) {
         }, 10000), 'a worker that will not answer comes up', '');
         const began = Date.now();
         const json = await workerPoolsAdmin.workerPoolsView();
-        const pq = poolOf(json, 'post-quantum');
-        t.check(Date.now() - began < 5000,
-                'the page does not wait on it past its bound',
+        t.check(Date.now() - began < 900,
+                'the page does not wait on it, since it asks it nothing',
                 String(Date.now() - began));
-        t.equal(pq.unanswered.length, 1,
-                'and it is listed as not having answered');
+        t.equal(poolOf(json, 'request').workers.length, 1,
+                'and it is drawn from the pool\'s own table');
       } finally {
         await requestPool.stop(3000);
         requestPool.reset();
       }
     });
-  log.debug("Leaving checkThePageAsksTheWorkers().");
+  log.debug("Leaving checkThePageDrawsTheWorkers().");
 }
 
 // ---------------------------------------------------------------------------
@@ -441,43 +405,42 @@ async function checkOffIsSaid(t) {
   t.log.info('=== 4. a pool that is off says so, in the JSON and on the ' +
              'page ===');
   requestPool.reset();
-  workerPool.reset();
-  config.setOverride('workers.count', '0');
-  try {
-    const json = await workerPoolsAdmin.workerPoolsView();
-    ['request', 'surface', 'post-quantum'].forEach(function (id) {
-      const p = poolOf(json, id);
-      t.check(!!p && p.state === 'off' && /^Off:/.test(p.stateText),
-              'the ' + id + ' pool is off and says so in a sentence',
-              p ? p.state + ': ' + p.stateText : 'missing');
-    });
-    t.equal(json.scope, 'node', 'the figures are said to be the node\'s');
-    t.check(json.pid === process.pid && !!json.node && !('host' in json),
-            'naming the process and node that drew them, by name and not ' +
-            'by host (#332)', '');
-    const page = await draw({});
-    t.check(!!page && /Off: workers\.requestCount is 0/.test(page.body) &&
-            /Off: workers\.surfaceCount is 0/.test(page.body) &&
-            /Off: workers\.count is 0/.test(page.body),
-            'the page says each pool is off rather than drawing zeros',
-            page ? page.body.slice(0, 300) : 'no page');
-    const asJson = await draw({ format: 'json' });
-    t.check(!!asJson && JSON.parse(asJson.body).pools.length === 3,
-            '?format=json answers the same three pools', '');
-  } finally {
-    config.clearOverride('workers.count');
-  }
-  // Not forked yet is a different sentence from off.
-  workerPool.reset();
-  config.setOverride('workers.count', '2');
-  try {
-    const json = await workerPoolsAdmin.workerPoolsView();
-    const pq = poolOf(json, 'post-quantum');
-    t.equal(pq.state, 'not-forked',
-            'a lazy pool with no job yet says it has not forked');
-  } finally {
-    config.clearOverride('workers.count');
-  }
+  const json = await workerPoolsAdmin.workerPoolsView();
+  ['request', 'surface'].forEach(function (id) {
+    const p = poolOf(json, id);
+    t.check(!!p && p.state === 'off' && /^Off:/.test(p.stateText),
+            'the ' + id + ' pool is off and says so in a sentence',
+            p ? p.state + ': ' + p.stateText : 'missing');
+  });
+  // WHICH OFF (#364): workers.requestCount defaults to 1, and on this
+  // file's memory store that default means none.
+  t.check(/^Off: workers\.requestCount is at its default of 1, which means none where the store cannot coordinate/.test(
+    poolOf(json, 'request').stateText),
+  'the request pool off by its default says so, rather than "is 0"',
+  poolOf(json, 'request').stateText);
+  t.equal(json.scope, 'node', 'the figures are said to be the node\'s');
+  t.check(json.pid === process.pid && !!json.node && !('host' in json),
+          'naming the process and node that drew them, by name and not ' +
+          'by host (#332)', '');
+  const page = await draw({});
+  t.check(!!page &&
+          /Off: workers\.requestCount is at its default of 1/.test(
+            page.body) &&
+          /Off: workers\.surfaceCount is 0/.test(page.body),
+          'the page says each pool is off rather than drawing zeros',
+          page ? page.body.slice(0, 300) : 'no page');
+  await withEnv({ STS_WORKERS_REQUEST_COUNT: '0' }, async function () {
+    const zero = poolOf(await workerPoolsAdmin.workerPoolsView(), 'request');
+    t.check(zero.state === 'off' &&
+            /^Off: workers\.requestCount is 0,/.test(zero.stateText),
+            'and one set to 0 says it is 0', zero.stateText);
+  });
+  t.check(!!page && !/workers\.count\b/.test(page.body) &&
+          !/Post-quantum pool/.test(page.body),
+          'and names no post-quantum pool or its setting (#363)', '');
+  const asJson = await draw({ format: 'json' });
+  t.check(!!asJson && JSON.parse(asJson.body).pools.length === 2,
+          '?format=json answers the same two pools', '');
   log.debug("Leaving checkOffIsSaid().");
 }
 
@@ -515,9 +478,8 @@ async function run(t) {
                              '.js');
   fs.writeFileSync(stubPath, STUB);
   try {
-    await checkThePqPool(t);
     await checkARequestPool(t, stubPath);
-    await checkThePageAsksTheWorkers(t, stubPath);
+    await checkThePageDrawsTheWorkers(t, stubPath);
     await checkOffIsSaid(t);
     await checkPinnedAndScoped(t);
   } finally {
@@ -527,7 +489,6 @@ async function run(t) {
       log.debug("Caught in run(): " + ((e && e.message) || e));
     }
     requestPool.reset();
-    workerPool.reset();
   }
   log.debug("Leaving run().");
 }
@@ -536,8 +497,8 @@ module.exports = {
   name: 'worker_pools_page',
   describe: 'Monitoring → Worker Pools (#327): what each pool counts — forks, ' +
             'crashes apart from stops, response times, the initial size — ' +
-            'each request worker\'s own post-quantum pool asked for, a pool ' +
-            'that is off saying so, pinned to the front process, and ' +
-            'refused to a realm administrator',
+            'each request worker drawn and none asked, no post-quantum ' +
+            'pool (#363), a pool that is off saying so, pinned to the ' +
+            'front process, and refused to a realm administrator',
   run: run
 };

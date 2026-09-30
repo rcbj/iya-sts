@@ -56,8 +56,8 @@ files did not change; the paths did.
 
 | Directory | What is in it |
 |---|---|
-| `common/` | Everything more than one family reads — settings, the express app, **`crypto.js` (the one place this service signs, verifies, encrypts and decrypts)**, trust realms, both worker pools and the shared require order, the registers (applications, delegation, permissions, consent, roles, the issuance gate), the certificate authority (`pki.js`), the second factors, the password policy, the error-code table, `outbound_tls.ts` (whether an outbound request may be plain http, and whether the peer's certificate is verified — #171), **the mail channel** (`mail.ts` and its transports, templates and uses — #63), and **`mode.js`, the one place `development` and `product` are told apart**, and **the cells** (`cells.ts` and the five `cell_*.ts`, #98 — one service deployed across regions and jurisdictions). `common/CLAUDE.md`. |
-| `common/vendored/` | Byte-identical copies of the parent project's files — `xmldsig.js`, the PKI and post-quantum encoders — plus the JSON-LD `contexts/`. **Do not edit them here.** `common/vendored/CLAUDE.md`. |
+| `common/` | Everything more than one family reads — settings, the express app, **`crypto.js` (the one place this service signs, verifies, encrypts and decrypts)**, trust realms, the request pool and the shared require order, **`pq_native.js` (ML-DSA, SLH-DSA and ML-KEM on node's OpenSSL, #363)**, the registers (applications, delegation, permissions, consent, roles, the issuance gate), the certificate authority (`pki.js`), the second factors, the password policy, the error-code table, `outbound_tls.ts` (whether an outbound request may be plain http, and whether the peer's certificate is verified — #171), **the mail channel** (`mail.ts` and its transports, templates and uses — #63), and **`mode.js`, the one place `development` and `product` are told apart**, and **the cells** (`cells.ts` and the five `cell_*.ts`, #98 — one service deployed across regions and jurisdictions). `common/CLAUDE.md`. |
+| `common/vendored/` | Byte-identical copies of the parent project's files — the PKI encoders and `bbs2023.js` — plus the JSON-LD `contexts/`. **Do not edit them here** — except `pqc.js`, `pqc_x509.js` and `xmldsig.js`, this service's own since #363 and never re-synced. `common/vendored/CLAUDE.md`. |
 | `home/` | The front door: `GET /` and the one image on it. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `GET|POST /logout`, and the one model of what a live session is, per identity (`/admin/logout`) and service-wide (`/admin/sessions`). `logout/CLAUDE.md`. |
 | `portal/` | **The user portal**: the pages that belong to the person looking at them, where no route takes an identity from the request, behind a navigation column that is not the console's. `portal/CLAUDE.md`. |
@@ -93,7 +93,7 @@ files did not change; the paths did.
 | `debugger/` | **The embedded identity protocol debugger** (2026-09-13): the parent project's client and api served on a listener of their own (`debugger.port`), signed in to through this service's authorization server, the api a FORKED CHILD behind an access token only a console administrator is issued. `debugger/embedded/` is that project's build output, never source. `debugger/CLAUDE.md`. |
 | `postgres/` | Four files the database container runs, never this service: TLS setup, TLS enforcement, the schema and the least-privilege `sts_app` role. `postgres/CLAUDE.md`. |
 | `docs/` | The GitHub Pages site — how to USE this service. `docs/CLAUDE.md`. |
-| `types/`, `tsconfig.json`, `tsconfig.build.json`, `build-typescript.sh` | **THE TYPESCRIPT CONVERSION (#50, 2026-09-16)**: `types/` is declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` — since 2026-09-16 every directory the service runs from, and `server.js`, all but the vendored copies, beside the `.ts` files (`sts_metadata.ts` at the root among them), which are always checked — and `tests/typecheck.js` runs it and holds the list. `build-typescript.sh` compiles — inside an image build only — each `x.ts` to `x.js` beside it (`tsconfig.build.json`), and with `--strip` removes the sources for the service image. The decisions for the rest of the conversion are on issue #50. |
+| `types/`, `tsconfig.json`, `tsconfig.build.json`, `build-typescript.sh` | **THE TYPESCRIPT CONVERSION (#50, 2026-09-16)**: `types/` is declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` — since 2026-09-16 every directory the service runs from, and `server.js`, all but the vendored copies, beside the `.ts` files (`sts_metadata.ts` at the root among them), which are always checked — and `tests/typecheck.js` runs it and holds the list. `build-typescript.sh` compiles — inside an image build only — each `x.ts` to `x.js` beside it (`tsconfig.build.json`), and with `--strip` removes the sources for the service image — and, since #365, every comment from the `.js` it ships (`tests/tools/strip-comments.js`: line numbers kept, token streams proved; the repository and the tests image keep them). The decisions for the rest of the conversion are on issue #50. |
 | `env/` | The appconfig files, each a layer over the generated `defaults.js`. `env/CLAUDE.md`. |
 
 At the package root there are exactly two modules, and both earn it:
@@ -340,14 +340,17 @@ a directory entry to be the subject of, so federation's provisioning switches
 ## One front process, and what a socket cannot share
 
 **This service is one node process that owns every listener**, and node runs all
-of them on one thread. Two pools take work off it, and they are different kinds
-of worker — `common/CLAUDE.md` argues both:
-
-| | `common/worker_pool.js` | `common/request_pool.js` |
-|---|---|---|
-| A worker runs | a JOB TABLE — four leaf computations | THE SERVICE — the whole protocol stack |
-| Forked | lazily, on the first post-quantum job | eagerly, before the listener binds |
-| Setting | `workers.count` (`workers.countInRequestWorkers`, 0, inside a request worker — #347) | `workers.requestCount` (0 — off by default), and `workers.surfaceCount` (0) for a second pool that runs only `/admin` and `/portal` |
+of them on one thread. **`common/request_pool.js` takes work off it**: workers
+that run THE SERVICE — the whole protocol stack — each a `worker_threads`
+Worker of this process since #364 (a forked process until then), started
+before the listener binds: `workers.requestCount` (1, and none where the store
+cannot coordinate), and `workers.surfaceCount` (0) for a separate pool that
+runs only `/admin` and `/portal`; `common/CLAUDE.md` argues it. A thread has a
+V8 heap of its own and shares nothing with the front but the store. **The slow computations are not a
+pool** since #363: post-quantum signing, verification and key generation, and
+scrypt, run natively on node's OpenSSL on libuv's thread pool
+(`common/pq_native.js`), where `common/worker_pool.js` forked processes for
+them until then.
 
 **The cross-cutting rule is one sentence: a store is shared by coordination, and
 anything that is NOT a row in a store — a socket, a timer, a listener, a

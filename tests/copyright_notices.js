@@ -97,8 +97,19 @@ function foreignVendoredJobs() {
   return out;
 }
 
+// This service's OWN files inside `common/vendored/` (#363, 2026-09-30):
+// they stopped being copies of the parent's, so they carry a header like
+// every other file this repository writes (`common/vendored/CLAUDE.md`).
+const OWNED_IN_VENDORED = ['common/vendored/pqc.js',
+                           'common/vendored/pqc_x509.js',
+                           'common/vendored/xmldsig.js'];
+
 function notEditedHere(rel, foreign) {
   log.debug("Entering notEditedHere().");
+  if (OWNED_IN_VENDORED.indexOf(rel) >= 0) {
+    log.debug("Leaving notEditedHere(). Owned since #363.");
+    return false;
+  }
   const answer = NOT_EDITED_HERE.some(function (d) {
     return rel.indexOf(d) === 0;
   }) || KERBEROS_COPIES.indexOf(rel) >= 0 || foreign.has(rel);

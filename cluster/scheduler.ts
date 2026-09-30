@@ -98,6 +98,9 @@ import clusterClaims = require('./cluster_claims');
 // process list the same jobs. See the block at the foot of this file.
 import clusterCounters = require('./cluster_counters');
 import usedAssertions = require('../common/used_assertions');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 type Json = any;
 
@@ -404,7 +407,7 @@ class Scheduler {
         // LAZILY: the driver is persistence's to load, and a require here
         // at load time would put it ahead of that module.
         const workers =
-          Math.max(0, Number(config.value('workers.requestCount')) || 0) +
+          require('../common/process_memory').requestWorkers() +
           Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
         return Number(require('../persistence/persistence_postgres')
           .poolMax(workers)) || 0;
@@ -1110,9 +1113,9 @@ class Scheduler {
     this.scheduleProcessTick(0);
     if (perProcessOnly) {
       log.info('scheduler: running ' + this.perProcessJobs().length +
-               ' per-process job(s) in this process (' + process.pid +
-               '). Cluster jobs run on the scheduler\'s leader, which a ' +
-               'request worker never is.');
+               ' per-process job(s) in this process (' +
+               WorkerChannel.processTag() + '). Cluster jobs run on the ' +
+               'scheduler\'s leader, which a request worker never is.');
       log.debug("Leaving Scheduler.start(). Per-process only.");
       return true;
     }
@@ -1748,7 +1751,10 @@ class Scheduler {
     log.debug("Entering Scheduler.runInThisProcess(). " + job.id);
     const me = this.who();
     const key = PROCESS_PREFIX + job.id + '|' + realmId + '|' +
-                (me.node || me.host) + '|' + me.pid;
+                (me.node || me.host) + '|' + me.pid +
+                // A worker THREAD shares the pid (#364): its thread id too.
+                (WorkerChannel.inWorkerThread() ? '.' + WorkerChannel.id()
+                                                : '');
     const startedAt = this.nowMs();
     const startedLocal = this.deps.now();
     const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);

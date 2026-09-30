@@ -16,12 +16,14 @@
 //      with its figures in range, or unavailable with a sentence and no
 //      figure — and a row per process with `process.memoryUsage()`'s five
 //      figures for every Node.js process that reports one, the front process
-//      first, and totals that are the sum of the rows; every child process
-//      (post-quantum, the debugger's api) with its own figures or the reason
-//      it has none, and the debugger's api child, where it runs, answering
-//      through its preload (#329);
+//      first; a row per request or hosted-surface worker THREAD (#364) with
+//      its own heap and no resident size or CPU time, which are the
+//      process's; and totals that are the sum of the rows, the resident one
+//      over processes alone; the debugger's api child, where it runs, with
+//      its own figures (answering through its preload) or the reason it has
+//      none (#329; the post-quantum children went with their pool in #363);
 //   2. IT IS THE FRONT PROCESS THAT ANSWERS, AND IT LISTS THE WORKERS: every
-//      request and hosted-surface worker `/admin-api/worker-pools` lists is a
+//      worker thread `/admin-api/worker-pools` lists, by its threadId, is a
 //      row or is listed as unanswered — on one node, where both reads reach
 //      the same front process;
 //   3. THE PAGE draws the sections, and its `?format=json` names the same
@@ -158,11 +160,20 @@ async function theApiAnswers() {
   });
   const p = body.processes;
   check("a row per process, the front process first, each Node.js process " +
-        "with its five figures", function () {
+        "with its five figures, each worker thread with its heap", function () {
     assert.ok(p.rows.length >= 1, JSON.stringify(p));
     assert.strictEqual(p.rows[0].role, "front process");
     assert.strictEqual(p.rows[0].pid, body.pid);
     p.rows.forEach(function (row) {
+      if (row.kind === "thread") {
+        // A worker THREAD of the front process (#364): its resident size
+        // and CPU time are the process's, on the front row, and not here.
+        assert.ok(row.pid === body.pid && isCount(row.threadId) &&
+                  row.rssBytes === null && row.cpuUserSeconds === null &&
+                  row.heapUsedBytes > 0 &&
+                  /worker thread \d+$/.test(row.role), JSON.stringify(row));
+        return;
+      }
       if (row.source === "process.memoryUsage()") {
         MEMORY_FIGURES.forEach(function (name) {
           assert.ok(isCount(row[name]), row.pid + " " + name + " is " +
@@ -179,7 +190,7 @@ async function theApiAnswers() {
     });
   });
   const children = p.rows.filter(function (row) {
-    return /^post-quantum worker|^protocol debugger api$/.test(row.role);
+    return /^protocol debugger api$/.test(row.role);
   });
   check("each of the " + children.length + " child process(es) reports its " +
         "own memory, or says why it did not", function () {
@@ -210,7 +221,12 @@ async function theApiAnswers() {
       return n + (typeof row.heapUsedBytes === "number" ? row.heapUsedBytes
                                                          : 0);
     }, 0);
-    assert.strictEqual(p.totals.processes, p.rows.length);
+    const threads = p.rows.filter(function (row) {
+      return row.kind === "thread";
+    }).length;
+    assert.strictEqual(p.totals.rows, p.rows.length);
+    assert.strictEqual(p.totals.workerThreads, threads);
+    assert.strictEqual(p.totals.processes, p.rows.length - threads);
     assert.strictEqual(p.totals.rssBytes, rss);
     assert.strictEqual(p.totals.heapUsedBytes, heap);
   });
@@ -241,23 +257,26 @@ async function everyWorkerIsListed(body) {
   check("the same front process answers both", function () {
     assert.strictEqual(pools.body.pid, body.pid);
   });
-  const listed = body.processes.rows.map(function (row) {
-    return row.pid;
+  // BY threadId (#364): every worker thread shares the front's pid.
+  const listed = body.processes.rows.filter(function (row) {
+    return row.kind === "thread";
+  }).map(function (row) {
+    return row.threadId;
   }).concat(body.processes.unanswered.map(function (u) {
-    return u.pid;
+    return u.threadId;
   }));
   const workers = [];
   (pools.body.pools || []).forEach(function (pool) {
     (pool.workers || []).forEach(function (w) {
       if (w.ready) {
-        workers.push(w.pid);
+        workers.push(w.threadId);
       }
     });
   });
-  check("each of the " + workers.length + " ready request worker(s) is a " +
+  check("each of the " + workers.length + " ready worker thread(s) is a " +
         "row or unanswered", function () {
-    workers.forEach(function (pid) {
-      assert.ok(listed.indexOf(pid) >= 0, pid + " not in " +
+    workers.forEach(function (threadId) {
+      assert.ok(listed.indexOf(threadId) >= 0, threadId + " not in " +
                 JSON.stringify(listed));
     });
   });

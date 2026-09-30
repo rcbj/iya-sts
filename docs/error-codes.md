@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3886** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3878** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -158,7 +158,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0012` | A trust realm was defined with an id that is already in use. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0013` | A trust realm was named that is not defined. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0014` | A realms.* setting was set on one trust realm; those settings decide how a realm is reached and may only be set service-wide. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-CORE-0015` | A per-process setting (such as workers.count) was set on one trust realm, where it would change every realm at once. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0015` | A per-process setting (such as workers.requestCount) was set on one trust realm, where it would change every realm at once. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0016` | A setting was cleared on a trust realm that does not set it. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0017` | The router could not be read to reserve realm ids, so a realm id may shadow an endpoint without being refused. | — |
 | `STS-CORE-0018` | A trust realm change watcher threw; the change stands but what watches it (persistence, most often) may not have recorded it. | — |
@@ -219,18 +219,18 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 
 ## STS-WORKER
 
-**Worker pools.** The child processes post-quantum signing runs in, and the request workers the whole protocol stack can be dispatched to.
+**Worker pools.** The request workers the whole protocol stack can be dispatched to (and, until #363, the child processes post-quantum signing ran in).
 
-Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.ts, common/service_state.ts, admin-ui/worker_pools_admin.ts.
+Raised from: common/request_pool.js, common/request_worker.ts, common/service_state.ts, admin-ui/worker_pools_admin.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-WORKER-0001` | The IPC channel to a post-quantum worker process failed, so a job sent to it may not arrive or its answer may not come back. | — |
-| `STS-WORKER-0002` | A post-quantum worker process exited or was killed with jobs in flight; every one of those jobs was failed and its caller told it can be retried. | — |
-| `STS-WORKER-0003` | Post-quantum worker processes kept exiting immediately without finishing a job, so the pool stopped forking them and computes in the front process (blocking) — usually an unreadable CONFIG_FILE or a machine out of memory. | — |
-| `STS-WORKER-0004` | A post-quantum worker stayed alive and did not answer a job within workers.jobTimeoutS, so the request waiting on it was failed rather than left to hang. | — |
-| `STS-WORKER-0005` | During shutdown a post-quantum worker did not finish within the drain bound and was killed. | — |
-| `STS-WORKER-0006` | A job (post-quantum sign, verify or generate, or a scrypt derivation) threw inside a worker process and was answered as a failure. | — |
+| `STS-WORKER-0001` *(retired)* | The IPC channel to a post-quantum worker process failed, so a job sent to it may not arrive or its answer may not come back. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0002` *(retired)* | A post-quantum worker process exited or was killed with jobs in flight; every one of those jobs was failed and its caller told it can be retried. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0003` *(retired)* | Post-quantum worker processes kept exiting immediately without finishing a job, so the pool stopped forking them and computes in the front process (blocking) — usually an unreadable CONFIG_FILE or a machine out of memory. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0004` *(retired)* | A post-quantum worker stayed alive and did not answer a job within workers.jobTimeoutS, so the request waiting on it was failed rather than left to hang. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0005` *(retired)* | During shutdown a post-quantum worker did not finish within the drain bound and was killed. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0006` *(retired)* | A job (post-quantum sign, verify or generate, or a scrypt derivation) threw inside a worker process and was answered as a failure. Retired by #363: the post-quantum worker pool was removed. | — |
 | `STS-WORKER-0007` | A dispatched read waited the full 2000ms barrier bound for an earlier write to be reported committed and was served without it, so it may be stale. | — |
 | `STS-WORKER-0008` | Read-barrier tickets that had been answered for longer than the reap threshold without any worker reporting them committed were dropped — a lost commit announcement, or a flush running that long. | — |
 | `STS-WORKER-0009` | A TLS client certificate was too large to forward to a request worker in a header, so the worker saw the request as having presented no certificate. | — |
@@ -270,8 +270,8 @@ Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, co
 | `STS-WORKER-0043` | A request worker exited (or could not start) and a replacement was forked into its pool and slot. | Nothing directly: requests in flight on the dead worker were answered 502 (STS-WORKER-0030) |
 | `STS-WORKER-0044` | The /admin/worker-pools page or GET /admin-api/worker-pools could not build its report of the worker pools (#327). | HTTP 500 page or JSON |
 | `STS-WORKER-0045` | A request worker could not be forked at all (the fork call threw); the start gate moved on to the next (#342). | — |
-| `STS-WORKER-0046` | A request worker was aborted (SIGABRT), which is how V8 ends a process whose heap reached its limit (--max-old-space-size, workers.heapLimitMb); V8's own "JavaScript heap out of memory" line precedes it in the log (#341). | Nothing directly: requests in flight on it were answered 502 |
-| `STS-WORKER-0047` | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). | Nothing directly: requests in flight on it were answered 502 |
+| `STS-WORKER-0046` | A request worker ran out of heap: its heap reached its limit (workers.heapLimitMb, #341) — ERR_WORKER_OUT_OF_MEMORY for a worker thread since #364, a SIGABRT of a worker process before. | Nothing directly: requests in flight on it were answered 502 |
+| `STS-WORKER-0047` *(retired)* | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). Retired by #364: a worker is a thread, and the kernel's OOM killer ends the whole process. | — |
 | `STS-WORKER-0048` | A heap limit was due for the front process and it could not restart itself with one (no process.execve, or the call failed), so it runs without a limit; its request workers still get one (#341). | — |
 
 ## STS-STORE
@@ -525,7 +525,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0003` | This runtime cannot generate ML-DSA keys (it needs OpenSSL 3.5 / node 24); ML-DSA certificates are unavailable. | — |
 | `STS-KEYS-0004` | A stored password or secret hash is not decodable and was treated as no match. | — |
 | `STS-KEYS-0005` | A stored password or secret hash names scrypt parameters this process cannot compute and was treated as no match. | — |
-| `STS-KEYS-0006` | The worker pool could not run a scrypt derivation, so it was computed in the front process instead. | — |
+| `STS-KEYS-0006` *(retired)* | The worker pool could not run a scrypt derivation, so it was computed in the front process instead. Retired by #363: scrypt runs on libuv's thread pool and there is no worker pool to fail. | — |
 | `STS-KEYS-0007` | An XML signature was not verified: the document is not well-formed XML. | refusal by the calling protocol (e.g. SAML Responder status, SOAP fault) |
 | `STS-KEYS-0008` | An XML signature was not verified: the named element is absent or carries no ds:Signature of its own. | refusal by the calling protocol |
 | `STS-KEYS-0009` | An XML signature was refused because its Reference names a different element than the one it is attached to (signature wrapping). | refusal by the calling protocol |

@@ -1560,7 +1560,7 @@ const COVERAGE_LEFT_OUT = {
 // so the report reads as it always did. `--serial` is the old behaviour.
 // ---------------------------------------------------------------------------
 const UNIT_ALONE = new Set([
-  'worker_pool', 'request_barrier', 'request_proxy_replay',
+  'request_barrier', 'request_proxy_replay',
   'request_worker_replacement', 'key_residency'
 ]);
 

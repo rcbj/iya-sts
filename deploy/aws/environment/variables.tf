@@ -190,6 +190,49 @@ variable "delete_automated_backups" {
   default     = true
 }
 
+# ---------------------------------------------------------------------------
+# RESTORING A SINGLE-REGION ENVIRONMENT FROM A SNAPSHOT (2026-09-30).
+#
+# A cell restores through its `cells[cell].db_snapshot_identifier` and the
+# global stack's carry-over (conversion.tf, global/secrets.tf); a single-cell
+# environment had no way to at all. These two are its way, and they go
+# TOGETHER: every sealed row in the snapshot opens only under the
+# key-encryption key it was written with, so a restore without the carry-over
+# is a database the nodes cannot read (and refuse to start on).
+#
+# PASSED ON THE ONE APPLY THAT RESTORES, NOT WRITTEN INTO envs/<env>.tfvars —
+# terraform-local.sh forwards TF_VAR_db_snapshot_identifier and
+# TF_VAR_carryover_secret from its environment. Written into the env file,
+# every fresh rebuild would restore a snapshot that stopped being current the
+# day it was taken, and fail the day it was deleted (the cells file's
+# argument, deploy/aws/CLAUDE.md). A later apply that names neither keeps
+# both: the instance ignores `snapshot_identifier` after creation (rds.tf),
+# and the carried values are read once (secrets.tf).
+# ---------------------------------------------------------------------------
+variable "db_snapshot_identifier" {
+  description = <<-EOT
+    A single-cell environment's database is RESTORED from this RDS snapshot
+    rather than created empty. It must be under the project KMS key (the
+    instance's). Ignored in a cell, whose own `db_snapshot_identifier` does
+    this. Name `carryover_secret` with it.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "carryover_secret" {
+  description = <<-EOT
+    A single-cell environment takes `kek`, `admin-api-client-secret`,
+    `bootstrap-admin-password` and `krb5-service-password` from this JSON
+    secret (deploy/aws/convert-to-cells.sh --carry-secrets writes one) in
+    place of generated ones, for a database restored from a snapshot those
+    values were written under. Read on the first apply and kept. Ignored in a
+    cell, whose shared secrets are the global stack's.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "vpc_cidr" {
   description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16. A cell's is `cells[cell].vpc_cidr` (#98)."
   type        = string

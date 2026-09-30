@@ -300,7 +300,9 @@ class DirectoryCreateClaims {
       return false;
     }
     const dispatched =
-      (Number(config.value('workers.requestCount')) || 0) > 0 &&
+      // The #364 rule: the default of one worker is none without a store
+      // that coordinates.
+      require('../common/process_memory').requestWorkers() > 0 &&
       String(config.value('workers.dispatch') || '').trim() !== '';
     log.debug("Leaving DirectoryCreateClaims.active().");
     return isActiveActive() || dispatched;

@@ -114,7 +114,7 @@
 // member, `sub` AND `sid`, and NO `nonce`. `typ: logout+jwt`. Signed like the
 // client's ID Token — its `id_token_signed_response_alg`, the whole table
 // including the post-quantum and composite algorithms, through
-// `signJwtAsAsync()` and the worker pool — and never `none`; and ENCRYPTED
+// `signJwtAsAsync()` and libuv's thread pool — and never `none`; and ENCRYPTED
 // like its ID Token when it registered `id_token_encrypted_response_alg`
 // (`id_token_encryption.ts`). Signed once per generation and resent
 // unchanged, re-signed with the SAME `jti` only if it expired before a retry;

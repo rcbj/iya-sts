@@ -1862,8 +1862,9 @@ class CryptoMetadata {
                'default, the PS and ES families, EdDSA, and the post-quantum ' +
                'ones — ML-DSA at three sizes, SLH-DSA at two, and the six ' +
                'composite ML-DSA + traditional algorithms. An SLH-DSA ' +
-               'signature takes seconds and runs on the worker pool, so this ' +
-               'service answers throughout and the receiver waits.',
+               'signature takes up to a second and runs on libuv\'s thread ' +
+               'pool, so this service answers throughout and the receiver ' +
+               'waits.',
         verifies: 'A Security Event Token pushed AT this service at `POST ' +
                   '/ssf/receive` — the roles reversed — against its own ' +
                   'JWKS, which is the only key it has. A SET signed by ' +
@@ -2187,8 +2188,8 @@ class CryptoMetadata {
                'from the TOTP row above where the "code" is a truncated HMAC.',
         verifies: 'A presented code, against EVERY entry in the person\'s ' +
                   'set — each a scrypt hash checked with ' +
-                  'crypto.verifySecret(), in parallel on the worker pool at ' +
-                  'the sign-in screen — and all of them are checked even ' +
+                  'crypto.verifySecret(), in parallel on libuv\'s thread ' +
+                  'pool at the sign-in screen — and all of them are checked even ' +
                   'after a match, so the time taken does not depend on WHICH ' +
                   'code matched. The shape is checked first, so a password ' +
                   'typed into the box is refused on its characters and costs ' +
@@ -3416,13 +3417,14 @@ class CryptoMetadata {
               'half. Each carries a DOMAIN SEPARATOR into both the composite ' +
               'message and the ML-DSA context string, which is what stops a ' +
               'signature made for one composite being replayed as another.',
-        independence: 'The lattice PRIMITIVE is @noble/post-quantum, shared ' +
-                      'with the debugger because there is no second ' +
-                      'implementation of ML-DSA to be had — node has none. ' +
-                      'EVERYTHING AROUND IT is written here from the ' +
-                      'specifications, and the traditional half of every ' +
-                      'composite runs on node\'s OpenSSL rather than on the ' +
-                      'curve library the far end uses. That is where the ' +
+        independence: 'The lattice PRIMITIVE is node\'s OpenSSL 3.5 ' +
+                      '(#363), where the debugger uses @noble/post-quantum, ' +
+                      'so ML-DSA itself is cross-checked between two ' +
+                      'implementations. EVERYTHING AROUND IT is written here ' +
+                      'from the specifications, and the traditional half of ' +
+                      'every composite runs on node\'s OpenSSL rather than ' +
+                      'on the curve library the far end uses. That is where ' +
+                      'the ' +
                       'cross-check has any value: a shared misunderstanding ' +
                       'about the framing would agree with itself perfectly ' +
                       'and interoperate with nothing.'

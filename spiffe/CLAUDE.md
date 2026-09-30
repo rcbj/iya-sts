@@ -997,8 +997,9 @@ have been handed a non-Buffer for a `bytes` field and the failure would have
 landed inside protobuf serialization, naming a field, one process from the
 cause.
 
-It forks `serialization: 'advanced'` now — `common/worker_pool.js`'s argument
-about a 32,000-byte signature, reaching the second pool — and it is a strict
+It forks `serialization: 'advanced'` now — the argument the post-quantum pool
+(`common/worker_pool.js`, removed by #363) made about a 32,000-byte
+signature — and it is a strict
 superset for everything that channel already carried.
 
 **`structuredClone()` IS NOT THAT CHANNEL, and assuming it was cost a test.**

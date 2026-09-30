@@ -2372,12 +2372,10 @@ const stsKeysFor = realms.keyed(function (realm) {
 // thread — six curve keys, a certificate signature, four JWK exports — is tens
 // of milliseconds, and `prepareKeySets()` yields between realms.
 //
-// **NOT `common/worker_pool.js`**, and the reason is not the one
-// `pki_authoring.js` gives for its own generation (that one is about the
-// post-quantum encoders' byte layouts): an RSA or EC generation is node's own
-// OpenSSL either way, and node already has an asynchronous door to it that
-// costs no IPC round trip and no forked child. The pool is for computation
-// node has no asynchronous door to.
+// **NODE'S OWN ASYNCHRONOUS DOOR**: an RSA or EC generation is node's
+// OpenSSL, and `generateKeyPair()` runs it on libuv's thread pool with no IPC
+// round trip and no forked child — the same door the post-quantum keys have
+// used since #363 (`common/pq_native.js`).
 //
 // **THE FACTORY'S ORDER IS NOT CHANGED**: stored, then a sibling's, then
 // generated — and `prepared` is only ever the third. A set prepared here while
@@ -4422,7 +4420,7 @@ function allVerificationKeys() {
 
 /**
  * The same list as `allVerificationKeys()`, with the post-quantum keys
- * generated in the worker pool.
+ * generated on libuv's thread pool.
  *
  * @returns a promise of the rows
  */
@@ -4528,8 +4526,8 @@ function groupJwkEntries(keys) {
 
 // ---------------------------------------------------------------------------
 // MINTING ONE UNIT'S NEXT KEY — off the event loop where there is an async
-// door (RSA and the curves in node's thread pool, the post-quantum keys on the
-// worker pool), with the builders the current keys were made by.
+// door (RSA, the curves and the post-quantum keys all on libuv's thread
+// pool), with the builders the current keys were made by.
 // ---------------------------------------------------------------------------
 function curveSpecFor(unitRow) {
   log.debug("Entering curveSpecFor().");
@@ -5862,7 +5860,7 @@ function pqKeysFor(keys) {
 // Nearly all of the ~1.9 seconds above is one SLH-DSA-SHAKE keygen, and it is
 // spent on the FIRST JWKS FETCH of a realm — a request that, until the worker
 // pool existed, stopped this whole service for two seconds while it was
-// answered. See common/worker.js.
+// answered. See common/pq_native.js.
 //
 // TWO THINGS HERE ARE NOT DECORATION.
 //
@@ -6069,12 +6067,12 @@ function pqKeysForAsync(keys) {
 // sign-in in the parent project's suite, reporting "the JWKS could not be
 // fetched", which is a sentence about a service that was working.
 //
-// So the keys are made when the realm is created, in the pool, where nothing
-// is waiting on them. That was not affordable before: eager generation used to
-// mean 5.8 seconds of a stopped service per realm, which is why they were lazy
-// in the first place. It is affordable now, and it is the whole point — the
-// pool does not merely move the cost off the request that pays it, it makes
-// paying it EARLY free.
+// So the keys are made when the realm is created, on libuv's thread pool, where
+// nothing is waiting on them. That was not affordable before: eager generation
+// used to mean 5.8 seconds of a stopped service per realm, which is why they
+// were lazy in the first place. It is affordable now, and it is the whole point
+// — the pool does not merely move the cost off the request that pays it, it
+// makes paying it EARLY free.
 //
 // `stsKeysFor.of(id)` rather than `stsKeysFor()`: this runs from a change
 // watcher, outside any request, so there is no ambient realm to read. See
@@ -6099,7 +6097,7 @@ function pqKeysForAsync(keys) {
 // **NO NEW RECIPE** (rcbj's rule of 2026-09-21): RSA through
 // generateRsaPairAsync(), the curves through generateCurvePairAsync() over
 // CURVE_KEY_SPECS' own rows, ML-DSA and SLH-DSA through
-// `pq_jose.generateAsync()` — the worker pool, which is what keeps an
+// `pq_jose.generateAsync()` — libuv's thread pool, which is what keeps an
 // SLH-DSA key generation from stopping this service answering.
 //
 // The `kid` is `sts-g-<group>-<slot>-<hash of the public key>`: from the key's
@@ -6223,8 +6221,8 @@ function certifySignerGroupsLater(realmId, members) {
 }
 
 /**
- * Returns a key set's signer-group keys, making them in the worker pool where
- * they do not exist yet; concurrent callers share one generation.
+ * Returns a key set's signer-group keys, making them on libuv's thread pool
+ * where they do not exist yet; concurrent callers share one generation.
  *
  * @param keys - the realm's key set
  * @returns a promise of the group members
@@ -6311,8 +6309,8 @@ function warmSignerGroups(realmId) {
 }
 
 /**
- * Generates a realm's post-quantum keys in the worker pool ahead of the first
- * JWKS fetch. Never rejects; a failure is logged (STS-CORE-0028).
+ * Generates a realm's post-quantum keys on libuv's thread pool ahead of the
+ * first JWKS fetch. Never rejects; a failure is logged (STS-CORE-0028).
  *
  * @param realmId - the realm
  * @returns a promise, resolving null where there is nothing to warm or it
@@ -6347,9 +6345,9 @@ function warmPqKeys(realmId) {
 // THERE IS NO WATCHER ANY MORE, AND THAT REVERSES HALF OF `5d9b51b` ON
 // EVIDENCE RATHER THAN ON TASTE (2026-08-30).
 //
-// It warmed every realm's eleven post-quantum keys as the realm was CREATED,
-// on `realms.onChange(… 'create')`. The argument was the paragraph above and
-// it is still correct as far as it goes: the pool makes paying early free, so
+// It warmed every realm's eleven post-quantum keys as the realm was CREATED, on
+// `realms.onChange(… 'create')`. The argument was the paragraph above and it is
+// still correct as far as it goes: the thread pool makes paying early free, so
 // pay early.
 //
 // What it did not account for is WHO CREATES REALMS HERE. In a deployment a
@@ -6364,15 +6362,15 @@ function warmPqKeys(realmId) {
 //
 // Over two minutes of both worker processes, under instrumentation, spent on
 // key material nothing would ever ask for — on the same two cores the job that
-// DOES sign is waiting for. Eager generation is free when the pool is idle and
-// is not free when something else needs it.
+// DOES sign is waiting for. Eager generation is free when the thread pool is
+// idle and is not free when something else needs it.
 //
-// So the eager path is now the DEFAULT REALM ALONE, warmed from `announce()`
-// in server.js once the port is open — the realm every process has, that every
+// So the eager path is now the DEFAULT REALM ALONE, warmed from `announce()` in
+// server.js once the port is open — the realm every process has, that every
 // protocol answers in, and the one whose first JWKS fetch a person actually
 // waits for. A realm created at runtime makes its keys on first use, the way
-// every realm did before that commit: about 1.7 seconds in the pool, off the
-// event loop, on a request nobody has made yet.
+// every realm did before that commit: about 1.7 seconds on the thread pool, off
+// the event loop, on a request nobody has made yet.
 //
 // **This is a latency optimisation and not a correctness one**, which is what
 // makes it safe to narrow: no behaviour depends on when the keys exist, only
@@ -6396,12 +6394,12 @@ function allSigningKeys() {
   return out;
 }
 
-// The same list, with the post-quantum half generated in the pool. It is what
-// the JWKS endpoint calls, because that endpoint is the one that brings those
-// eleven keys into being.
+// The same list, with the post-quantum half generated on libuv's thread pool.
+// It is what the JWKS endpoint calls, because that endpoint is the one that
+// brings those eleven keys into being.
 /**
  * The same list as `allSigningKeys()`, with the post-quantum keys generated in
- * the worker pool; what the JWKS endpoint calls.
+ * libuv's thread pool; what the JWKS endpoint calls.
  *
  * @returns a promise of the keys
  */
@@ -6761,12 +6759,12 @@ function signingKeyFor(alg, useCaseId) {
 // its post-quantum half is MADE on first use — eleven key generations, SLH-DSA
 // among them, SYNCHRONOUSLY, on this process's one thread. So the first ES256
 // signature in a new realm stopped the whole service while keys it could not
-// use were made: ten seconds on a CI runner, which a sign-in's connection
-// timed out against (sts_mail's reset link, sts_kerberos_krbtgt_rotation).
-// A curve algorithm can only ever be answered by a curve key, so it is looked
-// up among those and the post-quantum keys are left for whoever asks for
-// one — the JWKS, in the worker pool (`pqKeysForAsync()`), or a post-quantum
-// signature. The answer is the same key it always was.
+// use were made: ten seconds on a CI runner, which a sign-in's connection timed
+// out against (sts_mail's reset link, sts_kerberos_krbtgt_rotation). A curve
+// algorithm can only ever be answered by a curve key, so it is looked up among
+// those and the post-quantum keys are left for whoever asks for one — the JWKS,
+// on libuv's thread pool (`pqKeysForAsync()`), or a post-quantum signature. The
+// answer is the same key it always was.
 // ---------------------------------------------------------------------------
 /**
  * Lists this realm's curve signing keys (EC and EdDSA), without making its
@@ -6792,10 +6790,11 @@ function keyListFor(alg) {
   return allSigningKeys();
 }
 
-// The same key, with the post-quantum half of the list generated in the pool.
+// The same key, with the post-quantum half of the list generated off the
+// thread.
 /**
  * The same key as `signingKeyFor()`, with any post-quantum key generated in the
- * worker pool.
+ * libuv's thread pool.
  *
  * @param alg - the JWS algorithm
  * @param useCaseId - the certificate-header use case
@@ -6898,22 +6897,22 @@ function signJwtAs(payload, alg, secret, opts) {
 // Token (`id_token_signed_response_alg`) and the signed UserInfo response
 // (`userinfo_signed_response_alg`). An SLH-DSA-SHAKE-128s token took 14.6 and
 // 15.4 seconds on 2026-08-29, and for those seconds this service answered
-// nobody — see common/worker.js.
+// nobody — see common/pq_native.js.
 //
 // Everything else it can be asked for resolves with the value signJwtAs()
 // computed, unchanged and not deferred: an HS256 or RS256 signature is
 // microseconds, and an IPC round trip to save that would be a cost with no
-// saving. `opts.session` is the pool's routing hint and may be omitted.
+// saving.
 // ---------------------------------------------------------------------------
 /**
- * The same signature as `signJwtAs()`, made in the worker pool where the
+ * The same signature as `signJwtAs()`, made on libuv's thread pool where the
  * algorithm is post-quantum; anything else resolves with the value computed
  * here.
  *
  * @param payload - the claims
  * @param alg - the JWS algorithm
  * @param secret - the client secret, for HS*
- * @param opts - as `signJwtAs()`, and `session`, the pool's routing hint
+ * @param opts - as `signJwtAs()`
  * @returns a promise of the compact JWS
  */
 function signJwtAsAsync(payload, alg, secret, opts) {
@@ -6938,7 +6937,6 @@ function signJwtAsAsync(payload, alg, secret, opts) {
     .then(function (signer) {
       return stsCrypto.signJwsAsync(payload, signer.key,
         { algorithm: alg, keyid: publishedKidFor(signer.kid),
-          session: options.session,
           header: withCertificateHeader(options.header,
                                         options.certificateHeader, alg,
                                         signer.kid) });

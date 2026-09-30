@@ -165,11 +165,11 @@ const SUBSYSTEMS = [
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
-    where: 'common/worker_pool.js, common/worker.js, common/request_pool.js, ' +
-           'common/request_worker.ts, common/service_state.ts, ' +
-           'admin-ui/worker_pools_admin.ts',
-    what: 'The child processes post-quantum signing runs in, and the request ' +
-          'workers the whole protocol stack can be dispatched to.' },
+    where: 'common/request_pool.js, common/request_worker.ts, ' +
+           'common/service_state.ts, admin-ui/worker_pools_admin.ts',
+    what: 'The request workers the whole protocol stack can be dispatched ' +
+          'to (and, until #363, the child processes post-quantum signing ' +
+          'ran in).' },
   { id: 'STORE', label: 'Persistence and coordination',
     where: 'persistence/',
     what: 'The memory, LDIF and PostgreSQL stores, the minted-row flush, and ' +
@@ -623,8 +623,8 @@ const CODES = [
       'service-wide.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-CORE-0015',
-    summary: 'A per-process setting (such as workers.count) was set on one ' +
-      'trust realm, where it would change every realm at once.',
+    summary: 'A per-process setting (such as workers.requestCount) was set ' +
+      'on one trust realm, where it would change every realm at once.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-CORE-0016',
     summary: 'A setting was cleared on a trust realm that does not set it.',
@@ -926,33 +926,39 @@ const CODES = [
     spec: 'none — logged; the call fails as it would have at start' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
-      'job sent to it may not arrive or its answer may not come back.',
-    spec: '' },
+      'job sent to it may not arrive or its answer may not come back.' +
+      ' Retired by #363: the post-quantum worker pool was removed.',
+    spec: '', retired: true },
   { code: 'STS-WORKER-0002',
     summary: 'A post-quantum worker process exited or was killed with jobs ' +
       'in flight; every one of those jobs was failed and its caller ' +
-      'told it can be retried.',
-    spec: '' },
+      'told it can be retried.' +
+      ' Retired by #363: the post-quantum worker pool was removed.',
+    spec: '', retired: true },
   { code: 'STS-WORKER-0003',
     summary: 'Post-quantum worker processes kept exiting immediately without ' +
       'finishing a job, so the pool stopped forking them and ' +
       'computes in the front process (blocking) — usually an ' +
-      'unreadable CONFIG_FILE or a machine out of memory.',
-    spec: '' },
+      'unreadable CONFIG_FILE or a machine out of memory.' +
+      ' Retired by #363: the post-quantum worker pool was removed.',
+    spec: '', retired: true },
   { code: 'STS-WORKER-0004',
     summary: 'A post-quantum worker stayed alive and did not answer a job ' +
       'within workers.jobTimeoutS, so the request waiting on it was ' +
-      'failed rather than left to hang.',
-    spec: '' },
+      'failed rather than left to hang.' +
+      ' Retired by #363: the post-quantum worker pool was removed.',
+    spec: '', retired: true },
   { code: 'STS-WORKER-0005',
     summary: 'During shutdown a post-quantum worker did not finish within ' +
-      'the drain bound and was killed.',
-    spec: '' },
+      'the drain bound and was killed.' +
+      ' Retired by #363: the post-quantum worker pool was removed.',
+    spec: '', retired: true },
   { code: 'STS-WORKER-0006',
     summary: 'A job (post-quantum sign, verify or generate, or a scrypt ' +
       'derivation) threw inside a worker process and was answered as ' +
-      'a failure.',
-    spec: '' },
+      'a failure.' +
+      ' Retired by #363: the post-quantum worker pool was removed.',
+    spec: '', retired: true },
   { code: 'STS-WORKER-0007',
     summary: 'A dispatched read waited the full 2000ms barrier bound for an ' +
       'earlier write to be reported committed and was served without ' +
@@ -1136,16 +1142,17 @@ const CODES = [
       'threw); the start gate moved on to the next (#342).',
     spec: '' },
   { code: 'STS-WORKER-0046',
-    summary: 'A request worker was aborted (SIGABRT), which is how V8 ends a ' +
-      'process whose heap reached its limit (--max-old-space-size, ' +
-      'workers.heapLimitMb); V8\'s own "JavaScript heap out of memory" ' +
-      'line precedes it in the log (#341).',
+    summary: 'A request worker ran out of heap: its heap reached its limit ' +
+      '(workers.heapLimitMb, #341) — ERR_WORKER_OUT_OF_MEMORY for a worker ' +
+      'thread since #364, a SIGABRT of a worker process before.',
     spec: 'Nothing directly: requests in flight on it were answered 502' },
   { code: 'STS-WORKER-0047',
     summary: 'A request worker was SIGKILLed while the container cgroup\'s ' +
       'oom_kill count rose: the kernel\'s OOM killer ended it because the ' +
-      'container reached its memory limit (#341).',
-    spec: 'Nothing directly: requests in flight on it were answered 502' },
+      'container reached its memory limit (#341). Retired by #364: a ' +
+      'worker is a thread, and the kernel\'s OOM killer ends the whole ' +
+      'process.',
+    spec: '', retired: true },
   { code: 'STS-WORKER-0048',
     summary: 'A heap limit was due for the front process and it could not ' +
       'restart itself with one (no process.execve, or the call failed), so ' +
@@ -2114,8 +2121,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-KEYS-0006',
     summary: 'The worker pool could not run a scrypt derivation, so it was ' +
-      'computed in the front process instead.',
-    spec: '' },
+      'computed in the front process instead. Retired by #363: scrypt runs ' +
+      'on libuv\'s thread pool and there is no worker pool to fail.',
+    spec: '', retired: true },
   { code: 'STS-KEYS-0007',
     summary: 'An XML signature was not verified: the document is not ' +
       'well-formed XML.',
