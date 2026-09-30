@@ -25,7 +25,7 @@ its protocol in the admin console or through `POST /admin-api/config/set`.
 
 | Term | Meaning |
 |---|---|
-| **Per process** | One copy in each node process. With request workers turned on (`workers.requestCount` above 0) every worker has its own, so two requests answered by two workers may see two different cached answers until both expire. |
+| **Per process** | One copy in each node process, and one in each request worker thread (`workers.requestCount` above 0), since every thread has a JavaScript heap of its own — so two requests answered by two workers may see two different cached answers until both expire. |
 | **Per realm** | One copy for each [trust realm](trust-realms.md), in each process. Removing a realm empties its copy. |
 | **Persisted** | Written to the persistence store and restored at the next start, and shared between processes that use the same store. See [Persistence](persistence.md). |
 

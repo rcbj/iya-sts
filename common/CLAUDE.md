@@ -1122,7 +1122,69 @@ if any deferred package is in the require cache — one top-level `require` of
 it anywhere in the stack would bring it back into every worker with nothing
 else failing.
 
-## `request_pool.js` and `request_worker.ts`: THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER
+## `request_pool.js` and `request_worker.ts`: THE REQUEST WORKERS, THREADS OF THE FRONT PROCESS SINCE #364
+
+### A worker is a `worker_threads` Worker (#364, 2026-09-30)
+
+**Until #364 a request or surface worker was a forked process**: a whole node
+runtime each, which #339 measured at about 1.3 GB per process on testidp with
+five per node. **Since #364 it is a thread of the front process** — its own V8
+isolate, heap and event loop — and everything that made the design work is
+unchanged: it loads the whole stack in the same order, answers real HTTP on
+its own unix socket (so `res.send()`'s link rewriting and CSP re-check still
+run on node's real `ServerResponse`), and shares state with the front only
+through the store and its change log. Memory is not shared: a worker's heap is
+a whole second copy of the service's, which is why the default is ONE worker.
+
+What changed, and where it lives:
+
+* **The start.** `request_pool.js`'s `startThread()` is `new Worker(file,
+  { argv, env, resourceLimits })`, wrapped in the members the pool used of a
+  ChildProcess (`send`, `pid`, `connected`, `exitCode`, `kill`, the three
+  events), so the rest of the file still says "fork" and speaks to
+  `entry.child`. A thread's `process.env` is a copy taken at the start, as a
+  forked child's was, so the three `STS_REQUEST_WORKER*` markers and the
+  worker's own `STS_TLS_SERVER_*` writes are the thread's alone.
+* **The channel.** `common/worker_channel.ts` — `parentPort` in the thread,
+  the adapter's `postMessage` in the front. **`postMessage` delivers a Buffer
+  as a plain Uint8Array** (child_process's `advanced` serialisation did not),
+  so both ends REVIVE every message: SPIFFE's dispatched gRPC operations carry
+  `bytes` fields, and protobuf refuses a Uint8Array naming a field, one
+  thread from the cause.
+* **Identity.** Every thread has the process's pid. A worker is known by its
+  `threadId` — the pool table, affinity, the `sts_pool` pin cookie (still
+  numeric), `x-sts-pool-protocol-worker`, pending operations, status answers
+  — captured when the thread starts, because `threadId` reads -1 after it
+  exits. Where the pid told PROCESSES apart — the scheduler's per-process run
+  key, the claim holder on an outbound delivery or a mail, a risk row's
+  origin, the cache report — it is `WorkerChannel.processTag()`, pid AND
+  thread: in a container the front is pid 1 and the first thread's id is 1.
+* **Exits.** `process.exit()` in a thread ends the thread, so a worker's own
+  exits (stop, a lost persistence origin, a fenced write) mean what they
+  meant. `kill()` is `terminate()`. A thread receives no signal, so the unused
+  SIGUSR2 status and the `disconnect` handling are gone.
+* **Memory.** Each thread gets the heap budget as `resourceLimits`
+  (`maxOldGenerationSizeMb`) — every isolate has its own old space, so the
+  budget still divides by 1 + workers. A thread that exhausts it ends with
+  **ERR_WORKER_OUT_OF_MEMORY** and the process carries on: `STS-WORKER-0046`,
+  where it was a SIGABRT. **The kernel's OOM killer can no longer pick a
+  worker**: a container at its limit loses the whole process, so
+  `STS-WORKER-0047` is retired, and that is the argument for few threads.
+  `process.memoryUsage().rss` and `process.cpuUsage()` are PROCESS-WIDE in a
+  thread; only the heap figures are the isolate's own, which is what Node
+  Health draws per thread.
+* **The defaults (rcbj).** `workers.requestCount` 1, `workers.dispatch` `*`,
+  `workers.readYourWrite` on. `process_memory.ts`'s `requestWorkers()` is the
+  rule every reader of the count asks: the DEFAULT of one is none where the
+  store cannot coordinate (persistence.mode not postgres, or
+  persistence.coordinate off), so a development service on the memory store
+  is one thread as it always was; an operator's explicit count without
+  coordination is still refused at startup (`STS-WORKER-0024`). It is decided
+  from the settings because the heap budget divides by the same count before
+  the store is opened. `/admin` and `/portal` go to the request workers with
+  everything else; `workers.surfaceCount` above 0 starts a separate pool of
+  threads for them.
+
 
 **This moved here from the root `CLAUDE.md` when that file was broken up.** The
 family-specific halves — the directory's operations and its sockets, SPIFFE's
@@ -1141,17 +1203,18 @@ at load it requires `config_file`, `config` and `error_codes`, and `start()`
 requires `app`, `protocol_stack` and only then `service_state` — lazily,
 because loading it first made every worker fail in dispatch mode (2026-09-17),
 and the process-wide `deferToRoot()` that first fixed that broke the
-in-process suite, where several files require this module. `request_pool.js` forks `request_worker.js`, which is the COMPILED
-file and the only one in the image; a source-reading test reads the `.ts`.
+in-process suite, where several files require this module. `request_pool.js`
+starts `request_worker.js` as a thread, which is the COMPILED file and the only
+one in the image; a source-reading test reads the `.ts`.
 
 | | `common/request_pool.js` |
 |---|---|
-| A worker runs | THE SERVICE — the whole protocol stack |
+| A worker runs | THE SERVICE — the whole protocol stack, in a thread of this process |
 | Handed | an HTTP request |
 | Speaks | real HTTP over a unix socket |
-| Forked | EAGERLY, ONE AT A TIME (#342); the listener binds once each pool's first has settled |
-| Setting | `workers.requestCount` (0) |
-| Off by default | **yes, and nothing is dispatched until `workers.dispatch` names a path** |
+| Started | EAGERLY, ONE AT A TIME (#342); the listener binds once each pool's first has settled |
+| Setting | `workers.requestCount` (1; none where the store cannot coordinate) |
+| Dispatched by default | **everything (`workers.dispatch` `*`)**, where there is a worker |
 
 (Until #363 there was a first pool, `common/worker_pool.js`, of processes
 running four leaf computations; *`pq_native.js`*, above, says what replaced

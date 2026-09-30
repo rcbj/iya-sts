@@ -6,18 +6,20 @@
 // File: request_worker.ts
 //
 // ---------------------------------------------------------------------------
-// ONE WORKER THAT HANDLES REQUESTS, RATHER THAN ONE THAT COMPUTES A SIGNATURE.
+// ONE WORKER THAT HANDLES REQUESTS: A THREAD OF THE FRONT PROCESS (#364).
 //
-// `worker.js` beside this file is the OTHER kind and the two are not rivals:
-// that one runs a JOB TABLE — four leaf computations handed everything they
-// need — and it exists because a post-quantum signature took 14.6 seconds on
-// the thread that owns every socket. This one runs the SERVICE. It loads the
-// same protocol stack the front process loads, in the same order, and answers
-// HTTP.
+// This runs the SERVICE. It loads the same protocol stack the front process
+// loads, in the same order, and answers HTTP. Since #364 (2026-09-30) it runs
+// as a `worker_threads` Worker of the front process — its own V8 isolate,
+// heap and event loop, and the process's pid — and it was a forked process
+// until then. It speaks to the front through `common/worker_channel.ts`
+// (`parentPort`), is known by its `threadId`, receives no signal, and ends
+// with `process.exit()`, which ends the thread and nothing else. (A second
+// kind of worker, `worker.js`, computed post-quantum signatures until #363
+// moved them to libuv's thread pool.)
 //
 // The goal it serves is one sentence: **the front process should be doing
-// request/response I/O and nothing else.** Four leaf computations moved off
-// that thread; every handler still ran on it. This is the machinery for moving
+// request/response I/O and nothing else.** This is the machinery for moving
 // the handlers.
 //
 // ---------------------------------------------------------------------------

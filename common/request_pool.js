@@ -7,7 +7,20 @@
 // File: request_pool.js
 //
 // ---------------------------------------------------------------------------
-// THE FRONT PROCESS'S END OF THE REQUEST WORKERS: FORK, ROUTE, PROXY, DRAIN.
+// THE FRONT PROCESS'S END OF THE REQUEST WORKERS: START, ROUTE, PROXY, DRAIN.
+//
+// **A WORKER IS A THREAD SINCE #364 (2026-09-30)** — a `worker_threads`
+// Worker of this process, with its own V8 isolate, heap and event loop — and
+// it was a forked process until then. Everything else about it is as it was:
+// it loads the whole stack, answers real HTTP on its own unix socket, and
+// shares state with this thread through the store and its change log, never
+// through memory. `startThread()` is the one function that knows it is a
+// thread; the rest of this file speaks to `entry.child` as it spoke to a
+// ChildProcess, and still says "fork" for starting one. Two consequences run
+// through it: a worker's id is its `threadId` (every thread has this
+// process's pid), and a worker's heap exhaustion is ERR_WORKER_OUT_OF_MEMORY
+// where it was a SIGABRT. The default is ONE worker where the store
+// coordinates (`process_memory.ts`'s `requestWorkers()`).
 //
 // `request_worker.ts` says what a worker is and why it speaks real HTTP over a
 // unix socket. This file is the half that runs where the sockets are, and its
