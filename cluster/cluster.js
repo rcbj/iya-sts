@@ -61,6 +61,8 @@ const capabilities = require('./cluster_capabilities');
 // A leaf requiring only `config` and `error_codes` (rule 3ap), so this adds
 // nothing to what loads before the store's gate.
 const cacheRegistry = require('../common/cache_registry');
+// This thread's identity (#364); see common/worker_channel.ts.
+const WorkerChannel = require('../common/worker_channel');
 
 const log = bunyan.createLogger({ name: 'sts-cluster' });
 config.registerLogger(log);
@@ -734,7 +736,8 @@ function attach(theDriver) {
       'cluster: a request worker of an active-passive node was forked ' +
       'without the service lease\'s token.'));
   }
-  log.info('cluster: request worker ' + process.pid + ' attached to node ' +
+  log.info('cluster: request worker ' + WorkerChannel.processTag() +
+           ' attached to node ' +
            nodeId + ' (' + resolved.mode + ').');
   // READ THE MEMBERSHIP NOW, NOT ON THE FIRST PAGE THAT ASKS (2026-09-18).
   // A worker has no heartbeat, so the only thing that ever read the member

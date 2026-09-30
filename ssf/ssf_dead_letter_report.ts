@@ -73,6 +73,9 @@ import replication = require('../persistence/persistence_replication');
 import events = require('./ssf_events');
 import streams = require('./ssf_streams');
 import transport = require('./ssf_http');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 interface Cause {
   id: string;
@@ -706,7 +709,7 @@ class DeadLetterReport {
         pushRetries: this.settingOf('ssf.pushRetries')
       },
       process: {
-        pid: process.pid,
+        pid: WorkerChannel.processTag(),
         role: this.processRole(),
         pushes: transport.pushGateState(),
         sweeps: notes.recent.slice(),

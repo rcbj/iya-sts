@@ -82,7 +82,11 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const http = require('http');
-const child_process = require('child_process');
+const EventEmitter = require('events');
+const workerThreads = require('worker_threads');
+// The channel's other half (#364): a message a thread posts has its Buffers
+// turned back into Buffers here, as the thread does for what it receives.
+const WorkerChannel = require('./worker_channel');
 const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
@@ -1108,10 +1112,19 @@ let starting = null;
  * @param pool - `SURFACE_POOL`, or anything else for the protocol pool
  * @returns the count; 0 when unset or when there is no configuration
  */
+// ONE REQUEST WORKER BY DEFAULT, WHERE THE STORE CAN COORDINATE (#364):
+// `processMemory.requestWorkers()` is the rule, and the one place it is
+// written, because the heap budget divides by the same count before the
+// store is opened.
 function size(pool) {
   log.debug('Entering size().');
   const key = pool === SURFACE_POOL ? 'workers.surfaceCount'
                                     : 'workers.requestCount';
+  if (pool !== SURFACE_POOL) {
+    const wantedWorkers = processMemory.requestWorkers();
+    log.debug('Leaving size(). ' + wantedWorkers + '.');
+    return wantedWorkers;
+  }
   let wanted = 0;
   try {
     wanted = parseInt(config.value(key), 10);
@@ -2482,6 +2495,87 @@ function maxSocketsPerWorker() {
   return (n > 0) ? n : 64;
 }
 
+// ---------------------------------------------------------------------------
+// A WORKER THREAD WEARING THE SHAPE A FORKED CHILD HAD (#364, 2026-09-30).
+//
+// Until #364 each request or surface worker was `child_process.fork()`: a
+// whole node runtime per worker. It is a `worker_threads` Worker now — its
+// own V8 isolate and event loop inside this process — and this is the one
+// function that knows. It answers an EventEmitter with the members the pool
+// used of a ChildProcess:
+//
+//   send(message)   postMessage(); throws once the thread has exited, as
+//                   send() on a closed channel did
+//   pid             the thread's `threadId`, captured NOW because it reads
+//                   -1 after the thread exits. Every thread has this
+//                   process's pid, so the id the pool routes, pins and names
+//                   workers by is the thread's (WorkerChannel.id() in the
+//                   thread says the same number)
+//   connected       true until the thread exits
+//   exitCode        the thread's exit code once it has exited; signalCode
+//                   stays null, because a thread receives no signal
+//   kill()          terminate()
+//   'message'       each message REVIVED — a Buffer the thread posted
+//                   arrives as a Uint8Array and is turned back
+//   'error'         an exception the thread did not catch, or
+//                   ERR_WORKER_OUT_OF_MEMORY; it is kept for 'exit'
+//   'exit'          (code, cause) — `cause` is ERR_WORKER_OUT_OF_MEMORY
+//                   when the thread's heap reached its resourceLimits, and
+//                   null otherwise; it is what reap() passes to noteExit()
+//
+// stdout and stderr are the process's own, so a worker's bunyan lines land in
+// the same stream as everything else (forwarded through this thread's event
+// loop, which is node's design for worker threads).
+// ---------------------------------------------------------------------------
+function startThread(file, socket, options) {
+  log.debug("Entering startThread().");
+  const worker = new workerThreads.Worker(file, {
+    argv: [socket],
+    env: options.env,
+    resourceLimits: options.resourceLimits
+  });
+  const child = /** @type {any} */ (new EventEmitter());
+  child.worker = worker;
+  child.pid = worker.threadId;
+  child.connected = true;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.lastError = null;
+  child.send = function (message) {
+    if (!child.connected) {
+      throw new Error('request_pool: worker thread ' + child.pid +
+                      ' has exited');
+    }
+    worker.postMessage(message);
+    return true;
+  };
+  child.kill = function () {
+    worker.terminate().catch(function (e) {
+      log.debug("Caught in startThread(): " + ((e && e.message) || e));
+      // A thread that is already gone cannot be ended twice; its 'exit'
+      // has fired or is about to.
+    });
+    return true;
+  };
+  worker.on('message', function (message) {
+    child.emit('message', WorkerChannel.revive(message));
+  });
+  worker.on('error', function (err) {
+    child.lastError = err;
+    child.emit('error', err);
+  });
+  worker.on('exit', function (code) {
+    child.connected = false;
+    child.exitCode = code;
+    const cause = child.lastError &&
+      child.lastError.code === 'ERR_WORKER_OUT_OF_MEMORY'
+      ? 'ERR_WORKER_OUT_OF_MEMORY' : null;
+    child.emit('exit', code, cause);
+  });
+  log.debug("Leaving startThread(). thread=" + child.pid);
+  return child;
+}
+
 // `slot` is the worker's position in its pool, handed to it as
 // STS_REQUEST_WORKER_SLOT so that its persistence origin is the same one the
 // worker in that position had before a restart (2026-09-18, `adoptOrigin()` in
@@ -2502,54 +2596,15 @@ function fork(pool, slot) {
   const socket = path.join(ensureSocketDir(),
                            (which === SURFACE_POOL ? 's' : 'w') +
                            (nextSocket++) + '.sock');
-  const child = child_process.fork(workerModule, [socket], {
-    // stdout and stderr are the front process's, so a worker's bunyan lines
-    // land in the same stream as everything else. They carry the pid.
-    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-    // -------------------------------------------------------------------
-    // STRUCTURED CLONE ON THE CHANNEL, AND IT WAS THE DEFAULT JSON UNTIL
-    // 2026-09-12.
-    //
-    // **THIS IS `worker_pool.js`'s ARGUMENT, ARRIVING HERE FOR THE SECOND
-    // FAMILY.** That file says it about a 32,000-byte SLH-DSA signature; the
-    // same sentence is true of a DER certificate, and the operation channel
-    // now carries them: a SPIFFE gRPC request and reply hold X509-SVIDs,
-    // bundles, private keys and CSRs as `bytes`.
-    //
-    // **JSON DOES NOT MERELY BLOAT A BUFFER, IT CHANGES ITS TYPE.**
-    // `JSON.stringify(Buffer)` is `{"type":"Buffer","data":[…]}` — six times
-    // the bytes, and it arrives at the far end as a PLAIN OBJECT. Measured
-    // here before the change: a Buffer sent over a default channel reaches the
-    // child as `Object` and comes back as `Object`. grpc-js would then be
-    // handed something that is not a Buffer for a `bytes` field, so the
-    // failure lands in protobuf serialization, naming a field, one process
-    // away from the cause.
-    //
-    // **IT IS A STRICT SUPERSET FOR EVERYTHING THIS CHANNEL ALREADY
-    // CARRIES** — the LDAP operation shapes are strings and numbers, and so
-    // are the commit, sync and ready messages — so nothing that worked before
-    // it behaves differently. What it adds is Buffers, Dates and Maps
-    // surviving as themselves, which is what stopped the SPIFFE codec needing
-    // a base64 layer of its own that every new `bytes` field would have had to
-    // be added to.
-    // -------------------------------------------------------------------
-    serialization: 'advanced',
-    // -------------------------------------------------------------------
-    // ITS HEAP LIMIT (#341): this process's own node options without any
-    // heap flag, and the budget every process of the node shares
-    // (`common/process_memory.ts`). A heap that reaches it ends in V8, with
-    // a line that says so and a SIGABRT reap() reports as STS-WORKER-0046,
-    // before the kernel's OOM killer picks a victim. No budget (no visible
-    // container limit) leaves the options exactly as they were.
-    // -------------------------------------------------------------------
-    // With the limit OFF (workers.heapLimitMb -1) this process's own
-    // options are passed on unchanged, which is fork()'s default.
-    execArgv: processMemory.budget().off
-      ? process.execArgv.slice()
-      : processMemory.workerExecArgv(process.execArgv,
-                                     processMemory.budget().mb),
+  // A WORKER THREAD SINCE #364, and it was a forked process until then.
+  // startThread() gives it the shape the child had — send(), on(), kill(),
+  // connected, exitCode — so everything below that speaks to `entry.child`
+  // is unchanged.
+  const child = startThread(workerModule, socket, {
     // THE MARKER THAT STOPS A WORKER PROXYING TO ITSELF. See the constant at
-    // the top of this file for what happens without it.
+    // the top of this file for what happens without it. A thread's
+    // `process.env` is a COPY of this one taken here, exactly as a forked
+    // child's was, so these three are the thread's own.
     //
     // AND WHICH POOL IT IS IN. One thing in a worker reads it: the OpenID
     // Connect back channel in `common/oidc_rp.ts`, which names the worker that
@@ -2560,7 +2615,19 @@ function fork(pool, slot) {
       STS_REQUEST_WORKER_POOL: which,
       STS_REQUEST_WORKER_SLOT: typeof slot === 'number'
         ? which + '-' + slot : ''
-    })
+    }),
+    // -------------------------------------------------------------------
+    // ITS HEAP LIMIT (#341, #364): every isolate has an old space of its
+    // own, so a thread is given the same share of the node's budget a
+    // forked process was (`common/process_memory.ts`), as `resourceLimits`
+    // where it was a `--max-old-space-size` flag. A thread whose heap
+    // reaches it ends with ERR_WORKER_OUT_OF_MEMORY, which reap() reports as
+    // STS-WORKER-0046, and the process carries on. No budget (no visible
+    // container limit) sets none, which is V8's own default.
+    // -------------------------------------------------------------------
+    resourceLimits: processMemory.budget().off || !processMemory.budget().mb
+      ? undefined
+      : { maxOldGenerationSizeMb: processMemory.budget().mb }
   });
   const entry = { child: child, pid: child.pid, pool: which, socket: socket,
                   ready: false,
@@ -2867,21 +2934,20 @@ function reap(entry, code, signal) {
 // ---------------------------------------------------------------------------
 // WHY A WORKER DIED, WHERE THE FRONT PROCESS CAN TELL (#341, 2026-09-29).
 //
-// Two exits used to look alike: `worker N was killed with SIGKILL`, and
-// nothing else. Since #341 every worker has a heap limit, and there are two
-// ways out of memory with different codes:
+// Since #341 every worker has a heap limit, and a worker that reaches it is
+// named as such: `STS-WORKER-0046`. Since #364 a worker is a THREAD, and the
+// heap is the one way out of memory the front can see: V8 ends a thread
+// whose old space reached its `resourceLimits` with ERR_WORKER_OUT_OF_MEMORY
+// and the process carries on (startThread() hands that over as the exit's
+// cause). Until #364 it was a SIGABRT of a forked process.
 //
-// * **SIGABRT is the heap.** V8 ends a process whose old space reached
-//   `--max-old-space-size` by printing `FATAL ERROR: … JavaScript heap out
-//   of memory` and calling abort(). A worker's stderr is this process's, so
-//   that line is just above in the log. The code does not depend on reading
-//   it: a SIGABRT from a request worker is a fatal error inside node, and
-//   heap exhaustion is the one this service has seen. `STS-WORKER-0046`.
-// * **SIGKILL with the cgroup's `oom_kill` count risen is the kernel.** The
-//   container reached its memory limit and the kernel chose a victim.
-//   `STS-WORKER-0047`. A SIGKILL with the count unchanged was somebody's
-//   kill, and is logged as it always was. With no counter visible (no memory
-//   cgroup) nothing is claimed.
+// **THE KERNEL'S OOM KILLER NO LONGER HAS A WORKER TO NAME.** When the
+// workers were processes it could pick one, and a SIGKILL with the cgroup's
+// `oom_kill` count risen was `STS-WORKER-0047`. A thread is not a process
+// the kernel can choose, so a container at its limit loses the whole
+// process, front included, and nothing is left here to log it —
+// `STS-WORKER-0047` is retired. The count is still read, for
+// `stats().memory.oomKills`.
 //
 // Each line carries the worker's last memory report, when it sent one, and
 // the latest exits are in `stats().memory.exits`.
@@ -2898,24 +2964,17 @@ let oomCounter = function () {
 };
 
 /**
- * Classifies a worker's exit. A decision over its arguments.
+ * Classifies a worker's exit. A decision over its argument.
  *
- * @param signal - the signal it died of, or null
- * @param oomBefore - the cgroup's OOM-kill count before, or null
- * @param oomNow - the count now, or null
- * @returns `STS-WORKER-0046`, `STS-WORKER-0047` or '' when nothing can be
- *   said
+ * @param cause - the exit's cause as startThread() reports it, or null
+ * @returns `STS-WORKER-0046` for a heap that reached its limit, or '' when
+ *   nothing can be said
  */
-function exitCause(signal, oomBefore, oomNow) {
+function exitCause(cause) {
   log.debug("Entering exitCause().");
-  if (signal === 'SIGABRT') {
+  if (cause === 'ERR_WORKER_OUT_OF_MEMORY') {
     log.debug("Leaving exitCause(). The heap.");
     return 'STS-WORKER-0046';
-  }
-  if (signal === 'SIGKILL' && typeof oomBefore === 'number' &&
-      typeof oomNow === 'number' && oomNow > oomBefore) {
-    log.debug("Leaving exitCause(). The kernel.");
-    return 'STS-WORKER-0047';
   }
   log.debug("Leaving exitCause(). Nothing to say.");
   return '';
@@ -2938,34 +2997,15 @@ function lastReport(entry) {
 
 function noteExit(entry, code, signal) {
   log.debug("Entering noteExit(). pid=" + entry.pid);
-  const before = oomSeen;
-  let now = null;
-  if (signal === 'SIGKILL') {
-    now = oomCounter();
-    oomSeen = now;
-  }
-  const cause = exitCause(signal, before, now);
+  const cause = exitCause(signal);
   const pool = entry.pool || PROTOCOL_POOL;
   const budget = processMemory.budget();
   if (cause === 'STS-WORKER-0046') {
     log.error(errorCodes.tag(cause) + 'request_pool: ' + pool + ' worker ' +
-              entry.pid + ' was aborted (SIGABRT): its heap reached its ' +
-              'limit' + (budget.mb ? ' of ' + budget.mb + ' MiB (' +
-                                     budget.source + ')'
-                                   : ', V8\'s own default') +
-              ' — V8\'s "JavaScript heap out of memory" lines are above.' +
-              lastReport(entry));
-  } else if (cause === 'STS-WORKER-0047') {
-    log.error(errorCodes.tag(cause) + 'request_pool: ' + pool + ' worker ' +
-              entry.pid + ' was killed by the kernel\'s OOM killer: SIGKILL, ' +
-              'and the container cgroup\'s oom_kill count rose from ' +
-              before + ' to ' + now + '. The container is at its memory ' +
-              'limit' + (budget.limitBytes
-                ? ' of ' + Math.round(budget.limitBytes / (1024 * 1024)) +
-                  ' MiB'
-                : '') + '; each process\'s heap budget is ' +
-              (budget.mb ? budget.mb + ' MiB' : 'unset') + '.' +
-              lastReport(entry));
+              entry.pid + ' ran out of heap (ERR_WORKER_OUT_OF_MEMORY): ' +
+              'its heap reached its limit' +
+              (budget.mb ? ' of ' + budget.mb + ' MiB (' + budget.source + ')'
+                         : ', V8\'s own default') + '.' + lastReport(entry));
   }
   recentExits.push({ pid: entry.pid, pool: pool, code: code,
                      signal: signal || null, cause: cause || null,

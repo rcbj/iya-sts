@@ -548,7 +548,9 @@ function processIsProduct() {
 
 function severalProcesses() {
   log.debug("Entering severalProcesses().");
-  const count = Number(config.value('workers.requestCount')) || 0;
+  // The #364 rule: the default of one worker is none without a store that
+  // coordinates.
+  const count = require('../common/process_memory').requestWorkers();
   const paths = String(config.value('workers.dispatch') || '').trim();
   log.debug("Leaving severalProcesses().");
   return count > 0 && paths !== '';

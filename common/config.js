@@ -3012,8 +3012,18 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   // THE REQUEST POOL. These configure workers that run THE SERVICE: each
   // loads the whole protocol stack in the same order, binds no protocol port,
-  // and answers HTTP on a unix socket the front process proxies to.
-  // `common/request_pool.js` argues it.
+  // and answers HTTP on a unix socket the front process proxies to. Since
+  // #364 a worker is a THREAD of the front process (`worker_threads`), not a
+  // forked process. `common/request_pool.js` argues it.
+  //
+  // **THREE DEFAULTS CHANGED WITH IT (rcbj, #364)**: one request worker,
+  // `workers.dispatch` `*` and `workers.readYourWrite` on. A worker needs a
+  // store that coordinates (postgres), so when the store cannot and those
+  // values are still the DEFAULTS, the pool quietly runs none — a
+  // development service on the memory store is one thread, as it always
+  // was. An operator's explicit value without coordination is still refused
+  // at startup (`STS-WORKER-0024`); `request_pool.js`'s `autoOff` is the
+  // rule.
   //
   // All are `perProcess` — a pool belongs to the process, and a realm
   // resizing it would be resizing every other realm's too — and
@@ -3037,19 +3047,24 @@ const SETTINGS = [
                  'key set that every start re-certifies, a cold database ' +
                  '(#311).' },
   { key: 'workers.requestCount', group: 'Global',
-    label: 'Request worker processes',
-    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 0, min: 0, max: 32,
+    label: 'Request worker threads',
+    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 1, min: 0, max: 32,
     runtime: false, perProcess: true,
     restartReason: 'the pool is forked before the listener binds, and the ' +
                    'check that refuses to dispatch without a coordinating ' +
                    'store runs once, there',
-    description: 'How many child processes REQUESTS are handled in, so that ' +
-                 'the process holding the sockets is doing request and ' +
-                 'response I/O and not running handlers. Each worker loads ' +
-                 'the whole protocol stack in the same order and binds no ' +
-                 'protocol port. 0 — the default — means every request is ' +
-                 'handled in the process that holds the sockets, which is ' +
-                 'what this service has always done. Nothing is dispatched ' +
+    description: 'How many worker THREADS requests are handled in, so that ' +
+                 'the thread holding the sockets is doing request and ' +
+                 'response I/O and not running handlers. Each worker is a ' +
+                 'thread of this process with its own V8 heap: it loads the ' +
+                 'whole protocol stack in the same order and binds no ' +
+                 'protocol port. 1 — the default — is one worker when the ' +
+                 'store coordinates (postgres); with the memory or ldif ' +
+                 'store and this left at its default the pool runs none, ' +
+                 'and every request is handled in the thread that holds the ' +
+                 'sockets. 0 is that everywhere. Every worker costs a whole ' +
+                 'copy of the service\'s heap, so more than one is for a ' +
+                 'node with the cores to use them. Nothing is dispatched ' +
                  'whatever this is set to until workers.dispatch names a ' +
                  'path.' },
 
@@ -3078,21 +3093,22 @@ const SETTINGS = [
     restartReason: 'V8 reads the heap limit when a process starts: the front ' +
                    'process restarts itself with it before it loads ' +
                    'anything, and each request worker is forked with it',
-    description: 'The V8 heap limit (--max-old-space-size) of the front ' +
-                 'process and of every request worker. -1 turns it OFF: no ' +
-                 'limit is applied, the front process is not restarted with ' +
-                 'one and no worker is forked with one, while the memory ' +
-                 'report and the OOM-kill attribution go on. The default, 0, ' +
-                 'DERIVES it from the container: (the memory limit − 15 % ' +
-                 'headroom, at least 256 MiB) ÷ (1 + workers.requestCount + ' +
-                 'workers.surfaceCount + 1 for the post-quantum children), ' +
-                 'and never less than 256 MiB. The limit is read from ' +
+    description: 'The V8 heap limit of the front thread ' +
+                 '(--max-old-space-size) and of every request worker thread ' +
+                 '(its resourceLimits). -1 turns it OFF: no limit is ' +
+                 'applied, the front process is not restarted with one and ' +
+                 'no worker is started with one, while the memory report ' +
+                 'goes on. The default, 0, DERIVES it from the container: ' +
+                 '(the memory limit − 15 % headroom, at least 256 MiB) ÷ ' +
+                 '(1 + workers.requestCount + workers.surfaceCount) — every ' +
+                 'thread has a V8 heap of its own — and never less than ' +
+                 '256 MiB. The limit is read from ' +
                  'cgroup v2, then cgroup v1, then the ECS task metadata ' +
-                 'endpoint. With no visible limit nothing is set. A process ' +
-                 'whose heap reaches the limit is ended by V8 with a line ' +
-                 'that says so, and a request worker\'s exit is reported as ' +
-                 'STS-WORKER-0046, where the alternative was an anonymous ' +
-                 'SIGKILL from the kernel. A flag an operator set on the ' +
+                 'endpoint. With no visible limit nothing is set. A worker ' +
+                 'thread whose heap reaches the limit is ended by V8 and ' +
+                 'reported as STS-WORKER-0046, and the process carries on; ' +
+                 'the front\'s own heap reaching it ends the process with ' +
+                 'a line that says so. A flag an operator set on the ' +
                  'command line or in NODE_OPTIONS is left alone and used for ' +
                  'every process. Read before the store is opened.' },
 
@@ -3130,7 +3146,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'workers.dispatch', group: 'Global',
     label: 'Handled in a request worker',
-    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '',
+    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '*',
     runtime: false, perProcess: true,
     restartReason: 'dispatching is REFUSED at startup unless this process is ' +
                    'coordinating, and that check runs once, before the ' +
@@ -3150,9 +3166,12 @@ const SETTINGS = [
                  'writes the reply) and the worker does the work.\n- ' +
                  '**"*"**, which is EVERYTHING of both kinds — how "run the ' +
                  'service in the pool" is said, and the only spelling that ' +
-                 'cannot go stale the next time a family is added.\n\nEMPTY ' +
-                 'IS THE DEFAULT AND MEANS NOTHING IS DISPATCHED, which is ' +
-                 'what makes the pool inert until it is asked for. /tls is ' +
+                 'cannot go stale the next time a family is added.\n\n"*" IS ' +
+                 'THE DEFAULT (#364): with a coordinating store every ' +
+                 'request goes to the request worker. With the memory or ' +
+                 'ldif store and workers.requestCount at its default there ' +
+                 'is no worker, and nothing is dispatched. Empty means ' +
+                 'nothing is dispatched anywhere. /tls is ' +
                  'never dispatched whatever this says, because its whole ' +
                  'content is what the server saw of the connection the ' +
                  'request arrived on.\n\n**Nothing is dispatched unless this ' +
@@ -3223,7 +3242,7 @@ const SETTINGS = [
     restartReason: 'the pool is forked before the listener binds, and the ' +
                    'checks that refuse it without coordination and without ' +
                    'read-your-write run once, there',
-    description: 'How many request workers are kept for this service\'s OWN ' +
+    description: 'How many worker threads are kept for this service\'s OWN ' +
                  'two hosted surfaces — the admin console and the user ' +
                  'portal, or whatever workers.surfaces names — separately ' +
                  'from the workers.requestCount workers that run the ' +
@@ -3231,11 +3250,11 @@ const SETTINGS = [
                  'queues behind protocol traffic on the same worker, and a ' +
                  'console page walking the directory never holds a protocol ' +
                  'worker. 0 — the default — means there is no second pool ' +
-                 'and those paths go wherever the rest of workers.dispatch ' +
-                 'goes. Nothing is sent to these workers unless ' +
+                 'and those paths go to the request workers with the rest ' +
+                 'of workers.dispatch. Nothing is sent to these workers unless ' +
                  'workers.dispatch names the paths too. **It REQUIRES ' +
                  'workers.readYourWrite**: signing in to the console now ' +
-                 'crosses two processes (the sign-in in a protocol worker, ' +
+                 'crosses two workers (the sign-in in a protocol worker, ' +
                  'the console session in one of these), and without the ' +
                  'barrier the second would intermittently read a store the ' +
                  'first had not yet written — so the service refuses to ' +
@@ -3364,7 +3383,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'workers.readYourWrite', group: 'Global',
     label: 'Read-your-write across request workers',
-    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: false,
+    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: true,
     runtime: true, perProcess: true,
     description: 'Whether a request worker must catch up with what the other ' +
                  'workers have written before it serves. Coordination makes ' +
@@ -3377,10 +3396,12 @@ const SETTINGS = [
                  'there land anywhere. With it on, the pool counts writes ' +
                  'and a worker that is behind pulls before it answers — so ' +
                  'the cost falls on the first read after a write on each ' +
-                 'worker, and on nothing while nothing is being written. OFF ' +
-                 'BY DEFAULT because that is the behaviour that existed ' +
-                 'before it, and because whether the wait is worth it is a ' +
-                 'question about the callers rather than about the pool.' },
+                 'worker, and on nothing while nothing is being written. ON ' +
+                 'BY DEFAULT since #364, when a request worker became the ' +
+                 'default: the front thread still answers what is never ' +
+                 'dispatched, so a caller would otherwise see its own write ' +
+                 'go missing between two requests. It must be on for a ' +
+                 'surface pool (workers.surfaceCount).' },
 
   { key: 'workers.socketDir', group: 'Global',
     label: 'Request worker socket directory',

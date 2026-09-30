@@ -187,6 +187,9 @@ import InstanceSlot = require('./instance_slot');
 // FAPI (#139): whether this realm is in FAPI 1.0 Advanced, which changes how
 // a surface signs in. A leaf that requires only `helpers` and `config`.
 import fapi = require('../oauth-oidc/fapi');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('./worker_channel');
 
 type SurfaceId = 'admin' | 'portal' | 'debugger';
 
@@ -1292,7 +1295,7 @@ class OidcRelyingParty {
           process.env.STS_REQUEST_WORKER_POOL === 'surfaces';
         const target = inSurfacePool
           ? (Number(options.from && options.from.stsProtocolWorker) || 0)
-          : process.pid;
+          : WorkerChannel.id();
         if (target) {
           const pin = 'sts_pool=' + target;
           headers.cookie = headers.cookie ? (headers.cookie + '; ' + pin) :
