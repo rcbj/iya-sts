@@ -379,7 +379,7 @@ class CachesAdmin {
       const info = (node && node.info) || {};
       const report = info.caches;
       if (!report || !Array.isArray(report.caches) || node.leftAt ||
-          (report.pid === WorkerChannel.processTag() &&
+          (String(report.pid) === WorkerChannel.processTag() &&
            node.nodeId === selfId)) {
         return;
       }
