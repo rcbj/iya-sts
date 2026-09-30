@@ -1751,7 +1751,10 @@ class Scheduler {
     log.debug("Entering Scheduler.runInThisProcess(). " + job.id);
     const me = this.who();
     const key = PROCESS_PREFIX + job.id + '|' + realmId + '|' +
-                (me.node || me.host) + '|' + WorkerChannel.processTag();
+                (me.node || me.host) + '|' + me.pid +
+                // A worker THREAD shares the pid (#364): its thread id too.
+                (WorkerChannel.inWorkerThread() ? '.' + WorkerChannel.id()
+                                                : '');
     const startedAt = this.nowMs();
     const startedLocal = this.deps.now();
     const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);

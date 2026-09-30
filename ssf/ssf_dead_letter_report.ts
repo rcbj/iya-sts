@@ -709,7 +709,9 @@ class DeadLetterReport {
         pushRetries: this.settingOf('ssf.pushRetries')
       },
       process: {
-        pid: WorkerChannel.processTag(),
+        pid: process.pid,
+        // A worker THREAD shares the pid (#364); its thread id says which.
+        thread: WorkerChannel.inWorkerThread() ? WorkerChannel.id() : null,
         role: this.processRole(),
         pushes: transport.pushGateState(),
         sweeps: notes.recent.slice(),
