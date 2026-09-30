@@ -546,6 +546,7 @@ async function activeVersions(datasets) {
   ((r.body && r.body.datasets) || []).forEach(function (d) {
     if (datasets.indexOf(d.dataset) >= 0) {
       found[d.dataset] = String(d.activeVersion || "");
+      found[d.dataset + "@realm"] = String(d.realm || "default");
     }
   });
   log.debug("Leaving activeVersions().");
@@ -554,16 +555,22 @@ async function activeVersions(datasets) {
 
 async function putBack(saved) {
   log.debug("Entering putBack().");
-  const now = await activeVersions(Object.keys(saved));
-  for (const dataset of Object.keys(saved)) {
+  const datasets = Object.keys(saved).filter(function (k) {
+    return k.indexOf("@realm") < 0;
+  });
+  const now = await activeVersions(datasets);
+  for (const dataset of datasets) {
     const was = saved[dataset];
     if (!was || now[dataset] === was) {
       continue;
     }
     const r = await call("POST", base + "/admin-api/risk/activate",
                          { headers: { "Content-Type": "application/json" },
-                           body: JSON.stringify({ dataset: dataset,
-                                                  version: was }) });
+                           body: JSON.stringify({
+                             dataset: dataset, version: was,
+                             // Versions are held per realm; an activate naming
+                             // none looks in realm '' and finds nothing.
+                             realm: saved[dataset + "@realm"] || "default" }) });
     log.info("put " + dataset + " back to " + was + " (it was " +
              (now[dataset] || "none") + "): " + r.status);
   }
