@@ -79,6 +79,17 @@ locals {
     PKI_DISTRIBUTION_LDAP_HOST = local.public_host
     PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
 
+    # REVOCATION IS NOT CONSULTED ON THESE CLUSTERS (rcbj, #371). A
+    # certificate presented to a node, or registered and used, is not checked
+    # against a CRL or an OCSP responder — this service's own register
+    # included — and one whose issuer cannot be found through its caIssuers
+    # address is not refused. In the task definition, so it survives every
+    # restart and a rebuilt environment; an environment's `extra_environment`
+    # can still set either back. A value set on the console or through
+    # /admin-api is persisted in the cluster's database and outranks this.
+    STS_PKI_REVOCATION_CHECK                      = "off"
+    STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT = "off"
+
     # The directory's ceiling, as the ENVIRONMENT's value rather than an
     # override, so resetting the override the bulk loads leave lands here
     # (variables.tf, reset-environment.js).

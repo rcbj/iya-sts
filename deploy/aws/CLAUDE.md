@@ -118,6 +118,16 @@ TLS**, which is what lets an NLB target group with `proxy_protocol_v2` sit in
 front of a TLS listener at all. ECS allows five target groups per service; this
 uses four.
 
+**Revocation is not consulted on these clusters (rcbj, #371, 2026-09-30).**
+`node_environment` in `ecs.tf` sets `STS_PKI_REVOCATION_CHECK=off` and
+`STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT=off` for every node of every
+environment, so it survives restarts and a rebuilt environment; an
+environment's `extra_environment` can set either back. A value set on the
+console or through `/admin-api` is persisted in the cluster's database and
+OUTRANKS the environment, so after applying this to a running cluster, check
+Configuration → PKI for an override. The service's own defaults (`auto`) and
+the local stacks are unchanged.
+
 **636 PRESENTS WHATEVER 443 DOES, AND NO TERRAFORM MAKES THAT SO.**
 `ldap/ldap_server.js` builds its LDAPS listener from
 `tlsServer.serverCertificate()` — the one record every socket in the process
