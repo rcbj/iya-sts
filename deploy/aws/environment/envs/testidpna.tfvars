@@ -43,6 +43,12 @@ extra_environment = {
   STS_WORKERS_START_TIMEOUT_MS     = "300000"
   STS_WORKERS_HEAP_LIMIT_MB        = "-1"
   STS_PERSISTENCE_MINTED_RETENTION = "7200000"
+  # rcbj, 2026-09-30 (#361): a person's session may be held in the other
+  # region, both ways, so each region's own console (Server configuration ->
+  # Cells) serves an administrator homed in the other. A realm-level
+  # loosening of #98 D4's strict default; the credential-free profile is
+  # what is held.
+  STS_CELL_PERMITTED_TRANSFERS = "us>ca,ca>us"
 }
 
 sts_mode                = "product"
