@@ -1165,6 +1165,7 @@ class VcDid {
       res.set('Cache-Control', 'no-store');
       if (!answer.ok) {
         errorCodes.mark(res, answer.code);
+        // error-code: none — marked on the line above: the answer's own code
         res.status(404).type('application/json').send(JSON.stringify({
           error: 'not_found', error_description: answer.why }, null, 2));
         log.debug("Leaving the application DID document endpoint. " +
