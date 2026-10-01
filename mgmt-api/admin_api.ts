@@ -2453,9 +2453,7 @@ class AdminApi {
                      'silently.\n\n`classes` LISTS WHAT IS DELIBERATELY NOT ' +
                      'SEALED BESIDE WHAT IS, each with the reason — ' +
                      'passwords are hashed rather than encrypted, which is ' +
-                     'stronger; client secrets are in the clear because a ' +
-                     'federation secret is SENT to somebody else\'s token ' +
-                     'endpoint; the post-quantum keys, the TLS certificate ' +
+                     'stronger; the post-quantum keys, the TLS certificate ' +
                      'and the SPIFFE authorities are not persisted at all, ' +
                      'so there is nothing at rest to ' +
                      'seal. A list of only the yeses would ' +
@@ -2479,8 +2477,10 @@ class AdminApi {
                      'page to have read it on. Two limits and one deployment ' +
                      'mistake: there is ONE key-encryption key for the ' +
                      'service and NOT one per trust realm (`perRealmKey: ' +
-                     'false`), so a realm is not a cryptographic boundary at ' +
-                     'rest and rotating the key rotates every realm; ' +
+                     'false`) — it wraps every realm\'s data encryption ' +
+                     'keys, one per realm per class — so a realm is not an ' +
+                     'independent boundary at rest and rotating the key ' +
+                     're-wraps every realm\'s data keys; ' +
                      'everything NOT in `classes` is plaintext in the store, ' +
                      'because the layer that covers a whole database belongs ' +
                      'under it rather than inside it (a column-level answer ' +
@@ -2492,13 +2492,28 @@ class AdminApi {
                      '`file` provider invites and why every other provider ' +
                      'exists.',
         mirrors: 'GET /admin/encryption',
+        // THE DATA ENCRYPTION KEYS (#391 P2) are one paged list of the reply,
+        // `dataKeys.keys`, moved by `dataKeysPage` — ids, realms, classes and
+        // states, never a key.
+        parameters: [
+          { name: 'dataKeysPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `dataKeys.keys` to return, clamped ' +
+                         'as every page is; `dataKeys.paging` says which ' +
+                         'page it is.' }
+        ].concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })),
         responseDescription: 'The whole report.',
         responseSchema: { type: 'object',
           description: 'The encryption report: `mode`, `key` (present, ' +
                        'durable or ephemeral, and which provider), ' +
                        '`algorithm` (read from common/crypto.js\'s own ' +
                        'table), `store`, `classes` (what is sealed and what ' +
-                       'is not, each with its counts), `accounting` (the ' +
+                       'is not, each with its counts), `dataKeys` (every ' +
+                       'data encryption key held — id, realm, class, scope ' +
+                       'and state, never a key — paged, with the rotation ' +
+                       'settings and whether its jobs run), `accounting` (the ' +
                        'totals and the breakdown by label), `unclassified` ' +
                        '(labels counted that the page has no row for, ' +
                        'reported rather than dropped) and `boundaries` — the ' +
@@ -2507,9 +2522,77 @@ class AdminApi {
                        '(`perRealmKey: false`).' },
         handler: function (req, res) {
           log.debug("Entering the management API encryption report endpoint.");
-          self.sendJson(res, 200, encryptionAdmin.encryptionView());
+          self.sendJson(res, 200,
+                        encryptionAdmin.encryptionView(req.query || {}));
           log.debug("Leaving the management API encryption report endpoint.");
         } },
+
+      // THE DATA-KEY ACTS (#391 P2): `/admin/encryption/data-keys`'s two
+      // forms, through the one function they post to. Each QUEUES a run of
+      // `common/data_key_rotation.ts`'s jobs and answers 202.
+      { method: 'POST', route: BASE + '/encryption/:action', tag: 'Service',
+        mirrors: 'POST /admin/encryption/data-keys',
+        handler: function (req, res) {
+          log.debug("Entering the management API data-key endpoint.");
+          const body = self.withAction(req, parseBody(req));
+          const result = encryptionAdmin.dataKeysAction(
+            req, body, 'the management API at /admin-api/encryption/' +
+            body.action);
+          if (!result.ok) {
+            errorCodes.mark(res, result.errorCode || 'STS-API-0014');
+            self.sendJson(res, result.status || 400,
+                          { ok: false, errors: result.errors });
+            log.debug("Leaving the management API data-key endpoint. " +
+                      "Refused.");
+            return;
+          }
+          self.sendJson(res, 202, { ok: true, accepted: true,
+            runId: result.runId, message: result.message,
+            run: BASE + '/scheduler?run=' + encodeURIComponent(result.runId) });
+          log.debug("Leaving the management API data-key endpoint. Queued " +
+                    result.runId + ".");
+        },
+        actions: [
+          { action: 'rotate-data-keys', operationId: 'rotateDataKeys',
+            summary: 'Rotate the data encryption keys now',
+            description: 'Queues a run of the scheduler job ' +
+                         '`keys.data-key-rotate-now` and answers **202** ' +
+                         'with its `runId`. Every stored data encryption ' +
+                         'key — or one realm\'s, or one class\'s — gets a ' +
+                         'successor, used ' +
+                         '`keys.dataKeyActivationLeadSeconds` after it is ' +
+                         'published; what the old key sealed is re-sealed by ' +
+                         '`keys.data-key-reencrypt`. 400 (STS-KEYS-0100) ' +
+                         'where data keys are derived per run and not ' +
+                         'stored, or where none serves the realm or class.',
+            requestBody: {
+              type: 'object',
+              properties: {
+                realm: { type: 'string', description: 'A realm id; ' +
+                         'omitted for every realm, `default` for the ' +
+                         'default realm.' },
+                cls: { type: 'string', description: 'A data class, e.g. ' +
+                       '`minted-rows`; omitted for every class.' }
+              },
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run: `runId`, `message`, and ' +
+                                 '`run`, the address to follow it at.' },
+          { action: 'reencrypt-data-keys',
+            operationId: 'reencryptDataKeys',
+            summary: 'Run the data re-encryption pass now',
+            description: 'Queues a run of `keys.data-key-reencrypt` and ' +
+                         'answers **202**: what is still sealed under a ' +
+                         'superseded data encryption key is re-sealed under ' +
+                         'the current one, and a superseded key nothing is ' +
+                         'sealed under any longer, superseded for ' +
+                         '`keys.dataKeyRetireAfterDays`, is destroyed. 400 ' +
+                         '(STS-KEYS-0100) where data keys are not stored.',
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false },
+            responseDescription: 'The queued run, as for ' +
+                                 '`rotate-data-keys`.' }
+        ] },
 
       // ---------------------------------------------------------------------
       // CELLS (#98). `cellsAdmin.cellsView()` — the function `/admin/cells`

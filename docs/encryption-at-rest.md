@@ -75,6 +75,58 @@ realm's DEKs, so:
   it. The service refuses to start on one rather than generate new keys over
   it.
 
+### Rotating the data encryption keys
+
+Every data encryption key is replaced after `keys.dataKeyRotationDays` (365;
+0 turns the schedule off) by the scheduler job `keys.data-key-rotate`. You can
+also rotate them now — every key, one realm's, or one kind of data's — from
+**Monitoring → Encryption** (`/admin/encryption`, Admin Write) or with
+`POST /admin-api/encryption/rotate-data-keys`.
+
+1. The new key is **published first** and used
+   `keys.dataKeyActivationLeadSeconds` later (300), so every node has it
+   before anything is sealed under it.
+2. The key it replaces is **superseded**: it still opens what it sealed,
+   and nothing new is sealed under it.
+3. Every hour `keys.data-key-reencrypt` re-seals what is still under a
+   superseded key. Run it now with the console's **Re-encrypt now** or
+   `POST /admin-api/encryption/reencrypt-data-keys`.
+4. A superseded key is **destroyed** once nothing in the store is sealed
+   under it **and** it has been superseded for `keys.dataKeyRetireAfterDays`
+   (7). Destruction cannot be undone.
+
+> **Warning.** Only the PostgreSQL store can count what is sealed under a key.
+> On the `ldif` store superseded keys are never destroyed: they stay, wrapped,
+> in the key table. That is safe, and it means a rotation there does not
+> remove an old key from the store.
+
+The page lists every data key by realm, kind and state (current, waiting to
+be used, superseded, destroyed). It never shows a key.
+
+### Rotating the key-encryption key
+
+Rotating the key-encryption key **re-wraps** the data keys; it does not
+re-encrypt the store.
+
+1. Put the new key where the service reads it (`keys.kek*`), and point
+   `keys.previousKekProvider`, `keys.previousKekRef` (and `…Field`, `…Region`,
+   `…Vault` as the provider needs) at the **old** key.
+2. Restart. Every data key still wrapped under the old key is re-wrapped
+   under the new one and written back (logged as `STS-KEYS-0096`).
+3. Once **every node** has started with the new key, set
+   `keys.previousKekProvider` back to `none` and restart again. The old key is
+   no longer needed.
+
+A node started with only the new key, before step 2 has run anywhere, refuses
+to start (`STS-KEYS-0091`): it cannot unwrap the data keys.
+
+The keyed digests behind the cell routing index and the cell locator tags are
+made under a **stored digest key**, wrapped like the data keys, so a rotated
+key-encryption key changes none of them. That key is never rotated.
+
+> **Not yet covered.** A cell's own key-encryption key (`keys.cellKek*`, #98)
+> has no "previous key" setting yet, so it cannot be rotated this way.
+
 ---
 
 ## The stack ships with a secret store
@@ -148,10 +200,11 @@ for, and a completely broken provider configuration looks exactly like a working
 one until the day you set `global.mode=product`.
 
 **Three things it will not do**, and all three are deliberate: it will not show
-you a secret, it has no rotate button (this service has no re-sealing pass —
-replacing the key makes everything sealed under it unreadable, which is why the
-seeder writes it once), and it has no test-read, because that would be a console
-page causing the key to be in memory. Every probe behind it reads metadata only.
+you a secret, it has no rotate button (the key-encryption key is rotated by
+pointing `keys.kek*` at the new key and `keys.previousKek*` at the old one —
+*Rotating the key-encryption key*, above — and the store is the operator's to
+change, not this service's), and it has no test-read, because that would be a
+console page causing the key to be in memory. Every probe behind it reads metadata only.
 
 **A probe refused with 403 is usually good news** and the page says so: the
 identity is bound to two read paths, so a refusal anywhere else is the policy

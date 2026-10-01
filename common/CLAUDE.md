@@ -5936,7 +5936,9 @@ KEYS* block; what a caller needs:
 * **WHERE KEYS PERSIST A DEK IS RANDOM AND STORED**, wrapped, in a
   `dek:<scope>:<realm>` row of `sts_keys` (plain JSON; the global tier). The
   row is a UNION merged under the row's lock, so two processes making a DEK for
-  one class at once keep both, and all converge on the oldest as active.
+  one class at once keep both, and all converge on one as current: the usable
+  DEK ACTIVATED most recently (`activateAt` at or before now), then the lowest
+  id (`chooseActive()`, cached per slot until the next activation).
   **ORDER is what makes a DEK known before anything sealed under it is read**:
   a new DEK's row is queued at once, and every writer of sealed rows waits for
   `keystore.settleDeks()` first — this file's own key and PKI rows,
@@ -5960,6 +5962,53 @@ KEYS* block; what a caller needs:
   fatal** (`STS-KEYS-0091`), for the signing key's reason.
 
 `docs/encryption-at-rest.md` is the operator-facing half.
+
+### ROTATION, RE-SEALING, DESTRUCTION AND A ROTATED KEK (#391 P2)
+
+rcbj's decision: a yearly scheduled rotation of every DEK, a re-encryption job,
+a rotation by hand on the console and the API, and a rotated KEK RE-WRAPS the
+DEKs. The mechanism is `keystore.js`'s *THE DEK LIFECYCLE* block; WHEN is
+`common/data_key_rotation.ts`'s three cluster jobs (`keys.data-key-rotate`
+daily, `keys.data-key-rotate-now` by hand, `keys.data-key-reencrypt` hourly),
+built at 23b-ii beside the signing rotation. What a maintainer needs:
+
+* **A ROTATION PUBLISHES BEFORE IT SEALS.** `rotateDeks()` makes the successor
+  with `activateAt` `keys.dataKeyActivationLeadSeconds` (300) ahead, so every
+  process and node has read its row before a value names it. The DEK it
+  replaces is SUPERSEDED: it opens, nothing new is sealed under it.
+* **RE-SEALING NEEDS NO KNOWLEDGE OF THE VALUE**: a DEK records its scope,
+  realm and class, so `reseal(cipher)` opens under the old DEK and seals under
+  that slot's current one. The store does the walk (`countSealed()` and
+  `resealSealed()` in `persistence_postgres.js`, a compare-and-set UPDATE per
+  row with a change-log row, over `sts_keys`, `sts_minted`,
+  `sts_ldap_entries` and `sts_cluster_secrets`); `resealOwnRows()` rewrites
+  this file's own key and PKI rows. **The process running the pass applies the
+  directory rows it re-sealed to its own copy** (`persistence.js`'s hook,
+  through `applyDirectoryChange()`): the applier skips a process's own change
+  rows, and this process holds sealed attributes as ciphertext, so a copy left
+  naming the old DEK would be written back by its next flush — after the DEK
+  may be gone. A minted row is held in the clear and re-sealed at its next
+  flush; a cluster secret is held opened.
+* **A DEK IS DESTROYED ONLY ON A COUNT OF ZERO**, and only once superseded for
+  `keys.dataKeyRetireAfterDays` (7, at least 1). A store that cannot count
+  (`ldif`, `memory`) never says zero, so nothing is destroyed there. The
+  destruction is written to the row and WINS every merge (`unionDekRows()`,
+  `adoptDekRow()`), so no stale copy brings a key back.
+* **A ROTATED KEK**: `keys.previousKek*` (a sixth secret descriptor,
+  `secrets.PREVIOUS_KEK`, restart-only) is read at start beside the new key; a
+  service DEK that unwraps only under it is re-wrapped and its row written
+  (`rewrapRotated()`, `STS-KEYS-0096`). A start with only the new key over rows
+  wrapped under the old refuses (`STS-KEYS-0091`). **Cell keys are not covered**
+  — a rotated cell key has no previous-key descriptor yet.
+* **THE DIGEST KEY.** `keyedDigest()` (the cell routing index, a cell locator's
+  tag) was HKDF of the KEK, so a rotated KEK would have changed every digest.
+  Where DEKs are stored it is one random key of its own, class `keyed-digest`
+  in the service scope's default-realm row, FIRST WRITER WINS in the merge
+  (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
+  rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
+  is kept — nothing a digest names outlives the process there.
+* **The settings are per process** (`perProcess`): the jobs run once for the
+  service, and a realm cannot carry them.
 
 #### A key-encryption key per realm — NOT IMPLEMENTED
 

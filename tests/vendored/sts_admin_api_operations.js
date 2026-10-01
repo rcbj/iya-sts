@@ -5072,7 +5072,15 @@ const NOT_DRIVEN_HERE = {
   // matters is checked there — the gzip expanded as it is read, the version
   // imported and activated, the size bound refused before the body arrives.
   "POST /risk/upload": "sts_admin_risk_upload.js drives it: a dataset file " +
-    "streamed as the request body, imported and read back"
+    "streamed as the request body, imported and read back",
+  // DATA ENCRYPTION KEY ROTATION (#391 P2). Driven by `sts_data_keys.js`,
+  // which follows each queued run to its end on the scheduler and reads what
+  // it did off GET /encryption — a walk asking for a 2xx cannot — and which
+  // asserts the 400 a service that derives its data keys gives.
+  "POST /encryption/rotate-data-keys": "sts_data_keys.js drives it and " +
+    "follows the run to the new keys",
+  "POST /encryption/reencrypt-data-keys": "sts_data_keys.js drives it and " +
+    "follows the run"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

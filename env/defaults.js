@@ -233,31 +233,39 @@ var config = {
 
   // --- Key material ----------------------------------------------------
   keys: {
-    source: "auto",                  // Where signing keys come from; restart to apply
-    plaintextRetention: "timed",     // How long a decrypted private key is kept
-    plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
-    signerModel: "per-algorithm",    // Signer model
-    encryptionKemAlgs: "",           // Post-quantum / hybrid decryption keys
-    offerKemEncryption: false,       // Offer post-quantum / hybrid encryption to clients
-    kidFormat: "internal",           // Signed token kid format
-    kekProvider: "file",             // Key-encryption key provider; restart to apply
-    kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
-    kekRef: "",                      // Key-encryption key reference; restart to apply
-    kekVault: "",                    // Vault or Key Vault URL; restart to apply
-    vaultClientCert: "",             // Client certificate for the secret store; restart to apply
-    vaultClientKey: "",              // Client key for the secret store; restart to apply
-    vaultCaCert: "",                 // Trust anchor for the secret store; restart to apply
-    vaultCertRole: "",               // Certificate auth role; restart to apply
-    vaultCertAuthMount: "cert",      // Certificate auth mount path; restart to apply
-    kekField: "value",               // Vault secret field; restart to apply
-    kekToken: "",                    // Vault token; restart to apply
-    storeProbeTimeoutMs: 5000,       // Secret store probe timeout (ms)
-    kekRegion: "",                   // AWS region; restart to apply
-    cellKekProvider: "none",         // Where the cell key-encryption key is read from; restart to apply
-    cellKekRef: "",                  // The cell key-encryption key's location; restart to apply
-    cellKekField: "",                // The field the cell key is in; restart to apply
-    cellKekRegion: "",               // AWS region of the cell key; restart to apply
-    cellKekVault: ""                 // Key Vault URL of the cell key; restart to apply
+    source: "auto",                    // Where signing keys come from; restart to apply
+    plaintextRetention: "timed",       // How long a decrypted private key is kept
+    plaintextTtlS: 300,                // Decrypted key idle timeout (seconds)
+    signerModel: "per-algorithm",      // Signer model
+    encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
+    offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
+    kidFormat: "internal",             // Signed token kid format
+    kekProvider: "file",               // Key-encryption key provider; restart to apply
+    kekFile: "/run/secrets/sts-kek",   // Key-encryption key file; restart to apply
+    kekRef: "",                        // Key-encryption key reference; restart to apply
+    kekVault: "",                      // Vault or Key Vault URL; restart to apply
+    vaultClientCert: "",               // Client certificate for the secret store; restart to apply
+    vaultClientKey: "",                // Client key for the secret store; restart to apply
+    vaultCaCert: "",                   // Trust anchor for the secret store; restart to apply
+    vaultCertRole: "",                 // Certificate auth role; restart to apply
+    vaultCertAuthMount: "cert",        // Certificate auth mount path; restart to apply
+    kekField: "value",                 // Vault secret field; restart to apply
+    kekToken: "",                      // Vault token; restart to apply
+    storeProbeTimeoutMs: 5000,         // Secret store probe timeout (ms)
+    kekRegion: "",                     // AWS region; restart to apply
+    cellKekProvider: "none",           // Where the cell key-encryption key is read from; restart to apply
+    cellKekRef: "",                    // The cell key-encryption key's location; restart to apply
+    cellKekField: "",                  // The field the cell key is in; restart to apply
+    cellKekRegion: "",                 // AWS region of the cell key; restart to apply
+    cellKekVault: "",                  // Key Vault URL of the cell key; restart to apply
+    dataKeyRotationDays: 365,          // Rotate every data encryption key after (days)
+    dataKeyActivationLeadSeconds: 300, // A new data encryption key is used after (seconds)
+    dataKeyRetireAfterDays: 7,         // Keep a replaced data encryption key at least (days)
+    previousKekProvider: "none",       // Where the previous key-encryption key is read from; restart to apply
+    previousKekRef: "",                // The previous key-encryption key's location; restart to apply
+    previousKekField: "",              // The field the previous key is in; restart to apply
+    previousKekRegion: "",             // AWS region of the previous key; restart to apply
+    previousKekVault: ""               // Key Vault URL of the previous key; restart to apply
   },
 
   // --- Global ----------------------------------------------------------

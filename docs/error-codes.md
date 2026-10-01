@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3925** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3930** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 86
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 84
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 89
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 205
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -608,6 +608,11 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0093` | A data-key row could not be written to the store; what was sealed under its new keys will not open after a restart until it is (#391). | — |
 | `STS-KEYS-0094` | A stored data-key row could not be read, so the data encryption keys in it are not held (#391). It is not overwritten. | — |
 | `STS-KEYS-0095` | A stored key row is not a version-2 envelope: the store was written before data encryption keys (#391) and this build does not read it. The service does not start; recreate the store. | — |
+| `STS-KEYS-0096` | Data encryption keys wrapped under the PREVIOUS key-encryption key (keys.previousKek*) were re-wrapped under the current one at start. Once every node runs with the current key, the previous one may be removed (#391). | — |
+| `STS-KEYS-0097` | A key-set or certificate-authority row under a superseded data encryption key could not be re-sealed; it stays under the old key, which is then not destroyed (#391). | — |
+| `STS-KEYS-0098` | keys.previousKekProvider names a provider and its location is empty, so the previous key-encryption key could not be read. The service does not start (#391). | — |
+| `STS-KEYS-0099` | A pass of the data-key re-encryption job failed: what is sealed under superseded data encryption keys could not be counted or re-sealed. Nothing is destroyed; the next pass tries again (#391). | — |
+| `STS-KEYS-0100` | A data-key rotation was asked for where data encryption keys are derived per run and not stored, or for a realm or class no stored key serves (#391). | the console's and the API's refusal, 400 |
 
 ## STS-PKI
 

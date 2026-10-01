@@ -2516,6 +2516,32 @@ const CODES = [
       'written before data encryption keys (#391) and this build does not ' +
       'read it. The service does not start; recreate the store.',
     spec: '' },
+  { code: 'STS-KEYS-0096',
+    summary: 'Data encryption keys wrapped under the PREVIOUS key-encryption ' +
+      'key (keys.previousKek*) were re-wrapped under the current one at ' +
+      'start. Once every node runs with the current key, the previous one ' +
+      'may be removed (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0097',
+    summary: 'A key-set or certificate-authority row under a superseded data ' +
+      'encryption key could not be re-sealed; it stays under the old key, ' +
+      'which is then not destroyed (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0098',
+    summary: 'keys.previousKekProvider names a provider and its location is ' +
+      'empty, so the previous key-encryption key could not be read. The ' +
+      'service does not start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0099',
+    summary: 'A pass of the data-key re-encryption job failed: what is sealed ' +
+      'under superseded data encryption keys could not be counted or ' +
+      're-sealed. Nothing is destroyed; the next pass tries again (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0100',
+    summary: 'A data-key rotation was asked for where data encryption keys ' +
+      'are derived per run and not stored, or for a realm or class no ' +
+      'stored key serves (#391).',
+    spec: 'the console\'s and the API\'s refusal, 400' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

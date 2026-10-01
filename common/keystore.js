@@ -1171,6 +1171,13 @@ async function start() {
   // THE DATA ENCRYPTION KEYS ARE RANDOM AND STORED from here on (#391).
   durableKek = true;
   ephemeral = false;
+  // A ROTATED KEY-ENCRYPTION KEY (#391 P2): the previous one, read only
+  // where it is configured, opens the DEKs not yet re-wrapped.
+  previousKek = null;
+  if (secrets.configuredFor(secrets.PREVIOUS_KEK)) {
+    previousKek = await secrets.readPreviousKek();
+    crypto.kekBytes(previousKek);
+  }
   // ONLY WHERE A CELL KEY IS CONFIGURED (#98). An `await` here, even one that
   // answers "none" at once, yields to the event loop in the middle of every
   // start — and a key write another caller left pending then landed in the
@@ -1202,6 +1209,10 @@ async function start() {
       dekRows += 1;
     }
   });
+  rewrapRotated();
+  // THE DIGEST KEY (#391 P2), before anything is digested: made once for the
+  // service and stored, so a keyed digest survives a rotated KEK.
+  await ensureDigestKey();
   rows.forEach(function (row) {
     const realmId = String(row.realm || '');
     if (realmId.indexOf(DEK_ROW_PREFIX) === 0) {
@@ -2826,24 +2837,41 @@ function deksStored() {
   return durableKek && !!store;
 }
 
-// The oldest usable DEK of a slot, then the lowest id: what every process
-// converges on once it holds the same row.
+// THE CURRENT DEK OF A SLOT (#391 P2): the usable one ACTIVATED most recently
+// (`activateAt` at or before now), then the lowest id — what every process
+// converges on once it holds the same row. A rotation publishes its DEK with
+// an activation time ahead of now, so every process holds it before anything
+// is sealed under it; until then the previous DEK stays current. The answer is
+// cached per slot until the next activation the slot is waiting for.
+function activationOf(rec) {
+  log.debug("Entering activationOf().");
+  log.debug("Leaving activationOf().");
+  return Number(rec.activateAt) || Number(rec.createdAt) || 0;
+}
+
 function chooseActive(scope, realm, cls) {
   log.debug("Entering chooseActive().");
+  const now = Date.now();
   let best = null;
+  let until = Infinity;
   deks.forEach(function (rec) {
     if (rec.scope !== scope || rec.realm !== realm || rec.cls !== cls ||
-        rec.status === 'retired' || !rec.key) {
+        rec.status === 'destroyed' || !rec.key) {
       return;
     }
-    if (!best || rec.createdAt < best.createdAt ||
-        (rec.createdAt === best.createdAt && rec.id < best.id)) {
+    const at = activationOf(rec);
+    if (at > now) {
+      until = Math.min(until, at);
+      return;
+    }
+    if (!best || at > activationOf(best) ||
+        (at === activationOf(best) && rec.id < best.id)) {
       best = rec;
     }
   });
   const slot = dekSlot(scope, realm, cls);
   if (best) {
-    dekActive.set(slot, best.id);
+    dekActive.set(slot, { id: best.id, until: until });
   } else {
     dekActive.delete(slot);
   }
@@ -2851,14 +2879,45 @@ function chooseActive(scope, realm, cls) {
   return best;
 }
 
-// The DEK a value of this scope, realm and class is sealed under: the one
-// held, or a new one — derived where nothing is stored, random and queued for
+// The current DEK of a slot, from the cache while it holds.
+function currentDek(scope, realm, cls) {
+  log.debug("Entering currentDek().");
+  const cached = dekActive.get(dekSlot(scope, realm, cls));
+  if (cached && Date.now() < cached.until) {
+    const held = deks.get(cached.id);
+    if (held && held.key && held.status !== 'destroyed') {
+      log.debug("Leaving currentDek(). Cached.");
+      return held;
+    }
+  }
+  log.debug("Leaving currentDek().");
+  return chooseActive(scope, realm, cls);
+}
+
+// A new random DEK for a slot, wrapped and queued for the store; `activateAt`
+// is when it becomes the one values are sealed under.
+function makeDek(scope, realm, cls, wk, activateAt) {
+  log.debug("Entering makeDek().");
+  const now = Date.now();
+  const rec = { id: crypto.generateDekId(), scope: scope, realm: realm,
+                cls: cls, createdAt: now, activateAt: activateAt || now,
+                wrappedAt: now, status: 'active', wrapped: null,
+                key: crypto.generateDek(), derived: false };
+  rec.wrapped = crypto.wrapDek(wk, rec.key, dekAad(rec));
+  deks.set(rec.id, rec);
+  queueWrite(dekRowKey(scope, realm), { scope: scope, realm: realm },
+             writeDekRow);
+  log.debug("Leaving makeDek().");
+  return rec;
+}
+
+// The DEK a value of this scope, realm and class is sealed under: the current
+// one, or a new one — derived where nothing is stored, random and queued for
 // the store where it is. Null without the scope's key-encryption key.
 function activeDek(scope, realm, cls) {
   log.debug("Entering activeDek().");
-  const slot = dekSlot(scope, realm, cls);
-  const held = dekActive.has(slot) ? deks.get(dekActive.get(slot)) : null;
-  if (held && held.key) {
+  const held = currentDek(scope, realm, cls);
+  if (held) {
     log.debug("Leaving activeDek(). Held.");
     return held;
   }
@@ -2867,20 +2926,15 @@ function activeDek(scope, realm, cls) {
     log.debug("Leaving activeDek(). No key for the scope.");
     return null;
   }
+  const slot = dekSlot(scope, realm, cls);
   if (!deksStored()) {
     const derived = deriveDekFor(scope, realm, cls, wk);
-    dekActive.set(slot, derived.id);
+    dekActive.set(slot, { id: derived.id, until: Infinity });
     log.debug("Leaving activeDek(). Derived.");
     return derived;
   }
-  const rec = { id: crypto.generateDekId(), scope: scope, realm: realm,
-                cls: cls, createdAt: Date.now(), status: 'active',
-                wrapped: null, key: crypto.generateDek(), derived: false };
-  rec.wrapped = crypto.wrapDek(wk, rec.key, dekAad(rec));
-  deks.set(rec.id, rec);
-  dekActive.set(slot, rec.id);
-  queueWrite(dekRowKey(scope, realm), { scope: scope, realm: realm },
-             writeDekRow);
+  const rec = makeDek(scope, realm, cls, wk, 0);
+  dekActive.set(slot, { id: rec.id, until: Infinity });
   log.info('keystore: a data encryption key was made for "' + cls +
            '" in the "' + realm + '" realm (' + scope + '), wrapped under ' +
            'the key-encryption key and queued for the store.');
@@ -3098,21 +3152,33 @@ function adoptDekRow(rowKey, text, fatal) {
     }
     const held = deks.get(one.id);
     if (held) {
-      if (one.status === 'retired' && held.status !== 'retired') {
-        held.status = 'retired';
+      // A DESTROYED DEK STAYS DESTROYED (#391 P2), and a newer wrap (a
+      // re-wrap under a rotated key-encryption key) replaces an older one.
+      if (one.status === 'destroyed' && held.status !== 'destroyed') {
+        held.status = 'destroyed';
+        held.key = null;
+        held.wrapped = '';
+        dekDrops += 1;
         classes.add(held.cls);
+      } else if (held.status !== 'destroyed' &&
+                 (Number(one.wrappedAt) || 0) > (Number(held.wrappedAt) || 0)) {
+        held.wrapped = String(one.wrapped || '');
+        held.wrappedAt = Number(one.wrappedAt) || 0;
       }
       return;
     }
     const rec = { id: String(one.id), scope: row.scope, realm: row.realm,
                   cls: dekClass(one.cls), createdAt: Number(one.createdAt) || 0,
-                  status: one.status === 'retired' ? 'retired' : 'active',
+                  activateAt: Number(one.activateAt) ||
+                              Number(one.createdAt) || 0,
+                  wrappedAt: Number(one.wrappedAt) || 0,
+                  status: one.status === 'destroyed' ? 'destroyed' : 'active',
                   wrapped: String(one.wrapped || ''), key: null,
-                  derived: false };
-    const wk = wrappingKeyOf(rec.scope);
+                  derived: false, rewrap: false };
+    const wk = rec.status === 'destroyed' ? null : wrappingKeyOf(rec.scope);
     if (wk) {
       try {
-        rec.key = crypto.unwrapDek(wk, rec.wrapped, dekAad(rec));
+        rec.key = unwrapWithRotation(rec, wk);
       } catch (e) {
         const why = errorCodes.tag('STS-KEYS-0091') + 'the data encryption ' +
           'key "' + rec.id + '" (' + rec.cls + ', "' + rec.realm + '" realm, ' +
@@ -3147,10 +3213,12 @@ function dekRowText(scope, realm) {
   log.debug("Entering dekRowText().");
   const list = [];
   deks.forEach(function (rec) {
-    if (rec.scope === scope && rec.realm === realm && rec.wrapped &&
-        !rec.derived) {
+    if (rec.scope === scope && rec.realm === realm && !rec.derived &&
+        (rec.wrapped || rec.status === 'destroyed')) {
       list.push({ id: rec.id, cls: rec.cls, createdAt: rec.createdAt,
-                  status: rec.status, wrapped: rec.wrapped });
+                  activateAt: activationOf(rec),
+                  wrappedAt: rec.wrappedAt || 0, status: rec.status,
+                  wrapped: rec.status === 'destroyed' ? '' : rec.wrapped });
     }
   });
   list.sort(function (a, b) {
@@ -3161,8 +3229,9 @@ function dekRowText(scope, realm) {
                           deks: list });
 }
 
-// The union of two data-key rows: every DEK of either, a retirement on either
-// side kept. Null when `mine` adds nothing to `current`.
+// The union of two data-key rows: every DEK of either, a destruction on
+// either side kept, the newer wrap of each kept. Null when `mine` adds
+// nothing to `current`.
 function unionDekRows(current, mine) {
   log.debug("Entering unionDekRows().");
   const byId = new Map();
@@ -3170,13 +3239,32 @@ function unionDekRows(current, mine) {
     byId.set(one.id, Object.assign({}, one));
   });
   let changed = !current;
+  // ONE DIGEST KEY, FIRST WRITER WINS: two processes starting on an empty
+  // store each make one, and every keyed digest in the service must be made
+  // under the same key, so the second's is dropped here and pruned from its
+  // process when it adopts the row.
+  const storedDigest = (current ? current.deks : []).some(function (one) {
+    return dekClass(one.cls) === DIGEST_CLASS && one.status !== 'destroyed';
+  });
   mine.deks.forEach(function (one) {
     const theirs = byId.get(one.id);
+    if (!theirs && storedDigest && dekClass(one.cls) === DIGEST_CLASS) {
+      return;
+    }
     if (!theirs) {
       byId.set(one.id, Object.assign({}, one));
       changed = true;
-    } else if (one.status === 'retired' && theirs.status !== 'retired') {
-      theirs.status = 'retired';
+    } else if (theirs.status === 'destroyed') {
+      // Destroyed on either side is destroyed: nothing resurrects it.
+      return;
+    } else if (one.status === 'destroyed') {
+      theirs.status = 'destroyed';
+      theirs.wrapped = '';
+      changed = true;
+    } else if ((Number(one.wrappedAt) || 0) >
+               (Number(theirs.wrappedAt) || 0)) {
+      theirs.wrapped = one.wrapped;
+      theirs.wrappedAt = one.wrappedAt;
       changed = true;
     }
   });
@@ -3190,6 +3278,91 @@ function unionDekRows(current, mine) {
   log.debug("Leaving unionDekRows().");
   return { v: DEK_ROW_VERSION, scope: mine.scope, realm: mine.realm,
            deks: list };
+}
+
+// ---------------------------------------------------------------------------
+// THE DIGEST KEY (#391 P2). `keyedDigest()` — the cell routing index, a cell
+// locator's tag, a rate-limit bucket's name — was an HMAC under a key derived
+// from the KEK, so ROTATING THE KEK WOULD CHANGE EVERY DIGEST: the routing
+// index would stop finding anybody and every outstanding locator tag would
+// name no cell. Where data keys are stored, the HMAC key is instead one
+// random key of its own, the `keyed-digest` class of the service scope's
+// default-realm row: wrapped by the KEK like every data key (so a rotated KEK
+// re-wraps it and changes nothing it made), never rotated, never superseded
+// and never destroyed. Where data keys are derived per run, nothing a digest
+// names outlives the process and the KEK-derived key is kept.
+// ---------------------------------------------------------------------------
+const DIGEST_CLASS = 'keyed-digest';
+
+// The digest key this process holds: the one stored row's, or — between
+// making one and its write landing — this process's own.
+function digestKeyRec() {
+  log.debug("Entering digestKeyRec().");
+  let best = null;
+  deks.forEach(function (rec) {
+    if (rec.cls !== DIGEST_CLASS || rec.scope !== 'service' ||
+        rec.realm !== 'default' || !rec.key || rec.derived ||
+        rec.status === 'destroyed') {
+      return;
+    }
+    if (!best || rec.createdAt < best.createdAt ||
+        (rec.createdAt === best.createdAt && rec.id < best.id)) {
+      best = rec;
+    }
+  });
+  log.debug("Leaving digestKeyRec().");
+  return best;
+}
+
+// Makes the digest key where none is stored, and waits for its row: the
+// merge keeps whichever process wrote first, and the loser prunes its own.
+async function ensureDigestKey() {
+  log.debug("Entering ensureDigestKey().");
+  if (!deksStored() || digestKeyRec()) {
+    log.debug("Leaving ensureDigestKey(). Not needed.");
+    return;
+  }
+  const wk = wrappingKeyOf('service');
+  if (!wk) {
+    log.debug("Leaving ensureDigestKey(). No key-encryption key.");
+    return;
+  }
+  makeDek('service', 'default', DIGEST_CLASS, wk, 0);
+  await settleDeks();
+  log.debug("Leaving ensureDigestKey().");
+}
+
+// Drops a digest key this process made that the stored row did not keep.
+function pruneDigestKeys(material) {
+  log.debug("Entering pruneDigestKeys().");
+  let row = null;
+  try {
+    row = parseDekRow(material);
+  } catch (e) {
+    log.debug("Caught in pruneDigestKeys(): " + ((e && e.message) || e));
+    row = null;
+  }
+  if (!row || row.scope !== 'service' || row.realm !== 'default') {
+    log.debug("Leaving pruneDigestKeys(). Not the row.");
+    return;
+  }
+  const kept = new Set();
+  row.deks.forEach(function (one) {
+    if (one && dekClass(one.cls) === DIGEST_CLASS) {
+      kept.add(String(one.id));
+    }
+  });
+  if (!kept.size) {
+    log.debug("Leaving pruneDigestKeys(). The row holds none yet.");
+    return;
+  }
+  Array.from(deks.values()).forEach(function (rec) {
+    if (rec.cls === DIGEST_CLASS && rec.scope === 'service' &&
+        rec.realm === 'default' && !kept.has(rec.id)) {
+      deks.delete(rec.id);
+    }
+  });
+  log.debug("Leaving pruneDigestKeys().");
 }
 
 // Writes a scope and realm's data-key row: a union under the row's lock where
@@ -3228,6 +3401,7 @@ function writeDekRow(rowKey, payload) {
   }).then(function (result) {
     if (result && result.material) {
       adoptDekRow(rowKey, result.material, false);
+      pruneDigestKeys(result.material);
     }
     return { ok: true };
   }, function (e) {
@@ -3323,9 +3497,12 @@ function dataKeys() {
   deks.forEach(function (rec) {
     rows.push({ id: rec.id, scope: rec.scope, realm: rec.realm, cls: rec.cls,
                 createdAt: rec.createdAt, status: rec.status,
+                wrappedAt: rec.wrappedAt || 0,
                 derived: !!rec.derived, held: !!rec.key,
-                active: dekActive.get(dekSlot(rec.scope, rec.realm,
-                                              rec.cls)) === rec.id });
+                activateAt: activationOf(rec),
+                active: !!rec.key && rec.status !== 'destroyed' &&
+                  (currentDek(rec.scope, rec.realm, rec.cls) || {}).id ===
+                  rec.id });
   });
   rows.sort(function (a, b) {
     return (a.realm + '|' + a.cls).localeCompare(b.realm + '|' + b.cls) ||
@@ -3333,6 +3510,348 @@ function dataKeys() {
   });
   log.debug("Leaving dataKeys().");
   return rows;
+}
+
+
+// ---------------------------------------------------------------------------
+// THE DEK LIFECYCLE (#391 P2): ROTATION, RE-SEALING, DESTRUCTION, AND A
+// ROTATED KEY-ENCRYPTION KEY.
+//
+// rcbj's decision: a yearly scheduled rotation of every DEK, with a
+// re-encryption job, and rotation by hand from the console and the API; a
+// rotated key-encryption key RE-WRAPS the DEKs rather than re-encrypting the
+// store. The jobs are `common/data_key_rotation.ts`'s; the mechanism is here.
+//
+//   * **ROTATE** publishes a new DEK for a slot with `activateAt` a lead time
+//     ahead (`keys.dataKeyActivationLeadSeconds`), so every process holds it
+//     before anything is sealed under it. The previous DEK is then
+//     SUPERSEDED: it still opens, nothing new is sealed under it.
+//   * **RESEAL** (`reseal()`) opens a value under a superseded DEK and seals it
+//     again under the current DEK of the same scope, realm and class — the
+//     DEK records all three, so a re-sealer needs to know nothing about what
+//     the value is.
+//   * **DESTROY** forgets a superseded DEK once nothing in the store is
+//     sealed under it and it has been superseded for
+//     `keys.dataKeyRetireAfterDays`. Destruction is written to the row and
+//     wins every merge, so no process's stale copy brings the key back.
+//   * **A ROTATED KEK** is read as `keys.previousKek*` beside the new one: a
+//     DEK that unwraps only under the previous key is re-wrapped under the
+//     new one at start and written back. Once every row has been re-wrapped,
+//     the previous key is no longer needed.
+// ---------------------------------------------------------------------------
+let previousKek = null;
+let rewrapped = 0;
+
+// Unwraps a stored DEK under its scope's key, or — for the service scope —
+// under the previous key-encryption key, marking it to be re-wrapped.
+function unwrapWithRotation(rec, wk) {
+  log.debug("Entering unwrapWithRotation().");
+  try {
+    const key = crypto.unwrapDek(wk, rec.wrapped, dekAad(rec));
+    log.debug("Leaving unwrapWithRotation(). Under the current key.");
+    return key;
+  } catch (e) {
+    if (!previousKek || rec.scope !== 'service') {
+      throw e;
+    }
+    log.debug("Caught in unwrapWithRotation(): " + ((e && e.message) || e) +
+              "; trying the previous key-encryption key.");
+    const key = crypto.unwrapDek(previousKek, rec.wrapped, dekAad(rec));
+    rec.rewrap = true;
+    log.debug("Leaving unwrapWithRotation(). Under the previous key.");
+    return key;
+  }
+}
+
+// Re-wraps under the current key-encryption key every DEK that unwrapped only
+// under the previous one, and queues their rows. Answers how many.
+function rewrapRotated() {
+  log.debug("Entering rewrapRotated().");
+  const rows = new Set();
+  let count = 0;
+  deks.forEach(function (rec) {
+    if (!rec.rewrap || !rec.key || rec.status === 'destroyed') {
+      return;
+    }
+    rec.wrapped = crypto.wrapDek(wrappingKeyOf(rec.scope), rec.key,
+                                 dekAad(rec));
+    // LATER THAN THE WRAP IT REPLACES, whatever this clock says: the row's
+    // merge keeps the newer `wrappedAt`, and a stamp from a node whose clock
+    // ran ahead would otherwise keep the wrap under the previous key.
+    rec.wrappedAt = Math.max(Date.now(), (Number(rec.wrappedAt) || 0) + 1);
+    rec.rewrap = false;
+    rows.add(rec.scope + '\n' + rec.realm);
+    count += 1;
+  });
+  rows.forEach(function (both) {
+    const parts = both.split('\n');
+    queueWrite(dekRowKey(parts[0], parts[1]),
+               { scope: parts[0], realm: parts[1] }, writeDekRow);
+  });
+  if (count) {
+    rewrapped += count;
+    log.warn(errorCodes.tag('STS-KEYS-0096') + 'keystore: ' + count +
+             ' data encryption key(s) were wrapped under the PREVIOUS ' +
+             'key-encryption key and have been re-wrapped under the current ' +
+             'one. Once every node has started with the current key, ' +
+             'keys.previousKekProvider can be set back to none.');
+  }
+  log.debug("Leaving rewrapRotated(). " + count + " re-wrapped.");
+  return count;
+}
+
+/**
+ * Rotates data encryption keys: a new DEK for every current slot this
+ * process can wrap for, matching the realm and class given (all when
+ * omitted), active after `keys.dataKeyActivationLeadSeconds`. A slot that
+ * already has a DEK waiting to activate is left alone.
+ *
+ * @param options - `{ realm, cls, scope, reason }`, each optional
+ * @returns `{ ok, rotated: [{ id, scope, realm, cls, activateAt }] }`, or
+ * `{ ok: false, why }` where DEKs are not stored
+ */
+function rotateDeks(options) {
+  log.debug("Entering rotateDeks().");
+  const opts = options || {};
+  if (!deksStored()) {
+    log.debug("Leaving rotateDeks(). Nothing is stored.");
+    return { ok: false, rotated: [],
+             why: 'Data encryption keys are derived per run here, because ' +
+                  'nothing is stored; there is nothing to rotate.' };
+  }
+  const now = Date.now();
+  const lead = Math.max(0, Number(config.value(
+    'keys.dataKeyActivationLeadSeconds')) || 0) * 1000;
+  const wantRealm = opts.realm === undefined || opts.realm === null ||
+    opts.realm === '' ? null : dekRealm(opts.realm);
+  const wantClass = opts.cls ? dekClass(opts.cls) : null;
+  const slots = new Map();
+  deks.forEach(function (rec) {
+    if (rec.derived || rec.cls === DIGEST_CLASS ||
+        rec.status === 'destroyed' || !rec.key ||
+        !wrappingKeyOf(rec.scope) ||
+        (opts.scope && rec.scope !== opts.scope) ||
+        (wantRealm && rec.realm !== wantRealm) ||
+        (wantClass && rec.cls !== wantClass)) {
+      return;
+    }
+    const slot = dekSlot(rec.scope, rec.realm, rec.cls);
+    const seen = slots.get(slot) || { pending: false, rec: rec };
+    if (activationOf(rec) > now) {
+      seen.pending = true;
+    }
+    slots.set(slot, seen);
+  });
+  const rotated = [];
+  slots.forEach(function (seen) {
+    if (seen.pending) {
+      return;
+    }
+    const rec = seen.rec;
+    const made = makeDek(rec.scope, rec.realm, rec.cls,
+                         wrappingKeyOf(rec.scope), now + lead);
+    rotated.push({ id: made.id, scope: made.scope, realm: made.realm,
+                   cls: made.cls, activateAt: made.activateAt });
+  });
+  rotated.forEach(function (one) {
+    dekActive.delete(dekSlot(one.scope, one.realm, one.cls));
+  });
+  log.info('keystore: ' + rotated.length + ' data encryption key(s) ' +
+           'rotated (' + (opts.reason || 'requested') + '); each becomes ' +
+           'current in ' + Math.round(lead / 1000) + 's, and what was sealed ' +
+           'under the keys they replace is re-sealed by the re-encryption ' +
+           'job.');
+  log.debug("Leaving rotateDeks(). " + rotated.length + " rotated.");
+  return { ok: true, rotated: rotated };
+}
+
+/**
+ * The DEKs that are due a rotation: the current DEK of every slot that has
+ * been current for `days` days and has no DEK waiting to activate.
+ *
+ * @param days - the rotation interval
+ * @returns `[{ scope, realm, cls }]`
+ */
+function rotationDue(days) {
+  log.debug("Entering rotationDue().");
+  const out = [];
+  if (!deksStored() || !(Number(days) > 0)) {
+    log.debug("Leaving rotationDue(). None.");
+    return out;
+  }
+  const now = Date.now();
+  const age = Number(days) * 86400000;
+  const seen = new Map();
+  deks.forEach(function (rec) {
+    if (rec.derived || rec.cls === DIGEST_CLASS ||
+        rec.status === 'destroyed' || !rec.key ||
+        !wrappingKeyOf(rec.scope)) {
+      return;
+    }
+    const slot = dekSlot(rec.scope, rec.realm, rec.cls);
+    const one = seen.get(slot) || { scope: rec.scope, realm: rec.realm,
+                                    cls: rec.cls, newest: 0 };
+    one.newest = Math.max(one.newest, activationOf(rec));
+    seen.set(slot, one);
+  });
+  seen.forEach(function (one) {
+    if (one.newest <= now && now - one.newest >= age) {
+      out.push({ scope: one.scope, realm: one.realm, cls: one.cls });
+    }
+  });
+  log.debug("Leaving rotationDue(). " + out.length + " due.");
+  return out;
+}
+
+/**
+ * The superseded DEKs this process holds: not current for their slot,
+ * activated before the current one, not destroyed.
+ *
+ * @returns `[{ id, scope, realm, cls, supersededAt }]`
+ */
+function supersededDeks() {
+  log.debug("Entering supersededDeks().");
+  const out = [];
+  deks.forEach(function (rec) {
+    if (rec.derived || rec.cls === DIGEST_CLASS ||
+        rec.status === 'destroyed' || !rec.key) {
+      return;
+    }
+    const current = currentDek(rec.scope, rec.realm, rec.cls);
+    if (!current || current.id === rec.id ||
+        activationOf(rec) > activationOf(current)) {
+      return;
+    }
+    out.push({ id: rec.id, scope: rec.scope, realm: rec.realm, cls: rec.cls,
+               supersededAt: activationOf(current) });
+  });
+  log.debug("Leaving supersededDeks(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Seals a value again under the current DEK of the scope, realm and class its
+ * own DEK was for. Null when it is already under the current DEK, or its DEK
+ * is not held here.
+ *
+ * @param cipher - a sealed value
+ * @returns the value re-sealed, or null
+ */
+function reseal(cipher) {
+  log.debug("Entering reseal().");
+  const id = crypto.dekIdOf(cipher);
+  const rec = id ? dekFor(id) : null;
+  if (!rec) {
+    log.debug("Leaving reseal(). Its DEK is not held.");
+    return null;
+  }
+  const current = activeDek(rec.scope, rec.realm, rec.cls);
+  if (!current || current.id === rec.id) {
+    log.debug("Leaving reseal(). Already current.");
+    return null;
+  }
+  let plain;
+  try {
+    plain = crypto.decryptWithDek(rec.key, cipher, rec.cls);
+  } catch (e) {
+    log.debug("Caught in reseal(): " + ((e && e.message) || e));
+    log.debug("Leaving reseal(). It would not open.");
+    return null;
+  }
+  log.debug("Leaving reseal().");
+  return crypto.encryptWithDek(current.id, current.key, plain, rec.cls);
+}
+
+/**
+ * Re-seals this file's own key-set and certificate-authority rows that are
+ * under a DEK not current for them, by writing them again.
+ *
+ * @returns how many rows were queued
+ */
+function resealOwnRows() {
+  log.debug("Entering resealOwnRows().");
+  let queued = 0;
+  const stale = function (cipher) {
+    const id = crypto.dekIdOf(cipher);
+    const rec = id ? deks.get(id) : null;
+    if (!rec) {
+      return false;
+    }
+    const current = currentDek(rec.scope, rec.realm, rec.cls);
+    return !!current && current.id !== rec.id;
+  };
+  material.forEach(function (entry, id) {
+    if (entry && entry.cipher && stale(entry.cipher)) {
+      try {
+        hold(id, openBlob(entry.cipher, 'signing-keys'), 'resealed');
+        queued += 1;
+      } catch (e) {
+        log.error(errorCodes.tag('STS-KEYS-0097') + 'keystore: the "' + id +
+                  '" realm\'s key row could not be re-sealed: ' + e.message);
+      }
+    }
+  });
+  pkiBase.forEach(function (cipher, id) {
+    if (cipher && stale(cipher) && pkiHeld.has(id)) {
+      attachPki(id, pkiHeld.get(id));
+      queued += 1;
+    }
+  });
+  log.debug("Leaving resealOwnRows(). " + queued + " queued.");
+  return queued;
+}
+
+/**
+ * Destroys DEKs: forgets the key and writes the destruction to its row, which
+ * wins every merge. Only ever for a DEK nothing is sealed under any longer.
+ *
+ * @param ids - the DEK ids
+ * @returns how many were destroyed
+ */
+function destroyDeks(ids) {
+  log.debug("Entering destroyDeks().");
+  const rows = new Set();
+  let count = 0;
+  (ids || []).forEach(function (id) {
+    const rec = deks.get(String(id));
+    if (!rec || rec.derived || rec.cls === DIGEST_CLASS ||
+        rec.status === 'destroyed') {
+      return;
+    }
+    const current = currentDek(rec.scope, rec.realm, rec.cls);
+    if (current && current.id === rec.id) {
+      return;
+    }
+    rec.status = 'destroyed';
+    rec.key = null;
+    rec.wrapped = '';
+    rows.add(rec.scope + '\n' + rec.realm);
+    count += 1;
+  });
+  if (count) {
+    dekDrops += 1;
+  }
+  rows.forEach(function (both) {
+    const parts = both.split('\n');
+    queueWrite(dekRowKey(parts[0], parts[1]),
+               { scope: parts[0], realm: parts[1] }, writeDekRow);
+  });
+  log.debug("Leaving destroyDeks(). " + count + " destroyed.");
+  return count;
+}
+
+/**
+ * What the store hooks offer for the re-encryption job: whether this store
+ * can count and re-seal what is sealed under a DEK.
+ *
+ * @returns the hooks, or null
+ */
+function sealedStore() {
+  log.debug("Entering sealedStore().");
+  const ok = !!store && typeof store.countSealed === 'function' &&
+             typeof store.resealSealed === 'function';
+  log.debug("Leaving sealedStore().");
+  return ok ? { count: store.countSealed, reseal: store.resealSealed } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -3399,8 +3918,18 @@ function keyedDigest(label, text) {
     return null;
   }
   const nodeCrypto = require('crypto');
+  let ikm = crypto.kekBytes(kek);
+  if (deksStored()) {
+    // The stored digest key, so a rotated KEK changes no digest (#391 P2).
+    const rec = digestKeyRec();
+    if (!rec) {
+      log.debug("Leaving keyedDigest(). No digest key is held.");
+      return null;
+    }
+    ikm = rec.key;
+  }
   const derived = Buffer.from(nodeCrypto.hkdfSync('sha256',
-    crypto.kekBytes(kek), Buffer.alloc(0),
+    ikm, Buffer.alloc(0),
     Buffer.from('sts-keyed-digest:' + String(label), 'utf8'), 32));
   const out = nodeCrypto.createHmac('sha256', derived)
     .update(String(text), 'utf8').digest('base64url');
@@ -4778,6 +5307,7 @@ function reset() {
   dekReloadAt = 0;
   dekReloading = null;
   durableKek = false;
+  previousKek = null;
   kek = null;
   cellKek = null;
   log.debug('Leaving reset().');
@@ -4839,6 +5369,16 @@ module.exports = {
   settleDeks: settleDeks,
   reloadDekRows: reloadDekRows,
   dataKeys: dataKeys,
+  // THE DEK LIFECYCLE (#391 P2), for `common/data_key_rotation.ts`.
+  rotateDeks: rotateDeks,
+  rotationDue: rotationDue,
+  supersededDeks: supersededDeks,
+  reseal: reseal,
+  resealOwnRows: resealOwnRows,
+  destroyDeks: destroyDeks,
+  sealedStore: sealedStore,
+  rewrapRotated: rewrapRotated,
+  deksStored: deksStored,
   start: start,
   storedFor: storedFor,
   privateMaterialFor: privateMaterialFor,

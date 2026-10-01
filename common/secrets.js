@@ -274,6 +274,32 @@ const CELL_KEK = {
 };
 
 // ---------------------------------------------------------------------------
+// THE PREVIOUS KEY-ENCRYPTION KEY (#391 P2). Rotating the key-encryption key
+// re-wraps the data encryption keys rather than re-encrypting the store, and a
+// DEK can only be re-wrapped by a process that can unwrap it — so for one
+// start after the rotation the PREVIOUS key is read beside the new one.
+// Shaped as the service key is, with NO fallback: falling back to the current
+// key's location would read the new key under the old key's name.
+// ---------------------------------------------------------------------------
+/**
+ * The previous key-encryption key's descriptor (#391): its own provider,
+ * location, field, region and vault, and no fallback.
+ */
+const PREVIOUS_KEK = {
+  id: 'previous-kek',
+  label: 'the previous key-encryption key',
+  provider: 'keys.previousKekProvider',
+  file: 'keys.previousKekRef',
+  ref: 'keys.previousKekRef',
+  field: 'keys.previousKekField',
+  defaultField: '',
+  fallbackRef: null,
+  vault: 'keys.previousKekVault',
+  region: 'keys.previousKekRegion',
+  token: null
+};
+
+// ---------------------------------------------------------------------------
 // THE MAIL CHANNEL'S FOUR SECRETS (#63, 2026-09-22), shaped exactly like the
 // database password: a provider, one location row, a field, and the KEY's
 // location, vault, region and token when their own are empty — so one JSON
@@ -1196,6 +1222,39 @@ async function readCellKek() {
   }
   const value = await read(CELL_KEK);
   log.debug('Leaving readCellKek().');
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// THE PREVIOUS KEY-ENCRYPTION KEY (#391 P2): null where it is not configured,
+// refused when its location is empty (it has no fallback), and read as the
+// service key is otherwise.
+// ---------------------------------------------------------------------------
+/**
+ * Reads the previous key-encryption key, for re-wrapping the data encryption
+ * keys after the key-encryption key was rotated.
+ *
+ * @returns the key as the provider returned it, or null when
+ *   `keys.previousKekProvider` is `none`
+ * @throws an Error (STS-KEYS-0098) when its location is empty, or the
+ *   provider's error when the read fails
+ */
+async function readPreviousKek() {
+  log.debug('Entering readPreviousKek().');
+  if (!configuredFor(PREVIOUS_KEK)) {
+    log.debug('Leaving readPreviousKek(). Not configured.');
+    return null;
+  }
+  const provider = String(config.value(PREVIOUS_KEK.provider) || '');
+  const own = locationOf(PREVIOUS_KEK, provider === 'file' ? 'file' : 'ref');
+  if (!own.where) {
+    throw new Error(errorCodes.tag('STS-KEYS-0098') +
+                    PREVIOUS_KEK.provider + ' is "' + provider + '" and ' +
+                    'keys.previousKekRef is empty. The previous key has no ' +
+                    'fallback location.');
+  }
+  const value = await read(PREVIOUS_KEK);
+  log.debug('Leaving readPreviousKek().');
   return value;
 }
 
@@ -2387,8 +2446,8 @@ const MAIL_SECRETS = [MAIL_SMTP_PASSWORD, MAIL_DKIM_KEY,
  * Every secret this service reads: the key-encryption key, the database
  * password and the four mail secrets.
  */
-const SECRETS = [KEK, DATABASE_PASSWORD, GLOBAL_DATABASE_PASSWORD, CELL_KEK]
-  .concat(MAIL_SECRETS);
+const SECRETS = [KEK, DATABASE_PASSWORD, GLOBAL_DATABASE_PASSWORD, CELL_KEK,
+                 PREVIOUS_KEK].concat(MAIL_SECRETS);
 
 // Which store a secret lives in, as a key that is equal for two secrets in the
 // same place. The location is part of it for `file` — two mounted files are
@@ -2598,6 +2657,8 @@ module.exports = {
   // The global tier's password and the cell key (#98).
   GLOBAL_DATABASE_PASSWORD: GLOBAL_DATABASE_PASSWORD,
   CELL_KEK: CELL_KEK,
+  PREVIOUS_KEK: PREVIOUS_KEK,
+  readPreviousKek: readPreviousKek,
   readGlobalDatabasePassword: readGlobalDatabasePassword,
   readCellKek: readCellKek,
   // The mail channel's four (#63), and the one reader they share.

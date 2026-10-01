@@ -438,6 +438,11 @@ function checkNothingRequiresItEarly(t) {
                    // after the console, so the require is a cache hit and
                    // moves no route.
                    'admin-ui/caches_admin.ts',
+                   // The encryption page (#391 P2), for `adminViews`' paging
+                   // and the gate state only — the data keys, and who asks to
+                   // rotate them. Required at 18b, after the console, and only
+                   // lazily, so the require is a cache hit and moves no route.
+                   'admin-ui/encryption_admin.ts',
                    // The credential status page (#38's follow-ups), for
                    // `adminViews`' paging only — the list of issued
                    // credentials. Required at 18h, after the console, so the
