@@ -8006,8 +8006,10 @@ const KEK_PARAMETERS = {
   keyBits: KEK_KEY_BYTES * 8,
   ivBits: KEK_IV_BYTES * 8,
   tagBits: 128,
-  dataKeys: 'one 256-bit data encryption key per realm per data class, ' +
-            'random, stored wrapped',
+  dataKeys: 'one data encryption key per realm per data class, random, ' +
+            'stored wrapped: 256-bit for AES-256-GCM, 512-bit for ' +
+            'AES-256-SIV (keys.directoryCipher, directory data only)',
+  dataCiphers: ['aes-256-gcm', 'aes-256-siv'],
   dekWrap: '$dekwrap$1$<iv>$<tag>$<ciphertext>: AES-256-GCM under ' +
            'HKDF-SHA256(KEK, info "' + DEK_WRAP_INFO + '"), the DEK\'s id, ' +
            'scope, realm and class as additional authenticated data',
@@ -8025,7 +8027,7 @@ const KEK_PARAMETERS = {
 function isEncryptedWithKek(stored) {
   log.debug("Entering isEncryptedWithKek().");
   log.debug("Leaving isEncryptedWithKek().");
-  return /^\$aesgcm\$/.test(String(stored || ''));
+  return /^\$aes(gcm|siv)\$/.test(String(stored || ''));
 }
 
 /**
@@ -8038,7 +8040,7 @@ function isEncryptedWithKek(stored) {
 function dekIdOf(stored) {
   log.debug("Entering dekIdOf().");
   const parts = String(stored || '').split('$');
-  if (parts.length !== 7 || parts[1] !== 'aesgcm' ||
+  if (parts.length !== 7 || (parts[1] !== 'aesgcm' && parts[1] !== 'aessiv') ||
       parts[2] !== DEK_ENVELOPE_VERSION || !DEK_ID_PATTERN.test(parts[3])) {
     log.debug("Leaving dekIdOf(). Not a version-2 envelope.");
     return null;
@@ -8047,16 +8049,183 @@ function dekIdOf(stored) {
   return parts[3];
 }
 
-// A DEK as bytes: exactly 32, or refused, because a short key here would be a
-// value sealed under less than the AES-256 every page says it is.
+// A DEK as bytes: exactly 32 (AES-256-GCM) or 64 (AES-256-SIV, two AES-256
+// keys), or refused, because a short key here would be a value sealed under
+// less than the AES-256 every page says it is.
 function dekBytes(key) {
   log.debug("Entering dekBytes().");
-  if (!Buffer.isBuffer(key) || key.length !== KEK_KEY_BYTES) {
+  if (!Buffer.isBuffer(key) ||
+      (key.length !== KEK_KEY_BYTES && key.length !== SIV_KEY_BYTES)) {
     throw new Error('a data encryption key must be ' + KEK_KEY_BYTES +
-                    ' bytes');
+                    ' or ' + SIV_KEY_BYTES + ' bytes');
   }
   log.debug("Leaving dekBytes().");
   return key;
+}
+
+// ---------------------------------------------------------------------------
+// AES-SIV (RFC 5297) WITH A 512-BIT KEY — `aes-256-siv`, the cipher
+// `keys.directoryCipher` may choose for the data keys of directory data
+// (#391). Node exposes no SIV cipher, so it is built here on node's AES: S2V
+// is AES-256-CMAC (RFC 4493) under the key's LEFT half, and the encryption is
+// AES-256-CTR under its RIGHT half, from the synthetic IV with the two bits
+// RFC 5297 section 2.6 clears. Held to Wycheproof's `aes_siv_cmac` vectors by
+// `tests/wycheproof.js`.
+//
+// SIV is DETERMINISTIC: one key, one plaintext and one associated data give
+// one ciphertext. So a sealed value carries a random 128-bit NONCE as an
+// associated-data component (section 3), and two equal values are two
+// different ciphertexts, as under GCM. What SIV adds is MISUSE RESISTANCE: a
+// repeated nonce leaks only that two values are equal, where a repeated GCM
+// nonce leaks their XOR and the authentication key.
+// ---------------------------------------------------------------------------
+const SIV_KEY_BYTES = 64;
+const SIV_NONCE_BYTES = 16;
+const BLOCK = 16;
+
+// AES-256 on one block (the CMAC subkeys).
+function aesBlock(key, block) {
+  log.debug("Entering aesBlock().");
+  const c = nodeCrypto.createCipheriv('aes-256-ecb', key, null);
+  c.setAutoPadding(false);
+  log.debug("Leaving aesBlock().");
+  return Buffer.concat([c.update(block), c.final()]);
+}
+
+// Doubling in GF(2^128) (RFC 5297 section 2.3; RFC 4493's subkey step).
+function sivDbl(block) {
+  log.debug("Entering sivDbl().");
+  const out = Buffer.alloc(BLOCK);
+  let carry = 0;
+  for (let i = BLOCK - 1; i >= 0; i--) {
+    out[i] = ((block[i] << 1) | carry) & 0xff;
+    carry = block[i] >> 7;
+  }
+  if (block[0] & 0x80) {
+    out[BLOCK - 1] ^= 0x87;
+  }
+  log.debug("Leaving sivDbl().");
+  return out;
+}
+
+function xorBlocks(a, b) {
+  log.debug("Entering xorBlocks().");
+  const out = Buffer.alloc(a.length);
+  for (let i = 0; i < a.length; i++) {
+    out[i] = a[i] ^ b[i];
+  }
+  log.debug("Leaving xorBlocks().");
+  return out;
+}
+
+// The 10* padding to a whole block.
+function sivPad(bytes) {
+  log.debug("Entering sivPad().");
+  const out = Buffer.alloc(BLOCK);
+  bytes.copy(out);
+  out[bytes.length] = 0x80;
+  log.debug("Leaving sivPad().");
+  return out;
+}
+
+// AES-256-CMAC (RFC 4493): the CBC-MAC of the message with its last block
+// masked by K1 when whole and padded and masked by K2 when not.
+function aesCmac(key, message) {
+  log.debug("Entering aesCmac().");
+  const k1 = sivDbl(aesBlock(key, Buffer.alloc(BLOCK)));
+  const k2 = sivDbl(k1);
+  const n = Math.max(1, Math.ceil(message.length / BLOCK));
+  const whole = message.length > 0 && message.length % BLOCK === 0;
+  const lastStart = (n - 1) * BLOCK;
+  const last = whole
+    ? xorBlocks(message.subarray(lastStart, lastStart + BLOCK), k1)
+    : xorBlocks(sivPad(message.subarray(lastStart)), k2);
+  const c = nodeCrypto.createCipheriv('aes-256-cbc', key, Buffer.alloc(BLOCK));
+  c.setAutoPadding(false);
+  const all = Buffer.concat([c.update(Buffer.concat(
+    [message.subarray(0, lastStart), last])), c.final()]);
+  log.debug("Leaving aesCmac().");
+  return all.subarray(all.length - BLOCK);
+}
+
+// S2V (RFC 5297 section 2.4): the associated data components, then the
+// plaintext, folded into one 128-bit synthetic IV.
+function sivS2v(key, components, plaintext) {
+  log.debug("Entering sivS2v().");
+  let d = aesCmac(key, Buffer.alloc(BLOCK));
+  components.forEach(function (one) {
+    d = xorBlocks(sivDbl(d), aesCmac(key, one));
+  });
+  let t;
+  if (plaintext.length >= BLOCK) {
+    t = Buffer.from(plaintext);
+    const at = t.length - BLOCK;
+    xorBlocks(t.subarray(at), d).copy(t, at);
+  } else {
+    t = xorBlocks(sivDbl(d), sivPad(plaintext));
+  }
+  log.debug("Leaving sivS2v().");
+  return aesCmac(key, t);
+}
+
+// CTR from the synthetic IV, its bits 63 and 31 cleared (section 2.6).
+function sivCtr(key, siv, bytes) {
+  log.debug("Entering sivCtr().");
+  const q = Buffer.from(siv);
+  q[8] &= 0x7f;
+  q[12] &= 0x7f;
+  const c = nodeCrypto.createCipheriv('aes-256-ctr', key, q);
+  log.debug("Leaving sivCtr().");
+  return Buffer.concat([c.update(bytes), c.final()]);
+}
+
+/**
+ * AES-SIV encryption (RFC 5297) under a 512-bit key.
+ *
+ * @param key - 64 bytes: the S2V key, then the CTR key
+ * @param plaintext - the bytes to encrypt
+ * @param components - the associated data components, in order
+ * @returns the 16-byte synthetic IV followed by the ciphertext
+ */
+function aesSivEncrypt(key, plaintext, components) {
+  log.debug("Entering aesSivEncrypt().");
+  if (!Buffer.isBuffer(key) || key.length !== SIV_KEY_BYTES) {
+    throw new Error('an AES-256-SIV key is ' + SIV_KEY_BYTES + ' bytes');
+  }
+  const p = Buffer.from(plaintext);
+  const siv = sivS2v(key.subarray(0, 32), components || [], p);
+  const out = Buffer.concat([siv, sivCtr(key.subarray(32), siv, p)]);
+  log.debug("Leaving aesSivEncrypt().");
+  return out;
+}
+
+/**
+ * AES-SIV decryption (RFC 5297) under a 512-bit key.
+ *
+ * @param key - 64 bytes
+ * @param sealed - the synthetic IV followed by the ciphertext
+ * @param components - the associated data components it was sealed with
+ * @returns the plaintext
+ * @throws Error when the synthetic IV does not verify
+ */
+function aesSivDecrypt(key, sealed, components) {
+  log.debug("Entering aesSivDecrypt().");
+  if (!Buffer.isBuffer(key) || key.length !== SIV_KEY_BYTES) {
+    throw new Error('an AES-256-SIV key is ' + SIV_KEY_BYTES + ' bytes');
+  }
+  const all = Buffer.from(sealed);
+  if (all.length < BLOCK) {
+    throw new Error('an AES-SIV ciphertext is at least 16 bytes');
+  }
+  const siv = all.subarray(0, BLOCK);
+  const plain = sivCtr(key.subarray(32), siv, all.subarray(BLOCK));
+  const check = sivS2v(key.subarray(0, 32), components || [], plain);
+  if (!nodeCrypto.timingSafeEqual(check, siv)) {
+    log.debug("Leaving aesSivDecrypt(). It does not verify.");
+    throw new Error('the AES-SIV synthetic IV does not verify');
+  }
+  log.debug("Leaving aesSivDecrypt().");
+  return plain;
 }
 
 function envelopeAad(dekId) {
@@ -8080,6 +8249,21 @@ function encryptWithDek(dekId, key, plaintext, label) {
   log.debug('Entering encryptWithDek().');
   if (!DEK_ID_PATTERN.test(String(dekId || ''))) {
     throw new Error('a data encryption key id must be base64url');
+  }
+  // A 64-BYTE DEK IS AN AES-256-SIV KEY (#391): the envelope is
+  // `$aessiv$2$<dek id>$<nonce>$<siv>$<ciphertext>`, the envelope AAD and the
+  // nonce its two associated data components.
+  if (dekBytes(key).length === SIV_KEY_BYTES) {
+    const nonce = nodeCrypto.randomBytes(SIV_NONCE_BYTES);
+    const plain = Buffer.from(String(plaintext), 'utf8');
+    const sealedBytes = aesSivEncrypt(key, plain,
+                                      [envelopeAad(dekId), nonce]);
+    countKek(label, 'encryptions', plain.length, sealedBytes.length);
+    log.debug('Leaving encryptWithDek(). AES-256-SIV.');
+    return '$aessiv$' + DEK_ENVELOPE_VERSION + '$' + dekId + '$' +
+           nonce.toString('base64') + '$' +
+           sealedBytes.subarray(0, BLOCK).toString('base64') + '$' +
+           sealedBytes.subarray(BLOCK).toString('base64');
   }
   const iv = nodeCrypto.randomBytes(KEK_IV_BYTES);
   const cipher = nodeCrypto.createCipheriv('aes-256-gcm', dekBytes(key), iv);
@@ -8117,7 +8301,8 @@ function decryptWithDek(key, stored, label) {
   // **EVERY REFUSAL COUNTS AS A FAILURE**, a deliberate flattening: what a
   // reader of that number wants to know is *how often did this service fail
   // to read something it had written*.
-  if (parts.length !== 7 || parts[1] !== 'aesgcm') {
+  if (parts.length !== 7 || (parts[1] !== 'aesgcm' &&
+                              parts[1] !== 'aessiv')) {
     countKek(label, 'failures', 0, 0);
     throw new Error('this is not a record encrypted by this service');
   }
@@ -8127,9 +8312,31 @@ function decryptWithDek(key, stored, label) {
                     '", which this build does not read (version 1 records ' +
                     'were written before data encryption keys, #391)');
   }
+  if (parts[1] === 'aessiv') {
+    let plain = null;
+    try {
+      if (dekBytes(key).length !== SIV_KEY_BYTES) {
+        throw new Error('an AES-256-SIV value needs a 64-byte key');
+      }
+      plain = aesSivDecrypt(key, Buffer.concat([
+        Buffer.from(parts[5], 'base64'), Buffer.from(parts[6], 'base64')]),
+        [envelopeAad(parts[3]), Buffer.from(parts[4], 'base64')]);
+    } catch (e) {
+      countKek(label, 'failures', 0, 0);
+      log.debug('Leaving decryptWithDek(). It would not open.');
+      throw e;
+    }
+    countKek(label, 'decryptions', plain.length, plain.length + BLOCK);
+    log.debug('Leaving decryptWithDek(). AES-256-SIV.');
+    return plain.toString('utf8');
+  }
   const iv = Buffer.from(parts[4], 'base64');
   const tag = Buffer.from(parts[5], 'base64');
   const body = Buffer.from(parts[6], 'base64');
+  if (key.length !== KEK_KEY_BYTES) {
+    countKek(label, 'failures', 0, 0);
+    throw new Error('an AES-256-GCM value needs a 32-byte key');
+  }
   let out = null;
   try {
     const decipher = nodeCrypto.createDecipheriv('aes-256-gcm',
@@ -8162,14 +8369,30 @@ function dekWrappingKey(kek) {
 }
 
 /**
- * Generates a data encryption key: 32 random bytes.
+ * Generates a data encryption key: 32 random bytes for AES-256-GCM, or 64 for
+ * AES-256-SIV.
  *
+ * @param alg - `aes-256-gcm` (the default) or `aes-256-siv`
  * @returns the key
  */
-function generateDek() {
+function generateDek(alg) {
   log.debug("Entering generateDek().");
   log.debug("Leaving generateDek().");
-  return nodeCrypto.randomBytes(KEK_KEY_BYTES);
+  return nodeCrypto.randomBytes(alg === 'aes-256-siv' ? SIV_KEY_BYTES
+                                                      : KEK_KEY_BYTES);
+}
+
+/**
+ * The cipher a data encryption key is for, from its length.
+ *
+ * @param key - the DEK
+ * @returns `aes-256-siv` for 64 bytes, else `aes-256-gcm`
+ */
+function dekAlgOf(key) {
+  log.debug("Entering dekAlgOf().");
+  log.debug("Leaving dekAlgOf().");
+  return Buffer.isBuffer(key) && key.length === SIV_KEY_BYTES
+    ? 'aes-256-siv' : 'aes-256-gcm';
 }
 
 /**
@@ -8200,7 +8423,7 @@ function wrapDek(kek, key, aad) {
   cipher.setAAD(Buffer.from(String(aad), 'utf8'));
   const body = Buffer.concat([cipher.update(dekBytes(key)), cipher.final()]);
   const tag = cipher.getAuthTag();
-  countKek('data-keys', 'encryptions', KEK_KEY_BYTES, body.length);
+  countKek('data-keys', 'encryptions', key.length, body.length);
   log.debug("Leaving wrapDek().");
   return '$dekwrap$1$' + iv.toString('base64') + '$' +
          tag.toString('base64') + '$' + body.toString('base64');
@@ -11098,6 +11321,12 @@ module.exports = {
   kekAccounting: kekAccounting,
   KEK_PARAMETERS: KEK_PARAMETERS,
   isEncryptedWithKek: isEncryptedWithKek,
+  // AES-256-SIV (#391), for the data keys of directory data and for
+  // `tests/wycheproof.js`.
+  aesSivEncrypt: aesSivEncrypt,
+  aesSivDecrypt: aesSivDecrypt,
+  aesCmac: aesCmac,
+  dekAlgOf: dekAlgOf,
   kekBytes: kekBytes,
   verifySecret: verifySecret,
   verifySecretAsync: verifySecretAsync,

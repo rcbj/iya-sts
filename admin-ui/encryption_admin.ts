@@ -839,7 +839,7 @@ class EncryptionAdmin {
             : (d.activateAt > now ? 'pending' : 'superseded');
       counts[state] += 1;
       return { id: d.id, realm: d.realm, cls: d.cls, scope: d.scope,
-               state: state,
+               alg: d.alg || 'aes-256-gcm', state: state,
                createdAt: d.createdAt
                  ? new Date(d.createdAt).toISOString() : null,
                activateAt: d.activateAt
@@ -961,7 +961,10 @@ class EncryptionAdmin {
             admin.esc(life.scheduleOffReason) + '. A rotation by hand ' +
             'still works.')
         : 'Nothing is rotated here: ' + admin.esc(life.offReason) + '.') +
-      '</p>';
+      ' Data stored in the directory is sealed with <code>' +
+      admin.esc(life.directoryCipher) + '</code> ' +
+      '(<code>keys.directoryCipher</code>); everything else with ' +
+      '<code>aes-256-gcm</code>.</p>';
     const tiles = '<div class="tiles">' +
       admin.tile(String(dk.counts.current), 'current') +
       admin.tile(String(dk.counts.pending), 'waiting to be used') +
@@ -973,11 +976,13 @@ class EncryptionAdmin {
     const nav = admin.pageNavPair('/admin/encryption', params, dk.pagingRaw);
     const table = dk.keys.length
       ? nav.head + '<table class="grid"><thead><tr><th>Realm</th>' +
-        '<th>Class</th><th>State</th><th>Created</th><th>Used from</th>' +
+        '<th>Class</th><th>Cipher</th><th>State</th><th>Created</th>' +
+        '<th>Used from</th>' +
         '<th>Key id</th></tr></thead><tbody>' +
         dk.keys.map(function (k: Json): string {
           return '<tr><td><code>' + admin.esc(k.realm) + '</code></td>' +
             '<td><code>' + admin.esc(k.cls) + '</code></td>' +
+            '<td><code>' + admin.esc(k.alg) + '</code></td>' +
             '<td>' + admin.esc(k.state) + '</td>' +
             '<td>' + admin.esc(k.createdAt || '—') + '</td>' +
             '<td>' + admin.esc(k.activateAt || '—') + '</td>' +

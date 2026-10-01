@@ -6267,12 +6267,13 @@ function withholdFields(fields) {
  * Says whether a stored value is sealed ciphertext.
  *
  * @param value - the stored value
- * @returns true for a `$aesgcm$` value
+ * @returns true for a `$aesgcm$` or `$aessiv$` value
  */
 function isSealed(value) {
   log.debug("Entering isSealed().");
   log.debug("Leaving isSealed().");
-  return String(value == null ? '' : value).indexOf('$aesgcm$') === 0;
+  // Either envelope (#391): `crypto.js` is the one place that knows them.
+  return stsCrypto.isEncryptedWithKek(String(value == null ? '' : value));
 }
 
 // Seal on the way in, where this process holds a key-encryption key that will

@@ -458,6 +458,7 @@ class DataKeyRotation {
       activationLeadSeconds: Number(config.value(
         'keys.dataKeyActivationLeadSeconds')),
       retireAfterDays: Number(config.value('keys.dataKeyRetireAfterDays')),
+      directoryCipher: String(config.value('keys.directoryCipher')),
       jobs: [ROTATE_JOB, ROTATE_NOW_JOB, REENCRYPT_JOB]
     };
     log.debug("Leaving DataKeyRotation.lifecycleView().");

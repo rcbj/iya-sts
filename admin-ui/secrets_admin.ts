@@ -140,10 +140,13 @@ interface SecretsAdminDeps {
 const SECRET_NOTES = {
   'kek': {
     heading: 'The key-encryption key',
-    what: 'The AES-256 key every signing key, every certificate authority, ' +
-          'every assertion key pair this service issues, every authenticator ' +
-          'secret and every recovery code is sealed under — and, in product ' +
-          'mode on a postgres store, every row this service mints.',
+    what: 'The key that wraps every data encryption key (#391) — and so ' +
+          'protects every signing key, certificate authority, issued key ' +
+          'pair, authenticator secret and recovery code, and, in product ' +
+          'mode on a postgres store, every row this service mints. Read ' +
+          'into this process from a file or a secret store, or kept in ' +
+          'Vault Transit or AWS KMS, which then wraps each data key itself ' +
+          'and never hands the key over.',
     without: 'In PRODUCT mode this service does not start without it, and ' +
              'that is deliberate: generating a replacement would stop every ' +
              'token, assertion and signed document it has ever issued from ' +
@@ -151,11 +154,13 @@ const SECRET_NOTES = {
              'DEVELOPMENT mode &mdash; the default &mdash; nothing is ' +
              'persisted, so it is never asked for at all, which is why a ' +
              'perfectly broken configuration can sit here looking fine.',
-    rotating: 'It is written ONCE and never replaced. Everything sealed ' +
-              'under it would be unreadable, and this service has no ' +
-              're-sealing pass — which is why there is no rotate ' +
-              'control on this page and why <code>openbao/seed.js</code> ' +
-              'refuses to overwrite one.'
+    rotating: 'Rotated by RE-WRAPPING the data keys, not by re-encrypting ' +
+              'the store: put the new key in <code>keys.kek*</code> and the ' +
+              'old one in <code>keys.previousKek*</code>, and start. A key ' +
+              'rotated inside Transit or AWS KMS needs neither. Never ' +
+              'replace it without the previous one beside it: everything ' +
+              'wrapped under it would be unreadable, which is why ' +
+              '<code>openbao/seed.js</code> refuses to overwrite one.'
   },
   'database-password': {
     heading: 'The database password',
@@ -203,6 +208,20 @@ const SECRET_NOTES = {
               'service key: this service has no re-sealing pass. A person ' +
               're-homed to another cell is sealed again under THAT cell\'s ' +
               'key as they move.'
+  },
+  'previous-kek': {
+    heading: 'The previous key-encryption key',
+    what: 'Read only while the key-encryption key is being ROTATED (#391): ' +
+          'the old key, beside the new one in <code>keys.kek*</code>. A data ' +
+          'encryption key that unwraps only under the old key is re-wrapped ' +
+          'under the new one at start and written back. It may be a key ' +
+          'read into this process or a key in Vault Transit or AWS KMS.',
+    without: '<code>none</code>, the default, is the ordinary state. A ' +
+             'start with a new key and no previous key, over data keys ' +
+             'wrapped under the old one, does not start (STS-KEYS-0091).',
+    rotating: 'Set it back to <code>none</code> once every node has started ' +
+              'with the new key: by then nothing is wrapped under the old ' +
+              'one.'
   },
   // THE MAIL CHANNEL'S FOUR (#63). Each is optional and unconfigured by
   // default; each is read when `common/mail.ts` builds the transport that

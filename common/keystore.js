@@ -1123,7 +1123,8 @@ async function readCellKey() {
     return;
   }
   const bytes = crypto.kekBytes(read);
-  if (kek && Buffer.compare(bytes, crypto.kekBytes(kek)) === 0) {
+  if (kek && !isRemote(kek) &&
+      Buffer.compare(bytes, crypto.kekBytes(kek)) === 0) {
     throw new Error(errorCodes.tag('STS-CELL-0012') + 'the cell ' +
                     'key-encryption key is the same key as the service ' +
                     'key-encryption key. A cell key that is the service ' +
@@ -1166,8 +1167,11 @@ async function start() {
   }
   kek = await secrets.readKek();
   // Fail here rather than at the first decrypt, so the message names the KEK
-  // rather than a record.
-  crypto.kekBytes(kek);
+  // rather than a record. A key management service's key is a HANDLE (#391
+  // P3): it was checked by its provider, and has no bytes here.
+  if (!isRemote(kek)) {
+    crypto.kekBytes(kek);
+  }
   // THE DATA ENCRYPTION KEYS ARE RANDOM AND STORED from here on (#391).
   durableKek = true;
   ephemeral = false;
@@ -1176,7 +1180,9 @@ async function start() {
   previousKek = null;
   if (secrets.configuredFor(secrets.PREVIOUS_KEK)) {
     previousKek = await secrets.readPreviousKek();
-    crypto.kekBytes(previousKek);
+    if (!isRemote(previousKek)) {
+      crypto.kekBytes(previousKek);
+    }
   }
   // ONLY WHERE A CELL KEY IS CONFIGURED (#98). An `await` here, even one that
   // answers "none" at once, yields to the event loop in the middle of every
@@ -1202,13 +1208,13 @@ async function start() {
   // THE DATA-KEY ROWS FIRST (#391): every other row is sealed under one of
   // their DEKs. A DEK of this process's scope that will not unwrap stops the
   // start here, for the reason the error below gives about a signing key.
-  rows.forEach(function (row) {
+  for (const row of rows) {
     const rowKey = String(row.realm || '');
     if (rowKey.indexOf(DEK_ROW_PREFIX) === 0) {
-      adoptDekRow(rowKey, row.material, true);
+      await adoptDekRow(rowKey, row.material, true);
       dekRows += 1;
     }
-  });
+  }
   rewrapRotated();
   // THE DIGEST KEY (#391 P2), before anything is digested: made once for the
   // service and stored, so a keyed digest survives a rotated KEK.
@@ -2526,6 +2532,11 @@ function report() {
       : [],
     kek: secrets.describe(),
     kekRead: !!kek,
+    // WHERE THE KEY IS (#391 P3): in a key management service that wraps each
+    // data key, or read into this process.
+    kekInKms: isRemote(kek),
+    kekKms: isRemote(kek) ? { provider: kek.provider, label: kek.label }
+                          : null,
     encryption: 'AES-256-GCM under a data encryption key per realm per ' +
                 'data class, each wrapped under the key-encryption key (#391)',
     // HOW MANY DATA ENCRYPTION KEYS ARE HELD, and how (#391). Never a key.
@@ -2896,14 +2907,49 @@ function currentDek(scope, realm, cls) {
 
 // A new random DEK for a slot, wrapped and queued for the store; `activateAt`
 // is when it becomes the one values are sealed under.
+// ---------------------------------------------------------------------------
+// THE CIPHER OF DIRECTORY DATA (#391): `keys.directoryCipher`, AES-256-GCM by
+// default or AES-256-SIV (RFC 5297, a 512-bit key). It applies to the data
+// classes whose values are stored ON DIRECTORY ENTRIES — the list below, which
+// `tests/encryption_report.js` holds to `/admin/encryption`'s table — and is
+// read when a data key is MADE: a key keeps its cipher for life, a changed
+// setting makes the slot due a rotation (`rotationDue()`), and the
+// re-encryption job then moves what the old key sealed.
+// ---------------------------------------------------------------------------
+const DIRECTORY_CLASSES = [
+  'application-private-key', 'client-secret', 'registration-access-token',
+  'federation-client-secret', 'identity-verifications', 'gnap-shared-key',
+  'gnap-macaroon-key', 'person-private-key', 'federation-encryption-key',
+  'kerberos-keys', 'totp-secret', 'recovery-codes', 'directory'
+];
+
+// The cipher a NEW data key of a class is made for.
+function cipherFor(cls) {
+  log.debug("Entering cipherFor().");
+  const siv = DIRECTORY_CLASSES.indexOf(cls) >= 0 &&
+    String(config.value('keys.directoryCipher') || '') === 'aes-256-siv';
+  log.debug("Leaving cipherFor().");
+  return siv ? 'aes-256-siv' : 'aes-256-gcm';
+}
+
 function makeDek(scope, realm, cls, wk, activateAt) {
   log.debug("Entering makeDek().");
   const now = Date.now();
+  const key = crypto.generateDek(cipherFor(cls));
   const rec = { id: crypto.generateDekId(), scope: scope, realm: realm,
                 cls: cls, createdAt: now, activateAt: activateAt || now,
                 wrappedAt: now, status: 'active', wrapped: null,
-                key: crypto.generateDek(), derived: false };
-  rec.wrapped = crypto.wrapDek(wk, rec.key, dekAad(rec));
+                key: key, alg: crypto.dekAlgOf(key), derived: false };
+  if (isRemote(wk)) {
+    // A KEY MANAGEMENT SERVICE WRAPS IT, which is a network call: the DEK is
+    // usable here at once, and its row's write wraps it first
+    // (`wrapPending()`). Every writer of sealed rows waits for that write
+    // (`settleDeks()`), so nothing names it before it is stored.
+    rec.wrapped = null;
+    rec.needsWrap = true;
+  } else {
+    rec.wrapped = crypto.wrapDek(wk, rec.key, dekAad(rec));
+  }
   deks.set(rec.id, rec);
   queueWrite(dekRowKey(scope, realm), { scope: scope, realm: realm },
              writeDekRow);
@@ -2969,6 +3015,12 @@ function dekFor(id) {
     const wk = wrappingKeyOf(rec.scope);
     if (!wk) {
       log.debug("Leaving dekFor(). Another scope's.");
+      return null;
+    }
+    if (isRemote(wk)) {
+      // A network call: started now, held for the next caller.
+      unwrapLater(rec, wk);
+      log.debug("Leaving dekFor(). Being unwrapped by the KMS.");
       return null;
     }
     try {
@@ -3052,13 +3104,13 @@ function refreshDekRows() {
   dekReloadAt = Date.now();
   dekReloading = Promise.resolve().then(function () {
     return store.loadKeys();
-  }).then(function (rows) {
+  }).then(async function (rows) {
     let adopted = 0;
-    (rows || []).forEach(function (row) {
+    for (const row of rows || []) {
       if (String(row.realm || '').indexOf(DEK_ROW_PREFIX) === 0) {
-        adopted += adoptDekRow(String(row.realm), row.material, false);
+        adopted += await adoptDekRow(String(row.realm), row.material, false);
       }
-    });
+    }
     return adopted;
   }, function (e) {
     log.debug("Caught in reloadDekRows(): " + ((e && e.message) || e));
@@ -3125,7 +3177,7 @@ function parseDekRow(text) {
 // and the active DEK of each class chosen again. A DEK of our scope that will
 // not unwrap is the wrong key-encryption key, and `fatal` makes it stop the
 // start; otherwise it is logged and left out.
-function adoptDekRow(rowKey, text, fatal) {
+async function adoptDekRow(rowKey, text, fatal) {
   log.debug("Entering adoptDekRow(). row=" + rowKey);
   let row = null;
   try {
@@ -3146,9 +3198,11 @@ function adoptDekRow(rowKey, text, fatal) {
   }
   let adopted = 0;
   const classes = new Set();
-  row.deks.forEach(function (one) {
+  // A LOOP OF AWAITS SINCE #391 P3: a key management service unwraps each
+  // DEK with a network call. One at a time, which is a handful at start.
+  for (const one of row.deks) {
     if (!one || !DEK_ID_PATTERN.test(String(one.id || ''))) {
-      return;
+      continue;
     }
     const held = deks.get(one.id);
     if (held) {
@@ -3164,8 +3218,9 @@ function adoptDekRow(rowKey, text, fatal) {
                  (Number(one.wrappedAt) || 0) > (Number(held.wrappedAt) || 0)) {
         held.wrapped = String(one.wrapped || '');
         held.wrappedAt = Number(one.wrappedAt) || 0;
+        held.needsWrap = false;
       }
-      return;
+      continue;
     }
     const rec = { id: String(one.id), scope: row.scope, realm: row.realm,
                   cls: dekClass(one.cls), createdAt: Number(one.createdAt) || 0,
@@ -3174,11 +3229,16 @@ function adoptDekRow(rowKey, text, fatal) {
                   wrappedAt: Number(one.wrappedAt) || 0,
                   status: one.status === 'destroyed' ? 'destroyed' : 'active',
                   wrapped: String(one.wrapped || ''), key: null,
+                  alg: one.alg === 'aes-256-siv' ? 'aes-256-siv'
+                                                 : 'aes-256-gcm',
                   derived: false, rewrap: false };
     const wk = rec.status === 'destroyed' ? null : wrappingKeyOf(rec.scope);
     if (wk) {
       try {
-        rec.key = unwrapWithRotation(rec, wk);
+        rec.key = await unwrapWithRotation(rec, wk);
+        // The key's length is the truth; a row naming another cipher is
+        // corrected rather than believed.
+        rec.alg = crypto.dekAlgOf(rec.key);
       } catch (e) {
         const why = errorCodes.tag('STS-KEYS-0091') + 'the data encryption ' +
           'key "' + rec.id + '" (' + rec.cls + ', "' + rec.realm + '" realm, ' +
@@ -3193,13 +3253,17 @@ function adoptDekRow(rowKey, text, fatal) {
         // `why` opens with its STS-KEYS-0091 tag.
         log.error(errorCodes.tag('STS-KEYS-0091') + 'keystore: ' +
                   why.slice(why.indexOf(']') + 1).trim() + '.');
-        return;
+        continue;
       }
+    }
+    // Another adoption of the same row may have finished during the await.
+    if (deks.has(rec.id)) {
+      continue;
     }
     deks.set(rec.id, rec);
     classes.add(rec.cls);
     adopted += 1;
-  });
+  }
   classes.forEach(function (cls) {
     chooseActive(row.scope, row.realm, cls);
   });
@@ -3216,6 +3280,7 @@ function dekRowText(scope, realm) {
     if (rec.scope === scope && rec.realm === realm && !rec.derived &&
         (rec.wrapped || rec.status === 'destroyed')) {
       list.push({ id: rec.id, cls: rec.cls, createdAt: rec.createdAt,
+                  alg: rec.alg || 'aes-256-gcm',
                   activateAt: activationOf(rec),
                   wrappedAt: rec.wrappedAt || 0, status: rec.status,
                   wrapped: rec.status === 'destroyed' ? '' : rec.wrapped });
@@ -3371,11 +3436,12 @@ function pruneDigestKeys(material) {
 // store then holds is adopted.
 function writeDekRow(rowKey, payload) {
   log.debug("Entering writeDekRow(). row=" + rowKey);
-  const text = dekRowText(payload.scope, payload.realm);
   const merges = typeof store.mergeKeys === 'function' &&
                  typeof store.loadKey === 'function';
+  let text = '';
   log.debug("Leaving writeDekRow().");
-  return Promise.resolve().then(function () {
+  return wrapPending(payload.scope, payload.realm).then(function () {
+    text = dekRowText(payload.scope, payload.realm);
     if (!merges) {
       return Promise.resolve(store.saveKeys(rowKey, text)).then(function () {
         return { material: text };
@@ -3399,11 +3465,13 @@ function writeDekRow(rowKey, payload) {
       return merged ? JSON.stringify(merged) : null;
     });
   }).then(function (result) {
-    if (result && result.material) {
-      adoptDekRow(rowKey, result.material, false);
-      pruneDigestKeys(result.material);
+    if (!result || !result.material) {
+      return { ok: true };
     }
-    return { ok: true };
+    return adoptDekRow(rowKey, result.material, false).then(function () {
+      pruneDigestKeys(result.material);
+      return { ok: true };
+    });
   }, function (e) {
     log.error(errorCodes.tag('STS-KEYS-0093') + 'keystore: the "' + rowKey +
               '" data-key row could not be written: ' + e.message + '. ' +
@@ -3496,6 +3564,8 @@ function dataKeys() {
   const rows = [];
   deks.forEach(function (rec) {
     rows.push({ id: rec.id, scope: rec.scope, realm: rec.realm, cls: rec.cls,
+                alg: rec.alg || (rec.key ? crypto.dekAlgOf(rec.key)
+                                         : 'aes-256-gcm'),
                 createdAt: rec.createdAt, status: rec.status,
                 wrappedAt: rec.wrappedAt || 0,
                 derived: !!rec.derived, held: !!rec.key,
@@ -3542,12 +3612,93 @@ function dataKeys() {
 let previousKek = null;
 let rewrapped = 0;
 
+// ---------------------------------------------------------------------------
+// A KEY-ENCRYPTION KEY IN A KEY MANAGEMENT SERVICE (#391 P3). `secrets.js`
+// hands back a HANDLE for `vault-transit` and `aws-kms` rather than bytes:
+// it wraps and unwraps a DEK in the KMS, asynchronously, and the key never
+// enters this process. Everything below asks `isRemote()` and either calls
+// the handle or does what it always did with bytes.
+// ---------------------------------------------------------------------------
+function isRemote(wk) {
+  log.debug("Entering isRemote().");
+  log.debug("Leaving isRemote().");
+  return !!(wk && typeof wk === 'object' && wk.remote === true);
+}
+
+// Unwraps a wrapped DEK under one key, local or remote. A promise either way.
+function unwrapUnder(wk, wrapped, rec) {
+  log.debug("Entering unwrapUnder().");
+  if (isRemote(wk)) {
+    log.debug("Leaving unwrapUnder(). The KMS.");
+    return Promise.resolve().then(function () {
+      return wk.unwrap(wrapped, dekAad(rec));
+    }).then(function (key) {
+      if (!Buffer.isBuffer(key) || (key.length !== 32 && key.length !== 64)) {
+        throw new Error(errorCodes.tag('STS-KEYS-0103') + 'the KMS ' +
+                        'unwrapped something that is not a 32- or 64-byte ' +
+                        'key');
+      }
+      return key;
+    });
+  }
+  log.debug("Leaving unwrapUnder(). Local.");
+  return Promise.resolve().then(function () {
+    return crypto.unwrapDek(wk, wrapped, dekAad(rec));
+  });
+}
+
+// A KMS unwrap started for a DEK this process found wrapped and not yet
+// unwrapped (`dekFor()`); one at a time per DEK.
+const unwrapping = new Map();
+function unwrapLater(rec, wk) {
+  log.debug("Entering unwrapLater().");
+  if (!unwrapping.has(rec.id)) {
+    unwrapping.set(rec.id, unwrapUnder(wk, rec.wrapped, rec).then(
+      function (key) {
+        rec.key = key;
+      }, function (e) {
+        log.error(errorCodes.tag('STS-KEYS-0103') + 'keystore: the data ' +
+                  'encryption key "' + rec.id + '" could not be unwrapped ' +
+                  'by the key management service: ' + e.message);
+      }).then(function () {
+      unwrapping.delete(rec.id);
+    }));
+  }
+  log.debug("Leaving unwrapLater().");
+}
+
+// WRAPS EVERY DEK OF A ROW THAT IS WAITING FOR THE KMS — made here, or
+// re-wrapped after a rotation — before the row is written: a row never
+// carries an unwrapped DEK, or a DEK without its wrap.
+async function wrapPending(scope, realm) {
+  log.debug("Entering wrapPending().");
+  const waiting = [];
+  deks.forEach(function (rec) {
+    if (rec.scope === scope && rec.realm === realm && rec.needsWrap &&
+        rec.key && rec.status !== 'destroyed') {
+      waiting.push(rec);
+    }
+  });
+  for (const rec of waiting) {
+    const wk = wrappingKeyOf(rec.scope);
+    if (!isRemote(wk)) {
+      rec.wrapped = crypto.wrapDek(wk, rec.key, dekAad(rec));
+    } else {
+      rec.wrapped = await wk.wrap(rec.key, dekAad(rec));
+    }
+    rec.wrappedAt = Math.max(Date.now(), (Number(rec.wrappedAt) || 0) + 1);
+    rec.needsWrap = false;
+  }
+  log.debug("Leaving wrapPending(). " + waiting.length + " wrapped.");
+}
+
 // Unwraps a stored DEK under its scope's key, or — for the service scope —
-// under the previous key-encryption key, marking it to be re-wrapped.
-function unwrapWithRotation(rec, wk) {
+// under the previous key-encryption key, marking it to be re-wrapped. Either
+// key may be bytes or a key management service's handle.
+async function unwrapWithRotation(rec, wk) {
   log.debug("Entering unwrapWithRotation().");
   try {
-    const key = crypto.unwrapDek(wk, rec.wrapped, dekAad(rec));
+    const key = await unwrapUnder(wk, rec.wrapped, rec);
     log.debug("Leaving unwrapWithRotation(). Under the current key.");
     return key;
   } catch (e) {
@@ -3556,7 +3707,7 @@ function unwrapWithRotation(rec, wk) {
     }
     log.debug("Caught in unwrapWithRotation(): " + ((e && e.message) || e) +
               "; trying the previous key-encryption key.");
-    const key = crypto.unwrapDek(previousKek, rec.wrapped, dekAad(rec));
+    const key = await unwrapUnder(previousKek, rec.wrapped, rec);
     rec.rewrap = true;
     log.debug("Leaving unwrapWithRotation(). Under the previous key.");
     return key;
@@ -3570,11 +3721,28 @@ function rewrapRotated() {
   const rows = new Set();
   let count = 0;
   deks.forEach(function (rec) {
-    if (!rec.rewrap || !rec.key || rec.status === 'destroyed') {
+    if (!rec.key || rec.status === 'destroyed' || rec.derived) {
       return;
     }
-    rec.wrapped = crypto.wrapDek(wrappingKeyOf(rec.scope), rec.key,
-                                 dekAad(rec));
+    const wk = wrappingKeyOf(rec.scope);
+    // A KMS key rotated INSIDE the KMS (a new Transit version): the DEK
+    // unwraps, and is moved to the newest version.
+    if (!rec.rewrap && isRemote(wk) && typeof wk.isStale === 'function' &&
+        rec.wrapped && wk.isStale(rec.wrapped)) {
+      rec.rewrap = true;
+    }
+    if (!rec.rewrap) {
+      return;
+    }
+    if (isRemote(wk)) {
+      // Wrapped by the KMS when its row is written (`wrapPending()`).
+      rec.needsWrap = true;
+      rec.rewrap = false;
+      rows.add(rec.scope + '\n' + rec.realm);
+      count += 1;
+      return;
+    }
+    rec.wrapped = crypto.wrapDek(wk, rec.key, dekAad(rec));
     // LATER THAN THE WRAP IT REPLACES, whatever this clock says: the row's
     // merge keeps the newer `wrappedAt`, and a stamp from a node whose clock
     // ran ahead would otherwise keep the wrap under the previous key.
@@ -3690,12 +3858,18 @@ function rotationDue(days) {
     }
     const slot = dekSlot(rec.scope, rec.realm, rec.cls);
     const one = seen.get(slot) || { scope: rec.scope, realm: rec.realm,
-                                    cls: rec.cls, newest: 0 };
-    one.newest = Math.max(one.newest, activationOf(rec));
+                                    cls: rec.cls, newest: 0, alg: '' };
+    if (activationOf(rec) >= one.newest) {
+      one.newest = activationOf(rec);
+      one.alg = rec.alg || crypto.dekAlgOf(rec.key);
+    }
     seen.set(slot, one);
   });
   seen.forEach(function (one) {
-    if (one.newest <= now && now - one.newest >= age) {
+    // DUE BY AGE, or because its newest key is not of the cipher its class
+    // is now made with (`keys.directoryCipher` changed).
+    if (one.newest <= now && (now - one.newest >= age ||
+                              one.alg !== cipherFor(one.cls))) {
       out.push({ scope: one.scope, realm: one.realm, cls: one.cls });
     }
   });
@@ -3918,7 +4092,7 @@ function keyedDigest(label, text) {
     return null;
   }
   const nodeCrypto = require('crypto');
-  let ikm = crypto.kekBytes(kek);
+  let ikm = null;
   if (deksStored()) {
     // The stored digest key, so a rotated KEK changes no digest (#391 P2).
     const rec = digestKeyRec();
@@ -3927,6 +4101,11 @@ function keyedDigest(label, text) {
       return null;
     }
     ikm = rec.key;
+  } else if (!isRemote(kek)) {
+    ikm = crypto.kekBytes(kek);
+  } else {
+    log.debug("Leaving keyedDigest(). A KMS key and nothing stored.");
+    return null;
   }
   const derived = Buffer.from(nodeCrypto.hkdfSync('sha256',
     ikm, Buffer.alloc(0),
@@ -5112,7 +5291,8 @@ function applyStoredChange(rowKey, round) {
     return Promise.resolve().then(function () {
       return store.loadKey(key);
     }).then(function (text) {
-      const adopted = adoptDekRow(key, text, false);
+      return adoptDekRow(key, text, false);
+    }).then(function (adopted) {
       return { kind: 'deks', realm: key, adopted: adopted > 0 };
     });
   }
@@ -5379,6 +5559,7 @@ module.exports = {
   sealedStore: sealedStore,
   rewrapRotated: rewrapRotated,
   deksStored: deksStored,
+  DIRECTORY_CLASSES: DIRECTORY_CLASSES,
   start: start,
   storedFor: storedFor,
   privateMaterialFor: privateMaterialFor,

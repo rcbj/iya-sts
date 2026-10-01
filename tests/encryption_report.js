@@ -271,6 +271,27 @@ async function run(t) {
   t.check(String(drifted.key.note).length > 100,
           'and the report says which of the two states it is in, in words, ' +
           'rather than leaving a reader to infer it from two booleans');
+
+  t.log.info('=== F. keys.directoryCipher reaches every class on an entry ' +
+             '===');
+  // `keys.directoryCipher` (#391) applies to `keystore.DIRECTORY_CLASSES`,
+  // and this table is where a class says it lives on a directory entry. A
+  // class added to one and not the other would be sealed with a cipher the
+  // operator did not choose, and nothing would show it.
+  const onEntries = encryption.dataClasses().filter(function (one) {
+    return one.sealed && one.label && /\bentry\b/.test(one.where);
+  }).map(function (one) { return one.label; }).sort();
+  const directory = require('../common/keystore').DIRECTORY_CLASSES
+    .filter(function (cls) {
+      // The whole-directory class (#391 P6) seals an entry, not a value on
+      // one, so it has no row of its own here.
+      return cls !== 'directory';
+    }).slice().sort();
+  t.check(onEntries.length > 0 &&
+          JSON.stringify(onEntries) === JSON.stringify(directory),
+          'the classes this table places on a directory entry are exactly ' +
+          'the ones keys.directoryCipher applies to',
+          JSON.stringify({ table: onEntries, keystore: directory }));
   log.debug("Leaving run().");
 }
 

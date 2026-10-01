@@ -2668,21 +2668,32 @@ const SETTINGS = [
   { key: 'keys.kekProvider', group: 'Key material',
     label: 'Key-encryption key provider',
     path: 'keys.kekProvider', env: 'STS_KEYS_KEK_PROVIDER', type: 'enum',
-    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault'],
+    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault', 'vault-transit',
+                 'aws-kms'],
     dflt: 'file', runtime: false,
     restartReason: 'the key-encryption key is read once, at startup, before ' +
                    'the signing keys are decrypted',
-    description: 'Where the AES-256 key that protects the stored signing ' +
-                 'keys is READ FROM. This service never generates it and ' +
-                 'never writes it anywhere. `file` is the default because it ' +
-                 'needs nothing — Kubernetes and Docker both mount a secret ' +
-                 'as a file — and the other four are that same idea with a ' +
-                 'cloud provider\'s access control in front of it. Each of ' +
-                 'those lazily requires its official SDK, which is ' +
-                 'deliberately NOT a dependency of this service: it is a ' +
-                 'mock first, and four cloud SDKs nobody uses would be ' +
-                 'carried by every install. A missing one is reported with ' +
-                 'the package name to install.' },
+    description: 'Where the key-encryption key that wraps every data ' +
+                 'encryption key is. `file`, `aws`, `gcp`, `azure` and ' +
+                 '`vault` READ a 32-byte key into this process from a ' +
+                 'mounted file or a secret store; `file` is the default ' +
+                 'because it needs nothing. `vault-transit` (Vault or ' +
+                 'OpenBao Transit) and `aws-kms` are key management ' +
+                 'services: the key NEVER leaves them, keys.kekRef names it, ' +
+                 'and the KMS wraps and unwraps each data key — one call per ' +
+                 'data key at start, none per value. Every provider but ' +
+                 '`file` lazily requires its official SDK, which is ' +
+                 'deliberately NOT a dependency of this service; a missing ' +
+                 'one is reported with the package name to install.' },
+
+  { key: 'keys.kekTransitMount', group: 'Key material',
+    label: 'Transit engine mount',
+    path: 'keys.kekTransitMount', env: 'STS_KEYS_KEK_TRANSIT_MOUNT',
+    type: 'string', dflt: 'transit', runtime: false, perProcess: true,
+    restartReason: 'the key-encryption key is reached once, at startup',
+    description: 'Where the Transit secrets engine is mounted, for ' +
+                 'keys.kekProvider (or keys.previousKekProvider) ' +
+                 '`vault-transit`. A plain path; anything else is refused.' },
 
   { key: 'keys.kekFile', group: 'Key material',
     label: 'Key-encryption key file',
@@ -2945,6 +2956,23 @@ const SETTINGS = [
                  'hand still works). Data keys are rotated only where they ' +
                  'are stored — where keys persist.' },
 
+  { key: 'keys.directoryCipher', group: 'Key material',
+    label: 'Cipher for data stored in the directory',
+    env: 'STS_KEYS_DIRECTORY_CIPHER', type: 'enum',
+    enumValues: ['aes-256-gcm', 'aes-256-siv'], dflt: 'aes-256-gcm',
+    runtime: true, perProcess: true,
+    description: 'The cipher of the data encryption keys that seal values ' +
+                 'stored on directory entries (private keys, client ' +
+                 'secrets, authenticator secrets, recovery codes and the ' +
+                 'rest). `aes-256-gcm`, the default, is AES-256 in GCM. ' +
+                 '`aes-256-siv` is AES-SIV (RFC 5297) with a 512-bit key — ' +
+                 'two AES-256 keys — which is misuse resistant: a repeated ' +
+                 'nonce leaks only that two values are equal. Both are ' +
+                 '256-bit AES; there is no AES-512. A data key keeps its ' +
+                 'cipher for life: a change here makes each directory class ' +
+                 'due a rotation, and the re-encryption job moves what the ' +
+                 'old key sealed.' },
+
   { key: 'keys.dataKeyActivationLeadSeconds', group: 'Key material',
     label: 'A new data encryption key is used after (seconds)',
     env: 'STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS', type: 'int', min: 0,
@@ -2967,7 +2995,8 @@ const SETTINGS = [
   { key: 'keys.previousKekProvider', group: 'Key material',
     label: 'Where the previous key-encryption key is read from',
     env: 'STS_PREVIOUS_KEK_PROVIDER', type: 'enum',
-    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault',
+                 'vault-transit', 'aws-kms'],
     dflt: 'none', runtime: false, perProcess: true,
     restartReason: 'the key is read once, before the store is restored',
     description: 'To rotate the key-encryption key: point keys.kek* at the ' +

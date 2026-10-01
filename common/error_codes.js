@@ -2542,6 +2542,24 @@ const CODES = [
       'are derived per run and not stored, or for a realm or class no ' +
       'stored key serves (#391).',
     spec: 'the console\'s and the API\'s refusal, 400' },
+  { code: 'STS-KEYS-0101',
+    summary: 'A secret other than the key-encryption key names a key ' +
+      'management service (vault-transit, aws-kms) as its provider; a KMS ' +
+      'wraps keys and holds nothing to read. The read is refused (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0102',
+    summary: 'The key management service\'s key is not one data keys can be ' +
+      'wrapped under: a Transit key that is not AEAD (associated data is ' +
+      'required), an AWS KMS key that is not an enabled symmetric ' +
+      'ENCRYPT_DECRYPT key, or a Transit mount that is not a plain path. ' +
+      'The service does not start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0103',
+    summary: 'A key management service did not wrap or unwrap a data ' +
+      'encryption key: it refused, answered nothing, or the wrapped key is ' +
+      'under another KMS key. A new data key is not written; one that does ' +
+      'not unwrap at start stops the start (#391).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

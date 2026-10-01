@@ -132,7 +132,8 @@ async function main() {
   check("and no key material", function () {
     dk.keys.forEach(function (k) {
       assert.deepStrictEqual(Object.keys(k).sort(),
-        ["activateAt", "cls", "createdAt", "id", "realm", "scope", "state"],
+        ["activateAt", "alg", "cls", "createdAt", "id", "realm", "scope",
+         "state"],
         JSON.stringify(k));
     });
   });

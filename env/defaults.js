@@ -241,6 +241,7 @@ var config = {
     offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
     kidFormat: "internal",             // Signed token kid format
     kekProvider: "file",               // Key-encryption key provider; restart to apply
+    kekTransitMount: "transit",        // Transit engine mount; restart to apply
     kekFile: "/run/secrets/sts-kek",   // Key-encryption key file; restart to apply
     kekRef: "",                        // Key-encryption key reference; restart to apply
     kekVault: "",                      // Vault or Key Vault URL; restart to apply
@@ -259,6 +260,7 @@ var config = {
     cellKekRegion: "",                 // AWS region of the cell key; restart to apply
     cellKekVault: "",                  // Key Vault URL of the cell key; restart to apply
     dataKeyRotationDays: 365,          // Rotate every data encryption key after (days)
+    directoryCipher: "aes-256-gcm",    // Cipher for data stored in the directory
     dataKeyActivationLeadSeconds: 300, // A new data encryption key is used after (seconds)
     dataKeyRetireAfterDays: 7,         // Keep a replaced data encryption key at least (days)
     previousKekProvider: "none",       // Where the previous key-encryption key is read from; restart to apply

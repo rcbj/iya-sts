@@ -6019,6 +6019,73 @@ key-provisioning act, where today it is one API call. With DEKs per realm it is
 now a change to what WRAPS a realm's DEKs and nothing else.
 
 
+### A KEK IN A KEY MANAGEMENT SERVICE, AND AES-256-SIV FOR THE DIRECTORY (#391 P3)
+
+**`keys.kekProvider` may name a KMS key rather than a secret: `vault-transit`
+(OpenBao or HashiCorp Vault's Transit engine, mount `keys.kekTransitMount`) or
+`aws-kms`.** rcbj's decision: **the KMS key wraps EACH DEK directly** — there
+is no root key unwrapped into memory, so the KEK's bytes never enter the
+process. `secrets.js` returns a HANDLE for such a provider rather than bytes
+(`{ remote, provider, keyRef, wrap(dek, aad), unwrap(text, aad), owns(text),
+isStale(text) }`), and only for `kek` and `previous-kek` (`KMS_CAPABLE`); any
+other secret naming one is refused `STS-KEYS-0101`. What follows from it:
+
+* **A wrapped DEK under a KMS is `$dekkms$1$<provider>$<b64url key>$<ct>`.**
+  The DEK's AAD (`dekAad()`: id, scope, realm, class) goes with it — Transit's
+  `associated_data`, which is why a Transit key must be an AEAD type
+  (`aes256-gcm96`, `aes128-gcm96`, `chacha20-poly1305`; anything else is
+  `STS-KEYS-0102` at start), and AWS's `EncryptionContext {'sts-dek': aad}`,
+  on a key DescribeKey shows enabled, `ENCRYPT_DECRYPT` and
+  `SYMMETRIC_DEFAULT`. So a wrapped DEK moved to another realm's row is refused
+  by the KMS, as `$dekwrap$` is refused locally.
+* **WRAPPING AND UNWRAPPING ARE ASYNCHRONOUS, AND `seal()` IS NOT.** A DEK made
+  under a remote KEK is held with `needsWrap` and wrapped by `wrapPending()`
+  before its row is written (`writeDekRow()` awaits it), and a DEK read from
+  the store is unwrapped in the background (`unwrapLater()`) — `dekFor()`
+  answers null until it is, which is the same refusal-and-reread a DEK not yet
+  held already got (`STS-KEYS-0092`). `start()`, the change-log adoption and
+  `refreshDekRows()` await the unwraps, so a started process holds every DEK
+  it read. A KMS failure is `STS-KEYS-0103`.
+* **A Transit key version rotated in the KMS is a re-wrap**, the same as a
+  rotated KEK: `rewrapRotated()` asks `isStale()` (the `vault:vN:` version
+  against `latest_version`) and re-wraps at start. AWS rotates its backing key
+  inside one ARN and needs nothing.
+* **Moving a local KEK into a KMS, or back, is `keys.previousKek*`** — the
+  previous KEK may be either kind, so the P2 re-wrap is the migration.
+* **The keyed digests need bytes, not a handle**, so under a KMS they are made
+  under the stored digest key (P2), which is wrapped like a DEK.
+* **`tests/kms_kek.js` holds it against a fake Transit server and a fake KMS
+  client** injected through `secrets.setSdkLoader()`; no test runs against a
+  real KMS yet.
+
+**`keys.directoryCipher` (`aes-256-gcm`, the default, or `aes-256-siv`)
+chooses the cipher of NEW data keys of the classes stored on directory
+entries** (`keystore.DIRECTORY_CLASSES` — the `/admin/encryption` page's
+directory classes). It exists because rcbj asked for "AES-512", which does not
+exist: AES's key is 128, 192 or 256 bits. **AES-256-SIV (RFC 5297) is the
+honest reading of it** — a 512-bit key, two AES-256 keys, one for S2V
+(AES-CMAC, RFC 4493) and one for CTR — and it is nonce-misuse resistant, which
+GCM is not. Its strength is still 256-bit AES; say so wherever it is offered.
+
+* **node has no AES-SIV**, so `crypto.js` builds it from AES-256-ECB
+  (`aesBlock()`) and AES-256-CTR: `aesCmac()`, `sivS2v()`, `aesSivEncrypt()`,
+  `aesSivDecrypt()`. **Wycheproof's `aes_siv_cmac_test` 512-bit groups hold
+  it** (`tests/wycheproof.js`); the other key sizes are not a door here.
+* **The envelope is `$aessiv$2$<dek id>$<nonce>$<siv>$<ciphertext>`**, with a
+  random 16-byte nonce as the last AD component (so one value sealed twice is
+  two ciphertexts) and the envelope's AAD first. `encryptWithDek()` chooses by
+  the KEY's length (64 bytes is SIV); `decryptWithDek()` by the envelope, and
+  a GCM envelope under a 64-byte key is refused.
+* **A DEK's cipher is fixed when it is made** (`rec.alg`, the key length the
+  truth). Changing the setting makes every directory class due a rotation
+  (`rotationDue()` compares the newest key's cipher with `cipherFor()`), and the
+  P2 re-encryption moves the values — no migration path of its own.
+* **Every "is this sealed?" test is `crypto.isEncryptedWithKek()`** now; five
+  modules matched `$aesgcm$` themselves and would have stored a SIV value as
+  plaintext-looking text. A new one owes the same.
+* **A derived (development) DEK is always GCM**: nothing persists there, so
+  nothing would be gained.
+
 ### `storeReport()`: THE SAME MODULE ANSWERING A MONITORING QUESTION (2026-09-12)
 
 `describe()` says where a secret is configured to come from. **`storeReport()`

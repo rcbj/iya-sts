@@ -134,6 +134,30 @@ const log = bunyan.createLogger({
   level: config.value('global.logLevel')
 });
 
+// HOW AN SDK IS LOADED: `require`, unless a test handed in a loader of its own
+// (`setSdkLoader()`). The tests image installs node-vault in the tests' own
+// package, which this file's `require` cannot reach, and no test may dial
+// AWS — so the in-process half of the KMS providers is driven through this.
+// Nothing in the service calls `setSdkLoader()`.
+let sdkLoader = null;
+function loadSdk(name) {
+  log.debug("Entering loadSdk(). " + name);
+  log.debug("Leaving loadSdk().");
+  return sdkLoader ? sdkLoader(name) : require(name);
+}
+
+/**
+ * Hands in the function SDKs are loaded with, for a test; `null` puts
+ * `require` back.
+ *
+ * @param fn - `(packageName) => module`, or null
+ */
+function setSdkLoader(fn) {
+  log.debug("Entering setSdkLoader().");
+  sdkLoader = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving setSdkLoader().");
+}
+
 // One sentence for a missing SDK, so all four say the same thing the same way.
 function missingModule(pkg, provider, err) {
   log.debug("Entering missingModule().");
@@ -835,7 +859,7 @@ async function vaultConnect(spec) {
   log.debug('Entering vaultConnect().');
   let sdk;
   try {
-    sdk = require('node-vault');
+    sdk = loadSdk('node-vault');
   } catch (e) {
     throw missingModule('node-vault', 'vault', e);
   }
@@ -972,10 +996,327 @@ const vaultProvider = {
   }
 };
 
+// ===========================================================================
+// A KEY THAT NEVER LEAVES ITS KEY MANAGEMENT SERVICE (#391 P3): Vault or
+// OpenBao TRANSIT, and AWS KMS.
+//
+// The five providers above READ a key-encryption key: its bytes come into
+// this process. These two never do. rcbj's decision on #391: **the KMS key
+// wraps each data encryption key directly** — a data-key row holds the KMS's
+// ciphertext, a process asks the KMS to unwrap each data key it needs once,
+// at start or when it first meets it, and holds the data key; no root key is
+// ever in this process's memory. So `read()` for these answers a HANDLE, not
+// bytes:
+//
+//   { remote: true, provider, keyRef, label,
+//     wrap(dek, aad) -> Promise<string>,   // `$dekkms$1$<provider>$...`
+//     unwrap(text, aad) -> Promise<Buffer>,
+//     owns(text) -> boolean,               // its provider and its key
+//     isStale(text) -> boolean }           // wrapped under an older version
+//
+// THE AAD IS THE DATA KEY'S OWN (`keystore.js`'s `dekAad()`: its id, scope,
+// realm and class), as Transit's `associated_data` and as AWS's encryption
+// context — so a wrapped data key moved onto another realm's row is refused
+// by the KMS itself.
+//
+// ONLY THE KEY-ENCRYPTION KEY AND THE PREVIOUS ONE may name these providers:
+// a password or a cell key is a secret this service reads, and a handle is
+// not one (`STS-KEYS-0101`).
+// ===========================================================================
+const KMS_PREFIX = '$dekkms$1$';
+
+// The stored form: provider, the key's reference (base64url, since an ARN
+// holds ':' and '/'), and the KMS's own ciphertext, which holds no '$'.
+function kmsText(provider, keyRef, ciphertext) {
+  log.debug("Entering kmsText().");
+  log.debug("Leaving kmsText().");
+  return KMS_PREFIX + provider + '$' +
+         Buffer.from(String(keyRef), 'utf8').toString('base64url') + '$' +
+         ciphertext;
+}
+
+// Reads the stored form back: `{ provider, keyRef, ciphertext }`, or null.
+function kmsParts(text) {
+  log.debug("Entering kmsParts().");
+  const str = String(text || '');
+  if (str.indexOf(KMS_PREFIX) !== 0) {
+    log.debug("Leaving kmsParts(). Not a KMS wrap.");
+    return null;
+  }
+  const rest = str.slice(KMS_PREFIX.length).split('$');
+  if (rest.length !== 3 || !rest[0] || !rest[1] || !rest[2]) {
+    log.debug("Leaving kmsParts(). Malformed.");
+    return null;
+  }
+  log.debug("Leaving kmsParts().");
+  return { provider: rest[0],
+           keyRef: Buffer.from(rest[1], 'base64url').toString('utf8'),
+           ciphertext: rest[2] };
+}
+
+// The Transit mount, refused rather than spliced when it is not a path:
+// it goes into a request line, `certAuthMount()`'s rule.
+function transitMount() {
+  log.debug("Entering transitMount().");
+  const mount = String(config.value('keys.kekTransitMount') || 'transit')
+    .trim().replace(/^\/+|\/+$/g, '');
+  if (!/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/.test(mount)) {
+    throw errorCodes.mark(new Error('keys.kekTransitMount "' + mount +
+                                    '" is not a plain path.'),
+                          'STS-KEYS-0102');
+  }
+  log.debug("Leaving transitMount().");
+  return mount;
+}
+
+// ---------------------------------------------------------------------------
+// vault-transit — Vault's or OpenBao's Transit engine, through node-vault and
+// the same login `vaultConnect()` makes for a read (a client certificate or a
+// token). The key is `keys.kekRef` (or `keys.previousKekRef`); it must be an
+// AEAD key (aes256-gcm96, aes128-gcm96 or chacha20-poly1305), because only
+// those take `associated_data`. A login's token expires; a refused call logs
+// in again once.
+// ---------------------------------------------------------------------------
+const TRANSIT_AEAD = ['aes256-gcm96', 'aes128-gcm96', 'chacha20-poly1305'];
+
+const transitProvider = {
+  id: 'vault-transit',
+  label: 'Vault or OpenBao Transit (the key never leaves it)',
+  remote: true,
+  describe: function (spec) {
+    log.debug("Entering transitProvider.describe().");
+    const at = locationOf(spec || KEK, 'ref');
+    log.debug("Leaving transitProvider.describe().");
+    return { from: at.where ? transitMount() + '/keys/' + at.where
+                            : '(no key configured)',
+             endpoint: reachOf(spec || KEK, 'vault') || '(VAULT_ADDR)',
+             wraps: 'each data encryption key, in the KMS' };
+  },
+  read: async function (spec) {
+    log.debug('Entering transitProvider.read().');
+    const secret = spec || KEK;
+    const name = locationOf(secret, 'ref').where;
+    if (!name) {
+      throw errorCodes.mark(new Error(secret.provider + ' is ' +
+        '"vault-transit" and ' + secret.ref + ' names no key. Set it to the ' +
+        'Transit key\'s name.'), 'STS-KEYS-0046');
+    }
+    const mount = transitMount();
+    let connected = await vaultConnect(secret);
+    async function call(path, method, json) {
+      log.debug('Entering transitProvider.call(). ' + path);
+      const ask = function () {
+        return connected.client.request(Object.assign(
+          { path: '/' + mount + path, method: method },
+          json ? { json: json } : {}));
+      };
+      try {
+        const answer = await ask();
+        log.debug('Leaving transitProvider.call().');
+        return answer;
+      } catch (e) {
+        const code = e && e.response && e.response.statusCode;
+        if (code !== 403) {
+          throw e;
+        }
+        log.debug('Caught in transitProvider.call(): 403; logging in ' +
+                  'again once.');
+        connected = await vaultConnect(secret);
+        const answer = await ask();
+        log.debug('Leaving transitProvider.call(). After a new login.');
+        return answer;
+      }
+    }
+    const info = await call('/keys/' + encodeURIComponent(name), 'GET', null);
+    const data = (info && info.data) || {};
+    if (TRANSIT_AEAD.indexOf(String(data.type || '')) < 0) {
+      throw errorCodes.mark(new Error('the Transit key "' + name + '" is ' +
+        'of type "' + (data.type || '?') + '"; a data key is wrapped with ' +
+        'its id, scope, realm and class as associated data, which only ' +
+        TRANSIT_AEAD.join(', ') + ' accept.'), 'STS-KEYS-0102');
+    }
+    let latest = Number(data.latest_version) || 1;
+    const handle = {
+      remote: true, provider: 'vault-transit', keyRef: name,
+      label: 'Transit key ' + mount + '/' + name,
+      wrap: async function (dek, aad) {
+        log.debug('Entering transit wrap().');
+        const answer = await call('/encrypt/' + encodeURIComponent(name),
+          'POST', { plaintext: Buffer.from(dek).toString('base64'),
+                    associated_data: Buffer.from(String(aad), 'utf8')
+                      .toString('base64') });
+        const ct = answer && answer.data && answer.data.ciphertext;
+        if (!ct || String(ct).indexOf('$') >= 0) {
+          throw errorCodes.mark(new Error('Transit answered no ciphertext'),
+                                'STS-KEYS-0103');
+        }
+        const v = /^vault:v(\d+):/.exec(String(ct));
+        if (v) {
+          latest = Math.max(latest, Number(v[1]));
+        }
+        log.debug('Leaving transit wrap().');
+        return kmsText('vault-transit', name, String(ct));
+      },
+      unwrap: async function (text, aad) {
+        log.debug('Entering transit unwrap().');
+        const parts = kmsParts(text);
+        if (!parts || parts.provider !== 'vault-transit' ||
+            parts.keyRef !== name) {
+          throw errorCodes.mark(new Error('the wrapped data key is not ' +
+            'under the Transit key "' + name + '"'), 'STS-KEYS-0103');
+        }
+        const answer = await call('/decrypt/' + encodeURIComponent(name),
+          'POST', { ciphertext: parts.ciphertext,
+                    associated_data: Buffer.from(String(aad), 'utf8')
+                      .toString('base64') });
+        const plain = answer && answer.data && answer.data.plaintext;
+        if (!plain) {
+          throw errorCodes.mark(new Error('Transit answered no plaintext'),
+                                'STS-KEYS-0103');
+        }
+        log.debug('Leaving transit unwrap().');
+        return Buffer.from(String(plain), 'base64');
+      },
+      owns: function (text) {
+        log.debug('Entering transit owns().');
+        const parts = kmsParts(text);
+        log.debug('Leaving transit owns().');
+        return !!parts && parts.provider === 'vault-transit' &&
+               parts.keyRef === name;
+      },
+      // A ciphertext under an older version of the key: the key was rotated
+      // in Transit, and a re-wrap moves the data key to its newest version.
+      isStale: function (text) {
+        log.debug('Entering transit isStale().');
+        const parts = kmsParts(text);
+        const v = parts ? /^vault:v(\d+):/.exec(parts.ciphertext) : null;
+        log.debug('Leaving transit isStale().');
+        return !!v && Number(v[1]) < latest;
+      }
+    };
+    log.info('secrets: ' + secret.label + ' is the Transit key "' + mount +
+             '/' + name + '" (' + data.type + ', version ' + latest + '); ' +
+             'it never leaves the KMS, which wraps each data key.');
+    log.debug('Leaving transitProvider.read().');
+    return handle;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// aws-kms — AWS KMS, through `@aws-sdk/client-kms` and the SDK's own
+// credential chain (an instance or task role). `keys.kekRef` is the key id,
+// ARN or alias; `keys.kekRegion` the region. The key must be a symmetric
+// ENCRYPT_DECRYPT key; the data key's AAD is its encryption context. AWS's own
+// rotation keeps old backing keys, so nothing here is ever stale; moving to
+// ANOTHER key is `keys.previousKek*`.
+// ---------------------------------------------------------------------------
+const awsKmsProvider = {
+  id: 'aws-kms',
+  label: 'AWS KMS (the key never leaves it)',
+  remote: true,
+  describe: function (spec) {
+    log.debug("Entering awsKmsProvider.describe().");
+    const at = locationOf(spec || KEK, 'ref');
+    log.debug("Leaving awsKmsProvider.describe().");
+    return { from: at.where || '(no key configured)',
+             region: reachOf(spec || KEK, 'region') || '(the SDK default)',
+             wraps: 'each data encryption key, in the KMS' };
+  },
+  read: async function (spec) {
+    log.debug('Entering awsKmsProvider.read().');
+    const secret = spec || KEK;
+    const keyId = locationOf(secret, 'ref').where;
+    if (!keyId) {
+      throw errorCodes.mark(new Error(secret.provider + ' is "aws-kms" and ' +
+        secret.ref + ' names no key. Set it to the KMS key\'s id, ARN or ' +
+        'alias.'), 'STS-KEYS-0046');
+    }
+    let sdk;
+    try {
+      sdk = loadSdk('@aws-sdk/client-kms');
+    } catch (e) {
+      throw missingModule('@aws-sdk/client-kms', 'aws-kms', e);
+    }
+    const region = reachOf(secret, 'region');
+    const client = new sdk.KMSClient(region ? { region: region } : {});
+    const described = await client.send(new sdk.DescribeKeyCommand(
+      { KeyId: keyId }));
+    const meta = (described && described.KeyMetadata) || {};
+    if (meta.KeyUsage !== 'ENCRYPT_DECRYPT' ||
+        (meta.KeySpec || meta.CustomerMasterKeySpec) !== 'SYMMETRIC_DEFAULT' ||
+        meta.Enabled === false) {
+      throw errorCodes.mark(new Error('the KMS key "' + keyId + '" is not ' +
+        'an enabled symmetric ENCRYPT_DECRYPT key (' + (meta.KeyUsage || '?') +
+        ', ' + (meta.KeySpec || meta.CustomerMasterKeySpec || '?') + ', ' +
+        (meta.Enabled === false ? 'disabled' : 'enabled') + ').'),
+        'STS-KEYS-0102');
+    }
+    const context = function (aad) {
+      return { 'sts-dek': String(aad) };
+    };
+    const handle = {
+      remote: true, provider: 'aws-kms', keyRef: keyId,
+      label: 'AWS KMS key ' + (meta.Arn || keyId),
+      wrap: async function (dek, aad) {
+        log.debug('Entering aws-kms wrap().');
+        const answer = await client.send(new sdk.EncryptCommand({
+          KeyId: keyId, Plaintext: Buffer.from(dek),
+          EncryptionContext: context(aad) }));
+        if (!answer || !answer.CiphertextBlob) {
+          throw errorCodes.mark(new Error('AWS KMS answered no ciphertext'),
+                                'STS-KEYS-0103');
+        }
+        log.debug('Leaving aws-kms wrap().');
+        return kmsText('aws-kms', keyId,
+                       Buffer.from(answer.CiphertextBlob).toString('base64'));
+      },
+      unwrap: async function (text, aad) {
+        log.debug('Entering aws-kms unwrap().');
+        const parts = kmsParts(text);
+        if (!parts || parts.provider !== 'aws-kms' || parts.keyRef !== keyId) {
+          throw errorCodes.mark(new Error('the wrapped data key is not ' +
+            'under the KMS key "' + keyId + '"'), 'STS-KEYS-0103');
+        }
+        const answer = await client.send(new sdk.DecryptCommand({
+          KeyId: keyId,
+          CiphertextBlob: Buffer.from(parts.ciphertext, 'base64'),
+          EncryptionContext: context(aad) }));
+        if (!answer || !answer.Plaintext) {
+          throw errorCodes.mark(new Error('AWS KMS answered no plaintext'),
+                                'STS-KEYS-0103');
+        }
+        log.debug('Leaving aws-kms unwrap().');
+        return Buffer.from(answer.Plaintext);
+      },
+      owns: function (text) {
+        log.debug('Entering aws-kms owns().');
+        const parts = kmsParts(text);
+        log.debug('Leaving aws-kms owns().');
+        return !!parts && parts.provider === 'aws-kms' &&
+               parts.keyRef === keyId;
+      },
+      isStale: function () {
+        log.debug('Entering aws-kms isStale().');
+        log.debug('Leaving aws-kms isStale(). Never.');
+        return false;
+      }
+    };
+    log.info('secrets: ' + secret.label + ' is the AWS KMS key "' +
+             (meta.Arn || keyId) + '"; it never leaves the KMS, which wraps ' +
+             'each data key.');
+    log.debug('Leaving awsKmsProvider.read().');
+    return handle;
+  }
+};
+
 const PROVIDERS = [fileProvider, awsProvider, gcpProvider, azureProvider,
-                   vaultProvider];
+                   vaultProvider, transitProvider, awsKmsProvider];
+// THE TWO SECRETS A KMS PROVIDER MAY SERVE: a handle is a key-encryption key
+// and nothing else.
+const KMS_CAPABLE = ['kek', 'previous-kek'];
 /**
- * The ids of the five providers: file, aws, gcp, azure and vault.
+ * The ids of the seven providers: file, aws, gcp, azure, vault, and the two
+ * key management services vault-transit and aws-kms.
  */
 const PROVIDER_IDS = PROVIDERS.map(function (one) { return one.id; });
 
@@ -1042,6 +1383,14 @@ async function read(spec) {
                           '", which is not one of: ' + PROVIDER_IDS.join(', ') +
                           '.'), 'STS-KEYS-0050');
     recordRead(spec, null, 0, bad);
+    throw tagReadFailure(spec, bad);
+  }
+  if (provider.remote && KMS_CAPABLE.indexOf(spec.id) < 0) {
+    const bad = errorCodes.mark(new Error(spec.provider + ' is "' +
+      provider.id + '", a key management service that wraps keys and holds ' +
+      'no secret to read; only keys.kekProvider and ' +
+      'keys.previousKekProvider may name it.'), 'STS-KEYS-0101');
+    recordRead(spec, provider, 0, bad);
     throw tagReadFailure(spec, bad);
   }
   const began = Date.now();
@@ -2267,6 +2616,105 @@ PROBES.aws = {
 };
 
 // ---------------------------------------------------------------------------
+// vault-transit and aws-kms (#391 P3) — the KEY's metadata, never a key: a
+// Transit key's type, versions and whether it can ever be exported, and a KMS
+// key's state and rotation. There is no stored secret to describe.
+// ---------------------------------------------------------------------------
+PROBES['vault-transit'] = {
+  scope: function (spec) {
+    log.debug("Entering scope().");
+    log.debug("Leaving scope().");
+    return connectionKey(spec) + '|' + locationOf(spec, 'ref').where;
+  },
+  store: function () {
+    log.debug("Entering store().");
+    log.debug("Leaving store().");
+    return [];
+  },
+  secret: function (spec, session) {
+    log.debug("Entering secret().");
+    const name = locationOf(spec, 'ref').where;
+    log.debug("Leaving secret().");
+    return [
+      runProbe('transit-key', 'What Transit says about the key that wraps ' +
+               'the data keys: its type, its versions, and whether it may ' +
+               'ever leave the KMS.', async function () {
+        if (!name) {
+          throw new Error('no Transit key is configured');
+        }
+        const connected = await connect(session, spec);
+        const answer = await connected.client.request({
+          path: '/' + transitMount() + '/keys/' + encodeURIComponent(name),
+          method: 'GET' });
+        const d = (answer && answer.data) || {};
+        return { name: d.name, type: d.type,
+                 latestVersion: d.latest_version,
+                 minDecryptionVersion: d.min_decryption_version,
+                 minEncryptionVersion: d.min_encryption_version,
+                 exportable: !!d.exportable,
+                 deletionAllowed: !!d.deletion_allowed,
+                 autoRotatePeriod: d.auto_rotate_period,
+                 versions: Object.keys(d.keys || {}) };
+      })
+    ];
+  }
+};
+
+PROBES['aws-kms'] = {
+  scope: function (spec) {
+    log.debug("Entering scope().");
+    log.debug("Leaving scope().");
+    return reachOf(spec, 'region') + '|' + locationOf(spec, 'ref').where;
+  },
+  store: function () {
+    log.debug("Entering store().");
+    log.debug("Leaving store().");
+    return [];
+  },
+  secret: function (spec) {
+    log.debug("Entering secret().");
+    const keyId = locationOf(spec, 'ref').where;
+    log.debug("Leaving secret().");
+    return [
+      runProbe('kms-key', 'What AWS KMS says about the key that wraps the ' +
+               'data keys: its state and whether AWS rotates it.',
+               async function () {
+        let sdk;
+        try {
+          sdk = loadSdk('@aws-sdk/client-kms');
+        } catch (e) {
+          throw missingModule('@aws-sdk/client-kms', 'aws-kms', e);
+        }
+        if (!keyId) {
+          throw new Error('no KMS key is configured');
+        }
+        const region = reachOf(spec, 'region');
+        const client = new sdk.KMSClient(region ? { region: region } : {});
+        const described = await client.send(
+          new sdk.DescribeKeyCommand({ KeyId: keyId }));
+        const m = (described && described.KeyMetadata) || {};
+        let rotation = null;
+        try {
+          const r = await client.send(
+            new sdk.GetKeyRotationStatusCommand({ KeyId: keyId }));
+          rotation = { enabled: !!r.KeyRotationEnabled,
+                       periodDays: r.RotationPeriodInDays,
+                       next: r.NextRotationDate };
+        } catch (e) {
+          log.debug("Caught in the kms-key probe: " +
+                    ((e && e.message) || e));
+          rotation = { error: String((e && e.message) || e) };
+        }
+        return { arn: m.Arn, keyId: m.KeyId, state: m.KeyState,
+                 usage: m.KeyUsage, spec: m.KeySpec, origin: m.Origin,
+                 manager: m.KeyManager, multiRegion: !!m.MultiRegion,
+                 created: m.CreationDate, rotation: rotation };
+      })
+    ];
+  }
+};
+
+// ---------------------------------------------------------------------------
 // gcp — the SECRET and the VERSION, both metadata calls.
 //
 // `accessSecretVersion` is the one that returns the payload and is what
@@ -2649,6 +3097,9 @@ module.exports = {
   current: current,
   readKek: readKek,
   describe: describe,
+  // #391 P3: the stored form of a KMS-wrapped data key, and the test seam.
+  kmsParts: kmsParts,
+  setSdkLoader: setSdkLoader,
   // The second secret (2026-09-12). The descriptors are exported for
   // `tests/database_password.js`, which asserts the fallback and the field
   // rules directly — they are the part of this file with no other way in.

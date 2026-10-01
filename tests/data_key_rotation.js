@@ -32,6 +32,9 @@
 //      by hand is refused STS-KEYS-0100;
 //   H. a keyed digest is made under a stored digest key, so it is the same
 //      after the KEK is rotated, and that key is never rotated.
+//   I. `keys.directoryCipher=aes-256-siv` seals the directory's classes with
+//      AES-256-SIV and nothing else; changing it back makes the class due a
+//      rotation, and the re-encryption moves the value to AES-256-GCM.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -71,7 +74,7 @@ function childMain() {
   // standing for sts_minted.
   const rows = new Map();
   const table = new Map();
-  const SEALED = /\$aesgcm\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
+  const SEALED = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
   const store = {
     loadKeys: function () {
       return Promise.resolve(Array.from(rows.entries()).map(function (p) {
@@ -106,7 +109,7 @@ function childMain() {
       ids.forEach(function (id) {
         out[id] = 0;
         table.forEach(function (v) {
-          if (v.indexOf('$aesgcm$2$' + id + '$') >= 0) {
+          if (v.indexOf('$2$' + id + '$') >= 0) {
             out[id] += 1;
           }
         });
@@ -313,6 +316,42 @@ function childMain() {
                                              reason: 'test' });
     note(notRotated.ok && notRotated.rotated.length === 0,
          'H3. the digest key is never rotated', JSON.stringify(notRotated));
+
+    // ---------------------------------------------------------------- I
+    // THE DIRECTORY CIPHER: AES-256-SIV for the classes stored on directory
+    // entries, and nothing else; a change of setting is a rotation.
+    process.env.STS_KEYS_DIRECTORY_CIPHER = 'aes-256-siv';
+    const sivValue = keystore.seal('JBSWY3DPEHPK3PXP', 'totp-secret',
+                                   undefined, { realm: '' });
+    const notDir = keystore.seal('epsilon2', 'minted-rows', undefined,
+                                 { realm: '' });
+    table.set('t', sivValue);
+    note(/^\$aessiv\$2\$/.test(sivValue) && /^\$aesgcm\$2\$/.test(notDir),
+         'I1. a directory class is sealed with AES-256-SIV, other data with ' +
+         'AES-256-GCM', sivValue.slice(0, 30) + ' / ' + notDir.slice(0, 30));
+    note(keystore.open(sivValue, 'totp-secret') === 'JBSWY3DPEHPK3PXP',
+         'I2. and opens');
+    const twice = keystore.seal('JBSWY3DPEHPK3PXP', 'totp-secret', undefined,
+                                { realm: '' });
+    note(twice !== sivValue,
+         'I3. the same value sealed twice is two ciphertexts (the nonce)');
+    note(keystore.dataKeys().some(function (d) {
+      return d.cls === 'totp-secret' && d.alg === 'aes-256-siv';
+    }), 'I4. the data key says its cipher');
+    await keystore.settleDeks();
+    process.env.STS_KEYS_DIRECTORY_CIPHER = 'aes-256-gcm';
+    const mismatch = keystore.rotationDue(365).some(function (d) {
+      return d.cls === 'totp-secret';
+    });
+    note(mismatch, 'I5. a changed setting makes the class due a rotation');
+    keystore.rotateDeks({ realm: '', cls: 'totp-secret', reason: 'test' });
+    await sleep(1200);
+    const back = await job(8 * DAY).reencrypt({ trigger: 'test' });
+    note(/^\$aesgcm\$2\$/.test(table.get('t')) &&
+         keystore.open(table.get('t'), 'totp-secret') === 'JBSWY3DPEHPK3PXP',
+         'I6. and the re-encryption moves the value to AES-256-GCM',
+         JSON.stringify(back));
+    delete process.env.STS_KEYS_DIRECTORY_CIPHER;
 
     // ---------------------------------------------------------------- G
     const deps = rotation.DataKeyRotation.defaultDeps();

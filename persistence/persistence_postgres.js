@@ -256,7 +256,8 @@ const JOIN_LOCK = 460046;
 // — which answers null for a value already under its current DEK. Null when
 // nothing in the text changed.
 // ---------------------------------------------------------------------------
-const SEALED_VALUE = /\$aesgcm\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
+// Either envelope: AES-256-GCM (`$aesgcm$`) or AES-256-SIV (`$aessiv$`).
+const SEALED_VALUE = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
 
 const TOMBSTONE = '$tombstone$1';
 
@@ -1489,7 +1490,8 @@ function create(options) {
   function sealedLike(dekId) {
     log.debug("Entering sealedLike().");
     log.debug("Leaving sealedLike().");
-    return '%$aesgcm$2$' + String(dekId).replace(/[\\%_]/g, '\\$&') + '$%';
+    // `$aes___$`: LIKE's `_` matches either envelope's three letters.
+    return '%$aes___$2$' + String(dekId).replace(/[\\%_]/g, '\\$&') + '$%';
   }
 
   function resealText(text, reseal) {

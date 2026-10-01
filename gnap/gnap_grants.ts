@@ -546,7 +546,7 @@ class GnapGrants {
     const secret = this.field(app, 'gnapSymmetricKey');
     if (secret) {
       let bytes = Buffer.from(secret, 'base64url');
-      if (keystore.persists() && /^\$aesgcm\$/.test(secret)) {
+      if (keystore.persists() && stsCrypto.isEncryptedWithKek(secret)) {
         // Still ciphertext: the opened view could not open it. Refused rather
         // than used — a MAC keyed with ciphertext would verify nothing any
         // client could produce, and the log names the entry.
