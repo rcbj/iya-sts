@@ -1878,10 +1878,17 @@ async function theNewUserPageDescribesAPerson(driver) {
   });
 
   const page = await open(driver, realm("/admin/users/new"));
+  // EVERY FIELD IS ON THE ADVANCED VIEW (9e9647de): the page opens on the
+  // simplified one, which draws a subset, and only its switch reaches the
+  // rest — so it is pressed before the boxes are counted.
+  const switchIndex = await formIndexPosting(driver, "create");
+  await fillAndPress(driver, switchIndex, {},
+      { buttonText: "Show every field", noTyping: true });
+  const advanced = await survey(driver);
   check("and draws a box for every one of them", function () {
     assert.strictEqual(page.status, 200,
       "/admin/users/new should draw; it answered " + page.status);
-    const drawn = boxesNamed(page, "field.");
+    const drawn = boxesNamed(advanced, "field.");
     (form.body.fields || []).forEach(function (row) {
       assert.ok(boxFor(drawn, row.attribute) !== null,
         "the catalogue names `" + row.attribute + "` and the form draws no " +
