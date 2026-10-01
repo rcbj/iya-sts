@@ -6967,9 +6967,12 @@ So no API operation is new, and rule 7 holds through the existing mirrors.
 `certificateEnrollment`, which holds no secret. `tests/application_enrollment.js`
 section F holds the model and the return path.
 
-**What it does not do**: the pager links do not carry the tab's fragment,
-so a next page opens on the Overview tab. The observed-addresses list has
-the same limitation.
+**Each copy pages on a name of its own** (`enrolledPage` on Credentials,
+`enrolledConfigPage` on the sub-tab). A pager's links carry `#list-<param>`,
+the id of the pager above its list, and that fragment is what opens the tab
+holding it. With one name both copies had one id, and a next page from the
+Credentials tab landed on the Configuration copy. **A list drawn twice on
+one page needs two paging names**, for this reason and for `pagingOf()`'s.
 
 ## AN APPLICATION'S PAGE HAS A SHARED SIGNALS SECTION (2026-10-01)
 

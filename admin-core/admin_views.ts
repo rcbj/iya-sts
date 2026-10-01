@@ -6716,10 +6716,12 @@ class AdminViews {
    *
    * @param req - the request, for the paging of its certificates
    * @param row - the application's view
+   * @param listName - the paging name of its certificate list, `enrolled`
+   *   unless the caller draws the list a second time on one page
    * @returns `{ families, rules, certificates, paged, eabKeys, challenges,
    *   hostNames, keyAlgorithms, json }`
    */
-  applicationEnrollmentState(req, row) {
+  applicationEnrollmentState(req, row, listName?) {
     const { log, config } = this.deps;
     log.debug("Entering AdminViews.applicationEnrollmentState(). " +
               "identifier=" + (row && row.identifier));
@@ -6789,8 +6791,12 @@ class AdminViews {
         ? core.scepChallengesOf(entry) : [];
       hostNames = core.hostNamesOf(entry);
     }
+    // The list's paging name is also its pager's id (`list-<name>Page`), so
+    // a page that draws the list twice names each copy apart — or both
+    // pagers' links land on whichever copy comes first in the document.
     const paged = this.pagedRows((req && req.query) || {}, certificates,
-                                 { name: 'enrolled', noun: 'certificates' });
+                                 { name: listName || 'enrolled',
+                                   noun: 'certificates' });
     let keyAlgorithms = [];
     try {
       keyAlgorithms = require('../common/vendored/key_material').keyAlgIds();

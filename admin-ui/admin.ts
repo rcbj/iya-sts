@@ -17813,7 +17813,14 @@ class AdminConsole {
     const { log, adminViews, pageParamsOf } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.applicationEnrollmentPanel().");
-    const state = adminViews.applicationEnrollmentState(req, row);
+    // TWO COPIES ON ONE PAGE, TWO PAGERS (2026-10-01). The panel is drawn on
+    // the Credentials tab and on the Certificate enrollment sub-tab, and a
+    // pager's links carry `#list-<param>`, the id of the pager above its
+    // list — which opens the tab holding it. With one paging name both
+    // copies had that id, and a next page from the Credentials tab landed on
+    // the Configuration tab's copy. Each copy pages on a name of its own.
+    const state = adminViews.applicationEnrollmentState(req, row,
+      where === 'credentials' ? 'enrolled' : 'enrolledConfig');
     if (!state.families.length) {
       log.debug("Leaving AdminConsole.applicationEnrollmentPanel(). Not " +
                 "declared for any of the three.");

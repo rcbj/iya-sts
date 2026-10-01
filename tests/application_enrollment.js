@@ -296,6 +296,14 @@ function childMain() {
         { identifier: 'nobody', allowedProtocols: ['oauth2'], fields: {} });
       note(person.families.length === 0 && person.certificates.length === 0,
            'F5. an application declared for none of the three gets nothing');
+      const second = adminViews.applicationEnrollmentState({ query: {} },
+        applications.get('ae-panel'), 'enrolledConfig');
+      note(state.paged.paging.param === 'enrolledPage' &&
+           second.paged.paging.param === 'enrolledConfigPage',
+           'F7. the list drawn a second time on the page pages on a name ' +
+           'of its own, so its pager\'s id differs',
+           JSON.stringify([state.paged.paging.param,
+                           second.paged.paging.param]));
       note(consoleUi.enrollmentReturnTo({ from: 'application',
              application: 'ae-panel', where: 'config' }, '/admin/est') ===
            '/admin/applications?application=ae-panel#cfg-enroll' &&
