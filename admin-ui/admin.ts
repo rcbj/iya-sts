@@ -17566,7 +17566,8 @@ class AdminConsole {
                String(body.action || '') === 'issue-tls-client-certificate'
               ? '#credentials-tls-client'
               : (String(body.action || '') === 'generate-did-key'
-                ? '#cfg-did' : ''))))
+                ? (String(body.from || '') === 'credentials'
+                  ? '#credentials-did' : '#cfg-did') : ''))))
       : '/admin/applications' + queryWith(listView, {});
     this.respondToAction(req, res, back, result);
     log.debug("Leaving the admin applications action endpoint.");
@@ -17587,11 +17588,14 @@ class AdminConsole {
    * @param req - the request, whose base URL names the DID
    * @param row - the application's view
    * @param carryBack - the hidden `back` field the page's forms carry
+   * @param where - `config` (the DID tab) or `credentials` (the
+   *   Credentials tab), which the Generate form returns to
    * @returns the HTML
    */
-  applicationDidPanel(req, row, carryBack) {
+  applicationDidPanel(req, row, carryBack, where?) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminConsole.applicationDidPanel().");
+    const self = this;
     const vcDid = require('../oid4vc/vc_did');
     const base = baseUrlOf(req);
     const identifier = String(row.identifier || '');
@@ -17601,6 +17605,26 @@ class AdminConsole {
     const answer = vcDid.applicationDidDocument(base, identifier);
     const canWrite = this.mayWrite(req);
     const algorithms = ['ES256', 'ES384', 'EdDSA'];
+    const anchor = where === 'credentials' ? '#credentials-did' : '#cfg-did';
+    // THE KEY PAIRS THE DOCUMENT PUBLISHES, one row each: the verification
+    // method, the key's type and algorithm, and its thumbprint. Only public
+    // halves exist here; the private halves were handed out when generated.
+    const keys = answer.ok ? answer.document.verificationMethod : [];
+    const keyTable = keys.length
+      ? '<table><tr><th>Verification method</th><th>Key</th>' +
+        '<th>Algorithm</th></tr>' + keys.map(function (m) {
+          const jwk = m.publicKeyJwk || {};
+          return '<tr><td><code>' + self.esc(m.id.slice(did.length)) +
+            '</code></td><td>' + self.esc(String(jwk.kty || '') +
+              (jwk.crv ? ' ' + jwk.crv : '')) + '</td><td>' +
+            self.esc(String(jwk.alg || '—')) + '</td></tr>';
+        }).join('') + '</table>' +
+        this.note('Public keys only. Each private key was shown once, when ' +
+        'it was generated, and is not kept by this service. To change a key, ' +
+        'generate a new one with <em>replace</em> ticked, or edit ' +
+        '<code>didPublicKeyJwk</code> on the Decentralized Identifier (DID) ' +
+        'configuration tab.')
+      : '<p class="sub">No key pair yet.</p>';
     const html = '<table><tr><th>DID</th><td><code>' + this.esc(did) +
       '</code></td></tr><tr><th>Document</th><td><a href="' + this.esc(url) +
       '"><code>' + this.esc(url) + '</code></a><div class="sub">' +
@@ -17615,23 +17639,33 @@ class AdminConsole {
       'fetches it from this service. The document publishes the keys, ' +
       'services and other names below. The DID follows the address this ' +
       'console is reached on; pin <code>global.publicBaseUrl</code> so it ' +
-      'does not change with the host name.') +
+      'does not change with the host name.') + keyTable +
       (canWrite
-        ? '<form method="post" action="/admin/applications#cfg-did">' +
-          carryBack +
+        ? '<form method="post" action="/admin/applications' + anchor +
+          '">' + carryBack +
           '<input type="hidden" name="action" value="generate-did-key">' +
+          '<input type="hidden" name="from" value="' +
+          (where === 'credentials' ? 'credentials' : 'config') + '">' +
           '<input type="hidden" name="application" value="' +
           this.esc(identifier) + '"><div class="formrow">' +
           '<span>Generate a key pair:</span> ' +
           algorithms.map(function (alg, index) {
-            return '<label><input type="radio" name="algorithm" value="' +
+            return '<label' + self.tip({
+              ES256: 'ECDSA on P-256 with SHA-256: the default, and what ' +
+                     'most DID resolvers and wallets expect.',
+              ES384: 'ECDSA on P-384 with SHA-384.',
+              EdDSA: 'Ed25519. Compact, and widely supported by DID tooling.'
+            }[alg]) + '><input type="radio" name="algorithm" value="' +
               alg + '"' + (index === 0 ? ' checked' : '') + '> ' + alg +
               '</label>';
           }).join(' ') +
           ' <label' + this.tip('Take the keys already in the document off ' +
             'first, so the new key is the only one.') + '><input ' +
           'type="checkbox" name="replace" value="yes"> replace the keys ' +
-          'there</label> <button type="submit">Generate</button></div>' +
+          'there</label> <button type="submit"' +
+          this.tip('Make a key pair, add its public key to the DID document ' +
+                   'and show the private key once.') +
+          '>Generate</button></div>' +
           '</form>' +
           this.note('The public key is added to the document; the private ' +
           'key is shown once on the next page and not kept here.')
@@ -17661,7 +17695,9 @@ class AdminConsole {
                               body.application || '');
     const listView = this.listViewFromBack('/admin/applications', body.back);
     const back = '/admin/applications' +
-      queryWith(listView, { application: identifier }) + '#cfg-did';
+      queryWith(listView, { application: identifier }) +
+      (String(body.from || '') === 'credentials' ? '#credentials-did'
+                                                  : '#cfg-did');
     const jwk = JSON.stringify(answer.privateJwk, null, 2);
     const dataUri = function (mime, text) {
       log.debug("Entering dataUri().");
@@ -18145,9 +18181,14 @@ class AdminConsole {
       'class="formrow"><input type="hidden" name="action" ' +
       'value="create"><label for="identifier">Identifier</label><input ' +
       'type="text" id="identifier" name="identifier" size="30" required ' +
-      'placeholder="client_id, wtrealm, entityID or SPN"><label ' +
-      'for="newname">Name</label><input type="text" id="newname" name="name" ' +
-      'size="18" placeholder="optional"><button ' +
+      'placeholder="e.g. my-web-app"' +
+      this.tip('The key every protocol presents for this application: a ' +
+               'client_id, wtrealm, AppliesTo, SAML entityID or Kerberos ' +
+               'SPN. At most 512 characters, no line break.') +
+      '><label for="newname">Name</label><input type="text" id="newname" ' +
+      'name="name" size="18" placeholder="e.g. My Web App (optional)"' +
+      this.tip('What pages call it. With none, the identifier is the name.') +
+      '><button ' +
       'type="submit">Add</button></div></form>' +
       this.note('This row takes the identifier and a name and nothing else ' +
       '&mdash; it is the short way in for somebody already looking at the ' +
@@ -18257,8 +18298,10 @@ class AdminConsole {
       return shown.some(function (one) { return one.group === group.id; });
     });
     const saveButton = function (label) {
-      return '<div class="formrow"><button type="submit">' +
-        self.esc(label) + '</button></div>';
+      return '<div class="formrow"><button type="submit"' +
+        self.tip('Write this tab to the application. Nothing on the other ' +
+                 'tabs changes, and a refused value is shown with what was ' +
+                 'typed kept.') + '>' + self.esc(label) + '</button></div>';
     };
     const formOpen = function (group, present, extra?) {
       return '<form method="post" action="/admin/applications/edit#cfg-' +
@@ -18302,8 +18345,8 @@ class AdminConsole {
         return one.group === group.id;
       });
       return '<div class="subpanel" id="cfg-' + self.esc(group.id) + '">' +
-        (group.id === 'did' ? self.applicationDidPanel(req, row, carryBack)
-                            : '') +
+        (group.id === 'did'
+          ? self.applicationDidPanel(req, row, carryBack, 'config') : '') +
         formOpen(group.id, mine.map(function (one) {
           return one.attribute;
         })) +
@@ -19087,7 +19130,12 @@ class AdminConsole {
         '<input type="hidden" name="from" value="application">' +
         '<input type="hidden" name="application" value="' +
         self.esc(row.identifier) + '">' +
-        '<button type="submit" class="secondary">' + label +
+        '<button type="submit" class="secondary"' +
+        self.tip(status === 'paused'
+          ? 'Stop delivering events on this stream. The receiver is told ' +
+            'the stream is paused first; events are held, not dropped.'
+          : 'Deliver events on this stream again, held ones first. The ' +
+            'receiver is told the stream is enabled.') + '>' + label +
         '</button></form>';
     };
     const list = function (values) {
@@ -19952,9 +20000,14 @@ class AdminConsole {
           this.protocolFamilySection(row) },
       { id: 'tab-config', label: 'Configuration',
         html: this.applicationFieldsSection(req, row, carryBack, state) },
+      // EVERY CREDENTIAL IN ONE PLACE (rcbj, 2026-10-01): the DID key pair is
+      // here as well as on the DID configuration tab, for an application
+      // declared for `did`.
       { id: 'tab-credentials', label: 'Credentials',
         html: forFamilies(OAUTH,
-          this.applicationCredentialsSection(req, view, carryBack)) },
+          this.applicationCredentialsSection(req, view, carryBack)) +
+          forFamilies(['did'], '<h3 id="credentials-did">DID key pair</h3>' +
+            this.applicationDidPanel(req, row, carryBack, 'credentials')) },
       { id: 'tab-origins', label: 'Browser origins',
         html: this.applicationCorsSection(row, carryBack) },
       { id: 'tab-signals', label: 'Shared Signals',
@@ -20441,6 +20494,13 @@ class AdminConsole {
     const hint = this.tip(row.what || row.attribute);
     const defaultText = row.described
       ? 'default — currently ' + row.described.text : '';
+    // THE GUIDANCE IN AN EMPTY BOX (rcbj, 2026-10-01): an example of a valid
+    // value, as a placeholder — grey, and gone as soon as somebody types — and
+    // for a setting override the default beside it. `applications.
+    // fieldExample()` is the one table of them.
+    const guidance = row.example
+      ? 'e.g. ' + row.example + (defaultText ? ' (' + defaultText + ')' : '')
+      : (defaultText || 'not set');
     let control = '';
     // A VALUE THAT IS NOT ONE OF THE CHOICES (an older write, an
     // ldapmodify) is still offered, marked, so a save does not drop it
@@ -20459,8 +20519,8 @@ class AdminConsole {
       // A LIST FROM A CLOSED SET is a checkbox per value. An unticked box
       // posts nothing, so no box can be empty, and the form's `present` list
       // is what clears the attribute when every box is unticked.
-      control = '<div class="fg-checks" role="group" aria-label="' +
-        this.esc(row.attribute) + '">' +
+      control = '<div class="fg-checks" role="group"' + hint +
+        ' aria-label="' + this.esc(row.attribute) + '">' +
         offered(row.choices).map(function (value, n) {
           return '<label class="fg-radio"><input type="checkbox" name="' +
             self.esc(name + '.' + n) + '" value="' + self.esc(value) + '"' +
@@ -20471,7 +20531,9 @@ class AdminConsole {
       control = '<div class="fg-list">' + held.map(function (value, n) {
         return '<div class="fg-item"><input type="text" id="' +
           self.esc(id + '-' + n) + '" name="' + self.esc(name + '.' + n) +
-          '" value="' + self.esc(value) + '" aria-label="' +
+          '" value="' + self.esc(value) + '"' + hint +
+          (row.example ? ' placeholder="' + self.esc('e.g. ' + row.example) +
+                         '"' : '') + ' aria-label="' +
           self.esc(row.attribute + ' value ' + (n + 1)) + '">' +
           '<button type="submit" class="secondary fg-drop" name="drop" ' +
           'value="' + self.esc(row.attribute + '.' + n) + '" formaction="' +
@@ -20495,15 +20557,16 @@ class AdminConsole {
           (upper === value ? ' checked' : '') + '>' + self.esc(label) +
           '</label>';
       };
-      control = '<div class="fg-bool" role="radiogroup" aria-label="' +
-        this.esc(row.attribute) + '">' + radio('TRUE', 'true') +
+      control = '<div class="fg-bool" role="radiogroup"' + hint +
+        ' aria-label="' + this.esc(row.attribute) + '">' +
+        radio('TRUE', 'true') +
         radio('FALSE', 'false') +
         radio('', defaultText || 'not set') + '</div>';
     } else if (row.type === 'enum') {
       // ONE VALUE FROM A CLOSED SET is a radio per value, and a last one for
       // none (the setting's default, for an override), the boolean's shape.
-      control = '<div class="fg-bool fg-choices" role="radiogroup" ' +
-        'aria-label="' + this.esc(row.attribute) + '">' +
+      control = '<div class="fg-bool fg-choices" role="radiogroup"' +
+        hint + ' aria-label="' + this.esc(row.attribute) + '">' +
         offered(row.choices || []).map(function (value) {
           return '<label class="fg-radio"><input type="radio" name="' +
             self.esc(name) + '" value="' + self.esc(value) + '"' +
@@ -20515,16 +20578,17 @@ class AdminConsole {
         '>' + this.esc(defaultText || 'not set') + '</label></div>';
     } else if (row.long) {
       control = '<textarea id="' + this.esc(id) + '" name="' +
-        this.esc(name) + '" rows="3" placeholder="not set">' +
+        this.esc(name) + '" rows="3"' + hint + ' placeholder="' +
+        this.esc(guidance) + '">' +
         this.esc(held.join('\n')) + '</textarea>';
     } else {
       const d = row.described;
       control = '<input type="' + (row.type === 'int' ? 'number' : 'text') +
         '" id="' + this.esc(id) + '" name="' + this.esc(name) + '" value="' +
-        this.esc(first) + '"' +
+        this.esc(first) + '"' + hint +
         (d && typeof d.min === 'number' ? ' min="' + d.min + '"' : '') +
         (d && typeof d.max === 'number' ? ' max="' + d.max + '"' : '') +
-        ' placeholder="' + this.esc(defaultText || 'not set') + '">' +
+        ' placeholder="' + this.esc(guidance) + '">' +
         (row.attribute === 'oauthClientSecret' && opts.generateSecret
           ? ' <button type="submit" class="secondary" name="action" ' +
             'value="generate-secret" formaction="' +
@@ -21210,9 +21274,12 @@ class AdminConsole {
     const calledSection =
       '<h2>What it is called</h2><div class="formrow"><label ' +
       'for="identifier">Identifier</label><input type="text" id="identifier" ' +
-      'name="identifier" size="42" required placeholder="client_id, wtrealm, ' +
-      'AppliesTo, entityID or SPN" value="' + this.esc(drafted('identifier')) +
-      '"></div>' +
+      'name="identifier" size="42" required placeholder="e.g. my-web-app or ' +
+      'https://sp.example.com/saml/metadata"' +
+      this.tip('The key every protocol presents for this application: a ' +
+               'client_id, wtrealm, AppliesTo, SAML entityID or Kerberos ' +
+               'SPN. At most 512 characters, no line break.') +
+      ' value="' + this.esc(drafted('identifier')) + '"></div>' +
       this.note('THE KEY, exactly as the protocol will present it. At most ' +
       '512 characters, and no line break: an entry whose <code>cn</code> ' +
       'would be longer than 64 characters is filed under <code>app-&lt;12 ' +
@@ -21220,8 +21287,9 @@ class AdminConsole {
       'attribute to search on either way.') +
       '<div class="formrow"><label for="newname">Name</label><input ' +
       'type="text" id="newname" name="name" size="24" ' +
-      'placeholder="optional" value="' + this.esc(drafted('name')) +
-      '"></div>' +
+      'placeholder="e.g. My Web App (optional)"' +
+      this.tip('What pages call it. With none, the identifier is the name.') +
+      ' value="' + this.esc(drafted('name')) + '"></div>' +
       this.note('The name is what pages call it; with none given the ' +
       'identifier is the name, because inventing a friendly name for an ' +
       'opaque id would be inventing a fact.') +
@@ -21331,7 +21399,9 @@ class AdminConsole {
         : 'Simplified view: the fields most applications need.') +
       '</span><button type="submit" class="secondary" name="switchview" ' +
       'value="' + (view === 'advanced' ? 'simple' : 'advanced') +
-      '" formaction="/admin/applications/new" formnovalidate>' +
+      '" formaction="/admin/applications/new" formnovalidate' +
+      this.tip('Draw the other view of this form. Nothing is created, and ' +
+               'everything typed so far is kept.') + '>' +
       (view === 'advanced' ? 'Show the simplified view'
         : 'Show every field (advanced view)') + '</button></div>' +
       // THE PROMPT THAT STANDS IN FOR THE HIDDEN FIELDS. It is inside the form

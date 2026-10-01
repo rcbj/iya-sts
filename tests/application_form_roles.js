@@ -197,6 +197,27 @@ function run(t) {
           '7. the configuration has one Verifiable Credentials group',
           byName.oid4vpClientId && byName.oid4vpClientId.group);
 
+  // --- 8. Every text field shows an example of a valid value --------------
+  // The console draws `example` as the box's placeholder. A field drawn as
+  // radios or checkboxes (a boolean, a closed set) needs none, nor does a
+  // setting override, whose type the console refines from the setting and
+  // whose empty box shows the setting's default.
+  fields.forEach(function (row) {
+    if (row.type === 'boolean' || (row.choices && row.choices.length) ||
+        row.overrides) {
+      return;
+    }
+    t.check(typeof row.example === 'string' && row.example.length > 0,
+            '8. ' + row.attribute + ' carries an example of a valid value',
+            JSON.stringify(row.example));
+  });
+  t.check(Object.keys(byName).length > 0 &&
+          ['didService', 'oauthRedirectUri', 'krb5ServicePrincipalName']
+            .every(function (name) {
+              return applications.fieldExample(name) === byName[name].example;
+            }),
+          '8. fieldExample() is what the rows carry');
+
   // --- 5. The console's simplified view reads `declaration` ---------------
   const source = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
                                            'admin.ts'), 'utf8');

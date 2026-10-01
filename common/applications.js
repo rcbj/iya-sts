@@ -3910,12 +3910,142 @@ function declaredFamiliesOf(record) {
 // ---------------------------------------------------------------------------
 // THE DID DOCUMENT'S VALUES (2026-10-01): '' when a value of didPublicKeyJwk,
 // didService or didAlsoKnownAs is one the document can publish, and the
-// sentence to refuse it with otherwise (STS-REG-0204). A private member in a
-// key is the refusal that matters: this service publishes the document to
-// anybody who asks.
+// sentence to refuse it with otherwise (STS-REG-0204). Checked as a resolver
+// would read it, because a value this service accepts is one it then
+// publishes to anybody:
+//
+//   * a KEY is imported by node's crypto (an EC point off its curve, an RSA
+//     key with no modulus, does not import), must be a SIGNING key (the
+//     document lists it under authentication and assertionMethod, so X25519
+//     and X448 are refused), RSA at 2048 bits or more, ML-DSA's three sets
+//     for AKP, no private member, `use` sig where given, and an `alg` that
+//     belongs to the key where given;
+//   * a SERVICE's type is one the W3C DID Specification Registries define, or
+//     an absolute URI (a private type named so it collides with nobody's) —
+//     which is what refuses a typo of a registered type; its endpoint is an
+//     absolute http(s) URL with a host, https for anything but localhost, and
+//     for LinkedDomains an ORIGIN, as the DIF Well-Known DID Configuration
+//     reads it;
+//   * an alsoKnownAs is an absolute http(s) URL, a URN or a DID.
+//
+// A value already on the entry is refused a second time (didDuplicateProblem).
 // ---------------------------------------------------------------------------
 const DID_PRIVATE_JWK_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k',
                                  'priv'];
+
+/** The service types the W3C DID Specification Registries define. */
+const DID_SERVICE_TYPES = ['LinkedDomains', 'DIDCommMessaging',
+                           'LinkedVerifiablePresentation',
+                           'DecentralizedWebNode', 'CredentialRegistry',
+                           'WotThing', 'WotDirectory'];
+
+// The algorithms a JWK's `alg` may name, by what the key is.
+const DID_KEY_ALGS = {
+  'EC P-256': ['ES256'], 'EC P-384': ['ES384'], 'EC P-521': ['ES512'],
+  'EC secp256k1': ['ES256K'], 'OKP Ed25519': ['EdDSA', 'Ed25519'],
+  'OKP Ed448': ['EdDSA', 'Ed448'],
+  RSA: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512']
+};
+
+/** The ML-DSA parameter sets an AKP key may be. */
+const DID_AKP_ALGS = ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87'];
+
+// An absolute http(s) URL with a host, parsed rather than matched; null when
+// it is not one.
+function didUrlOf(text) {
+  log.debug("Entering didUrlOf().");
+  let url = null;
+  try {
+    url = new URL(String(text));
+  } catch (e) {
+    log.debug("Caught in didUrlOf(): " + ((e && e.message) || e));
+    url = null;
+  }
+  const ok = url && (url.protocol === 'https:' || url.protocol === 'http:') &&
+    !!url.hostname && !/\s/.test(String(text)) ? url : null;
+  log.debug("Leaving didUrlOf().");
+  return ok;
+}
+
+// Whether a URL's host is this machine, where plain http is allowed.
+function didLocalHost(url) {
+  log.debug("Entering didLocalHost().");
+  log.debug("Leaving didLocalHost().");
+  return ['localhost', '127.0.0.1', '[::1]'].indexOf(url.hostname) >= 0;
+}
+
+// The key problem, or ''.
+function didKeyProblem(jwk) {
+  log.debug("Entering didKeyProblem().");
+  const kty = String(jwk.kty || '');
+  if (['EC', 'OKP', 'RSA', 'AKP'].indexOf(kty) < 0) {
+    log.debug("Leaving didKeyProblem(). No usable kty.");
+    return 'didPublicKeyJwk takes an EC, OKP, RSA or AKP key; this one\'s ' +
+           'kty is "' + kty + '".';
+  }
+  const secret = DID_PRIVATE_JWK_MEMBERS.filter(function (member) {
+    return jwk[member] !== undefined;
+  });
+  if (secret.length) {
+    log.debug("Leaving didKeyProblem(). A private member.");
+    return 'didPublicKeyJwk takes the PUBLIC half of a key only, because ' +
+           'the DID document is published to anybody; this one carries ' +
+           secret.join(', ') + '.';
+  }
+  if (jwk.use !== undefined && jwk.use !== 'sig') {
+    log.debug("Leaving didKeyProblem(). Not a signing use.");
+    return 'didPublicKeyJwk keys are listed for authentication and ' +
+           'assertionMethod, so their use is "sig"; this one says "' +
+           String(jwk.use) + '".';
+  }
+  if (kty === 'AKP') {
+    const ok = DID_AKP_ALGS.indexOf(String(jwk.alg)) >= 0 &&
+      typeof jwk.pub === 'string' && /^[A-Za-z0-9_-]+$/.test(jwk.pub);
+    log.debug("Leaving didKeyProblem(). AKP " + (ok ? 'ok' : 'refused') + ".");
+    return ok ? '' : 'An AKP key in didPublicKeyJwk needs an alg of ' +
+      DID_AKP_ALGS.join(', ') + ' and a base64url pub.';
+  }
+  if (kty === 'OKP' && ['Ed25519', 'Ed448'].indexOf(String(jwk.crv)) < 0) {
+    log.debug("Leaving didKeyProblem(). Not a signing curve.");
+    return 'An OKP key in didPublicKeyJwk must be Ed25519 or Ed448, a ' +
+           'signing curve; "' + String(jwk.crv || '') + '" is not.';
+  }
+  let key = null;
+  try {
+    key = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+  } catch (e) {
+    log.debug("Caught in didKeyProblem(): " + ((e && e.message) || e));
+    key = null;
+  }
+  if (!key) {
+    log.debug("Leaving didKeyProblem(). Does not import.");
+    return 'didPublicKeyJwk could not read this key: its members do not ' +
+           'make a valid ' + kty + (jwk.crv ? ' ' + String(jwk.crv) : '') +
+           ' public key.';
+  }
+  if (kty === 'RSA') {
+    const bits = (key.asymmetricKeyDetails || {}).modulusLength || 0;
+    if (bits < 2048) {
+      log.debug("Leaving didKeyProblem(). RSA too short.");
+      return 'An RSA key in didPublicKeyJwk must be 2048 bits or more; this ' +
+             'one is ' + bits + '.';
+    }
+  }
+  const shape = kty === 'RSA' ? 'RSA' : kty + ' ' + String(jwk.crv || '');
+  const algs = DID_KEY_ALGS[shape];
+  if (!algs) {
+    log.debug("Leaving didKeyProblem(). An unsupported curve.");
+    return 'didPublicKeyJwk takes EC keys on P-256, P-384, P-521 or ' +
+           'secp256k1; "' + String(jwk.crv || '') + '" is not one.';
+  }
+  if (jwk.alg !== undefined && algs.indexOf(String(jwk.alg)) < 0) {
+    log.debug("Leaving didKeyProblem(). An alg the key does not have.");
+    return 'This ' + shape + ' key cannot be used with alg "' +
+           String(jwk.alg) + '"; it takes ' + algs.join(', ') + '.';
+  }
+  log.debug("Leaving didKeyProblem(). A public signing key.");
+  return '';
+}
 
 /**
  * Says whether a value of one of the DID document attributes can be
@@ -3943,45 +4073,122 @@ function didValueProblem(attribute, value) {
     }
     if (!jwk || typeof jwk !== 'object' || Array.isArray(jwk)) {
       log.debug("Leaving didValueProblem(). Not a JSON object.");
-      return 'didPublicKeyJwk takes one JWK as a JSON object per value.';
+      return 'didPublicKeyJwk takes one JWK as a JSON object per value, such ' +
+             'as {"kty":"EC","crv":"P-256","x":"…","y":"…"}.';
     }
-    if (['EC', 'OKP', 'RSA', 'AKP'].indexOf(String(jwk.kty)) < 0) {
-      log.debug("Leaving didValueProblem(). No usable kty.");
-      return 'didPublicKeyJwk takes an EC, OKP, RSA or AKP key; this one\'s ' +
-             'kty is "' + String(jwk.kty || '') + '".';
-    }
-    const secret = DID_PRIVATE_JWK_MEMBERS.filter(function (member) {
-      return jwk[member] !== undefined;
-    });
-    if (secret.length) {
-      log.debug("Leaving didValueProblem(). A private member.");
-      return 'didPublicKeyJwk takes the PUBLIC half of a key only, because ' +
-             'the DID document is published to anybody; this one carries ' +
-             secret.join(', ') + '.';
-    }
-    log.debug("Leaving didValueProblem(). A public JWK.");
-    return '';
+    const problem = didKeyProblem(jwk);
+    log.debug("Leaving didValueProblem(). Key " +
+              (problem ? 'refused' : 'ok') + ".");
+    return problem;
   }
   if (attribute === 'didService') {
     const bar = text.indexOf('|');
     const type = bar > 0 ? text.slice(0, bar).trim() : '';
     const endpoint = bar > 0 ? text.slice(bar + 1).trim() : '';
-    if (!/^[A-Za-z0-9._:-]+$/.test(type) ||
-        !/^https?:\/\/[^\s/?#]+/i.test(endpoint) || /\s/.test(endpoint)) {
-      log.debug("Leaving didValueProblem(). Not a service.");
-      return 'didService takes <type>|<serviceEndpoint>, a one-token type ' +
-             'and an absolute http or https URL, such as ' +
-             'LinkedDomains|https://app.example.com; "' + text + '" is not.';
+    const form = 'didService takes <type>|<serviceEndpoint>, such as ' +
+                 'LinkedDomains|https://app.example.com';
+    if (!type || !endpoint) {
+      log.debug("Leaving didValueProblem(). Not type|endpoint.");
+      return form + '; "' + text + '" is not.';
+    }
+    const registered = DID_SERVICE_TYPES.indexOf(type) >= 0;
+    if (!registered && !/^[A-Za-z][A-Za-z0-9+.-]*:\S+$/.test(type)) {
+      const near = DID_SERVICE_TYPES.filter(function (one) {
+        return one.toLowerCase() === type.toLowerCase() ||
+          one.toLowerCase().indexOf(type.toLowerCase()) >= 0 ||
+          type.toLowerCase().indexOf(one.toLowerCase()) >= 0;
+      });
+      log.debug("Leaving didValueProblem(). An unregistered type.");
+      return 'The service type "' + type + '" is not one the W3C DID ' +
+             'Specification Registries define (' +
+             DID_SERVICE_TYPES.join(', ') + '); a type of your own must be ' +
+             'an absolute URI.' +
+             (near.length ? ' Did you mean ' + near.join(' or ') + '?' : '');
+    }
+    const url = didUrlOf(endpoint);
+    if (!url) {
+      log.debug("Leaving didValueProblem(). Not a URL endpoint.");
+      return form + '; the endpoint "' + endpoint + '" is not an absolute ' +
+             'http or https URL.';
+    }
+    if (url.protocol !== 'https:' && !didLocalHost(url)) {
+      log.debug("Leaving didValueProblem(). Plain http.");
+      return 'A service endpoint must be https, except on localhost; "' +
+             endpoint + '" is not.';
+    }
+    if (url.username || url.password) {
+      log.debug("Leaving didValueProblem(). Credentials in the URL.");
+      return 'A service endpoint may not carry a user name or password; "' +
+             endpoint + '" does.';
+    }
+    if (type === 'LinkedDomains' &&
+        (url.pathname !== '/' || url.search || url.hash)) {
+      log.debug("Leaving didValueProblem(). LinkedDomains not an origin.");
+      return 'A LinkedDomains endpoint is an origin — scheme, host and ' +
+             'port, with no path — such as https://app.example.com; "' +
+             endpoint + '" is not.';
     }
     log.debug("Leaving didValueProblem(). A service.");
     return '';
   }
-  if (!/^[A-Za-z][A-Za-z0-9+.-]*:\S+$/.test(text)) {
+  const asUrl = /^https?:/i.test(text) ? didUrlOf(text) : null;
+  const ok = asUrl ||
+    /^urn:[A-Za-z0-9][A-Za-z0-9-]{0,31}:\S+$/i.test(text) ||
+    /^did:[a-z0-9]+:[A-Za-z0-9._:%-]*[A-Za-z0-9._-]$/.test(text);
+  if (!ok) {
     log.debug("Leaving didValueProblem(). Not a URI.");
-    return 'didAlsoKnownAs takes an absolute URI; "' + text + '" is not.';
+    return 'didAlsoKnownAs takes an absolute https URL, a URN or a DID, ' +
+           'such as https://app.example.com; "' + text + '" is not.';
   }
   log.debug("Leaving didValueProblem(). A URI.");
   return '';
+}
+
+// What makes two values of a DID attribute the same: a key's RFC 7638
+// thumbprint (so the same key with another kid or member order is the same
+// key), and otherwise the trimmed text, case-folded for a URL's host.
+function didSameness(attribute, value) {
+  log.debug("Entering didSameness().");
+  const text = String(value == null ? '' : value).trim();
+  if (attribute === 'didPublicKeyJwk') {
+    let thumb = text;
+    try {
+      const jwk = JSON.parse(text);
+      thumb = 'jkt:' + require('./crypto').jwkThumbprint(jwk);
+    } catch (e) {
+      log.debug("Caught in didSameness(): " + ((e && e.message) || e));
+      thumb = text;
+    }
+    log.debug("Leaving didSameness().");
+    return thumb;
+  }
+  log.debug("Leaving didSameness().");
+  return text.toLowerCase();
+}
+
+/**
+ * Says whether a DID document value is already among an entry's values.
+ *
+ * @param attribute - the attribute being written
+ * @param value - the value being added
+ * @param existing - the values already there
+ * @returns '' when it is new, the refusal sentence otherwise
+ */
+function didDuplicateProblem(attribute, value, existing) {
+  log.debug("Entering didDuplicateProblem(). attribute=" + attribute);
+  if (['didPublicKeyJwk', 'didService', 'didAlsoKnownAs']
+        .indexOf(attribute) < 0) {
+    log.debug("Leaving didDuplicateProblem(). Not a DID value.");
+    return '';
+  }
+  const mine = didSameness(attribute, value);
+  const twice = [].concat(existing || []).some(function (one) {
+    return didSameness(attribute, one) === mine;
+  });
+  log.debug("Leaving didDuplicateProblem(). " + (twice ? 'Twice.' : 'New.'));
+  return twice ? attribute + ' already holds ' +
+    (attribute === 'didPublicKeyJwk' ? 'this key' : '"' +
+      String(value).trim() + '"') + '; each value appears once.' : '';
 }
 
 /**
@@ -4514,6 +4721,161 @@ function familiesOfChoices(values) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// AN EXAMPLE OF A VALID VALUE FOR EVERY FIELD A PERSON TYPES INTO (rcbj,
+// 2026-10-01): the console draws it as the box's placeholder — grey, gone as
+// soon as somebody types — so a reader sees the SHAPE a value takes before
+// the server has to refuse one. One value each, as it would be stored; a list
+// field shows the shape of ONE of its values. A field drawn as radios or
+// checkboxes (a boolean, a closed set) needs none. `tests/application_
+// form_roles.js` fails when a text field has no example, so a field added to
+// the schema arrives with one.
+// ---------------------------------------------------------------------------
+const FIELD_EXAMPLES = {
+  appRequiredRole: 'claims-readers',
+  appAllowedToDelegateTo: 'api-backend',
+  appAllowedToActOnBehalfOf: 'web-frontend',
+  appDelegationSubjectGroup: 'cn=delegable,ou=groups,dc=example,dc=com',
+  oauthClientId: 'my-web-app',
+  oauthAudience: 'https://api.example.com',
+  oauthClientSecret: 'press Generate Secret, or 32+ random characters',
+  oauthNativeSsoGroup: 'acme-mobile-suite',
+  oauthBackchannelClientNotificationEndpoint:
+    'https://app.example.com/ciba/notify',
+  oauthCommandEndpoint: 'https://app.example.com/op-commands',
+  oauthSectorIdentifierUri: 'https://app.example.com/sector-uris.json',
+  oauthJwks: '{"keys":[{"kty":"EC","crv":"P-256","x":"…","y":"…"}]}',
+  oauthJwksUri: 'https://app.example.com/jwks.json',
+  oauthRequestUri: 'https://app.example.com/requests/signin.jwt',
+  oauthAuthorizationDetailsType: 'payment_initiation',
+  oauthAuthorizationDetailsTypes: 'payment_initiation',
+  oauthStepUpAcrValues: 'mfa',
+  oauthStepUpMaxAge: '600',
+  oauthAssertionIssuer: 'https://issuer.example.com',
+  oauthSamlAssertionIssuer: 'https://idp.example.com/saml',
+  oauthSamlAssertionSigningCertificate:
+    '-----BEGIN CERTIFICATE-----\nMIIC…\n-----END CERTIFICATE-----',
+  oauthSoftwareStatementIssuer: 'https://publisher.example.com',
+  oauthTlsClientAuthSubjectDn: 'CN=my-web-app,O=Example Corp,C=US',
+  oauthTlsClientAuthSanDns: 'app.example.com',
+  oauthTlsClientAuthSanUri: 'https://app.example.com',
+  oauthTlsClientAuthSanIp: '192.0.2.10',
+  oauthTlsClientAuthSanEmail: 'app@example.com',
+  oauthTlsClientCertificateThumbprint:
+    'base64url SHA-256 of the DER, 43 characters',
+  samlEntityId: 'https://sp.example.com/saml/metadata',
+  samlSigningCertificate: '-----BEGIN CERTIFICATE----- MIIC… -----END ' +
+                          'CERTIFICATE-----',
+  samlSingleLogoutService: 'https://sp.example.com/saml/slo',
+  samlSpMetadataSigningCertificate:
+    '-----BEGIN CERTIFICATE-----\nMIIC…\n-----END CERTIFICATE-----',
+  saml2AssertionLifetimeMin: '5',
+  saml2NameIdFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:' +
+                     'emailAddress',
+  saml2ArtifactTtlS: '60',
+  saml11AssertionLifetimeMin: '5',
+  saml11NameIdFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:' +
+                      'emailAddress',
+  saml11ArtifactTtlS: '60',
+  oauthAccessTokenTtlS: '3600',
+  oauthIdTokenTtlS: '3600',
+  oauthRefreshTokenTtlS: '86400',
+  oauthRefreshIdleSeconds: '1800',
+  oauthTokenExchangeRefreshToken: 'true',
+  appGroupsClaimName: 'groups',
+  appGroupsClaimValue: 'cn',
+  wsfedAssertionLifetimeMin: '60',
+  samlSpMetadataUrl: 'https://sp.example.com/saml/metadata',
+  samlSpMetadata: '<md:EntityDescriptor entityID="https://sp.example.com">' +
+                  '…</md:EntityDescriptor>',
+  samlEncryptionCertificate:
+    '-----BEGIN CERTIFICATE-----\nMIIC…\n-----END CERTIFICATE-----',
+  saml2EncryptionAlgorithm: 'http://www.w3.org/2009/xmlenc11#aes256-gcm',
+  saml2KeyTransportAlgorithm: 'http://www.w3.org/2009/xmlenc11#rsa-oaep',
+  wsfedRealm: 'urn:example:my-app',
+  wstrustAppliesTo: 'https://service.example.com/',
+  krb5ServicePrincipalName: 'HTTP/app.example.com@EXAMPLE.COM',
+  oid4vpClientId: 'x509_san_dns:verifier.example.com',
+  federationPartnerId: 'partner-idp',
+  appFederationRelationship: 'partner-idp',
+  appHomePageUrl: 'https://app.example.com',
+  appCorsOrigin: 'https://app.example.com',
+  ldapBindDn: 'cn=my-app,ou=applications,dc=example,dc=com',
+  scimClientId: 'hr-provisioning',
+  spiffeWorkloadId: 'spiffe://example.com/ns/prod/sa/web',
+  ssfReceiverId: 'https://receiver.example.com',
+  ssfDeliveryEndpoint: 'https://receiver.example.com/events',
+  didPublicKeyJwk: '{"kty":"EC","crv":"P-256","x":"…","y":"…"} — or ' +
+                   'Generate a key pair above',
+  didService: 'LinkedDomains|https://app.example.com',
+  didAlsoKnownAs: 'https://app.example.com',
+  ssfAllowedEvents: 'https://schemas.openid.net/secevent/caep/event-type/' +
+                    'session-revoked',
+  ssfCaepReasonLanguage: 'en',
+  ssfRiscReasonLanguage: 'en',
+  ssfSigningAlgorithm: 'ES256',
+  ssfMinVerificationInterval: '60',
+  ssfInactivityTimeoutS: '86400',
+  ssfInactivityAction: 'pause',
+  ssfVerificationEveryS: '3600',
+  ssfStreamStatusOnCreate: 'enabled',
+  ssfMaxStreams: '5',
+  ssfMaxSubjectsPerStream: '1000',
+  ssfMaxQueuedEvents: '1000',
+  ssfPollMaxEvents: '100',
+  ssfDeadLetterMaxPerStream: '100',
+  ssfPushTimeoutMs: '5000',
+  ssfPushRetries: '3',
+  ssfPushRetryDelayMs: '1000',
+  gnapInstanceId: 'my-client-instance',
+  gnapKey: '{"proof":"httpsig","jwk":{"kty":"EC","crv":"P-256","x":"…",' +
+           '"y":"…"}}',
+  gnapKeyReference: 'key-1',
+  gnapSymmetricKey: '32+ random bytes, base64url',
+  gnapClassId: 'urn:example:client-class',
+  gnapDisplayUri: 'https://app.example.com',
+  gnapLogoUri: 'https://app.example.com/logo.png',
+  gnapFinishUri: 'https://app.example.com/gnap/finish',
+  gnapAllowedAccess: 'photo-api',
+  gnapAccessTokenLifetimeS: '600',
+  gnapResourceServerUri: 'https://rs.example.com',
+  gnapJweKey: '{"kty":"EC","crv":"P-256","use":"enc","x":"…","y":"…"}',
+  oauthRedirectUri: 'https://app.example.com/callback',
+  oauthPostLogoutRedirectUri: 'https://app.example.com/signed-out',
+  oauthFrontchannelLogoutUri: 'https://app.example.com/frontchannel-logout',
+  oauthBackchannelLogoutUri: 'https://app.example.com/backchannel-logout',
+  oauthGrantType: 'authorization_code',
+  oauthResponseType: 'code',
+  oauthAllowedScope: 'profile',
+  oauthPermissionBaseUri: 'https://api.example.com/',
+  oauthPermission: 'read|Read your widgets',
+  oauthRoleGatedPermission: 'write',
+  oauthDelegatedPermission: 'https://api.example.com/read',
+  oauthGlobalConsent: 'openid',
+  oauthResourceMetadata: '{"resource":"https://api.example.com",' +
+                         '"authorization_servers":[…]}',
+  oauthResourceMetadataUrl:
+    'https://api.example.com/.well-known/oauth-protected-resource',
+  samlAssertionConsumerService: 'https://sp.example.com/saml/acs',
+  wsfedReplyUrl: 'https://app.example.com/wsfed',
+  wsfedSignOutUri: 'https://app.example.com/wsfed/signout',
+  description: 'What this application is, in a sentence'
+};
+
+/**
+ * Returns the example value the console shows in an empty box for an
+ * attribute, or '' where it has none.
+ *
+ * @param attribute - the attribute's name
+ * @returns the example
+ */
+function fieldExample(attribute) {
+  log.debug("Entering fieldExample().");
+  log.debug("Leaving fieldExample().");
+  return Object.prototype.hasOwnProperty.call(FIELD_EXAMPLES, attribute)
+    ? FIELD_EXAMPLES[attribute] : '';
+}
+
 /**
  * The attribute-name prefixes that say which families a field belongs to,
  * most specific first.
@@ -4652,6 +5014,7 @@ function applicationFields() {
       sensitive: !!row.sensitive,
       overrides: row.overrides || '',
       choices: attributeChoices(row.name),
+      example: fieldExample(row.name),
       what: row.what || '',
       families: scope.families,
       everyFamily: scope.everyFamily,
@@ -10269,11 +10632,14 @@ function createApplication(detail) {
   // A DID document value (2026-10-01), every value of a list.
   const didProblems = [];
   Object.keys(given.fields).forEach(function (name) {
+    const seen = [];
     valuesOf(given.fields[name]).forEach(function (one) {
-      const problem = didValueProblem(name, one);
+      const problem = didValueProblem(name, one) ||
+        didDuplicateProblem(name, one, seen);
       if (problem) {
         didProblems.push(problem);
       }
+      seen.push(one);
     });
   });
   if (didProblems.length) {
@@ -10677,7 +11043,9 @@ function updateApplication(identifier, change) {
   // behind by a family being untimed from the entry after it was set, and
   // refusing to remove it would shut the one door that could tidy it up.
   if ((mode === 'set' || mode === 'add') && value) {
-    const didProblem = didValueProblem(attribute, value);
+    const didProblem = didValueProblem(attribute, value) ||
+      (mode === 'add' ? didDuplicateProblem(attribute, value,
+        valuesOf(loaded.record.fields[attribute])) : '');
     if (didProblem) {
       log.debug("Leaving updateApplication(). Not a DID document value.");
       return errorCodes.mark({ ok: false, errors: [didProblem] },
@@ -14477,6 +14845,7 @@ module.exports = {
   applicationFields: applicationFields,
   FIELD_GROUPS: FIELD_GROUPS,
   FAMILY_CHOICES: FAMILY_CHOICES,
+  fieldExample: fieldExample,
   familiesOfChoices: familiesOfChoices,
   BOOLEAN_ATTRIBUTES: BOOLEAN_ATTRIBUTES,
   LONG_TEXT_ATTRIBUTES: LONG_TEXT_ATTRIBUTES,
@@ -14488,6 +14857,8 @@ module.exports = {
   declaredFamiliesOf: declaredFamiliesOf,
   declaredFamiliesFor: declaredFamiliesFor,
   didValueProblem: didValueProblem,
+  didDuplicateProblem: didDuplicateProblem,
+  DID_SERVICE_TYPES: DID_SERVICE_TYPES,
   familyRefusal: familyRefusal,
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,

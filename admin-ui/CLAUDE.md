@@ -6891,13 +6891,25 @@ form's `present` list clears the attribute when every box is unticked. A
 stored value that is not one of the choices is still drawn, marked, so a
 save does not drop it without a word.
 
+**EVERY TEXT FIELD SHOWS AN EXAMPLE, AND EVERY CONTROL A TOOLTIP (rcbj,
+2026-10-01).** `applications.fieldExample()` (`FIELD_EXAMPLES`) is an example
+of a valid value for every field a person types into. `fieldGridCell()` draws
+it as the box's `placeholder` (grey, gone on typing), with a setting
+override's default beside it, and puts the field's sentence as a `title` on
+the control itself as well as on its name. `tests/application_form_roles.js`
+section 8 fails when a text field has no example. The create form's identifier
+and name, the view switch, every tab's Save, the Shared Signals Pause and
+Enable buttons and the DID form carry tooltips of their own.
+
 **THE DID TAB CARRIES MORE THAN FIELDS (2026-10-01)**: on an application
 declared for `did`, the *Decentralized Identifier (DID)* sub-tab opens with
 `applicationDidPanel()` — the DID, its document's address and whether it is
 advertised, and a *Generate a key pair* form (Admin Write) that posts
 `generate-did-key` and is answered by `answerGeneratedDidKey()`, a one-time
 `no-store` page carrying the private key, `answerIssuedTlsClientCertificate()`'s
-arrangement. `oid4vc/CLAUDE.md` argues the DID.
+arrangement. The same panel, with the published keys listed, is on the
+Credentials tab too (`#credentials-did`), and the Generate form returns to
+whichever tab it was pressed on (`from`). `oid4vc/CLAUDE.md` argues the DID.
 
 **OPENID4VCI AND OPENID4VP ARE ONE CHECKBOX, *Verifiable Credentials*
 (rcbj, 2026-10-01)**, on the create form and the Protocol families tab, and

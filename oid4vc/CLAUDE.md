@@ -711,14 +711,28 @@ application declared for the `did` family (its own checkbox, `applications.js`
   `didPublicKeyJwk` (JsonWebKey2020 methods, `#<kid>` or the RFC 7638
   thumbprint, under `authentication` and `assertionMethod`), `didService`
   (`<type>|<url>`) and `didAlsoKnownAs`. `applications.didValueProblem()`
-  refuses a private member, a malformed service and a relative URI on every
-  write (`STS-REG-0204`); the builder skips anything that slipped past it.
+  checks every write as a resolver would read it (`STS-REG-0204`), and
+  `didDuplicateProblem()` refuses a value already there:
+  * a key: imported by node's crypto (an EC point off its curve is refused),
+    a signing key only (no X25519 or X448), RSA of 2048 bits or more, an `alg`
+    that belongs to the key, no private member, and not the same key (by
+    thumbprint) twice;
+  * a service: a type the W3C DID Specification Registries define (`DID_SERVICE_TYPES`)
+    or an absolute URI, so a typo of a registered type is refused, with the
+    near one named; an https endpoint (http on localhost only), with no
+    credentials in it; a LinkedDomains endpoint an origin;
+  * an alsoKnownAs: an https URL, a URN or a DID.
+
+  The builder skips anything an older write left behind.
   404 with `STS-VC-0114` for an unknown, undeclared or keyless application.
 * **`generate-did-key`** (`admin_actions.ts`, `POST /admin-api/applications/
   generate-did-key`) makes the pair with `crypto.js`'s
   `generateSigningJwkPair()` (ES256, ES384, EdDSA), adds the public JWK, and
   returns the private key once. This service keeps no private key: it only
-  publishes the document. The console answers with a one-time page.
+  publishes the document. The console answers with a one-time page. The
+  published keys and the Generate form are on the application's DID
+  configuration tab AND its Credentials tab (`applicationDidPanel()`, drawn
+  twice), so every credential an application has is in one place.
 * **Not built**: resolving an application's DID for anything (a client
   assertion verified against its keys, a pre-registered verifier); controller
   and keyAgreement members; other DID methods.

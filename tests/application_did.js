@@ -183,6 +183,51 @@ function childMain() {
          'refused with STS-REG-0204',
          JSON.stringify([priv.errors, badService.errors, badAka.errors]));
 
+    // --- D3. The stricter checks (2026-10-01) -----------------------------
+    // Each refused with STS-REG-0204, with the reason a reader can act on.
+    const refusedWith = function (attribute, value, pattern) {
+      const one = add(attribute, value);
+      return one.ok === false && errorCodes.codeOf(one) === 'STS-REG-0204' &&
+        pattern.test(String((one.errors || [])[0]));
+    };
+    const x25519 = nodeCrypto.generateKeyPairSync('x25519').publicKey
+      .export({ format: 'jwk' });
+    const p256 = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' })
+      .publicKey.export({ format: 'jwk' });
+    note(refusedWith('didService', 'inkedDomains|https://a.example.com',
+                     /Did you mean LinkedDomains/),
+         'D3. a misspelt registered service type is refused, naming the ' +
+         'type it is near');
+    note(refusedWith('didService', 'LinkedDomains|https://a.example.com/x',
+                     /origin/),
+         'D3. a LinkedDomains endpoint with a path is refused');
+    note(refusedWith('didService', 'LinkedDomains|http://a.example.com',
+                     /https/),
+         'D3. a plain http endpoint off localhost is refused');
+    note(refusedWith('didPublicKeyJwk', JSON.stringify(x25519),
+                     /Ed25519 or Ed448/),
+         'D3. an X25519 key (not a signing key) is refused');
+    note(refusedWith('didPublicKeyJwk', JSON.stringify(Object.assign({},
+           p256, { y: p256.x })), /could not read/),
+         'D3. an EC point that is not on its curve is refused');
+    note(refusedWith('didPublicKeyJwk', JSON.stringify(Object.assign({},
+           p256, { alg: 'ES384' })), /cannot be used with alg/),
+         'D3. an alg the key does not have is refused');
+    note(refusedWith('didService', 'LinkedDomains|https://app.example.com',
+                     /already holds/) &&
+         refusedWith('didPublicKeyJwk', JSON.stringify(
+           Object.assign({}, third.publicJwk, { kid: 'other' })),
+           /already holds this key/),
+         'D3. a service already there, and the same key under another kid, ' +
+         'are refused as duplicates');
+    const urn = add('didAlsoKnownAs', 'urn:example:app');
+    const otherDid = add('didAlsoKnownAs', 'did:web:app.example.com');
+    const custom = add('didService', 'https://example.com/types#Api|' +
+                       'https://api.example.com/v1');
+    note(urn.ok && otherDid.ok && custom.ok,
+         'D3. a URN and a DID in alsoKnownAs, and a service type of one\'s ' +
+         'own written as a URI, are accepted');
+
     // --- E. An identifier with reserved characters --------------------------
     const odd = 'urn:example:app/1';
     applications.createApplication({ identifier: odd, protocols: ['did'],
