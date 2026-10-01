@@ -21,7 +21,10 @@
 //   C. a sealed value that does not open is dropped, not handed over;
 //   D. where nothing durable seals (no key-encryption key), nothing is sealed;
 //   E. the cluster's claim and counter keys are keyed digests once a key is
-//      held (#222), and the plain digest where none is.
+//      held (#222), and the plain digest where none is;
+//   F. the used-assertion history in a database: issuer, id, client and
+//      subject sealed, a replay still refused and its row opened, a look
+//      opened, and the text search done in memory.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -188,6 +191,68 @@ function childMain() {
          keyedClaim !== keyedCounter,
          'E1. claim and counter keys are keyed digests, stable, and ' +
          'different for the two stores');
+
+    // ------------------------------------------------------------------ F
+    // THE USED-ASSERTION HISTORY IN A DATABASE: the four text columns are
+    // written sealed, opened when read, and searched here.
+    const used = require(ROOT + '/common/used_assertions');
+    const uaRows = new Map();
+    const uaDriver = {
+      claimUsedAssertion: function (row) {
+        const held = uaRows.get(row.key);
+        if (held) {
+          return Promise.resolve({ claimed: false, live: uaRows.size,
+                                   existing: Object.assign({}, held) });
+        }
+        uaRows.set(row.key, Object.assign({}, row));
+        return Promise.resolve({ claimed: true });
+      },
+      settleUsedAssertion: function () { return Promise.resolve(1); },
+      findUsedAssertion: function (realm, key) {
+        return Promise.resolve(uaRows.has(key)
+          ? Object.assign({}, uaRows.get(key)) : null);
+      },
+      listUsedAssertions: function (realm, o) {
+        const all = Array.from(uaRows.values()).map(function (r) {
+          return Object.assign({}, r);
+        });
+        return Promise.resolve({
+          rows: all.slice(o.offset || 0, (o.offset || 0) + (o.limit || 50)),
+          total: all.length, live: all.length, q: o.q });
+      },
+      purgeUsedAssertions: function () { return Promise.resolve(0); },
+      removeUsedAssertions: function () { return Promise.resolve(0); }
+    };
+    await used.setStore(uaDriver, 'postgres');
+    const format = Object.keys(used.FORMATS)[0];
+    const use = Object.keys(used.USES)[0];
+    const asked = { format: format, use: use,
+                    issuer: 'https://issuer.example', identifier: 'jti-123',
+                    clientId: 'client-a', subject: 'alice' };
+    const first = await used.claim(asked);
+    const stored = Array.from(uaRows.values())[0] || {};
+    note(first.ok && SEALED.test(stored.issuer) &&
+         SEALED.test(stored.identifier) && SEALED.test(stored.clientId) &&
+         SEALED.test(stored.subject) &&
+         JSON.stringify(stored).indexOf('alice') < 0 &&
+         JSON.stringify(stored).indexOf('jti-123') < 0,
+         'F1. a claimed row\'s issuer, id, client and subject are sealed ' +
+         'in the database', JSON.stringify(stored).slice(0, 200));
+    const replay = await used.claim(asked);
+    note(!replay.ok && replay.reason === 'replay' &&
+         replay.existing.issuer === 'https://issuer.example' &&
+         replay.existing.subject === 'alice',
+         'F2. a replay is still refused, and the row it names is opened');
+    const looked = await used.peek(asked);
+    note(looked.used && looked.existing.identifier === 'jti-123',
+         'F3. a look opens it too');
+    const found = await used.list({ q: 'ALICE' });
+    const missed = await used.list({ q: 'nobody' });
+    note(found.rows.length === 1 && found.rows[0].clientId === 'client-a' &&
+         missed.rows.length === 0 && found.searchedAll === true,
+         'F4. the text search is done in memory over the opened rows',
+         JSON.stringify({ found: found.matched, missed: missed.matched }));
+    used.clearStore();
 
     // ------------------------------------------------------------------ D
     keystore.reset();

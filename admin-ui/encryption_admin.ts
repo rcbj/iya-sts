@@ -240,6 +240,20 @@ const DATA_CLASSES = [
          'durable key-encryption key; no page and no API reply returns it.'
   },
   {
+    label: 'used-assertion',
+    what: 'The used-assertion history’s issuer, assertion id, client and ' +
+          'subject — who presented which RFC 7523 or RFC 7522 document ' +
+          'about whom',
+    where: 'the `issuer`, `identifier`, `client_id` and `subject` columns ' +
+           'of `sts_used_assertions`, in a database store',
+    sealed: true,
+    why: 'They name people and relationships in a table every node shares. ' +
+         'Sealed since #222; the row is still found by its digest key, and ' +
+         'the console’s text search is done in memory over the newest ' +
+         'rows. A file (ldif) store holds them as the filesystem protects ' +
+         'them: it reads them back before the keystore has started.'
+  },
+  {
     label: 'setting-secret',
     what: 'A secret setting changed while the service runs — today ' +
           '`scim.digestPassword`, the HTTP Digest password every SCIM ' +

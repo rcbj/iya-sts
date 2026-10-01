@@ -1524,7 +1524,17 @@ function create(options) {
     { table: 'sts_appconfig', keys: ['key'], column: 'value', jsonb: true,
       change: { kind: 'appconfig' } },
     { table: 'sts_realms', keys: ['id'], column: 'overrides', jsonb: true,
-      change: { kind: 'realms' } }
+      change: { kind: 'realms' } },
+    // THE USED-ASSERTION HISTORY's four text columns (`used_assertions.js`):
+    // read from the table at every use, so no change-log row is needed.
+    { table: 'sts_used_assertions', keys: ['realm', 'key'], column: 'issuer',
+      jsonb: false, change: null },
+    { table: 'sts_used_assertions', keys: ['realm', 'key'],
+      column: 'identifier', jsonb: false, change: null },
+    { table: 'sts_used_assertions', keys: ['realm', 'key'],
+      column: 'client_id', jsonb: false, change: null },
+    { table: 'sts_used_assertions', keys: ['realm', 'key'], column: 'subject',
+      jsonb: false, change: null }
   ];
 
   // The column as text, for LIKE and for the regular expression.
@@ -1568,7 +1578,9 @@ function create(options) {
                 return null;
               }
               tally.other = (tally.other || 0) + 1;
-              return recordChanges(client, [Object.assign({}, one.change)]);
+              return one.change
+                ? recordChanges(client, [Object.assign({}, one.change)])
+                : null;
             });
           });
         });

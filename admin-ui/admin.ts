@@ -36628,6 +36628,8 @@ class AdminConsole {
             self.tile(json.matched, filtering ? 'match' : 'listed') +
             self.tile(json.store, 'store') +
           '</div>' +
+          (json.searchNote ? self.warn(self.esc(json.searchNote),
+                                       'A search of the newest rows') : '') +
 
           self.note('Every <strong>RFC 7523</strong> JWT and <strong>RFC ' +
           '7522</strong> SAML assertion this realm has accepted — to ' +

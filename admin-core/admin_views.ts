@@ -3310,6 +3310,15 @@ class AdminViews {
         live: page.live,
         matched: page.matched,
         shown: page.rows.length,
+        // A TEXT SEARCH READS THE NEWEST ROWS ONLY (#222): the columns it
+        // reads are sealed in a database, so it is done in memory over a
+        // bounded window, and says so when the window did not hold them all.
+        searchNote: page.searched !== undefined && !page.searchedAll
+          ? 'The text search read the newest ' + page.searched + ' rows ' +
+            'matching the other filters, not all of them: in a database ' +
+            'the searched columns are sealed and are searched here, in ' +
+            'memory. Narrow it with the format, use or state filter.'
+          : '',
         filter: page.filter,
         formats: usedAssertions.FORMATS,
         uses: usedAssertions.USES,
