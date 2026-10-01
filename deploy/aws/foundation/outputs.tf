@@ -66,6 +66,24 @@ output "global_kms_key_arn" {
   value       = aws_kms_key.global.arn
 }
 
+output "kek_kms_key_id" {
+  description = "The key-encryption key's multi-region key ID (mrk-…, alias/<name>-kek, #391): the one STS_KEYS_KEK_REF every node of every cell is given."
+  value       = aws_kms_key.kek.key_id
+}
+
+output "kek_kms_key_arn" {
+  description = "The key-encryption key's primary, in the home region (#391)."
+  value       = aws_kms_key.kek.arn
+}
+
+output "kek_kms_key_arns" {
+  description = "The key-encryption key in every permitted region, by region: the primary in the home region, a replica elsewhere (#391)."
+  value = merge(
+    { (var.aws_region) = aws_kms_key.kek.arn },
+    { for r, m in module.region : r => m.kek_replica_key_arn if m.kek_replica_key_arn != "" },
+  )
+}
+
 output "cell_kms_key_arns" {
   description = "Each permitted region's single-region CELL key (alias/<name>-cell-<cell>), by region (#98)."
   value       = { for r, m in module.region : r => m.cell_key_arn }

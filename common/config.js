@@ -2745,21 +2745,34 @@ const SETTINGS = [
   { key: 'keys.kekProvider', group: 'Key material',
     label: 'Key-encryption key provider',
     path: 'keys.kekProvider', env: 'STS_KEYS_KEK_PROVIDER', type: 'enum',
-    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault'],
+    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault', 'vault-transit',
+                 'aws-kms', 'gcp-kms', 'azure-keys'],
     dflt: 'file', runtime: false,
     restartReason: 'the key-encryption key is read once, at startup, before ' +
                    'the signing keys are decrypted',
-    description: 'Where the AES-256 key that protects the stored signing ' +
-                 'keys is READ FROM. This service never generates it and ' +
-                 'never writes it anywhere. `file` is the default because it ' +
-                 'needs nothing — Kubernetes and Docker both mount a secret ' +
-                 'as a file — and the other four are that same idea with a ' +
-                 'cloud provider\'s access control in front of it. Each of ' +
-                 'those lazily requires its official SDK, which is ' +
-                 'deliberately NOT a dependency of this service: it is a ' +
-                 'mock first, and four cloud SDKs nobody uses would be ' +
-                 'carried by every install. A missing one is reported with ' +
-                 'the package name to install.' },
+    description: 'Where the key-encryption key that wraps every data ' +
+                 'encryption key is. `file`, `aws`, `gcp`, `azure` and ' +
+                 '`vault` READ a 32-byte key into this process from a ' +
+                 'mounted file or a secret store; `file` is the default ' +
+                 'because it needs nothing. `vault-transit` (Vault or ' +
+                 'OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) and ' +
+                 '`azure-keys` (a Key Vault or Managed HSM key; ' +
+                 'keys.kekVault is its vault) are key management ' +
+                 'services: the key NEVER leaves them, keys.kekRef names it, ' +
+                 'and the KMS wraps and unwraps each data key — one call per ' +
+                 'data key at start, none per value. Every provider but ' +
+                 '`file` lazily requires its official SDK, which is ' +
+                 'deliberately NOT a dependency of this service; a missing ' +
+                 'one is reported with the package name to install.' },
+
+  { key: 'keys.kekTransitMount', group: 'Key material',
+    label: 'Transit engine mount',
+    path: 'keys.kekTransitMount', env: 'STS_KEYS_KEK_TRANSIT_MOUNT',
+    type: 'string', dflt: 'transit', runtime: false, perProcess: true,
+    restartReason: 'the key-encryption key is reached once, at startup',
+    description: 'Where the Transit secrets engine is mounted, for ' +
+                 'keys.kekProvider (or keys.previousKekProvider) ' +
+                 '`vault-transit`. A plain path; anything else is refused.' },
 
   { key: 'keys.kekFile', group: 'Key material',
     label: 'Key-encryption key file',
@@ -2792,7 +2805,8 @@ const SETTINGS = [
     path: 'keys.kekVault', env: 'STS_KEYS_KEK_VAULT', type: 'string',
     dflt: '', runtime: false,
     restartReason: 'read once at startup',
-    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net) ' +
+    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net, ' +
+                 'or a Managed HSM\'s, for `azure` and `azure-keys`) ' +
                  'or the HashiCorp Vault endpoint. Empty lets the Vault SDK ' +
                  'fall back to VAULT_ADDR, which is what an agent sidecar ' +
                  'sets.' },
@@ -2928,7 +2942,7 @@ const SETTINGS = [
     path: 'keys.kekRegion', env: 'STS_KEYS_KEK_REGION', type: 'string',
     dflt: '', runtime: false,
     restartReason: 'read once at startup',
-    description: 'The AWS region for Secrets Manager. Empty uses the SDK\'s ' +
+    description: 'The AWS region for Secrets Manager and AWS KMS. Empty uses the SDK\'s ' +
                  'own resolution (AWS_REGION, the shared config file, the ' +
                  'instance metadata service), which is what an in-cluster ' +
                  'deployment relies on.' },
@@ -3001,6 +3015,109 @@ const SETTINGS = [
                  '`keys.kekVault`: the cell key has no fallback of any ' +
                  'kind, so the `azure` provider refuses to read it without ' +
                  'this.' },
+
+  // -------------------------------------------------------------------------
+  // THE DATA ENCRYPTION KEYS' LIFECYCLE AND A ROTATED KEY-ENCRYPTION KEY
+  // (#391 P2, 2026-10-01). Every value at rest is sealed under a data
+  // encryption key per realm per data class, wrapped under the
+  // key-encryption key; these say how often the data keys are replaced, how
+  // long a new one waits before values are sealed under it, how long a
+  // replaced one is kept, and where the PREVIOUS key-encryption key is read
+  // from while the data keys are re-wrapped after a rotation.
+  // -------------------------------------------------------------------------
+  { key: 'keys.dataKeyRotationDays', group: 'Key material',
+    label: 'Rotate every data encryption key after (days)',
+    env: 'STS_KEYS_DATA_KEY_ROTATION_DAYS', type: 'int', min: 0, max: 3650,
+    dflt: 365, runtime: true, perProcess: true,
+    description: 'How long a data encryption key seals new values before ' +
+                 'the keys.data-key-rotate job replaces it with a new one; ' +
+                 'the re-encryption job then re-seals what the old one ' +
+                 'sealed. 0 turns the scheduled rotation off (a rotation by ' +
+                 'hand still works). Data keys are rotated only where they ' +
+                 'are stored — where keys persist.' },
+
+  { key: 'keys.directoryCipher', group: 'Key material',
+    label: 'Cipher for data stored in the directory',
+    env: 'STS_KEYS_DIRECTORY_CIPHER', type: 'enum',
+    enumValues: ['aes-256-gcm', 'aes-256-siv'], dflt: 'aes-256-gcm',
+    runtime: true, perProcess: true,
+    description: 'The cipher of the data encryption keys that seal values ' +
+                 'stored on directory entries (private keys, client ' +
+                 'secrets, authenticator secrets, recovery codes and the ' +
+                 'rest). `aes-256-gcm`, the default, is AES-256 in GCM. ' +
+                 '`aes-256-siv` is AES-SIV (RFC 5297) with a 512-bit key — ' +
+                 'two AES-256 keys — which is misuse resistant: a repeated ' +
+                 'nonce leaks only that two values are equal. Both are ' +
+                 '256-bit AES; there is no AES-512. A data key keeps its ' +
+                 'cipher for life: a change here makes each directory class ' +
+                 'due a rotation, and the re-encryption job moves what the ' +
+                 'old key sealed.' },
+
+  { key: 'keys.dataKeyActivationLeadSeconds', group: 'Key material',
+    label: 'A new data encryption key is used after (seconds)',
+    env: 'STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS', type: 'int', min: 0,
+    max: 86400, dflt: 300, runtime: true, perProcess: true,
+    description: 'How long a rotated data encryption key is published ' +
+                 'before values are sealed under it, so every process and ' +
+                 'every node holds it before anything sealed under it is ' +
+                 'read. Lower it only where the store\'s change log reaches ' +
+                 'every process faster.' },
+
+  { key: 'keys.dataKeyRetireAfterDays', group: 'Key material',
+    label: 'Keep a replaced data encryption key at least (days)',
+    env: 'STS_KEYS_DATA_KEY_RETIRE_AFTER_DAYS', type: 'int', min: 1,
+    max: 3650, dflt: 7, runtime: true, perProcess: true,
+    description: 'How long a replaced data encryption key is kept after its ' +
+                 'successor became current. It is destroyed only after this ' +
+                 'AND once nothing in the store is sealed under it; ' +
+                 'destruction cannot be undone.' },
+
+  { key: 'keys.previousKekProvider', group: 'Key material',
+    label: 'Where the previous key-encryption key is read from',
+    env: 'STS_PREVIOUS_KEK_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault',
+                 'vault-transit', 'aws-kms', 'gcp-kms', 'azure-keys'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the key is read once, before the store is restored',
+    description: 'To rotate the key-encryption key: point keys.kek* at the ' +
+                 'NEW key and this at the OLD one, and start. Every data ' +
+                 'encryption key still wrapped under the old key is ' +
+                 're-wrapped under the new one and written back; once every ' +
+                 'node has started that way, set this back to none. The ' +
+                 'store is not re-encrypted.' },
+
+  { key: 'keys.previousKekRef', group: 'Key material',
+    label: 'The previous key-encryption key\'s location',
+    env: 'STS_PREVIOUS_KEK_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'Where the previous key is, in the provider ' +
+                 'keys.previousKekProvider names: a path, an ARN, a resource ' +
+                 'or a Vault read path. It has no fallback.' },
+
+  { key: 'keys.previousKekField', group: 'Key material',
+    label: 'The field the previous key is in',
+    env: 'STS_PREVIOUS_KEK_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The member of a JSON secret that holds the previous key. ' +
+                 'Empty takes the value whole.' },
+
+  { key: 'keys.previousKekRegion', group: 'Key material',
+    label: 'AWS region of the previous key',
+    env: 'STS_PREVIOUS_KEK_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the previous key is read from. Empty uses ' +
+                 'the SDK\'s own resolution.' },
+
+  { key: 'keys.previousKekVault', group: 'Key material',
+    label: 'Key Vault URL of the previous key',
+    env: 'STS_PREVIOUS_KEK_VAULT', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL or the HashiCorp Vault endpoint ' +
+                 'the previous key is read from. It has no fallback.' },
 
   // -------------------------------------------------------------------------
   // THE MODE. What this service IS, rather than what any one surface requires.

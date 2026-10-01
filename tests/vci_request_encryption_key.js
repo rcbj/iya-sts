@@ -366,6 +366,7 @@ async function checkStore(t) {
   const helpers = require('../common/helpers');
   const keystore = require('../common/keystore');
   const stsCrypto = require('../common/crypto');
+  const sealedRows = require('./tools/sealed_rows');
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-vci-key-'));
   const kekFile = path.join(dir, 'kek');
@@ -395,8 +396,7 @@ async function checkStore(t) {
     const row = store.rows.get('default') || '';
     t.check(stsCrypto.isEncryptedWithKek(row) && row.indexOf('PRIVATE KEY') < 0,
             'the key set, request-encryption key included, is written SEALED');
-    const opened = JSON.parse(stsCrypto.decryptWithKek(kekText, row,
-                                                       'signing-keys'));
+    const opened = JSON.parse(sealedRows.openRowIn([store], kekText, row));
     t.check(!!(opened.vciRequestEncKey && opened.vciRequestEncKey.publicJwk &&
                opened.vciRequestEncKey.publicJwk.kid === first.publicJwk.kid),
             'AND THE ROW CARRIES THE KEY — this is what "persisted in ' +
@@ -449,8 +449,8 @@ async function checkStore(t) {
     const legacy = Object.assign({}, opened);
     delete legacy.vciRequestEncKey;
     store.rows.set('default',
-                   stsCrypto.encryptWithKek(kekText, JSON.stringify(legacy),
-                                                        'signing-keys'));
+                   sealedRows.sealRowIn(store, kekText, 'default',
+                                        'signing-keys', JSON.stringify(legacy)));
     await restart();
     t.equal(helpers.STS.vciRequestEncKey, undefined,
             'a set restored from a row written before the key existed has no ' +
@@ -463,8 +463,7 @@ async function checkStore(t) {
             'THE LEGACY SET IS BACKFILLED on first use rather than failing ' +
             'the issuer');
     await settle();
-    const rewritten = JSON.parse(stsCrypto.decryptWithKek(
-      kekText, store.rows.get('default'), 'signing-keys'));
+    const rewritten = JSON.parse(sealedRows.openRowIn([store], kekText, store.rows.get('default')));
     t.check(!!(rewritten.vciRequestEncKey &&
                rewritten.vciRequestEncKey.publicJwk.kid === backfilled.publicJwk.kid),
             'AND WRITTEN DOWN, so the backfill happens once',
@@ -485,8 +484,8 @@ async function checkStore(t) {
     // drops a cached set only when it REPLACES a shared blob, and on this path
     // there was none).
     store.rows.set('default',
-                   stsCrypto.encryptWithKek(kekText, JSON.stringify(legacy),
-                                                        'signing-keys'));
+                   sealedRows.sealRowIn(store, kekText, 'default',
+                                        'signing-keys', JSON.stringify(legacy)));
     await restart();
     const stale = helpers.stsKeysFor.of('default');
     t.equal(stale.vciRequestEncKey, undefined,

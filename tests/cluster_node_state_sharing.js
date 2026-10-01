@@ -165,10 +165,43 @@ async function node(role, storeFile, kekFile) {
   const store = fileStore(storeFile);
   const keystore = require('../common/keystore');
   keystore.reset();
+  // THE KEY ROWS ARE SHARED TOO (#391): a sealed row names the data
+  // encryption key it is under, and that key reaches the other node only
+  // through the key table, as it does through sts_keys in a cluster. A
+  // store that dropped its writes left B holding a DEK of its own that
+  // opened nothing A sealed.
+  const keyFile = storeFile + '.keys';
+  function keyRows() {
+    log.debug("Entering keyRows().");
+    let rows = {};
+    try {
+      rows = JSON.parse(fs.readFileSync(keyFile, 'utf8'));
+    } catch (e) {
+      log.debug("Caught in keyRows(): " + ((e && e.message) || e));
+      rows = {};
+    }
+    log.debug("Leaving keyRows().");
+    return rows;
+  }
   keystore.setStore({
-    loadKeys: function () { return Promise.resolve([]); },
-    saveKeys: function () { return Promise.resolve(); },
-    deleteKeys: function () { return Promise.resolve(); }
+    loadKeys: function () {
+      const rows = keyRows();
+      return Promise.resolve(Object.keys(rows).map(function (k) {
+        return { realm: k, material: rows[k] };
+      }));
+    },
+    saveKeys: function (key, material) {
+      const rows = keyRows();
+      rows[key] = material;
+      fs.writeFileSync(keyFile, JSON.stringify(rows));
+      return Promise.resolve();
+    },
+    deleteKeys: function (key) {
+      const rows = keyRows();
+      delete rows[key];
+      fs.writeFileSync(keyFile, JSON.stringify(rows));
+      return Promise.resolve();
+    }
   });
   await keystore.start();
   out.sealed = keystore.sealed() && !keystore.hasEphemeralKek();

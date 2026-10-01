@@ -2492,6 +2492,90 @@ const CODES = [
       'service does not agree over; refused before any key operation ' +
       '(#193 — it was reported as a key encrypted to another certificate).',
     spec: 'the caller\'s refusal' },
+  { code: 'STS-KEYS-0091',
+    summary: 'A stored data encryption key could not be unwrapped under the ' +
+      'key-encryption key — almost always the wrong key-encryption key. At ' +
+      'startup the service does not start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0092',
+    summary: 'A sealed value names a data encryption key this process does ' +
+      'not hold, so it does not open; the stored data-key rows are read ' +
+      'again in the background. Said once per key (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0093',
+    summary: 'A data-key row could not be written to the store; what was ' +
+      'sealed under its new keys will not open after a restart until it is ' +
+      '(#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0094',
+    summary: 'A stored data-key row could not be read, so the data ' +
+      'encryption keys in it are not held (#391). It is not overwritten.',
+    spec: '' },
+  { code: 'STS-KEYS-0095',
+    summary: 'A stored key row is not a version-2 envelope: the store was ' +
+      'written before data encryption keys (#391) and this build does not ' +
+      'read it. The service does not start; recreate the store.',
+    spec: '' },
+  { code: 'STS-KEYS-0096',
+    summary: 'Data encryption keys wrapped under the PREVIOUS key-encryption ' +
+      'key (keys.previousKek*) were re-wrapped under the current one at ' +
+      'start. Once every node runs with the current key, the previous one ' +
+      'may be removed (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0097',
+    summary: 'A key-set or certificate-authority row under a superseded data ' +
+      'encryption key could not be re-sealed; it stays under the old key, ' +
+      'which is then not destroyed (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0098',
+    summary: 'keys.previousKekProvider names a provider and its location is ' +
+      'empty, so the previous key-encryption key could not be read. The ' +
+      'service does not start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0099',
+    summary: 'A pass of the data-key re-encryption job failed: what is sealed ' +
+      'under superseded data encryption keys could not be counted or ' +
+      're-sealed. Nothing is destroyed; the next pass tries again (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0100',
+    summary: 'A data-key rotation was asked for where data encryption keys ' +
+      'are derived per run and not stored, or for a realm or class no ' +
+      'stored key serves (#391).',
+    spec: 'the console\'s and the API\'s refusal, 400' },
+  { code: 'STS-KEYS-0101',
+    summary: 'A secret other than the key-encryption key names a key ' +
+      'management service (vault-transit, aws-kms, gcp-kms, azure-keys) as ' +
+      'its provider; a KMS ' +
+      'wraps keys and holds nothing to read. The read is refused (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0102',
+    summary: 'The key management service\'s key is not one data keys can be ' +
+      'wrapped under: a Transit key that is not AEAD (associated data is ' +
+      'required), an AWS KMS key that is not an enabled symmetric ' +
+      'ENCRYPT_DECRYPT key, or a Transit mount that is not a plain path. ' +
+      'The service does not start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0103',
+    summary: 'A key management service did not wrap or unwrap a data ' +
+      'encryption key: it refused, answered nothing, or the wrapped key is ' +
+      'under another KMS key. A new data key is not written; one that does ' +
+      'not unwrap at start stops the start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0104',
+    summary: 'A rotation of the key-encryption key was asked for where it ' +
+      'is not in a key management service (it is read into the process, or ' +
+      'data keys are derived per run): its successor has to be configured ' +
+      'with keys.previousKek* and the nodes restarted (#391).',
+    spec: 'the console\'s and the API\'s refusal, 400' },
+  { code: 'STS-KEYS-0105',
+    summary: 'The key management service refused to rotate the ' +
+      'key-encryption key (commonly: the identity this service runs as may ' +
+      'use the key but not rotate it). Nothing was re-wrapped (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0106',
+    summary: 'Counting the values sealed under each data encryption key ' +
+      'failed; the counts shown are the previous ones (#391).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

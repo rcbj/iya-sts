@@ -260,6 +260,7 @@ ENV NODE_PATH=/opt/sts-sdk/node_modules
 # The paragraph above leaves the three cloud SDKs out, and for THIS stack that
 # is still right. `deploy/aws/` (issue #51) runs the same image on ECS against
 # AWS Secrets Manager and RDS, so it needs `@aws-sdk/client-secrets-manager`
+# (and, since #391, `@aws-sdk/client-kms` for a key-encryption key in KMS)
 # and the RDS certificate bundle — and "a deployment runs one `npm install` in
 # its own image" is exactly what these two build arguments are, spelt once
 # here rather than in a second Dockerfile that would drift from this one.

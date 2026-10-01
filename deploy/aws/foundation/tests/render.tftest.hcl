@@ -74,3 +74,20 @@ run "a_region_of_another_shape_is_refused" {
   }
   expect_failures = [var.permitted_regions]
 }
+
+# THE KEY-ENCRYPTION KEY IN KMS (#391): one multi-region symmetric key for
+# encryption, rotated, thirty days to delete, and its alias. Its replicas
+# are made by the same rule as the global key's (modules/region, `local.home`)
+# and their ARNs are unknown until apply, so a plan cannot show them; the
+# home region holding none can be shown.
+run "the_kek_is_a_multi_region_key" {
+  command = plan
+  assert {
+    condition     = aws_kms_key.kek.multi_region == true && aws_kms_key.kek.enable_key_rotation == true && aws_kms_key.kek.key_usage == "ENCRYPT_DECRYPT" && aws_kms_key.kek.customer_master_key_spec == "SYMMETRIC_DEFAULT" && aws_kms_key.kek.deletion_window_in_days == 30
+    error_message = "the KEK key's shape"
+  }
+  assert {
+    condition     = aws_kms_alias.kek.name == "alias/iya-sts-kek" && module.region["us-west-2"].kek_replica_key_arn == ""
+    error_message = aws_kms_alias.kek.name
+  }
+}

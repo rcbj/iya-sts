@@ -6079,7 +6079,7 @@ function redirectOriginsOfRealm() {
 // whole promise is that nothing it minted survives a restart.
 //
 // **THE VALUE SAYS WHICH IT IS AND NOTHING HAS TO REMEMBER.** A sealed value
-// is `crypto.encryptWithKek()`'s own envelope, which begins `$aesgcm$`; a PEM
+// is `crypto.encryptWithDek()`'s own envelope, which begins `$aesgcm$`; a PEM
 // begins `-----BEGIN`. So `isSealed()` is a prefix test rather than a marker
 // attribute beside it — a second attribute would be a second fact to keep in
 // step, and an entry carried between two modes would be read wrongly the first
@@ -6267,12 +6267,13 @@ function withholdFields(fields) {
  * Says whether a stored value is sealed ciphertext.
  *
  * @param value - the stored value
- * @returns true for a `$aesgcm$` value
+ * @returns true for a `$aesgcm$` or `$aessiv$` value
  */
 function isSealed(value) {
   log.debug("Entering isSealed().");
   log.debug("Leaving isSealed().");
-  return String(value == null ? '' : value).indexOf('$aesgcm$') === 0;
+  // Either envelope (#391): `crypto.js` is the one place that knows them.
+  return stsCrypto.isEncryptedWithKek(String(value == null ? '' : value));
 }
 
 // Seal on the way in, where this process holds a key-encryption key that will

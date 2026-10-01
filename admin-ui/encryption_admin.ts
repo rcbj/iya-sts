@@ -56,12 +56,15 @@
 // genuinely wants to see a `$aesgcm$…` envelope goes, and it shows it under a
 // heading saying the registry as the directory sees it.
 //
-// **NOR DOES IT HAVE A CONTROL.** There is nothing here to press: rotating the
-// key-encryption key is a deployment act (`secrets.js` reads one; it never
-// writes one), and a *decrypt this* button would be the one door in this
-// service onto material no door is supposed to have. The page is a report, and
-// `/admin/keys` — which does have an export — is where taking a key out is
-// argued.
+// **ITS ONLY CONTROLS MOVE KEYS AND SHOW NOTHING (#391 P2).** Rotating the
+// key-encryption key is still a deployment act (`secrets.js` reads one; it
+// never writes one), and a *decrypt this* button would still be the one door
+// in this service onto material no door is supposed to have. What it has is
+// the two acts on the DATA encryption keys an operator may ask for — rotate
+// them now, and run the re-encryption pass now — each queuing a run of
+// `common/data_key_rotation.ts`'s jobs, Admin Write, beside the list of keys
+// (ids, realms, classes and states; never a key). `/admin/keys` — which does
+// have an export — is where taking a key out is argued.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
@@ -112,6 +115,10 @@ interface EncryptionAdminDeps {
   mode: typeof mode;
   persistence: typeof persistence;
   minted: typeof minted;
+  // Lazily, both: the rotation module is built at 23b-ii, after this page,
+  // and the console's views are a module this page reaches only to page.
+  dataKeyRotation: () => Json;
+  adminViews: () => Json;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +145,19 @@ interface EncryptionAdminDeps {
  * why.
  */
 const DATA_CLASSES = [
+  {
+    label: 'data-keys',
+    what: 'The data encryption keys themselves (#391): one per realm per ' +
+          'data class below, each wrapped and unwrapped under the ' +
+          'key-encryption key',
+    where: 'the `dek:<scope>:<realm>` rows of `sts_keys`',
+    sealed: true,
+    why: 'Envelope encryption: every value is encrypted under a data ' +
+         'encryption key, and only the data encryption keys are encrypted ' +
+         'under the key-encryption key. A wrap counts here as an encryption ' +
+         'and an unwrap as a decryption; a process unwraps each key once and ' +
+         'holds it, so these figures stay small whatever is sealed.'
+  },
   {
     label: 'signing-keys',
     what: 'This service’s own signing keys, one row per trust realm — and, ' +
@@ -402,6 +422,13 @@ class EncryptionAdmin {
   static readonly DATA_CLASSES = DATA_CLASSES;
 
   /**
+   * The four acts of `POST /admin/encryption/data-keys` and
+   * `POST /admin-api/encryption/:action` (rule 7).
+   */
+  static readonly ACTIONS = ['rotate-data-keys', 'reencrypt-data-keys',
+                             'count-data-keys', 'rotate-kek'];
+
+  /**
    * Builds an instance over the modules it depends on.
    *
    * @param deps - the console, settings, crypto, the keystore and the mode
@@ -430,7 +457,13 @@ class EncryptionAdmin {
       secrets: secrets,
       mode: mode,
       persistence: persistence,
-      minted: minted
+      minted: minted,
+      dataKeyRotation: function (): Json {
+        return require('../common/data_key_rotation');
+      },
+      adminViews: function (): Json {
+        return require('../admin-core/admin_views');
+      }
     };
   }
 
@@ -443,10 +476,12 @@ class EncryptionAdmin {
    * Builds the page's model, the one object behind the page, its `?format=json`
    * and `/admin-api/encryption` (rule 7).
    *
-   * @returns the key-encryption key, the data classes and the encryption and
-   * decryption counts of this process
+   * @param query - the request's query, which pages the data keys
+   *   (`dataKeysPage`, `per`); none for the first page
+   * @returns the key-encryption key, the data classes, the data encryption
+   * keys and the encryption and decryption counts of this process
    */
-  encryptionJson(): Json {
+  encryptionJson(query?: Json): Json {
     const { log, crypto, keystore, mode } = this.deps;
     const self = this;
     log.debug('Entering EncryptionAdmin.encryptionJson().');
@@ -506,6 +541,10 @@ class EncryptionAdmin {
         ephemeral: !!report.kekRead && !report.persisting,
         provider: report.kek.provider,
         providerLabel: report.kek.label,
+        // THE KEY IN A KEY MANAGEMENT SERVICE (#391 P5): its name there, never
+        // a key — a KMS key has no bytes this process could show.
+        inKms: !!report.kekInKms,
+        kmsKey: report.kekKms ? String(report.kekKms.label || '') : null,
         providerKnown: !!report.kek.known,
         where: report.kek.where,
         providers: report.kek.providers,
@@ -528,6 +567,7 @@ class EncryptionAdmin {
             'site is `keystore.persists()` rather than `keystore.sealed()`.'
       },
       algorithm: crypto.KEK_PARAMETERS,
+      dataKeys: self.dataKeysJson(query || {}),
       algorithmNote:
         'AES-256-GCM and deliberately not CBC: GCM is AUTHENTICATED, so a ' +
         'ciphertext somebody altered fails to decrypt instead of yielding a ' +
@@ -535,10 +575,13 @@ class EncryptionAdmin {
         'bytes would produce signatures nothing can verify, and the failure ' +
         'would surface at a relying party as "the signature is invalid" — as ' +
         'far from the cause as it is possible to get. The key-encryption key ' +
-        'NEVER ENCRYPTS ANYTHING DIRECTLY: every record derives a subkey of ' +
-        'its own with HKDF-SHA256 over a random salt, so no record’s IV ' +
-        'matters to any other — and a single key encrypting many records ' +
-        'under many IVs is one IV-reuse bug away from catastrophic in GCM.',
+        'NEVER ENCRYPTS A VALUE (#391): every value is encrypted under a ' +
+        'data encryption key — 256 random bits, one per realm per data ' +
+        'class — and the data encryption keys are what the key-encryption ' +
+        'key wraps. A process unwraps each once and holds it, so a key ' +
+        'held in a key management service is asked per data key, never per ' +
+        'value, and rotating the key-encryption key re-wraps a handful of ' +
+        'keys rather than re-encrypting the store.',
       // ---------------------------------------------------------------------
       // THE TWO LIMITS OF EVERYTHING ABOVE (2026-09-12), and they are on the
       // JSON as well as on the page for `pki_admin.ts`'s `revocationNote`
@@ -554,17 +597,17 @@ class EncryptionAdmin {
         // Answered as a FIELD and not only as prose, so a test or a dashboard
         // can assert it rather than matching on a sentence.
         perRealmKey: false,
+        perRealmDataKey: true,
         realms:
           'THERE IS ONE KEY-ENCRYPTION KEY FOR THIS SERVICE, NOT ONE PER ' +
-          'TRUST REALM. It is read once at startup and used for every sealed ' +
-          'value in every realm. Each record does get a key of its own — ' +
-          'HKDF over a random salt per record — but the derivation takes no ' +
-          'realm, so the separation is per RECORD and not per TENANT. What ' +
-          'is per realm is the material being sealed (each realm has its own ' +
-          'signing keys and its own branch of the certificate authority), ' +
-          'not the key that seals it. So a realm is NOT a cryptographic ' +
-          'boundary at rest: whoever can read this key can open every ' +
-          'realm\'s sealed data, and rotating it rotates every realm at once.',
+          'TRUST REALM, AND A DATA ENCRYPTION KEY PER REALM PER DATA CLASS ' +
+          '(#391). No data encryption key is shared between realms, so a ' +
+          'value of one realm is never sealed under a key another realm\'s ' +
+          'values are. But every data encryption key is wrapped under the ' +
+          'one key-encryption key, so a realm is NOT an independent ' +
+          'boundary at rest: whoever can read that key can unwrap every ' +
+          'realm\'s data keys, and rotating it re-wraps every realm\'s at ' +
+          'once.',
         storage:
           'EVERYTHING NOT IN THE TABLE ABOVE IS PLAINTEXT IN THE STORE — the ' +
           'directory entries, the groups, the applications, the realms and ' +
@@ -608,7 +651,9 @@ class EncryptionAdmin {
       },
       accountingNote:
         'Counted at the ONE funnel both operations pass through — ' +
-        '`crypto.js`’s `encryptWithKek()` and `decryptWithKek()` — ' +
+        '`crypto.js`’s `encryptWithDek()` and `decryptWithDek()`, with ' +
+        'the data encryption keys’ own wraps and unwraps under ' +
+        '`data-keys` — ' +
         'rather than at the call sites, because a total assembled from call ' +
         'sites is wrong the first time somebody adds another one and is ' +
         'wrong SILENTLY. The breakdown below is by a LABEL each call site ' +
@@ -779,11 +824,266 @@ class EncryptionAdmin {
       'below.</p>');
   }
 
+  // ---------------------------------------------------------------------------
+  // THE DATA ENCRYPTION KEYS (#391 P2): every DEK this process holds, by id,
+  // realm, class and state — never a key — paged, with the lifecycle's
+  // settings and whether its jobs run. The STATE is computed here from the
+  // keystore's own `active`, `activateAt` and `status`, so it is the
+  // keystore's answer and not a second opinion.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the data-key section of the model.
+   *
+   * @param query - the request's query, for paging
+   * @returns `{ lifecycle, counts, keys, paging }`
+   */
+  dataKeysJson(query: Json): Json {
+    const { log, keystore, dataKeyRotation, adminViews } = this.deps;
+    log.debug('Entering EncryptionAdmin.dataKeysJson().');
+    const now = Date.now();
+    const counts = { current: 0, pending: 0, superseded: 0, destroyed: 0,
+                     derived: 0 };
+    let counted = 0;
+    const rows = keystore.dataKeys().map(function (d: Json): Json {
+      const state = d.status === 'destroyed' ? 'destroyed'
+        : d.derived ? 'derived'
+          : d.active ? 'current'
+            : (d.activateAt > now ? 'pending' : 'superseded');
+      counts[state] += 1;
+      counted = Math.max(counted, Number(d.countedAt) || 0);
+      // AGE is from creation; VALUES is the last count of what is sealed
+      // under it (`keys.data-key-count`), null where it was never counted.
+      return { id: d.id, realm: d.realm, cls: d.cls, scope: d.scope,
+               alg: d.alg || 'aes-256-gcm', state: state,
+               createdAt: d.createdAt
+                 ? new Date(d.createdAt).toISOString() : null,
+               activateAt: d.activateAt
+                 ? new Date(d.activateAt).toISOString() : null,
+               ageDays: d.createdAt
+                 ? Math.max(0, Math.floor((now - d.createdAt) / 86400000))
+                 : null,
+               values: d.values === undefined ? null : d.values,
+               countedAt: d.countedAt
+                 ? new Date(d.countedAt).toISOString() : null };
+    });
+    let lifecycle: Json = null;
+    try {
+      lifecycle = dataKeyRotation().lifecycleView();
+    } catch (e) {
+      log.debug('Caught in EncryptionAdmin.dataKeysJson(): ' +
+                ((e && (e as Error).message) || e));
+      lifecycle = null;
+    }
+    const paged = adminViews().pagedRows(query, rows,
+                                         { name: 'dataKeys', noun: 'keys' });
+    const out = {
+      lifecycle: lifecycle, counts: counts, total: rows.length,
+      lastCounted: counted ? new Date(counted).toISOString() : null,
+      keys: paged.shown,
+      paging: adminViews().pagingJson(paged.paging),
+      note: 'One data encryption key per realm and data class seals every ' +
+            'value of that class; the key-encryption key only wraps the data ' +
+            'keys. A ROTATED data key is superseded: it still opens what it ' +
+            'sealed, nothing new is sealed under it, and the re-encryption ' +
+            'job re-seals what it sealed and then destroys it. A DERIVED key ' +
+            'is made from the key-encryption key per run where nothing ' +
+            'outlives the process, and is never stored or rotated.'
+    };
+    Object.defineProperty(out, 'pagingRaw',
+                          { value: paged.paging, enumerable: false });
+    log.debug('Leaving EncryptionAdmin.dataKeysJson(). ' + rows.length + '.');
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE TWO ACTS, and the one function the console's form and
+  // `POST /admin-api/encryption/:action` both call (rule 7). Each QUEUES a run
+  // of `common/data_key_rotation.ts`'s jobs rather than doing the work in the
+  // request: a re-encryption pass walks the store.
+  // ---------------------------------------------------------------------------
+  /**
+   * Queues a rotation of the data encryption keys, or a re-encryption pass.
+   *
+   * @param req - the request, for the actor
+   * @param body - `action` (`rotate-data-keys` or `reencrypt-data-keys`), and
+   *   for a rotation an optional `realm` and `cls`
+   * @param via - how it was asked for, for the audit record
+   * @returns `ok` with the run's id and a link to it, or a refusal
+   */
+  dataKeysAction(req: Req, body: Json, via: string): Json {
+    const { log, dataKeyRotation } = this.deps;
+    log.debug('Entering EncryptionAdmin.dataKeysAction().');
+    const b = body || {};
+    const action = String(b.action || '').trim();
+    if (EncryptionAdmin.ACTIONS.indexOf(action) < 0) {
+      log.debug('Leaving EncryptionAdmin.dataKeysAction(). Unknown action.');
+      return { ok: false, errorCode: 'STS-ADMIN-0012', status: 400,
+               errors: ['Unknown action "' + action + '". The actions here ' +
+                        'are: ' + EncryptionAdmin.ACTIONS.join(', ') + '.'] };
+    }
+    let actor = '';
+    try {
+      const state = require('../admin-core/admin_views').gateStateFor(req);
+      actor = String((state && state.username) || '');
+    } catch (e) {
+      log.debug('Caught in EncryptionAdmin.dataKeysAction(): ' +
+                ((e && (e as Error).message) || e));
+      actor = '';
+    }
+    const channel = /management API/.test(via) ? 'http' : 'console';
+    const realm = b.realm === undefined || b.realm === null ||
+      String(b.realm).trim() === '' ? undefined : String(b.realm).trim();
+    const cls = String(b.cls || '').trim() || undefined;
+    const who = { requestedBy: actor, via: via, channel: channel };
+    const answer = action === 'rotate-data-keys'
+      ? dataKeyRotation().requestRotation(Object.assign({ realm: realm,
+                                                          cls: cls }, who))
+      : action === 'reencrypt-data-keys'
+        ? dataKeyRotation().requestReencryption(who)
+        : action === 'count-data-keys'
+          ? dataKeyRotation().requestCount(who)
+          : dataKeyRotation().requestKekRotation(who);
+    if (!answer.ok) {
+      log.debug('Leaving EncryptionAdmin.dataKeysAction(). Refused.');
+      return { ok: false, errorCode: answer.errorCode,
+               status: answer.status || 400, errors: [answer.why] };
+    }
+    log.debug('Leaving EncryptionAdmin.dataKeysAction(). ' + answer.runId);
+    return {
+      ok: true, accepted: true, runId: answer.runId,
+      href: '/admin/scheduler?run=' + encodeURIComponent(answer.runId),
+      message: (action === 'rotate-data-keys'
+        ? 'A rotation of ' + (realm !== undefined || cls
+          ? 'the data encryption keys' + (realm !== undefined
+            ? ' of the realm "' + realm + '"' : '') +
+            (cls ? ' for the class "' + cls + '"' : '')
+          : 'every data encryption key')
+        : action === 'reencrypt-data-keys' ? 'A re-encryption pass'
+          : action === 'count-data-keys'
+            ? 'A count of the values under every data encryption key'
+            : 'A rotation of the key-encryption key in its key management ' +
+              'service') +
+        ' was queued as run ' + answer.runId + '. It runs on the ' +
+        'scheduler\'s leader at its next tick.'
+    };
+  }
+
+  // The section drawn under the algorithm: the lifecycle, the keys, and —
+  // for Admin Write, where keys are stored — the two forms. No script.
+  private renderDataKeys(req: Req, json: Json): string {
+    const { log, admin } = this.deps;
+    log.debug('Entering EncryptionAdmin.renderDataKeys().');
+    const dk = json.dataKeys;
+    const life = dk.lifecycle;
+    const status = !life ? '<p class="warn">The data-key rotation module ' +
+        'is not loaded in this process, so nothing here can be rotated.</p>'
+      : '<p>' + (life.on
+        ? (life.scheduled
+          ? 'Every data encryption key is rotated after <strong>' +
+            admin.esc(String(life.rotationDays)) + ' day(s)</strong> ' +
+            '(<code>keys.dataKeyRotationDays</code>); a new key is used ' +
+            admin.esc(String(life.activationLeadSeconds)) + ' second(s) ' +
+            'after it is published, and a replaced key is destroyed no ' +
+            'sooner than ' + admin.esc(String(life.retireAfterDays)) +
+            ' day(s) after, once nothing is sealed under it.'
+          : 'Scheduled rotation is <strong>off</strong>: ' +
+            admin.esc(life.scheduleOffReason) + '. A rotation by hand ' +
+            'still works.')
+        : 'Nothing is rotated here: ' + admin.esc(life.offReason) + '.') +
+      ' Data stored in the directory is sealed with <code>' +
+      admin.esc(life.directoryCipher) + '</code> ' +
+      '(<code>keys.directoryCipher</code>); everything else with ' +
+      '<code>aes-256-gcm</code>.</p>' +
+      (life.on ? '<p>' + (life.counting
+        ? 'What is sealed under each key is counted once a day ' +
+          '(<code>keys.data-key-count</code>)' + (dk.lastCounted
+            ? ', last at ' + admin.esc(dk.lastCounted) : ', and has not ' +
+              'been counted yet') + '.'
+        : 'Values are not counted: ' + admin.esc(life.countOffReason) +
+          '.') + '</p>' : '');
+    const tiles = '<div class="tiles">' +
+      admin.tile(String(dk.counts.current), 'current') +
+      admin.tile(String(dk.counts.pending), 'waiting to be used') +
+      admin.tile(String(dk.counts.superseded), 'superseded') +
+      admin.tile(String(dk.counts.destroyed), 'destroyed') +
+      admin.tile(String(dk.counts.derived), 'derived per run') +
+      '</div>';
+    const params = this.deps.adminViews().pageParamsOf(req.query || {});
+    const nav = admin.pageNavPair('/admin/encryption', params, dk.pagingRaw);
+    const table = dk.keys.length
+      ? nav.head + '<table class="grid"><thead><tr><th>Realm</th>' +
+        '<th>Class</th><th>Cipher</th><th>State</th><th>Created</th>' +
+        '<th>Used from</th><th>Age (days)</th><th>Values</th>' +
+        '<th>Key id</th></tr></thead><tbody>' +
+        dk.keys.map(function (k: Json): string {
+          return '<tr><td><code>' + admin.esc(k.realm) + '</code></td>' +
+            '<td><code>' + admin.esc(k.cls) + '</code></td>' +
+            '<td><code>' + admin.esc(k.alg) + '</code></td>' +
+            '<td>' + admin.esc(k.state) + '</td>' +
+            '<td>' + admin.esc(k.createdAt || '—') + '</td>' +
+            '<td>' + admin.esc(k.activateAt || '—') + '</td>' +
+            '<td>' + admin.esc(k.ageDays === null ? '—'
+                                                  : String(k.ageDays)) +
+            '</td>' +
+            '<td' + (k.countedAt ? ' title="counted ' +
+                     admin.esc(k.countedAt) + '"' : '') + '>' +
+            admin.esc(k.values === null ? '—' : String(k.values)) + '</td>' +
+            '<td>' + admin.clipped(k.id, 40) + '</td></tr>';
+        }).join('') + '</tbody></table>' + nav.foot
+      : '<p class="muted">No data encryption key is held yet: one is made ' +
+        'the first time a value of its realm and class is sealed.</p>';
+    let forms = '';
+    if (life && life.on && admin.mayWrite(req)) {
+      forms = '<h4>Rotate by hand</h4>' +
+        '<form method="post" action="/admin/encryption/data-keys">' +
+        '<input type="hidden" name="action" value="rotate-data-keys">' +
+        '<label>Realm (empty for every realm): <input type="text" ' +
+        'name="realm" id="data-keys-realm" autocomplete="off"></label> ' +
+        '<label>Class (empty for every class): <input type="text" ' +
+        'name="cls" id="data-keys-cls" autocomplete="off"></label> ' +
+        '<button type="submit" id="data-keys-rotate">Rotate data keys' +
+        '</button></form>' +
+        '<p class="muted">Each key gets a successor, used once it has been ' +
+        'published; what the old key sealed is re-sealed by the ' +
+        're-encryption job.</p>' +
+        '<form method="post" action="/admin/encryption/data-keys">' +
+        '<input type="hidden" name="action" value="reencrypt-data-keys">' +
+        '<button type="submit" id="data-keys-reencrypt">Re-encrypt now' +
+        '</button> — re-seals what is still under a superseded key, and ' +
+        'destroys a superseded key nothing is sealed under that has been ' +
+        'superseded long enough.</form>' +
+        (life.counting
+          ? '<form method="post" action="/admin/encryption/data-keys">' +
+            '<input type="hidden" name="action" value="count-data-keys">' +
+            '<button type="submit" id="data-keys-count">Count now</button> ' +
+            '&mdash; counts what is sealed under every key, in one pass of ' +
+            'the store.</form>'
+          : '') +
+        '<h4>Rotate the key-encryption key</h4>' +
+        (life.kekRotation
+          ? '<form method="post" action="/admin/encryption/data-keys">' +
+            '<input type="hidden" name="action" value="rotate-kek">' +
+            '<button type="submit" id="kek-rotate">Rotate the ' +
+            'key-encryption key</button> &mdash; the key management ' +
+            'service makes a new version, and every data key is re-wrapped ' +
+            'under it. The earlier version stays: data keys other nodes ' +
+            'wrapped under it still unwrap. The identity this service runs ' +
+            'as must be allowed to rotate the key, which the deployments ' +
+            'here do not grant: they rotate it on the KMS\'s own ' +
+            'schedule.</form>'
+          : '<p class="muted">Not from here: ' +
+            admin.esc(life.kekRotationOffReason) + '.</p>');
+    }
+    log.debug('Leaving EncryptionAdmin.renderDataKeys().');
+    return status + tiles + '<p class="muted">' + admin.esc(dk.note) +
+           '</p>' + table + forms;
+  }
+
   private renderEncryption(req: Req, res: Res): void {
     const { log, admin } = this.deps;
     const self = this;
     log.debug('Entering EncryptionAdmin.renderEncryption().');
-    const json = self.encryptionJson();
+    const json = self.encryptionJson(req.query || {});
 
     const tiles = '<div class="tiles">' +
       admin.tile(String(json.accounting.operations), 'operations') +
@@ -809,17 +1109,24 @@ class EncryptionAdmin {
       'opened one appears on this page.</strong> A sealed value is a private ' +
       'key, an authenticator&rsquo;s shared secret or somebody&rsquo;s ' +
       'recovery codes, and printing either half of one would hand over ' +
-      'exactly what the sealing exists to protect. There is no control here ' +
-      'either: rotating the key-encryption key is a deployment act &mdash; ' +
-      'this service reads one and never writes one &mdash; and a <em>decrypt ' +
-      'this</em> button would be the one door onto material no door is ' +
-      'supposed to have.</p>',
+      'exactly what the sealing exists to protect. Its only controls rotate ' +
+      'the data encryption keys, re-seal and count what they sealed, and ' +
+      'rotate a key-encryption key that is in a key management service ' +
+      '(which makes the new version itself), and they show nothing. A ' +
+      'key-encryption key READ into this process is rotated by deploying ' +
+      'its successor &mdash; this service reads one and never writes one ' +
+      '&mdash; and a <em>decrypt this</em> button would be the one door ' +
+      'onto material no door is supposed to have.</p>',
       'What this page is, and the two things it deliberately has not got');
 
     const keyBlock = admin.note(
       '<p>The key-encryption key is read by <code>common/secrets.js</code> ' +
       'from <strong>' + admin.esc(json.key.providerLabel) + '</strong> ' +
-      '(<code>' + admin.esc(json.key.provider) + '</code>), once, at startup ' +
+      '(<code>' + admin.esc(json.key.provider) + '</code>)' +
+      (json.key.kmsKey ? ' &mdash; <strong>' + admin.esc(json.key.kmsKey) +
+        '</strong>, which never leaves it: the service holds a handle, ' +
+        'not the key, and asks it to wrap and unwrap each data key' : '') +
+      ', once, at startup ' +
       'and before the listener binds. <code>file</code> is the default ' +
       'because it needs nothing: Kubernetes mounts a Secret as a file, ' +
       'Docker mounts a secret as a file, and every other provider here is ' +
@@ -853,9 +1160,9 @@ class EncryptionAdmin {
        ['Key', json.algorithm.keyBits + '-bit'],
        ['Nonce', json.algorithm.ivBits + '-bit, random per record'],
        ['Authentication tag', json.algorithm.tagBits + '-bit'],
-       ['Key derivation', json.algorithm.kdf + ', ' +
-        json.algorithm.kdfSaltBits + '-bit random salt per record'],
-       ['Derivation info', json.algorithm.kdfInfo],
+       ['Data keys', json.algorithm.dataKeys],
+       ['Data key wrapping', json.algorithm.dekWrap],
+       ['Authenticated data', json.algorithm.aad],
        ['Envelope', json.algorithm.envelope]].map(function (pair) {
         return '<tr><th>' + admin.esc(pair[0]) + '</th><td><code>' +
                admin.esc(String(pair[1])) + '</code></td></tr>';
@@ -895,6 +1202,8 @@ class EncryptionAdmin {
                   self.unclassifiedBlock(json) +
                   '<h3>The key</h3>' + keyBlock + boundsBlock +
                   '<h3>The algorithm</h3>' + algBlock +
+                  '<h3>The data encryption keys</h3>' +
+                  self.renderDataKeys(req, json) +
                   '<h3>The counting</h3>' + countsBlock +
                   storeBlock);
     log.debug('Leaving EncryptionAdmin.renderEncryption().');
@@ -922,14 +1231,37 @@ class EncryptionAdmin {
    *
    * @param app - the shared express app
    */
-  registerRoutes(app: { get: Function }): void {
-    const { log } = this.deps;
+  registerRoutes(app: { get: Function; post: Function }): void {
+    const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering EncryptionAdmin.registerRoutes().");
     app.get('/admin/encryption', function (req, res) {
       log.debug('Entering GET /admin/encryption.');
       self.renderEncryption(req, res);
       log.debug('Leaving GET /admin/encryption.');
+    });
+    // THE DATA-KEY ACTS (#391 P2). Admin Write; a service page, so a realm's
+    // own administrator never reaches it (`admin_scope.ts`).
+    app.post('/admin/encryption/data-keys', function (req, res) {
+      log.debug('Entering POST /admin/encryption/data-keys.');
+      if (!admin.mayWrite(req)) {
+        require('../common/error_codes').mark(res, 'STS-ADMIN-0012');
+        admin.respondToAction(req, res, '/admin/encryption', { ok: false,
+          errors: ['Rotating data encryption keys needs the Admin Write ' +
+                   'role.'] });
+        log.debug('Leaving POST /admin/encryption/data-keys. Read-only.');
+        return;
+      }
+      const result = self.dataKeysAction(req, helpers.parseBody(req),
+                                         'the admin console');
+      if (!result.ok) {
+        require('../common/error_codes').mark(res,
+          result.errorCode || 'STS-ADMIN-0012');
+      }
+      admin.respondToAction(req, res,
+                            result.ok ? result.href : '/admin/encryption',
+                            result);
+      log.debug('Leaving POST /admin/encryption/data-keys. ' + result.ok);
     });
     log.debug("Leaving EncryptionAdmin.registerRoutes().");
   }
@@ -984,6 +1316,8 @@ export = {
   // For `mgmt-api/admin_api.ts`. Rule 7 — the page and the operation read one
   // function, so the API cannot report a different number from the console.
   encryptionView: slot.forward('encryptionJson'),
+  // For `mgmt-api/admin_api.ts`'s `/encryption/:action` (rule 7, #391 P2).
+  dataKeysAction: slot.forward('dataKeysAction'),
   // For `tests/encryption_report.js` — see `EncryptionAdmin.dataClasses()`.
   dataClasses: slot.forward('dataClasses')
 };

@@ -95,6 +95,9 @@
     "@azure/arm-compute": "^22.0.0",
     "@google-cloud/secret-manager": "^5.0.0",
     "node-vault": "^0.10.0",
+    "@aws-sdk/client-kms": "^3.0.0",
+    "@google-cloud/kms": "^5.0.0",
+    "@azure/keyvault-keys": "^4.0.0",
     "dbus-next": "^0.10.2",
     "@aws-sdk/client-sesv2": "^3.0.0",
     "@azure/communication-email": "^1.0.0",
@@ -126,6 +129,15 @@
       "optional": true
     },
     "node-vault": {
+      "optional": true
+    },
+    "@aws-sdk/client-kms": {
+      "optional": true
+    },
+    "@google-cloud/kms": {
+      "optional": true
+    },
+    "@azure/keyvault-keys": {
       "optional": true
     },
     "dbus-next": {

@@ -62,16 +62,16 @@ locals {
     STS_PROXY_PROTOCOL  = "off"
     STS_TRUSTED_PROXIES = ""
 
-    # The key-encryption key and the database password, from Key Vault
-    # through common/secrets.js — the path issue #51 exists to exercise, on
-    # the `azure` provider. DefaultAzureCredential finds the VM's managed
-    # identity; naming its client id means it never has to guess. The rest
-    # arrive in the env file (secrets.tf).
+    # The database password, from Key Vault through common/secrets.js — the
+    # path issue #51 exists to exercise, on the `azure` provider — and the
+    # key-encryption key, a Key Vault KEY or secret (kek.tf, merged below).
+    # DefaultAzureCredential finds the VM's managed identity; naming its
+    # client id means it never has to guess. The password names its vault
+    # itself, because with the Key Vault key the KEK's vault may be another
+    # (kek.tf). The rest arrive in the env file (secrets.tf).
     AZURE_CLIENT_ID                = data.azurerm_user_assigned_identity.nodes.client_id
-    STS_KEYS_KEK_PROVIDER          = "azure"
-    STS_KEYS_KEK_VAULT             = local.vault_uri
-    STS_KEYS_KEK_REF               = "kek"
     STS_DATABASE_PASSWORD_PROVIDER = "azure"
+    STS_DATABASE_PASSWORD_VAULT    = local.vault_uri
     STS_DATABASE_PASSWORD_REF      = "db-app-password"
 
     # No password in the URL. The host is the server's own name, mapped to
@@ -96,6 +96,9 @@ locals {
       STS_TLS_CERT_FILE = local.tls_cert
       STS_TLS_KEY_FILE  = local.tls_keyfile
     } : {},
+    # Where the key-encryption key is (kek.tf), and, while an environment
+    # moves to the Key Vault key, the previous one.
+    local.kek_environment,
     # A CELL'S CONTRACT WITH THE SERVICE (cells.tf); empty otherwise.
     local.cell_environment,
   var.extra_environment)

@@ -368,17 +368,17 @@ request.
 
 ### Not separated — the key-encryption key
 
-**A realm is not a cryptographic boundary at rest.** Each realm has its own
-signing keys and its own branch of the certificate authority — that is the table
-above — but the key that ENCRYPTS all of it before it reaches the store is a
-single one for the whole deployment, read once at startup from
-`keys.kekProvider`.
+**A realm has keys of its own at rest, but not an independent boundary.**
+Each realm has its own signing keys and its own branch of the certificate
+authority — that is the table above — and since #391 its own DATA ENCRYPTION
+KEYS: everything sealed for a realm is encrypted under keys no other realm's
+values use. Those data keys are all wrapped under a single key-encryption key
+for the whole deployment, read once at startup from `keys.kekProvider`.
 
-So anybody who can read that key can open every realm's sealed data, and
-rotating it rotates every realm at once. Per-record separation does exist (every
-sealed value gets its own derived key), but it is per record and not per tenant.
-[Encryption at rest](encryption-at-rest.md) argues it, and says what making it
-per realm would cost.
+So anybody who can read that key can unwrap every realm's data keys, and
+rotating it re-wraps every realm's at once.
+[Encryption at rest](encryption-at-rest.md) argues it, and says what a
+key-encryption key per realm would cost.
 
 `GET /realms` and `/admin/realms` both publish this list family by family, so it
 is something the service tells you rather than something to remember.

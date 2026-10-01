@@ -21,6 +21,8 @@
 #   * with a public name: roles/dns.admin on the public zone (the ACME
 #     DNS-01 challenge; the zone holds nothing but this project's records),
 #     and reading, adding and disabling versions of ITS certificate secret (tls_secrets.tf)
+#   * roles/cloudkms.cryptoKeyEncrypterDecrypter and roles/cloudkms.viewer
+#     on the service's key-encryption key `iya-sts-kek` only (kms.tf, #391)
 #
 # What the ENVIRONMENT grants it (deploy/gcp/environment/secrets.tf): reading
 # each secret that environment made, one secret at a time. The environment's

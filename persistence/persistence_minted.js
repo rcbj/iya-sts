@@ -1217,8 +1217,10 @@ function flush() {
         }
         let body = null;
         try {
+          // Under THIS ROW'S realm's data encryption key (#391), not the
+          // ambient realm's: a flush writes every realm's rows.
           body = keystore.seal(JSON.stringify(present.value), 'minted-rows',
-                               tierOfHandle(handle));
+                               tierOfHandle(handle), { realm: realmId });
         } catch (e) {
           // A value with a cycle in it, or a BigInt. Counted and skipped:
           // failing the whole transaction because one store holds something
@@ -1269,7 +1271,13 @@ function flush() {
   }
 
   log.debug("Leaving flush().");
-  const saving = driver.saveMinted(upserts, deletes).then(function (result) {
+  // THE DATA-KEY ROWS LAND FIRST (#391): a row sealed under a data encryption
+  // key made during this flush must not reach another process before the key
+  // does.
+  const saving = Promise.resolve(typeof keystore.settleDeks === 'function'
+    ? keystore.settleDeks() : null).then(function () {
+    return driver.saveMinted(upserts, deletes);
+  }).then(function (result) {
     committedAt = Math.max(committedAt, takenAt);
     settleDecided(result);
     ensureTombstoneJob();
@@ -1495,7 +1503,7 @@ function mergerFor(row, handle, key, mine, upsert, realmId) {
       // process's copy's: the other node may have extended it.
       upsert.expiresAt = expiryOf(row, merged, key, realmId);
       return keystore.seal(JSON.stringify(merged), 'minted-rows',
-                           tierOfHandle(handle));
+                           tierOfHandle(handle), { realm: realmId });
     } catch (e) {
       log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
                handle + '" row under "' + key + '" could not be merged with ' +

@@ -245,10 +245,20 @@ const JOIN_LOCK = 460046;
 // whose body is this marker, and an upsert of a key holding it does nothing
 // (`… DO UPDATE … WHERE sts_minted.body <> $tombstone`). Every reader here
 // treats a tombstone as absent. `$` is not in the sealed form's alphabet
-// (`$aesgcm$1$…` is the only shape `keystore.seal()` writes and a body is
+// (`$aesgcm$2$…` is the only shape `keystore.seal()` writes and a body is
 // always one), and this is not that shape, so no sealed row can be mistaken
 // for one. It expires with `persistence.mintedRetention` — `purgeTombstones()`.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// FINDING A SEALED VALUE BY THE DATA ENCRYPTION KEY IT NAMES (#391 P2). The
+// LIKE pattern for a DEK id, escaped (`_` is LIKE's wildcard), and the text
+// of a row with every value sealed under a stale DEK re-sealed by `reseal()`
+// — which answers null for a value already under its current DEK. Null when
+// nothing in the text changed.
+// ---------------------------------------------------------------------------
+// Either envelope: AES-256-GCM (`$aesgcm$`) or AES-256-SIV (`$aessiv$`).
+const SEALED_VALUE = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
+
 const TOMBSTONE = '$tombstone$1';
 
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
@@ -417,7 +427,7 @@ const SCHEMA_OBJECTS = [
   // outside the service entirely; see common/secrets.js.
   //
   // `text` and not `bytea`, because the stored form is the self-describing
-  // ASCII `$aesgcm$1$salt$iv$tag$body` that crypto.js writes — the same
+  // ASCII `$aesgcm$2$dek$iv$tag$body` that crypto.js writes — the same
   // decision `userPassword` follows, and it means a row can be read and
   // reasoned about with psql without a decode step.
   { name: 'sts_keys', statement:
@@ -445,7 +455,7 @@ const SCHEMA_OBJECTS = [
   // and a query for one realm's rows cannot accidentally match them.
   //
   // `body` IS CIPHERTEXT, always, in the same self-describing
-  // `$aesgcm$1$salt$iv$tag$body` form `sts_keys` uses and under the SAME
+  // `$aesgcm$2$dek$iv$tag$body` form `sts_keys` uses and under the SAME
   // key-encryption key. A session id is a cookie value and an authorization
   // code is redeemable, so a dump of this table must not be a set of usable
   // credentials. What it costs is that nothing here is queryable by SQL, which
@@ -1474,6 +1484,31 @@ function dialOptions(url, verifyTls) {
 function create(options) {
   const url = options.url;
   const log = options.log;
+
+  // The two helpers of SEALED_VALUE (above, at module level), here for the
+  // driver's logger.
+  function sealedLike(dekId) {
+    log.debug("Entering sealedLike().");
+    log.debug("Leaving sealedLike().");
+    // `$aes___$`: LIKE's `_` matches either envelope's three letters.
+    return '%$aes___$2$' + String(dekId).replace(/[\\%_]/g, '\\$&') + '$%';
+  }
+
+  function resealText(text, reseal) {
+    log.debug("Entering resealText().");
+    let changed = false;
+    const out = String(text || '').replace(SEALED_VALUE, function (value) {
+      const next = reseal(value);
+      if (next) {
+        changed = true;
+        return next;
+      }
+      return value;
+    });
+    log.debug("Leaving resealText().");
+    return changed ? out : null;
+  }
+
 
   // RISK ROWS (#62) in the shapes `risk/risk_store.ts` works in: camelCase,
   // times as numbers, an `inet` as its text.
@@ -5791,6 +5826,196 @@ function create(options) {
           }
           return second;
         });
+      });
+    },
+
+    // =====================================================================
+    // WHAT IS SEALED UNDER A DATA ENCRYPTION KEY (#391 P2): counted and
+    // re-sealed here, for the re-encryption job.
+    //
+    // A sealed value names its DEK (`$aesgcm$2$<dek id>$…`), so what is
+    // sealed under a superseded DEK is found by its text, in the four tables
+    // that hold sealed values: `sts_keys` (key-set and certificate-authority
+    // rows — the keystore re-seals those itself, they are only COUNTED here),
+    // `sts_minted`, the directory's attributes and `sts_cluster_secrets`.
+    //
+    // **RE-SEALING IS COMPARE-AND-SWAP, ROW BY ROW**: the new text is written
+    // only where the row still holds the text it was made from, so a writer
+    // that changed the row in between is never overwritten — the next run
+    // finds the row again if it is still stale. A re-sealed minted row and
+    // directory entry is logged in `sts_changes` like any write, so every
+    // process adopts the re-sealed value; a cluster secret is not (every
+    // process holds it opened, and the opened value did not change).
+    //
+    // The DEK id is base64url plus dots, and `_` is LIKE's wildcard, so the
+    // pattern escapes it. `risk.address` values are in the risk tables and
+    // are not counted: they are written and never read (see the risk store).
+    // =====================================================================
+    countSealed: function (dekIds) {
+      log.debug("Entering countSealed().");
+      const ids = (dekIds || []).map(String);
+      log.debug("Leaving countSealed().");
+      return Promise.all(ids.map(function (id) {
+        const like = sealedLike(id);
+        return pool.query(
+          'SELECT ' +
+          '(SELECT count(*) FROM sts_keys WHERE realm NOT LIKE \'dek:%\' ' +
+          '   AND material LIKE $1 ESCAPE \'\\\') + ' +
+          '(SELECT count(*) FROM sts_minted WHERE body LIKE $1 ' +
+          '   ESCAPE \'\\\') + ' +
+          '(SELECT count(*) FROM sts_ldap_entries WHERE attrs::text LIKE $1 ' +
+          '   ESCAPE \'\\\') + ' +
+          '(SELECT count(*) FROM sts_cluster_secrets WHERE material LIKE $1 ' +
+          '   ESCAPE \'\\\') AS n', [like]
+        ).then(function (r) {
+          return { id: id, count: Number(((r.rows || [])[0] || {}).n) || 0 };
+        });
+      })).then(function (rows) {
+        const out = {};
+        rows.forEach(function (one) {
+          out[one.id] = one.count;
+        });
+        return out;
+      });
+    },
+
+    // EVERY DATA KEY'S COUNT AT ONCE (#391 P5), for the console's figure:
+    // one pass over each table, the DEK id pulled out of every sealed value by
+    // a regular expression and grouped, rather than `countSealed()`'s pass
+    // per key. A row holding two values under one key counts two: it is a
+    // count of VALUES, which is what re-encryption has to re-seal.
+    countAllSealed: function () {
+      log.debug("Entering countAllSealed().");
+      const pattern = '\\$aes(?:gcm|siv)\\$2\\$([A-Za-z0-9_.-]+)\\$';
+      const one = function (table, column, where) {
+        log.debug("Entering countAllSealed.one().");
+        log.debug("Leaving countAllSealed.one().");
+        return 'SELECT m[1] AS id, count(*) AS n FROM ' + table + ', ' +
+               'regexp_matches(' + column + ', $1, \'g\') AS m' +
+               (where ? ' WHERE ' + where : '') + ' GROUP BY 1';
+      };
+      log.debug("Leaving countAllSealed().");
+      return pool.query(
+        'SELECT id, sum(n)::bigint AS n FROM (' +
+        one('sts_keys', 'material', 'realm NOT LIKE \'dek:%\'') +
+        ' UNION ALL ' + one('sts_minted', 'body') +
+        ' UNION ALL ' + one('sts_ldap_entries', 'attrs::text') +
+        ' UNION ALL ' + one('sts_cluster_secrets', 'material') +
+        ') t GROUP BY id', [pattern]
+      ).then(function (r) {
+        const out = {};
+        (r.rows || []).forEach(function (row) {
+          out[String(row.id)] = Number(row.n) || 0;
+        });
+        return out;
+      });
+    },
+
+    resealSealed: function (dekIds, reseal, options) {
+      log.debug("Entering resealSealed().");
+      const ids = (dekIds || []).map(String);
+      const limit = Math.max(1, Number(options && options.limit) || 500);
+      const ownHandle = (options && options.ownHandle) || function () {
+        return false;
+      };
+      // `changed` names the directory rows re-sealed, so the process that ran
+      // this can apply them to its own copy: the change log's applier skips
+      // a process's own rows, and this process holds the entries' sealed
+      // attributes as ciphertext — a copy left naming the old DEK would be
+      // written back by its next flush of that entry, after the DEK may be
+      // gone.
+      const tally = { minted: 0, entries: 0, secrets: 0, skipped: 0,
+                      changed: [] };
+      log.debug("Leaving resealSealed().");
+      return ids.reduce(function (chain, id) {
+        const like = sealedLike(id);
+        return chain.then(function () {
+          return pool.query('SELECT handle, realm, key, body FROM sts_minted ' +
+                            'WHERE body LIKE $1 ESCAPE \'\\\' LIMIT $2',
+                            [like, limit]);
+        }).then(function (r) {
+          return (r.rows || []).reduce(function (c, row) {
+            return c.then(function () {
+              const next = resealText(row.body, reseal);
+              if (!next) {
+                tally.skipped += 1;
+                return null;
+              }
+              return withTransaction(function (client) {
+                return client.query(
+                  'UPDATE sts_minted SET body = $4, written_at = now() ' +
+                  'WHERE handle = $1 AND realm = $2 AND key = $3 AND ' +
+                  'body = $5', [row.handle, row.realm, row.key, next, row.body]
+                ).then(function (u) {
+                  if (!u.rowCount) {
+                    return null;
+                  }
+                  tally.minted += 1;
+                  return recordChanges(client, [{
+                    kind: ownHandle(row.handle) ? 'minted-own' : 'minted',
+                    realm: row.realm,
+                    key: Buffer.from(String(row.handle), 'utf8')
+                           .toString('base64url') + '.' +
+                         Buffer.from(String(row.key), 'utf8')
+                           .toString('base64url') }]);
+                });
+              });
+            });
+          }, Promise.resolve());
+        }).then(function () {
+          return pool.query('SELECT realm, dn_key, dn, attrs::text AS attrs ' +
+                            'FROM sts_ldap_entries WHERE attrs::text LIKE $1 ' +
+                            'ESCAPE \'\\\' LIMIT $2', [like, limit]);
+        }).then(function (r) {
+          return (r.rows || []).reduce(function (c, row) {
+            return c.then(function () {
+              const next = resealText(row.attrs, reseal);
+              if (!next) {
+                tally.skipped += 1;
+                return null;
+              }
+              return withTransaction(function (client) {
+                return client.query(
+                  'UPDATE sts_ldap_entries SET attrs = $3::jsonb ' +
+                  'WHERE realm = $1 AND dn_key = $2 AND attrs = $4::jsonb',
+                  [row.realm, row.dn_key, next, row.attrs]
+                ).then(function (u) {
+                  if (!u.rowCount) {
+                    return null;
+                  }
+                  tally.entries += 1;
+                  tally.changed.push({ realm: row.realm, key: row.dn });
+                  return recordChanges(client, [{ kind: 'directory',
+                                                  realm: row.realm,
+                                                  key: row.dn }]);
+                });
+              });
+            });
+          }, Promise.resolve());
+        }).then(function () {
+          return pool.query('SELECT name, material FROM sts_cluster_secrets ' +
+                            'WHERE material LIKE $1 ESCAPE \'\\\' LIMIT $2',
+                            [like, limit]);
+        }).then(function (r) {
+          return (r.rows || []).reduce(function (c, row) {
+            return c.then(function () {
+              const next = resealText(row.material, reseal);
+              if (!next) {
+                tally.skipped += 1;
+                return null;
+              }
+              return pool.query(
+                'UPDATE sts_cluster_secrets SET material = $2 ' +
+                'WHERE name = $1 AND material = $3',
+                [row.name, next, row.material]
+              ).then(function (u) {
+                tally.secrets += u.rowCount ? 1 : 0;
+              });
+            });
+          }, Promise.resolve());
+        });
+      }, Promise.resolve()).then(function () {
+        return tally;
       });
     },
 

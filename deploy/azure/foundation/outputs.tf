@@ -41,6 +41,16 @@ output "units" {
   }
 }
 
+output "key_encryption_keys" {
+  description = "Each single-cell environment's and each multi-region environment's key-encryption key (kek.tf): the vault URI and key name every one of its nodes must name, identically."
+  value = {
+    for k, key in azurerm_key_vault_key.kek : k => {
+      vault = trimsuffix(contains(keys(azurerm_key_vault.global), k) ? azurerm_key_vault.global[k].vault_uri : azurerm_key_vault.unit[k].vault_uri, "/")
+      key   = key.name
+    }
+  }
+}
+
 output "global_resource_groups" {
   description = "Each multi-region environment's global group."
   value       = { for k, g in azurerm_resource_group.global : k => g.name }

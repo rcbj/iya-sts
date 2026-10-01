@@ -546,6 +546,12 @@ const JOBS = [
   // throwaway realm, so the emergency signs nobody else out. `local: true`:
   // this repository's own /admin and /admin-api.
   { file: 'sts_key_rotation.js',         browser: false, local: true },
+  // DATA ENCRYPTION KEY ROTATION (#391 P2): POST /admin-api/encryption's
+  // two acts followed to their runs' ends, or their 400 where the data keys
+  // are derived per run. It rotates one class of the default realm's keys,
+  // which changes nothing another job can see: a value sealed under either
+  // key opens. `local: true`: this repository's own /admin-api.
+  { file: 'sts_data_keys.js',            browser: false, local: true },
   { file: 'sts_signer_groups.js',        browser: false, local: true },
   // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
   // (2026-09-12). Both surfaces are this repository's own, and section 5 waits

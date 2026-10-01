@@ -1436,8 +1436,10 @@ confuse, since the `kid` is derived from the key material.
 ### What goes in the store is CIPHERTEXT, and neither driver ever holds a key
 
 `common/keystore.js` encrypts with AES-256-GCM before anything reaches a driver,
-so `keys.json` and `sts_keys.material` hold `$aesgcm$1$salt$iv$tag$body` and
-nothing else. That is what makes it acceptable for private keys to live beside
+so `keys.json` and `sts_keys.material` hold `$aesgcm$2$<dek id>$iv$tag$body`
+and, beside them, the `dek:<scope>:<realm>` rows of DATA ENCRYPTION KEYS each
+wrapped under the key-encryption key (#391, `common/CLAUDE.md`) — nothing
+else. That is what makes it acceptable for private keys to live beside
 the directory in the same store — and it is asserted rather than assumed:
 `tests/keystore.js` checks that no `BEGIN` survives into the stored form.
 

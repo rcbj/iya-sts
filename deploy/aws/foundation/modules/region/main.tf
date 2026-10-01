@@ -39,6 +39,7 @@ variable "common" {
     account_id           = string
     partition            = string
     global_key_arn       = string
+    kek_key_arn          = string
     log_retention_days   = number
     ecr_lifecycle_policy = string
   })
@@ -151,6 +152,32 @@ resource "aws_kms_alias" "global" {
 }
 
 # ---------------------------------------------------------------------------
+# THE KEY-ENCRYPTION KEY, REPLICATED HERE (#391, 2026-10-01; not in the home
+# region, which holds the primary). ../../kms.tf argues the key. A node in
+# this region names the key by its ID — the same `mrk-…` here as in the home
+# region — with THIS region in STS_KEYS_KEK_REGION, so it wraps and unwraps
+# its DEKs against a key in its own region and keeps doing so when the home
+# region is down. Same key material, so a DEK wrapped by a node anywhere
+# unwraps here. Its alias is the primary's name, so an environment finds it
+# by the same lookup in every region.
+# ---------------------------------------------------------------------------
+resource "aws_kms_replica_key" "kek" {
+  count                   = local.home ? 0 : 1
+  region                  = var.region
+  description             = "iya-sts (issue #391): replica of the KEY-ENCRYPTION KEY"
+  primary_key_arn         = var.common.kek_key_arn
+  deletion_window_in_days = 30
+  policy                  = data.aws_iam_policy_document.global.json
+}
+
+resource "aws_kms_alias" "kek" {
+  count         = local.home ? 0 : 1
+  region        = var.region
+  name          = "alias/${var.common.name}-kek"
+  target_key_id = aws_kms_replica_key.kek[0].key_id
+}
+
+# ---------------------------------------------------------------------------
 # THIS REGION'S CONTAINER LOG GROUP. A node's log is personal data as much as
 # its database is (addresses, user agents, names in error lines), so a cell
 # writes to a group in its own region, sealed under its own cell key. Same
@@ -206,6 +233,11 @@ output "cell_key_arn" {
 output "global_replica_key_arn" {
   description = "The global key's replica here; empty in the home region, where the primary is."
   value       = local.home ? "" : aws_kms_replica_key.global[0].arn
+}
+
+output "kek_replica_key_arn" {
+  description = "The key-encryption key's replica here (#391); empty in the home region, where the primary is."
+  value       = local.home ? "" : aws_kms_replica_key.kek[0].arn
 }
 
 output "log_group_arn" {

@@ -5898,11 +5898,18 @@ would produce signatures nothing can verify, and the failure would surface at a
 relying party as "the signature is invalid" — as far from the cause as it is
 possible to get.
 
-**A per-record subkey, derived with HKDF.** The KEK never encrypts anything
-directly: each record uses HKDF-SHA256(KEK, random salt, purpose), so the same
-KEK protects the whole store without any record's IV mattering to any other —
-and a single key encrypting many records under many IVs is one IV-reuse bug away
-from catastrophic in GCM.
+**ENVELOPE ENCRYPTION SINCE #391 (2026-10-01): THE KEK WRAPS DATA KEYS AND
+NOTHING ELSE.** A value is AES-256-GCM under a DATA ENCRYPTION KEY (32 random
+bytes), and only the DEK is encrypted under the KEK. The envelope is
+`$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>`, its version and DEK id the
+additional authenticated data; a wrapped DEK is `$dekwrap$1$…` under
+HKDF-SHA256(KEK, info `sts dek wrapping v1`), with the DEK's id, scope, realm
+and class as its AAD, so a wrapped DEK moved onto another realm's row does not
+unwrap. `crypto.js` holds the primitives (`encryptWithDek()`,
+`decryptWithDek()`, `wrapDek()`, `unwrapDek()`, `deriveDek()`); `keystore.js`
+holds the registry. **Version 1 — a per-value HKDF subkey of the KEK, no DEK —
+is gone, and a store written before #391 is recreated, not migrated**
+(rcbj's decision; `STS-KEYS-0095` stops the start).
 
 **A KEK shorter than 32 bytes is refused rather than stretched.** Stretching
 would let a four-character password protect every signing key this service holds
@@ -5910,67 +5917,231 @@ while the log said AES-256, which is the kind of comfortable lie this repository
 refuses everywhere else. Hex is tried before base64, because a 64-character hex
 string is also valid base64 and reading it that way produces 48 different bytes.
 
-### ONE KEK FOR THE SERVICE, NOT ONE PER REALM — AND THE HKDF ABOVE IS NOT THAT (2026-09-12)
+### THE DATA ENCRYPTION KEYS: ONE PER REALM PER CLASS, HELD UNWRAPPED (#391)
 
-Asked directly, and written down here because the per-record subkey paragraph
-above reads like an answer to it and is not.
+rcbj's decisions on #391: **one DEK per realm per data class, never shared
+between realms**; the DEKs **unwrapped once and held in memory** (a minted
+flush seals thousands of values, so a KEK in a key management service is asked
+per DEK, never per value). The design is in `keystore.js`'s *DATA ENCRYPTION
+KEYS* block; what a caller needs:
 
-**There is a single key-encryption key per PROCESS.** `keystore.js` holds one
-module-level `kek`, filled by the only call to `secrets.readKek()` there is;
-that function takes no realm and reads one value from one provider. `seal()` and
-`open()` take `(plaintext, label)` and **no realm** — the `label` is accounting
-for `/admin/encryption`'s per-kind counters and reaches no key derivation, which
-that function's own header says in as many words. Every call site agrees:
-`'totp-secret'`, `'application-private-key'`, `'person-private-key'`,
-`'minted-rows'`. Labels, never realms.
+* **`seal(plaintext, label, tier, options)`**: the class is the LABEL (made
+  safe by `dekClass()`); the realm is `options.realm`, else the AMBIENT realm.
+  A writer of another realm's rows outside a request passes the realm —
+  `persistence_minted.js`'s flush does, per row. `open()` needs neither: the
+  envelope names its DEK.
+* **A SCOPE beside the realm**: `service`, or `cell.<cells.id>` for
+  `seal(…, 'cell')` where a cell key is held (#98) — wrapped under the cell's
+  own key. Another cell's DEK rows are held unopened and never written here.
+* **WHERE KEYS PERSIST A DEK IS RANDOM AND STORED**, wrapped, in a
+  `dek:<scope>:<realm>` row of `sts_keys` (plain JSON; the global tier). The
+  row is a UNION merged under the row's lock, so two processes making a DEK for
+  one class at once keep both, and all converge on one as current: the usable
+  DEK ACTIVATED most recently (`activateAt` at or before now), then the lowest
+  id (`chooseActive()`, cached per slot until the next activation).
+  **ORDER is what makes a DEK known before anything sealed under it is read**:
+  a new DEK's row is queued at once, and every writer of sealed rows waits for
+  `keystore.settleDeks()` first — this file's own key and PKI rows,
+  `persistence.js`'s flush, `persistence_minted.js`'s flush, and
+  `cluster_secrets.ts`. **A new direct writer of sealed values owes the same
+  wait.** A value under a DEK not held is refused (`STS-KEYS-0092`) and the
+  rows are read again in the background.
+* **WHERE NOTHING IS STORED A DEK IS DERIVED** from the KEK (`deriveDek()`),
+  and its id (`d.` + the base64url context) names what it was derived for, so a
+  sibling thread with the same ephemeral KEK derives it from the id alone.
+  "Stored or derived" is a PROCESS fact (`start()` read a KEK for a store), not
+  `persists()`, which follows the ambient realm's mode.
+* **What a realm IS at rest now**: no DEK is shared between realms, but every
+  DEK is wrapped under the one KEK, so whoever holds the KEK unwraps every
+  realm's. A realm is a separate key, not an independent boundary; a KEK per
+  realm is still not built, and the costs of one are below.
+* **`open()` still swallows a failure** rather than throwing: a value under a
+  DEK this process cannot hold is reported and dropped by its reader, and the
+  alternative is a service that will not start because of a session from last
+  week. **A DEK of this process's own scope that will not unwrap at START is
+  fatal** (`STS-KEYS-0091`), for the signing key's reason.
 
-**The HKDF `info` IS A CONSTANT** (`'sts key material v1'`), so the
-separation the paragraph above buys is **per record and not per tenant**: every
-sealed value has its own key and IV, and one master key opens all of them in
-every realm.
+`docs/encryption-at-rest.md` is the operator-facing half.
 
-**THE DISTINCTION TO KEEP STRAIGHT IS WHICH KEY IS THE SUBJECT.** Realm
-separation in this service is about *which keys exist* — signing keys per realm
-in `material`, a certificate-authority branch per realm since the Root was
-shared — not about *which key encrypts them*. A reader who knows the first can
-reasonably assume the second, and it is not true.
+### ROTATION, RE-SEALING, DESTRUCTION AND A ROTATED KEK (#391 P2)
 
-Three consequences, and the third is already visible in the code:
+rcbj's decision: a yearly scheduled rotation of every DEK, a re-encryption job,
+a rotation by hand on the console and the API, and a rotated KEK RE-WRAPS the
+DEKs. The mechanism is `keystore.js`'s *THE DEK LIFECYCLE* block; WHEN is
+`common/data_key_rotation.ts`'s three cluster jobs (`keys.data-key-rotate`
+daily, `keys.data-key-rotate-now` by hand, `keys.data-key-reencrypt` hourly),
+built at 23b-ii beside the signing rotation. What a maintainer needs:
 
-* whoever can read the KEK can open **every realm's** sealed data, so a realm is
-  not a cryptographic boundary at rest;
-* rotating the KEK rotates every realm at once;
-* **and that is why `open()` swallows a failure rather than throwing.** A value
-  written under a previous KEK is the ordinary outcome of a rotation, so the
-  restore counts them and drops them — the alternative is a service that will
-  not start because of a session from last week.
+* **A ROTATION PUBLISHES BEFORE IT SEALS.** `rotateDeks()` makes the successor
+  with `activateAt` `keys.dataKeyActivationLeadSeconds` (300) ahead, so every
+  process and node has read its row before a value names it. The DEK it
+  replaces is SUPERSEDED: it opens, nothing new is sealed under it.
+* **RE-SEALING NEEDS NO KNOWLEDGE OF THE VALUE**: a DEK records its scope,
+  realm and class, so `reseal(cipher)` opens under the old DEK and seals under
+  that slot's current one. The store does the walk (`countSealed()` and
+  `resealSealed()` in `persistence_postgres.js`, a compare-and-set UPDATE per
+  row with a change-log row, over `sts_keys`, `sts_minted`,
+  `sts_ldap_entries` and `sts_cluster_secrets`); `resealOwnRows()` rewrites
+  this file's own key and PKI rows. **The process running the pass applies the
+  directory rows it re-sealed to its own copy** (`persistence.js`'s hook,
+  through `applyDirectoryChange()`): the applier skips a process's own change
+  rows, and this process holds sealed attributes as ciphertext, so a copy left
+  naming the old DEK would be written back by its next flush — after the DEK
+  may be gone. A minted row is held in the clear and re-sealed at its next
+  flush; a cluster secret is held opened.
+* **A DEK IS DESTROYED ONLY ON A COUNT OF ZERO**, and only once superseded for
+  `keys.dataKeyRetireAfterDays` (7, at least 1). A store that cannot count
+  (`ldif`, `memory`) never says zero, so nothing is destroyed there. The
+  destruction is written to the row and WINS every merge (`unionDekRows()`,
+  `adoptDekRow()`), so no stale copy brings a key back.
+* **A ROTATED KEK**: `keys.previousKek*` (a sixth secret descriptor,
+  `secrets.PREVIOUS_KEK`, restart-only) is read at start beside the new key; a
+  service DEK that unwraps only under it is re-wrapped and its row written
+  (`rewrapRotated()`, `STS-KEYS-0096`). A start with only the new key over rows
+  wrapped under the old refuses (`STS-KEYS-0091`). **Cell keys are not covered**
+  — a rotated cell key has no previous-key descriptor yet.
+* **THE DIGEST KEY.** `keyedDigest()` (the cell routing index, a cell locator's
+  tag) was HKDF of the KEK, so a rotated KEK would have changed every digest.
+  Where DEKs are stored it is one random key of its own, class `keyed-digest`
+  in the service scope's default-realm row, FIRST WRITER WINS in the merge
+  (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
+  rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
+  is kept — nothing a digest names outlives the process there.
+* **The settings are per process** (`perProcess`): the jobs run once for the
+  service, and a realm cannot carry them.
 
-`docs/encryption-at-rest.md` is the operator-facing half, and
-`docs/trust-realms.md`'s *what a realm does not separate* names it beside the
-three socket families.
+### WHAT THE CONSOLE AND THE API SHOW AND DO (#391 P5)
 
-#### Making it per realm, if it is ever asked for — NEITHER IS IMPLEMENTED
+rcbj's P5 list: the KEK provider (never the key), every DEK's id, scope,
+class, state, age and value count, and the rotate acts on both surfaces (rule
+7). `admin-ui/encryption_admin.ts` draws it; `GET /admin-api/encryption`
+returns the same model; `POST /admin-api/encryption/:action` and the page's
+forms go through one `dataKeysAction()` with FOUR acts (`ACTIONS`):
+`rotate-data-keys`, `reencrypt-data-keys`, `count-data-keys`, `rotate-kek`.
 
-Written down so the costs are not re-derived. **Nothing below describes code
-that exists.**
+* **A VALUE COUNT IS A JOB, NEVER A PAGE VIEW.** `countSealed()` is a pattern
+  scan per key; `countAllSealed()` (postgres) is ONE pass per table that pulls
+  every DEK id out with `regexp_matches()` and groups — a count of VALUES, so
+  a row holding two counts two. `keys.data-key-count` runs it daily and by
+  hand and records each count ON THE KEY (`keystore.recordCounts()`: `values`
+  and `countedAt` on the record and its row, merged newest-count-wins in
+  `unionDekRows()` and `adoptDekRow()`), so every node draws the same figure.
+  A key nobody counted shows `—`, never 0. The re-encryption pass records the
+  superseded keys' counts it took anyway. Off where the store cannot count
+  (`countOffReason()`). Only this process's own scopes are recorded: another
+  cell's values are in a database this one did not count.
+* **THE KEK IS ROTATED FROM HERE ONLY WHERE IT IS IN A KMS.** Each KMS handle
+  has `rotate()` (Transit's `/keys/<k>/rotate`; Cloud KMS a new version made
+  primary; Key Vault `rotateKey`; AWS `RotateKeyOnDemand`, behind the same
+  key id, re-wrapping nothing); `keystore.rotateKek()` then runs
+  `rewrapRotated()`, which re-wraps every DEK `isStale()` names and writes the
+  rows LIVE — no restart; the other nodes adopt the newer wrap through the
+  row's merge, and their own new DEKs are wrapped by the KMS under its newest
+  version anyway. The job is `keys.kek-rotate-now` (manual only). A KEK READ
+  into the process is refused (`STS-KEYS-0104`, with the previousKek* way to
+  do it): its successor is bytes an operator supplies, and this service never
+  writes a KEK. A KMS that refuses (the deployments here grant use, not
+  rotation, and rotate on the KMS's own schedule) fails the run
+  (`STS-KEYS-0105`), audited `keys.kek-rotate`.
+* **`key.kmsKey`** is the KMS key's NAME (its handle's label). A KMS key has
+  no bytes this process could show, which is why it is safe to print.
 
-* **A per-realm subkey from the one master key.** Put the realm id into the
-  HKDF `info` beside the constant, thread the realm through `seal()` / `open()`,
-  and bump the envelope version (`$aesgcm$2$…`) so records written before the
-  change still open under v1. Cryptographic separation per realm from one
-  secret, no new provisioning, no extra secret-store round trips — and it is
-  SEPARATION rather than INDEPENDENCE: an operator holding the master key still
-  opens everything.
-* **A key-encryption key per realm, from the secret store.** Genuine
-  independence and a much larger change. `secrets.js` grows a keyed read;
-  `keystore.start()` can no longer read one value before the realm registry
-  exists, which inverts the ordering `start()` is built on; every call site
-  needs an ambient realm, **and `persistence_minted.js`'s flush does not have
-  one** — it runs on a timer rather than inside a request, which is the same
-  shape of problem the request pool's barrier hit from the other direction.
-  Creating a realm would also become a key-provisioning act, where today it is
-  one API call.
+#### A key-encryption key per realm — NOT IMPLEMENTED
 
+Written down so the cost is not re-derived. Genuine independence per realm
+needs `secrets.js` to grow a keyed read; `keystore.start()` could no longer read
+one value before the realm registry exists, and creating a realm would become a
+key-provisioning act, where today it is one API call. With DEKs per realm it is
+now a change to what WRAPS a realm's DEKs and nothing else.
+
+
+### A KEK IN A KEY MANAGEMENT SERVICE, AND AES-256-SIV FOR THE DIRECTORY (#391 P3, P4)
+
+**`keys.kekProvider` may name a KMS key rather than a secret: `vault-transit`
+(OpenBao or HashiCorp Vault's Transit engine, mount `keys.kekTransitMount`),
+`aws-kms`, `gcp-kms` (Cloud KMS) or `azure-keys` (a Key Vault or Managed HSM
+key).** rcbj's decision: **the KMS key wraps EACH DEK directly** — there
+is no root key unwrapped into memory, so the KEK's bytes never enter the
+process. `secrets.js` returns a HANDLE for such a provider rather than bytes
+(`{ remote, provider, keyRef, wrap(dek, aad), unwrap(text, aad), owns(text),
+isStale(text) }`), and only for `kek` and `previous-kek` (`KMS_CAPABLE`); any
+other secret naming one is refused `STS-KEYS-0101`. What follows from it:
+
+* **A wrapped DEK under a KMS is `$dekkms$1$<provider>$<b64url key>$<ct>`.**
+  The DEK's AAD (`dekAad()`: id, scope, realm, class) goes with it — Transit's
+  `associated_data`, which is why a Transit key must be an AEAD type
+  (`aes256-gcm96`, `aes128-gcm96`, `chacha20-poly1305`; anything else is
+  `STS-KEYS-0102` at start), and AWS's `EncryptionContext {'sts-dek': aad}`,
+  on a key DescribeKey shows enabled, `ENCRYPT_DECRYPT` and
+  `SYMMETRIC_DEFAULT`; Cloud KMS's `additionalAuthenticatedData` on an
+  `ENCRYPT_DECRYPT` / `GOOGLE_SYMMETRIC_ENCRYPTION` key; an Azure `oct-HSM`
+  key's A256GCM AAD. So a wrapped DEK moved to another realm's row is refused
+  by the KMS, as `$dekwrap$` is refused locally.
+* **AN AZURE RSA KEY IS THE ONE EXCEPTION, AND IT IS HELD HERE.** A standard
+  Key Vault has no symmetric key, and RSA-OAEP-256 takes no AAD, so the wrapped
+  plaintext is the DEK followed by SHA-256 of its AAD and the unwrap refuses a
+  digest that is not the row's (`STS-KEYS-0103`): the vault unwraps a moved
+  key, and this service refuses it. OAEP is not malleable, so that is a
+  binding. Under 3072 bits is refused (2048 is ~112-bit, below the AES-256 it
+  would protect), and RSA is not post-quantum — an `oct-HSM` key is the
+  recommendation wherever a Managed HSM is available.
+* **THE KEY'S REFERENCE IS IN EVERY WRAPPED DEK, AND A DIFFERENT ONE IS
+  REFUSED** (`owns()`): every node and every cell must name the key
+  identically — a multi-region AWS key by its `mrk-` id with `keys.kekRegion`
+  per node, never a regional ARN; Cloud KMS by the KEY, never a version (a
+  version is refused, `STS-KEYS-0102`); Azure as vault URL plus name.
+* **WRAPPING AND UNWRAPPING ARE ASYNCHRONOUS, AND `seal()` IS NOT.** A DEK made
+  under a remote KEK is held with `needsWrap` and wrapped by `wrapPending()`
+  before its row is written (`writeDekRow()` awaits it), and a DEK read from
+  the store is unwrapped in the background (`unwrapLater()`) — `dekFor()`
+  answers null until it is, which is the same refusal-and-reread a DEK not yet
+  held already got (`STS-KEYS-0092`). `start()`, the change-log adoption and
+  `refreshDekRows()` await the unwraps, so a started process holds every DEK
+  it read. A KMS failure is `STS-KEYS-0103`.
+* **A key version rotated in the KMS is a re-wrap**, the same as a rotated
+  KEK: `rewrapRotated()` asks `isStale()` and re-wraps at start. Transit's
+  version is in its `vault:vN:` ciphertext; Cloud KMS and Azure name versions
+  outside the ciphertext, so their wrapped text is `<version>:<ciphertext>`,
+  and stale is "not the primary / current version". AWS rotates its backing
+  key inside one key id and needs nothing.
+* **Moving a local KEK into a KMS, or back, is `keys.previousKek*`** — the
+  previous KEK may be either kind, so the P2 re-wrap is the migration.
+* **The keyed digests need bytes, not a handle**, so under a KMS they are made
+  under the stored digest key (P2), which is wrapped like a DEK.
+* **`tests/kms_kek.js` holds it against a fake Transit server and fake
+  AWS KMS, Cloud KMS and Key Vault clients** injected through
+  `secrets.setSdkLoader()`; no test runs against a real KMS yet.
+* **The four SDKs are optional peers** (`package.json`), like every cloud
+  SDK here: a deployment adds `@aws-sdk/client-kms`, `@google-cloud/kms` or
+  `@azure/keyvault-keys` (with `@azure/identity`) to `STS_CLOUD_SDKS`.
+
+**`keys.directoryCipher` (`aes-256-gcm`, the default, or `aes-256-siv`)
+chooses the cipher of NEW data keys of the classes stored on directory
+entries** (`keystore.DIRECTORY_CLASSES` — the `/admin/encryption` page's
+directory classes). It exists because rcbj asked for "AES-512", which does not
+exist: AES's key is 128, 192 or 256 bits. **AES-256-SIV (RFC 5297) is the
+honest reading of it** — a 512-bit key, two AES-256 keys, one for S2V
+(AES-CMAC, RFC 4493) and one for CTR — and it is nonce-misuse resistant, which
+GCM is not. Its strength is still 256-bit AES; say so wherever it is offered.
+
+* **node has no AES-SIV**, so `crypto.js` builds it from AES-256-ECB
+  (`aesBlock()`) and AES-256-CTR: `aesCmac()`, `sivS2v()`, `aesSivEncrypt()`,
+  `aesSivDecrypt()`. **Wycheproof's `aes_siv_cmac_test` 512-bit groups hold
+  it** (`tests/wycheproof.js`); the other key sizes are not a door here.
+* **The envelope is `$aessiv$2$<dek id>$<nonce>$<siv>$<ciphertext>`**, with a
+  random 16-byte nonce as the last AD component (so one value sealed twice is
+  two ciphertexts) and the envelope's AAD first. `encryptWithDek()` chooses by
+  the KEY's length (64 bytes is SIV); `decryptWithDek()` by the envelope, and
+  a GCM envelope under a 64-byte key is refused.
+* **A DEK's cipher is fixed when it is made** (`rec.alg`, the key length the
+  truth). Changing the setting makes every directory class due a rotation
+  (`rotationDue()` compares the newest key's cipher with `cipherFor()`), and the
+  P2 re-encryption moves the values — no migration path of its own.
+* **Every "is this sealed?" test is `crypto.isEncryptedWithKek()`** now; five
+  modules matched `$aesgcm$` themselves and would have stored a SIV value as
+  plaintext-looking text. A new one owes the same.
+* **A derived (development) DEK is always GCM**: nothing persists there, so
+  nothing would be gained.
 
 ### `storeReport()`: THE SAME MODULE ANSWERING A MONITORING QUESTION (2026-09-12)
 

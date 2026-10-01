@@ -1472,7 +1472,11 @@ function flush() {
   const realmChanges = wantRealms ? realmsDelta(removals) : null;
   const configChanges = wantConfig ? appconfigDelta() : null;
 
-  flushing = Promise.resolve().then(function () {
+  // THE DATA-KEY ROWS LAND FIRST (#391): a directory entry carrying a value
+  // sealed under a data encryption key made since the last flush must not
+  // reach another process before the key does.
+  flushing = Promise.resolve(typeof keystore.settleDeks === 'function'
+    ? keystore.settleDeks() : null).then(function () {
     if (!changes) {
       return null;
     }
@@ -2545,7 +2549,53 @@ function openStore(chosen, resolvedUrl, globalUrls) {
                    'with it: ' + ((e && e.message) || e));
         }
         log.debug("Leaving hierarchyAdopted().");
-      }
+      },
+      // WHAT IS SEALED UNDER A DATA ENCRYPTION KEY (#391 P2): counted and
+      // re-sealed for the re-encryption job, by a driver that can (postgres).
+      // A re-sealed minted row of an `own` store is logged as `minted-own`,
+      // which only this side can say: the handle's declaration is here.
+      countSealed: typeof driver.countSealed === 'function'
+        ? function (dekIds) {
+          log.debug("Entering countSealed().");
+          log.debug("Leaving countSealed().");
+          return driver.countSealed(dekIds);
+        }
+        : undefined,
+      countAllSealed: typeof driver.countAllSealed === 'function'
+        ? function () {
+          log.debug("Entering countAllSealed().");
+          log.debug("Leaving countAllSealed().");
+          return driver.countAllSealed();
+        }
+        : undefined,
+      resealSealed: typeof driver.resealSealed === 'function'
+        ? function (dekIds, reseal, options) {
+          log.debug("Entering resealSealed().");
+          log.debug("Leaving resealSealed().");
+          return driver.resealSealed(dekIds, reseal, Object.assign({
+            ownHandle: function (handle) {
+              const row = realms.handleFor(handle);
+              return !!(row && row.merge === 'own');
+            }
+          }, options || {})).then(function (tally) {
+            // THIS PROCESS'S OWN COPY OF EVERY RE-SEALED ENTRY, applied as
+            // another process's change would be: the change log's applier
+            // skips this process's own rows, and the copy held here still
+            // names the old DEK. Left alone, the next flush of the entry
+            // would write that back — after the DEK may have been destroyed.
+            const changed = (tally && tally.changed) || [];
+            return changed.reduce(function (chain, one) {
+              return chain.then(function () {
+                return applyDirectoryChange({ kind: 'directory',
+                                              realm: one.realm,
+                                              key: one.key });
+              });
+            }, Promise.resolve()).then(function () {
+              return tally;
+            });
+          });
+        }
+        : undefined
     });
     // ---------------------------------------------------------------------
     // AND THE MINTED STORE ITS DRIVER, AT THE SAME MOMENT AND FOR THE SAME

@@ -28,7 +28,8 @@
 #   cloudsql.admin              the primary and the replica
 #   secretmanager.admin         the environment's secrets, and granting its
 #                               node account access to each (a secret's IAM)
-#   cloudkms.viewer             finding the project key by name
+#   cloudkms.viewer             finding the project key, and the KEK
+#                               (kms.tf, #391), by name
 #   artifactregistry.reader     reading an image's digest (and writer on the one
 #                               repository, to push — below)
 #   serviceusage.serviceUsageConsumer   calling the APIs at all

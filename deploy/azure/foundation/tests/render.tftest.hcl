@@ -120,4 +120,39 @@ run "every_unit" {
     condition     = jsonencode(sort(jsondecode(azurerm_resource_group_policy_assignment.global_locations["globalidp"].parameters).listOfAllowedLocations.value)) == jsonencode(["germanywestcentral", "southeastasia", "westus2"])
     error_message = "the global group admits every cell's region"
   }
+  assert {
+    condition     = jsonencode(sort(keys(azurerm_key_vault_key.kek))) == jsonencode(["ci", "dev", "globalidp", "testidp", "testidpna"])
+    error_message = "a key-encryption key per single-cell environment and ONE per multi-region environment"
+  }
+  assert {
+    condition = alltrue([
+      for k in values(azurerm_key_vault_key.kek) :
+      k.name == "kek-rsa" && k.key_type == "RSA" && k.key_size == 3072 && jsonencode(sort(k.key_opts)) == jsonencode(["unwrapKey", "wrapKey"])
+    ])
+    error_message = "RSA-3072, wrapKey and unwrapKey only"
+  }
+  assert {
+    condition     = azurerm_key_vault_key.kek["testidp"].rotation_policy[0].automatic[0].time_after_creation == "P1Y" && azurerm_key_vault_key.kek["testidp"].rotation_policy[0].expire_after == "P2Y" && azurerm_key_vault_key.kek["testidp"].rotation_policy[0].notify_before_expiry == "P30D"
+    error_message = "rotated yearly; a version expires a year after its successor"
+  }
+  assert {
+    condition     = length(azurerm_role_assignment.nodes_kek) == 8 && alltrue([for a in values(azurerm_role_assignment.nodes_kek) : a.role_definition_name == "Key Vault Crypto User"])
+    error_message = "every unit's nodes are Crypto Users"
+  }
+  assert {
+    condition     = azurerm_role_assignment.nodes_kek["globalidp-zsea"].scope == azurerm_key_vault_key.kek["globalidp"].resource_versionless_id && azurerm_role_assignment.nodes_kek["testidp"].scope == azurerm_key_vault_key.kek["testidp"].resource_versionless_id && strcontains(azurerm_role_assignment.nodes_kek["testidp"].scope, "/keys/")
+    error_message = "scoped to the KEY, a cell's to its environment's one key"
+  }
+  assert {
+    condition     = local.unit_kek_holder["testidpna-zcnc"] == "testidpna" && local.unit_kek_holder["dev"] == "dev"
+    error_message = jsonencode(local.unit_kek_holder)
+  }
+  assert {
+    condition     = jsonencode(sort(keys(azurerm_key_vault.global))) == jsonencode(["globalidp", "testidpna"]) && azurerm_key_vault.global["globalidp"].location == "westus2" && alltrue([for n in values(local.global_vault_names) : length(n) <= 24 && can(regex("^[a-z][a-z0-9-]+$", n))])
+    error_message = jsonencode(local.global_vault_names)
+  }
+  assert {
+    condition     = length(azurerm_role_assignment.nodes_read_global_vault) == 5 && length(azurerm_role_assignment.deployer_global_vaults) == 2 && length(azurerm_role_assignment.admin_kek_vault) == 5
+    error_message = "every cell reads its global vault; the deployer writes secrets in it; the administrator makes each key"
+  }
 }

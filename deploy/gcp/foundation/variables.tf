@@ -99,6 +99,22 @@ variable "kms_rotation_period" {
   default     = "7776000s"
 }
 
+variable "kek_rotation_period" {
+  description = <<-EOT
+    How often the service's key-encryption key in Cloud KMS (kms.tf, `kek`)
+    gets a new primary version. A year by default: rotating it costs every
+    node one re-wrap per data key at its next start, and nothing the service
+    sealed is re-encrypted, so a short period buys little. At least a day,
+    Cloud KMS's minimum.
+  EOT
+  type        = string
+  default     = "31536000s"
+  validation {
+    condition     = can(regex("^[0-9]+s$", var.kek_rotation_period)) && tonumber(trimsuffix(var.kek_rotation_period, "s")) >= 86400
+    error_message = "kek_rotation_period is a number of seconds with an `s`, at least 86400s."
+  }
+}
+
 variable "multicell_environments" {
   description = <<-EOT
     THE MULTI-CELL, MULTI-CLOUD ENVIRONMENTS (#97), by name. Each is read from

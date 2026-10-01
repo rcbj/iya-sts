@@ -9,6 +9,8 @@
 #                       key-encryption key, its database, its upload volumes
 #   the GLOBAL key      a replica of kms.tf's multi-region key (not in the
 #                       home region, where the primary is)
+#   the KEK             a replica of kms.tf's key-encryption key (#391), the
+#                       same way and for the same reason
 #   a log group         /iya-sts/containers (not in the home region, where
 #                       logs.tf's is): a cell's logs stay in its region
 #   the image repository  a replica of ecr.tf's (not in the home region),
@@ -27,6 +29,7 @@ locals {
     account_id           = local.account_id
     partition            = local.partition
     global_key_arn       = aws_kms_key.global.arn
+    kek_key_arn          = aws_kms_key.kek.arn
     log_retention_days   = var.log_retention_days
     ecr_lifecycle_policy = aws_ecr_lifecycle_policy.main.policy
   }
@@ -94,6 +97,14 @@ locals {
   all_log_group_arns   = concat([aws_cloudwatch_log_group.containers.arn], local.regional_log_arns)
   all_ecr_arns         = concat([aws_ecr_repository.main.arn], local.regional_ecr_arns)
   replica_regions      = [for r in local.regions : r if r != var.aws_region]
+
+  # THE KEK IN EVERY REGION AT ONCE, AS ONE ARN (#391): a multi-region key's
+  # replicas share its key ID, so `key/<mrk id>` with the region a wildcard
+  # names the primary and its replicas and no other key, and the region
+  # fence holds the region to the permitted list. Used where a policy's size
+  # matters (the boundary, the deployer); an environment's task role names
+  # each regional ARN (../environment/iam.tf).
+  kek_key_arn_any_region = "arn:${local.partition}:kms:*:${local.account_id}:key/${aws_kms_key.kek.key_id}"
 }
 
 # ---------------------------------------------------------------------------

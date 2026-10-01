@@ -121,6 +121,13 @@ data "azurerm_user_assigned_identity" "postgres" {
   resource_group_name = "${var.name}-${local.region_codes[each.value.region]}"
 }
 
+# The environment's global vault: its key-encryption key and a copy of the
+# global database password (../foundation/kek.tf's formula; keep in step).
+data "azurerm_key_vault" "global" {
+  name                = "ms${var.environment}g-${substr(sha1("${local.subscription_id}/${var.name}/${var.environment}/global"), 0, 4)}"
+  resource_group_name = local.resource_group
+}
+
 # Each cell's vault (the foundation's formula, ../foundation/locals.tf).
 data "azurerm_key_vault" "cell" {
   for_each            = var.cells

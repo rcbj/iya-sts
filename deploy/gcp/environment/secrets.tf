@@ -5,8 +5,12 @@
 # THE SAME SECRETS AS AWS, IN SECRET MANAGER (deploy/aws/environment/secrets.tf
 # argues each): four, and three more in product mode.
 #
-#   kek                      32 random bytes, base64 — read by the service
-#                            itself through common/secrets.js's `gcp` provider
+#   kek                      32 random bytes, base64 — the key-encryption key
+#                            ONLY with kek_provider = "secret", read by the
+#                            service itself through common/secrets.js's `gcp`
+#                            provider. By default the KEK is the foundation's
+#                            Cloud KMS key and this secret is the PREVIOUS
+#                            KEK of a migration, or nothing (kek.tf)
 #   db-app-password          the `sts_app` role's — read by the service the
 #                            same way, and set on the role by schema-init
 #   db-master-password       the master user's, schema-init only
@@ -23,12 +27,16 @@
 # environment at once; Secret Manager has no recovery window to set to zero.
 #
 # HOW THEY REACH A NODE (units/): the two the service reads for itself are
-# NAMED in its environment (STS_KEYS_KEK_REF, STS_DATABASE_PASSWORD_REF),
-# as on AWS; the rest are read by the `sts-secrets` unit into a file on a
+# NAMED in its environment (STS_KEYS_KEK_REF — or STS_PREVIOUS_KEK_REF while
+# migrating to KMS, kek.tf — and STS_DATABASE_PASSWORD_REF), as on AWS; the rest are read by the `sts-secrets` unit into a file on a
 # tmpfs that the containers take as `--env-file` — what ECS's `secrets`
 # injection did. None is ever in instance metadata, which anybody who can
 # describe the instance can read.
 # ---------------------------------------------------------------------------
+# GENERATED WHATEVER `kek_provider` SAYS (#391, kek.tf): on `kms` it is what
+# an environment that ran on `secret` migrates FROM, and what a backup taken
+# before that migration was wrapped under. Dropping it on `kms` would destroy
+# the secret with the next apply, and with it both.
 resource "random_bytes" "kek" {
   length = 32
 }
@@ -168,9 +176,13 @@ resource "google_secret_manager_secret_version" "main" {
 # THE NODES MAY READ EACH OF THIS ENVIRONMENT'S SECRETS, ONE BY ONE — and
 # nothing else's; the foundation gave the account no project-wide secret
 # role. (All of them, the master password included: deploy/gcp/CLAUDE.md,
-# *One identity per VM*.)
+# *One identity per VM*.) EXCEPT `kek` when the KEK is in Cloud KMS and no
+# migration is under way (kek.tf): a key the node never reads is one it
+# should not be able to read.
 resource "google_secret_manager_secret_iam_member" "nodes" {
-  for_each  = local.secrets
+  for_each = toset([
+    for k in keys(local.secrets) : k if k != "kek" || local.nodes_read_secret_kek
+  ])
   secret_id = google_secret_manager_secret.main[each.key].id
   role      = "roles/secretmanager.secretAccessor"
   member    = data.google_service_account.nodes.member

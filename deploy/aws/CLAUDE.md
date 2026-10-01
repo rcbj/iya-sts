@@ -7,7 +7,7 @@ Dockerfile removes this directory from the image.
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `iya-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
-| `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the ECR repository, the container log group, the test report bucket `iya-sts-test-reports-<account>` — and since #98, for every region in `permitted_regions`, a single-region CELL key, a replica of the multi-region GLOBAL key, a log group and a replica of the repository (`modules/region`), with ECR replication to them (*Cells*, below) | an administrator |
+| `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the KEY-ENCRYPTION KEY — a multi-region KMS key of its own, `alias/iya-sts-kek` (#391) — the ECR repository, the container log group, the test report bucket `iya-sts-test-reports-<account>` — and since #98, for every region in `permitted_regions`, a single-region CELL key, a replica of the multi-region GLOBAL key and of the KEK, a log group and a replica of the repository (`modules/region`), with ECR replication to them (*Cells*, below) | an administrator |
 | `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a CNAME (`dns.tf`) — and the public certificate's ARN, READ from `certificate/`'s state, since 2026-10-01, RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `certificate/` | **kept across destroys** | **the public ACM certificate (2026-10-01, rcbj)**: the exportable certificate the nodes present, its DNS validation records — one state per environment (`environment/<env>/certificate.tfstate`) and per cell (`environment/<env>/<cell>/certificate.tfstate`). Applied before every environment apply, NEVER destroyed with the environment, and its first apply ADOPTS an existing certificate rather than requesting one (*The public certificate is kept*, below) | the deployer role, through `entrypoint.sh` |
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
@@ -235,9 +235,11 @@ one error this arrangement exists to prevent, and it would look healthy.
 
 **Development mode by default.** The suite drives development mode (most jobs
 sign people in with no password, which product mode refuses by design). Keys
-still persist, so the key-encryption key and the database password are read
-from Secrets Manager through `common/secrets.js` — the path this issue exists to
-exercise. `sts_mode = "product"` is a variable.
+still persist, so the database password is read from Secrets Manager through
+`common/secrets.js` — the path this issue exists to exercise — and the
+key-encryption key is the foundation's KMS key, or with `kek_provider =
+"secret"` a Secrets Manager secret (*The key-encryption key*, below).
+`sts_mode = "product"` is a variable.
 
 **The schema is an init container**, not a one-off task or a Terraform
 provisioner: RDS is private, psql variables and `\gexec` need psql, and an init
@@ -369,6 +371,119 @@ re-applied); and **every node replaced on the first apply**, which is expected
 — a new task definition revision in `dev` and `ci` too, because the volume is
 unconditional: the upload job runs against every environment the suite is
 pointed at.
+
+## The key-encryption key: a key in KMS that never leaves it (#391, 2026-10-01)
+
+**Since #391 every value the service seals is sealed under a data encryption
+key (DEK), and only the DEKs are wrapped by the key-encryption key (KEK).**
+Where the KEK lives is `environment/`'s `kek_provider` (`environment/kek.tf`
+argues it at length):
+
+| `kek_provider` | The KEK | What every node is told |
+|---|---|---|
+| `kms` (**the default**) | `foundation/kms.tf`'s `aws_kms_key.kek`, `alias/iya-sts-kek`: symmetric, ENCRYPT_DECRYPT, multi-region, rotated by AWS, a replica in every permitted region | `STS_KEYS_KEK_PROVIDER=aws-kms`, `STS_KEYS_KEK_REF=<the key's ID, mrk-…>`, `STS_KEYS_KEK_REGION=<this node's region>` |
+| `secret` | 32 random bytes in Secrets Manager, `iya-sts/<env>/kek` (global/'s replica in a cell) — the arrangement before #391 | `STS_KEYS_KEK_PROVIDER=aws`, `STS_KEYS_KEK_REF=<the secret's ARN>`, `STS_KEYS_KEK_REGION=<this region>` |
+
+**KMS by default, because it is the more secure of the two** and that is the
+project's rule for a default: a secret KEK is a value anyone holding
+`GetSecretValue` and the project key can copy out and use anywhere, for good;
+a KMS KEK is usable only by a principal KMS lets call it, only while it may,
+and every call is in CloudTrail. The node calls `kms:DescribeKey` at start
+(the key must be enabled, ENCRYPT_DECRYPT, SYMMETRIC_DEFAULT — and the
+environment's plan checks the same, a postcondition on `data.aws_kms_key.kek`,
+so a missing or wrong key stops the plan rather than a node), `kms:Encrypt`
+and `kms:Decrypt` with the encryption context `{"sts-dek": "<id|scope|realm|class>"}`
+for each DEK, and `kms:GetKeyRotationStatus` for `/admin/secrets`. **The image
+needs `@aws-sdk/client-kms`** in `STS_CLOUD_SDKS`; `aws-cluster.yml`,
+`testidp-deploy.yml` and `run-tests.sh`'s ephemeral build all pass it.
+
+**A DEDICATED FOUNDATION KEY, NOT `main` AND NOT `global`.** Those two
+encrypt STORAGE on a service's behalf — Secrets Manager, RDS, Logs, EBS — and
+every grant on them is `kms:ViaService`. The KEK is called DIRECTLY by the
+container, which is a different right; on its own key it can be granted
+without also letting a task decrypt a secret or a snapshot outside the
+service that owns it, and its rotation, policy and one day its deletion are
+decisions about the service's data alone. **Long-lived in `foundation/`** for
+the project key's reason — a per-environment key would sit thirty days in
+pending deletion after every teardown — and because a KEK lost is every row
+it wrapped lost.
+
+**MULTI-REGION, AND NAMED BY ITS ID — NEVER AN ARN OR THE ALIAS.** The
+service writes the KEK reference into every wrapped DEK row and refuses to
+unwrap a row whose reference differs from the one it is configured with, so
+every node of every cell must be given the identical string. A multi-region
+key's ID (`mrk-…`) is the same in the primary's region and every replica's;
+its ARN and an alias name a region. Each node pairs the one ID with its own
+region in `STS_KEYS_KEK_REGION`, so a cell wraps against the replica beside
+it and keeps working when the home region is the one that failed.
+
+**IAM, nothing broader.** The task role (`environment/iam.tf`,
+`WrapAndUnwrapWithTheKeyEncryptionKey`) may call those four actions on the
+key's primary and replica ARNs, read from the key itself
+(`multi_region_configuration`), and no other key; with a KMS KEK it may NOT
+read the `kek` secret. The workload boundary (`foundation/iam_deployer.tf`)
+carries the same four actions on `arn:aws:kms:*:<account>:key/<mrk id>` —
+one ARN, because a multi-region key's replicas share its ID, so it names the
+primary and the replicas and no other key, and the region fence holds the
+region; it keeps the boundary's size from growing with the regions. The
+deployer gets `kms:DescribeKey` on the same ARN, for the lookup, and nothing
+that uses the key.
+
+**MIGRATING AN ENVIRONMENT THAT RAN WITH `secret`** — every environment
+built before #391, since the default changed under them — is two applies:
+
+1. `kek_provider = "kms"` (the default) with **`kek_migrating_from_secret =
+   true`**: every node is also given the `kek` secret as the PREVIOUS KEK
+   (`STS_PREVIOUS_KEK_PROVIDER=aws`, `_REF=<the secret>`, `_REGION`), and the
+   task role may read it. At start each node re-wraps every DEK it can open
+   only under the previous key under the KMS key, and writes it back
+   (`common/keystore.js`). **Let every node of every cell start that way.**
+2. `kek_migrating_from_secret = false`: the previous KEK leaves the task
+   definition and the secret the task role's reach.
+
+Applying the new default to an existing `secret` environment WITHOUT step 1
+is a service that cannot open its own rows — set `kek_provider = "secret"` in
+its `envs/<env>.tfvars`, or migrate. **A conversion into cells
+(`TF_CONVERT=1`) from an environment that ran with `secret`** takes
+`kek_migrating_from_secret = true` too: the conversion task gets the node's
+environment, and `persistence/cell_convert.js` opens the store through the
+same keystore. There is no built-in way back from `kms` to `secret`: a DEK
+wrapped in KMS opens only in KMS.
+
+**THE `kek` SECRET IS STILL GENERATED IN BOTH MODES** (`environment/secrets.tf`,
+`global/secrets.tf`): the migration reads it, the carry-over of a converted
+environment requires `kek` (`convert-to-cells.sh`, `carryover_secret`'s
+validations), and a multi-cloud environment's GCP cells read it. A secret
+nothing reads costs $0.40 a month.
+
+**WHAT IS NOT A KMS KEY.** The CELL KEK (`STS_CELL_KEK_*`) stays a Secrets
+Manager secret under the cell's single-region key: the service refuses a
+key management service for any secret but the KEK and the previous KEK. And
+**a multi-cloud environment is `secret`**: its GCP cells read the global KEK
+from Secret Manager (`deploy/multicloud/gcp-global`), a GCP node has no AWS
+credential to call KMS with, and every cell must name the same KEK — so
+`environment/` refuses `kms` with a cell whose cloud is not `aws`, and
+`deploy/multicloud/envs/testidpmc.aws.tfvars` sets `kek_provider = "secret"`.
+
+**`foundation/` must be re-applied by an administrator first** — it makes
+the key, its replicas and alias in every permitted region, and widens the
+workload boundary and the deployer's data policy; until then a `kms`
+environment's plan stops at `data.aws_kms_key.kek` (no such alias) and a node
+would be refused by the boundary. **It costs** $1 a month for the key and $1
+for each replica (seven regions, $7), plus $0.03 per 10,000 requests — one
+`Decrypt` per DEK per node start, and an `Encrypt` per DEK made.
+
+**Written and checked offline only**, like *Cells*: `terraform fmt -check`,
+`init -backend=false`, `validate` and the renders in `foundation/` and
+`environment/` (`tests/render.tftest.hcl`: the key's shape and alias; the
+default rendering `aws-kms` with the `mrk-…` ID and each cell's own region,
+the task role's KMS statement on exactly the key's ARNs and no `kek` secret;
+`secret` rendering the old environment; migrating adding
+`STS_PREVIOUS_KEK_*`; and the refusals). The first apply is its test; look
+first at an AccessDenied on `kms:Encrypt` naming the key (the foundation not
+re-applied, so the boundary lacks it) and at `STS-KEYS-…` refusals in the
+node's log naming the reference (a node given an ARN or alias where the rows
+hold the ID).
 
 ## Mail: an SES identity per environment that asks for one (#311, 2026-09-28)
 
@@ -703,7 +818,8 @@ peers' inter-cell names need no read at all: they are deterministic.
 
 | | Where | Replicated to the other cells |
 |---|---|---|
-| the global KEK (`iya-sts/<env>/kek`, `STS_KEYS_KEK_*`) | global/, primary region | **yes**, under the multi-region key's replica in each region |
+| the global KEK, by default (#391) — `alias/iya-sts-kek`, `STS_KEYS_KEK_*` = its `mrk-…` ID and this region | foundation/, primary in the home region | **yes**: a multi-region KMS key with a replica in every permitted region; the key material never leaves KMS |
+| the global KEK's secret (`iya-sts/<env>/kek`) — THE KEK with `kek_provider = "secret"`, the previous KEK while migrating | global/, primary region | **yes**, under the multi-region key's replica in each region |
 | the global database's password, the management client's secret, product mode's bootstrap, krbtgt and service passwords | global/ | **yes** — every cell must hold the same values, and a per-cell value would be a different one in each, all but the first refused by the global tier |
 | the global database's master password | global/ | no — only the primary cell's `global-schema-init` uses it |
 | the global database | global/: writer in the primary cell's VPC | **yes**: one RDS cross-region read replica per other cell (D3) |
@@ -720,6 +836,8 @@ permitted region) and seals only what every region may hold;
 `alias/iya-sts-cell-<cell>` is single-region and seals the cell's own
 secrets, database, upload volumes and log group. The project key stays what
 single-cell environments use, and cannot be made multi-region after creation.
+`alias/iya-sts-kek` (#391) is a third multi-region key, for the
+key-encryption key alone (*The key-encryption key*, below).
 
 ### The inter-cell channel: peering, and 8446 by a private name
 
@@ -812,8 +930,9 @@ is (`environment/cells.tf`, `cell_environment`):
 | `STS_GLOBAL_DATABASE_PASSWORD_PROVIDER`, `_REF`, `_REGION` | `aws`, the replica of the password secret in this region, this region |
 | `STS_CELL_KEK_PROVIDER`, `_REF`, `_REGION` | `aws`, the cell's own KEK secret, this region |
 
-`STS_KEYS_KEK_*` keep naming the key-encryption key — the global one,
-replicated into this region — `STS_DATABASE_URL` stays the cell database, and
+`STS_KEYS_KEK_*` keep naming the key-encryption key — the global one: the
+KMS key's ID with this cell's region by default, or global/'s secret
+replicated into this region with `kek_provider = "secret"` (#391) — `STS_DATABASE_URL` stays the cell database, and
 `STS_PUBLIC_BASE_URL` stays the one public name in every cell. The global
 variables appear only in `full`; a `base` cell runs no node.
 
@@ -828,7 +947,7 @@ inter-region transfer ($0.02 a GB on the peering and on the replication).
 The primary cell also carries the global writer (about $0.035 an hour). The
 small monthly items: a health check ($1.50 with HTTPS), a private zone
 ($0.50), six replicated secrets per non-primary cell ($2.40), and in
-`foundation/` a cell key and a global-key replica per permitted region ($2).
+`foundation/` a cell key, a global-key replica and a KEK replica per permitted region ($3).
 Estimated from 2026-09 on-demand list prices and not measured; the whole
 environment is applied and destroyed together, so nothing idles unbilled.
 
@@ -1342,7 +1461,7 @@ terraform -chdir=deploy/aws/foundation init -backend-config=bucket=iya-sts-terra
 terraform -chdir=deploy/aws/foundation apply          # once, administrator
 
 # as the deployer role, from here on
-docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-sesv2" \
+docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms @aws-sdk/client-sesv2" \
   --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem .
 docker build -t <repo>:schema-<tag> -f deploy/aws/schema-init/Dockerfile .
 docker build -t <repo>:cert-<tag> -f deploy/aws/cert-init/Dockerfile .   # only with a public name

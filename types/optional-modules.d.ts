@@ -14,6 +14,10 @@ declare module '@google-cloud/secret-manager';
 declare module '@azure/keyvault-secrets';
 declare module '@azure/identity';
 declare module 'node-vault';
+// The key management services that wrap the data keys (#391 P3, P4).
+declare module '@aws-sdk/client-kms';
+declare module '@google-cloud/kms';
+declare module '@azure/keyvault-keys';
 // The mail channel's three cloud transports (#63), required by
 // `common/mail_transports.ts` when a realm chooses one.
 declare module '@aws-sdk/client-sesv2';

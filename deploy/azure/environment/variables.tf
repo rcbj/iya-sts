@@ -299,3 +299,41 @@ variable "schema_init_sslmode" {
     error_message = "schema_init_sslmode is verify-ca or verify-full."
   }
 }
+
+variable "kek_provider" {
+  description = <<-EOT
+    Where the key-encryption key that wraps every data encryption key is
+    (#391; kek.tf argues both):
+
+      kms     (the default) a Key Vault RSA-3072 key the foundation made,
+              which never leaves the vault: STS_KEYS_KEK_PROVIDER=azure-keys
+      secret  the `kek` secret's 32 bytes, read into the service:
+              STS_KEYS_KEK_PROVIDER=azure, as before #391
+
+    `kms` because the project's rule is the most secure choice by default.
+    Moving an environment that ran with `secret` to `kms` is
+    `kek_migrating_from_secret`. Every cell of an environment must say the
+    same; entrypoint.sh passes one tfvars file to all of them.
+  EOT
+  type        = string
+  default     = "kms"
+  validation {
+    condition     = contains(["kms", "secret"], var.kek_provider)
+    error_message = "kek_provider is kms or secret."
+  }
+}
+
+variable "kek_migrating_from_secret" {
+  description = <<-EOT
+    With kek_provider = kms: name the `kek` SECRET as the PREVIOUS key
+    (STS_PREVIOUS_KEK_*), so every data key still wrapped under it is
+    re-wrapped under the Key Vault key at the next start. Apply once with
+    true, let every node of every cell start, then apply with false.
+  EOT
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.kek_migrating_from_secret || var.kek_provider == "kms"
+    error_message = "kek_migrating_from_secret moves an environment from the `kek` secret to the Key Vault key: it needs kek_provider = kms."
+  }
+}

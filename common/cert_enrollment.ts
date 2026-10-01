@@ -2233,7 +2233,7 @@ class CertEnrollment {
     const { log, keystore } = this.deps;
     log.debug("Entering CertEnrollment.openText().");
     const text = String(value || '');
-    if (text.indexOf('$aesgcm$') !== 0) {
+    if (!require('./crypto').isEncryptedWithKek(text)) {
       log.debug("Leaving CertEnrollment.openText(). Not sealed.");
       return text;
     }

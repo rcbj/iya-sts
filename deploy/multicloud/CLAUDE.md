@@ -206,7 +206,11 @@ when AWS is down.
 4. **AWS `global/`**: the writer with its publication parameters, the AWS
    replicas and peering, the global secrets (and `global-db-repl-password`);
 5. **`gcp-global`**: the global secrets copied into Secret Manager, and each
-   GCP cell's Cloud SQL copy;
+   GCP cell's Cloud SQL copy. **The global KEK among them stays a secret on
+   GCP** (#391): `envs/<env>.gcp.tfvars` sets `kek_provider = "secret"`,
+   because deploy/gcp's default is a Cloud KMS key an AWS cell cannot use,
+   and every cell must name the same KEK — `deploy/gcp/environment/kek.tf`
+   refuses `kms` in a cell;
 6. every AWS cell `full`, the primary first (its global-schema-init makes the
    publication); then every GCP cell `full` (each subscribes).
 

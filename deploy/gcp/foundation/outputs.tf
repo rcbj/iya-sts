@@ -26,6 +26,11 @@ output "kms_key" {
   value       = google_kms_crypto_key.main.id
 }
 
+output "kek_key" {
+  description = "The service's key-encryption key in Cloud KMS (#391): STS_KEYS_KEK_REF for an environment with kek_provider = \"kms\"."
+  value       = google_kms_crypto_key.kek.id
+}
+
 output "registry_url" {
   description = "Where images are pushed: <registry_url>/<image>:<tag>."
   value       = local.registry_url

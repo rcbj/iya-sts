@@ -5465,7 +5465,7 @@ class Credentials {
       String(username || '')) || '');
     // SEALED SINCE 2026-10-01 (see writeIdaVerifications()); a value written
     // before then, or without a durable key, is the JSON as it is.
-    if (value.indexOf('$aesgcm$') === 0) {
+    if (crypto.isEncryptedWithKek(value)) {
       const opened = this.deps.keystore.open(value, IDA_SEAL_LABEL);
       if (!opened) {
         log.warn(this.deps.errorCodes.tag('STS-OAUTH-0788') + 'credentials: ' +
