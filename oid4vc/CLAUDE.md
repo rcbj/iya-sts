@@ -696,6 +696,35 @@ prefix itself) and `client.request_object_trust_anchor_pem` = the
 `/oid4vp/start?client_id_prefix=<prefix>`. In product mode, also set
 `oid4vp.x509DnsName` to the realm's host.
 
+## AN APPLICATION'S DID (rcbj, 2026-10-01)
+
+A DID describing an APPLICATION, where until then the only DIDs here were the
+realm's own `did:web` and the people's enrolled self-issued subjects. An
+application declared for the `did` family (its own checkbox, `applications.js`
+`PROTOCOLS`) has `did:web:<host>[:realm:<id>]:applications:<identifier>`, and
+`vc_did.ts` serves its document at `/applications/:application/did.json`.
+
+* **The DID is derived, never stored** (`applicationDid()`), for the realm
+  DID's reason: it names the address the request arrived on. The identifier is
+  one component, percent-encoded beyond ALPHA, DIGIT, `.`, `-`, `_`.
+* **The document is built from three attributes** (`applicationDidDocument()`):
+  `didPublicKeyJwk` (JsonWebKey2020 methods, `#<kid>` or the RFC 7638
+  thumbprint, under `authentication` and `assertionMethod`), `didService`
+  (`<type>|<url>`) and `didAlsoKnownAs`. `applications.didValueProblem()`
+  refuses a private member, a malformed service and a relative URI on every
+  write (`STS-REG-0204`); the builder skips anything that slipped past it.
+  404 with `STS-VC-0114` for an unknown, undeclared or keyless application.
+* **`generate-did-key`** (`admin_actions.ts`, `POST /admin-api/applications/
+  generate-did-key`) makes the pair with `crypto.js`'s
+  `generateSigningJwkPair()` (ES256, ES384, EdDSA), adds the public JWK, and
+  returns the private key once. This service keeps no private key: it only
+  publishes the document. The console answers with a one-time page.
+* **Not built**: resolving an application's DID for anything (a client
+  assertion verified against its keys, a pre-registered verifier); controller
+  and keyAgreement members; other DID methods.
+
+`tests/application_did.js` holds it.
+
 ## THE 2026-09-12 HARD-CODED-VALUE SWEEP
 
 The literals became `config.js` rows whose `dflt` is the old value, read per

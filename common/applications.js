@@ -543,7 +543,23 @@ const PROTOCOLS = [
           'object) or gnapKeyReference with a sealed gnapSymmetricKey; its ' +
           'finish URIs are return addresses like any other; a resource ' +
           'server carries the locations it answers for and, once it has ' +
-          'registered a resource set, the macaroon root key it verifies with.' }
+          'registered a resource set, the macaroon root key it verifies with.' },
+  // A DID DESCRIBING THE APPLICATION (2026-10-01): a did:web under this
+  // realm's address, whose document this service advertises at
+  // <base>/applications/<identifier>/did.json. The DID is derived, never
+  // stored, because it names the address a request arrived on; what is stored
+  // is what the document says — its keys, services and alsoKnownAs.
+  { id: 'did', label: 'Decentralized Identifier (DID)', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A W3C DID describing this application: did:web:<host>' +
+          '[:realm:<id>]:applications:<identifier>, its document advertised ' +
+          'by this service at <base>/applications/<identifier>/did.json. The ' +
+          'document publishes the public keys in didPublicKeyJwk (generate a ' +
+          'key pair, or paste the public half of your own), the services in ' +
+          'didService and the URIs in didAlsoKnownAs. Nothing is issued ' +
+          'through this family: it is how the application is identified and ' +
+          'its keys found.' }
 ];
 
 /**
@@ -2964,6 +2980,28 @@ const SCHEMA = {
             'identifier, so it writes nothing here; the value is a ' +
             'declaration, and the SCIM gate is what decides whether a ' +
             'credential is demanded at all.' },
+    // THE DID DOCUMENT'S CONTENTS (2026-10-01): what this service publishes
+    // at <base>/applications/<identifier>/did.json for an application
+    // declared for `did`. See the `did` row of PROTOCOLS.
+    { name: 'didPublicKeyJwk', kind: 'multi',
+      from: 'the console\'s Generate a key pair, or by hand',
+      what: 'A PUBLIC KEY THE APPLICATION\'S DID DOCUMENT PUBLISHES, one JWK ' +
+            'per value, each a JsonWebKey2020 verification method named by ' +
+            'its kid (its RFC 7638 thumbprint where it carries none) and ' +
+            'listed under authentication and assertionMethod. Public members ' +
+            'only: a value carrying d, p, q, dp, dq, qi, oth, k or priv is ' +
+            'refused. Generate a key pair on the application\'s page and ' +
+            'the private half is handed out once and not kept here.' },
+    { name: 'didService', kind: 'multi', from: 'the console, or by hand',
+      what: 'A SERVICE THE DID DOCUMENT NAMES, as <type>|<serviceEndpoint>: ' +
+            'for example LinkedDomains|https://app.example.com. The type is ' +
+            'one token; the endpoint an absolute http or https URL. Each ' +
+            'becomes a service entry with the id <did>#service-<n>.' },
+    { name: 'didAlsoKnownAs', kind: 'multi', from: 'the console, or by hand',
+      what: 'ANOTHER IDENTIFIER FOR THE SAME APPLICATION, published as the ' +
+            'DID document\'s alsoKnownAs: an absolute URI such as the ' +
+            'application\'s web origin or its client_id URL. DID Core makes ' +
+            'it a claim, not a proof; a relying party checks it.' },
     { name: 'ssfReceiverId', kind: 'multi',
       from: 'SSF, the console, or by hand',
       identifier: true,
@@ -3702,6 +3740,10 @@ const EDITABLE = {
   // environment.
   ssfReceiverId: 'multi',
   ssfDeliveryEndpoint: 'multi',
+  // The DID document's contents (2026-10-01).
+  didPublicKeyJwk: 'multi',
+  didService: 'multi',
+  didAlsoKnownAs: 'multi',
   ssfAllowedEvents: 'multi',
   // The per-receiver Shared Signals overrides, each one value an empty
   // write clears (the setting then decides); see their SCHEMA rows.
@@ -3863,6 +3905,83 @@ function declaredFamiliesOf(record) {
   return valuesOf((record && record.fields || {}).appAllowedProtocol)
     .map(function (one) { return String(one).trim().toLowerCase(); })
     .filter(function (one) { return !!one; });
+}
+
+// ---------------------------------------------------------------------------
+// THE DID DOCUMENT'S VALUES (2026-10-01): '' when a value of didPublicKeyJwk,
+// didService or didAlsoKnownAs is one the document can publish, and the
+// sentence to refuse it with otherwise (STS-REG-0204). A private member in a
+// key is the refusal that matters: this service publishes the document to
+// anybody who asks.
+// ---------------------------------------------------------------------------
+const DID_PRIVATE_JWK_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k',
+                                 'priv'];
+
+/**
+ * Says whether a value of one of the DID document attributes can be
+ * published.
+ *
+ * @param attribute - the attribute being written
+ * @param value - one value
+ * @returns '' when it can, the refusal sentence otherwise
+ */
+function didValueProblem(attribute, value) {
+  log.debug("Entering didValueProblem(). attribute=" + attribute);
+  const text = String(value == null ? '' : value).trim();
+  if (!text || ['didPublicKeyJwk', 'didService',
+                'didAlsoKnownAs'].indexOf(attribute) < 0) {
+    log.debug("Leaving didValueProblem(). Not a DID value.");
+    return '';
+  }
+  if (attribute === 'didPublicKeyJwk') {
+    let jwk = null;
+    try {
+      jwk = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in didValueProblem(): " + ((e && e.message) || e));
+      jwk = null;
+    }
+    if (!jwk || typeof jwk !== 'object' || Array.isArray(jwk)) {
+      log.debug("Leaving didValueProblem(). Not a JSON object.");
+      return 'didPublicKeyJwk takes one JWK as a JSON object per value.';
+    }
+    if (['EC', 'OKP', 'RSA', 'AKP'].indexOf(String(jwk.kty)) < 0) {
+      log.debug("Leaving didValueProblem(). No usable kty.");
+      return 'didPublicKeyJwk takes an EC, OKP, RSA or AKP key; this one\'s ' +
+             'kty is "' + String(jwk.kty || '') + '".';
+    }
+    const secret = DID_PRIVATE_JWK_MEMBERS.filter(function (member) {
+      return jwk[member] !== undefined;
+    });
+    if (secret.length) {
+      log.debug("Leaving didValueProblem(). A private member.");
+      return 'didPublicKeyJwk takes the PUBLIC half of a key only, because ' +
+             'the DID document is published to anybody; this one carries ' +
+             secret.join(', ') + '.';
+    }
+    log.debug("Leaving didValueProblem(). A public JWK.");
+    return '';
+  }
+  if (attribute === 'didService') {
+    const bar = text.indexOf('|');
+    const type = bar > 0 ? text.slice(0, bar).trim() : '';
+    const endpoint = bar > 0 ? text.slice(bar + 1).trim() : '';
+    if (!/^[A-Za-z0-9._:-]+$/.test(type) ||
+        !/^https?:\/\/[^\s/?#]+/i.test(endpoint) || /\s/.test(endpoint)) {
+      log.debug("Leaving didValueProblem(). Not a service.");
+      return 'didService takes <type>|<serviceEndpoint>, a one-token type ' +
+             'and an absolute http or https URL, such as ' +
+             'LinkedDomains|https://app.example.com; "' + text + '" is not.';
+    }
+    log.debug("Leaving didValueProblem(). A service.");
+    return '';
+  }
+  if (!/^[A-Za-z][A-Za-z0-9+.-]*:\S+$/.test(text)) {
+    log.debug("Leaving didValueProblem(). Not a URI.");
+    return 'didAlsoKnownAs takes an absolute URI; "' + text + '" is not.';
+  }
+  log.debug("Leaving didValueProblem(). A URI.");
+  return '';
 }
 
 /**
@@ -4414,7 +4533,8 @@ const FIELD_FAMILY_PREFIXES = [
   ['scim', ['scim']],
   ['spiffe', ['spiffe']],
   ['ssf', ['ssf']],
-  ['gnap', ['gnap']]
+  ['gnap', ['gnap']],
+  ['did', ['did']]
 ];
 
 /**
@@ -4438,7 +4558,8 @@ const FIELD_GROUPS = [
   { id: 'scim', label: 'SCIM 2.0', families: ['scim'] },
   { id: 'spiffe', label: 'SPIFFE', families: ['spiffe'] },
   { id: 'ssf', label: 'Shared Signals', families: ['ssf'] },
-  { id: 'gnap', label: 'GNAP', families: ['gnap'] }
+  { id: 'gnap', label: 'GNAP', families: ['gnap'] },
+  { id: 'did', label: 'Decentralized Identifier (DID)', families: ['did'] }
 ];
 
 /**
@@ -10145,6 +10266,21 @@ function createApplication(detail) {
     log.debug("Leaving createApplication().");
     return errorCodes.mark({ ok: false, errors: wrongFamily }, 'STS-REG-0010');
   }
+  // A DID document value (2026-10-01), every value of a list.
+  const didProblems = [];
+  Object.keys(given.fields).forEach(function (name) {
+    valuesOf(given.fields[name]).forEach(function (one) {
+      const problem = didValueProblem(name, one);
+      if (problem) {
+        didProblems.push(problem);
+      }
+    });
+  });
+  if (didProblems.length) {
+    log.debug("Leaving createApplication(). Not a DID document value.");
+    return errorCodes.mark({ ok: false, errors: didProblems },
+                           'STS-REG-0204');
+  }
   // A closed set's value (2026-10-01), every value of a list.
   const choiceProblems = [];
   Object.keys(given.fields).forEach(function (name) {
@@ -10541,6 +10677,12 @@ function updateApplication(identifier, change) {
   // behind by a family being untimed from the entry after it was set, and
   // refusing to remove it would shut the one door that could tidy it up.
   if ((mode === 'set' || mode === 'add') && value) {
+    const didProblem = didValueProblem(attribute, value);
+    if (didProblem) {
+      log.debug("Leaving updateApplication(). Not a DID document value.");
+      return errorCodes.mark({ ok: false, errors: [didProblem] },
+                             'STS-REG-0204');
+    }
     const notAChoice = choiceProblem(attribute, value);
     if (notAChoice) {
       log.debug("Leaving updateApplication(). Not one of the values.");
@@ -14345,6 +14487,7 @@ module.exports = {
   // row's `families` member.
   declaredFamiliesOf: declaredFamiliesOf,
   declaredFamiliesFor: declaredFamiliesFor,
+  didValueProblem: didValueProblem,
   familyRefusal: familyRefusal,
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,

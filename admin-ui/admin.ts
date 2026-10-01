@@ -17564,10 +17564,142 @@ class AdminConsole {
             ? '#software-statements'
             : (String(body.action || '') === 'revoke-tls-client-certificate' ||
                String(body.action || '') === 'issue-tls-client-certificate'
-              ? '#credentials-tls-client' : '')))
+              ? '#credentials-tls-client'
+              : (String(body.action || '') === 'generate-did-key'
+                ? '#cfg-did' : ''))))
       : '/admin/applications' + queryWith(listView, {});
     this.respondToAction(req, res, back, result);
     log.debug("Leaving the admin applications action endpoint.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE APPLICATION'S DID, ON ITS CONFIGURATION TAB (2026-10-01): the DID this
+  // service advertises for it, the document's address (a link, so a reader can
+  // see exactly what a resolver gets), whether it resolves yet, and the
+  // *Generate a key pair* form. The form posts `generate-did-key` to
+  // /admin/applications and is answered by a page carrying the private key
+  // once; it is drawn for Admin Write only, like every write on the page.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the DID block on an application's Decentralized Identifier
+   * configuration tab: its DID, its document, and the key-pair form.
+   *
+   * @param req - the request, whose base URL names the DID
+   * @param row - the application's view
+   * @param carryBack - the hidden `back` field the page's forms carry
+   * @returns the HTML
+   */
+  applicationDidPanel(req, row, carryBack) {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering AdminConsole.applicationDidPanel().");
+    const vcDid = require('../oid4vc/vc_did');
+    const base = baseUrlOf(req);
+    const identifier = String(row.identifier || '');
+    const did = vcDid.applicationDid(base, identifier);
+    const url = base + '/applications/' + encodeURIComponent(identifier) +
+                '/did.json';
+    const answer = vcDid.applicationDidDocument(base, identifier);
+    const canWrite = this.mayWrite(req);
+    const algorithms = ['ES256', 'ES384', 'EdDSA'];
+    const html = '<table><tr><th>DID</th><td><code>' + this.esc(did) +
+      '</code></td></tr><tr><th>Document</th><td><a href="' + this.esc(url) +
+      '"><code>' + this.esc(url) + '</code></a><div class="sub">' +
+      (answer.ok
+        ? '<span class="state-valid">advertised</span>, ' +
+          answer.document.verificationMethod.length + ' key(s)'
+        : '<span class="state-none">not advertised yet</span>: ' +
+          this.esc(answer.why)) +
+      '</div></td></tr></table>' +
+      this.note('<code>did:web</code> under this realm&rsquo;s address: a ' +
+      'resolver turns the DID into the document&rsquo;s address above and ' +
+      'fetches it from this service. The document publishes the keys, ' +
+      'services and other names below. The DID follows the address this ' +
+      'console is reached on; pin <code>global.publicBaseUrl</code> so it ' +
+      'does not change with the host name.') +
+      (canWrite
+        ? '<form method="post" action="/admin/applications#cfg-did">' +
+          carryBack +
+          '<input type="hidden" name="action" value="generate-did-key">' +
+          '<input type="hidden" name="application" value="' +
+          this.esc(identifier) + '"><div class="formrow">' +
+          '<span>Generate a key pair:</span> ' +
+          algorithms.map(function (alg, index) {
+            return '<label><input type="radio" name="algorithm" value="' +
+              alg + '"' + (index === 0 ? ' checked' : '') + '> ' + alg +
+              '</label>';
+          }).join(' ') +
+          ' <label' + this.tip('Take the keys already in the document off ' +
+            'first, so the new key is the only one.') + '><input ' +
+          'type="checkbox" name="replace" value="yes"> replace the keys ' +
+          'there</label> <button type="submit">Generate</button></div>' +
+          '</form>' +
+          this.note('The public key is added to the document; the private ' +
+          'key is shown once on the next page and not kept here.')
+        : '');
+    log.debug("Leaving AdminConsole.applicationDidPanel().");
+    return html;
+  }
+
+  // The one-time answer to *Generate a key pair*: the private key, as a JWK
+  // and as PKCS#8 PEM, each a download and a read-only box, `no-store` —
+  // `answerIssuedTlsClientCertificate()`'s arrangement, because this page is
+  // the only copy.
+  /**
+   * Answers a generated DID key pair with a page carrying the private key
+   * once, served `no-store`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the posted form body, for the application and `back`
+   * @param answer - the action's result
+   */
+  answerGeneratedDidKey(req, res, body, answer) {
+    const { log, queryWith } = this.deps;
+    log.debug("Entering AdminConsole.answerGeneratedDidKey().");
+    const identifier = String((answer.application &&
+                               answer.application.identifier) ||
+                              body.application || '');
+    const listView = this.listViewFromBack('/admin/applications', body.back);
+    const back = '/admin/applications' +
+      queryWith(listView, { application: identifier }) + '#cfg-did';
+    const jwk = JSON.stringify(answer.privateJwk, null, 2);
+    const dataUri = function (mime, text) {
+      log.debug("Entering dataUri().");
+      log.debug("Leaving dataUri().");
+      return 'data:' + mime + ';base64,' +
+             Buffer.from(String(text), 'utf8').toString('base64');
+    };
+    const file = String(answer.kid || 'did-key').slice(0, 16);
+    const html = this.warn('<p><strong>This is the only time the private ' +
+      'key is shown.</strong> This service keeps the public half, in the ' +
+      'DID document, and not the private half. If it is lost, generate ' +
+      'another with <em>replace</em> ticked.</p><p><a class="btn" download="' +
+      this.esc(file) + '.jwk.json" href="' +
+      this.esc(dataUri('application/json', jwk)) + '">Download the JWK</a> ' +
+      '<a class="btn" download="' + this.esc(file) + '.pem" href="' +
+      this.esc(dataUri('application/x-pem-file', answer.privateKeyPem)) +
+      '">Download the PEM</a></p>', 'The private key, once') +
+      '<table><tr><th>DID</th><td><code>' + this.esc(answer.did) +
+      '</code></td></tr><tr><th>Verification method</th><td><code>' +
+      this.esc(answer.verificationMethod) + '</code></td></tr>' +
+      '<tr><th>Algorithm</th><td>' + this.esc(answer.algorithm) +
+      '</td></tr><tr><th>Document</th><td><a href="' +
+      this.esc(answer.documentUrl) + '"><code>' +
+      this.esc(answer.documentUrl) + '</code></a></td></tr></table>' +
+      '<h3>Private key (JWK)</h3><textarea readonly rows="9" cols="80">' +
+      this.esc(jwk) + '</textarea>' +
+      '<h3>Private key (PKCS#8 PEM)</h3><textarea readonly rows="6" ' +
+      'cols="80">' + this.esc(answer.privateKeyPem) + '</textarea>' +
+      this.note('Sign as the DID with this key and name the verification ' +
+      'method above as the <code>kid</code>; a verifier resolves the DID ' +
+      'and finds the public key in the document.') +
+      '<p><a class="btn" href="' + this.esc(back) + '">Back to ' +
+      this.esc(identifier) + '</a></p>';
+    res.set('Cache-Control', 'no-store');
+    this.respond(req, res, { ok: true }, 'DID key pair',
+                 '/admin/applications', html,
+                 this.upTo('/admin/applications', 'DID key pair', listView));
+    log.debug("Leaving AdminConsole.answerGeneratedDidKey().");
   }
 
   // ---------------------------------------------------------------------------
@@ -18170,6 +18302,8 @@ class AdminConsole {
         return one.group === group.id;
       });
       return '<div class="subpanel" id="cfg-' + self.esc(group.id) + '">' +
+        (group.id === 'did' ? self.applicationDidPanel(req, row, carryBack)
+                            : '') +
         formOpen(group.id, mine.map(function (one) {
           return one.attribute;
         })) +
@@ -38064,6 +38198,14 @@ class AdminConsole {
         });
         log.debug("Leaving the admin applications action endpoint. Awaiting " +
                   "a metadata fetch.");
+        return;
+      }
+      // A DID KEY PAIR THAT WAS GENERATED (2026-10-01) is answered with a
+      // page, for the TLS certificate's reason: the reply carries the only
+      // copy of the private key.
+      if (result && result.ok && result.privateJwk &&
+          String(body.action || '') === 'generate-did-key') {
+        self.answerGeneratedDidKey(req, res, body, result);
         return;
       }
       self.respondToApplicationAction(req, res, body, result);

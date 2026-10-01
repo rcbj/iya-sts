@@ -12841,6 +12841,11 @@ const CODES = [
       'can be signed (#230).',
     spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
+  { code: 'STS-VC-0114',
+    summary: 'An application DID document was asked for and none is ' +
+      'advertised: no such application in this realm, one not declared for ' +
+      'the did family, or one with no key in didPublicKeyJwk.',
+    spec: 'HTTP 404 JSON at /applications/{application}/did.json' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -16772,6 +16777,11 @@ const CODES = [
     summary: 'update-fields changed some attributes of an application and ' +
       'was refused one or more others; the reply names each refusal.',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0837',
+    summary: 'generate-did-key was refused: no such application, one not ' +
+      'declared for the did family, an algorithm other than ES256, ES384 ' +
+      'or EdDSA, or the public key could not be written.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -18116,6 +18126,12 @@ const CODES = [
       'signing algorithm, a GNAP key proof, algorithm, start mode or token ' +
       'format) was given a value outside it.',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0204',
+    summary: 'A DID document value was refused: a didPublicKeyJwk that is ' +
+      'not a public EC, OKP, RSA or AKP JWK (a private member is refused), ' +
+      'a didService that is not <type>|<http(s) URL>, or a didAlsoKnownAs ' +
+      'that is not an absolute URI.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

@@ -6891,6 +6891,14 @@ form's `present` list clears the attribute when every box is unticked. A
 stored value that is not one of the choices is still drawn, marked, so a
 save does not drop it without a word.
 
+**THE DID TAB CARRIES MORE THAN FIELDS (2026-10-01)**: on an application
+declared for `did`, the *Decentralized Identifier (DID)* sub-tab opens with
+`applicationDidPanel()` — the DID, its document's address and whether it is
+advertised, and a *Generate a key pair* form (Admin Write) that posts
+`generate-did-key` and is answered by `answerGeneratedDidKey()`, a one-time
+`no-store` page carrying the private key, `answerIssuedTlsClientCertificate()`'s
+arrangement. `oid4vc/CLAUDE.md` argues the DID.
+
 **OPENID4VCI AND OPENID4VP ARE ONE CHECKBOX, *Verifiable Credentials*
 (rcbj, 2026-10-01)**, on the create form and the Protocol families tab, and
 one field group (`vc`, the *Verifiable Credentials* sub-tab). They stay two

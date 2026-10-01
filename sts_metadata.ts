@@ -10898,6 +10898,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'path answers 404 naming the well-known location, because a ' +
           'document served where no resolver looks is a document nothing ' +
           'checks.' },
+  { path: '/applications/:application/did.json',
+    group: 'Decentralized Identifiers',
+    name: 'An application\'s DID document', specs: ['did-core'],
+    effect: 'answers 404 unless the application is declared for the did ' +
+            'family and has a key',
+    what: 'The DID document of an application declared for the ' +
+          'Decentralized Identifier (DID) family, where the did:web method ' +
+          'resolves did:web:<host>[:realm:<id>]:applications:<identifier>: ' +
+          'its keys (didPublicKeyJwk) as JsonWebKey2020 methods under ' +
+          'authentication and assertionMethod, its services (didService) ' +
+          'and alsoKnownAs (didAlsoKnownAs). no-store. A key pair is ' +
+          'generated on the application\'s Configuration tab or with ' +
+          'POST /admin-api/applications/generate-did-key, which hands the ' +
+          'private key out once.' },
   { path: '/did/generate', group: 'Decentralized Identifiers',
     name: 'Generate a verifiable DID (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for tests and for trying the DID Tools page: ' +

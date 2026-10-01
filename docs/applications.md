@@ -451,6 +451,34 @@ for SAML 2.0 (#112) — see [SAML 2.0 Web Browser SSO](saml2-sso.md). What
 otherwise takes effect is the configuration underneath: redirect URIs, grant
 types, scopes and the secret.
 
+### A DID describing an application
+
+Tick **Decentralized Identifier (DID)** among an application's protocol
+families and this service advertises a W3C DID for it:
+
+* **The DID** is a `did:web` under the realm's address:
+  `did:web:<host>[:realm:<id>]:applications:<identifier>`. Characters a
+  `did:web` component cannot hold (such as `:` and `/` in a URN identifier) are
+  percent-encoded.
+* **The document** is served at
+  `<base>/applications/<identifier>/did.json` (`application/did+json`,
+  `no-store`). It is answered only once the application has a key; until then
+  it is a 404.
+* **Its contents** are three attributes, on the application's
+  *Decentralized Identifier (DID)* configuration tab:
+  * `didPublicKeyJwk`: the public keys, each a JsonWebKey2020 method named
+    `<did>#<kid>` under `authentication` and `assertionMethod`. A value with a
+    private member is refused.
+  * `didService`: `<type>|<https URL>`, each a `service` entry.
+  * `didAlsoKnownAs`: absolute URIs.
+* **Generate a key pair** on that tab (ES256, ES384 or EdDSA), or call
+  `POST /admin-api/applications/generate-did-key`. The public key is added to
+  the document. The private key is shown once and not kept by this service.
+  Tick *replace* to make the new key the only one.
+
+The DID follows the address the service is reached on; pin
+`global.publicBaseUrl` so it does not change with the host name.
+
 ### CORS: which pages may read an answer
 
 CORS is an **allowlist on every path**, in both modes. An application's

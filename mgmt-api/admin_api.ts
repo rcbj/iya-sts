@@ -11753,6 +11753,43 @@ class AdminApi {
             },
             responseDescription: 'The secret in `clientSecret`.' },
 
+          // THE DID TAB'S *Generate a key pair* (2026-10-01).
+          { action: 'generate-did-key',
+            operationId: 'generateApplicationDidKey',
+            summary: 'Generate a key pair for an application\'s DID, ' +
+                     'publishing the public half',
+            description: 'For an application declared for the `did` family: ' +
+                         'generates an ES256 (default), ES384 or EdDSA key ' +
+                         'pair, adds the public JWK to `didPublicKeyJwk` — ' +
+                         'with `replace`, after taking the keys already ' +
+                         'there off — and answers the private key, as a JWK ' +
+                         'and as PKCS#8 PEM. **THIS REPLY IS THE ONLY COPY ' +
+                         'OF THE PRIVATE KEY**: this service keeps the ' +
+                         'public half, in the DID document it advertises at ' +
+                         '`<base>/applications/<identifier>/did.json`, and ' +
+                         'nothing else. The application\'s DID is ' +
+                         '`did:web:<host>[:realm:<id>]:applications:' +
+                         '<identifier>`. Refused (`STS-ADMIN-0837`) for an ' +
+                         'unknown application, one not declared for `did`, ' +
+                         'or another algorithm.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                algorithm: { type: 'string',
+                             enum: ['ES256', 'ES384', 'EdDSA'] },
+                replace: { type: 'boolean' }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app', algorithm: 'ES256' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The DID, the verification method and the ' +
+                                 'document\'s address; the public JWK; and ' +
+                                 'the private key in `privateJwk` and ' +
+                                 '`privateKeyPem`.' },
+
           // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705,
           // 2026-09-13).
           { action: 'issue-tls-client-certificate',

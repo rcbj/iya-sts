@@ -7305,6 +7305,49 @@ function jwkThumbprintUri(jwk) {
 }
 
 // ---------------------------------------------------------------------------
+// A SIGNING KEY PAIR AS JWKs (2026-10-01), for an application's DID document:
+// the public half goes into the document and the private half is handed to
+// the caller once. Three algorithms, the ones a DID document's JsonWebKey2020
+// method is conventionally read with: ES256 (P-256, the default), ES384
+// (P-384) and EdDSA (Ed25519). The `kid` is the RFC 7638 thumbprint, which is
+// what names the method in the document.
+// ---------------------------------------------------------------------------
+/** The algorithms `generateSigningJwkPair()` takes. */
+const SIGNING_JWK_PAIR_ALGS = ['ES256', 'ES384', 'EdDSA'];
+
+/**
+ * Generates a signing key pair and returns both halves as JWKs, with the
+ * private half also as PKCS#8 PEM.
+ *
+ * @param alg - ES256, ES384 or EdDSA
+ * @returns `{ alg, kid, publicJwk, privateJwk, privateKeyPem }`
+ */
+function generateSigningJwkPair(alg) {
+  log.debug("Entering generateSigningJwkPair(). alg=" + alg);
+  const which = String(alg || 'ES256');
+  if (SIGNING_JWK_PAIR_ALGS.indexOf(which) < 0) {
+    log.debug("Leaving generateSigningJwkPair(). Unknown algorithm.");
+    throw new Error('the algorithm must be one of ' +
+                    SIGNING_JWK_PAIR_ALGS.join(', ') + ', not ' + which + '.');
+  }
+  const pair = which === 'EdDSA'
+    ? nodeCrypto.generateKeyPairSync('ed25519')
+    : nodeCrypto.generateKeyPairSync('ec', {
+      namedCurve: which === 'ES384' ? 'P-384' : 'P-256' });
+  const publicJwk = pair.publicKey.export({ format: 'jwk' });
+  const kid = jwkThumbprint(publicJwk);
+  const publicOut = Object.assign({ kid: kid, alg: which, use: 'sig' },
+                                  publicJwk);
+  const privateOut = Object.assign({ kid: kid, alg: which, use: 'sig' },
+                                   pair.privateKey.export({ format: 'jwk' }));
+  log.debug("Leaving generateSigningJwkPair(). kid=" + kid);
+  return { alg: which, kid: kid, publicJwk: publicOut,
+           privateJwk: privateOut,
+           privateKeyPem: String(pair.privateKey.export({ type: 'pkcs8',
+                                                          format: 'pem' })) };
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE'S SHA-256 THUMBPRINT, over the DER, in whichever spelling the
 // specification that asked for it uses.
 //
@@ -10863,6 +10906,8 @@ module.exports = {
   jwkThumbprint: jwkThumbprint,
   JWK_THUMBPRINT_URI_PREFIX: JWK_THUMBPRINT_URI_PREFIX,
   jwkThumbprintUri: jwkThumbprintUri,
+  SIGNING_JWK_PAIR_ALGS: SIGNING_JWK_PAIR_ALGS,
+  generateSigningJwkPair: generateSigningJwkPair,
   certificateThumbprint: certificateThumbprint,
   certificateSpkiThumbprint: certificateSpkiThumbprint,
   constantTimeEquals: constantTimeEquals,
