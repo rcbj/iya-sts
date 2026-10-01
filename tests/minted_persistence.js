@@ -364,6 +364,44 @@ async function body(t, dir) {
           '— which is the half a write-only journal would get wrong');
 
   // -------------------------------------------------------------------------
+  // 3b. MINTED BEFORE THE KEYSTORE STARTED IS DEFERRED, NOT DROPPED (#357).
+  //
+  // A product process opens its store, and mints, before `keystore.start()`
+  // has read the key-encryption key. The flush then had nothing to seal with
+  // and CLEARED the journal, and the restore after the start cleared it again:
+  // what was minted in that window was never written. Now the flush keeps it,
+  // the restore keeps it, and the next flush writes it.
+  // -------------------------------------------------------------------------
+  t.log.info('=== minted before the keystore started is deferred (#357) ===');
+  keystore.reset();
+  t.check(!keystore.hasStarted() && !keystore.sealed(),
+          'a keystore that has not started yet holds no key');
+  sessions.set('sid-357', { user: 'early' });
+  const early = await minted.flush();
+  const hasEarlyRow = function () {
+    let found = false;
+    driver.rows.forEach(function (row) {
+      if (row.key === 'sid-357') {
+        found = true;
+      }
+    });
+    return found;
+  };
+  t.check(early.deferred === true && !hasEarlyRow(),
+          'a flush before the keystore starts is DEFERRED and writes nothing',
+          JSON.stringify(early));
+  await armKeystore(dir);
+  t.check(keystore.hasStarted(), 'the keystore has started');
+  await minted.restore();
+  await minted.flush();
+  t.check(hasEarlyRow(),
+          'and once the keystore has started and the store is restored, the ' +
+          'session minted before the start is written — not dropped, which ' +
+          'is what clearing the journal at the deferred flush used to do');
+  t.equal((sessions.get('sid-357') || {}).user, 'early',
+          'and it is still live in this process');
+
+  // -------------------------------------------------------------------------
   // 4. A RESTORE MUST NOT JOURNAL WHAT IT JUST READ.
   //
   // Without the suppression the first act of a restored process is to write

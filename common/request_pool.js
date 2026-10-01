@@ -4103,16 +4103,19 @@ function start() {
   // rows are sealed, and development mode has no KEK to seal them with. So one
   // is generated here and handed to every worker with everything else.
   //
-  // In PRODUCT mode this does nothing — `useEphemeralKek()` refuses, because
-  // there the operator's KEK is already in place and the store is meant to
-  // outlive the process. See keystore.js.
+  // In PRODUCT mode — anywhere the keystore persists — nothing is offered: the
+  // operator's KEK is already in place and the store is meant to outlive the
+  // process. See keystore.js.
   // ---------------------------------------------------------------------
   // (THE OID4VCI REQUEST-ENCRYPTION KEY WAS GENERATED HERE until 2026-09-12 —
   // one key for the whole process, handed to every worker in the environment,
   // shared by every trust realm. It is a member of each realm's key set now, so
   // the key channel installed below carries it per realm and the keystore
   // writes it down in product mode; nothing about it happens in this file.)
-  if (!keystore.hasEphemeralKek()) {
+  // NOT WHERE THE KEYSTORE PERSISTS (#357): `useEphemeralKek()` refuses there,
+  // and the refusal is an ERROR (STS-KEYS-0038) that every product start logged
+  // for a key nobody needed — the operator's KEK is already in place.
+  if (!keystore.hasEphemeralKek() && !keystore.persists()) {
     const generated = nodeCrypto.randomBytes(32).toString('hex');
     if (keystore.useEphemeralKek(generated)) {
       log.info('request_pool: a per-run key-encryption key was generated, so ' +

@@ -255,6 +255,52 @@ function expiryOf(row, value, key, realmId) {
 // anything.
 const journal = new Map();
 
+// A copy of the journal, emptied (#357): what `restore()` keeps aside.
+function takePendingJournal() {
+  log.debug("Entering takePendingJournal().");
+  const copy = new Map();
+  journal.forEach(function (byRealm, handle) {
+    const realmsCopy = new Map();
+    byRealm.forEach(function (keys, realmId) {
+      realmsCopy.set(realmId, new Set(keys));
+    });
+    copy.set(handle, realmsCopy);
+  });
+  journal.clear();
+  log.debug("Leaving takePendingJournal(). " + copy.size + " handle(s).");
+  return copy;
+}
+
+// Puts what `takePendingJournal()` kept back into the journal; true when there
+// was anything to put back.
+function putBackJournal(pending) {
+  log.debug("Entering putBackJournal().");
+  let any = false;
+  (pending || new Map()).forEach(function (byRealm, handle) {
+    byRealm.forEach(function (keys, realmId) {
+      keys.forEach(function (key) {
+        let held = journal.get(handle);
+        if (!held) {
+          held = new Map();
+          journal.set(handle, held);
+        }
+        let set = held.get(realmId);
+        if (!set) {
+          set = new Set();
+          held.set(realmId, set);
+        }
+        set.add(key);
+        any = true;
+      });
+    });
+  });
+  if (any) {
+    generation += 1;
+  }
+  log.debug("Leaving putBackJournal(). " + any);
+  return any;
+}
+
 // ---------------------------------------------------------------------------
 // A REALM THAT IS GONE LEAVES NOTHING PENDING (2026-09-07).
 //
@@ -1124,6 +1170,20 @@ function flush() {
     log.debug('Leaving flush(). Not persisting minted state.');
     return Promise.resolve({ written: false });
   }
+  if (!keystore.sealed() && typeof keystore.hasStarted === 'function' &&
+      !keystore.hasStarted()) {
+    // NOT YET IS NOT NEVER (#357). The store opens, and things are minted,
+    // before `keystore.start()` has read the key-encryption key — a network
+    // call to the secret store. This branch used to fall through to the one
+    // below, which CLEARS the journal: whatever was minted in that window was
+    // dropped, not deferred, and every process logged STS-STORE-0018 as it
+    // started. The journal is kept and nothing is committed; `restore()`,
+    // which runs once the keystore has started, keeps it too and asks for the
+    // flush that writes it.
+    flushAsked = false;
+    log.debug('Leaving flush(). The keystore has not started; deferred.');
+    return Promise.resolve({ written: false, deferred: true });
+  }
   if (!keystore.sealed()) {
     journal.clear();
     flushAsked = false;
@@ -1938,7 +1998,14 @@ function restore() {
   }
   const filter = restoreFilter(Date.now());
   log.debug("Leaving restore().");
+  // WHAT WAS MINTED BEFORE THE RESTORE (#357): journalled and not written —
+  // before the keystore started a flush had nothing to seal with, and one
+  // during the load is not guaranteed to have run. Taken aside the moment
+  // `restoring` is set (nothing is journalled after that), kept across the
+  // restore, which clears the journal of its own writes, and flushed after.
+  let pending = null;
   return driver.loadMinted(filter).then(function (rows) {
+    pending = takePendingJournal();
     restoring = true;
     let restored = 0;
     droppedUnreadable = 0;
@@ -2018,6 +2085,9 @@ function restore() {
     // something writes — and those writes are already in the store.
     journal.clear();
     flushAsked = false;
+    if (putBackJournal(pending) && scheduler) {
+      flushAsked = scheduler() !== false;
+    }
 
     if (staleHandles.size) {
       log.info('persistence: ' + droppedUnknown + ' minted row(s) belong to ' +
@@ -2041,6 +2111,7 @@ function restore() {
     return { restored: restored };
   }).catch(function (err) {
     restoring = false;
+    putBackJournal(pending);
     log.debug('Leaving restore(). It failed.');
     return Promise.reject(new Error(errorCodes.tag('STS-STORE-0026') +
       'the minted state in the store could not be read: ' + err.message));

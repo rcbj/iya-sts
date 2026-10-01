@@ -1148,9 +1148,27 @@ function hasCellKek() {
   return !!cellKek;
 }
 
+// WHETHER `start()` HAS FINISHED in this process (#357). Until it has, a
+// product process has not read its key-encryption key YET, which is not the
+// same as having none: `persistence_minted.js`'s flush defers rather than
+// dropping what it was asked to write.
+let started = false;
+
+/**
+ * Tells whether `start()` has finished in this process.
+ *
+ * @returns true once the keystore has started
+ */
+function hasStarted() {
+  log.debug("Entering hasStarted().");
+  log.debug("Leaving hasStarted().");
+  return started;
+}
+
 async function start() {
   log.debug('Entering start().');
   if (!persists()) {
+    started = true;
     log.debug('Leaving start(). Keys are generated per start.');
     return { persisting: false,
              why: mode.isProduct()
@@ -1297,6 +1315,7 @@ async function start() {
            'THIS PROCESS IS THE CIPHERTEXT: a private key is decrypted when ' +
            'something signs with it and dropped again (' +
            retentionSentence() + ').');
+  started = true;
   log.debug('Leaving start(). ' + loaded + ' realm(s).');
   return { persisting: true, loaded: loaded, pki: pkiLoaded,
            dataKeys: deks.size, provider: secrets.describe().provider };
@@ -5600,6 +5619,7 @@ function refreshPki(scopeId) {
  */
 function reset() {
   log.debug("Entering reset().");
+  started = false;
   shared.clear();
   pkiHeld.clear();
   // What the store arbitration holds (#46): a test doing what a restart does
@@ -5647,6 +5667,7 @@ module.exports = {
   useEphemeralKek: useEphemeralKek,
   useEphemeralCellKek: useEphemeralCellKek,
   hasEphemeralKek: hasEphemeralKek,
+  hasStarted: hasStarted,
   ephemeralKek: ephemeralKek,
   onAdopt: onAdopt,
   onOrphanedCertificates: onOrphanedCertificates,
