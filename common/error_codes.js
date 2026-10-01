@@ -18078,6 +18078,12 @@ const CODES = [
       'entry was given a value its setting does not take, or a reason ' +
       'language that is not a BCP 47 tag.',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0203',
+    summary: 'An application attribute whose values are a closed set (the ' +
+      'token endpoint authentication method, a CIBA delivery mode or ' +
+      'signing algorithm, a GNAP key proof, algorithm, start mode or token ' +
+      'format) was given a value outside it.',
+    spec: 'HTTP 400 (console and API)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

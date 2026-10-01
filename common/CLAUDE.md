@@ -792,8 +792,28 @@ A name in either table that is not a single-valued editable attribute is
 logged at load (`STS-ADMIN-0833`) and drawn as an ordinary field. Families come
 from the PROTOCOLS table (declaration attributes), a schema row's own
 `families`, or `FIELD_FAMILY_PREFIXES`; `FIELD_GROUPS` orders the sections.
-`gridExcludedAttributes()` is what the grid leaves to another control.
+`gridExcludedAttributes()` is what the grid leaves to another control, and
+`oauthScope` is among them since 2026-10-01: it records what a client ASKED
+FOR, written by `seen()`, so the form offers nothing to type there.
 `tests/application_form_roles.js` holds it to the schema.
+
+**A CLOSED SET IS OFFERED, NOT TYPED (2026-10-01).** `ATTRIBUTE_CHOICES` lists
+every editable attribute whose values are a closed set. Each list is read from
+the constant the service checks it against: `client_auth.js`'s `METHODS`, the
+JWS and JWE tables, `GNAP_MTLS_TRUSTS`, the GNAP settings' own enums and
+`federation.MECHANISM_IDS`. `applicationFields()` hands each row its
+`choices`, and the grid draws a single value as radios and a list as
+checkboxes. Seven of them had no check at a console or API write until this
+change (`CHOICES_CHECKED_HERE`), so `choiceProblem()` refuses a value outside
+them at update and create (`STS-REG-0203`). The rest already have a validator
+that says more. `oauthGrantType` and `oauthResponseType` are not on the list,
+because they are an open record of what a client was seen doing.
+
+**A GENERATED SECRET SETS ITS METHOD.** `regenerateClientSecret()` (and so
+Regenerate and Rotate) writes `client_secret_basic`, RFC 7591's default, where
+the entry names no `oauthTokenEndpointAuthMethod` or names `none`. The create
+page's Generate Secret fills the same value into the form. A method somebody
+chose is left alone.
 
 ## `ssfSettingFor()` AND THE `strictOverride` ROWS (2026-10-01)
 

@@ -59,7 +59,9 @@ const log = require('bunyan').createLogger({ name: 'application_form_roles',
 const LEFT_TO_THEIR_OWN_CONTROL = [
   'appName', 'appAllowedProtocol', 'oauthClientSecretPrevious',
   'oauthClientSecretPreviousUntil', 'oauthClientSecretExpiresAt',
-  'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken'
+  'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
+  // What the client has asked for, written as the service sees it ask.
+  'oauthScope'
 ];
 
 function run(t) {
@@ -143,6 +145,30 @@ function run(t) {
           '4. the CORS origins belong to every family');
   t.equal(byName.oauthNativeSso.families.join(','), 'oidc',
           '4. a schema row\'s own families win over the prefix');
+
+  // --- 6. Closed sets ------------------------------------------------------
+  // A field whose values are a closed set carries them, read from the source
+  // the service checks against; a value outside one is refused where nothing
+  // else checks it; an open field carries none.
+  const clientAuth = require('../oauth-oidc/client_auth');
+  t.equal(JSON.stringify(byName.oauthTokenEndpointAuthMethod.choices),
+          JSON.stringify(clientAuth.METHODS),
+          '6. the token endpoint auth method offers client_auth.js\'s METHODS');
+  t.equal(JSON.stringify(byName.oauthSubjectType.choices),
+          JSON.stringify(['public', 'pairwise', 'ephemeral']),
+          '6. the subject type offers its three values');
+  t.check(byName.oauthRedirectUri.choices === null &&
+          !byName.oauthScope,
+          '6. an open list carries no choices, and oauthScope is not a field');
+  t.check(/is not a value oauthTokenEndpointAuthMethod takes/.test(
+            applications.choiceProblem('oauthTokenEndpointAuthMethod',
+                                       'client_secret_magic')) &&
+          applications.choiceProblem('oauthTokenEndpointAuthMethod',
+                                     'private_key_jwt') === '' &&
+          applications.choiceProblem('oauthTokenEndpointAuthMethod', '') ===
+            '',
+          '6. a method outside the set is refused, one inside it and a clear ' +
+          'are not');
 
   // --- 5. The console's simplified view reads `declaration` ---------------
   const source = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',

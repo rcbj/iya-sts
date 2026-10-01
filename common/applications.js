@@ -4104,6 +4104,159 @@ const BOOLEAN_ATTRIBUTES = [
  * The single-valued attributes that hold a document (JSON, PEM, XML) and so
  * get a box of several lines rather than one.
  */
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTES WHOSE VALUES ARE A CLOSED SET (2026-10-01).
+//
+// rcbj asked for the field grid to offer such a field's values to choose from
+// rather than a text box. The schema rows hold prose, so the lists are here,
+// each read from the SAME constant the validator or the protocol module
+// checks against, so the form cannot offer what the service refuses. A
+// function rather than a value, because several depend on the realm (the
+// ML-KEM and HPKE algorithms follow keys.*) and two live in modules that
+// require this one (read when asked, never at load).
+//
+// `oauthGrantType` and `oauthResponseType` are not here: they are what a
+// client was SEEN using, an open record. The setting overrides take their
+// lists from their setting (`config.js`'s enumValues), in the console.
+// ---------------------------------------------------------------------------
+const ATTRIBUTE_CHOICES = {
+  oauthTokenEndpointAuthMethod: function () {
+    return require('../oauth-oidc/client_auth').METHODS.slice(0);
+  },
+  oauthBackchannelTokenDeliveryMode: function () {
+    return ['poll', 'ping', 'push'];
+  },
+  oauthBackchannelAuthenticationRequestSigningAlg: function () {
+    return stsCrypto.JWS_ASYMMETRIC_ALGS.slice(0);
+  },
+  oauthSubjectType: function () {
+    return ['public', 'pairwise', 'ephemeral'];
+  },
+  oauthTokenEndpointAuthSigningAlg: function () {
+    return stsCrypto.JWS_SIGNING_ALGS.slice(0);
+  },
+  oauthIntrospectionSignedResponseAlg: function () {
+    return INTROSPECTION_SIGNING_ALGS.slice(0);
+  },
+  oauthIntrospectionEncryptedResponseAlg: function () {
+    return helpers.offeredJweAlgs(INTROSPECTION_ENCRYPTION_ALGS);
+  },
+  oauthIntrospectionEncryptedResponseEnc: function () {
+    return INTROSPECTION_ENCRYPTION_ENCS.slice(0);
+  },
+  oauthRequestObjectSigningAlg: function () {
+    return REQUEST_OBJECT_SIGNING_ALGS.concat(
+      mode.acceptsUnsignedRequestObjects() ? ['none'] : []);
+  },
+  oauthRequestObjectEncryptionAlg: function () {
+    return helpers.decryptableJweAlgs(REQUEST_OBJECT_ENCRYPTION_ALGS);
+  },
+  oauthRequestObjectEncryptionEnc: function () {
+    return REQUEST_OBJECT_ENCRYPTION_ENCS.slice(0);
+  },
+  gnapMtlsTrust: function () {
+    return GNAP_MTLS_TRUSTS.slice(0);
+  },
+  // RFC 9635 section 7.1.1: a key reference is bound to one proofing method,
+  // and a shared secret cannot be proved by mutual TLS.
+  gnapKeyProof: function () {
+    return ['httpsig', 'jwsd', 'jws'];
+  },
+  gnapSymmetricAlg: function () {
+    return ['HS256', 'HS384', 'HS512', 'hmac-sha256'];
+  },
+  gnapInteractionStartModes: function () {
+    return settingValues('gnap.interactionStartModes');
+  },
+  gnapAccessTokenFormat: function () {
+    return settingValues('gnap.accessTokenFormat');
+  },
+  appAuthnMechanism: function () {
+    return require('../federation/federation').MECHANISM_IDS.slice(0);
+  }
+};
+
+// The closed sets nothing checked at a console or API write until 2026-10-01
+// (the others have a validator of their own, which says more). A value
+// outside one is refused (STS-REG-0203). `appAuthnMechanism` is offered and
+// not refused: it is checked where it is read, on purpose.
+const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
+  'oauthBackchannelTokenDeliveryMode',
+  'oauthBackchannelAuthenticationRequestSigningAlg', 'gnapKeyProof',
+  'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat'];
+
+/**
+ * The values a setting's own closed set allows (enumValues or csvValues),
+ * without the empty one.
+ *
+ * @param key - the setting
+ * @returns the values
+ */
+function settingValues(key) {
+  log.debug("Entering settingValues(). " + key);
+  /** @type {any} */
+  const row = config.SETTINGS.filter(function (one) {
+    return one.key === key;
+  })[0] || {};
+  log.debug("Leaving settingValues().");
+  return [].concat(row.enumValues || row.csvValues || [])
+    .filter(function (one) { return one !== ''; });
+}
+
+/**
+ * The values an attribute may hold, where they are a closed set.
+ *
+ * @param attribute - the attribute
+ * @returns the values, or null for an attribute whose values are open
+ */
+function attributeChoices(attribute) {
+  log.debug("Entering attributeChoices(). " + attribute);
+  const source = Object.prototype.hasOwnProperty.call(ATTRIBUTE_CHOICES,
+                                                      attribute)
+    ? ATTRIBUTE_CHOICES[attribute] : null;
+  if (!source) {
+    log.debug("Leaving attributeChoices(). Open.");
+    return null;
+  }
+  try {
+    const out = source().map(String);
+    log.debug("Leaving attributeChoices(). " + out.length + " value(s).");
+    return out;
+  } catch (e) {
+    log.debug("Caught in attributeChoices(): " + ((e && e.message) || e));
+    // A source that cannot be read leaves the field a text box, which is
+    // what it was; the validator, where there is one, still decides.
+    log.debug("Leaving attributeChoices(). Unreadable.");
+    return null;
+  }
+}
+
+/**
+ * Refuses a value outside an attribute's closed set, for the attributes no
+ * other validator checks at a write.
+ *
+ * @param attribute - the attribute
+ * @param value - the value written
+ * @returns the refusal, or '' when allowed
+ */
+function choiceProblem(attribute, value) {
+  log.debug("Entering choiceProblem(). " + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (CHOICES_CHECKED_HERE.indexOf(attribute) < 0 || text === '') {
+    log.debug("Leaving choiceProblem(). Not checked here.");
+    return '';
+  }
+  const choices = attributeChoices(attribute);
+  if (!choices || choices.indexOf(text) >= 0) {
+    log.debug("Leaving choiceProblem(). Allowed.");
+    return '';
+  }
+  log.debug("Leaving choiceProblem(). Not one of the values.");
+  return '"' + text + '" is not a value ' + attribute + ' takes. It is one ' +
+    'of ' + choices.join(', ') + '.';
+}
+
 const LONG_TEXT_ATTRIBUTES = [
   'oauthJwks', 'samlSpMetadata', 'samlEncryptionCertificate',
   'samlSpMetadataSigningCertificate', 'oauthSamlAssertionSigningCertificate',
@@ -4124,9 +4277,13 @@ const LONG_TEXT_ATTRIBUTES = [
  */
 function gridExcludedAttributes() {
   log.debug("Entering gridExcludedAttributes().");
+  // `oauthScope` (2026-10-01) is what the client has ASKED FOR, written as
+  // the service sees it ask, so an administrator has nothing to type there;
+  // the page's entry table shows it.
   const out = ['appName', 'appAllowedProtocol', 'oauthClientSecretPrevious',
                'oauthClientSecretPreviousUntil', 'oauthClientSecretExpiresAt',
-               'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken'];
+               'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
+               'oauthScope'];
   Object.keys(KEY_PAIR_ATTRIBUTES).forEach(function (profile) {
     const row = KEY_PAIR_ATTRIBUTES[profile];
     ['certificate', 'chain', 'privateKey', 'handle', 'expires', 'source',
@@ -4274,6 +4431,7 @@ function applicationFields() {
       editable: row.editable,
       sensitive: !!row.sensitive,
       overrides: row.overrides || '',
+      choices: attributeChoices(row.name),
       what: row.what || '',
       families: scope.families,
       everyFamily: scope.everyFamily,
@@ -9888,6 +10046,21 @@ function createApplication(detail) {
     log.debug("Leaving createApplication().");
     return errorCodes.mark({ ok: false, errors: wrongFamily }, 'STS-REG-0010');
   }
+  // A closed set's value (2026-10-01), every value of a list.
+  const choiceProblems = [];
+  Object.keys(given.fields).forEach(function (name) {
+    valuesOf(given.fields[name]).forEach(function (one) {
+      const problem = choiceProblem(name, one);
+      if (problem) {
+        choiceProblems.push(problem);
+      }
+    });
+  });
+  if (choiceProblems.length) {
+    log.debug("Leaving createApplication(). Not one of the values.");
+    return errorCodes.mark({ ok: false, errors: choiceProblems },
+                           'STS-REG-0203');
+  }
   // The strict overrides' parse (2026-10-01), for the same reason.
   const strictProblems = Object.keys(given.fields).map(function (name) {
     return strictOverrideProblem(name, valuesOf(given.fields[name])[0]);
@@ -10268,6 +10441,14 @@ function updateApplication(identifier, change) {
   // one step further. A value can arrive here by `ldapmodify`, or be left
   // behind by a family being untimed from the entry after it was set, and
   // refusing to remove it would shut the one door that could tidy it up.
+  if ((mode === 'set' || mode === 'add') && value) {
+    const notAChoice = choiceProblem(attribute, value);
+    if (notAChoice) {
+      log.debug("Leaving updateApplication(). Not one of the values.");
+      return errorCodes.mark({ ok: false, errors: [notAChoice] },
+                             'STS-REG-0203');
+    }
+  }
   if (mode === 'set' && value) {
     const strictProblem = strictOverrideProblem(attribute, value);
     if (strictProblem) {
@@ -11202,10 +11383,24 @@ function regenerateClientSecret(identifier, options) {
     delete record.fields.oauthClientSecretPreviousUntil;
   }
   setField(record, 'oauthClientSecret', secret);
+  // A SECRET NEEDS A METHOD THAT USES IT (2026-10-01). An entry naming no
+  // token_endpoint_auth_method, or `none`, would leave the new secret with
+  // nothing to present it by, so it takes RFC 7591 section 2's default,
+  // client_secret_basic. A method somebody chose (a JWT, a certificate) is
+  // theirs and is left alone.
+  const methodBefore = String(valuesOf(
+      record.fields.oauthTokenEndpointAuthMethod)[0] || '').trim();
+  const methodSet = methodBefore === '' || methodBefore === 'none';
+  if (methodSet) {
+    setField(record, 'oauthTokenEndpointAuthMethod', 'client_secret_basic');
+  }
   if (record.fields.appRegistrationJson) {
     try {
       const document = JSON.parse(record.fields.appRegistrationJson);
       document.client_secret = secret;
+      if (methodSet) {
+        document.token_endpoint_auth_method = 'client_secret_basic';
+      }
       if (Object.prototype.hasOwnProperty.call(document,
                                                'client_secret_expires_at')) {
         const seconds = Number(
@@ -11238,6 +11433,7 @@ function regenerateClientSecret(identifier, options) {
     // The attribute and never the value — see updateApplication()'s row.
     detail: { identifier: String(identifier), attribute: 'oauthClientSecret',
               mode: keeps ? 'rotate' : 'regenerate', replaced: replaced,
+              tokenEndpointAuthMethod: methodSet ? 'client_secret_basic' : '',
               overlapUntil: keeps ? Date.now() + overlapMs : 0 }
   });
   log.info('applications: "' + identifier + '" — the client secret was ' +
@@ -11257,7 +11453,11 @@ function regenerateClientSecret(identifier, options) {
                'authenticating at the token endpoint now.'
              : 'A client secret was generated.') + ' It is ' + bytes +
              ' random bytes, base64url, minted the way a registration mints ' +
-             'one.' };
+             'one.' + (methodSet
+               ? ' Its token endpoint authentication method was ' +
+                 (methodBefore ? methodBefore : 'not set') + ' and is now ' +
+                 'client_secret_basic, the default for a client with a secret.'
+               : '') };
 }
 
 // ---------------------------------------------------------------------------
@@ -13937,6 +14137,8 @@ module.exports = {
   ssfSettingFor: ssfSettingFor,
   ssfOverrideRows: ssfOverrideRows,
   strictOverrideProblem: strictOverrideProblem,
+  attributeChoices: attributeChoices,
+  choiceProblem: choiceProblem,
   corsOriginsOfRealm: corsOriginsOfRealm,
   redirectOriginsOfRealm: redirectOriginsOfRealm,
   ssfAllowedEventProblem: ssfAllowedEventProblem,

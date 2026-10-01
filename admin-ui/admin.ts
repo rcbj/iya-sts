@@ -5485,7 +5485,7 @@ class AdminConsole {
       'button.fg-drop,button.fg-grow{padding:2px 8px;line-height:1.2;' +
       'min-width:0}' +
       'button.fg-grow{font-weight:700;margin-top:.2em}' +
-      '.fg-bool{display:flex;flex-wrap:wrap;gap:.2em .9em}' +
+      '.fg-bool,.fg-checks{display:flex;flex-wrap:wrap;gap:.2em .9em}' +
       '.fg-radio{font-weight:400;white-space:nowrap}' +
       '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
       '.fg-proto{font-weight:400;white-space:nowrap}' +
@@ -20074,6 +20074,12 @@ class AdminConsole {
     const { log, configSettingFor, config } = this.deps;
     log.debug("Entering AdminConsole.gridFieldTyped().");
     if (!row.overrides) {
+      // A closed set of its own (applications.attributeChoices()): one value
+      // is chosen from them, a list is ticked from them.
+      if (row.choices && row.choices.length && row.type === 'string') {
+        log.debug("Leaving AdminConsole.gridFieldTyped(). A closed set.");
+        return Object.assign({}, row, { type: 'enum' });
+      }
       log.debug("Leaving AdminConsole.gridFieldTyped(). Not an override.");
       return row;
     }
@@ -20137,7 +20143,32 @@ class AdminConsole {
     const defaultText = row.described
       ? 'default — currently ' + row.described.text : '';
     let control = '';
-    if (row.type === 'array') {
+    // A VALUE THAT IS NOT ONE OF THE CHOICES (an older write, an
+    // ldapmodify) is still offered, marked, so a save does not drop it
+    // silently.
+    const offered = function (choices) {
+      return choices.concat(held.filter(function (one) {
+        return String(one).trim() !== '' && choices.indexOf(String(one)) < 0;
+      }).map(String));
+    };
+    const outside = function (choices, value) {
+      return choices.indexOf(value) < 0
+        ? ' <span class="state-none">(not one of the allowed values)</span>'
+        : '';
+    };
+    if (row.type === 'array' && row.choices && row.choices.length) {
+      // A LIST FROM A CLOSED SET is a checkbox per value. An unticked box
+      // posts nothing, so no box can be empty, and the form's `present` list
+      // is what clears the attribute when every box is unticked.
+      control = '<div class="fg-checks" role="group" aria-label="' +
+        this.esc(row.attribute) + '">' +
+        offered(row.choices).map(function (value, n) {
+          return '<label class="fg-radio"><input type="checkbox" name="' +
+            self.esc(name + '.' + n) + '" value="' + self.esc(value) + '"' +
+            (held.map(String).indexOf(value) >= 0 ? ' checked' : '') + '>' +
+            self.esc(value) + outside(row.choices, value) + '</label>';
+        }).join('') + '</div>';
+    } else if (row.type === 'array') {
       control = '<div class="fg-list">' + held.map(function (value, n) {
         return '<div class="fg-item"><input type="text" id="' +
           self.esc(id + '-' + n) + '" name="' + self.esc(name + '.' + n) +
@@ -20170,13 +20201,19 @@ class AdminConsole {
         radio('FALSE', 'false') +
         radio('', defaultText || 'not set') + '</div>';
     } else if (row.type === 'enum') {
-      control = '<select id="' + this.esc(id) + '" name="' + this.esc(name) +
-        '"><option value="">' + this.esc(defaultText || 'not set') +
-        '</option>' + (row.choices || []).map(function (option) {
-          return '<option value="' + self.esc(option) + '"' +
-            (option === first ? ' selected' : '') + '>' + self.esc(option) +
-            '</option>';
-        }).join('') + '</select>';
+      // ONE VALUE FROM A CLOSED SET is a radio per value, and a last one for
+      // none (the setting's default, for an override), the boolean's shape.
+      control = '<div class="fg-bool fg-choices" role="radiogroup" ' +
+        'aria-label="' + this.esc(row.attribute) + '">' +
+        offered(row.choices || []).map(function (value) {
+          return '<label class="fg-radio"><input type="radio" name="' +
+            self.esc(name) + '" value="' + self.esc(value) + '"' +
+            (value === first ? ' checked' : '') + '>' + self.esc(value) +
+            outside(row.choices || [], value) + '</label>';
+        }).join('') +
+        '<label class="fg-radio"><input type="radio" name="' +
+        this.esc(name) + '" value=""' + (first === '' ? ' checked' : '') +
+        '>' + this.esc(defaultText || 'not set') + '</label></div>';
     } else if (row.long) {
       control = '<textarea id="' + this.esc(id) + '" name="' +
         this.esc(name) + '" rows="3" placeholder="not set">' +
@@ -37732,6 +37769,14 @@ class AdminConsole {
         const draft = Object.assign({}, body, {
           'field.oauthClientSecret': minted.clientSecret
         });
+        // The method a secret is presented by, filled in where nothing (or
+        // `none`) was chosen: RFC 7591 section 2's default. A method somebody
+        // picked is left as they picked it.
+        const methodAsked = String(
+            body['field.oauthTokenEndpointAuthMethod'] || '').trim();
+        if (methodAsked === '' || methodAsked === 'none') {
+          draft['field.oauthTokenEndpointAuthMethod'] = 'client_secret_basic';
+        }
         const loaded = reloadedMetadata();
         self.newApplicationRedraw(req, res, {
           loaded: loaded, draft: draft, protocols: protocols,
@@ -37740,9 +37785,9 @@ class AdminConsole {
           notice: 'A client secret was generated and is in the ' +
                   'oauthClientSecret box below. Nothing has been written: ' +
                   'it becomes this application\'s credential when you ' +
-                  'create it. With OAuth 2.0 or OpenID Connect ticked, the ' +
-                  'create records client_secret_basic as its token endpoint ' +
-                  'authentication method, and the token endpoint accepts ' +
+                  'create it. Its token endpoint authentication method is ' +
+                  'set to client_secret_basic where none was chosen, and the ' +
+                  'token endpoint accepts ' +
                   'the secret either in an Authorization: Basic header ' +
                   '(client_secret_basic) or as a client_secret form ' +
                   'parameter (client_secret_post).'

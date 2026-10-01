@@ -6877,8 +6877,19 @@ the existing `:has()` rules hide by.
   unseal; the name and families are the form's own; managed key-pair
   attributes are the Credentials section's.
 
-`tests/application_form_roles.js` holds the catalogue; nothing drives the grid
-in a browser yet.
+**A CLOSED SET IS RADIOS OR CHECKBOXES (2026-10-01).** A field carrying
+`choices` (`common/CLAUDE.md`, `applicationFields()`) is drawn in one of two
+ways. A single value is a radio per value plus one for "not set", which is the
+boolean's shape; the setting overrides' enums, which were a `<select>`, are
+drawn the same way. A list is a checkbox per value. An unticked box posts
+nothing, so a list from a closed set can never hold an empty box, and the
+form's `present` list clears the attribute when every box is unticked. A
+stored value that is not one of the choices is still drawn, marked, so a
+save does not drop it without a word.
+
+`tests/application_form_roles.js` holds the catalogue, and
+`tests/vendored/sts_admin_console.js`'s `theFieldGridIsPressed()` presses the
+grid in a browser.
 
 ## AN APPLICATION'S PAGE HAS A SHARED SIGNALS SECTION (2026-10-01)
 
