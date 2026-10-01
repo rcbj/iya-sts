@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3880** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3886** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 72
+* [Service core (`STS-CORE`)](#sts-core) — 76
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 70
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 83
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 211
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 77
@@ -216,6 +216,10 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0127` | A cluster node's snapshot of Monitoring → Worker Pools and → Node Health could not be written to the shared store, or the other nodes' snapshots could not be read from it (#332). Logged when it starts failing, not on every run or page; the page draws this node alone and says why. | none — the pages and their API still answer 200 |
 | `STS-CORE-0128` | The hourly cluster.node-snapshot-purge job could not delete the snapshots of nodes that are no longer live cluster members (#332). Logged when it starts failing, not on every run; the rows stay, and the pages go on drawing those nodes as gone. | none — the scheduler records the failed run |
 | `STS-CORE-0140` | A package this service requires at first use rather than at start (common/lazy_module.ts, #348) — the gRPC runtime, its proto loader, jsonld through the vendored bbs2023.js — failed to load when it was first needed, so the call that needed it fails. The image is missing or has a broken copy of the package. | none — logged; the call fails as it would have at start |
+| `STS-CORE-0141` | An uncaught exception reached a started process — the front process, a request worker or a computation worker — and was contained there rather than ending it (#355, common/fault_boundary.ts). The line carries the stack. Logged at the first three occurrences of each distinct fault and then at each power of ten, with the count. | none — logged; the process carries on |
+| `STS-CORE-0142` | A promise rejection nobody handled reached a started process and was contained there rather than ending it (#355). The line carries the stack, throttled as STS-CORE-0141 is. | none — logged; the process carries on |
+| `STS-CORE-0143` | An Express handler returned a promise that rejected (an `async` handler that failed, #355). The request is answered with a plain 500 through Express's final handler, as a thrown error is, unless the handler had already answered or called next(); the line carries the stack, throttled as STS-CORE-0141 is. | HTTP 500 Internal Server Error, with no detail |
+| `STS-CORE-0144` | The Express guard (#355) could not be installed, because express/lib/router/layer is missing or not the shape it knows: a rejected async handler reaches the process handlers (STS-CORE-0142) instead of being answered with a 500. | none — logged at start |
 
 ## STS-WORKER
 
@@ -3779,6 +3783,8 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0030` | The HTTPS certificate and key files could not be read, are not PEM, or do not belong together. A listener already serving keeps the pair it has; one not yet started waits for a usable pair. | — |
 | `STS-XPEP-0031` | The HTTPS listener could not bind its port (commonly the port is taken). Plain HTTP and enforcement are unaffected. | — |
 | `STS-XPEP-0032` | The certificate the HTTPS listener is serving is expired or not yet valid, so clients that check will refuse the handshake. | — |
+| `STS-XPEP-0033` | The remote XACML PEP met an uncaught exception after it had started, and contained it rather than exiting (#355): it carries on enforcing the policy it last pulled. The line carries the stack; a distinct fault is logged at occurrences 1, 2, 3 and each power of ten. | none — logged; the PEP carries on |
+| `STS-XPEP-0034` | The remote XACML PEP met a promise rejection nobody handled after it had started, and contained it rather than exiting (#355), throttled as STS-XPEP-0033 is. | none — logged; the PEP carries on |
 
 ## STS-ADMIN
 

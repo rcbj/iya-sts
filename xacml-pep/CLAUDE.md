@@ -405,6 +405,15 @@ that and the file is arranged so a failure elsewhere cannot stop it:
   `warn`: a PEP that cannot report is still enforcing correctly, and a warning on
   a sixty-second timer would fill a log with the least important failure here.
 
+* **An unexpected error is contained, not an exit (#355, 2026-09-29).** Once
+  `start()` has finished, an uncaught exception (`STS-XPEP-0033`) or unhandled
+  rejection (`STS-XPEP-0034`) is logged with its stack — a distinct fault at
+  occurrences 1, 2, 3 and each power of ten — and the PEP carries on enforcing
+  the policy it last pulled. An exit would enforce nothing until the container
+  restarted. It is a small copy of `common/fault_boundary.ts`'s process half,
+  because this image compiles no TypeScript; a failure while starting is still
+  `STS-XPEP-0013` and exit 1.
+
 ### When the pull itself fails
 
 **The last good policy set is KEPT and enforcement continues.** A PDP that is

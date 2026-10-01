@@ -125,6 +125,21 @@ const version = require('./common/version');
 // each is logged with its code at the front — see common/error_codes.js.
 const errorCodes = require('./common/error_codes');
 const APP_VERSION = version.load();
+// ---------------------------------------------------------------------------
+// AN UNEXPECTED ERROR IS CONTAINED, NOT A CRASH (#355). Two halves, installed
+// at two different moments on purpose — see common/fault_boundary.ts:
+//
+//   * the EXPRESS GUARD now, before any request can arrive: a rejected
+//     `async` handler reaches `next()` as a 500 instead of becoming an
+//     unhandled rejection. It patches the one prototype every express app in
+//     this process shares, the debugger's own included. Here and not in
+//     `common/app.js`, because that file is in the parent project's Kerberos
+//     COPY closure and a require there would owe a COPY line over there;
+//   * the PROCESS HANDLERS in announce(), once the service has STARTED — a
+//     failure while starting is still fatal, as it always was.
+// ---------------------------------------------------------------------------
+const faultBoundary = require('./common/fault_boundary');
+faultBoundary.guardExpress(log);
 
 // ---------------------------------------------------------------------------
 // WHERE THIS SERVICE WRITES ITSELF DOWN — #4a, AND THE FIRST TIME IT EVER HAS.
@@ -222,6 +237,10 @@ const useHttps = config.value('global.https');
 
 function announce() {
   log.debug('Entering announce().');
+  // From here on no uncaught exception or unhandled rejection ends this
+  // process — the front process, and the scheduler's leader when it is one
+  // (#355). Logged under STS-CORE-0141 / 0142 and carried on from.
+  faultBoundary.installProcessHandlers('front process', log);
   // ---------------------------------------------------------------------
   // THE DEFAULT REALM'S POST-QUANTUM KEYS, WARMED ONCE THE PORT IS OPEN.
   //
