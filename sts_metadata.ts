@@ -4989,6 +4989,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'its authorization_servers with this realm\'s; action=create then ' +
           'creates through the same function and redraws this page on a ' +
           'refusal with the document still loaded.' },
+  { path: '/admin/applications/edit', group: 'Admin',
+    name: 'An application\'s field grid',
+    // The page above's specifications, for its reasons: what it writes is the
+    // same directory entry.
+    specs: ['rfc4511', 'rfc4519', 'rfc7591'],
+    what: 'NON-SPEC console form, POST ONLY. The field grid on an ' +
+          'application\'s page and on /admin/applications/new — the ' +
+          'protocol families it is declared for and every field ' +
+          'applicationFields() can edit, one sub-tab per protocol — posts ' +
+          'here, because a refused save, a "+" and a delete have to come ' +
+          'back to the same page with every box as the reader left it, which ' +
+          'the list page\'s 303 cannot carry. A save goes through the same ' +
+          'update-fields action as POST /admin-api/applications/update-fields ' +
+          'and lands on the protocol\'s sub-tab.' },
   { path: '/admin/spiffe', group: 'Admin', name: 'SPIFFE',
     specs: ['spiffe-id', 'spiffe-bundle', 'spiffe-x509-svid',
             'spiffe-jwt-svid'],

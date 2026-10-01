@@ -284,11 +284,14 @@ async function browse(url, options) {
 // hand-written links work in a realm without one of them being edited — so the
 // form this job is looking for posts to `/realm/<id>/admin/pki/certificate`.
 // Matching the bare path finds nothing, and the failure reads as "the pane is
-// not on the page".
+// not on the page". AND SINCE 2026-10-01 AN ACTION MAY END IN A FRAGMENT: the
+// console appends `#sec-<section>` so a press comes back to its own section
+// (admin-ui/admin.ts, withReturnAnchors()), so the path is followed by an
+// optional `#…` before the closing quote.
 function form(page, action) {
   log.debug("Entering form().");
   const at = page.search(new RegExp('action="[^"]*' +
-    action.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '"'));
+    action.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '(#[^"]*)?"'));
   assert.ok(at >= 0,
             "no form posting to " + action + " on " + page.slice(0, 200));
   const start = page.lastIndexOf("<form", at);
