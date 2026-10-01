@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3912** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3918** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 80
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 141
+* [Registries (`STS-REG`)](#sts-reg) — 147
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -1762,7 +1762,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0555` | Product mode: an RFC 8693 subject_token that did not verify against this realm's signing key (a forged, foreign, expired or unreadable token) was refused. Development exchanges it unverified (mode.exchangesUnverifiedTokens()). | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0556` | Product mode: an RFC 8693 actor_token that did not verify against this realm's signing key was refused. Development reads its sub unverified into the act claim. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0557` | An RFC 8693 subject_token or actor_token that verified was refused because this realm has revoked it. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
-| `STS-OAUTH-0558` | A client authenticated with a client_secret past its expiry (oauthClientSecretExpiresAt, or the registration's client_secret_expires_at), in product mode. | invalid_client (RFC 6749 section 5.2) |
+| `STS-OAUTH-0558` | A client authenticated with a client_secret past its expiry (the expiry on that secret's record on oauthClientSecret), in product mode. | invalid_client (RFC 6749 section 5.2) |
 | `STS-OAUTH-0559` | A client authenticated with an expired client_secret and was accepted, because the service is in development mode. | none — logged; the request is answered |
 | `STS-OAUTH-0560` | An authorization request asked for an ID Token without the openid scope (OIDC Core section 3.1.2.1). | redirect: error=invalid_scope |
 | `STS-OAUTH-0561` | An authorization request combined prompt=none with another prompt value (OIDC Core section 3.1.2.1). | redirect: error=invalid_request |
@@ -4319,7 +4319,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0163` | A confirm or discard of a SAML service provider's observed signing certificate found none on the entry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0164` | An RFC 7591 registration or RFC 7592 update named an id_token_encrypted_response_alg or _enc this service cannot honour (a symmetric family, an unknown content encryption), or an enc with no alg. | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0165` | A registration named id_token_encrypted_response_alg with no inline jwks key of the right type to encrypt to (a jwks_uri is never fetched). | invalid_client_metadata (HTTP 400) |
-| `STS-REG-0166` | An application's client secret has expired, or expires within oauth2.clientSecretExpiryWarningDays — found by the daily scheduler job oauth2.client-secret-expiry. | none — an audit row and a warning; rotate the secret on /admin/applications |
+| `STS-REG-0166` | Every client secret an application holds has expired, or one expires within oauth2.clientSecretExpiryWarningDays — found by the daily scheduler job oauth2.client-secret-expiry. | none — an audit row and a warning; rotate the secret on /admin/applications |
 | `STS-REG-0167` | A client registration named a subject_type, sector_identifier_uri or token_endpoint_auth_signing_alg this service cannot honour (OIDC Core sections 8 and 9). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0168` | A console or /admin-api write set oauthSubjectType, oauthSectorIdentifierUri or oauthTokenEndpointAuthSigningAlg to a value this service cannot honour. | HTTP 400 |
 | `STS-REG-0169` | A registered sector_identifier_uri could not be fetched, was not a JSON array of URIs, or did not list every redirect_uri (OIDC Core section 8.1). | HTTP 400 {error: invalid_client_metadata} |
@@ -4361,6 +4361,12 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0205` | An application carries its own claim or SAML attribute rows (oauthClaims*, saml2CustomAttributes, saml11CustomAttributes) that are not a JSON array or that the claim-set rules refuse; they are ignored at issuance and the realm's set is issued. | none (logged at issuance; nothing is refused) |
 | `STS-REG-0206` | An application's own custom claim or SAML attribute was refused: an unknown claim set, a row the claim-set rules refuse (a reserved name, an attribute that may not be released, a type that is not one), a name to remove that it does not hold, or an application not declared for the set's protocol. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0207` | An application's token endpoint authentication methods (oauthTokenEndpointAuthMethod) were refused: "none" declares a public client and cannot be held beside any other method. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0208` | A client secret was not added or rotated in: the application already holds oauth2.clientSecretsMax secrets. Remove one first. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0209` | A client secret was not removed: no secret on the application has the id named. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0210` | The client secret pinned by adminApi.clientSecret on sts-management-api was not removed: every /admin-api token is minted with it. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0211` | A client secret was not added: its lifetime or description is not one this service accepts. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0212` | A sealed client secret will not open under this process's key-encryption key — it was written under a different one — so it authenticates nothing until it is replaced. | none (logged; the token endpoint answers invalid_client) |
+| `STS-REG-0213` | A client secret could not be sealed, so it was not written: storing it in the clear where keys persist would put a working client credential in every directory dump. | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

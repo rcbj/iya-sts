@@ -3816,12 +3816,21 @@ with `Cannot find module` naming a file the operator never mentioned.
      identifier and a change), so this bullet described a behaviour nothing had
      ever performed. `common/oidc_rp.ts`'s `ensureRedirectUri()` carries both.
 
-   **TWO ATTRIBUTES HOLD CREDENTIALS IN THE CLEAR** — `oauthClientSecret` and
-   `appRegistrationAccessToken` — which is the `/krb5/principals` decision about
-   the Kerberos passwords, made again and for the same reason. Now that RFC 9700
-   mode CHECKS that secret, anyone who can read the directory can authenticate as
-   that client; that is the honest state of a service that authenticates nobody.
-   They are never given to `audit.js`, whose no-credential rule is untouched.
+   **ONE ATTRIBUTE HOLDS A CREDENTIAL IN THE CLEAR** — `appRegistrationAccessToken`
+   — which is the `/krb5/principals` decision about the Kerberos passwords, made
+   again and for the same reason. **`oauthClientSecret` WAS THE OTHER UNTIL
+   2026-10-01** and is SEALED now wherever the process holds a DURABLE
+   key-encryption key (`sealsClientSecrets()`: `keystore.persists()`, as for
+   the issued private keys, and a key that is not development's ephemeral one —
+   so a product-mode realm on a development container writes it as it is
+   rather than refusing every registration): each value — one record per
+   secret — is sealed WHOLE (`sealClientSecretText()`, label `client-secret`),
+   `parseClientSecretValue()` opens what it reads so every verifier and the
+   sweep meet one shape, and `view()` opens them for a reader that came through
+   this module. A value written before that date stays in the clear until the
+   secret is next written; nothing migrates it. A seal that fails is a refusal
+   (`STS-REG-0213`), one that will not open authenticates nothing
+   (`STS-REG-0212`). Neither is ever given to `audit.js`.
 
 
 ---

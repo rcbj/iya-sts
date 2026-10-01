@@ -911,8 +911,16 @@ class RequestObject {
     let why = '';
     if (/^HS/.test(alg)) {
       if (client.client_secret) {
-        candidates.push({ kid: '', key: client.client_secret,
-                          source: 'secret' });
+        // EVERY SECRET (2026-10-01): a client may sign with any it holds,
+        // newest first; the one `client_secret` where the record lists none.
+        const secrets: Json[] = Array.isArray(client.client_secrets) &&
+          client.client_secrets.length
+          ? client.client_secrets
+          : [{ secret: client.client_secret }];
+        secrets.forEach(function (one: Json) {
+          candidates.push({ kid: '', key: String(one.secret),
+                            source: 'secret' });
+        });
       } else {
         why = 'it is signed with the HMAC algorithm "' + alg + '", which is ' +
               'keyed by the client secret, and this client has none';

@@ -7280,8 +7280,8 @@ const CODES = [
   // ===== SAML ==============================================================
   { code: 'STS-OAUTH-0558',
     summary: 'A client authenticated with a client_secret past its ' +
-      'expiry (oauthClientSecretExpiresAt, or the registration\'s ' +
-      'client_secret_expires_at), in product mode.',
+      'expiry (the expiry on that secret\'s record on oauthClientSecret), ' +
+      'in product mode.',
     spec: 'invalid_client (RFC 6749 section 5.2)' },
   { code: 'STS-OAUTH-0559',
     summary: 'A client authenticated with an expired client_secret and was ' +
@@ -17986,9 +17986,9 @@ const CODES = [
       'never fetched).',
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-REG-0166',
-    summary: 'An application\'s client secret has expired, or expires within ' +
-      'oauth2.clientSecretExpiryWarningDays — found by the daily scheduler ' +
-      'job oauth2.client-secret-expiry.',
+    summary: 'Every client secret an application holds has expired, or one ' +
+      'expires within oauth2.clientSecretExpiryWarningDays — found by the ' +
+      'daily scheduler job oauth2.client-secret-expiry.',
     spec: 'none — an audit row and a warning; rotate the secret on ' +
       '/admin/applications' },
   { code: 'STS-REG-0167',
@@ -18199,6 +18199,33 @@ const CODES = [
     summary: 'An application\'s token endpoint authentication methods ' +
       '(oauthTokenEndpointAuthMethod) were refused: "none" declares a ' +
       'public client and cannot be held beside any other method.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0208',
+    summary: 'A client secret was not added or rotated in: the application ' +
+      'already holds oauth2.clientSecretsMax secrets. Remove one first.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0209',
+    summary: 'A client secret was not removed: no secret on the ' +
+      'application has the id named.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0210',
+    summary: 'The client secret pinned by adminApi.clientSecret on ' +
+      'sts-management-api was not removed: every /admin-api token is ' +
+      'minted with it.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0211',
+    summary: 'A client secret was not added: its lifetime or description ' +
+      'is not one this service accepts.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0212',
+    summary: 'A sealed client secret will not open under this process\'s ' +
+      'key-encryption key — it was written under a different one — so it ' +
+      'authenticates nothing until it is replaced.',
+    spec: 'none (logged; the token endpoint answers invalid_client)' },
+  { code: 'STS-REG-0213',
+    summary: 'A client secret could not be sealed, so it was not written: ' +
+      'storing it in the clear where keys persist would put a working ' +
+      'client credential in every directory dump.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

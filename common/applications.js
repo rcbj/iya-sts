@@ -1073,39 +1073,26 @@ const SCHEMA = {
             'exchanged for exactly as before and recorded verbatim, because ' +
             'a mock that refused would remove a test case rather than add ' +
             'one.' },
-    { name: 'oauthClientSecret', kind: 'single', from: 'POST /oauth2/register',
+    { name: 'oauthClientSecret', kind: 'multi', from: 'POST /oauth2/register',
       sensitive: true,
-      what: 'THE SECRET THIS SERVICE MINTED, in the clear, in a directory ' +
-            'where every bind succeeds. Deliberate, and it is the same ' +
-            'decision GET /krb5/principals makes about the Kerberos ' +
-            'passwords: a debugger whose accounts are unusable without ' +
-            'reading the source is worse than one that says what they are. ' +
-            'In RFC 9700 mode this secret is CHECKED, so anyone who can read ' +
-            'this directory can authenticate as this client — which is the ' +
-            'honest state of a service that authenticates nobody. It is ' +
-            'never written to the audit log.' },
-    // CLIENT-SECRET ROTATION AND EXPIRY (2026-09-22, #49 P5, rcbj's answer).
-    { name: 'oauthClientSecretPrevious', kind: 'single',
-      from: 'a rotation on /admin/applications or /admin-api',
-      sensitive: true,
-      what: 'The secret a ROTATION replaced, still accepted at the token ' +
-            'endpoint until oauthClientSecretPreviousUntil, so a client ' +
-            'can move to the new one without a moment when neither works. ' +
-            'In the clear for oauthClientSecret\'s reason, and cleared by ' +
-            'the scheduler job oauth2.client-secret-expiry once the overlap ' +
-            'has passed.' },
-    { name: 'oauthClientSecretPreviousUntil', kind: 'single',
-      from: 'a rotation on /admin/applications or /admin-api',
-      what: 'When the previous secret stops being accepted, in ' +
-            'milliseconds since the epoch: the rotation\'s instant plus ' +
-            'oauth2.clientSecretOverlapS.' },
-    { name: 'oauthClientSecretExpiresAt', kind: 'single',
-      from: 'POST /oauth2/register, or a rotation',
-      what: 'When the current secret expires, in SECONDS since the epoch — ' +
-            'RFC 7591 section 3.2.1\'s client_secret_expires_at — or 0 for ' +
-            'never. Refused after it in product mode ' +
-            '(mode.refusesExpiredClientSecrets()); administrators are warned ' +
-            'oauth2.clientSecretExpiryWarningDays ahead.' },
+      what: 'THE SECRETS THIS SERVICE MINTED OR WAS GIVEN, in the clear, in ' +
+            'a directory where every bind succeeds. Deliberate, and it is ' +
+            'the same decision GET /krb5/principals makes about the ' +
+            'Kerberos passwords: a debugger whose accounts are unusable ' +
+            'without reading the source is worse than one that says what ' +
+            'they are. In RFC 9700 mode these secrets are CHECKED, so ' +
+            'anyone who can read this directory can authenticate as this ' +
+            'client — which is the honest state of a service that ' +
+            'authenticates nobody. Never written to the audit log.\n\n' +
+            'SEVERAL SINCE 2026-10-01, EACH A RECORD: ' +
+            '{"id","secret","created","expires","description"}, the two ' +
+            'times in seconds since the epoch and `expires` 0 for never. ' +
+            'Every unexpired secret authenticates; the NEWEST unexpired one ' +
+            'is the one this service signs and encrypts with and the ' +
+            'client_secret RFC 7591 and 7592 return. A bare value (an ' +
+            'ldapmodify, a set) is a secret with no expiry; a set REPLACES ' +
+            'every secret, and the Credentials section adds, removes and ' +
+            'rotates them one at a time, at most oauth2.clientSecretsMax.' },
     { name: 'oauthRedirectUri', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'Registered redirect URIs from a registration, and any ' +
             'redirect_uri this service has ACCEPTED for the application ' +
@@ -3698,9 +3685,6 @@ const EDITABLE = {
   // out.
   oauthAudience: 'multi',
   oauthClientSecret: 'set',
-  oauthClientSecretPrevious: 'set',
-  oauthClientSecretPreviousUntil: 'set',
-  oauthClientSecretExpiresAt: 'set',
   // A LIST since 2026-10-01: every method the client may use, `none` alone.
   oauthTokenEndpointAuthMethod: 'multi',
   // Native SSO (#130). One answer each.
@@ -4925,8 +4909,7 @@ function gridExcludedAttributes() {
   // `oauthScope` (2026-10-01) is what the client has ASKED FOR, written as
   // the service sees it ask, so an administrator has nothing to type there;
   // the page's entry table shows it.
-  const out = ['appName', 'appAllowedProtocol', 'oauthClientSecretPrevious',
-               'oauthClientSecretPreviousUntil', 'oauthClientSecretExpiresAt',
+  const out = ['appName', 'appAllowedProtocol',
                'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
                'oauthScope', 'didPrivateKeys',
                // Drawn by their own Custom claims and Custom SAML
@@ -5314,7 +5297,10 @@ function applicationFields() {
       })[0] || FIELD_GROUPS[0];
     return {
       attribute: row.name,
-      type: row.kind === 'multi' ? 'array'
+      // A list is a list of boxes — unless it is only ever SET, which is
+      // one value: `oauthClientSecret` (2026-10-01) holds several records
+      // and a set writes the one secret typed (the create page's box).
+      type: row.kind === 'multi' && row.editable !== 'set' ? 'array'
         : (BOOLEAN_ATTRIBUTES.indexOf(row.name) >= 0 ? 'boolean' : 'string'),
       long: LONG_TEXT_ATTRIBUTES.indexOf(row.name) >= 0,
       editable: row.editable,
@@ -6150,7 +6136,10 @@ const SEAL_LABELS = {
   oauthAssertionPrivateKey: 'application-private-key',
   oauthSamlAssertionPrivateKey: 'application-private-key',
   gnapSymmetricKey: 'gnap-shared-key',
-  gnapMacaroonKey: 'gnap-macaroon-key'
+  gnapMacaroonKey: 'gnap-macaroon-key',
+  // Not in SEALED_FIELDS: it is multi-valued and each value is sealed WHOLE,
+  // as a record — see sealClientSecretText().
+  oauthClientSecret: 'client-secret'
 };
 
 function sealLabelOf(name) {
@@ -6357,6 +6346,30 @@ function openSealedValue(name, value, identifier) {
 function openSealedFields(fields, identifier) {
   log.debug("Entering openSealedFields().");
   let out = fields;
+  // THE CLIENT SECRETS (2026-10-01): each value a sealed record. Opened on
+  // read like the private keys, so `/admin/applications` and `GET
+  // /admin-api/applications` show the records as they always did and an
+  // LDAP read, a database row and a backup hold `$aesgcm$…`.
+  const secrets = out.oauthClientSecret;
+  if (Array.isArray(secrets) && secrets.some(isSealed)) {
+    out = Object.assign({}, fields);
+    Object.defineProperty(out, 'oauthClientSecret', {
+      configurable: true,
+      enumerable: true,
+      get: function () {
+        return secrets.map(function (value) {
+          // One that will not open is reported as it is stored rather than
+          // as absent, for openSealedValue()'s reason.
+          return isSealed(value)
+            ? (openClientSecretText(String(value)) || String(value)) : value;
+        });
+      },
+      set: function (next) {
+        Object.defineProperty(this, 'oauthClientSecret', {
+          configurable: true, enumerable: true, writable: true, value: next });
+      }
+    });
+  }
   SEALED_FIELDS.forEach(function (name) {
     const value = out[name];
     if (!value || !isSealed(value)) {
@@ -9346,6 +9359,12 @@ function setField(record, name, value) {
     log.debug("Leaving setField().");
     return false;
   }
+  // THE CLIENT SECRET IS RECORDS (2026-10-01): a value written here is THE
+  // secret, wrapped — see putClientSecret().
+  if (name === 'oauthClientSecret') {
+    log.debug("Leaving setField(). A client secret.");
+    return putClientSecret(record, value);
+  }
   if (row.kind === 'multi') {
     if (!record.fields[name]) record.fields[name] = [];
     let changed = false;
@@ -9834,7 +9853,9 @@ function applyRegistrationFields(record, registration, statement) {
   setField(record, 'appRegistrationAccessToken',
            meta.registration_access_token);
   setField(record, 'oauthClientId', record.identifier);
-  setField(record, 'oauthClientSecret', meta.client_secret);
+  // The registration's secret, with the expiry its document publishes.
+  putClientSecret(record, meta.client_secret,
+    { expiresAt: Number(meta.client_secret_expires_at) || 0 });
   // RFC 7591's key members. `jwks` is stored as text because that is what the
   // verifier parses and what an operator edits; `jwks_uri` is recorded and,
   // since #120, fetched when a key is needed (see its schema row).
@@ -10368,8 +10389,12 @@ function registrationOf(clientId) {
     }
   }
   const fields = record.fields;
-  if (fields.oauthClientSecret !== undefined) document.client_secret =
-      fields.oauthClientSecret;
+  // The PRIMARY secret and its expiry — RFC 7591 publishes one.
+  const primarySecret = primaryClientSecretOf(fields);
+  if (primarySecret) {
+    document.client_secret = primarySecret.secret;
+    document.client_secret_expires_at = primarySecret.expiresAt;
+  }
   if (fields.appRegistrationAccessToken !== undefined) {
     document.registration_access_token = fields.appRegistrationAccessToken;
   }
@@ -10641,17 +10666,18 @@ function clientConfigOf(identifier) {
     // Not an RFC 7591 member (that one is a single string, above), spelt
     // beside it like `unconfirmed_redirect_uris`.
     token_endpoint_auth_methods: methods.slice(0),
-    client_secret: fields.oauthClientSecret === undefined
-      ? '' : String(fields.oauthClientSecret),
-    // ROTATION AND EXPIRY (#49 P5): the secret a rotation replaced and until
-    // when it is accepted (ms), and when the current one expires (seconds,
-    // 0 for never) — the attribute, or a registration's own
-    // client_secret_expires_at when only that says.
-    client_secret_previous: fields.oauthClientSecretPrevious === undefined
-      ? '' : String(fields.oauthClientSecretPrevious),
-    client_secret_previous_until: Number(valuesOf(
-      fields.oauthClientSecretPreviousUntil)[0]) || 0,
+    // THE PRIMARY SECRET (2026-10-01): the newest unexpired one, which every
+    // reader that needs exactly one — a symmetric signature or key, the
+    // registration's client_secret — takes; and its expiry (seconds, 0 for
+    // never).
+    client_secret: (primaryClientSecretOf(fields) || { secret: '' }).secret,
     client_secret_expires_at: secretExpiryOf(fields),
+    // EVERY SECRET, for the verifiers (`client_auth.js`, the request object
+    // and id_token_hint checks), newest first, each with its expiry. Which of
+    // them a mode accepts is the verifier's decision.
+    client_secrets: clientSecretRecordsOf(fields).map(function (one) {
+      return { id: one.id, secret: one.secret, expiresAt: one.expiresAt };
+    }),
     // What an ASYMMETRIC method verifies against. Public key material and two
     // certificate facts — none of them a secret, which is the property RFC 9700
     // section 2.5 is recommending them for.
@@ -12144,7 +12170,7 @@ function mintClientSecret() {
 // names the attribute and not the value, the log line says it was regenerated,
 // and the registration document is updated in place so that RFC 7592's read
 // returns the secret a client now needs. `client_secret_expires_at` is
-// recomputed from `oauth2.registeredSecretLifetimeS` where the document
+// recomputed from `oauth2.clientSecretLifetimeDays` where the document
 // carries one, because a secret minted now with an expiry counted from the
 // original registration would be published as already partly spent.
 //
@@ -12153,49 +12179,384 @@ function mintClientSecret() {
 // three doors onto one entry, and minting in one of them would be a second
 // definition of what a client secret looks like.
 // ---------------------------------------------------------------------------
-// When an entry's current secret expires, in seconds since the epoch, or 0
-// for never (#49 P5): its own attribute, or — for a client registered before
-// the attribute existed — the client_secret_expires_at its registration
-// document published.
+// ---------------------------------------------------------------------------
+// SEVERAL CLIENT SECRETS PER APPLICATION (2026-10-01, rcbj).
+//
+// `oauthClientSecret` is MULTI-VALUED and each value is a RECORD — Entra ID's
+// shape: `{"id","secret","created","expires","description"}`, `created` and
+// `expires` in SECONDS since the epoch (RFC 7591 section 3.2.1's unit), and
+// `expires` 0 for never. rcbj's four decisions, and where each is applied:
+//
+//   * THE RECORD HOLDS ITS OWN EXPIRY. `oauthClientSecretExpiresAt` and the
+//     rotation's `oauthClientSecretPrevious` / `…PreviousUntil` are gone,
+//     with no migration: a rotation's old secret is simply a second record
+//     whose expiry is the overlap's end.
+//   * THE NEWEST UNEXPIRED SECRET IS THE PRIMARY — the one used wherever
+//     exactly one is needed: an HS256 ID Token, JARM, a symmetric request
+//     object or ID Token key, and the `client_secret` RFC 7591 and 7592
+//     return. `clientConfigOf()` publishes it as `client_secret`, so those
+//     readers changed nothing. VERIFICATION accepts any secret the mode
+//     allows (`client_secrets`): every unexpired one, and in development an
+//     expired one too, with a warning, as before.
+//   * ROTATION IS ADD-AND-SHORTEN: a new secret, and every live one's expiry
+//     moved to now + `oauth2.clientSecretOverlapS` (never later than it was).
+//     The daily job removes expired secrets — every one but the last, so a
+//     client is never silently left holding none.
+//   * `oauth2.clientSecretsMax` caps how many an application holds, and a new
+//     secret takes `oauth2.clientSecretLifetimeDays` unless the add form
+//     names another lifetime.
+//
+// A VALUE THAT IS NOT A RECORD IS A SECRET. A bare string arrives from three
+// places — a caller of `create` or `set` handing the secret itself (the
+// console's typed value, every test, RFC 7591's registration), an
+// `ldapmodify`, and a store written before records existed — and all three
+// mean "this is the secret". The write door wraps one into a record
+// (`putClientSecret()`); a reader meets one only from the last two, and reads
+// it as a secret with no expiry, named by a digest of itself so its id is
+// stable across reads.
+// ---------------------------------------------------------------------------
 /**
- * Returns when an entry's current client secret expires.
+ * A stable id for a secret that arrived without one: a digest, so the same
+ * bare value has the same id on every read and nothing about it is shown.
+ *
+ * @param secret - the secret
+ * @returns `cs-` and twelve hex digits
+ */
+function digestSecretId(secret) {
+  log.debug("Entering digestSecretId().");
+  log.debug("Leaving digestSecretId().");
+  return 'cs-' + crypto.createHash('sha256').update(String(secret))
+    .digest('hex').slice(0, 12);
+}
+
+/**
+ * A fresh id for a secret this service is writing now.
+ *
+ * @returns `cs-` and twelve random hex digits
+ */
+function newSecretId() {
+  log.debug("Entering newSecretId().");
+  log.debug("Leaving newSecretId().");
+  return 'cs-' + crypto.randomBytes(6).toString('hex');
+}
+
+/**
+ * Reads one stored value of `oauthClientSecret` as a record.
+ *
+ * @param value - the stored value
+ * @returns `{ id, secret, createdAt, expiresAt, description }`, or null for
+ *   an empty value
+ */
+function parseClientSecretValue(value) {
+  log.debug("Entering parseClientSecretValue().");
+  const stored = String(value == null ? '' : value).trim();
+  const text = isSealed(stored) ? openClientSecretText(stored).trim()
+                                : stored;
+  if (!text) {
+    log.debug("Leaving parseClientSecretValue(). Empty, or will not open.");
+    return null;
+  }
+  if (text.charAt(0) === '{') {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.secret === 'string' && parsed.secret) {
+        log.debug("Leaving parseClientSecretValue(). A record.");
+        return {
+          id: String(parsed.id || digestSecretId(parsed.secret)),
+          secret: parsed.secret,
+          createdAt: Math.max(0, Math.floor(Number(parsed.created) || 0)),
+          expiresAt: Math.max(0, Math.floor(Number(parsed.expires) || 0)),
+          description: String(parsed.description || '')
+        };
+      }
+    } catch (e) {
+      // Not a record after all: a secret that happens to begin with a brace
+      // is still a secret, so it falls through to the bare reading.
+      log.debug("Caught in parseClientSecretValue(): " +
+                ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving parseClientSecretValue(). A bare secret.");
+  return { id: digestSecretId(text), secret: text, createdAt: 0,
+           expiresAt: 0, description: '' };
+}
+
+/**
+ * Writes a record as the stored value.
+ *
+ * @param record - a client secret record
+ * @returns the JSON text
+ */
+function formatClientSecretRecord(record) {
+  log.debug("Entering formatClientSecretRecord().");
+  const out = { id: record.id, secret: record.secret,
+                created: record.createdAt || 0,
+                expires: record.expiresAt || 0 };
+  if (record.description) {
+    out.description = record.description;
+  }
+  log.debug("Leaving formatClientSecretRecord().");
+  return sealClientSecretText(JSON.stringify(out));
+}
+
+// A CLIENT SECRET IS SEALED AT REST (2026-10-01, rcbj), the way an issued
+// private key is (SEALED_FIELDS). The WHOLE RECORD is sealed, one value of the
+// multi-valued attribute each, so the id, the expiry and the description are
+// as private as the secret beside them and every reader meets one shape:
+// `parseClientSecretValue()` opens what it is handed.
+//
+// **SEALED ONLY UNDER A DURABLE KEY-ENCRYPTION KEY**, which is one question
+// stricter than the private keys' `keystore.persists()`. That predicate reads
+// the AMBIENT realm's mode, so a product-mode realm inside a development
+// process — the way a product-only behaviour is exercised on a development
+// container, and what the suite's product realms are — answers yes while the
+// process holds no key, or only development's EPHEMERAL one. Refusing there
+// would refuse every client registration in such a realm; sealing under the
+// ephemeral key would leave a secret that opens to nothing after a restart.
+// So the secret is written as it is unless keys persist AND the key held is
+// not ephemeral. A product-mode PROCESS cannot start without a durable key,
+// so a real deployment always seals. A seal that fails under a durable key
+// is a refusal (STS-REG-0213), never a clear write.
+function sealsClientSecrets() {
+  log.debug("Entering sealsClientSecrets().");
+  log.debug("Leaving sealsClientSecrets().");
+  return keystore.persists() && keystore.sealed() &&
+         !keystore.hasEphemeralKek();
+}
+
+function sealClientSecretText(text) {
+  log.debug("Entering sealClientSecretText().");
+  if (!sealsClientSecrets()) {
+    log.debug("Leaving sealClientSecretText(). No durable key.");
+    return text;
+  }
+  const sealed = keystore.seal(text, 'client-secret');
+  if (!sealed) {
+    log.debug("Leaving sealClientSecretText(). It would not seal.");
+    throw errorCodes.mark(new Error('A client secret could not be ' +
+      'encrypted, so it was not stored. Storing it in the clear where keys ' +
+      'persist would put a working client credential in every directory ' +
+      'dump. The key-encryption key is the one /admin/persistence reports ' +
+      'on.'), 'STS-REG-0213');
+  }
+  log.debug("Leaving sealClientSecretText().");
+  return sealed;
+}
+
+// And open, for parseClientSecretValue(). A value that will not open was
+// written under another key-encryption key: it authenticates nothing, and
+// is said once per value rather than per request.
+const unopenedSecretsReported = new Set();
+function openClientSecretText(text) {
+  log.debug("Entering openClientSecretText().");
+  const opened = keystore.open(text, 'client-secret');
+  if (!opened && !unopenedSecretsReported.has(text)) {
+    if (unopenedSecretsReported.size > 1000) {
+      unopenedSecretsReported.clear();
+    }
+    unopenedSecretsReported.add(text);
+    log.warn(errorCodes.tag('STS-REG-0212') + 'applications: a client ' +
+             'secret is sealed and will not open under this process\'s ' +
+             'key-encryption key; it authenticates nothing. Add or ' +
+             'regenerate one on /admin/applications.');
+  }
+  log.debug("Leaving openClientSecretText().");
+  return opened || '';
+}
+
+/**
+ * Returns an entry's client secrets, newest first.
+ *
+ * Several values with one secret are one record: the first, in stored
+ * order.
  *
  * @param fields - the entry's fields
- * @returns seconds since the epoch, or 0 for never
+ * @returns the records
+ */
+function clientSecretRecordsOf(fields) {
+  log.debug("Entering clientSecretRecordsOf().");
+  const seen = {};
+  const records = valuesOf((fields || {}).oauthClientSecret)
+    .map(parseClientSecretValue)
+    .filter(function (one) {
+      if (!one || seen[one.secret]) {
+        return false;
+      }
+      seen[one.secret] = true;
+      return true;
+    });
+  // NEWEST FIRST, by creation; a bare value (created 0) is the oldest, and
+  // ties keep the stored order — which is the order they were added in.
+  const ordered = records.map(function (one, index) {
+    return { one: one, index: index };
+  }).sort(function (a, b) {
+    return (b.one.createdAt - a.one.createdAt) || (a.index - b.index);
+  }).map(function (pair) { return pair.one; });
+  log.debug("Leaving clientSecretRecordsOf(). " + ordered.length + ".");
+  return ordered;
+}
+
+/**
+ * Whether a record has expired at a moment.
+ *
+ * @param record - a client secret record
+ * @param nowS - the moment, in seconds since the epoch
+ * @returns true when its expiry has passed
+ */
+function clientSecretExpired(record, nowS) {
+  log.debug("Entering clientSecretExpired().");
+  log.debug("Leaving clientSecretExpired().");
+  return record.expiresAt > 0 && record.expiresAt <= nowS;
+}
+
+/**
+ * Returns the PRIMARY client secret: the newest unexpired one, or — where
+ * every one has expired — the newest, so a development-mode service that
+ * accepts an expired secret still signs with something.
+ *
+ * @param fields - the entry's fields
+ * @param nowS - the moment, in seconds; now when omitted
+ * @returns the record, or null for an entry with none
+ */
+function primaryClientSecretOf(fields, nowS) {
+  log.debug("Entering primaryClientSecretOf().");
+  const at = nowS === undefined ? nowSec() : nowS;
+  const records = clientSecretRecordsOf(fields);
+  const live = records.filter(function (one) {
+    return !clientSecretExpired(one, at);
+  });
+  log.debug("Leaving primaryClientSecretOf().");
+  return live[0] || records[0] || null;
+}
+
+// The expiry a new secret takes by default: `oauth2.clientSecretLifetimeDays`
+// days from now, or 0 (never) where it is 0.
+function defaultClientSecretExpiry(nowS) {
+  log.debug("Entering defaultClientSecretExpiry().");
+  const days = Number(config.value('oauth2.clientSecretLifetimeDays'));
+  log.debug("Leaving defaultClientSecretExpiry().");
+  return isFinite(days) && days > 0 ? nowS + Math.floor(days) * 86400 : 0;
+}
+
+/**
+ * Builds a new record for a secret.
+ *
+ * @param secret - the secret
+ * @param options - `expiresAt` (seconds; the default lifetime when
+ *   omitted), `description`
+ * @returns the record
+ */
+function newClientSecretRecord(secret, options) {
+  log.debug("Entering newClientSecretRecord().");
+  const opts = options || {};
+  const at = nowSec();
+  log.debug("Leaving newClientSecretRecord().");
+  return {
+    id: newSecretId(), secret: String(secret), createdAt: at,
+    expiresAt: opts.expiresAt === undefined ? defaultClientSecretExpiry(at)
+                                            : Number(opts.expiresAt) || 0,
+    description: String(opts.description || '')
+  };
+}
+
+// Writes the records onto an application record, newest first, or removes
+// the attribute when there are none. Throws a marked error when a record
+// would not seal (sealClientSecretText()); the three Admin Write doors turn
+// that into a refusal through sealRefusal().
+function writeClientSecretRecords(record, records) {
+  log.debug("Entering writeClientSecretRecords(). " + records.length + ".");
+  if (records.length) {
+    record.fields.oauthClientSecret = records.map(formatClientSecretRecord);
+  } else {
+    delete record.fields.oauthClientSecret;
+  }
+  log.debug("Leaving writeClientSecretRecords().");
+}
+
+/**
+ * Makes `secret` the application's client secret — the meaning of a `set`
+ * or a `create` naming one. A secret already on the entry changes nothing
+ * (so an RFC 7592 update that sends the current secret back keeps the
+ * others); any other value replaces every secret with a record of it.
+ *
+ * @param record - the application record
+ * @param value - a bare secret or a record's JSON; an array takes its first
+ *   non-empty value
+ * @param options - `expiresAt`, for a registration that publishes one
+ * @returns whether anything changed
+ */
+function putClientSecret(record, value, options) {
+  log.debug("Entering putClientSecret().");
+  const given = (Array.isArray(value) ? value : [value]).map(function (one) {
+    return String(one == null ? '' : one).trim();
+  }).filter(Boolean)[0] || '';
+  const parsed = parseClientSecretValue(given);
+  if (!parsed) {
+    log.debug("Leaving putClientSecret(). Nothing to write.");
+    return false;
+  }
+  const held = clientSecretRecordsOf(record.fields);
+  if (held.some(function (one) { return one.secret === parsed.secret; })) {
+    log.debug("Leaving putClientSecret(). Already held.");
+    return false;
+  }
+  // A RECORD handed in whole (a value copied off another entry, an
+  // ldapmodify-shaped add) keeps what it says; a bare secret is wrapped.
+  const wrapped = given.charAt(0) === '{' && parsed.createdAt > 0
+    ? parsed
+    : newClientSecretRecord(parsed.secret, options);
+  writeClientSecretRecords(record, [wrapped]);
+  log.debug("Leaving putClientSecret(). Replaced.");
+  return true;
+}
+
+/**
+ * Returns when an entry's PRIMARY client secret expires.
+ *
+ * @param fields - the entry's fields
+ * @returns seconds since the epoch, or 0 for never or for no secret
  */
 function secretExpiryOf(fields) {
   log.debug("Entering secretExpiryOf().");
-  const own = Number(valuesOf(fields.oauthClientSecretExpiresAt)[0]);
-  if (own > 0) {
-    log.debug("Leaving secretExpiryOf(). The attribute.");
-    return own;
-  }
-  let fromDocument = 0;
-  const text = valuesOf(fields.appRegistrationJson)[0];
-  if (text) {
-    try {
-      fromDocument = Number(JSON.parse(String(text))
-        .client_secret_expires_at) || 0;
-    } catch (e) {
-      // A document that does not parse publishes no expiry.
-      log.debug("Caught in secretExpiryOf(): " + ((e && e.message) || e));
-      fromDocument = 0;
-    }
-  }
+  const primary = primaryClientSecretOf(fields);
   log.debug("Leaving secretExpiryOf().");
-  return fromDocument > 0 ? fromDocument : 0;
+  return primary ? primary.expiresAt : 0;
+}
+
+/**
+ * Returns an entry's client secrets for display: no secret value, the id,
+ * the expiry and whether each is the primary or has expired.
+ *
+ * @param fields - the entry's fields
+ * @param nowS - the moment, in seconds; now when omitted
+ * @returns `{ id, createdAt, expiresAt, description, expired, primary }`
+ */
+function clientSecretSummariesOf(fields, nowS) {
+  log.debug("Entering clientSecretSummariesOf().");
+  const at = nowS === undefined ? nowSec() : nowS;
+  const primary = primaryClientSecretOf(fields, at);
+  log.debug("Leaving clientSecretSummariesOf().");
+  return clientSecretRecordsOf(fields).map(function (one) {
+    return { id: one.id, createdAt: one.createdAt, expiresAt: one.expiresAt,
+             description: one.description,
+             expired: clientSecretExpired(one, at),
+             primary: !!primary && primary.id === one.id };
+  });
 }
 
 // THE DAILY CLIENT-SECRET SWEEP (#49 P5, rcbj's answer), which the scheduler
-// job `oauth2.client-secret-expiry` runs in each realm: an audit row and a
-// warning for every secret expiring within
-// oauth2.clientSecretExpiryWarningDays, one for every secret that has
-// expired, and the previous secret of every rotation whose overlap has
-// passed CLEARED from its entry. Answers the three lists of identifiers.
+// job `oauth2.client-secret-expiry` runs in each realm. Per SECRET since
+// 2026-10-01: an audit row and a warning for every application holding one
+// that expires within oauth2.clientSecretExpiryWarningDays, one for every
+// application whose PRIMARY has expired (the secret it authenticates and
+// signs with), and every EXPIRED secret REMOVED — except the last one an
+// application holds, so a client is never silently left with none; that one
+// stays and is reported expired, and product refuses it at the token
+// endpoint. Answers the three lists of identifiers.
 /**
  * Runs the daily client-secret sweep in the ambient realm: warns of secrets
- * expiring soon and expired ones, and clears previous secrets whose overlap has
- * passed.
+ * expiring soon and expired ones, and removes expired secrets an application
+ * holds another beside.
  *
  * @param nowMs - the time in milliseconds; now when omitted
  * @returns the identifiers expiring, expired and cleared
@@ -12208,56 +12569,78 @@ function sweepClientSecrets(nowMs) {
                 86400;
   const out = { expiring: [], expired: [], cleared: [] };
   list().forEach(function (row) {
-    const fields = row.fields || {};
-    if (!valuesOf(fields.oauthClientSecret)[0]) {
+    const records = clientSecretRecordsOf(row.fields || {});
+    if (!records.length) {
       return;
     }
-    const expiresAt = secretExpiryOf(fields);
-    if (expiresAt > 0 && expiresAt <= nowS) {
+    const expired = records.filter(function (one) {
+      return clientSecretExpired(one, nowS);
+    });
+    const live = records.filter(function (one) {
+      return !clientSecretExpired(one, nowS);
+    });
+    if (!live.length) {
       out.expired.push(row.identifier);
-    } else if (expiresAt > 0 && expiresAt - nowS <= warnS) {
+    } else if (live.some(function (one) {
+      return one.expiresAt > 0 && one.expiresAt - nowS <= warnS;
+    })) {
       out.expiring.push(row.identifier);
     }
-    const until = Number(valuesOf(fields.oauthClientSecretPreviousUntil)[0]);
-    if (valuesOf(fields.oauthClientSecretPrevious)[0] && until > 0 &&
-        until <= now) {
+    // The expired secrets an application holds another beside: removed. With
+    // none live, every expired one but the newest.
+    const removable = live.length ? expired : expired.slice(1);
+    if (removable.length) {
       const loaded = load(row.identifier);
       if (loaded.known) {
-        delete loaded.record.fields.oauthClientSecretPrevious;
-        delete loaded.record.fields.oauthClientSecretPreviousUntil;
-        save(loaded.record);
-        out.cleared.push(row.identifier);
+        const gone = removable.map(function (one) { return one.id; });
+        try {
+          writeClientSecretRecords(loaded.record,
+            clientSecretRecordsOf(loaded.record.fields).filter(function (one) {
+              return gone.indexOf(one.id) < 0;
+            }));
+          save(loaded.record);
+          out.cleared.push(row.identifier);
+        } catch (e) {
+          // The expired secrets stay until a later sweep can seal what is
+          // left: they authenticate nothing meanwhile, being expired.
+          log.debug("Caught in sweepClientSecrets(): " +
+                    ((e && e.message) || e));
+          log.error(errorCodes.tag('STS-REG-0213') + 'applications: the ' +
+                    'expired client secrets of "' + row.identifier + '" ' +
+                    'were not removed. ' + e.message);
+        }
       }
     }
   });
   out.expiring.forEach(function (id) {
     audit.audit({ action: 'application.secret-expiring', actor: 'scheduler',
       protocol: 'console', channel: 'internal', target: String(id),
-      summary: 'Application "' + id + '": its client secret expires within ' +
-               'oauth2.clientSecretExpiryWarningDays; rotate it on ' +
+      summary: 'Application "' + id + '": a client secret expires within ' +
+               'oauth2.clientSecretExpiryWarningDays; add or rotate one on ' +
                '/admin/applications', detail: { identifier: String(id) } });
   });
   out.expired.forEach(function (id) {
     audit.audit({ action: 'application.secret-expired', actor: 'scheduler',
       protocol: 'console', channel: 'internal', target: String(id),
       outcome: 'failure', errorCode: 'STS-REG-0166',
-      summary: 'Application "' + id + '": its client secret has expired',
-      detail: { identifier: String(id) } });
+      summary: 'Application "' + id + '": every client secret it holds has ' +
+               'expired', detail: { identifier: String(id) } });
   });
   out.cleared.forEach(function (id) {
     audit.audit({ action: 'application.update', actor: 'scheduler',
       protocol: 'console', channel: 'internal', target: String(id),
-      summary: 'Application "' + id + '": the secret a rotation replaced ' +
-               'stopped being accepted, its overlap having passed',
+      summary: 'Application "' + id + '": expired client secrets were ' +
+               'removed, another secret being held beside them',
       detail: { identifier: String(id),
-                attribute: 'oauthClientSecretPrevious', mode: 'cleared' } });
+                attribute: 'oauthClientSecret', mode: 'expired-removed' } });
   });
   if (out.expiring.length || out.expired.length) {
     log.warn(errorCodes.tag('STS-REG-0166') + 'applications: ' +
-             out.expired.length + ' client secret(s) expired (' +
-             out.expired.join(', ') + ') and ' + out.expiring.length +
-             ' expire soon (' + out.expiring.join(', ') + '). Rotate them ' +
-             'on /admin/applications.');
+             out.expired.length + ' application(s) hold only expired client ' +
+             'secrets (' + out.expired.join(', ') + ') and ' +
+             out.expiring.length + ' hold one that expires soon (' +
+             out.expiring.join(', ') + '). Add or rotate one on ' +
+             '/admin/applications.');
   }
   log.debug("Leaving sweepClientSecrets(). " + JSON.stringify({
     expiring: out.expiring.length, expired: out.expired.length,
@@ -12265,12 +12648,261 @@ function sweepClientSecrets(nowMs) {
   return out;
 }
 
-// ROTATE — a new secret, with the old one still accepted for
-// oauth2.clientSecretOverlapS (#49 P5, rcbj's answer). The Admin Write act
-// the console and `POST /admin-api/applications/rotate-secret` share.
+// THE MANAGEMENT API'S OWN CLIENT, WHILE ITS SECRET IS PINNED. Seeding writes
+// `adminApi.clientSecret` onto a FRESH entry and never over an existing one,
+// so a secret regenerated, rotated out or removed here would go on
+// disagreeing with the setting every launcher and deployment mints its API
+// token with — and wherever a secret is checked, nobody could obtain one.
+// Adding a second secret beside it is allowed: the pinned one still
+// authenticates.
+function pinnedSecretOf(identifier) {
+  log.debug("Entering pinnedSecretOf().");
+  log.debug("Leaving pinnedSecretOf().");
+  return String(identifier) === 'sts-management-api' && realms.isDefault()
+    ? String(config.value('adminApi.clientSecret') || '') : '';
+}
+
+// The refusal for an application this registry does not hold.
+function unknownApplication(identifier) {
+  log.debug("Entering unknownApplication().");
+  log.debug("Leaving unknownApplication().");
+  return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+                                               'called "' + identifier +
+                                               '" in this registry.'] },
+                         'STS-REG-0021');
+}
+
+// What every secret write does after the records are decided: a method that
+// uses a secret, the registration document's client_secret and its expiry
+// (the PRIMARY's), save, and one audit row naming the attribute and never a
+// value.
+function finishClientSecretWrite(identifier, record, opts, detail, summary) {
+  log.debug("Entering finishClientSecretWrite().");
+  // A SECRET NEEDS A METHOD THAT USES IT (2026-10-01). An entry naming no
+  // token_endpoint_auth_method, or `none`, would leave the new secret with
+  // nothing to present it by, so it takes RFC 7591 section 2's default,
+  // client_secret_basic. A method somebody chose (a JWT, a certificate) is
+  // theirs and is left alone. Only when a secret is held.
+  const primary = primaryClientSecretOf(record.fields);
+  const methodBefore = String(valuesOf(
+      record.fields.oauthTokenEndpointAuthMethod)[0] || '').trim();
+  const methodSet = !!primary &&
+    (methodBefore === '' || methodBefore === 'none');
+  if (methodSet) {
+    setField(record, 'oauthTokenEndpointAuthMethod', 'client_secret_basic');
+  }
+  if (record.fields.appRegistrationJson) {
+    try {
+      const document = JSON.parse(record.fields.appRegistrationJson);
+      if (primary) {
+        document.client_secret = primary.secret;
+        document.client_secret_expires_at = primary.expiresAt;
+      } else {
+        delete document.client_secret;
+        delete document.client_secret_expires_at;
+      }
+      if (methodSet) {
+        document.token_endpoint_auth_method = 'client_secret_basic';
+      }
+      setField(record, 'appRegistrationJson', JSON.stringify(document));
+    } catch (e) {
+      log.debug("Caught in finishClientSecretWrite(): " +
+                ((e && e.message) || e));
+      // A hand-edited document that no longer parses: the attribute is what
+      // the checks read and it is written, and registrationOf() already
+      // rebuilds a document it cannot parse from the attributes beside it.
+      log.warn(errorCodes.tag('STS-REG-0024') + 'applications: ' +
+               'appRegistrationJson on "' + identifier + '" is not valid ' +
+               'JSON, so the client secret is on the attribute and not in ' +
+               'the stored document. ' + e.message);
+    }
+  }
+  record.lastAt = record.lastAt || Date.now();
+  save(record);
+  audit.audit({
+    action: 'application.update', actor: opts.actor || '',
+    protocol: 'console', channel: 'internal', target: String(identifier),
+    summary: 'Application "' + identifier + '": ' + summary,
+    // The attribute and never the value — see updateApplication()'s row.
+    detail: Object.assign({ identifier: String(identifier),
+                            attribute: 'oauthClientSecret',
+                            tokenEndpointAuthMethod:
+                              methodSet ? 'client_secret_basic' : '' },
+                          detail)
+  });
+  log.info('applications: "' + identifier + '" — ' + summary + '.');
+  log.debug("Leaving finishClientSecretWrite().");
+  return { methodSet: methodSet, methodBefore: methodBefore };
+}
+
+// The sentence every reply about a new secret ends with.
+function mintedSentence(written) {
+  log.debug("Entering mintedSentence().");
+  log.debug("Leaving mintedSentence().");
+  return ' It is ' + clientSecretBytes() + ' random bytes, base64url, ' +
+    'minted the way a registration mints one.' + (written.methodSet
+      ? ' Its token endpoint authentication method was ' +
+        (written.methodBefore ? written.methodBefore : 'not set') +
+        ' and is now client_secret_basic, the default for a client with a ' +
+        'secret.'
+      : '');
+}
+
+// The refusal a client secret write that would not seal answers with, or
+// null for any other error, which is rethrown.
+function sealRefusal(e) {
+  log.debug("Entering sealRefusal().");
+  if (errorCodes.codeOf(e) !== 'STS-REG-0213') {
+    log.debug("Leaving sealRefusal(). Not a sealing failure.");
+    throw e;
+  }
+  log.error(errorCodes.tag('STS-REG-0213') + 'applications: ' + e.message);
+  log.debug("Leaving sealRefusal().");
+  return errorCodes.mark({ ok: false, errors: [e.message] }, 'STS-REG-0213');
+}
+
+// The cap on how many secrets one application holds.
+function clientSecretsMax() {
+  log.debug("Entering clientSecretsMax().");
+  log.debug("Leaving clientSecretsMax().");
+  return Math.max(1, Number(config.value('oauth2.clientSecretsMax')) || 1);
+}
+
 /**
- * Rotates a client secret: a new one, with the old one still accepted for
- * `oauth2.clientSecretOverlapS`.
+ * Adds a client secret beside the ones an application holds. The new secret
+ * is the newest, so it becomes the primary.
+ *
+ * @param identifier - the application's identifier
+ * @param options - `actor`; `lifetimeDays` (days, 0 for never; the default
+ *   lifetime when omitted or empty); `description`
+ * @returns `ok`, the new secret (shown once), its id and expiry, the
+ *   application and a message; or `ok: false` with `errors`
+ */
+function addClientSecret(identifier, options) {
+  log.debug("Entering addClientSecret(). identifier=" + identifier);
+  const opts = options || {};
+  const loaded = load(identifier);
+  if (!loaded.known) {
+    log.debug("Leaving addClientSecret(). No such application.");
+    return unknownApplication(identifier);
+  }
+  const description = String(opts.description || '').trim();
+  const rawLifetime = opts.lifetimeDays === undefined ||
+    opts.lifetimeDays === null ? '' : String(opts.lifetimeDays).trim();
+  const lifetime = rawLifetime === '' ? null : Number(rawLifetime);
+  if (description.length > 200 || /[\r\n\0]/.test(description) ||
+      (lifetime !== null && (!isFinite(lifetime) || lifetime < 0 ||
+                             lifetime > 730 ||
+                             Math.floor(lifetime) !== lifetime))) {
+    log.debug("Leaving addClientSecret(). Bad lifetime or description.");
+    return errorCodes.mark({ ok: false, errors: ['A client secret\'s ' +
+      'lifetime is a whole number of days from 0 (never expires) to ' +
+      '730, or empty for oauth2.clientSecretLifetimeDays; ' +
+      'its description is one line of at most 200 characters.'] },
+      'STS-REG-0211');
+  }
+  const record = loaded.record;
+  const held = clientSecretRecordsOf(record.fields);
+  const max = clientSecretsMax();
+  if (held.length >= max) {
+    log.debug("Leaving addClientSecret(). At the cap.");
+    return errorCodes.mark({ ok: false, errors: ['"' + identifier + '" ' +
+      'already holds ' + held.length + ' client secret(s), and ' +
+      'oauth2.clientSecretsMax is ' + max + '. Remove one before adding ' +
+      'another.'] }, 'STS-REG-0208');
+  }
+  const at = nowSec();
+  const secret = mintClientSecret();
+  const added = newClientSecretRecord(secret, {
+    expiresAt: lifetime === null ? undefined
+                                 : (lifetime > 0 ? at + lifetime * 86400
+                                                 : 0),
+    description: description });
+  try {
+    writeClientSecretRecords(record, [added].concat(held));
+  } catch (e) {
+    log.debug("Caught in addClientSecret(): " + ((e && e.message) || e));
+    log.debug("Leaving addClientSecret(). It would not seal.");
+    return sealRefusal(e);
+  }
+  const written = finishClientSecretWrite(identifier, record, opts,
+    { mode: 'add', secretId: added.id, expiresAt: added.expiresAt },
+    'a client secret was added (' + added.id + ')');
+  log.debug("Leaving addClientSecret().");
+  return { ok: true, changed: true, clientSecret: secret, secretId: added.id,
+           expiresAt: added.expiresAt,
+           application: viewAfterWrite(identifier, record),
+           message: 'A client secret was added beside the ' + held.length +
+             ' already held; it is the newest, so it is the one this ' +
+             'service signs and encrypts with, and every unexpired secret ' +
+             'still authenticates. ' + (added.expiresAt
+               ? 'It expires at ' +
+                 new Date(added.expiresAt * 1000).toISOString() + '.'
+               : 'It does not expire.') + mintedSentence(written) };
+}
+
+/**
+ * Removes one client secret, by id.
+ *
+ * @param identifier - the application's identifier
+ * @param options - `actor`, `id` (the secret's id)
+ * @returns `ok`, how many are left, the application and a message; or
+ *   `ok: false` with `errors`
+ */
+function removeClientSecret(identifier, options) {
+  log.debug("Entering removeClientSecret(). identifier=" + identifier);
+  const opts = options || {};
+  const loaded = load(identifier);
+  if (!loaded.known) {
+    log.debug("Leaving removeClientSecret(). No such application.");
+    return unknownApplication(identifier);
+  }
+  const record = loaded.record;
+  const held = clientSecretRecordsOf(record.fields);
+  const wanted = String(opts.id || '').trim();
+  const target = held.filter(function (one) { return one.id === wanted; })[0];
+  if (!target) {
+    log.debug("Leaving removeClientSecret(). No such secret.");
+    return errorCodes.mark({ ok: false, errors: ['"' + identifier + '" ' +
+      'holds no client secret with the id "' + wanted + '". Its secrets ' +
+      'are: ' + (held.map(function (one) { return one.id; }).join(', ') ||
+                 'none') + '.'] }, 'STS-REG-0209');
+  }
+  const pinned = pinnedSecretOf(identifier);
+  if (pinned && target.secret === pinned) {
+    log.debug("Leaving removeClientSecret(). The pinned secret.");
+    return errorCodes.mark({ ok: false, errors: ['That client secret of ' +
+      '"sts-management-api" is pinned by the adminApi.clientSecret ' +
+      'setting, which is what every token for /admin-api is minted with. ' +
+      'Change the setting instead.'] }, 'STS-REG-0210');
+  }
+  const left = held.filter(function (one) { return one.id !== wanted; });
+  try {
+    writeClientSecretRecords(record, left);
+  } catch (e) {
+    log.debug("Caught in removeClientSecret(): " + ((e && e.message) || e));
+    log.debug("Leaving removeClientSecret(). It would not seal.");
+    return sealRefusal(e);
+  }
+  finishClientSecretWrite(identifier, record, opts,
+    { mode: 'remove', secretId: wanted },
+    'a client secret was removed (' + wanted + ')');
+  log.debug("Leaving removeClientSecret().");
+  return { ok: true, changed: true, left: left.length,
+           application: viewAfterWrite(identifier, record),
+           message: 'The client secret ' + wanted + ' was removed and stops ' +
+             'authenticating at the token endpoint now. ' + (left.length
+               ? left.length + ' secret(s) remain.'
+               : 'The application holds no client secret now.') };
+}
+
+// ROTATE — a new secret, with the live ones still accepted for
+// oauth2.clientSecretOverlapS (#49 P5, rcbj's answer; ADD-AND-SHORTEN since
+// 2026-10-01). The Admin Write act the console and `POST
+// /admin-api/applications/rotate-secret` share.
+/**
+ * Rotates a client secret: a new one, with every live one still accepted
+ * for `oauth2.clientSecretOverlapS`.
  *
  * @param identifier - the application's identifier
  * @param options - `actor`
@@ -12285,8 +12917,10 @@ function rotateClientSecret(identifier, options) {
 }
 
 /**
- * Mints a new client secret for an application, optionally keeping the old one
- * accepted for `oauth2.clientSecretOverlapS`.
+ * Mints a new client secret for an application. A regeneration REPLACES
+ * every secret; a rotation (`keepPrevious`) adds the new one and moves every
+ * live one's expiry to the end of `oauth2.clientSecretOverlapS` (removing
+ * them where that is 0).
  *
  * @param identifier - the application's identifier
  * @param options - `actor`, and `keepPrevious` for a rotation
@@ -12299,20 +12933,9 @@ function regenerateClientSecret(identifier, options) {
   const loaded = load(identifier);
   if (!loaded.known) {
     log.debug("Leaving regenerateClientSecret(). No such application.");
-    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
-                                                 'called "' + identifier +
-                                                 '" in this registry.'] },
-                           'STS-REG-0021');
+    return unknownApplication(identifier);
   }
-  // THE MANAGEMENT API'S OWN CLIENT, WHILE ITS SECRET IS PINNED. Seeding
-  // writes `adminApi.clientSecret` onto a FRESH entry and never over an
-  // existing one, so a secret regenerated here would go on disagreeing with
-  // the setting every launcher and deployment mints its API token with — and
-  // wherever a secret is checked, nobody could obtain one. The setting is the
-  // one place that secret is decided; this refuses rather than making a
-  // second.
-  if (String(identifier) === 'sts-management-api' && realms.isDefault() &&
-      String(config.value('adminApi.clientSecret') || '')) {
+  if (pinnedSecretOf(identifier)) {
     log.debug("Leaving regenerateClientSecret(). The secret is pinned.");
     return errorCodes.mark({ ok: false, errors: ['The client secret of ' +
                              '"sts-management-api" is pinned by the ' +
@@ -12325,99 +12948,65 @@ function regenerateClientSecret(identifier, options) {
                            'STS-REG-0061');
   }
   const record = loaded.record;
-  const bytes = clientSecretBytes();
+  const held = clientSecretRecordsOf(record.fields);
+  const at = nowSec();
+  const overlapS = Math.max(0,
+    Math.floor(Number(config.value('oauth2.clientSecretOverlapS')) || 0));
+  const keeps = !!opts.keepPrevious && overlapS > 0 &&
+    held.some(function (one) { return !clientSecretExpired(one, at); });
+  // A ROTATION keeps the live secrets, each until the overlap ends (or its
+  // own earlier expiry); the expired ones it leaves to the daily job. A
+  // regeneration — or a rotation with no overlap — keeps none.
+  const kept = keeps
+    ? held.filter(function (one) {
+      return !clientSecretExpired(one, at);
+    }).map(function (one) {
+      const until = at + overlapS;
+      return Object.assign({}, one, {
+        expiresAt: one.expiresAt > 0 ? Math.min(one.expiresAt, until)
+                                     : until });
+    })
+    : [];
+  const max = clientSecretsMax();
+  if (kept.length + 1 > max) {
+    log.debug("Leaving regenerateClientSecret(). At the cap.");
+    return errorCodes.mark({ ok: false, errors: ['A rotation would leave "' +
+      identifier + '" holding ' + (kept.length + 1) + ' client secrets, ' +
+      'and oauth2.clientSecretsMax is ' + max + '. Remove one first, or ' +
+      'regenerate, which replaces them all.'] }, 'STS-REG-0208');
+  }
+  const replaced = held.length > 0;
   const secret = mintClientSecret();
-  const replaced = !!record.fields.oauthClientSecret;
-  const previous = valuesOf(record.fields.oauthClientSecret)[0];
-  // A ROTATION (#49 P5) keeps the secret it replaces working for
-  // oauth2.clientSecretOverlapS; a regeneration ends it now, and ends any
-  // overlap an earlier rotation left.
-  const overlapMs = Number(config.value('oauth2.clientSecretOverlapS')) * 1000;
-  const keeps = !!opts.keepPrevious && !!previous && overlapMs > 0;
-  if (keeps) {
-    setField(record, 'oauthClientSecretPrevious', String(previous));
-    setField(record, 'oauthClientSecretPreviousUntil',
-             String(Date.now() + overlapMs));
-  } else {
-    delete record.fields.oauthClientSecretPrevious;
-    delete record.fields.oauthClientSecretPreviousUntil;
+  const added = newClientSecretRecord(secret);
+  try {
+    writeClientSecretRecords(record, [added].concat(kept));
+  } catch (e) {
+    log.debug("Caught in regenerateClientSecret(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving regenerateClientSecret(). It would not seal.");
+    return sealRefusal(e);
   }
-  setField(record, 'oauthClientSecret', secret);
-  // A SECRET NEEDS A METHOD THAT USES IT (2026-10-01). An entry naming no
-  // token_endpoint_auth_method, or `none`, would leave the new secret with
-  // nothing to present it by, so it takes RFC 7591 section 2's default,
-  // client_secret_basic. A method somebody chose (a JWT, a certificate) is
-  // theirs and is left alone.
-  const methodBefore = String(valuesOf(
-      record.fields.oauthTokenEndpointAuthMethod)[0] || '').trim();
-  const methodSet = methodBefore === '' || methodBefore === 'none';
-  if (methodSet) {
-    setField(record, 'oauthTokenEndpointAuthMethod', 'client_secret_basic');
-  }
-  if (record.fields.appRegistrationJson) {
-    try {
-      const document = JSON.parse(record.fields.appRegistrationJson);
-      document.client_secret = secret;
-      if (methodSet) {
-        document.token_endpoint_auth_method = 'client_secret_basic';
-      }
-      if (Object.prototype.hasOwnProperty.call(document,
-                                               'client_secret_expires_at')) {
-        const seconds = Number(
-            config.value('oauth2.registeredSecretLifetimeS'));
-        document.client_secret_expires_at = isFinite(seconds) && seconds > 0
-          ? nowSec() + Math.floor(seconds) : 0;
-        setField(record, 'oauthClientSecretExpiresAt',
-                 String(document.client_secret_expires_at));
-      }
-      setField(record, 'appRegistrationJson', JSON.stringify(document));
-    } catch (e) {
-      log.debug("Caught in regenerateClientSecret(): " +
-                ((e && e.message) || e));
-      // A hand-edited document that no longer parses: the attribute is what
-      // the checks read and it is written above, and registrationOf() already
-      // rebuilds a document it cannot parse from the attributes beside it.
-      log.warn(errorCodes.tag('STS-REG-0024') + 'applications: ' +
-               'appRegistrationJson on "' + identifier + '" is not valid ' +
-               'JSON, so the new client secret is on the attribute and not ' +
-               'in the stored document. ' + e.message);
-    }
-  }
-  record.lastAt = record.lastAt || Date.now();
-  save(record);
-  audit.audit({
-    action: 'application.update', actor: opts.actor || '',
-    protocol: 'console', channel: 'internal', target: String(identifier),
-    summary: 'Application "' + identifier + '": the client secret was ' +
-             (replaced ? 'regenerated' : 'generated'),
-    // The attribute and never the value — see updateApplication()'s row.
-    detail: { identifier: String(identifier), attribute: 'oauthClientSecret',
-              mode: keeps ? 'rotate' : 'regenerate', replaced: replaced,
-              tokenEndpointAuthMethod: methodSet ? 'client_secret_basic' : '',
-              overlapUntil: keeps ? Date.now() + overlapMs : 0 }
-  });
-  log.info('applications: "' + identifier + '" — the client secret was ' +
-           (replaced ? 'regenerated' : 'generated') + '.');
+  const overlapUntil = keeps ? (at + overlapS) * 1000 : 0;
+  const written = finishClientSecretWrite(identifier, record, opts,
+    { mode: keeps ? 'rotate' : 'regenerate', replaced: replaced,
+      secretId: added.id, overlapUntil: overlapUntil },
+    'the client secret was ' + (keeps ? 'rotated'
+      : replaced ? 'regenerated' : 'generated'));
   log.debug("Leaving regenerateClientSecret().");
   return { ok: true, changed: true, replaced: replaced, clientSecret: secret,
+           secretId: added.id, expiresAt: added.expiresAt,
            application: viewAfterWrite(identifier, record),
-           overlapUntil: keeps ? Date.now() + overlapMs : 0,
+           overlapUntil: overlapUntil,
            message: (keeps
-             ? 'A new client secret replaced the old one, which goes on ' +
-               'authenticating at the token endpoint until ' +
-               new Date(Date.now() + overlapMs).toISOString() +
+             ? 'A new client secret was added, and the ' + kept.length +
+               ' it replaces go on authenticating at the token endpoint ' +
+               'until ' + new Date(overlapUntil).toISOString() +
                ' (oauth2.clientSecretOverlapS), so the client can change ' +
                'over.'
              : replaced
-             ? 'A new client secret replaced the old one, which stops ' +
-               'authenticating at the token endpoint now.'
-             : 'A client secret was generated.') + ' It is ' + bytes +
-             ' random bytes, base64url, minted the way a registration mints ' +
-             'one.' + (methodSet
-               ? ' Its token endpoint authentication method was ' +
-                 (methodBefore ? methodBefore : 'not set') + ' and is now ' +
-                 'client_secret_basic, the default for a client with a secret.'
-               : '') };
+             ? 'A new client secret replaced every secret the application ' +
+               'held, which stop authenticating at the token endpoint now.'
+             : 'A client secret was generated.') + mintedSentence(written) };
 }
 
 // ---------------------------------------------------------------------------
@@ -15220,8 +15809,13 @@ module.exports = {
   noteGlobalConsentWithdrawn: noteGlobalConsentWithdrawn,
   regenerateClientSecret: regenerateClientSecret,
   rotateClientSecret: rotateClientSecret,
+  addClientSecret: addClientSecret,
+  removeClientSecret: removeClientSecret,
   sweepClientSecrets: sweepClientSecrets,
   secretExpiryOf: secretExpiryOf,
+  clientSecretRecordsOf: clientSecretRecordsOf,
+  clientSecretSummariesOf: clientSecretSummariesOf,
+  primaryClientSecretOf: primaryClientSecretOf,
   mintClientSecret: mintClientSecret,
   KEY_SOURCES: KEY_SOURCES,
   KEY_SOURCE_ATTRIBUTES: KEY_SOURCE_ATTRIBUTES,

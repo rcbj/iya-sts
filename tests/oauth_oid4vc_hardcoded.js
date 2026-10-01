@@ -258,21 +258,22 @@ function childMain() {
     // 4. RFC 7591 REGISTRATION
     // ======================================================================
     config.setOverride('oauth2.registeredClientIdPrefix', 'hc-dyn-');
-    config.setOverride('oauth2.registeredSecretLifetimeS', 3600);
+    config.setOverride('oauth2.clientSecretLifetimeDays', 1);
     r = await request(port, 'POST', '/oauth2/register',
       { json: { redirect_uris: ['https://rp.hc.example/cb'] } });
     note(r.status === 201 && r.json && /^hc-dyn-/.test(r.json.client_id),
          '4a. development: registration is open and the client_id takes the ' +
          'configured prefix',
          r.status + ' ' + (r.json && r.json.client_id));
+    const dayFromNow = Math.floor(Date.now() / 1000) + 86400;
     note(r.json &&
-         r.json.client_secret_expires_at > Math.floor(Date.now() / 1000),
+         Math.abs(r.json.client_secret_expires_at - dayFromNow) <= 60,
          '4b. and client_secret_expires_at follows ' +
-         'oauth2.registeredSecretLifetimeS',
+         'oauth2.clientSecretLifetimeDays, in days',
          r.json && r.json.client_secret_expires_at);
     const registered = r.json || {};
     config.clearOverride('oauth2.registeredClientIdPrefix');
-    config.clearOverride('oauth2.registeredSecretLifetimeS');
+    config.clearOverride('oauth2.clientSecretLifetimeDays');
 
     const readNoToken = await request(port, 'GET', '/oauth2/register/' +
       encodeURIComponent(registered.client_id || 'x'));

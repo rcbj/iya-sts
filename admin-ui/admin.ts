@@ -18091,8 +18091,9 @@ class AdminConsole {
     const back = named
       ? '/admin/applications' + queryWith(listView, { application: named }) +
         // Back to the section the button was in, which is four screens down.
-        (String(body.action || '') === 'regenerate-secret' ||
-         String(body.action || '') === 'rotate-secret' ? '#credentials'
+        (['regenerate-secret', 'rotate-secret', 'add-secret',
+          'remove-secret'].indexOf(String(body.action || '')) >= 0
+          ? '#credentials'
           : (String(body.action || '') === 'issue-software-statement'
             ? '#software-statements'
             : (String(body.action || '') === 'revoke-tls-client-certificate' ||
@@ -20473,25 +20474,64 @@ class AdminConsole {
              '">';
     };
     const secret = state.clientSecret;
-    const secretHtml = '<h3 id="credentials-secret">Client secret</h3>' +
+    const isoOf = function (seconds) {
+      log.debug("Entering isoOf().");
+      log.debug("Leaving isoOf().");
+      return new Date(seconds * 1000).toISOString();
+    };
+    // ONE ROW PER SECRET (2026-10-01, rcbj): its id and description, its
+    // value behind a fold as the one secret always was, when it EXPIRES —
+    // the column this section was asked for — and a Remove button.
+    const secretRows = secret.secrets.map(function (one) {
+      const value = secret.values[one.id] || '';
+      return '<tr><td><code>' + self.esc(one.id) + '</code>' +
+        (one.primary ? ' <span class="state-valid" title="The newest ' +
+          'unexpired secret: the one this service signs and encrypts with, ' +
+          'and the client_secret RFC 7591 and 7592 return.">primary</span>'
+          : '') +
+        (one.description ? '<div class="sub">' + self.esc(one.description) +
+          '</div>' : '') +
+        (one.createdAt ? '<div class="sub">created <code>' +
+          self.esc(isoOf(one.createdAt)) + '</code></div>' : '') +
+        '</td><td><details class="fold"><summary>Show the client secret' +
+        '</summary><code>' + self.esc(value) + '</code></details></td>' +
+        '<td>' + (one.expiresAt
+          ? '<code>' + self.esc(isoOf(one.expiresAt)) + '</code>' +
+            (one.expired ? '<div class="sub warn">expired' +
+              ' &mdash; product mode refuses it</div>' : '')
+          : '<span class="state-none">never</span>') + '</td>' +
+        '<td><form method="post" action="/admin/applications">' + carryBack +
+        hidden('action', 'remove-secret') + hidden('application', id) +
+        hidden('secret', one.id) +
+        '<button type="submit" class="danger">Remove</button></form></td>' +
+        '</tr>';
+    }).join('');
+    const atCap = secret.secrets.length >= secret.max;
+    const secretHtml = '<h3 id="credentials-secret">Client secrets</h3>' +
       this.note('<code>oauthClientSecret</code> is what ' +
       '<code>client_secret_basic</code>, <code>client_secret_post</code> and ' +
       '<code>client_secret_jwt</code> authenticate with. The token endpoint ' +
-      'CHECKS it in RFC 9700 mode and in product mode. <strong>Regenerating ' +
-      'replaces it at once</strong>: the old secret stops authenticating on ' +
-      'the next request, so the client has to be given the new one before it ' +
-      'next asks for a token. The new value is minted here &mdash; ' +
+      'CHECKS it in RFC 9700 mode and in product mode. <strong>An ' +
+      'application may hold several</strong> (at most ' +
+      '<code>oauth2.clientSecretsMax</code>, ' + this.esc(String(secret.max)) +
+      '), each with its own expiry: every unexpired secret authenticates, ' +
+      'and the NEWEST unexpired one is the <em>primary</em> &mdash; the one ' +
+      'this service signs HS256 ID Tokens and JARM responses with, keys ' +
+      'symmetric encryption with, and returns as RFC 7591&rsquo;s ' +
+      '<code>client_secret</code>. A new value is minted here &mdash; ' +
       '<code>oauth2.registeredSecretBytes</code> random bytes, as a ' +
-      'registration mints one &mdash; and never typed.') +
-      '<table><tr><th>Credential</th><th>Held</th></tr>' +
-      '<tr><td><code>oauthClientSecret</code>' +
+      'registration mints one &mdash; and never typed. The daily job ' +
+      '<code>oauth2.client-secret-expiry</code> warns before one expires ' +
+      'and removes expired ones, never the last one held.') +
+      '<table><tr><th>Secret</th><th>Value</th><th>Expires</th><th></th>' +
+      '</tr>' +
+      (secretRows || '<tr><td colspan="4"><span class="state-none">This ' +
+        'application holds no client secret.</span></td></tr>') +
+      '</table>' +
       (secret.authMethod
-        ? '<div class="sub">token endpoint auth method <code>' +
-          this.esc(secret.authMethod) + '</code></div>' : '') + '</td><td>' +
-      (secret.held
-        ? '<details class="fold"><summary>Show the client secret</summary>' +
-          '<code>' + this.esc(secret.value) + '</code></details>'
-        : '<span class="state-none">none</span>') + '</td></tr>' +
+        ? '<p class="sub">Token endpoint auth method <code>' +
+          this.esc(secret.authMethod) + '</code>.</p>' : '') +
+      '<table><tr><th>Credential</th><th>Held</th></tr>' +
       '<tr><td><code>appRegistrationAccessToken</code><div class="sub">RFC ' +
       '7592&rsquo;s credential for reading and changing the registration ' +
       '&mdash; not a client secret</div></td><td>' +
@@ -20500,33 +20540,50 @@ class AdminConsole {
           '</summary><code>' + this.esc(secret.registrationAccessToken) +
           '</code></details>'
         : '<span class="state-none">none</span>') + '</td></tr></table>' +
-      '<form method="post" action="/admin/applications">' + carryBack +
-      '<div class="formrow">' + hidden('action', 'regenerate-secret') +
-      hidden('application', id) +
-      '<button type="submit"' + (secret.held ? ' class="danger"' : '') + '>' +
-      (secret.held ? 'Regenerate the client secret'
-                   : 'Generate a client secret') + '</button>' +
-      '<span class="sub">' + (secret.held
-        ? 'The current secret stops working immediately.'
-        : 'This application holds none yet.') + '</span></div></form>' +
+      // ADD ONE BESIDE THE OTHERS (2026-10-01): the new secret is the newest,
+      // so it becomes the primary; the others go on authenticating.
+      (atCap
+        ? this.note('It holds ' + secret.secrets.length + ' secret(s), ' +
+          'which is <code>oauth2.clientSecretsMax</code>. Remove one to add ' +
+          'or rotate in another.')
+        : '<form method="post" action="/admin/applications">' + carryBack +
+          '<div class="formrow">' + hidden('action', 'add-secret') +
+          hidden('application', id) +
+          '<label for="secret-lifetime">Lifetime (days)</label>' +
+          '<input type="number" id="secret-lifetime" name="lifetimeDays" ' +
+          'min="0" max="730" step="1" placeholder="' +
+          this.esc(String(secret.defaultLifetimeDays)) + '">' +
+          '<label for="secret-description">Description</label>' +
+          '<input type="text" id="secret-description" name="description" ' +
+          'size="28" maxlength="200" placeholder="what it is for">' +
+          '<button type="submit">Add a client secret</button>' +
+          '<span class="sub">Empty lifetime: ' +
+          '<code>oauth2.clientSecretLifetimeDays</code> (' +
+          (secret.defaultLifetimeDays
+            ? this.esc(String(secret.defaultLifetimeDays)) + ' days'
+            : 'never expires') + '); 0 never expires. The existing ' +
+          'secrets keep working.</span></div></form>') +
       // ROTATION WITH AN OVERLAP (#49 P5): the one to use for a client in
-      // service — the old secret keeps working while it changes over.
-      (secret.held
+      // service — the live secrets keep working while it changes over.
+      (secret.held && !atCap
         ? '<form method="post" action="/admin/applications">' + carryBack +
           '<div class="formrow">' + hidden('action', 'rotate-secret') +
           hidden('application', id) +
           '<button type="submit">Rotate the client secret</button>' +
-          '<span class="sub">A new secret; the current one goes on working ' +
-          'for oauth2.clientSecretOverlapS so the client can change over.' +
-          (secret.previousUntil
-            ? ' The secret an earlier rotation replaced works until ' +
-              this.esc(new Date(secret.previousUntil).toISOString()) + '.'
-            : '') +
-          (secret.expiresAt
-            ? ' The current secret expires at ' +
-              this.esc(new Date(secret.expiresAt * 1000).toISOString()) + '.'
-            : '') + '</span></div></form>'
-        : '');
+          '<span class="sub">A new secret; every unexpired one goes on ' +
+          'working for <code>oauth2.clientSecretOverlapS</code> (' +
+          this.esc(String(secret.overlapS)) + ' seconds) and then ' +
+          'expires.</span></div></form>'
+        : '') +
+      '<form method="post" action="/admin/applications">' + carryBack +
+      '<div class="formrow">' + hidden('action', 'regenerate-secret') +
+      hidden('application', id) +
+      '<button type="submit"' + (secret.held ? ' class="danger"' : '') + '>' +
+      (secret.held ? 'Regenerate: replace every secret'
+                   : 'Generate a client secret') + '</button>' +
+      '<span class="sub">' + (secret.held
+        ? 'Every secret it holds stops working immediately.'
+        : 'This application holds none yet.') + '</span></div></form>';
 
     const algOptions = state.ca.keyAlgorithms.map(function (one) {
       return '<option value="' + self.esc(one.id) + '">' + self.esc(one.label) +

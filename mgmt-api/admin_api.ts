@@ -11709,29 +11709,28 @@ class AdminApi {
             responseDescription: 'The application as it now stands, without ' +
                                  'the address or its mark.' },
 
-          // THE CREDENTIALS SECTION'S SECRET CONTROL (2026-09-13).
+          // THE CREDENTIALS SECTION'S SECRET CONTROLS (2026-09-13; several
+          // secrets since 2026-10-01).
           { action: 'regenerate-secret',
             operationId: 'regenerateApplicationClientSecret',
             summary: 'Mint a new client secret for an application, replacing ' +
-                     'the old one',
+                     'every one it holds',
             description: 'Mints `oauth2.registeredSecretBytes` random bytes, ' +
                          'base64url — the way `POST /oauth2/register` mints ' +
-                         'one — onto `oauthClientSecret`, and into the ' +
-                         'stored RFC 7591 registration document where there ' +
-                         'is one, with `client_secret_expires_at` recomputed ' +
-                         'from `oauth2.registeredSecretLifetimeS`.\n\n**THE ' +
-                         'OLD SECRET STOPS AUTHENTICATING AT ONCE**, ' +
-                         'wherever the token endpoint checks a secret (RFC ' +
-                         '9700 mode, product mode). **THIS REPLY IS THE ONE ' +
-                         'PLACE THE NEW VALUE IS HANDED OUT BY THIS ACT** — ' +
-                         'the audit row names the attribute and never the ' +
-                         'value — though `GET ' +
+                         'one — as the application\'s ONLY secret, a record ' +
+                         'on `oauthClientSecret` expiring after ' +
+                         '`oauth2.clientSecretLifetimeDays` days (never at ' +
+                         '0), ' +
+                         'and into the stored RFC 7591 registration document ' +
+                         'where there is one.\n\n**EVERY SECRET IT HELD ' +
+                         'STOPS AUTHENTICATING AT ONCE**, wherever the token ' +
+                         'endpoint checks a secret (RFC 9700 mode, product ' +
+                         'mode). **THIS REPLY IS THE ONE PLACE THE NEW VALUE ' +
+                         'IS HANDED OUT BY THIS ACT** — the audit row names ' +
+                         'the attribute and never the value — though `GET ' +
                          '/admin-api/applications?application=` reads the ' +
-                         'entry\'s secret back for an `admin:read` token, as ' +
-                         'it always has.\n\nThe console\'s and the portal\'s ' +
-                         'own seeded clients read their secret off the entry ' +
-                         'on every sign-in, so regenerating one is safe. ' +
-                         '`sts-management-api` is REFUSED while ' +
+                         'entry back for an `admin:read` token, as it always ' +
+                         'has.\n\n`sts-management-api` is REFUSED while ' +
                          '`adminApi.clientSecret` pins its secret: every ' +
                          'token for this API is minted with that setting, ' +
                          'and seeding never writes over an existing entry.',
@@ -11743,26 +11742,27 @@ class AdminApi {
               examples: [{ application: 'my-web-app' }],
               additionalProperties: false
             },
-            responseDescription: 'The new secret in `clientSecret`, whether ' +
-                                 'one was replaced, and the application as ' +
-                                 'it now stands.' },
+            responseDescription: 'The new secret in `clientSecret`, its ' +
+                                 '`secretId` and `expiresAt`, whether one ' +
+                                 'was replaced, and the application as it ' +
+                                 'now stands.' },
 
-          // ROTATION WITH AN OVERLAP (#49 P5, 2026-09-22).
+          // ROTATION WITH AN OVERLAP (#49 P5, 2026-09-22; add-and-shorten
+          // since 2026-10-01).
           { action: 'rotate-secret',
             operationId: 'rotateApplicationClientSecret',
-            summary: 'Mint a new client secret, keeping the old one working ' +
+            summary: 'Add a new client secret, keeping the others working ' +
                      'for an overlap',
-            description: 'Exactly `regenerate-secret`, except that the ' +
-                         'secret it replaces goes on authenticating at the ' +
-                         'token endpoint until ' +
+            description: 'Adds a new secret, as `add-secret` does with the ' +
+                         'default lifetime, and moves every UNEXPIRED secret ' +
+                         'the application holds to expire when ' +
                          '`oauth2.clientSecretOverlapS` has passed (a week ' +
-                         'by default) — kept on the entry as ' +
-                         '`oauthClientSecretPrevious` and ' +
-                         '`oauthClientSecretPreviousUntil`, and cleared by ' +
-                         'the scheduler job `oauth2.client-secret-expiry` ' +
-                         'after it — so the client can change over without ' +
-                         'an outage. With the overlap at 0 it is a ' +
-                         'regeneration.',
+                         'by default; an earlier expiry is kept), so the ' +
+                         'client can change over without an outage. The ' +
+                         'scheduler job `oauth2.client-secret-expiry` ' +
+                         'removes them after. With the overlap at 0 it is a ' +
+                         'regeneration. Refused past ' +
+                         '`oauth2.clientSecretsMax`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -11772,8 +11772,63 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The new secret in `clientSecret`, and ' +
-                                 '`overlapUntil`: when the old one stops ' +
+                                 '`overlapUntil`: when the old ones stop ' +
                                  'working (ms).' },
+
+          { action: 'add-secret',
+            operationId: 'addApplicationClientSecret',
+            summary: 'Add a client secret beside the ones an application ' +
+                     'holds',
+            description: 'Mints a secret as `regenerate-secret` does and ' +
+                         'ADDS it: every secret already held goes on ' +
+                         'authenticating until its own expiry. The new one ' +
+                         'is the newest, so it becomes the PRIMARY — the one ' +
+                         'this service signs HS256 ID Tokens and JARM with, ' +
+                         'keys symmetric encryption with, and returns as ' +
+                         'RFC 7591\'s `client_secret`. `lifetimeDays` is ' +
+                         'its lifetime in whole days, 0 to 730 (0 never ' +
+                         'expires; omitted or empty, ' +
+                         '`oauth2.clientSecretLifetimeDays`), and ' +
+                         '`description` one line saying what it is for. ' +
+                         'Refused past `oauth2.clientSecretsMax`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                lifetimeDays: { type: ['integer', 'string'] },
+                description: { type: 'string', maxLength: 200 }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app', lifetimeDays: 90,
+                           description: 'production deploy' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The new secret in `clientSecret`, its ' +
+                                 '`secretId` and `expiresAt` (seconds, 0 ' +
+                                 'never), and the application as it now ' +
+                                 'stands.' },
+
+          { action: 'remove-secret',
+            operationId: 'removeApplicationClientSecret',
+            summary: 'Remove one client secret, by its id',
+            description: 'Removes the secret whose id is `secret` (the ids ' +
+                         'are in the application\'s `credentials.clientSecret' +
+                         '.secrets`); it stops authenticating at once. The ' +
+                         'secret `adminApi.clientSecret` pins on ' +
+                         '`sts-management-api` is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' },
+                            secret: { type: 'string' } },
+              required: ['application', 'secret'],
+              examples: [{ application: 'my-web-app',
+                           secret: 'cs-0123456789ab' }],
+              additionalProperties: false
+            },
+            responseDescription: 'How many secrets are `left`, and the ' +
+                                 'application as it now stands.' },
 
           // /admin/applications/new's *Generate Secret* button (2026-09-18).
           { action: 'generate-secret',

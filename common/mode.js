@@ -666,7 +666,7 @@ function derivesKrbtgtFromPassword() {
 // Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
 // it at the token endpoint wherever a secret is checked; development accepts
 // it and says so, because a test fixture registered with a short
-// oauth2.registeredSecretLifetimeS must not stop working half-way through a
+// oauth2.clientSecretLifetimeDays must not stop working half-way through a
 // run nobody meant to be about secrets.
 /**
  * Tells whether an expired client secret is refused at the token endpoint.
@@ -3001,10 +3001,11 @@ const REQUIREMENTS = [
     development: 'ACCEPTED where a secret is checked, with an audit row ' +
                  'saying it had expired.',
     product: 'REFUSED at the token endpoint (invalid_client, ' +
-             'STS-OAUTH-0558) once oauthClientSecretExpiresAt — or the ' +
-             'registration\'s client_secret_expires_at — has passed. A ' +
-             'rotated secret\'s predecessor is accepted in both modes until ' +
-             'oauth2.clientSecretOverlapS has passed.',
+             'STS-OAUTH-0558), and as a client_secret_jwt key, once the ' +
+             'expiry on that secret\'s record on oauthClientSecret has ' +
+             'passed. An application may hold several secrets, each with ' +
+             'its own expiry; a rotation moves the live ones to expire after ' +
+             'oauth2.clientSecretOverlapS.',
     where: 'oauth-oidc/client_auth.js, common/applications.js' },
   // 2026-09-22 (#42). It was NOT_YET's `key-overlap` — "a rotation has NO
   // OVERLAP" — until key GENERATIONS gave every unit a next key published

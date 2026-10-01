@@ -6950,7 +6950,7 @@ class AdminViews {
   }
 
   private applicationCredentialsState(row) {
-    const { log, applications, pki } = this.deps;
+    const { log, applications, pki, config } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.applicationCredentialsState(). identifier=" +
               (row && row.identifier));
@@ -7011,21 +7011,30 @@ class AdminViews {
     const declared = [].concat(row.allowedProtocols || []);
     const oauthDeclared = declared.indexOf('oauth2') >= 0 ||
                           declared.indexOf('oidc') >= 0;
-    const secret = one('oauthClientSecret');
+    // SEVERAL SECRETS (2026-10-01): each record with its expiry, newest
+    // first, the primary marked. The VALUES go to the page (it shows each
+    // behind a fold, as it showed the one) and never into the reply's JSON.
+    const summaries = applications.clientSecretSummariesOf(row.fields || {});
+    const secretValues: Record<string, string> = {};
+    applications.clientSecretRecordsOf(row.fields || {}).forEach(
+      function (rec) { secretValues[rec.id] = rec.secret; });
     const state: Record<string, any> = {
       oauthDeclared: oauthDeclared,
       clientSecret: {
-        held: !!secret,
-        value: secret,
+        held: summaries.length > 0,
+        secrets: summaries,
+        values: secretValues,
+        max: Number(config.value('oauth2.clientSecretsMax')) || 1,
+        defaultLifetimeDays:
+          Number(config.value('oauth2.clientSecretLifetimeDays')) || 0,
+        overlapS: Number(config.value('oauth2.clientSecretOverlapS')) || 0,
         // Every declared method (2026-10-01), as one line.
         authMethod: one('oauthTokenEndpointAuthMethod').split('\n')
           .filter(function (m) { return m !== ''; }).join(', '),
         registered: !!row.registered,
         registrationAccessTokenHeld: !!one('appRegistrationAccessToken'),
         registrationAccessToken: one('appRegistrationAccessToken'),
-        // ROTATION AND EXPIRY (#49 P5): until when a rotated-out secret still
-        // works (ms), and when the current one expires (seconds, 0 never).
-        previousUntil: Number(one('oauthClientSecretPreviousUntil')) || 0,
+        // When the PRIMARY expires (seconds, 0 never).
         expiresAt: applications.secretExpiryOf(row.fields || {})
       },
       purposes: purposes,
@@ -7044,8 +7053,10 @@ class AdminViews {
                       registered: state.clientSecret.registered,
                       registrationAccessTokenHeld:
                         state.clientSecret.registrationAccessTokenHeld,
-                      previousUntil: state.clientSecret.previousUntil,
-                      expiresAt: state.clientSecret.expiresAt },
+                      expiresAt: state.clientSecret.expiresAt,
+                      // Every secret's id and expiry, never its value.
+                      secrets: state.clientSecret.secrets,
+                      max: state.clientSecret.max },
       keyPairs: purposes.map(function (p) {
         return { purpose: p.id, label: p.label, held: p.held, source: p.source,
                  privateKeyHeld: p.privateKeyHeld, certificate: p.certificate,

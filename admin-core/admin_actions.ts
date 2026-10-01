@@ -519,6 +519,7 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'update-fields', 'confirm-address',
                              'discard-address',
                              'regenerate-secret', 'rotate-secret',
+                             'add-secret', 'remove-secret',
                              'generate-secret',
                              'issue-software-statement',
                              'issue-tls-client-certificate',
@@ -4192,7 +4193,8 @@ class AdminActions {
     const needsOne = ['set', 'add', 'remove', 'update-fields',
                       'confirm-address',
                       'discard-address', 'regenerate-secret',
-                      'rotate-secret', 'issue-software-statement',
+                      'rotate-secret', 'add-secret', 'remove-secret',
+                      'issue-software-statement',
                       'issue-tls-client-certificate',
                       'revoke-tls-client-certificate',
                       'revoke-registration', 'generate-did-key',
@@ -4601,6 +4603,25 @@ class AdminActions {
     if (action === 'rotate-secret') {
       const result = applications.rotateClientSecret(identifier);
       log.debug("Leaving AdminActions.applicationsAction(). rotate-secret " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0620', result);
+    }
+
+    // SEVERAL CLIENT SECRETS (2026-10-01, rcbj): one added beside the others
+    // — with a lifetime and a description where given — and one removed by
+    // its id. The registry decides everything (the cap, the record, the
+    // primary); the reply carries a new secret once, as regenerate's does.
+    if (action === 'add-secret') {
+      const result = applications.addClientSecret(identifier, {
+        lifetimeDays: body.lifetimeDays, description: body.description });
+      log.debug("Leaving AdminActions.applicationsAction(). add-secret " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0620', result);
+    }
+    if (action === 'remove-secret') {
+      const result = applications.removeClientSecret(identifier, {
+        id: body.secret });
+      log.debug("Leaving AdminActions.applicationsAction(). remove-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
     }

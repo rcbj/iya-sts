@@ -540,8 +540,10 @@ async function runBody(t) {
     t.check(regenerated.ok && regenerated.replaced &&
             regenerated.clientSecret &&
             regenerated.clientSecret !== 'appcred-second-typed-secret' &&
-            applications.get(APP).fields.oauthClientSecret ===
-              regenerated.clientSecret,
+            applications.clientSecretRecordsOf(
+              applications.get(APP).fields).map(function (one) {
+              return one.secret;
+            }).join(' ') === regenerated.clientSecret,
             'regenerate-secret mints a new secret onto the entry and hands ' +
             'it back', sentence(regenerated));
     t.check(regenerated.clientSecret.length >= 32 &&

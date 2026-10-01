@@ -336,8 +336,9 @@ var config = {
     softwareStatementRequired: false,            // Require a software statement on every registration
     softwareStatementLifetimeS: 31536000,        // Issued software statement lifetime (s)
     clientSecretOverlapS: 604800,                // Keep a rotated client secret working for (seconds)
+    clientSecretsMax: 5,                         // Client secrets an application may hold
     clientSecretExpiryWarningDays: 14,           // Warn about an expiring client secret this many days ahead
-    registeredSecretLifetimeS: 0,                // Dynamically registered secret lifetime (s)
+    clientSecretLifetimeDays: 0,                 // Client secret lifetime (days)
     registeredClientIdPrefix: "sts-client-",     // Dynamically registered client_id prefix
     registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes
     registeredSecretBytes: 48,                   // Dynamically registered secret random bytes

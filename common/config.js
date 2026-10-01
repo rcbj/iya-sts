@@ -4556,33 +4556,50 @@ const SETTINGS = [
     label: 'Keep a rotated client secret working for (seconds)',
     env: 'STS_OAUTH2_CLIENT_SECRET_OVERLAP_S', type: 'int', dflt: 604800,
     min: 0, max: 31536000, runtime: true,
-    description: 'How long the secret a ROTATION replaced (Rotate secret on ' +
-                 '/admin/applications, or rotate-secret on /admin-api) goes ' +
-                 'on authenticating at the token endpoint beside the new ' +
-                 'one, so a client can change over without an outage. A ' +
-                 'week by default; 0 makes a rotation a regeneration, which ' +
-                 'ends the old secret at once.' },
+    description: 'How long the secrets a ROTATION replaced (Rotate secret ' +
+                 'on /admin/applications, or rotate-secret on /admin-api) ' +
+                 'go on authenticating at the token endpoint beside the new ' +
+                 'one, so a client can change over without an outage: a ' +
+                 'rotation sets each live secret\'s expiry to now plus this, ' +
+                 'or leaves an earlier one. A week by default; 0 makes a ' +
+                 'rotation a regeneration, which removes the old secrets at ' +
+                 'once.' },
+  // SEVERAL CLIENT SECRETS PER APPLICATION (2026-10-01, rcbj).
+  { key: 'oauth2.clientSecretsMax', group: 'OAuth 2.0 / OIDC',
+    label: 'Client secrets an application may hold',
+    env: 'STS_OAUTH2_CLIENT_SECRETS_MAX', type: 'int', dflt: 5,
+    min: 1, max: 50, runtime: true,
+    description: 'How many client secrets one application may hold at ' +
+                 'once (each a record on oauthClientSecret with its own ' +
+                 'expiry). Adding or rotating in a secret past this is ' +
+                 'refused (STS-REG-0208); remove one first. Expired secrets ' +
+                 'count until the daily job oauth2.client-secret-expiry ' +
+                 'removes them.' },
   { key: 'oauth2.clientSecretExpiryWarningDays', group: 'OAuth 2.0 / OIDC',
     label: 'Warn about an expiring client secret this many days ahead',
     env: 'STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS', type: 'int',
     dflt: 14, min: 0, max: 365, runtime: true,
     description: 'The daily scheduler job oauth2.client-secret-expiry ' +
                  'writes an audit row and a warning for every application ' +
-                 'whose secret expires within this many days (its ' +
-                 'oauthClientSecretExpiresAt, or its registration\'s ' +
-                 'client_secret_expires_at), and /admin/applications marks ' +
-                 'it. 0 warns only once it has expired.' },
+                 'holding a secret that expires within this many days (the ' +
+                 'expiry on each oauthClientSecret record), and ' +
+                 '/admin/applications marks it. 0 warns only once it has ' +
+                 'expired.' },
 
-  { key: 'oauth2.registeredSecretLifetimeS', group: 'OAuth 2.0 / OIDC',
-    label: 'Dynamically registered secret lifetime (s)',
-    env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S', type: 'int', dflt: 0,
-    min: 0, max: 31536000, runtime: true,
-    description: 'The `client_secret_expires_at` RFC 7591 section 3.2.1 ' +
+  { key: 'oauth2.clientSecretLifetimeDays', group: 'OAuth 2.0 / OIDC',
+    label: 'Client secret lifetime (days)',
+    env: 'STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS', type: 'int', dflt: 0,
+    min: 0, max: 730, runtime: true,
+    description: 'The lifetime, in days, of every client secret this ' +
+                 'service mints or is given, and so the ' +
+                 '`client_secret_expires_at` RFC 7591 section 3.2.1 ' +
                  'publishes for a client registered at POST ' +
-                 '/oauth2/register, as seconds after registration. ZERO, the ' +
-                 'default, is that section\'s own "never", which is what ' +
-                 'this service always said. It is stamped when the client ' +
-                 'registers and is not moved by a later change.' },
+                 '/oauth2/register — the default for every secret ' +
+                 'mints or is given (a regeneration, a rotation, an added ' +
+                 'secret, a value typed on the console), unless the add ' +
+                 'form names another. ZERO, the default, is that section\'s ' +
+                 'own "never". It is stamped on each secret when it is ' +
+                 'made and is not moved by a later change.' },
 
   { key: 'oauth2.registeredClientIdPrefix', group: 'OAuth 2.0 / OIDC',
     label: 'Dynamically registered client_id prefix',
@@ -15794,6 +15811,12 @@ const REPLACED_SETTINGS = [
     env: 'STS_XACML_PEP_NOTIFY_ALLOW_INSECURE',
     now: ['xacml.pepNotifyAllowHttp', 'xacml.pepNotifySkipTlsVerification',
           'xacml.pepNotifyCaFile'] },
+  { key: 'oauth2.registeredSecretLifetimeS',
+    env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S',
+    now: ['oauth2.clientSecretLifetimeDays'],
+    why: ' It was removed on 2026-10-01 and replaced by ' +
+         'oauth2.clientSecretLifetimeDays: a client secret\'s lifetime is ' +
+         'measured in days.' },
   { key: 'oid4vp.federationAuthorityHints',
     env: 'OID4VP_FEDERATION_AUTHORITY_HINTS',
     now: ['oidfed.authorityHints'],
@@ -17278,13 +17301,14 @@ function refuseReplacedSettings() {
   REPLACED_SETTINGS.forEach(function (row) {
     if (dig(operatorConfig, row.key) !== undefined) {
       named.push('  ' + row.key + ' (in ' + (process.env.CONFIG_FILE ||
-                 'the appconfig file') + ') is now ' + row.now.join(', '));
+                 'the appconfig file') + ') is now ' + row.now.join(', ') +
+                 '.' + replacedBy(row.key));
     }
     if (process.env[row.env] !== undefined) {
       named.push('  ' + row.env + ' (in the environment) is now ' +
                  row.now.map(function (key) {
                    return byKey[key].env;
-                 }).join(', '));
+                 }).join(', ') + '.' + replacedBy(row.key));
     }
   });
   if (!named.length) {
@@ -17293,12 +17317,10 @@ function refuseReplacedSettings() {
   }
   process.stderr.write(
     '\n' + errorCodes.tag('STS-CORE-0105') + 'config: FATAL — ' +
-    named.length + ' setting(s) that were removed on 2026-09-23 (#171) are ' +
-    'still named:\n\n' + named.join('\n') + '\n\nEach allowed plain http ' +
-    'AND turned certificate verification off. They are three settings now — ' +
-    'plain http, certificate verification (off in development mode only) ' +
-    'and a CA file — and which of them was meant is for the operator to ' +
-    'say. Remove the old name and set the ones intended.\n\n');
+    named.length + ' setting(s) that were removed are still named:\n\n' +
+    named.join('\n') + '\n\nThere is no mapping from an old name to a ' +
+    'new one: what the old value meant is for the operator to say. Remove ' +
+    'the old name and set the ones intended.\n\n');
   log.debug("Leaving refuseReplacedSettings(). Refusing to start.");
   process.exit(1);
   log.debug("Leaving refuseReplacedSettings().");

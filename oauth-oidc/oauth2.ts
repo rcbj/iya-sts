@@ -9387,16 +9387,33 @@ class OAuth2Server {
         // default, #139).
         verified = helpers.verifyOwnCompactJws(hint, { algorithms: [alg] });
       } else if (/^HS(256|384|512)$/.test(alg)) {
-        const registered = applications.registrationOf(clientId) || {};
-        if (!registered.client_secret) {
+        // EVERY SECRET THE CLIENT HOLDS (2026-10-01): this service signed
+        // the hint with whichever was the primary then, and a rotation since
+        // may have put another in front of it.
+        const clientConfig: Json = applications.clientConfigOf(clientId) ||
+          {};
+        const held: Json[] = clientConfig.client_secrets || [];
+        if (!held.length) {
           log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No secret.");
           return { ok: false, why: 'the id_token_hint is signed with ' + alg +
                    ' and client "' + clientId + '" has no client_secret to ' +
                    'verify it with.' };
         }
-        verified = stsCrypto.verifyCompactJws(hint,
-          Buffer.from(String(registered.client_secret), 'utf8'),
-          { algorithms: [alg] });
+        let lastError: Json = null;
+        for (const one of held) {
+          try {
+            verified = stsCrypto.verifyCompactJws(hint,
+              Buffer.from(String(one.secret), 'utf8'), { algorithms: [alg] });
+            break;
+          } catch (e) {
+            log.debug("Caught in OAuth2Server.verifyIdTokenHint(): " +
+                      ((e && e.message) || e));
+            lastError = e;
+          }
+        }
+        if (!verified) {
+          throw lastError;
+        }
       } else {
         const keys: Json[] = await allSigningKeysAsync();
         const entry = keys.filter(function (one: Json) {
@@ -17525,10 +17542,10 @@ class OAuth2Server {
   private registeredSecretExpiry(issuedAt: Json): Json {
     const { log, config } = this.deps;
     log.debug("Entering OAuth2Server.registeredSecretExpiry().");
-    const seconds = Number(config.value('oauth2.registeredSecretLifetimeS'));
+    const days = Number(config.value('oauth2.clientSecretLifetimeDays'));
     log.debug("Leaving OAuth2Server.registeredSecretExpiry().");
-    return isFinite(seconds) && seconds > 0 ?
-      issuedAt + Math.floor(seconds) : 0;
+    return isFinite(days) && days > 0 ?
+      issuedAt + Math.floor(days) * 86400 : 0;
   }
 
   private clientRecord(base: Json, metadata: Json, clientId: Json,
@@ -17541,7 +17558,7 @@ class OAuth2Server {
       client_id: clientId,
       client_id_issued_at: issuedAt,
       client_secret: secret,
-      // `oauth2.registeredSecretLifetimeS`; 0 = never, the default.
+      // `oauth2.clientSecretLifetimeDays`; 0 = never, the default.
       client_secret_expires_at: self.registeredSecretExpiry(issuedAt),
       registration_access_token: token,
       registration_client_uri: base + '/oauth2/register/' + clientId

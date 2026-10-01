@@ -53,12 +53,11 @@ const log = require('bunyan').createLogger({ name: 'application_form_roles',
 
 // The editable attributes the grid leaves to a control of its own, as its
 // header in applications.js names them: the name and the families (the
-// form's own fields), the secret's rotation bookkeeping, the issued software
-// statement, the registration access token, and every attribute of a managed
-// key pair except the issuer declaration and the by-value certificate.
+// form's own fields), the issued software statement, the registration access
+// token, and every attribute of a managed key pair except the issuer
+// declaration and the by-value certificate.
 const LEFT_TO_THEIR_OWN_CONTROL = [
-  'appName', 'appAllowedProtocol', 'oauthClientSecretPrevious',
-  'oauthClientSecretPreviousUntil', 'oauthClientSecretExpiresAt',
+  'appName', 'appAllowedProtocol',
   'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
   // What the client has asked for, written as the service sees it ask.
   'oauthScope',
@@ -116,7 +115,11 @@ function run(t) {
     const schema = applications.SCHEMA.attributes.filter(function (one) {
       return one.name === row.attribute;
     })[0];
-    const expected = schema.kind === 'multi' ? 'array'
+    // A list is a list of boxes, unless it is only ever SET, which writes
+    // one value: oauthClientSecret holds several records (2026-10-01) and
+    // its box takes the one secret typed.
+    const expected = schema.kind === 'multi' && row.editable !== 'set'
+      ? 'array'
       : (applications.BOOLEAN_ATTRIBUTES.indexOf(row.attribute) >= 0
         ? 'boolean' : 'string');
     t.equal(row.type, expected, '3. ' + row.attribute + ' is a ' + expected);

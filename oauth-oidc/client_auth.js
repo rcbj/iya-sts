@@ -370,14 +370,32 @@ async function verifyAssertion(opts) {
                                        'HS384 or HS512. This assertion says ' +
                                        '"' + alg + '".' };
     }
-    if (!opts.clientSecret) {
+    // EVERY SECRET THE MODE ACCEPTS (2026-10-01): each unexpired one, and
+    // in development an expired one too — the rule a presented secret is
+    // held to at client_secret_basic. The caller's one secret where the
+    // registry lists none.
+    const nowS = Math.floor(Date.now() / 1000);
+    const usable = (Array.isArray(opts.clientSecrets) &&
+                    opts.clientSecrets.length
+      ? opts.clientSecrets
+      : (opts.clientSecret ? [{ secret: opts.clientSecret, expiresAt: 0 }]
+                           : []))
+      .filter(function (one, index) {
+        // verify()'s rule: an expired secret is usable only in development,
+        // and only the newest one.
+        return one && one.secret &&
+          !(Number(one.expiresAt) > 0 && Number(one.expiresAt) <= nowS &&
+            (mode.refusesExpiredClientSecrets() || index > 0));
+      }).map(function (one) { return String(one.secret); });
+    if (!usable.length) {
       log.debug("Leaving verifyAssertion().");
       return { ok: false, errorCode: 'STS-OAUTH-0003', description: 'this ' +
-                                       'client has no client_secret on its ' +
-                                       'entry, so there is nothing to verify ' +
-                                       'a client_secret_jwt assertion with.' };
+                                       'client has no usable client_secret ' +
+                                       'on its entry, so there is nothing ' +
+                                       'to verify a client_secret_jwt ' +
+                                       'assertion with.' };
     }
-    verifyWith = opts.clientSecret;
+    verifyWith = usable;
   } else {
     if (/^HS/.test(alg) || alg === 'none') {
       // The alg-confusion refusal, and it is the reason the method decides the
@@ -1107,6 +1125,42 @@ function verifiedOnce(request, parts, run) {
 // assertion — the two secret ones and the two RFC 8705 certificate ones —
 // resolve without leaving this process; nothing about what any of them decides
 // changed.
+// THE SECRETS A CLIENT HOLDS, newest first, each `{ id, secret, expiresAt }`
+// (2026-10-01): the registry's `client_secrets`, or — for a caller this
+// registry does not answer — the one `clientSecret` the caller passed, with
+// the expiry it has. Read lazily: the registry is not this file's dependency.
+/**
+ * Returns the client secrets a verification may match.
+ *
+ * @param info - verify()'s options: `clientId`, `clientSecret`
+ * @returns the records, newest first
+ */
+function secretsOf(info) {
+  log.debug("Entering secretsOf().");
+  let entry = {};
+  try {
+    entry = require('../common/applications')
+      .clientConfigOf(String(info.clientId || '')) || {};
+  } catch (e) {
+    log.debug("Caught in secretsOf(): " + ((e && e.message) || e));
+    entry = {};
+  }
+  const listed = Array.isArray(entry.client_secrets)
+    ? entry.client_secrets.filter(function (one) {
+      return one && one.secret;
+    })
+    : [];
+  if (listed.length) {
+    log.debug("Leaving secretsOf(). " + listed.length + " from the entry.");
+    return listed;
+  }
+  log.debug("Leaving secretsOf(). The caller's.");
+  return info.clientSecret
+    ? [{ id: '', secret: String(info.clientSecret),
+         expiresAt: Number(entry.client_secret_expires_at) || 0 }]
+    : [];
+}
+
 /**
  * Decides whether what a request presented proves the client, by the method its
  * entry declares. Whether authentication is required is `oauth2_bcp.js`'s
@@ -1139,49 +1193,41 @@ async function verify(opts) {
                                          : 'client_secret_basic (an ' +
                                            'Authorization: Basic header).') };
     }
-    // ROTATION AND EXPIRY (#49 P5), read off the client's own entry here
-    // rather than threaded through every caller: the secret a rotation
-    // replaced, accepted until its overlap ends, and when the current one
-    // expires. The registry is required LAZILY — it is not one of this
-    // file's dependencies and must not become a cycle.
-    let entry = {};
-    try {
-      entry = require('../common/applications')
-        .clientConfigOf(String(info.clientId || '')) || {};
-    } catch (e) {
-      log.debug("Caught in verify(): " + ((e && e.message) || e));
-      entry = {};
-    }
-    const current = secretsMatch(info.presentedSecret, info.clientSecret);
-    const previous = !current && !!entry.client_secret_previous &&
-      Date.now() < Number(entry.client_secret_previous_until) &&
-      secretsMatch(info.presentedSecret, entry.client_secret_previous);
-    if (!current && !previous) {
+    // EVERY SECRET THE CLIENT HOLDS (2026-10-01), each with its expiry, read
+    // off the client's own entry here rather than threaded through every
+    // caller. The registry is required LAZILY — it is not one of this file's
+    // dependencies and must not become a cycle. A caller's `clientSecret` is
+    // still honoured where the entry has none to say (a test, a client this
+    // registry does not hold).
+    const secrets = secretsOf(info);
+    const matched = secrets.filter(function (one) {
+      return secretsMatch(info.presentedSecret, one.secret);
+    })[0];
+    if (!matched) {
       log.debug("Leaving verify(). The secret did not match.");
       log.debug("Leaving verify().");
       return { ok: false, errorCode: 'STS-OAUTH-0020', description: 'the ' +
-                                       'client_secret presented is not the ' +
-                                       'one on this client\'s entry in the ' +
-                                       'application registry.' };
+                                       'client_secret presented is not one ' +
+                                       'of the secrets on this client\'s ' +
+                                       'entry in the application registry.' };
     }
-    if (previous) {
-      log.debug("Leaving verify(). The previous secret, inside its overlap.");
-      log.debug("Leaving verify().");
-      return { ok: true, method: method, previousSecret: true };
-    }
-    const expiresAt = Number(entry.client_secret_expires_at) || 0;
+    const expiresAt = Number(matched.expiresAt) || 0;
     if (expiresAt > 0 && Math.floor(Date.now() / 1000) >= expiresAt) {
-      if (mode.refusesExpiredClientSecrets()) {
+      // A SUPERSEDED secret past its expiry is refused in BOTH modes: that is
+      // a rotation's overlap ending, which development honoured before
+      // several secrets existed. Only the NEWEST secret, expired, is the one
+      // development accepts with a warning.
+      if (mode.refusesExpiredClientSecrets() || matched !== secrets[0]) {
         log.debug("Leaving verify(). The secret has expired.");
         log.debug("Leaving verify().");
         return { ok: false, errorCode: 'STS-OAUTH-0558', description: 'the ' +
                  'client_secret presented expired at ' +
                  new Date(expiresAt * 1000).toISOString() +
-                 ' (its client_secret_expires_at); ask this service\'s ' +
-                 'administrator for a new one, or rotate it through RFC ' +
-                 '7592 client registration management.' };
+                 '; ask this service\'s administrator for a new one, or ' +
+                 'rotate it through RFC 7592 client registration ' +
+                 'management.' };
       }
-      log.warn(errorCodes.tag('STS-OAUTH-0559') + 'client_auth: the ' +
+      log.warn(errorCodes.tag('STS-OAUTH-0559') + 'client_auth: a ' +
                'client_secret of "' + String(info.clientId || '') +
                '" expired at ' + new Date(expiresAt * 1000).toISOString() +
                ' and was ACCEPTED, because this is a development-mode ' +
@@ -1189,7 +1235,11 @@ async function verify(opts) {
     }
     log.debug("Leaving verify(). The secret matched.");
     log.debug("Leaving verify().");
-    return { ok: true, method: method };
+    return { ok: true, method: method,
+             // Which of several: a secret other than the primary is one a
+             // rotation is moving the client off.
+             secretId: matched.id || '',
+             previousSecret: secrets.length > 1 && matched !== secrets[0] };
   }
 
   if (method === 'client_secret_jwt' || method === 'private_key_jwt') {
@@ -1223,7 +1273,10 @@ async function verify(opts) {
       function () {
         return verifyAssertion({
           method: method, assertion: info.assertion, clientId: info.clientId,
-          clientSecret: info.clientSecret, jwks: info.jwks,
+          clientSecret: info.clientSecret,
+          // Every secret, for client_secret_jwt (2026-10-01).
+          clientSecrets: method === 'client_secret_jwt' ? secretsOf(info) : [],
+          jwks: info.jwks,
           jwksUri: info.jwksUri,
           // The JWKS this service ISSUED to this client from its own
           // certificate authority, beside the one the client registered. Two

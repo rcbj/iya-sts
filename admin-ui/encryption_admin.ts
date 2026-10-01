@@ -180,6 +180,22 @@ const DATA_CLASSES = [
          'database row and a backup of either hold `$aesgcm$…`.'
   },
   {
+    label: 'client-secret',
+    what: 'An application’s OAuth client secrets — `oauthClientSecret`, ' +
+          'one sealed record per secret (the secret, its id, expiry and ' +
+          'description)',
+    where: 'an attribute on the application’s own entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'Whoever holds one authenticates as that client, and it is also ' +
+         'the HMAC key of `client_secret_jwt` and of HS256 ID Tokens. ' +
+         'Sealed at rest since 2026-10-01 under a durable key-encryption ' +
+         'key, opened for a ' +
+         'reader that came through `applications.js`, and withheld from ' +
+         'LDAP readers in product mode. A value written before then stays ' +
+         'in the clear until the secret is next written.'
+  },
+  {
     label: 'gnap-shared-key',
     what: 'A GNAP client instance’s shared secret for a key reference — ' +
           '`gnapSymmetricKey` (RFC 9635 section 7.1.1)',
