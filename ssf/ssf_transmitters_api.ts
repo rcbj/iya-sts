@@ -94,8 +94,8 @@ class SsfTransmittersApi {
   }
 
   /**
-   * Builds the route table: `GET /admin-api/ssf/transmitters` and `POST
-   * /admin-api/ssf/transmitters/:action` with each action's schema.
+   * Builds the route table: `GET /admin-api/ssf/transmitters`, the
+   * monitoring report.
    *
    * @returns the routes
    */
