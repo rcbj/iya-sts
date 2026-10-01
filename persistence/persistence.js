@@ -2439,6 +2439,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
                (globalUrls.readUrl !== globalUrls.url ? 'this cell\'s replica'
                                                       : 'the writer') + '.');
     }
+    // A SECRET SETTING IS SEALED WHERE IT IS WRITTEN DOWN (#222): the four
+    // settings methods of the driver this process uses, wrapped — the tiered
+    // one where there is one, whose settings go to the global tier.
+    require('./sealed_settings').wrap(driver);
   } catch (err) {
     // The postgres driver's `require('pg')` is the realistic way to get here —
     // an image built without the dependency. Named, because "cannot find

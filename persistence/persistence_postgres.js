@@ -1509,6 +1509,73 @@ function create(options) {
     return changed ? out : null;
   }
 
+  // ---------------------------------------------------------------------------
+  // MORE COLUMNS THAT HOLD SEALED VALUES (#222), counted and re-sealed beside
+  // the four the re-encryption job always walked. A column that holds a
+  // sealed value and is NOT on one of these lists is a column whose data key
+  // the job counts as unused and destroys — with the value still in it. So a
+  // new one joins here in the same change that starts sealing into it.
+  //
+  //   `table`, the key columns that find one row, the sealed `column`, whether
+  //   it is `jsonb`, and the change-log row a re-seal records so that every
+  //   process reads the row again.
+  // ---------------------------------------------------------------------------
+  const EXTRA_SEALED = [
+    { table: 'sts_appconfig', keys: ['key'], column: 'value', jsonb: true,
+      change: { kind: 'appconfig' } },
+    { table: 'sts_realms', keys: ['id'], column: 'overrides', jsonb: true,
+      change: { kind: 'realms' } }
+  ];
+
+  // The column as text, for LIKE and for the regular expression.
+  function textOf(one) {
+    log.debug("Entering textOf().");
+    log.debug("Leaving textOf().");
+    return one.jsonb ? one.column + '::text' : one.column;
+  }
+
+  // Re-seals the rows of one extra column holding values under a DEK, compare
+  // and swap per row; resolves how many rows changed.
+  function resealExtra(one, like, limit, reseal, tally) {
+    log.debug("Entering resealExtra(). " + one.table);
+    const keyList = one.keys.join(', ');
+    log.debug("Leaving resealExtra().");
+    return pool.query('SELECT ' + keyList + ', ' + textOf(one) + ' AS v ' +
+                      'FROM ' + one.table + ' WHERE ' + textOf(one) +
+                      ' LIKE $1 ESCAPE \'\\\' LIMIT $2', [like, limit]
+    ).then(function (r) {
+      return (r.rows || []).reduce(function (c, row) {
+        return c.then(function () {
+          const next = resealText(row.v, reseal);
+          if (!next) {
+            tally.skipped += 1;
+            return null;
+          }
+          const where = one.keys.map(function (k, i) {
+            return k + ' = $' + (i + 1);
+          }).join(' AND ');
+          const n = one.keys.length;
+          const cast = one.jsonb ? '::jsonb' : '';
+          return withTransaction(function (client) {
+            return client.query(
+              'UPDATE ' + one.table + ' SET ' + one.column + ' = $' +
+              (n + 1) + cast + ' WHERE ' + where + ' AND ' + one.column +
+              ' = $' + (n + 2) + cast,
+              one.keys.map(function (k) { return row[k]; })
+                .concat([next, row.v])
+            ).then(function (u) {
+              if (!u.rowCount) {
+                return null;
+              }
+              tally.other = (tally.other || 0) + 1;
+              return recordChanges(client, [Object.assign({}, one.change)]);
+            });
+          });
+        });
+      }, Promise.resolve());
+    });
+  }
+
 
   // RISK ROWS (#62) in the shapes `risk/risk_store.ts` works in: camelCase,
   // times as numbers, an `inet` as its text.
@@ -5866,7 +5933,10 @@ function create(options) {
           '(SELECT count(*) FROM sts_ldap_entries WHERE attrs::text LIKE $1 ' +
           '   ESCAPE \'\\\') + ' +
           '(SELECT count(*) FROM sts_cluster_secrets WHERE material LIKE $1 ' +
-          '   ESCAPE \'\\\') AS n', [like]
+          '   ESCAPE \'\\\')' + EXTRA_SEALED.map(function (one) {
+            return ' + (SELECT count(*) FROM ' + one.table + ' WHERE ' +
+                   textOf(one) + ' LIKE $1 ESCAPE \'\\\')';
+          }).join('') + ' AS n', [like]
         ).then(function (r) {
           return { id: id, count: Number(((r.rows || [])[0] || {}).n) || 0 };
         });
@@ -5901,6 +5971,9 @@ function create(options) {
         ' UNION ALL ' + one('sts_minted', 'body') +
         ' UNION ALL ' + one('sts_ldap_entries', 'attrs::text') +
         ' UNION ALL ' + one('sts_cluster_secrets', 'material') +
+        EXTRA_SEALED.map(function (extra) {
+          return ' UNION ALL ' + one(extra.table, textOf(extra));
+        }).join('') +
         ') t GROUP BY id', [pattern]
       ).then(function (r) {
         const out = {};
@@ -6011,6 +6084,12 @@ function create(options) {
               ).then(function (u) {
                 tally.secrets += u.rowCount ? 1 : 0;
               });
+            });
+          }, Promise.resolve());
+        }).then(function () {
+          return EXTRA_SEALED.reduce(function (c, one) {
+            return c.then(function () {
+              return resealExtra(one, like, limit, reseal, tally);
             });
           }, Promise.resolve());
         });

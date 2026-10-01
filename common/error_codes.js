@@ -1497,6 +1497,11 @@ const CODES = [
       'dropped or could not be opened; the next statement reconnects, and ' +
       'one that cannot goes through the pool.',
     spec: 'none — logged' },
+  { code: 'STS-STORE-0071',
+    summary: 'A secret setting saved in the store (sts_appconfig or a ' +
+      'realm\'s overrides) is sealed and did not open; it is ignored and ' +
+      'the setting has its configured value until it is set again (#222).',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

@@ -240,6 +240,19 @@ const DATA_CLASSES = [
          'durable key-encryption key; no page and no API reply returns it.'
   },
   {
+    label: 'setting-secret',
+    what: 'A secret setting changed while the service runs — today ' +
+          '`scim.digestPassword`, the HTTP Digest password every SCIM ' +
+          'username shares',
+    where: 'the saved settings: `sts_appconfig` for the service, ' +
+           '`sts_realms.overrides` for a realm',
+    sealed: true,
+    why: 'A setting marked secret is a credential, and the saved settings ' +
+         'are otherwise plain JSON. Sealed where it is written down since ' +
+         '#222 (`persistence/sealed_settings.js`); the running ' +
+         'configuration, the console and the API see it as before.'
+  },
+  {
     label: 'identity-verifications',
     what: 'A person’s identity verifications — `stsIdaVerification` ' +
           '(OpenID Connect for Identity Assurance), whose evidence carries ' +

@@ -1079,6 +1079,21 @@ the list merge, the session rank).
 * The capability `ops.change-log-retention` is provided by
   `persistence_replication.js`, not `persistence.js` as the row first named.
 
+## SECRET SETTINGS ARE SEALED AT THE DRIVER'S DOOR (#222, 2026-10-01)
+
+A runtime setting marked `secret: true` in `common/config.js` (today only
+`scim.digestPassword`) is sealed when `sts_appconfig` or a realm's
+`sts_realms.overrides` is written, and opened when it is read —
+`sealed_settings.js` wraps the four settings methods of whatever driver
+`openStore()` made (the tiered one in a cell, whose settings go to the global
+tier). **Not earlier**: the settings are saved as a delta against a shadow of
+plaintext values, and a fresh ciphertext per flush would make every flush a
+change. A value that does not open is dropped (STS-STORE-0071) and the setting
+falls back to its configured value. Both columns are on the postgres driver's
+`EXTRA_SEALED` list, so the re-encryption job counts and re-seals them — **a
+column that holds sealed values and is not on that list is one whose data key
+the job destroys with the values still in it**.
+
 ## A WINDOWED WORKER'S DIRECTORY (#349, 2026-09-29)
 
 With `ldap.workerDirectory=postgres-lru` the directory slot carries a

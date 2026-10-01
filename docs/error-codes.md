@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3938** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3939** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 76
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 70
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 71
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 86
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
@@ -356,6 +356,7 @@ Raised from: persistence/.
 | `STS-STORE-0068` | This process's event loop was blocked past the warning threshold in the last report window; timers such as the origin renewal and the cluster heartbeat ran that late too. | none — logged |
 | `STS-STORE-0069` | The renewal of this process's origin claim started or answered more than half the claim's lifetime late; the line names the event loop's delay, so a lost origin says why. | none — logged |
 | `STS-STORE-0070` | The liveness connection (origin renewal, heartbeat, leases) dropped or could not be opened; the next statement reconnects, and one that cannot goes through the pool. | none — logged |
+| `STS-STORE-0071` | A secret setting saved in the store (sts_appconfig or a realm's overrides) is sealed and did not open; it is ignored and the setting has its configured value until it is set again (#222). | — |
 
 ## STS-CLUSTER
 
