@@ -93,7 +93,12 @@ const ISSUANCE = {
   SAML_ASSERTION: 'issue-saml-assertion',
   WSFED_TOKEN: 'issue-wsfed-token',
   WSTRUST_TOKEN: 'issue-wstrust-token',
-  KERBEROS_TICKET: 'issue-kerberos-ticket'
+  KERBEROS_TICKET: 'issue-kerberos-ticket',
+  // A CERTIFICATE ENROLLED over ACME, EST or SCEP (2026-10-01), asked by
+  // `common/cert_enrollment.ts` for an application subject, roles waived and
+  // the device deferred: it is the protocol-declaration rule (#380) that
+  // decides it, the family the caller names.
+  CERTIFICATE: 'issue-certificate'
 };
 
 /**
@@ -115,7 +120,8 @@ const PROTOCOL_OF_KIND = {
   'issue-saml-assertion': 'SAML',
   'issue-wsfed-token': 'WS-Federation',
   'issue-wstrust-token': 'WS-Trust',
-  'issue-kerberos-ticket': 'Kerberos'
+  'issue-kerberos-ticket': 'Kerberos',
+  'issue-certificate': 'Certificate enrollment'
 };
 
 // THE PROTOCOL FAMILIES AN ISSUANCE SATISFIES (2026-10-01), as the ids of
@@ -133,7 +139,8 @@ const FAMILIES_OF_KIND = {
   'issue-saml-assertion': ['saml2', 'saml11'],
   'issue-wsfed-token': ['wsfed'],
   'issue-wstrust-token': ['wstrust'],
-  'issue-kerberos-ticket': ['krb5']
+  'issue-kerberos-ticket': ['krb5'],
+  'issue-certificate': ['acme', 'est', 'scep']
 };
 
 let decider = null;

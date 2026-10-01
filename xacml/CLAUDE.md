@@ -1262,7 +1262,7 @@ what a PDP is. This one turns THIS service's issuances into XACML requests and
 refuses the ones the PDP will not permit.
 
 It fills `common/issuance_gate.js`'s decider at require time, which is what arms
-every issuance site in the service: the nine kinds of issuance in
+every issuance site in the service: the ten kinds of issuance in
 `issuance_gate.js`'s `ISSUANCE`, and every `gate.check()` call in the modules
 that issue them. The decider is read at CALL time, so a module required after
 23c (GNAP, at 23d) is armed exactly as one required before it. So

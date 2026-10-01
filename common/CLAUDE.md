@@ -9158,6 +9158,45 @@ fourteen caught and one recorded as EQUIVALENT (the canonical-base64url check in
 survived the first version and both were the fixture: the non-canonical kid never
 got past the regex, and no certificate was presented that its entry did not hold.
 
+### An application's own ACME, EST and SCEP rules (2026-10-01)
+
+ACME, EST and SCEP are three protocol families an application may be
+declared for (`acme`, `est`, `scep` in `applications.js`'s `PROTOCOLS`), and
+an application's *Certificate enrollment* configuration tab carries its own
+rules. `applicationRules()` applies them in `issue()`, after
+`authorizeTarget()`, when the certificate is FOR an application. A person's
+certificate is not affected. The rules, in order:
+
+1. **The declaration.** The issuance gate is asked the tenth kind,
+   `issue-certificate`, with the request's one family. In product mode the
+   `protocol-not-declared` rule refuses an application declared for other
+   families (`STS-ENROLL-0094`). Development refuses nothing, and an
+   application declared for nothing is refused nothing, as for every other
+   kind (#380). Roles and the device rules are waived: the identity rule
+   above has already decided who may ask.
+2. **The profile.** `<family>AllowedProfiles` narrows the realm's
+   `<family>.allowedProfiles` and never widens it (`allowedProfiles(family,
+   entry)` is the intersection). A profile outside it is `STS-ENROLL-0095`.
+   `<family>DefaultProfile` replaces the realm's default only for a request
+   that named no profile (`asked.profileDefaulted`: an unlabelled EST
+   request, a SCEP challenge made with none, an ACME order with no
+   `profile`) and only when it is allowed.
+3. **EST's authentication**, when the application authenticated itself:
+   `estBasicAuthentication` or `estCertificateAuthentication` set FALSE
+   refuses that method (`STS-ENROLL-0096`). `estServerKeyGeneration` FALSE
+   refuses `/serverkeygen` whoever asked. These can turn an EST method off
+   for one application; they cannot turn on what the realm turned off.
+4. **The lifetime and the cap** are the smaller of the realm's and the
+   application's (`<family>CertificateLifetimeDays`,
+   `enrollMaxCertificates`).
+
+**Every refusal goes out in its protocol's own words**, which is what keeps
+the three specifications intact: ACME answers a problem document
+(`invalidProfile` for 0095, RFC 8555 section 6.7 and the profiles draft),
+EST an HTTP status (RFC 7030 section 4.2.3), SCEP a `failInfo` (RFC 8894
+section 3.3.2.2). Nothing new is put on the wire. `tests/application_enrollment.js`
+holds the four rules in process.
+
 ### The realm listings read in one walk and parse one family (#352, 2026-09-29)
 
 `certificatesInRealm()`, `eabsInRealm()`, `challengesInRealm()` and

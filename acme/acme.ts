@@ -1820,7 +1820,10 @@ class Acme {
       // identifiers once they are parsed, below (#252).
       let profile = null;
       if (body.profile) {
-        profile = core.checkProfile(FAMILY, body.profile);
+        // The account's entry: an application's own AllowedProfiles narrows
+        // the realm's (2026-10-01), refused as `invalidProfile` like any
+        // profile the server does not offer here.
+        profile = core.checkProfile(FAMILY, body.profile, account.entry);
         if (!profile.ok) {
           log.debug("Leaving the ACME new-order. Profile refused.");
           return self.acmeProblem(ctx, 400, 'invalidProfile', 'STS-ACME-0044',
@@ -1888,7 +1891,8 @@ class Acme {
       // as a named one is.
       if (!profile) {
         profile = core.checkProfile(FAMILY, core.profileForIdentifiers(FAMILY,
-          identifiers.map(function (one) { return one.type; })));
+          identifiers.map(function (one) { return one.type; }),
+          account.entry), account.entry);
         if (!profile.ok) {
           log.debug("Leaving the ACME new-order. Default profile refused.");
           return self.acmeProblem(ctx, 400, 'invalidProfile', 'STS-ACME-0044',

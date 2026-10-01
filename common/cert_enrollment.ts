@@ -1204,9 +1204,11 @@ class CertEnrollment {
    * `allowedProfiles` setting.
    *
    * @param family - the enrollment family
+   * @param entry - optional `{ kind, id }`: an application's
+   *   `<family>AllowedProfiles` narrows the realm's list
    * @returns the profile ids
    */
-  allowedProfiles(family) {
+  allowedProfiles(family, entry?) {
     const { log, config } = this.deps;
     log.debug("Entering CertEnrollment.allowedProfiles(). family=" + family);
     const raw = config.value(family + '.allowedProfiles');
@@ -1216,10 +1218,36 @@ class CertEnrollment {
     const listed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
       .map(function (one) { return String(one).trim(); })
       .filter(function (one) { return known.indexOf(one) >= 0; });
+    const own = this.applicationProfileList(family, entry);
     log.debug("Leaving CertEnrollment.allowedProfiles().");
     return known.filter(function (one) {
-      return listed.indexOf(one) >= 0;
+      return listed.indexOf(one) >= 0 &&
+        (!own.length || own.indexOf(one) >= 0);
     });
+  }
+
+  // An application's own `<family>AllowedProfiles`, or none (2026-10-01).
+  /**
+   * Returns an application's own allowed-profile list for a family, or an
+   * empty list for anything else.
+   *
+   * @param family - the enrollment family
+   * @param entry - `{ kind, id }`, or nothing
+   * @returns the profile ids it lists
+   */
+  applicationProfileList(family, entry?) {
+    const { log, applications } = this.deps;
+    log.debug("Entering CertEnrollment.applicationProfileList().");
+    if (!entry || entry.kind !== 'application') {
+      log.debug("Leaving CertEnrollment.applicationProfileList(). None.");
+      return [];
+    }
+    const view = applications.get(String(entry.id));
+    const raw = view && view.fields ? view.fields[family + 'AllowedProfiles']
+                                    : null;
+    log.debug("Leaving CertEnrollment.applicationProfileList().");
+    return [].concat(raw == null ? [] : raw).map(String)
+      .map(function (one) { return one.trim(); }).filter(Boolean);
   }
 
   /**
@@ -1228,9 +1256,10 @@ class CertEnrollment {
    *
    * @param family - the enrollment family
    * @param profileId - the profile
+   * @param entry - optional `{ kind, id }`, whose own list also applies
    * @returns `ok` and the profile, or a refusal
    */
-  checkProfile(family, profileId) {
+  checkProfile(family, profileId, entry?) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.checkProfile(). profile=" + profileId);
@@ -1264,6 +1293,14 @@ class CertEnrollment {
                          'is not in ' + family + '.allowedProfiles in this ' +
                          'realm.');
     }
+    if (self.allowedProfiles(family, entry).indexOf(id) < 0) {
+      log.debug("Leaving CertEnrollment.checkProfile(). Not allowed for " +
+                "the application.");
+      return self.refuse('STS-ENROLL-0095', 403, 'The "' + id + '" profile ' +
+                         'is not in the ' + family + 'AllowedProfiles of ' +
+                         'the application "' + String(entry && entry.id) +
+                         '".');
+    }
     log.debug("Leaving CertEnrollment.checkProfile(). Allowed.");
     return { ok: true, profile: id };
   }
@@ -1272,13 +1309,27 @@ class CertEnrollment {
    * Returns a family's default profile in this realm.
    *
    * @param family - the enrollment family
+   * @param entry - optional `{ kind, id }`: an application's own
+   *   `<family>DefaultProfile` is used where both lists allow it
    * @returns the profile id
    */
-  defaultProfile(family) {
-    const { log, config } = this.deps;
+  defaultProfile(family, entry?) {
+    const { log, config, applications } = this.deps;
     log.debug("Entering CertEnrollment.defaultProfile().");
+    const realmDefault = String(config.value(family + '.defaultProfile') ||
+                                'tls-client');
+    if (entry && entry.kind === 'application') {
+      const view = applications.get(String(entry.id));
+      const own = String(view && view.fields &&
+                         view.fields[family + 'DefaultProfile'] || '').trim();
+      if (own && this.allowedProfiles(family, entry).indexOf(own) >= 0) {
+        log.debug("Leaving CertEnrollment.defaultProfile(). The " +
+                  "application's.");
+        return own;
+      }
+    }
     log.debug("Leaving CertEnrollment.defaultProfile().");
-    return String(config.value(family + '.defaultProfile') || 'tls-client');
+    return realmDefault;
   }
 
   // ---------------------------------------------------------------------------
@@ -1316,22 +1367,166 @@ class CertEnrollment {
    *
    * @param family - the enrollment family
    * @param types - the identifier types in the order
+   * @param entry - optional `{ kind, id }`, the account's entry
    * @returns the profile id
    */
-  profileForIdentifiers(family, types) {
+  profileForIdentifiers(family, types, entry?) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.profileForIdentifiers().");
     const list = Array.isArray(types) ? types.map(String) : [];
     const hostsOnly = list.length > 0 && list.every(function (one) {
       return one === 'dns' || one === 'ip';
     });
-    if (hostsOnly && this.allowedProfiles(family).indexOf('tls-server') >= 0) {
+    if (hostsOnly &&
+        this.allowedProfiles(family, entry).indexOf('tls-server') >= 0) {
       log.debug("Leaving CertEnrollment.profileForIdentifiers(). tls-server.");
       return 'tls-server';
     }
     log.debug("Leaving CertEnrollment.profileForIdentifiers(). The realm " +
               "default.");
-    return this.defaultProfile(family);
+    return this.defaultProfile(family, entry);
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN APPLICATION'S OWN RULES (rcbj, 2026-10-01). An application is an
+  // enrollment subject like a person; since this date it may also be declared
+  // for the ACME, EST and SCEP families and carry overrides for them, on its
+  // page's Certificate enrollment tab. For an APPLICATION entry, in order:
+  //
+  //   1. THE DECLARATION, decided by the issuance policy's protocol rule
+  //      (#380) through `issuance_gate.check()` with kind `issue-certificate`
+  //      and this family: in product mode, an application declared for some
+  //      families and not this one is refused; development refuses nothing,
+  //      and one declared for nothing is never refused. Roles are waived and
+  //      the device deferred — neither is what this question is about.
+  //   2. THE PROFILE: a request that named none (`profileDefaulted`) takes
+  //      the application's `<family>DefaultProfile` where the realm and the
+  //      application both allow it; and any profile must be in
+  //      `<family>AllowedProfiles` where that lists something. These NARROW
+  //      the realm's `<family>.allowedProfiles` and never widen it.
+  //   3. EST'S AUTHENTICATION, where the application authenticated itself:
+  //      `estBasicAuthentication` or `estCertificateAuthentication` FALSE
+  //      refuses that method, and `estServerKeyGeneration` FALSE refuses
+  //      /serverkeygen. TRUE or unset leaves the realm to decide; the realm's
+  //      own refusal has already happened by the time this runs.
+  //   4. THE LIFETIME AND THE CAP, each the smaller of the realm's and the
+  //      application's.
+  //
+  // Every refusal is this module's ordinary one, which each protocol already
+  // turns into its own specification's error — an RFC 8555 problem document,
+  // an RFC 7030 HTTP status, an RFC 8894 failInfo — so nothing here adds a
+  // protocol error the specifications do not define. A person's entry is
+  // unchanged: the realm's settings, as before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Applies an application subject's declaration and overrides to an
+   * enrollment, and answers the profile, lifetime and certificate cap to
+   * issue with.
+   *
+   * @param family - the enrollment family
+   * @param entry - the resolved subject, `{ kind, id }`
+   * @param asked - the issue request, for its principal, key source and
+   *   whether its profile was the default
+   * @param profileId - the profile the request is for
+   * @returns `{ ok: true, profile, days, cap }`, or a refusal
+   */
+  applicationRules(family, entry, asked, profileId) {
+    const { log, config, applications } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.applicationRules(). family=" + family);
+    const realmDays = Number(config.value(family +
+                                          '.certificateLifetimeDays'));
+    const realmCap = Number(config.value(
+      'pki.enrollmentMaxCertificatesPerEntry'));
+    const plain = { ok: true, profile: profileId, days: realmDays,
+                    cap: realmCap };
+    if (!entry || entry.kind !== 'application') {
+      log.debug("Leaving CertEnrollment.applicationRules(). Not an " +
+                "application.");
+      return plain;
+    }
+    const id = String(entry.id);
+    // 1. The declaration.
+    const gate = require('./issuance_gate');
+    const declared = gate.check({
+      application: id, kind: gate.ISSUANCE.CERTIFICATE,
+      protocolFamilies: [family], rolesWaived: true, deviceDeferred: true,
+      subject: { kind: 'application', name: id, authenticated: true },
+      claims: null
+    });
+    if (!declared.allowed) {
+      log.debug("Leaving CertEnrollment.applicationRules(). Not declared.");
+      return self.refuse('STS-ENROLL-0094', 403, 'The application "' + id +
+        '" is not declared for ' + FAMILY_LABELS[family] + ', so no ' +
+        'certificate is issued to it over that protocol here.');
+    }
+    const view = applications.get(id);
+    const fields = (view && view.fields) || {};
+    const listOf = function (value) {
+      log.debug("Entering listOf().");
+      log.debug("Leaving listOf().");
+      return [].concat(value == null ? [] : value).map(String)
+        .map(function (one) { return one.trim(); }).filter(Boolean);
+    };
+    // 2. The profile.
+    const allowed = self.allowedProfiles(family, entry);
+    let profile = String(profileId || '');
+    const ownDefault = String(fields[family + 'DefaultProfile'] || '').trim();
+    if (asked && asked.profileDefaulted && ownDefault &&
+        allowed.indexOf(ownDefault) >= 0) {
+      profile = ownDefault;
+    }
+    const own = listOf(fields[family + 'AllowedProfiles']);
+    if (own.length && own.indexOf(profile) < 0) {
+      log.debug("Leaving CertEnrollment.applicationRules(). Profile not " +
+                "allowed for the application.");
+      return self.refuse('STS-ENROLL-0095', 403, 'The "' + profile +
+        '" profile is not one the application "' + id + '" may be issued ' +
+        'over ' + FAMILY_LABELS[family] + ' (' + family +
+        'AllowedProfiles: ' + own.join(', ') + ').');
+    }
+    // 3. EST's authentication, where the application authenticated itself.
+    const principal = (asked && asked.principal) || {};
+    const isSelf = principal.kind === 'application' &&
+      String(principal.id) === id;
+    const off = function (attribute) {
+      log.debug("Entering off().");
+      log.debug("Leaving off().");
+      return String(fields[attribute] || '').trim().toUpperCase() === 'FALSE';
+    };
+    if (family === 'est' && isSelf) {
+      const byCertificate = !!principal.certificateSerial;
+      const refusedBy = byCertificate
+        ? (off('estCertificateAuthentication')
+          ? 'certificate authentication (estCertificateAuthentication)' : '')
+        : (off('estBasicAuthentication')
+          ? 'its client id and secret (estBasicAuthentication)' : '');
+      if (refusedBy) {
+        log.debug("Leaving CertEnrollment.applicationRules(). EST " +
+                  "authentication turned off for the application.");
+        return self.refuse('STS-ENROLL-0096', 403, 'EST does not accept ' +
+          refusedBy + ' for the application "' + id + '".');
+      }
+    }
+    if (family === 'est' && asked && asked.keySource === 'server' &&
+        off('estServerKeyGeneration')) {
+      log.debug("Leaving CertEnrollment.applicationRules(). Server key " +
+                "generation turned off for the application.");
+      return self.refuse('STS-ENROLL-0096', 403, 'EST /serverkeygen is not ' +
+        'offered to the application "' + id + '" (estServerKeyGeneration).');
+    }
+    // 4. The lifetime and the cap: the smaller of the realm's and its own.
+    const smaller = function (realmValue, attribute) {
+      log.debug("Entering smaller().");
+      const mine = Number(String(fields[attribute] || '').trim());
+      log.debug("Leaving smaller().");
+      return Number.isFinite(mine) && mine > 0 && mine < realmValue
+        ? mine : realmValue;
+    };
+    log.debug("Leaving CertEnrollment.applicationRules().");
+    return { ok: true, profile: profile,
+             days: smaller(realmDays, family + 'CertificateLifetimeDays'),
+             cap: smaller(realmCap, 'enrollMaxCertificates') };
   }
 
   // ---------------------------------------------------------------------------
@@ -2226,6 +2421,17 @@ class CertEnrollment {
       log.debug("Leaving CertEnrollment.issue(). Not authorized.");
       return auditRefusal(allowed);
     }
+    // AN APPLICATION'S OWN RULES (2026-10-01): its protocol declaration,
+    // its profile, lifetime and certificate-cap overrides, and EST's
+    // authentication overrides. See applicationRules().
+    const rules = self.applicationRules(family, resolved.entry, asked,
+                                        profile.profile);
+    if (!rules.ok) {
+      log.debug("Leaving CertEnrollment.issue(). The application's rules " +
+                "refused it.");
+      return auditRefusal(rules);
+    }
+    profile.profile = rules.profile;
     const names = self.namesFor(resolved, profile.profile, asked.requested);
     if (!names.ok) {
       log.debug("Leaving CertEnrollment.issue(). A name was refused.");
@@ -2237,7 +2443,7 @@ class CertEnrollment {
     const live = existing.filter(function (one) {
       return new Date(one.notAfter).getTime() > nowMs;
     });
-    const cap = Number(config.value('pki.enrollmentMaxCertificatesPerEntry'));
+    const cap = rules.cap;
     const replacing = asked.replaces ? self.normalSerial(asked.replaces) : '';
     const counted = live.filter(function (one) {
       return self.normalSerial(one.serialHex) !== replacing;
@@ -2275,7 +2481,7 @@ class CertEnrollment {
     const subject = self.subjectFor(resolved.entry, names.names)
       .concat([{ name: 'O', value: org.organisation }])
       .concat(org.country ? [{ name: 'C', value: org.country }] : []);
-    const days = Number(config.value(family + '.certificateLifetimeDays'));
+    const days = rules.days;
     const issued = await pki.issueEnrolled(realms.currentId(), family, {
       subject: subject,
       publicKeyPem: asked.publicKeyPem,
@@ -3510,7 +3716,8 @@ class CertEnrollment {
     log.debug("Entering CertEnrollment.createScepChallenge().");
     const asked = spec || {};
     const profile = self.checkProfile('scep', asked.profile ||
-                                      self.defaultProfile('scep'));
+                                      self.defaultProfile('scep', asked.target),
+                                      asked.target);
     if (!profile.ok) {
       log.debug("Leaving CertEnrollment.createScepChallenge(). Profile " +
                 "refused.");
@@ -4588,6 +4795,7 @@ export = {
     slot.forward('authenticatePresentedCertificate'),
   authorizeTarget: slot.forward('authorizeTarget'),
   allowedProfiles: slot.forward('allowedProfiles'),
+  applicationRules: slot.forward('applicationRules'),
   checkProfile: slot.forward('checkProfile'),
   defaultProfile: slot.forward('defaultProfile'),
   profileForIdentifiers: slot.forward('profileForIdentifiers'),

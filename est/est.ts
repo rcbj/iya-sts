@@ -984,6 +984,9 @@ class Est {
       // The request's key attestation, read only by the device profile
       // (#164 phase 2, `core.issueForDevice()`).
       attestations: csr.attestations,
+      // The unlabelled path's profile is the realm default, which an
+      // application's own default replaces (2026-10-01).
+      profileDefaulted: !ctx.labelled,
       via: 'est:simpleenroll'
     });
     if (!issued.ok) {
@@ -1332,6 +1335,7 @@ class Est {
     const issued = await core.issueWithServerKey({
       family: FAMILY, profile: ctx.profile, principal: ctx.principal,
       target: target.target, keyAlg: keyAlg, requested: csr.requested,
+      profileDefaulted: !ctx.labelled,
       via: 'est:serverkeygen'
     });
     if (!issued.ok) {

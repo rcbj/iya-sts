@@ -3705,6 +3705,23 @@ const CODES = [
       'request refused.',
     spec: 'EST 503 / SCEP CertRep FAILURE badRequest' },
   // ===== ACME ==============================================================
+  { code: 'STS-ENROLL-0094',
+    summary: 'In product mode a certificate was refused to an application ' +
+      'declared for some protocol families but not this enrollment ' +
+      'protocol (ACME, EST or SCEP); the issuance policy\'s ' +
+      'protocol-not-declared rule decided it.',
+    spec: 'each protocol\'s own refusal (an RFC 8555 problem document, an ' +
+      'RFC 7030 HTTP 403, an RFC 8894 failInfo)' },
+  { code: 'STS-ENROLL-0095',
+    summary: 'The profile is allowed in the realm but not in the ' +
+      'application\'s own <family>AllowedProfiles.',
+    spec: 'each protocol\'s own refusal (ACME invalidProfile, an RFC 7030 ' +
+      'HTTP 403, an RFC 8894 failInfo)' },
+  { code: 'STS-ENROLL-0096',
+    summary: 'EST refused an application an authentication method or ' +
+      '/serverkeygen that its own estBasicAuthentication, ' +
+      'estCertificateAuthentication or estServerKeyGeneration turns off.',
+    spec: 'RFC 7030 HTTP 403' },
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',
     spec: 'HTTP 503, ACME serverInternal problem' },

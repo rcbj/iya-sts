@@ -489,6 +489,28 @@ families and this service advertises a W3C DID for it:
 The DID follows the address the service is reached on; pin
 `global.publicBaseUrl` so it does not change with the host name.
 
+### Certificate enrollment (ACME, EST, SCEP)
+
+ACME, EST and SCEP are three protocol families an application may be
+declared for. In product mode an application is issued a certificate only
+over a family it is declared for. An application declared for nothing is
+not refused, in either mode.
+
+The application's *Certificate enrollment* configuration tab overrides the
+realm's settings for that application alone:
+
+| Attribute | Overrides | What it does |
+|---|---|---|
+| `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles` | `<family>.allowedProfiles` | The profiles it may be issued. Narrows the realm's list; never widens it. |
+| `acmeDefaultProfile`, `estDefaultProfile`, `scepDefaultProfile` | `<family>.defaultProfile` | The profile used when a request names none. |
+| `acmeCertificateLifetimeDays`, `estCertificateLifetimeDays`, `scepCertificateLifetimeDays` | `<family>.certificateLifetimeDays` | Its certificates' lifetime. The shorter of the two is used. |
+| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold. The lower of the two is used. |
+| `estBasicAuthentication`, `estCertificateAuthentication` | `est.basicAuthentication`, `est.certificateAuthentication` | FALSE refuses that EST authentication method when the application authenticates itself. |
+| `estServerKeyGeneration` | `est.serverKeyGeneration` | FALSE refuses `/serverkeygen` for its certificates. |
+
+A refusal is the protocol's own error: an ACME problem document, an EST
+HTTP status, a SCEP `failInfo`.
+
 ### CORS: which pages may read an answer
 
 CORS is an **allowlist on every path**, in both modes. An application's

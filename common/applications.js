@@ -544,6 +544,31 @@ const PROTOCOLS = [
           'finish URIs are return addresses like any other; a resource ' +
           'server carries the locations it answers for and, once it has ' +
           'registered a resource set, the macaroon root key it verifies with.' },
+  // CERTIFICATE ENROLLMENT (rcbj, 2026-10-01): ACME, EST and SCEP, a family
+  // each, so an application may be allowed one and not another. An
+  // application is already an enrollment SUBJECT in all three
+  // (`common/cert_enrollment.ts` keeps its certificates on its entry and names
+  // it urn:sts:application:<id>); the family is what lets the issuance
+  // policy refuse, in product mode, a protocol it is not declared for (#380),
+  // and what draws its overrides on the Certificate enrollment tab.
+  { id: 'acme', label: 'ACME', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'Certificate enrollment over ACME (RFC 8555) at /enroll/acme: an ' +
+          'ACME account bound to this application by an External Account ' +
+          'Binding key. Its certificates name urn:sts:application:<id> and ' +
+          'are kept on this entry.' },
+  { id: 'est', label: 'EST', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'Certificate enrollment over EST (RFC 7030) at /.well-known/est: ' +
+          'this application authenticating with its client id and secret, ' +
+          'or with a certificate this realm issued it.' },
+  { id: 'scep', label: 'SCEP', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'Certificate enrollment over SCEP (RFC 8894) at /enroll/scep: a ' +
+          'single-use challenge password made for this application.' },
   // A DID DESCRIBING THE APPLICATION (2026-10-01): a did:web under this
   // realm's address, whose document this service advertises at
   // <base>/applications/<identifier>/did.json. The DID is derived, never
@@ -2980,6 +3005,73 @@ const SCHEMA = {
             'identifier, so it writes nothing here; the value is a ' +
             'declaration, and the SCIM gate is what decides whether a ' +
             'credential is demanded at all.' },
+    { name: 'acmeAllowedProfiles', kind: 'multi', from: 'the console, or by hand',
+      what: 'THE ACME PROFILES THIS APPLICATION MAY BE ISSUED, narrowing ' +
+            'acme.allowedProfiles: a profile is issued over ACME only ' +
+            'when the realm allows it AND this lists it. Empty means every ' +
+            'profile the realm allows. It never widens the realm\'s list.' },
+    { name: 'acmeDefaultProfile', kind: 'single', from: 'the console, or by hand',
+      what: 'THE PROFILE THIS APPLICATION IS ISSUED OVER ACME WHEN A ' +
+            'REQUEST NAMES NONE, in place of acme.defaultProfile. Used only ' +
+            'while both the realm and acmeAllowedProfiles allow it.' },
+    { name: 'acmeCertificateLifetimeDays', kind: 'single', from: 'by hand',
+      overrides: 'acme.certificateLifetimeDays',
+      what: 'How long a certificate this application is issued over ACME ' +
+            'is valid, in days. CAPPED at acme.certificateLifetimeDays: an ' +
+            'application can be given shorter-lived certificates than the ' +
+            'realm issues, never longer.' },
+    { name: 'estAllowedProfiles', kind: 'multi', from: 'the console, or by hand',
+      what: 'THE EST PROFILES THIS APPLICATION MAY BE ISSUED, narrowing ' +
+            'est.allowedProfiles: a profile is issued over EST only ' +
+            'when the realm allows it AND this lists it. Empty means every ' +
+            'profile the realm allows. It never widens the realm\'s list.' },
+    { name: 'estDefaultProfile', kind: 'single', from: 'the console, or by hand',
+      what: 'THE PROFILE THIS APPLICATION IS ISSUED OVER EST WHEN A ' +
+            'REQUEST NAMES NONE, in place of est.defaultProfile. Used only ' +
+            'while both the realm and estAllowedProfiles allow it.' },
+    { name: 'estCertificateLifetimeDays', kind: 'single', from: 'by hand',
+      overrides: 'est.certificateLifetimeDays',
+      what: 'How long a certificate this application is issued over EST ' +
+            'is valid, in days. CAPPED at est.certificateLifetimeDays: an ' +
+            'application can be given shorter-lived certificates than the ' +
+            'realm issues, never longer.' },
+    { name: 'scepAllowedProfiles', kind: 'multi', from: 'the console, or by hand',
+      what: 'THE SCEP PROFILES THIS APPLICATION MAY BE ISSUED, narrowing ' +
+            'scep.allowedProfiles: a profile is issued over SCEP only ' +
+            'when the realm allows it AND this lists it. Empty means every ' +
+            'profile the realm allows. It never widens the realm\'s list.' },
+    { name: 'scepDefaultProfile', kind: 'single', from: 'the console, or by hand',
+      what: 'THE PROFILE THIS APPLICATION IS ISSUED OVER SCEP WHEN A ' +
+            'REQUEST NAMES NONE, in place of scep.defaultProfile. Used only ' +
+            'while both the realm and scepAllowedProfiles allow it.' },
+    { name: 'scepCertificateLifetimeDays', kind: 'single', from: 'by hand',
+      overrides: 'scep.certificateLifetimeDays',
+      what: 'How long a certificate this application is issued over SCEP ' +
+            'is valid, in days. CAPPED at scep.certificateLifetimeDays: an ' +
+            'application can be given shorter-lived certificates than the ' +
+            'realm issues, never longer.' },
+    { name: 'estBasicAuthentication', kind: 'single', from: 'by hand',
+      overrides: 'est.basicAuthentication',
+      what: 'Whether EST accepts this application\'s client id and secret ' +
+            '(HTTP Basic, RFC 7030 section 3.2.3). FALSE refuses it; TRUE ' +
+            'or unset leaves est.basicAuthentication to decide, which this ' +
+            'cannot turn on where the realm turned it off.' },
+    { name: 'estCertificateAuthentication', kind: 'single', from: 'by hand',
+      overrides: 'est.certificateAuthentication',
+      what: 'Whether EST accepts a certificate this realm issued this ' +
+            'application (TLS client authentication, RFC 7030 section ' +
+            '3.3.2). FALSE refuses it; TRUE or unset leaves ' +
+            'est.certificateAuthentication to decide.' },
+    { name: 'estServerKeyGeneration', kind: 'single', from: 'by hand',
+      overrides: 'est.serverKeyGeneration',
+      what: 'Whether EST /serverkeygen (RFC 7030 section 4.4) may generate ' +
+            'this application\'s key. FALSE refuses it; TRUE or unset leaves ' +
+            'est.serverKeyGeneration to decide.' },
+    { name: 'enrollMaxCertificates', kind: 'single', from: 'by hand',
+      overrides: 'pki.enrollmentMaxCertificatesPerEntry',
+      what: 'How many unexpired enrolled certificates (ACME, EST and SCEP ' +
+            'together) this application may hold. CAPPED at ' +
+            'pki.enrollmentMaxCertificatesPerEntry: lower only.' },
     // THE DID DOCUMENT'S CONTENTS (2026-10-01): what this service publishes
     // at <base>/applications/<identifier>/did.json for an application
     // declared for `did`. See the `did` row of PROTOCOLS.
@@ -3749,6 +3841,20 @@ const EDITABLE = {
   // environment.
   ssfReceiverId: 'multi',
   ssfDeliveryEndpoint: 'multi',
+  // Certificate enrollment's per-application overrides (2026-10-01).
+  acmeAllowedProfiles: 'multi',
+  acmeDefaultProfile: 'set',
+  acmeCertificateLifetimeDays: 'set',
+  estAllowedProfiles: 'multi',
+  estDefaultProfile: 'set',
+  estCertificateLifetimeDays: 'set',
+  scepAllowedProfiles: 'multi',
+  scepDefaultProfile: 'set',
+  scepCertificateLifetimeDays: 'set',
+  estBasicAuthentication: 'set',
+  estCertificateAuthentication: 'set',
+  estServerKeyGeneration: 'set',
+  enrollMaxCertificates: 'set',
   // The DID document's contents (2026-10-01).
   didPublicKeyJwk: 'multi',
   didPrivateKeys: 'set',
@@ -4550,6 +4656,24 @@ const ATTRIBUTE_CHOICES = {
   },
   appAuthnMechanism: function () {
     return require('../federation/federation').MECHANISM_IDS.slice(0);
+  },
+  acmeAllowedProfiles: function () {
+    return enrollmentProfileChoices(false);
+  },
+  acmeDefaultProfile: function () {
+    return enrollmentProfileChoices(false);
+  },
+  estAllowedProfiles: function () {
+    return enrollmentProfileChoices(true);
+  },
+  estDefaultProfile: function () {
+    return enrollmentProfileChoices(true);
+  },
+  scepAllowedProfiles: function () {
+    return enrollmentProfileChoices(true);
+  },
+  scepDefaultProfile: function () {
+    return enrollmentProfileChoices(true);
   }
 };
 
@@ -4557,10 +4681,22 @@ const ATTRIBUTE_CHOICES = {
 // (the others have a validator of their own, which says more). A value
 // outside one is refused (STS-REG-0203). `appAuthnMechanism` is offered and
 // not refused: it is checked where it is read, on purpose.
+// The certificate profiles an enrollment family issues, from the module that
+// defines them (lazily: it is loaded after this one); `device` over EST and
+// SCEP only, as `cert_enrollment.ts` has it.
+function enrollmentProfileChoices(withDevice) {
+  log.debug("Entering enrollmentProfileChoices().");
+  const ids = require('./enrollment_profiles').PROFILE_IDS.slice(0);
+  log.debug("Leaving enrollmentProfileChoices().");
+  return withDevice ? ids.concat(['device']) : ids;
+}
+
 const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthBackchannelTokenDeliveryMode',
   'oauthBackchannelAuthenticationRequestSigningAlg', 'gnapKeyProof',
-  'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat'];
+  'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat',
+  'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
+  'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),
@@ -4923,7 +5059,11 @@ const FIELD_FAMILY_PREFIXES = [
   ['spiffe', ['spiffe']],
   ['ssf', ['ssf']],
   ['gnap', ['gnap']],
-  ['did', ['did']]
+  ['did', ['did']],
+  ['acme', ['acme']],
+  ['est', ['est']],
+  ['scep', ['scep']],
+  ['enroll', ['acme', 'est', 'scep']]
 ];
 
 /**
@@ -4948,7 +5088,9 @@ const FIELD_GROUPS = [
   { id: 'spiffe', label: 'SPIFFE', families: ['spiffe'] },
   { id: 'ssf', label: 'Shared Signals', families: ['ssf'] },
   { id: 'gnap', label: 'GNAP', families: ['gnap'] },
-  { id: 'did', label: 'Decentralized Identifier (DID)', families: ['did'] }
+  { id: 'did', label: 'Decentralized Identifier (DID)', families: ['did'] },
+  { id: 'enroll', label: 'Certificate enrollment',
+    families: ['acme', 'est', 'scep'] }
 ];
 
 /**
