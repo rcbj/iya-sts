@@ -389,7 +389,7 @@ function oauthApplication(identifier, name) {
   log.debug("Entering oauthApplication().");
   log.debug("Leaving oauthApplication().");
   return { identifier: identifier, kind: "oauth2-client", name: name,
-           protocols: ["oauth2", "oidc"],
+           protocols: ["oauth2", "oidc", "wstrust"],
            fields: { oauthClientId: [identifier],
                      oauthRedirectUri: [REDIRECT_URI],
                      oauthClientSecret: CLIENT_SECRET,

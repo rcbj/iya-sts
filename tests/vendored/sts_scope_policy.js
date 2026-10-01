@@ -368,7 +368,8 @@ async function test() {
   await ok(realmApi + "/applications/create",
            application(SSF_CLIENT, ["oauth2", "ssf"]), "an SSF client");
   await ok(realmApi + "/applications/create",
-           application(BARE_CLIENT, ["oauth2"]), "a client declaring nothing");
+           application(BARE_CLIENT, ["oauth2", "oidc"]),
+           "a client declaring nothing");
   await ok(realmApi + "/applications/create",
            application(LISTED_CLIENT, ["oauth2"],
                        { oauthAllowedScope: [CUSTOM] }),

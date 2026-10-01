@@ -276,7 +276,7 @@ async function test() {
       })));
   });
   await ok(realmApi + "/applications/create",
-           { identifier: CLIENT, protocols: ["oauth2"],
+           { identifier: CLIENT, protocols: ["oauth2", "oidc"],
              fields: { oauthClientId: CLIENT,
                        oauthClientSecret: CLIENT + "-secret-" + REALM,
                        oauthTokenEndpointAuthMethod: "client_secret_post" } },
@@ -290,7 +290,7 @@ async function test() {
                                  "@saml2-bearer-grant.test" } },
            "created the person the assertions are about");
   await ok(realmApi + "/applications/create",
-           { identifier: AUTH_CLIENT, protocols: ["oauth2"],
+           { identifier: AUTH_CLIENT, protocols: ["oauth2", "oidc"],
              fields: { oauthClientId: AUTH_CLIENT,
                        oauthTokenEndpointAuthMethod: "saml2_bearer" } },
            "created the application that authenticates by SAML assertion");

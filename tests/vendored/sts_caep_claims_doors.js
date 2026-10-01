@@ -330,7 +330,7 @@ async function test() {
     domain: REALM + ".example.net", name: "CAEP 238 " + STAMP },
     "created the realm");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
-    kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
+    kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "oidc", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
               oauthAllowedScope: ["openid", "profile", "ssf:read",

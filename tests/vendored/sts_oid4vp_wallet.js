@@ -724,7 +724,7 @@ async function test() {
   // them; nothing about the realm is changed to let it.
   await registry.provision(base, {
     identifier: CLIENT_ID, name: "OpenID4VP wallet job",
-    protocols: ["oauth2", "oid4vci"],
+    protocols: ["oauth2", "oidc", "oid4vci"],
     fields: { oauthClientId: CLIENT_ID,
               oauthGrantType: ["authorization_code"],
               oauthTokenEndpointAuthMethod: "none",
