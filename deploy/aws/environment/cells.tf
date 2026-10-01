@@ -336,8 +336,11 @@ locals {
   #                                        in this region (a replica)
   #   STS_CELL_KEK_*                       this cell's OWN key-encryption key,
   #                                        which is replicated nowhere
-  # STS_KEYS_KEK_* stay the global KEK (replicated here), STS_DATABASE_URL
-  # stays the CELL database, and STS_PUBLIC_BASE_URL stays the one public name.
+  # STS_KEYS_KEK_* stay the global KEK (kek.tf, #391: the multi-region KMS
+  # key's ID with THIS region by default, or global/'s secret replicated
+  # here), STS_DATABASE_URL stays the CELL database, and STS_PUBLIC_BASE_URL
+  # stays the one public name. The cell KEK cannot be a KMS key — the service
+  # refuses one for any secret but the KEK — so it stays a secret.
   cell_environment = local.multi ? merge({
     STS_CELL_ID           = var.cell
     STS_CELL_JURISDICTION = local.this_cell.jurisdiction

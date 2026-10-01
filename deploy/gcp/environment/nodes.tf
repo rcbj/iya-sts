@@ -59,11 +59,10 @@ locals {
     STS_PROXY_PROTOCOL  = "off"
     STS_TRUSTED_PROXIES = ""
 
-    # The key-encryption key and the database password, from Secret Manager
-    # through common/secrets.js — the path issue #51 exists to exercise, on
-    # the `gcp` provider. The rest arrive in the env file (secrets.tf).
-    STS_KEYS_KEK_PROVIDER          = "gcp"
-    STS_KEYS_KEK_REF               = local.shared_secret_names["kek"]
+    # The database password, from Secret Manager through common/secrets.js
+    # — the path issue #51 exists to exercise, on the `gcp` provider. The
+    # key-encryption key is `kek_environment` below: Cloud KMS by default
+    # (kek.tf). The rest arrive in the env file (secrets.tf).
     STS_DATABASE_PASSWORD_PROVIDER = "gcp"
     STS_DATABASE_PASSWORD_REF      = local.secret_names["db-app-password"]
 
@@ -89,6 +88,9 @@ locals {
       STS_TLS_CERT_FILE = local.tls_cert
       STS_TLS_KEY_FILE  = local.tls_keyfile
     } : {},
+    # THE KEY-ENCRYPTION KEY (#391, kek.tf): STS_KEYS_KEK_* — the Cloud KMS
+    # key or the `kek` secret — and STS_PREVIOUS_KEK_* while migrating.
+    local.kek_environment,
     # A CELL'S CONTRACT WITH THE SERVICE (#97, cells.tf); empty otherwise.
     local.cell_environment,
   var.extra_environment)

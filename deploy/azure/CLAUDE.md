@@ -32,7 +32,7 @@ is most likely to need a change.
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the state resource group, the account `mockststate<subscription>` (shared keys off, versioned, soft delete) and its `tfstate` container | an administrator |
-| `foundation/` | long-lived | per region (`modules/region`): a key vault with the two customer-managed keys, a disk-encryption set per key, the PostgreSQL key identity, a Log Analytics workspace and its syslog rule. Once: the registry (Premium, geo-replicated), **the public zone `azure.iyasec.io`**, and the deployer's custom role. **Per environment, and per cell:** a resource group with *Allowed locations* on it, the nodes' managed identity, the Key Vault its secrets and certificate are in, and every grant | an administrator |
+| `foundation/` | long-lived | per region (`modules/region`): a key vault with the two customer-managed keys, a disk-encryption set per key, the PostgreSQL key identity, a Log Analytics workspace and its syslog rule. Once: the registry (Premium, geo-replicated), **the public zone `azure.iyasec.io`**, and the deployer's custom role. **Per environment, and per cell:** a resource group with *Allowed locations* on it, the nodes' managed identity, the Key Vault its secrets and certificate are in, and every grant. **The key-encryption key** (`kek.tf`, #391): one per environment, and a multi-region environment's global vault for it | an administrator |
 | `dns-delegation/` | once | the NS record `azure.iyasec.io` in **the Route 53 zone `iyasec.io`** | an administrator with AWS **and** Azure credentials |
 | `environment/` | per run | one environment, or one CELL of a multi-region one: VNet, security groups, Standard Load Balancer, PostgreSQL primary + replica behind a private endpoint, secrets, three zonal scale sets of one VM each, the public record | the deployer |
 | `global/` | per run | a multi-region environment's global tier and joins: the global writer and a replica per other cell, the VNet peering mesh, the shared secrets in every cell's vault, Traffic Manager | the deployer |
@@ -82,7 +82,7 @@ for GCP's reason.
 |---|---|---|---|
 | ECS on Fargate, a service per AZ | a zonal MIG per zone, COS | **A Flexible scale set per zone with one instance, Ubuntu 24.04 LTS, Docker from Ubuntu's archive**. `node-a`'s is made first. | Container Apps proxies what it publishes. Container Instances has no zonal load-balanced service that follows its instances. Neither gives 389/636/88/gRPC plus a client certificate at the node. AKS is a cluster to keep. Ubuntu's unattended-upgrades is the nearest thing to COS. A scale set rather than a bare VM because it **repairs**: the Application Health extension asks `/healthcheck`, and a failing node is replaced after `PT30M`. |
 | task definition | systemd units | **The same units**, in order: `sts-disk` → `sts-registry` → `sts-secrets` → `sts-cert` → `sts-schema` (→ `sts-global-schema` in the primary cell) → `sts-node`. `sts-node` is enabled, so a reboot starts it again. | `Requires=`/`After=` is `dependsOn: SUCCESS` |
-| ECS `secrets` | `sts-secrets` from Secret Manager | `sts-secrets` from **Key Vault** over REST with the VM's managed identity, into env files on `/run` | Nothing secret is in the VM's model. The KEK and database passwords are read by the SERVICE through `common/secrets.js`'s `azure` provider (`AZURE_CLIENT_ID` names the identity) |
+| ECS `secrets` | `sts-secrets` from Secret Manager | `sts-secrets` from **Key Vault** over REST with the VM's managed identity, into env files on `/run` | Nothing secret is in the VM's model. The database passwords are read by the SERVICE through `common/secrets.js`'s `azure` provider (`AZURE_CLIENT_ID` names the identity), and the KEK is a Key Vault KEY it wraps with (`azure-keys`, *The key-encryption key*, below) |
 | ECR pull | `docker-credential-gcr` | `/etc/sts/registry-login.sh`: an Entra ID token from the metadata endpoint, exchanged at the registry. It runs before every start of the node. | The registry's token lasts about three hours, and systemd restarts the node long after boot |
 | NLB, PROXY v2 | passthrough NLB, no PROXY | **Standard Load Balancer**: one zone-redundant public address, one rule per port translating 443 → 8081 and 80 → 8082, one HTTPS probe of `/healthcheck` | A pass-through: the client's certificate and address reach the node, so `STS_PROXY_PROTOCOL=off`. **No register-by-address workaround for SPIFFE**: the pool follows the scale sets |
 | NAT-free public subnets | an ephemeral external IP per VM | **The load balancer's outbound rule**, on a second address; the nodes have NO public address, and the subnet's default outbound access is off | New VNets have no default outbound access (since 2025-09-30), and a NAT gateway is zonal. The fixed outbound address is also what the service calling its own public name arrives from |
@@ -111,6 +111,79 @@ as a new version (the provider's `recover_soft_deleted_secrets`). Nothing is
 purged. The vault's name is a formula of the subscription, environment and
 cell, repeated in `environment/locals.tf` and `global/main.tf`, so no stack
 reads the foundation's state.
+
+## The key-encryption key: a Key Vault KEY, never its bytes (#391)
+
+The service seals every value under a data encryption key and wraps each
+data key under the KEK. **By default the KEK is a Key Vault key the service
+never sees**: `STS_KEYS_KEK_PROVIDER=azure-keys`, `STS_KEYS_KEK_VAULT` the
+vault, `STS_KEYS_KEK_REF` the key, and the vault wraps and unwraps each data
+key (RSA-OAEP-256) through the node's managed identity, once per data key at
+start. `foundation/kek.tf` and `environment/kek.tf` argue it in full.
+
+* **The variables** (`environment/`):
+  * `kek_provider`: `kms` (the default; the rule is most secure by default)
+    or `secret`, the `kek` secret read into the service through the `azure`
+    provider, as before #391. Anything else is refused.
+  * `kek_migrating_from_secret` (default false, needs `kms`): also names the
+    `kek` secret as `STS_PREVIOUS_KEK_*`.
+* **The key is the FOUNDATION's**, not beside the `kek` secret: the deployer
+  holds nothing on keys and assigns no role, and a node needs a role on the
+  key. `kek-rsa`, RSA 3072, `key_opts` exactly `wrapKey` and `unwrapKey`.
+* **Where:** a single-cell environment's own vault. A multi-region
+  environment has **ONE key, in a vault of its own** (`ms<env>g-<hash>`, in
+  the global group). The service stores `<vault>/keys/<name>` and the version
+  in every wrapped row and refuses a row naming another, so every node of
+  every cell names the identical URI (without Key Vault's trailing slash) and
+  name. A vault of its own rather than the primary cell's because the service
+  reads the global database password (which has no vault setting) from the
+  KEK's vault: the global vault holds a copy of `global-db-app-password`,
+  every cell's nodes may read its secrets, and no cell can read another's
+  `cell-kek`. With `kms`, `STS_DATABASE_PASSWORD_VAULT` names the unit's own
+  vault (set in both modes).
+* **What a multi-region environment gives up:** a starting node in any cell
+  dials the primary region's vault. Key Vault's failover to the paired region
+  keeps wrap and unwrap working once Microsoft fails it over, which is not
+  instant. The `kek` secret was copied into every cell.
+* **The role:** *Key Vault Crypto User* for each unit's node identity,
+  **scoped to the key** (`resource_versionless_id`), not the vault. It is
+  wider than needed: `keys/update` (a node could disable the key, which is an
+  outage, not a disclosure) and `keys/backup`. **It lacks
+  `keyrotationpolicies/read`**, so `/admin/secrets` shows an error where the
+  rotation policy would be; the key itself is reported. A custom role (read,
+  wrap, unwrap, rotation-policy read) would be exact.
+* **Rotation is a policy:** a new version a year after the last, each
+  version expiring after two years, with notice 30 days before. The service
+  re-wraps, at its next start, any data key wrapped under a version that is
+  not current, so old versions must stay ENABLED until every node has
+  restarted. Rotation disables nothing. An expired version still unwraps
+  (Key Vault allows decrypt and unwrap outside the validity window). The
+  current version never expires while rotation works.
+* **Destroy and re-create:** the vaults soft-delete for 7 days and are not
+  purge-protected. Within the 7 days a re-create RECOVERS the same key with
+  every version. After that a re-create is a new key, and rows wrapped under
+  the old one never open again. That is acceptable only because the
+  environment's database goes with it.
+* **The migration** from `secret` on an environment that holds data:
+  1. Apply `kek_provider = "kms"` with `kek_migrating_from_secret = true`.
+     Every node is replaced and re-wraps each data key from the secret to the
+     key.
+  2. Once every node of every cell has started, apply with `false`.
+
+  The `kek` secret is still made in both modes: it is what the migration
+  names, and it keeps the stacks' shape independent of the mode.
+* **The cell key stays a SECRET** (`STS_CELL_KEK_*`, `cell-kek`): the service
+  refuses a key management service for it.
+* **RSA is not post-quantum.** An AES-256 `oct-HSM` key in a **Managed HSM**
+  (or Key Vault Premium's oct-HSM, in preview) is stronger, and the service
+  takes it (A256GCM, the row's binding as AAD). Nothing here builds one (a
+  Managed HSM is about $3 an hour). To use an existing one, set
+  `STS_KEYS_KEK_PROVIDER=azure-keys`, `STS_KEYS_KEK_VAULT=https://<hsm>.managedhsm.azure.net`
+  and `STS_KEYS_KEK_REF=<key>` in `extra_environment`, and grant every node
+  identity *Managed HSM Crypto User* on the key in the HSM's local RBAC.
+* **The image needs `@azure/keyvault-keys`** beside `@azure/identity` in
+  `STS_CLOUD_SDKS` (*Running it by hand*); without it the service refuses to
+  start and names the package.
 
 ## The certificate
 
@@ -199,12 +272,15 @@ the code half*), with the `azure` provider where AWS has `aws`.
   global stack writes each shared value (`kek`, `global-db-app-password`,
   `admin-api-client-secret`, product mode's three) into every cell's vault.
   It writes the writer's administrator password into the primary cell's
-  vault only.
+  vault only. **The exception is the key-encryption KEY** (#391): one Key
+  Vault key for the whole environment, in its global vault, beside a copy of
+  `global-db-app-password` (*The key-encryption key*, below).
 * **`STS_CELL_KEK_VAULT` names the cell key's vault.** It is a new setting,
   `keys.cellKekVault` (#96). The cell key has no fallback of any kind, so the
   `azure` provider had no vault URL to read it from, and a cell on Azure could
   not have started. The global database password falls back to the KEK's
-  vault, which is the same one.
+  vault: the cell's own with `kek_provider = "secret"`, the environment's
+  global vault with `kms`, where `global/` writes a copy.
 
 ### The apply order
 
@@ -238,7 +314,8 @@ concurrent writers of one ACME TXT record set. `TF_CELL=<id>` (with
 
 | | Where | In the other cells |
 |---|---|---|
-| the global KEK and the other shared secrets | every cell's vault, written by `global/` | **a copy in each** |
+| **the KEK, as a Key Vault key** (`kek_provider = "kms"`) | the environment's global vault, in the primary's region | **NO: one key, dialled from every cell** |
+| the `kek` secret and the other shared secrets | every cell's vault, written by `global/` | **a copy in each** |
 | the writer's administrator password | the primary cell's vault | no |
 | the global database | the writer in the primary cell's region | **a physical cross-region read replica per other cell**, under that region's `mock-sts` key |
 | the images | the registry, home region | **geo-replicated** |
@@ -338,6 +415,8 @@ These are estimates from 2026 list prices in westus2, not measurements:
   trade is wanted.
 * **Also long-lived:**
   * per region, a key vault and keys (about $1 a month);
+  * the key-encryption keys: software keys, charged per operation (a few
+    operations per data key per node start), so cents a month;
   * a workspace, by volume;
   * the public zone ($0.50 a month).
 
@@ -367,6 +446,12 @@ These are estimates from 2026 list prices in westus2, not measurements:
   its own grants before writing.
 * **Traffic Manager's geographic behaviour when a pinned child is
   degraded.** Check it answers the child's endpoints, not the `WORLD` ones.
+* **The key-encryption key.** Check that the rotation policy is accepted as
+  written (`P1Y` rotation, `P2Y` expiry, `P30D` notice). Check that a node's
+  first start logs the `kek-rsa` key and its version, and that
+  `/admin/secrets` reports the key with only the rotation policy refused. In a
+  multi-region environment, check that a non-primary cell starts and reads
+  `global-db-app-password` from the global vault.
 * **An `AuthorizationFailed` naming an action** on plan or apply: add it to
   `foundation/iam_deployer.tf`'s role, and an administrator re-applies.
 
@@ -383,7 +468,7 @@ terraform -chdir=deploy/azure/dns-delegation apply -var subscription_id=<id>   #
 
 # the three images, from the repository root
 R=<registry login server>/mock-sts
-docker build -t $R:<tag> --build-arg STS_CLOUD_SDKS="@azure/keyvault-secrets @azure/identity" .
+docker build -t $R:<tag> --build-arg STS_CLOUD_SDKS="@azure/keyvault-secrets @azure/keyvault-keys @azure/identity" .
 docker build -t $R:schema-<tag> -f deploy/azure/schema-init/Dockerfile .
 docker build -t $R:init-<tag> -f deploy/azure/node-init/Dockerfile .
 az acr login --name <registry name>

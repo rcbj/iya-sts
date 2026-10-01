@@ -145,8 +145,9 @@ const SECRET_NOTES = {
           'pair, authenticator secret and recovery code, and, in product ' +
           'mode on a postgres store, every row this service mints. Read ' +
           'into this process from a file or a secret store, or kept in ' +
-          'Vault Transit or AWS KMS, which then wraps each data key itself ' +
-          'and never hands the key over.',
+          'a key management service (Vault Transit, AWS KMS, Cloud KMS or ' +
+          'Azure Key Vault), which then wraps each data key itself and ' +
+          'never hands the key over.',
     without: 'In PRODUCT mode this service does not start without it, and ' +
              'that is deliberate: generating a replacement would stop every ' +
              'token, assertion and signed document it has ever issued from ' +
@@ -157,7 +158,8 @@ const SECRET_NOTES = {
     rotating: 'Rotated by RE-WRAPPING the data keys, not by re-encrypting ' +
               'the store: put the new key in <code>keys.kek*</code> and the ' +
               'old one in <code>keys.previousKek*</code>, and start. A key ' +
-              'rotated inside Transit or AWS KMS needs neither. Never ' +
+              'rotated inside its key management service needs neither. ' +
+              'Never ' +
               'replace it without the previous one beside it: everything ' +
               'wrapped under it would be unreadable, which is why ' +
               '<code>openbao/seed.js</code> refuses to overwrite one.'
@@ -215,7 +217,7 @@ const SECRET_NOTES = {
           'the old key, beside the new one in <code>keys.kek*</code>. A data ' +
           'encryption key that unwraps only under the old key is re-wrapped ' +
           'under the new one at start and written back. It may be a key ' +
-          'read into this process or a key in Vault Transit or AWS KMS.',
+          'read into this process or a key in a key management service.',
     without: '<code>none</code>, the default, is the ordinary state. A ' +
              'start with a new key and no previous key, over data keys ' +
              'wrapped under the old one, does not start (STS-KEYS-0091).',

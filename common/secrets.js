@@ -997,11 +997,11 @@ const vaultProvider = {
 };
 
 // ===========================================================================
-// A KEY THAT NEVER LEAVES ITS KEY MANAGEMENT SERVICE (#391 P3): Vault or
-// OpenBao TRANSIT, and AWS KMS.
+// A KEY THAT NEVER LEAVES ITS KEY MANAGEMENT SERVICE (#391 P3, P4): Vault or
+// OpenBao TRANSIT, AWS KMS, Google Cloud KMS and an Azure Key Vault key.
 //
 // The five providers above READ a key-encryption key: its bytes come into
-// this process. These two never do. rcbj's decision on #391: **the KMS key
+// this process. These four never do. rcbj's decision on #391: **the KMS key
 // wraps each data encryption key directly** — a data-key row holds the KMS's
 // ciphertext, a process asks the KMS to unwrap each data key it needs once,
 // at start or when it first meets it, and holds the data key; no root key is
@@ -1015,9 +1015,11 @@ const vaultProvider = {
 //     isStale(text) -> boolean }           // wrapped under an older version
 //
 // THE AAD IS THE DATA KEY'S OWN (`keystore.js`'s `dekAad()`: its id, scope,
-// realm and class), as Transit's `associated_data` and as AWS's encryption
-// context — so a wrapped data key moved onto another realm's row is refused
-// by the KMS itself.
+// realm and class), as Transit's `associated_data`, AWS's encryption
+// context, Cloud KMS's additional authenticated data and an Azure oct-HSM
+// key's A256GCM AAD — so a wrapped data key moved onto another realm's row is
+// refused by the KMS itself. An Azure RSA key takes no AAD; that one is held
+// to its digest here instead (`azureKeysProvider`).
 //
 // ONLY THE KEY-ENCRYPTION KEY AND THE PREVIOUS ONE may name these providers:
 // a password or a cell key is a secret this service reads, and a handle is
@@ -1309,14 +1311,366 @@ const awsKmsProvider = {
   }
 };
 
+// ---------------------------------------------------------------------------
+// gcp-kms — Google Cloud KMS, through `@google-cloud/kms` and Application
+// Default Credentials (the VM's or the workload's service account).
+// `keys.kekRef` is the CryptoKey's resource name,
+// projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k> — the KEY, never one
+// of its versions, because Cloud KMS encrypts under the primary version and
+// decrypts under whichever version the ciphertext names. The key must be an
+// ENCRYPT_DECRYPT key of GOOGLE_SYMMETRIC_ENCRYPTION (AES-256-GCM in the KMS)
+// with an enabled primary; the data key's AAD is the additional
+// authenticated data. The stored ciphertext is `<version>:<base64>`, so a
+// data key wrapped under a version that is no longer primary is STALE and
+// re-wrapped at start, as a rotated Transit key's are: a version can then be
+// disabled without losing anything.
+// ---------------------------------------------------------------------------
+const GCP_KEY_NAME =
+  /^projects\/[^/]+\/locations\/[^/]+\/keyRings\/[^/]+\/cryptoKeys\/[^/]+$/;
+
+// The version number at the end of a CryptoKeyVersion's resource name.
+function gcpVersionOf(name) {
+  log.debug("Entering gcpVersionOf().");
+  const m = /\/cryptoKeyVersions\/(\d+)$/.exec(String(name || ''));
+  log.debug("Leaving gcpVersionOf().");
+  return m ? m[1] : '';
+}
+
+const gcpKmsProvider = {
+  id: 'gcp-kms',
+  label: 'Google Cloud KMS (the key never leaves it)',
+  remote: true,
+  describe: function (spec) {
+    log.debug("Entering gcpKmsProvider.describe().");
+    const at = locationOf(spec || KEK, 'ref');
+    log.debug("Leaving gcpKmsProvider.describe().");
+    return { from: at.where || '(no key configured)',
+             wraps: 'each data encryption key, in the KMS' };
+  },
+  read: async function (spec) {
+    log.debug('Entering gcpKmsProvider.read().');
+    const secret = spec || KEK;
+    const name = String(locationOf(secret, 'ref').where || '')
+      .replace(/\/+$/, '');
+    if (!name) {
+      throw errorCodes.mark(new Error(secret.provider + ' is "gcp-kms" and ' +
+        secret.ref + ' names no key. Set it to projects/<project>/locations/' +
+        '<location>/keyRings/<ring>/cryptoKeys/<key>.'), 'STS-KEYS-0046');
+    }
+    if (!GCP_KEY_NAME.test(name)) {
+      throw errorCodes.mark(new Error(secret.ref + ' is "' + name + '", ' +
+        'which is not a CryptoKey\'s resource name. Name the key, not one ' +
+        'of its versions: projects/<project>/locations/<location>/' +
+        'keyRings/<ring>/cryptoKeys/<key>.'), 'STS-KEYS-0102');
+    }
+    let sdk;
+    try {
+      sdk = loadSdk('@google-cloud/kms');
+    } catch (e) {
+      throw missingModule('@google-cloud/kms', 'gcp-kms', e);
+    }
+    const client = new sdk.KeyManagementServiceClient();
+    const [key] = await client.getCryptoKey({ name: name });
+    const algorithm = key && key.versionTemplate &&
+                      key.versionTemplate.algorithm;
+    const primary = (key && key.primary) || {};
+    if (!key || key.purpose !== 'ENCRYPT_DECRYPT' ||
+        algorithm !== 'GOOGLE_SYMMETRIC_ENCRYPTION' ||
+        primary.state !== 'ENABLED') {
+      throw errorCodes.mark(new Error('the Cloud KMS key "' + name + '" is ' +
+        'not an ENCRYPT_DECRYPT key of GOOGLE_SYMMETRIC_ENCRYPTION with an ' +
+        'enabled primary version (' + ((key && key.purpose) || '?') + ', ' +
+        (algorithm || '?') + ', primary ' + (primary.state || 'none') + ').'),
+        'STS-KEYS-0102');
+    }
+    let latest = gcpVersionOf(primary.name);
+    const handle = {
+      remote: true, provider: 'gcp-kms', keyRef: name,
+      label: 'Cloud KMS key ' + name,
+      wrap: async function (dek, aad) {
+        log.debug('Entering gcp-kms wrap().');
+        const [answer] = await client.encrypt({
+          name: name, plaintext: Buffer.from(dek),
+          additionalAuthenticatedData: Buffer.from(String(aad), 'utf8') });
+        const version = gcpVersionOf(answer && answer.name);
+        if (!answer || !answer.ciphertext || !version) {
+          throw errorCodes.mark(new Error('Cloud KMS answered no ciphertext ' +
+                                          'or no key version'),
+                                'STS-KEYS-0103');
+        }
+        latest = version;
+        log.debug('Leaving gcp-kms wrap().');
+        return kmsText('gcp-kms', name, version + ':' +
+                       Buffer.from(answer.ciphertext).toString('base64'));
+      },
+      unwrap: async function (text, aad) {
+        log.debug('Entering gcp-kms unwrap().');
+        const parts = kmsParts(text);
+        const body = parts ? /^(\d+):(.+)$/.exec(parts.ciphertext) : null;
+        if (!parts || parts.provider !== 'gcp-kms' || parts.keyRef !== name ||
+            !body) {
+          throw errorCodes.mark(new Error('the wrapped data key is not ' +
+            'under the Cloud KMS key "' + name + '"'), 'STS-KEYS-0103');
+        }
+        const [answer] = await client.decrypt({
+          name: name, ciphertext: Buffer.from(body[2], 'base64'),
+          additionalAuthenticatedData: Buffer.from(String(aad), 'utf8') });
+        if (!answer || !answer.plaintext) {
+          throw errorCodes.mark(new Error('Cloud KMS answered no plaintext'),
+                                'STS-KEYS-0103');
+        }
+        log.debug('Leaving gcp-kms unwrap().');
+        return Buffer.from(answer.plaintext);
+      },
+      owns: function (text) {
+        log.debug('Entering gcp-kms owns().');
+        const parts = kmsParts(text);
+        log.debug('Leaving gcp-kms owns().');
+        return !!parts && parts.provider === 'gcp-kms' &&
+               parts.keyRef === name;
+      },
+      // Wrapped under a version that is not the primary: the key was rotated
+      // in Cloud KMS (or its primary moved), and a re-wrap moves the data key
+      // to the primary so the old version can be disabled.
+      isStale: function (text) {
+        log.debug('Entering gcp-kms isStale().');
+        const parts = kmsParts(text);
+        const v = parts ? /^(\d+):/.exec(parts.ciphertext) : null;
+        log.debug('Leaving gcp-kms isStale().');
+        return !!v && !!latest && v[1] !== latest;
+      }
+    };
+    log.info('secrets: ' + secret.label + ' is the Cloud KMS key "' + name +
+             '" (primary version ' + latest + '); it never leaves the KMS, ' +
+             'which wraps each data key.');
+    log.debug('Leaving gcpKmsProvider.read().');
+    return handle;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// azure-keys — a KEY in Azure Key Vault or Managed HSM, through
+// `@azure/keyvault-keys` and `@azure/identity`'s DefaultAzureCredential (a
+// managed identity in Azure). `keys.kekVault` is the vault's URL and
+// `keys.kekRef` the key's name. Two kinds of key, because Azure offers two:
+//
+// * **An `oct-HSM` key (Managed HSM only)** is AES-256: each data key is
+//   encrypted with A256GCM and its AAD as the additional authenticated data,
+//   exactly as Transit and the other two do. Symmetric, so no quantum
+//   computer helps an attacker with it; this is the one to choose where a
+//   Managed HSM is available.
+// * **An `RSA` or `RSA-HSM` key of at least 3072 bits** (a Key Vault of
+//   either tier) wraps with RSA-OAEP-256, which takes NO associated data. So
+//   the wrapped plaintext is the data key followed by SHA-256 of its AAD, and
+//   the unwrap refuses a result whose digest is not this row's: a wrapped key
+//   moved to another realm's row unwraps in the vault and is refused HERE,
+//   rather than by the KMS. RSA-OAEP is not malleable, so the digest cannot
+//   be changed without the private key. 2048-bit keys are refused: ~112-bit
+//   strength, below the AES-256 they would protect. RSA is not post-quantum.
+//
+// The stored ciphertext is `<key version>:<base64>` (`<version>:<iv>.<tag>.
+// <ct>` for A256GCM), because Key Vault decrypts under the version named;
+// a data key wrapped under an older version is stale and re-wrapped at start.
+// ---------------------------------------------------------------------------
+const AZURE_RSA_MIN_BITS = 3072;
+
+const azureKeysProvider = {
+  id: 'azure-keys',
+  label: 'Azure Key Vault or Managed HSM key (the key never leaves it)',
+  remote: true,
+  describe: function (spec) {
+    log.debug("Entering azureKeysProvider.describe().");
+    const at = locationOf(spec || KEK, 'ref');
+    log.debug("Leaving azureKeysProvider.describe().");
+    return { from: at.where || '(no key name configured)',
+             vault: reachOf(spec || KEK, 'vault') ||
+                    '(no vault url configured)',
+             wraps: 'each data encryption key, in the vault' };
+  },
+  read: async function (spec) {
+    log.debug('Entering azureKeysProvider.read().');
+    const secret = spec || KEK;
+    const name = locationOf(secret, 'ref').where;
+    const vault = String(reachOf(secret, 'vault') || '').replace(/\/+$/, '');
+    if (!vault || !name) {
+      throw errorCodes.mark(new Error(secret.provider + ' is "azure-keys" ' +
+        'and it needs both ' + (secret.vault || 'keys.kekVault') +
+        ' (https://<name>.vault.azure.net, or a Managed HSM\'s URL) and ' +
+        secret.ref + ' (the key\'s name).'), 'STS-KEYS-0046');
+    }
+    if (!/^[A-Za-z0-9-]+$/.test(name)) {
+      throw errorCodes.mark(new Error(secret.ref + ' is "' + name + '", ' +
+        'which is not a Key Vault key name (letters, digits and "-").'),
+        'STS-KEYS-0102');
+    }
+    let keysSdk;
+    let identitySdk;
+    try {
+      keysSdk = loadSdk('@azure/keyvault-keys');
+    } catch (e) {
+      throw missingModule('@azure/keyvault-keys', 'azure-keys', e);
+    }
+    try {
+      identitySdk = loadSdk('@azure/identity');
+    } catch (e) {
+      throw missingModule('@azure/identity', 'azure-keys', e);
+    }
+    const credential = new identitySdk.DefaultAzureCredential();
+    const keyClient = new keysSdk.KeyClient(vault, credential);
+    const key = await keyClient.getKey(name);
+    const props = (key && key.properties) || {};
+    const ops = (key && key.keyOperations) || [];
+    const type = String((key && key.keyType) || '');
+    const symmetric = type === 'oct-HSM' || type === 'oct';
+    const rsa = type === 'RSA' || type === 'RSA-HSM';
+    const bits = rsa && key.key && key.key.n ? key.key.n.length * 8 : 0;
+    const needs = symmetric ? ['encrypt', 'decrypt'] : ['wrapKey', 'unwrapKey'];
+    const allowed = needs.every(function (op) { return ops.indexOf(op) >= 0; });
+    if (props.enabled === false || !allowed || !(symmetric || rsa) ||
+        (rsa && bits < AZURE_RSA_MIN_BITS)) {
+      throw errorCodes.mark(new Error('the Key Vault key "' + name + '" in ' +
+        vault + ' is not usable to wrap data keys: it must be enabled, an ' +
+        'oct-HSM key allowing encrypt and decrypt or an RSA key of at least ' +
+        AZURE_RSA_MIN_BITS + ' bits allowing wrapKey and unwrapKey (it is ' +
+        (type || '?') + (bits ? ' ' + bits + '-bit' : '') + ', ' +
+        (props.enabled === false ? 'disabled' : 'enabled') + ', operations ' +
+        (ops.join(' ') || 'none') + ').'), 'STS-KEYS-0102');
+    }
+    const keyRef = vault + '/keys/' + name;
+    let latest = String(props.version || '');
+    const clients = new Map();
+    function cryptoFor(version) {
+      log.debug('Entering azureKeysProvider.cryptoFor().');
+      let one = clients.get(version);
+      if (!one) {
+        one = new keysSdk.CryptographyClient(keyRef + '/' + version,
+                                             credential);
+        clients.set(version, one);
+      }
+      log.debug('Leaving azureKeysProvider.cryptoFor().');
+      return one;
+    }
+    function aadDigest(aad) {
+      log.debug('Entering azureKeysProvider.aadDigest().');
+      log.debug('Leaving azureKeysProvider.aadDigest().');
+      return nodeCrypto.createHash('sha256').update(String(aad), 'utf8')
+        .digest();
+    }
+    const handle = {
+      remote: true, provider: 'azure-keys', keyRef: keyRef,
+      label: 'Key Vault key ' + keyRef + ' (' + type +
+             (bits ? ' ' + bits : '') + ')',
+      wrap: async function (dek, aad) {
+        log.debug('Entering azure-keys wrap().');
+        const client = cryptoFor(latest);
+        let body;
+        if (symmetric) {
+          const answer = await client.encrypt({
+            algorithm: 'A256GCM', plaintext: Buffer.from(dek),
+            additionalAuthenticatedData: Buffer.from(String(aad), 'utf8') });
+          if (!answer || !answer.result || !answer.iv ||
+              !answer.authenticationTag) {
+            throw errorCodes.mark(new Error('Key Vault answered no ' +
+                                            'ciphertext'), 'STS-KEYS-0103');
+          }
+          body = [answer.iv, answer.authenticationTag, answer.result]
+            .map(function (b) { return Buffer.from(b).toString('base64'); })
+            .join('.');
+        } else {
+          const answer = await client.wrapKey('RSA-OAEP-256',
+            Buffer.concat([Buffer.from(dek), aadDigest(aad)]));
+          if (!answer || !answer.result) {
+            throw errorCodes.mark(new Error('Key Vault answered no ' +
+                                            'wrapped key'), 'STS-KEYS-0103');
+          }
+          body = Buffer.from(answer.result).toString('base64');
+        }
+        log.debug('Leaving azure-keys wrap().');
+        return kmsText('azure-keys', keyRef, latest + ':' + body);
+      },
+      unwrap: async function (text, aad) {
+        log.debug('Entering azure-keys unwrap().');
+        const parts = kmsParts(text);
+        const m = parts ? /^([A-Za-z0-9]+):(.+)$/.exec(parts.ciphertext) : null;
+        if (!parts || parts.provider !== 'azure-keys' ||
+            parts.keyRef !== keyRef || !m) {
+          throw errorCodes.mark(new Error('the wrapped data key is not ' +
+            'under the Key Vault key "' + keyRef + '"'), 'STS-KEYS-0103');
+        }
+        const client = cryptoFor(m[1]);
+        if (symmetric) {
+          const pieces = m[2].split('.');
+          if (pieces.length !== 3) {
+            throw errorCodes.mark(new Error('the wrapped data key is not an ' +
+                                            'A256GCM ciphertext'),
+                                  'STS-KEYS-0103');
+          }
+          const answer = await client.decrypt({
+            algorithm: 'A256GCM',
+            iv: Buffer.from(pieces[0], 'base64'),
+            authenticationTag: Buffer.from(pieces[1], 'base64'),
+            ciphertext: Buffer.from(pieces[2], 'base64'),
+            additionalAuthenticatedData: Buffer.from(String(aad), 'utf8') });
+          if (!answer || !answer.result) {
+            throw errorCodes.mark(new Error('Key Vault answered no ' +
+                                            'plaintext'), 'STS-KEYS-0103');
+          }
+          log.debug('Leaving azure-keys unwrap(). A256GCM.');
+          return Buffer.from(answer.result);
+        }
+        const answer = await client.unwrapKey('RSA-OAEP-256',
+                                              Buffer.from(m[2], 'base64'));
+        const out = answer && answer.result ? Buffer.from(answer.result) :
+                                              Buffer.alloc(0);
+        const want = aadDigest(aad);
+        const dek = out.subarray(0, Math.max(0, out.length - want.length));
+        const got = out.subarray(dek.length);
+        if ((dek.length !== 32 && dek.length !== 64) ||
+            !nodeCrypto.timingSafeEqual(got, want)) {
+          throw errorCodes.mark(new Error('the wrapped data key unwrapped ' +
+            'under "' + keyRef + '" but is bound to another data key\'s id, ' +
+            'scope, realm or class: it was moved onto this row'),
+            'STS-KEYS-0103');
+        }
+        log.debug('Leaving azure-keys unwrap(). RSA-OAEP-256.');
+        return Buffer.from(dek);
+      },
+      owns: function (text) {
+        log.debug('Entering azure-keys owns().');
+        const parts = kmsParts(text);
+        log.debug('Leaving azure-keys owns().');
+        return !!parts && parts.provider === 'azure-keys' &&
+               parts.keyRef === keyRef;
+      },
+      // Wrapped under a version that is not the key's current one: the key
+      // was rotated in the vault, and a re-wrap moves the data key onto the
+      // current version.
+      isStale: function (text) {
+        log.debug('Entering azure-keys isStale().');
+        const parts = kmsParts(text);
+        const v = parts ? /^([A-Za-z0-9]+):/.exec(parts.ciphertext) : null;
+        log.debug('Leaving azure-keys isStale().');
+        return !!v && !!latest && v[1] !== latest;
+      }
+    };
+    log.info('secrets: ' + secret.label + ' is the Key Vault key "' + keyRef +
+             '" (' + type + (bits ? ' ' + bits + '-bit' : '') + ', version ' +
+             latest + '); it never leaves the vault, which wraps each data ' +
+             'key.');
+    log.debug('Leaving azureKeysProvider.read().');
+    return handle;
+  }
+};
+
 const PROVIDERS = [fileProvider, awsProvider, gcpProvider, azureProvider,
-                   vaultProvider, transitProvider, awsKmsProvider];
+                   vaultProvider, transitProvider, awsKmsProvider,
+                   gcpKmsProvider, azureKeysProvider];
 // THE TWO SECRETS A KMS PROVIDER MAY SERVE: a handle is a key-encryption key
 // and nothing else.
 const KMS_CAPABLE = ['kek', 'previous-kek'];
 /**
- * The ids of the seven providers: file, aws, gcp, azure, vault, and the two
- * key management services vault-transit and aws-kms.
+ * The ids of the nine providers: file, aws, gcp, azure, vault, and the four
+ * key management services vault-transit, aws-kms, gcp-kms and azure-keys.
  */
 const PROVIDER_IDS = PROVIDERS.map(function (one) { return one.id; });
 
@@ -2709,6 +3063,113 @@ PROBES['aws-kms'] = {
                  usage: m.KeyUsage, spec: m.KeySpec, origin: m.Origin,
                  manager: m.KeyManager, multiRegion: !!m.MultiRegion,
                  created: m.CreationDate, rotation: rotation };
+      })
+    ];
+  }
+};
+
+PROBES['gcp-kms'] = {
+  scope: function (spec) {
+    log.debug("Entering scope().");
+    log.debug("Leaving scope().");
+    return locationOf(spec, 'ref').where;
+  },
+  store: function () {
+    log.debug("Entering store().");
+    log.debug("Leaving store().");
+    return [];
+  },
+  secret: function (spec) {
+    log.debug("Entering secret().");
+    const name = locationOf(spec, 'ref').where;
+    log.debug("Leaving secret().");
+    return [
+      runProbe('kms-key', 'What Cloud KMS says about the key that wraps the ' +
+               'data keys: its purpose, its primary version and its ' +
+               'rotation schedule.', async function () {
+        let sdk;
+        try {
+          sdk = loadSdk('@google-cloud/kms');
+        } catch (e) {
+          throw missingModule('@google-cloud/kms', 'gcp-kms', e);
+        }
+        if (!name) {
+          throw new Error('no Cloud KMS key is configured');
+        }
+        const client = new sdk.KeyManagementServiceClient();
+        const [k] = await client.getCryptoKey({ name: name });
+        const primary = (k && k.primary) || {};
+        return { name: k && k.name, purpose: k && k.purpose,
+                 algorithm: k && k.versionTemplate &&
+                            k.versionTemplate.algorithm,
+                 protectionLevel: k && k.versionTemplate &&
+                                  k.versionTemplate.protectionLevel,
+                 primaryVersion: gcpVersionOf(primary.name),
+                 primaryState: primary.state,
+                 rotationPeriod: k && k.rotationPeriod,
+                 nextRotation: k && k.nextRotationTime };
+      })
+    ];
+  }
+};
+
+PROBES['azure-keys'] = {
+  scope: function (spec) {
+    log.debug("Entering scope().");
+    log.debug("Leaving scope().");
+    return reachOf(spec, 'vault') + '|' + locationOf(spec, 'ref').where;
+  },
+  store: function () {
+    log.debug("Entering store().");
+    log.debug("Leaving store().");
+    return [];
+  },
+  secret: function (spec) {
+    log.debug("Entering secret().");
+    const name = locationOf(spec, 'ref').where;
+    const vault = String(reachOf(spec, 'vault') || '').replace(/\/+$/, '');
+    log.debug("Leaving secret().");
+    return [
+      runProbe('vault-key', 'What the vault says about the key that wraps ' +
+               'the data keys: its type, size, operations, version and ' +
+               'rotation.', async function () {
+        let keysSdk;
+        let identitySdk;
+        try {
+          keysSdk = loadSdk('@azure/keyvault-keys');
+          identitySdk = loadSdk('@azure/identity');
+        } catch (e) {
+          throw missingModule('@azure/keyvault-keys @azure/identity',
+                              'azure-keys', e);
+        }
+        if (!name || !vault) {
+          throw new Error('no Key Vault key is configured');
+        }
+        const client = new keysSdk.KeyClient(
+          vault, new identitySdk.DefaultAzureCredential());
+        const k = await client.getKey(name);
+        const p = (k && k.properties) || {};
+        let rotation = null;
+        try {
+          const policy = await client.getKeyRotationPolicy(name);
+          rotation = { expiresIn: policy && policy.expiresIn,
+                       actions: ((policy && policy.lifetimeActions) || [])
+                         .map(function (a) {
+                           return a.action + ' ' +
+                                  (a.timeAfterCreate || a.timeBeforeExpiry ||
+                                   '');
+                         }) };
+        } catch (e) {
+          log.debug("Caught in the vault-key probe: " +
+                    ((e && e.message) || e));
+          rotation = { error: String((e && e.message) || e) };
+        }
+        return { id: k && k.id, type: k && k.keyType,
+                 bits: k && k.key && k.key.n ? k.key.n.length * 8 :
+                                               undefined,
+                 operations: k && k.keyOperations, enabled: p.enabled,
+                 version: p.version, exportable: !!p.exportable,
+                 created: p.createdOn, rotation: rotation };
       })
     ];
   }

@@ -21,7 +21,9 @@
 #   * the key-encryption key and the other values every cell shares are the
 #     GLOBAL ones, copied from AWS into Secret Manager by
 #     deploy/multicloud/gcp-global, as is the cell's copy of the global tier —
-#     a Cloud SQL instance subscribed to the RDS writer's publication;
+#     a Cloud SQL instance subscribed to the RDS writer's publication. So a
+#     cell's KEK is a SECRET, never #391's Cloud KMS key: `kek_provider` must
+#     be `secret` in a cell, and kek.tf refuses anything else;
 #   * the nodes answer the other cells on 8446 through an internal load
 #     balancer at a fixed address (intercell.tf), and the public name's
 #     Route 53 tree is deploy/multicloud/interconnect's.
@@ -149,7 +151,10 @@ locals {
         consoleUrl = "https://${id}.${var.public_hostname}"
       } : {})
     ])
-    STS_CELL_CONSOLE_URL  = local.cell_console_host != "" ? "https://${local.cell_console_host}" : ""
+    STS_CELL_CONSOLE_URL = local.cell_console_host != "" ? "https://${local.cell_console_host}" : ""
+    # The cell's OWN key-encryption key: a secret in every case — the
+    # service refuses a KMS key for it (#391), so `kek_provider` does not
+    # reach it.
     STS_CELL_KEK_PROVIDER = "gcp"
     STS_CELL_KEK_REF      = google_secret_manager_secret.main["cell-kek"].id
     }, local.full ? {

@@ -149,6 +149,16 @@ output "intercell_url" {
   value       = local.multi ? "https://${local.intercell_hostname}:${local.intercell_port}" : ""
 }
 
+output "kek_provider" {
+  description = "Where the key-encryption key lives (kek.tf, #391): kms or secret."
+  value       = var.kek_provider
+}
+
+output "kek_ref" {
+  description = "The STS_KEYS_KEK_REF every node is given: the KMS key's ID (mrk-…), identical in every cell, or the `kek` secret's ARN."
+  value       = local.kek_environment.STS_KEYS_KEK_REF
+}
+
 output "cell_kek_secret_arn" {
   description = "The cell's own key-encryption key, replicated nowhere; empty for a single-cell environment."
   value       = local.multi ? aws_secretsmanager_secret.main["cell-kek"].arn : ""

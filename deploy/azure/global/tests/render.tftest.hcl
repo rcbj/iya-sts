@@ -134,6 +134,10 @@ run "globalidp" {
     condition     = length(azurerm_key_vault_secret.global) == 19 && length(azurerm_network_security_rule.cells_self) == 3
     error_message = "six shared secrets in each of three vaults and the master in one; a self rule per cell"
   }
+  assert {
+    condition     = azurerm_key_vault_secret.global_vault.name == "global-db-app-password" && azurerm_key_vault_secret.global_vault.value == azurerm_key_vault_secret.global["zsea-global-db-app-password"].value && data.azurerm_key_vault.global.name == "msglobalidpg-${substr(sha1("00000000-0000-0000-0000-000000000001/mock-sts/globalidp/global"), 0, 4)}"
+    error_message = "a copy of the global database password in the environment's global vault, where the service looks with the Key Vault KEK"
+  }
 }
 
 run "one_cell_refused" {

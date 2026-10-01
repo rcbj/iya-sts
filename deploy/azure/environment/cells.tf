@@ -210,12 +210,16 @@ locals {
   }
 
   # THE CONTRACT WITH THE SERVICE — AWS's `cell_environment`, name for name,
-  # with the `azure` secret provider where AWS has `aws`. Every secret is in
+  # with the `azure` secret provider where AWS has `aws`. The secrets are in
   # THIS cell's vault: its own (`cell-kek`) and the global ones the global/
   # stack wrote there (`kek`, `global-db-app-password`, …). The global
-  # database password needs no vault of its own — it falls back to the
-  # key-encryption key's, which is this one — and the cell key names its
-  # vault itself, because it has no fallback (`keys.cellKekVault`, #96).
+  # database password has no vault setting and is read from the
+  # key-encryption key's vault: this one with kek_provider = "secret", the
+  # environment's GLOBAL vault with "kms", where the global stack writes a
+  # copy (kek.tf). The service KEK itself is kek.tf's, the same for every
+  # cell. The cell key names its vault itself, because it has no fallback
+  # (`keys.cellKekVault`, #96), and stays a SECRET in either mode: the
+  # service refuses a key management service for it.
   cell_environment = local.multi ? merge({
     STS_CELL_ID           = var.cell
     STS_CELL_JURISDICTION = local.this_cell.jurisdiction

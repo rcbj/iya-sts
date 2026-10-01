@@ -6,7 +6,11 @@
 # deploy/aws/global/secrets.tf argues each).
 #
 #   kek                      the key-encryption key EVERY cell shares — what
-#                            STS_KEYS_KEK_* name in every cell
+#                            STS_KEYS_KEK_* name in every cell with
+#                            kek_provider = "secret". With "kms" (the
+#                            default) the KEK is ONE Key Vault key in the
+#                            global vault (../foundation/kek.tf) and this is
+#                            only what a migration names as the previous key
 #   global-db-app-password   the global database's `sts_app` password; the
 #                            role is made on the writer by the primary
 #                            cell's global schema-init and reaches every
@@ -28,6 +32,12 @@
 # from this state. Each copy is in its cell's region and read there, so a
 # cell's nodes never cross a region to start, and still start when the
 # primary region is the one that failed.
+#
+# AND ONE MORE COPY, IN THE ENVIRONMENT'S GLOBAL VAULT: `global-db-app-
+# password`. The service reads the global database password from the
+# key-encryption key's vault (it has no vault setting of its own), and with
+# kek_provider = "kms" that is the global vault the key is in
+# (../environment/kek.tf). Written in both modes, so this stack has no mode.
 #
 # THE CELL KEY-ENCRYPTION KEYS ARE NOT HERE, AND THAT IS THE POINT: each
 # cell's `cell-kek` is its own stack's, in its own vault only (issue #98,
@@ -107,6 +117,18 @@ resource "azurerm_key_vault_secret" "global" {
   tags = {
     Environment = var.environment
     Cell        = each.value.cell
+    Tier        = "global"
+  }
+}
+
+resource "azurerm_key_vault_secret" "global_vault" {
+  name         = "global-db-app-password"
+  key_vault_id = data.azurerm_key_vault.global.id
+  value        = random_password.db_app.result
+  content_type = "text/plain"
+  tags = {
+    Environment = var.environment
+    Cell        = "global"
     Tier        = "global"
   }
 }

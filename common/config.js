@@ -2669,7 +2669,7 @@ const SETTINGS = [
     label: 'Key-encryption key provider',
     path: 'keys.kekProvider', env: 'STS_KEYS_KEK_PROVIDER', type: 'enum',
     enumValues: ['file', 'aws', 'gcp', 'azure', 'vault', 'vault-transit',
-                 'aws-kms'],
+                 'aws-kms', 'gcp-kms', 'azure-keys'],
     dflt: 'file', runtime: false,
     restartReason: 'the key-encryption key is read once, at startup, before ' +
                    'the signing keys are decrypted',
@@ -2678,7 +2678,9 @@ const SETTINGS = [
                  '`vault` READ a 32-byte key into this process from a ' +
                  'mounted file or a secret store; `file` is the default ' +
                  'because it needs nothing. `vault-transit` (Vault or ' +
-                 'OpenBao Transit) and `aws-kms` are key management ' +
+                 'OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) and ' +
+                 '`azure-keys` (a Key Vault or Managed HSM key; ' +
+                 'keys.kekVault is its vault) are key management ' +
                  'services: the key NEVER leaves them, keys.kekRef names it, ' +
                  'and the KMS wraps and unwraps each data key — one call per ' +
                  'data key at start, none per value. Every provider but ' +
@@ -2726,7 +2728,8 @@ const SETTINGS = [
     path: 'keys.kekVault', env: 'STS_KEYS_KEK_VAULT', type: 'string',
     dflt: '', runtime: false,
     restartReason: 'read once at startup',
-    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net) ' +
+    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net, ' +
+                 'or a Managed HSM\'s, for `azure` and `azure-keys`) ' +
                  'or the HashiCorp Vault endpoint. Empty lets the Vault SDK ' +
                  'fall back to VAULT_ADDR, which is what an agent sidecar ' +
                  'sets.' },
@@ -2862,7 +2865,7 @@ const SETTINGS = [
     path: 'keys.kekRegion', env: 'STS_KEYS_KEK_REGION', type: 'string',
     dflt: '', runtime: false,
     restartReason: 'read once at startup',
-    description: 'The AWS region for Secrets Manager. Empty uses the SDK\'s ' +
+    description: 'The AWS region for Secrets Manager and AWS KMS. Empty uses the SDK\'s ' +
                  'own resolution (AWS_REGION, the shared config file, the ' +
                  'instance metadata service), which is what an in-cluster ' +
                  'deployment relies on.' },
@@ -2996,7 +2999,7 @@ const SETTINGS = [
     label: 'Where the previous key-encryption key is read from',
     env: 'STS_PREVIOUS_KEK_PROVIDER', type: 'enum',
     enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault',
-                 'vault-transit', 'aws-kms'],
+                 'vault-transit', 'aws-kms', 'gcp-kms', 'azure-keys'],
     dflt: 'none', runtime: false, perProcess: true,
     restartReason: 'the key is read once, before the store is restored',
     description: 'To rotate the key-encryption key: point keys.kek* at the ' +

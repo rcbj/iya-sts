@@ -6019,11 +6019,12 @@ key-provisioning act, where today it is one API call. With DEKs per realm it is
 now a change to what WRAPS a realm's DEKs and nothing else.
 
 
-### A KEK IN A KEY MANAGEMENT SERVICE, AND AES-256-SIV FOR THE DIRECTORY (#391 P3)
+### A KEK IN A KEY MANAGEMENT SERVICE, AND AES-256-SIV FOR THE DIRECTORY (#391 P3, P4)
 
 **`keys.kekProvider` may name a KMS key rather than a secret: `vault-transit`
-(OpenBao or HashiCorp Vault's Transit engine, mount `keys.kekTransitMount`) or
-`aws-kms`.** rcbj's decision: **the KMS key wraps EACH DEK directly** — there
+(OpenBao or HashiCorp Vault's Transit engine, mount `keys.kekTransitMount`),
+`aws-kms`, `gcp-kms` (Cloud KMS) or `azure-keys` (a Key Vault or Managed HSM
+key).** rcbj's decision: **the KMS key wraps EACH DEK directly** — there
 is no root key unwrapped into memory, so the KEK's bytes never enter the
 process. `secrets.js` returns a HANDLE for such a provider rather than bytes
 (`{ remote, provider, keyRef, wrap(dek, aad), unwrap(text, aad), owns(text),
@@ -6036,8 +6037,23 @@ other secret naming one is refused `STS-KEYS-0101`. What follows from it:
   (`aes256-gcm96`, `aes128-gcm96`, `chacha20-poly1305`; anything else is
   `STS-KEYS-0102` at start), and AWS's `EncryptionContext {'sts-dek': aad}`,
   on a key DescribeKey shows enabled, `ENCRYPT_DECRYPT` and
-  `SYMMETRIC_DEFAULT`. So a wrapped DEK moved to another realm's row is refused
+  `SYMMETRIC_DEFAULT`; Cloud KMS's `additionalAuthenticatedData` on an
+  `ENCRYPT_DECRYPT` / `GOOGLE_SYMMETRIC_ENCRYPTION` key; an Azure `oct-HSM`
+  key's A256GCM AAD. So a wrapped DEK moved to another realm's row is refused
   by the KMS, as `$dekwrap$` is refused locally.
+* **AN AZURE RSA KEY IS THE ONE EXCEPTION, AND IT IS HELD HERE.** A standard
+  Key Vault has no symmetric key, and RSA-OAEP-256 takes no AAD, so the wrapped
+  plaintext is the DEK followed by SHA-256 of its AAD and the unwrap refuses a
+  digest that is not the row's (`STS-KEYS-0103`): the vault unwraps a moved
+  key, and this service refuses it. OAEP is not malleable, so that is a
+  binding. Under 3072 bits is refused (2048 is ~112-bit, below the AES-256 it
+  would protect), and RSA is not post-quantum — an `oct-HSM` key is the
+  recommendation wherever a Managed HSM is available.
+* **THE KEY'S REFERENCE IS IN EVERY WRAPPED DEK, AND A DIFFERENT ONE IS
+  REFUSED** (`owns()`): every node and every cell must name the key
+  identically — a multi-region AWS key by its `mrk-` id with `keys.kekRegion`
+  per node, never a regional ARN; Cloud KMS by the KEY, never a version (a
+  version is refused, `STS-KEYS-0102`); Azure as vault URL plus name.
 * **WRAPPING AND UNWRAPPING ARE ASYNCHRONOUS, AND `seal()` IS NOT.** A DEK made
   under a remote KEK is held with `needsWrap` and wrapped by `wrapPending()`
   before its row is written (`writeDekRow()` awaits it), and a DEK read from
@@ -6046,17 +6062,22 @@ other secret naming one is refused `STS-KEYS-0101`. What follows from it:
   held already got (`STS-KEYS-0092`). `start()`, the change-log adoption and
   `refreshDekRows()` await the unwraps, so a started process holds every DEK
   it read. A KMS failure is `STS-KEYS-0103`.
-* **A Transit key version rotated in the KMS is a re-wrap**, the same as a
-  rotated KEK: `rewrapRotated()` asks `isStale()` (the `vault:vN:` version
-  against `latest_version`) and re-wraps at start. AWS rotates its backing key
-  inside one ARN and needs nothing.
+* **A key version rotated in the KMS is a re-wrap**, the same as a rotated
+  KEK: `rewrapRotated()` asks `isStale()` and re-wraps at start. Transit's
+  version is in its `vault:vN:` ciphertext; Cloud KMS and Azure name versions
+  outside the ciphertext, so their wrapped text is `<version>:<ciphertext>`,
+  and stale is "not the primary / current version". AWS rotates its backing
+  key inside one key id and needs nothing.
 * **Moving a local KEK into a KMS, or back, is `keys.previousKek*`** — the
   previous KEK may be either kind, so the P2 re-wrap is the migration.
 * **The keyed digests need bytes, not a handle**, so under a KMS they are made
   under the stored digest key (P2), which is wrapped like a DEK.
-* **`tests/kms_kek.js` holds it against a fake Transit server and a fake KMS
-  client** injected through `secrets.setSdkLoader()`; no test runs against a
-  real KMS yet.
+* **`tests/kms_kek.js` holds it against a fake Transit server and fake
+  AWS KMS, Cloud KMS and Key Vault clients** injected through
+  `secrets.setSdkLoader()`; no test runs against a real KMS yet.
+* **The four SDKs are optional peers** (`package.json`), like every cloud
+  SDK here: a deployment adds `@aws-sdk/client-kms`, `@google-cloud/kms` or
+  `@azure/keyvault-keys` (with `@azure/identity`) to `STS_CLOUD_SDKS`.
 
 **`keys.directoryCipher` (`aes-256-gcm`, the default, or `aes-256-siv`)
 chooses the cipher of NEW data keys of the classes stored on directory

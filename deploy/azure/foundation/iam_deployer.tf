@@ -24,7 +24,9 @@
 #   3. THE REGION FENCE: *Allowed locations* on each group (units.tf).
 #   4. RESOURCE-LEVEL GRANTS where the resource is shared: DNS Zone
 #      Contributor on the one public zone, AcrPush on the registry, Secrets
-#      Officer on each environment's vault (to write its secrets), Managed
+#      Officer on each environment's vault and each multi-region
+#      environment's global vault (to write its secrets; never a key, which
+#      is kek.tf's, the administrator's), Managed
 #      Identity Operator on each region's PostgreSQL key identity, blob data
 #      on the state container, and Reader on the foundation's groups so
 #      that it can FIND what it attaches (a disk-encryption set, a data
@@ -105,6 +107,11 @@ locals {
     "${pair[0]}-${pair[1]}" => { unit = pair[0], principal = pair[1] }
   }
 
+  deployer_global_vault_grants = {
+    for pair in setproduct(keys(local.global_groups), var.deployer_principal_ids) :
+    "${pair[0]}-${pair[1]}" => { env = pair[0], principal = pair[1] }
+  }
+
   deployer_region_grants = {
     for pair in setproduct(tolist(local.regions), var.deployer_principal_ids) :
     "${pair[0]}-${pair[1]}" => { region = pair[0], principal = pair[1] }
@@ -129,6 +136,16 @@ resource "azurerm_role_assignment" "deployer_readers" {
 resource "azurerm_role_assignment" "deployer_vaults" {
   for_each             = local.deployer_vault_grants
   scope                = azurerm_key_vault.unit[each.value.unit].id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = each.value.principal
+}
+
+# A multi-region environment's global vault (kek.tf): the global stack
+# writes its copy of `global-db-app-password` there. The vault's KEY is the
+# administrator's; Secrets Officer reaches no key.
+resource "azurerm_role_assignment" "deployer_global_vaults" {
+  for_each             = local.deployer_global_vault_grants
+  scope                = azurerm_key_vault.global[each.value.env].id
   role_definition_name = "Key Vault Secrets Officer"
   principal_id         = each.value.principal
 }

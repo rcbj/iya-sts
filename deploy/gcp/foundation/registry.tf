@@ -6,7 +6,9 @@
 #
 # Artifact Registry, Docker format, in the home region, under the project
 # key. Per build: `<sha>` (the service, built with
-# STS_CLOUD_SDKS=@google-cloud/secret-manager), `schema-<sha>`
+# STS_CLOUD_SDKS="@google-cloud/secret-manager @google-cloud/kms" — Secret
+# Manager for the database password, Cloud KMS for the key-encryption key,
+# #391), `schema-<sha>`
 # (deploy/gcp/schema-init) and `init-<sha>` (deploy/gcp/node-init: the
 # secrets and the ACME certificate).
 #

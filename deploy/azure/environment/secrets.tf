@@ -6,9 +6,13 @@
 # ENVIRONMENT (deploy/aws/environment/secrets.tf argues each): four, and
 # three more in product mode.
 #
-#   kek                      32 random bytes, base64 — read by the service
-#                            itself through common/secrets.js's `azure`
-#                            provider
+#   kek                      32 random bytes, base64 — the key-encryption
+#                            key with kek_provider = "secret", read by the
+#                            service itself through common/secrets.js's
+#                            `azure` provider; with "kms" (the default) the
+#                            KEK is a Key Vault KEY instead and this is only
+#                            the PREVIOUS key a migration names (kek.tf
+#                            argues why it is still made)
 #   db-app-password          the `sts_app` role's — read by the service the
 #                            same way, and set on the role by schema-init
 #   db-master-password       the server's administrator's, schema-init only
@@ -28,7 +32,8 @@
 # is READ, because the new version is the current one.
 #
 # HOW THEY REACH A NODE (units/): the ones the service reads for itself are
-# NAMED in its environment (STS_KEYS_KEK_REF, STS_DATABASE_PASSWORD_REF, in a
+# NAMED in its environment (STS_KEYS_KEK_REF or the key's name, kek.tf;
+# STS_DATABASE_PASSWORD_REF; in a
 # cell STS_CELL_KEK_REF and STS_GLOBAL_DATABASE_PASSWORD_REF), as on AWS; the
 # rest are read by the `sts-secrets` unit into a file on a tmpfs that the
 # containers take as `--env-file` — what ECS's `secrets` injection did. None

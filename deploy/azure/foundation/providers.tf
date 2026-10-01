@@ -18,9 +18,12 @@ provider "azurerm" {
       # A vault here is LONG-LIVED and its name is global: a deleted one
       # keeps its name for its retention period, so it is recovered rather
       # than left to block a re-apply, and never purged by Terraform.
-      purge_soft_delete_on_destroy          = false
-      recover_soft_deleted_key_vaults       = true
-      purge_soft_deleted_keys_on_destroy    = false
+      purge_soft_delete_on_destroy       = false
+      recover_soft_deleted_key_vaults    = true
+      purge_soft_deleted_keys_on_destroy = false
+      # A key-encryption key deleted with its environment and re-made within
+      # the retention period comes back with every version (kek.tf).
+      recover_soft_deleted_keys             = true
       purge_soft_deleted_secrets_on_destroy = false
       recover_soft_deleted_secrets          = true
     }

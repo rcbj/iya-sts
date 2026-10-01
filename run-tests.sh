@@ -503,7 +503,7 @@ buildAndPushEphemeralImages()
   commit="$(git rev-parse HEAD)"
   echo "==> building the ${tag} images from this working tree"
   docker build -q -t "${repo}:${tag}" \
-    --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
+    --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms" \
     --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
     --build-arg GIT_COMMIT="${commit}" . > /dev/null || return 1
   docker build -q -t "${repo}:schema-${tag}" \

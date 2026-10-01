@@ -18,6 +18,8 @@
 #                                environment writes them, the nodes read them
 #     tls                        with a public name: the ACME certificate and
 #                                its key, written by node-a alone
+#     kek-rsa                    a single-cell environment's key-encryption
+#                                KEY (#391), the administrator's: kek.tf
 #
 # WHY THE VAULT IS HERE AND NOT IN THE ENVIRONMENT. A vault's name is global
 # and a deleted vault keeps it, soft-deleted, for its retention period — so
@@ -30,8 +32,8 @@
 #
 # WHY THE IDENTITY IS HERE: the deployer creates no identity and assigns no
 # role (iam_deployer.tf), so everything a node may do is decided here, by an
-# administrator — Key Vault Secrets User on its vault, AcrPull on the
-# registry, and with a public name the TXT records of its zone and a new
+# administrator — Key Vault Secrets User on its vault, Crypto User on its
+# key-encryption key alone (kek.tf), AcrPull on the registry, and with a public name the TXT records of its zone and a new
 # version of its certificate.
 #
 # ONE IDENTITY PER VM, as on GCP: every container on a node reaches the same
@@ -177,9 +179,10 @@ resource "azurerm_role_assignment" "nodes_acme" {
 
 # ---------------------------------------------------------------------------
 # A MULTI-REGION ENVIRONMENT'S GLOBAL GROUP: the global tier's writer and
-# replicas, and Traffic Manager (../global/). No identity and no vault of its
-# own — the global secrets are written into every cell's vault, where that
-# cell's nodes read them.
+# replicas, and Traffic Manager (../global/). No identity of its own. Its
+# one vault (kek.tf) holds the environment's key-encryption key and a copy
+# of the global database password; every other global secret is written
+# into every cell's vault, where that cell's nodes read it.
 # ---------------------------------------------------------------------------
 resource "azurerm_resource_group" "global" {
   for_each = local.global_groups

@@ -5,10 +5,13 @@
 # THE TWO ROLES A NODE'S TASK RUNS WITH, EACH WITH THE LEAST IT NEEDS.
 #
 # TASK ROLE — what the mock-sts CONTAINER can do with its credentials: read
-# the key-encryption key and the database password (GetSecretValue at startup,
-# DescribeSecret for the /admin/secrets report), and decrypt them with the
-# project key, only through Secrets Manager. Nothing else: no S3, no RDS API,
-# no other secret. The schema-init container shares it and uses none of it.
+# the database password, and the key-encryption key where it is a secret
+# (kek.tf), with GetSecretValue at startup and DescribeSecret for the
+# /admin/secrets report, and decrypt them with the project key, only through
+# Secrets Manager; and, where the key-encryption key is the foundation's KMS
+# key (the default since #391), wrap and unwrap the data encryption keys with
+# it directly. Nothing else: no S3, no RDS API, no other secret, no other
+# key. The schema-init container shares it and uses none of it.
 #
 # AND, WHERE THERE IS A PUBLIC NAME, ONE MORE THING — `acm:ExportCertificate`
 # on THAT ONE CERTIFICATE, which the `cert-init` container uses and the other
@@ -61,8 +64,12 @@ data "aws_iam_policy_document" "task" {
     # node also reads its CELL key-encryption key and the global database's
     # password. `compact`, because a cell's `base` phase has no global
     # secrets yet and runs no node to read them.
+    #
+    # THE `kek` SECRET ONLY WHERE A NODE READS IT (kek.tf, #391): as the KEK
+    # with `kek_provider = "secret"`, as the previous KEK while migrating.
+    # With a KMS KEK the node never asks for it, so it may not.
     resources = compact(concat([
-      local.shared_secret_arns["kek"],
+      local.kek_reads_secret ? local.shared_secret_arns["kek"] : "",
       aws_secretsmanager_secret.main["db-app-password"].arn,
       ], local.multi ? [
       aws_secretsmanager_secret.main["cell-kek"].arn,
@@ -77,6 +84,26 @@ data "aws_iam_policy_document" "task" {
       test     = "StringEquals"
       variable = "kms:ViaService"
       values   = ["secretsmanager.${local.region}.amazonaws.com"]
+    }
+  }
+
+  # THE KEY-ENCRYPTION KEY IN KMS (kek.tf, #391), called directly by the
+  # node: DescribeKey at start (the service checks the key is enabled,
+  # ENCRYPT_DECRYPT and SYMMETRIC_DEFAULT), Encrypt and Decrypt to wrap and
+  # unwrap each data encryption key, and GetKeyRotationStatus for the
+  # /admin/secrets report. On the key's primary and replica ARNs and nothing
+  # else; no `kms:ViaService`, because no AWS service is between the node and
+  # the key. Absent with `kek_provider = "secret"`. The foundation's
+  # workload boundary carries the same four on the same key.
+  dynamic "statement" {
+    for_each = local.kek_in_kms ? [1] : []
+    content {
+      sid = "WrapAndUnwrapWithTheKeyEncryptionKey"
+      actions = [
+        "kms:DescribeKey", "kms:Encrypt", "kms:Decrypt",
+        "kms:GetKeyRotationStatus",
+      ]
+      resources = local.kek_key_arns
     }
   }
 

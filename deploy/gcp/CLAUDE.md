@@ -17,7 +17,7 @@ need a change.
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the GCS state bucket `mock-sts-terraform-state-<project>`, versioned | an administrator |
-| `foundation/` | long-lived | the APIs, the KMS key ring and key (and the service agents' use of it), Artifact Registry `mock-sts`, the log bucket and sink, **the public zone `gcp.iyasec.io`**, the deployer service account, **one node service account per environment**, and **one certificate secret per environment with a public name** | an administrator |
+| `foundation/` | long-lived | the APIs, the KMS key ring and key (and the service agents' use of it), **the service's key-encryption key `mock-sts-kek` and each environment's node account's use of it (#391)**, Artifact Registry `mock-sts`, the log bucket and sink, **the public zone `gcp.iyasec.io`**, the deployer service account, **one node service account per environment**, and **one certificate secret per environment with a public name** | an administrator |
 | `dns-delegation/` | once | the NS record `gcp.iyasec.io` in **the Route 53 zone `iyasec.io`**, naming Cloud DNS's name servers | an administrator with AWS **and** GCP credentials |
 | `environment/` | per run | VPC, firewall, passthrough network load balancer, Cloud SQL primary + replica behind a Private Service Connect endpoint, secrets, three zonal managed instance groups of one VM each, the public A record | the deployer (impersonated) |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `dev` and `ci` have none | the deployer |
@@ -48,7 +48,7 @@ and the parent's signing is AWS's.
 |---|---|---|
 | ECS on Fargate, one service per AZ, desired count 1 | **One zonal managed instance group per zone, size 1**, on Container-Optimized OS; `node-a`'s group STABLE before the others are made | Cloud Run publishes HTTP(S) on one port and terminates TLS — no 389/636/88/gRPC, no client certificate. GKE publishes everything and is a cluster to keep. COS is kept current by Google, which is what Fargate bought. A group, not a bare VM, because it **autoheals** on `/healthcheck` as ECS replaced a task |
 | Task definition: `cert-init`, `schema-init`, `mock-sts` | systemd units from cloud-init: `sts-disk` → `sts-registry` → `sts-secrets` → `sts-cert` → `sts-schema` → `sts-node` | `Requires=`/`After=` is `dependsOn: SUCCESS`: a node whose certificate or schema failed does not start |
-| ECS `secrets` injection | `sts-secrets` reads Secret Manager into env files on `/run` (a tmpfs); the containers take them as `--env-file` | Nothing secret is ever in instance metadata, which anybody who can describe the VM reads. The KEK and the database password are still read by the SERVICE through `common/secrets.js`'s `gcp` provider — the path #51 exists to exercise |
+| ECS `secrets` injection | `sts-secrets` reads Secret Manager into env files on `/run` (a tmpfs); the containers take them as `--env-file` | Nothing secret is ever in instance metadata, which anybody who can describe the VM reads. The database password is still read by the SERVICE through `common/secrets.js`'s `gcp` provider — the path #51 exists to exercise — and so is the KEK with `kek_provider = "secret"`; by default the KEK is a Cloud KMS key the service never reads (*The key-encryption key*, below) |
 | NLB, TCP passthrough, PROXY v2, client-IP preservation off | **Regional external passthrough NLB** (backend-service based), one static address, two forwarding rules | A passthrough NLB is not a connection endpoint at all — the node's TLS is the client's, so `GET /tls/sign-in` and RFC 8705 work. It **preserves the client's address and sends no PROXY header**, so the nodes run `STS_PROXY_PROTOCOL=off` and trust no proxy |
 | 443 → 8081, 80 → 8082 on the NLB | **Docker publishes them** (`-p 443:8081`, `-p 80:8082`, the rest 1:1) | A passthrough load balancer does not translate ports |
 | Five target groups, and the SPIFFE ports registered BY ADDRESS by hand | One backend service (the three instance groups); SPIFFE's 8092/8181 are a second forwarding rule on the same address | A forwarding rule takes five ports. **The register-by-address workaround and its "re-apply after every restart" are gone**: the backend follows its instances |
@@ -113,10 +113,94 @@ an administrator's re-apply, as a new `public_dns` name is on AWS.
   database master password. Every container on a VM reaches the same metadata
   server, so the service here COULD read every secret of its environment.
   Closing it would mean blocking the service container from the metadata
-  server, and the service reads its KEK through it.
+  server, and the service reaches its KEK through it — the Cloud KMS key by
+  default, which the VM's identity can USE and never read.
 * **`secretmanager.admin` reads every secret in the project**, the
   foundation's certificate keys included — the price of the deployer granting
   per-secret access at all. A dedicated project keeps "every secret" small.
+
+## The key-encryption key: in Cloud KMS by default (#391)
+
+**Every value the service seals is sealed under a data encryption key (DEK),
+and every DEK is wrapped by the key-encryption key (KEK).** `environment/kek.tf`
+chooses where the KEK is, with `kek_provider`:
+
+| `kek_provider` | The node is told | What it means |
+|---|---|---|
+| **`kms`** (the default) | `STS_KEYS_KEK_PROVIDER=gcp-kms`, `STS_KEYS_KEK_REF=projects/<p>/locations/<home>/keyRings/mock-sts/cryptoKeys/mock-sts-kek` | **The key never leaves Cloud KMS.** The node asks it to wrap and unwrap each DEK (with the DEK's additional authenticated data), once per DEK at start; no KEK bytes are in the process, a secret, the state or a backup |
+| `secret` | `STS_KEYS_KEK_PROVIDER=gcp`, `STS_KEYS_KEK_REF=<the environment's kek secret>` | #95's arrangement: 32 random bytes READ into the process. Anybody who can read the secret — the node, the deployer (`secretmanager.admin`), an owner — holds the key to everything |
+
+`kms` is the default because the project's rule is the most secure choice by
+default and the weaker one on request.
+
+**A DEDICATED KEY IN THE FOUNDATION, `mock-sts-kek`, beside `main` in the home
+ring — not `main`, and not one per environment:**
+
+* **Not `main`**: `main` is used by Google's service agents to encrypt
+  storage (secrets, Cloud SQL, disks, the registry, logs). A node account
+  with encrypt/decrypt on it could have the KMS decrypt what the agents
+  sealed; on `mock-sts-kek` it can only wrap and unwrap DEKs. Different
+  purpose, different grantee, different rotation (`main` 90 days, the KEK
+  `kek_rotation_period`, a year).
+* **Long-lived, one for the project**: a Cloud KMS key cannot be deleted —
+  only its versions destroyed — so a key made by each environment apply
+  would leave one behind every time `dev` or `ci` is torn down. Every
+  environment on `kms` names this one key, and a key in one location is
+  usable from every region.
+* **One key name everywhere**: the service stores the key's resource name in
+  every wrapped DEK and refuses a row whose name differs, so every node must
+  configure the identical name — read from the foundation, never spelt — and
+  it is the KEY's name, never a version's (the service refuses a version).
+* **Rotation is the key's own**: on a new primary version, each node re-wraps
+  at its next start every DEK wrapped under a version that is no longer
+  primary. An old version may then be DISABLED; never DESTROY one a database
+  backup may still need.
+
+**THE NODE'S RIGHTS ARE GRANTED IN THE FOUNDATION, on that one key**, to every
+listed environment's node account (`kms.tf`, `kek_nodes`) — the deployer holds
+no IAM administration role, so `environment/` cannot make the grant:
+
+* `roles/cloudkms.cryptoKeyEncrypterDecrypter` — wrap and unwrap;
+* **`roles/cloudkms.viewer`** — the service calls `getCryptoKey` at start to
+  check the key is ENCRYPT_DECRYPT, GOOGLE_SYMMETRIC_ENCRYPTION, with an
+  enabled primary, and **`cloudkms.cryptoKeys.get` is not in the encrypter
+  role**. Without it the node stops at start with a 403.
+
+Nothing project-wide; the GCP cells' accounts get nothing. An environment on
+`secret` holds the two roles on a key it never calls, because the deployer
+could not add them at the environment's own apply. On `kms` the node LOSES its
+read on the `kek` secret (`secrets.tf`) unless a migration is under way.
+
+**MIGRATING an environment that ran on `secret`** (its database holds DEKs
+wrapped under the secret) — `STS_PREVIOUS_KEK_*` is the service's rotation
+mechanism, and the secret is the previous KEK:
+
+1. apply `kek_provider = "kms"`, `kek_migrating_from_secret = true`: every
+   node also gets `STS_PREVIOUS_KEK_PROVIDER=gcp` and
+   `STS_PREVIOUS_KEK_REF=<the kek secret>`, and re-wraps every DEK under the
+   KMS key at start;
+2. let EVERY node start that way;
+3. apply `kek_migrating_from_secret = false`.
+
+A new environment needs neither. **The `kek` secret is generated on `kms` too**:
+step 1 reads it, and a backup taken before the migration was wrapped under it.
+
+**A GCP CELL (#97) MUST BE `secret`**, and `kek.tf` refuses `kms` there: a
+cell's KEK is the global one AWS made and every cell on both clouds shares
+(`deploy/multicloud/gcp-global`), and an AWS cell cannot use a Cloud KMS key.
+`deploy/multicloud/envs/testidpmc.gcp.tfvars` sets it. **The cell KEK**
+(`STS_CELL_KEK_*`) cannot be a KMS key at all — the service refuses one — and
+stays a secret everywhere.
+
+**The image needs `@google-cloud/kms`** beside `@google-cloud/secret-manager`
+in `STS_CLOUD_SDKS` (*Running it by hand*, below); without it the node stops at
+start naming the package. **The foundation must be re-applied with #391
+before an environment applies on `kms`**: the environment looks the key up by
+name and fails at plan when it is not there.
+
+`environment/tests/kek.tftest.hcl` and `foundation/tests/kek.tftest.hcl` hold
+all of this offline (mocked providers): `terraform -chdir=deploy/gcp/<stack>
+init -backend=false`, then `terraform test`.
 
 ## Cloud SQL's names and TLS
 
@@ -177,7 +261,8 @@ Estimated from 2026 on-demand list prices in us-west1, not measured:
   (~$0.035/h), four external IPv4 addresses (~$0.02/h) — **about $0.29 an
   hour idle**, before disks and backups.
 * `testidp`: three e2-standard-2 (~$0.20/h) — **about $0.39 an hour**.
-* Long-lived: the key (~$0.06/month per version), a public zone ($0.20/month),
+* Long-lived: the two keys (~$0.06/month per version each; the KEK also
+  ~$0.03 per 10,000 operations, one per DEK per node start), a public zone ($0.20/month),
   the log bucket and the registry by volume.
 
 ## What to look at first on the first apply
@@ -214,7 +299,7 @@ terraform -chdir=deploy/gcp/dns-delegation apply -var project_id=<project>   # A
 
 # the three images, from the repository root
 R=us-west1-docker.pkg.dev/<project>/mock-sts/mock-sts
-docker build -t $R:<tag> --build-arg STS_CLOUD_SDKS="@google-cloud/secret-manager" .
+docker build -t $R:<tag> --build-arg STS_CLOUD_SDKS="@google-cloud/secret-manager @google-cloud/kms" .
 docker build -t $R:schema-<tag> -f deploy/gcp/schema-init/Dockerfile .
 docker build -t $R:init-<tag> -f deploy/gcp/node-init/Dockerfile .
 gcloud auth print-access-token --impersonate-service-account=mock-sts-deployer@<project>.iam.gserviceaccount.com |

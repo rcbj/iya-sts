@@ -55,11 +55,10 @@ locals {
     STS_WORKERS_READ_YOUR_WRITE = tostring(var.workers_read_your_write)
     AWS_REGION                  = local.region
 
-    # The key-encryption key and the database password, from Secrets Manager
-    # through common/secrets.js — the path issue #51 exists to exercise.
-    STS_KEYS_KEK_PROVIDER          = "aws"
-    STS_KEYS_KEK_REF               = local.shared_secret_arns["kek"]
-    STS_KEYS_KEK_REGION            = local.region
+    # The database password, from Secrets Manager through common/secrets.js
+    # — the path issue #51 exists to exercise. The key-encryption key is
+    # `local.kek_environment` below: a key in KMS by default, the Secrets
+    # Manager secret with `kek_provider = "secret"` (kek.tf, #391).
     STS_DATABASE_PASSWORD_PROVIDER = "aws"
     STS_DATABASE_PASSWORD_REF      = aws_secretsmanager_secret.main["db-app-password"].arn
     STS_DATABASE_PASSWORD_REGION   = local.region
@@ -102,6 +101,9 @@ locals {
     # agreeing by coincidence with a default in another repository file.
     STS_RISK_UPLOAD_DIRECTORY = local.risk_upload_dir
     },
+    # THE KEY-ENCRYPTION KEY (kek.tf, #391): STS_KEYS_KEK_*, and while an
+    # environment migrates from a secret KEK, STS_PREVIOUS_KEK_* as well.
+    local.kek_environment,
     # THE PUBLIC CERTIFICATE, WHERE THERE IS ONE. `cert-init` has written both
     # files into the shared volume before this container is allowed to start, so
     # the node serves the ACM leaf on its own 8081 rather than the self-signed

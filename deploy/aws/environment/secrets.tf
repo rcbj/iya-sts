@@ -6,7 +6,13 @@
 # FIFTH IN PRODUCT MODE.
 #
 #   kek                      32 random bytes, base64 — the key-encryption key
-#                            `common/secrets.js` reads (STS_KEYS_KEK_PROVIDER=aws)
+#                            `common/secrets.js` reads with `kek_provider =
+#                            "secret"` (STS_KEYS_KEK_PROVIDER=aws). With the
+#                            default "kms" the KEK is foundation's KMS key and
+#                            this is read only as the PREVIOUS key while an
+#                            environment migrates; it is made in both modes
+#                            because the migration and the carry-over of a
+#                            converted environment depend on it (kek.tf)
 #   db-app-password          the least-privilege `sts_app` role's password,
 #                            read by the service (STS_DATABASE_PASSWORD_PROVIDER=aws)
 #                            and set on the role by the schema-init container
@@ -126,7 +132,9 @@ resource "random_password" "krb5_service" {
 # In a cell, what must be THE SAME IN EVERY CELL is not made here but by the
 # global/ stack, once, and replicated into every cell region under the global
 # multi-region key: the key-encryption key every cell shares (`kek`, which is
-# what STS_KEYS_KEK_* keep naming), the seeded management client's secret, and
+# what STS_KEYS_KEK_* name with `kek_provider = "secret"`, and the previous
+# KEK while migrating to the KMS key, kek.tf), the seeded management client's
+# secret, and
 # in product mode the bootstrap administrator's and the KDC's passwords — a
 # value generated here per cell would be a different value in each, and the
 # one the cluster seeded first would win in the global tier while the others

@@ -6,10 +6,17 @@
 # INTO EVERY OTHER CELL'S (issue #98, 2026-09-28).
 #
 #   kek                      the key-encryption key EVERY cell shares — what
-#                            STS_KEYS_KEK_* name in every cell, the single-cell
+#                            STS_KEYS_KEK_* name in every cell with
+#                            `kek_provider = "secret"`, the single-cell
 #                            environment's `kek` become global (D8: one set of
 #                            signing keys per realm, held in the global tier,
-#                            sealed under this)
+#                            sealed under this). Since #391 the default KEK is
+#                            foundation's multi-region KMS key instead, and
+#                            this is read only as the PREVIOUS key while an
+#                            environment migrates to it; it is still made, for
+#                            that migration, the carry-over below and a
+#                            multi-cloud environment's GCP cells, which read
+#                            it (../environment/kek.tf)
 #   global-db-app-password   the global database's `sts_app` password
 #                            (STS_GLOBAL_DATABASE_PASSWORD_*); the role is
 #                            made on the writer by the primary cell's

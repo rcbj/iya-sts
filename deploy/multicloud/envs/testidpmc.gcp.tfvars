@@ -23,6 +23,15 @@ extra_environment = {
   STS_PERSISTENCE_MINTED_RETENTION = "7200000"
 }
 
+# THE KEY-ENCRYPTION KEY STAYS THE GLOBAL SECRET (#391). deploy/gcp's
+# default is its Cloud KMS key, which an AWS cell cannot use; and every cell
+# must name the SAME KEK, because the service stores the KEK's name in every
+# wrapped data key and refuses a row whose name differs. So a GCP cell reads
+# the global `kek` deploy/multicloud/gcp-global copied from AWS, as an AWS
+# cell reads the original. deploy/gcp/environment/kek.tf refuses `kms` in a
+# cell; this says it rather than relying on the refusal.
+kek_provider = "secret"
+
 sts_mode                = "product"
 workers_request_count   = 2
 workers_surface_count   = 0

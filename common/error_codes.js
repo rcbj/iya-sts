@@ -2544,7 +2544,8 @@ const CODES = [
     spec: 'the console\'s and the API\'s refusal, 400' },
   { code: 'STS-KEYS-0101',
     summary: 'A secret other than the key-encryption key names a key ' +
-      'management service (vault-transit, aws-kms) as its provider; a KMS ' +
+      'management service (vault-transit, aws-kms, gcp-kms, azure-keys) as ' +
+      'its provider; a KMS ' +
       'wraps keys and holds nothing to read. The read is refused (#391).',
     spec: '' },
   { code: 'STS-KEYS-0102',

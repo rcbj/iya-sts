@@ -3614,7 +3614,8 @@ let rewrapped = 0;
 
 // ---------------------------------------------------------------------------
 // A KEY-ENCRYPTION KEY IN A KEY MANAGEMENT SERVICE (#391 P3). `secrets.js`
-// hands back a HANDLE for `vault-transit` and `aws-kms` rather than bytes:
+// hands back a HANDLE for `vault-transit`, `aws-kms`, `gcp-kms` and
+// `azure-keys` rather than bytes:
 // it wraps and unwraps a DEK in the KMS, asynchronously, and the key never
 // enters this process. Everything below asks `isRemote()` and either calls
 // the handle or does what it always did with bytes.

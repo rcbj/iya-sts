@@ -99,7 +99,8 @@ resource "aws_iam_role" "deployer" {
 # ---------------------------------------------------------------------------
 # THE BOUNDARY EVERY ROLE THE DEPLOYER CREATES MUST CARRY.
 #
-# The union of what the ECS task role (mock-sts reading its two secrets, and
+# The union of what the ECS task role (mock-sts reading its secrets and,
+# since #391, wrapping its data encryption keys with the KEK in KMS, and
 # cert-init exporting the public certificate), the ECS execution role (pulling
 # the images, writing logs, injecting the environment's secrets) and the suite
 # runner's role (uploading its report) can do. A role's effective permissions
@@ -137,6 +138,22 @@ data "aws_iam_policy_document" "workload_boundary" {
       variable = "kms:ViaService"
       values   = [for r in local.regions : "secretsmanager.${r}.amazonaws.com"]
     }
+  }
+  # THE KEY-ENCRYPTION KEY, CALLED DIRECTLY (#391, kms.tf). With an
+  # environment's `kek_provider = "kms"` the container wraps and unwraps its
+  # data encryption keys in KMS itself — no `kms:ViaService`, because no AWS
+  # service stands between — and reports the key's rotation on
+  # /admin/secrets. These four actions and this one key, in every permitted
+  # region; never `kms:ReEncrypt*`, `GenerateDataKey*` or a grant, which the
+  # service does not call. The environment's task role names the regional
+  # ARNs (environment/iam.tf); the effective permission is the intersection.
+  statement {
+    sid = "WrapAndUnwrapWithTheKeyEncryptionKey"
+    actions = [
+      "kms:DescribeKey", "kms:Encrypt", "kms:Decrypt",
+      "kms:GetKeyRotationStatus",
+    ]
+    resources = [local.kek_key_arn_any_region]
   }
   statement {
     sid       = "PullTheProjectImage"
@@ -690,6 +707,16 @@ data "aws_iam_policy_document" "deploy_data" {
       "kms:GenerateDataKey*",
     ]
     resources = local.all_project_key_arns
+  }
+
+  # THE KEY-ENCRYPTION KEY (#391): DESCRIBED, NEVER USED. The environment
+  # finds it by its alias (`data.aws_kms_key.kek`) to hand the nodes its ID
+  # and name its ARNs in the task role; the deployer wraps nothing with it,
+  # and only the nodes' task role may (the workload boundary).
+  statement {
+    sid       = "DescribeTheKeyEncryptionKey"
+    actions   = ["kms:DescribeKey"]
+    resources = [local.kek_key_arn_any_region]
   }
 
   statement {

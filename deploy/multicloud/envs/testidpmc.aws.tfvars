@@ -28,6 +28,14 @@ extra_environment = {
   STS_PERSISTENCE_MINTED_RETENTION = "7200000"
 }
 
+# THE KEY-ENCRYPTION KEY IS THE SECRET, NOT THE KMS KEY (#391). The AWS
+# stack's default is foundation's multi-region KMS key, but every cell must
+# name the SAME KEK, and the GCP cells read it from Secret Manager (copied by
+# gcp-global from AWS's `kek` secret) — a GCP node cannot call AWS KMS
+# without AWS credentials. deploy/aws/environment refuses "kms" with a cell
+# whose cloud is not aws (kek.tf).
+kek_provider = "secret"
+
 sts_mode                = "product"
 workers_request_count   = 2
 workers_surface_count   = 0

@@ -140,8 +140,16 @@ run "dev" {
     error_message = "no public name: the load balancer's address"
   }
   assert {
-    condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "azure" && local.node_environment.STS_KEYS_KEK_VAULT == "https://msvault-abcd.vault.azure.net" && local.node_environment.STS_PROXY_PROTOCOL == "off"
-    error_message = "the key from Key Vault, and no PROXY header"
+    condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "azure-keys" && local.node_environment.STS_KEYS_KEK_VAULT == "https://msvault-abcd.vault.azure.net" && local.node_environment.STS_KEYS_KEK_REF == "kek-rsa" && local.node_environment.STS_PROXY_PROTOCOL == "off"
+    error_message = "by default the KEK is the Key Vault key in the unit's own vault, spelt without its slash; and no PROXY header"
+  }
+  assert {
+    condition     = length([for k in keys(local.node_environment) : k if startswith(k, "STS_PREVIOUS_KEK_")]) == 0 && local.node_environment.STS_DATABASE_PASSWORD_VAULT == "https://msvault-abcd.vault.azure.net" && length(data.azurerm_key_vault.global_kek) == 0
+    error_message = "no previous key unless migrating; the password names its own vault; no global vault outside a cell"
+  }
+  assert {
+    condition     = contains(keys(local.secrets), "kek")
+    error_message = "the `kek` secret is still made with the Key Vault key (kek.tf)"
   }
   assert {
     condition     = !contains(keys(local.node_environment), "STS_CELL_ID") && length(azurerm_lb.intercell) == 0
@@ -163,6 +171,51 @@ run "dev" {
     condition     = contains(keys(azurerm_network_security_rule.rules), "nodes-deny-inbound") && !contains(keys(azurerm_network_security_rule.rules), "nodes-dns-out")
     error_message = "the deny rules, and no DNS egress without a public name"
   }
+}
+
+run "dev_kek_secret" {
+  variables {
+    environment  = "dev"
+    kek_provider = "secret"
+  }
+  assert {
+    condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "azure" && local.node_environment.STS_KEYS_KEK_VAULT == "https://msvault-abcd.vault.azure.net" && local.node_environment.STS_KEYS_KEK_REF == "kek"
+    error_message = "secret: the `kek` secret through the `azure` provider, as before #391"
+  }
+  assert {
+    condition     = length([for k in keys(local.node_environment) : k if startswith(k, "STS_PREVIOUS_KEK_")]) == 0
+    error_message = "secret: no previous key"
+  }
+}
+
+run "dev_kek_migrating" {
+  variables {
+    environment               = "dev"
+    kek_migrating_from_secret = true
+  }
+  assert {
+    condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "azure-keys" && local.node_environment.STS_PREVIOUS_KEK_PROVIDER == "azure" && local.node_environment.STS_PREVIOUS_KEK_VAULT == "https://msvault-abcd.vault.azure.net" && local.node_environment.STS_PREVIOUS_KEK_REF == "kek"
+    error_message = "migrating: the Key Vault key, with the `kek` secret as the previous key"
+  }
+}
+
+run "kek_provider_refused" {
+  command = plan
+  variables {
+    environment  = "dev"
+    kek_provider = "hsm"
+  }
+  expect_failures = [var.kek_provider]
+}
+
+run "kek_migrating_needs_kms" {
+  command = plan
+  variables {
+    environment               = "dev"
+    kek_provider              = "secret"
+    kek_migrating_from_secret = true
+  }
+  expect_failures = [var.kek_migrating_from_secret]
 }
 
 run "testidp" {
@@ -207,6 +260,13 @@ run "testidpna_zcnc_base" {
     cells           = jsondecode(file("envs/testidpna.cells.tfvars.json")).cells
     jurisdictions   = jsondecode(file("envs/testidpna.cells.tfvars.json")).jurisdictions
   }
+  override_data {
+    target = data.azurerm_key_vault.global_kek
+    values = {
+      name      = "mstestidpnag-${substr(sha1("00000000-0000-0000-0000-000000000001/mock-sts/testidpna/global"), 0, 4)}"
+      vault_uri = "https://mstestidpnag-0000.vault.azure.net/"
+    }
+  }
   assert {
     condition     = azurerm_orchestrated_virtual_machine_scale_set.first.instances == 0 && local.region == "canadacentral" && local.key_kind == "cell"
     error_message = "base: no running node, in the cell's region, under the cell key"
@@ -226,6 +286,32 @@ run "testidpna_zcnc_base" {
   assert {
     condition     = jsonencode(sort(keys(local.secrets))) == jsonencode(["cell-kek", "db-app-password", "db-master-password"])
     error_message = "a cell writes only its own secrets"
+  }
+  assert {
+    condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "azure-keys" && local.node_environment.STS_KEYS_KEK_VAULT == "https://mstestidpnag-0000.vault.azure.net" && local.node_environment.STS_KEYS_KEK_REF == "kek-rsa" && data.azurerm_key_vault.global_kek[0].name == "mstestidpnag-${substr(sha1("00000000-0000-0000-0000-000000000001/mock-sts/testidpna/global"), 0, 4)}"
+    error_message = "a cell's KEK is the environment's ONE key, in the global vault"
+  }
+  assert {
+    condition     = local.node_environment.STS_DATABASE_PASSWORD_VAULT == "https://msvault-abcd.vault.azure.net" && local.node_environment.STS_CELL_KEK_PROVIDER == "azure" && local.node_environment.STS_CELL_KEK_REF == "cell-kek"
+    error_message = "the cell's password from its own vault; the cell key stays a secret"
+  }
+}
+
+run "testidpna_zcnc_base_kek_secret" {
+  variables {
+    environment     = "testidpna"
+    cell            = "zcnc"
+    cell_phase      = "base"
+    kek_provider    = "secret"
+    public_hostname = jsondecode(file("envs/testidpna.cells.tfvars.json")).public_hostname
+    acme_email      = "tester1@iyasec.io"
+    primary_cell    = jsondecode(file("envs/testidpna.cells.tfvars.json")).primary_cell
+    cells           = jsondecode(file("envs/testidpna.cells.tfvars.json")).cells
+    jurisdictions   = jsondecode(file("envs/testidpna.cells.tfvars.json")).jurisdictions
+  }
+  assert {
+    condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "azure" && local.node_environment.STS_KEYS_KEK_VAULT == "https://msvault-abcd.vault.azure.net" && local.node_environment.STS_KEYS_KEK_REF == "kek" && length(data.azurerm_key_vault.global_kek) == 0
+    error_message = "secret: the copy of `kek` in the cell's own vault, and no global vault read"
   }
 }
 
@@ -270,13 +356,14 @@ run "testidpna_zwus2_full" {
 
 run "globalidp_zgwc_full" {
   variables {
-    environment     = "globalidp"
-    cell            = "zgwc"
-    public_hostname = jsondecode(file("envs/globalidp.cells.tfvars.json")).public_hostname
-    acme_email      = "tester1@iyasec.io"
-    primary_cell    = jsondecode(file("envs/globalidp.cells.tfvars.json")).primary_cell
-    cells           = jsondecode(file("envs/globalidp.cells.tfvars.json")).cells
-    jurisdictions   = jsondecode(file("envs/globalidp.cells.tfvars.json")).jurisdictions
+    environment               = "globalidp"
+    cell                      = "zgwc"
+    kek_migrating_from_secret = true
+    public_hostname           = jsondecode(file("envs/globalidp.cells.tfvars.json")).public_hostname
+    acme_email                = "tester1@iyasec.io"
+    primary_cell              = jsondecode(file("envs/globalidp.cells.tfvars.json")).primary_cell
+    cells                     = jsondecode(file("envs/globalidp.cells.tfvars.json")).cells
+    jurisdictions             = jsondecode(file("envs/globalidp.cells.tfvars.json")).jurisdictions
   }
   override_data {
     target = data.terraform_remote_state.global
@@ -285,6 +372,14 @@ run "globalidp_zgwc_full" {
       read_hosts  = { zwus2 = "w.postgres.database.azure.com", zgwc = "g.postgres.database.azure.com", zsea = "s.postgres.database.azure.com" }
       db_port     = 5432, db_name = "sts", db_app_user = "sts_app"
     } }
+  }
+  override_data {
+    target = data.azurerm_key_vault.global_kek
+    values = { vault_uri = "https://msglobalidpg-0000.vault.azure.net/" }
+  }
+  assert {
+    condition     = local.node_environment.STS_KEYS_KEK_VAULT == "https://msglobalidpg-0000.vault.azure.net" && local.node_environment.STS_PREVIOUS_KEK_VAULT == "https://msvault-abcd.vault.azure.net" && local.node_environment.STS_PREVIOUS_KEK_REF == "kek" && local.node_environment.STS_GLOBAL_DATABASE_PASSWORD_REF == "global-db-app-password"
+    error_message = "migrating in a cell: the global key, the cell's copy of `kek` as the previous one"
   }
   assert {
     condition     = jsonencode(local.global_hosts) == jsonencode(["--add-host w.postgres.database.azure.com:10.84.10.12", "--add-host g.postgres.database.azure.com:10.85.10.12"])

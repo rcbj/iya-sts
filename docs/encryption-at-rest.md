@@ -86,20 +86,38 @@ unwrap each data key once when it starts. Values are never sent.
 |---|---|---|
 | `vault-transit` | the Transit key's name; the engine's mount is `keys.kekTransitMount` (`transit`) | of type `aes256-gcm96`, `aes128-gcm96` or `chacha20-poly1305` |
 | `aws-kms` | the key's ID, ARN or alias, in `keys.kekRegion` | a symmetric encryption key (`SYMMETRIC_DEFAULT`, `ENCRYPT_DECRYPT`), enabled |
+| `gcp-kms` | the key's resource name, `projects/…/locations/…/keyRings/…/cryptoKeys/…` (the key, not a version) | `ENCRYPT_DECRYPT`, `GOOGLE_SYMMETRIC_ENCRYPTION`, with an enabled primary version |
+| `azure-keys` | the key's name; the vault (or Managed HSM) URL is `keys.kekVault` | an `oct-HSM` key (Managed HSM) allowing encrypt and decrypt, or an `RSA` / `RSA-HSM` key of at least 3072 bits allowing wrapKey and unwrapKey |
 
 Vault Transit is reached with the same login as the `vault` provider. The
 policy needs `read` on `<mount>/keys/<name>` and `update` on
-`<mount>/encrypt/<name>` and `<mount>/decrypt/<name>`. With AWS KMS the
-service's identity needs `kms:DescribeKey`, `kms:Encrypt` and `kms:Decrypt` on
-the key.
+`<mount>/encrypt/<name>` and `<mount>/decrypt/<name>`. The other three use
+their cloud's own identity (an instance or task role, a service account, a
+managed identity):
+
+* **AWS KMS**: `kms:DescribeKey`, `kms:Encrypt` and `kms:Decrypt` on the key
+  (and `kms:GetKeyRotationStatus` for `/admin/secrets`). Every node must name
+  the key the same way: for a multi-region key, use its `mrk-…` key ID and
+  set `keys.kekRegion` per node.
+* **Cloud KMS**: `roles/cloudkms.cryptoKeyEncrypterDecrypter` and
+  `roles/cloudkms.viewer` on the key. The service reads the key at start, and
+  the encrypter role alone cannot.
+* **Azure**: the *Key Vault Crypto User* role on the key.
+
+> **Azure RSA keys.** RSA-OAEP takes no associated data, so for an RSA key the
+> service wraps each data key with a SHA-256 digest of its binding to its
+> realm and kind of data. The service, not the vault, refuses a key moved to
+> another realm's row. RSA is also not post-quantum. Where a Managed HSM is
+> available, an `oct-HSM` (AES-256) key avoids both.
 
 Each wrapped data key is bound to its realm and kind of data (Transit's
 associated data, AWS's encryption context). The KMS refuses to unwrap one that
 was moved to another realm's row.
 
-* **Rotating the key in the KMS.** Rotating a Transit key creates a new
-  version, and every data key wrapped under an older version is re-wrapped at
-  the next start. AWS rotates the key material behind one key ID and needs
+* **Rotating the key in the KMS.** Rotating a Transit, Cloud KMS or Azure key
+  creates a new version, and every data key wrapped under an older version is
+  re-wrapped at the next start. Keep the old version enabled until every node
+  has restarted. AWS rotates the key material behind one key ID and needs
   nothing from the service.
 * **Moving to a KMS from a file, or back.** Use the steps in *Rotating the
   key-encryption key*, below: put the old key in `keys.previousKek*` and the
