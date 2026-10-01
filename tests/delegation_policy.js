@@ -121,24 +121,25 @@ function fixtures(t) {
   dir.addGroupMember(roster, 'dp-dave', { origin: 'test' });
   const made = [
     applications.createApplication({ identifier: 'dp-back',
-      protocols: ['oauth2'],
+      protocols: ['oauth2', 'wstrust'],
       fields: { oauthClientId: 'dp-back', oauthAudience: [AUDIENCE] } }),
     applications.createApplication({ identifier: 'dp-mid',
-      protocols: ['oauth2'],
+      protocols: ['oauth2', 'wstrust'],
       fields: { oauthClientId: 'dp-mid',
                 appAllowedToDelegateTo: ['dp-back'],
                 appDelegationSubjectGroup: [staff.dn] } }),
     applications.createApplication({ identifier: 'dp-mid-imp',
-      protocols: ['oauth2'],
+      protocols: ['oauth2', 'wstrust'],
       fields: { oauthClientId: 'dp-mid-imp',
                 appAllowedToDelegateTo: [AUDIENCE],
                 appTrustedToImpersonate: 'TRUE' } }),
     applications.createApplication({ identifier: 'dp-rbcd-back',
-      protocols: ['oauth2'],
+      protocols: ['oauth2', 'wstrust'],
       fields: { oauthClientId: 'dp-rbcd-back',
                 appAllowedToActOnBehalfOf: ['dp-rbcd-mid'] } }),
     applications.createApplication({ identifier: 'dp-rbcd-mid',
-      protocols: ['oauth2'], fields: { oauthClientId: 'dp-rbcd-mid' } })
+      protocols: ['oauth2', 'wstrust'],
+      fields: { oauthClientId: 'dp-rbcd-mid' } })
   ];
   t.check(made.every(function (one) { return one && one.ok; }),
           'precondition: the five applications were created',

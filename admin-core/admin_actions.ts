@@ -7565,11 +7565,16 @@ class AdminActions {
     }
 
     log.debug("Leaving AdminActions.federationAction(). Unknown action.");
+    // THE LIST IS BUILT, NOT WRITTEN: the Shared Signals acts are the
+    // transmitter module's own table (#373), and the parity check reads this
+    // sentence's count against what it names.
+    const known = ['create', 'set', 'add-value', 'remove-value', 'enable',
+      'disable', 'rotate-key', 'delete']
+        .concat(loadSignals().ACTIONS || []);
     return this.refused('STS-ADMIN-0500', { ok: false,
-             errors: ['Unknown action "' + action + '". The eight are: ' +
-                           'create, set, add-value, remove-value, enable, ' +
-                           'disable, rotate-key, delete — and the Shared ' +
-                           'Signals acts, each signals-*.'] });
+             errors: ['Unknown action "' + action + '". The ' +
+                           this.deps.numberWord(known.length) + ' are: ' +
+                           known.join(', ') + '.'] });
   }
 
   /**

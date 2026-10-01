@@ -2873,9 +2873,17 @@ async function theDirectoryPagesWork(driver) {
       "and it should carry the NAME the form was given; it carries " +
       JSON.stringify(found.name));
     const declared = [].concat(found.allowedProtocols || []);
-    assert.strictEqual(declared.length, kinds.length,
-      "and it should have declared ALL " + kinds.length + " families the " +
-      "form's repeated `protocol` column carried; it declared " +
+    // ONE BOX MAY STAND FOR TWO FAMILIES (2026-10-01): "Verifiable
+    // Credentials" posts `vc`, which the registry stores as OpenID4VCI and
+    // OpenID4VP (applications.familiesOfChoices()). So the families expected
+    // are the boxes with that one expanded.
+    const expected = [].concat.apply([], kinds.map(function (k) {
+      return k === "vc" ? ["oid4vci", "oid4vp"] : [k];
+    }));
+    assert.deepStrictEqual(declared.slice().sort(), expected.slice().sort(),
+      "and it should have declared ALL " + expected.length + " families the " +
+      "form's repeated `protocol` column carried (" + kinds.length +
+      " boxes); it declared " +
       declared.length + " (" + JSON.stringify(declared) + "). The body a " +
       "browser builds carries that name once per checked box, and a handler " +
       "reading it the ordinary way keeps only the last — which answers 200 " +
