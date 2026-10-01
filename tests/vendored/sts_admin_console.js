@@ -450,8 +450,18 @@ async function go(driver, url) {
   // driver.get() resolving, so the bug appears as one page in the walk
   // reporting the status it had in a previous section, intermittently.
   const from = mark();
-  await driver.get(url);
-  const seen = await waitForResponse(url, from);
+  // A FRAGMENT IS NOT PART OF WHAT IS FETCHED (2026-10-01): the response is
+  // for the URL without it, and a URL differing from the page already loaded
+  // only by its fragment is not fetched at all. So the page is loaded bare
+  // and the fragment — an application page's tab — set afterwards.
+  const hash = url.indexOf("#");
+  const bare = hash < 0 ? url : url.slice(0, hash);
+  await driver.get(bare);
+  const seen = await waitForResponse(bare, from);
+  if (hash >= 0) {
+    await driver.executeScript("location.hash = arguments[0];",
+                               url.slice(hash + 1));
+  }
   log.debug("Leaving go(). status=" + (seen ? seen.status : "?"));
   return seen;
 }
@@ -754,6 +764,16 @@ async function fillAndPress(driver, formIndex, values, options) {
     }
   }
 
+  // A FORM ON A TAB THAT IS NOT SHOWN (2026-10-01) — an application's page
+  // is tabs — is reached by opening its tab, which is the fragment of the
+  // panel it is in, as a person clicking the tab does.
+  await driver.executeScript(`
+    const f = document.forms[arguments[0]];
+    const panel = f && f.closest('.subpanel, .tabpanel');
+    if (panel && panel.id && !f.checkVisibility()) {
+      location.hash = panel.id;
+    }
+  `, formIndex);
   const from = mark();
   const button = await submitButtonOf(driver, formIndex, opts.buttonText);
   // THE OLD DOCUMENT HAS TO GO BEFORE ANYTHING IS READ (#311). The settle
@@ -3883,7 +3903,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
   //    landed anywhere else, or a write that landed on the resource, both
   //    answer 303 with the same cheerful notice.
   await open(driver, realm("/admin/applications?application=" +
-                           encodeURIComponent(client)));
+                           encodeURIComponent(client) + "#tab-permissions"));
   const grantForm = await formIndexPosting(driver, "grant-permission");
   check("the client's own page draws the Grant a permission form", function () {
     assert.ok(grantForm >= 0,
@@ -3940,7 +3960,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
   //    beside the grant it revokes; Remove stays on /admin/delegation, which
   //    is where a permission is defined and undefined.
   await open(driver, realm("/admin/applications?application=" +
-                           encodeURIComponent(client)));
+                           encodeURIComponent(client) + "#tab-permissions"));
   const revokeForm = await formIndexPosting(driver, "revoke-permission");
   if (revokeForm >= 0) {
     await fillAndPress(driver, revokeForm, {});
@@ -4051,7 +4071,7 @@ async function theObservedAddressesArePressed(driver) {
   });
 
   const pageUrl = realm("/admin/applications?application=" +
-                        encodeURIComponent(rpId));
+                        encodeURIComponent(rpId) + "#tab-addresses");
   const drawn = await open(driver, pageUrl);
   check("the application page draws the observed addresses with both buttons",
         function () {
@@ -4161,7 +4181,7 @@ async function theCredentialsSectionIsPressed(driver) {
   };
   const donorPem = (await entryOf(DONOR)).fields.oauthSamlAssertionCertificate;
   const pageUrl = realm("/admin/applications?application=" +
-                        encodeURIComponent(APP));
+                        encodeURIComponent(APP) + "#tab-credentials");
   const onThePage = function (url) {
     log.debug("Entering onThePage().");
     const u = new URL(url);
@@ -4318,6 +4338,12 @@ async function theFieldGridIsPressed(driver) {
     await driver.executeScript(`
       const f = arguments[0].form;
       const values = arguments[1];
+      // A BUTTON ON A TAB NOT SHOWN is reached as a person reaches it: by
+      // opening its tab, which is the panel's fragment.
+      const panel = arguments[0].closest('.subpanel, .tabpanel');
+      if (panel && panel.id && !arguments[0].checkVisibility()) {
+        location.hash = panel.id;
+      }
       Object.keys(values).forEach(function (name) {
         const control = f.elements[name];
         if (!control) { return; }
@@ -4512,7 +4538,7 @@ async function theFieldGridIsPressed(driver) {
   });
   assert.deepStrictEqual(listOf(await entryOf(), REDIRECT), [URI_B],
     "+ on the application page wrote to the entry");
-  const SAVE = "form.appgrid .formrow > button[type=submit]";
+  const SAVE = "#cfg-oauth form.appgrid .formrow > button[type=submit]";
   await press(SAVE, "Save", { ["field." + REDIRECT + ".1"]: URI_C });
   const savedTwo = await entryOf();
   const u = new URL(await driver.getCurrentUrl());
@@ -4523,7 +4549,7 @@ async function theFieldGridIsPressed(driver) {
     assert.strictEqual(outcomeOf(u.href, "error"), "",
       "the save was refused: " + outcomeOf(u.href, "error"));
     assert.ok(u.searchParams.get("application") === APP &&
-              u.hash === "#fields", "Save landed on " + u.href);
+              u.hash === "#cfg-oauth", "Save landed on " + u.href);
   });
 
   await press(dropOf(0), "", { ["field." + BOOL]: "FALSE" });

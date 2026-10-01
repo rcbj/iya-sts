@@ -6944,3 +6944,40 @@ is the fragment.**
 **What it cannot do**: a section whose heading text changes with the action
 (a count in it) gets a new id and the page opens at its top, as before. A
 link is not a form, so a pager link still opens a page at its top.
+
+## AN APPLICATION'S PAGE IS TABS (2026-10-01)
+
+rcbj: one tab across the top per section, so a reader is not scrolling past a
+dozen sections, a proper Save on every tab that edits values, and the
+configuration grid split by protocol.
+
+* **`tabbedPanels()` DRAWS THEM, WITH NO SCRIPT.** A tab is a link to its
+  panel's fragment. The stylesheet shows a panel when it is `:target` or holds
+  the target (`:has(:target)`), shows the first panel when nothing is
+  targeted, and marks the tab being read by its id
+  (`APPLICATION_TAB_IDS`). Every panel stays in the page, so a browser without
+  `:has()` shows them all, which is the page as it was. A panel with nothing
+  in it gets no tab.
+* **A control comes back to its own tab for free.** The answer to a form lands
+  at a fragment inside the form's own panel: the `#sec-…` heading
+  `withReturnAnchors()` adds, or the anchor its handler names (`#credentials`,
+  `#signals`, `#cfg-<group>`). The panel holding that fragment is the one
+  shown.
+* **The tabs are**: Overview, Configuration, Credentials, Browser origins,
+  Shared Signals, Software statements, Return addresses, Permissions, Roles,
+  SP metadata, Directory entry (with the one-attribute forms) and Remove.
+  The identifier and the tiles stay above them.
+* **CONFIGURATION IS SUB-TABS, EACH ITS OWN FORM AND SAVE.** The first
+  sub-tab, Protocol families, is the declared families. Its form carries
+  `protocolsPresent` and nothing else. Then there is one sub-tab per
+  `FIELD_GROUPS` group that has a field to show. A field is shown when it
+  belongs to every family, to a declared family, or already holds a value.
+  That is decided on the server, because the family checkboxes are in another
+  form and the create page's `:has()` rules cannot reach across forms. Each
+  group's `present` names only its own fields, so a Save writes that group
+  and nothing else. It returns to `#cfg-<group>` (the posted `group`), and a
+  refused save redraws with the post laid over the entry for that group only.
+* **The console test opens a tab as a person does.** `fillAndPress()` and the
+  grid section's `press()` set the fragment of a hidden button's panel before
+  clicking it, and `go()` loads a URL without its fragment and sets the
+  fragment afterwards, because a fragment is not fetched.

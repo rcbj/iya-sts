@@ -3049,6 +3049,13 @@ type RouteApp = typeof app;
  * also answers `?format=json`. The gate is unconditional: a console session
  * of its own and one of two roles.
  */
+// The tabs of an application's page, in the order they are drawn: the ids
+// `applicationDetailPage()` gives its panels, named here because the
+// stylesheet marks the tab being read by its id.
+const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
+  'tab-origins', 'tab-signals', 'tab-statements', 'tab-addresses',
+  'tab-permissions', 'tab-roles', 'tab-metadata', 'tab-entry', 'tab-remove'];
+
 class AdminConsole {
   // What the Cluster page's `prepare` step last read from the other cells
   // (#361): `{ at, rows, error? }`, or null in single-cell mode.
@@ -5518,6 +5525,41 @@ class AdminConsole {
       '0;cursor:pointer;color:#12107c}.prm-panel{display:none;padding:12px;' +
       'overflow-x:auto}' +
       '.prm-panel pre{white-space:pre-wrap;word-break:break-all;margin:0}' +
+      // ---------------------------------------------------------------------
+      // TABS (2026-10-01): an application's page, one tab per section, and its
+      // configuration one sub-tab per protocol. tabbedPanels() argues the
+      // mechanism: the fragment decides, through `:target` and `:has()`. A
+      // browser without `:has()` shows every panel, which is the page as it
+      // was.
+      '.tabbar{display:flex;flex-wrap:wrap;gap:4px;margin:10px 0 14px;' +
+      'border-bottom:1px solid #d5d5dd}.tabbar a{padding:6px 12px;' +
+      'border:1px solid #d5d5dd;border-bottom:0;border-radius:6px 6px 0 0;' +
+      'background:#f6f6fa;color:#12107c;text-decoration:none;' +
+      'font-size:.9em}.subbar a{font-size:.85em;padding:4px 10px}' +
+      '.tabpanel,.subpanel{scroll-margin-top:1rem}' +
+      '@supports selector(:has(*)){' +
+      '.tabs>.tabpanel,.subtabs>.subpanel{display:none}' +
+      '.tabs>.tabpanel:target,.tabs>.tabpanel:has(:target),' +
+      '.subtabs>.subpanel:target,.subtabs>.subpanel:has(:target)' +
+      '{display:block}' +
+      '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>' +
+      '.tabpanel.first,.subtabs:not(:has(>.subpanel:target,>.subpanel ' +
+      ':target))>.subpanel.first{display:block}' +
+      '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>.tabbar ' +
+      'a.first,.subtabs:not(:has(>.subpanel:target,>.subpanel :target))>' +
+      '.subbar a.first{background:#fff;font-weight:700;' +
+      'border-color:#12107c}' +
+      // The tab being read, one rule per tab: a selector cannot compare a
+      // link's href with the id that is targeted, so the ids are named.
+      APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
+        return 'cfg-' + g.id;
+      }), ['cfg-families']).map(function (id) {
+        const outer = id.indexOf('cfg-') === 0 ? '.subtabs' : '.tabs';
+        const bar = id.indexOf('cfg-') === 0 ? '.subbar' : '.tabbar';
+        return outer + ':has(#' + id + ':target,#' + id + ' :target)>' + bar +
+          ' a[href="#' + id + '"]';
+      }).join(',') + '{background:#fff;font-weight:700;' +
+      'border-color:#12107c}}' +
       ['json', 'table', 'fields'].map(function (tab) {
         return '#prm-tab-' + tab + ':checked~.prm-panel-' + tab +
                '{display:block}' +
@@ -18042,50 +18084,105 @@ class AdminConsole {
       return !one.sensitive;
     });
     const names = rows.map(function (one) { return one.attribute; });
-    const values = draft ? this.gridValuesFromDraft(draft)
-      : this.gridValuesFromEntry(row.fields, names);
-    const declared = draft
+    // WHAT THE ENTRY HOLDS, WITH WHAT WAS POSTED LAID OVER IT. A redraw is of
+    // one sub-tab's form, so only the attributes that form named (`present`)
+    // are taken from the post; every other group shows the entry.
+    const values = this.gridValuesFromEntry(row.fields, names);
+    if (draft) {
+      const posted = this.gridValuesFromDraft(draft);
+      String(draft.present || '').split(/[\s,]+/).forEach(function (name) {
+        if (name && Object.prototype.hasOwnProperty.call(values, name)) {
+          values[name] = posted[name] || [];
+        }
+      });
+    }
+    const declared = draft && draft.protocolsPresent
       ? this.listField(req, draft, 'protocol')
       : [].concat(row.allowedProtocols || []);
-    const families = '<div class="fg-protos" role="group" ' +
+    const holds = function (one) {
+      return (values[one.attribute] || []).some(function (v) {
+        return String(v).trim() !== '';
+      });
+    };
+    // A FIELD IS SHOWN when it belongs to every family, to a family this
+    // application is declared for, or already holds a value. Decided here
+    // rather than by the create page's `:has()` rules, because each group is
+    // a form of its own and the family checkboxes are in another.
+    const shown = rows.filter(function (one) {
+      return one.everyFamily || holds(one) || one.families.some(function (f) {
+        return declared.indexOf(f) >= 0;
+      });
+    });
+    const groups = applications.FIELD_GROUPS.filter(function (group) {
+      return shown.some(function (one) { return one.group === group.id; });
+    });
+    const saveButton = function (label) {
+      return '<div class="formrow"><button type="submit">' +
+        self.esc(label) + '</button></div>';
+    };
+    const formOpen = function (group, present, extra?) {
+      return '<form method="post" action="/admin/applications/edit#cfg-' +
+        self.esc(group) + '" class="appgrid">' + carryBack +
+        '<input type="hidden" name="action" value="update-fields">' +
+        '<input type="hidden" name="application" value="' +
+        self.esc(row.identifier) + '">' +
+        '<input type="hidden" name="group" value="' + self.esc(group) + '">' +
+        (present ? '<input type="hidden" name="present" value="' +
+                   self.esc(present.join(' ')) + '">' : '') + (extra || '') +
+        // THE DEFAULT BUTTON, first in the form, for the reason the create
+        // form has one: Enter in a box presses the first submit button,
+        // which would otherwise be a "+" or a delete.
+        '<button type="submit" class="default-submit" tabindex="-1" ' +
+        'aria-hidden="true">Save</button>';
+    };
+    const familiesPanel = '<div class="subpanel first" id="cfg-families">' +
+      '<h3>Protocol families it is declared for</h3>' +
+      this.note('Tick the families this application speaks and press Save. ' +
+      'A family ticked here adds its tab of fields beside this one; a ' +
+      'field that already holds a value keeps its tab whatever is ticked.') +
+      formOpen('families', null,
+               '<input type="hidden" name="protocolsPresent" value="1">') +
+      '<div class="fg-protos" role="group" ' +
       'aria-label="Protocol families it is declared for">' +
       applications.PROTOCOLS.map(function (family) {
         return '<label class="fg-proto"' + self.tip(family.what) + '>' +
-          '<input type="checkbox" id="proto-' + self.esc(family.id) +
-          '" name="protocol" value="' + self.esc(family.id) + '"' +
+          '<input type="checkbox" name="protocol" value="' +
+          self.esc(family.id) + '"' +
           (declared.indexOf(family.id) >= 0 ? ' checked' : '') + '>' +
           self.esc(family.label) + '</label>';
-      }).join('') + '</div>';
+      }).join('') + '</div>' + saveButton('Save the families') + '</form>' +
+      '</div>';
+    const groupPanels = groups.map(function (group) {
+      const mine = shown.filter(function (one) {
+        return one.group === group.id;
+      });
+      return '<div class="subpanel" id="cfg-' + self.esc(group.id) + '">' +
+        formOpen(group.id, mine.map(function (one) {
+          return one.attribute;
+        })) +
+        self.fieldGrid(mine, values, { redraw: '/admin/applications/edit',
+                                       showSet: true }) +
+        saveButton('Save ' + group.label) + '</form></div>';
+    }).join('');
+    const bar = '<nav class="tabbar subbar" aria-label="Configuration">' +
+      '<a class="first" href="#cfg-families">Protocol families</a>' +
+      groups.map(function (group) {
+        return '<a href="#cfg-' + self.esc(group.id) + '">' +
+          self.esc(group.label) + '</a>';
+      }).join('') + '</nav>';
     log.debug("Leaving AdminConsole.applicationFieldsSection(). " +
-              rows.length + " field(s).");
+              shown.length + " field(s) in " + groups.length + " group(s).");
     return '<h2 id="fields">Its configuration</h2>' +
-      this.note('Every field for the protocol families ticked here, as the ' +
-      'entry holds it now. Tick a family to show its fields. A field that ' +
-      'holds a value is shown whatever is ticked. <strong>Save</strong> ' +
-      'writes what changed and nothing else: a single value is set, and an ' +
-      'empty one is cleared; a list has the values taken out removed and the ' +
-      'values put in added. A list shows one box per value, with + to add ' +
-      'one and the bin to delete one; every box that is there must hold a ' +
-      'value. These write the same entry an <code>ldapmodify</code> writes, ' +
-      'and RFC 9700 mode reads it on the very next request.') +
-      '<form method="post" action="/admin/applications/edit" ' +
-      'class="newapp appgrid">' + carryBack +
-      '<input type="hidden" name="action" value="update-fields">' +
-      '<input type="hidden" name="application" value="' +
-      this.esc(row.identifier) + '">' +
-      '<input type="hidden" name="protocolsPresent" value="1">' +
-      '<input type="hidden" name="present" value="' +
-      this.esc(names.join(' ')) + '">' +
-      // THE DEFAULT BUTTON, first in the form, for the reason the create
-      // form has one: Enter in a box presses the first submit button, which
-      // would otherwise be a "+" or a delete.
-      '<button type="submit" class="default-submit" tabindex="-1" ' +
-      'aria-hidden="true">Save</button>' +
-      '<h3>Protocol families it is declared for</h3>' + families +
-      this.fieldGrid(rows, values, { redraw: '/admin/applications/edit',
-                                     showSet: true }) +
-      '<div class="formrow"><button type="submit">Save</button></div>' +
-      '</form>';
+      this.note('One tab per protocol, each with its own Save, beside the ' +
+      'families this application is declared for. <strong>Save</strong> ' +
+      'writes what changed on that tab and nothing else: a single value is ' +
+      'set, and an empty one is cleared; a list has the values taken out ' +
+      'removed and the values put in added. A list shows one box per value, ' +
+      'with + to add one and the bin to delete one; every box that is there ' +
+      'must hold a value. A field with a fixed set of values offers them to ' +
+      'choose from. These write the same entry an <code>ldapmodify</code> ' +
+      'writes, and RFC 9700 mode reads it on the very next request.') +
+      '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
   }
 
   // THE TWO PROTOCOL LISTS AN APPLICATION ENTRY CARRIES, SIDE BY SIDE.
@@ -18712,7 +18809,8 @@ class AdminConsole {
     return '/admin/applications' +
            queryWith(listView, { application: String(identifier) }) +
            (anchor === '#credentials' || anchor === '#fields' ||
-            anchor === '#signals' ? anchor : '');
+            anchor === '#signals' || /^#(?:tab|cfg)-[a-z0-9-]+$/.test(
+              String(anchor || '')) ? anchor : '');
   }
 
   // And a PERSON's page (2026-09-13), whose Credentials section draws the same
@@ -19526,6 +19624,50 @@ class AdminConsole {
   // convention pagingOf()'s header describes for a view that holds more than
   // the list views do, and the shape to grow into when this page gains a second
   // list.
+  // ---------------------------------------------------------------------------
+  // TABS WITH NO SCRIPT (2026-10-01).
+  //
+  // rcbj asked for an application's page to be tabs across the top, one per
+  // section, so a reader does not scroll past a dozen sections to reach one.
+  // This console is `script-src 'none'`, so a tab is a LINK to its panel's
+  // fragment and the stylesheet shows the panel that is `:target`, or holds
+  // the target (`:has(:target)`), and the first one when nothing is targeted.
+  // That is what makes every control on a tab come back to it: a form's
+  // answer lands at a fragment inside its own panel (withReturnAnchors(), or
+  // the anchor its handler names), so the panel is shown and the page opens
+  // where the button was. Every panel is in the page, so a search of the
+  // page, a printout and a browser without `:has()` (which shows them all)
+  // see everything. A panel with nothing in it gets no tab.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws panels as tabs: a bar of links, then each panel with something in
+   * it, the first shown when no fragment picks one.
+   *
+   * @param cls - an extra class for the container
+   * @param panels - `{ id, label, html }` in tab order
+   * @returns the tabs as HTML
+   */
+  tabbedPanels(cls, panels) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.tabbedPanels().");
+    const shown = panels.filter(function (one) {
+      return String(one.html || '').trim() !== '';
+    });
+    log.debug("Leaving AdminConsole.tabbedPanels(). " + shown.length +
+              " tab(s).");
+    return '<div class="tabs ' + this.esc(cls) + '">' +
+      '<nav class="tabbar" aria-label="Sections of this page">' +
+      shown.map(function (one, n) {
+        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
+          self.esc(one.id) + '">' + self.esc(one.label) + '</a>';
+      }).join('') + '</nav>' +
+      shown.map(function (one, n) {
+        return '<section class="tabpanel' + (n === 0 ? ' first' : '') +
+          '" id="' + self.esc(one.id) + '">' + one.html + '</section>';
+      }).join('') + '</div>';
+  }
+
   /**
    * Draws one application's page: its summary, every attribute of its
    * directory entry, and the sections and forms that change it.
@@ -19613,15 +19755,12 @@ class AdminConsole {
           return '<li>' + self.esc(one) + '</li>';
         }).join('') + '</ul></div>'
       : '';
-    const inner = this.flash(this.messagesOf(req) + refused) +
-      '<h2><code>' + this.esc(row.identifier) + '</code></h2>' +
-      '<div class="tiles">' +
-      this.tile(row.authentications, 'Authentications') +
-      this.tile(row.sessions, 'Sessions') +
-      this.tile(row.users, 'Users') +
-      this.tile(row.registered || row.registeredBy ? 'yes' : 'no',
-                'Registered') +
-      '</div>' +
+    // THE PAGE IS TABS (2026-10-01), one per section that has something to
+    // show, so a reader is not scrolling past a dozen sections to reach one.
+    // `tabbedPanels()` argues the mechanism: no script, the fragment decides.
+    const panels = [
+      { id: 'tab-overview', label: 'Overview',
+        html: '<h3>What it is</h3>' +
       '<table><tr><th>Thing</th><th>Value</th></tr>' +
       // FIRST, because it is the thing this page could not previously answer:
       // where in the tree this application lives. The registry is the
@@ -19654,18 +19793,65 @@ class AdminConsole {
           .join('<br>')
         : '<span class="state-none">nothing recorded</span>') + '</td></tr>' +
       '</table>' +
-      this.protocolFamilySection(row) +
-      // WHAT BROWSER PAGES MAY CALL IT, beside what protocols it is for: both
-      // are what this application is allowed to do, and the CORS list is the
-      // one of the two a person edits value by value.
-      this.applicationCorsSection(row, carryBack) +
-      // THE CREDENTIALS, above the raw entry because they are what a reader
-      // most often opens this page to find — see the section's header.
-      this.applicationCredentialsSection(req, view, carryBack) +
-      this.applicationSignalsSection(view, carryBack,
-        this.mayWrite(req)) +
-      this.applicationSoftwareStatementSection(req, view, carryBack) +
-      '<h2>Its directory entry</h2><p class="sub">Every attribute the entry ' +
+          this.protocolFamilySection(row) },
+      { id: 'tab-config', label: 'Configuration',
+        html: this.applicationFieldsSection(req, row, carryBack, state) },
+      { id: 'tab-credentials', label: 'Credentials',
+        html: this.applicationCredentialsSection(req, view, carryBack) },
+      { id: 'tab-origins', label: 'Browser origins',
+        html: this.applicationCorsSection(row, carryBack) },
+      { id: 'tab-signals', label: 'Shared Signals',
+        html: this.applicationSignalsSection(view, carryBack,
+                                             this.mayWrite(req)) },
+      { id: 'tab-statements', label: 'Software statements',
+        html: this.applicationSoftwareStatementSection(req, view, carryBack) },
+      { id: 'tab-addresses', label: 'Return addresses',
+        html: this.applicationObservedAddressesSection(req, view, carryBack) },
+      // AFTER the generic attribute editor in the page this was. The editor
+      // can already write `oauthDelegatedPermission` by hand — it is an
+      // ordinary multi-valued attribute in the EDITABLE table — so this
+      // section is a second DOOR onto it and not a second place it lives,
+      // which is the one-store rule /admin/token-lifetimes' header argues.
+      { id: 'tab-permissions', label: 'Permissions',
+        html: this.applicationPermissionsSection(req, row, carryBack) },
+      // AND WHAT IT MAY DO AS ITSELF (#93): the roles it holds.
+      { id: 'tab-roles', label: 'Roles',
+        html: this.applicationRolesSection(row, view.rolesState, carryBack) },
+      // THE METADATA REFRESH, the only control on this page that reaches off
+      // this machine, drawn only for an application that names a URL — see
+      // sp_metadata.ts.
+      { id: 'tab-metadata', label: 'SP metadata',
+        html:       (this.firstFieldValue(row, 'samlSpMetadataUrl')
+        ? '<h2>Service provider metadata</h2>' +
+          this.note('Fetches <code>' +
+                    this.esc(this.firstFieldValue(row, 'samlSpMetadataUrl')) +
+          '</code> and CONSUMES it: the document on ' +
+          '<code>samlSpMetadata</code>, its AssertionConsumerService and ' +
+          'SingleLogoutService endpoints as REGISTERED return addresses, its ' +
+          'signing certificates as what its requests are verified against, ' +
+          'its <code>use="encryption"</code> certificate on ' +
+          '<code>samlEncryptionCertificate</code>, and its NameIDFormats, ' +
+          'AuthnRequestsSigned and WantAssertionsSigned. A fetch that fails ' +
+          'changes NOTHING, so whatever is registered stays in force. <a ' +
+          'href="/admin/saml2?sp=' + encodeURIComponent(row.identifier) +
+          '">The SAML 2.0 page</a> shows what was consumed and takes an ' +
+          'uploaded document.') +
+          '<form method="post" action="/admin/applications">' + carryBack +
+          '<div class="formrow">' +
+          '<input type="hidden" name="action" value="refresh-metadata">' +
+          '<input type="hidden" name="application" value="' +
+          this.esc(row.identifier) + '"><button ' +
+          'type="submit">Refresh the metadata</button><span class="sub">' +
+          (this.firstFieldValue(row, 'samlSpMetadataConsumedAt')
+            ? 'Metadata was last consumed ' +
+              this.esc(this.firstFieldValue(row, 'samlSpMetadataConsumedAt')) +
+              '; this replaces what it registered.'
+            : 'No metadata has been consumed yet.') +
+          ' This is one of two places in this service that dials anything at ' +
+          'all.</span></div></form>'
+        : '') },
+      { id: 'tab-entry', label: 'Directory entry',
+        html:       '<h2>Its directory entry</h2><p class="sub">Every attribute the entry ' +
       'carries &mdash; the operational ones and <code>entryDN</code> ' +
       'included, which a SEARCH would return only when asked for by name ' +
       '(RFC 4511 section 4.5.1.8) &mdash; with what each one is. This IS the ' +
@@ -19698,15 +19884,9 @@ class AdminConsole {
        'purpose.</td></tr>') +
       '</table>' +
       nav.foot +
-
-      this.applicationObservedAddressesSection(req, view, carryBack) +
-
-      // THE FIELD GRID (2026-09-30): every field relevant to the protocols
-      // this application is declared for, typed, in one form. The three
-      // one-attribute forms below it still reach every editable attribute by
-      // name, folded, for the attribute the grid leaves to a control of its
-      // own and for an ldapmodify-shaped edit.
-      this.applicationFieldsSection(req, row, carryBack, state) +
+          // THE ONE-ATTRIBUTE FORMS reach every editable attribute by name,
+          // folded, for what the grid leaves to a control of its own and for
+          // an ldapmodify-shaped edit.
       '<details class="fold section"><summary><h3>Change one attribute by ' +
       'name</h3></summary>' +
       this.note('These write the same entry an <code>ldapmodify</code> ' +
@@ -19768,60 +19948,9 @@ class AdminConsole {
       'HERE is the difference between offering an operation and merely not ' +
       'preventing it. <code>appRegistrationJson</code> is not offered either ' +
       '&mdash; edit the attributes beside it instead, which is what the ' +
-      'registration is rebuilt from.') + '</details>' +
-
-      // AFTER the generic attribute editor and before the metadata refresh. The
-      // editor can already write `oauthDelegatedPermission` by hand — it is an
-      // ordinary multi-valued attribute in the EDITABLE table — so this section
-      // is a second DOOR onto it and not a second place it lives, which is the
-      // one-store rule /admin/token-lifetimes' header argues. What it adds is
-      // the resolution: the raw attribute is a bare identifier, and every
-      // column beside it here (which application exposes it, what the token
-      // will say, whether it has ever been asked for) is something only the
-      // register can answer.
-      this.applicationPermissionsSection(req, row, carryBack) +
-      // AND WHAT IT MAY DO AS ITSELF (#93): the roles it holds.
-      this.applicationRolesSection(row, view.rolesState, carryBack) +
-
-
-      // THE METADATA REFRESH, and the only control on this page that reaches
-      // off this machine. It is a button rather than something issuing does,
-      // for the reason sp_metadata.ts argues at length: an assertion that had
-      // to wait on somebody else's web server would make every sign-in as
-      // reliable as that server. It is drawn only for an application that names
-      // a URL — a button whose only possible outcome is "there is no URL" is
-      // not a control.
-      (this.firstFieldValue(row, 'samlSpMetadataUrl')
-        ? '<h2>Service provider metadata</h2>' +
-          this.note('Fetches <code>' +
-                    this.esc(this.firstFieldValue(row, 'samlSpMetadataUrl')) +
-          '</code> and CONSUMES it: the document on ' +
-          '<code>samlSpMetadata</code>, its AssertionConsumerService and ' +
-          'SingleLogoutService endpoints as REGISTERED return addresses, its ' +
-          'signing certificates as what its requests are verified against, ' +
-          'its <code>use="encryption"</code> certificate on ' +
-          '<code>samlEncryptionCertificate</code>, and its NameIDFormats, ' +
-          'AuthnRequestsSigned and WantAssertionsSigned. A fetch that fails ' +
-          'changes NOTHING, so whatever is registered stays in force. <a ' +
-          'href="/admin/saml2?sp=' + encodeURIComponent(row.identifier) +
-          '">The SAML 2.0 page</a> shows what was consumed and takes an ' +
-          'uploaded document.') +
-          '<form method="post" action="/admin/applications">' + carryBack +
-          '<div class="formrow">' +
-          '<input type="hidden" name="action" value="refresh-metadata">' +
-          '<input type="hidden" name="application" value="' +
-          this.esc(row.identifier) + '"><button ' +
-          'type="submit">Refresh the metadata</button><span class="sub">' +
-          (this.firstFieldValue(row, 'samlSpMetadataConsumedAt')
-            ? 'Metadata was last consumed ' +
-              this.esc(this.firstFieldValue(row, 'samlSpMetadataConsumedAt')) +
-              '; this replaces what it registered.'
-            : 'No metadata has been consumed yet.') +
-          ' This is one of two places in this service that dials anything at ' +
-          'all.</span></div></form>'
-        : '') +
-
-      '<h2>Take it out of the registry</h2>' +
+      'registration is rebuilt from.') + '</details>' },
+      { id: 'tab-remove', label: 'Remove',
+        html:       '<h2>Take it out of the registry</h2>' +
       (row.registered
         ? '<form method="post" action="/admin/applications">' + carryBack +
           '<div class="formrow"><input type="hidden" name="action" ' +
@@ -19845,7 +19974,18 @@ class AdminConsole {
       'and takes its ' +
       row.authentications + ' recorded authentication(s) with it. It will ' +
       'reappear, empty, the next time this identifier is accepted by a ' +
-      'protocol.</span></div></form>' +
+      'protocol.</span></div></form>' }
+    ];
+    const inner = this.flash(this.messagesOf(req) + refused) +
+      '<h2><code>' + this.esc(row.identifier) + '</code></h2>' +
+      '<div class="tiles">' +
+      this.tile(row.authentications, 'Authentications') +
+      this.tile(row.sessions, 'Sessions') +
+      this.tile(row.users, 'Users') +
+      this.tile(row.registered || row.registeredBy ? 'yes' : 'no',
+                'Registered') +
+      '</div>' +
+      this.tabbedPanels('apptabs', panels) +
       APPLICATIONS_CAVEAT +
       '<p class="sub"><a href="' +
       this.esc('/admin/applications' +
@@ -37902,7 +38042,9 @@ class AdminConsole {
       }
       self.respondToAction(req, res,
                            self.applicationReturnTo(body, identifier,
-                                                    '#fields'), result);
+                             '#cfg-' + (/^[a-z0-9-]+$/.test(
+                               String(body.group || '')) ? body.group
+                               : 'families')), result);
       log.debug("Leaving the admin application edit endpoint. Saved.");
     });
 
