@@ -47,34 +47,152 @@ Two properties of the mechanism matter for what follows:
   deliberately — sealing an attribute under a key that will not survive the
   restart the attribute does would turn a certificate into permanent garbage.
 
-### ENVELOPE ENCRYPTION: DATA KEYS UNDER ONE KEY-ENCRYPTION KEY
+## How values are encrypted: a key-encryption key and data encryption keys
 
-Since #391 the key-encryption key never encrypts a stored value. Every value is
-encrypted under a **data encryption key** (DEK) — a random 256-bit AES key —
-and only the DEKs are encrypted ("wrapped") under the key-encryption key.
+This service uses **envelope encryption** (#391). Two kinds of key work
+together, and they never swap roles:
 
-* **One DEK per trust realm per kind of data**, and no DEK is ever shared
-  between realms: a realm's sessions, its signing keys and its people's
-  authenticator secrets are three keys of that realm's, and another realm's are
-  others.
-* **The DEKs are stored wrapped**, in the same table as the signing keys, and
-  each process unwraps the ones it needs once and holds them. So the
-  key-encryption key is used once per DEK, never once per value, which is what
-  lets it live in a key management service.
-* **A value names its DEK**, and is bound to it: moved under another DEK's name
-  it does not open, and a wrapped DEK moved to another realm does not unwrap.
+| | Key-encryption key (KEK) | Data encryption key (DEK) |
+|---|---|---|
+| What it encrypts | Data encryption keys, and nothing else | Stored values: private keys, secrets, sessions, tokens and the rest of the list above |
+| How many | One for the whole deployment (plus one per cell's own data, in a multi-cell deployment) | One per trust realm per kind of data, and more over time as they are rotated |
+| Who makes it | You, or your key management service. This service never generates or writes a KEK | This service: 256 random bits (512 for AES-256-SIV) each |
+| Where it is kept | Outside the database: a mounted file, a secret store, or inside a key management service it never leaves | In the database, **wrapped** (encrypted) by the KEK, in the `dek:<scope>:<realm>` rows of the key table |
+| Where it is used | Once per data key: to wrap a new one, or unwrap a stored one | Once per value, in memory, every time a value is sealed or opened |
+| How it is rotated | Supply a successor and restart, or rotate it in its key management service (*Rotating the key-encryption key*, below). The data keys are re-wrapped; no value is re-encrypted | Yearly by schedule, or by hand. The values are re-encrypted in the background (*Rotating the data encryption keys*, below) |
 
-**There is still one key-encryption key per deployment.** It wraps every
-realm's DEKs, so:
+The point of the split is that the expensive, sensitive key is used rarely.
+A busy service seals thousands of values a minute (every session, code and
+token it stores). If each of those were a call to a key management service,
+it would be slow, costly and fragile. Instead, each process asks for each
+data key once, holds it in memory, and seals values locally. And because the
+KEK only wraps data keys, rotating it means re-wrapping a handful of keys
+rather than re-encrypting the database.
 
-* Anyone who can read the key-encryption key can unwrap **every realm's** data
-  keys. A realm has keys of its own; it is not an independent boundary at rest.
-* **Rotating the key-encryption key re-wraps every realm's data keys at once**
-  — a handful of keys, not the whole store.
-* A store written before #391 (each value under a subkey of the
-  key-encryption key, with no data keys) is not read by this build; recreate
-  it. The service refuses to start on one rather than generate new keys over
-  it.
+### Sealing and opening a value
+
+To **seal** a value (for example, an application's client secret in the
+`acme` realm):
+
+1. The service picks the data key for that realm and kind of data
+   (`acme` / `client-secret`). If none exists yet, it generates one, has the
+   KEK wrap it, and stores the wrapped copy *before* anything is sealed under
+   it.
+2. It encrypts the value with that data key (AES-256-GCM, or AES-256-SIV for
+   directory data when `keys.directoryCipher` says so) under a fresh random
+   nonce.
+3. It stores the result, which names the data key that sealed it:
+
+   ```
+   $aesgcm$2$<data key id>$<iv>$<tag>$<ciphertext>
+   $aessiv$2$<data key id>$<nonce>$<siv>$<ciphertext>
+   ```
+
+To **open** a value, the service reads the data key id from the value, finds
+that data key in memory, and decrypts. Opening never involves the KEK, and
+never needs to know the realm or kind of data: the value says which key it
+was sealed under.
+
+A **wrapped data key** is stored in one of two forms:
+
+```
+$dekwrap$1$...                                     wrapped in this process by a KEK it read
+$dekkms$1$<provider>$<key reference>$<ciphertext>  wrapped by a key management service
+```
+
+### What each key is bound to
+
+Both layers are authenticated encryption, and each binds what it protects
+to where it belongs:
+
+* **A value is bound to its data key.** The envelope's version and data key
+  id are authenticated with the value. A value copied into a row that claims
+  a different key does not decrypt.
+* **A data key is bound to its id, scope, realm and kind of data.** The KEK
+  wraps it with those four as associated data (Transit's `associated_data`,
+  AWS's encryption context, Cloud KMS's additional authenticated data). A
+  wrapped data key copied into another realm's row does not unwrap, and the
+  key management service itself refuses it. For an Azure RSA key, which
+  takes no associated data, this service checks the binding instead.
+* **Tampering fails closed.** A changed byte in a value or a wrapped key is a
+  failed decryption, never a different plaintext. A signing key that
+  decrypted to the wrong bytes would produce signatures nothing can verify,
+  far from the cause, so this matters more than it looks.
+
+### One data key per realm per kind of data
+
+No data key is ever shared between realms. The `acme` realm's sessions, its
+signing keys and its people's authenticator secrets are three keys of
+`acme`'s own, and the `globex` realm's are three others. The kinds of data
+are the labels `/admin/encryption` lists (`client-secret`, `totp-secret`,
+`minted-rows`, `signing-keys` and so on).
+
+Data keys also have a **scope**. `service` keys are readable by every node
+of the deployment. In a multi-cell deployment, a cell's resident data
+(people homed in that cell) is sealed under `cell.<id>` keys, wrapped by the
+cell's own KEK (`keys.cellKek*`). Another cell holds those rows but cannot
+open them.
+
+### Where the KEK comes from
+
+`keys.kekProvider` decides, and the difference between the two groups is
+whether the KEK's bytes ever enter this process:
+
+| Providers | The KEK is | What happens at start |
+|---|---|---|
+| `file`, `aws`, `gcp`, `azure`, `vault` | **Read into the process**: 32 bytes from a mounted file or a secret store (AWS Secrets Manager, GCP Secret Manager, an Azure Key Vault secret, Vault KV) | The KEK is read once, the stored data keys are unwrapped locally, and the KEK stays in memory to wrap new ones |
+| `vault-transit`, `aws-kms`, `gcp-kms`, `azure-keys` | **A key in a key management service** that never leaves it | The service holds only a handle. Each stored data key is sent to the KMS once to be unwrapped, and each new one to be wrapped |
+
+The key management service options are described in detail below.
+
+### At start, and across processes and nodes
+
+* **At start**, before it listens, the service reads the KEK (or reaches its
+  key management service) and unwraps every stored data key it may need. A
+  data key that cannot be unwrapped **stops the start**
+  (`STS-KEYS-0091`). Usually it means the configured KEK is not the one the
+  data keys were wrapped under, and starting anyway would mean every value
+  under them was lost.
+* **Every process and every node shares the data keys through the
+  database**, not through a channel of its own. The key rows are merged
+  under a lock, so two nodes making a data key for the same slot at once
+  both keep theirs, and all agree on one as current.
+* **A new data key is published before it is used.** A rotated key is
+  written first and used `keys.dataKeyActivationLeadSeconds` (300) later, so
+  every node has read it before any value names it.
+* **A value under a data key this process does not hold yet** (one another
+  node made a moment ago) is refused (`STS-KEYS-0092`), and the key rows are
+  read again in the background.
+
+### Development mode
+
+When nothing outlives the process (development mode, or any configuration
+whose KEK is not durable), data keys are **derived** from an ephemeral
+per-run KEK and never stored. The same envelopes are produced, so the code
+path is the same, but there is nothing to rotate, count or re-encrypt, and
+`/admin/encryption` says so.
+
+### What this protects against, and what it does not
+
+* **A copy of the database alone is useless.** Every sealed value needs a
+  data key, and every data key needs the KEK, which is not in the database.
+  This covers a stolen backup, a replica, or a database administrator
+  reading rows.
+* **The KEK opens everything.** Anyone who can read it, or use it in its key
+  management service, can unwrap every realm's data keys. A realm has keys
+  of its own but is not an independent boundary at rest. A KEK per realm is
+  not built; see *A key-encryption key per realm*, at the end of this page.
+* **A running process holds its data keys in memory.** Someone who can read
+  the service's memory can read them. A key management service keeps the
+  KEK out of the process, but not the data keys it unwraps.
+* **Not everything is sealed.** `/admin/encryption` lists what is and what is
+  not. The directory's names and other attributes not on that list are
+  stored in the clear. For those, use storage-level encryption (*The rest of
+  the store*, below).
+
+A store written before #391 (each value under a subkey of the KEK, with no
+data keys) is not read by this build; recreate it. The service refuses to
+start on one (`STS-KEYS-0095`) rather than generate new keys over it.
 
 ### The key-encryption key in a key management service
 
@@ -328,6 +446,13 @@ provision a second one is work this service would have invented. What tells the
 two apart inside it is `persistence.databasePasswordField`, `databasePassword`
 by default.
 
+**Except when the key-encryption key is in a key management service.** Its
+location is the name of a key, not a place a secret is stored, so nothing is
+borrowed from it: set `persistence.databasePasswordRef` (and its provider's
+other settings) explicitly. This repository's compose stack does:
+`STS_DATABASE_PASSWORD_REF=secret/data/sts`, beside the Transit key
+`sts-kek`.
+
 A secret of its **own** needs no field — point `persistence.databasePasswordRef`
 at a Vault path or a file holding nothing but the password and it is taken
 whole. For the `{"username": …, "password": …}` shape AWS Secrets Manager writes
@@ -450,12 +575,13 @@ putting the layer underneath the database rather than inside it.
 is the host's job**: put the docker volume — or `/var/lib/docker` — on a LUKS
 partition or an encrypted ZFS dataset. Two specifics are easy to get wrong:
 
-* **The `sts-secrets` volume holds the key-encryption key.** The compose stack
-  mints one into it on first start, which is right for a development stack and
-  wrong for anything else: on the same unencrypted disk as the database it
-  makes the application-level sealing decorative, because whoever has the disk
-  has both halves. In a real deployment set `keys.kekProvider` to one of the
-  four cloud secret stores and do not mount a key file at all.
+* **The key-encryption key is a Transit key in the stack's OpenBao**
+  (`sts-kek`, `keys.kekProvider=vault-transit`). It never enters the service,
+  which asks OpenBao to wrap and unwrap each data key. OpenBao's data is in a
+  docker volume on the same host, though, so whoever has the host's disk has
+  both the store and the key. That is right for a development stack and wrong
+  for anything else. In a real deployment, put the key in a key management
+  service or secret store that does not share a disk with the database.
 * **TLS to the database is already on and is a different property.**
   The stack's PostgreSQL refuses a plaintext connection (`hostssl` on every
   rule) and this service asks for `sslmode=require`, so both ends insist. It

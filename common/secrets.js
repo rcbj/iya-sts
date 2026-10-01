@@ -449,9 +449,25 @@ function locationOf(spec, which) {
     log.debug("Leaving locationOf().");
     return { where: '', borrowed: false };
   }
+  // NOTHING IS BORROWED FROM A KEY IN A KEY MANAGEMENT SERVICE (#391): its
+  // `ref` names a KMS key, not a place a secret is stored, so a password
+  // with no location of its own has none.
+  if (lendsNothing(spec.fallbackRef)) {
+    log.debug("Leaving locationOf(). The lender is a KMS key.");
+    return { where: '', borrowed: false };
+  }
   const lent = String(specValue(spec.fallbackRef, which) || '').trim();
   log.debug("Leaving locationOf().");
   return { where: lent, borrowed: !!lent };
+}
+
+// Whether a secret's configured provider is a key management service, whose
+// `ref` names a key and so lends no location to another secret (#391).
+function lendsNothing(spec) {
+  log.debug("Entering lendsNothing().");
+  const provider = /** @type {any} */ (current(spec));
+  log.debug("Leaving lendsNothing().");
+  return !!(provider && provider.remote);
 }
 
 // The field to take out of a JSON value, where the secret names one.
@@ -2128,8 +2144,11 @@ function describeSecret(spec) {
     // operator reading this cannot work out from the settings: an empty
     // location row means *wherever the key is*, and a page that printed the
     // empty row would be reporting that nothing is configured.
+    // Never from a key in a key management service (#391), which lends
+    // nothing (`locationOf()`).
     shared: configured && !!spec.fallbackRef &&
-            !String(specValue(spec, 'ref') || '').trim(),
+            !String(specValue(spec, 'ref') || '').trim() &&
+            !lendsNothing(spec.fallbackRef),
     field: fieldOf(spec) || undefined,
     providers: PROVIDERS.map(function (one) {
       return { id: one.id, label: one.label };

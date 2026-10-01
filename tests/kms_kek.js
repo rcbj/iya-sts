@@ -40,7 +40,8 @@
 //   E. moving from a local KEK to a KMS: the local key as the PREVIOUS key,
 //      every data key re-wrapped by the KMS, and the next start needs only
 //      the KMS.
-//   F. the report says the key is in a KMS.
+//   F. the report says the key is in a KMS; and (A5) a secret with no
+//      location of its own borrows none from a KMS key.
 //   G. Cloud KMS (#391 P4): the round trip with the AAD, the version used in
 //      the row and a new primary re-wrapping at start, a moved row refused,
 //      a key VERSION or a non-ENCRYPT_DECRYPT key refusing the start.
@@ -459,6 +460,13 @@ function childMain() {
     }), 'A3. a restart asks Transit to unwrap');
     note(keystore.open(v1, 'minted-rows') === 'alpha',
          'A4. and every value opens');
+    // A password with no location of its own borrows the KEK's — but not
+    // from a KMS key, whose `ref` is a key's name and no place to read.
+    process.env.STS_DATABASE_PASSWORD_PROVIDER = 'vault';
+    const dbAt = JSON.stringify(secrets.describeDatabasePassword());
+    delete process.env.STS_DATABASE_PASSWORD_PROVIDER;
+    note(dbAt.indexOf('dek-key') < 0 && !/"shared":true/.test(dbAt),
+         'A5. a secret with no location borrows none from a KMS key', dbAt);
 
     // ------------------------------------------------------------ B
     transit.keys['dek-key'].versions.push(nodeCrypto.randomBytes(32));
