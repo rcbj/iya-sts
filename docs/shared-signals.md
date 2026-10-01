@@ -421,40 +421,65 @@ names nothing `ssf.receiveAudiences` lists (`invalid_audience`). Left empty,
 the first means this realm's own transmitter issuer and the second means the
 endpoint's own URL, for example `https://host/ssf/receive`. The console's and
 portal's receivers make the same `typ` and `iss` checks against their own
-streams. To receive another transmitter's streams, see *Receiving from
-another identity service*, below.
+streams. To receive a federation partner's streams, see *Receiving from a
+federation partner*, below.
 
-### Receiving from another identity service
+### Receiving from a federation partner
 
-A realm can receive CAEP and RISC events from another identity service's
-transmitter, for people who sign in here through a federation relationship
-with it ([#153](https://github.com/rcbj/iya-sts/issues/153)).
+A realm can receive CAEP and RISC events from a federation partner's
+transmitter ([#153](https://github.com/rcbj/iya-sts/issues/153),
+[#373](https://github.com/rcbj/iya-sts/issues/373)). The partner is
+configured as a **federation relationship** on Protocols → Federation, and
+its Shared Signals are a section of that relationship. A partner that signs
+nobody in here — a device manager, an endpoint agent, an HR system — is an
+`ssf` relationship ([#374](https://github.com/rcbj/iya-sts/issues/374)).
 
-1. **Register it** on Protocols → SSF transmitters (`/admin/ssf/transmitters`)
-   or with `POST /admin-api/ssf/transmitters/add`. You give it an id, its
-   issuer, the federation relationship its subjects are mapped through,
-   `poll` or `push`, and how this realm authenticates to it: client
-   credentials at its token endpoint, or a bearer token. Its
-   `/.well-known/ssf-configuration` and `jwks_uri` are fetched and checked.
-2. **Create the stream** (`create-stream`). A poll stream is polled every
-   `ssf.foreignPollS` seconds. A push stream is given
-   `/ssf/transmitters/{id}/push` and an authorization header only the two
-   services know.
-3. **Link people.** A subject `{format: "iss_sub", iss, sub}` with the
-   relationship's issuer names the person whose federation link holds it. An
-   `email` subject is matched only where the relationship sets
+1. **Turn the signals on** on a relationship where this service is the
+   service provider: `fedSignalsEnabled` (an `ssf` relationship has it on
+   from the start). The partner's SSF issuer is `fedSignalsIssuer`, or the
+   relationship's `fedPeer` when that is empty. Set `fedSignalsIssuer` for a
+   SAML or WS-Federation partner, whose entityID is not its SSF issuer.
+2. **Say how this realm authenticates to the partner**: client credentials
+   (`fedSignalsTokenUrl`, `fedSignalsClientId`, `fedSignalsClientSecret`,
+   each falling back to the relationship's own `fedTokenUrl`, `fedClientId`
+   and `fedClientSecret`), or `fedSignalsBearer`. The two signals
+   credentials are sealed under the key-encryption key wherever keys
+   persist.
+3. **Create the stream**: *Create stream* on the relationship's page, or
+   `POST /admin-api/federation/signals-create-stream`. This fetches the
+   partner's `/.well-known/ssf-configuration` and `jwks_uri` first and
+   checks the document names the issuer. A poll stream
+   (`fedSignalsDelivery` `poll`) is polled every `ssf.foreignPollS` seconds.
+   A push stream is given `/federation/signals/{id}` and an authorization
+   header only the two services know. `fedSignalsEvents` is what the stream
+   asks for.
+4. **Link people.** For a partner people sign in through, the links its
+   sign-ins wrote are what its `iss_sub` subjects match: `iss` is the
+   partner (or its SSF issuer) and `sub` the identifier it signs them in
+   with — for SAML, the persistent NameID. For an `ssf` relationship, link
+   each person on their page, with the issuer and subject its `iss_sub`
+   events name them by, or the issuer `opaque` and the id of an opaque
+   subject. An `email` subject is matched only where the relationship sets
    `fedSignalEmailMatch`.
 
 A Security Event Token is acted on only if it verified: its signature against
-the transmitter's keys, `typ`, `iss`, the stream's `aud`, and a `jti` never
-seen before. Product mode refuses an unverified one. What it leads to is the
-`signal-response` XACML policy's decision:
+the keys the partner's SSF configuration names, `typ`, `iss`, the stream's
+`aud`, and a `jti` never seen before. Product mode refuses an unverified one.
+What it leads to is the `signal-response` XACML policy's decision. By
+default:
 
-| Events | Reaction here |
-|---|---|
-| `session-revoked`, `credential-change`, `sessions-revoked`, `credential-compromise`, `account-purged` | end the person's sessions |
-| `account-disabled` | disable the account |
-| `account-enabled` | enable it again, only if that transmitter disabled it |
+| Partner | Events | Reaction here |
+|---|---|---|
+| signs people in | `session-revoked`, `credential-change`, `sessions-revoked`, `credential-compromise`, `account-purged` | end the sessions **this relationship** started for the person — the one a complex subject's `session` names, else every one. A local sign-in and other partners' sessions are untouched |
+| signs people in | `account-disabled` | **block this partner's sign-ins** of the person, and end the sessions it started. The account stays enabled; other ways of signing in keep working |
+| signs people in | `account-enabled` | lift that block |
+| `ssf` only | anything about a person | recorded, nothing more. A global sign-out and an account lock exist for an operator's policy to permit |
+| either | `device-compliance-change` | set the device's compliance |
+
+An administrator can lift a block with *Unblock* on the relationship's page
+(`POST /admin-api/federation/signals-unblock`). Every arrival from every
+partner, and every block, is on Monitoring → Signals from partners
+(`/admin/ssf/transmitters`, `GET /admin-api/ssf/transmitters`).
 
 Development records what it would do and does nothing unless
 `ssf.actOnSignalsInDevelopment` is on.

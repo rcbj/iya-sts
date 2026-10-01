@@ -1,6 +1,9 @@
 # federation/
 
-Federation relationships: this service as either end of one, in five protocols.
+Federation relationships: this service as either end of one, in five
+sign-in protocols — and a sixth, `ssf` (#374), for a partner that only sends
+Shared Signals. A partner's Shared Signals are configured on its
+relationship (#373); see *A PARTNER'S SHARED SIGNALS* below.
 
 | File | What it is |
 |---|---|
@@ -11,6 +14,7 @@ Federation relationships: this service as either end of one, in five protocols.
 | `federation_sp.ts` | The five endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued — and `subjectDecision()`, which says which local person a verified subject may become (#109). |
 | `federation_slo.ts` | **A partner's sign-out, in both directions** (#167): `/federation/slo/{id}`, `/federation/backchannel-logout/{id}` and `/federation/frontchannel-logout/{id}`, and what `logout/logout.ts` draws to tell a partner of a sign-out here. See *A PARTNER'S SIGN-OUT* below. |
 | `federation_links.ts` | **The link between a partner's subject and a person** (#109): the `federationLink` format, the stable subject a verified response carries, the one check a requested link goes through (console, `/admin-api`, SCIM), and what removing one ends. A static utility class. |
+| `federation_blocks.ts` | **A partner's stop on one person** (#373): the (relationship, person) pairs a verified `account-disabled` from the partner's own Shared Signals put there, which `federation_sp.ts`'s `subjectDecision()` refuses (`STS-FED-0156`). A leaf store; `ssf/ssf_transmitters.ts` writes it. |
 | `federation_encryption.ts` | **What a partner encrypts to** (#168): each relationship's encryption key — issued under the realm's Intermediate, sealed, rotated with a grace period, retired by the scheduler job `federation.encryption-key-retire`, published — and the policy a partner's `EncryptedAssertion`, `EncryptedID`, `EncryptedAttribute`, WS-Federation token and JWE ID Token or Logout Token is decrypted under. A static utility class. See *A PARTNER'S ENCRYPTED ASSERTION* below. |
 
 ---
@@ -1082,6 +1086,9 @@ created, because its creation is announced by the create.
 
 ## THE FIVE PROTOCOLS, AND WHERE EACH IS GENUINELY DIFFERENT
 
+(A sixth, `ssf`, signs nobody in and is not among them: see *A PARTNER'S
+SHARED SIGNALS* below.)
+
 **SAML 2.0** is the ordinary case: an `<AuthnRequest>` out, a `<Response>` back
 on the POST binding. `ProtocolBinding` asks for HTTP-POST always, because a
 Response on the Redirect binding is DEFLATEd into a URL and a signed assertion
@@ -1746,3 +1753,53 @@ about the person is written, carried or provisioned in the flow's cell, and
 a link-at-first-sign-in happens at home. A peer that cannot be asked about a
 link is skipped (`STS-CELL-0123`). Held in process by `tests/cell_saml_federation.js`.
 
+## A PARTNER'S SHARED SIGNALS, AND THE PARTNER THAT ONLY SENDS THEM (#373, #374, 2026-10-01)
+
+**rcbj's call on #373: a foreign Shared Signals transmitter is a federation
+partner in spirit**, so it is configured here rather than in a register of
+its own (#153's `ssf.foreignTransmitters`, dropped with no migration). The
+receiver — discovery, the stream, poll and push, verification, the policy's
+reactions — is `ssf/ssf_transmitters.ts`, and `ssf/CLAUDE.md` (*A PARTNER'S
+SHARED SIGNALS*) argues it. What lives here:
+
+* **The fields.** `fedSignalsEnabled` (off; written ON for an `ssf`
+  relationship), `fedSignalsIssuer` (empty = `fedPeer`; needed for a SAML or
+  WS-Federation partner, whose entityID is not its SSF issuer URL),
+  `fedSignalsDelivery` (poll | push), `fedSignalsEvents`, and the token
+  client — `fedSignalsTokenUrl`, `fedSignalsClientId`,
+  `fedSignalsClientSecret`, `fedSignalsScope`, or `fedSignalsBearer` — whose
+  first three fall back to `fedTokenUrl`, `fedClientId` and
+  `fedClientSecret`. **The two signals credentials are sealed** under the
+  key-encryption key wherever keys persist (`sealSignalsSecret()`,
+  `sealed:` on the entry); `fedClientSecret` predates that and is still in
+  clear. `signalsCredentialOf()`, `signalsIssuerOf()`, `signalsEnabled()`
+  and `signalsReadinessOf()` are the one reading of them.
+* **`ssf` is a sixth protocol, service-provider side only** (create refuses
+  the other role). `fieldsForRole(role, mode, protocol)` narrows it to
+  `SIGNAL_FIELDS` and `update()` refuses a sign-in field on it by name
+  (`STS-FED-0068`); `readinessOf()` asks `fedPeer` and the signals
+  credential. **`signsIn()` is the question every sign-in path asks besides
+  the role**: `signInOptions()`, `usableServiceProvider()`, the login and
+  linking endpoints (`STS-FED-0155` at login), the assertion consumer service
+  and the two sign-out paths all refuse an `ssf` relationship, which is
+  usable — enabled and ready — only as a transmitter.
+* **Its people.** It verifies no assertion, so `federationLink`s through it
+  are written by an administrator and name what its events carry:
+  `<id> <iss> <sub>` for an iss_sub subject (any `iss` —
+  `FederationLinks.resolveRequest()` drops the fedPeer check for `ssf`) and
+  `<id> opaque <id>` for an opaque one (`FederationLinks.OPAQUE`). A sign-in
+  relationship's links are the ones its sign-ins wrote, under `fedPeer`.
+* **The block** (`federation_blocks.ts`): a sign-in partner's verified
+  `account-disabled` refuses its sign-ins of that person and nobody else's
+  — their password, their key and every other partner keep working —
+  until its `account-enabled` or an administrator lifts it. Locking the
+  whole account would let any partner switch a person off everywhere, which
+  is more than its own statement covers.
+* **The console.** The relationship page draws a *Shared Signals from this
+  partner* section (`AdminConsole.federationSignalsSection()`) with the
+  fields, the stream and its acts, the blocks and the latest arrivals; an
+  identity-provider-side one draws, read only, the streams its application
+  owns on this service's transmitter (`federationOutboundSection()`). Every
+  act is `federationAction()`'s `signals-*`, handed to the receiver; a
+  delete forgets the relationship's stream there first. The map marks a
+  relationship receiving signals on its consuming arrow.

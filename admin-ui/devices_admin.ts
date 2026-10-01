@@ -668,12 +668,13 @@ class DevicesAdmin {
         predicate: 'opensTestControls',
         source: 'test-control'
       },
-      // #153's receiver acts on a registered foreign transmitter's
-      // device-compliance-change through setCompliance().
+      // A federation partner's device-compliance-change, through
+      // setCompliance() as the signal-response policy permits (#153, #373,
+      // #374 — an MDM being an `ssf` relationship).
       receivedCaep: {
         built: true,
         source: 'caep',
-        via: '/admin/ssf/transmitters'
+        via: '/admin/federation'
       },
       // What a compliance change, a risk level and a compromise send (#164
       // phase 4): the events and their subject.
@@ -1166,10 +1167,13 @@ class DevicesAdmin {
       'credential, development only (<code>mode.opensTestControls()</code>). ' +
       'Source <code>test-control</code>.</td></tr>' +
       '<tr><td>A received CAEP device-compliance-change</td><td>' +
-      state(true) + '</td><td>From a foreign transmitter registered on ' +
-      '<a href="/admin/ssf/transmitters">Shared Signals transmitters</a> ' +
-      '(#153), its device named by id or key thumbprint. Source ' +
-      '<code>caep</code>.</td></tr></tbody></table>' +
+      state(true) + '</td><td>From a federation partner whose Shared ' +
+      'Signals this realm receives — a device manager is an ' +
+      '<code>ssf</code> relationship on <a href="/admin/federation">' +
+      'Federation</a> — as the <code>signal-response</code> policy permits ' +
+      '(#373, #374), its device named by id or key thumbprint. Source ' +
+      '<code>caep</code>; arrivals on <a href="/admin/ssf/transmitters">' +
+      'Signals from partners</a>.</td></tr></tbody></table>' +
       '<h2>What goes out over Shared Signals</h2>' +
       admin.note('CAEP: ' + esc(json.signals.caep.join('; ')) + '. RISC, ' +
         'for a person\'s device compromised or removed: ' +

@@ -240,6 +240,11 @@ class FederationGraph {
       ready: readiness.ready,
       missing: readiness.missing,
       usable: federation.isEnabled(record) && readiness.ready,
+      // Whether it signs anybody in, and whether its partner's Shared
+      // Signals are received (#373, #374): the picture marks both on the
+      // consuming arrow.
+      signsIn: federation.signsIn(record),
+      signalsEnabled: federation.signalsEnabled(record),
       authentications: parseInt(record.fedAuthentications, 10) || 0,
       users: parseInt(record.fedUsers, 10) || 0,
       lastUser: record.fedLastUser || '',

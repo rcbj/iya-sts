@@ -1001,6 +1001,12 @@ const ACTIONS = [
     label: 'A certificate enrollment was refused' },
   { action: 'enrollment.revoke', category: 'protocol',
     label: 'An enrolled certificate was revoked' },
+  { action: 'federation.signal-block', category: 'session',
+    label: 'A federation partner\'s Shared Signals blocked its sign-ins of ' +
+           'a person (#373)' },
+  { action: 'federation.signal-unblock', category: 'session',
+    label: 'A federation partner\'s Shared Signals lifted its block on a ' +
+           'person (#373)' },
   { action: 'federation.signout', category: 'session',
     label: 'A federation partner\'s sign-out ended a session' },
   { action: 'federation.signout-answered', category: 'session',

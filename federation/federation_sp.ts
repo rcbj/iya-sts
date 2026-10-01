@@ -196,6 +196,8 @@ import InstanceSlot = require('./../common/instance_slot');
 // register nothing and require nothing here back.
 import mode = require('./../common/mode');
 import links = require('./federation_links');
+// A partner's block on a person (#373): a leaf store the receiver writes.
+import fedBlocks = require('./federation_blocks');
 import rbac = require('./../admin-ui/admin_rbac');
 import roles = require('./../common/roles');
 // A PARTNER'S ENCRYPTED ASSERTION OR ID TOKEN (#168): the key it is encrypted
@@ -1618,6 +1620,23 @@ class FederationSp {
       }
     }
     const person = federation.federatedPerson(target);
+    // THE PARTNER STOPPED VOUCHING FOR THIS PERSON (#373): a verified
+    // account-disabled from its own Shared Signals blocks its sign-ins of
+    // them, and only its — before any rule, because nothing else this
+    // partner says about the person can outweigh the partner saying stop.
+    const stopped = fedBlocks.blockOf(record.fedId,
+                                      person ? person.username : target);
+    if (stopped) {
+      log.debug("Leaving FederationSp.subjectDecision(). Blocked.");
+      return this.subjectRefusal('STS-FED-0156', 'blocked',
+        'The partner has stopped vouching for this person',
+        'A verified ' + (stopped.event || 'account-disabled') + ' event ' +
+        'from this partner\'s Shared Signals (at ' +
+        new Date(Number(stopped.at) || 0).toISOString() + ') blocks its ' +
+        'sign-ins of ' + stopped.username + '. Its account-enabled lifts ' +
+        'that, and so can an administrator on the relationship\'s page. ' +
+        'Signing in here another way is unaffected.');
+    }
     const rules = this.subjectRules(record, mapped, target, person);
     if (!rules.ok) {
       log.debug("Leaving FederationSp.subjectDecision(). A rule refused.");
@@ -1941,7 +1960,7 @@ class FederationSp {
     }
     const record = federation.get(context.id);
     if (!record || record.fedRole !== 'service-provider' ||
-        !federation.isUsable(record)) {
+        !federation.signsIn(record) || !federation.isUsable(record)) {
       errorCodes.mark(res, record && federation.isEnabled(record)
         ? 'STS-FED-0006' : 'STS-FED-0005');
       log.debug("Leaving the federation linking endpoint. The relationship " +
@@ -2754,6 +2773,15 @@ class FederationSp {
         'There is nothing to sign in to here. A partner this service both ' +
         'consumes from and asserts to is two relationships — see ' +
         'federation/CLAUDE.md.');
+    }
+    // A PARTNER THAT ONLY SENDS SHARED SIGNALS (#374) has nowhere to send
+    // anybody: it is a transmitter, and nothing more.
+    if (!federation.signsIn(record)) {
+      errorCodes.mark(res, 'STS-FED-0155');
+      log.debug("Leaving the federation login endpoint. Signals only.");
+      return this.refuse(res, record, 400, 'That partner signs nobody in',
+        '"' + id + '" is an ssf relationship: the partner sends this ' +
+        'service Shared Signals, and signs nobody in.');
     }
     if (!federation.isEnabled(record)) {
       errorCodes.mark(res, 'STS-FED-0005');
@@ -4468,7 +4496,9 @@ class FederationSp {
     }
     const id = String(req.params.id || '');
     const record = federation.get(id);
-    if (!record || record.fedRole !== 'service-provider') {
+    // An ssf relationship (#374) has no assertion consumer service.
+    if (!record || record.fedRole !== 'service-provider' ||
+        !federation.signsIn(record)) {
       errorCodes.mark(res, 'STS-FED-0002');
       res.status(404).type('html').send(this.page('No such relationship',
         '<h1>No such assertion consumer service</h1><p>There is no ' +

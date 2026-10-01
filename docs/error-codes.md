@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3893** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3897** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 137
+* [Federation (`STS-FED`)](#sts-fed) — 140
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 37
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 110
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 117
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
@@ -2296,6 +2296,9 @@ Raised from: federation/.
 | `STS-FED-0151` | A fedAttributeMap value was not a mapping: it is <incoming name>=<LDAP attribute> (#94). | HTTP 400 (console and API) |
 | `STS-FED-0152` | A fedAttributeMap value named a target no partner may write — an attribute this service keeps (sts*, app*, fed*, pwd*) or the entry's identity, structure or authorization (uid, memberOf, userPassword, the operational attributes) (#94). | HTTP 400 (console and API) |
 | `STS-FED-0153` | A partner's attribute was dropped at sign-in because the relationship maps it onto an attribute no partner may write (a mapping written before #94, or by an ldapmodify) (#94). | none (logged; the sign-in proceeds without it) |
+| `STS-FED-0154` | A federation relationship's Shared Signals credential (fedSignalsClientSecret or fedSignalsBearer) could not be sealed under the key-encryption key where keys persist, so it was not written (#373). | HTTP 400 (console and API) |
+| `STS-FED-0155` | A federated sign-in was started through an ssf relationship, which only sends Shared Signals and signs nobody in (#374). | HTTP 400 page |
+| `STS-FED-0156` | A federated sign-in was refused because the partner's own Shared Signals (a verified account-disabled) blocked its sign-ins of this person; its account-enabled, or an administrator, lifts it (#373). | HTTP 403 page |
 
 ## STS-OIDFED
 
@@ -3191,19 +3194,20 @@ Raised from: ssf/.
 | `STS-SSF-0110` | No reaction to a signal this service's own console or portal received could be decided: the signal-response policy is disabled, missing or does not load. The event is recorded and nothing is ended. | — |
 | `STS-SSF-0111` | A reaction the signal-response policy permitted to a received signal failed: the receiving surface's sessions for the person could not be ended. | — |
 | `STS-SSF-0112` | The kerberos-tickets-invalidated event (this service's own, #169) could not be transmitted after a krbtgt key was rotated with nothing kept; the rotation itself stands. | none — logged; nothing is sent to a receiver |
-| `STS-SSF-0113` | A foreign SSF transmitter act was refused: an unknown action, a bad or taken id, the realm's limit, no federation relationship, an unsupported delivery, no credential, or no stream yet (#153). | console / /admin-api refusal (HTTP 400) |
-| `STS-SSF-0114` | A foreign transmitter could not be registered: its /.well-known/ssf-configuration could not be read or does not name the issuer, a jwks_uri and a configuration_endpoint, or its jwks_uri could not be read (#153). | console / /admin-api refusal (HTTP 400) |
-| `STS-SSF-0115` | A foreign transmitter refused a stream act — create, read, update, delete, status, a subject or verification — or could not be reached (#153). | console / /admin-api refusal (HTTP 400) |
-| `STS-SSF-0116` | Polling a foreign transmitter (RFC 8936) failed (#153). | none (logged; the job tries again) |
-| `STS-SSF-0117` | A push to /ssf/transmitters/{id}/push named no push stream here, or its Authorization header is not the one this realm gave the transmitter (#153). | HTTP 404 or 401 {err} |
-| `STS-SSF-0118` | A Security Event Token from a foreign transmitter was malformed: not a compact JWS, typ not secevent+jwt, or no jti or events (#153). | HTTP 400 {err: invalid_request}, or a poll setErrs entry |
-| `STS-SSF-0119` | A foreign SET's iss is not the transmitter's issuer (#153). | HTTP 400 {err: invalid_issuer}, or a poll setErrs entry |
-| `STS-SSF-0120` | A foreign SET's aud does not name this realm's stream audience (#153). | HTTP 400 {err: invalid_audience}, or a poll setErrs entry |
-| `STS-SSF-0121` | A foreign SET's signature does not verify against the transmitter's keys, and it was refused (product mode, or ssf.receiveRequireSignature) (#153). | HTTP 400 {err: invalid_key}, or a poll setErrs entry |
-| `STS-SSF-0122` | Acting on a verified event from a foreign transmitter — ending a person's sessions, disabling or enabling their account — failed; the SET is recorded (#153). | none (logged) |
+| `STS-SSF-0113` | A Shared Signals act on a federation relationship was refused: an unknown signals-* action, no such service-provider-side relationship, no issuer or credential configured, an unsupported delivery, a stream already held, a bad status or subject, or no stream yet (#153, #373). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0114` | A federation partner's Shared Signals configuration could not be discovered: the SSF issuer is not a URL, its /.well-known/ssf-configuration could not be read or does not name the issuer, a jwks_uri and a configuration_endpoint, or its jwks_uri could not be read (#153, #373). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0115` | A federation partner refused a stream act — create, read, update, delete, status, a subject or verification — or could not be reached (#153, #373). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0116` | Polling a federation partner's Shared Signals stream (RFC 8936) failed (#153, #373). | none (logged; the job tries again) |
+| `STS-SSF-0117` | A push to /federation/signals/{id} named no relationship receiving by push here (none, disabled, its signals off, or no push stream), or its Authorization header is not the one this realm gave the partner (#153, #373). | HTTP 404 or 401 {err} |
+| `STS-SSF-0118` | A Security Event Token from a federation partner was malformed: not a compact JWS, typ not secevent+jwt, or no jti or events (#153, #373). | HTTP 400 {err: invalid_request}, or a poll setErrs entry |
+| `STS-SSF-0119` | A federation partner's SET names an iss that is not the SSF issuer its configuration was discovered for (#153, #373). | HTTP 400 {err: invalid_issuer}, or a poll setErrs entry |
+| `STS-SSF-0120` | A federation partner's SET's aud does not name this realm's stream audience (#153, #373). | HTTP 400 {err: invalid_audience}, or a poll setErrs entry |
+| `STS-SSF-0121` | A federation partner's SET's signature does not verify against the keys its SSF configuration names, and it was refused (product mode, or ssf.receiveRequireSignature) (#153, #373). | HTTP 400 {err: invalid_key}, or a poll setErrs entry |
+| `STS-SSF-0122` | Acting on a verified event from a federation partner — ending sessions, blocking or unblocking its sign-ins of a person, disabling or enabling their account — failed; the SET is recorded (#153, #373). | none (logged) |
 | `STS-SSF-0123` | A key event of this service's own (federation-key-rotated, spiffe-authority-rotated or tls-certificate-changed, #245) could not be transmitted after the key moved; the change itself stands. | none — logged; nothing is sent to a receiver |
 | `STS-SSF-0130` | The RISC account register is over risc.maxAccountsTracked and every row left is an account holder's opt-out (#260), which is never dropped to make room: RISC 1.0 section 2.8 makes the choice theirs. The register stays over its cap until the cap is raised. | none — logged; the opt-outs are kept |
 | `STS-SSF-0131` | An Add Subject request on a stream a person owns named somebody other than that person, and ssf.personStreamsSelfOnly is on. A person's stream carries events only about them. | HTTP 403 access_denied |
+| `STS-SSF-0132` | A Shared Signals act on a federation relationship whose signals are off (fedSignalsEnabled), or an unblock of a person the relationship has not blocked (#373). | console / /admin-api refusal (HTTP 400) |
 
 ## STS-RISK
 

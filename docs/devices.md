@@ -262,7 +262,7 @@ counts changes by source, day by day.
 | An administrator: the **Compliance** form on a device's page, or `POST /admin-api/devices/set-compliance` | `admin` | Admin Write. May also set `unknown`, withdrawing a vouch. |
 | An MDM or posture feed: `POST /admin-api/device-compliance` | `mdm` | A client holding an access token with the **`device:compliance`** scope, and nothing else, whose application is a member of the `DEVICE_COMPLIANCE` role. |
 | The test control: `POST /devices/test/compliance` | `test-control` | Anybody, **in development only**; product answers `403`. |
-| A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | A foreign transmitter an administrator registered on **Shared Signals transmitters** (#153). The device is named by its id (an `iss_sub` subject's `sub`) or a key thumbprint. |
+| A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | A federation partner whose Shared Signals this realm receives, as the `signal-response` policy permits (#153, #373). A device manager is an `ssf` relationship on **Federation** (#374). The device is named by its id (an `iss_sub` subject's `sub`) or a key thumbprint. |
 
 ### Integrating an MDM or posture feed
 

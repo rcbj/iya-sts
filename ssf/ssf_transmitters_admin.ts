@@ -6,26 +6,25 @@
 // File: ssf_transmitters_admin.ts
 //
 // ===========================================================================
-// /admin/ssf/transmitters — FOREIGN SHARED SIGNALS TRANSMITTERS (#153,
-// 2026-09-26): the transmitters this realm receives CAEP and RISC events
-// from, each with its discovered configuration, the federation relationship
-// its subjects are mapped through, its stream at the transmitter and the
-// stream's acts (create, read, update, delete, status, subjects, verify,
-// poll now), what arrived and what it led to, and the locks a transmitter's
-// account-disabled put on people here. Its twin is
-// `/admin-api/ssf/transmitters` (`ssf_transmitters_api.ts`, rule 7); both call
-// `ssf_transmitters.ts`'s `report()` and `act()`. Never a client secret, a
-// bearer token or the push authorization header.
+// /admin/ssf/transmitters — SIGNALS FROM PARTNERS (#153, 2026-09-26; a
+// monitoring page since #373, 2026-10-01): every federation relationship
+// whose partner's Shared Signals this realm receives, its stream at the
+// partner and whether it is healthy, what arrived and what it led to, the
+// sign-ins partners have blocked and the account locks a signals-only
+// partner's event put on people here. Its twin is
+// `GET /admin-api/ssf/transmitters` (`ssf_transmitters_api.ts`, rule 7); both
+// draw `ssf_transmitters.ts`'s `report()`. Never a secret.
 //
-// It REVERSES `ssf/CLAUDE.md`'s rule that nothing on the console creates a
-// stream — for the other direction only: there it would be this service
-// dialling a delivery address a console user typed; here the administrator
-// names an ISSUER, and every address dialled comes from that issuer's own
-// configuration document (root CLAUDE.md's argued "Dial a URL" row).
+// READ ONLY SINCE #373. A partner's stream is CONFIGURED on its relationship
+// (`fedSignals*`) and ACTED ON from the relationship's page — Discover,
+// Create stream, Verify, Poll now, Unblock — because the relationship is
+// what the partner is (rcbj's call on #373: a foreign transmitter is a
+// federation partner in spirit). A second set of controls here would be a
+// second door onto the same acts, and the one an operator reading this page
+// during an incident did not need.
 // ===========================================================================
 
 import helpers = require('../common/helpers');
-import errorCodes = require('../common/error_codes');
 import admin = require('../admin-ui/admin');
 import InstanceSlot = require('../common/instance_slot');
 import transmitters = require('./ssf_transmitters');
@@ -40,19 +39,15 @@ const PAGE = '/admin/ssf/transmitters';
 
 interface TransmittersAdminDeps {
   log: typeof helpers.log;
-  parseBody: typeof helpers.parseBody;
-  baseUrlOf: typeof helpers.baseUrlOf;
-  errorCodes: typeof errorCodes;
   admin: typeof admin;
   transmitters: typeof transmitters;
-  adminViews: () => Json;
 }
 
 /**
- * The console page for the foreign Shared Signals transmitters this realm
- * receives from: each transmitter and its stream's acts, what arrived and what
- * it led to. It draws `ssf_transmitters.ts`'s report and performs its acts, and
- * never shows a secret.
+ * The monitoring page for the federation partners whose Shared Signals this
+ * realm receives: each relationship's stream, what arrived and what it led
+ * to, and the blocks and locks partners put on people. It draws
+ * `ssf_transmitters.ts`'s report, performs nothing, and never shows a secret.
  */
 class SsfTransmittersAdmin {
   /**
@@ -80,63 +75,13 @@ class SsfTransmittersAdmin {
   static defaultDeps(): TransmittersAdminDeps {
     helpers.log.debug("Entering SsfTransmittersAdmin.defaultDeps().");
     helpers.log.debug("Leaving SsfTransmittersAdmin.defaultDeps().");
-    return {
-      log: helpers.log, parseBody: helpers.parseBody,
-      baseUrlOf: helpers.baseUrlOf, errorCodes: errorCodes, admin: admin,
-      transmitters: transmitters,
-      adminViews: function (): Json {
-        return require('../admin-core/admin_views');
-      }
-    };
+    return { log: helpers.log, admin: admin, transmitters: transmitters };
   }
 
   /**
-   * Returns the signed-in console user's name, for the audit row.
-   *
-   * @param req - the request
-   * @returns the username; empty when there is none
-   */
-  actorOf(req: Json): string {
-    const { log, adminViews } = this.deps;
-    log.debug("Entering SsfTransmittersAdmin.actorOf().");
-    let state: Json = null;
-    try {
-      state = adminViews().gateStateFor(req);
-    } catch (e: any) {
-      log.debug("Caught in SsfTransmittersAdmin.actorOf(): " +
-                ((e && e.message) || e));
-      state = null;
-    }
-    log.debug("Leaving SsfTransmittersAdmin.actorOf().");
-    return (state && state.username) || '';
-  }
-
-  /**
-   * Draws a one-button form that posts an action to the page.
-   *
-   * @param action - the action's name
-   * @param fields - hidden fields, by name
-   * @param label - the button's label
-   * @param danger - whether the button is drawn as a destructive one
-   * @returns the HTML
-   */
-  static form(action: string, fields: Json, label: string,
-              danger?: boolean): string {
-    helpers.log.debug("Entering SsfTransmittersAdmin.form(). " + action);
-    helpers.log.debug("Leaving SsfTransmittersAdmin.form().");
-    return '<form method="post" action="' + PAGE + '" class="inline">' +
-      '<input type="hidden" name="action" value="' + esc(action) + '">' +
-      Object.keys(fields).map(function (k: string): string {
-        return '<input type="hidden" name="' + esc(k) + '" value="' +
-          esc(fields[k]) + '">';
-      }).join('') + ' <button type="submit"' +
-      (danger ? ' class="danger"' : '') + '>' + esc(label) +
-      '</button></form>';
-  }
-
-  /**
-   * Draws the page's body from the transmitters report: a card per transmitter
-   * with its acts, the registration form, and the table of what arrived.
+   * Draws the page's body from the report: a card per relationship, the
+   * blocks and locks partners put on people here, and the table of what
+   * arrived.
    *
    * @param json - `ssf_transmitters.ts`'s report
    * @returns the HTML
@@ -144,17 +89,20 @@ class SsfTransmittersAdmin {
   body(json: Json): string {
     const { log, admin } = this.deps;
     log.debug("Entering SsfTransmittersAdmin.body().");
-    const form = SsfTransmittersAdmin.form;
-    const cards = json.transmitters.length
-      ? json.transmitters.map(function (t: Json): string {
-        const id = { id: t.id };
-        return '<div class="card" id="transmitter-' + esc(t.id) + '"><h3>' +
-          esc(t.id) + ' <span class="sub">' + esc(t.state) + '</span></h3>' +
-          '<p>Issuer <code>' + esc(t.issuer) + '</code>, subjects mapped ' +
-          'through the relationship <code>' + esc(t.federationId) +
-          '</code>, delivery <strong>' + esc(t.delivery) + '</strong>' +
-          (t.streamId ? ', stream <code>' + esc(t.streamId) + '</code>' +
-            ' (aud <code>' + esc((t.streamAud || []).join(' ')) +
+    const link = function (id: string): string {
+      return '<a href="/admin/federation?relationship=' +
+        encodeURIComponent(id) + '#signals"><code>' + esc(id) +
+        '</code></a>';
+    };
+    const cards = json.relationships.length
+      ? json.relationships.map(function (t: Json): string {
+        return '<div class="card" id="relationship-' + esc(t.relationship) +
+          '"><h3>' + link(t.relationship) + ' <span class="sub">' +
+          esc(t.kind) + ', ' + esc(t.receiving ? t.state : 'not receiving') +
+          '</span></h3><p>Issuer <code>' + esc(t.issuer) + '</code>, ' +
+          'delivery <strong>' + esc(t.streamDelivery || t.delivery) +
+          '</strong>' + (t.streamId ? ', stream <code>' + esc(t.streamId) +
+            '</code> (aud <code>' + esc((t.streamAud || []).join(' ')) +
             '</code>)' : ', no stream yet') + '.</p><p class="sub">' +
           esc(t.counts.received || 0) + ' received, ' +
           esc(t.counts.verified || 0) + ' verified, ' +
@@ -163,51 +111,36 @@ class SsfTransmittersAdmin {
           (t.lastPollAt ? '; last poll ' + esc(t.lastPollAt) + ': ' +
             esc(t.lastPollResult) : '') +
           (t.verifiedAt ? '; verified ' + esc(t.verifiedAt) : '') +
+          (t.ready ? '' : '<br>Still to set: ' + esc(t.missing.join(', '))) +
           (t.lastError ? '<br><strong>' + esc(t.lastError) + '</strong>'
-                       : '') + '</p>' +
-          (t.streamId
-            ? form('read-stream', id, 'Read stream') +
-              form('verify', id, 'Verify') +
-              (t.delivery === 'poll' ? form('poll-now', id, 'Poll now') : '') +
-              form('set-status', Object.assign({ status: 'paused' }, id),
-                   'Pause') +
-              form('set-status', Object.assign({ status: 'enabled' }, id),
-                   'Enable') +
-              form('delete-stream', id, 'Delete stream', true)
-            : form('create-stream', id, 'Create stream')) +
-          form('remove', id, 'Remove', true) + '</div>';
+                       : '') + '</p></div>';
       }).join('')
-      : '<p class="sub" id="transmitters-none">No foreign transmitter is ' +
-        'registered in this realm.</p>';
-    const field = function (name: string, label: string, hint: string,
-                            type?: string): string {
-      return '<label>' + label + ' <input type="' + (type || 'text') +
-        '" name="' + name + '" autocomplete="off"></label>' +
-        (hint ? ' <span class="sub">' + hint + '</span>' : '') + '<br>';
-    };
-    const add = '<h3>Register a transmitter</h3>' +
-      '<form method="post" action="' + PAGE + '" id="transmitter-add">' +
-      '<input type="hidden" name="action" value="add">' +
-      field('id', 'Id', 'lower-case letters, digits and hyphens') +
-      field('issuer', 'Issuer', 'its SSF issuer; the configuration is ' +
-            'discovered from it') +
-      field('federationId', 'Federation relationship', 'whose linked ' +
-            'identities its subjects are mapped through') +
-      '<label>Delivery <select name="delivery"><option>poll</option>' +
-      '<option>push</option></select></label><br>' +
-      field('eventsRequested', 'Events requested', 'space-separated event ' +
-            'URIs; empty asks for what it supports') +
-      field('tokenEndpoint', 'Token endpoint', 'client credentials at the ' +
-            'transmitter\'s authorization server') +
-      field('clientId', 'client_id', '') +
-      field('clientSecret', 'Client secret', 'sealed; never shown again',
-            'password') +
-      field('bearer', 'Or a bearer token', 'instead of client credentials',
-            'password') +
-      '<button type="submit">Register</button></form>';
+      : '<p class="sub" id="relationships-none">No federation relationship ' +
+        'in this realm receives its partner\'s Shared Signals. Turn ' +
+        '<code>fedSignalsEnabled</code> on for one on <a ' +
+        'href="/admin/federation">Federation</a>, or create an ' +
+        '<code>ssf</code> relationship for a partner that signs nobody in.' +
+        '</p>';
+    const blocks = json.blocks.length
+      ? '<h3>Sign-ins partners have blocked</h3><table><thead><tr><th>' +
+        'Person</th><th>Relationship</th><th>Since</th><th>Event</th></tr>' +
+        '</thead><tbody>' + json.blocks.map(function (b: Json): string {
+          return '<tr><td>' + esc(b.username) + '</td><td>' +
+            link(b.relationship) + '</td><td>' + esc(b.at) + '</td><td>' +
+            '<code>' + esc(b.event) + '</code></td></tr>';
+        }).join('') + '</tbody></table>'
+      : '';
+    const locks = json.locks.length
+      ? '<h3>Accounts a partner disabled</h3><table><thead><tr><th>Person' +
+        '</th><th>Relationship</th><th>Since</th></tr></thead><tbody>' +
+        json.locks.map(function (l: Json): string {
+          return '<tr><td>' + esc(l.username) + '</td><td>' +
+            link(l.relationship) + '</td><td>' + esc(l.at) + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '';
     const received = json.received.length ? json.received.map(function (r:
                                                                        Json) {
-      return '<tr><td><code>' + esc(r.transmitter) + '</code></td><td>' +
+      return '<tr><td>' + link(r.relationship) + '</td><td>' +
         esc(r.receivedAt) + ' <span class="sub">' + esc(r.via) + '</span>' +
         '</td><td>' + (r.events || []).map(function (e: string) {
           return '<code>' + esc(String(e).replace(/^.*\//, '')) + '</code>';
@@ -224,20 +157,19 @@ class SsfTransmittersAdmin {
     }).join('') : '<tr><td colspan="6" class="sub">Nothing has arrived.' +
       '</td></tr>';
     log.debug("Leaving SsfTransmittersAdmin.body().");
-    return admin.note('<strong>Shared Signals from other identity ' +
-        'services.</strong> A transmitter registered here is another ' +
-        'service that sends CAEP and RISC events about people who also ' +
-        'sign in here. Its configuration and keys are discovered from its ' +
-        'issuer; a Security Event Token is acted on only when it verified ' +
-        'against those keys, names this stream\'s audience and a person ' +
-        'the federation relationship links — and then only as the ' +
-        '<code>signal-response</code> policy permits: end their sessions ' +
-        'here, disable their account, enable it again (only a lock this ' +
-        'transmitter put there).' + (json.observeOnly
+    return admin.note('<strong>Shared Signals from federation ' +
+        'partners.</strong> A partner\'s CAEP and RISC events about the ' +
+        'people it signs in — or, from an <code>ssf</code> relationship, ' +
+        'about the people and devices it manages — are acted on only when ' +
+        'they verified against the keys its SSF configuration names, name ' +
+        'this stream\'s audience and a person the relationship links, and ' +
+        'then only as the <code>signal-response</code> policy permits. Each ' +
+        'stream is configured and acted on from its relationship\'s page.' +
+        (json.observeOnly
           ? ' <strong>This realm only records what it would do</strong> ' +
             '(development; <code>ssf.actOnSignalsInDevelopment</code>).'
-          : '')) + cards + add +
-      '<h3>What arrived</h3><table><thead><tr><th>Transmitter</th><th>When' +
+          : '')) + cards + blocks + locks +
+      '<h3>What arrived</h3><table><thead><tr><th>Relationship</th><th>When' +
       '</th><th>Events</th><th>Verified</th><th>Person</th><th>Reactions' +
       '</th></tr></thead><tbody>' + received + '</tbody></table>' +
       '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
@@ -245,37 +177,22 @@ class SsfTransmittersAdmin {
   }
 
   /**
-   * Registers `GET` and `POST /admin/ssf/transmitters` on the app.
+   * Registers `GET /admin/ssf/transmitters` on the app.
    *
    * @param app - the express app
    */
   registerRoutes(app: Json): void {
-    const { log, parseBody, admin, transmitters, errorCodes,
-            baseUrlOf } = this.deps;
+    const { log, admin, transmitters } = this.deps;
     const self = this;
     log.debug("Entering SsfTransmittersAdmin.registerRoutes().");
     app.get(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin transmitters page.");
-      const json = transmitters.report({ transmitter: req.query.transmitter });
+      log.debug("Entering the admin partners' signals page.");
+      const json = transmitters.report({
+        relationship: req.query.relationship });
       const inner = (typeof admin.messagesOf === 'function'
         ? admin.messagesOf(req) : '') + self.body(json);
-      admin.respond(req, res, json, 'Foreign SSF transmitters', PAGE, inner);
-      log.debug("Leaving the admin transmitters page.");
-    });
-    app.post(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin transmitters action.");
-      Promise.resolve().then(function (): Json {
-        return transmitters.act(parseBody(req) || {}, { via: 'console',
-          actor: self.actorOf(req), base: baseUrlOf(req) });
-      }).catch(function (e: any): Json {
-        log.error(errorCodes.tag('STS-SSF-0113') + 'ssf: a console ' +
-                  'transmitter action failed: ' + ((e && e.stack) || e));
-        return errorCodes.mark({ ok: false, errors:
-          ['The action could not be completed.'] }, 'STS-SSF-0113');
-      }).then(function (result: Json): void {
-        admin.respondToAction(req, res, PAGE, result);
-        log.debug("Leaving the admin transmitters action.");
-      });
+      admin.respond(req, res, json, 'Signals from partners', PAGE, inner);
+      log.debug("Leaving the admin partners' signals page.");
     });
     log.debug("Leaving SsfTransmittersAdmin.registerRoutes().");
   }
@@ -290,7 +207,7 @@ const slot = new InstanceSlot<SsfTransmittersAdmin>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The console page for foreign Shared Signals transmitters,
+ * The monitoring page for federation partners' Shared Signals,
  * `/admin/ssf/transmitters`.
  *
  * @namespace

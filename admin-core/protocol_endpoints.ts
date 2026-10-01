@@ -307,8 +307,6 @@ class ProtocolEndpoints {
         '/.well-known/hoba/register'
       ].map(route),
       '/admin/ssf': ['/ssf'].concat(SSF_DELIVERY).map(route),
-      // Foreign transmitters (#153): the push endpoint this realm gives one.
-      '/admin/ssf/transmitters': ['/ssf/transmitters/:id/push'].map(route),
       '/admin/caep': SSF_DELIVERY.map(route),
       '/admin/risc': SSF_DELIVERY.map(route),
       '/admin/federation': ['/federation', '/federation/login/:id',
@@ -317,6 +315,8 @@ class ProtocolEndpoints {
                             '/federation/slo/:id',
                             '/federation/backchannel-logout/:id',
                             '/federation/frontchannel-logout/:id',
+                            // A partner's Shared Signals push (#373).
+                            '/federation/signals/:id',
                             '/authn/select-idp'].map(route),
       '/admin/totp': ['/authn/totp', '/portal/mfa'].map(route),
       '/admin/backup-codes': ['/authn/backup-code', '/portal/mfa'].map(route),

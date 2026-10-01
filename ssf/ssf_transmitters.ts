@@ -6,62 +6,76 @@
 // File: ssf_transmitters.ts
 //
 // ===========================================================================
-// THIS REALM AS THE RECEIVER OF A FOREIGN TRANSMITTER (#153, 2026-09-26) —
-// Shared Signals Framework 1.0 with the roles the other way round.
+// A FEDERATION PARTNER'S SHARED SIGNALS (#373, #374, 2026-10-01) — Shared
+// Signals Framework 1.0 with this realm as the RECEIVER.
 //
-// Until #153 the only receivers here were this service's own console and
-// portal, fed by its own transmitter (`ssf_receivers.ts`), and the debugger's
-// inbox. Another identity service that transmits CAEP and RISC events about
-// people who ALSO sign in here — a partner this realm federates with — had
-// nowhere to send them. rcbj's answers on #153 were every recommendation:
+// #153 built this as a register of its own (`ssf.foreignTransmitters`) that
+// had to name a federation relationship to map subjects. rcbj's call on #373:
+// a foreign transmitter is a federation partner in spirit — a party that asks
+// this service for nothing and makes statements about people who sign in
+// through it — so it is CONFIGURED ON THE RELATIONSHIP (`fedSignals*`,
+// `federation/federation.js`) and this module keeps only what is MINTED: the
+// discovered configuration, the stream at the partner, the push secret's
+// digest, verification, the inbox and the account locks. #374 added the
+// partner that signs nobody in — an MDM, an EDR, an HR feed — as a sixth
+// relationship protocol, `ssf`.
 //
-// **1. ONLY A TRANSMITTER AN ADMINISTRATOR REGISTERS.** Per realm, an issuer,
-// discovered through its `/.well-known/ssf-configuration` (SSF 1.0 section
-// 7; the path inserted before the issuer's own, as RFC 8414 does), whose
-// document must name that issuer. Its `jwks_uri` is fetched and cached for
-// verification (`oauth-oidc/client_jwks.js`), and every endpoint the
-// document names is dialled through `federation_http.fetchPublished()` —
-// internal addresses refused in product mode, the connection pinned, no
-// redirect, a cap. The administrator supplied the issuer and nothing a
-// request carries can name another; that is the argued row in root
-// CLAUDE.md's "Dial a URL a CALLER supplied" index.
+// **1. ONLY A RELATIONSHIP AN ADMINISTRATOR CONFIGURED.** The issuer is
+// `fedSignalsIssuer`, else `fedPeer`; its `/.well-known/ssf-configuration`
+// (SSF 1.0 section 7; the path inserted before the issuer's own, as RFC 8414
+// does) must name it, and every address dialled afterwards comes from that
+// document, through `federation_http.fetchPublished()` — internal addresses
+// refused in product mode, the connection pinned, no redirect, a cap. That
+// is the fifteenth row of root CLAUDE.md's "Dial a URL" index. Nothing is
+// received unless the relationship is enabled AND its signals are.
 //
-// **2. A STREAM AT THE TRANSMITTER, AND BOTH DELIVERIES.** This realm creates,
-// reads, updates and deletes its stream at the transmitter's configuration
-// endpoint (section 8.1.1), sets its status, adds and removes subjects and
-// asks for verification — with an access token the transmitter's
-// authorization server issues this realm by client credentials (or a bearer
-// token the administrator pasted). POLL (RFC 8936) is the
-// `ssf.foreign-poll` scheduler job — a cluster job, per realm — acknowledging
-// what it received on the next request; PUSH (RFC 8935) is
-// `POST /ssf/transmitters/{id}/push`, authenticated by the authorization
-// header this realm gave the transmitter when it created the stream (kept
-// only as its digest, compared in constant time).
+// **2. A STREAM AT THE PARTNER, AND BOTH DELIVERIES.** This realm creates,
+// reads, updates and deletes its stream at the configuration endpoint
+// (section 8.1.1), sets its status, adds and removes subjects and asks for
+// verification, with an access token from client credentials (falling back to
+// the sign-in relationship's own client) or a bearer the administrator
+// pasted, both sealed on the entry. POLL (RFC 8936) is the `ssf.foreign-poll`
+// cluster job, per realm, acknowledging what it received on the next request;
+// PUSH (RFC 8935) is `POST /federation/signals/{id}`, authenticated by the
+// authorization header this realm gave the partner when it created the
+// stream (kept only as its digest, compared in constant time).
 //
 // **3. NOTHING ACTS ON A SET UNLESS IT VERIFIED** (#117's rule): the
-// signature against the transmitter's keys (the algorithms named, never
-// taken from the token), `typ` secevent+jwt, `iss` the transmitter's issuer,
-// `aud` the stream's, a `jti` never seen before. In product an unverified
-// SET is refused (`mode.refusesUnverifiedSignals()`); in development it is
-// recorded and acted on in no way. What a verified one leads to is the
-// `signal-response` policy's decision, asked with the surface
-// `foreign:<id>`: end the person's sessions here (session-revoked,
-// credential-change, …), disable their account (account-disabled), enable
-// it again (account-enabled — only a lock this transmitter's own event
-// put there). Development only RECORDS what it would do unless
-// `ssf.actOnSignalsInDevelopment` is on (`mode.observesSignalsOnly()`).
+// signature against the keys at the configuration document's `jwks_uri` (the
+// algorithms named, never taken from the token), `typ` secevent+jwt, `iss`
+// the partner's SSF issuer, `aud` the stream's, a `jti` never seen before. In
+// product an unverified SET is refused (`mode.refusesUnverifiedSignals()`);
+// in development it is recorded and acted on in no way. What a verified one
+// leads to is the `signal-response` policy's decision, asked with the surface
+// `federation:<id>` and the relationship KIND:
 //
-// **4. A FOREIGN SUBJECT IS A LOCAL PERSON THROUGH A FEDERATION
-// RELATIONSHIP.** The registration names one (`ou=federations`): an
-// `iss_sub` subject with that relationship's issuer is the ONE person whose
-// `federationLink` holds it; an `email` subject is the one person with that
-// address only where the relationship sets `fedSignalEmailMatch`. Anything
-// else — no relationship, no link, two people — is recorded and acts on
-// nobody.
+//   * a SIGN-IN partner (#373): end the sessions IT started for the person
+//     (the one a complex subject's session names, else every one), as its
+//     own sign-out does (#167); block its sign-ins of the person on
+//     account-disabled (`federation/federation_blocks.ts`) and lift that on
+//     account-enabled. A local sign-in and other partners are untouched.
+//   * a SIGNALS-ONLY partner (#374): recorded, and nothing more, by default;
+//     a global sign-out and an account lock exist for a policy to permit.
+//   * either: a device's compliance (`device-compliance-change`) is set.
 //
-// A LIBRARY with two routes of its own (the push endpoint, and the page's
-// JSON is the console's): `common/protocol_stack.ts` builds it after the
-// directory and registers its route.
+// Development only RECORDS what it would do unless
+// `ssf.actOnSignalsInDevelopment` is on (`mode.observesSignalsOnly()`) — the
+// device's compliance included.
+//
+// **4. A FOREIGN SUBJECT IS A LOCAL PERSON THROUGH THE RELATIONSHIP.** A
+// sign-in partner's `iss_sub` subject (its issuer being fedPeer or the SSF
+// issuer) is the ONE person whose `federationLink` holds
+// `<id> <fedPeer> <sub>` — the identifier that partner signs them in with,
+// which for SAML is the persistent NameID. A signals-only partner's links are
+// written by an administrator: `<id> <iss> <sub>` for an iss_sub subject,
+// `<id> opaque <id>` for an opaque one. An `email` subject matches only where
+// `fedSignalEmailMatch` is on. Anything else — no link, two people — is
+// recorded and acts on nobody.
+//
+// A LIBRARY with one route of its own (the push endpoint); its acts are the
+// relationship's (`admin-core/admin_actions.ts`'s federationAction) and its
+// report is Monitoring → Shared Signals from partners
+// (`ssf_transmitters_admin.ts`).
 // ===========================================================================
 
 import nodeCrypto = require('crypto');
@@ -73,13 +87,14 @@ import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
 import mode = require('../common/mode');
 import stsCrypto = require('../common/crypto');
+import fedBlocks = require('../federation/federation_blocks');
 
 type Json = any;
 type Req = import('express').Request;
 type Res = import('express').Response;
 
 /**
- * The scheduler job that polls every foreign transmitter with a poll stream,
+ * The scheduler job that polls every relationship with a poll stream,
  * `ssf.foreign-poll`.
  */
 const POLL_JOB = 'ssf.foreign-poll';
@@ -89,15 +104,28 @@ const SET_TYPES = ['secevent+jwt', 'application/secevent+jwt'];
 const CAEP_PREFIX = 'https://schemas.openid.net/secevent/caep/event-type/';
 const RISC_PREFIX = 'https://schemas.openid.net/secevent/risc/event-type/';
 const SSF_PREFIX = 'https://schemas.openid.net/secevent/ssf/event-type/';
+// The push route's prefix: `federation.js`'s PATHS.signals, spelled here so
+// this module needs the register only lazily.
+const PUSH_PATH = '/federation/signals';
 
-// Per realm and persisted: the registrations; what arrived (which is also
-// the jti history); which lock each transmitter put on whom.
-const transmitters = realms.map({ persist: 'ssf.foreignTransmitters' });
-const inbox = realms.map({ persist: 'ssf.foreignInbox' });
-const locks = realms.map({ persist: 'ssf.foreignLocks' });
+/**
+ * The acts on a relationship's signals, as `federationAction()` names them.
+ */
+const ACTIONS = ['signals-discover', 'signals-create-stream',
+  'signals-read-stream', 'signals-update-stream', 'signals-delete-stream',
+  'signals-set-status', 'signals-add-subject', 'signals-remove-subject',
+  'signals-verify', 'signals-poll-now', 'signals-unblock'];
 
-// Access tokens, per process and short-lived: `<realm>|<id>` → { token,
-// until }. A process that has none asks again; nothing is lost.
+// Per realm and persisted, keyed by the relationship: the stream's state; what
+// arrived (which is also the jti history); and which account lock a
+// signals-only partner's event put on whom. The relationship's own
+// CONFIGURATION is on its entry, never copied here.
+const streams = realms.map({ persist: 'ssf.relationshipStreams' });
+const inbox = realms.map({ persist: 'ssf.relationshipInbox' });
+const locks = realms.map({ persist: 'ssf.relationshipLocks' });
+
+// Access tokens, per process and short-lived: `<realm>|<id>|<client>` →
+// { token, until }. A process that has none asks again; nothing is lost.
 const tokens = new Map<string, Json>();
 
 interface TransmittersDeps {
@@ -107,34 +135,46 @@ interface TransmittersDeps {
   errorCodes: typeof errorCodes;
   audit: typeof audit;
   mode: typeof mode;
+  blocks: typeof fedBlocks;
   now: () => number;
   // Lazily, each: the outbound door, the key cache, the federation register,
-  // the policy, the sign-out and the account lock.
+  // the links, the policy, the sign-out, the sessions, the account lock, the
+  // device register, this service's own streams and the applications.
   fedHttp: () => Json;
   jwks: () => Json;
   federation: () => Json;
   links: () => Json;
   signalPep: () => Json;
   logout: () => Json;
+  authn: () => Json;
   accountState: () => Json;
   devices: () => Json;
+  ownStreams: () => Json;
+  applications: () => Json;
 }
 
 /**
- * This realm as the receiver of foreign Shared Signals transmitters that an
- * administrator registered: discovery, the stream at the transmitter, poll and
- * push delivery, verification, and what a verified SET leads to.
+ * This realm as the receiver of its federation partners' Shared Signals:
+ * discovery, the stream at the partner, poll and push delivery,
+ * verification, and what a verified SET leads to.
  *
- * A SET is acted on only when it verified, and then only as the
- * `signal-response` policy permits, on the one local person the named
- * federation relationship links; development mode only records what it would do
- * unless `ssf.actOnSignalsInDevelopment` is on.
+ * Configuration is the relationship's (`fedSignals*`); this keeps what is
+ * minted. A SET is acted on only when it verified, and then only as the
+ * `signal-response` policy permits.
  */
 class SsfTransmitters {
   /**
    * The poll job's id; the module's `POLL_JOB`.
    */
   static readonly POLL_JOB = POLL_JOB;
+  /**
+   * The acts `act()` takes.
+   */
+  static readonly ACTIONS = ACTIONS;
+  /**
+   * Where a partner pushes, the relationship's id after it.
+   */
+  static readonly PUSH_PATH = PUSH_PATH;
 
   /**
    * Builds the receiver from its dependencies.
@@ -158,7 +198,7 @@ class SsfTransmitters {
     helpers.log.debug("Leaving SsfTransmitters.defaultDeps().");
     return {
       log: helpers.log, config: config, realms: realms,
-      errorCodes: errorCodes, audit: audit, mode: mode,
+      errorCodes: errorCodes, audit: audit, mode: mode, blocks: fedBlocks,
       now: function (): number {
         return Date.now();
       },
@@ -181,11 +221,20 @@ class SsfTransmitters {
         const found = require.cache[require.resolve('../logout/logout')];
         return found ? found.exports : null;
       },
+      authn: function (): Json {
+        return require('../authn/authn');
+      },
       accountState: function (): Json {
         return require('../common/account_state');
       },
       devices: function (): Json {
         return require('../common/devices');
+      },
+      ownStreams: function (): Json {
+        return require('./ssf_streams');
+      },
+      applications: function (): Json {
+        return require('../common/applications');
       }
     };
   }
@@ -230,34 +279,57 @@ class SsfTransmitters {
       (path && path !== '/' ? path : '');
   }
 
+  // -------------------------------------------------------------------------
+  // THE MINTED STATE, keyed by the relationship.
+  // -------------------------------------------------------------------------
   /**
-   * Returns a copy of a registered transmitter in the ambient realm.
+   * Returns a copy of a relationship's stream state in the ambient realm.
    *
-   * @param id - the transmitter's id
-   * @returns the record, or null
+   * @param fedId - the relationship
+   * @returns the state, or a fresh one when there is none
    */
-  get(id: string): Json {
+  stateOf(fedId: string): Json {
     const { log } = this.deps;
-    log.debug("Entering SsfTransmitters.get(). " + id);
-    const held = transmitters.get(String(id || ''));
-    log.debug("Leaving SsfTransmitters.get(). " + !!held);
-    return held ? Object.assign({}, held) : null;
+    log.debug("Entering SsfTransmitters.stateOf(). " + fedId);
+    const held = streams.get(String(fedId || ''));
+    log.debug("Leaving SsfTransmitters.stateOf(). " + !!held);
+    return held ? Object.assign({}, held)
+      : { fedId: String(fedId), config: null, streamId: '', stream: null,
+          streamAud: [], pollEndpoint: '', pushSecretDigest: '',
+          delivery: '', verifyState: '', verifiedAt: 0, state: 'new',
+          lastPollAt: 0, lastPollResult: '', lastError: '',
+          counts: { received: 0, verified: 0, refused: 0, acted: 0 },
+          createdAt: this.deps.now() };
   }
 
-  private save(record: Json): void {
+  private save(state: Json): void {
     const { log, now } = this.deps;
-    log.debug("Entering SsfTransmitters.save(). " + record.id);
-    record.updatedAt = now();
-    transmitters.set(record.id, Object.assign({}, record));
+    log.debug("Entering SsfTransmitters.save(). " + state.fedId);
+    state.updatedAt = now();
+    streams.set(state.fedId, Object.assign({}, state));
     log.debug("Leaving SsfTransmitters.save().");
   }
 
-  // One outbound request to an endpoint the transmitter's document named,
-  // JSON both ways. `{ ok, status, json, why }`; never rejects.
+  private tokenKey(record: Json): string {
+    const { realms } = this.deps;
+    this.deps.log.debug("Entering SsfTransmitters.tokenKey().");
+    const c = this.deps.federation().signalsCredentialOf(record);
+    this.deps.log.debug("Leaving SsfTransmitters.tokenKey().");
+    return realms.currentId() + '|' + record.fedId + '|' +
+      String(c.tokenEndpoint || '') + '|' + String(c.clientId || '');
+  }
+
+  // One outbound request to an endpoint the partner's document named, JSON
+  // both ways. `{ ok, status, json, why }`; never rejects.
   private async call(record: Json, method: string, url: string,
                      body?: Json, withToken?: boolean): Promise<Json> {
     const { log, fedHttp } = this.deps;
     log.debug("Entering SsfTransmitters.call(). " + method + " " + url);
+    if (!url) {
+      log.debug("Leaving SsfTransmitters.call(). No endpoint.");
+      return { ok: false, status: 0, json: null,
+               why: 'the partner\'s configuration names no such endpoint' };
+    }
     const headers: Json = {};
     if (withToken !== false) {
       const token = await this.accessToken(record);
@@ -289,18 +361,22 @@ class SsfTransmitters {
                                json.error).slice(0, 200) + ')' : '') };
   }
 
-  // The access token this realm presents to the transmitter: a pasted
-  // bearer, or client credentials at the administrator's token endpoint.
+  // The access token this realm presents to the partner: a pasted bearer, or
+  // client credentials at the token endpoint the relationship names.
   private async accessToken(record: Json): Promise<Json> {
-    const { log, fedHttp, now, realms } = this.deps;
-    log.debug("Entering SsfTransmitters.accessToken(). " + record.id);
-    const credential = record.credential || {};
+    const { log, fedHttp, now } = this.deps;
+    log.debug("Entering SsfTransmitters.accessToken(). " + record.fedId);
+    const credential = this.deps.federation().signalsCredentialOf(record);
     if (credential.method === 'bearer') {
       log.debug("Leaving SsfTransmitters.accessToken(). Pasted.");
-      return credential.bearer ? { ok: true, token: credential.bearer }
-        : { ok: false, why: 'no bearer token is configured' };
+      return { ok: true, token: credential.bearer };
     }
-    const key = realms.currentId() + '|' + record.id;
+    if (!credential.tokenEndpoint || !credential.clientId) {
+      log.debug("Leaving SsfTransmitters.accessToken(). Not configured.");
+      return { ok: false, why: 'the relationship names no bearer token and ' +
+                               'no token endpoint and client for its signals' };
+    }
+    const key = this.tokenKey(record);
     const held = tokens.get(key);
     if (held && held.until > now()) {
       log.debug("Leaving SsfTransmitters.accessToken(). Cached.");
@@ -308,12 +384,12 @@ class SsfTransmitters {
     }
     const form = new URLSearchParams({
       grant_type: 'client_credentials',
-      client_id: String(credential.clientId || ''),
+      client_id: String(credential.clientId),
       client_secret: String(credential.clientSecret || ''),
-      scope: String(credential.scope || 'ssf:read ssf:write')
+      scope: String(credential.scope)
     }).toString();
     const answer: Json = await fedHttp().fetchPublished(
-      String(credential.tokenEndpoint || ''), {
+      String(credential.tokenEndpoint), {
         method: 'POST', accept: 'application/json', body: form,
         contentType: 'application/x-www-form-urlencoded',
         timeoutMs: this.setting('ssf.foreignTimeoutMs') });
@@ -338,73 +414,52 @@ class SsfTransmitters {
     return { ok: true, token: String(json.access_token) };
   }
 
+  private audited(action: string, ctx: Json, record: Json,
+                  what: string): void {
+    const { log, audit } = this.deps;
+    log.debug("Entering SsfTransmitters.audited(). " + action);
+    const state = this.stateOf(record.fedId);
+    audit.audit({ action: action, actor: (ctx && ctx.actor) || '',
+      protocol: 'Shared Signals', channel: (ctx && ctx.via) || 'http',
+      target: record.fedId,
+      summary: 'the Shared Signals of the federation relationship ' +
+               record.fedId + ': ' + what,
+      detail: { relationship: record.fedId,
+                issuer: this.deps.federation().signalsIssuerOf(record),
+                streamId: state.streamId || '' } });
+    log.debug("Leaving SsfTransmitters.audited().");
+  }
+
+  private refusal(code: string, message: string): Json {
+    this.deps.log.debug("Entering SsfTransmitters.refusal(). " + code);
+    this.deps.log.debug("Leaving SsfTransmitters.refusal().");
+    return this.deps.errorCodes.mark({ ok: false, errors: [message] }, code);
+  }
+
   // -------------------------------------------------------------------------
-  // REGISTER: discover the issuer's configuration and keys, and keep them.
+  // DISCOVERY: the partner's configuration and keys, from its SSF issuer.
   // -------------------------------------------------------------------------
   /**
-   * Registers a transmitter: discovers its configuration (which must name the
-   * issuer) and its keys, checks the federation relationship, and keeps the
-   * credential sealed. Audited.
+   * Fetches the partner's SSF configuration (which must name its issuer) and
+   * its keys, and keeps them. Audited.
    *
-   * @param body - `id`, `issuer`, `discoveryUrl`, `federationId`, `delivery`,
-   * `eventsRequested`, and `tokenEndpoint`, `clientId`, `clientSecret` and
-   * `scope`, or `bearer`
-   * @param ctx - `via`, `actor` and `base`
-   * @returns a promise of `{ ok, ... }` or `{ ok: false, errors }`
+   * @param record - the relationship
+   * @param ctx - `via` and `actor`
+   * @returns a promise of `{ ok, signals }` or `{ ok: false, errors }`
    */
-  async add(body: Json, ctx: Json): Promise<Json> {
-    const { log, fedHttp, errorCodes, now } = this.deps;
-    log.debug("Entering SsfTransmitters.add().");
-    const b = body || {};
-    const refuse = function (message: string): Json {
-      log.debug("Entering refuse().");
-      log.debug("Leaving refuse().");
-      return errorCodes.mark({ ok: false, errors: [message] },
-                             'STS-SSF-0113');
-    };
-    const id = String(b.id || '').trim();
-    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(id)) {
-      log.debug("Leaving SsfTransmitters.add(). The id.");
-      return refuse('The id must be lower-case letters, digits and hyphens.');
-    }
-    if (transmitters.get(id)) {
-      log.debug("Leaving SsfTransmitters.add(). Taken.");
-      return refuse('A transmitter "' + id + '" is already registered.');
-    }
-    if (transmitters.size >= this.setting('ssf.foreignMaxTransmitters')) {
-      log.debug("Leaving SsfTransmitters.add(). Full.");
-      return refuse('This realm already holds ssf.foreignMaxTransmitters ' +
-                    'transmitters.');
-    }
-    const issuer = String(b.issuer || '').trim();
-    let discovery = String(b.discoveryUrl || '').trim();
+  async discover(record: Json, ctx: Json): Promise<Json> {
+    const { log, fedHttp } = this.deps;
+    log.debug("Entering SsfTransmitters.discover(). " + record.fedId);
+    const issuer = this.deps.federation().signalsIssuerOf(record);
+    let discovery = '';
     try {
-      discovery = discovery || SsfTransmitters.discoveryUrlFor(issuer);
+      discovery = SsfTransmitters.discoveryUrlFor(issuer);
     } catch (e) {
-      log.debug("Caught in SsfTransmitters.add(): " +
+      log.debug("Caught in SsfTransmitters.discover(): " +
                 ((e && e.message) || e));
-      log.debug("Leaving SsfTransmitters.add(). The issuer.");
-      return refuse('The issuer must be a URL.');
-    }
-    const fed = this.deps.federation().get(String(b.federationId || ''));
-    if (!fed) {
-      log.debug("Leaving SsfTransmitters.add(). No relationship.");
-      return refuse('federationId must name a federation relationship in ' +
-        'this realm: it is how a subject the transmitter names becomes a ' +
-        'person here.');
-    }
-    const delivery = String(b.delivery || 'poll');
-    if (delivery !== 'poll' && delivery !== 'push') {
-      log.debug("Leaving SsfTransmitters.add(). Delivery.");
-      return refuse('delivery must be poll or push.');
-    }
-    const method = b.bearer ? 'bearer' : 'client_credentials';
-    if (method === 'client_credentials' &&
-        (!b.tokenEndpoint || !b.clientId)) {
-      log.debug("Leaving SsfTransmitters.add(). No credential.");
-      return refuse('Give tokenEndpoint, clientId and clientSecret (client ' +
-        'credentials), or bearer — how this realm authenticates to the ' +
-        'transmitter.');
+      log.debug("Leaving SsfTransmitters.discover(). The issuer.");
+      return this.refusal('STS-SSF-0114', 'The SSF issuer "' + issuer +
+        '" (fedSignalsIssuer, else fedPeer) is not a URL.');
     }
     const fetched: Json = await fedHttp().fetchPublished(discovery, {
       accept: 'application/json',
@@ -413,243 +468,257 @@ class SsfTransmitters {
     try {
       doc = fetched.ok ? JSON.parse(fetched.body.toString('utf8')) : null;
     } catch (e) {
-      log.debug("Caught in SsfTransmitters.add(): " +
+      log.debug("Caught in SsfTransmitters.discover(): " +
                 ((e && e.message) || e));
       doc = null;
     }
+    const state = this.stateOf(record.fedId);
     if (!doc) {
-      log.debug("Leaving SsfTransmitters.add(). Discovery.");
-      return errorCodes.mark({ ok: false, errors: ['The configuration ' +
-        'document at ' + discovery + ' could not be read: ' +
-        String(fetched.why || fetched.status) + '.'] }, 'STS-SSF-0114');
+      state.lastError = 'discovery: ' + String(fetched.why || fetched.status);
+      this.save(state);
+      log.debug("Leaving SsfTransmitters.discover(). Unreadable.");
+      return this.refusal('STS-SSF-0114', 'The configuration document at ' +
+        discovery + ' could not be read: ' + String(fetched.why ||
+                                                    fetched.status) + '.');
     }
     if (doc.issuer !== issuer || !doc.jwks_uri ||
         !doc.configuration_endpoint) {
-      log.debug("Leaving SsfTransmitters.add(). Not the issuer's.");
-      return errorCodes.mark({ ok: false, errors: ['The configuration ' +
-        'document must name the issuer ' + issuer + ' (it names ' +
-        String(doc.issuer) + ') and a jwks_uri and configuration_endpoint ' +
-        '(SSF 1.0 section 7.1).'] }, 'STS-SSF-0114');
-    }
-    const methods = Array.isArray(doc.delivery_methods_supported)
-      ? doc.delivery_methods_supported : [];
-    if (methods.indexOf(delivery === 'push' ? PUSH : POLL) < 0) {
-      log.debug("Leaving SsfTransmitters.add(). Delivery unsupported.");
-      return refuse('The transmitter does not offer ' + delivery +
-                    ' delivery.');
+      state.lastError = 'discovery: not the issuer\'s document';
+      this.save(state);
+      log.debug("Leaving SsfTransmitters.discover(). Not the issuer's.");
+      return this.refusal('STS-SSF-0114', 'The configuration document must ' +
+        'name the issuer ' + issuer + ' (it names ' + String(doc.issuer) +
+        ') and a jwks_uri and configuration_endpoint (SSF 1.0 section 7.1).');
     }
     const keys: Json = await this.deps.jwks().ensure(String(doc.jwks_uri),
                                                      '');
     if (!keys.ok) {
-      log.debug("Leaving SsfTransmitters.add(). Keys.");
-      return errorCodes.mark({ ok: false, errors: ['The transmitter\'s ' +
-        'jwks_uri could not be read: ' + keys.why + '.'] }, 'STS-SSF-0114');
+      state.lastError = 'discovery: the jwks_uri: ' + keys.why;
+      this.save(state);
+      log.debug("Leaving SsfTransmitters.discover(). Keys.");
+      return this.refusal('STS-SSF-0114', 'The partner\'s jwks_uri could ' +
+        'not be read: ' + keys.why + '.');
     }
-    const record = {
-      id: id, issuer: issuer, discoveryUrl: discovery,
-      config: {
-        issuer: doc.issuer, jwks_uri: doc.jwks_uri,
-        configuration_endpoint: doc.configuration_endpoint,
-        status_endpoint: doc.status_endpoint || '',
-        add_subject_endpoint: doc.add_subject_endpoint || '',
-        remove_subject_endpoint: doc.remove_subject_endpoint || '',
-        verification_endpoint: doc.verification_endpoint || '',
-        delivery_methods_supported: methods
-      },
-      federationId: String(fed.fedId || b.federationId),
-      delivery: delivery,
-      eventsRequested: Array.isArray(b.eventsRequested)
-        ? b.eventsRequested.map(String)
-        : String(b.eventsRequested || '').split(/[\s,]+/).filter(Boolean),
-      credential: method === 'bearer'
-        ? { method: 'bearer', bearer: String(b.bearer) }
-        : { method: 'client_credentials',
-            tokenEndpoint: String(b.tokenEndpoint),
-            clientId: String(b.clientId),
-            clientSecret: String(b.clientSecret || ''),
-            scope: String(b.scope || 'ssf:read ssf:write') },
-      streamId: '', stream: null, streamAud: [], pollEndpoint: '',
-      pushSecretDigest: '', verifyState: '', verifiedAt: 0,
-      state: 'registered', createdAt: now(), lastPollAt: 0,
-      lastPollResult: '', lastError: '',
-      counts: { received: 0, verified: 0, refused: 0, acted: 0 }
+    state.config = {
+      issuer: doc.issuer, jwks_uri: doc.jwks_uri,
+      configuration_endpoint: doc.configuration_endpoint,
+      status_endpoint: doc.status_endpoint || '',
+      add_subject_endpoint: doc.add_subject_endpoint || '',
+      remove_subject_endpoint: doc.remove_subject_endpoint || '',
+      verification_endpoint: doc.verification_endpoint || '',
+      delivery_methods_supported: Array.isArray(
+        doc.delivery_methods_supported) ? doc.delivery_methods_supported : []
     };
-    this.save(record);
-    this.audited('ssf.transmitter.add', ctx, record, 'registered');
-    log.debug("Leaving SsfTransmitters.add().");
-    return { ok: true, transmitter: this.view(record),
-             message: 'Transmitter ' + id + ' registered from ' + discovery +
-                      '. Create its stream next.' };
+    state.discoveryUrl = discovery;
+    state.discoveredAt = this.deps.now();
+    if (state.state === 'new') {
+      state.state = 'discovered';
+    }
+    state.lastError = '';
+    this.save(state);
+    this.audited('ssf.signals.discover', ctx, record, 'discovered from ' +
+                 discovery);
+    log.debug("Leaving SsfTransmitters.discover().");
+    return { ok: true, signals: this.view(record),
+             message: 'Discovered ' + record.fedId + '\'s Shared Signals ' +
+                      'configuration at ' + discovery + '.' };
   }
 
-  private audited(action: string, ctx: Json, record: Json,
-                  what: string): void {
-    const { log, audit } = this.deps;
-    log.debug("Entering SsfTransmitters.audited(). " + action);
-    audit.audit({ action: action, actor: (ctx && ctx.actor) || '',
-      protocol: 'Shared Signals', channel: (ctx && ctx.via) || 'http',
-      target: record.issuer,
-      summary: 'foreign SSF transmitter ' + record.id + ': ' + what,
-      detail: { transmitter: record.id, streamId: record.streamId || '' } });
-    log.debug("Leaving SsfTransmitters.audited().");
+  // The configuration, discovered again when the issuer it was discovered
+  // for is not the one the relationship names now.
+  private async configured(record: Json, ctx: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering SsfTransmitters.configured().");
+    const state = this.stateOf(record.fedId);
+    const issuer = this.deps.federation().signalsIssuerOf(record);
+    if (state.config && state.config.issuer === issuer) {
+      log.debug("Leaving SsfTransmitters.configured(). Held.");
+      return { ok: true, state: state };
+    }
+    const found = await this.discover(record, ctx);
+    log.debug("Leaving SsfTransmitters.configured(). " + found.ok);
+    return found.ok ? { ok: true, state: this.stateOf(record.fedId) }
+                    : found;
   }
 
   // -------------------------------------------------------------------------
-  // THE STREAM AT THE TRANSMITTER (section 8.1.1).
+  // THE STREAM AT THE PARTNER (section 8.1.1).
   // -------------------------------------------------------------------------
   /**
-   * Creates this realm's stream at the transmitter (SSF 1.0 section 8.1.1): a
-   * poll stream, or a push stream to `/ssf/transmitters/{id}/push` with an
-   * authorization header only this realm and the transmitter know. Audited.
+   * Creates this realm's stream at the partner (SSF 1.0 section 8.1.1): a
+   * poll stream, or a push stream to `/federation/signals/{id}` with an
+   * authorization header only this realm and the partner know. Audited.
    *
-   * @param record - the transmitter
+   * @param record - the relationship
    * @param ctx - `via`, `actor` and `base`
    * @returns a promise of the outcome
    */
   async createStream(record: Json, ctx: Json): Promise<Json> {
-    const { log, errorCodes } = this.deps;
-    log.debug("Entering SsfTransmitters.createStream(). " + record.id);
-    if (record.streamId) {
-      log.debug("Leaving SsfTransmitters.createStream(). Has one.");
-      return errorCodes.mark({ ok: false, errors: ['Transmitter ' +
-        record.id + ' already has stream ' + record.streamId + '.'] },
-        'STS-SSF-0113');
+    const { log } = this.deps;
+    log.debug("Entering SsfTransmitters.createStream(). " + record.fedId);
+    const ready = this.deps.federation().signalsReadinessOf(record);
+    if (!ready.ready) {
+      log.debug("Leaving SsfTransmitters.createStream(). Not configured.");
+      return this.refusal('STS-SSF-0113', 'The relationship ' +
+        record.fedId + ' cannot reach the partner\'s stream yet: ' +
+        ready.missing.join(', ') + ' still to set.');
     }
-    const delivery: Json = { method: record.delivery === 'push' ? PUSH
-                                                                  : POLL };
+    const found = await this.configured(record, ctx);
+    if (!found.ok) {
+      log.debug("Leaving SsfTransmitters.createStream(). Discovery.");
+      return found;
+    }
+    const state = found.state;
+    if (state.streamId) {
+      log.debug("Leaving SsfTransmitters.createStream(). Has one.");
+      return this.refusal('STS-SSF-0113', 'The relationship ' +
+        record.fedId + ' already has stream ' + state.streamId + '.');
+    }
+    const delivery = String(record.fedSignalsDelivery || 'poll') === 'push'
+      ? 'push' : 'poll';
+    if ((state.config.delivery_methods_supported || [])
+          .indexOf(delivery === 'push' ? PUSH : POLL) < 0) {
+      log.debug("Leaving SsfTransmitters.createStream(). Unsupported.");
+      return this.refusal('STS-SSF-0113', 'The partner does not offer ' +
+        delivery + ' delivery (fedSignalsDelivery).');
+    }
+    const asked: Json = { delivery: { method: delivery === 'push' ? PUSH
+                                                                   : POLL },
+                          description: 'iya-sts federation relationship ' +
+                                       record.fedId };
     let secret = '';
-    if (record.delivery === 'push') {
+    if (delivery === 'push') {
       if (!ctx || !ctx.base) {
         log.debug("Leaving SsfTransmitters.createStream(). No base.");
-        return errorCodes.mark({ ok: false, errors: ['A push stream needs ' +
-          'this realm\'s address, which comes from the request.'] },
-          'STS-SSF-0113');
+        return this.refusal('STS-SSF-0113', 'A push stream needs this ' +
+          'realm\'s address, which comes from the request.');
       }
       secret = nodeCrypto.randomBytes(32).toString('base64url');
-      delivery.endpoint_url = String(ctx.base) + '/ssf/transmitters/' +
-                              record.id + '/push';
-      delivery.authorization_header = 'Bearer ' + secret;
+      asked.delivery.endpoint_url = String(ctx.base) + PUSH_PATH + '/' +
+                                    encodeURIComponent(record.fedId);
+      asked.delivery.authorization_header = 'Bearer ' + secret;
     }
-    const asked: Json = { delivery: delivery,
-                          description: 'iya-sts realm receiver ' + record.id };
-    if (record.eventsRequested.length) {
-      asked.events_requested = record.eventsRequested;
+    const events = [].concat(record.fedSignalsEvents || []).map(String);
+    if (events.length) {
+      asked.events_requested = events;
     }
     const answer = await this.call(record, 'POST',
-                                   record.config.configuration_endpoint,
+                                   state.config.configuration_endpoint,
                                    asked);
     if (!answer.ok || !answer.json || !answer.json.stream_id) {
-      record.lastError = 'create stream: ' + answer.why;
-      this.save(record);
+      state.lastError = 'create stream: ' + answer.why;
+      this.save(state);
       log.debug("Leaving SsfTransmitters.createStream(). Refused.");
-      return errorCodes.mark({ ok: false, errors: ['The transmitter did ' +
-        'not create the stream: ' + answer.why + '.'] }, 'STS-SSF-0115');
+      return this.refusal('STS-SSF-0115', 'The partner did not create the ' +
+        'stream: ' + answer.why + '.');
     }
-    this.adoptStream(record, answer.json);
+    state.delivery = delivery;
+    this.adoptStream(state, answer.json);
     if (secret) {
-      record.pushSecretDigest = SsfTransmitters.digest('Bearer ' + secret);
+      state.pushSecretDigest = SsfTransmitters.digest('Bearer ' + secret);
     }
-    record.state = 'streaming';
-    record.lastError = '';
-    this.save(record);
-    this.audited('ssf.transmitter.stream', ctx, record, 'stream ' +
-                 record.streamId + ' created');
+    state.state = 'streaming';
+    state.lastError = '';
+    this.save(state);
+    this.audited('ssf.signals.stream', ctx, record, 'stream ' +
+                 state.streamId + ' created (' + delivery + ')');
     log.debug("Leaving SsfTransmitters.createStream().");
-    return { ok: true, transmitter: this.view(record),
-             message: 'Stream ' + record.streamId + ' created at ' +
-                      record.issuer + '.' };
+    return { ok: true, signals: this.view(record),
+             message: 'Stream ' + state.streamId + ' created at ' +
+                      state.config.issuer + '.' };
   }
 
-  private adoptStream(record: Json, stream: Json): void {
+  private adoptStream(state: Json, stream: Json): void {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.adoptStream().");
-    record.streamId = String(stream.stream_id || record.streamId);
-    record.stream = { stream_id: stream.stream_id, aud: stream.aud,
+    state.streamId = String(stream.stream_id || state.streamId);
+    state.stream = { stream_id: stream.stream_id, aud: stream.aud,
       events_supported: stream.events_supported,
       events_requested: stream.events_requested,
       events_delivered: stream.events_delivered,
       delivery: { method: stream.delivery && stream.delivery.method,
                   endpoint_url: stream.delivery &&
                                 stream.delivery.endpoint_url } };
-    record.streamAud = Array.isArray(stream.aud) ? stream.aud.map(String)
+    state.streamAud = Array.isArray(stream.aud) ? stream.aud.map(String)
       : (stream.aud ? [String(stream.aud)] : []);
-    if (record.delivery === 'poll' && stream.delivery &&
+    if (state.delivery === 'poll' && stream.delivery &&
         stream.delivery.endpoint_url) {
-      record.pollEndpoint = String(stream.delivery.endpoint_url);
+      state.pollEndpoint = String(stream.delivery.endpoint_url);
     }
     log.debug("Leaving SsfTransmitters.adoptStream().");
   }
 
-  private streamUrl(record: Json): string {
+  private streamUrl(state: Json): string {
     this.deps.log.debug("Entering SsfTransmitters.streamUrl().");
-    const u = new URL(record.config.configuration_endpoint);
-    u.searchParams.set('stream_id', record.streamId);
+    const u = new URL(state.config.configuration_endpoint);
+    u.searchParams.set('stream_id', state.streamId);
     this.deps.log.debug("Leaving SsfTransmitters.streamUrl().");
     return u.toString();
   }
 
   /**
-   * Performs an act on the stream at the transmitter: `read-stream`,
-   * `update-stream`, `delete-stream`, `set-status`, `add-subject`,
-   * `remove-subject` or `verify`.
+   * Performs an act on the stream at the partner: `read-stream`,
+   * `update-stream` (to the relationship's `fedSignalsEvents`),
+   * `delete-stream`, `set-status`, `add-subject`, `remove-subject` or
+   * `verify`.
    *
-   * @param record - the transmitter
-   * @param action - the act
+   * @param record - the relationship
+   * @param action - the act, without its `signals-` prefix
    * @param body - its fields
    * @param ctx - `via` and `actor`
    * @returns a promise of the outcome
    */
   async streamAct(record: Json, action: string, body: Json,
                   ctx: Json): Promise<Json> {
-    const { log, errorCodes } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering SsfTransmitters.streamAct(). " + action);
-    if (!record.streamId) {
+    const state = this.stateOf(record.fedId);
+    if (!state.streamId || !state.config) {
       log.debug("Leaving SsfTransmitters.streamAct(). No stream.");
-      return errorCodes.mark({ ok: false, errors: ['Transmitter ' +
-        record.id + ' has no stream yet.'] }, 'STS-SSF-0113');
+      return this.refusal('STS-SSF-0113', 'The relationship ' +
+        record.fedId + ' has no stream yet.');
     }
     const b = body || {};
     let answer: Json = null;
     let what = '';
     if (action === 'read-stream') {
-      answer = await this.call(record, 'GET', this.streamUrl(record));
+      answer = await this.call(record, 'GET', this.streamUrl(state));
       if (answer.ok && answer.json) {
-        this.adoptStream(record, answer.json);
+        this.adoptStream(state, answer.json);
       }
       what = 'stream read';
     } else if (action === 'update-stream') {
-      const events = Array.isArray(b.eventsRequested) ? b.eventsRequested
-        : String(b.eventsRequested || '').split(/[\s,]+/).filter(Boolean);
+      const events = [].concat(record.fedSignalsEvents || []).map(String);
       answer = await this.call(record, 'PATCH',
-        record.config.configuration_endpoint,
-        { stream_id: record.streamId, events_requested: events });
+        state.config.configuration_endpoint,
+        { stream_id: state.streamId, events_requested: events });
       if (answer.ok && answer.json) {
-        record.eventsRequested = events;
-        this.adoptStream(record, answer.json);
+        this.adoptStream(state, answer.json);
       }
-      what = 'events_requested updated';
+      what = 'events_requested set to fedSignalsEvents';
     } else if (action === 'delete-stream') {
-      answer = await this.call(record, 'DELETE', this.streamUrl(record));
+      answer = await this.call(record, 'DELETE', this.streamUrl(state));
       if (answer.ok || answer.status === 404) {
         answer.ok = true;
-        record.streamId = '';
-        record.stream = null;
-        record.streamAud = [];
-        record.pollEndpoint = '';
-        record.pushSecretDigest = '';
-        record.state = 'registered';
+        state.streamId = '';
+        state.stream = null;
+        state.streamAud = [];
+        state.pollEndpoint = '';
+        state.pushSecretDigest = '';
+        state.delivery = '';
+        state.state = 'discovered';
       }
       what = 'stream deleted';
     } else if (action === 'set-status') {
       const status = String(b.status || '');
       if (['enabled', 'paused', 'disabled'].indexOf(status) < 0) {
         log.debug("Leaving SsfTransmitters.streamAct(). Status.");
-        return errorCodes.mark({ ok: false, errors: ['status must be ' +
-          'enabled, paused or disabled.'] }, 'STS-SSF-0113');
+        return this.refusal('STS-SSF-0113', 'status must be enabled, ' +
+                                            'paused or disabled.');
       }
       answer = await this.call(record, 'POST',
-        record.config.status_endpoint,
-        { stream_id: record.streamId, status: status,
+        state.config.status_endpoint,
+        { stream_id: state.streamId, status: status,
           reason: String(b.reason || 'set by an administrator') });
       what = 'status set to ' + status;
     } else if (action === 'add-subject' || action === 'remove-subject') {
@@ -665,59 +734,77 @@ class SsfTransmitters {
       }
       if (!subject || typeof subject !== 'object' || !subject.format) {
         log.debug("Leaving SsfTransmitters.streamAct(). Subject.");
-        return errorCodes.mark({ ok: false, errors: ['subject must be an ' +
-          'SSF subject identifier with a format.'] }, 'STS-SSF-0113');
+        return this.refusal('STS-SSF-0113', 'subject must be an SSF ' +
+                                            'subject identifier with a ' +
+                                            'format.');
       }
       answer = await this.call(record, 'POST', action === 'add-subject'
-        ? record.config.add_subject_endpoint
-        : record.config.remove_subject_endpoint,
-        Object.assign({ stream_id: record.streamId, subject: subject },
+        ? state.config.add_subject_endpoint
+        : state.config.remove_subject_endpoint,
+        Object.assign({ stream_id: state.streamId, subject: subject },
                       action === 'add-subject' ? { verified: true } : {}));
       what = (action === 'add-subject' ? 'subject added'
                                        : 'subject removed');
     } else if (action === 'verify') {
-      record.verifyState = nodeCrypto.randomBytes(12).toString('base64url');
+      state.verifyState = nodeCrypto.randomBytes(12).toString('base64url');
       answer = await this.call(record, 'POST',
-        record.config.verification_endpoint,
-        { stream_id: record.streamId, state: record.verifyState });
+        state.config.verification_endpoint,
+        { stream_id: state.streamId, state: state.verifyState });
       what = 'verification asked';
     }
     if (!answer) {
       log.debug("Leaving SsfTransmitters.streamAct(). Unknown.");
-      return errorCodes.mark({ ok: false, errors: ['Unknown stream act.'] },
-                             'STS-SSF-0113');
+      return this.refusal('STS-SSF-0113', 'Unknown stream act.');
     }
-    record.lastError = answer.ok ? '' : action + ': ' + answer.why;
-    this.save(record);
+    state.lastError = answer.ok ? '' : action + ': ' + answer.why;
+    this.save(state);
     if (!answer.ok) {
       log.debug("Leaving SsfTransmitters.streamAct(). Refused.");
-      return errorCodes.mark({ ok: false, errors: ['The transmitter ' +
-        'refused ' + action + ': ' + answer.why + '.'] }, 'STS-SSF-0115');
+      return this.refusal('STS-SSF-0115', 'The partner refused ' + action +
+                                          ': ' + answer.why + '.');
     }
-    this.audited('ssf.transmitter.' + action, ctx, record, what);
+    this.audited('ssf.signals.' + action, ctx, record, what);
     log.debug("Leaving SsfTransmitters.streamAct().");
-    return { ok: true, transmitter: this.view(record),
+    return { ok: true, signals: this.view(record),
              answer: answer.json || null,
-             message: 'Transmitter ' + record.id + ': ' + what + '.' };
+             message: record.fedId + '\'s Shared Signals: ' + what + '.' };
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER A RELATIONSHIP RECEIVES AT ALL: enabled, and its signals on.
+  // -------------------------------------------------------------------------
+  private receives(record: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering SsfTransmitters.receives().");
+    const federation = this.deps.federation();
+    log.debug("Leaving SsfTransmitters.receives().");
+    return !!record && federation.isEnabled(record) &&
+           federation.signalsEnabled(record);
   }
 
   // -------------------------------------------------------------------------
   // POLL (RFC 8936): ask, act, acknowledge on the next request.
   // -------------------------------------------------------------------------
   /**
-   * Polls a transmitter (RFC 8936) for up to `ssf.foreignPollMaxRounds` rounds,
+   * Polls a partner (RFC 8936) for up to `ssf.foreignPollMaxRounds` rounds,
    * receiving each SET and acknowledging it on the next request.
    *
-   * @param record - the transmitter
+   * @param record - the relationship
    * @returns a promise of `{ received, acted, refused, rounds, why }`
    */
   async pollOnce(record: Json): Promise<Json> {
     const { log, now } = this.deps;
-    log.debug("Entering SsfTransmitters.pollOnce(). " + record.id);
+    log.debug("Entering SsfTransmitters.pollOnce(). " + record.fedId);
     const out = { received: 0, acted: 0, refused: 0, rounds: 0, why: '' };
-    if (!record.pollEndpoint) {
+    const state = this.stateOf(record.fedId);
+    if (!state.pollEndpoint || state.delivery !== 'poll') {
       log.debug("Leaving SsfTransmitters.pollOnce(). No poll stream.");
       out.why = 'no poll stream';
+      return out;
+    }
+    if (!this.receives(record)) {
+      log.debug("Leaving SsfTransmitters.pollOnce(). Not receiving.");
+      out.why = 'the relationship, or its signals, are turned off';
       return out;
     }
     let ack: string[] = [];
@@ -730,7 +817,7 @@ class SsfTransmitters {
       // stream (this service's own does) needs it, and one that does not
       // ignores a member it does not know.
       const asked: Json = { returnImmediately: true, stream_id:
-        record.streamId,
+        state.streamId,
         maxEvents: last ? 0 : this.setting('ssf.foreignPollMaxEvents') };
       if (ack.length) {
         asked.ack = ack;
@@ -738,7 +825,7 @@ class SsfTransmitters {
       if (Object.keys(setErrs).length) {
         asked.setErrs = setErrs;
       }
-      const answer = await this.call(record, 'POST', record.pollEndpoint,
+      const answer = await this.call(record, 'POST', state.pollEndpoint,
                                      asked);
       out.rounds++;
       if (!answer.ok || !answer.json) {
@@ -767,7 +854,7 @@ class SsfTransmitters {
         break;
       }
     }
-    const current = this.get(record.id) || record;
+    const current = this.stateOf(record.fedId);
     current.lastPollAt = now();
     current.lastPollResult = out.why ? 'failed: ' + out.why
       : out.received + ' received, ' + out.refused + ' refused';
@@ -776,10 +863,11 @@ class SsfTransmitters {
     return out;
   }
 
-  // The scheduler job: every realm, every poll stream that is streaming.
+  // The scheduler job: every realm, every receiving relationship streaming
+  // by poll.
   /**
-   * Polls every streaming poll transmitter in every realm; the scheduler job's
-   * body.
+   * Polls every receiving relationship with a poll stream in every realm; the
+   * scheduler job's body.
    *
    * @returns a promise of the totals
    */
@@ -787,26 +875,30 @@ class SsfTransmitters {
     const { log, realms, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering SsfTransmitters.pollAll().");
-    const total = { transmitters: 0, received: 0, refused: 0 };
+    const total = { relationships: 0, received: 0, refused: 0 };
     for (const realm of realms.list()) {
       await realms.run(realm, async function () {
         const due: Json[] = [];
-        transmitters.forEach(function (row: Json) {
+        streams.forEach(function (row: Json) {
           if (row && row.delivery === 'poll' && row.state === 'streaming' &&
               row.pollEndpoint) {
             due.push(row);
           }
         });
         for (const row of due) {
+          const record = self.deps.federation().get(row.fedId);
+          if (!self.receives(record)) {
+            continue;
+          }
           try {
-            const one = await self.pollOnce(row);
-            total.transmitters++;
+            const one = await self.pollOnce(record);
+            total.relationships++;
             total.received += one.received;
             total.refused += one.refused;
           } catch (e) {
             log.error(errorCodes.tag('STS-SSF-0116') + 'ssf: polling the ' +
-                      'foreign transmitter ' + row.id + ' failed: ' +
-                      ((e && e.message) || e));
+                      'partner of the federation relationship ' + row.fedId +
+                      ' failed: ' + ((e && e.message) || e));
           }
         }
       });
@@ -827,9 +919,9 @@ class SsfTransmitters {
     if (!scheduler.job(POLL_JOB)) {
       scheduler.register({
         id: POLL_JOB,
-        title: 'Foreign SSF transmitters poll',
-        describe: 'Polls every foreign Shared Signals transmitter this ' +
-                  'realm registered with a poll stream (RFC 8936): the ' +
+        title: 'Federation partners\' Shared Signals poll',
+        describe: 'Polls every federation relationship whose partner\'s ' +
+                  'Shared Signals stream is a poll stream (RFC 8936): the ' +
                   'Security Event Tokens it holds are verified, acted on ' +
                   'and acknowledged.',
         owner: 'ssf/ssf_transmitters.ts',
@@ -846,9 +938,9 @@ class SsfTransmitters {
   // PUSH (RFC 8935): the authorization header this realm gave, then a SET.
   // -------------------------------------------------------------------------
   /**
-   * Answers `POST /ssf/transmitters/:id/push` (RFC 8935): checks the
-   * authorization header this realm gave the transmitter, then receives the
-   * SET, answering 202 or an RFC 8935 error.
+   * Answers `POST /federation/signals/:id` (RFC 8935): checks the
+   * relationship receives, then the authorization header this realm gave the
+   * partner, then receives the SET, answering 202 or an RFC 8935 error.
    *
    * @param req - the request
    * @param res - the response
@@ -857,7 +949,9 @@ class SsfTransmitters {
   async pushRoute(req: Req, res: Res): Promise<unknown> {
     const { log, errorCodes } = this.deps;
     log.debug("Entering SsfTransmitters.pushRoute().");
-    const record = this.get(String((req.params as Json).id || ''));
+    const id = String((req.params as Json).id || '');
+    const record = this.deps.federation().get(id);
+    const state = this.stateOf(id);
     const refuse = function (status: number, code: string, err: string,
                              description: string): unknown {
       log.debug("Entering refuse(). " + code);
@@ -865,7 +959,8 @@ class SsfTransmitters {
       log.debug("Leaving refuse().");
       return res.status(status).json({ err: err, description: description });
     };
-    if (!record || record.delivery !== 'push' || !record.pushSecretDigest) {
+    if (!record || !this.receives(record) || state.delivery !== 'push' ||
+        !state.pushSecretDigest) {
       log.debug("Leaving SsfTransmitters.pushRoute(). Unknown.");
       return refuse(404, 'STS-SSF-0117', 'invalid_request',
                     'No push stream is registered here.');
@@ -873,7 +968,7 @@ class SsfTransmitters {
     const given = SsfTransmitters.digest(String(req.headers.authorization ||
                                                 ''));
     const a = Buffer.from(given);
-    const b = Buffer.from(String(record.pushSecretDigest));
+    const b = Buffer.from(String(state.pushSecretDigest));
     if (a.length !== b.length || !nodeCrypto.timingSafeEqual(a, b)) {
       log.debug("Leaving SsfTransmitters.pushRoute(). Authorization.");
       return refuse(401, 'STS-SSF-0117', 'authentication_failed',
@@ -896,7 +991,7 @@ class SsfTransmitters {
   }
 
   /**
-   * Registers the push endpoint, `POST /ssf/transmitters/:id/push`.
+   * Registers the push endpoint, `POST /federation/signals/:id`.
    *
    * @param app - the express app
    */
@@ -904,7 +999,7 @@ class SsfTransmitters {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering SsfTransmitters.registerRoutes().");
-    app.post('/ssf/transmitters/:id/push', function (req: Req, res: Res) {
+    app.post(PUSH_PATH + '/:id', function (req: Req, res: Res) {
       return self.pushRoute(req, res).catch(function (e) {
         log.debug("Caught in the push route: " + ((e && e.message) || e));
         self.deps.errorCodes.mark(res, 'STS-SSF-0118');
@@ -920,11 +1015,11 @@ class SsfTransmitters {
   // { ok: false, err, description, code }` — RFC 8935 / 8936 error codes.
   // -------------------------------------------------------------------------
   /**
-   * Takes one SET from a transmitter: verifies it (signature, `typ`, `iss`,
+   * Takes one SET from a partner: verifies it (signature, `typ`, `iss`,
    * `aud`, a fresh `jti`), acts on a verified one as policy permits, and
    * records it. Product mode refuses an unverified SET.
    *
-   * @param record - the transmitter
+   * @param record - the relationship
    * @param token - the SET, as a compact JWS
    * @param via - `poll` or `push`
    * @returns a promise of `{ ok, acted }` or `{ ok: false, err, description,
@@ -932,7 +1027,9 @@ class SsfTransmitters {
    */
   async receive(record: Json, token: string, via: string): Promise<Json> {
     const { log, mode, now } = this.deps;
-    log.debug("Entering SsfTransmitters.receive(). " + record.id + " " + via);
+    log.debug("Entering SsfTransmitters.receive(). " + record.fedId + " " +
+              via);
+    const state = this.stateOf(record.fedId);
     const parts = String(token || '').split('.');
     let header: Json = null;
     let claims: Json = null;
@@ -951,23 +1048,24 @@ class SsfTransmitters {
       return this.refused(record, null, 'invalid_request',
         'This is not a Security Event Token.', 'STS-SSF-0118', via);
     }
-    const key = record.id + '|' + String(claims.jti || '');
+    const key = record.fedId + '|' + String(claims.jti || '');
     if (claims.jti && inbox.get(key)) {
       // A SET seen before: acknowledged, never acted on twice.
       log.debug("Leaving SsfTransmitters.receive(). A duplicate.");
       return { ok: true, acted: 0, duplicate: true };
     }
+    const issuer = (state.config && state.config.issuer) || '';
     let problem = '';
     let err = 'invalid_request';
     let code = 'STS-SSF-0118';
     if (SET_TYPES.indexOf(String(header.typ || '').toLowerCase()) < 0) {
       problem = 'typ is not secevent+jwt';
-    } else if (claims.iss !== record.config.issuer) {
-      problem = 'iss is ' + String(claims.iss) + ', not the transmitter\'s ' +
-                record.config.issuer;
+    } else if (!issuer || claims.iss !== issuer) {
+      problem = 'iss is ' + String(claims.iss) + ', not the partner\'s SSF ' +
+                'issuer ' + (issuer || '(not discovered)');
       err = 'invalid_issuer';
       code = 'STS-SSF-0119';
-    } else if (!this.audienceMatches(record, claims.aud)) {
+    } else if (!this.audienceMatches(state, claims.aud)) {
       problem = 'aud does not name this stream\'s audience';
       err = 'invalid_audience';
       code = 'STS-SSF-0120';
@@ -979,11 +1077,11 @@ class SsfTransmitters {
       log.debug("Leaving SsfTransmitters.receive(). " + problem);
       return this.refused(record, claims, err, problem, code, via);
     }
-    const verified = await this.verifies(record, token, header);
+    const verified = await this.verifies(state, token, header);
     if (!verified.ok && mode.refusesUnverifiedSignals()) {
       log.debug("Leaving SsfTransmitters.receive(). Unverified.");
       return this.refused(record, claims, 'invalid_key', 'The signature ' +
-        'does not verify against the transmitter\'s keys: ' + verified.why,
+        'does not verify against the partner\'s keys: ' + verified.why,
         'STS-SSF-0121', via);
     }
     const events = Object.keys(claims.events);
@@ -995,7 +1093,7 @@ class SsfTransmitters {
     if (verified.ok) {
       for (const uri of events) {
         const done = await this.actOn(record, uri, claims.events[uri] || {},
-                                      mapped, subject);
+                                      mapped, subject, String(claims.jti));
         done.forEach(function (one: Json) {
           reactions.push(one);
           if (one.done) {
@@ -1011,7 +1109,7 @@ class SsfTransmitters {
       events: events, subject: subject, person: mapped.username || '',
       mapping: mapped.why || '', reactions: reactions,
       iat: Number(claims.iat) || 0 });
-    const current = this.get(record.id) || record;
+    const current = this.stateOf(record.fedId);
     current.counts = current.counts || {};
     current.counts.received = (current.counts.received || 0) + 1;
     current.counts.verified = (current.counts.verified || 0) +
@@ -1022,24 +1120,29 @@ class SsfTransmitters {
     return { ok: true, acted: acted };
   }
 
-  private audienceMatches(record: Json, aud: Json): boolean {
+  private audienceMatches(state: Json, aud: Json): boolean {
     this.deps.log.debug("Entering SsfTransmitters.audienceMatches().");
     const given = Array.isArray(aud) ? aud.map(String)
                                      : (aud ? [String(aud)] : []);
-    const want = record.streamAud || [];
+    const want = state.streamAud || [];
     this.deps.log.debug("Leaving SsfTransmitters.audienceMatches().");
     return want.length > 0 && given.some(function (one: string) {
       return want.indexOf(one) >= 0;
     });
   }
 
-  // The signature, against the transmitter's keys: the kid named, else
-  // each; the algorithms this service verifies, never taken from the token.
-  private async verifies(record: Json, token: string,
+  // The signature, against the partner's keys: the kid named, else each;
+  // the algorithms this service verifies, never taken from the token.
+  private async verifies(state: Json, token: string,
                          header: Json): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.verifies().");
-    const got: Json = await this.deps.jwks().ensure(record.config.jwks_uri,
+    if (!state.config || !state.config.jwks_uri) {
+      log.debug("Leaving SsfTransmitters.verifies(). No keys known.");
+      return { ok: false, why: 'the partner\'s configuration was never ' +
+                               'discovered' };
+    }
+    const got: Json = await this.deps.jwks().ensure(state.config.jwks_uri,
                                                     header.kid || '');
     const keys = got && got.jwks && Array.isArray(got.jwks.keys)
       ? got.jwks.keys : [];
@@ -1047,7 +1150,7 @@ class SsfTransmitters {
       return !header.kid || k.kid === header.kid;
     });
     let why = candidates.length ? '' : 'no key ' + (header.kid ? 'with kid ' +
-      header.kid + ' ' : '') + 'at the transmitter\'s jwks_uri';
+      header.kid + ' ' : '') + 'at the partner\'s jwks_uri';
     for (const jwk of candidates) {
       try {
         stsCrypto.verifyCompactJws(token, jwk,
@@ -1075,7 +1178,7 @@ class SsfTransmitters {
         subject: claims.sub_id || null, person: '', mapping: '',
         reactions: [], iat: Number(claims.iat) || 0 });
     }
-    const current = this.get(record.id) || record;
+    const current = this.stateOf(record.fedId);
     current.counts = current.counts || {};
     current.counts.refused = (current.counts.refused || 0) + 1;
     this.save(current);
@@ -1094,8 +1197,8 @@ class SsfTransmitters {
         inbox.delete(oldest);
       }
     }
-    inbox.set(record.id + '|' + row.jti, Object.assign({
-      transmitter: record.id }, row));
+    inbox.set(record.fedId + '|' + row.jti, Object.assign({
+      relationship: record.fedId }, row));
     log.debug("Leaving SsfTransmitters.record().");
   }
 
@@ -1103,11 +1206,11 @@ class SsfTransmitters {
   // THE PERSON A FOREIGN SUBJECT NAMES (header point 4), or why nobody.
   // -------------------------------------------------------------------------
   /**
-   * Finds the one local person a foreign subject names, through the
-   * transmitter's federation relationship: an `iss_sub` by its federation link,
-   * an `email` only where the relationship allows it.
+   * Finds the one local person a partner's subject names through the
+   * relationship: an `iss_sub` (or, from a signals-only partner, an `opaque`)
+   * subject by its link, an `email` only where the relationship allows it.
    *
-   * @param record - the transmitter
+   * @param record - the relationship
    * @param subject - the SET's subject
    * @returns `{ username, ... }`, with `why` when it names nobody
    */
@@ -1123,23 +1226,34 @@ class SsfTransmitters {
       return { username: '', why: 'the SET names no user subject' };
     }
     const federation = this.deps.federation();
-    const fed = federation.get(record.federationId);
-    if (!fed) {
-      log.debug("Leaving SsfTransmitters.personFor(). No relationship.");
-      return { username: '', why: 'the relationship ' + record.federationId +
-                                  ' is gone' };
-    }
+    const links = this.deps.links();
+    const signalsOnly = !federation.signsIn(record);
     let found: Json[] = [];
     if (s.format === 'iss_sub') {
-      if (String(s.iss) !== String(fed.fedPeer || '')) {
-        log.debug("Leaving SsfTransmitters.personFor(). Another issuer.");
-        return { username: '', why: 'the subject\'s iss is not the ' +
-                                    'relationship\'s partner' };
+      const iss = String(s.iss || '');
+      if (signalsOnly) {
+        // A link an administrator wrote names the iss itself (#374).
+        found = federation.peopleLinkedBy(links.linkValue(record.fedId, iss,
+          String(s.sub || '')));
+      } else {
+        // A sign-in partner's people are linked under its fedPeer — the
+        // identifier it signs them in with — whichever of its two names
+        // the subject carries.
+        const peer = String(record.fedPeer || '');
+        if (iss !== peer && iss !== federation.signalsIssuerOf(record)) {
+          log.debug("Leaving SsfTransmitters.personFor(). Another issuer.");
+          return { username: '', why: 'the subject\'s iss ' + iss +
+                   ' is neither the partner (' + peer + ') nor its SSF ' +
+                   'issuer' };
+        }
+        found = federation.peopleLinkedBy(links.linkValue(record.fedId, peer,
+          String(s.sub || '')));
       }
-      found = federation.peopleLinkedBy(this.deps.links().linkValue(
-        fed.fedId, fed.fedPeer, String(s.sub || '')));
+    } else if (s.format === 'opaque' && signalsOnly) {
+      found = federation.peopleLinkedBy(links.linkValue(record.fedId,
+        links.OPAQUE, String(s.id || '')));
     } else if (s.format === 'email') {
-      if (!federation.boolOf(fed.fedSignalEmailMatch, false)) {
+      if (!federation.boolOf(record.fedSignalEmailMatch, false)) {
         log.debug("Leaving SsfTransmitters.personFor(). No email match.");
         return { username: '', why: 'the relationship does not allow a ' +
                                     'match by mail (fedSignalEmailMatch)' };
@@ -1160,11 +1274,21 @@ class SsfTransmitters {
     return { username: String(found[0].username), why: '' };
   }
 
+  // A CAEP session-revoked's session, where a complex subject names one: the
+  // OpenID Connect `sid` (or SAML session index) the partner gave it.
+  private sessionIdOf(subject: Json): string {
+    this.deps.log.debug("Entering SsfTransmitters.sessionIdOf().");
+    const session = subject && subject.format === 'complex'
+      ? subject.session : null;
+    this.deps.log.debug("Leaving SsfTransmitters.sessionIdOf().");
+    return session ? String(session.id || session.sub || '') : '';
+  }
+
   // -------------------------------------------------------------------------
   // ONE EVENT, ACTED ON AS THE POLICY SAYS (header point 3).
   // -------------------------------------------------------------------------
   private async actOn(record: Json, uri: string, body: Json, mapped: Json,
-                      subject: Json): Promise<Json[]> {
+                      subject: Json, jti: string): Promise<Json[]> {
     const { log, mode } = this.deps;
     log.debug("Entering SsfTransmitters.actOn(). " + uri);
     const family = uri.indexOf(CAEP_PREFIX) === 0 ? 'caep'
@@ -1173,41 +1297,65 @@ class SsfTransmitters {
     const short = uri.replace(/^.*\//, '');
     const out: Json[] = [];
     if (family === 'ssf') {
+      const state = this.stateOf(record.fedId);
       if (short === 'verification' && body.state &&
-          body.state === record.verifyState) {
-        const current = this.get(record.id) || record;
-        current.verifiedAt = this.deps.now();
-        current.verifyState = '';
-        this.save(current);
+          body.state === state.verifyState) {
+        state.verifiedAt = this.deps.now();
+        state.verifyState = '';
+        this.save(state);
         out.push({ event: short, reaction: 'verified', done: false });
       }
       log.debug("Leaving SsfTransmitters.actOn(). SSF.");
       return out;
     }
-    if (family === 'caep' && short === 'device-compliance-change') {
-      out.push(this.deviceCompliance(record, body, subject));
-      log.debug("Leaving SsfTransmitters.actOn(). A device.");
-      return out;
-    }
-    if (!family || !mapped.username) {
-      log.debug("Leaving SsfTransmitters.actOn(). Nobody.");
+    if (!family) {
+      log.debug("Leaving SsfTransmitters.actOn(). Not CAEP or RISC.");
       return [{ event: short, reaction: '', done: false,
-                why: mapped.why || 'not a CAEP or RISC event' }];
+                why: 'not a CAEP or RISC event' }];
     }
     if (family === 'caep' && short === 'session-revoked' &&
         body.initiating_entity === 'policy') {
       log.debug("Leaving SsfTransmitters.actOn(). An expiry.");
       return [{ event: short, reaction: '', done: false,
-                why: 'an expiry at the transmitter, not a revocation' }];
+                why: 'an expiry at the partner, not a revocation' }];
     }
-    const decided: Json = this.deps.signalPep().decide({
-      event: short, family: family, surface: 'foreign:' + record.id,
-      level: String(body.current_level || '') });
+    const federation = this.deps.federation();
+    const pep = this.deps.signalPep();
+    const RESPONSE = pep.RESPONSE || {};
+    const decided: Json = pep.decide({
+      event: short, family: family, surface: 'federation:' + record.fedId,
+      level: String(body.current_level || ''),
+      kind: federation.signsIn(record) ? 'sign-in' : 'signals-only' });
+    const permitted: string[] = decided.reactions || [];
     const observe = mode.observesSignalsOnly();
-    const RESPONSE = this.deps.signalPep().RESPONSE || {};
-    for (const reaction of (decided.reactions || [])) {
-      if ([RESPONSE.END_PERSON_SESSIONS, RESPONSE.DISABLE_ACCOUNT,
-           RESPONSE.ENABLE_ACCOUNT].indexOf(reaction) < 0) {
+    // A DEVICE'S COMPLIANCE (#164, #374) names a device, not a person, so it
+    // is decided before the person is needed — and through the policy and
+    // the observe gate like every other reaction.
+    if (family === 'caep' && short === 'device-compliance-change') {
+      if (permitted.indexOf(RESPONSE.SET_DEVICE_COMPLIANCE) < 0) {
+        log.debug("Leaving SsfTransmitters.actOn(). Device: not permitted.");
+        return [{ event: short, reaction: '', done: false,
+                  why: 'the signal-response policy permits no reaction' }];
+      }
+      if (observe) {
+        log.debug("Leaving SsfTransmitters.actOn(). Device: observed.");
+        return [{ event: short, reaction: RESPONSE.SET_DEVICE_COMPLIANCE,
+                  observed: true, done: false }];
+      }
+      log.debug("Leaving SsfTransmitters.actOn(). A device.");
+      return [this.deviceCompliance(record, body, subject)];
+    }
+    if (!mapped.username) {
+      log.debug("Leaving SsfTransmitters.actOn(). Nobody.");
+      return [{ event: short, reaction: '', done: false,
+                why: mapped.why || 'the subject names nobody here' }];
+    }
+    const PERSON = [RESPONSE.END_PARTNER_SESSIONS,
+      RESPONSE.BLOCK_RELATIONSHIP, RESPONSE.UNBLOCK_RELATIONSHIP,
+      RESPONSE.END_PERSON_SESSIONS, RESPONSE.DISABLE_ACCOUNT,
+      RESPONSE.ENABLE_ACCOUNT];
+    for (const reaction of permitted) {
+      if (PERSON.indexOf(reaction) < 0) {
         continue;
       }
       if (observe) {
@@ -1215,8 +1363,9 @@ class SsfTransmitters {
                    done: false });
         continue;
       }
-      out.push(await this.react(record, reaction, short,
-                                mapped.username, RESPONSE));
+      out.push(await this.react(record, reaction, short, mapped.username,
+                                RESPONSE, { jti: jti,
+                                  sid: this.sessionIdOf(subject) }));
     }
     if (!out.length) {
       out.push({ event: short, reaction: '', done: false,
@@ -1226,14 +1375,95 @@ class SsfTransmitters {
     return out;
   }
 
+  // THE SESSIONS THIS RELATIONSHIP STARTED FOR THE PERSON — the one `sid`
+  // names where the event gave one — ended through the one model, as the
+  // partner's own sign-out ends them (#167).
+  private endPartnerSessions(record: Json, username: string, sid: string,
+                             by: string): number {
+    const { log } = this.deps;
+    log.debug("Entering SsfTransmitters.endPartnerSessions(). " +
+              record.fedId);
+    const authn = this.deps.authn();
+    const logout = this.deps.logout();
+    const wanted = String(username).toLowerCase();
+    const matching: Json[] = [];
+    authn.sessions.forEach(function (session: Json): void {
+      const held = session && session.fedPartnerSession;
+      if (!held || held.relationship !== record.fedId) {
+        return;
+      }
+      if (String((session.user && session.user.username) || '')
+            .toLowerCase() !== wanted) {
+        return;
+      }
+      if (authn.sessionEnded(session)) {
+        return;
+      }
+      if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
+        return;
+      }
+      matching.push(session);
+    });
+    let ended = 0;
+    matching.forEach(function (session: Json): void {
+      if (logout) {
+        const result = logout.endPartnerSession(session, {
+          by: by, channel: 'internal',
+          // The signal-response policy decided it (#242).
+          initiatingEntity: 'policy' });
+        ended += ((result && result.terminated) || []).length ? 1 : 0;
+      }
+    });
+    log.debug("Leaving SsfTransmitters.endPartnerSessions(). " + ended);
+    return ended;
+  }
+
   private async react(record: Json, reaction: string, event: string,
-                      username: string, RESPONSE: Json): Promise<Json> {
-    const { log, errorCodes } = this.deps;
+                      username: string, RESPONSE: Json,
+                      ctx: Json): Promise<Json> {
+    const { log, errorCodes, blocks } = this.deps;
     log.debug("Entering SsfTransmitters.react(). " + reaction);
-    const by = 'a ' + event + ' Security Event Token from the foreign ' +
-               'transmitter ' + record.id + ' (' + record.issuer + ')';
-    const actor = 'ssf:' + record.id;
+    const by = 'a ' + event + ' Security Event Token from the partner of ' +
+               'the federation relationship ' + record.fedId;
+    const actor = 'federation:' + record.fedId;
     try {
+      if (reaction === RESPONSE.END_PARTNER_SESSIONS) {
+        const ended = this.endPartnerSessions(record, username, ctx.sid, by);
+        log.debug("Leaving SsfTransmitters.react(). Partner sessions.");
+        return { event: event, reaction: reaction, done: true,
+                 ended: ended };
+      }
+      if (reaction === RESPONSE.BLOCK_RELATIONSHIP) {
+        const fresh = blocks.block(record.fedId, username,
+          { event: event, jti: ctx.jti, by: by });
+        // The partner stopped vouching for them, so what it vouched for
+        // ends too (#373).
+        const ended = this.endPartnerSessions(record, username, '', by);
+        this.deps.audit.audit({ action: 'federation.signal-block',
+          actor: actor, protocol: 'Shared Signals', channel: 'internal',
+          target: username, summary: username + '\'s sign-ins through ' +
+            record.fedId + ' are blocked by ' + by + '; ' + ended +
+            ' session(s) it started were ended',
+          detail: { relationship: record.fedId, username: username,
+                    event: event, ended: String(ended) } });
+        log.debug("Leaving SsfTransmitters.react(). Blocked.");
+        return { event: event, reaction: reaction, done: true,
+                 ended: ended, why: fresh ? '' : 'already blocked' };
+      }
+      if (reaction === RESPONSE.UNBLOCK_RELATIONSHIP) {
+        const lifted = blocks.unblock(record.fedId, username);
+        if (lifted) {
+          this.deps.audit.audit({ action: 'federation.signal-unblock',
+            actor: actor, protocol: 'Shared Signals', channel: 'internal',
+            target: username, summary: username + '\'s sign-ins through ' +
+              record.fedId + ' are no longer blocked (' + by + ')',
+            detail: { relationship: record.fedId, username: username,
+                      event: event } });
+        }
+        log.debug("Leaving SsfTransmitters.react(). Unblocked.");
+        return { event: event, reaction: reaction, done: lifted,
+                 why: lifted ? '' : 'this relationship had not blocked them' };
+      }
       if (reaction === RESPONSE.END_PERSON_SESSIONS) {
         const logout = this.deps.logout();
         const ended = logout ? logout.terminate(username, [], {
@@ -1254,7 +1484,7 @@ class SsfTransmitters {
         const act: Json = state.setDisabled(username, true, {
           actor: actor, door: actor, by: by, reason: by });
         if (act && act.ok) {
-          locks.set(String(username), { transmitter: record.id,
+          locks.set(String(username), { relationship: record.fedId,
                                         at: this.deps.now() });
         }
         log.debug("Leaving SsfTransmitters.react(). Disabled.");
@@ -1263,10 +1493,10 @@ class SsfTransmitters {
       }
       if (reaction === RESPONSE.ENABLE_ACCOUNT) {
         const lock = locks.get(String(username));
-        if (!lock || lock.transmitter !== record.id) {
+        if (!lock || lock.relationship !== record.fedId) {
           log.debug("Leaving SsfTransmitters.react(). Not its lock.");
           return { event: event, reaction: reaction, done: false,
-                   why: 'the account was not disabled by this transmitter' };
+                   why: 'the account was not disabled by this relationship' };
         }
         const act: Json = this.deps.accountState().setDisabled(username,
           false, { actor: actor, door: actor, by: by, reason: by });
@@ -1278,7 +1508,7 @@ class SsfTransmitters {
       }
     } catch (e) {
       log.warn(errorCodes.tag('STS-SSF-0122') + 'ssf: acting on a ' + event +
-               ' from the foreign transmitter ' + record.id + ' failed: ' +
+               ' from the partner of ' + record.fedId + ' failed: ' +
                ((e && e.message) || e));
     }
     log.debug("Leaving SsfTransmitters.react(). Nothing.");
@@ -1287,8 +1517,8 @@ class SsfTransmitters {
   }
 
   // CAEP device-compliance-change (#164's register): the device the
-  // subject names, by its id or its key thumbprint, marked as the
-  // transmitter says. Only where the register offers `setCompliance()`.
+  // subject names, by its id or its key thumbprint, marked as the partner
+  // says. Only where the register offers `setCompliance()`.
   private deviceCompliance(record: Json, body: Json, subject: Json): Json {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.deviceCompliance().");
@@ -1321,150 +1551,204 @@ class SsfTransmitters {
     }
     const status = String(body.current_status || '');
     devices.setCompliance(device.id || id, status, 'caep',
-                          'ssf:' + record.id, String(body.reason_admin ||
-                                                     body.reason || ''));
+                          'federation:' + record.fedId,
+                          String(body.reason_admin || body.reason || ''));
     log.debug("Leaving SsfTransmitters.deviceCompliance(). Set.");
-    return { event: 'device-compliance-change', reaction: 'set-compliance',
+    return { event: 'device-compliance-change',
+             reaction: this.deps.signalPep().RESPONSE.SET_DEVICE_COMPLIANCE,
              done: true };
   }
 
+  // -------------------------------------------------------------------------
+  // A RELATIONSHIP DELETED: its stream at the partner first, best effort,
+  // then everything minted for it here.
+  // -------------------------------------------------------------------------
   /**
-   * Removes a transmitter, deleting its stream at the transmitter first.
-   * Audited.
+   * Forgets a relationship's signals: deletes its stream at the partner
+   * (best effort), and drops its state, its arrivals, its blocks and its
+   * account-lock records. The accounts it disabled stay disabled.
    *
-   * @param record - the transmitter
+   * @param record - the relationship, while it still exists
    * @param ctx - `via` and `actor`
-   * @returns a promise of `{ ok, message }`
+   * @returns a promise of what was dropped
    */
-  async remove(record: Json, ctx: Json): Promise<Json> {
-    const { log } = this.deps;
-    log.debug("Entering SsfTransmitters.remove(). " + record.id);
-    if (record.streamId) {
-      await this.streamAct(record, 'delete-stream', {}, ctx);
+  async forget(record: Json, ctx: Json): Promise<Json> {
+    const { log, blocks } = this.deps;
+    log.debug("Entering SsfTransmitters.forget(). " + record.fedId);
+    const state = this.stateOf(record.fedId);
+    let streamDeleted = false;
+    if (state.streamId && state.config) {
+      try {
+        const done = await this.streamAct(record, 'delete-stream', {}, ctx);
+        streamDeleted = !!done.ok;
+      } catch (e) {
+        log.debug("Caught in SsfTransmitters.forget(): " +
+                  ((e && e.message) || e));
+        streamDeleted = false;
+      }
     }
-    transmitters.delete(record.id);
-    tokens.delete(this.deps.realms.currentId() + '|' + record.id);
-    this.audited('ssf.transmitter.remove', ctx, record, 'removed');
-    log.debug("Leaving SsfTransmitters.remove().");
-    return { ok: true, message: 'Transmitter ' + record.id + ' removed.' };
+    streams.delete(record.fedId);
+    const arrivals: string[] = [];
+    inbox.forEach(function (row: Json, key: string): void {
+      if (row && row.relationship === record.fedId) {
+        arrivals.push(key);
+      }
+    });
+    arrivals.forEach(function (key: string): void {
+      inbox.delete(key);
+    });
+    const lockKeys: string[] = [];
+    locks.forEach(function (row: Json, key: string): void {
+      if (row && row.relationship === record.fedId) {
+        lockKeys.push(key);
+      }
+    });
+    lockKeys.forEach(function (key: string): void {
+      locks.delete(key);
+    });
+    const lifted = blocks.clearRelationship(record.fedId);
+    tokens.delete(this.tokenKey(record));
+    log.debug("Leaving SsfTransmitters.forget().");
+    return { streamDeleted: streamDeleted, arrivals: arrivals.length,
+             blocks: lifted, locks: lockKeys.length };
   }
 
   // -------------------------------------------------------------------------
-  // THE CONSOLE'S AND THE API'S ACTS (rule 7).
+  // THE RELATIONSHIP'S ACTS (rule 7): `admin-core/admin_actions.ts`'s
+  // federationAction() hands every `signals-*` action here.
   // -------------------------------------------------------------------------
   /**
-   * Performs one of the console's and the management API's acts: `add`,
-   * `create-stream`, `read-stream`, `update-stream`, `delete-stream`,
-   * `set-status`, `add-subject`, `remove-subject`, `verify`, `poll-now` or
-   * `remove`.
+   * Performs one of a relationship's Shared Signals acts: `signals-discover`,
+   * `-create-stream`, `-read-stream`, `-update-stream`, `-delete-stream`,
+   * `-set-status`, `-add-subject`, `-remove-subject`, `-verify`, `-poll-now`
+   * or `-unblock` (with `user`).
    *
-   * @param body - `action`, `id` and the act's fields
+   * @param body - `action`, `id` (the relationship) and the act's fields
    * @param ctx - `via`, `actor` and `base`
    * @returns a promise of the outcome
    */
   async act(body: Json, ctx: Json): Promise<Json> {
-    const { log, errorCodes } = this.deps;
+    const { log, blocks } = this.deps;
     log.debug("Entering SsfTransmitters.act().");
     const b = body || {};
     const action = String(b.action || '');
-    const ACTIONS = ['add', 'create-stream', 'read-stream', 'update-stream',
-                     'delete-stream', 'set-status', 'add-subject',
-                     'remove-subject', 'verify', 'poll-now', 'remove'];
     if (ACTIONS.indexOf(action) < 0) {
       log.debug("Leaving SsfTransmitters.act(). Unknown.");
-      return errorCodes.mark({ ok: false, errors: ['Unknown action "' +
-        action + '". The ' + ACTIONS.length + ' are: ' +
-        ACTIONS.slice(0, -1).join(', ') + ' and ' +
-        ACTIONS[ACTIONS.length - 1] + '.'] }, 'STS-SSF-0113');
+      return this.refusal('STS-SSF-0113', 'Unknown action "' + action +
+        '". The ' + ACTIONS.length + ' are: ' + ACTIONS.join(', ') + '.');
     }
-    if (action === 'add') {
-      log.debug("Leaving SsfTransmitters.act(). Add.");
-      return this.add(b, ctx);
+    const id = String(b.id || b.relationship || '').trim();
+    const federation = this.deps.federation();
+    const record = federation.get(id);
+    if (!record || record.fedRole !== 'service-provider') {
+      log.debug("Leaving SsfTransmitters.act(). No such relationship.");
+      return this.refusal('STS-SSF-0113', 'There is no service-provider-' +
+        'side federation relationship "' + id + '" in this realm.');
     }
-    const record = this.get(String(b.id || ''));
-    if (!record) {
-      log.debug("Leaving SsfTransmitters.act(). No such transmitter.");
-      return errorCodes.mark({ ok: false, errors: ['There is no ' +
-        'transmitter "' + String(b.id || '') + '" in this realm.'] },
-        'STS-SSF-0113');
+    if (action === 'signals-unblock') {
+      const who = String(b.user || b.username || '').trim();
+      const lifted = who ? blocks.unblock(record.fedId, who) : false;
+      if (!lifted) {
+        log.debug("Leaving SsfTransmitters.act(). Nothing to unblock.");
+        return this.refusal('STS-SSF-0132', (who ? who : 'Nobody') +
+          ' is not blocked through ' + record.fedId + '.');
+      }
+      this.audited('ssf.signals.unblock', ctx, record, who + '\'s sign-ins ' +
+                   'through it unblocked by an administrator');
+      log.debug("Leaving SsfTransmitters.act(). Unblocked.");
+      return { ok: true, signals: this.view(record),
+               message: who + ' may sign in through ' + record.fedId +
+                        ' again.' };
+    }
+    if (!federation.signalsEnabled(record)) {
+      log.debug("Leaving SsfTransmitters.act(). Signals off.");
+      return this.refusal('STS-SSF-0132', 'The relationship ' + id +
+        '\'s Shared Signals are off: turn fedSignalsEnabled on first.');
     }
     let result: Json;
-    if (action === 'create-stream') {
+    if (action === 'signals-discover') {
+      result = await this.discover(record, ctx);
+    } else if (action === 'signals-create-stream') {
       result = await this.createStream(record, ctx);
-    } else if (action === 'poll-now') {
+    } else if (action === 'signals-poll-now') {
       const polled = await this.pollOnce(record);
       result = polled.why && !polled.received
-        ? errorCodes.mark({ ok: false, errors: ['The poll failed: ' +
-            polled.why + '.'] }, 'STS-SSF-0116')
-        : { ok: true, polled: polled, message: 'Polled ' + record.id +
-            ': ' + polled.received + ' received, ' + polled.refused +
-            ' refused, ' + polled.acted + ' reaction(s).' };
-    } else if (action === 'remove') {
-      result = await this.remove(record, ctx);
+        ? this.refusal('STS-SSF-0116', 'The poll failed: ' + polled.why + '.')
+        : { ok: true, polled: polled, signals: this.view(record),
+            message: 'Polled ' + record.fedId + ': ' + polled.received +
+              ' received, ' + polled.refused + ' refused, ' + polled.acted +
+              ' reaction(s).' };
     } else {
-      result = await this.streamAct(record, action, b, ctx);
+      result = await this.streamAct(record,
+        action.replace(/^signals-/, ''), b, ctx);
     }
     log.debug("Leaving SsfTransmitters.act(). " + action + " " + result.ok);
     return result;
   }
 
-  // A registration as a caller sees it: never a secret or a token.
+  // -------------------------------------------------------------------------
+  // WHAT A CALLER SEES: never a secret or a token.
+  // -------------------------------------------------------------------------
   /**
-   * Returns a registration as a caller sees it, never with a secret or a token.
+   * Returns a relationship's Shared Signals as a caller sees them: the
+   * configuration it reads, the stream's state, and never a secret.
    *
-   * @param record - the transmitter
+   * @param record - the relationship
    * @returns the view
    */
   view(record: Json): Json {
-    const { log } = this.deps;
+    const { log, blocks } = this.deps;
     log.debug("Entering SsfTransmitters.view().");
+    const federation = this.deps.federation();
+    const state = this.stateOf(record.fedId);
     const iso = function (ms: unknown): string {
       log.debug("Entering iso().");
       log.debug("Leaving iso().");
       return Number(ms) ? new Date(Number(ms)).toISOString() : '';
     };
-    const c = record.credential || {};
+    const c = federation.signalsCredentialOf(record);
+    const readiness = federation.signalsReadinessOf(record);
     log.debug("Leaving SsfTransmitters.view().");
     return {
-      id: record.id, issuer: record.issuer, discoveryUrl: record.discoveryUrl,
-      config: record.config, federationId: record.federationId,
-      delivery: record.delivery, eventsRequested: record.eventsRequested,
+      relationship: record.fedId, name: record.fedName || record.fedId,
+      kind: federation.signsIn(record) ? 'sign-in' : 'signals-only',
+      enabled: federation.isEnabled(record),
+      signalsEnabled: federation.signalsEnabled(record),
+      receiving: this.receives(record),
+      issuer: federation.signalsIssuerOf(record),
+      delivery: String(record.fedSignalsDelivery || 'poll'),
+      eventsRequested: [].concat(record.fedSignalsEvents || []),
       credential: { method: c.method, tokenEndpoint: c.tokenEndpoint || '',
                     clientId: c.clientId || '', scope: c.scope || '',
                     secretHeld: !!(c.clientSecret || c.bearer) },
-      streamId: record.streamId, stream: record.stream,
-      streamAud: record.streamAud, pollEndpoint: record.pollEndpoint,
-      pushEndpointSet: !!record.pushSecretDigest, state: record.state,
-      verifiedAt: iso(record.verifiedAt), lastPollAt: iso(record.lastPollAt),
-      lastPollResult: record.lastPollResult || '',
-      lastError: record.lastError || '', counts: record.counts || {},
-      createdAt: iso(record.createdAt)
+      ready: readiness.ready, missing: readiness.missing,
+      config: state.config, discoveryUrl: state.discoveryUrl || '',
+      discoveredAt: iso(state.discoveredAt),
+      streamId: state.streamId, stream: state.stream,
+      streamDelivery: state.delivery || '',
+      streamAud: state.streamAud || [], pollEndpoint: state.pollEndpoint,
+      pushEndpoint: PUSH_PATH + '/' + encodeURIComponent(record.fedId),
+      pushEndpointSet: !!state.pushSecretDigest, state: state.state,
+      verifiedAt: iso(state.verifiedAt), lastPollAt: iso(state.lastPollAt),
+      lastPollResult: state.lastPollResult || '',
+      lastError: state.lastError || '', counts: state.counts || {},
+      blocks: blocks.list(record.fedId)
     };
   }
 
   /**
-   * Builds the report the console page and the management API answer: every
-   * transmitter, what arrived newest first, the account locks transmitters put
-   * on people here, and whether this realm only observes.
+   * Returns what arrived from one relationship, or from all, newest first.
    *
-   * @param options - `transmitter`, which narrows what arrived, and `limit`
-   * (default 200)
-   * @returns `{ transmitters, received, locks, observeOnly }`
+   * @param fedId - the relationship, or empty for all
+   * @param limit - the most rows (default 200)
+   * @returns the rows, `receivedAt` as an ISO time
    */
-  report(options?: Json): Json {
+  arrivals(fedId?: string, limit?: number): Json[] {
     const { log } = this.deps;
-    const self = this;
-    log.debug("Entering SsfTransmitters.report().");
-    const o = options || {};
-    const list: Json[] = [];
-    transmitters.forEach(function (row: Json) {
-      if (row) {
-        list.push(self.view(row));
-      }
-    });
+    log.debug("Entering SsfTransmitters.arrivals().");
     const received: Json[] = [];
     inbox.forEach(function (row: Json) {
-      if (row && (!o.transmitter || row.transmitter === o.transmitter)) {
+      if (row && (!fedId || row.relationship === fedId)) {
         received.push(Object.assign({}, row, {
           receivedAt: new Date(Number(row.receivedAt)).toISOString() }));
       }
@@ -1472,15 +1756,103 @@ class SsfTransmitters {
     received.sort(function (a, b) {
       return String(b.receivedAt).localeCompare(String(a.receivedAt));
     });
+    log.debug("Leaving SsfTransmitters.arrivals(). " + received.length);
+    return received.slice(0, Number(limit) || 200);
+  }
+
+  /**
+   * Builds the monitoring report: every relationship whose signals are on (or
+   * that holds a stream), what arrived newest first, the blocks and account
+   * locks partners put on people here, and whether this realm only observes.
+   *
+   * @param options - `relationship`, which narrows what arrived, and `limit`
+   * (default 200)
+   * @returns `{ relationships, received, blocks, locks, observeOnly }`
+   */
+  report(options?: Json): Json {
+    const { log, blocks } = this.deps;
+    const self = this;
+    log.debug("Entering SsfTransmitters.report().");
+    const o = options || {};
+    const federation = this.deps.federation();
+    const list: Json[] = [];
+    (federation.inRole('service-provider') || []).forEach(
+      function (record: Json): void {
+        if (federation.signalsEnabled(record) || streams.get(record.fedId)) {
+          list.push(self.view(record));
+        }
+      });
     const held: Json[] = [];
     locks.forEach(function (row: Json, username: string) {
-      held.push({ username: username, transmitter: row.transmitter,
+      held.push({ username: username, relationship: row.relationship,
                   at: new Date(Number(row.at)).toISOString() });
     });
     log.debug("Leaving SsfTransmitters.report().");
-    return { transmitters: list, received: received.slice(0,
-             Number(o.limit) || 200), locks: held,
+    return { relationships: list,
+             received: this.arrivals(o.relationship, o.limit),
+             blocks: blocks.list(), locks: held,
              observeOnly: this.deps.mode.observesSignalsOnly() };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE OTHER DIRECTION (#373): what this service SENDS the partner of an
+  // identity-provider-side relationship, read off this service's own
+  // transmitter — the streams its application owns. Read-only; the streams
+  // stay the application's.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the streams on this service's own transmitter that an
+   * identity-provider-side relationship's application owns, with what each
+   * delivered and its dead letters.
+   *
+   * @param record - the relationship
+   * @returns `{ application, streams }`
+   */
+  outboundFor(record: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering SsfTransmitters.outboundFor().");
+    const application = String((record && record.fedApplication) || '')
+      .trim();
+    if (!application) {
+      log.debug("Leaving SsfTransmitters.outboundFor(). No application.");
+      return { application: '', streams: [] };
+    }
+    let own: Json = null;
+    let applications: Json = null;
+    try {
+      own = this.deps.ownStreams();
+      applications = this.deps.applications();
+    } catch (e) {
+      log.debug("Caught in SsfTransmitters.outboundFor(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving SsfTransmitters.outboundFor(). No transmitter.");
+      return { application: application, streams: [] };
+    }
+    const iso = function (s: unknown): string {
+      log.debug("Entering iso().");
+      log.debug("Leaving iso().");
+      return Number(s) ? new Date(Number(s) * 1000).toISOString() : '';
+    };
+    const rows = (own.listStreams() || []).filter(function (one: Json) {
+      if (own.isInternal(one)) {
+        return false;
+      }
+      const owner = applications.ssfAllowedEventsFor(one.createdBy);
+      return !!owner && owner.identifier === application;
+    }).map(function (one: Json): Json {
+      const letters = own.deadLettersOf(one) || [];
+      return { streamId: one.stream_id,
+               delivery: own.deliveryName(one.delivery &&
+                                          one.delivery.method),
+               status: one.status || 'enabled',
+               eventsDelivered: one.events_delivered || [],
+               createdBy: one.createdBy || '',
+               lastActivityAt: iso(one.lastActivityAt),
+               dead: !!own.isDead(one),
+               deadLetters: letters.length };
+    });
+    log.debug("Leaving SsfTransmitters.outboundFor(). " + rows.length);
+    return { application: application, streams: rows };
   }
 }
 
@@ -1495,10 +1867,10 @@ const slot = new InstanceSlot<SsfTransmitters>(
 slot.buildNowUnlessDeferred();
 
 /**
- * This realm as the receiver of foreign Shared Signals transmitters.
+ * This realm as the receiver of its federation partners' Shared Signals.
  *
- * Exports the `SsfTransmitters` class, `POLL_JOB`, and facades that forward to
- * the installed instance.
+ * Exports the `SsfTransmitters` class, `POLL_JOB`, `ACTIONS`, and facades
+ * that forward to the installed instance.
  *
  * @namespace
  */
@@ -1513,17 +1885,22 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   POLL_JOB: POLL_JOB,
+  ACTIONS: ACTIONS,
+  PUSH_PATH: PUSH_PATH,
   discoveryUrlFor: SsfTransmitters.discoveryUrlFor,
-  get: slot.forward('get'),
-  add: slot.forward('add'),
+  stateOf: slot.forward('stateOf'),
+  discover: slot.forward('discover'),
   createStream: slot.forward('createStream'),
   streamAct: slot.forward('streamAct'),
   pollOnce: slot.forward('pollOnce'),
   pollAll: slot.forward('pollAll'),
   receive: slot.forward('receive'),
   personFor: slot.forward('personFor'),
+  forget: slot.forward('forget'),
   act: slot.forward('act'),
-  report: slot.forward('report'),
   view: slot.forward('view'),
+  arrivals: slot.forward('arrivals'),
+  report: slot.forward('report'),
+  outboundFor: slot.forward('outboundFor'),
   registerRoutes: slot.forward('registerRoutes')
 };

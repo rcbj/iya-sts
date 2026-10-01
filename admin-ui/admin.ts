@@ -1276,15 +1276,6 @@ const SECTIONS = [
       // that it is the one family here that runs the OTHER WAY ROUND — this
       // service delivering an event to a receiver that agreed in advance —
       // so there is no family above it whose page it would be a corner of.
-      // FOREIGN TRANSMITTERS (#153, 2026-09-26), beside the transmitter:
-      // the same framework with this realm as the RECEIVER of another
-      // identity service. Drawn by ssf/ssf_transmitters_admin.ts.
-      { path: '/admin/ssf/transmitters', label: 'SSF transmitters',
-        blurb: 'Other identity services whose Shared Signals this realm ' +
-               'receives: each registered by its issuer, its stream there ' +
-               '(poll or push), what arrived and whether it verified, the ' +
-               'person each event named through a federation relationship, ' +
-               'and what the signal-response policy let it do here.' },
       { path: '/admin/ssf', label: 'Shared Signals',
         blurb: 'The <strong>Shared Signals Framework</strong> (OpenID SSF ' +
                '1.0): the streams this transmitter has agreed, who each one ' +
@@ -2240,7 +2231,23 @@ const SECTIONS = [
                    'receiver, at <a href="/portal/signals">the user ' +
                    'portal</a>.' },
 
-          // LAST IN THE GROUP, because it is what the other three cannot show:
+          // WHAT THIS REALM'S FEDERATION PARTNERS SENT (#373), beside what
+          // this console was sent: the same framework with the realm as the
+          // RECEIVER. Configured on each relationship (Protocols →
+          // Federation); this page only reads. Drawn by
+          // ssf/ssf_transmitters_admin.ts.
+          { path: '/admin/ssf/transmitters', label: 'Signals from partners',
+            blurb: 'The federation partners whose Shared Signals this ' +
+                   'realm receives: each relationship\'s stream at its ' +
+                   'partner (poll or push) and whether it is healthy, every ' +
+                   'Security Event Token that arrived and whether it ' +
+                   'verified, the person it named through the ' +
+                   'relationship, what the signal-response policy let it ' +
+                   'do here, and the sign-ins partners have blocked. ' +
+                   'Read only: a partner\'s stream is configured and acted ' +
+                   'on from its relationship\'s page.' },
+
+          // LAST IN THE GROUP, because it is what the others cannot show:
           // every one of them is full and correct while a SET is failing to
           // reach its receiver. Its own page rather than a table on
           // /admin/ssf, which already draws each stream's letters in that
@@ -31225,12 +31232,20 @@ class AdminConsole {
                                      linkPage.paging);
     const linkedSection = row.role !== 'service-provider' ? ''
       : '<h2 id="linked-people">People linked to this partner</h2>' +
-        this.note('Each person below carries a <code>federationLink</code> ' +
-          'through this relationship: the partner\'s identifier for them, ' +
-          'which is what signs them in. Under <code>fedSubjectPolicy</code> ' +
-          '<code>' + this.esc(federation.subjectPolicyOf(record)) + '</code>' +
-          '. A link is added and removed on the person\'s own page, and ' +
-          'removing one ends the sessions this partner signed them in to.') +
+        (row.signsIn
+          ? this.note('Each person below carries a <code>federationLink' +
+            '</code> through this relationship: the partner\'s identifier ' +
+            'for them, which is what signs them in. Under <code>' +
+            'fedSubjectPolicy</code> <code>' +
+            this.esc(federation.subjectPolicyOf(record)) + '</code>. A link ' +
+            'is added and removed on the person\'s own page, and removing ' +
+            'one ends the sessions this partner signed them in to.')
+          : this.note('Each person below carries a <code>federationLink' +
+            '</code> through this relationship, written by an administrator ' +
+            'on the person\'s own page: the issuer and subject the partner\'s ' +
+            'iss_sub events name them by, or <code>opaque</code> and the ' +
+            'opaque id. It signs nobody in; it is how this partner\'s ' +
+            'events find the person (#374).')) +
         linkNav.head +
         (linkPage.shown.length
           ? '<table><tr><th>Person</th><th>Issuer</th><th>Subject</th></tr>' +
@@ -31244,8 +31259,10 @@ class AdminConsole {
           : this.note('Nobody is linked to this partner yet.')) +
         linkNav.foot;
 
+    // An `ssf` relationship (#374) has no sign-in to switch; its two
+    // signals switches are in its Shared Signals section.
     const switches = ['fedEnabled'].concat(
-      row.role === 'service-provider'
+      row.role === 'service-provider' && row.signsIn
         ? ['fedAutocreateUsers', 'fedUpdateUserAttributes',
            'fedMayAssertAdministrators', 'fedAllowUnsolicited',
            'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
@@ -31367,7 +31384,9 @@ class AdminConsole {
         '</td></tr>' +
       '<tr><td>Directory entry</td><td class="who"><code>' + this.esc(row.dn) +
       '</code></td></tr></table>' +
-      (row.role === 'service-provider'
+      (row.role === 'service-provider' && !row.signsIn
+        ? this.federationSignalsSection(row, record, view, carryBack)
+        : row.role === 'service-provider'
         ? '<h2>What to configure at the partner</h2>' +
           this.note('These are the URLs to give whoever runs the identity ' +
           'provider. The assertion consumer service is the one that matters: ' +
@@ -31458,7 +31477,9 @@ class AdminConsole {
                     '">Start a federated ' +
           'sign-in through this ' +
           'partner</a> ' + (row.usable ? '' : '<span class="sub">— it will ' +
-          'refuse until this relationship is enabled and configured</span>'))
+          'refuse until this relationship is enabled and configured</span>')) +
+          // THE SAME PARTNER AS A TRANSMITTER (#373).
+          this.federationSignalsSection(row, record, view, carryBack)
         : '<h2>What this relationship does</h2>' +
           this.note('Every protocol endpoint here already issues to anybody ' +
           'that asks, so this relationship changes nothing about whether the ' +
@@ -31474,7 +31495,9 @@ class AdminConsole {
           'anything else the protocol puts in an artifact itself — those are ' +
           'what make the artifact verifiable, and a release list that could ' +
           'drop <code>iss</code> would produce tokens that fail to verify ' +
-          'with nothing pointing back at this page.')) +
+          'with nothing pointing back at this page.') +
+          // WHAT THIS SERVICE TELLS THE PARTNER (#373).
+          this.federationOutboundSection(view.outbound)) +
       '<h2>Settings</h2>' +
       '<table><tr><th>Field</th><th>Value</th><th>What it is</th></tr>' +
       fieldRows +
@@ -31505,7 +31528,9 @@ class AdminConsole {
       'It is never shown here and never written to the audit log, and ' +
       'anybody who can read this directory can authenticate as this service ' +
       'at that partner. A deployment federating with something real should ' +
-      'know that.') +
+      'know that. The Shared Signals credentials, <code>fedSignalsClient' +
+      'Secret</code> and <code>fedSignalsBearer</code>, are sealed under the ' +
+      'key-encryption key wherever keys persist (#373).') +
       FEDERATION_CAVEAT +
       '<p class="sub"><a href="' +
       this.esc('/admin/federation' +
@@ -31514,6 +31539,248 @@ class AdminConsole {
 
     log.debug("Leaving AdminConsole.federationDetailPage(). " + row.id + ".");
     return { inner: inner, json: view.json };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PARTNER'S SHARED SIGNALS (#373, #374): the configuration on the entry,
+  // the stream this realm holds at the partner and its acts, the people the
+  // partner has blocked, and the latest arrivals. Every act posts to
+  // /admin/federation as a `signals-*` action, whose API twin is
+  // `POST /admin-api/federation/signals-*` (rule 7). Never a secret.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a service-provider-side relationship's Shared Signals section.
+   *
+   * @param row - the relationship's row
+   * @param record - the relationship
+   * @param view - the detail view: `signals`, `arrivals`, `signalSetFields`
+   * @param carryBack - the hidden `back` field carried into each form
+   * @returns the section as HTML
+   */
+  federationSignalsSection(row, record, view, carryBack) {
+    const { log, federation } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationSignalsSection().");
+    const s = view.signals;
+    if (!s) {
+      log.debug("Leaving AdminConsole.federationSignalsSection(). None.");
+      return '';
+    }
+    const act = function (action, label, extra?, danger?) {
+      log.debug("Entering act(). " + action);
+      log.debug("Leaving act().");
+      return '<form method="post" action="/admin/federation" ' +
+        'class="inline">' + carryBack +
+        '<input type="hidden" name="action" value="' + self.esc(action) +
+        '"><input type="hidden" name="id" value="' + self.esc(row.id) +
+        '">' + (extra || '') + ' <button type="submit"' +
+        (danger ? ' class="danger"' : '') + '>' + self.esc(label) +
+        '</button></form>';
+    };
+    const setRow = function (field) {
+      log.debug("Entering setRow(). " + field.name);
+      const value = record[field.name] || '';
+      log.debug("Leaving setRow().");
+      return '<tr><td><code>' + self.esc(field.name) + '</code></td><td>' +
+        '<form method="post" action="/admin/federation"><div ' +
+        'class="formrow">' + carryBack +
+        '<input type="hidden" name="action" value="set">' +
+        '<input type="hidden" name="id" value="' + self.esc(row.id) + '">' +
+        '<input type="hidden" name="field" value="' + self.esc(field.name) +
+        '">' + (Array.isArray(field.enum)
+          ? '<select name="value">' + field.enum.map(function (one) {
+              return '<option' + (String(value || 'poll') === one
+                ? ' selected' : '') + '>' + self.esc(one) + '</option>';
+            }).join('') + '</select>'
+          : '<input type="' + (field.sensitive ? 'password' : 'text') +
+            '" name="value" size="42" autocomplete="off" value="' +
+            self.esc(field.sensitive ? '' : value) + '"' +
+            (field.sensitive && value ? ' placeholder="set — not shown"'
+                                      : '') + '>') +
+        '<button type="submit">Set</button></div></form></td><td ' +
+        'class="sub">' + self.note(self.esc(field.what)) + '</td></tr>';
+    };
+    const switchRow = function (name, dflt) {
+      log.debug("Entering switchRow(). " + name);
+      const field = federation.SCHEMA.attributes.filter(function (f) {
+        return f.name === name;
+      })[0];
+      const on = federation.boolOf(record[name], dflt);
+      log.debug("Leaving switchRow().");
+      return '<tr><td><code>' + self.esc(name) + '</code></td><td class="' +
+        (on ? 'ok' : 'off') + '">' + (on ? 'TRUE' : 'FALSE') + '</td><td>' +
+        act('set', on ? 'Turn off' : 'Turn on',
+            '<input type="hidden" name="field" value="' + self.esc(name) +
+            '"><input type="hidden" name="value" value="' +
+            (on ? 'FALSE' : 'TRUE') + '">') + '</td><td class="sub">' +
+        self.esc(field ? field.what : '') + '</td></tr>';
+    };
+    const events = [].concat(record.fedSignalsEvents || []);
+    const eventRows = events.map(function (one) {
+      return '<tr><td class="who"><code>' + self.esc(one) + '</code></td>' +
+        '<td>' + act('remove-value', 'Remove',
+          '<input type="hidden" name="field" value="fedSignalsEvents">' +
+          '<input type="hidden" name="value" value="' + self.esc(one) +
+          '">', true) + '</td></tr>';
+    }).join('');
+    const streamActs = s.streamId
+      ? act('signals-read-stream', 'Read stream') +
+        act('signals-update-stream', 'Send fedSignalsEvents') +
+        act('signals-verify', 'Verify') +
+        (s.streamDelivery === 'poll' ? act('signals-poll-now', 'Poll now')
+                                     : '') +
+        act('signals-set-status', 'Pause',
+            '<input type="hidden" name="status" value="paused">') +
+        act('signals-set-status', 'Enable',
+            '<input type="hidden" name="status" value="enabled">') +
+        act('signals-delete-stream', 'Delete stream', '', true)
+      : act('signals-discover', 'Discover') +
+        act('signals-create-stream', 'Create stream');
+    const blocks = (s.blocks || []).length
+      ? '<h3 id="signal-blocks">Sign-ins this partner has blocked</h3>' +
+        '<table><tr><th>Person</th><th>Since</th><th>Event</th><th></th>' +
+        '</tr>' + s.blocks.map(function (b) {
+          return '<tr><td><a href="' + self.esc('/admin/users?user=' +
+            encodeURIComponent(b.username)) + '">' + self.esc(b.username) +
+            '</a></td><td>' + self.esc(b.at) + '</td><td><code>' +
+            self.esc(b.event) + '</code></td><td>' +
+            act('signals-unblock', 'Unblock',
+                '<input type="hidden" name="user" value="' +
+                self.esc(b.username) + '">') + '</td></tr>';
+        }).join('') + '</table>'
+      : '';
+    const arrivals = (view.arrivals || []).length
+      ? '<h3>Latest arrivals</h3><table><tr><th>When</th><th>Events</th>' +
+        '<th>Verified</th><th>Person</th><th>Reactions</th></tr>' +
+        view.arrivals.map(function (r) {
+          return '<tr><td>' + self.esc(r.receivedAt) + ' <span class="sub">' +
+            self.esc(r.via) + '</span></td><td>' + (r.events || [])
+              .map(function (e) {
+                return '<code>' + self.esc(String(e).replace(/^.*\//, '')) +
+                  '</code>';
+              }).join(' ') + '</td><td>' + (r.verified ? 'verified'
+              : '<strong>' + self.esc(r.refusal || 'unverified') +
+                '</strong>') + '</td><td>' + self.esc(r.person || '—') +
+            (r.mapping ? '<br><span class="sub">' + self.esc(r.mapping) +
+                         '</span>' : '') + '</td><td>' +
+            (r.reactions || []).map(function (x) {
+              return self.esc(x.reaction || '—') + (x.done ? ' ✓' : '') +
+                (x.observed ? ' (observed only)' : '') +
+                (x.why ? ' <span class="sub">' + self.esc(x.why) +
+                         '</span>' : '');
+            }).join('<br>') + '</td></tr>';
+        }).join('') + '</table>' +
+        this.note('Every arrival from every partner is on <a href="' +
+          '/admin/ssf/transmitters">Monitoring → Shared Signals from ' +
+          'partners</a>.')
+      : '';
+    log.debug("Leaving AdminConsole.federationSignalsSection().");
+    return '<h2 id="signals">Shared Signals from this partner</h2>' +
+      this.note(row.signsIn
+        ? 'The partner\'s CAEP and RISC events about the people it signs ' +
+          'in. A verified one is acted on as the <code>signal-response' +
+          '</code> policy permits — by default ending the sessions THIS ' +
+          'relationship started for the person, and on ' +
+          '<code>account-disabled</code> blocking its sign-ins of them until ' +
+          'its <code>account-enabled</code>. A local sign-in and every other ' +
+          'partner are untouched.'
+        : 'This partner signs nobody in: it only sends CAEP and RISC events. ' +
+          'By default they are recorded and nothing more, except a ' +
+          'device\'s compliance, which is set. Its people are the ones ' +
+          'linked to it below (<code>&lt;iss&gt; &lt;sub&gt;</code>, or ' +
+          '<code>opaque &lt;id&gt;</code>), or matched by mail where ' +
+          '<code>fedSignalEmailMatch</code> is on.') +
+      '<table><tr><th>What</th><th>Value</th></tr>' +
+      '<tr><td>Receiving</td><td class="' + (s.receiving ? 'ok' : 'off') +
+      '">' + (s.receiving ? 'yes'
+        : 'no — ' + (s.enabled ? 'fedSignalsEnabled is off'
+                               : 'the relationship is disabled')) +
+      '</td></tr>' +
+      '<tr><td>SSF issuer</td><td class="who"><code>' +
+      this.esc(s.issuer || '(none)') + '</code></td></tr>' +
+      '<tr><td>Configuration</td><td>' + (s.config
+        ? 'discovered ' + this.esc(s.discoveredAt) + ' from <code>' +
+          this.esc(s.discoveryUrl) + '</code>'
+        : '<span class="sub">not discovered yet</span>') + '</td></tr>' +
+      '<tr><td>Stream</td><td>' + (s.streamId
+        ? '<code>' + this.esc(s.streamId) + '</code> (' +
+          this.esc(s.streamDelivery) + ', aud <code>' +
+          this.esc((s.streamAud || []).join(' ')) + '</code>)' +
+          (s.verifiedAt ? ' — verified ' + this.esc(s.verifiedAt) : '')
+        : '<span class="sub">none</span>') + '</td></tr>' +
+      (s.streamDelivery === 'push' || s.delivery === 'push'
+        ? '<tr><td>Push endpoint</td><td class="who"><code>' +
+          this.esc(view.base + s.pushEndpoint) + '</code><span class="sub">' +
+          ' given to the partner with the stream</span></td></tr>' : '') +
+      '<tr><td>Counts</td><td>' + this.esc(String(s.counts.received || 0)) +
+      ' received, ' + this.esc(String(s.counts.verified || 0)) +
+      ' verified, ' + this.esc(String(s.counts.refused || 0)) +
+      ' refused, ' + this.esc(String(s.counts.acted || 0)) +
+      ' reaction(s)' + (s.lastPollAt ? '; last poll ' +
+        this.esc(s.lastPollAt) + ': ' + this.esc(s.lastPollResult) : '') +
+      '</td></tr>' +
+      (s.lastError ? '<tr><td>Last error</td><td class="warn">' +
+                     this.esc(s.lastError) + '</td></tr>' : '') +
+      (s.ready ? '' : '<tr><td>Still to set</td><td class="warn">' +
+                      this.esc(s.missing.join(', ')) + '</td></tr>') +
+      '</table>' +
+      '<p>' + streamActs + '</p>' +
+      '<table><tr><th>Field</th><th>Now</th><th></th><th>What it is</th>' +
+      '</tr>' + (row.signsIn ? switchRow('fedSignalsEnabled', false) : '') +
+      switchRow('fedSignalEmailMatch', false) + '</table>' +
+      '<table><tr><th>Field</th><th>Value</th><th>What it is</th></tr>' +
+      (view.signalSetFields || []).map(setRow).join('') + '</table>' +
+      '<h3><code>fedSignalsEvents</code></h3>' +
+      (eventRows ? '<table>' + eventRows + '</table>'
+                 : this.note('None: the stream asks for whatever the ' +
+                             'partner supports.')) +
+      '<form method="post" action="/admin/federation"><div class="formrow">' +
+      carryBack + '<input type="hidden" name="action" value="add-value">' +
+      '<input type="hidden" name="id" value="' + this.esc(row.id) + '">' +
+      '<input type="hidden" name="field" value="fedSignalsEvents">' +
+      '<input type="text" name="value" size="60" placeholder="an event ' +
+      'type URI"><button type="submit">Add</button></div></form>' +
+      blocks + arrivals;
+  }
+
+  /**
+   * Draws what this service SENDS the partner of an identity-provider-side
+   * relationship: its application's streams on this service's transmitter.
+   *
+   * @param outbound - `{ application, streams }`
+   * @returns the section as HTML
+   */
+  federationOutboundSection(outbound) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationOutboundSection().");
+    if (!outbound || !outbound.application) {
+      log.debug("Leaving AdminConsole.federationOutboundSection(). None.");
+      return '';
+    }
+    log.debug("Leaving AdminConsole.federationOutboundSection().");
+    return '<h2 id="signals-sent">Shared Signals this service sends the ' +
+      'partner</h2>' +
+      this.note('The streams on this service\'s own transmitter that the ' +
+        'partner\'s application <code>' + this.esc(outbound.application) +
+        '</code> owns. Read only: a stream belongs to the receiver that ' +
+        'created it, and is managed through SSF\'s stream management API.') +
+      ((outbound.streams || []).length
+        ? '<table><tr><th>Stream</th><th>Delivery</th><th>Status</th>' +
+          '<th>Events delivered</th><th>Last activity</th><th>Dead letters' +
+          '</th></tr>' + outbound.streams.map(function (one) {
+            return '<tr><td><code>' + self.esc(one.streamId) + '</code>' +
+              '</td><td>' + self.esc(one.delivery) + '</td><td class="' +
+              (one.dead ? 'warn' : '') + '">' + self.esc(one.status) +
+              (one.dead ? ' — not delivering' : '') + '</td><td>' +
+              (one.eventsDelivered || []).map(function (e) {
+                return '<code>' + self.esc(String(e).replace(/^.*\//, '')) +
+                  '</code>';
+              }).join(' ') + '</td><td>' +
+              self.esc(one.lastActivityAt || '—') + '</td><td>' +
+              self.esc(String(one.deadLetters)) + '</td></tr>';
+          }).join('') + '</table>'
+        : this.note('The partner\'s application holds no stream here.'));
   }
 
   // ---------------------------------------------------------------------------
@@ -31919,7 +32186,10 @@ class AdminConsole {
        '') +
       '</td>' +
       '<td>' + this.esc(row.roleLabel) + '</td>' +
-      '<td>' + this.esc(row.protocolLabel) + '</td>' +
+      '<td>' + this.esc(row.protocolLabel) +
+        (row.signsIn !== false && row.signalsEnabled
+          ? '<span class="sub">and its Shared Signals</span>' : '') +
+        '</td>' +
       '<td class="who">' + this.esc(row.peer || row.application || '') +
         (!row.peer && !row.application
           ? '<span class="sub">nothing named yet</span>' : '') + '</td>' +
@@ -43921,8 +44191,13 @@ class AdminConsole {
     app.post('/admin/federation', function (req, res) {
       log.debug("Entering the admin federation action endpoint.");
       const body = parseBody(req);
-      // A PROMISE SINCE #168: a create and a key rotation issue a key.
-      federationAction(body).then(function (result) {
+      // A PROMISE SINCE #168: a create and a key rotation issue a key. The
+      // actor and the base since #373: a Shared Signals act is audited, and a
+      // push stream is created with this realm's address.
+      const state = gateStateFor(req);
+      federationAction(body, { via: 'console',
+                               actor: (state && state.username) || '',
+                               base: baseUrlOf(req) }).then(function (result) {
         const id = String(body.id || body.relationship || '').trim();
         // The list state the form carried, REBUILT rather than echoed — see
         // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new
