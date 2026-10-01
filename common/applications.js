@@ -444,7 +444,11 @@ const PROTOCOLS = [
     kinds: ['kerberos-service'],
     identifierAttribute: 'krb5ServicePrincipalName', redirectAttribute: '',
     what: 'A service principal name a ticket may be issued for, or that the ' +
-          'acceptor may be asked to be.' },
+          'acceptor may be asked to be. This covers SPNEGO (HTTP Negotiate, ' +
+          'RFC 4559) to a Kerberos-protected service, which carries the same ' +
+          'ticket. Signing people in to this application with SPNEGO is not ' +
+          'a family: set appAuthnMechanism to spnego, and declare the ' +
+          'protocol the application gets its tokens or assertions through.' },
   { id: 'oid4vci', label: 'OpenID4VCI', kind: '',
     kinds: [],
     identifierAttribute: 'oauthClientId', redirectAttribute: 'oauthRedirectUri',
