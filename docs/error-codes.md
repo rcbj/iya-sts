@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3904** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3906** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 77
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 138
+* [Registries (`STS-REG`)](#sts-reg) — 140
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -4353,6 +4353,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0202` | A per-receiver Shared Signals override on an application entry was given a value its setting does not take, or a reason language that is not a BCP 47 tag. | HTTP 400 (console and API) |
 | `STS-REG-0203` | An application attribute whose values are a closed set (the token endpoint authentication method, a CIBA delivery mode or signing algorithm, a GNAP key proof, algorithm, start mode or token format) was given a value outside it. | HTTP 400 (console and API) |
 | `STS-REG-0204` | A DID document value was refused: a didPublicKeyJwk that is not a public EC, OKP, RSA or AKP JWK (a private member is refused), a didService that is not <type>\|<http(s) URL>, or a didAlsoKnownAs that is not an absolute URI. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0205` | An application carries its own claim or SAML attribute rows (oauthClaims*, saml2CustomAttributes, saml11CustomAttributes) that are not a JSON array or that the claim-set rules refuse; they are ignored at issuance and the realm's set is issued. | none (logged at issuance; nothing is refused) |
+| `STS-REG-0206` | An application's own custom claim or SAML attribute was refused: an unknown claim set, a row the claim-set rules refuse (a reserved name, an attribute that may not be released, a type that is not one), a name to remove that it does not hold, or an application not declared for the set's protocol. | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

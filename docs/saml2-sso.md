@@ -525,6 +525,8 @@ here — an attribute called `exp` collides with nothing. The page previews the
 result for a person. Custom JWT claims are on `/admin/claims`; the store behind
 both pages is one.
 
+
+**Per application.** A service provider or relying party can have attributes of its own. They are added to these and win by name, on its SAML configuration tab: see [Applications](applications.md#custom-claims-saml-attributes-and-token-lifetimes).
 ### Not implemented
 
 The ECP profile and its PAOS binding (refused by name), Name Identifier

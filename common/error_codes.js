@@ -18155,6 +18155,19 @@ const CODES = [
       'a didService that is not <type>|<http(s) URL>, or a didAlsoKnownAs ' +
       'that is not an absolute URI.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0205',
+    summary: 'An application carries its own claim or SAML attribute rows ' +
+      '(oauthClaims*, saml2CustomAttributes, saml11CustomAttributes) that ' +
+      'are not a JSON array or that the claim-set rules refuse; they are ' +
+      'ignored at issuance and the realm\'s set is issued.',
+    spec: 'none (logged at issuance; nothing is refused)' },
+  { code: 'STS-REG-0206',
+    summary: 'An application\'s own custom claim or SAML attribute was ' +
+      'refused: an unknown claim set, a row the claim-set rules refuse ' +
+      '(a reserved name, an attribute that may not be released, a type ' +
+      'that is not one), a name to remove that it does not hold, or an ' +
+      'application not declared for the set\'s protocol.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

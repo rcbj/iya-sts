@@ -6410,6 +6410,8 @@ class AdminViews {
     const rolesState = this.applicationRolesState(row.identifier);
     const signalsState = this.applicationSignalsState(req, row);
     const enrollmentState = this.applicationEnrollmentState(req, row);
+    const claimsState = this.applicationClaimsState(row);
+    const lifetimesState = this.applicationTokenLifetimesState(row);
     log.debug("Leaving AdminViews.applicationDetailJson().");
     return {
       row: row, attributeRows: attributeRows, paged: paged, paging: paging,
@@ -6420,6 +6422,8 @@ class AdminViews {
       softwareStatementState: softwareStatementState,
       signalsState: signalsState,
       enrollmentState: enrollmentState,
+      claimsState: claimsState,
+      lifetimesState: lifetimesState,
       json: (function () {
       return Object.assign({ found: true }, row, {
           attributesShown: paged.shown,
@@ -6444,6 +6448,12 @@ class AdminViews {
           // was issued (paged), its EAB keys and SCEP challenges (no secret)
           // and its host names. See applicationEnrollmentState().
           certificateEnrollment: enrollmentState.json,
+          // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES, AND THE
+          // TOKEN LIFETIMES IN FORCE FOR IT (2026-10-01): its configuration
+          // tabs' sections, as data. See applicationClaimsState() and
+          // applicationTokenLifetimesState().
+          customClaims: claimsState.json,
+          tokenLifetimes: lifetimesState.json,
           // THE SOFTWARE STATEMENTS SECTION, AS DATA (2026-09-13): the issuers
           // this application vouches for as a publisher, the statement this
           // realm issued it, and how it registered if a statement let it in. A
@@ -6819,6 +6829,106 @@ class AdminViews {
              certificates: certificates, paged: paged, eabKeys: eabKeys,
              challenges: challenges, hostNames: hostNames,
              keyAlgorithms: keyAlgorithms, json: json };
+  }
+
+  // AN APPLICATION'S OWN CLAIM SETS, BESIDE THE REALM'S (rcbj, 2026-10-01):
+  // what its OAuth / OpenID Connect tab's Custom claims section and its SAML
+  // tab's Custom SAML attributes section draw. Per set, for the families the
+  // application is declared for: the realm's rows, its own rows, and the
+  // rows IN FORCE for it (`stats.effectiveClaimSet()`: the realm's, with its
+  // own added and winning by name), each marked with where it came from.
+  /**
+   * Answers an application's own claim sets beside the realm's.
+   *
+   * @param row - the application's view
+   * @returns `{ sets, json }`, one member per set it is declared for
+   */
+  applicationClaimsState(row) {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.applicationClaimsState(). identifier=" +
+              (row && row.identifier));
+    const declared = [].concat((row && row.allowedProtocols) || []);
+    const families = {
+      access_token: ['oauth2', 'oidc', 'oid4vci'],
+      id_token: ['oidc', 'oauth2'],
+      userinfo: ['oidc', 'oauth2'],
+      saml2: ['saml2'],
+      saml11: ['saml11']
+    };
+    const labels = {
+      access_token: 'Access token', id_token: 'ID Token',
+      userinfo: 'UserInfo response', saml2: 'SAML 2.0 attributes',
+      saml11: 'SAML 1.1 attributes'
+    };
+    const sets = Object.keys(families).filter(function (id) {
+      return families[id].some(function (one) {
+        return declared.indexOf(one) >= 0;
+      });
+    }).map(function (id) {
+      const realmRows = stats.claimSet(id);
+      const own = stats.applicationClaimSet(id, row);
+      const ownNames = own.map(function (one) { return one.name; });
+      const effective = realmRows.filter(function (one) {
+        return ownNames.indexOf(one.name) < 0;
+      }).map(function (one) {
+        return Object.assign({ source: 'realm' }, one);
+      }).concat(own.map(function (one) {
+        const replaced = realmRows.some(function (r) {
+          return r.name === one.name;
+        });
+        return Object.assign({ source: 'application', replacesRealm: replaced },
+                             one);
+      }));
+      return { id: id, label: labels[id],
+               attribute: stats.APP_CLAIM_ATTRIBUTES[id],
+               realm: realmRows, own: own, effective: effective };
+    });
+    log.debug("Leaving AdminViews.applicationClaimsState(). " + sets.length +
+              " set(s).");
+    return { sets: sets, json: sets };
+  }
+
+  // THE TOKEN LIFETIMES IN FORCE FOR AN APPLICATION (2026-10-01): its OAuth
+  // tab's Token lifetimes section. The four settings it may override, each
+  // with the value in force (`applications.settingFor()`, which is what the
+  // token endpoint reads), the realm's value, and where the value came from;
+  // and the realm's clock skew, which stays realm-wide.
+  /**
+   * Answers the token lifetimes in force for an application.
+   *
+   * @param row - the application's view
+   * @returns `{ rows, skew, json }`
+   */
+  applicationTokenLifetimesState(row) {
+    const { log, applications, config } = this.deps;
+    log.debug("Entering AdminViews.applicationTokenLifetimesState().");
+    const id = String((row && row.identifier) || '');
+    const fields = (row && row.fields) || {};
+    const keys = [
+      { key: 'oauth2.accessTokenTtlS', attribute: 'oauthAccessTokenTtlS',
+        label: 'Access token' },
+      { key: 'oauth2.idTokenTtlS', attribute: 'oauthIdTokenTtlS',
+        label: 'ID Token' },
+      { key: 'oauth2.refreshTokenTtlS', attribute: 'oauthRefreshTokenTtlS',
+        label: 'Refresh token' },
+      { key: 'oauth2.refreshIdleSeconds',
+        attribute: 'oauthRefreshIdleSeconds',
+        label: 'Refresh chain idle limit (RFC 9700 mode)' }
+    ];
+    const rows = keys.map(function (one) {
+      const own = String([].concat(fields[one.attribute] || [])[0] || '')
+        .trim();
+      return {
+        setting: one.key, attribute: one.attribute, label: one.label,
+        value: Number(applications.settingFor(id, one.key, config)),
+        realmValue: Number(config.value(one.key)),
+        source: own ? 'application' : 'realm'
+      };
+    });
+    const skew = Number(config.value('oauth2.clockSkewS'));
+    log.debug("Leaving AdminViews.applicationTokenLifetimesState().");
+    return { rows: rows, skew: skew,
+             json: { lifetimes: rows, clockSkewS: skew } };
   }
 
   private applicationCredentialsState(row) {
@@ -9179,6 +9289,8 @@ export = {
   applicationPermissionsState: slot.forward('applicationPermissionsState'),
   applicationRolesState: slot.forward('applicationRolesState'),
   applicationEnrollmentState: slot.forward('applicationEnrollmentState'),
+  applicationClaimsState: slot.forward('applicationClaimsState'),
+  applicationTokenLifetimesState: slot.forward('applicationTokenLifetimesState'),
   attributeClaimChoices: slot.forward('attributeClaimChoices'),
   attributeClaimPreview: slot.forward('attributeClaimPreview'),
   releaseWithholding: slot.forward('releaseWithholding'),

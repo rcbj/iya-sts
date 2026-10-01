@@ -9361,6 +9361,35 @@ What is this directory's is where it is decided and what an app password is.
 `tests/second_factor_doors.js` is the in-process half;
 `tests/vendored/sts_second_factor_doors.js` drives the five doors over the wire.
 
+### An application's own claim sets (2026-10-01)
+
+Each of `admin_stats.js`'s five claim sets may also be configured on an
+APPLICATION: one JSON array of rows per set on its entry
+(`APP_CLAIM_ATTRIBUTES`: `oauthClaimsAccessToken`, `oauthClaimsIdToken`,
+`oauthClaimsUserinfo`, `saml2CustomAttributes`, `saml11CustomAttributes`).
+`jwtClaims()` and `samlAttributes()` read `effectiveClaimSet(id, context)`
+instead of `claimSet(id)`. That is the realm's rows, with the application's
+**added and winning by name** (rcbj's choice), so an application with none
+issues exactly what the realm does.
+
+* **Which application:** `applicationForClaims()` finds it by `client_id`
+  for the three JSON sets and by `audience` for the two SAML sets, reading
+  by identifier, then `forClientId()`, then `forAppliesTo()`. Those are the
+  keys `applications.settingFor()` already answers per-application settings
+  for.
+* **One set of rules:** `checkClaimEntries()` was lifted out of
+  `setClaimSet()` so a realm row and an application row are refused for the
+  same reasons.
+* **Checked at the write and at issuance:** `applications.claimRowsProblem()`
+  holds every write (`STS-REG-0206`). A stored array that fails the rules at
+  issuance is dropped with a warning (`STS-REG-0205`) and the realm's set
+  goes out: a bad row costs the application's claims, never the issuance.
+* **Not done:** changing an application's rows does not send CAEP
+  `token-claims-change` the way a realm set change does
+  (`announceClaimsReshaped()`); the live-holder fan-out is realm-wide today.
+
+`tests/application_claims.js` holds it.
+
 ## 3ay. `identity_assurance.ts`: a person's identity verifications, and `verified_claims` (#127, 2026-09-23)
 
 OpenID Connect for Identity Assurance 1.0. **A verification is a RECORD ON THE

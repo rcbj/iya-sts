@@ -17607,8 +17607,14 @@ class AdminConsole {
     const listView = this.listViewFromBack('/admin/applications', body.back);
     const made = result.ok && result.application
       ? String(result.application.identifier || '') : '';
+    const claimAction = String(body.action || '') === 'set-custom-claim' ||
+      String(body.action || '') === 'remove-custom-claim';
+    // A claim action comes back to its section whether it was refused or
+    // not (2026-10-01): the refusal is about one row, and the reader is
+    // still working on that application.
     const named = made ||
-      (result.ok !== false ? String(body.application || '').trim() : '');
+      (result.ok !== false || claimAction
+        ? String(body.application || '').trim() : '');
     const back = named
       ? '/admin/applications' + queryWith(listView, { application: named }) +
         // Back to the section the button was in, which is four screens down.
@@ -17622,7 +17628,11 @@ class AdminConsole {
               : (String(body.action || '') === 'generate-did-key' ||
                  String(body.action || '') === 'sign-domain-linkage'
                 ? (String(body.from || '') === 'credentials'
-                  ? '#credentials-did' : '#cfg-did') : ''))))
+                  ? '#credentials-did' : '#cfg-did')
+                : (claimAction
+                  ? (['saml2', 'saml11'].indexOf(String(body.set || '')) >= 0
+                    ? '#cfg-saml-attributes' : '#cfg-oauth-claims')
+                  : '')))))
       : '/admin/applications' + queryWith(listView, {});
     this.respondToAction(req, res, back, result);
     log.debug("Leaving the admin applications action endpoint.");
@@ -17783,6 +17793,178 @@ class AdminConsole {
           'service can sign the Domain Linkage Credentials.')
         : '');
     log.debug("Leaving AdminConsole.applicationDidPanel().");
+    return html;
+  }
+
+  // AN APPLICATION'S TOKEN LIFETIMES (rcbj, 2026-10-01): the realm's Token
+  // lifetimes page, for one application, at the head of its OAuth / OpenID
+  // Connect configuration tab. The four overrides were already fields on
+  // that tab (`oauthAccessTokenTtlS` and three more); this draws the value
+  // IN FORCE for each, where it came from, and the realm page's warnings
+  // over the application's own values. Clock skew stays realm-wide.
+  /**
+   * Draws the token lifetimes in force for an application, with the realm
+   * page's warnings.
+   *
+   * @param row - the application's view
+   * @returns the markup
+   */
+  applicationTokenLifetimesSection(row) {
+    const { log, adminViews } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationTokenLifetimesSection().");
+    const state = adminViews.applicationTokenLifetimesState(row);
+    const byKey = {};
+    state.rows.forEach(function (one) { byKey[one.setting] = one; });
+    const html = '<h3 id="cfg-oauth-lifetimes">Token lifetimes</h3>' +
+      '<table><tr><th>Token</th><th>In force</th><th>From</th>' +
+      '<th>The realm\'s</th><th>Override</th></tr>' +
+      state.rows.map(function (one) {
+        return '<tr><td>' + self.esc(one.label) + '</td><td>' +
+          self.esc(self.humanSeconds(one.value)) + '</td><td>' +
+          (one.source === 'application'
+            ? '<span class="state-valid">this application</span>'
+            : '<span class="state-none">the realm</span>') + '</td><td>' +
+          self.esc(self.humanSeconds(one.realmValue)) + '</td><td>' +
+          '<code>' + self.esc(one.attribute) + '</code></td></tr>';
+      }).join('') + '</table>' +
+      this.tokenLifetimeWarnings({
+        access: byKey['oauth2.accessTokenTtlS'].value,
+        refresh: byKey['oauth2.refreshTokenTtlS'].value,
+        skew: state.skew }) +
+      this.note('Set an override in the field of that name below and press ' +
+        'Save; empty it to take the realm\'s value again (Protocols → ' +
+        'OAuth2 / OIDC → Token lifetimes). The clock skew, ' +
+        this.esc(this.humanSeconds(state.skew)) + ', is the realm\'s for ' +
+        'every application.');
+    log.debug("Leaving AdminConsole.applicationTokenLifetimesSection().");
+    return html;
+  }
+
+  // AN APPLICATION'S OWN CUSTOM CLAIMS OR SAML ATTRIBUTES (rcbj,
+  // 2026-10-01): the realm's Custom claims, UserInfo claims and Custom SAML
+  // attributes pages, for one application, on its configuration tabs. Each
+  // set shows the rows IN FORCE for it — the realm's, and its own, which are
+  // added and win by name — with a Remove on its own rows and a form to set
+  // one. Both post to `/admin/applications` (`set-custom-claim`,
+  // `remove-custom-claim`), mirrored at `/admin-api/applications/<action>`.
+  /**
+   * Draws an application's own claim sets beside the realm's, with the
+   * controls that set and remove its own rows.
+   *
+   * @param req - the request
+   * @param row - the application's view
+   * @param carryBack - the hidden `back` field
+   * @param setIds - which of the five sets to draw
+   * @param anchor - the section's id, which a form comes back to
+   * @param title - the section's heading
+   * @returns the markup
+   */
+  applicationClaimsSection(req, row, carryBack, setIds, anchor, title) {
+    const { log, adminViews } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationClaimsSection().");
+    const canWrite = this.mayWrite(req);
+    const id = String(row.identifier || '');
+    const sets = adminViews.applicationClaimsState(row).sets
+      .filter(function (one) { return setIds.indexOf(one.id) >= 0; });
+    if (!sets.length) {
+      log.debug("Leaving AdminConsole.applicationClaimsSection(). None " +
+                "declared.");
+      return '';
+    }
+    const formOpen = function (action, setId) {
+      return '<form method="post" action="/admin/applications#' + anchor +
+        '" class="inline">' + carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="application" value="' + self.esc(id) +
+        '"><input type="hidden" name="set" value="' + self.esc(setId) + '">';
+    };
+    const html = '<h3 id="' + this.esc(anchor) + '">' + this.esc(title) +
+      '</h3>' +
+      this.note('The realm\'s claims are issued to this application, and its ' +
+        'own are added to them; where both name the same claim, this ' +
+        'application\'s value is the one issued. A row is a typed value, ' +
+        'whose <code>${…}</code> placeholders are expanded as on the realm\'s ' +
+        'page, or a directory attribute of the person. ' +
+        'The realm\'s rows are edited on the realm\'s page under Protocols.') +
+      sets.map(function (set) {
+        const isSaml = set.id === 'saml2' || set.id === 'saml11';
+        const rows = set.effective.length
+          ? set.effective.map(function (claim) {
+            const what = claim.attribute
+              ? 'attribute <code>' + self.esc(claim.attribute) + '</code>' +
+                (claim.multi ? ', every value' : '') +
+                (claim.type ? ', ' + self.esc(claim.type) : '')
+              : '<code>' + self.esc(claim.value) + '</code>';
+            const extra = claim.nameFormat
+              ? ' <span class="sub">' + self.esc(claim.nameFormat) + '</span>'
+              : (claim.namespace ? ' <span class="sub">' +
+                self.esc(claim.namespace) + '</span>' : '');
+            return '<tr><td><code>' + self.esc(claim.name) + '</code>' +
+              extra + '</td><td>' + what + '</td><td>' +
+              (claim.source === 'application'
+                ? '<span class="state-valid">this application</span>' +
+                  (claim.replacesRealm ? ' <span class="sub">(replaces the ' +
+                    'realm\'s)</span>' : '')
+                : '<span class="state-none">the realm</span>') + '</td><td>' +
+              (canWrite && claim.source === 'application'
+                ? formOpen('remove-custom-claim', set.id) +
+                  '<input type="hidden" name="name" value="' +
+                  self.esc(claim.name) + '"><button type="submit" ' +
+                  'class="secondary"' + self.tip('Take this application\'s ' +
+                    'row off. The realm\'s row of the same name, if there is ' +
+                    'one, is issued again.') + '>Remove</button></form>'
+                : '') + '</td></tr>';
+          }).join('')
+          : '<tr><td colspan="4" class="sub">No claims: neither the realm ' +
+            'nor this application configures any.</td></tr>';
+        const typeSelect = isSaml ? '' : ' <label' + self.tip('The JSON type ' +
+            'each value of a directory attribute becomes. A typed value is ' +
+            'issued as written.') + '>Type <select name="type">' +
+          ['string', 'number', 'boolean', 'json'].map(function (t) {
+            return '<option value="' + t + '">' + t + '</option>';
+          }).join('') + '</select></label>';
+        const samlExtra = set.id === 'saml2'
+          ? ' <label' + self.tip('The SAML 2.0 NameFormat of the attribute, ' +
+              'such as urn:oasis:names:tc:SAML:2.0:attrname-format:uri. ' +
+              'Empty leaves it unspecified.') + '>NameFormat <input ' +
+            'type="text" name="nameFormat" placeholder="urn:oasis:names:tc:' +
+            'SAML:2.0:attrname-format:uri"></label>'
+          : (set.id === 'saml11'
+            ? ' <label' + self.tip('The SAML 1.1 AttributeNamespace. Empty ' +
+                'gives the identity claims namespace.') + '>Namespace <input ' +
+              'type="text" name="namespace" placeholder="http://schemas.' +
+              'xmlsoap.org/ws/2005/05/identity/claims"></label>'
+            : '');
+        return '<h4>' + self.esc(set.label) + '</h4>' +
+          '<table><tr><th>Name</th><th>Value</th><th>From</th><th></th></tr>' +
+          rows + '</table>' + (canWrite
+            ? formOpen('set-custom-claim', set.id) + '<div class="formrow">' +
+              '<label' + self.tip('The claim or attribute name. Setting a ' +
+                'name this application already has replaces its row; a name ' +
+                'the realm has is replaced for this application.') + '>Name ' +
+              '<input type="text" name="name" required placeholder="' +
+              (isSaml ? 'department' : 'tenant') + '"></label> ' +
+              '<label' + self.tip('A typed value, with ${placeholders}. ' +
+                'Leave it empty and name an attribute instead to take the ' +
+                'value from the person\'s directory entry.') + '>Value ' +
+              '<input type="text" name="value" placeholder="' +
+              (isSaml ? '${subject}' : '${username}') + '">' +
+              '</label> <label' + self.tip('A directory attribute of the ' +
+                'person, such as departmentNumber. Takes the place of the ' +
+                'value.') + '>or attribute <input type="text" ' +
+              'name="attribute" placeholder="departmentNumber"></label> ' +
+              '<label' + self.tip('Issue every value of the attribute, not ' +
+                'only the first.') + '><input type="checkbox" name="multi" ' +
+              'value="yes"> every value</label>' + typeSelect + samlExtra +
+              ' <button type="submit"' + self.tip('Set this row on the ' +
+                'application. It is added to the realm\'s ' + set.label +
+                ' and wins by name.') + '>Set</button></div></form>'
+            : '');
+      }).join('');
+    log.debug("Leaving AdminConsole.applicationClaimsSection(). " +
+              sets.length + " set(s).");
     return html;
   }
 
@@ -18744,6 +18926,20 @@ class AdminConsole {
           ? self.applicationDidPanel(req, row, carryBack, 'config') : '') +
         (group.id === 'enroll'
           ? self.applicationEnrollmentPanel(req, row, carryBack, 'config')
+          : '') +
+        // The realm's Token lifetimes, Custom claims and UserInfo claims
+        // pages, and its Custom SAML attributes page, for this application
+        // (2026-10-01): sections at the head of the tab they belong to.
+        (group.id === 'oauth'
+          ? self.applicationTokenLifetimesSection(row) +
+            self.applicationClaimsSection(req, row, carryBack,
+              ['access_token', 'id_token', 'userinfo'], 'cfg-oauth-claims',
+              'Custom claims')
+          : '') +
+        (group.id === 'saml'
+          ? self.applicationClaimsSection(req, row, carryBack,
+              ['saml2', 'saml11'], 'cfg-saml-attributes',
+              'Custom SAML attributes')
           : '') +
         formOpen(group.id, mine.map(function (one) {
           return one.attribute;
@@ -27090,13 +27286,19 @@ class AdminConsole {
    *
    * @returns the warnings as HTML, or an empty string
    */
-  tokenLifetimeWarnings() {
+  tokenLifetimeWarnings(values?) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.tokenLifetimeWarnings().");
-    const access = config.value('oauth2.accessTokenTtlS');
-    const refresh = config.value('oauth2.refreshTokenTtlS');
-    const skew = config.value('oauth2.clockSkewS');
+    // An application's page hands in the values in force FOR IT
+    // (2026-10-01); the realm's page reads the settings.
+    const given = values || {};
+    const access = given.access !== undefined ? given.access
+      : config.value('oauth2.accessTokenTtlS');
+    const refresh = given.refresh !== undefined ? given.refresh
+      : config.value('oauth2.refreshTokenTtlS');
+    const skew = given.skew !== undefined ? given.skew
+      : config.value('oauth2.clockSkewS');
     const notes = [];
     if (access >= refresh) {
       notes.push('<strong>The access token lives at least as long as the ' +

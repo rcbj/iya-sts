@@ -11828,6 +11828,81 @@ class AdminApi {
                                  'the signing key\'s kid, a file name and ' +
                                  'where to host it (`hostAt`).' },
 
+          // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES
+          // (2026-10-01): the Custom claims and Custom SAML attributes
+          // sections of its configuration tabs.
+          { action: 'set-custom-claim',
+            operationId: 'setApplicationCustomClaim',
+            summary: 'Set one of an application\'s own custom claims or ' +
+                     'SAML attributes',
+            description: 'Adds a row to one of the application\'s own claim ' +
+                         'sets — `access_token`, `id_token`, `userinfo`, ' +
+                         '`saml2` or `saml11` — or replaces its row of the ' +
+                         'same name. At issuance the application\'s rows are ' +
+                         'ADDED to the realm\'s set and win by name. A row is ' +
+                         'a typed value (`value`, with `${placeholders}`) or a ' +
+                         'directory attribute of the person (`attribute`, ' +
+                         'with `multi` and, for the three JSON sets, `type`); ' +
+                         'a SAML 2.0 row may carry `nameFormat`, a SAML 1.1 ' +
+                         'row `namespace`. Held to the realm\'s rules: a ' +
+                         'reserved name, an attribute that may not be ' +
+                         'released or an unknown type is refused ' +
+                         '(`STS-REG-0206`), as is an OAuth set on an ' +
+                         'application declared for no OAuth family.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11'] },
+                name: { type: 'string' },
+                value: { type: 'string' },
+                attribute: { type: 'string' },
+                multi: { type: 'boolean' },
+                type: { type: 'string',
+                        enum: ['string', 'number', 'boolean', 'json'] },
+                nameFormat: { type: 'string' },
+                namespace: { type: 'string' }
+              },
+              required: ['application', 'set', 'name'],
+              examples: [{ application: 'my-web-app', set: 'access_token',
+                           name: 'tenant', value: 'acme' },
+                         { application: 'my-web-app', set: 'id_token',
+                           name: 'department', attribute: 'departmentNumber',
+                           type: 'string' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application\'s rows for that set ' +
+                                 'after the change, in `claims`.' },
+          { action: 'remove-custom-claim',
+            operationId: 'removeApplicationCustomClaim',
+            summary: 'Take one of an application\'s own custom claims or ' +
+                     'SAML attributes off',
+            description: 'Removes the application\'s row of that name from ' +
+                         'one of its claim sets. The realm\'s row of the same ' +
+                         'name, if there is one, is issued again. Refused ' +
+                         '(`STS-REG-0206`) for a name the application does ' +
+                         'not hold.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11'] },
+                name: { type: 'string' }
+              },
+              required: ['application', 'set', 'name'],
+              examples: [{ application: 'my-web-app', set: 'access_token',
+                           name: 'tenant' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application\'s rows for that set ' +
+                                 'after the change, in `claims`.' },
+
           // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705,
           // 2026-09-13).
           { action: 'issue-tls-client-certificate',

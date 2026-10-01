@@ -536,6 +536,45 @@ answers with, which links back to the application. `GET
 /admin-api/applications?application=<id>` returns the same facts as
 `certificateEnrollment`, with no secret.
 
+### Custom claims, SAML attributes and token lifetimes
+
+The realm's **Token lifetimes**, **Custom claims**, **UserInfo claims** and
+**Custom SAML attributes** pages (under Protocols) apply to every
+application. An application can override them on its own configuration tabs
+(**Directory → Applications → the application → Configuration**):
+
+| Tab | Section | What it overrides |
+|---|---|---|
+| OAuth 2.0 / OpenID Connect | **Token lifetimes** | Shows the access token, ID Token, refresh token and refresh-idle lifetimes in force for this client, whether each is its own or the realm's, and the realm page's warnings. The overrides are the `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS` and `oauthRefreshIdleSeconds` fields on the same tab. The clock skew stays realm-wide. |
+| OAuth 2.0 / OpenID Connect | **Custom claims** | The access token, ID Token and UserInfo claims for this client. |
+| SAML | **Custom SAML attributes** | The SAML 2.0 attributes (with an optional NameFormat) and SAML 1.1 attributes (with a namespace) for this audience. |
+
+**An application's claims are added to the realm's, and win by name.** The
+realm's claims still go out. Where the application and the realm name the
+same claim, the application's value is issued. An application with no claims
+of its own gets exactly the realm's set. Each section lists the claims in
+force, marked as the application's own or the realm's, with **Remove** on the
+application's rows and a form to set one.
+
+A row is either a typed value, with the same `${…}` placeholders as the
+realm's page, or a directory attribute of the person (every value or the
+first, and a JSON type for the token sets). Rows follow the realm's rules: a
+name the protocol sets itself (`sub`, `iss`, `exp`…), an attribute that may
+not be released, or an unknown type is refused (`STS-REG-0206`). So is a set
+whose protocol the application is not declared for.
+
+Which application a claim applies to: for tokens and UserInfo, the client
+(`client_id`); for SAML, the audience (the service provider's entityID, or a
+WS-Federation or WS-Trust relying party). These are the same keys its other
+per-application settings use.
+
+The management API: `POST /admin-api/applications/set-custom-claim` (with
+`set` = `access_token`, `id_token`, `userinfo`, `saml2` or `saml11`, and
+`name`, plus `value`, or `attribute` with `multi` and `type`) and
+`POST /admin-api/applications/remove-custom-claim`. `GET
+/admin-api/applications?application=<id>` returns `customClaims` and
+`tokenLifetimes`.
+
 ### CORS: which pages may read an answer
 
 CORS is an **allowlist on every path**, in both modes. An application's

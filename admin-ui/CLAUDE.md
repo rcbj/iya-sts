@@ -6974,6 +6974,33 @@ holding it. With one name both copies had one id, and a next page from the
 Credentials tab landed on the Configuration copy. **A list drawn twice on
 one page needs two paging names**, for this reason and for `pagingOf()`'s.
 
+## AN APPLICATION'S OWN TOKEN LIFETIMES, CUSTOM CLAIMS AND SAML ATTRIBUTES (2026-10-01)
+
+rcbj asked for the realm's Token lifetimes, Custom claims, UserInfo claims
+and Custom SAML attributes pages to have per-application overrides, drawn as
+sections on the application's configuration tabs:
+
+* **The OAuth 2.0 / OpenID Connect sub-tab** opens with
+  `applicationTokenLifetimesSection()`, a read-only table, and
+  `applicationClaimsSection(..., ['access_token', 'id_token', 'userinfo'])`.
+  The table shows the four lifetimes in force for the client, each one's
+  source, and `tokenLifetimeWarnings({ access, refresh, skew })` over the
+  application's values. `tokenLifetimeWarnings()` takes values since this
+  date; the realm page passes none. The four overrides were already
+  fields on the tab, and clock skew stays realm-wide (rcbj's choice).
+* **The SAML sub-tab** opens with `applicationClaimsSection(..., ['saml2',
+  'saml11'])`.
+
+Each section draws `adminViews.applicationClaimsState()`: the rows in force,
+marked `realm` or `application`, with a replaced realm row marked as such.
+Its forms post `set-custom-claim` and `remove-custom-claim` to
+`/admin/applications`, both new arms of `applicationsAction()` mirrored at
+`/admin-api/applications/<action>` (rule 7), and come back to
+`#cfg-oauth-claims` or `#cfg-saml-attributes`, **on a refusal too**: the
+refusal is about one row and the reader is still on that application. The
+model is `common/CLAUDE.md`'s *An application's own claim sets*. The GET
+carries `customClaims` and `tokenLifetimes`.
+
 ## AN APPLICATION'S PAGE HAS A SHARED SIGNALS SECTION (2026-10-01)
 
 `applicationSignalsSection()` draws `adminViews.applicationSignalsState()`

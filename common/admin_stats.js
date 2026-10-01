@@ -3672,31 +3672,24 @@ const ATTRIBUTE_CLAIM_TYPES = ['string', 'number', 'boolean', 'json'];
 
 // Validate and install a whole set at once. Returns the errors rather than
 // throwing, because the caller is a form handler that has to redisplay them.
+// THE RULES A CLAIM ROW IS HELD TO, wherever it is configured (2026-10-01):
+// lifted out of setClaimSet() when an APPLICATION grew claim sets of its own,
+// so the realm's five sets and an application's are refused for exactly the
+// same reasons — a reserved name, a duplicate, an attribute that may not be
+// released, a type that is not one. Returns the cleaned rows; changes
+// nothing.
 /**
- * Validates and replaces a whole claim set; audited, and announced to holders
- * of live artifacts built from it.
+ * Checks a list of claim rows against a claim set's rules.
  *
  * @param id - the claim set id
- * @param entries - the claims: a typed claim is `name` and `value`, an
- *   attribute claim (#94) is `name`, `attribute`, `multi` and `type`
- * @returns `ok`, or `ok: false` with `errors` when the set is unknown or an
- *   entry is invalid
+ * @param entries - the rows: a typed claim is `name` and `value`, an
+ *   attribute claim `name` and `attribute`
+ * @returns `ok`, the cleaned `claims`, the `errors` and the first refusal's
+ *   `code`
  */
-function setClaimSet(id, entries) {
-  log.debug("Entering setClaimSet(). id=" + id + ", " + (entries || []).length +
-      " " +
-      "entry/entries.");
-  const set = CLAIM_SETS[id];
-  if (!set) {
-    log.debug("Leaving setClaimSet(). No such claim set.");
-    return errorCodes.mark({ ok: false, errors: ['There is no claim set ' +
-                                                 'called "' + id + '". ' +
-        'The ' +
-                                 CLAIM_SET_IDS.length + ' are: ' +
-                                                 CLAIM_SET_IDS.join(', ') +
-                                                 '.'] },
-                           'STS-REG-0034');
-  }
+function checkClaimEntries(id, entries) {
+  log.debug("Entering checkClaimEntries(). id=" + id);
+  const set = CLAIM_SETS[id] || freshClaimSets()[id];
   const errors = [];
   const cleaned = [];
   const seen = new Set();
@@ -3766,6 +3759,40 @@ function setClaimSet(id, entries) {
         entry.namespace || DEFAULT_SAML11_NAMESPACE);
     cleaned.push(claim);
   });
+  log.debug("Leaving checkClaimEntries(). " + errors.length + " error(s).");
+  return { ok: errors.length === 0, errors: errors, claims: cleaned,
+           code: code };
+}
+
+/**
+ * Validates and replaces a whole claim set; audited, and announced to holders
+ * of live artifacts built from it.
+ *
+ * @param id - the claim set id
+ * @param entries - the claims: a typed claim is `name` and `value`, an
+ *   attribute claim (#94) is `name`, `attribute`, `multi` and `type`
+ * @returns `ok`, or `ok: false` with `errors` when the set is unknown or an
+ *   entry is invalid
+ */
+function setClaimSet(id, entries) {
+  log.debug("Entering setClaimSet(). id=" + id + ", " + (entries || []).length +
+      " " +
+      "entry/entries.");
+  const set = CLAIM_SETS[id];
+  if (!set) {
+    log.debug("Leaving setClaimSet(). No such claim set.");
+    return errorCodes.mark({ ok: false, errors: ['There is no claim set ' +
+                                                 'called "' + id + '". ' +
+        'The ' +
+                                 CLAIM_SET_IDS.length + ' are: ' +
+                                                 CLAIM_SET_IDS.join(', ') +
+                                                 '.'] },
+                           'STS-REG-0034');
+  }
+  const checked = checkClaimEntries(id, entries);
+  const errors = checked.errors;
+  const cleaned = checked.claims;
+  const code = checked.code;
   if (errors.length) {
     recordClaimSetChange(id, set, [], [], set.claims.length, false, errors,
                          code);
@@ -3818,6 +3845,137 @@ function setClaimSet(id, entries) {
   log.debug("Leaving setClaimSet(). Installed " + cleaned.length +
             " claim(s).");
   return { ok: true, errors: [], claims: cleaned };
+}
+
+// AN APPLICATION'S OWN CLAIM SETS (rcbj, 2026-10-01). Each of the five sets
+// may also be configured on an APPLICATION, on its OAuth / OpenID Connect
+// and SAML configuration tabs, as one JSON array of rows on its entry
+// (`APP_CLAIM_ATTRIBUTES`). At issuance they are ADDED to the realm's set and
+// WIN BY NAME — rcbj's choice: the realm's rows still go out, an
+// application's row replaces the realm's row of the same name, and an
+// application with none issues exactly what the realm does.
+//
+// WHICH APPLICATION: the one the per-application settings already answer
+// for (`applications.settingFor()`) — the OAuth `client_id` for the three
+// JSON sets, the audience (a service provider's entityID, a WS-Federation
+// realm) for the two SAML sets — read by identifier, then by client_id or
+// AppliesTo. The rows are held to `checkClaimEntries()` at the write; a row
+// stored by hand that fails it is dropped here with a warning rather than
+// costing the issuance.
+const APP_CLAIM_ATTRIBUTES = {
+  access_token: 'oauthClaimsAccessToken',
+  id_token: 'oauthClaimsIdToken',
+  userinfo: 'oauthClaimsUserinfo',
+  saml2: 'saml2CustomAttributes',
+  saml11: 'saml11CustomAttributes'
+};
+
+/**
+ * Finds the application an issuance is for: by identifier, then by OAuth
+ * client_id, then by WS-Trust AppliesTo.
+ *
+ * @param name - the client_id or the audience
+ * @returns the application's view, or null
+ */
+function applicationForClaims(name) {
+  log.debug("Entering applicationForClaims().");
+  const wanted = String(name || '').trim();
+  if (!wanted) {
+    log.debug("Leaving applicationForClaims(). Nothing named.");
+    return null;
+  }
+  let found = null;
+  try {
+    found = applications.get(wanted) ||
+      (typeof applications.forClientId === 'function'
+        ? applications.forClientId(wanted) : null) ||
+      (typeof applications.forAppliesTo === 'function'
+        ? applications.forAppliesTo(wanted) : null);
+  } catch (e) {
+    log.debug("Caught in applicationForClaims(): " + ((e && e.message) || e));
+    // A registry that cannot answer costs the application's rows, never the
+    // issuance: the realm's set still goes out.
+    found = null;
+  }
+  log.debug("Leaving applicationForClaims(). " + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
+/**
+ * Returns an application's own rows for a claim set, as stored and
+ * checked; none for an application with none.
+ *
+ * @param id - the claim set id
+ * @param application - the application's view, or its identifier
+ * @returns the rows
+ */
+function applicationClaimSet(id, application) {
+  log.debug("Entering applicationClaimSet(). id=" + id);
+  const attribute = APP_CLAIM_ATTRIBUTES[id];
+  const view = typeof application === 'string'
+    ? applicationForClaims(application) : application;
+  const raw = attribute && view && view.fields
+    ? [].concat(view.fields[attribute] || [])[0] : '';
+  if (!raw) {
+    log.debug("Leaving applicationClaimSet(). None.");
+    return [];
+  }
+  let rows = null;
+  try {
+    rows = JSON.parse(String(raw));
+  } catch (e) {
+    log.debug("Caught in applicationClaimSet(): " + ((e && e.message) || e));
+    rows = null;
+  }
+  if (!Array.isArray(rows)) {
+    log.warn(errorCodes.tag('STS-REG-0205') + 'admin: the application "' +
+             view.identifier + '" carries ' + attribute + ' that is not a ' +
+             'JSON array of claim rows; its own ' + id + ' claims are ' +
+             'ignored and the realm\'s are issued.');
+    log.debug("Leaving applicationClaimSet(). Not an array.");
+    return [];
+  }
+  const checked = checkClaimEntries(id, rows);
+  if (!checked.ok) {
+    log.warn(errorCodes.tag('STS-REG-0205') + 'admin: the application "' +
+             view.identifier + '" carries ' + attribute + ' rows that are ' +
+             'refused (' + checked.errors.join(' ') + '); its own ' + id +
+             ' claims are ignored and the realm\'s are issued.');
+    log.debug("Leaving applicationClaimSet(). Refused rows.");
+    return [];
+  }
+  log.debug("Leaving applicationClaimSet(). " + checked.claims.length + ".");
+  return checked.claims;
+}
+
+/**
+ * Returns the claim rows in force for an issuance: the realm's set, with the
+ * application's own rows added and winning by name.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context: `client_id` for the JSON sets,
+ *   `audience` for the SAML ones
+ * @returns the rows
+ */
+function effectiveClaimSet(id, context) {
+  log.debug("Entering effectiveClaimSet(). id=" + id);
+  const realmRows = claimSet(id);
+  const isSaml = id === 'saml2' || id === 'saml11';
+  const name = context
+    ? (isSaml ? context.audience : (context.client_id || context.clientId))
+    : '';
+  const own = name ? applicationClaimSet(id, String(name)) : [];
+  if (!own.length) {
+    log.debug("Leaving effectiveClaimSet(). The realm's.");
+    return realmRows;
+  }
+  const ownNames = own.map(function (row) { return row.name; });
+  const merged = realmRows.filter(function (row) {
+    return ownNames.indexOf(row.name) < 0;
+  }).concat(own);
+  log.debug("Leaving effectiveClaimSet(). " + own.length + " of the " +
+            "application's over " + realmRows.length + " of the realm's.");
+  return merged;
 }
 
 /**
@@ -3945,7 +4103,8 @@ function jwtClaims(id, context) {
   const out = resolvedRoleClaims(context);
   Object.assign(out, resolvedGroupClaims(id, context));
   Object.assign(out, resolvedJwtClaims(id, context));
-  const configured = claimSet(id);
+  // The realm's set with the application's own rows over it (2026-10-01).
+  const configured = effectiveClaimSet(id, context);
   // Read once, and only when a row needs it (#94).
   const entry = configured.some(function (claim) { return !!claim.attribute; })
     ? resolvedEntryAttributes(context) : null;
@@ -4005,7 +4164,8 @@ function jwtClaims(id, context) {
  */
 function samlAttributes(id, context) {
   log.debug("Entering samlAttributes(). id=" + id);
-  const configured = claimSet(id);
+  // The realm's set with the application's own rows over it (2026-10-01).
+  const configured = effectiveClaimSet(id, context);
   // Read once, and only when a row needs it (#94).
   const entry = configured.some(function (claim) { return !!claim.attribute; })
     ? resolvedEntryAttributes(context) : null;
@@ -5912,6 +6072,10 @@ module.exports = {
   claimSet: claimSet,
   attributeClaimRows: attributeClaimRows,
   setClaimSet: setClaimSet,
+  checkClaimEntries: checkClaimEntries,
+  APP_CLAIM_ATTRIBUTES: APP_CLAIM_ATTRIBUTES,
+  applicationClaimSet: applicationClaimSet,
+  effectiveClaimSet: effectiveClaimSet,
   // Filled by claim_attributes.js at its require time; see the note above it.
   // The inversion is what keeps the four issuance sites unchanged.
   setAttributeResolver: setAttributeResolver,

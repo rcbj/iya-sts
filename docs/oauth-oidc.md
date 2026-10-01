@@ -1049,6 +1049,8 @@ issued changes. The page shares one store with **Custom SAML attributes**
 (`/admin/saml-attributes`), which holds the SAML 2.0 and SAML 1.1 sets. The API
 is `/admin-api/claims`.
 
+**Per application.** A client can have claims of its own. They are added to these and win by name, on its OAuth 2.0 / OpenID Connect configuration tab: see [Applications](applications.md#custom-claims-saml-attributes-and-token-lifetimes).
+
 ### UserInfo claims — `/admin/userinfo-claims`
 
 **Protocols → OAuth2 / OIDC → UserInfo claims** configures the same kind of
@@ -1080,6 +1082,8 @@ lifetimes, and RFC 9700 mode's refresh idle timeout and revoke-on-logout.
 `/admin-api/token-lifetimes` and `POST /admin-api/token-lifetimes/set` are the
 same controls.
 
+
+**Per application.** The four lifetimes can be overridden per client. Its OAuth 2.0 / OpenID Connect tab shows the values in force with these warnings: see [Applications](applications.md#custom-claims-saml-attributes-and-token-lifetimes).
 ### Refresh tokens
 
 Every refresh token is a **nested JWT**: signed, then encrypted as a JWE to this

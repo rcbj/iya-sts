@@ -522,7 +522,8 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'revoke-tls-client-certificate',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
-                             'sign-domain-linkage', 'forget'];
+                             'sign-domain-linkage', 'set-custom-claim',
+                             'remove-custom-claim', 'forget'];
 
 // ---------------------------------------------------------------------------
 // GET /admin/saml2, POST /admin/saml2 — THE SAML 2.0 IDENTITY PROVIDER.
@@ -3999,7 +4000,8 @@ class AdminActions {
                       'issue-tls-client-certificate',
                       'revoke-tls-client-certificate',
                       'revoke-registration', 'generate-did-key',
-                      'sign-domain-linkage', 'forget'];
+                      'sign-domain-linkage', 'set-custom-claim',
+                      'remove-custom-claim', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
                 "named.");
@@ -4185,6 +4187,114 @@ class AdminActions {
     // kept. Refused for an application not declared for `did`, whose DID is
     // not advertised. The DID and its document's address are in the reply.
     // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES (rcbj,
+    // 2026-10-01), from the Custom claims section of its OAuth / OpenID
+    // Connect tab and the Custom SAML attributes section of its SAML tab.
+    // `set` names one of the five claim sets; `set-custom-claim` adds a row
+    // or replaces the row of the same name, `remove-custom-claim` takes one
+    // off. The whole list is held to the realm's rules
+    // (`stats.checkClaimEntries()`) before it is written as one JSON array,
+    // and `updateApplication()` holds the family rule (an OAuth set on an
+    // application declared for no OAuth family is refused).
+    // ---------------------------------------------------------------------
+    if (action === 'set-custom-claim' || action === 'remove-custom-claim') {
+      const setId = String(body.set || '');
+      const attribute = stats.APP_CLAIM_ATTRIBUTES[setId];
+      if (!attribute) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such claim set.");
+        return this.refused('STS-REG-0206', { ok: false,
+          errors: ['set must be one of ' +
+            Object.keys(stats.APP_CLAIM_ATTRIBUTES).join(', ') + ', not "' +
+            setId.slice(0, 60) + '".'] });
+      }
+      const entry = applications.get(identifier);
+      if (!entry) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such application.");
+        return this.refused('STS-REG-0206', { ok: false,
+          errors: ['There is no application called "' + identifier +
+                   '".'] });
+      }
+      // THE SET'S PROTOCOL MUST BE DECLARED: an OAuth claim on an
+      // application that is not an OAuth client would read like a policy in
+      // force and reach nothing.
+      const SET_FAMILIES = {
+        access_token: ['oauth2', 'oidc', 'oid4vci'],
+        id_token: ['oidc', 'oauth2'], userinfo: ['oidc', 'oauth2'],
+        saml2: ['saml2'], saml11: ['saml11']
+      };
+      const declaredFamilies = applications.declaredFamiliesOf(entry);
+      if (action === 'set-custom-claim' &&
+          !SET_FAMILIES[setId].some(function (one) {
+            return declaredFamilies.indexOf(one) >= 0;
+          })) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the set's protocol is not declared.");
+        return this.refused('STS-REG-0206', { ok: false,
+          errors: ['The application "' + identifier + '" is not declared ' +
+            'for ' + SET_FAMILIES[setId].join(' or ') + ', so a ' + setId +
+            ' claim would reach nothing. Tick the family first.'] });
+      }
+      const current = stats.applicationClaimSet(setId, entry);
+      const name = String(body.name || '').trim();
+      let next = null;
+      if (action === 'remove-custom-claim') {
+        if (!current.some(function (row) { return row.name === name; })) {
+          log.debug("Leaving AdminActions.applicationsAction(). " +
+                    "remove-custom-claim: not held.");
+          return this.refused('STS-REG-0206', { ok: false,
+            errors: ['The application "' + identifier + '" has no ' + setId +
+                     ' claim called "' + name.slice(0, 120) + '".'] });
+        }
+        next = current.filter(function (row) { return row.name !== name; });
+      } else {
+        const attributeName = String(body.attribute || '').trim();
+        const row: any = attributeName
+          ? { name: name, attribute: attributeName,
+              multi: body.multi === true ||
+                     String(body.multi || '') === 'true' ||
+                     String(body.multi || '') === 'yes',
+              type: String(body.type || 'string') }
+          : { name: name, value: String(body.value == null ? ''
+                                                           : body.value) };
+        if (body.nameFormat) {
+          row.nameFormat = String(body.nameFormat);
+        }
+        if (body.namespace) {
+          row.namespace = String(body.namespace);
+        }
+        next = current.filter(function (one) { return one.name !== name; })
+          .concat([row]);
+      }
+      const checked = stats.checkClaimEntries(setId, next);
+      if (!checked.ok) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the rows were refused.");
+        return this.refused('STS-REG-0206', { ok: false,
+          errors: checked.errors });
+      }
+      const write = applications.updateApplication(identifier, {
+        mode: 'set', attribute: attribute,
+        value: checked.claims.length ? JSON.stringify(checked.claims) : '' });
+      if (!write.ok) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the write was refused.");
+        return this.refusedBy('STS-REG-0206', write);
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                " ok.");
+      return { ok: true, application: identifier, set: setId,
+               claims: checked.claims,
+               message: (action === 'remove-custom-claim'
+                 ? 'The ' + setId + ' claim "' + name + '" was taken off "' +
+                   identifier + '".'
+                 : 'The ' + setId + ' claim "' + name + '" is set on "' +
+                   identifier + '"; it is added to the realm\'s set and wins ' +
+                   'by name.') };
+    }
+
     if (action === 'generate-did-key') {
       const entry = applications.get(identifier);
       if (!entry) {

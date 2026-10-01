@@ -2481,6 +2481,30 @@ const SCHEMA = {
             'keeps its grant and a quiet one does not. Outside RFC 9700 mode ' +
             'nothing reads it, which is a property of the setting rather ' +
             'than of this attribute.' },
+    // AN APPLICATION'S OWN CUSTOM CLAIMS (rcbj, 2026-10-01), one JSON array
+    // of rows per claim set, each row the realm's shape (`name` and `value`,
+    // or `name`, `attribute`, `multi` and `type`). Added to the realm's set
+    // at issuance and winning by name (admin_stats.effectiveClaimSet()).
+    // Written by the configuration tab's Custom claims section, through the
+    // `set-custom-claim` and `remove-custom-claim` actions; kept off the
+    // field grid, which would show a JSON array as one text box.
+    { name: 'oauthClaimsAccessToken', kind: 'single',
+      from: 'the console\'s Custom claims section',
+      what: 'THIS APPLICATION\'S OWN ACCESS TOKEN CLAIMS, as a JSON array of ' +
+            'rows like the realm\'s Custom claims page. Added to the realm\'s ' +
+            'access token claims for tokens issued to this client, and an ' +
+            'application row replaces the realm row of the same name.' },
+    { name: 'oauthClaimsIdToken', kind: 'single',
+      from: 'the console\'s Custom claims section',
+      what: 'THIS APPLICATION\'S OWN ID TOKEN CLAIMS, as a JSON array of ' +
+            'rows like the realm\'s Custom claims page. Added to the realm\'s ' +
+            'ID Token claims for this client, winning by name.' },
+    { name: 'oauthClaimsUserinfo', kind: 'single',
+      from: 'the console\'s Custom claims section',
+      what: 'THIS APPLICATION\'S OWN USERINFO CLAIMS, as a JSON array of ' +
+            'rows like the realm\'s UserInfo claims page. Added to the ' +
+            'realm\'s UserInfo claims answered to this client, winning by ' +
+            'name.' },
     { name: 'oauthRevokeRefreshOnLogout', kind: 'single', from: 'by hand',
       overrides: 'oauth2.revokeRefreshOnLogout',
       what: 'TRUE or FALSE: does signing out revoke this client\'s refresh ' +
@@ -2712,6 +2736,19 @@ const SCHEMA = {
     // value is read back: an `ldapmodify` can put any string on any attribute,
     // and an identity provider that refused to issue because somebody typed
     // "yes" instead of "true" would be a mock that stopped answering.
+    { name: 'saml2CustomAttributes', kind: 'single',
+      from: 'the console\'s Custom SAML attributes section',
+      what: 'THIS SERVICE PROVIDER\'S OWN SAML 2.0 ATTRIBUTES, as a JSON array ' +
+            'of rows like the realm\'s Custom SAML attributes page (a ' +
+            'nameFormat allowed). Added to the realm\'s SAML 2.0 attributes ' +
+            'in assertions for this audience, winning by name.' },
+    { name: 'saml11CustomAttributes', kind: 'single',
+      from: 'the console\'s Custom SAML attributes section',
+      what: 'THIS RELYING PARTY\'S OWN SAML 1.1 ATTRIBUTES, as a JSON array of ' +
+            'rows like the realm\'s Custom SAML attributes page (a namespace ' +
+            'allowed). Added to the realm\'s SAML 1.1 attributes in ' +
+            'assertions for this audience (SAML 1.1, WS-Federation, ' +
+            'WS-Trust), winning by name.' },
     { name: 'saml2AssertionLifetimeMin', kind: 'single', from: 'by hand',
       overrides: 'saml2.assertionLifetimeMin',
       what: 'HOW LONG THIS SERVICE PROVIDER\'S ASSERTIONS ARE VALID, in ' +
@@ -3857,6 +3894,12 @@ const EDITABLE = {
   didPublicKeyJwk: 'multi',
   didPrivateKeys: 'set',
   didService: 'multi',
+  // An application's own claim sets (2026-10-01), each one JSON array.
+  oauthClaimsAccessToken: 'set',
+  oauthClaimsIdToken: 'set',
+  oauthClaimsUserinfo: 'set',
+  saml2CustomAttributes: 'set',
+  saml11CustomAttributes: 'set',
   didAlsoKnownAs: 'multi',
   ssfAllowedEvents: 'multi',
   // The per-receiver Shared Signals overrides, each one value an empty
@@ -4159,6 +4202,49 @@ function didKeyProblem(jwk) {
   }
   log.debug("Leaving didKeyProblem(). A public signing key.");
   return '';
+}
+
+// AN APPLICATION'S OWN CLAIM ROWS (2026-10-01), held at the write to the
+// rules the realm's sets are: `admin_stats.checkClaimEntries()`, required
+// lazily because that module requires this one.
+const CLAIM_ROW_SETS = {
+  oauthClaimsAccessToken: 'access_token',
+  oauthClaimsIdToken: 'id_token',
+  oauthClaimsUserinfo: 'userinfo',
+  saml2CustomAttributes: 'saml2',
+  saml11CustomAttributes: 'saml11'
+};
+
+/**
+ * Says whether a value of one of an application's claim-set attributes is
+ * acceptable: a JSON array of rows the claim-set rules accept.
+ *
+ * @param attribute - the attribute being written
+ * @param value - the value
+ * @returns '' when it is, the refusal sentence otherwise
+ */
+function claimRowsProblem(attribute, value) {
+  log.debug("Entering claimRowsProblem(). attribute=" + attribute);
+  const setId = CLAIM_ROW_SETS[attribute];
+  const text = String(value == null ? '' : value).trim();
+  if (!setId || !text) {
+    log.debug("Leaving claimRowsProblem(). Not a claim-set value.");
+    return '';
+  }
+  let rows = null;
+  try {
+    rows = JSON.parse(text);
+  } catch (e) {
+    log.debug("Caught in claimRowsProblem(): " + ((e && e.message) || e));
+    rows = null;
+  }
+  if (!Array.isArray(rows)) {
+    log.debug("Leaving claimRowsProblem(). Not an array.");
+    return attribute + ' holds a JSON array of claim rows.';
+  }
+  const checked = require('./admin_stats').checkClaimEntries(setId, rows);
+  log.debug("Leaving claimRowsProblem(). " + (checked.ok ? 'ok' : 'refused'));
+  return checked.ok ? '' : checked.errors.join(' ');
 }
 
 /**
@@ -4794,7 +4880,13 @@ function gridExcludedAttributes() {
   const out = ['appName', 'appAllowedProtocol', 'oauthClientSecretPrevious',
                'oauthClientSecretPreviousUntil', 'oauthClientSecretExpiresAt',
                'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
-               'oauthScope', 'didPrivateKeys'];
+               'oauthScope', 'didPrivateKeys',
+               // Drawn by their own Custom claims and Custom SAML
+               // attributes sections (2026-10-01): a JSON array is not a
+               // text box.
+               'oauthClaimsAccessToken', 'oauthClaimsIdToken',
+               'oauthClaimsUserinfo', 'saml2CustomAttributes',
+               'saml11CustomAttributes'];
   Object.keys(KEY_PAIR_ATTRIBUTES).forEach(function (profile) {
     const row = KEY_PAIR_ATTRIBUTES[profile];
     ['certificate', 'chain', 'privateKey', 'handle', 'expires', 'source',
@@ -10805,6 +10897,7 @@ function createApplication(detail) {
     const seen = [];
     valuesOf(given.fields[name]).forEach(function (one) {
       const problem = didValueProblem(name, one) ||
+        claimRowsProblem(name, one) ||
         didDuplicateProblem(name, one, seen);
       if (problem) {
         didProblems.push(problem);
@@ -11220,6 +11313,12 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). Not a DID document value.");
       return errorCodes.mark({ ok: false, errors: [didProblem] },
                              'STS-REG-0204');
+    }
+    const claimProblem = claimRowsProblem(attribute, value);
+    if (claimProblem) {
+      log.debug("Leaving updateApplication(). Claim rows refused.");
+      return errorCodes.mark({ ok: false, errors: [claimProblem] },
+                             'STS-REG-0206');
     }
     const notAChoice = choiceProblem(attribute, value);
     if (notAChoice) {
@@ -15027,6 +15126,7 @@ module.exports = {
   declaredFamiliesOf: declaredFamiliesOf,
   declaredFamiliesFor: declaredFamiliesFor,
   didValueProblem: didValueProblem,
+  claimRowsProblem: claimRowsProblem,
   didDuplicateProblem: didDuplicateProblem,
   DID_SERVICE_TYPES: DID_SERVICE_TYPES,
   familyRefusal: familyRefusal,

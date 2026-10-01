@@ -63,7 +63,11 @@ const LEFT_TO_THEIR_OWN_CONTROL = [
   // What the client has asked for, written as the service sees it ask.
   'oauthScope',
   // The DID keys' sealed private halves, written by Generate a key pair.
-  'didPrivateKeys'
+  'didPrivateKeys',
+  // An application's own claim sets (2026-10-01), each one JSON array,
+  // written by the Custom claims and Custom SAML attributes sections.
+  'oauthClaimsAccessToken', 'oauthClaimsIdToken', 'oauthClaimsUserinfo',
+  'saml2CustomAttributes', 'saml11CustomAttributes'
 ];
 
 function run(t) {
