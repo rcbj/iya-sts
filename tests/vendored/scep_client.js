@@ -9,7 +9,7 @@
 // A SCEP CLIENT (RFC 8894), WRITTEN FOR THE TESTS AND SHARING NO CODE WITH
 // `scep/` OR `common/cert_enrollment.js`.
 //
-// `tests/vendored/sts_scep_enrollment.js` asserts what mock-sts does over the
+// `tests/vendored/sts_scep_enrollment.js` asserts what iya-sts does over the
 // wire, and the property that makes such a job worth running is that the two
 // ends of the exchange are INDEPENDENT implementations: a CMS structure built
 // and read by one codec verifies perfectly and interoperates with nobody. So

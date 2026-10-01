@@ -9,7 +9,7 @@
 # see that file's note; nothing here names the port, so the map lost a row and
 # this file lost a listener and a target group with no edit.
 #
-# Network and not application load balancer, because mock-sts terminates its
+# Network and not application load balancer, because iya-sts terminates its
 # own TLS and a client certificate presented to the main port only reaches the
 # service if the TCP stream does. Each node presents its own leaf
 # and every leaf chains to the cluster's one Root (tls/CLAUDE.md), so a client
@@ -75,7 +75,7 @@ resource "aws_lb_target_group" "nodes" {
   deregistration_delay   = 30
   connection_termination = true
 
-  # mock-sts accepts the PROXY v2 LOCAL header the NLB sends on a health
+  # iya-sts accepts the PROXY v2 LOCAL header the NLB sends on a health
   # check. Where the port speaks HTTP the check is a GET of /healthcheck
   # (2026-09-21): it completes the TLS handshake and asks the process to
   # answer, where a bare TCP connect only asked whether the socket accepted —

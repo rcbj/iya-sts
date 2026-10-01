@@ -1162,7 +1162,7 @@ class Saml11Sso {
       // asking for it is going to try to split on a backslash.
       log.debug("Leaving Saml11Sso.nameIdValueFor(). A Windows domain " +
                 "qualified name.");
-      return 'MOCKSTS\\' + username;
+      return 'IYASTS\\' + username;
     }
     if (format ===
         'urn:oasis:names:tc:SAML:1.1:nameid-format:X509SubjectName') {

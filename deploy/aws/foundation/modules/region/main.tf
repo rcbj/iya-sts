@@ -53,7 +53,7 @@ locals {
 # THE CELL KEY: SINGLE-REGION, AND NEVER REPLICATED — ON PURPOSE.
 #
 # It seals what issue #98 calls a cell's RESIDENT and LOCAL tiers: the cell's
-# own key-encryption key (the secret `mock-sts/<env>/<cell>/cell-kek`), the
+# own key-encryption key (the secret `iya-sts/<env>/<cell>/cell-kek`), the
 # cell database's storage and backups, its secrets and each node's upload
 # volume. A multi-region key would be the easier thing to reach for and the
 # wrong one: its replicas can be made in any region by anyone allowed to, and
@@ -102,7 +102,7 @@ data "aws_iam_policy_document" "cell" {
 
 resource "aws_kms_key" "cell" {
   region                  = var.region
-  description             = "mock-sts cell ${var.cell} (issue #98): the cell KEK and resident data; single-region, never replicated"
+  description             = "iya-sts cell ${var.cell} (issue #98): the cell KEK and resident data; single-region, never replicated"
   multi_region            = false
   enable_key_rotation     = true
   deletion_window_in_days = 30
@@ -137,7 +137,7 @@ data "aws_iam_policy_document" "global" {
 resource "aws_kms_replica_key" "global" {
   count                   = local.home ? 0 : 1
   region                  = var.region
-  description             = "mock-sts (issue #98): replica of the GLOBAL multi-region key"
+  description             = "iya-sts (issue #98): replica of the GLOBAL multi-region key"
   primary_key_arn         = var.common.global_key_arn
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.global.json

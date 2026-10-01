@@ -25,7 +25,7 @@ mock_provider "azurerm" {
   }
   mock_data "azurerm_key_vault_key" {
     defaults = {
-      versionless_id = "https://v.vault.azure.net/keys/mock-sts"
+      versionless_id = "https://v.vault.azure.net/keys/iya-sts"
     }
   }
   mock_data "azurerm_user_assigned_identity" {
@@ -35,13 +35,13 @@ mock_provider "azurerm" {
   }
   mock_data "azurerm_resource_group" {
     defaults = {
-      name = "mock-sts-env-global"
+      name = "iya-sts-env-global"
     }
   }
   mock_data "azurerm_dns_zone" {
     defaults = {
       name                = "azure.iyasec.io"
-      resource_group_name = "mock-sts-foundation"
+      resource_group_name = "iya-sts-foundation"
     }
   }
   mock_resource "azurerm_postgresql_flexible_server" {
@@ -60,7 +60,7 @@ mock_provider "azurerm" {
 override_data {
   target = data.terraform_remote_state.cell
   values = { outputs = {
-    resource_group    = "mock-sts-env-cell"
+    resource_group    = "iya-sts-env-cell"
     vnet_id           = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet"
     vnet_name         = "vnet"
     private_subnet_id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/private"
@@ -73,7 +73,7 @@ override_data {
 
 variables {
   subscription_id       = "00000000-0000-0000-0000-000000000001"
-  state_storage_account = "mockststate0000000000000"
+  state_storage_account = "iyaststate0000000000000"
 }
 
 run "testidpna" {

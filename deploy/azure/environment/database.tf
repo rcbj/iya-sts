@@ -28,14 +28,14 @@
 # trust store verifies it and no CA file has to travel with the instance, as
 # GCP's did; schema-init verifies it by name (`verify-full`).
 #
-# ENCRYPTED AT REST under the region's customer-managed key — `mock-sts` for
-# a single-cell environment, `mock-sts-cell` for a cell — read by the
+# ENCRYPTED AT REST under the region's customer-managed key — `iya-sts` for
+# a single-cell environment, `iya-sts-cell` for a cell — read by the
 # region's PostgreSQL identity (../foundation/modules/region). Backups
 # daily, `backup_retention_days` kept, and not geo-redundant: a copy in the
 # paired region would be a copy outside the cell.
 #
 # THE REPLICA is asynchronous and read-only, as on AWS and GCP: a copy and a
-# promotable standby, not a failover target; mock-sts reads and writes the
+# promotable standby, not a failover target; iya-sts reads and writes the
 # primary only, and nothing dials the replica, so it has no endpoint.
 # (Flexible Server's zone-redundant HIGH AVAILABILITY would be the Azure way
 # to survive a zone; it is a different thing from AWS's arrangement, and

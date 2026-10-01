@@ -1061,7 +1061,7 @@ const WEBAUTHN_SCRIPT = [
   '    var p;',
   '    if (d.getAttribute("data-mode") === "create") {',
   '      p = navigator.credentials.create({ publicKey: {',
-  '        rp: o.rp || { name: "Mock authorization server", id: rpId },',
+  '        rp: o.rp || { name: "IYA STS", id: rpId },',
   '        user: { id: new TextEncoder().encode(user), name: user, ' +
   'displayName: user },',
   '        challenge: challenge,',

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
-# THREE mock-sts NODES, ONE SCALE SET PER AVAILABILITY ZONE
+# THREE iya-sts NODES, ONE SCALE SET PER AVAILABILITY ZONE
 # (deploy/aws/environment/ecs.tf, deploy/gcp/environment/nodes.tf).
 #
 # WHY VMs. Fargate's nearest Azure counterparts are Container Apps and
@@ -31,7 +31,7 @@
 #   sts-cert      the ACME certificate (only with a public name; AWS cert-init)
 #   sts-schema    postgres/schema.sql as the administrator (AWS schema-init)
 #   sts-global-schema   the same against the global writer (a primary cell)
-#   sts-node      mock-sts itself, restarted by systemd if it exits
+#   sts-node      iya-sts itself, restarted by systemd if it exits
 #
 # A NEW IMAGE IS A NEW SCALE SET. A Flexible scale set's instances keep the
 # model they were made with, so a changed image, environment or unit would
@@ -550,5 +550,5 @@ resource "azurerm_monitor_data_collection_rule_association" "syslog" {
   name                    = "${local.prefix}-${each.key}-syslog"
   target_resource_id      = local.node_scale_sets[each.key].id
   data_collection_rule_id = data.azurerm_monitor_data_collection_rule.syslog.id
-  description             = "mock-sts ${local.unit} ${each.key}: container logs"
+  description             = "iya-sts ${local.unit} ${each.key}: container logs"
 }

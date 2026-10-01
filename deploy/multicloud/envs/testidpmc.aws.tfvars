@@ -41,6 +41,6 @@ delete_automated_backups = true
 
 tags = {
   ManagedBy = "terraform"
-  Stack     = "mock-sts-environment"
+  Stack     = "iya-sts-environment"
   Lifecycle = "long-lived"
 }

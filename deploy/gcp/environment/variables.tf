@@ -18,7 +18,7 @@ variable "region" {
 variable "name" {
   description = "The project prefix. Must match the foundation stack's `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {
@@ -156,7 +156,7 @@ variable "labels" {
   type        = map(string)
   default = {
     managed-by = "terraform"
-    stack      = "mock-sts-environment"
+    stack      = "iya-sts-environment"
   }
 }
 

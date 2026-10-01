@@ -2944,7 +2944,7 @@ class PkiAdmin {
                       'A free-text comment some tools display when showing ' +
                       'the certificate.'),
       self.textField(draft, 'pki_ns_comment', 'Comment', 'Free text.',
-                     ' size="40" placeholder="Issued by the mock STS"')));
+                     ' size="40" placeholder="Issued by IYA STS"')));
 
     cards.push(self.extCard(
       '<strong' + admin.tip('Any extension at all, by OID and base64 DER — ' +

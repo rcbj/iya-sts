@@ -5,7 +5,7 @@
 # THE PUBLIC FRONT DOOR: A STANDARD LOAD BALANCER (deploy/aws/environment/nlb.tf,
 # deploy/gcp/environment/lb.tf).
 #
-# PASS-THROUGH, NOT PROXY, for AWS's reason: mock-sts terminates its own TLS,
+# PASS-THROUGH, NOT PROXY, for AWS's reason: iya-sts terminates its own TLS,
 # and a client certificate presented to the main port reaches the service
 # only if the TCP stream does. An Azure load balancer is a layer-4
 # pass-through — it rewrites the destination to a node and forwards the

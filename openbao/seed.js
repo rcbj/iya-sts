@@ -497,7 +497,7 @@ async function ensurePki(token) {
                held.body.data.certificate) || '';
   if (!caPem) {
     const made = await call('POST', '/v1/pki/root/generate/internal',
-                            { common_name: 'mock-sts secret store CA',
+                            { common_name: 'iya-sts secret store CA',
                               ttl: '87600h', key_type: 'rsa',
                               key_bits: 2048 }, token);
     if (made.status !== 200 || !made.body || !made.body.data) {

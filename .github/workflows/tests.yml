@@ -267,7 +267,7 @@ jobs:
   #
   # It builds its own images — this job shares no workspace and no docker cache
   # with the one above, so --no-build would have nothing to reuse. Its compose
-  # project is mock-sts-coverage, which is what keeps the two runs from reaching
+  # project is iya-sts-coverage, which is what keeps the two runs from reaching
   # each other's containers even when they land on one machine.
   # ---------------------------------------------------------------------------
   coverage:

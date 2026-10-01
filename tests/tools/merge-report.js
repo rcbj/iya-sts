@@ -128,7 +128,7 @@ function merge(opts) {
                                   describe: 'run by ' + opts.label });
   });
   // The other run's own service and runner logs, kept beside the jobs'.
-  ['00-test-runner.log', '00-mock-sts-service.log'].forEach(function (name) {
+  ['00-test-runner.log', '00-iya-sts-service.log'].forEach(function (name) {
     const src = path.join(from.runDir, 'logs', name);
     if (fs.existsSync(src)) {
       fs.copyFileSync(src, path.join(logsDir, '00-' + report.slug(opts.label) +

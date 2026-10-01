@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # THE TWO ROLES A NODE'S TASK RUNS WITH, EACH WITH THE LEAST IT NEEDS.
 #
-# TASK ROLE — what the mock-sts CONTAINER can do with its credentials: read
+# TASK ROLE — what the iya-sts CONTAINER can do with its credentials: read
 # the key-encryption key and the database password (GetSecretValue at startup,
 # DescribeSecret for the /admin/secrets report), and decrypt them with the
 # project key, only through Secrets Manager. Nothing else: no S3, no RDS API,
@@ -22,7 +22,7 @@
 # EXECUTION ROLE — what ECS itself does on the task's behalf before a container
 # runs: pull the images, write to the log group, and inject the three
 # secrets that arrive as environment variables (the admin API client secret
-# into mock-sts; the master and application passwords into schema-init).
+# into iya-sts; the master and application passwords into schema-init).
 #
 # Both carry the foundation's permissions boundary; the deployer cannot create
 # a role without it.
@@ -48,7 +48,7 @@ data "aws_iam_policy_document" "ecs_tasks_trust" {
 
 resource "aws_iam_role" "task" {
   name                 = "${local.role_prefix}-task"
-  description          = "mock-sts ${var.environment}: the container reads its key and database password"
+  description          = "iya-sts ${var.environment}: the container reads its key and database password"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_trust.json
   permissions_boundary = data.aws_iam_policy.workload_boundary.arn
 }
@@ -141,7 +141,7 @@ resource "aws_iam_role_policy" "task" {
 
 resource "aws_iam_role" "execution" {
   name                 = "${local.role_prefix}-exec"
-  description          = "mock-sts ${var.environment}: ECS pulls images, writes logs, injects secrets"
+  description          = "iya-sts ${var.environment}: ECS pulls images, writes logs, injects secrets"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_trust.json
   permissions_boundary = data.aws_iam_policy.workload_boundary.arn
 }
@@ -190,7 +190,7 @@ data "aws_iam_policy_document" "execution" {
   }
 
   # THE PRODUCT-MODE THREE (2026-09-17, the KDC's two 2026-09-18): the
-  # bootstrap administrator's password, injected into mock-sts so that the
+  # bootstrap administrator's password, injected into iya-sts so that the
   # only way into a fresh deployment is in Secrets Manager rather than in a
   # log, and the krbtgt and service account passwords without which a product
   # KDC issues nothing (secrets.tf).
@@ -239,7 +239,7 @@ resource "aws_iam_role_policy" "execution" {
 # Not a task role and never one: it is assumed by `ecs.amazonaws.com` (the
 # service scheduler), not `ecs-tasks.amazonaws.com`, and no container ever
 # holds its credentials. It carries a boundary of its OWN,
-# `mock-sts-ecs-infrastructure-boundary`, rather than the workload boundary,
+# `iya-sts-ecs-infrastructure-boundary`, rather than the workload boundary,
 # so that nothing a container may do was widened to make room for it; and the
 # deployer may pass a role of this name to ECS itself and to nothing else
 # (foundation/iam_deployer.tf).
@@ -280,7 +280,7 @@ data "aws_iam_policy_document" "ecs_infrastructure_trust" {
 
 resource "aws_iam_role" "ecs_infrastructure" {
   name                 = "${local.role_prefix}-ecs-infra"
-  description          = "mock-sts ${var.environment}: ECS creates, attaches and deletes each node's upload volume"
+  description          = "iya-sts ${var.environment}: ECS creates, attaches and deletes each node's upload volume"
   assume_role_policy   = data.aws_iam_policy_document.ecs_infrastructure_trust.json
   permissions_boundary = data.aws_iam_policy.ecs_infrastructure_boundary.arn
 }

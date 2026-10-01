@@ -35,10 +35,10 @@ mock_provider "aws" {
     defaults = { arn = "arn:aws:iam::111122223333:policy/p" }
   }
   mock_data "aws_ecr_repository" {
-    defaults = { arn = "arn:aws:ecr:us-west-2:111122223333:repository/mock-sts", repository_url = "111122223333.dkr.ecr.us-west-2.amazonaws.com/mock-sts" }
+    defaults = { arn = "arn:aws:ecr:us-west-2:111122223333:repository/iya-sts", repository_url = "111122223333.dkr.ecr.us-west-2.amazonaws.com/iya-sts" }
   }
   mock_data "aws_cloudwatch_log_group" {
-    defaults = { arn = "arn:aws:logs:us-west-2:111122223333:log-group:/mock-sts/containers" }
+    defaults = { arn = "arn:aws:logs:us-west-2:111122223333:log-group:/iya-sts/containers" }
   }
   mock_data "aws_network_interfaces" {
     defaults = { ids = [] }

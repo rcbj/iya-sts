@@ -11,7 +11,7 @@
 # managed by Terraform for the same reason: it holds Terraform's state, so the
 # stack that would create it has nowhere to record having done so.
 #
-#   mock-sts-terraform-state-<project>   versioned, uniform bucket-level
+#   iya-sts-terraform-state-<project>   versioned, uniform bucket-level
 #                                        access, public access prevented,
 #                                        in the home region
 #
@@ -33,7 +33,7 @@ PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2> /dev/null)
   exit 1
 }
 REGION="${GCP_REGION:-us-west1}"
-STATE_BUCKET="${STATE_BUCKET:-mock-sts-terraform-state-${PROJECT}}"
+STATE_BUCKET="${STATE_BUCKET:-iya-sts-terraform-state-${PROJECT}}"
 
 if gcloud storage buckets describe "gs://${STATE_BUCKET}" \
      --project "${PROJECT}" > /dev/null 2>&1;

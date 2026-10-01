@@ -13,12 +13,12 @@ name: AWS cluster test
 #   * TERRAFORM RUNS INSIDE A CONTAINER, the same image a developer runs with
 #     deploy/aws/terraform-local.sh (deploy/aws/Dockerfile, entrypoint.sh), so
 #     this workflow installs neither Terraform nor the AWS CLI. State is remote
-#     (s3://mock-sts-terraform-state-<account>/environment/<env>.tfstate).
+#     (s3://iya-sts-terraform-state-<account>/environment/<env>.tfstate).
 #   * STATIC-KEY SECRETS, handed to `docker run`: AWS_ACCESS_KEY_ID and
 #     AWS_SECRET_ACCESS_KEY are the key of `git_user6`, the workflow's IAM user
 #     (modelled on git_user5: no console, no groups, one inline policy to
 #     assume one role), and the entrypoint exchanges them for the
-#     `mock-sts-deployer` role — the role ARN is derived from the account, so
+#     `iya-sts-deployer` role — the role ARN is derived from the account, so
 #     there is no third secret.
 #   * THE SUITE RUNS FROM THE GITHUB RUNNER (2026-09-21), through the same
 #     deploy/aws/run-suite.sh a developer's `./run-tests.sh --target=aws:<env>`
@@ -100,7 +100,7 @@ concurrency:
 env:
   AWS_REGION: us-west-2
   TF_ENV: ${{ github.event.inputs.environment }}
-  TF_IMAGE: mock-sts-terraform
+  TF_IMAGE: iya-sts-terraform
 
 jobs:
   # ---- The two images, tagged with the commit ----
@@ -145,7 +145,7 @@ jobs:
           TAG: ${{ steps.names.outputs.tag }}
         run: |
           set -euo pipefail
-          repo="${REGISTRY}/mock-sts"
+          repo="${REGISTRY}/iya-sts"
           docker build -t "${repo}:${TAG}" \
             --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
             --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
@@ -292,7 +292,7 @@ jobs:
               echo "No report was downloaded."
             fi
             echo ""
-            echo "Container logs: CloudWatch \`/mock-sts/containers\`, streams \`${TF_ENV}-node-*\` and the callback task's \`${TF_ENV}-*\` (kept 14 days)."
+            echo "Container logs: CloudWatch \`/iya-sts/containers\`, streams \`${TF_ENV}-node-*\` and the callback task's \`${TF_ENV}-*\` (kept 14 days)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ---- Take a throwaway environment down again ----

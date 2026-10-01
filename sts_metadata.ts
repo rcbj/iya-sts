@@ -12323,7 +12323,7 @@ class StsMetadata {
       // this service do" and the honest form of that answer names a release.
       // The footer says it on every page; this is the one page where it is
       // part of the subject rather than provenance in the margin.
-      ' This is <strong>mock-sts ' + esc(APP_VERSION.version) + '</strong>' +
+      ' This is <strong>iya-sts ' + esc(APP_VERSION.version) + '</strong>' +
       (APP_VERSION.commit ? ', built from commit <code>' +
        esc(APP_VERSION.commit) + '</code>' : '') +
       (APP_VERSION.stamped ? '' : ' — computed at startup rather than ' +

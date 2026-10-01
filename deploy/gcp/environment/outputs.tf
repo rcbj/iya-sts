@@ -121,7 +121,7 @@ output "intercell_address" {
 }
 
 output "intercell_url" {
-  description = "Where the other cells reach this one: https://nodes.<cell>.<env>.mock-sts.internal:8446; empty outside a cell."
+  description = "Where the other cells reach this one: https://nodes.<cell>.<env>.iya-sts.internal:8446; empty outside a cell."
   value       = local.multi ? "https://${local.intercell_hostname}:${local.intercell_port}" : ""
 }
 

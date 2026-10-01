@@ -9,7 +9,7 @@ variable "project_id" {
 variable "name" {
   description = "The project prefix, the same in every stack."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {

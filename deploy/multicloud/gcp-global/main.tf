@@ -7,7 +7,7 @@ provider "google" {
   default_labels = {
     project     = "sts"
     environment = var.environment
-    stack       = "mock-sts-gcp-global"
+    stack       = "iya-sts-gcp-global"
   }
 }
 

@@ -5,7 +5,7 @@
 # WHAT A MULTI-CLOUD ENVIRONMENT'S GCP CELLS SHARE, MADE BY AN ADMINISTRATOR
 # (#97, 2026-09-30).
 #
-# ONE GLOBAL VPC PER ENVIRONMENT, `mock-sts-<env>`, which all three GCP cells
+# ONE GLOBAL VPC PER ENVIRONMENT, `iya-sts-<env>`, which all three GCP cells
 # make their subnets in (deploy/gcp/environment, `cell`). A GCP network is
 # global, and with GLOBAL dynamic routing a route one region's HA VPN learns
 # reaches every region's subnets — so each AWS cell's VPN, to its partner in
@@ -45,7 +45,7 @@ resource "google_compute_network" "multicell" {
   name                    = "${var.name}-${each.key}"
   auto_create_subnetworks = false
   routing_mode            = "GLOBAL"
-  description             = "mock-sts ${each.key}: the GCP cells' shared network (#97)"
+  description             = "iya-sts ${each.key}: the GCP cells' shared network (#97)"
 
   depends_on = [google_project_service.apis]
 }
@@ -90,9 +90,9 @@ resource "google_compute_network_peering_routes_config" "psa" {
 
 # ---------------------------------------------------------------------------
 # THE INTER-CELL NAMES, INSIDE THE GCP NETWORK.
-#   nodes.<gcp cell>.<env>.mock-sts.internal  A  the cell's internal load
+#   nodes.<gcp cell>.<env>.iya-sts.internal  A  the cell's internal load
 #                                              balancer (a fixed address)
-#   <aws cell>.<env>.mock-sts.internal         forwarded to that AWS cell's
+#   <aws cell>.<env>.iya-sts.internal         forwarded to that AWS cell's
 #                                              inbound resolver, which answers
 #                                              from its Cloud Map namespace
 # Forwarded to the cell's OWN region's resolver: when that region is down its
@@ -102,7 +102,7 @@ resource "google_dns_managed_zone" "intercell_gcp" {
   for_each    = local.gcp_cells
   name        = "${var.name}-${each.value.env}-${each.value.id}-intercell"
   dns_name    = "${each.value.id}.${each.value.env}.${var.name}.internal."
-  description = "mock-sts ${each.value.env}: cell ${each.value.id}'s inter-cell name (#97)"
+  description = "iya-sts ${each.value.env}: cell ${each.value.id}'s inter-cell name (#97)"
   visibility  = "private"
 
   private_visibility_config {
@@ -127,7 +127,7 @@ resource "google_dns_managed_zone" "intercell_aws" {
   for_each    = local.aws_cells
   name        = "${var.name}-${each.value.env}-${each.value.id}-intercell"
   dns_name    = "${each.value.id}.${each.value.env}.${var.name}.internal."
-  description = "mock-sts ${each.value.env}: AWS cell ${each.value.id}'s names, forwarded to its inbound resolver (#97)"
+  description = "iya-sts ${each.value.env}: AWS cell ${each.value.id}'s names, forwarded to its inbound resolver (#97)"
   visibility  = "private"
 
   private_visibility_config {
@@ -158,13 +158,13 @@ resource "google_dns_managed_zone" "intercell_aws" {
 # tls_secrets.tf argue both for a single-cell environment). Per CELL here:
 # each is a separate unit of failure and residency, and the certificate's
 # key is kept in the cell's own region, under its region's key.
-# `mock-sts-env-<env>-<cell>` is at most 30 characters for an environment name
+# `iya-sts-env-<env>-<cell>` is at most 30 characters for an environment name
 # of up to 11 and a five-character cell.
 # ---------------------------------------------------------------------------
 resource "google_service_account" "cell" {
   for_each     = local.gcp_cells
   account_id   = "${var.name}-env-${each.value.env}-${each.value.id}"
-  display_name = "mock-sts ${each.value.env} ${each.value.id}: the nodes"
+  display_name = "iya-sts ${each.value.env} ${each.value.id}: the nodes"
   description  = "What every node of cell ${each.value.id} of ${each.value.env} runs as (#97). Made by the foundation; the deployer only attaches it."
 
   depends_on = [google_project_service.apis]

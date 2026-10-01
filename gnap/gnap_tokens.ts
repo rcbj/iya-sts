@@ -173,7 +173,7 @@ class GnapTokens {
     const { log } = this;
     log.debug("Entering GnapTokens.jweSecret().");
     log.debug("Leaving GnapTokens.jweSecret().");
-    return this.realmDerived('mock-sts gnap jwt-encrypted A256GCM v1', 32);
+    return this.realmDerived('iya-sts gnap jwt-encrypted A256GCM v1', 32);
   }
 
   // The macaroon root key a resource server verifies with. `rsIdentity` is the
@@ -191,7 +191,7 @@ class GnapTokens {
     const { log } = this;
     log.debug("Entering GnapTokens.macaroonKeyFor().");
     log.debug("Leaving GnapTokens.macaroonKeyFor().");
-    return this.realmDerived('mock-sts gnap macaroon root v1|' +
+    return this.realmDerived('iya-sts gnap macaroon root v1|' +
                              String(rsIdentity || ''), 32);
   }
 

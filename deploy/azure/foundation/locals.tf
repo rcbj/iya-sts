@@ -66,7 +66,7 @@ locals {
   # A UNIT is one thing that runs nodes: a single-cell environment, or one
   # cell of a multi-region one. Each gets a resource group, a node identity
   # and a vault (units.tf). Keyed `<env>` or `<env>-<cell>`, which is also
-  # the middle of every name it owns (`mock-sts-<key>-…`) and of its
+  # the middle of every name it owns (`iya-sts-<key>-…`) and of its
   # state key.
   # ---------------------------------------------------------------------------
   units = merge(

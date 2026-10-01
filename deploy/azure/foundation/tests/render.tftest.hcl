@@ -25,7 +25,7 @@ mock_provider "azurerm" {
   }
   mock_data "azurerm_storage_account" {
     defaults = {
-      id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/mock-sts-terraform-state/providers/Microsoft.Storage/storageAccounts/mockststate"
+      id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/iya-sts-terraform-state/providers/Microsoft.Storage/storageAccounts/iyaststate"
     }
   }
   mock_resource "azurerm_resource_group" {
@@ -82,7 +82,7 @@ mock_provider "time" {}
 run "every_unit" {
   variables {
     subscription_id        = "00000000-0000-0000-0000-000000000001"
-    state_storage_account  = "mockststate0000000000000"
+    state_storage_account  = "iyaststate0000000000000"
     deployer_principal_ids = ["00000000-0000-0000-0000-0000000000d1"]
   }
   assert {

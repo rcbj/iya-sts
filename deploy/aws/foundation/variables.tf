@@ -61,7 +61,7 @@ variable "name" {
     deployer from what it created.
   EOT
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "tags" {
@@ -69,7 +69,7 @@ variable "tags" {
   type        = map(string)
   default = {
     ManagedBy = "terraform"
-    Stack     = "mock-sts-foundation"
+    Stack     = "iya-sts-foundation"
   }
 }
 

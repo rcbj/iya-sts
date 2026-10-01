@@ -1,5 +1,5 @@
 {
-  "name": "mock-sts-tests",
+  "name": "iya-sts-tests",
   "private": true,
   "version": "1.0.0",
   "description": "Dependencies of the VENDORED protocol jobs in tests/vendored/. Installed separately from the service on purpose — see the comment below and tests/CLAUDE.md.",

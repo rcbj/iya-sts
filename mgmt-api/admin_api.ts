@@ -2297,7 +2297,7 @@ class AdminApi {
           log.debug("Entering the management API index.");
           const base = baseUrlOf(req);
           self.sendJson(res, 200, {
-            name: 'mock STS management API',
+            name: 'IYA STS management API',
             version: VERSION,
             // THE PROVENANCE OF THAT NUMBER, BROKEN OUT rather than left as a
             // string to be parsed. A test asserting "this stack is running the

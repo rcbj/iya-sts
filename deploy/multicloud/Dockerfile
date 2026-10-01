@@ -12,7 +12,7 @@
 # CLI: it reads the application-default credentials the launcher hands over
 # and impersonates the GCP deployer with them.
 #
-#   docker build -f deploy/multicloud/Dockerfile -t mock-sts-terraform-mc .
+#   docker build -f deploy/multicloud/Dockerfile -t iya-sts-terraform-mc .
 # ---------------------------------------------------------------------------
 FROM ubuntu:latest
 

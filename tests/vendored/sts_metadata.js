@@ -3,7 +3,7 @@
 //
 // File: sts_metadata.js
 //
-// GET /admin/sts-metadata — the mock STS's own index of what it offers.
+// GET /admin/sts-metadata — IYA STS's own index of what it offers.
 //
 // IT WAS `GET /sts-metadata` AND IT MOVED INTO THE CONSOLE on 2026-08-24, which
 // costs this test two things and is worth knowing before either surprises you:
@@ -189,7 +189,7 @@ async function theDocumentIsServed(session) {
 function theConsoleChromeIsThere(page) {
   log.debug("Entering theConsoleChromeIsThere().");
   log.info("=== The console's shell around it ===");
-  assert.ok(/<title>Service metadata — mock STS admin<\/title>/.test(page),
+  assert.ok(/<title>Service metadata — IYA STS admin<\/title>/.test(page),
     "the page should carry the console's own title, which is what says it is " +
     "drawn by admin.js's page() rather than by a second shell of its own.");
   assert.ok(/<nav aria-label="Admin console sections">/.test(page),

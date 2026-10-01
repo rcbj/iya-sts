@@ -13,7 +13,7 @@
 # How "minimum" is enforced, in three layers:
 #
 #   * NAMES — ELB, ECS, RDS, IAM, Secrets Manager, S3 and ECR resources are
-#     scoped to ARNs starting `mock-sts`. Nothing already in the account
+#     scoped to ARNs starting `iya-sts`. Nothing already in the account
 #     carries that prefix.
 #   * TAGS — EC2 resources have no predictable ARN (vpc-0abc…), so creation
 #     requires `aws:RequestTag/Project = STS` and every change or deletion
@@ -22,7 +22,7 @@
 #   * A PERMISSIONS BOUNDARY — the deployer must create roles (the ECS task and
 #     execution roles). A role creator with no boundary can create a role more
 #     powerful than itself and pass it to a task; so every role it creates must
-#     carry `mock-sts-workload-boundary`, which permits only what a mock-sts
+#     carry `iya-sts-workload-boundary`, which permits only what an iya-sts
 #     container can ever need, and the deployer cannot remove it.
 #
 # The actions were chosen from what the AWS provider calls for these resources
@@ -56,7 +56,7 @@ resource "aws_iam_user_policy" "deployer" {
 # `/`, no login profile, no groups, and ONE inline policy named
 # `assume-<role>` allowing sts:AssumeRole on ONE role, which trusts it by name.
 # It is a second principal of the deployer role rather than a replacement for
-# mock-sts-deployer, so a person's key and the workflow's key can be rotated or
+# iya-sts-deployer, so a person's key and the workflow's key can be rotated or
 # revoked apart: the workflow's secrets hold this user's key and nothing else.
 # ---------------------------------------------------------------------------
 resource "aws_iam_user" "ci" {
@@ -91,7 +91,7 @@ data "aws_iam_policy_document" "deployer_trust" {
 
 resource "aws_iam_role" "deployer" {
   name                 = "${var.name}-deployer"
-  description          = "Creates and destroys mock-sts test environments (issue #51)"
+  description          = "Creates and destroys iya-sts test environments (issue #51)"
   assume_role_policy   = data.aws_iam_policy_document.deployer_trust.json
   max_session_duration = var.deployer_session_seconds
 }
@@ -99,7 +99,7 @@ resource "aws_iam_role" "deployer" {
 # ---------------------------------------------------------------------------
 # THE BOUNDARY EVERY ROLE THE DEPLOYER CREATES MUST CARRY.
 #
-# The union of what the ECS task role (mock-sts reading its two secrets, and
+# The union of what the ECS task role (iya-sts reading its two secrets, and
 # cert-init exporting the public certificate), the ECS execution role (pulling
 # the images, writing logs, injecting the environment's secrets) and the suite
 # runner's role (uploading its report) can do. A role's effective permissions
@@ -165,7 +165,7 @@ data "aws_iam_policy_document" "workload_boundary" {
   # the load balancer no longer terminates TLS and a node cannot present a
   # certificate whose key it does not hold. EXPORT ONLY — not
   # `RequestCertificate`, not `DeleteCertificate`, not `ImportCertificate`:
-  # this ceiling is what a mock-sts CONTAINER may ever do, and a container
+  # this ceiling is what an iya-sts CONTAINER may ever do, and a container
   # that could issue or remove a certificate for a public name is a different
   # thing entirely.
   #
@@ -200,7 +200,7 @@ data "aws_iam_policy_document" "workload_boundary" {
 
 resource "aws_iam_policy" "workload_boundary" {
   name        = "${var.name}-workload-boundary"
-  description = "The most any role a mock-sts environment creates may do"
+  description = "The most any role an iya-sts environment creates may do"
   policy      = data.aws_iam_policy_document.workload_boundary.json
 }
 
@@ -212,7 +212,7 @@ resource "aws_iam_policy" "workload_boundary" {
 # (environment/iam.tf). What that takes — EC2 volume calls and the project key
 # through EC2 — is kept OUT of the workload boundary above, so no container
 # role can ever be given it, and in a ceiling of its own that the deployer may
-# attach only to a role named `mock-sts-env-<environment>-ecs-infra` and pass
+# attach only to a role named `iya-sts-env-<environment>-ecs-infra` and pass
 # only to `ecs.amazonaws.com` (below). The environment's own policy narrows it
 # further, to volumes of that environment's cluster; the effective permission
 # is the intersection.
@@ -1129,7 +1129,7 @@ data "aws_iam_policy_document" "deploy_cells" {
 #   * a Route 53 Resolver INBOUND endpoint per AWS cell, so GCP's Cloud DNS
 #     can forward the AWS cells' inter-cell names to it over the VPN;
 #   * the records of the private zones that name the GCP cells inside the AWS
-#     VPCs — only names under `.mock-sts.internal`, which no public zone holds.
+#     VPCs — only names under `.iya-sts.internal`, which no public zone holds.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "deploy_multicloud" {
   statement {
@@ -1230,7 +1230,7 @@ data "aws_iam_policy_document" "deploy_multicloud" {
   }
 
   # THE GCP CELLS' INTER-CELL NAMES, in private zones this deployer makes
-  # (policy 4, Route53PrivateZonesForCloudMap): only `.mock-sts.internal`
+  # (policy 4, Route53PrivateZonesForCloudMap): only `.iya-sts.internal`
   # names, which the public zones cannot hold.
   statement {
     sid       = "Route53PrivateInterCellRecords"
@@ -1239,7 +1239,7 @@ data "aws_iam_policy_document" "deploy_multicloud" {
     condition {
       test     = "ForAllValues:StringLike"
       variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
-      values   = ["*.mock-sts.internal"]
+      values   = ["*.iya-sts.internal"]
     }
   }
 }

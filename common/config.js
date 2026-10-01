@@ -2144,7 +2144,7 @@ const SETTINGS = [
   { key: 'webauthn.rpName', group: 'WebAuthn',
     label: 'Relying party name', path: 'webauthn.rpName',
     env: 'STS_WEBAUTHN_RP_NAME', type: 'string',
-    dflt: 'Mock authorization server', runtime: true,
+    dflt: 'IYA STS', runtime: true,
     description: 'The `rp.name` handed to `navigator.credentials.create()`. ' +
                  'It is what a browser and a password manager show the ' +
                  'person while they decide whether to create a credential, ' +
@@ -2208,6 +2208,37 @@ const SETTINGS = [
                 'Ed25519', 'EdDSA', 'ESP384', 'ES384', 'ESP512', 'ES512',
                 'Ed448', 'ES256K', 'PS256', 'PS384', 'PS512', 'RS256',
                 'RS384', 'RS512', 'RS1'],
+    // AN ORDERED CHOICE (2026-10-01, rcbj: "explicitly choose, by
+    // checkboxes, which algorithms are requested and an order of
+    // preference"): the console draws a checkbox and an order number per
+    // value rather than a text box, and folds them back into this list.
+    // `csvValueNotes` is the sentence drawn beside each value.
+    ordered: true,
+    csvValueNotes: {
+      'ML-DSA-44': 'COSE -48 · post-quantum, RFC 9964 (NIST category 2)',
+      'ML-DSA-65': 'COSE -49 · post-quantum, RFC 9964 (NIST category 3)',
+      'ML-DSA-87': 'COSE -50 · post-quantum, RFC 9964 (NIST category 5)',
+      ESP256: 'COSE -9 · ECDSA P-256 with SHA-256, curve checked (RFC 9864)',
+      ES256: 'COSE -7 · ECDSA with SHA-256 — what nearly every ' +
+             'authenticator supports',
+      Ed25519: 'COSE -19 · EdDSA on Ed25519, curve checked (RFC 9864)',
+      EdDSA: 'COSE -8 · EdDSA, any curve the key carries',
+      ESP384: 'COSE -51 · ECDSA P-384 with SHA-384, curve checked (RFC 9864)',
+      ES384: 'COSE -35 · ECDSA with SHA-384',
+      ESP512: 'COSE -52 · ECDSA P-521 with SHA-512, curve checked (RFC 9864)',
+      ES512: 'COSE -36 · ECDSA with SHA-512',
+      Ed448: 'COSE -53 · EdDSA on Ed448 (RFC 9864)',
+      ES256K: 'COSE -47 · ECDSA secp256k1 with SHA-256 (RFC 8812)',
+      PS256: 'COSE -37 · RSASSA-PSS with SHA-256 (RFC 8230)',
+      PS384: 'COSE -38 · RSASSA-PSS with SHA-384 (RFC 8230)',
+      PS512: 'COSE -39 · RSASSA-PSS with SHA-512 (RFC 8230)',
+      RS256: 'COSE -257 · RSASSA-PKCS1-v1_5 with SHA-256 (Windows Hello, ' +
+             'older TPMs)',
+      RS384: 'COSE -258 · RSASSA-PKCS1-v1_5 with SHA-384',
+      RS512: 'COSE -259 · RSASSA-PKCS1-v1_5 with SHA-512',
+      RS1: 'COSE -65535 · SHA-1, INSECURE — requested only while ' +
+           'webauthn.insecureAlgorithms is on (development only)'
+    },
     description: '`pubKeyCredParams`, in preference order — the COSE ' +
                  'algorithms this service will accept a credential in. The ' +
                  'names are JOSE spellings and are mapped to COSE ' +
@@ -17087,6 +17118,10 @@ function describe(setting) {
     // only where the row declares one — the same absent-unless-meaningful
     // rule as `enumValues` beside it, so every open list describes as before.
     csvValues: setting.csvValues || undefined,
+    // A `csv` row whose ORDER is a preference (2026-10-01), and the sentence
+    // drawn beside each of its values — absent on every other row.
+    ordered: setting.ordered ? true : undefined,
+    csvValueNotes: setting.csvValueNotes || undefined,
     // The int bounds, where a row narrows them. `undefined` is dropped by
     // JSON.stringify, so a row that carries none of them describes exactly as
     // it did before they existed — which is what keeps the management API's

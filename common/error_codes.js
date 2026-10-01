@@ -16832,6 +16832,12 @@ const CODES = [
       'attributes, possibly after saving others; the reply names what was ' +
       'saved and each refusal.',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0840',
+    summary: 'A settings save ticked none of an ordered choice\'s values ' +
+      '(webauthn.algorithms on /admin/webauthn): an empty list is refused ' +
+      'rather than saved, because the setting would fall back to a default ' +
+      'nobody chose.',
+    spec: 'none (a console refusal, drawn on the page)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -18470,7 +18476,7 @@ function describe(code) {
 // UNREGISTERED code is still recorded — dropping it would hide the one row
 // that says the table is incomplete — and is warned about.
 // ---------------------------------------------------------------------------
-const MARK = Symbol.for('mock-sts.errorCode');
+const MARK = Symbol.for('iya-sts.errorCode');
 
 /**
  * Records on a response which condition it is about to report, for the call log

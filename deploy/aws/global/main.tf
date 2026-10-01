@@ -5,7 +5,7 @@ locals {
   account_id = data.aws_caller_identity.current.account_id
   partition  = data.aws_partition.current.partition
 
-  # `mock-sts-<env>-global`: every name here, under the `mock-sts-*` the
+  # `iya-sts-<env>-global`: every name here, under the `iya-sts-*` the
   # deployer's policy scopes RDS and Secrets Manager to.
   prefix      = "${var.name}-${var.environment}-global"
   secret_path = "${var.name}/${var.environment}"
@@ -28,7 +28,7 @@ locals {
   tags = merge(var.tags, {
     Project     = "STS"
     Environment = var.environment
-    Stack       = "mock-sts-global"
+    Stack       = "iya-sts-global"
   })
 
   db_name        = "sts"

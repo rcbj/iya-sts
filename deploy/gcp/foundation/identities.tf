@@ -12,7 +12,7 @@
 # may only ATTACH its environment's to a VM (roles/iam.serviceAccountUser on
 # that one account) and grant it access to the secrets that environment made.
 #
-#   mock-sts-env-<env>@<project>.iam.gserviceaccount.com
+#   iya-sts-env-<env>@<project>.iam.gserviceaccount.com
 #
 # What the account holds here, for the life of the project:
 #   * roles/logging.logWriter   — Docker's gcplogs driver and COS's own agent
@@ -36,7 +36,7 @@
 resource "google_service_account" "environment" {
   for_each     = var.environments
   account_id   = "${var.name}-env-${each.key}"
-  display_name = "mock-sts ${each.key}: the nodes"
+  display_name = "iya-sts ${each.key}: the nodes"
   description  = "What every node of the ${each.key} environment runs as (issue #95). Made by the foundation; the deployer only attaches it."
 
   depends_on = [google_project_service.apis]

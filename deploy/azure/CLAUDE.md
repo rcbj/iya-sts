@@ -31,7 +31,7 @@ is most likely to need a change.
 
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
-| `bootstrap-state.sh` | once | the state resource group, the account `mockststate<subscription>` (shared keys off, versioned, soft delete) and its `tfstate` container | an administrator |
+| `bootstrap-state.sh` | once | the state resource group, the account `iyaststate<subscription>` (shared keys off, versioned, soft delete) and its `tfstate` container | an administrator |
 | `foundation/` | long-lived | per region (`modules/region`): a key vault with the two customer-managed keys, a disk-encryption set per key, the PostgreSQL key identity, a Log Analytics workspace and its syslog rule. Once: the registry (Premium, geo-replicated), **the public zone `azure.iyasec.io`**, and the deployer's custom role. **Per environment, and per cell:** a resource group with *Allowed locations* on it, the nodes' managed identity, the Key Vault its secrets and certificate are in, and every grant | an administrator |
 | `dns-delegation/` | once | the NS record `azure.iyasec.io` in **the Route 53 zone `iyasec.io`** | an administrator with AWS **and** Azure credentials |
 | `environment/` | per run | one environment, or one CELL of a multi-region one: VNet, security groups, Standard Load Balancer, PostgreSQL primary + replica behind a private endpoint, secrets, three zonal scale sets of one VM each, the public record | the deployer |
@@ -89,11 +89,11 @@ for GCP's reason.
 | security groups | firewall rules by service account | **Two security groups** (nodes, private). Every rule is a resource of its own, and everything is denied at 4096 in both directions | A group's inline rules are its WHOLE list, so the global stack's rule would be deleted by the next cell apply. The deny rules sit ahead of Azure's defaults, which admit every peered VNet |
 | #311's private zone for self-calls | nothing | **An inbound rule for the outbound address** (`self`, and `cells-self` from the global stack for every cell's) | The node's packet leaves by the outbound rule and comes back through the public frontend |
 | RDS primary + replica | Cloud SQL + PSC endpoint | **Flexible Server 18, primary + a read replica in another zone**, CMK, `require_secure_transport`, 14 days of backups (not geo-redundant). A **private endpoint at a fixed address** (`.10` of the private subnet), which the node dials by the server's own name with `--add-host` | No VNet integration: a delegated subnet refuses to delete when a teardown runs out of order. No private DNS zone. **The certificate chains to a public root**, so node's own trust store verifies it and schema-init runs `verify-full`, unlike GCP |
-| Secrets Manager `mock-sts/<env>/<key>` | Secret Manager `mock-sts-<env>-<key>` | **The environment's Key Vault** (the foundation's `ms<env><cell>-<hash>`), a secret per key: `kek`, `db-app-password`, … | *The vault*, below |
+| Secrets Manager `iya-sts/<env>/<key>` | Secret Manager `iya-sts-<env>-<key>` | **The environment's Key Vault** (the foundation's `ms<env><cell>-<hash>`), a secret per key: `kek`, `db-app-password`, … | *The vault*, below |
 | an exportable ACM certificate | ACME in a foundation secret | **ACME** (Let's Encrypt, DNS-01 in `azure.iyasec.io` through lego's `azuredns` provider and the node's identity), in the vault's `tls` secret | *The certificate*, below |
 | EBS for risk uploads | a second persistent disk | a data disk at LUN 0 (CMK), **emptied on every start** | GCP's argument |
 | `awslogs` | `gcplogs` | Docker's `journald` driver → rsyslog → **the Azure Monitor agent → the REGION's workspace** | A log is personal data (#98). The data collection rule must be in its workspace's region |
-| a project key / cell keys per region | a key ring per region | **A key vault per region** with `mock-sts` (single-cell and the global tier) and `mock-sts-cell` (a cell's own data), both purge-protected | A key is regional and never replicated, which is the residency line. The global tier needs no multi-region key here: a cross-region replica uses its own region's key |
+| a project key / cell keys per region | a key ring per region | **A key vault per region** with `iya-sts` (single-cell and the global tier) and `iya-sts-cell` (a cell's own data), both purge-protected | A key is regional and never replicated, which is the residency line. The global tier needs no multi-region key here: a cross-region replica uses its own region's key |
 | ECR, replicated | Artifact Registry | **ACR Premium, geo-replicated** into every region an environment uses | Premium is the tier that replicates. Nodes pull from their own region |
 | the deployer role and its boundaries | an impersonated SA | **A custom role granted only on the foundation's resource groups** | *The deployer*, below |
 
@@ -240,10 +240,10 @@ concurrent writers of one ACME TXT record set. `TF_CELL=<id>` (with
 |---|---|---|
 | the global KEK and the other shared secrets | every cell's vault, written by `global/` | **a copy in each** |
 | the writer's administrator password | the primary cell's vault | no |
-| the global database | the writer in the primary cell's region | **a physical cross-region read replica per other cell**, under that region's `mock-sts` key |
+| the global database | the writer in the primary cell's region | **a physical cross-region read replica per other cell**, under that region's `iya-sts` key |
 | the images | the registry, home region | **geo-replicated** |
 | **the cell key (`cell-kek`)** | the cell's vault | **NO, never** |
-| **the cell database, disks and logs** | the cell's region, under its `mock-sts-cell` key and workspace | **NO** |
+| **the cell database, disks and logs** | the cell's region, under its `iya-sts-cell` key and workspace | **NO** |
 
 ### The inter-cell channel
 
@@ -261,7 +261,7 @@ concurrent writers of one ACME TXT record set. `TF_CELL=<id>` (with
   * `.12`, the global tier's endpoint.
 
   The formula is in `environment/cells.tf` and `global/main.tf`; keep them in
-  step. A node maps each peer's `nodes.<cell>.<env>.mock-sts.internal`, the
+  step. A node maps each peer's `nodes.<cell>.<env>.iya-sts.internal`, the
   writer's name and its own replica's name to those addresses with
   `--add-host`. That avoids private DNS zones, which a VNet may link only one
   of per name.
@@ -377,12 +377,12 @@ AZURE_SUBSCRIPTION_ID=<id> deploy/azure/bootstrap-state.sh               # once,
 cp deploy/azure/foundation/foundation.tfvars.example deploy/azure/foundation/foundation.auto.tfvars   # fill in
 TF_STACK=foundation AZURE_SUBSCRIPTION_ID=<id> deploy/azure/terraform-local.sh dev apply   # administrator
 terraform -chdir=deploy/azure/dns-delegation init \
-  -backend-config=subscription_id=<id> -backend-config=resource_group_name=mock-sts-terraform-state \
+  -backend-config=subscription_id=<id> -backend-config=resource_group_name=iya-sts-terraform-state \
   -backend-config=storage_account_name=<account>
 terraform -chdir=deploy/azure/dns-delegation apply -var subscription_id=<id>   # AWS + Azure credentials
 
 # the three images, from the repository root
-R=<registry login server>/mock-sts
+R=<registry login server>/iya-sts
 docker build -t $R:<tag> --build-arg STS_CLOUD_SDKS="@azure/keyvault-secrets @azure/identity" .
 docker build -t $R:schema-<tag> -f deploy/azure/schema-init/Dockerfile .
 docker build -t $R:init-<tag> -f deploy/azure/node-init/Dockerfile .

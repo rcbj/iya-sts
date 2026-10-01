@@ -102,7 +102,7 @@ moved {
 # ---------------------------------------------------------------------------
 # EACH CELL'S INTER-CELL NAME, RESOLVABLE IN EVERY OTHER CELL'S VPC.
 #
-# A cell's `nodes.<cell>.<env>.mock-sts.internal` lives in a Route 53 PRIVATE
+# A cell's `nodes.<cell>.<env>.iya-sts.internal` lives in a Route 53 PRIVATE
 # zone that Cloud Map made and associated with that cell's VPC
 # (../environment/intercell.tf). Associating it with each other cell's VPC —
 # across regions, which private zones allow — is what lets a peer's nodes

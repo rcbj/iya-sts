@@ -76,7 +76,7 @@
 # Other knobs: STS_SUITE_EXCLUDE (comma-separated job files to leave out),
 # STS_SUITE_ONLY (the local job list, replacing the computed one — for
 # re-running what failed), STS_SUITE_REPORT_DIR, STS_SUITE_TASK_TIMEOUT_SECS
-# (default 3600), STS_SUITE_SKIP_BUILD=1 (reuse mock-sts-tests:<tag> and the
+# (default 3600), STS_SUITE_SKIP_BUILD=1 (reuse iya-sts-tests:<tag> and the
 # pushed images, when nothing changed since the last run).
 # ---------------------------------------------------------------------------
 set -euo pipefail
@@ -117,11 +117,11 @@ tfl() {
 identity="$(aws sts get-caller-identity --query Arn --output text)" || \
   die "no usable AWS credentials."
 case "${identity}" in
-  *:user/mock-sts-deployer|*:user/mock-sts/mock-sts-deployer|*:user/git_user6)
+  *:user/iya-sts-deployer|*:user/iya-sts/iya-sts-deployer|*:user/git_user6)
     account="$(aws sts get-caller-identity --query Account --output text)"
     say "assuming the deployer role for the AWS CLI calls made here"
     creds="$(aws sts assume-role \
-      --role-arn "arn:aws:iam::${account}:role/mock-sts-deployer" \
+      --role-arn "arn:aws:iam::${account}:role/iya-sts-deployer" \
       --role-session-name "run-suite-${ENVIRONMENT}" --duration-seconds 14400 \
       --query Credentials --output json)"
     AWS_ACCESS_KEY_ID="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).AccessKeyId)' "${creds}")"
@@ -175,7 +175,7 @@ say "${ENVIRONMENT} at ${URL}, ${NODES} node(s), run ${RUN_ID}"
 HEAD_SHORT="$(git rev-parse --short=12 HEAD)"
 DIRTY="$( { git diff HEAD; git ls-files --others --exclude-standard -z | xargs -0 -r sha256sum; } | sha256sum | cut -c1-8)"
 TAG="suite-${HEAD_SHORT}-${DIRTY}"
-TESTS_IMAGE="mock-sts-tests:${TAG}"
+TESTS_IMAGE="iya-sts-tests:${TAG}"
 if [ "${STS_SUITE_SKIP_BUILD:-0}" != "1" ];
 then
   say "building ${TESTS_IMAGE} from this working tree"
@@ -189,7 +189,7 @@ if [ "${WITH_CALLBACKS}" = "1" ];
 then
   account="$(aws sts get-caller-identity --query Account --output text)"
   REGISTRY="${account}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-  REPO="${REGISTRY}/mock-sts"
+  REPO="${REGISTRY}/iya-sts"
   if [ "${STS_SUITE_SKIP_BUILD:-0}" != "1" ];
   then
     say "building and pushing runner-${TAG} and pep-${TAG}"

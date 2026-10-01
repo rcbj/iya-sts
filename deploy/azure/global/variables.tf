@@ -9,7 +9,7 @@ variable "subscription_id" {
 variable "name" {
   description = "The project prefix. Must match the foundation and environment stacks' `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {
@@ -90,7 +90,7 @@ variable "state_storage_account" {
 variable "state_resource_group" {
   description = "The state storage account's resource group."
   type        = string
-  default     = "mock-sts-terraform-state"
+  default     = "iya-sts-terraform-state"
 }
 
 variable "public_hostname" {
@@ -134,6 +134,6 @@ variable "tags" {
   type        = map(string)
   default = {
     ManagedBy = "terraform"
-    Stack     = "mock-sts-global"
+    Stack     = "iya-sts-global"
   }
 }

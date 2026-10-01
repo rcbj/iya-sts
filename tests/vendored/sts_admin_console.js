@@ -4,7 +4,7 @@
 // File: sts_admin_console.js
 //
 // ---------------------------------------------------------------------------
-// THE MOCK STS'S ADMIN CONSOLE AT /admin, DRIVEN IN A REAL BROWSER: EVERY PAGE,
+// IYA STS'S ADMIN CONSOLE AT /admin, DRIVEN IN A REAL BROWSER: EVERY PAGE,
 // EVERY LINK, EVERY GET FORM, AND EVERY BUTTON — AND WHAT COMES BACK
 // AFTERWARDS.
 //
@@ -3793,8 +3793,8 @@ async function theTruststorePageAddsAndRemoves(driver) {
   const label = "console-truststore-" + names.runStamp().toLowerCase()
       .replace(/[^a-z0-9]/g, "").slice(0, 12);
   const minted = await credentials.mint({
-    rootSubject: "CN=" + label + ",O=mock-sts tests",
-    subject: "CN=" + label + "-leaf,O=mock-sts tests" });
+    rootSubject: "CN=" + label + ",O=iya-sts tests",
+    subject: "CN=" + label + "-leaf,O=iya-sts tests" });
   const fingerprint = new (require("crypto").X509Certificate)(
     minted.anchorPem).fingerprint256;
   const held = async function () {
@@ -6371,7 +6371,7 @@ async function theChangeReachedTheStore(driver) {
              (store.mode || "memory") + "), the default " +
              "and what the containerized stack runs. The value round trip " +
              "above is asserted; that the bytes reach a file is asserted in " +
-             "mock-sts's own tests/appconfig_persistence.js, in process, " +
+             "iya-sts's own tests/appconfig_persistence.js, in process, " +
              "where they can be read back.");
     log.debug("Leaving theChangeReachedTheStore(). No store.");
     return;
@@ -6946,7 +6946,7 @@ async function theBrowserConsoleIsClean(driver) {
 // ---------------------------------------------------------------------------
 async function test() {
   log.debug("Entering test().");
-  log.info("Driving the mock STS admin console at " + base + "/admin");
+  log.info("Driving IYA STS admin console at " + base + "/admin");
 
   let status;
   try {
@@ -7049,7 +7049,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_admin_console")
-  .description("Verify the mock STS admin console in a real browser: the " +
+  .description("Verify IYA STS admin console in a real browser: the " +
       "gate, every page, every link, every GET form, every button, and the " +
       "values that come back afterwards.")
   .addOption(new Option("-u, --url <url>", "base url of the STS under test")

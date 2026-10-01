@@ -267,7 +267,7 @@ class AdminApiDocs {
     const html =
       '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<title>mock STS management API</title><style>' + STYLE + '</style>' +
+      '<title>IYA STS management API</title><style>' + STYLE + '</style>' +
       '</head><body>' +
       // The banner is BEFORE the app rather than after it, and the position is
       // the point: it is the first thing on the page whether or not the
@@ -277,7 +277,7 @@ class AdminApiDocs {
       '<div id="app" data-spec="' + specUrl + '" data-version="' +
       xmlEscape(version) + '" data-realm-prefix="' +
       xmlEscape(realmPrefix || '') + '">' +
-      '<h1>mock STS management API</h1>' +
+      '<h1>IYA STS management API</h1>' +
       '<p class="lede">Reading <code>' + specUrl + '</code>&hellip;</p>' +
       '</div>' +
       '<script src="' + xmlEscape(base) + '/docs/explorer.js" defer></script>' +

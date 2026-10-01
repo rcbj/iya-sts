@@ -22,7 +22,7 @@
 # a traveller who cannot sign in (D6 fails closed). So each node service
 # registers its tasks in AWS Cloud Map instead (`service_registries`, which
 # is not a target group and has no such limit): a PRIVATE DNS namespace per
-# cell, `<cell>.<environment>.mock-sts.internal`, whose `nodes` name holds an A
+# cell, `<cell>.<environment>.iya-sts.internal`, whose `nodes` name holds an A
 # record per healthy task, added and removed by ECS as tasks start and stop.
 # That is "the target IPs", kept current by the scheduler rather than by a
 # re-apply.
@@ -47,7 +47,7 @@
 resource "aws_service_discovery_private_dns_namespace" "cells" {
   count       = local.multi ? 1 : 0
   name        = local.intercell_zone
-  description = "mock-sts ${var.environment} ${var.cell}: the inter-cell name (#98), private to the VPCs of the cells"
+  description = "iya-sts ${var.environment} ${var.cell}: the inter-cell name (#98), private to the VPCs of the cells"
   vpc         = aws_vpc.main.id
 }
 

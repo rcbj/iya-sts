@@ -531,7 +531,7 @@ the per-relying-party `saml11NameIdFormat`:
 |---|---|
 | `emailAddress` | the person's mail |
 | `X509SubjectName` | `CN=<username>` |
-| `WindowsDomainQualifiedName` | `MOCKSTS\<username>` |
+| `WindowsDomainQualifiedName` | `IYASTS\<username>` |
 | `unspecified` | the username |
 
 Custom attributes use the `saml11` set:

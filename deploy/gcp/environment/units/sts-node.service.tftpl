@@ -1,19 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: BUSL-1.1
 #
-# mock-sts: the node. Every init unit must have succeeded — a node that
+# iya-sts: the node. Every init unit must have succeeded — a node that
 # could not get its certificate must not start and serve a self-signed one
 # under a public name (AWS's `dependsOn: SUCCESS`).
 [Unit]
-Description=mock-sts: ${node}
+Description=iya-sts: ${node}
 Requires=${requires}
 After=${requires}
 
 [Service]
 Environment=HOME=/var/lib/sts
-ExecStartPre=-/usr/bin/docker rm -f mock-sts
+ExecStartPre=-/usr/bin/docker rm -f iya-sts
 ExecStartPre=/usr/bin/docker pull ${image}
-ExecStart=/usr/bin/docker run --rm --name mock-sts \
+ExecStart=/usr/bin/docker run --rm --name iya-sts \
   --env-file /etc/sts/node.env \
   --env-file ${run_dir}/node-secrets.env \
   ${extra_hosts} \
@@ -27,6 +27,6 @@ ExecStart=/usr/bin/docker run --rm --name mock-sts \
   --log-driver=gcplogs \
   --log-opt labels=sts.environment,sts.node \
   ${image}
-ExecStop=/usr/bin/docker stop -t 30 mock-sts
+ExecStop=/usr/bin/docker stop -t 30 iya-sts
 Restart=always
 RestartSec=10

@@ -3183,7 +3183,7 @@ with `Cannot find module` naming a file the operator never mentioned.
 
    A library that RETURNS a refusal to a caller that sends it (a verdict, an
    `{ ok: false }` action result) attaches the code under the same
-   `Symbol.for('mock-sts.errorCode')` that `mark()` uses, NON-ENUMERABLY, and
+   `Symbol.for('iya-sts.errorCode')` that `mark()` uses, NON-ENUMERABLY, and
    the caller marks `errorCodes.codeOf(result) || '<its own fallback>'`. The
    symbol is what makes that safe: several of those results are serialised
    whole to `/admin-api` clients, and an enumerable `errorCode` member would
@@ -8714,7 +8714,7 @@ project's own `--sync-manifests` carries `sts` in its manifest list and rewrites
 `sts/package.json` to the PARENT's M.N.0. That checkout is this repository, so
 after a parent sync the two say different things — which is correct: they answer
 *which release of the debugger is this submodule pinned into* and *which release
-of the mock STS is this*, and those are different questions. `--check-manifests`
+of IYA STS is this*, and those are different questions. `--check-manifests`
 here checks this tree only, and `../id-proto-debugger/sts` is read-only forever.
 
 ## 3w, CONTINUED: A CERTIFICATE UPLOADED IN PLACE OF AN ISSUED KEY PAIR (2026-09-13)

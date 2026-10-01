@@ -1278,7 +1278,7 @@ class Portal {
     log.debug("Leaving Portal.page().");
     return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<title>' + self.esc(title) + ' — mock STS</title><style>' + CSS +
+      '<title>' + self.esc(title) + ' — IYA STS</title><style>' + CSS +
       '</style></head><body><div class="wrap' + (wide ? ' wide' : '') + '">' +
       inner +
       // WHICH BUILD THIS IS, on every page of this application including the
@@ -1292,7 +1292,7 @@ class Portal {
       // person's own account, not a console: the number is enough to quote, and
       // the build instant and commit are for whoever they quote it to.
       '<p class="ver" title="' + self.esc(APP_BUILD_INFO) + '">' +
-      'mock-sts <code>' + self.esc(APP_VERSION.version) + '</code></p>' +
+      'iya-sts <code>' + self.esc(APP_VERSION.version) + '</code></p>' +
       '</div></body></html>\n';
   }
 

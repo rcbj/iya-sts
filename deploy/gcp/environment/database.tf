@@ -35,7 +35,7 @@
 # backups with it — AWS's `delete_automated_backups = true`, always.
 #
 # THE REPLICA is asynchronous and read-only, as on AWS: a copy and a
-# promotable standby, not a failover target; mock-sts reads and writes the
+# promotable standby, not a failover target; iya-sts reads and writes the
 # primary only. It gets no PSC endpoint, because nothing dials it.
 #
 # **THE NAMES CARRY A RANDOM SUFFIX, WHERE AWS'S DO NOT**: Cloud SQL will not
@@ -200,7 +200,7 @@ resource "google_compute_address" "database" {
   subnetwork   = google_compute_subnetwork.private.id
   address_type = "INTERNAL"
   address      = cidrhost(local.private_cidr, 10)
-  description  = "mock-sts ${var.environment}: the Cloud SQL primary's PSC endpoint"
+  description  = "iya-sts ${var.environment}: the Cloud SQL primary's PSC endpoint"
 }
 
 resource "google_compute_forwarding_rule" "database" {

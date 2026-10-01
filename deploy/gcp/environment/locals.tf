@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 locals {
-  # Every name starts `mock-sts-<environment>`, as on AWS — and carries the
+  # Every name starts `iya-sts-<environment>`, as on AWS — and carries the
   # cell in a cell (#97, cells.tf).
   prefix      = local.multi ? "${var.name}-${var.environment}-${var.cell}" : "${var.name}-${var.environment}"
   secret_path = local.prefix

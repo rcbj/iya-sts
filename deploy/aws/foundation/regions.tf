@@ -9,7 +9,7 @@
 #                       key-encryption key, its database, its upload volumes
 #   the GLOBAL key      a replica of kms.tf's multi-region key (not in the
 #                       home region, where the primary is)
-#   a log group         /mock-sts/containers (not in the home region, where
+#   a log group         /iya-sts/containers (not in the home region, where
 #                       logs.tf's is): a cell's logs stay in its region
 #   the image repository  a replica of ecr.tf's (not in the home region),
 #                       which the replication configuration below fills

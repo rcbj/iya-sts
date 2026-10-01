@@ -240,7 +240,7 @@ function run(t) {
           'but spaces inside a typed code are stripped rather than refused');
 
   t.log.info('=== the otpauth URI, which no RFC defines ===');
-  const uri = totp.otpauthUri({ issuer: 'mock STS (acme)', account: 'alice',
+  const uri = totp.otpauthUri({ issuer: 'IYA STS (acme)', account: 'alice',
                                 secret: 'JBSWY3DPEHPK3PXP', algorithm: 'SHA1',
                                 digits: 6, period: 30 });
   t.check(uri.indexOf('otpauth://totp/') === 0, 'it is an otpauth totp URI',

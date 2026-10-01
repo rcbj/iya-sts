@@ -209,7 +209,7 @@ var config = {
   // --- WebAuthn --------------------------------------------------------
   webauthn: {
     enabled: true,                                                                                                                                     // Offer security keys (WebAuthn)
-    rpName: "Mock authorization server",                                                                                                               // Relying party name
+    rpName: "IYA STS",                                                                                                                                 // Relying party name
     rpId: "",                                                                                                                                          // RP ID override
     allowedOrigins: "",                                                                                                                                // Allowed origins
     algorithms: "ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,RS256,RS384,RS512", // Algorithms offered

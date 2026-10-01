@@ -11,7 +11,7 @@
 # through. Terraform is pinned to AWS's and GCP's version, so the stacks'
 # locks and plans agree about the language.
 #
-#   docker build -f deploy/azure/Dockerfile -t mock-sts-terraform-azure .
+#   docker build -f deploy/azure/Dockerfile -t iya-sts-terraform-azure .
 #
 # terraform-local.sh builds and runs it; the credentials are the host's
 # Azure CLI login, handed over through a private env file (entrypoint.sh).

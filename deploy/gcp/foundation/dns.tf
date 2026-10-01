@@ -23,7 +23,7 @@
 resource "google_dns_managed_zone" "public" {
   name        = replace(var.dns_zone_name, ".", "-")
   dns_name    = "${var.dns_zone_name}."
-  description = "mock-sts (issue #95): delegated from the Route 53 zone of the parent"
+  description = "iya-sts (issue #95): delegated from the Route 53 zone of the parent"
   visibility  = "public"
 
   # Records an environment wrote would otherwise block the zone's deletion

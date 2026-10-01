@@ -9,7 +9,7 @@
 # to the log `gcplogs-docker-driver` with the instance and container in each
 # entry; a sink routes that log into a bucket of this project's own, under
 # the project key, kept `log_retention_days`. Several environments share it
-# without meeting: an entry names its instance (`mock-sts-<env>-node-a-…`) and
+# without meeting: an entry names its instance (`iya-sts-<env>-node-a-…`) and
 # its container.
 #
 # Cloud Logging is project-wide, so logs outlive an environment here by
@@ -22,7 +22,7 @@ resource "google_logging_project_bucket_config" "containers" {
   location       = var.region
   bucket_id      = "${var.name}-containers"
   retention_days = var.log_retention_days
-  description    = "mock-sts container logs (issue #95)"
+  description    = "iya-sts container logs (issue #95)"
 
   cmek_settings {
     kms_key_name = google_kms_crypto_key.main.id

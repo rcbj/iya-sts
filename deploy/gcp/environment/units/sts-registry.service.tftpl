@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: BUSL-1.1
 #
-# mock-sts: Docker's credential helper for the project's Artifact Registry,
+# iya-sts: Docker's credential helper for the project's Artifact Registry,
 # with the VM's service account (Container-Optimized OS ships the helper).
 [Unit]
-Description=mock-sts: registry credentials
+Description=iya-sts: registry credentials
 Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service

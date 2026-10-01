@@ -38,6 +38,6 @@ vm_size = "Standard_D2s_v5"
 
 tags = {
   ManagedBy = "terraform"
-  Stack     = "mock-sts-environment"
+  Stack     = "iya-sts-environment"
   Lifecycle = "test-case"
 }

@@ -7,7 +7,7 @@
 # deploy/aws/foundation/'s counterpart: what outlives every environment, and
 # the identities an environment runs as. State at `foundation/` in the bucket
 # deploy/gcp/bootstrap-state.sh made:
-#   terraform init -backend-config="bucket=mock-sts-terraform-state-<project>"
+#   terraform init -backend-config="bucket=iya-sts-terraform-state-<project>"
 # ---------------------------------------------------------------------------
 terraform {
   required_version = ">= 1.11"

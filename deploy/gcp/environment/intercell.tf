@@ -35,7 +35,7 @@ resource "google_compute_address" "intercell" {
   subnetwork   = google_compute_subnetwork.nodes.id
   address_type = "INTERNAL"
   address      = local.intercell_address
-  description  = "mock-sts ${var.environment} ${var.cell}: the inter-cell listener (#97)"
+  description  = "iya-sts ${var.environment} ${var.cell}: the inter-cell listener (#97)"
 }
 
 resource "google_compute_region_health_check" "intercell" {

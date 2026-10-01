@@ -6,7 +6,7 @@
 // File: tests/sts_saml_encryption.js
 //
 // ===========================================================================
-// THE MOCK STS'S SAML 2.0 ENCRYPTION, END TO END, OVER HTTP, WITH NO BROWSER.
+// IYA STS'S SAML 2.0 ENCRYPTION, END TO END, OVER HTTP, WITH NO BROWSER.
 //
 // It sits beside `sts_saml11.js`, `sts_dpop.js` and `vc_did.js` — the tests
 // that drive that service DIRECTLY —
@@ -513,7 +513,7 @@ function setField(identifier, attribute, value) {
 }
 
 async function main() {
-  log.info('The mock STS is at ' + BASE + '.');
+  log.info('IYA STS is at ' + BASE + '.');
   const reachable = await request('GET', '/saml2/metadata').catch(function () { return null; });
   if (!reachable || reachable.status !== 200) {
     // Skips rather than fails, the way sts_dpop.js and sts_saml11.js do: an

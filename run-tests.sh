@@ -61,8 +61,8 @@
 #
 # `docker compose up` in this directory gives somebody a mock called `sts` on
 # port 8081, quite possibly in another terminal of the same person's. This run
-# is its own compose PROJECT (`mock-sts-docker-tests`), its own container names
-# (`sts-docker-tests`, `mock-sts-test-runner`) and publishes NO PORT AT ALL, so
+# is its own compose PROJECT (`iya-sts-docker-tests`), its own container names
+# (`sts-docker-tests`, `iya-sts-test-runner`) and publishes NO PORT AT ALL, so
 # the teardown at the end of this script can never reach that container and the
 # start of it can never fail because that container holds the port. The two
 # variables at the top are there for a CI agent with two workspaces, where even
@@ -127,7 +127,7 @@
 #
 #   tests/report/<mode>/latest/report.html          the run
 #   tests/report/<mode>/latest/logs/NN-<job>.log    one job's output
-#   tests/report/<mode>/latest/logs/00-mock-sts-service.log
+#   tests/report/<mode>/latest/logs/00-iya-sts-service.log
 #                                                   the mock's own account of
 #                                                   what it issued
 #   tests/report/<mode>/latest/logs/00-test-runner.log
@@ -180,7 +180,7 @@ COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
 # do not share a project: compose scopes containers, networks and images by it,
 # so two runs sharing one would tear down each other's stack.
-COMPOSE_PROJECT="${STS_DOCKER_TEST_PROJECT:-mock-sts-docker-tests}"
+COMPOSE_PROJECT="${STS_DOCKER_TEST_PROJECT:-iya-sts-docker-tests}"
 STS_CONTAINER_NAME="${STS_CONTAINER_NAME:-sts-docker-tests}"
 # THE SECRET STORE AND ITS TWO ONE-SHOT CONTAINERS (2026-09-12). Named for the
 # reason every other container here is: `container_name` is machine-wide, and
@@ -189,7 +189,7 @@ STS_CONTAINER_NAME="${STS_CONTAINER_NAME:-sts-docker-tests}"
 STS_BAO_CONTAINER_NAME="${STS_BAO_CONTAINER_NAME:-sts-docker-tests-openbao}"
 STS_BAO_TLS_CONTAINER_NAME="${STS_BAO_TLS_CONTAINER_NAME:-sts-docker-tests-openbao-tls}"
 STS_BAO_SEED_CONTAINER_NAME="${STS_BAO_SEED_CONTAINER_NAME:-sts-docker-tests-openbao-seed}"
-STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}"
+STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-iya-sts-test-runner}"
 # The `cluster` mode's node B and load balancer (2026-09-14), named for the
 # same reason.
 STS2_CONTAINER_NAME="${STS2_CONTAINER_NAME:-sts-docker-tests-node-b}"
@@ -240,7 +240,7 @@ else
 fi
 STS_IMAGE="${STS_IMAGE:-${IMAGE_REGISTRY}/sts:${imageTag}}"
 XACML_PEP_IMAGE="${XACML_PEP_IMAGE:-${IMAGE_REGISTRY}/xacml-pep:${imageTag}}"
-STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-${IMAGE_REGISTRY}/mock-sts-tests:${imageTag}}"
+STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-${IMAGE_REGISTRY}/iya-sts-tests:${imageTag}}"
 SAML_SHIB_IMAGE="${SAML_SHIB_IMAGE:-${IMAGE_REGISTRY}/sts-saml-shibboleth:${imageTag}}"
 SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-${IMAGE_REGISTRY}/sts-saml-simplesamlphp:${imageTag}}"
 SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-${IMAGE_REGISTRY}/sts-saml-pysaml2:${imageTag}}"
@@ -499,7 +499,7 @@ buildAndPushEphemeralImages()
   local env="$1" tag="$2" account registry repo commit
   account="$(aws sts get-caller-identity --query Account --output text)" || return 1
   registry="${account}.dkr.ecr.${AWS_REGION:-us-west-2}.amazonaws.com"
-  repo="${registry}/mock-sts"
+  repo="${registry}/iya-sts"
   commit="$(git rev-parse HEAD)"
   echo "==> building the ${tag} images from this working tree"
   docker build -q -t "${repo}:${tag}" \
@@ -761,7 +761,7 @@ fi
 # (no job here removes a realm since 2026-09-06). The stack is built fresh for
 # every run, so nothing carries over between them.
 # ---------------------------------------------------------------------------
-XACML_PEP_SUBJECT="${XACML_PEP_SUBJECT:-CN=remote-pep-1,OU=remote-peps,O=mock-sts}"
+XACML_PEP_SUBJECT="${XACML_PEP_SUBJECT:-CN=remote-pep-1,OU=remote-peps,O=iya-sts}"
 XACML_PEP_REALM="${XACML_PEP_REALM:-pep-e2e}"
 XACML_PEP_NAME="$(printf '%s' "${XACML_PEP_SUBJECT}" \
   | sed -n 's/.*CN=\([^,]*\).*/\1/p')"
@@ -1025,12 +1025,12 @@ captureContainerLogs()
   then
     return 0
   fi
-  captureOneContainerLog "${mode}" sts   "00-mock-sts-service.log" "Service log"
+  captureOneContainerLog "${mode}" sts   "00-iya-sts-service.log" "Service log"
   # The `cluster` mode's node B and balancer, whose logs go with their
   # containers too (2026-09-14). Node A keeps the name every mode uses.
   if stsModeIsCluster "${mode}";
   then
-    captureOneContainerLog "${mode}" sts2   "00-mock-sts-service-node-b.log" \
+    captureOneContainerLog "${mode}" sts2   "00-iya-sts-service-node-b.log" \
       "Node B log"
     captureOneContainerLog "${mode}" sts-lb "00-load-balancer.log" \
       "Balancer log"
@@ -1038,7 +1038,7 @@ captureContainerLogs()
   # The `cells` mode's cell B (#98), whose log goes with its container.
   if stsModeIsCells "${mode}";
   then
-    captureOneContainerLog "${mode}" sts2   "00-mock-sts-service-cell-b.log" \
+    captureOneContainerLog "${mode}" sts2   "00-iya-sts-service-cell-b.log" \
       "Cell B log"
   fi
   captureOneContainerLog "${mode}" tests "00-test-runner.log"      "Runner log"
@@ -1059,7 +1059,7 @@ captureContainerLogs()
 # newest report of that mode from ANY run — ./local-run-tests.sh's included,
 # while it existed (removed 2026-09-16) —
 # so a mode whose runner never started wrote its two logs over another run's
-# `00-mock-sts-service.log` and `00-test-runner.log`, destroying that report's
+# `00-iya-sts-service.log` and `00-test-runner.log`, destroying that report's
 # evidence and leaving this run's where nobody would look for it.
 MODE_MARKER="${CURRENT_DIR}/tests/report/.run-tests-mode-start"
 
@@ -1305,7 +1305,7 @@ trap 'exit 143' TERM
 
 # A stack left behind by an interrupted run holds the container names this one
 # is about to ask for. Removing it is safe BECAUSE of the project name: this
-# reaches `mock-sts-docker-tests` and can never reach the `sts` container a
+# reaches `iya-sts-docker-tests` and can never reach the `sts` container a
 # plain `docker compose up` in this directory creates.
 docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
   "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
@@ -1649,7 +1649,7 @@ recoverModeVerdict()
   return 0
 }
 
-echo "Bringing up ${COMPOSE_PROJECT}: the mock STS, the remote PEP and the"
+echo "Bringing up ${COMPOSE_PROJECT}: IYA STS, the remote PEP and the"
 echo "test runner."
 if [ -n "${STS_TEST_ARGS}" ];
 then
@@ -1921,11 +1921,11 @@ do
   touch "${MODE_MARKER}"
   if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" up -d "${UP_SERVICES[@]}";
   then
-    echo "The mock STS would not start in mode ${MODE}. Nothing was run." >&2
+    echo "IYA STS would not start in mode ${MODE}. Nothing was run." >&2
     MODE_RC=1
   elif ! waitForStsHealthy;
   then
-    echo "The mock STS never became healthy in mode ${MODE}. Nothing was" >&2
+    echo "IYA STS never became healthy in mode ${MODE}. Nothing was" >&2
     echo "run — see the container log captured below." >&2
     MODE_RC=1
   elif stsModeIsCells "${MODE}" && ! waitForStsHealthy "${STS2_CONTAINER_NAME}";

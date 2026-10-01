@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: BUSL-1.1
 #
-# mock-sts: the public certificate and its key, where the node reads them —
+# iya-sts: the public certificate and its key, where the node reads them —
 # AWS's cert-init. Read from the foundation's secret; node-a issues or renews
 # it through ACME first when it must. deploy/gcp/node-init/cert.sh.
 [Unit]
-Description=mock-sts: public certificate
+Description=iya-sts: public certificate
 Requires=sts-registry.service
 After=sts-registry.service sts-secrets.service
 

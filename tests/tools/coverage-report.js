@@ -732,9 +732,9 @@ function render(opts) {
 
   let html = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<title>mock STS coverage</title><style>' + STYLE +
+    '<title>IYA STS coverage</title><style>' + STYLE +
     '</style></head><body><div class="wrap">';
-  html += '<h1>mock STS coverage</h1><p class="sub">' +
+  html += '<h1>IYA STS coverage</h1><p class="sub">' +
     new Date().toISOString() + ' · rendered from V8\'s own data, no ' +
     'instrumentation and no dependencies</p>';
   html += '<div class="banner"><strong>How to read this.</strong> ' +

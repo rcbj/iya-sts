@@ -10,7 +10,7 @@ variable "aws_region" {
 variable "name" {
   description = "The project prefix. Must match the foundation and environment stacks' `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {

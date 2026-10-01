@@ -89,7 +89,7 @@ module "pair_apse1" {
 
 # ---------------------------------------------------------------------------
 # THE GCP CELLS' INTER-CELL NAMES, INSIDE EVERY AWS VPC: a private zone per
-# GCP cell, `<cell>.<env>.mock-sts.internal`, associated with each AWS cell's
+# GCP cell, `<cell>.<env>.iya-sts.internal`, associated with each AWS cell's
 # VPC, holding the one record the foundation also holds on the GCP side —
 # `nodes` at the cell's internal load balancer. The AWS cells' own names are
 # their Cloud Map namespaces, which deploy/aws/global associates among the
@@ -98,7 +98,7 @@ module "pair_apse1" {
 resource "aws_route53_zone" "gcp_intercell" {
   for_each = local.gcp
   name     = "${each.key}.${var.environment}.${var.name}.internal"
-  comment  = "mock-sts ${var.environment}: GCP cell ${each.key}'s inter-cell name, inside the AWS cells (#97)"
+  comment  = "iya-sts ${var.environment}: GCP cell ${each.key}'s inter-cell name, inside the AWS cells (#97)"
 
   dynamic "vpc" {
     for_each = local.aws

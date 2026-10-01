@@ -22,7 +22,7 @@ set -uo pipefail
 URL="${STS_SUITE_SERVICE_URL:?STS_SUITE_SERVICE_URL is required}"
 URL="${URL%/}"
 OUT=/shared/pep
-SUBJECT="${XACML_PEP_SUBJECT:-CN=remote-pep-1,OU=remote-peps,O=mock-sts}"
+SUBJECT="${XACML_PEP_SUBJECT:-CN=remote-pep-1,OU=remote-peps,O=iya-sts}"
 
 mkdir -p "${OUT}/server"
 chmod 0777 "${OUT}" "${OUT}/server"

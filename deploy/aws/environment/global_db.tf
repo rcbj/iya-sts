@@ -27,14 +27,14 @@
 resource "aws_db_subnet_group" "global" {
   count       = local.multi ? 1 : 0
   name        = "${local.prefix}-global"
-  description = "mock-sts ${var.environment} ${var.cell}: the global database, in the private subnets of this cell"
+  description = "iya-sts ${var.environment} ${var.cell}: the global database, in the private subnets of this cell"
   subnet_ids  = aws_subnet.private[*].id
 }
 
 resource "aws_security_group" "global_database" {
   count       = local.multi ? 1 : 0
   name        = "${local.prefix}-global-db"
-  description = "mock-sts ${var.environment} ${var.cell}: the global database, reachable from the VPC of every cell"
+  description = "iya-sts ${var.environment} ${var.cell}: the global database, reachable from the VPC of every cell"
   vpc_id      = aws_vpc.main.id
   tags        = { Name = "${local.prefix}-global-db" }
 }

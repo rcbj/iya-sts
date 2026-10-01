@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
-# ONE THREE-NODE mock-sts ENVIRONMENT ON AZURE — OR ONE CELL OF A
+# ONE THREE-NODE iya-sts ENVIRONMENT ON AZURE — OR ONE CELL OF A
 # MULTI-REGION ONE — CREATED AND DESTROYED PER RUN (issue #96).
 #
 # deploy/gcp/environment/'s single-region pattern and deploy/aws/environment/'s
@@ -17,7 +17,7 @@
 #
 # The state key names the environment, and the cell in a cell:
 #   terraform init -backend-config=storage_account_name=<account> \
-#                  -backend-config=resource_group_name=mock-sts-terraform-state \
+#                  -backend-config=resource_group_name=iya-sts-terraform-state \
 #                  -backend-config=key=environment/dev.tfstate
 # ---------------------------------------------------------------------------
 terraform {

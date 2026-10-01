@@ -31,7 +31,7 @@
 #   ${STS_TLS_DIR}/key.pem           the key, unencrypted, 0400
 #
 # A node that cannot get the certificate must FAIL, and the unit then keeps
-# mock-sts from starting — a node serving a self-signed certificate under a
+# iya-sts from starting — a node serving a self-signed certificate under a
 # public name would look healthy (AWS's argument, word for word).
 # ---------------------------------------------------------------------------
 set -euo pipefail

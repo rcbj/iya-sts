@@ -5,16 +5,16 @@ locals {
   subscription_id = data.azurerm_client_config.current.subscription_id
 
   # THE UNIT (../foundation/locals.tf): `<env>`, or `<env>-<cell>` in a cell.
-  # Every name starts `mock-sts-<unit>`, as on AWS.
+  # Every name starts `iya-sts-<unit>`, as on AWS.
   unit   = local.multi ? "${var.environment}-${var.cell}" : var.environment
   prefix = "${var.name}-${local.unit}"
 
   # The region's short code (cells.tf), which names its foundation group,
-  # `mock-sts-<code>`.
+  # `iya-sts-<code>`.
   region_code = local.region_codes[local.region]
 
-  # THE CELL'S OWN DATA IS UNDER ITS REGION'S `mock-sts-cell` KEY, and a
-  # single-cell environment's under `mock-sts` — AWS's cell key and project
+  # THE CELL'S OWN DATA IS UNDER ITS REGION'S `iya-sts-cell` KEY, and a
+  # single-cell environment's under `iya-sts` — AWS's cell key and project
   # key (../foundation/modules/region).
   key_kind = local.multi ? "cell" : "main"
 

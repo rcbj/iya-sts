@@ -1783,6 +1783,14 @@ header; what a maintainer of THIS directory needs is where it sits:
   request to ML-DSA (all three where the list names none, and it beats the
   insecure flag); registration then refuses anything else, and enrolled
   classical keys go on signing in.
+* **CHOSEN ON THE CONSOLE BY CHECKBOX AND NUMBER (2026-10-01, rcbj).**
+  `webauthn.algorithms` is marked `ordered` (with `csvValueNotes`) in
+  `common/config.js`, so `/admin/webauthn` draws it as a table — a
+  checkbox to request each algorithm and a number for its preference — and
+  `admin.ts`'s `foldOrderedChoices()` turns the posted fields back into the
+  one list before `set-many` checks it; ticking nothing is refused
+  (`STS-ADMIN-0840`). No script. `/admin-api/config` takes the list as it
+  always did. `tests/ordered_choice_setting.js` holds it.
 * **THE ALGORITHM IS RECORDED AND SHOWN (2026-10-01, rcbj).** A key's
   record carries `algorithm` and `coseAlg` from the ceremony;
   `credentials.keyAlgorithm()` reads them, or the stored JWK's `alg`, or

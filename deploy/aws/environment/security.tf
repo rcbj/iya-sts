@@ -29,7 +29,7 @@
 # ---------------------------------------------------------------------------
 resource "aws_security_group" "nlb" {
   name        = "${local.prefix}-nlb"
-  description = "mock-sts ${var.environment}: the load balancer, open to allowed_cidrs on 443"
+  description = "iya-sts ${var.environment}: the load balancer, open to allowed_cidrs on 443"
   vpc_id      = aws_vpc.main.id
   tags        = { Name = "${local.prefix}-nlb" }
 }
@@ -89,7 +89,7 @@ resource "aws_vpc_security_group_egress_rule" "nlb_to_nodes" {
 
 resource "aws_security_group" "nodes" {
   name        = "${local.prefix}-nodes"
-  description = "mock-sts ${var.environment}: the nodes, reachable from the load balancer only"
+  description = "iya-sts ${var.environment}: the nodes, reachable from the load balancer only"
   vpc_id      = aws_vpc.main.id
   tags        = { Name = "${local.prefix}-nodes" }
 }
@@ -127,7 +127,7 @@ resource "aws_vpc_security_group_egress_rule" "nodes_to_database" {
 
 resource "aws_security_group" "database" {
   name        = "${local.prefix}-database"
-  description = "mock-sts ${var.environment}: RDS, reachable from the nodes only"
+  description = "iya-sts ${var.environment}: RDS, reachable from the nodes only"
   vpc_id      = aws_vpc.main.id
   tags        = { Name = "${local.prefix}-database" }
 }

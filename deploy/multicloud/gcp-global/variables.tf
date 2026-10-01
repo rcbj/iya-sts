@@ -9,7 +9,7 @@ variable "project_id" {
 variable "name" {
   description = "The project prefix, the same in every stack."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {
@@ -17,7 +17,7 @@ variable "environment" {
   type        = string
   validation {
     condition     = can(regex("^[a-z][a-z0-9]{1,10}$", var.environment))
-    error_message = "a multi-cloud environment's name is 2-11 lower-case letters and digits: a GCP cell's service account is mock-sts-env-<env>-<cell>, at most 30 characters."
+    error_message = "a multi-cloud environment's name is 2-11 lower-case letters and digits: a GCP cell's service account is iya-sts-env-<env>-<cell>, at most 30 characters."
   }
 }
 

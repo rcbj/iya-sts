@@ -517,7 +517,7 @@ READ.**
 
 | File | What it is | Where it comes from |
 |---|---|---|
-| `logs/00-mock-sts-service.log` | the mock's own account of what it issued | `run-report.js` writes it when it started the service itself (a coverage run, or a bare run); otherwise the launcher takes it out of `docker compose logs sts` before the teardown removes the container |
+| `logs/00-iya-sts-service.log` | the mock's own account of what it issued | `run-report.js` writes it when it started the service itself (a coverage run, or a bare run); otherwise the launcher takes it out of `docker compose logs sts` before the teardown removes the container |
 | `logs/00-test-runner.log` | **the RUNNER's own output** — which jobs it chose, the ones it could not start and why, the reason a job was reported SKIPPED, the summary | `./run-tests.sh` takes it out of `docker compose logs tests`, because there the runner IS a container (`./local-run-tests.sh` tee'd it, until it was removed on 2026-09-16) |
 
 **THE SECOND ONE IS NOT THE JOBS' LOGS AND THAT IS THE WHOLE REASON IT EXISTS.**
@@ -3525,8 +3525,8 @@ tag points at by then. A named project (`STS_TEST_COMPOSE_PROJECT`,
 PEP and runner twins; `image: ${STS_IMAGE:-rcbj/sts}` in both compose files
 keeps an unnamed run exactly as it was.
 
-The service logs are `logs/00-mock-sts-service.log` (node A, the name every mode
-uses), `logs/00-mock-sts-service-node-b.log` and `logs/00-load-balancer.log`.
+The service logs are `logs/00-iya-sts-service.log` (node A, the name every mode
+uses), `logs/00-iya-sts-service-node-b.log` and `logs/00-load-balancer.log`.
 `!reset` in the local override needs docker compose 2.24 or later.
 
 ## THE `cells` MODE: TWO CELLS OF ONE SERVICE (2026-09-28, issue #98)
@@ -3651,7 +3651,7 @@ SPIFFE jobs, which dial `STS_SPIFFE_GRPC_HOST` by address, and the peer
 containers (SAML, conformance), which resolve `sts` in their own
 containers. It writes the same `report/cells/` as an entry-A run. The
 default, `a`, is what the mode always did. The service log of cell B is
-`logs/00-mock-sts-service-cell-b.log`.
+`logs/00-iya-sts-service-cell-b.log`.
 
 ### The conversion rehearsal: a single-cell store becomes cell A (2026-09-28)
 

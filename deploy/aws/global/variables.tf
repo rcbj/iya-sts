@@ -4,7 +4,7 @@
 variable "name" {
   description = "The project prefix. Must match the foundation and environment stacks' `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {
@@ -82,7 +82,7 @@ variable "primary_cell" {
 variable "carryover_secret" {
   description = <<-EOT
     The name of a CARRY-OVER secret in the primary cell's region — e.g.
-    `mock-sts/carryover/testidp`, written by deploy/aws/convert-to-cells.sh —
+    `iya-sts/carryover/testidp`, written by deploy/aws/convert-to-cells.sh —
     whose values replace the generated ones for the secrets a converted
     single-region environment's database was written under (secrets.tf, *A
     converted environment's secrets*). EMPTY — the default, and every

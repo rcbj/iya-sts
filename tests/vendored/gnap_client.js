@@ -9,7 +9,7 @@
 // A GNAP CLIENT INSTANCE AND RESOURCE SERVER, WRITTEN FOR THE TESTS AND SHARING
 // NO CODE WITH `gnap/`.
 //
-// The GNAP jobs assert what mock-sts does over the wire, and the one property
+// The GNAP jobs assert what iya-sts does over the wire, and the one property
 // that makes such a job worth running is that the two ends of the exchange are
 // INDEPENDENT implementations: a signature base built by the same function on
 // both sides verifies perfectly and interoperates with nobody

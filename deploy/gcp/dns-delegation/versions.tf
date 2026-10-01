@@ -17,7 +17,7 @@
 #
 # STATE IN THE GCP STATE BUCKET, beside the foundation's:
 #   terraform -chdir=deploy/gcp/dns-delegation init \
-#     -backend-config=bucket=mock-sts-terraform-state-<project>
+#     -backend-config=bucket=iya-sts-terraform-state-<project>
 #   terraform -chdir=deploy/gcp/dns-delegation apply -var project_id=<project>
 #
 # #97 (load balancing across clouds) will put its records in the same Route

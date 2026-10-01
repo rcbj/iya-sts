@@ -26,7 +26,7 @@
 # (`--add-host`), so no private DNS zone is shared between the cells —
 # which a VNet may link only one of per name.
 #
-# ENCRYPTED UNDER EACH REGION'S `mock-sts` KEY: the global tier is what every
+# ENCRYPTED UNDER EACH REGION'S `iya-sts` KEY: the global tier is what every
 # region may hold, and a replica's key must be in its own region. TLS
 # required, as on a cell database. Only the writer keeps backups.
 # ---------------------------------------------------------------------------

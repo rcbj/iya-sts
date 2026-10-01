@@ -3914,7 +3914,7 @@ would cost an afternoon:
   issuer.** `wstrust.issuer` was never the name of this service — it is what ONE
   of sixteen families puts in an `<Issuer>` element — and in the corner of a
   console the other fifteen never mention it read as this service's identity.
-  It is `Mock STS · <realm name>` now, which is true of the whole page and is
+  It is `IYA STS · <realm name>` now, which is true of the whole page and is
   the fact a reader most needs before they act, since `/admin/config` writes the
   realm it is read in. It is deliberately NOT the switcher said twice: the
   switcher appears only when a realm has been DEFINED, which is exactly the
@@ -3922,7 +3922,7 @@ would cost an afternoon:
 
   **AND ON 2026-08-25 THE ISSUER CAME OFF THE SHELL ENTIRELY**, which is the
   same argument read once more rather than a reversal of it. It had moved from
-  the corner into the line under the heading — `Mock STS admin console — issuer
+  the corner into the line under the heading — `IYA STS admin console — issuer
   <code>…</code>`, drawn on every page of the console — where it was still a
   name that ONE of sixteen protocol families uses, sitting at the top of the
   seventy-odd pages the other fifteen never mention it on. **Nothing is lost**,

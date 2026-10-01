@@ -15,7 +15,7 @@
 # database-ca.pem) and one image serves every environment.
 #
 # Build from the repository root:
-#   docker build -f deploy/gcp/schema-init/Dockerfile -t <registry>/mock-sts:schema-<sha> .
+#   docker build -f deploy/gcp/schema-init/Dockerfile -t <registry>/iya-sts:schema-<sha> .
 # ---------------------------------------------------------------------------
 FROM mirror.gcr.io/library/postgres:18
 

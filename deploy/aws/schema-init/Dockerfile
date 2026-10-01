@@ -10,7 +10,7 @@
 # `\set`, `\gexec` and `:'variable'` substitution. The compose stack runs it
 # inside the database container on the start that creates the cluster
 # (`postgres/apply-schema.sh`); RDS has no such hook and no shell, so it runs
-# here — an init container in every mock-sts task, `essential: false`, that
+# here — an init container in every iya-sts task, `essential: false`, that
 # the node waits on with `dependsOn: SUCCESS`. The file is idempotent, so the
 # second and third node applying it again changes nothing, and the task
 # definition orders node-a ahead of the other two so the first application is

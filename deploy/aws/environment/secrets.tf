@@ -42,7 +42,7 @@
 # node starts and can be read whenever it is wanted:
 #
 #   aws secretsmanager get-secret-value --region us-west-2 \
-#     --secret-id mock-sts/testidp/bootstrap-admin-password \
+#     --secret-id iya-sts/testidp/bootstrap-admin-password \
 #     --query SecretString --output text
 #
 # The service does not print a supplied password anywhere.
@@ -232,7 +232,7 @@ locals {
 resource "aws_secretsmanager_secret" "main" {
   for_each                = local.secrets
   name                    = "${local.secret_path}/${each.key}"
-  description             = "mock-sts ${var.environment}: ${each.key}"
+  description             = "iya-sts ${var.environment}: ${each.key}"
   kms_key_id              = local.kms_key_arn
   recovery_window_in_days = 0
 }

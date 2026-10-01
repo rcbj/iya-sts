@@ -1253,7 +1253,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_roles_builtin")
-  .description("Drive the six BUILT-IN roles of the mock STS, in a throwaway " +
+  .description("Drive the six BUILT-IN roles of IYA STS, in a throwaway " +
       "trust realm: EVERYBODY admitting both a signed-in and an " +
       "unauthenticated session, the two user roles splitting on whether " +
       "anybody authenticated, ALL_APPLICATIONS refusing a person, and the " +

@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # File: deploy/gcp/node-init/Dockerfile
 #
-# WHAT A GCP NODE RUNS BEFORE mock-sts STARTS (issue #95): two commands, one
+# WHAT A GCP NODE RUNS BEFORE iya-sts STARTS (issue #95): two commands, one
 # image, the parts of an ECS task definition a VM has to do for itself.
 #
 #   sts-secrets   Secret Manager → a KEY=VALUE env file on the VM's tmpfs,
@@ -20,7 +20,7 @@
 # `gcloud` DNS provider writes the DNS-01 record with the same credentials.
 #
 # Build from the repository root:
-#   docker build -f deploy/gcp/node-init/Dockerfile -t <registry>/mock-sts:init-<sha> .
+#   docker build -f deploy/gcp/node-init/Dockerfile -t <registry>/iya-sts:init-<sha> .
 # ---------------------------------------------------------------------------
 # Google's mirror of Docker Hub, as the schema image: no Docker Hub pull limit.
 FROM mirror.gcr.io/library/debian:bookworm-slim

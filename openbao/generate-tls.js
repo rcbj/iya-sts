@@ -90,7 +90,7 @@ async function main() {
   const pair = await keyMaterial.generateKeyPair('rsa-2048');
   const issued = await x509.issueCertificate({
     subject: [{ name: 'CN', value: NAMES[0] || 'openbao' },
-              { name: 'O', value: 'mock-sts' }],
+              { name: 'O', value: 'iya-sts' }],
     subjectPublicKey: pair.publicPem,
     issuerPrivateKey: pair.privatePem,
     signatureAlg: 'sha256-rsa',
