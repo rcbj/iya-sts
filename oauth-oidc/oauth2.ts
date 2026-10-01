@@ -11743,12 +11743,30 @@ class OAuth2Server {
   private secretPresented(presented: Json, registered: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.secretPresented().");
-    const method = String((registered &&
-                           registered.token_endpoint_auth_method) ||
-                          '');
+    // Any of the declared methods (2026-10-01): an assertion from a client
+    // that may use client_secret_jwt may be one signed with its secret.
+    const methods = [].concat((registered &&
+      (registered.token_endpoint_auth_methods ||
+       [registered.token_endpoint_auth_method])) || []).map(String);
     log.debug("Leaving OAuth2Server.secretPresented().");
     return !!(presented.basic || presented.bodySecret ||
-              (presented.assertion && method === 'client_secret_jwt'));
+              (presented.assertion &&
+               methods.indexOf('client_secret_jwt') >= 0));
+  }
+
+  // WHICH OF THE CLIENT'S DECLARED METHODS THIS REQUEST PRESENTED
+  // (2026-10-01): an entry may declare several, and the advertised-methods
+  // check is about the one in use, which `client_auth.methodFor()` reads off
+  // the wire. A client declaring one method gets that method, as before.
+  private presentedMethodOf(req: Req, client: Json, registered: Json): string {
+    const { log, clientAuth } = this.deps;
+    log.debug("Entering OAuth2Server.presentedMethodOf().");
+    const method = clientAuth.methodFor(registered || {}, {
+      request: req, clientSecret: client && client.client_secret,
+      assertion: client && client.assertion,
+      assertionType: client && client.assertionType });
+    log.debug("Leaving OAuth2Server.presentedMethodOf(). " + method);
+    return String(method || '');
   }
 
   // **COUNTED IN THE CLUSTER'S SHARED WINDOW SINCE 2026-09-14 (#46)**, and
@@ -12059,8 +12077,8 @@ class OAuth2Server {
     // server's capabilities rather than about the credential.
     const advertisedAuth = self.capabilityFor(
       req, 'token_endpoint_auth_methods_supported');
-    const declaredMethod = (applications.clientConfigOf(client.client_id) || {})
-      .token_endpoint_auth_method;
+    const declaredMethod = self.presentedMethodOf(req, client,
+      applications.clientConfigOf(client.client_id) || {});
     if (declaredMethod && advertisedAuth &&
         advertisedAuth.indexOf(String(declaredMethod)) < 0) {
       log.debug("Leaving the token endpoint. " + self.profileOf(req) +
@@ -15654,7 +15672,7 @@ class OAuth2Server {
     // -------------------
     const advertisedAuth = self.capabilityFor(
       req, 'token_endpoint_auth_methods_supported');
-    const declaredMethod = String(registered.token_endpoint_auth_method || '');
+    const declaredMethod = self.presentedMethodOf(req, client, registered);
     if (declaredMethod && advertisedAuth &&
         advertisedAuth.indexOf(declaredMethod) < 0) {
       log.debug("Leaving OAuth2Server.parRequest(). " + self.profileOf(req) +
@@ -16272,8 +16290,7 @@ class OAuth2Server {
     // is about the server's capabilities rather than about the credential. A
     // removed member means the check does not run.
     const advertisedAuth = self.capabilityFor(req, opts.capability);
-    const declaredMethod = String(registered.token_endpoint_auth_method ||
-                                  '');
+    const declaredMethod = self.presentedMethodOf(req, client, registered);
     if (declaredMethod && advertisedAuth &&
         advertisedAuth.indexOf(declaredMethod) < 0) {
       log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). " +

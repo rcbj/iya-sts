@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3911** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3912** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 80
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 140
+* [Registries (`STS-REG`)](#sts-reg) — 141
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -4360,6 +4360,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0204` | A DID document value was refused: a didPublicKeyJwk that is not a public EC, OKP, RSA or AKP JWK (a private member is refused), a didService that is not <type>\|<http(s) URL>, or a didAlsoKnownAs that is not an absolute URI. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0205` | An application carries its own claim or SAML attribute rows (oauthClaims*, saml2CustomAttributes, saml11CustomAttributes) that are not a JSON array or that the claim-set rules refuse; they are ignored at issuance and the realm's set is issued. | none (logged at issuance; nothing is refused) |
 | `STS-REG-0206` | An application's own custom claim or SAML attribute was refused: an unknown claim set, a row the claim-set rules refuse (a reserved name, an attribute that may not be released, a type that is not one), a name to remove that it does not hold, or an application not declared for the set's protocol. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0207` | An application's token endpoint authentication methods (oauthTokenEndpointAuthMethod) were refused: "none" declares a public client and cannot be held beside any other method. | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

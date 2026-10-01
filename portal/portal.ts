@@ -5238,11 +5238,12 @@ class Portal {
             ? credentials.pendingKeyEnrolmentFor(username) : null;
           log.debug('Leaving POST ' + ACTIVATE + '. The key was not ' +
                     'registered.');
-          errorCodes.mark(res, refusedCode);
           if (!fresh) {
+            errorCodes.mark(res, refusedCode || 'STS-PORTAL-0102');
             return self.send(res, 400, self.activationForm(
               base, username, token, null, refused));
           }
+          errorCodes.mark(res, refusedCode || 'STS-PORTAL-0102');
           return self.sendKeysPage(res, 400, self.activationKeyForm(
             base, username, token, fresh, wantsTotp, refused));
         }

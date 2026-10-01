@@ -1156,8 +1156,21 @@ class ClientAttestation {
     log.debug("Entering ClientAttestation.requestRefusal().");
     const o = opts || {};
     const registered = o.registered || {};
-    const declared = String(registered.token_endpoint_auth_method || '');
     const observation = o.observation || {};
+    // SEVERAL DECLARED METHODS (2026-10-01): the attestation is the declared
+    // method when the client declares nothing else, or when it declares it
+    // and this request presented the header — a client that may also use a
+    // secret and sent one is not refused for not attesting.
+    const methods = [].concat(registered.token_endpoint_auth_methods &&
+                              registered.token_endpoint_auth_methods.length
+      ? registered.token_endpoint_auth_methods
+      : [registered.token_endpoint_auth_method || '']).map(String);
+    const attesting = methods.filter((one) => this.isMethod(one));
+    const declared = attesting.length &&
+      (attesting.length === methods.length || this.presented(o.request))
+      ? (this.isMethod(observation.method) ? String(observation.method)
+                                           : attesting[0])
+      : '';
     if (this.isMethod(declared)) {
       if (observation.authenticated) {
         log.debug("Leaving ClientAttestation.requestRefusal(). Declared, " +

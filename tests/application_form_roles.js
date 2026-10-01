@@ -176,6 +176,45 @@ function run(t) {
           '6. a method outside the set is refused, one inside it and a clear ' +
           'are not');
 
+  // --- 6a. Several token endpoint auth methods, `none` alone (2026-10-01) ---
+  // A list from a closed set is a checkbox per value on the grid; `none`
+  // declares a public client and is refused beside any other method; the
+  // token endpoint verifies the declared method the request PRESENTED.
+  t.equal(byName.oauthTokenEndpointAuthMethod.type, 'array',
+          '6a. the token endpoint auth method is a list (checkboxes)');
+  t.check(/declares a PUBLIC client/.test(
+            applications.authMethodsProblem(['none', 'client_secret_basic'])),
+          '6a. none beside another method is refused');
+  t.check(applications.authMethodsProblem(['client_secret_basic',
+                                           'private_key_jwt']) === '' &&
+          applications.authMethodsProblem(['none']) === '' &&
+          applications.authMethodsProblem([]) === '',
+          '6a. several methods without none, none alone, and nothing are ' +
+          'allowed');
+  const both = { token_endpoint_auth_method: 'client_secret_basic',
+                 token_endpoint_auth_methods: ['client_secret_basic',
+                                               'private_key_jwt'] };
+  const rs256 = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+    .toString('base64url') + '.' +
+    Buffer.from('{}').toString('base64url') + '.c2ln';
+  t.equal(clientAuth.methodFor(both, {
+            assertion: rs256, assertionType: clientAuth.ASSERTION_TYPE,
+            request: { headers: {} } }), 'private_key_jwt',
+          '6a. an RS256 client assertion is private_key_jwt, the second ' +
+          'declared');
+  t.equal(clientAuth.methodFor(both, {
+            clientSecret: 's', request: { headers: {
+              authorization: 'Basic eDp5' } } }), 'client_secret_basic',
+          '6a. a Basic header is client_secret_basic');
+  t.equal(clientAuth.methodFor(both, { request: { headers: {} } }),
+          'client_secret_basic',
+          '6a. nothing presented falls back to the first declared');
+  t.equal(clientAuth.methodFor(both, {
+            clientSecret: 's', request: { headers: {} } }),
+          'client_secret_basic',
+          '6a. a body secret that is not declared as client_secret_post ' +
+          'falls back to the first declared');
+
   // --- 7. Verifiable Credentials is one choice -----------------------------
   // OpenID4VCI and OpenID4VP are one checkbox on the console and one field
   // group, and stay two families in the data. Every other family is a choice

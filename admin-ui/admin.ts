@@ -39556,10 +39556,18 @@ class AdminConsole {
         // The method a secret is presented by, filled in where nothing (or
         // `none`) was chosen: RFC 7591 section 2's default. A method somebody
         // picked is left as they picked it.
-        const methodAsked = String(
-            body['field.oauthTokenEndpointAuthMethod'] || '').trim();
-        if (methodAsked === '' || methodAsked === 'none') {
-          draft['field.oauthTokenEndpointAuthMethod'] = 'client_secret_basic';
+        // A LIST OF CHECKBOXES since 2026-10-01 (`field.<name>.<n>`, one key
+        // per ticked box), so every key of it is read and, where nothing but
+        // `none` was ticked, all of them are replaced by the one default.
+        const methodKeys = Object.keys(body).filter(function (key) {
+          return /^field\.oauthTokenEndpointAuthMethod(\.\d+)?$/.test(key);
+        });
+        const methodsAsked = methodKeys.map(function (key) {
+          return String(body[key] || '').trim();
+        }).filter(function (one) { return one !== '' && one !== 'none'; });
+        if (!methodsAsked.length) {
+          methodKeys.forEach(function (key) { delete draft[key]; });
+          draft['field.oauthTokenEndpointAuthMethod.0'] = 'client_secret_basic';
         }
         const loaded = reloadedMetadata();
         self.newApplicationRedraw(req, res, {

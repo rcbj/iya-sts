@@ -11508,9 +11508,11 @@ class AdminApi {
                            'The new value; empty clears the attribute.' }
               },
               required: ['application', 'attribute'],
+              // Not `oauthTokenEndpointAuthMethod` since 2026-10-01: it is
+              // a list now, written with `add` and `remove`.
               examples: [{ application: 'my-web-app',
-                           attribute: 'oauthTokenEndpointAuthMethod',
-                           value: 'none' }],
+                           attribute: 'oauthSubjectType',
+                           value: 'pairwise' }],
               additionalProperties: false
             },
             responseDescription: 'The application as it now stands, with ' +

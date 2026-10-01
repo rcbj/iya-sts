@@ -3923,6 +3923,16 @@ class AdminActions {
       }
       const current = valuesOf(entry.fields[name]);
       const wanted = change.values;
+      // `none` BESIDE ANOTHER METHOD (2026-10-01) is refused for the whole
+      // list before any of it is written: the removes and adds below go one
+      // value at a time, and the first add would land before the second was
+      // refused.
+      const listProblem = name === 'oauthTokenEndpointAuthMethod'
+        ? applications.authMethodsProblem(wanted) : '';
+      if (listProblem) {
+        errors.push(listProblem);
+        return;
+      }
       const same = current.length === wanted.length &&
         current.every(function (one) { return wanted.indexOf(one) >= 0; });
       if (same) {

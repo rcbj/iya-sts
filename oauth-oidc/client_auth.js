@@ -1382,6 +1382,106 @@ async function verify(opts) {
                         ' it can are: ' + METHODS.join(', ') + '.' };
 }
 
+// ---------------------------------------------------------------------------
+// WHICH OF A CLIENT'S DECLARED METHODS THIS REQUEST PRESENTED (2026-10-01).
+//
+// An entry may declare SEVERAL methods since that day (rcbj): a client that
+// holds a secret and a key pair may present either. `verify()` is still told
+// ONE method and checks the request against exactly that one, so the choice
+// is made here, from what is on the wire, and never from what would verify:
+// trying each in turn would spend a single-use assertion or an attestation
+// challenge on a method the client did not use, and would make "which
+// credential did this client authenticate with" the server's guess.
+//
+//   * `client_assertion_type` names RFC 7522 → `saml2_bearer`; RFC 7523 →
+//     `private_key_jwt` or `client_secret_jwt`, and where both are declared
+//     the assertion's own `alg` says which (an HMAC is a shared secret);
+//   * an Authorization: Basic header → `client_secret_basic`; a
+//     `client_secret` without one → `client_secret_post`;
+//   * the attestation header → `attest_jwt_client_auth` with its PoP header,
+//     `attest_jwt_client_auth_dpop` without (section 5.2's combined mode);
+//   * a client certificate → `self_signed_tls_client_auth` when the
+//     certificate is its own issuer, `tls_client_auth` otherwise.
+//
+// What was presented and is NOT declared falls back to the FIRST declared
+// method, so the refusal is the one a single-method client always got: this
+// client authenticates with X, and the request did not.
+// ---------------------------------------------------------------------------
+/**
+ * Picks, from the methods a client declares, the one this request presented,
+ * falling back to the first declared.
+ *
+ * @param registered - the client's configuration (`clientConfigOf()`)
+ * @param presented - `request`, `clientSecret` (the presented secret),
+ *   `assertion` and `assertionType`
+ * @returns the method to verify, or '' where none is declared
+ */
+function methodFor(registered, presented) {
+  log.debug("Entering methodFor().");
+  const client = registered || {};
+  const declared = [].concat(client.token_endpoint_auth_methods &&
+                             client.token_endpoint_auth_methods.length
+    ? client.token_endpoint_auth_methods
+    : (client.token_endpoint_auth_method
+      ? [client.token_endpoint_auth_method] : []))
+    .map(String);
+  if (declared.length < 2) {
+    log.debug("Leaving methodFor(). One method, or none.");
+    return declared[0] || '';
+  }
+  const p = presented || {};
+  const req = p.request || null;
+  const headers = (req && req.headers) || {};
+  const holds = function (method) {
+    return declared.indexOf(method) >= 0;
+  };
+  const wanted = [];
+  const assertionType = String(p.assertionType || '');
+  if (p.assertion && assertionType === SAML_ASSERTION_TYPE) {
+    wanted.push('saml2_bearer');
+  } else if (p.assertion && assertionType === ASSERTION_TYPE) {
+    let alg = '';
+    try {
+      const decoded = jwt.decode(String(p.assertion), { complete: true });
+      alg = String((decoded && decoded.header && decoded.header.alg) || '');
+    } catch (e) {
+      log.debug("Caught in methodFor(): " + ((e && e.message) || e));
+      // Not a JWT. Either method refuses it the same way, so the order
+      // below decides only which sentence the refusal says.
+      alg = '';
+    }
+    if (/^HS/i.test(alg)) {
+      wanted.push('client_secret_jwt', 'private_key_jwt');
+    } else {
+      wanted.push('private_key_jwt', 'client_secret_jwt');
+    }
+  } else if (headers['oauth-client-attestation'] !== undefined) {
+    if (headers['oauth-client-attestation-pop'] !== undefined) {
+      wanted.push('attest_jwt_client_auth', 'attest_jwt_client_auth_dpop');
+    } else {
+      wanted.push('attest_jwt_client_auth_dpop', 'attest_jwt_client_auth');
+    }
+  } else if (p.clientSecret) {
+    if (/^Basic\s/i.test(String(headers.authorization || ''))) {
+      wanted.push('client_secret_basic', 'client_secret_post');
+    } else {
+      wanted.push('client_secret_post', 'client_secret_basic');
+    }
+  } else if (req && mtls.peerCertificate(req)) {
+    const cert = mtls.peerCertificate(req);
+    const selfIssued = !!(cert && cert.subject && cert.issuer &&
+      JSON.stringify(cert.subject) === JSON.stringify(cert.issuer));
+    if (selfIssued) {
+      wanted.push('self_signed_tls_client_auth', 'tls_client_auth');
+    } else {
+      wanted.push('tls_client_auth', 'self_signed_tls_client_auth');
+    }
+  }
+  const chosen = wanted.filter(holds)[0] || declared[0];
+  log.debug("Leaving methodFor(). " + chosen + " of " + declared.join(', '));
+  return chosen;
+}
+
 /**
  * How a client proves who it is at the token endpoint: every method this
  * service can verify.
@@ -1396,6 +1496,7 @@ module.exports = {
   ASYMMETRIC_METHODS: ASYMMETRIC_METHODS,
   isAsymmetric: isAsymmetric,
   subjectRfc4514: subjectRfc4514,
+  methodFor: methodFor,
   verify: verify,
   // For the pages that report how many assertions are being remembered. The
   // history is one per realm now, shared with both grant profiles, so this is

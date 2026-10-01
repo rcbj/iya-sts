@@ -708,6 +708,25 @@ so must `admin-ui/admin.ts`.
    verifying it would use the client's PUBLIC key as an HMAC secret, which is
    the classic JWT forgery and one anybody can perform.
 
+   **AN ENTRY MAY DECLARE SEVERAL METHODS (2026-10-01, rcbj)** —
+   `oauthTokenEndpointAuthMethod` is a list, a checkbox per method on the
+   application's page, and `none` is refused beside any other
+   (`applications.authMethodsProblem()`, `STS-REG-0207`) because it is what
+   makes a client public. `clientConfigOf()` carries them as
+   `token_endpoint_auth_methods`, its single `token_endpoint_auth_method`
+   being the first (all a "public or confidential" reader needs, and what RFC
+   7591's single-valued member reports). **`methodFor()` picks the one this
+   request PRESENTED** — the assertion type, a Basic header or a body secret,
+   the attestation headers, a client certificate — and `verify()` is still
+   told exactly one method; nothing tries methods in turn, which would spend a
+   single-use assertion on a method the client did not use. Where a client
+   declares both JWT methods the assertion's `alg` chooses between them, and
+   that does not reopen the forgery above: an HMAC `alg` selects
+   `client_secret_jwt`, verified with the client's SECRET, never with its
+   public key. `oauth2_bcp.js`'s two verification sites, the advertised-method
+   checks in `oauth2.ts`, `mtls.declaredRefusal()` and the attestation's
+   `requestRefusal()` all ask about the presented method.
+
    **THE UNVERIFIED `sub` SELECTS, IT DOES NOT ESTABLISH.** OIDC Core section 9
    lets a `private_key_jwt` request omit `client_id`, so `clientFrom()` reads
    the assertion's `sub` unverified — safe for exactly one purpose, choosing

@@ -101,7 +101,8 @@ them there. `appRegistered` records *how* an application got here, not whether
 what it holds counts.
 
 That makes one `client_id` able to exercise both halves of RFC 6749 section
-2.1.1 without a restart: set `oauthTokenEndpointAuthMethod` to `none` and the
+2.1.1 without a restart: make `oauthTokenEndpointAuthMethod` hold `none` alone
+(it may hold several methods, but never `none` beside another) and the
 client becomes public — PKCE is required of it and its secret is no longer
 checked — and set it back and it is confidential again.
 

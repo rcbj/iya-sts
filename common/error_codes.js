@@ -18195,6 +18195,11 @@ const CODES = [
       'that is not one), a name to remove that it does not hold, or an ' +
       'application not declared for the set\'s protocol.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0207',
+    summary: 'An application\'s token endpoint authentication methods ' +
+      '(oauthTokenEndpointAuthMethod) were refused: "none" declares a ' +
+      'public client and cannot be held beside any other method.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

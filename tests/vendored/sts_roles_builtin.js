@@ -610,7 +610,8 @@ async function buildTheWorld() {
   await act("applications", "set",
             { application: CONFIDENTIAL, attribute: "oauthClientSecret",
               value: CLIENT_SECRET }, "gave it a secret");
-  await act("applications", "set",
+  // `add`: the methods are a LIST since 2026-10-01.
+  await act("applications", "add",
             { application: CONFIDENTIAL,
               attribute: "oauthTokenEndpointAuthMethod",
               value: "client_secret_basic" }, "made it confidential");
@@ -622,7 +623,8 @@ async function buildTheWorld() {
   await act("applications", "create",
             { identifier: PUBLIC_CLIENT, kind: "oauth2-client",
               name: "a public client" }, "created the public client");
-  await act("applications", "set",
+  // `add`: the methods are a LIST since 2026-10-01.
+  await act("applications", "add",
             { application: PUBLIC_CLIENT,
               attribute: "oauthTokenEndpointAuthMethod",
               value: "none" }, "made it public");

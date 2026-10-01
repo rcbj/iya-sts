@@ -1435,12 +1435,21 @@ const SCHEMA = {
             'not revived by the next one. One value per scope; a later ' +
             'withdrawal replaces the earlier. Written by the consent ' +
             'register and never by a form.' },
-    { name: 'oauthTokenEndpointAuthMethod', kind: 'single', from: 'POST ' +
+    // SEVERAL SINCE 2026-10-01 (rcbj): a client may hold a secret AND a key
+    // pair and present either, so the entry lists every method it may use and
+    // the token endpoint accepts the one a request presents
+    // (`client_auth.methodFor()`). `none` stands alone — it is what makes a
+    // client PUBLIC, and a client that is public and also authenticates is
+    // two contradictory declarations (`authMethodsProblem()`). The FIRST
+    // value is what RFC 7591's single-valued member reports.
+    { name: 'oauthTokenEndpointAuthMethod', kind: 'multi', from: 'POST ' +
         '/oauth2/register',
-      what: 'How it authenticates. RFC 7591 section 2 makes ' +
-            'client_secret_basic the default when a registration omits it, ' +
-            'which is why an omission means CONFIDENTIAL rather than ' +
-            'unknown.' },
+      what: 'How it authenticates — every method it may use at the token ' +
+            'endpoint, any one of which a request may present. `none` (a ' +
+            'public client) cannot be held with any other. RFC 7591 section ' +
+            '2 makes client_secret_basic the default when a registration ' +
+            'omits it, which is why an omission means CONFIDENTIAL rather ' +
+            'than unknown.' },
     // OPENID CONNECT NATIVE SSO FOR MOBILE APPS 1.0 (#130, 2026-09-23).
     { name: 'oauthNativeSso', kind: 'single',
       from: 'the console, the management API, or a TRUSTED software ' +
@@ -3692,7 +3701,8 @@ const EDITABLE = {
   oauthClientSecretPrevious: 'set',
   oauthClientSecretPreviousUntil: 'set',
   oauthClientSecretExpiresAt: 'set',
-  oauthTokenEndpointAuthMethod: 'set',
+  // A LIST since 2026-10-01: every method the client may use, `none` alone.
+  oauthTokenEndpointAuthMethod: 'multi',
   // Native SSO (#130). One answer each.
   oauthNativeSso: 'set',
   oauthNativeSsoGroup: 'set',
@@ -4852,6 +4862,39 @@ function choiceProblem(attribute, value) {
   log.debug("Leaving choiceProblem(). Not one of the values.");
   return '"' + text + '" is not a value ' + attribute + ' takes. It is one ' +
     'of ' + choices.join(', ') + '.';
+}
+
+// ---------------------------------------------------------------------------
+// `none` STANDS ALONE AMONG THE TOKEN ENDPOINT AUTHENTICATION METHODS
+// (2026-10-01). Several methods may be declared — a client holding a secret
+// and a key pair may present either — but `none` is the declaration that a
+// client is PUBLIC and has no credential at all, and every reader of
+// "public or confidential" (`oauth2_bcp.js`'s `isConfidential()` and
+// `declaredPublic()`, PKCE, product mode's gate) would otherwise have two
+// answers for one client. Asked of the WHOLE list, before any of it is
+// written, so a save cannot leave half of a contradiction behind.
+// ---------------------------------------------------------------------------
+/**
+ * Refuses a list of token endpoint authentication methods that holds `none`
+ * beside any other method.
+ *
+ * @param values - the methods the entry would hold
+ * @returns the refusal, or '' when allowed
+ */
+function authMethodsProblem(values) {
+  log.debug("Entering authMethodsProblem().");
+  const methods = valuesOf(values).map(function (one) {
+    return String(one).trim();
+  }).filter(function (one) { return one !== ''; });
+  if (methods.indexOf('none') < 0 || methods.length < 2) {
+    log.debug("Leaving authMethodsProblem(). Allowed.");
+    return '';
+  }
+  log.debug("Leaving authMethodsProblem(). `none` beside another method.");
+  return 'oauthTokenEndpointAuthMethod "none" declares a PUBLIC client, one ' +
+    'with no credential, so it cannot be held with ' +
+    methods.filter(function (one) { return one !== 'none'; }).join(', ') +
+    '. Choose "none" alone, or the methods the client authenticates with.';
 }
 
 const LONG_TEXT_ATTRIBUTES = [
@@ -8662,7 +8705,8 @@ function normaliseFields(value) {
       // method and carrying no credential declares `none` (the method
       // createApplication() writes for it).
       if (name === 'oauthBackchannelLogoutUri') {
-        const method = String(asked.oauthTokenEndpointAuthMethod || '');
+        const method = String(
+          valuesOf(asked.oauthTokenEndpointAuthMethod)[0] || '');
         const schemeProblem = backchannelSchemeProblem(values[0],
           method === 'none' ||
           (!method && !asked.oauthClientSecret && !asked.oauthJwks &&
@@ -10354,8 +10398,11 @@ function registrationOf(clientId) {
       0);
   if (fields.oauthResponseType) document.response_types =
       fields.oauthResponseType.slice(0);
-  if (fields.oauthTokenEndpointAuthMethod !== undefined) {
-    document.token_endpoint_auth_method = fields.oauthTokenEndpointAuthMethod;
+  // RFC 7591's member is ONE string, so a client declaring several methods
+  // reports the first (2026-10-01).
+  if (valuesOf(fields.oauthTokenEndpointAuthMethod).length) {
+    document.token_endpoint_auth_method =
+      String(valuesOf(fields.oauthTokenEndpointAuthMethod)[0]);
   }
   // RFC 7591 section 3.2.1 returns the registered `scope`, and the
   // attribute is what an operator edits (#110) — so it is read from there,
@@ -10510,6 +10557,7 @@ function clientConfigOf(identifier) {
     return { known: false, registered: false, declared: false,
              redirect_uris: [],
              post_logout_redirect_uris: [], token_endpoint_auth_method: '',
+             token_endpoint_auth_methods: [],
              frontchannel_logout_uri: '',
              frontchannel_logout_session_required: false,
              backchannel_logout_uri: '',
@@ -10524,9 +10572,18 @@ function clientConfigOf(identifier) {
   // registered client and says nothing at all for one that was created by hand.
   // The two are told apart here rather than at the check, because this is where
   // both facts are.
-  const method = fields.oauthTokenEndpointAuthMethod !== undefined
-    ? String(fields.oauthTokenEndpointAuthMethod)
-    : (loaded.record.registered ? 'client_secret_basic' : '');
+  //
+  // SEVERAL METHODS SINCE 2026-10-01: `token_endpoint_auth_methods` is every
+  // one, and `token_endpoint_auth_method` the first — which is all that a
+  // reader asking "public or confidential" needs, since `none` is never
+  // held beside another (`authMethodsProblem()`). A reader asking WHICH
+  // method to verify asks `client_auth.methodFor()`.
+  const declaredMethods = valuesOf(fields.oauthTokenEndpointAuthMethod)
+    .map(function (one) { return String(one).trim(); })
+    .filter(function (one) { return one !== ''; });
+  const methods = declaredMethods.length ? declaredMethods
+    : (loaded.record.registered ? ['client_secret_basic'] : []);
+  const method = methods.length ? methods[0] : '';
   // THE REDIRECT URIs GO THROUGH returnAddressesOf() (2026-09-12), so that a
   // callback development LEARNT — `common/oidc_rp.ts` teaches the console's and
   // portal's own clients the address they were reached at — is not a registered
@@ -10576,6 +10633,9 @@ function clientConfigOf(identifier) {
       String(fields.oauthBackchannelLogoutSessionRequired ||
              '').toUpperCase() === 'TRUE',
     token_endpoint_auth_method: method,
+    // Not an RFC 7591 member (that one is a single string, above), spelt
+    // beside it like `unconfirmed_redirect_uris`.
+    token_endpoint_auth_methods: methods.slice(0),
     client_secret: fields.oauthClientSecret === undefined
       ? '' : String(fields.oauthClientSecret),
     // ROTATION AND EXPIRY (#49 P5): the secret a rotation replaced and until
@@ -10924,6 +10984,13 @@ function createApplication(detail) {
     log.debug("Leaving createApplication(). Not one of the values.");
     return errorCodes.mark({ ok: false, errors: choiceProblems },
                            'STS-REG-0203');
+  }
+  const methodsProblem =
+    authMethodsProblem(given.fields.oauthTokenEndpointAuthMethod);
+  if (methodsProblem) {
+    log.debug("Leaving createApplication(). `none` beside another method.");
+    return errorCodes.mark({ ok: false, errors: [methodsProblem] },
+                           'STS-REG-0207');
   }
   // The strict overrides' parse (2026-10-01), for the same reason.
   const strictProblems = Object.keys(given.fields).map(function (name) {
@@ -11326,6 +11393,16 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [notAChoice] },
                              'STS-REG-0203');
     }
+    if (attribute === 'oauthTokenEndpointAuthMethod' && mode === 'add') {
+      const methodsProblem = authMethodsProblem(
+        valuesOf(loaded.record.fields[attribute]).concat([value]));
+      if (methodsProblem) {
+        log.debug("Leaving updateApplication(). `none` beside another " +
+                  "method.");
+        return errorCodes.mark({ ok: false, errors: [methodsProblem] },
+                               'STS-REG-0207');
+      }
+    }
   }
   if (mode === 'set' && value) {
     const strictProblem = strictOverrideProblem(attribute, value);
@@ -11505,8 +11582,8 @@ function updateApplication(identifier, change) {
     // Back-Channel Logout section 2.2's scheme (#123), for the entry's type.
     if (attribute === 'oauthBackchannelLogoutUri') {
       const schemeProblem = backchannelSchemeProblem(value,
-        String(loaded.record.fields.oauthTokenEndpointAuthMethod || '') ===
-          'none');
+        valuesOf(loaded.record.fields.oauthTokenEndpointAuthMethod)
+          .indexOf('none') >= 0);
       if (schemeProblem) {
         log.debug("Leaving updateApplication(). The back-channel scheme.");
         return errorCodes.mark({ ok: false,
@@ -15016,6 +15093,7 @@ module.exports = {
   ssfOverrideRows: ssfOverrideRows,
   strictOverrideProblem: strictOverrideProblem,
   attributeChoices: attributeChoices,
+  authMethodsProblem: authMethodsProblem,
   choiceProblem: choiceProblem,
   corsOriginsOfRealm: corsOriginsOfRealm,
   redirectOriginsOfRealm: redirectOriginsOfRealm,

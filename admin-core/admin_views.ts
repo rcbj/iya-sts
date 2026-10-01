@@ -7012,7 +7012,9 @@ class AdminViews {
       clientSecret: {
         held: !!secret,
         value: secret,
-        authMethod: one('oauthTokenEndpointAuthMethod'),
+        // Every declared method (2026-10-01), as one line.
+        authMethod: one('oauthTokenEndpointAuthMethod').split('\n')
+          .filter(function (m) { return m !== ''; }).join(', '),
         registered: !!row.registered,
         registrationAccessTokenHeld: !!one('appRegistrationAccessToken'),
         registrationAccessToken: one('appRegistrationAccessToken'),
@@ -7094,12 +7096,18 @@ class AdminViews {
       return { member: member, attribute: described.attribute,
                label: described.label, value: one(described.attribute) };
     });
-    const method = one('oauthTokenEndpointAuthMethod');
+    // Several since 2026-10-01: a certificate method among them is what the
+    // page reports.
+    const methods = String(one('oauthTokenEndpointAuthMethod') || '')
+      .split('\n').filter(function (m) { return m !== ''; });
+    const certificate = methods.filter(function (m) {
+      return mtls.CERTIFICATE_METHODS.indexOf(m) >= 0;
+    })[0] || '';
     log.debug("Leaving AdminViews.applicationMtlsState(). " + held.length +
               " held.");
     return {
-      authMethod: method,
-      certificateMethod: mtls.CERTIFICATE_METHODS.indexOf(method) >= 0,
+      authMethod: certificate || methods.join(', '),
+      certificateMethod: !!certificate,
       implicitName: tlsClientCertificates.APPLICATION_URN + identifier,
       certificates: held,
       active: held.filter(function (cert) {

@@ -511,8 +511,13 @@ function declaredRefusal(opts) {
     log.debug("Leaving declaredRefusal(). No entry to have declared anything.");
     return null;
   }
-  const method = String(registered.token_endpoint_auth_method || '').trim();
   const observation = o.observation || {};
+  // THE METHOD THIS REQUEST USED, where an entry declares several
+  // (2026-10-01): the observation's, which `client_auth.methodFor()` chose
+  // from what was presented. A client that may present a certificate OR a
+  // secret and sent the secret is held to the secret, not refused here.
+  const method = String(observation.method ||
+                        registered.token_endpoint_auth_method || '').trim();
   if (CERTIFICATE_METHODS.indexOf(method) >= 0 && !observation.authenticated) {
     log.debug("Leaving declaredRefusal(). The declared method did not " +
               "authenticate.");
