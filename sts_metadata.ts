@@ -6135,9 +6135,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'accounts, both attributes and which was missing, and they appear ' +
           'in NO other list here, because nothing was accepted so no ' +
           'authentication was recorded. A SECOND HALF OF THE PAGE IS ' +
-          'CONFIGURATION RATHER THAN HISTORY, and it is TWO registers. ' +
-          'DELEGATED PERMISSIONS, in Microsoft Entra ID\'s shape and the ' +
-          'only CONTROLS this page has: a resource application is given a ' +
+          'CONFIGURATION RATHER THAN HISTORY, and it is TWO registers, both ' +
+          'drawn READ-ONLY here since 2026-10-01: every control is on ' +
+          '/admin/delegation-settings (Protocols → Delegation) and on each ' +
+          'application\'s Permissions tab. DELEGATED PERMISSIONS, in ' +
+          'Microsoft Entra ID\'s shape: a resource application is given a ' +
           'base URI (oauthPermissionBaseUri) and permissions on it ' +
           '(oauthPermission), a permission is identified by the two joined — ' +
           'https://example.com/ + write = https://example.com/write — and a ' +
@@ -6146,8 +6148,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'ORDINARY OAUTH SCOPE and the access token comes back AUDIENCED to ' +
           'the base URI with the permission NAME on its scope claim. A ' +
           'permission must be DEFINED before it can be GRANTED, which is ' +
-          'checked in applications.js so that this form, the management API ' +
-          'and the attribute editor on /admin/applications cannot disagree. ' +
+          'checked in applications.js so that the console forms, the ' +
+          'management API and the attribute editor on /admin/applications ' +
+          'cannot disagree. ' +
           'IN PRODUCT MODE AN UNGRANTED PERMISSION IS invalid_scope; in ' +
           'development it is honoured, logged and marked here, and only ' +
           'oauth2.delegatedPermissionsEnforced turns it into invalid_scope. ' +
@@ -6176,6 +6179,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'the picture), the Kerberos policy, and `delegationPolicy` — the ' +
           'WS-Trust and token-exchange one, paged as GET ' +
           '/admin-api/delegation/policy pages it.' },
+  { path: '/admin/delegation-settings', group: 'Admin',
+    name: 'Delegation settings',
+    // RFC 6749 because a delegated permission is asked for as an OAuth scope
+    // and the access token is audienced to the resource's base URI.
+    specs: ['rfc6749'],
+    effect: 'changes which delegated permissions exist and which client ' +
+            'applications hold them, and how many delegation acts are kept',
+    what: 'NON-SPEC PAGE (2026-10-01). Every control that was on ' +
+          '/admin/delegation, which only reads since: the DELEGATED ' +
+          'PERMISSIONS register for every application — Expose an API (a ' +
+          'resource\'s oauthPermissionBaseUri), Define a permission ' +
+          '(oauthPermission), each permission\'s Remove and each grant\'s ' +
+          'Revoke (oauthDelegatedPermission on the client) — and the ' +
+          'Delegation settings group (delegation.maxRecords). A grant is ' +
+          'made on an application\'s own Permissions tab, from either end. ' +
+          'POST takes the five actions set-permission-base, ' +
+          'define-permission, remove-permission, grant-permission and ' +
+          'revoke-permission from both pages, and POST ' +
+          '/admin-api/permissions/{action} mirrors it. ?format=json is the ' +
+          'register whole, as `allowed`, and the settings.' },
   { path: '/admin/attribute-sources', group: 'Admin',
     name: 'Attribute sources', specs: [],
     what: 'NON-SPEC PAGE (#94). The SQL databases this realm reads people\'s ' +

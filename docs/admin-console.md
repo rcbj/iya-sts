@@ -947,10 +947,12 @@ readable, and `?format=svg` is how it is opened in something that zooms.
 
 ### Delegated permissions
 
-**A third register on `/admin/delegation`, and the one you type.** The acts
-are what happened, and the Kerberos table is somebody else's configuration;
-this is configuration of this service's own, in the shape Microsoft Entra ID
-uses. The page draws all three under headings saying which is which.
+**A third register on `/admin/delegation`, and the one you type** — on
+Protocols → Delegation and each application's page; `/admin/delegation`
+draws it read-only. The acts are what happened, and the Kerberos table is
+somebody else's configuration; this is configuration of this service's own,
+in the shape Microsoft Entra ID uses. The page draws all three under headings
+saying which is which.
 
 * A **resource** application exposes an API: a base URI
   (`oauthPermissionBaseUri` — Entra's Application ID URI, `api://<guid>`;
@@ -967,16 +969,27 @@ All three are ordinary attributes on entries in `ou=applications`, so an
 rule, checked in one place so the console form, `POST /admin-api/permissions/…`
 and the generic attribute editor on `/admin/applications` cannot disagree.
 
-**Five actions, on two pages, posting to one handler.** *Expose an API*,
-*Define a permission* and each row's *Remove* are on `/admin/delegation`.
-**Granting is on the client application's own page** — its *Delegated
-permissions* section shows what it holds, what it exposes, and a form that
-grants it another — because there the client half is settled by the URL. A grant
-written to the resource instead of the client would still succeed and be wrong
-only at the token endpoint, later. The select offers neither the application's
-own permissions nor ones it already holds. *Revoke* is drawn in both places.
-Both forms post to `/admin/delegation` and both are
-`POST /admin-api/permissions/{action}`.
+**`/admin/delegation` shows this register and does not change it** (since
+2026-10-01). The controls are in two places, and every form posts to one
+handler, `POST /admin/delegation-settings`, which is
+`POST /admin-api/permissions/{action}` on the management API:
+
+* **Protocols → Delegation** (`/admin/delegation-settings`) is the register
+  for every application: *Expose an API*, *Define a permission*, each
+  permission's *Remove* and each grant's *Revoke* — and the
+  `delegation.maxRecords` setting.
+* **An application's own *Permissions* tab** (Directory → Applications)
+  configures both halves for that application only. As a **client** it shows
+  what it holds, with *Revoke*, and grants it another application's
+  permission. As a **resource** it sets its base URI, defines and removes its
+  own permissions, and lists which other applications hold them, with
+  *Revoke* and a form that grants one of ITS permissions to another
+  application.
+
+Granting is only on an application's page, because there one half of the pair
+is settled by the URL: a grant written to the resource instead of the client
+would still succeed and be wrong only at the token endpoint, later. No select
+offers an application its own permission, or one it already holds.
 
 The two tables of this register have a **search over the application name**:
 `?permq=` matches the application that EXPOSES a permission, and `?grantq=`
@@ -1548,7 +1561,7 @@ edited on `/admin/rbac`.
 |---|---|---|---|---|
 | `audit.maxEvents` | `AUDIT_MAX_EVENTS` | `5000` | yes | How many audit events are held; the dropped are counted and shown. |
 | `audit.protocolCalls` | `AUDIT_PROTOCOL_CALLS` | `true` | yes | Whether ordinary protocol endpoint calls get an audit row. |
-| `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | yes | How many delegation acts `/admin/delegation` keeps, refusals included. |
+| `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | yes | How many delegation acts `/admin/delegation` keeps, refusals included. Set on `/admin/delegation-settings`. |
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development mode, refuse a permission the client was not granted. Product mode always refuses. |
 | `debugger.enabled` | `STS_DEBUGGER_ENABLED` | `auto` | no | `auto`, `on` or `off`; `auto` serves the debugger in development mode only. |
 | `debugger.port` | `STS_DEBUGGER_PORT` | `8444` | no | The debugger's listener. |

@@ -3857,7 +3857,11 @@ async function theTruststorePageAddsAndRemoves(driver) {
 }
 
 // ---------------------------------------------------------------------------
-// /admin/delegation: THE FIVE CONTROLS ON THE CONFIGURED HALF.
+// THE FIVE CONTROLS ON THE CONFIGURED HALF OF DELEGATION — on Protocols →
+// Delegation (/admin/delegation-settings) since 2026-10-01, and on each
+// application's own Permissions tab. Monitoring → Delegation
+// (/admin/delegation) draws the same register READ-ONLY, which is asserted
+// here too.
 //
 // It is in this section rather than in the writeForms() table for the reason
 // /admin/logout is: each control needs something done first. A permission
@@ -3897,9 +3901,28 @@ async function theDelegationPageDefinesAndGrants(driver) {
     });
   }
 
+  // 0. MONITORING → DELEGATION CHANGES NOTHING (2026-10-01). Every control
+  //    that was on it is on Protocols → Delegation; a form left behind would
+  //    post to a path that no longer takes one.
+  const monitoring = await open(driver, realm("/admin/delegation"));
+  const leftBehind = [];
+  for (const action of ["set-permission-base", "define-permission",
+                        "remove-permission", "revoke-permission"]) {
+    if (await formIndexPosting(driver, action) >= 0) {
+      leftBehind.push(action);
+    }
+  }
+  check("/admin/delegation draws no control of the register", function () {
+    assert.ok(monitoring.status === 200 && leftBehind.length === 0,
+      "Monitoring → Delegation reads the register and changes none of it " +
+      "since 2026-10-01; its controls are on /admin/delegation-settings. It " +
+      "answered " + monitoring.status + " and drew: " +
+      (leftBehind.join(", ") || "nothing"));
+  });
+
   // 1. THE BASE URI. Pressed first because nothing else on the page works
   //    without it, which is exactly what the second press below asserts.
-  await open(driver, realm("/admin/delegation"));
+  await open(driver, realm("/admin/delegation-settings"));
   // FOUND BY ACTION AND NOT BY FIELD NAMES, all three of them, and that is a
   // correction rather than a style. The two TABLES on this page draw row
   // buttons whose hidden fields are `resource`+`name` (Remove) and
@@ -3909,22 +3932,24 @@ async function theDelegationPageDefinesAndGrants(driver) {
   // this run starts, and would silently press Remove instead of Define the
   // first time it did not.
   const baseForm = await formIndexPosting(driver, "set-permission-base");
-  check("/admin/delegation draws the Expose an API form", function () {
+  check("/admin/delegation-settings draws the Expose an API form", function () {
     assert.ok(baseForm >= 0,
-      "/admin/delegation should draw a form taking a `resource` and a " +
-      "`baseUri`. The whole configured half of that page hangs off it: a " +
-      "permission is named by its base URI followed by its name, so an " +
+      "/admin/delegation-settings should draw a form taking a `resource` " +
+      "and a `baseUri`. The whole configured half of that page hangs off " +
+      "it: a permission is named by its base URI followed by its name, so an " +
       "application with no base exposes permissions no client can ask for.");
   });
   await fillAndPress(driver, baseForm,
                      { resource: resource, baseUri: baseUri });
 
   // 2. THE PERMISSION.
-  await open(driver, realm("/admin/delegation"));
+  await open(driver, realm("/admin/delegation-settings"));
   const defineForm = await formIndexPosting(driver, "define-permission");
-  check("/admin/delegation draws the Define a permission form", function () {
+  check("/admin/delegation-settings draws the Define a permission form",
+        function () {
     assert.ok(defineForm >= 0,
-      "/admin/delegation should draw a form taking a `resource` and a `name`.");
+      "/admin/delegation-settings should draw a form taking a `resource` and " +
+      "a `name`.");
   });
   await fillAndPress(driver, defineForm,
                      { resource: resource, name: "write",
@@ -3950,11 +3975,11 @@ async function theDelegationPageDefinesAndGrants(driver) {
   //    delegation page keeps the other four controls and a paragraph saying
   //    where this one went.
   //
-  //    The form still POSTs to /admin/delegation — `grant-permission` is that
-  //    handler's action and moving a form is not moving an action — which is
-  //    why the read-back below is the assertion that matters: a redirect that
-  //    landed anywhere else, or a write that landed on the resource, both
-  //    answer 303 with the same cheerful notice.
+  //    The form POSTs to /admin/delegation-settings — `grant-permission` is
+  //    that handler's action and moving a form is not moving an action —
+  //    which is why the read-back below is the assertion that matters: a
+  //    redirect that landed anywhere else, or a write that landed on the
+  //    resource, both answer 303 with the same cheerful notice.
   await open(driver, realm("/admin/applications?application=" +
                            encodeURIComponent(client) + "#tab-permissions"));
   const grantForm = await formIndexPosting(driver, "grant-permission");
@@ -4010,8 +4035,8 @@ async function theDelegationPageDefinesAndGrants(driver) {
   //    then be pressing a button on a row in a state this run did not set up.
   //
   //    Revoke is pressed on the CLIENT's page, where the row button now is
-  //    beside the grant it revokes; Remove stays on /admin/delegation, which
-  //    is where a permission is defined and undefined.
+  //    beside the grant it revokes; Remove is on /admin/delegation-settings,
+  //    which is where every permission is defined and undefined.
   await open(driver, realm("/admin/applications?application=" +
                            encodeURIComponent(client) + "#tab-permissions"));
   const revokeForm = await formIndexPosting(driver, "revoke-permission");
@@ -4019,7 +4044,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
     await fillAndPress(driver, revokeForm, {});
   }
   const revoked = await survey(driver);
-  await open(driver, realm("/admin/delegation"));
+  await open(driver, realm("/admin/delegation-settings"));
   const removeForm = await formIndexPosting(driver, "remove-permission");
   if (removeForm >= 0) {
     await fillAndPress(driver, removeForm, {});
@@ -4030,7 +4055,8 @@ async function theDelegationPageDefinesAndGrants(driver) {
       "the client's page should draw a Revoke button on the row of every " +
       "permission it holds; it drew revoke=" + revokeForm);
     assert.ok(removeForm >= 0,
-      "and /admin/delegation should draw a Remove button on the row of every " +
+      "and /admin/delegation-settings should draw a Remove button on the row " +
+      "of every " +
       "permission defined; it drew remove=" + removeForm);
     assert.ok(revoked.text.indexOf(baseUri + "write") < 0 ||
               /It holds none/i.test(revoked.text),
@@ -4041,12 +4067,102 @@ async function theDelegationPageDefinesAndGrants(driver) {
       "It still says: " + cleared.text.slice(0, 400));
   });
 
+  // 6. THE RESOURCE'S OWN PAGE (2026-10-01). Its Permissions tab defines,
+  //    grants and removes ITS OWN permissions only: `resource` is a hidden
+  //    field there, and the grant form offers a CLIENT select beside a
+  //    select of this application's permissions. Two `grant-permission`
+  //    forms are on that page — the client half's has no `client` select —
+  //    so the resource half's is found by the select it carries.
+  const resourcePage = realm("/admin/applications?application=" +
+                             encodeURIComponent(resource) + "#tab-permissions");
+  await open(driver, resourcePage);
+  const ownDefine = await formIndexPosting(driver, "define-permission");
+  check("the resource's own page draws Define a permission", function () {
+    assert.ok(ownDefine >= 0,
+      "the Permissions tab of a RESOURCE application should define a " +
+      "permission on that application, with no application select.");
+  });
+  await fillAndPress(driver, ownDefine,
+                     { name: "read", description: "Pressed on its own page" });
+  const afterDefine = await survey(driver);
+  check("and the permission is read back on that page", function () {
+    assert.ok(afterDefine.text.indexOf(baseUri + "read") >= 0,
+      "a permission defined on the resource's page should be listed there " +
+      "by its whole identifier. The page says " +
+      afterDefine.text.slice(0, 400));
+  });
+
+  const ownGrant = await formIndexPostingWithField(driver, "grant-permission",
+                                                   "select[name=client]");
+  check("the resource's own page grants its permission to a client",
+        function () {
+    assert.ok(ownGrant >= 0,
+      "the Permissions tab of a RESOURCE application should draw a form " +
+      "granting one of ITS OWN permissions to another application.");
+  });
+  if (ownGrant >= 0) {
+    await fillAndPress(driver, ownGrant,
+                       { client: client, permission: baseUri + "read" });
+  }
+  const clientPage = await open(driver, realm(
+    "/admin/applications?application=" + encodeURIComponent(client) +
+    "#tab-permissions"));
+  check("and the grant lands on the CLIENT's entry", function () {
+    assert.ok(clientPage.text.indexOf(baseUri + "read") >= 0,
+      "a grant made from the resource's page is still a value of " +
+      "oauthDelegatedPermission on the CLIENT, so the client's own page " +
+      "must list it as something it holds. It says " +
+      clientPage.text.slice(0, 500));
+  });
+
+  await open(driver, resourcePage);
+  const ownRevoke = await formIndexPosting(driver, "revoke-permission");
+  if (ownRevoke >= 0) {
+    await fillAndPress(driver, ownRevoke, {});
+  }
+  const ownRemove = await formIndexPosting(driver, "remove-permission");
+  if (ownRemove >= 0) {
+    await fillAndPress(driver, ownRemove, {});
+  }
+  const ownCleared = await survey(driver);
+  check("and revokes and removes it there", function () {
+    assert.ok(ownRevoke >= 0 && ownRemove >= 0,
+      "the resource's page should draw Revoke on each grant of its " +
+      "permissions and Remove on each permission; it drew revoke=" +
+      ownRevoke + " remove=" + ownRemove);
+    assert.ok(ownCleared.text.indexOf(baseUri + "read") < 0,
+      "and afterwards the permission should be gone from it. It says " +
+      ownCleared.text.slice(0, 400));
+  });
+
   log.info("[permissions] OK — a base URI and a permission were typed on " +
-           "/admin/delegation, the grant was typed on the CLIENT's own page, " +
-           "the composed identifier and both applications were read back off " +
-           "the pages that drew the controls, the register agreed, and " +
-           "revoke and remove took them away again.");
+           "/admin/delegation-settings, the grant was typed on the CLIENT's " +
+           "own page, the composed identifier and both applications were " +
+           "read back off the pages that drew the controls, the register " +
+           "agreed, revoke and remove took them away again, and the " +
+           "RESOURCE's own page defined, granted, revoked and removed one " +
+           "of its own.");
   log.debug("Leaving theDelegationPageDefinesAndGrants().");
+}
+
+// The index of the first form whose hidden `action` is `actionValue` AND
+// which holds an element matching `selector` — for a page that draws two
+// forms with one action, like a resource's Permissions tab (2026-10-01).
+async function formIndexPostingWithField(driver, actionValue, selector) {
+  log.debug("Entering formIndexPostingWithField(). action=" + actionValue);
+  const found = await driver.executeScript(`
+    const forms = Array.from(document.forms);
+    for (let i = 0; i < forms.length; i += 1) {
+      const control = forms[i].querySelector('input[type=hidden][name=action]');
+      if (control && control.value === arguments[0] &&
+          forms[i].querySelector(arguments[1])) {
+        return i;
+      }
+    }
+    return -1;
+  `, actionValue, selector);
+  log.debug("Leaving formIndexPostingWithField(). " + found);
+  return found;
 }
 
 // ---------------------------------------------------------------------------

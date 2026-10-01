@@ -4088,6 +4088,50 @@ ACT**, on every request, whatever anything is set to. The permissions above are
 policy this service was configured with and refuse only when
 `oauth2.delegatedPermissionsEnforced` is set.
 
+## …AND ON 2026-10-01 THE CONTROLS LEFT IT FOR PROTOCOLS → DELEGATION
+
+rcbj's change: **every control that changed configuration moved off Monitoring
+→ Delegation** to a new page, **Protocols → Delegation**
+(`/admin/delegation-settings`), and the application's own **Permissions** tab
+took this one application's part of them. The reason is the console's filing
+rule (a page is filed by the QUESTION it answers): Monitoring is what happened,
+and a page under it that also configured was the one exception. The section
+above still argues why the register EXISTS; this says where it is drawn.
+
+* **`/admin/delegation` draws the register READ-ONLY**, beside the acts it is
+  read against: `permissionsSection(…, editable = false)` swaps every row
+  button for a *change it* link (the `readOnly` row option the picture pages
+  already pass) and drops Expose an API and Define a permission. It has no
+  POST, no settings form and no `settings` in its JSON. "There is NO FORM" in
+  the section further up is true of the whole page again.
+* **`/admin/delegation-settings` is the same `permissionsSection()`,
+  `editable`**, for every application, plus the `Delegation` settings group
+  (`delegation.maxRecords`, `SETTING_HOMES`). It owns `POST
+  /admin/delegation-settings`, the five actions' one handler (it was `POST
+  /admin/delegation`); `POST /admin-api/permissions/:action` mirrors it, which
+  is what satisfies rule 7's page parity for the new page. It is exempt from
+  `admin-core/protocol_endpoints.ts` with its reason: it configures registers
+  other families' endpoints read and has none of its own. Its `LIST_PARAMS`
+  are the register's two searches and two pagings, the names they have on the
+  Monitoring page.
+* **An application's Permissions tab configures BOTH halves for itself.** The
+  client half was already there (what it holds, with Revoke; a form granting
+  it another application's permission). The resource half is new: *What it
+  exposes* with Remove, *Expose an API* and *Define a permission* with
+  `resource` a HIDDEN field set to this entry — so no form there reaches
+  another application's permissions — and *Grants — the delegation
+  relationships*, the grants of ITS permissions, with Revoke and a form whose
+  client select offers every other application and whose permission select
+  offers only its own. That page therefore draws TWO `grant-permission`
+  forms; the resource half's is the one with a `client` select (the console
+  test finds it that way). Every form carries `page`, which
+  `permissionsReturnTo()` spends — only when the registry knows the name — to
+  bring the reader back to the page they were on, since a grant made from the
+  resource names a different `client`.
+* **Who may act for whom (Kerberos, WS-Trust, token exchange) did not move**:
+  it was read-only on the Monitoring page already, every value being an
+  attribute edited on the application's or the person's page.
+
 ## EVERY LIST ON `/admin/delegation` IS PAGED AT TEN, AND THAT IS A NUMBER ABOUT THE PAGE
 
 Changed 2026-09-01, when the configured register made it seven tables. Before

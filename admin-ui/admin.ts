@@ -1350,6 +1350,23 @@ const SECTIONS = [
         ]
       },
 
+      // PROTOCOLS → DELEGATION (2026-10-01, rcbj): every control that was on
+      // Monitoring → Delegation. Ungrouped for Federation's reason below —
+      // delegation spans three families (Kerberos, WS-Trust, RFC 8693) and
+      // the permissions it configures are OAuth scopes — and under Protocols
+      // because it is CONFIGURATION; the acts it is read against stay in
+      // Monitoring, which no longer changes anything.
+      { path: '/admin/delegation-settings', label: 'Delegation',
+        blurb: 'The delegated permissions register, configured: which ' +
+               'RESOURCE applications expose an API under a base URI, the ' +
+               'permissions each defines on it, and which CLIENT ' +
+               'applications hold them — Expose an API, Define a ' +
+               'permission, Remove and Revoke for every application — and ' +
+               '<code>delegation.maxRecords</code>, how many acts ' +
+               '<a href="/admin/delegation">Monitoring &rsaquo; ' +
+               'Delegation</a> keeps. A grant is made on an application\'s ' +
+               'own Permissions tab, from either end.' },
+
       // UNGROUPED, beside SCIM, and the placement needed the same argument the
       // delegation page needed. Federation spans FIVE protocol families, so
       // under any one of the groups above it would mean choosing which four
@@ -2145,9 +2162,11 @@ const SECTIONS = [
                'WS-Trust\'s <code>OnBehalfOf</code> and <code>ActAs</code>, ' +
                'and RFC 8693\'s impersonation and delegation — against ONE ' +
                'model, because the question a reader arrives with is ' +
-               'protocol-independent. Beside them, who MAY delegate to whom, ' +
-               'which only Kerberos polices; that asymmetry is the most ' +
-               'useful thing on the page. ' +
+               'protocol-independent. Beside them, read-only, who MAY ' +
+               'delegate to whom and the delegated permissions register; ' +
+               'both are changed elsewhere (<a ' +
+               'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+               'Delegation</a>). ' +
                '<a href="/admin/delegation/map">The picture</a> draws the ' +
                'same acts as a graph, laid out on the SERVER because this ' +
                'console runs no script.' },
@@ -9965,10 +9984,10 @@ class AdminConsole {
       // IDENTIFIER cell, not this one, and a permission with no identifier is
       // removed by exactly the same call. One form, once.
       '<td>' + (options && options.readOnly
-        ? '<a href="/admin/delegation#allowed" title="This page draws the ' +
-          'register and does not change it. The Remove button for this ' +
-          'permission is on the register itself.">on the register</a>'
-        : '<form method="post" action="/admin/delegation">' +
+        ? '<a href="/admin/delegation-settings#allowed" title="This page ' +
+          'draws the register and does not change it. The Remove button for ' +
+          'this permission is on Protocols › Delegation.">change it</a>'
+        : '<form method="post" action="/admin/delegation-settings">' +
           this.permissionsBack(listView) + '<div class="formrow">' +
           '<input type="hidden" name="action" value="remove-permission">' +
           '<input type="hidden" name="resource" value="' +
@@ -10088,10 +10107,10 @@ class AdminConsole {
           'it. A configured grant nobody has needed is exactly what this ' +
           'register is here to show.">never asked for</span>') + '</td>' +
       '<td>' + (options && options.readOnly
-        ? '<a href="/admin/delegation#allowed" title="This page draws the ' +
-          'register and does not change it. The Revoke button for this grant ' +
-          'is on the register itself.">on the register</a>'
-        : '<form method="post" action="/admin/delegation">' +
+        ? '<a href="/admin/delegation-settings#allowed" title="This page ' +
+          'draws the register and does not change it. The Revoke button for ' +
+          'this grant is on Protocols › Delegation.">change it</a>'
+        : '<form method="post" action="/admin/delegation-settings">' +
           this.permissionsBack(listView) + '<div class="formrow">' +
           '<input type="hidden" name="action" value="revoke-permission">' +
           '<input type="hidden" name="client" value="' + this.esc(one.client) +
@@ -10151,26 +10170,42 @@ class AdminConsole {
     };
   }
 
-  // The whole configured section, as it appears on /admin/delegation. Extracted
-  // into a function of its own because that page's `inner` is already the
-  // longest expression in this console and a fourth screen of string
-  // concatenation inside it would be unreadable — not because anything else
-  // draws it.
+  // The whole configured section. Extracted into a function of its own because
+  // the delegation page's `inner` is already the longest expression in this
+  // console and a fourth screen of string concatenation inside it would be
+  // unreadable.
+  //
+  // **IT IS DRAWN ON TWO PAGES SINCE 2026-10-01, AND ONLY ONE OF THEM CHANGES
+  // ANYTHING** (rcbj). Monitoring → Delegation (/admin/delegation) is what
+  // HAPPENED, and a register of what is ALLOWED drawn there is the reading the
+  // acts are compared against — so it keeps the tables, read-only, with every
+  // row button swapped for a link (the `readOnly` the picture pages already
+  // pass). Protocols → Delegation (/admin/delegation-settings) is where the
+  // register is CONFIGURED: the same tables with their Remove and Revoke
+  // buttons, Expose an API and Define a permission for any application, and
+  // the page's one setting. One function, so the two pages cannot come to
+  // disagree about what a row says; `editable` decides only the controls and
+  // which page the searches and pagings stay on.
   /**
-   * Draws the delegated permissions section of /admin/delegation.
-   *
-   * The paged permissions and grants tables, and the Expose an API and
-   * Define a permission forms.
+   * Draws the delegated permissions register: the paged permissions and
+   * grants tables, and — when editable — the Expose an API and Define a
+   * permission forms and each row's button.
    *
    * @param req - the request
    * @param view - the delegation view holding the register
    * @param listView - the list state carried into links and forms
+   * @param editable - true on Protocols → Delegation, which configures the
+   *   register; false on Monitoring → Delegation, which only reads it
    * @returns the section as HTML
    */
-  permissionsSection(req, view, listView) {
+  permissionsSection(req, view, listView, editable) {
     const { log, applications, pageParamsOf } = this.deps;
     const self = this;
-    log.debug("Entering AdminConsole.permissionsSection().");
+    log.debug("Entering AdminConsole.permissionsSection(). editable=" +
+              !!editable);
+    // The page this section is on: its searches and pagings stay there.
+    const here = editable ? '/admin/delegation-settings' : '/admin/delegation';
+    const rowOptions = editable ? undefined : { readOnly: true };
     const register = view.register;
     const counts = register.counts;
     // Every application in the registry, for the two selects. A select rather
@@ -10224,10 +10259,8 @@ class AdminConsole {
     // searches and the other table's own search all ride along. pageNavPair()
     // overrides only the one name off the paging object it is handed.
     const navParams = pageParamsOf(req.query);
-    const permNav = this.pageNavPair('/admin/delegation', navParams,
-                                     permPage.paging);
-    const grantNav = this.pageNavPair('/admin/delegation', navParams,
-                                      grantPage.paging);
+    const permNav = this.pageNavPair(here, navParams, permPage.paging);
+    const grantNav = this.pageNavPair(here, navParams, grantPage.paging);
 
     log.debug("Leaving AdminConsole.permissionsSection(). " + counts.grants +
               " grant(s), " +
@@ -10271,8 +10304,8 @@ class AdminConsole {
 
       this.note('<strong>In product mode an ungranted permission is refused ' +
       '<code>invalid_scope</code>, always. In development a grant refuses ' +
-      'nothing by default, and that is the setting at the foot of this ' +
-      'page.</strong> With ' +
+      'nothing by default, and that is a setting on <a ' +
+      'href="/admin/oauth2">OAuth 2.0 / OIDC settings</a>.</strong> With ' +
       '<code>oauth2.delegatedPermissionsEnforced</code> off &mdash; which it ' +
       'is unless somebody turned it on &mdash; an ungranted permission is ' +
       'honoured exactly as a granted one is, logged as ungranted, and marked ' +
@@ -10313,7 +10346,7 @@ class AdminConsole {
       'entries and become dangling, because tidying them would be this page ' +
       'writing to entries nobody named.') +
       this.sectionSearchForm({
-        path: '/admin/delegation', query: req.query,
+        path: here, query: req.query,
         param: 'permq', pageParam: 'permissionsPage',
         label: 'Narrow to an application',
         placeholder: 'part of an application name or identifier',
@@ -10330,7 +10363,7 @@ class AdminConsole {
       '&mdash; what a client sends</th><th>Held by</th><th>Which ' +
       'applications</th><th></th></tr>' +
       (permPage.shown.map(function (one) {
-        return self.permissionDefinitionRow(one, listView);
+        return self.permissionDefinitionRow(one, listView, rowOptions);
       }).join('') || '<tr><td colspan="6">' +
         (permWanted
           ? 'No application whose name or identifier contains <code>' +
@@ -10345,47 +10378,59 @@ class AdminConsole {
       '</table>' +
       permNav.foot +
 
-      '<h4>Expose an API</h4>' +
-      this.note('The base URI is one answer per application and everything ' +
-      'it exposes hangs off it. A trailing separator is added where there is ' +
-      'none, because the identifier is a plain concatenation and ' +
-      '<code>https://example.com</code> + <code>write</code> would otherwise ' +
-      'read as one word. Clearing it leaves the permissions on the entry ' +
-      'with no identifier at all, which the table above reports rather than ' +
-      'hides.') +
-      '<form method="post" action="/admin/delegation">' +
-      this.permissionsBack(listView) +
+      (editable ? '' :
+        this.note('<strong>This page READS the register and changes ' +
+        'none of it (2026-10-01).</strong> Exposing an API, defining and ' +
+        'removing a permission and revoking a grant are on <a ' +
+        'href="/admin/delegation-settings#allowed">Protocols &rsaquo; ' +
+        'Delegation</a>, for every application at once, and on each ' +
+        'application\'s own <em>Permissions</em> tab under <a ' +
+        'href="/admin/applications">Directory &rsaquo; Applications</a>, ' +
+        'for that one. Each row\'s last column links there instead of ' +
+        'carrying a button.')) +
+
+      (!editable ? '' :
+        '<h4>Expose an API</h4>' +
+        this.note('The base URI is one answer per application and ' +
+        'everything it exposes hangs off it. A trailing separator is added ' +
+        'where there is none, because the identifier is a plain ' +
+        'concatenation and <code>https://example.com</code> + ' +
+        '<code>write</code> would otherwise read as one word. Clearing it ' +
+        'leaves the permissions on the entry with no identifier at all, ' +
+        'which the table above reports rather than hides.') +
+        '<form method="post" action="/admin/delegation-settings">' +
+        this.permissionsBack(listView) +
         '<div class="formrow">' +
         '<input type="hidden" name="action" value="set-permission-base">' +
         '<label for="base-resource">Application</label>' +
         '<select id="base-resource" name="resource">' + applicationOptions +
-      '</select><label ' +
-        'for="baseUri">Base URI</label><input type="text" id="baseUri" ' +
-        'name="baseUri" size="34" placeholder="https://example.com/"><button ' +
-        'type="submit">Set the base URI</button></div></form><h4>Define a ' +
-        'permission</h4>' +
-      this.note('The name is what ends up on the token\'s <code>scope</code> ' +
-      'claim, so it must be a legal OAuth scope token: any printable ASCII ' +
-      'except space, double quote and backslash (RFC 6749 section 3.3), and ' +
-      'not <code>|</code>, which separates the name from the description in ' +
-      'the attribute. The description is optional and is shown wherever the ' +
-      'permission is; changing it means removing the permission and defining ' +
-      'it again, because a permission has one description and two rows with ' +
-      'one name would leave the second unreachable.') +
-      '<form method="post" action="/admin/delegation">' +
-      this.permissionsBack(listView) +
+        '</select><label for="baseUri">Base URI</label><input type="text" ' +
+        'id="baseUri" name="baseUri" size="34" ' +
+        'placeholder="https://example.com/"><button type="submit">Set the ' +
+        'base URI</button></div></form>' +
+        '<h4>Define a permission</h4>' +
+        this.note('The name is what ends up on the token\'s ' +
+        '<code>scope</code> claim, so it must be a legal OAuth scope token: ' +
+        'any printable ASCII except space, double quote and backslash (RFC ' +
+        '6749 section 3.3), and not <code>|</code>, which separates the name ' +
+        'from the description in the attribute. The description is optional ' +
+        'and is shown wherever the permission is; changing it means removing ' +
+        'the permission and defining it again, because a permission has one ' +
+        'description and two rows with one name would leave the second ' +
+        'unreachable.') +
+        '<form method="post" action="/admin/delegation-settings">' +
+        this.permissionsBack(listView) +
         '<div class="formrow">' +
         '<input type="hidden" name="action" value="define-permission">' +
         '<label for="perm-resource">Exposed by</label>' +
         '<select id="perm-resource" name="resource">' + applicationOptions +
-      '</select><label ' +
-        'for="perm-name">Name</label><input type="text" id="perm-name" ' +
-        'name="name" size="18" placeholder="write"><label ' +
+        '</select><label for="perm-name">Name</label><input type="text" ' +
+        'id="perm-name" name="name" size="18" placeholder="write"><label ' +
         'for="perm-description">Description</label><input type="text" ' +
         'id="perm-description" name="description" size="34" ' +
         'placeholder="Change widgets on somebody\'s behalf"><button ' +
-        'type="submit">Define it</button></div></form><h3 id="grants">Grants ' +
-        '&mdash; the delegation relationships</h3>' +
+        'type="submit">Define it</button></div></form>') +
+      '<h3 id="grants">Grants &mdash; the delegation relationships</h3>' +
       this.note('<strong>One row per (client, permission), and that IS the ' +
       'relationship.</strong> A client granted three permissions on one ' +
       'resource is three rows rather than one labelled <em>3</em>, because ' +
@@ -10394,7 +10439,7 @@ class AdminConsole {
       'both work here with no store of their own: three clients granted one ' +
       'permission is one value on each of three entries.') +
       this.sectionSearchForm({
-        path: '/admin/delegation', query: req.query,
+        path: here, query: req.query,
         param: 'grantq', pageParam: 'grantsPage',
         label: 'Narrow to an application',
         placeholder: 'part of an application name or identifier',
@@ -10415,7 +10460,7 @@ class AdminConsole {
       'what is reached</th><th>Permission</th><th>Identifier</th><th>What ' +
       'the access token will say</th><th>Ever asked for?</th><th></th></tr>' +
       (grantPage.shown.map(function (one) {
-        return self.permissionGrantRow(one, listView);
+        return self.permissionGrantRow(one, listView, rowOptions);
       }).join('') || '<tr><td colspan="7">' +
         (grantWanted
           ? 'No grant names an application whose name or identifier contains ' +
@@ -10445,41 +10490,39 @@ class AdminConsole {
       //
       // On an application's own page there is no first select at all: the
       // client is the entry the reader is standing on. So the control that
-      // could be half wrong became a control that cannot be. Only this one
-      // moved: the three RESOURCE-half controls stay here, because this page is
-      // where the register is and `Expose an API`, `Define a permission` and
-      // each row's `Remove` all name the resource explicitly.
-      // `revoke-permission` is drawn in BOTH places and that is not a leftover
-      // — it is a ROW BUTTON, so its two halves are the row it sits on and
-      // neither can be got wrong, which is exactly what was wrong with the
-      // grant form's two selects. Somebody tidying up works from the register;
-      // the application's own list is the read-back of the grant just made, and
-      // a table with no way to undo the write above it is half a control.
+      // could be half wrong became a control that cannot be.
       //
-      // WHAT IS DELIBERATELY UNCHANGED IS THE HANDLER. `POST /admin/delegation`
-      // still answers all five actions and PERMISSION_ACTIONS still lists all
-      // five, so rule 7's parity check reads the same sentence it always did
-      // and `POST /admin-api/permissions/grant-permission` still mirrors it.
-      // Moving a FORM is not moving an action, and making it one would have
-      // cost this feature an /admin-api operation for no reason a caller would
-      // notice.
+      // **AND SINCE 2026-10-01 THE RESOURCE'S PAGE GRANTS TOO** (rcbj): its
+      // Permissions tab offers ITS OWN permissions to another application.
+      // That is still one select of applications, but the other half — the
+      // permission, and so the resource — is settled by the page, which is
+      // the property the move above was for. The register stays without a
+      // grant form; `revoke-permission` is a ROW BUTTON here and on both
+      // applications' pages, because the row is the pair and neither half
+      // can be got wrong.
+      //
+      // THE HANDLER MOVED WITH THE CONTROLS (2026-10-01): every form that
+      // changes the register posts to `POST /admin/delegation-settings`, the
+      // Protocols page's handler, and Monitoring → Delegation has no POST.
+      // PERMISSION_ACTIONS still lists all five, and `POST
+      // /admin-api/permissions/:action` mirrors the new path.
       // -----------------------------------------------------------------------
       '<h4>Grant a permission</h4>' +
       (grantable.length
-        ? this.note('<strong>This one is on the application\'s own ' +
-          'page.</strong> A grant lands on the CLIENT\'s entry, as a value ' +
+        ? this.note('<strong>This one is on the two applications\' own ' +
+          'pages.</strong> A grant lands on the CLIENT\'s entry, as a value ' +
           'of <code>oauthDelegatedPermission</code>, because the client is ' +
           'the party that will name the permission in a <code>scope</code> — ' +
           'so the entry that answers <em>may this request be honoured</em> ' +
-          'is the entry the request identifies. That is exactly why the ' +
-          'control is drawn where that entry is: open an application under ' +
+          'is the entry the request identifies. Open an application under ' +
           '<a href="/admin/applications">Directory &rsaquo; Applications</a> ' +
-          'and its <em>Delegated permissions</em> section grants it one, ' +
-          'with the client half of the pair already settled by the page you ' +
-          'are on rather than chosen out of a list of every application ' +
-          'here. An application still cannot be granted its own permission: ' +
-          'the token would be addressed to itself, which is what an ID Token ' +
-          'already is, and that page offers it none of them.')
+          'and its <em>Permissions</em> tab grants it somebody else\'s ' +
+          'permission, or grants one of ITS OWN to another application — ' +
+          'either way one half of the pair is settled by the page you are ' +
+          'on rather than chosen out of a list of every application here. ' +
+          'An application still cannot be granted its own permission: the ' +
+          'token would be addressed to itself, which is what an ID Token ' +
+          'already is, and neither page offers it.')
         : this.note('<strong>There is nothing to grant yet.</strong> A ' +
           'permission must be defined before it can be granted, so the ' +
           'control appears — on each application\'s own page under <a ' +
@@ -10504,55 +10547,68 @@ class AdminConsole {
   // ---------------------------------------------------------------------------
   // WHERE A PERMISSION WRITE SENDS THE READER AFTERWARDS.
   //
-  // This handler serves TWO pages since 2026-09-01. Four of its five actions
-  // are drawn on /admin/delegation, where the register is; `grant-permission`
-  // and the per-row `revoke-permission` beside it are drawn on an APPLICATION's
-  // own page, because there the client half of the pair is the entry the reader
-  // is standing on rather than an option in a list of everything. See
-  // applicationPermissionsSection()'s header for why that move was worth making
-  // and why it did not become a sixth action on /admin/applications.
+  // This handler serves TWO pages. Since 2026-10-01 it is `POST
+  // /admin/delegation-settings`, the handler of Protocols → Delegation, where
+  // the whole register is configured; an APPLICATION's own Permissions tab
+  // posts here too, for the client half (grant it somebody's permission,
+  // revoke one it holds) and the resource half (its base URI, its own
+  // permissions, and granting one of them to another client). See
+  // applicationPermissionsSection()'s header for why those are drawn on the
+  // application and did not become actions on /admin/applications.
   //
   // `from` IS A NAME AND NOT A URL, and this function is why. configReturnTo()
   // makes the same argument for the settings forms on twenty-one pages: a
   // redirect target taken out of a request body is an open redirect, and one
   // carrying a newline is a header injection. So nothing here is echoed — the
-  // name is matched against the two paths this file wrote, and the application
-  // page's destination is REBUILT from `client`, which the action has just
-  // validated as an identifier in the registry. The worst a hand-written `from`
-  // can reach is the delegation page.
+  // name is matched against the one path this file wrote, and the application
+  // page's destination is REBUILT from `page` or `client`, whichever names an
+  // application in the registry. The worst a hand-written `from` can reach is
+  // the delegation settings page.
   //
-  // The FRAGMENT differs between them and that is not decoration. On
-  // /admin/delegation the configured half is four screens down, so `#allowed`
-  // is the difference between landing on the thing you just did and landing at
-  // the top of the longest page in this console; on an application's page the
-  // section has its own `#permissions` for exactly the same reason.
+  // The FRAGMENT differs between them and that is not decoration: `#allowed`
+  // on the settings page is where the register starts, and on an
+  // application's page `#permissions` is inside its Permissions tab, which is
+  // what makes that tab the one shown (`tabbedPanels()`).
   // ---------------------------------------------------------------------------
   /**
    * Works out where a permission write redirects the browser.
    *
-   * An application page when `from` names it and a client is given,
-   * else /admin/delegation; the query is rebuilt, never echoed.
+   * An application page when `from` names it and `page` or `client` is an
+   * application, else /admin/delegation-settings; the query is rebuilt,
+   * never echoed.
    *
    * @param body - the posted form body
    * @returns the path, with its query and fragment
    */
   permissionsReturnTo(body) {
-    const { log, queryWith } = this.deps;
+    const { log, queryWith, applications } = this.deps;
     log.debug("Entering AdminConsole.permissionsReturnTo(). from=" +
               ((body && body.from) || '(none)'));
     const from = String((body && body.from) || '').trim();
-    const client = String((body && body.client) || '').trim();
-    if (from === '/admin/applications' && client) {
+    // WHICH APPLICATION'S PAGE. A form on a CLIENT's page names the client;
+    // since 2026-10-01 a form on a RESOURCE's page — Expose an API, Define a
+    // permission, Remove, and a grant of its own permission to some other
+    // client — names the page it was drawn on in `page`. Either way it is a
+    // NAME, and it is spent only when the registry knows it, so a
+    // hand-written one reaches nothing but an application's page.
+    const named = [String((body && body.page) || '').trim(),
+                   String((body && body.client) || '').trim()]
+      .filter(function (one) {
+        return one !== '' && !!applications.get(one);
+      });
+    if (from === '/admin/applications' && named.length) {
       const listView = this.listViewFromBack('/admin/applications', body.back);
       log.debug("Leaving AdminConsole.permissionsReturnTo(). Back to the " +
                 "application page.");
       return '/admin/applications' +
-             queryWith(listView, { application: client }) + '#permissions';
+             queryWith(listView, { application: named[0] }) + '#permissions';
     }
-    const listView = this.listViewFromBack('/admin/delegation', body.back);
+    const listView = this.listViewFromBack('/admin/delegation-settings',
+                                           body.back);
     log.debug("Leaving AdminConsole.permissionsReturnTo(). Back to the " +
-              "delegation page.");
-    return '/admin/delegation' + queryWith(listView, {}) + '#allowed';
+              "delegation settings page.");
+    return '/admin/delegation-settings' + queryWith(listView, {}) +
+           '#allowed';
   }
 
   // ---------------------------------------------------------------------------
@@ -19674,10 +19730,13 @@ class AdminConsole {
   }
 
   /**
-   * Draws an application's delegated permissions: those it holds, with
-   * Revoke; a form to grant another; and those it exposes, read-only.
+   * Draws an application's delegated permissions, both halves: those it
+   * holds, with Revoke, and a form to grant it another; and — for this
+   * application only — its base URI, the permissions it exposes, with
+   * Remove, and the grants of them to other applications, with Revoke and a
+   * form to grant one.
    *
-   * The forms post to `/admin/delegation`.
+   * The forms post to `/admin/delegation-settings`.
    *
    * @param req - the request, whose query carries the paging
    * @param row - the application's registry view
@@ -19704,6 +19763,61 @@ class AdminConsole {
                                      heldPage.paging);
     const exposedNav = this.pageNavPair('/admin/applications', navParams,
                                         exposedPage.paging);
+    const grantedOutPage = state.grantedOutPage;
+    const grantedNav = this.pageNavPair('/admin/applications', navParams,
+                                        grantedOutPage.paging);
+    const baseUri = this.firstFieldValue(row, 'oauthPermissionBaseUri') || '';
+    // THE RESOURCE HALF'S HIDDEN FIELDS (2026-10-01). `resource` is this
+    // entry, so no form on this tab can configure another application's
+    // permissions; `page` brings the reader back here even when the action
+    // names a different `client` (permissionsReturnTo()).
+    const resourceHidden = function (action) {
+      log.debug("Entering resourceHidden().");
+      log.debug("Leaving resourceHidden().");
+      return carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="from" value="/admin/applications">' +
+        '<input type="hidden" name="page" value="' + self.esc(identifier) +
+        '"><input type="hidden" name="resource" value="' +
+        self.esc(identifier) + '">';
+    };
+    // Its own permissions that a client could ask for — those with an
+    // identifier — and every other application to grant them to.
+    const grantOwnOptions = exposes.filter(function (one) {
+      return !!one.id;
+    }).map(function (one) {
+      return '<option value="' + self.esc(one.id) + '">' + self.esc(one.id) +
+             '</option>';
+    }).join('');
+    const clientOptions = state.clients.map(function (one) {
+      return '<option value="' + self.esc(one.identifier) + '">' +
+        self.esc(one.name !== one.identifier
+          ? one.name + ' — ' + one.identifier : one.identifier) +
+        '</option>';
+    }).join('');
+    const grantedRows = grantedOutPage.shown.map(function (one) {
+      return '<tr><td><a href="' + self.esc('/admin/applications' +
+          queryWith(self.listViewOf('/admin/applications', req.query),
+                    { application: one.client })) + '">' +
+        self.esc(one.clientName) + '</a></td>' +
+        '<td><code>' + self.esc(one.permissionName) + '</code></td>' +
+        '<td><code>' + self.esc(one.permissionId) + '</code></td>' +
+        '<td><code>aud: ' + self.esc(one.baseUri) + '</code><br>' +
+        '<code>scope: ' + self.esc(one.permissionName) + '</code></td>' +
+        '<td>' + (one.asked
+          ? '<span class="state-valid">asked for</span>'
+          : '<span class="state-none">never asked for</span>') + '</td>' +
+        '<td><form method="post" action="/admin/delegation-settings">' +
+          carryBack + '<div class="formrow">' +
+          '<input type="hidden" name="action" value="revoke-permission">' +
+          '<input type="hidden" name="from" value="/admin/applications">' +
+          '<input type="hidden" name="page" value="' + self.esc(identifier) +
+          '"><input type="hidden" name="client" value="' +
+          self.esc(one.client) + '"><input type="hidden" ' +
+          'name="permission" value="' + self.esc(one.permissionId) + '">' +
+          '<button type="submit" class="danger">Revoke</button>' +
+          '</div></form></td></tr>';
+    }).join('');
     const options = offerable.map(function (one) {
       return '<option value="' + self.esc(one.id) + '">' + self.esc(one.id) +
              ' — exposed by ' + self.esc(one.resourceName) + '</option>';
@@ -19741,10 +19855,11 @@ class AdminConsole {
           : '<span class="state-none" title="It has never asked for this ' +
             'one. A configured grant nobody has needed is exactly what this ' +
             'register is here to show.">never asked for</span>') + '</td>' +
-        // THE ROW BUTTON POSTS TO /admin/delegation TOO, for the reason the
-        // header gives — and it needs no `client` select either, because the
-        // row IS the pair.
-        '<td><form method="post" action="/admin/delegation">' + carryBack +
+        // THE ROW BUTTON POSTS TO /admin/delegation-settings TOO, for the
+        // reason the header gives — and it needs no `client` select either,
+        // because the row IS the pair.
+        '<td><form method="post" action="/admin/delegation-settings">' +
+          carryBack +
           '<div class="formrow">' +
           '<input type="hidden" name="action" value="revoke-permission">' +
           '<input type="hidden" name="from" value="/admin/applications">' +
@@ -19767,7 +19882,7 @@ class AdminConsole {
           : '<span class="state-revoked" title="This application has no ' +
             'oauthPermissionBaseUri, and a permission is named by its base ' +
             'URI followed by its name — so no client can ever ask for this ' +
-            'one. Set the base on the Delegation page and it resolves.">no ' +
+            'one. Set the base below and it resolves.">no ' +
             'identifier &mdash; this application has no base ' +
             'URI</span>') + '</td>' +
         '<td class="num">' + (one.grantedTo.length
@@ -19781,7 +19896,15 @@ class AdminConsole {
                 ' <span class="state-none" title="Granted and never asked ' +
                 'for.">(unused)</span>');
             }).join('<br>')
-          : '<span class="state-none">&mdash;</span>') + '</td></tr>';
+          : '<span class="state-none">&mdash;</span>') + '</td>' +
+        // REMOVE, for this application's own permission (2026-10-01). It
+        // does not revoke the grants naming it; they become dangling, as on
+        // the register.
+        '<td><form method="post" action="/admin/delegation-settings">' +
+        resourceHidden('remove-permission') +
+        '<input type="hidden" name="name" value="' + self.esc(one.name) +
+        '"><button type="submit" class="danger">Remove</button></form>' +
+        '</td></tr>';
     }).join('');
 
     log.debug("Leaving AdminConsole.applicationPermissionsSection(). " +
@@ -19798,10 +19921,11 @@ class AdminConsole {
       'them. The grant lands on the CLIENT\'s entry — this one — as a value ' +
       'of <code>oauthDelegatedPermission</code>, because the client is the ' +
       'party that will name the permission in a <code>scope</code>. <a ' +
-      'href="/admin/delegation#allowed">The Delegation page</a> is the whole ' +
-      'register across every application, with the picture of it; this is ' +
-      'the one entry\'s half of it, where the client is settled by the page ' +
-      'rather than chosen out of a list.') +
+      'href="/admin/delegation-settings#allowed">Protocols &rsaquo; ' +
+      'Delegation</a> is the whole register across every application, and ' +
+      '<a href="/admin/delegation/allowed">its picture</a> draws it; this is ' +
+      'the one entry\'s part of it, where one half of every pair is settled ' +
+      'by the page rather than chosen out of a list.') +
 
       this.note('<strong>Then it asks for one as an ordinary OAuth ' +
       'scope.</strong> <code>scope=openid https://example.com/write</code> ' +
@@ -19813,7 +19937,8 @@ class AdminConsole {
       'mode an ungranted permission is refused; in development it REFUSES ' +
       'nothing by default.</strong> With ' +
       '<code>oauth2.delegatedPermissionsEnforced</code> off — which it is ' +
-      'unless somebody turned it on, at the foot of the Delegation page — an ' +
+      'unless somebody turned it on, on <a href="/admin/oauth2">OAuth 2.0 ' +
+      '/ OIDC settings</a> — an ' +
       'ungranted permission is honoured exactly as a granted one is and ' +
       'merely recorded as ungranted.') +
 
@@ -19839,8 +19964,8 @@ class AdminConsole {
           'Token already is, and <code>app_permissions.js</code> refuses ' +
           'that grant however it arrives; the ones it holds are left out ' +
           'because granting a value an entry already carries writes nothing.') +
-          '<form method="post" action="/admin/delegation">' + carryBack +
-          '<div class="formrow">' +
+          '<form method="post" action="/admin/delegation-settings">' +
+          carryBack + '<div class="formrow">' +
             '<input type="hidden" name="action" value="grant-permission">' +
             // WHERE TO GO AFTERWARDS. Not a URL — a NAME, checked against a
             // table in permissionsReturnTo() and spent by rebuilding the path
@@ -19864,26 +19989,90 @@ class AdminConsole {
             : 'No application in this registry exposes an API yet. A ' +
               'permission must be DEFINED before it can be GRANTED, which is ' +
               'the one ordering rule this feature has.') +
-          ' <a href="/admin/delegation#allowed">Expose an API and define a ' +
-          'permission on the Delegation page</a>, and it appears here.')) +
+          ' Another application exposes one on its own Permissions tab, ' +
+          'or on <a href="/admin/delegation-settings#allowed">Protocols ' +
+          '&rsaquo; Delegation</a>, and it appears here.')) +
 
-      '<h3>What it exposes</h3>' +
-      this.note('The other half of the same question, and it is READ-ONLY ' +
-      'here on purpose. Giving this application a base URI and defining ' +
-      'permissions on it are configuration of the RESOURCE, which is one ' +
-      'form each on <a href="/admin/delegation#allowed">the Delegation ' +
-      'page</a> — where the reader is looking at the register rather than at ' +
-      'one entry. Everything below is <code>oauthPermissionBaseUri</code> ' +
-      'and <code>oauthPermission</code> on this entry, and the attribute ' +
-      'table above shows both raw.') +
+      '<h3 id="permissions-exposed">What it exposes</h3>' +
+      this.note('<strong>The RESOURCE half, configured here for this ' +
+      'application only</strong> (2026-10-01): its base URI, the ' +
+      'permissions it defines on it, and which OTHER applications hold ' +
+      'them. Everything below is <code>oauthPermissionBaseUri</code> and ' +
+      '<code>oauthPermission</code> on this entry, and ' +
+      '<code>oauthDelegatedPermission</code> on each client\'s. <a ' +
+      'href="/admin/delegation-settings#allowed">Protocols &rsaquo; ' +
+      'Delegation</a> is the same register across every application.') +
       exposedNav.head +
       '<table><tr><th>Permission</th><th>Identifier &mdash; what a client ' +
-      'sends</th><th>Held by</th><th>Which applications</th></tr>' +
-      (exposedRows || '<tr><td colspan="4">It exposes none. An application ' +
-        'exposes an API by being given a base URI and then having ' +
-        'permissions defined on it, both on the Delegation page.</td></tr>') +
+      'sends</th><th>Held by</th><th>Which applications</th><th></th></tr>' +
+      (exposedRows || '<tr><td colspan="5">It exposes none. Give it a base ' +
+        'URI and define a permission on it, below.</td></tr>') +
       '</table>' +
-      exposedNav.foot;
+      exposedNav.foot +
+
+      '<h4>Expose an API</h4>' +
+      this.note('The base URI is one answer per application and every ' +
+      'permission it exposes hangs off it' +
+      (baseUri
+        ? ' &mdash; this one\'s is <code>' + this.esc(baseUri) + '</code>.'
+        : '. <strong>This one has none</strong>, so no client can ask for ' +
+          'a permission it defines until it is set.') +
+      ' A trailing separator is added where there is none; clearing it ' +
+      'leaves the permissions with no identifier.') +
+      '<form method="post" action="/admin/delegation-settings">' +
+      resourceHidden('set-permission-base') +
+      '<div class="formrow"><label for="app-baseUri">Base URI</label>' +
+      '<input type="text" id="app-baseUri" name="baseUri" size="34" ' +
+      'value="' + this.esc(baseUri) + '" ' +
+      'placeholder="https://example.com/"><button type="submit">Set the ' +
+      'base URI</button></div></form>' +
+
+      '<h4>Define a permission</h4>' +
+      this.note('The name ends up on the token\'s <code>scope</code> ' +
+      'claim, so it must be a legal OAuth scope token (RFC 6749 section ' +
+      '3.3) and not contain <code>|</code>. It is defined on THIS ' +
+      'application; to define one on another, open that application.') +
+      '<form method="post" action="/admin/delegation-settings">' +
+      resourceHidden('define-permission') +
+      '<div class="formrow"><label for="app-perm-name">Name</label>' +
+      '<input type="text" id="app-perm-name" name="name" size="18" ' +
+      'placeholder="write"><label for="app-perm-description">Description' +
+      '</label><input type="text" id="app-perm-description" ' +
+      'name="description" size="34" placeholder="Change widgets on ' +
+      'somebody\'s behalf"><button type="submit">Define it</button>' +
+      '</div></form>' +
+
+      '<h4 id="permissions-granted">Grants &mdash; the delegation ' +
+      'relationships</h4>' +
+      this.note('<strong>Which other applications hold this one\'s ' +
+      'permissions</strong>, one row per (client, permission). Granting ' +
+      'here offers only permissions <code>' + this.esc(identifier) +
+      '</code> exposes, to any application but itself; the grant still ' +
+      'lands on the CLIENT\'s entry, so it reads back on that ' +
+      'application\'s own tab as something it holds.') +
+      grantedNav.head +
+      '<table><tr><th>Client &mdash; who may ask</th><th>Permission</th>' +
+      '<th>Identifier</th><th>What the access token will say</th>' +
+      '<th>Ever asked for?</th><th></th></tr>' +
+      (grantedRows || '<tr><td colspan="6">No other application holds ' +
+        'one of its permissions.</td></tr>') +
+      '</table>' +
+      grantedNav.foot +
+      (grantOwnOptions && clientOptions
+        ? '<form method="post" action="/admin/delegation-settings">' +
+          resourceHidden('grant-permission') +
+          '<div class="formrow"><label for="grant-own-client">Grant to' +
+          '</label><select id="grant-own-client" name="client">' +
+          clientOptions + '</select><label for="grant-own-permission">' +
+          'the permission</label><select id="grant-own-permission" ' +
+          'name="permission">' + grantOwnOptions + '</select>' +
+          '<button type="submit">Grant it</button></div></form>'
+        : this.note(grantOwnOptions
+          ? 'There is no other application in this registry to grant one ' +
+            'to.'
+          : 'There is nothing of its own to grant yet: define a ' +
+            'permission above, with a base URI set, and it can be granted ' +
+            'here.'));
   }
 
   // ---------------------------------------------------------------------------
@@ -36775,8 +36964,9 @@ class AdminConsole {
           ? ', and <strong>' + summary.dropped + ' dropped</strong> — this ' +
             'page holds at ' +
             'most ' + summary.maxRecords + ' acts and discards the oldest ' +
-            'first. Raise <code>delegation.maxRecords</code> in the settings ' +
-            'at the foot of this page if that is losing something you need.'
+            'first. Raise <code>delegation.maxRecords</code> on <a ' +
+            'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+            'Delegation</a> if that is losing something you need.'
           : '. The cap is ' + summary.maxRecords + ' acts and nothing has ' +
             'been dropped yet.') +
         ' The <strong>#</strong> column is a sequence number and is ' +
@@ -36835,7 +37025,7 @@ class AdminConsole {
         '</table>' +
         chainsNav.foot +
 
-        self.permissionsSection(req, permissions, listView) +
+        self.permissionsSection(req, permissions, listView, false) +
 
         '<h2>Who may delegate to whom &mdash; Kerberos</h2>' +
         self.note('<strong>The SECOND configured register on this page, and ' +
@@ -36941,13 +37131,15 @@ class AdminConsole {
         'gap is the reason this page keeps its own list rather than a filter ' +
         'over one of theirs.') +
 
-        // THE ONE SETTING THIS PAGE HAS, and it is the one a reader wants
-        // exactly when the paragraph above says something was dropped. It is
-        // also the only control on a page that had none — which does not change
-        // rule 7's answer for /admin-api/delegation: the form posts `set-many`
-        // to /admin/config, which POST /admin-api/config/set-many already
-        // mirrors.
-        self.configFormsFor('/admin/delegation') +
+        // THE ONE SETTING THIS PAGE HAD, `delegation.maxRecords`, is on
+        // Protocols → Delegation since 2026-10-01 with every other control
+        // that was here (rcbj): this page reads, and that one configures.
+        self.note('<strong>Nothing on this page changes anything ' +
+        '(2026-10-01).</strong> The register\'s controls and ' +
+        '<code>delegation.maxRecords</code> are on <a ' +
+        'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+        'Delegation</a>, and one application\'s permissions on its own ' +
+        'Permissions tab.') +
 
         self.note('<strong>Every table on this page is paged, at ' +
         DELEGATION_PER_PAGE + ' rows, and they share one size.</strong> ' +
@@ -37020,7 +37212,6 @@ class AdminConsole {
                     { permissions: pagingJson(allowedState.permPage.paging),
                             grants: pagingJson(allowedState.grantPage.paging) }
                 },
-                settings: self.configSettingsJson('/admin/delegation'),
                 // WS-Trust and token exchange (#108), paged as GET
                 // /admin-api/delegation/policy pages it.
                 delegationPolicy: exchangePolicy.json
@@ -37030,7 +37221,75 @@ class AdminConsole {
     });
 
     // -------------------------------------------------------------------------
-    // POST /admin/delegation — THE FIVE ACTIONS THE CONFIGURED HALF HAS.
+    // GET /admin/delegation-settings — PROTOCOLS → DELEGATION (2026-10-01).
+    //
+    // **EVERY CONTROL THAT WAS ON MONITORING → DELEGATION, AND NOTHING THAT
+    // RECORDS WHAT HAPPENED** (rcbj). That page was the one place in this
+    // console where a register of what is ALLOWED and a record of what
+    // HAPPENED shared a screen, and it carried the register's controls with
+    // them; Monitoring is where a reader goes to see what happened, and the
+    // console's rule (console-section-by-question) is that a page is filed by
+    // the question it answers. So the controls moved here, under Protocols
+    // where every other family is configured, and the Monitoring page keeps
+    // the same register READ-ONLY beside the acts it is read against.
+    //
+    // What is here: the delegated permissions register with Expose an API,
+    // Define a permission, each permission's Remove and each grant's Revoke,
+    // for EVERY application — the same `permissionsSection()` the Monitoring
+    // page draws, `editable` — and the `Delegation` settings group
+    // (`delegation.maxRecords`, SETTING_HOMES). A grant is still made on an
+    // application's own Permissions tab, from either end, for the reason that
+    // section's grant paragraph gives. Who may act for whom at Kerberos,
+    // WS-Trust and token exchange stays where it was: read-only on the
+    // Monitoring page, edited on the application and person pages, because
+    // each value is an attribute of one of them.
+    //
+    // ?format=json carries the register whole, as `allowed`, in the shape the
+    // Monitoring page's own reply always had, and the settings.
+    // -------------------------------------------------------------------------
+    app.get('/admin/delegation-settings', function (req, res) {
+      log.debug("Entering the admin delegation settings page.");
+      const permissions = permissionsView();
+      const allowedState = self.permissionsListState(req.query,
+                                                     permissions.register);
+      const listView = self.listViewOf('/admin/delegation-settings',
+                                       req.query);
+      const inner = self.messagesOf(req) +
+        self.note('<strong>Which applications may reach which, decided in ' +
+        'advance, and how much of what HAPPENED is kept.</strong> This page ' +
+        'configures; <a href="/admin/delegation">Monitoring &rsaquo; ' +
+        'Delegation</a> shows the acts &mdash; Kerberos S4U, WS-Trust ' +
+        '<code>OnBehalfOf</code> / <code>ActAs</code> and RFC 8693 token ' +
+        'exchange &mdash; with this register beside them, read-only. One ' +
+        'application\'s part of it is also on that application\'s ' +
+        '<em>Permissions</em> tab under <a href="/admin/applications">' +
+        'Directory &rsaquo; Applications</a>, which is where a grant is ' +
+        'made. Who may act for whom at Kerberos, WS-Trust and token ' +
+        'exchange is attributes of applications and people, edited on ' +
+        'their pages.') +
+        self.permissionsSection(req, permissions, listView, true) +
+        self.configFormsFor('/admin/delegation-settings');
+      self.respond(req, res, {
+        allowed: {
+          resources: permissions.register.resources,
+          permissions: permissions.register.permissions,
+          grants: permissions.register.grants,
+          counts: permissions.register.counts,
+          filter: { permissions: allowedState.permWanted || null,
+                    grants: allowedState.grantWanted || null },
+          paging: { permissions: pagingJson(allowedState.permPage.paging),
+                    grants: pagingJson(allowedState.grantPage.paging) }
+        },
+        settings: self.configSettingsJson('/admin/delegation-settings')
+      }, 'Delegation', '/admin/delegation-settings', inner);
+      log.debug("Leaving the admin delegation settings page.");
+    });
+
+    // -------------------------------------------------------------------------
+    // POST /admin/delegation-settings — THE FIVE ACTIONS THE CONFIGURED HALF
+    // HAS. It was `POST /admin/delegation` until 2026-10-01, when every
+    // control moved to Protocols → Delegation (above) and the Monitoring page
+    // stopped changing anything.
     //
     // The acts half has none and never will; see `permissionsSection()`'s
     // header, where the reversal of that route's "NO FORM, AND THAT IS A
@@ -37041,25 +37300,24 @@ class AdminConsole {
     // IT SAID "CONTROLS" AND IT SAYS "ACTIONS" NOW, and the difference stopped
     // being pedantic on 2026-09-01: the FORMS are on two pages and the ACTIONS
     // are all here. `grant-permission` is drawn on an application's own page
-    // under /admin/applications, where the client half of a grant is the entry
-    // being looked at rather than an option in a list of every application
-    // here; `revoke-permission` is drawn on both, as a row button either way.
+    // under /admin/applications — from the client's end and, since
+    // 2026-10-01, from the resource's — and every other action is drawn both
+    // here and on the application's page, where the application is settled.
     // Moving a form is not moving an action — PERMISSION_ACTIONS is unchanged,
     // and rule 7's parity check reads this handler's refusal sentence exactly
-    // as it always did. See applicationPermissionsSection()'s header for the
-    // move itself.
+    // as it always did; `POST /admin-api/permissions/:action` mirrors this
+    // path. See applicationPermissionsSection()'s header for the move itself.
     //
     // WHERE IT LANDS AFTERWARDS IS THEREFORE A DECISION AND NOT A CONSTANT.
     // permissionsReturnTo() makes it, off the `from` field the form carries:
     // `#allowed` on this page, and the application's own page at `#permissions`
     // for a form drawn there. A fragment either way, for `chooserPane()`'s
-    // reason, because this is the longest page in the console and a reader who
-    // has just granted a permission is several screens down whichever page they
-    // are on. The list state rides on `back` exactly as /admin/applications'
-    // forms carry it, and `from` is a NAME rather than a URL, which is that
-    // function's whole subject.
+    // reason: a reader who has just changed something is several screens down
+    // whichever page they are on. The list state rides on `back` exactly as
+    // /admin/applications' forms carry it, and `from` is a NAME rather than a
+    // URL, which is that function's whole subject.
     // -------------------------------------------------------------------------
-    app.post('/admin/delegation', function (req, res) {
+    app.post('/admin/delegation-settings', function (req, res) {
       log.debug("Entering the admin delegation action endpoint.");
       const body = parseBody(req);
       // The actor is the person whose session got them through the gate above,
@@ -38145,8 +38403,8 @@ class AdminConsole {
               'ordinary outcome rather than a mistake, and so is a link from ' +
               'a service that has restarted since: nothing here is ' +
               'persisted. Raise <code>delegation.maxRecords</code> on <a ' +
-              'href="/admin/delegation">the delegation page</a> if this ' +
-              'keeps happening to something you need.')
+              'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+              'Delegation</a> if this keeps happening to something you need.')
             : self.note('<strong>Name a relationship.</strong> This page ' +
               'draws ONE of them, and the way to it is a link on ' +
               '<a href="' + self.esc(up.href) +
@@ -46113,7 +46371,9 @@ const SETTING_HOMES = [
     pages: ['/admin/totp', '/admin/webauthn'] },
   { group: 'Group claim', pages: ['/admin/groups'] },
   { group: 'Audit log', pages: ['/admin/audit'] },
-  { group: 'Delegation', pages: ['/admin/delegation'] },
+  // On Protocols → Delegation since 2026-10-01, with the register's controls:
+  // Monitoring → Delegation changes nothing.
+  { group: 'Delegation', pages: ['/admin/delegation-settings'] },
   { group: 'Logout', pages: ['/admin/logout'] },
   { group: 'SPIFFE', pages: ['/admin/spiffe'] }
 ];
@@ -46231,6 +46491,11 @@ const LIST_PARAMS = {
   // reader who paged the grants table to 4, clicked a client and came back
   // should come back to page 4 of the grants table and not to the top of a
   // page they have already read three screens of.
+  // Protocols → Delegation (2026-10-01): the register's two searches and two
+  // pagings, the same names they have on Monitoring → Delegation, so a
+  // Remove or Revoke answers on the page and the search it was pressed on.
+  '/admin/delegation-settings': ['per', 'permq', 'grantq', 'permissionsPage',
+                                 'grantsPage'],
   '/admin/delegation': ['type', 'mode', 'outcome', 'protocol', 'q', 'per',
                         'page',
                         'appq', 'appfrom', 'userq', 'userfrom',

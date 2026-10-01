@@ -6493,9 +6493,14 @@ class AdminViews {
             offerable: permissionState.offerable.map(function (one) {
               return one.id;
             }),
+            // The grants of its OWN permissions to other applications
+            // (2026-10-01), the Permissions tab's third table.
+            grantedOut: permissionState.grantedOut,
             paging: { held: self.pagingJson(permissionState.heldPage.paging),
                       exposes:
-                        self.pagingJson(permissionState.exposedPage.paging) }
+                        self.pagingJson(permissionState.exposedPage.paging),
+                      grantedOut: self.pagingJson(
+                        permissionState.grantedOutPage.paging) }
           }
       });
       }())
@@ -7374,7 +7379,7 @@ class AdminViews {
    * @returns the state
    */
   applicationPermissionsState(query, identifier) {
-    const { log, appPermissions } = this.deps;
+    const { log, appPermissions, applications } = this.deps;
     log.debug("Entering AdminViews.applicationPermissionsState(). identifier=" +
               identifier);
     const register = appPermissions.register();
@@ -7386,11 +7391,24 @@ class AdminViews {
     const held = register.grants.filter(function (one) {
       return one.client === identifier;
     });
-    // AND WHAT IT EXPOSES, which is the other half of the same question and is
-    // read-only on that page: `Expose an API` and `Define a permission` stay on
-    // /admin/delegation, where the resource half of this feature is configured.
+    // AND WHAT IT EXPOSES, the other half of the same question — configured
+    // on that page since 2026-10-01 (rcbj): its base URI, its permissions,
+    // and which OTHER applications hold them, each for this application only.
     const exposes = register.permissions.filter(function (one) {
       return one.resource === identifier;
+    });
+    // THE GRANTS OF ITS OWN PERMISSIONS: the relationships in which it is the
+    // RESOURCE, one row per (client, permission) as on the register.
+    const grantedOut = register.grants.filter(function (one) {
+      return one.resource === identifier;
+    });
+    // WHO THEY MAY STILL GO TO: every other application in the registry. Not
+    // itself — app_permissions.js refuses that grant however it arrives, for
+    // the reason the `offerable` exclusions below give.
+    const clients = applications.list().filter(function (row) {
+      return row.identifier !== identifier;
+    }).map(function (row) {
+      return { identifier: row.identifier, name: row.name || row.identifier };
     });
     const heldIds = held.map(function (one) { return one.permissionId; });
     log.debug("Leaving AdminViews.applicationPermissionsState(). " +
@@ -7400,6 +7418,8 @@ class AdminViews {
       register: register,
       held: held,
       exposes: exposes,
+      grantedOut: grantedOut,
+      clients: clients,
       // WHAT MAY STILL BE GRANTED. See the section's header for why each of the
       // three exclusions is an exclusion rather than an option that refuses.
       offerable: register.permissions.filter(function (one) {
@@ -7424,6 +7444,9 @@ class AdminViews {
         { name: 'held', noun: 'permissions', defaultPer: DELEGATION_PER_PAGE }),
       exposedPage: this.pagedRows(query, exposes,
         { name: 'exposed', noun: 'permissions',
+          defaultPer: DELEGATION_PER_PAGE }),
+      grantedOutPage: this.pagedRows(query, grantedOut,
+        { name: 'grantedOut', noun: 'grants',
           defaultPer: DELEGATION_PER_PAGE })
     };
   }

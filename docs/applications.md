@@ -673,7 +673,7 @@ The live source for every setting is its console page and
 | `/admin/applications` | The registry: list, filter, drill-down, and the edit actions. `GET /admin-api/applications`, `POST /admin-api/applications/{action}` |
 | `/admin/applications/new` | Create an application, with its families, identifiers, redirect URIs and an RFC 9728 import. `GET /admin-api/applications/new` |
 | `/admin/ldap/applications` | The entries as the directory holds them, and the published schema |
-| `/admin/delegation` | Delegated permissions defined and granted on application entries ([Admin console](admin-console.md#delegated-permissions)) |
+| `/admin/delegation-settings` | Delegated permissions defined and granted on application entries, and on each application's Permissions tab ([Admin console](admin-console.md#delegated-permissions)) |
 | `/admin/consent` | Global consent on application entries, and per-person consent |
 | `POST /oauth2/register` | RFC 7591 registration, which writes an entry |
 | `/portal/applications` | The applications a signed-in person may use |

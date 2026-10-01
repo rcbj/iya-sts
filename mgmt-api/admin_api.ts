@@ -18129,7 +18129,7 @@ class AdminApi {
         } },
 
       { method: 'POST', route: BASE + '/permissions/:action', tag: 'Delegation',
-        mirrors: 'POST /admin/delegation',
+        mirrors: 'POST /admin/delegation-settings',
         handler: function (req, res) {
           log.debug("Entering the management API permissions action endpoint.");
           const body = parseBody(req);
