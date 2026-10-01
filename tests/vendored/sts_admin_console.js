@@ -1194,8 +1194,11 @@ async function theGateBehaves(driver) {
     "/admin/users/new should draw a form whose action is `create`; the " +
     "gate's POST assertion needs a real form to submit.");
   await clearSession(driver);
+  // NAMED, because the first submit on that form is the simplified /
+  // advanced view switch since 9e9647de, which creates nobody.
   const posted = await fillAndPress(driver, createForm,
-      { username: "gate-probe-" + names.runStamp() });
+      { username: "gate-probe-" + names.runStamp() },
+      { buttonText: "Create the user" });
   const postResponse = thePostIn(posted.responses, "posting a form with no " +
                                                    "session");
   check("a POST with no session is refused, never redirected", function () {
@@ -2855,7 +2858,9 @@ async function theDirectoryPagesWork(driver) {
   await open(driver, realm("/admin/users/new"));
   const createUser = await formIndexPosting(driver, "create");
   assert.ok(createUser >= 0, "/admin/users/new should draw a create form.");
-  await fillAndPress(driver, createUser, { username: person });
+  // The Create button by name: the form's first submit is the view switch.
+  await fillAndPress(driver, createUser, { username: person },
+                     { buttonText: "Create the user" });
 
   const users = await apiJson("/realm/" + REALM +
       "/admin-api/users?q=" + encodeURIComponent(person));
@@ -6401,7 +6406,8 @@ async function theRolesArePressedAndEnforced(driver, created) {
     await open(driver, realm("/admin/users/new"));
     const createForm = await formIndexPosting(driver, "create");
     const attempt = await fillAndPress(driver, createForm,
-        { username: "reader-should-not-create-" + names.runStamp() });
+        { username: "reader-should-not-create-" + names.runStamp() },
+        { buttonText: "Create the user" });
     const refused = thePostIn(attempt.responses, "a reader posting a form");
     check("and a reader may not write", function () {
       assert.strictEqual(refused.status, 403,

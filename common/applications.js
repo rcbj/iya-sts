@@ -4883,9 +4883,14 @@ function choiceProblem(attribute, value) {
  */
 function authMethodsProblem(values) {
   log.debug("Entering authMethodsProblem().");
+  // A method named twice is one method: an `add` of a value the entry
+  // already holds (the parent suite's reconcile adds `none` to a wallet that
+  // has it) must not read as `none` beside another method.
   const methods = valuesOf(values).map(function (one) {
     return String(one).trim();
-  }).filter(function (one) { return one !== ''; });
+  }).filter(function (one, i, all) {
+    return one !== '' && all.indexOf(one) === i;
+  });
   if (methods.indexOf('none') < 0 || methods.length < 2) {
     log.debug("Leaving authMethodsProblem(). Allowed.");
     return '';
