@@ -1798,6 +1798,24 @@ async function everyGetFormSubmits(driver, pages) {
   log.debug("Leaving everyGetFormSubmits().");
 }
 
+// THE BOX FOR AN ATTRIBUTE ON THE NEW-USER GRID (9e9647de): a single-valued
+// attribute is `field.<name>` and a multi-valued one `field.<name>.<n>`, its
+// first row `.0`. Answers the drawn name, or null where neither is drawn.
+function boxFor(drawn, attribute) {
+  log.debug("Entering boxFor().");
+  const single = "field." + attribute;
+  if (drawn.indexOf(single) >= 0) {
+    log.debug("Leaving boxFor(). Single-valued.");
+    return single;
+  }
+  if (drawn.indexOf(single + ".0") >= 0) {
+    log.debug("Leaving boxFor(). Multi-valued.");
+    return single + ".0";
+  }
+  log.debug("Leaving boxFor(). Not drawn.");
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // /admin/users/new — A PERSON DESCRIBED RATHER THAN INVENTED.
 //
@@ -1865,7 +1883,7 @@ async function theNewUserPageDescribesAPerson(driver) {
       "/admin/users/new should draw; it answered " + page.status);
     const drawn = boxesNamed(page, "field.");
     (form.body.fields || []).forEach(function (row) {
-      assert.ok(drawn.indexOf("field." + row.attribute) >= 0,
+      assert.ok(boxFor(drawn, row.attribute) !== null,
         "the catalogue names `" + row.attribute + "` and the form draws no " +
         "box for it. The form and the create validate against ONE list, so a " +
         "field the document offers and the page does not is an attribute " +
@@ -1911,10 +1929,11 @@ async function theNewUserPageDescribesAPerson(driver) {
         "the one value that was typed must survive the fill: an invention that " +
         "overwrote it would discard work with nothing said. It now holds " +
         JSON.stringify(values["field.mail"]));
-      assert.ok(values["field.givenName"],
+      const given = values["field.givenName"] || values["field.givenName.0"];
+      assert.ok(given,
         "and a box that was EMPTY should now carry the invented person's " +
-        "value — that is the whole of what the button does. `field.givenName` " +
-        "holds " + JSON.stringify(values["field.givenName"]));
+        "value — that is the whole of what the button does. The givenName " +
+        "box holds " + JSON.stringify(given));
     });
     const stillNobody = await apiJson("/realm/" + REALM +
         "/admin-api/ldap/directory?q=" + encodeURIComponent(filled));
@@ -1934,10 +1953,14 @@ async function theNewUserPageDescribesAPerson(driver) {
   const described = "ui-described-" + names.runStamp();
   await open(driver, realm("/admin/users/new"));
   const second = await formIndexPosting(driver, "create");
-  await fillAndPress(driver, second,
-      { username: described, "field.mail": "described@example.com",
-        "field.title": "Auditor" },
-      { noTyping: true });
+  const secondBoxes = {};
+  secondBoxes.username = described;
+  secondBoxes[boxFor(boxesNamed(page, "field."), "mail") || "field.mail"] =
+    "described@example.com";
+  secondBoxes[boxFor(boxesNamed(page, "field."), "title") || "field.title"] =
+    "Auditor";
+  await fillAndPress(driver, second, secondBoxes,
+      { noTyping: true, buttonText: "Create the user" });
 
   const entry = await theDirectoryEntryOf(described);
   check("an empty box records NO VALUE", function () {
@@ -4410,14 +4433,28 @@ async function theCredentialsSectionIsPressed(driver) {
   });
 
   // --- Regenerate ----------------------------------------------------------
-  const secretBefore = (await entryOf(APP)).fields.oauthClientSecret;
+  // The secret is a RECORD on the entry (2026-10-01); compare the secrets
+  // themselves, newest first, or an array compared by reference always
+  // "changed".
+  const secretsOn = function (entry) {
+    return [].concat((entry.fields || {}).oauthClientSecret || [])
+      .map(function (value) {
+        try {
+          return JSON.parse(value).secret;
+        } catch (e) {
+          log.debug("Caught in secretsOn(): " + ((e && e.message) || e));
+          return String(value);
+        }
+      }).join(" ");
+  };
+  const secretBefore = secretsOn(await entryOf(APP));
   const regenerate = await formFor("regenerate-secret");
   check("it draws a Regenerate form", function () {
     assert.ok(regenerate >= 0, "no regenerate-secret form on " + pageUrl);
   });
   await fillAndPress(driver, regenerate, {});
   const afterRegenerate = await driver.getCurrentUrl();
-  const secretAfter = (await entryOf(APP)).fields.oauthClientSecret;
+  const secretAfter = secretsOn(await entryOf(APP));
   check("Regenerate replaced the secret and came back to the section, with " +
         "no secret in the address", function () {
     assert.strictEqual(outcomeOf(afterRegenerate, "error"), "",
