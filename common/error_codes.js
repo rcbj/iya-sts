@@ -12846,6 +12846,12 @@ const CODES = [
       'advertised: no such application in this realm, one not declared for ' +
       'the did family, or one with no key in didPublicKeyJwk.',
     spec: 'HTTP 404 JSON at /applications/{application}/did.json' },
+  { code: 'STS-VC-0115',
+    summary: 'An application Domain Linkage Credential could not be signed: ' +
+      'the application has no DID document, the origin is not one of its ' +
+      'LinkedDomains services, or none of its published keys has a private ' +
+      'half this service kept.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

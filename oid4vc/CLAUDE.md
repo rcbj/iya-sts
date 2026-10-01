@@ -728,14 +728,30 @@ application declared for the `did` family (its own checkbox, `applications.js`
 * **`generate-did-key`** (`admin_actions.ts`, `POST /admin-api/applications/
   generate-did-key`) makes the pair with `crypto.js`'s
   `generateSigningJwkPair()` (ES256, ES384, EdDSA), adds the public JWK, and
-  returns the private key once. This service keeps no private key: it only
-  publishes the document. The console answers with a one-time page. The
+  returns the private key once. **It also KEEPS the private key, sealed**, in
+  `didPrivateKeys` (a JSON array of private JWKs, `SEALED_FIELDS`, withheld
+  from LDAP reads, not in the grid) — rcbj's choice on 2026-10-01, over
+  signing only at generation or pasting the key in, so the Domain Linkage
+  Credential below can be signed whenever it is asked for. The console
+  answers with a one-time page.
+* **The Domain Linkage Credential** (`applicationDomainLinkage()`, action
+  `sign-domain-linkage`): the DIF Well-Known DID Configuration resource for
+  one `LinkedDomains` origin, the JWT form self-issued by the DID with
+  `credentialSubject { id, origin }`, signed with a kept key the document
+  still publishes (matched by kid or thumbprint), for
+  `oid4vci.domainLinkageLifetimeS`. The console's *Download
+  did-configuration.json* hands it over as a file to host at
+  `https://<origin>/.well-known/did-configuration.json`; nothing is written.
+  `STS-VC-0115` for no document, an origin not listed, or no kept key — a key
+  pasted into `didPublicKeyJwk` by hand cannot sign. The
   published keys and the Generate form are on the application's DID
   configuration tab AND its Credentials tab (`applicationDidPanel()`, drawn
   twice), so every credential an application has is in one place.
 * **Not built**: resolving an application's DID for anything (a client
   assertion verified against its keys, a pre-registered verifier); controller
-  and keyAgreement members; other DID methods.
+  and keyAgreement members; other DID methods; fetching an origin's hosted
+  did-configuration.json to check it (that would be dialling an operator's
+  URL, the root `CLAUDE.md`'s row of URLs this service dials).
 
 `tests/application_did.js` holds it.
 

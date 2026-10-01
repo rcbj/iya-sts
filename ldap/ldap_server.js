@@ -8954,6 +8954,9 @@ const SECRET_ATTRIBUTES = [
   'userpassword', 'pwdhistory',
   'oauthclientsecret', 'appregistrationaccesstoken', 'fedclientsecret',
   'oauthassertionprivatekey', 'oauthsamlassertionprivatekey',
+  // An application DID's private keys (2026-10-01), sealed like the two
+  // above and withheld from every directory read like them.
+  'didprivatekeys',
   'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
   // A person's app passwords (#101): scrypt hashes, a verifier like

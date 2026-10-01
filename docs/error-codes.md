@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3900** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3901** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 37
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 111
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
@@ -3082,6 +3082,7 @@ Raised from: oid4vc/.
 | `STS-VC-0112` | The OpenID4VP Verifier's certificate could not be issued, or was not in place over the key the Request Object is signed with when it was built, so no x509_san_dns or x509_hash request was made (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
 | `STS-VC-0113` | oid4vp.x509SigningAlgorithm names an algorithm this realm holds no signing key for, so no x509_san_dns or x509_hash request can be signed (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
 | `STS-VC-0114` | An application DID document was asked for and none is advertised: no such application in this realm, one not declared for the did family, or one with no key in didPublicKeyJwk. | HTTP 404 JSON at /applications/{application}/did.json |
+| `STS-VC-0115` | An application Domain Linkage Credential could not be signed: the application has no DID document, the origin is not one of its LinkedDomains services, or none of its published keys has a private half this service kept. | none (a console or management API refusal, HTTP 400) |
 
 ## STS-SSF
 

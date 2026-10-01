@@ -2992,6 +2992,15 @@ const SCHEMA = {
             'only: a value carrying d, p, q, dp, dq, qi, oth, k or priv is ' +
             'refused. Generate a key pair on the application\'s page and ' +
             'the private half is handed out once and not kept here.' },
+    { name: 'didPrivateKeys', kind: 'single', sensitive: true,
+      from: 'the console\'s Generate a key pair',
+      what: 'THE PRIVATE HALVES OF THE DID KEYS THIS SERVICE GENERATED, as a ' +
+            'JSON array of private JWKs, SEALED at rest under the ' +
+            'key-encryption key like an application\'s RFC 7523 key pair. ' +
+            'Kept so this service can sign the application\'s Domain Linkage ' +
+            'Credentials (the DIF Well-Known DID Configuration) on request; a ' +
+            'key pasted into didPublicKeyJwk by hand has no private half ' +
+            'here and cannot sign one. Written by Generate a key pair only.' },
     { name: 'didService', kind: 'multi', from: 'the console, or by hand',
       what: 'A SERVICE THE DID DOCUMENT NAMES, as <type>|<serviceEndpoint>: ' +
             'for example LinkedDomains|https://app.example.com. The type is ' +
@@ -3742,6 +3751,7 @@ const EDITABLE = {
   ssfDeliveryEndpoint: 'multi',
   // The DID document's contents (2026-10-01).
   didPublicKeyJwk: 'multi',
+  didPrivateKeys: 'set',
   didService: 'multi',
   didAlsoKnownAs: 'multi',
   ssfAllowedEvents: 'multi',
@@ -4058,10 +4068,27 @@ function didKeyProblem(jwk) {
 function didValueProblem(attribute, value) {
   log.debug("Entering didValueProblem(). attribute=" + attribute);
   const text = String(value == null ? '' : value).trim();
-  if (!text || ['didPublicKeyJwk', 'didService',
-                'didAlsoKnownAs'].indexOf(attribute) < 0) {
+  if (!text || ['didPublicKeyJwk', 'didService', 'didAlsoKnownAs',
+                'didPrivateKeys'].indexOf(attribute) < 0) {
     log.debug("Leaving didValueProblem(). Not a DID value.");
     return '';
+  }
+  if (attribute === 'didPrivateKeys') {
+    let keys = null;
+    try {
+      keys = isSealed(text) ? [] : JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in didValueProblem(): " + ((e && e.message) || e));
+      keys = null;
+    }
+    const ok = Array.isArray(keys) && keys.every(function (one) {
+      return one && typeof one === 'object' && typeof one.d === 'string' &&
+        ['EC', 'OKP'].indexOf(String(one.kty)) >= 0;
+    });
+    log.debug("Leaving didValueProblem(). Private keys " +
+              (ok ? 'ok' : 'refused') + ".");
+    return ok ? '' : 'didPrivateKeys holds a JSON array of private EC or ' +
+      'OKP JWKs, written by Generate a key pair.';
   }
   if (attribute === 'didPublicKeyJwk') {
     let jwk = null;
@@ -4633,7 +4660,7 @@ function gridExcludedAttributes() {
   const out = ['appName', 'appAllowedProtocol', 'oauthClientSecretPrevious',
                'oauthClientSecretPreviousUntil', 'oauthClientSecretExpiresAt',
                'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
-               'oauthScope'];
+               'oauthScope', 'didPrivateKeys'];
   Object.keys(KEY_PAIR_ATTRIBUTES).forEach(function (profile) {
     const row = KEY_PAIR_ATTRIBUTES[profile];
     ['certificate', 'chain', 'privateKey', 'handle', 'expires', 'source',
@@ -5831,7 +5858,10 @@ const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        // key-encryption key — the user's decision, over a
                        // per-realm derivation that does not exist yet.
                        'gnapSymmetricKey',
-                       'gnapMacaroonKey'];
+                       'gnapMacaroonKey',
+                       // An application DID's private keys (2026-10-01),
+                       // kept to sign its Domain Linkage Credentials.
+                       'didPrivateKeys'];
 
 // The label each sealed field is sealed under, which is what
 // /admin/encryption counts by (admin-ui/encryption_admin.ts DATA_CLASSES). One

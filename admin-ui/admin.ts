@@ -17565,7 +17565,8 @@ class AdminConsole {
             : (String(body.action || '') === 'revoke-tls-client-certificate' ||
                String(body.action || '') === 'issue-tls-client-certificate'
               ? '#credentials-tls-client'
-              : (String(body.action || '') === 'generate-did-key'
+              : (String(body.action || '') === 'generate-did-key' ||
+                 String(body.action || '') === 'sign-domain-linkage'
                 ? (String(body.from || '') === 'credentials'
                   ? '#credentials-did' : '#cfg-did') : ''))))
       : '/admin/applications' + queryWith(listView, {});
@@ -17612,18 +17613,23 @@ class AdminConsole {
     const keys = answer.ok ? answer.document.verificationMethod : [];
     const keyTable = keys.length
       ? '<table><tr><th>Verification method</th><th>Key</th>' +
-        '<th>Algorithm</th></tr>' + keys.map(function (m) {
+        '<th>Algorithm</th><th>Private half</th></tr>' +
+        keys.map(function (m) {
           const jwk = m.publicKeyJwk || {};
-          return '<tr><td><code>' + self.esc(m.id.slice(did.length)) +
+          const kid = m.id.slice(did.length + 1);
+          return '<tr><td><code>' + self.esc('#' + kid) +
             '</code></td><td>' + self.esc(String(jwk.kty || '') +
               (jwk.crv ? ' ' + jwk.crv : '')) + '</td><td>' +
-            self.esc(String(jwk.alg || '—')) + '</td></tr>';
+            self.esc(String(jwk.alg || '—')) + '</td><td>' +
+            (keptKids.indexOf(kid) >= 0
+              ? '<span class="state-valid">kept here, sealed</span>'
+              : '<span class="state-none">not here</span>') + '</td></tr>';
         }).join('') + '</table>' +
-        this.note('Public keys only. Each private key was shown once, when ' +
-        'it was generated, and is not kept by this service. To change a key, ' +
-        'generate a new one with <em>replace</em> ticked, or edit ' +
-        '<code>didPublicKeyJwk</code> on the Decentralized Identifier (DID) ' +
-        'configuration tab.')
+        this.note('A key Generate made has its private half kept here, ' +
+        'sealed under the key-encryption key, so this service can sign the ' +
+        'Domain Linkage Credentials below. A key added to ' +
+        '<code>didPublicKeyJwk</code> by hand has only its public half here. ' +
+        'To change a key, generate a new one with <em>replace</em> ticked.')
       : '<p class="sub">No key pair yet.</p>';
     const html = '<table><tr><th>DID</th><td><code>' + this.esc(did) +
       '</code></td></tr><tr><th>Document</th><td><a href="' + this.esc(url) +
@@ -17639,7 +17645,7 @@ class AdminConsole {
       'fetches it from this service. The document publishes the keys, ' +
       'services and other names below. The DID follows the address this ' +
       'console is reached on; pin <code>global.publicBaseUrl</code> so it ' +
-      'does not change with the host name.') + keyTable +
+      'does not change with the host name.') + keyTable + linkage +
       (canWrite
         ? '<form method="post" action="/admin/applications' + anchor +
           '">' + carryBack +
@@ -17664,11 +17670,23 @@ class AdminConsole {
           'type="checkbox" name="replace" value="yes"> replace the keys ' +
           'there</label> <button type="submit"' +
           this.tip('Make a key pair, add its public key to the DID document ' +
+    // Which published keys have a private half kept here, by kid: the ones
+    // Generate made. Only that a half is kept is drawn, never the half.
+    let keptKids = [];
+    try {
+      keptKids = JSON.parse(String((row.fields || {}).didPrivateKeys || '[]'))
+        .map(function (one) { return String(one && one.kid || ''); });
+    } catch (e) {
+      log.debug("Caught in AdminConsole.applicationDidPanel(): " +
+                ((e && e.message) || e));
+      keptKids = [];
+    }
                    'and show the private key once.') +
           '>Generate</button></div>' +
           '</form>' +
-          this.note('The public key is added to the document; the private ' +
-          'key is shown once on the next page and not kept here.')
+          this.note('The public key is added to the document. The private ' +
+          'key is shown once on the next page, and kept here sealed so this ' +
+          'service can sign the Domain Linkage Credentials.')
         : '');
     log.debug("Leaving AdminConsole.applicationDidPanel().");
     return html;
@@ -17679,6 +17697,46 @@ class AdminConsole {
   // `answerIssuedTlsClientCertificate()`'s arrangement, because this page is
   // the only copy.
   /**
+    // THE DOMAIN LINKAGE, one per LinkedDomains origin (2026-10-01): a
+    // download of the DID Configuration resource to host at
+    // https://<origin>/.well-known/did-configuration.json, signed on request
+    // with a kept key. A POST, because signing is an act; Admin Write.
+    const origins = answer.ok ? (answer.document.service || [])
+      .filter(function (one) { return one.type === 'LinkedDomains'; })
+      .map(function (one) { return String(one.serviceEndpoint); }) : [];
+    const linkage = '<h4>Domain linkage</h4>' + (origins.length
+      ? '<table><tr><th>Origin</th><th>Host the file at</th><th></th></tr>' +
+        origins.map(function (origin) {
+          const at = origin.replace(/\/+$/, '') +
+                     '/.well-known/did-configuration.json';
+          return '<tr><td><code>' + self.esc(origin) + '</code></td><td>' +
+            '<code>' + self.esc(at) + '</code></td><td>' + (canWrite
+              ? '<form method="post" action="/admin/applications' + anchor +
+                '" class="inline">' + carryBack +
+                '<input type="hidden" name="action" ' +
+                'value="sign-domain-linkage"><input type="hidden" ' +
+                'name="application" value="' + self.esc(identifier) + '">' +
+                '<input type="hidden" name="origin" value="' +
+                self.esc(origin) + '"><input type="hidden" name="from" ' +
+                'value="' + (where === 'credentials' ? 'credentials'
+                                                     : 'config') + '">' +
+                '<button type="submit" class="secondary"' +
+                self.tip('Sign a Domain Linkage Credential for this origin ' +
+                         'with a kept DID key, and download the ' +
+                         'did-configuration.json to host at the address ' +
+                         'beside it.') +
+                '>Download did-configuration.json</button></form>'
+              : '') + '</td></tr>';
+        }).join('') + '</table>' +
+        this.note('The DIF Well-Known DID Configuration: the file proves the ' +
+        'DID and the origin are one party. It carries one Domain Linkage ' +
+        'Credential, self-issued by the DID and signed with its key, and is ' +
+        'good for <code>oid4vci.domainLinkageLifetimeS</code> (a year by ' +
+        'default); download a new one before it expires.')
+      : '<p class="sub">No LinkedDomains service yet: add one to ' +
+        '<code>didService</code>, such as ' +
+        '<code>LinkedDomains|https://app.example.com</code>, to link the DID ' +
+        'to an origin.</p>');
    * Answers a generated DID key pair with a page carrying the private key
    * once, served `no-store`.
    *
@@ -17707,9 +17765,10 @@ class AdminConsole {
     };
     const file = String(answer.kid || 'did-key').slice(0, 16);
     const html = this.warn('<p><strong>This is the only time the private ' +
-      'key is shown.</strong> This service keeps the public half, in the ' +
-      'DID document, and not the private half. If it is lost, generate ' +
-      'another with <em>replace</em> ticked.</p><p><a class="btn" download="' +
+      'key is shown.</strong> This service keeps it sealed, to sign the ' +
+      'application&rsquo;s Domain Linkage Credentials, and shows it on no ' +
+      'page after this one. If your copy is lost, generate another with ' +
+      '<em>replace</em> ticked.</p><p><a class="btn" download="' +
       this.esc(file) + '.jwk.json" href="' +
       this.esc(dataUri('application/json', jwk)) + '">Download the JWK</a> ' +
       '<a class="btn" download="' + this.esc(file) + '.pem" href="' +
@@ -38332,6 +38391,21 @@ class AdminConsole {
       if (action === 'load-resource-metadata') {
         // THE FILE, with its name, off the multipart parts. `parseBody()` has
         // put its content under `file` as text already; this adds the filename
+      // A SIGNED DID CONFIGURATION (2026-10-01) is answered with the FILE,
+      // to host at the origin; a JSON caller gets the action's reply.
+      if (result && result.ok && result.didConfiguration &&
+          String(body.action || '') === 'sign-domain-linkage' &&
+          !/json/i.test(String(req.headers['content-type'] || ''))) {
+        res.set('Cache-Control', 'no-store');
+        res.set('Content-Disposition', 'attachment; filename="' +
+                String(result.filename).replace(/[^A-Za-z0-9._-]/g, '_') +
+                '"');
+        res.status(200).type('application/json')
+           .send(JSON.stringify(result.didConfiguration, null, 2));
+        log.debug("Leaving the admin applications action endpoint. A DID " +
+                  "configuration.");
+        return;
+      }
         // the page names it by, and ignores a file input left empty — a browser
         // posts one with no filename and no bytes, which is not a document.
         const input = Object.assign({}, body);

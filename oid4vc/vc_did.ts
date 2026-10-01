@@ -415,6 +415,138 @@ class VcDid {
     return { ok: true, did: did, document: document };
   }
 
+  // ---------------------------------------------------------------------------
+  // AN APPLICATION'S DOMAIN LINKAGE (rcbj, 2026-10-01): the DIF Well-Known DID
+  // Configuration resource an application hosts at
+  // https://<origin>/.well-known/did-configuration.json, proving that its DID
+  // and that origin are one party. One Domain Linkage Credential in the JWT
+  // form, self-issued by the application's DID, credentialSubject
+  // { id: did, origin }, signed with a key the DID document publishes whose
+  // private half this service KEPT (didPrivateKeys, sealed) — a key pasted
+  // into didPublicKeyJwk by hand cannot sign one. The origin must be one of
+  // the document's LinkedDomains services, because a linkage the document
+  // does not point at is half a claim. Lifetime `oid4vci.domainLinkageLifetimeS`,
+  // the realm's own linkage's.
+  // ---------------------------------------------------------------------------
+  /**
+   * Signs the DID Configuration resource for one of an application's
+   * LinkedDomains origins.
+   *
+   * @param base - the realm's base URL
+   * @param identifier - the application's identifier
+   * @param origin - the LinkedDomains origin
+   * @returns `{ ok: true, did, origin, kid, didConfiguration, filename }`, or
+   *   `{ ok: false, errors }` marked STS-VC-0115
+   */
+  applicationDomainLinkage(base: unknown, identifier: string,
+                           origin: string): any {
+    const { log, config, errorCodes } = this.deps;
+    log.debug("Entering VcDid.applicationDomainLinkage().");
+    const refuse = function (why: string): any {
+      log.debug("Entering refuse().");
+      log.debug("Leaving refuse().");
+      return errorCodes.mark({ ok: false, errors: [why] }, 'STS-VC-0115');
+    };
+    const built = this.applicationDidDocument(base, identifier);
+    if (!built.ok) {
+      log.debug("Leaving VcDid.applicationDomainLinkage(). No document.");
+      return refuse(built.why);
+    }
+    const did = built.did;
+    const wanted = String(origin || '').trim().replace(/\/+$/, '');
+    const linked = (built.document.service || []).filter(function (one) {
+      return one.type === 'LinkedDomains';
+    }).map(function (one) {
+      return String(one.serviceEndpoint).replace(/\/+$/, '');
+    });
+    if (!linked.length) {
+      log.debug("Leaving VcDid.applicationDomainLinkage(). No origin.");
+      return refuse('The application "' + identifier + '" names no ' +
+        'LinkedDomains service in didService, so there is no origin to ' +
+        'link its DID to. Add one, such as ' +
+        'LinkedDomains|https://app.example.com.');
+    }
+    if (linked.indexOf(wanted) < 0) {
+      log.debug("Leaving VcDid.applicationDomainLinkage(). Not linked.");
+      return refuse('"' + wanted + '" is not one of the LinkedDomains ' +
+        'origins of "' + identifier + '": ' + linked.join(', ') + '.');
+    }
+    const applications = require('../common/applications');
+    const view = applications.get(String(identifier));
+    let kept = [];
+    try {
+      kept = JSON.parse(String((view.fields || {}).didPrivateKeys || '[]'));
+    } catch (e) {
+      log.debug("Caught in VcDid.applicationDomainLinkage(): " +
+                ((e && e.message) || e));
+      kept = [];
+    }
+    const published = built.document.verificationMethod.map(function (m) {
+      return m.id.slice(did.length + 1);
+    });
+    let signer: any = null;
+    [].concat(Array.isArray(kept) ? kept : []).some(function (jwk: any) {
+      let key = null;
+      let kid = '';
+      try {
+        key = crypto.createPrivateKey({ key: jwk, format: 'jwk' });
+        kid = stsCrypto.jwkThumbprint(
+          crypto.createPublicKey(key).export({ format: 'jwk' }));
+      } catch (e) {
+        log.debug("Caught in VcDid.applicationDomainLinkage(): " +
+                  ((e && e.message) || e));
+        return false;
+      }
+      const named = published.indexOf(String(jwk.kid || '')) >= 0
+        ? String(jwk.kid) : (published.indexOf(kid) >= 0 ? kid : '');
+      if (!named) {
+        return false;
+      }
+      signer = { key: key, kid: named,
+                 alg: String(jwk.alg || (jwk.kty === 'OKP' ? 'EdDSA'
+                   : (jwk.crv === 'P-384' ? 'ES384' : 'ES256'))) };
+      return true;
+    });
+    if (!signer) {
+      log.debug("Leaving VcDid.applicationDomainLinkage(). No kept key.");
+      return refuse('None of the keys the DID document of "' + identifier +
+        '" publishes has a private half this service kept, so it cannot ' +
+        'sign the linkage. Generate a key pair on the application\'s page; ' +
+        'a key added to didPublicKeyJwk by hand cannot sign.');
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now +
+                (Number(config.value('oid4vci.domainLinkageLifetimeS')) ||
+                 365 * 24 * 3600);
+    const vc = {
+      '@context': ['https://www.w3.org/2018/credentials/v1',
+                   DID_CONFIGURATION_CONTEXT],
+      issuer: did,
+      issuanceDate: new Date(now * 1000).toISOString(),
+      expirationDate: new Date(exp * 1000).toISOString(),
+      type: ['VerifiableCredential', 'DomainLinkageCredential'],
+      credentialSubject: { id: did, origin: wanted }
+    };
+    // certificate-header: none — the DIF specification allows exactly `alg`
+    // and `kid` in this header (common/jose_certificate_header.js).
+    const token = stsCrypto.signJws({ iss: did, sub: did, nbf: now, exp: exp,
+                                      vc: vc }, signer.key, {
+      algorithm: signer.alg,
+      noTimestamp: true,
+      header: { alg: signer.alg, kid: did + '#' + signer.kid, typ: undefined }
+    });
+    const host = wanted.replace(/^https?:\/\//, '').replace(/[^A-Za-z0-9.-]/g,
+                                                            '_');
+    log.debug("Leaving VcDid.applicationDomainLinkage(). origin=" + wanted);
+    return {
+      ok: true, did: did, origin: wanted, kid: signer.kid,
+      didConfiguration: { '@context': DID_CONFIGURATION_CONTEXT,
+                          linked_dids: [token] },
+      filename: 'did-configuration-' + host + '.json',
+      hostAt: wanted + '/.well-known/did-configuration.json'
+    };
+  }
+
   // The algorithm and key this issuer's DID-named artefacts are signed with —
   // `oid4vci.credentialSigningAlgorithm`, the same setting the credentials use,
   // because a credential whose `iss` is this DID is verified against a key the
@@ -1096,6 +1228,7 @@ export = {
   didWebPartsOf: slot.forward('didWebPartsOf'),
   applicationDid: slot.forward('applicationDid'),
   applicationDidDocument: slot.forward('applicationDidDocument'),
+  applicationDomainLinkage: slot.forward('applicationDomainLinkage'),
   stsDidDocument: slot.forward('stsDidDocument'),
   domainLinkageCredential: slot.forward('domainLinkageCredential'),
   issuerDidFor: slot.forward('issuerDidFor'),

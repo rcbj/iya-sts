@@ -137,9 +137,10 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    untouched by grouping and must stay that way; `NAV` is still **derived**, now
    through `sectionPages()`, which flattens a group's pages into the section
    holding it, so `upTo()`, the trail and `consoleJson().pages` cannot tell a
-   grouped page from an ungrouped one; and **nesting stops at one level** — a
-   group holds pages, never another group, enforced only by `sectionPages()` not
-   recursing. The markup is an `<li>` holding a heading and a `<ul>`, INSIDE the
+   grouped page from an ungrouped one; and **a group may hold a group** since
+   2026-10-01 (it read *nesting stops at one level* until then) — the one case
+   is Cert issuance › SPIFFE, below, and `groupPages()` is the walk that
+   flattens every depth. The markup is an `<li>` holding a heading and a `<ul>`, INSIDE the
    section's list rather than a second list beside it: a group is three of that
    list's items said together, and a sibling list would tell a screen reader the
    section ended where the group began.
@@ -4700,6 +4701,16 @@ oversight**: it has no monitoring page, and a group of three under a heading
 that names four families is drift a reader cannot see. The day SPIFFE gets one
 it goes here, and the comment above the group says so.
 
+**SPIFFE GOT ITS HEADING BACK, INSIDE THE GROUP (2026-10-01, rcbj's ask).**
+Merged into Cert issuance, its four pages — `SPIFFE`, `Registration entries`,
+`Agents`, `Brokers` — sat flat beside ACME, EST and SCEP, where `Agents` and
+`Brokers` read as more enrollment protocols. They are a **SPIFFE** group
+nested in Cert issuance now, the first group inside a group: `groupPages()`
+flattens any depth for `NAV`, and `navItem()`, `visibleSections()` and
+`consoleGuide()` recurse. The sidebar CSS colours only the heading of the
+group the page is in (`.navgrp.open>.navsub`), so an open Cert issuance does
+not highlight the SPIFFE heading under it.
+
 Nothing else moved: the paths, the modules that draw the pages and every
 `SETTING_HOMES` row are untouched — this is the `SECTIONS` table's shape and
 nothing below it. `sectionPages()` splices a group's pages in where the group
@@ -6909,7 +6920,11 @@ advertised, and a *Generate a key pair* form (Admin Write) that posts
 `no-store` page carrying the private key, `answerIssuedTlsClientCertificate()`'s
 arrangement. The same panel, with the published keys listed, is on the
 Credentials tab too (`#credentials-did`), and the Generate form returns to
-whichever tab it was pressed on (`from`). `oid4vc/CLAUDE.md` argues the DID.
+whichever tab it was pressed on (`from`). The panel also lists each
+`LinkedDomains` origin with a *Download did-configuration.json* button
+(Admin Write), which posts `sign-domain-linkage` and is answered with the
+FILE (`Content-Disposition: attachment`), and marks which published keys have
+a private half kept here. `oid4vc/CLAUDE.md` argues the DID.
 
 **OPENID4VCI AND OPENID4VP ARE ONE CHECKBOX, *Verifiable Credentials*
 (rcbj, 2026-10-01)**, on the create form and the Protocol families tab, and

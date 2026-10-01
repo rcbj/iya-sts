@@ -473,8 +473,18 @@ families and this service advertises a W3C DID for it:
   * `didAlsoKnownAs`: absolute URIs.
 * **Generate a key pair** on that tab (ES256, ES384 or EdDSA), or call
   `POST /admin-api/applications/generate-did-key`. The public key is added to
-  the document. The private key is shown once and not kept by this service.
-  Tick *replace* to make the new key the only one.
+  the document. The private key is shown once, and kept by this service
+  sealed (like an application's RFC 7523 key pair) so it can sign the
+  application's Domain Linkage Credentials. Tick *replace* to make the new key
+  the only one.
+* **Domain linkage.** For each `LinkedDomains` service, *Download
+  did-configuration.json* (or `POST
+  /admin-api/applications/sign-domain-linkage` with the `origin`) signs a
+  DIF Domain Linkage Credential with a kept key. Host the file at
+  `https://<origin>/.well-known/did-configuration.json`: it proves the DID
+  and the origin are one party. It is good for
+  `oid4vci.domainLinkageLifetimeS` (a year by default). A key pasted in by
+  hand has no private half here and cannot sign one.
 
 The DID follows the address the service is reached on; pin
 `global.publicBaseUrl` so it does not change with the host name.

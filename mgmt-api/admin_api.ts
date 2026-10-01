@@ -11763,11 +11763,14 @@ class AdminApi {
                          'pair, adds the public JWK to `didPublicKeyJwk` — ' +
                          'with `replace`, after taking the keys already ' +
                          'there off — and answers the private key, as a JWK ' +
-                         'and as PKCS#8 PEM. **THIS REPLY IS THE ONLY COPY ' +
-                         'OF THE PRIVATE KEY**: this service keeps the ' +
-                         'public half, in the DID document it advertises at ' +
-                         '`<base>/applications/<identifier>/did.json`, and ' +
-                         'nothing else. The application\'s DID is ' +
+                         'and as PKCS#8 PEM. **THIS REPLY IS THE ONLY ' +
+                         'PLACE THE PRIVATE KEY IS SHOWN**: this service ' +
+                         'publishes the public half in the DID document it ' +
+                         'advertises at `<base>/applications/<identifier>/' +
+                         'did.json`, and keeps the private half SEALED in ' +
+                         '`didPrivateKeys` to sign the application\'s ' +
+                         'Domain Linkage Credentials (`sign-domain-' +
+                         'linkage`). The application\'s DID is ' +
                          '`did:web:<host>[:realm:<id>]:applications:' +
                          '<identifier>`. Refused (`STS-ADMIN-0837`) for an ' +
                          'unknown application, one not declared for `did`, ' +
@@ -11789,6 +11792,41 @@ class AdminApi {
                                  'document\'s address; the public JWK; and ' +
                                  'the private key in `privateJwk` and ' +
                                  '`privateKeyPem`.' },
+
+          // THE DID TAB'S *Download did-configuration.json* (2026-10-01).
+          { action: 'sign-domain-linkage',
+            operationId: 'signApplicationDomainLinkage',
+            summary: 'Sign the DID Configuration resource for one of an ' +
+                     'application\'s LinkedDomains origins',
+            description: 'The DIF Well-Known DID Configuration: one Domain ' +
+                         'Linkage Credential (JWT form), self-issued by the ' +
+                         'application\'s DID with credentialSubject ' +
+                         '`{ id, origin }`, signed with a key its DID ' +
+                         'document publishes whose private half this ' +
+                         'service kept (one `generate-did-key` made). Host ' +
+                         '`didConfiguration` at ' +
+                         '`https://<origin>/.well-known/did-configuration.' +
+                         'json`. `origin` must be a `LinkedDomains` service ' +
+                         'in `didService`. Writes nothing. Refused ' +
+                         '(`STS-VC-0115`) for an application with no DID ' +
+                         'document, an origin it does not list, or no kept ' +
+                         'key.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                origin: { type: 'string' }
+              },
+              required: ['application', 'origin'],
+              examples: [{ application: 'my-web-app',
+                           origin: 'https://app.example.com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The DID Configuration resource in ' +
+                                 '`didConfiguration`, the DID, the origin, ' +
+                                 'the signing key\'s kid, a file name and ' +
+                                 'where to host it (`hostAt`).' },
 
           // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705,
           // 2026-09-13).

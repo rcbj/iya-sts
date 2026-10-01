@@ -228,6 +228,56 @@ function childMain() {
          'D3. a URN and a DID in alsoKnownAs, and a service type of one\'s ' +
          'own written as a URI, are accepted');
 
+    // --- F. The Domain Linkage Credential ---------------------------------
+    // Signed with the kept private half of the ES384 key `third` made (with
+    // replace, so it is the only one), for the LinkedDomains origin D1 added.
+    const linkage = act({ action: 'sign-domain-linkage', application: 'ad-app',
+                          origin: 'https://app.example.com' });
+    const jwt = ((linkage.didConfiguration || {}).linked_dids || [])[0] || '';
+    const parts = jwt.split('.');
+    const b64json = function (text) {
+      return JSON.parse(Buffer.from(text, 'base64url').toString('utf8'));
+    };
+    const header = parts.length === 3 ? b64json(parts[0]) : {};
+    const claims = parts.length === 3 ? b64json(parts[1]) : {};
+    r = await get(port, docPath('ad-app'));
+    const method = (r.json.verificationMethod || []).filter(function (m) {
+      return m.id === header.kid;
+    })[0];
+    note(linkage.ok && header.alg === 'ES384' &&
+         header.kid === third.verificationMethod && method &&
+         claims.iss === r.json.id && claims.sub === r.json.id &&
+         claims.vc && claims.vc.credentialSubject.id === r.json.id &&
+         claims.vc.credentialSubject.origin === 'https://app.example.com' &&
+         claims.vc.type.indexOf('DomainLinkageCredential') >= 0 &&
+         linkage.hostAt ===
+           'https://app.example.com/.well-known/did-configuration.json',
+         'F1. the DID configuration carries one Domain Linkage Credential, ' +
+         'self-issued by the DID for the origin, under the kept key\'s kid',
+         JSON.stringify(header));
+    note(!!method && nodeCrypto.verify('sha384',
+      Buffer.from(parts[0] + '.' + parts[1]),
+      { key: nodeCrypto.createPublicKey({ key: method.publicKeyJwk,
+                                          format: 'jwk' }),
+        dsaEncoding: 'ieee-p1363' }, Buffer.from(parts[2], 'base64url')),
+         'F2. it verifies with the key the DID document publishes');
+    const notLinked = act({ action: 'sign-domain-linkage',
+                            application: 'ad-app',
+                            origin: 'https://other.example.com' });
+    note(notLinked.ok === false &&
+         errorCodes.codeOf(notLinked) === 'STS-VC-0115',
+         'F3. an origin the document does not list is refused');
+    applications.createApplication({ identifier: 'ad-handmade',
+      protocols: ['did'], fields: {
+        didPublicKeyJwk: [JSON.stringify(p256)],
+        didService: ['LinkedDomains|https://hand.example.com'] } });
+    const noKept = act({ action: 'sign-domain-linkage',
+                         application: 'ad-handmade',
+                         origin: 'https://hand.example.com' });
+    note(noKept.ok === false && errorCodes.codeOf(noKept) === 'STS-VC-0115' &&
+         /private half/.test(String((noKept.errors || [])[0])),
+         'F4. a key added by hand has no private half here and cannot sign');
+
     // --- E. An identifier with reserved characters --------------------------
     const odd = 'urn:example:app/1';
     applications.createApplication({ identifier: odd, protocols: ['did'],

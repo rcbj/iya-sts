@@ -522,7 +522,7 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'revoke-tls-client-certificate',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
-                             'forget'];
+                             'sign-domain-linkage', 'forget'];
 
 // ---------------------------------------------------------------------------
 // GET /admin/saml2, POST /admin/saml2 — THE SAML 2.0 IDENTITY PROVIDER.
@@ -3998,7 +3998,8 @@ class AdminActions {
                       'rotate-secret', 'issue-software-statement',
                       'issue-tls-client-certificate',
                       'revoke-tls-client-certificate',
-                      'revoke-registration', 'generate-did-key', 'forget'];
+                      'revoke-registration', 'generate-did-key',
+                      'sign-domain-linkage', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
                 "named.");
@@ -4178,10 +4179,11 @@ class AdminActions {
     // A KEY PAIR FOR THE APPLICATION'S DID (2026-10-01). Generated here, the
     // PUBLIC half added to `didPublicKeyJwk` (and, with `replace`, the keys
     // already there taken off), and the PRIVATE half handed back in this
-    // reply and nowhere else: this service only publishes the DID document,
-    // and a private key it kept would be one more place to lose it. Refused
-    // for an application not declared for `did`, whose DID is not
-    // advertised. The DID and its document's address are in the reply.
+    // reply AND KEPT, sealed, in `didPrivateKeys` — rcbj's choice, so this
+    // service can sign the application's Domain Linkage Credentials
+    // (`sign-domain-linkage`), the way an application's RFC 7523 key pair is
+    // kept. Refused for an application not declared for `did`, whose DID is
+    // not advertised. The DID and its document's address are in the reply.
     // ---------------------------------------------------------------------
     if (action === 'generate-did-key') {
       const entry = applications.get(identifier);
@@ -4228,22 +4230,64 @@ class AdminActions {
                   "generate-did-key: the write was refused.");
         return this.refusedBy('STS-ADMIN-0837', write);
       }
+      // THE PRIVATE HALF, KEPT. The keys already kept stay unless replace
+      // took their public halves off; a kept key whose public half is gone
+      // signs nothing (applicationDomainLinkage() matches on the document).
+      let kept = [];
+      try {
+        kept = replace ? [] : JSON.parse(String(
+          (entry.fields || {}).didPrivateKeys || '[]'));
+      } catch (e) {
+        log.debug("Caught in AdminActions.applicationsAction(): " +
+                  ((e && e.message) || e));
+        kept = [];
+      }
+      const keep = applications.updateApplication(identifier, {
+        mode: 'set', attribute: 'didPrivateKeys',
+        value: JSON.stringify([].concat(Array.isArray(kept) ? kept : [])
+          .concat([pair.privateJwk])) });
+      if (!keep.ok) {
+        log.debug("Leaving AdminActions.applicationsAction(). " +
+                  "generate-did-key: the private key was not kept.");
+        return this.refusedBy('STS-ADMIN-0837', keep);
+      }
       const base = String((context || {}).base || '');
       const did = vcDid.applicationDid(base, identifier);
       log.debug("Leaving AdminActions.applicationsAction(). " +
                 "generate-did-key ok, kid=" + pair.kid);
       return {
-        ok: true, application: write.application,
+        ok: true,
         did: did, kid: pair.kid, algorithm: pair.alg,
         verificationMethod: did + '#' + pair.kid,
         documentUrl: base + '/applications/' +
                      encodeURIComponent(identifier) + '/did.json',
         publicJwk: pair.publicJwk, privateJwk: pair.privateJwk,
         privateKeyPem: pair.privateKeyPem, replaced: replace,
+        application: keep.application,
         why: 'A ' + pair.alg + ' key pair was generated for ' + did +
-             '. Its public key is in the DID document; the private key is ' +
-             'in this reply only.'
+             '. Its public key is in the DID document; its private key is ' +
+             'kept sealed so this service can sign the application\'s ' +
+             'Domain Linkage Credentials.'
       };
+    }
+
+    // ---------------------------------------------------------------------
+    // A DOMAIN LINKAGE CREDENTIAL (2026-10-01): the DID Configuration
+    // resource for one of the application's LinkedDomains origins, signed
+    // with a DID key whose private half this service kept. The reply carries
+    // the document to host at https://<origin>/.well-known/
+    // did-configuration.json; nothing is written. vc_did.ts builds it.
+    // ---------------------------------------------------------------------
+    if (action === 'sign-domain-linkage') {
+      const base = String((context || {}).base || '');
+      const result = vcDid.applicationDomainLinkage(base, identifier,
+        String(body.origin || ''));
+      log.debug("Leaving AdminActions.applicationsAction(). " +
+                "sign-domain-linkage " + (result.ok ? 'ok' : 'refused') + ".");
+      return result.ok ? Object.assign({
+        why: 'A Domain Linkage Credential was signed for ' + result.origin +
+             '. Host it at ' + result.hostAt + '.' }, result)
+        : this.refusedBy('STS-VC-0115', result);
     }
 
     // A ROTATION (#49 P5): the same new secret, with the old one still

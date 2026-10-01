@@ -61,7 +61,9 @@ const LEFT_TO_THEIR_OWN_CONTROL = [
   'oauthClientSecretPreviousUntil', 'oauthClientSecretExpiresAt',
   'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
   // What the client has asked for, written as the service sees it ask.
-  'oauthScope'
+  'oauthScope',
+  // The DID keys' sealed private halves, written by Generate a key pair.
+  'didPrivateKeys'
 ];
 
 function run(t) {
