@@ -20,7 +20,7 @@
 #   bootstrap-admin-password, krb5-krbtgt-password, krb5-service-password
 #                            product mode only, for AWS's reasons
 #
-# NAMED BY THEIR KEY ALONE (`kek`, not `mock-sts-dev-kek`): the vault is this
+# NAMED BY THEIR KEY ALONE (`kek`, not `iya-sts-dev-kek`): the vault is this
 # environment's, so the name needs nothing else. Read the bootstrap password
 # with
 #   az keyvault secret show --vault-name <vault> --name bootstrap-admin-password --query value -o tsv

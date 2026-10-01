@@ -2144,7 +2144,7 @@ const SETTINGS = [
   { key: 'webauthn.rpName', group: 'WebAuthn',
     label: 'Relying party name', path: 'webauthn.rpName',
     env: 'STS_WEBAUTHN_RP_NAME', type: 'string',
-    dflt: 'Mock authorization server', runtime: true,
+    dflt: 'IYA STS', runtime: true,
     description: 'The `rp.name` handed to `navigator.credentials.create()`. ' +
                  'It is what a browser and a password manager show the ' +
                  'person while they decide whether to create a credential, ' +
@@ -2193,30 +2193,107 @@ const SETTINGS = [
 
   { key: 'webauthn.algorithms', group: 'WebAuthn',
     label: 'Algorithms offered', path: 'webauthn.algorithms',
-    env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv', dflt: 'ES256,RS256',
+    env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv',
+    // EVERY ALGORITHM THE VERIFIER CHECKS, REQUESTED BY DEFAULT (2026-10-01,
+    // rcbj): the post-quantum ML-DSA three first, so an authenticator that
+    // can make an ML-DSA credential does, then the classical ones strongest
+    // and most specific first. It was `ES256,RS256` until that day.
+    dflt: 'ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,' +
+          'ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,' +
+          'RS256,RS384,RS512',
     runtime: true,
     // Mirrors authn/webauthn_policy.ts's ALG_IDS, the verifier's COSE_ALGS
     // inverted.
-    csvValues: ['ES256', 'ES384', 'ES512', 'EdDSA', 'RS256', 'RS384',
-                'RS512', 'PS256', 'PS384', 'PS512', 'ML-DSA-44',
-                'ML-DSA-65', 'ML-DSA-87'],
+    csvValues: ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'ESP256', 'ES256',
+                'Ed25519', 'EdDSA', 'ESP384', 'ES384', 'ESP512', 'ES512',
+                'Ed448', 'ES256K', 'PS256', 'PS384', 'PS512', 'RS256',
+                'RS384', 'RS512', 'RS1'],
+    // AN ORDERED CHOICE (2026-10-01, rcbj: "explicitly choose, by
+    // checkboxes, which algorithms are requested and an order of
+    // preference"): the console draws a checkbox and an order number per
+    // value rather than a text box, and folds them back into this list.
+    // `csvValueNotes` is the sentence drawn beside each value.
+    ordered: true,
+    csvValueNotes: {
+      'ML-DSA-44': 'COSE -48 · post-quantum, RFC 9964 (NIST category 2)',
+      'ML-DSA-65': 'COSE -49 · post-quantum, RFC 9964 (NIST category 3)',
+      'ML-DSA-87': 'COSE -50 · post-quantum, RFC 9964 (NIST category 5)',
+      ESP256: 'COSE -9 · ECDSA P-256 with SHA-256, curve checked (RFC 9864)',
+      ES256: 'COSE -7 · ECDSA with SHA-256 — what nearly every ' +
+             'authenticator supports',
+      Ed25519: 'COSE -19 · EdDSA on Ed25519, curve checked (RFC 9864)',
+      EdDSA: 'COSE -8 · EdDSA, any curve the key carries',
+      ESP384: 'COSE -51 · ECDSA P-384 with SHA-384, curve checked (RFC 9864)',
+      ES384: 'COSE -35 · ECDSA with SHA-384',
+      ESP512: 'COSE -52 · ECDSA P-521 with SHA-512, curve checked (RFC 9864)',
+      ES512: 'COSE -36 · ECDSA with SHA-512',
+      Ed448: 'COSE -53 · EdDSA on Ed448 (RFC 9864)',
+      ES256K: 'COSE -47 · ECDSA secp256k1 with SHA-256 (RFC 8812)',
+      PS256: 'COSE -37 · RSASSA-PSS with SHA-256 (RFC 8230)',
+      PS384: 'COSE -38 · RSASSA-PSS with SHA-384 (RFC 8230)',
+      PS512: 'COSE -39 · RSASSA-PSS with SHA-512 (RFC 8230)',
+      RS256: 'COSE -257 · RSASSA-PKCS1-v1_5 with SHA-256 (Windows Hello, ' +
+             'older TPMs)',
+      RS384: 'COSE -258 · RSASSA-PKCS1-v1_5 with SHA-384',
+      RS512: 'COSE -259 · RSASSA-PKCS1-v1_5 with SHA-512',
+      RS1: 'COSE -65535 · SHA-1, INSECURE — requested only while ' +
+           'webauthn.insecureAlgorithms is on (development only)'
+    },
     description: '`pubKeyCredParams`, in preference order — the COSE ' +
                  'algorithms this service will accept a credential in. The ' +
                  'names are JOSE spellings and are mapped to COSE ' +
                  'identifiers by `authn/webauthn.js`\'s own table, which is ' +
-                 'the module that verifies the signature: `ES256` (-7), ' +
-                 '`ES384` (-35), `ES512` (-36), `EdDSA` (-8), `RS256` ' +
-                 '(-257), `RS384` (-258), `RS512` (-259), `PS256` (-37), ' +
-                 '`PS384` (-38), `PS512` (-39), and RFC 9964\'s `ML-DSA-44` ' +
-                 '(-48), `ML-DSA-65` (-49) and `ML-DSA-87` (-50). A ' +
-                 'credential whose algorithm is not on this list is refused ' +
-                 '(WebAuthn Level 3 section 7.1). A name outside ' +
-                 'that table is dropped with a warning rather than sent, ' +
-                 'because offering an algorithm this service cannot verify ' +
-                 'produces a credential that enrols and then never works. ' +
-                 '**ES256 and RS256 are the two every authenticator ' +
-                 'implements** and are the default; the rest are here to ' +
-                 'find out what a client does when the list is unusual.' },
+                 'the module that verifies the signature: RFC 9964\'s ' +
+                 'post-quantum `ML-DSA-44` (-48), `ML-DSA-65` (-49) and ' +
+                 '`ML-DSA-87` (-50); RFC 9864\'s fully specified `ESP256` ' +
+                 '(-9), `ESP384` (-51), `ESP512` (-52), `Ed25519` (-19) and ' +
+                 '`Ed448` (-53), whose curve is checked against the key; ' +
+                 '`ES256` (-7), `ES384` (-35), `ES512` (-36), `EdDSA` (-8); ' +
+                 'RFC 8812\'s `ES256K` (-47, secp256k1); and `PS256` (-37), ' +
+                 '`PS384` (-38), `PS512` (-39), `RS256` (-257), `RS384` ' +
+                 '(-258) and `RS512` (-259). A credential whose algorithm is ' +
+                 'not on this list is refused (WebAuthn Level 3 section ' +
+                 '7.1). A name outside that table is dropped with a warning ' +
+                 'rather than sent, because offering an algorithm this ' +
+                 'service cannot verify produces a credential that enrols ' +
+                 'and then never works. **The default requests every one, ' +
+                 'ML-DSA first**; an authenticator takes the first it ' +
+                 'supports, so the order is a preference. SHA-1\'s `RS1` ' +
+                 '(-65535) may be named but is offered and accepted only ' +
+                 'while `webauthn.insecureAlgorithms` is on (development ' +
+                 'only); `webauthn.pqcOnly` narrows the list to ML-DSA.' },
+
+  // THE TWO ALGORITHM FLAGS (2026-10-01, rcbj). Per realm, like every
+  // runtime row. `authn/webauthn_policy.ts` reads both.
+  { key: 'webauthn.insecureAlgorithms', group: 'WebAuthn',
+    label: 'Use insecure algorithms (development only)',
+    path: 'webauthn.insecureAlgorithms',
+    env: 'STS_WEBAUTHN_INSECURE_ALGORITHMS', type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'usesBrokenAlgorithms',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. On requests and accepts ' +
+                 'the broken passkey algorithms — SHA-1\'s `RS1` (-65535) — ' +
+                 'as well: offered last in `pubKeyCredParams`, so only an ' +
+                 'authenticator that supports nothing better uses it, and ' +
+                 'its signatures verified at sign-in. Off, `RS1` is neither ' +
+                 'requested nor accepted, even where `webauthn.algorithms` ' +
+                 'names it, and a key enrolled with it is refused at sign-in ' +
+                 '(STS-AUTHN-0294). In product mode it cannot be set and is ' +
+                 'ignored: product never uses a broken algorithm.' },
+  { key: 'webauthn.pqcOnly', group: 'WebAuthn',
+    label: 'Request post-quantum algorithms only',
+    path: 'webauthn.pqcOnly',
+    env: 'STS_WEBAUTHN_PQC_ONLY', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On requests ONLY the post-quantum passkey algorithms — RFC ' +
+                 '9964\'s `ML-DSA-44` (-48), `ML-DSA-65` (-49) and ' +
+                 '`ML-DSA-87` (-50) — whichever of them ' +
+                 '`webauthn.algorithms` names, and all three where it names ' +
+                 'none. A new passkey must then be ML-DSA: one made with ' +
+                 'another algorithm is refused at registration (WebAuthn ' +
+                 'section 7.1). It narrows what is REQUESTED: a classical ' +
+                 'key already enrolled goes on signing in. Most ' +
+                 'authenticators support no ML-DSA yet and cannot register ' +
+                 'while this is on.' },
 
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',
@@ -17158,6 +17235,10 @@ function describe(setting) {
     // only where the row declares one — the same absent-unless-meaningful
     // rule as `enumValues` beside it, so every open list describes as before.
     csvValues: setting.csvValues || undefined,
+    // A `csv` row whose ORDER is a preference (2026-10-01), and the sentence
+    // drawn beside each of its values — absent on every other row.
+    ordered: setting.ordered ? true : undefined,
+    csvValueNotes: setting.csvValueNotes || undefined,
     // The int bounds, where a row narrows them. `undefined` is dropped by
     // JSON.stringify, so a row that carries none of them describes exactly as
     // it did before they existed — which is what keeps the management API's

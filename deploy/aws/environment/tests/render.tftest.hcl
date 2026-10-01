@@ -35,10 +35,10 @@ mock_provider "aws" {
     defaults = { arn = "arn:aws:iam::111122223333:policy/p" }
   }
   mock_data "aws_ecr_repository" {
-    defaults = { arn = "arn:aws:ecr:us-west-2:111122223333:repository/mock-sts", repository_url = "111122223333.dkr.ecr.us-west-2.amazonaws.com/mock-sts" }
+    defaults = { arn = "arn:aws:ecr:us-west-2:111122223333:repository/iya-sts", repository_url = "111122223333.dkr.ecr.us-west-2.amazonaws.com/iya-sts" }
   }
   mock_data "aws_cloudwatch_log_group" {
-    defaults = { arn = "arn:aws:logs:us-west-2:111122223333:log-group:/mock-sts/containers" }
+    defaults = { arn = "arn:aws:logs:us-west-2:111122223333:log-group:/iya-sts/containers" }
   }
   mock_data "aws_network_interfaces" {
     defaults = { ids = [] }
@@ -198,12 +198,12 @@ run "single_cell_dev_unchanged" {
 override_resource {
   target          = aws_secretsmanager_secret.main["kek"]
   override_during = plan
-  values          = { arn = "arn:aws:secretsmanager:us-west-2:111122223333:secret:mock-sts/dev/kek-AbCdEf" }
+  values          = { arn = "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/dev/kek-AbCdEf" }
 }
 override_resource {
   target          = aws_secretsmanager_secret.main["db-app-password"]
   override_during = plan
-  values          = { arn = "arn:aws:secretsmanager:us-west-2:111122223333:secret:mock-sts/dev/db-app-password-GhIjKl" }
+  values          = { arn = "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/dev/db-app-password-GhIjKl" }
 }
 run "kek_default_is_the_kms_key" {
   command = plan
@@ -263,7 +263,7 @@ run "kek_secret_is_the_old_arrangement" {
   assert {
     condition = local.kek_environment == {
       STS_KEYS_KEK_PROVIDER = "aws"
-      STS_KEYS_KEK_REF      = "arn:aws:secretsmanager:us-west-2:111122223333:secret:mock-sts/dev/kek-AbCdEf"
+      STS_KEYS_KEK_REF      = "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/dev/kek-AbCdEf"
       STS_KEYS_KEK_REGION   = "us-west-2"
     }
     error_message = jsonencode(local.kek_environment)
@@ -293,7 +293,7 @@ run "kek_migrating_adds_the_previous_kek" {
       STS_KEYS_KEK_REF          = "mrk-0123456789abcdef0123456789abcdef"
       STS_KEYS_KEK_REGION       = "us-west-2"
       STS_PREVIOUS_KEK_PROVIDER = "aws"
-      STS_PREVIOUS_KEK_REF      = "arn:aws:secretsmanager:us-west-2:111122223333:secret:mock-sts/dev/kek-AbCdEf"
+      STS_PREVIOUS_KEK_REF      = "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/dev/kek-AbCdEf"
       STS_PREVIOUS_KEK_REGION   = "us-west-2"
     }
     error_message = jsonencode(local.kek_environment)

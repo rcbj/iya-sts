@@ -938,7 +938,7 @@ const program = new Command();
 program
   .name("sts_directory_bulk_load_ldap")
   .description("Create 5000 people, 50 groups and 5000 memberships in the " +
-      "mock STS's DEFAULT realm ENTIRELY OVER LDAP v3 on the raw socket, " +
+      "IYA STS's DEFAULT realm ENTIRELY OVER LDAP v3 on the raw socket, " +
       "read them back, and report how long each kind of write took on " +
       "average. Deletes nothing.")
   .addOption(new Option("-u, --url <url>", "base url of the STS under test")

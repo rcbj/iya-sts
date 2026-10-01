@@ -6,8 +6,8 @@ Dockerfile removes this directory from the image.
 
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
-| `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
-| `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the KEY-ENCRYPTION KEY — a multi-region KMS key of its own, `alias/mock-sts-kek` (#391) — the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` — and since #98, for every region in `permitted_regions`, a single-region CELL key, a replica of the multi-region GLOBAL key and of the KEK, a log group and a replica of the repository (`modules/region`), with ECR replication to them (*Cells*, below) | an administrator |
+| `bootstrap-state.sh` | once | the S3 state bucket `iya-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
+| `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the KEY-ENCRYPTION KEY — a multi-region KMS key of its own, `alias/iya-sts-kek` (#391) — the ECR repository, the container log group, the test report bucket `iya-sts-test-reports-<account>` — and since #98, for every region in `permitted_regions`, a single-region CELL key, a replica of the multi-region GLOBAL key and of the KEK, a log group and a replica of the repository (`modules/region`), with ECR replication to them (*Cells*, below) | an administrator |
 | `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a CNAME (`dns.tf`) — and the public certificate's ARN, READ from `certificate/`'s state, since 2026-10-01, RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `certificate/` | **kept across destroys** | **the public ACM certificate (2026-10-01, rcbj)**: the exportable certificate the nodes present, its DNS validation records — one state per environment (`environment/<env>/certificate.tfstate`) and per cell (`environment/<env>/<cell>/certificate.tfstate`). Applied before every environment apply, NEVER destroyed with the environment, and its first apply ADOPTS an existing certificate rather than requesting one (*The public certificate is kept*, below) | the deployer role, through `entrypoint.sh` |
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
@@ -253,7 +253,7 @@ refuses). Recovery window zero, so the next environment of the same name can
 reuse the names.
 
 **THE BOOTSTRAP ADMINISTRATOR'S PASSWORD IS A FIFTH, IN PRODUCT MODE
-(2026-09-17)** — `mock-sts/<environment>/bootstrap-admin-password`. It is the
+(2026-09-17)** — `iya-sts/<environment>/bootstrap-admin-password`. It is the
 only way into a fresh deployment and the one an operator actually goes looking
 for, and until this it existed only as a log line: the service generates a
 password and announces it ONCE (`common/CLAUDE.md`, `credentials.ts`), so the
@@ -265,7 +265,7 @@ one and **prints it nowhere**. Read it whenever:
 
 ```bash
 aws secretsmanager get-secret-value --region us-west-2 \
-  --secret-id mock-sts/testidp/bootstrap-admin-password \
+  --secret-id iya-sts/testidp/bootstrap-admin-password \
   --query SecretString --output text
 ```
 
@@ -278,10 +278,10 @@ injected, not written into the task definition**, which anybody with
 the bootstrap is: `dev` and `ci` are development, where every password is
 accepted, so they get the four secrets and the task definition they always had.
 The workload boundary already covers it — it reads every secret under
-`mock-sts/<environment>/`.
+`iya-sts/<environment>/`.
 
 **AND THE KDC'S TWO, IN PRODUCT MODE (2026-09-18)** —
-`mock-sts/<environment>/krb5-krbtgt-password` and `…/krb5-service-password`,
+`iya-sts/<environment>/krb5-krbtgt-password` and `…/krb5-service-password`,
 injected as `KRB5_KRBTGT_PASSWORD` and `KRB5_SERVICE_PASSWORD`. **A product
 KDC builds neither `krbtgt/<realm>` nor the `krb5.servicePrincipal` account
 while its password is the default the settings table publishes**
@@ -309,7 +309,7 @@ definition declares `risk-uploads` with `configure_at_launch`, and each
 service's `volume_configuration { managed_ebs_volume }` makes it gp3,
 encrypted with the project KMS key, `risk_upload_volume_gib` (10) with
 `_throughput` (125) and `_iops` (3000) — gp3's free baseline. It is mounted
-read-write in `mock-sts` at `/usr/src/sts/data/risk-uploads` and named to the
+read-write in `iya-sts` at `/usr/src/sts/data/risk-uploads` and named to the
 service as `STS_RISK_UPLOAD_DIRECTORY`, both from `locals.tf`. ECS creates it
 as the task starts and deletes it as the task stops, so it is temporary space
 and holds no state — which is what the upload needs: a file is deleted when
@@ -342,14 +342,14 @@ The two alternatives, and why each was refused:
 
 **THE VOLUME TAKES A THIRD ROLE, AND A SECOND BOUNDARY.** ECS creates,
 attaches and deletes the volume with an **infrastructure role**,
-`mock-sts-env-<env>-ecs-infra` (`environment/iam.tf`), assumed by
+`iya-sts-env-<env>-ecs-infra` (`environment/iam.tf`), assumed by
 `ecs.amazonaws.com` — the scheduler, not a task. Its policy is AWS's managed
 `AmazonECSInfrastructureRolePolicyForVolumes` narrowed to this environment:
 `CreateVolume`/`CreateTags` only with `AmazonECSManaged = true` and an
 `AmazonECSCreated` task ARN in THIS environment's cluster, attach/detach/delete
 only of volumes carrying those tags, no snapshot statement, and the project key
 only through EC2 (`kms:ViaService`), for an EBS encryption context, the grant
-only for an AWS resource. Its ceiling is **`mock-sts-ecs-infrastructure-
+only for an AWS resource. Its ceiling is **`iya-sts-ecs-infrastructure-
 boundary`** (`foundation/iam_deployer.tf`), NOT the workload boundary: widening
 the workload boundary would have let any task role be given EC2 volume and key
 calls no container needs. The deployer may create a role of that one name only
@@ -381,8 +381,8 @@ argues it at length):
 
 | `kek_provider` | The KEK | What every node is told |
 |---|---|---|
-| `kms` (**the default**) | `foundation/kms.tf`'s `aws_kms_key.kek`, `alias/mock-sts-kek`: symmetric, ENCRYPT_DECRYPT, multi-region, rotated by AWS, a replica in every permitted region | `STS_KEYS_KEK_PROVIDER=aws-kms`, `STS_KEYS_KEK_REF=<the key's ID, mrk-…>`, `STS_KEYS_KEK_REGION=<this node's region>` |
-| `secret` | 32 random bytes in Secrets Manager, `mock-sts/<env>/kek` (global/'s replica in a cell) — the arrangement before #391 | `STS_KEYS_KEK_PROVIDER=aws`, `STS_KEYS_KEK_REF=<the secret's ARN>`, `STS_KEYS_KEK_REGION=<this region>` |
+| `kms` (**the default**) | `foundation/kms.tf`'s `aws_kms_key.kek`, `alias/iya-sts-kek`: symmetric, ENCRYPT_DECRYPT, multi-region, rotated by AWS, a replica in every permitted region | `STS_KEYS_KEK_PROVIDER=aws-kms`, `STS_KEYS_KEK_REF=<the key's ID, mrk-…>`, `STS_KEYS_KEK_REGION=<this node's region>` |
+| `secret` | 32 random bytes in Secrets Manager, `iya-sts/<env>/kek` (global/'s replica in a cell) — the arrangement before #391 | `STS_KEYS_KEK_PROVIDER=aws`, `STS_KEYS_KEK_REF=<the secret's ARN>`, `STS_KEYS_KEK_REGION=<this region>` |
 
 **KMS by default, because it is the more secure of the two** and that is the
 project's rule for a default: a secret KEK is a value anyone holding
@@ -599,7 +599,7 @@ plan against its state showed two new empty outputs and nothing else.
   8 GiB idled at 76–87 % after a few suite runs and was OOM-killed on a
   restart (#339); *Sizing a node*, below. The bootstrap
   administrator's password is in Secrets Manager at
-  `mock-sts/testidp/bootstrap-admin-password` and is printed nowhere (*Four
+  `iya-sts/testidp/bootstrap-admin-password` and is printed nowhere (*Four
   secrets*, above); it was a log line in whichever node won the bootstrap
   claim until 2026-09-17.
 * **iyasec.io names throughout (2026-09-18)**, through `extra_environment`:
@@ -725,9 +725,9 @@ region (*Adding a region*, below).
 conditional on it; every name is spelt as it was; the state key, the task
 definition, the policies, the secrets and the DNS record are unchanged for
 `dev`, `ci` and `testidp`. Set, every globally unique name carries the cell —
-resources `mock-sts-<env>-<cell>-…`, IAM roles `mock-sts-env-<env>-<cell>-…`
+resources `iya-sts-<env>-<cell>-…`, IAM roles `iya-sts-env-<env>-<cell>-…`
 (IAM is global, so two cells would otherwise claim one role), secrets
-`mock-sts/<env>/<cell>/…` — and the state key is
+`iya-sts/<env>/<cell>/…` — and the state key is
 `environment/<env>/<cell>.tfstate`. A cell id is at most five characters and
 the NLB checks that the prefix stays within the 27 a target group name
 leaves room for.
@@ -818,25 +818,25 @@ peers' inter-cell names need no read at all: they are deterministic.
 
 | | Where | Replicated to the other cells |
 |---|---|---|
-| the global KEK, by default (#391) — `alias/mock-sts-kek`, `STS_KEYS_KEK_*` = its `mrk-…` ID and this region | foundation/, primary in the home region | **yes**: a multi-region KMS key with a replica in every permitted region; the key material never leaves KMS |
-| the global KEK's secret (`mock-sts/<env>/kek`) — THE KEK with `kek_provider = "secret"`, the previous KEK while migrating | global/, primary region | **yes**, under the multi-region key's replica in each region |
+| the global KEK, by default (#391) — `alias/iya-sts-kek`, `STS_KEYS_KEK_*` = its `mrk-…` ID and this region | foundation/, primary in the home region | **yes**: a multi-region KMS key with a replica in every permitted region; the key material never leaves KMS |
+| the global KEK's secret (`iya-sts/<env>/kek`) — THE KEK with `kek_provider = "secret"`, the previous KEK while migrating | global/, primary region | **yes**, under the multi-region key's replica in each region |
 | the global database's password, the management client's secret, product mode's bootstrap, krbtgt and service passwords | global/ | **yes** — every cell must hold the same values, and a per-cell value would be a different one in each, all but the first refused by the global tier |
 | the global database's master password | global/ | no — only the primary cell's `global-schema-init` uses it |
 | the global database | global/: writer in the primary cell's VPC | **yes**: one RDS cross-region read replica per other cell (D3) |
 | the images | foundation/: pushed to the home region | **yes**: ECR replication into a repository made first in each region, so it carries the lifecycle policy |
-| **the cell KEK (`mock-sts/<env>/<cell>/cell-kek`, `STS_CELL_KEK_*`)** | the cell | **NO, and never**: sealed under the cell's single-region key, which AWS will not replicate. A copy of the cell's rows taken elsewhere cannot be read there — the residency line of issue #98, §3 |
+| **the cell KEK (`iya-sts/<env>/<cell>/cell-kek`, `STS_CELL_KEK_*`)** | the cell | **NO, and never**: sealed under the cell's single-region key, which AWS will not replicate. A copy of the cell's rows taken elsewhere cannot be read there — the residency line of issue #98, §3 |
 | **the cell database** | the cell | **NO**: its primary and same-region replica, as before, under the cell key |
 | the cell's logs | the cell's region's log group | no — a log is personal data as much as a row is |
 
 **THE KEYS ARE LONG-LIVED AND PER REGION, IN `foundation/`**, for the reason
 the project key is: a key per environment would leave a seven-day
-pending-deletion key behind every teardown. `alias/mock-sts-global` is a
+pending-deletion key behind every teardown. `alias/iya-sts-global` is a
 multi-region key (primary in the home region, a replica in every other
 permitted region) and seals only what every region may hold;
-`alias/mock-sts-cell-<cell>` is single-region and seals the cell's own
+`alias/iya-sts-cell-<cell>` is single-region and seals the cell's own
 secrets, database, upload volumes and log group. The project key stays what
 single-cell environments use, and cannot be made multi-region after creation.
-`alias/mock-sts-kek` (#391) is a third multi-region key, for the
+`alias/iya-sts-kek` (#391) is a third multi-region key, for the
 key-encryption key alone (*The key-encryption key*, below).
 
 ### The inter-cell channel: peering, and 8446 by a private name
@@ -863,13 +863,13 @@ ldaps, pki, kerberos). Registering the nodes in a sixth by address, as
 inter-cell target is a traveller who cannot sign in (D6 fails closed). So
 each node service registers its tasks in a Cloud Map PRIVATE DNS namespace
 (`service_registries`, which is not a target group):
-`nodes.<cell>.<env>.mock-sts.internal`, one A record per healthy task, kept
+`nodes.<cell>.<env>.iya-sts.internal`, one A record per healthy task, kept
 by ECS. The namespace is a Route 53 private zone; `global/` associates each
 cell's zone with every other cell's VPC, so the name resolves inside the
 cells and nowhere else. It costs $0.50 a month per cell against an NLB's
 hour and LCUs; it gives up a single stable address, since a peer is several A
 records the service must try in turn. **The URL in `STS_CELL_PEERS` is
-therefore `https://nodes.<cell>.<env>.mock-sts.internal:8446`**, and each node
+therefore `https://nodes.<cell>.<env>.iya-sts.internal:8446`**, and each node
 is told its own as `STS_CELL_HOSTNAME` so the cell leaf can name it.
 
 ### Route 53 (D7)
@@ -923,7 +923,7 @@ is (`environment/cells.tf`, `cell_environment`):
 |---|---|
 | `STS_CELL_ID`, `STS_CELL_JURISDICTION` | the cell, e.g. `usw2`, `us` (empty/unset: single-cell) |
 | `STS_CELL_PORT` | `8446` |
-| `STS_CELL_PEERS` | JSON array of `{ "id", "jurisdiction", "url" }` for every OTHER cell, `url` = `https://nodes.<cell>.<env>.mock-sts.internal:8446` |
+| `STS_CELL_PEERS` | JSON array of `{ "id", "jurisdiction", "url" }` for every OTHER cell, `url` = `https://nodes.<cell>.<env>.iya-sts.internal:8446` |
 | `STS_CELL_HOSTNAME` | **(added)** this cell's own inter-cell host name, the host of the `url` its peers are given |
 | `STS_GLOBAL_DATABASE_URL` | the global writer, `sslmode=require`, no password |
 | `STS_GLOBAL_DATABASE_READ_URL` | the replica in this cell's region; the writer in the primary cell |
@@ -962,7 +962,7 @@ the fence holds them to the list), and makes each region's keys, log group
 and repository replica. **For `globalidp` it also adds `global-idp.iyasec.io`
 and its wildcard to `public_dns`**, and ap-southeast-5 must be enabled on the
 account first. A fourth
-deployer policy, `mock-sts-deploy-cells`, holds what only cells do: the
+deployer policy, `iya-sts-deploy-cells`, holds what only cells do: the
 peering (accepted in the other region, where the connection arrives
 untagged, so scoped to this account's VPCs instead), Route 53 health checks
 (which have no name to scope by), and Cloud Map with the private zones it
@@ -1088,14 +1088,14 @@ nothing and whose default run only reads:
   key parameter (RDS API reference) — and a copy is the only way to change
   it: `CopyDBSnapshot` with `KmsKeyId` "encrypt[s] the copy with a new KMS
   key" (RDS API reference, *CopyDBSnapshot*). `testidp`'s snapshot is under
-  the project key; a cell's database is under `alias/mock-sts-cell-<cell>`
+  the project key; a cell's database is under `alias/iya-sts-cell-<cell>`
   (the residency line). Restoring the project-key snapshot as it is would
   put the cell's data under a key it must not be under, and the instance's
   `kms_key_id` would disagree with the config on every plan — the provider's
   answer to which is to REPLACE the database. `--copy-snapshot` makes
   `<source>-<cell>` under the cell key, in the cell's region (cross-region
   with `--source-region` for a cell elsewhere), and waits for it.
-* **the carry-over secret**, `mock-sts/carryover/<old env>`: one JSON secret
+* **the carry-over secret**, `iya-sts/carryover/<old env>`: one JSON secret
   under the project key with the four values the restored rows depend on —
   the KEK, the management client's secret, the bootstrap administrator's
   password and the Kerberos service password. `global/secrets.tf`, *A
@@ -1176,7 +1176,7 @@ any of it — `cac1` is made empty, exactly as before.
 **The deployer's two new RDS actions** (`foundation/iam_deployer.tf`,
 `RdsRestoreAndCopyProjectSnapshots`): `RestoreDBInstanceFromDBSnapshot`,
 which the provider calls in place of `CreateDBInstance`, and
-`CopyDBSnapshot`, for the runbook — on `mock-sts-*` snapshots and instances
+`CopyDBSnapshot`, for the runbook — on `iya-sts-*` snapshots and instances
 only, and **no `DeleteDBSnapshot`**: the snapshot is the only record of the
 database the conversion destroyed, and removing it is an administrator's
 call. So `foundation/` is re-applied before the conversion, as it already
@@ -1415,9 +1415,9 @@ about this stack rather than taste:
 * **The key is `git_user6`'s, and the entrypoint assumes the deployer ROLE** —
   that user may do nothing else. It is the account's `git_userN` pattern
   (`git_user5` assumes `rcbj-deploy` for the rcbj.net site): path `/`, no login
-  profile, no groups, one inline policy `assume-mock-sts-deployer`, and the role
+  profile, no groups, one inline policy `assume-iya-sts-deployer`, and the role
   trusts it by name (`foundation/iam_deployer.tf`, `ci_user_name`). It is a
-  SECOND principal of the role beside `mock-sts-deployer`, a person's, so either
+  SECOND principal of the role beside `iya-sts-deployer`, a person's, so either
   key can be rotated or revoked without the other. Its key was created by hand
   (`aws iam create-access-key`) and set as the repository's `AWS_ACCESS_KEY_ID`
   and `AWS_SECRET_ACCESS_KEY` secrets on 2026-09-15; it is in no Terraform state.
@@ -1457,7 +1457,7 @@ INTERRUPT (2026-09-18)**, which it did twice on testidp, each time costing a
 
 ```bash
 deploy/aws/bootstrap-state.sh                         # once, administrator
-terraform -chdir=deploy/aws/foundation init -backend-config=bucket=mock-sts-terraform-state-<account>
+terraform -chdir=deploy/aws/foundation init -backend-config=bucket=iya-sts-terraform-state-<account>
 terraform -chdir=deploy/aws/foundation apply          # once, administrator
 
 # as the deployer role, from here on

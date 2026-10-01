@@ -23,8 +23,8 @@
 # SET, what changes, and why:
 #   * the REGION is the cell's (`cells[cell].region`), not `aws_region`;
 #   * every globally unique name carries the cell: resources are
-#     `mock-sts-<env>-<cell>-…`, IAM roles `mock-sts-env-<env>-<cell>-…`,
-#     secrets `mock-sts/<env>/<cell>/…`; the state key is
+#     `iya-sts-<env>-<cell>-…`, IAM roles `iya-sts-env-<env>-<cell>-…`,
+#     secrets `iya-sts/<env>/<cell>/…`; the state key is
 #     `environment/<env>/<cell>.tfstate` (entrypoint.sh);
 #   * the VPC is the cell's own CIDR from the map, distinct in every cell, so
 #     the cells can be peered (the global/ stack does it);

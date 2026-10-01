@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: BUSL-1.1
 #
-# mock-sts: THE GLOBAL TIER'S SCHEMA, on the writer, as its administrator —
+# iya-sts: THE GLOBAL TIER'S SCHEMA, on the writer, as its administrator —
 # AWS's `global-schema-init`, run by the PRIMARY cell's nodes only. Every
 # other cell reads a physical replica, which takes the schema, the role and
 # its password by replication. Idempotent, and run on every start.
 [Unit]
-Description=mock-sts: global tier schema
+Description=iya-sts: global tier schema
 Requires=sts-secrets.service
 After=sts-secrets.service
 

@@ -299,7 +299,7 @@ const SEED_DOCUMENT = [
   '        RuleCombiningAlgId="urn:oasis:names:tc:xacml:3.0:' +
     'rule-combining-algorithm:deny-unless-permit">',
   '  <Description>',
-  '    Seeded by the mock STS so that the PDP answers something before',
+  '    Seeded by IYA STS so that the PDP answers something before',
   '    anybody has authored a policy. Anyone whose directory entry carries',
   '    employeeType=staff may GET; anyone with employeeType=admin may do',
   '    anything. Everybody else is denied, because deny-unless-permit cannot',

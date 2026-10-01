@@ -3,7 +3,7 @@
 
 variable "project_id" {
   description = <<-EOT
-    The GCP project the whole mock-sts deployment lives in. A PROJECT OF ITS
+    The GCP project the whole iya-sts deployment lives in. A PROJECT OF ITS
     OWN, deliberately: GCP has no permissions boundary, and the deployer's
     project-level roles (iam_deployer.tf) are bounded by the project they are
     granted in. Sharing it with anything else widens the deployer to that too.
@@ -20,7 +20,7 @@ variable "region" {
 variable "name" {
   description = "The prefix every resource name starts with. Must match the environment stack's `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "labels" {
@@ -82,7 +82,7 @@ variable "deployer_members" {
 }
 
 variable "state_bucket" {
-  description = "The state bucket bootstrap-state.sh made. Empty means mock-sts-terraform-state-<project>."
+  description = "The state bucket bootstrap-state.sh made. Empty means iya-sts-terraform-state-<project>."
   type        = string
   default     = ""
 }

@@ -15,7 +15,7 @@ variable "azure_zone_name" {
 variable "azure_zone_resource_group" {
   description = "The foundation's resource group, which holds the zone."
   type        = string
-  default     = "mock-sts-foundation"
+  default     = "iya-sts-foundation"
 }
 
 variable "parent_zone_name" {
@@ -49,7 +49,7 @@ provider "aws" {
     tags = {
       Project   = "STS"
       ManagedBy = "terraform"
-      Stack     = "mock-sts-azure-dns-delegation"
+      Stack     = "iya-sts-azure-dns-delegation"
     }
   }
 }

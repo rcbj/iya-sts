@@ -68,18 +68,18 @@ identity="$(aws sts get-caller-identity --output json 2> /dev/null)" || \
   die "no valid AWS credentials."
 account="$(jq -r .Account <<< "${identity}")"
 arn="$(jq -r .Arn <<< "${identity}")"
-role_arn="${MOCK_STS_DEPLOYER_ROLE_ARN:-}"
-for user in ${MOCK_STS_DEPLOYER_USERS:-mock-sts/mock-sts-deployer git_user6}; do
+role_arn="${IYA_STS_DEPLOYER_ROLE_ARN:-}"
+for user in ${IYA_STS_DEPLOYER_USERS:-iya-sts/iya-sts-deployer git_user6}; do
   if [ -z "${role_arn}" ] && [[ "${arn}" == *":user/${user}" ]];
   then
-    role_arn="arn:aws:iam::${account}:role/mock-sts-deployer"
+    role_arn="arn:aws:iam::${account}:role/iya-sts-deployer"
   fi
 done
 if [ -n "${role_arn}" ];
 then
   creds="$(aws sts assume-role --role-arn "${role_arn}" \
-    --role-session-name "mock-sts-${TF_ENV}-mc-$(date -u +%s)" \
-    --duration-seconds "${MOCK_STS_ROLE_SECONDS:-14400}" \
+    --role-session-name "iya-sts-${TF_ENV}-mc-$(date -u +%s)" \
+    --duration-seconds "${IYA_STS_ROLE_SECONDS:-14400}" \
     --query Credentials --output json)" || die "could not assume ${role_arn}."
   export AWS_ACCESS_KEY_ID="$(jq -r .AccessKeyId <<< "${creds}")"
   export AWS_SECRET_ACCESS_KEY="$(jq -r .SecretAccessKey <<< "${creds}")"
@@ -87,7 +87,7 @@ then
   arn="$(aws sts get-caller-identity --query Arn --output text)"
 fi
 say "AWS: acting as ${arn}"
-AWS_BUCKET="mock-sts-terraform-state-${account}"
+AWS_BUCKET="iya-sts-terraform-state-${account}"
 
 # --- GCP: the host's ADC, impersonating the deployer (deploy/gcp/entrypoint.sh)
 if [ -n "${GCP_ADC_B64:-}" ];
@@ -100,9 +100,9 @@ then
   export GOOGLE_APPLICATION_CREDENTIALS="${adc_dir}/application_default_credentials.json"
 fi
 [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] || die "no GCP application-default credentials."
-export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT="${MOCK_STS_GCP_DEPLOYER:-mock-sts-deployer@${PROJECT}.iam.gserviceaccount.com}"
+export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT="${IYA_STS_GCP_DEPLOYER:-iya-sts-deployer@${PROJECT}.iam.gserviceaccount.com}"
 say "GCP: acting as ${GOOGLE_IMPERSONATE_SERVICE_ACCOUNT} (impersonated)"
-GCP_BUCKET="mock-sts-terraform-state-${PROJECT}"
+GCP_BUCKET="iya-sts-terraform-state-${PROJECT}"
 
 # INT and TERM become an interrupt to terraform, which releases its lock
 # (deploy/aws/entrypoint.sh's `tf`).
@@ -212,14 +212,14 @@ has_state() {
 # testidpna answers the same public name: it and a multi-cloud environment
 # that also does cannot both run (deploy/multicloud/CLAUDE.md).
 guard_public_name() {
-  local other="${MOCK_STS_CONFLICTING_ENV:-testidpna}" tmp n
+  local other="${IYA_STS_CONFLICTING_ENV:-testidpna}" tmp n
   tmp="$(mktemp)"
   if aws s3 cp "s3://${AWS_BUCKET}/environment/${other}/global.tfstate" "${tmp}" > /dev/null 2>&1;
   then
     n="$(jq '[.resources[]?] | length' "${tmp}" 2> /dev/null || echo 0)"
     rm -f "${tmp}"
     [ "${n}" -eq 0 ] || \
-      die "${other} is standing and answers the same public name; destroy it first (or set MOCK_STS_CONFLICTING_ENV)."
+      die "${other} is standing and answers the same public name; destroy it first (or set IYA_STS_CONFLICTING_ENV)."
   fi
   rm -f "${tmp}"
 }

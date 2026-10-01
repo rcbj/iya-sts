@@ -30,7 +30,7 @@
 #   * product mode with the request dispatcher — the `dispatch` row of
 #     tests/tools/modes.sh with STS_MODE=product. THE BOOTSTRAP
 #     ADMINISTRATOR'S PASSWORD IS IN SECRETS MANAGER (2026-09-17), at
-#     mock-sts/testidp/bootstrap-admin-password, and is printed nowhere; it
+#     iya-sts/testidp/bootstrap-admin-password, and is printed nowhere; it
 #     was a log line in whichever node won the bootstrap claim until then.
 #   * larger nodes: 2 vCPU / 8 GiB, with THREE node processes per task
 #     (front and two request workers, no surface worker) since 2026-09-29
@@ -116,7 +116,7 @@ vpc_cidr                 = "10.52.0.0/16"
 
 tags = {
   ManagedBy = "terraform"
-  Stack     = "mock-sts-environment"
+  Stack     = "iya-sts-environment"
   Lifecycle = "long-lived"
 }
 

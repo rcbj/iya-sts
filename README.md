@@ -11,7 +11,7 @@
 An **identity provider and security token service** that speaks the protocol
 families below from one process, with a certificate authority of its own.
 
-It started as the mock STS inside the [OAuth2/OIDC Debugger](https://idptools.com)
+It started as IYA STS inside the [OAuth2/OIDC Debugger](https://idptools.com)
 project's test suite, and it runs in one of two modes, per trust realm
 (`global.mode`):
 

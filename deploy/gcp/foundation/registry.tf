@@ -20,7 +20,7 @@ resource "google_artifact_registry_repository" "main" {
   repository_id = var.name
   location      = var.region
   format        = "DOCKER"
-  description   = "mock-sts (issue #95): service, schema-init and node-init images"
+  description   = "iya-sts (issue #95): service, schema-init and node-init images"
   kms_key_name  = google_kms_crypto_key.main.id
 
   cleanup_policy_dry_run = false

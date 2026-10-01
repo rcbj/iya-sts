@@ -65,7 +65,7 @@ output "container_log_group" {
 }
 
 output "task_role_arn" {
-  description = "What the mock-sts containers run as."
+  description = "What the iya-sts containers run as."
   value       = aws_iam_role.task.arn
 }
 
@@ -145,7 +145,7 @@ output "intercell_zone_id" {
 }
 
 output "intercell_url" {
-  description = "Where the other cells reach this cell's nodes: https://nodes.<cell>.<env>.mock-sts.internal:8446, never public; empty for a single-cell environment."
+  description = "Where the other cells reach this cell's nodes: https://nodes.<cell>.<env>.iya-sts.internal:8446, never public; empty for a single-cell environment."
   value       = local.multi ? "https://${local.intercell_hostname}:${local.intercell_port}" : ""
 }
 

@@ -28,7 +28,7 @@ resource "google_compute_network" "main" {
   name                    = local.prefix
   auto_create_subnetworks = false
   routing_mode            = "REGIONAL"
-  description             = "mock-sts ${var.environment} (issue #95)"
+  description             = "iya-sts ${var.environment} (issue #95)"
 }
 
 resource "google_compute_subnetwork" "nodes" {

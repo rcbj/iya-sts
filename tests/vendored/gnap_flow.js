@@ -37,7 +37,7 @@ function harness(options) {
   const realmApi = realmBase + "/admin-api";
   const GRANT = realmBase + "/gnap";
   const FINISH = "https://client.gnap.test/callback";
-  const DEMO = "urn:mock-sts:gnap:demo";
+  const DEMO = "urn:iya-sts:gnap:demo";
   const self = { base: base, api: api, realm: REALM, realmBase: realmBase,
                  realmApi: realmApi,
                  GRANT: GRANT, FINISH: FINISH, DEMO: DEMO, RS: realmBase +

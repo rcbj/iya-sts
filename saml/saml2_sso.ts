@@ -5248,7 +5248,7 @@ class Saml2Sso {
           }).join('') +
         '</md:AttributeAuthorityDescriptor>' +
         // `saml.organizationName` and its two siblings since 2026-09-12 — the
-        // literal "mock-sts" / "Mock security token service" until then — and
+        // literal "iya-sts" / "Mock security token service" until then — and
         // omitted entirely when the name is emptied. See document_settings.ts.
         documentSettings.organizationElement(base) +
       '</md:EntityDescriptor>';

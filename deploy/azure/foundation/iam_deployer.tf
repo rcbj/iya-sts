@@ -10,7 +10,7 @@
 # identity. Azure's natural fence is the RESOURCE GROUP, and this is built on
 # it:
 #
-#   1. A CUSTOM ROLE, `mock-sts deployer`, granted ONLY on the resource groups
+#   1. A CUSTOM ROLE, `iya-sts deployer`, granted ONLY on the resource groups
 #      units.tf made — one per environment or cell, and a multi-region
 #      environment's global group. It can build networks, load balancers,
 #      scale sets, PostgreSQL servers and Traffic Manager profiles there, and
@@ -47,7 +47,7 @@
 resource "azurerm_role_definition" "deployer" {
   name        = "${var.name} deployer"
   scope       = "/subscriptions/${local.subscription_id}"
-  description = "mock-sts (#96): builds an environment inside the resource groups the foundation granted it. Makes no identity and assigns no role."
+  description = "iya-sts (#96): builds an environment inside the resource groups the foundation granted it. Makes no identity and assigns no role."
 
   permissions {
     actions = [

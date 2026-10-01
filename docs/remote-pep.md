@@ -115,7 +115,7 @@ an anchor it holds, which is the commonest thing to get wrong in mutual TLS.
 node tests/tools/pep-credential.js \
   --url=https://localhost:8081 \
   --out=/tmp/pep-certs \
-  --subject="CN=remote-pep-1,OU=remote-peps,O=mock-sts"
+  --subject="CN=remote-pep-1,OU=remote-peps,O=iya-sts"
 ```
 
 **The flags take `=`**; a space between the flag and its value is reported as an

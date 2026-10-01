@@ -38,24 +38,24 @@ mock_provider "azurerm" {
   }
   mock_data "azurerm_container_registry" {
     defaults = {
-      login_server = "mocksts12345678.azurecr.io"
+      login_server = "iyasts12345678.azurecr.io"
     }
   }
   mock_data "azurerm_dns_zone" {
     defaults = {
       name                = "azure.iyasec.io"
-      resource_group_name = "mock-sts-foundation"
+      resource_group_name = "iya-sts-foundation"
     }
   }
   mock_data "azurerm_resource_group" {
     defaults = {
-      name = "mock-sts-unit"
+      name = "iya-sts-unit"
     }
   }
   mock_resource "azurerm_postgresql_flexible_server" {
     defaults = {
       id   = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.DBforPostgreSQL/flexibleServers/primary"
-      fqdn = "mock-sts-primary-abcdef.postgres.database.azure.com"
+      fqdn = "iya-sts-primary-abcdef.postgres.database.azure.com"
     }
   }
   mock_resource "azurerm_public_ip" {
@@ -101,7 +101,7 @@ mock_provider "azurerm" {
   }
   mock_data "azurerm_key_vault_key" {
     defaults = {
-      versionless_id = "https://mskwus2-abcdef.vault.azure.net/keys/mock-sts"
+      versionless_id = "https://mskwus2-abcdef.vault.azure.net/keys/iya-sts"
     }
   }
   mock_data "azurerm_disk_encryption_set" {
@@ -156,11 +156,11 @@ run "dev" {
     error_message = "a single-cell environment has no cell contract and no inter-cell load balancer"
   }
   assert {
-    condition     = strcontains(local.extra_hosts, "--add-host mock-sts-primary-abcdef.postgres.database.azure.com:10.80.10.10")
+    condition     = strcontains(local.extra_hosts, "--add-host iya-sts-primary-abcdef.postgres.database.azure.com:10.80.10.10")
     error_message = local.extra_hosts
   }
   assert {
-    condition     = local.key_kind == "main" && local.region_code == "wus2" && local.prefix == "mock-sts-dev"
+    condition     = local.key_kind == "main" && local.region_code == "wus2" && local.prefix == "iya-sts-dev"
     error_message = "the project key, in the home region"
   }
   assert {
@@ -263,7 +263,7 @@ run "testidpna_zcnc_base" {
   override_data {
     target = data.azurerm_key_vault.global_kek
     values = {
-      name      = "mstestidpnag-${substr(sha1("00000000-0000-0000-0000-000000000001/mock-sts/testidpna/global"), 0, 4)}"
+      name      = "mstestidpnag-${substr(sha1("00000000-0000-0000-0000-000000000001/iya-sts/testidpna/global"), 0, 4)}"
       vault_uri = "https://mstestidpnag-0000.vault.azure.net/"
     }
   }
@@ -280,7 +280,7 @@ run "testidpna_zcnc_base" {
     error_message = "the inter-cell address, and the cell's own name"
   }
   assert {
-    condition     = jsondecode(local.cell_environment.STS_CELL_PEERS)[0].url == "https://nodes.zwus2.testidpna.mock-sts.internal:8446" && jsondecode(local.cell_environment.STS_CELL_PEERS)[0].consoleUrl == "https://zwus2.na-idp.azure.iyasec.io"
+    condition     = jsondecode(local.cell_environment.STS_CELL_PEERS)[0].url == "https://nodes.zwus2.testidpna.iya-sts.internal:8446" && jsondecode(local.cell_environment.STS_CELL_PEERS)[0].consoleUrl == "https://zwus2.na-idp.azure.iyasec.io"
     error_message = local.cell_environment.STS_CELL_PEERS
   }
   assert {
@@ -288,7 +288,7 @@ run "testidpna_zcnc_base" {
     error_message = "a cell writes only its own secrets"
   }
   assert {
-    condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "azure-keys" && local.node_environment.STS_KEYS_KEK_VAULT == "https://mstestidpnag-0000.vault.azure.net" && local.node_environment.STS_KEYS_KEK_REF == "kek-rsa" && data.azurerm_key_vault.global_kek[0].name == "mstestidpnag-${substr(sha1("00000000-0000-0000-0000-000000000001/mock-sts/testidpna/global"), 0, 4)}"
+    condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "azure-keys" && local.node_environment.STS_KEYS_KEK_VAULT == "https://mstestidpnag-0000.vault.azure.net" && local.node_environment.STS_KEYS_KEK_REF == "kek-rsa" && data.azurerm_key_vault.global_kek[0].name == "mstestidpnag-${substr(sha1("00000000-0000-0000-0000-000000000001/iya-sts/testidpna/global"), 0, 4)}"
     error_message = "a cell's KEK is the environment's ONE key, in the global vault"
   }
   assert {
@@ -328,10 +328,10 @@ run "testidpna_zwus2_full" {
   override_data {
     target = data.terraform_remote_state.global
     values = { outputs = {
-      writer_host = "mock-sts-testidpna-global-writer-aaaaaa.postgres.database.azure.com"
+      writer_host = "iya-sts-testidpna-global-writer-aaaaaa.postgres.database.azure.com"
       read_hosts = {
-        zwus2 = "mock-sts-testidpna-global-writer-aaaaaa.postgres.database.azure.com"
-        zcnc  = "mock-sts-testidpna-global-zcnc-aaaaaa.postgres.database.azure.com"
+        zwus2 = "iya-sts-testidpna-global-writer-aaaaaa.postgres.database.azure.com"
+        zcnc  = "iya-sts-testidpna-global-zcnc-aaaaaa.postgres.database.azure.com"
       }
       db_port = 5432, db_name = "sts", db_app_user = "sts_app"
     } }
@@ -341,15 +341,15 @@ run "testidpna_zwus2_full" {
     error_message = "full, primary"
   }
   assert {
-    condition     = contains(keys(local.unit_files["node-a"]), "sts-global-schema.service") && strcontains(local.unit_files["node-a"]["sts-global-schema.service"], "--add-host mock-sts-testidpna-global-writer-aaaaaa.postgres.database.azure.com:10.82.10.12")
+    condition     = contains(keys(local.unit_files["node-a"]), "sts-global-schema.service") && strcontains(local.unit_files["node-a"]["sts-global-schema.service"], "--add-host iya-sts-testidpna-global-writer-aaaaaa.postgres.database.azure.com:10.82.10.12")
     error_message = "the primary's nodes make the global schema, at the writer's endpoint"
   }
   assert {
-    condition     = local.cell_environment.STS_GLOBAL_DATABASE_READ_URL == "postgres://sts_app@mock-sts-testidpna-global-writer-aaaaaa.postgres.database.azure.com:5432/sts?sslmode=require"
+    condition     = local.cell_environment.STS_GLOBAL_DATABASE_READ_URL == "postgres://sts_app@iya-sts-testidpna-global-writer-aaaaaa.postgres.database.azure.com:5432/sts?sslmode=require"
     error_message = "the primary reads the writer"
   }
   assert {
-    condition     = strcontains(local.extra_hosts, "--add-host nodes.zcnc.testidpna.mock-sts.internal:10.83.10.5")
+    condition     = strcontains(local.extra_hosts, "--add-host nodes.zcnc.testidpna.iya-sts.internal:10.83.10.5")
     error_message = local.extra_hosts
   }
 }

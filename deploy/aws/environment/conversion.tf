@@ -14,7 +14,7 @@
 #      (rds.tf). RDS restores a snapshot under THE SNAPSHOT'S OWN KMS KEY —
 #      RestoreDBInstanceFromDBSnapshot has no key parameter — so the snapshot
 #      named here must already be a COPY re-encrypted under the cell's key
-#      (`alias/mock-sts-cell-<cell>`, CopyDBSnapshot with KmsKeyId), which
+#      (`alias/iya-sts-cell-<cell>`, CopyDBSnapshot with KmsKeyId), which
 #      deploy/aws/convert-to-cells.sh makes. A snapshot under the project key
 #      would restore under the project key, `kms_key_id` would disagree with
 #      the instance on every later plan, and the provider would REPLACE the

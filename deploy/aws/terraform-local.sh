@@ -76,7 +76,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-IMAGE_NAME="${IMAGE_NAME:-mock-sts-terraform}"
+IMAGE_NAME="${IMAGE_NAME:-iya-sts-terraform}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 TF_ENV="${TF_ENV:-${1:-dev}}"
@@ -214,7 +214,7 @@ echo "==> Building ${IMAGE_NAME}" >&2
 # and killing the client leaves the container running without this script's
 # credentials endpoint. `wait` returns early on a trapped signal, hence the
 # loop.
-CONTAINER_NAME="mock-sts-terraform-${TF_ENV}${TF_CELL:+-${TF_CELL}}${REALM:+-${REALM}}-$$"
+CONTAINER_NAME="iya-sts-terraform-${TF_ENV}${TF_CELL:+-${TF_CELL}}${REALM:+-${REALM}}-$$"
 relay() {
   echo "==> Interrupted: telling terraform to stop cleanly and release the lock" >&2
   "${DOCKER_CMD[@]}" kill --signal INT "${CONTAINER_NAME}" >/dev/null 2>&1 || true

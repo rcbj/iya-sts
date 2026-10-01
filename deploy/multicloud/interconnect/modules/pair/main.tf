@@ -40,7 +40,7 @@ terraform {
 }
 
 variable "prefix" {
-  description = "mock-sts-<env>-<aws cell>"
+  description = "iya-sts-<env>-<aws cell>"
   type        = string
 }
 
@@ -223,7 +223,7 @@ resource "google_compute_router_peer" "aws" {
 # ---------------------------------------------------------------------------
 resource "aws_security_group" "resolver" {
   name        = "${var.prefix}-resolver"
-  description = "mock-sts: the inbound resolver, from Cloud DNS forwarding over the HA VPN (#97)"
+  description = "iya-sts: the inbound resolver, from Cloud DNS forwarding over the HA VPN (#97)"
   vpc_id      = var.aws_cell.vpc_id
   tags        = { Name = "${var.prefix}-resolver" }
 }

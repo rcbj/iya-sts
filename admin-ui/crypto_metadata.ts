@@ -2079,7 +2079,11 @@ class CryptoMetadata {
                return name + ' (' + webauthnPolicy.ALG_IDS[name] + ')';
              })],
             ['Accepted at verification',
-             Object.keys(webauthn.COSE_ALGS).map(function (k) {
+             Object.keys(webauthn.COSE_ALGS).filter(function (k) {
+               // An insecure one only where this realm allows it.
+               return webauthn.INSECURE_COSE_ALGS.indexOf(Number(k)) < 0 ||
+                 webauthnPolicy.insecureAlgorithmsAllowed();
+             }).map(function (k) {
                return webauthn.COSE_ALGS[k] + ' (' + k + ')';
              })],
             ['Curves', Object.keys(webauthn.COSE_CURVES).map(function (k) {

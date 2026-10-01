@@ -11,12 +11,12 @@
 #
 # AWS credentials come from OUTSIDE the container, as environment variables.
 # When they are the key of one of the deployer role's two IAM USERS —
-# `mock-sts-deployer` (a person's) or `git_user6` (the workflow's), neither of
-# which may do anything else — the entrypoint assumes the `mock-sts-deployer`
+# `iya-sts-deployer` (a person's) or `git_user6` (the workflow's), neither of
+# which may do anything else — the entrypoint assumes the `iya-sts-deployer`
 # ROLE first, so a caller needs the user's key and nothing else (the two
 # repository secrets).
 # Any other identity (an administrator, or role credentials already assumed) is
-# used as it is. MOCK_STS_DEPLOYER_ROLE_ARN forces a role.
+# used as it is. IYA_STS_DEPLOYER_ROLE_ARN forces a role.
 #
 # Config (env vars):
 #   TF_STACK     environment | global | foundation | spiffe-realm
@@ -97,22 +97,22 @@ identity="$(aws sts get-caller-identity --output json 2>/dev/null)" || \
 account="$(jq -r .Account <<<"${identity}")"
 arn="$(jq -r .Arn <<<"${identity}")"
 
-role_arn="${MOCK_STS_DEPLOYER_ROLE_ARN:-}"
+role_arn="${IYA_STS_DEPLOYER_ROLE_ARN:-}"
 # The deployer role's two users (foundation/iam_deployer.tf): a person's, and
-# the workflow's (git_user6). MOCK_STS_DEPLOYER_USERS names others.
-deployer_users="${MOCK_STS_DEPLOYER_USERS:-mock-sts/mock-sts-deployer git_user6}"
+# the workflow's (git_user6). IYA_STS_DEPLOYER_USERS names others.
+deployer_users="${IYA_STS_DEPLOYER_USERS:-iya-sts/iya-sts-deployer git_user6}"
 for user in ${deployer_users}; do
   if [ -z "${role_arn}" ] && [[ "${arn}" == *":user/${user}" ]];
   then
-    role_arn="arn:aws:iam::${account}:role/mock-sts-deployer"
+    role_arn="arn:aws:iam::${account}:role/iya-sts-deployer"
   fi
 done
 if [ -n "${role_arn}" ];
 then
   say "assuming ${role_arn}"
   creds="$(aws sts assume-role --role-arn "${role_arn}" \
-    --role-session-name "mock-sts-${TF_ENV}-${TF_ACTION}-$(date -u +%s)" \
-    --duration-seconds "${MOCK_STS_ROLE_SECONDS:-14400}" \
+    --role-session-name "iya-sts-${TF_ENV}-${TF_ACTION}-$(date -u +%s)" \
+    --duration-seconds "${IYA_STS_ROLE_SECONDS:-14400}" \
     --query Credentials --output json)" || die "could not assume ${role_arn}."
   export AWS_ACCESS_KEY_ID="$(jq -r .AccessKeyId <<<"${creds}")"
   export AWS_SECRET_ACCESS_KEY="$(jq -r .SecretAccessKey <<<"${creds}")"
@@ -197,7 +197,7 @@ cell_snapshot() {
 }
 
 # --- The stack and its state ------------------------------------------------
-bucket="mock-sts-terraform-state-${account}"
+bucket="iya-sts-terraform-state-${account}"
 case "${TF_STACK}" in
   environment)
     TF_DIR=/workspace/deploy/aws/environment
@@ -389,14 +389,14 @@ destroy_dependent_stacks() {
         # environment's destroy below would read the child's state and
         # destroy nothing, reporting success. Empty, the child derives one
         # of its own.
-        MOCK_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=spiffe-realm \
+        IYA_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=spiffe-realm \
           TF_CELL="${cell}" TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
           die "the spiffe-realm stack for '${realm}' would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
         ;;
       "${prefix}suite-callbacks.tfstate")
         say "dependent stack first: suite-callbacks"
         # TF_DATA_DIR cleared for the same reason (#372).
-        MOCK_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=suite-callbacks \
+        IYA_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=suite-callbacks \
           TF_CELL="${cell}" TF_ACTION=destroy "$0" || \
           die "the suite-callbacks stack would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
         ;;
@@ -493,7 +493,7 @@ state_exists() {
 # directory this process exported and `init`s its backend into it; a step
 # that names one in its arguments still gets it, since those come after.
 step() {
-  env MOCK_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= "$@" "$0" &
+  env IYA_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= "$@" "$0" &
   local pid=$! rc=0
   trap 'kill -TERM "${pid}" 2>/dev/null || true' INT TERM
   while :; do
@@ -547,7 +547,7 @@ cells_in_parallel() {
     # group from a terminal (and from `timeout`): it ends when its cell's
     # output does, so the cell's last words — its terraform stopping — are
     # still printed rather than killing the cell with SIGPIPE.
-    env MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=environment TF_CELL="${c}" \
+    env IYA_STS_DEPLOYER_ROLE_ARN= TF_STACK=environment TF_CELL="${c}" \
       TF_CELL_PHASE="${phase}" TF_ACTION="${action}" "$0" \
       > >(trap '' INT TERM; exec sed -u "s/^/[${c}] /" >&2) 2>&1 &
     cell_of[$!]="${c}"
@@ -797,7 +797,7 @@ convert_cell() {
       assignPublicIp: .assign_public_ip } }' <<<"${out}")"
 
   task="$(aws ecs list-tasks --region "${region}" --cluster "${cluster}" \
-    --started-by mock-sts-cell-convert --desired-status RUNNING \
+    --started-by iya-sts-cell-convert --desired-status RUNNING \
     --query 'taskArns[0]' --output text 2>/dev/null || true)"
   if [ -n "${task}" ] && [ "${task}" != "None" ];
   then
@@ -806,7 +806,7 @@ convert_cell() {
     say "cell ${c}: running the conversion (${td##*/})"
     task="$(aws ecs run-task --region "${region}" --cluster "${cluster}" \
       --task-definition "${td}" --launch-type FARGATE --count 1 \
-      --started-by mock-sts-cell-convert \
+      --started-by iya-sts-cell-convert \
       --network-configuration "${network}" \
       --query 'tasks[0].taskArn' --output text)" || \
       die "cell ${c}: the conversion task could not be started; its nodes stay at 0."
@@ -834,7 +834,7 @@ convert_cell() {
       --tasks "${task}" --output json \
       | jq -r '.tasks[0] | "stopped: \(.stoppedReason // "?"); " +
           ([.containers[] | "\(.name) exit \(.exitCode // "none")\(if .reason then " (" + .reason + ")" else "" end)"] | join(", "))')"
-    die "cell ${c}: THE CONVERSION FAILED (${reason}). The tool leaves its sources in place; the cell's nodes stay at 0 and it is still pending. Its log: group /mock-sts/containers in ${region}, streams ${TF_ENV}-${c}-convert/*/${task##*/}. Fix the cause and apply again with TF_CONVERT=1."
+    die "cell ${c}: THE CONVERSION FAILED (${reason}). The tool leaves its sources in place; the cell's nodes stay at 0 and it is still pending. Its log: group /iya-sts/containers in ${region}, streams ${TF_ENV}-${c}-convert/*/${task##*/}. Fix the cause and apply again with TF_CONVERT=1."
   fi
   say "cell ${c}: converted (${task##*/})"
 }
@@ -1157,7 +1157,7 @@ case "${TF_ACTION}" in
   # non-destructive repair. TF_IMPORT_ADDRESS is the resource address,
   # TF_IMPORT_ID the provider's identifier (an RDS instance's is its name).
   #   TF_IMPORT_ADDRESS=aws_db_instance.primary \
-  #   TF_IMPORT_ID=mock-sts-testidp-primary IMAGE_TAG=<tag> \
+  #   TF_IMPORT_ID=iya-sts-testidp-primary IMAGE_TAG=<tag> \
   #   deploy/aws/terraform-local.sh testidp import
   import)
     [ -n "${TF_IMPORT_ADDRESS:-}" ] && [ -n "${TF_IMPORT_ID:-}" ] || \

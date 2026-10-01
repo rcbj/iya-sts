@@ -1,5 +1,5 @@
 {
-  "name": "mock-sts",
+  "name": "iya-sts",
   "version": "0.1.0",
   "private": true,
   "description": "An identity service in one Node process: OAuth 2.0 and OpenID Connect, SAML, WS-Trust and WS-Federation, Kerberos, LDAP, SCIM, SPIFFE, OpenID4VC, certificate enrollment and more. Development mode exercises clients; product mode is deployable.",

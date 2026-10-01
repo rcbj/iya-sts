@@ -34,7 +34,7 @@
 #
 # The state key is `environment/<env>/global.tfstate`, under the one prefix
 # the deployer may write state under:
-#   terraform init -backend-config="bucket=mock-sts-terraform-state-<account>" \
+#   terraform init -backend-config="bucket=iya-sts-terraform-state-<account>" \
 #                  -backend-config="key=environment/testidpna/global.tfstate"
 # ---------------------------------------------------------------------------
 terraform {

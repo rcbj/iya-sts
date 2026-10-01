@@ -4,7 +4,7 @@
 // File: sts_admin_api_operations.js
 //
 // ---------------------------------------------------------------------------
-// EVERY OPERATION OF THE MOCK STS'S MANAGEMENT API, DRIVEN FOR REAL.
+// EVERY OPERATION OF IYA STS'S MANAGEMENT API, DRIVEN FOR REAL.
 //
 // `admin_api.js` next door asserts that the API is SHAPED right: that the
 // OpenAPI document is well formed, that every console page and every console
@@ -2613,8 +2613,8 @@ async function theSamlRegistriesRoundTrip() {
   const credentials = require("../tools/pep-credential.js");
   const minted = await credentials.mint({
     rootSubject: "CN=admin-api-operations saml2 " + REALM +
-                 ",O=mock-sts tests",
-    subject: "CN=admin-api-operations-saml2-sp,O=mock-sts tests" });
+                 ",O=iya-sts tests",
+    subject: "CN=admin-api-operations-saml2-sp,O=iya-sts tests" });
   const certificate = String(minted.anchorPem)
     .replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
   await refused("/saml2/set-signing-certificate",
@@ -3784,8 +3784,8 @@ async function theTruststoreRoundTrips() {
   const credentials = require("../tools/pep-credential.js");
   const minted = await credentials.mint({
     rootSubject: "CN=admin-api-operations truststore " + REALM +
-                 ",O=mock-sts tests",
-    subject: "CN=admin-api-operations-truststore-leaf,O=mock-sts tests" });
+                 ",O=iya-sts tests",
+    subject: "CN=admin-api-operations-truststore-leaf,O=iya-sts tests" });
   const mine = trustFingerprintOf(minted.anchorPem);
   const notMine = trustFingerprintOf(minted.issuing.pem);
 
@@ -4777,7 +4777,7 @@ async function theConfigurationChangeReachesTheStore(candidate) {
     log.info("[persistence] The store is OFF (persistence.mode=memory), " +
              "which is the default and what the containerized stack runs. " +
              "The value round trip above is asserted; the ON-DISK half is " +
-             "not reachable from here and is asserted in mock-sts's own " +
+             "not reachable from here and is asserted in iya-sts's own " +
              "tests/appconfig_persistence.js, which drives the store in " +
              "process against a temporary directory.");
     log.debug("Leaving theConfigurationChangeReachesTheStore(). Store off.");
@@ -5442,7 +5442,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_admin_api_operations")
-  .description("Drive every operation of the mock STS's management API at " +
+  .description("Drive every operation of IYA STS's management API at " +
       "/admin-api for real: replay each documented example, round-trip each " +
       "write through a read, and check that a configuration change reaches " +
       "the persistence store.")

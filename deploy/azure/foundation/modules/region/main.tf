@@ -6,27 +6,27 @@
 #
 # AWS's modules/region (a cell key, a global-key replica, a log group, a
 # repository replica per permitted region) and GCP's regional key rings, in
-# Azure's parts. One resource group per region, `mock-sts-<code>`, holding:
+# Azure's parts. One resource group per region, `iya-sts-<code>`, holding:
 #
 #   msk<code>-<hash>        a Key Vault for customer-managed KEYS only —
 #                           purge protection on, which Azure requires of a
 #                           vault a disk or a database is encrypted from
-#     mock-sts              the key a single-cell environment and the
+#     iya-sts              the key a single-cell environment and the
 #                           global tier are sealed under (AWS's project key
-#                           and `alias/mock-sts-global`)
-#     mock-sts-cell         a cell's own data (AWS's `alias/mock-sts-cell-*`)
-#   mock-sts-<code>         a disk-encryption set per key, for the nodes'
-#   mock-sts-<code>-cell    disks
-#   mock-sts-<code>-postgres  the identity a PostgreSQL server reads its key
+#                           and `alias/iya-sts-global`)
+#     iya-sts-cell         a cell's own data (AWS's `alias/iya-sts-cell-*`)
+#   iya-sts-<code>         a disk-encryption set per key, for the nodes'
+#   iya-sts-<code>-cell    disks
+#   iya-sts-<code>-postgres  the identity a PostgreSQL server reads its key
 #                           as (Flexible Server takes a user-assigned one)
-#   mock-sts-<code>         a Log Analytics workspace and the data
+#   iya-sts-<code>         a Log Analytics workspace and the data
 #                           collection rule the nodes' agent sends syslog by
 #
 # **A KEY IS NEVER REPLICATED OUT OF ITS REGION**, and a cell's data is
-# under its own region's `mock-sts-cell` key — issue #98's residency line.
+# under its own region's `iya-sts-cell` key — issue #98's residency line.
 # (The GLOBAL tier needs no multi-region key here, as it did on AWS: a
 # cross-region read replica of Flexible Server is encrypted under a key in
-# its own region, which is this module's `mock-sts` in that region.)
+# its own region, which is this module's `iya-sts` in that region.)
 #
 # LONG-LIVED, for the reasons AWS's and GCP's keys are: a key whose versions
 # are gone makes every disk, database and backup under it unreadable, so it
@@ -230,7 +230,7 @@ resource "azurerm_monitor_data_collection_rule" "syslog" {
   location            = var.region
   resource_group_name = azurerm_resource_group.region.name
   kind                = "Linux"
-  description         = "mock-sts (#96): the nodes' container logs, by syslog, into the region's workspace"
+  description         = "iya-sts (#96): the nodes' container logs, by syslog, into the region's workspace"
 
   destinations {
     log_analytics {

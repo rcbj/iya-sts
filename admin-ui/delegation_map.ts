@@ -1233,7 +1233,7 @@ class DelegationMap {
     log.debug("Entering DelegationMap.defaultResolve().");
     if (node.kind === 'sts') {
       log.debug("Leaving DelegationMap.defaultResolve().");
-      return { shape: 'sts', label: 'mock STS', sublabel: '', dashed: false };
+      return { shape: 'sts', label: 'IYA STS', sublabel: '', dashed: false };
     }
     const person = node.chiefRole === 'initial';
     log.debug("Leaving DelegationMap.defaultResolve().");

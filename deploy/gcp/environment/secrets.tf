@@ -18,9 +18,9 @@
 #   bootstrap-admin-password, krb5-krbtgt-password, krb5-service-password
 #                            product mode only, for AWS's reasons
 #
-# NAMED `mock-sts-<env>-<key>`: a secret id may not contain `/`, so AWS's
-# `mock-sts/<env>/<key>` becomes this. Read the bootstrap password with
-#   gcloud secrets versions access latest --secret=mock-sts-testidp-bootstrap-admin-password
+# NAMED `iya-sts-<env>-<key>`: a secret id may not contain `/`, so AWS's
+# `iya-sts/<env>/<key>` becomes this. Read the bootstrap password with
+#   gcloud secrets versions access latest --secret=iya-sts-testidp-bootstrap-admin-password
 #
 # UNDER THE PROJECT KEY, in the environment's region only (user-managed
 # replication with CMEK — AWS's single-region secrets). Deleted with the

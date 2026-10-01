@@ -569,7 +569,7 @@ function makeServerCertificate() {
   const keys = stsCrypto.selfSignedRsaCertificate({
     // `tls.selfSignedKeyBits`, `tls.selfSignedValidityYears` and
     // `tls.selfSignedOrganization` since 2026-09-12; the defaults are the
-    // literals 2048, 2 and 'mock-sts' this call used to carry — the last of
+    // literals 2048, 2 and 'iya-sts' this call used to carry — the last of
     // which became 'sts' when the product name in every identifier this
     // service emits was renamed, the same day.
     bits: config.value('tls.selfSignedKeyBits'),

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
-# THREE mock-sts NODES, ONE MANAGED INSTANCE GROUP PER ZONE
+# THREE iya-sts NODES, ONE MANAGED INSTANCE GROUP PER ZONE
 # (deploy/aws/environment/ecs.tf).
 #
 # WHY VMs. Fargate's GCP counterpart is Cloud Run, and Cloud Run publishes
@@ -30,7 +30,7 @@
 #   sts-secrets   Secret Manager → env files on a tmpfs (ECS `secrets`)
 #   sts-cert      the ACME certificate (only with a public name; AWS cert-init)
 #   sts-schema    postgres/schema.sql as the master user (AWS schema-init)
-#   sts-node      mock-sts itself, restarted by systemd if it exits
+#   sts-node      iya-sts itself, restarted by systemd if it exits
 #
 # A NEW IMAGE IS A NEW TEMPLATE, and the group REPLACES its one instance —
 # stops it, then makes the new one (AWS's minimum healthy percent 0), keeping
@@ -271,7 +271,7 @@ resource "google_compute_instance_template" "node" {
   name_prefix  = "${local.prefix}-${each.key}-"
   machine_type = var.machine_type
   region       = local.region
-  description  = "mock-sts ${var.environment} ${each.key}, image ${var.image_tag}"
+  description  = "iya-sts ${var.environment} ${each.key}, image ${var.image_tag}"
 
   # The boot disk: Container-Optimized OS, under the project key.
   disk {

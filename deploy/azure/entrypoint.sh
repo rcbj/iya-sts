@@ -85,8 +85,8 @@ say "acting as $(az account show --query user.name -o tsv 2> /dev/null || echo '
 # --- The state ------------------------------------------------------------------
 # bootstrap-state.sh's names; the account's is a formula of the subscription,
 # so no stack has to be told it.
-STATE_GROUP="${STATE_RESOURCE_GROUP:-mock-sts-terraform-state}"
-STATE_ACCOUNT="${STATE_STORAGE_ACCOUNT:-$(printf 'mockststate%s' "${SUBSCRIPTION//-/}" | cut -c1-24)}"
+STATE_GROUP="${STATE_RESOURCE_GROUP:-iya-sts-terraform-state}"
+STATE_ACCOUNT="${STATE_STORAGE_ACCOUNT:-$(printf 'iyaststate%s' "${SUBSCRIPTION//-/}" | cut -c1-24)}"
 export TF_VAR_state_storage_account="${STATE_ACCOUNT}"
 export TF_VAR_state_resource_group="${STATE_GROUP}"
 backend_args() {

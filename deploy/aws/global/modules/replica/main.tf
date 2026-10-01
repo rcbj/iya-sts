@@ -69,7 +69,7 @@ resource "aws_db_parameter_group" "global" {
   region      = var.region
   name        = "${var.common.prefix}-${var.cell}-pg18"
   family      = var.common.parameter_family
-  description = "mock-sts ${var.common.environment}: the global database's replica in ${var.cell}, TLS required"
+  description = "iya-sts ${var.common.environment}: the global database's replica in ${var.cell}, TLS required"
 
   parameter {
     name         = "rds.force_ssl"

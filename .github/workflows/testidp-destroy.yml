@@ -69,7 +69,7 @@ concurrency:
 env:
   AWS_REGION: us-west-2
   TF_ENV: ${{ github.event.inputs.environment }}
-  TF_IMAGE: mock-sts-terraform
+  TF_IMAGE: iya-sts-terraform
 
 jobs:
   destroy:

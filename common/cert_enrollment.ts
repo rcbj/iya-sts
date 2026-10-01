@@ -2137,7 +2137,7 @@ class CertEnrollment {
     log.debug("Leaving CertEnrollment.organisationOf().");
     return {
       organisation: String((row && row.organisation) ||
-                           config.value('pki.organisation') || 'mock-sts'),
+                           config.value('pki.organisation') || 'iya-sts'),
       country: String((row && row.country) || '')
     };
   }

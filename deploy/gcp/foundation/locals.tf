@@ -12,7 +12,7 @@ locals {
   }
 
   # Where the images are pushed and pulled:
-  #   <region>-docker.pkg.dev/<project>/mock-sts/<image>:<tag>
+  #   <region>-docker.pkg.dev/<project>/iya-sts/<image>:<tag>
   registry_host = "${var.region}-docker.pkg.dev"
   registry_url  = "${local.registry_host}/${var.project_id}/${var.name}"
 

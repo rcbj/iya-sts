@@ -11,8 +11,8 @@
 #
 # SET, what changes:
 #   * the REGION is the cell's; every name carries the cell
-#     (`mock-sts-<env>-<cell>-…`); the node account is the foundation's
-#     `mock-sts-env-<env>-<cell>`; the state prefix is `environment/<env>/<cell>`;
+#     (`iya-sts-<env>-<cell>-…`); the node account is the foundation's
+#     `iya-sts-env-<env>-<cell>`; the state prefix is `environment/<env>/<cell>`;
 #   * the NETWORK is the environment's shared global VPC, which the
 #     foundation made (network_multicell.tf there); the cell makes its own
 #     subnets in it;

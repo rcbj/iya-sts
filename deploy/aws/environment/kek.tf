@@ -9,7 +9,7 @@
 # key (DEK), and only the DEKs are wrapped by the key-encryption key (KEK).
 # Where the KEK lives is `kek_provider`:
 #
-#   kms     (THE DEFAULT) foundation/kms.tf's `alias/mock-sts-kek`, a
+#   kms     (THE DEFAULT) foundation/kms.tf's `alias/iya-sts-kek`, a
 #           multi-region key with a replica in every permitted region. The
 #           node calls kms:Encrypt and kms:Decrypt on it for each DEK, with
 #           the DEK's id, scope, realm and class as the encryption context;
@@ -19,7 +19,7 @@
 #             STS_KEYS_KEK_REF      = the key's ID, mrk-…
 #             STS_KEYS_KEK_REGION   = THIS node's region
 #   secret  the arrangement before #391: 32 random bytes in Secrets Manager
-#           (`mock-sts/<env>/kek`, or global/'s replica in a cell), read by
+#           (`iya-sts/<env>/kek`, or global/'s replica in a cell), read by
 #           the node at start and held in its memory.
 #             STS_KEYS_KEK_PROVIDER = aws
 #             STS_KEYS_KEK_REF      = the secret's ARN

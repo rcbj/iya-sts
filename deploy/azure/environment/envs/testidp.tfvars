@@ -45,6 +45,6 @@ vpc_cidr = "10.81.0.0/16"
 
 tags = {
   ManagedBy = "terraform"
-  Stack     = "mock-sts-environment"
+  Stack     = "iya-sts-environment"
   Lifecycle = "long-lived"
 }

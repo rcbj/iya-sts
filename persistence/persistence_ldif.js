@@ -579,7 +579,7 @@ function create(options) {
           const list = [];
           rows.forEach(function (entry) { list.push(entry); });
           writeAtomic(realmFile(realmId), toLdif(list, [
-            'The "' + realmId + '" realm\'s directory, written by mock-sts.',
+            'The "' + realmId + '" realm\'s directory, written by iya-sts.',
             'RFC 2849 LDIF. It is read back at startup when ' +
               'persistence.mode=ldif, and it is ordinary LDIF otherwise: ' +
               'ldapadd -f will load it into any directory.',
@@ -603,7 +603,7 @@ function create(options) {
       return Promise.resolve().then(function () {
         writeAtomic(path.join(dir, 'realms.json'), JSON.stringify({
           version: 1,
-          note: 'The trust realms mock-sts had defined when this was ' +
+          note: 'The trust realms iya-sts had defined when this was ' +
                 'written. The DEFAULT realm is not here and never will be: ' +
                 'it is a constant in common/realms.js, not a row.',
           realms: rows

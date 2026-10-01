@@ -393,6 +393,36 @@ class Credentials {
       hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
   }
 
+  // WHICH SIGNATURE ALGORITHM ONE STORED KEY USES (2026-10-01, rcbj:
+  // "record the algorithm that was actually used ... display it on the
+  // passkey list"). The key's own `algorithm` and `coseAlg`, written at
+  // enrolment since that day; for a key written before, the `alg` its stored
+  // JWK has carried since #105; and for one older still, what the verifier
+  // checks it with by key type (`coseAlgOfJwk()`), which is the algorithm
+  // that key has actually been verified with all along. `postQuantum` is
+  // RFC 9964's ML-DSA; `insecure` the verifier's broken list (RS1).
+  /**
+   * Says which COSE signature algorithm one stored key uses.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ name, coseAlg, text, postQuantum, insecure }`
+   */
+  static keyAlgorithm(key: any): { name: string; coseAlg: number;
+                                   text: string; postQuantum: boolean;
+                                   insecure: boolean } {
+    helpers.log.debug("Entering Credentials.keyAlgorithm().");
+    const k = key || {};
+    const coseAlg = Number(k.coseAlg) ||
+      webauthnVerifier.coseAlgOfJwk(k.publicKeyJwk || {});
+    const name = String(k.algorithm ||
+      webauthnVerifier.COSE_ALGS[String(coseAlg)] || ('COSE ' + coseAlg));
+    helpers.log.debug("Leaving Credentials.keyAlgorithm(). " + name);
+    return { name: name, coseAlg: coseAlg, text: name + ' (' + coseAlg + ')',
+             postQuantum: /^ML-DSA-/.test(name),
+             insecure: webauthnVerifier.INSECURE_COSE_ALGS
+               .indexOf(coseAlg) >= 0 };
+  }
+
   // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
   // (2026-09-26). `/portal/keys` draws it beside each key and
   // `/portal/devices` says with it why a key cannot be linked to a device.
@@ -2338,6 +2368,13 @@ class Credentials {
       // neither, and is reported as it always was.
       attachment: String(credential.attachment || ''),
       aaguid: Credentials.aaguidString(credential.aaguid),
+      // THE SIGNATURE ALGORITHM (2026-10-01), as the ceremony reported it —
+      // JOSE name and COSE identifier — so the key lists and the audit can
+      // say it without re-deriving it. `keyAlgorithm()` reads it, and
+      // derives it for a key written before.
+      algorithm: String(credential.algorithm ||
+                        (credential.publicKeyJwk || {}).alg || '') || null,
+      coseAlg: Number(credential.coseAlg) || null,
       // WHAT THE ATTESTATION STATEMENT PROVED (#105): the format, the
       // attestation type, whether it was verified and whether it chained to
       // an anchor (the realm's or the FIDO Metadata Service's), the model MDS
@@ -6633,6 +6670,7 @@ class Credentials {
         userVerified: !!(verdict.flags && verdict.flags.uv),
         aaguid: verdict.aaguid || null,
         algorithm: verdict.algorithm || null,
+        coseAlg: verdict.coseAlg || null,
         attestation: attested.attestation
       }, held.role).then((stored) => {
         return this.keyEnrolmentWritten(name, held, stored);
@@ -7987,6 +8025,7 @@ export = {
   WEBAUTHN_ATTRIBUTE: Credentials.WEBAUTHN_ATTRIBUTE,
   ROLES: Credentials.ROLES,
   keyKind: Credentials.keyKind,
+  keyAlgorithm: Credentials.keyAlgorithm,
   keysOf: slot.forward('keysOf'),
   addKey: slot.forward('addKey'),
   removeKey: slot.forward('removeKey'),

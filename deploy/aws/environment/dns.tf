@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # A PUBLIC NAME AND A PUBLIC CERTIFICATE, WHEN `public_hostname` IS SET.
 #
-#   test-idp.iyasec.io  CNAME  mock-sts-<env>-….elb.us-west-2.amazonaws.com
+#   test-idp.iyasec.io  CNAME  iya-sts-<env>-….elb.us-west-2.amazonaws.com
 #
 # The certificate is ACM's, DNS-validated in the same zone, and **the NODE
 # presents it** — the load balancer passes TCP through untouched (nlb.tf) and

@@ -335,7 +335,7 @@ function run(t) {
   }
   t.check(/<md:OrganizationName xml:lang="en">sts</.test(
             documentSettings.organizationElement('https://idp.test')),
-          'and the default is the product name, sts (mock-sts until ' +
+          'and the default is the product name, sts (iya-sts until ' +
           '2026-09-12)');
 
   // -------------------------------------------------------------------------

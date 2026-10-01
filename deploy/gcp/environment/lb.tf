@@ -5,7 +5,7 @@
 # THE PUBLIC FRONT DOOR: A REGIONAL EXTERNAL PASSTHROUGH NETWORK LOAD BALANCER
 # (deploy/aws/environment/nlb.tf).
 #
-# PASSTHROUGH, NOT PROXY, for AWS's reason: mock-sts terminates its own TLS,
+# PASSTHROUGH, NOT PROXY, for AWS's reason: iya-sts terminates its own TLS,
 # and a client certificate presented to the main port reaches the service
 # only if the TCP stream does. GCP's passthrough load balancer is not even a
 # connection endpoint — it forwards packets, so the node's TLS is the client's
@@ -40,7 +40,7 @@ resource "google_compute_address" "lb" {
   region       = local.region
   address_type = "EXTERNAL"
   network_tier = "PREMIUM"
-  description  = "mock-sts ${var.environment}: the load balancer's address"
+  description  = "iya-sts ${var.environment}: the load balancer's address"
 }
 
 resource "google_compute_region_health_check" "https" {

@@ -1410,7 +1410,7 @@ async function theRegisterRefuses() {
 // ---------------------------------------------------------------------------
 async function test() {
   log.debug("Entering test().");
-  log.info("Driving the mock STS's role register and the nine issuance sites " +
+  log.info("Driving IYA STS's role register and the nine issuance sites " +
            "at " + base);
 
   // A SERVICE THAT IS NOT THERE IS A FAILURE AND NOT A SKIP, which is the rule
@@ -1453,7 +1453,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_roles")
-  .description("Drive the mock STS's role register and the issuance sites it " +
+  .description("Drive IYA STS's role register and the issuance sites it " +
       "gates, in a throwaway trust realm: the claim, a narrowed application " +
       "refusing at the token endpoint in OAuth's own words, a group and an " +
       "application holding roles, WS-Trust's optional AppliesTo, and the off " +

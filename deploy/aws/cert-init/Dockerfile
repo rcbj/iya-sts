@@ -26,7 +26,7 @@
 # store, no state and no log. The passphrase is random per run and never
 # leaves this container.
 #
-# An init container in every mock-sts task, `essential: false`, that the node
+# An init container in every iya-sts task, `essential: false`, that the node
 # waits on with `dependsOn: SUCCESS` — schema-init's shape, and for the same
 # reason: a node that cannot get its certificate must not start and serve a
 # self-signed one under a public name.

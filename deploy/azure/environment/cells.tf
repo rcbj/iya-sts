@@ -12,12 +12,12 @@
 # SET, what changes:
 #   * the REGION is the cell's, and so are its resource group, node identity
 #     and vault — the foundation made one of each per cell;
-#   * every name carries the cell (`mock-sts-<env>-<cell>-…`) and the state
+#   * every name carries the cell (`iya-sts-<env>-<cell>-…`) and the state
 #     key is `environment/<env>/<cell>.tfstate` (entrypoint.sh);
 #   * the VNet is the cell's own CIDR from the cells file, distinct in every
 #     cell, so the cells can be peered (the global/ stack does it);
 #   * the cell's own data — its database, disks, secrets — is sealed under
-#     its region's `mock-sts-cell` key, which is replicated nowhere; the
+#     its region's `iya-sts-cell` key, which is replicated nowhere; the
 #     key-encryption key every cell shares, and the other values that must be
 #     the same in every cell, are the global/ stack's, written into this
 #     cell's vault;

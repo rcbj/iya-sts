@@ -188,7 +188,7 @@ class GnapSubject {
     const secret = helpers.refreshTokenKeysFor().secret;
     const key = Buffer.from(nodeCrypto.hkdfSync('sha256', secret,
                                                 Buffer.alloc(0),
-                                                Buffer.from('mock-sts gnap ' +
+                                                Buffer.from('iya-sts gnap ' +
                                                     'opaque subject v1'),
                                                 32));
     const subject = helpers.subjectForName(username);

@@ -208,27 +208,29 @@ var config = {
 
   // --- WebAuthn --------------------------------------------------------
   webauthn: {
-    enabled: true,                            // Offer security keys (WebAuthn)
-    rpName: "Mock authorization server",      // Relying party name
-    rpId: "",                                 // RP ID override
-    allowedOrigins: "",                       // Allowed origins
-    algorithms: "ES256,RS256",                // Algorithms offered
-    userVerification: "preferred",            // User verification
-    attestation: "direct",                    // Attestation conveyance
-    attestationPolicy: "by-mode",             // Attestation policy
-    attestationTrustAnchors: "",              // Attestation trust anchors (PEM)
-    attestationAllowedAaguids: "",            // Allowed authenticator models (AAGUIDs)
-    attestationMinCertificationLevel: "none", // Least FIDO certification level
-    attestationRequireFips: false,            // Require a FIPS 140 certified model
-    attestationAllowSafetynet: false,         // Trust android-safetynet attestation
-    attestationAndroidSoftwareKeys: false,    // Accept Android keys not enforced in the TEE
-    timeoutMs: 60000,                         // Ceremony timeout (ms)
-    authenticatorAttachment: "any",           // Authenticator attachment (CTAP)
-    residentKey: "discouraged",               // Discoverable credential (CTAP resident key)
-    credProps: true,                          // Ask for the credProps extension
-    primaryAllowed: true,                     // Allow a key as a PRIMARY credential
-    mfaAllowed: true,                         // Allow a key as a SECOND factor
-    maxKeysPerPerson: 10                      // Keys per person
+    enabled: true,                                                                                                                                     // Offer security keys (WebAuthn)
+    rpName: "IYA STS",                                                                                                                                 // Relying party name
+    rpId: "",                                                                                                                                          // RP ID override
+    allowedOrigins: "",                                                                                                                                // Allowed origins
+    algorithms: "ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,RS256,RS384,RS512", // Algorithms offered
+    insecureAlgorithms: false,                                                                                                                         // Use insecure algorithms (development only)
+    pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
+    userVerification: "preferred",                                                                                                                     // User verification
+    attestation: "direct",                                                                                                                             // Attestation conveyance
+    attestationPolicy: "by-mode",                                                                                                                      // Attestation policy
+    attestationTrustAnchors: "",                                                                                                                       // Attestation trust anchors (PEM)
+    attestationAllowedAaguids: "",                                                                                                                     // Allowed authenticator models (AAGUIDs)
+    attestationMinCertificationLevel: "none",                                                                                                          // Least FIDO certification level
+    attestationRequireFips: false,                                                                                                                     // Require a FIPS 140 certified model
+    attestationAllowSafetynet: false,                                                                                                                  // Trust android-safetynet attestation
+    attestationAndroidSoftwareKeys: false,                                                                                                             // Accept Android keys not enforced in the TEE
+    timeoutMs: 60000,                                                                                                                                  // Ceremony timeout (ms)
+    authenticatorAttachment: "any",                                                                                                                    // Authenticator attachment (CTAP)
+    residentKey: "discouraged",                                                                                                                        // Discoverable credential (CTAP resident key)
+    credProps: true,                                                                                                                                   // Ask for the credProps extension
+    primaryAllowed: true,                                                                                                                              // Allow a key as a PRIMARY credential
+    mfaAllowed: true,                                                                                                                                  // Allow a key as a SECOND factor
+    maxKeysPerPerson: 10                                                                                                                               // Keys per person
   },
 
   // --- Key material ----------------------------------------------------

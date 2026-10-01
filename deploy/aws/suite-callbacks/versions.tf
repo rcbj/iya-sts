@@ -9,7 +9,7 @@
 # The state key names the environment, under `environment/` because that is
 # the one prefix the deployer role may write state under
 # (foundation/iam_deployer.tf, TerraformStateObjects):
-#   terraform init -backend-config="bucket=mock-sts-terraform-state-<account>" \
+#   terraform init -backend-config="bucket=iya-sts-terraform-state-<account>" \
 #                  -backend-config="key=environment/testidp/suite-callbacks.tfstate"
 # entrypoint.sh builds that key from TF_ENV.
 # ---------------------------------------------------------------------------

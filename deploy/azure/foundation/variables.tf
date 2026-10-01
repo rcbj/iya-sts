@@ -3,7 +3,7 @@
 
 variable "subscription_id" {
   description = <<-EOT
-    The Azure subscription the whole mock-sts deployment lives in. A
+    The Azure subscription the whole iya-sts deployment lives in. A
     SUBSCRIPTION OF ITS OWN is best, as GCP's project is: the deployer's
     custom role is assignable at this subscription and granted only on the
     resource groups this stack makes (iam_deployer.tf), but a subscription
@@ -22,7 +22,7 @@ variable "home_region" {
 variable "name" {
   description = "The prefix every resource name starts with. Must match the environment and global stacks' `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "tags" {
@@ -117,7 +117,7 @@ variable "extra_regions" {
 variable "state_resource_group" {
   description = "The resource group bootstrap-state.sh made the state account in."
   type        = string
-  default     = "mock-sts-terraform-state"
+  default     = "iya-sts-terraform-state"
 }
 
 variable "state_storage_account" {

@@ -63,7 +63,7 @@ fi
 [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] || \
   die "no application-default credentials. Run 'gcloud auth application-default login' on the host first."
 
-DEPLOYER="${MOCK_STS_DEPLOYER:-mock-sts-deployer@${PROJECT}.iam.gserviceaccount.com}"
+DEPLOYER="${IYA_STS_DEPLOYER:-iya-sts-deployer@${PROJECT}.iam.gserviceaccount.com}"
 if [ "${TF_STACK}" != "foundation" ];
 then
   export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT="${DEPLOYER}"
@@ -73,7 +73,7 @@ else
 fi
 
 # --- The stack and its state --------------------------------------------------
-bucket="mock-sts-terraform-state-${PROJECT}"
+bucket="iya-sts-terraform-state-${PROJECT}"
 BACKEND_ARGS=(-backend-config="bucket=${bucket}")
 case "${TF_STACK}" in
   environment)

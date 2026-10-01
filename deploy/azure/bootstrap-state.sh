@@ -12,8 +12,8 @@
 # reason: it holds Terraform's state, so the stack that would create it has
 # nowhere to record having done so.
 #
-#   mock-sts-terraform-state          the resource group, in the home region
-#   mockststate<subscription, cut>    the account: its name is a FORMULA of
+#   iya-sts-terraform-state          the resource group, in the home region
+#   iyaststate<subscription, cut>    the account: its name is a FORMULA of
 #                                     the subscription (24 characters at
 #                                     most, letters and digits), which
 #                                     entrypoint.sh repeats — so no stack
@@ -44,8 +44,8 @@ SUBSCRIPTION="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv 2> /d
   exit 1
 }
 REGION="${AZURE_REGION:-westus2}"
-GROUP="${STATE_RESOURCE_GROUP:-mock-sts-terraform-state}"
-ACCOUNT="${STATE_STORAGE_ACCOUNT:-$(printf 'mockststate%s' "${SUBSCRIPTION//-/}" | cut -c1-24)}"
+GROUP="${STATE_RESOURCE_GROUP:-iya-sts-terraform-state}"
+ACCOUNT="${STATE_STORAGE_ACCOUNT:-$(printf 'iyaststate%s' "${SUBSCRIPTION//-/}" | cut -c1-24)}"
 
 az account set --subscription "${SUBSCRIPTION}"
 

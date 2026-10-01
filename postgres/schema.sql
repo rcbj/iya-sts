@@ -38,7 +38,7 @@
 -- defaults (`sts_app` / `sts_app`, which is what docker-compose.yml uses):
 --
 --   psql -v ON_ERROR_STOP=1 \
---        -v sts_app_role=mock_sts -v sts_app_password='...' \
+--        -v sts_app_role=iya_sts -v sts_app_password='...' \
 --        -f postgres/schema.sql "postgres://.../sts"
 --
 -- IT IS IDEMPOTENT. Every object is `IF NOT EXISTS` and every grant is a grant

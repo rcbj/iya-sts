@@ -46,7 +46,7 @@ variable "tags" {
   type        = map(string)
   default = {
     ManagedBy = "terraform"
-    Stack     = "mock-sts-certificate"
+    Stack     = "iya-sts-certificate"
     # NOT destroy-after-test-run: this stack outlives every environment
     # destroy (main.tf says why).
     Lifecycle = "keep-across-environment-destroys"

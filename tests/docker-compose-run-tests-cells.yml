@@ -102,7 +102,7 @@ services:
   # and the script.
   sts-cell-link:
     container_name: ${STS_CELL_LINK_CONTAINER_NAME:-sts-docker-tests-cell-link}
-    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/mock-sts-tests:${IMAGE_TAG:-latest}}
+    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/iya-sts-tests:${IMAGE_TAG:-latest}}
     restart: "no"
     command: ["node", "tests/tools/cell_link.js"]
     environment:

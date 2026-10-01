@@ -7,14 +7,14 @@
 # client that uploads the report (upload-report.js).
 #
 # Built after tests/Dockerfile, from its tag:
-#   docker build -t mock-sts-tests -f tests/Dockerfile .
-#   docker build -t <repo>:runner-<tag> --build-arg TESTS_IMAGE=mock-sts-tests \
+#   docker build -t iya-sts-tests -f tests/Dockerfile .
+#   docker build -t <repo>:runner-<tag> --build-arg TESTS_IMAGE=iya-sts-tests \
 #                -f deploy/aws/runner/Dockerfile deploy/aws/runner
 #
 # In a directory of its own under /opt rather than the suite's node_modules,
 # so nothing a job resolves changes because this image exists.
 # ---------------------------------------------------------------------------
-ARG TESTS_IMAGE=mock-sts-tests
+ARG TESTS_IMAGE=iya-sts-tests
 FROM ${TESTS_IMAGE}
 
 RUN mkdir -p /opt/sts-runner \

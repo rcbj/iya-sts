@@ -16,7 +16,7 @@
 # other cells know it without reading this state, and it is reached across
 # the global VNet peering (the global/ stack) from any region.
 #
-# NO DNS AT ALL: each peer's name, `nodes.<cell>.<env>.mock-sts.internal`,
+# NO DNS AT ALL: each peer's name, `nodes.<cell>.<env>.iya-sts.internal`,
 # is mapped to that address inside the node's container (`--add-host`,
 # nodes.tf), as the database's is. The name exists so the cell leaf the
 # service issues can carry it (`STS_CELL_HOSTNAME`), and so a URL in a log

@@ -127,7 +127,7 @@ BUILD=1
 # images are named in the compose file (`image:`), so the two still share a
 # build rather than each keeping one.
 COMPOSE_FILE="docker-compose-run-tests.yml"
-COMPOSE_PROJECT="${STS_COVERAGE_PROJECT:-mock-sts-coverage}"
+COMPOSE_PROJECT="${STS_COVERAGE_PROJECT:-iya-sts-coverage}"
 COMPOSE_CMD=""
 DOCKER_SUDO=""
 COMPOSE_ENV=()
@@ -374,7 +374,7 @@ else
   COMPOSE_ENV=(
     "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
     "STS_NETWORK_SUBNET=${subnet}"
-    "STS_TESTS_CONTAINER_NAME=mock-sts-coverage-runner"
+    "STS_TESTS_CONTAINER_NAME=iya-sts-coverage-runner"
     "STS_CONTAINER_NAME=sts-coverage-unused"
     "CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     "STS_TEST_ARGS="

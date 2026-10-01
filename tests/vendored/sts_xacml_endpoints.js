@@ -415,11 +415,11 @@ var xacmlUser = null;
 async function mintTheCredentials() {
   log.debug("Entering mintTheCredentials().");
   trusted = await credentials.mint({
-    subject: "CN=" + PEP_CN + ",OU=remote-peps,O=mock-sts tests" });
+    subject: "CN=" + PEP_CN + ",OU=remote-peps,O=iya-sts tests" });
   rogue = await credentials.mint({
-    subject: "CN=" + ROGUE_CN + ",OU=remote-peps,O=mock-sts tests" });
+    subject: "CN=" + ROGUE_CN + ",OU=remote-peps,O=iya-sts tests" });
   xacmlUser = await credentials.mint({
-    subject: "CN=" + XACML_USER_CN + ",OU=xacml-users,O=mock-sts tests" });
+    subject: "CN=" + XACML_USER_CN + ",OU=xacml-users,O=iya-sts tests" });
   for (const one of [trusted, rogue, xacmlUser]) {
     const posted = await credentials.trustAnchor(base, one.anchorPem);
     assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this " +
@@ -550,7 +550,7 @@ function selfSignedFor(commonName) {
   certificate.validity.notBefore = new Date(Date.now() - 60 * 1000);
   certificate.validity.notAfter = new Date(Date.now() + 24 * 3600 * 1000);
   const attributes = [{ name: "commonName", value: commonName },
-                      { name: "organizationName", value: "mock-sts tests" }];
+                      { name: "organizationName", value: "iya-sts tests" }];
   certificate.setSubject(attributes);
   certificate.setIssuer(attributes);
   certificate.sign(keys.privateKey, forge.md.sha256.create());
@@ -2260,7 +2260,7 @@ async function admitTheCertificates() {
 
 async function test() {
   log.debug("Entering test().");
-  log.info("Driving the mock STS's XACML endpoints at " + base + "/xacml");
+  log.info("Driving IYA STS's XACML endpoints at " + base + "/xacml");
 
   // A SERVICE THAT IS NOT THERE IS A FAILURE AND NOT A SKIP, which is the rule
   // tests/CLAUDE.md records the 2026-08-28 default flip for: a job that reports
@@ -2311,7 +2311,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_xacml_endpoints")
-  .description("Drive the mock STS's eight /xacml endpoints over HTTP in a " +
+  .description("Drive IYA STS's eight /xacml endpoints over HTTP in a " +
       "throwaway trust realm: the decision endpoint and its refusals, the " +
       "repository, the embedded PEP's bias and its obligation rule, and the " +
       "three a remote PEP registers, pulls and reports on.")

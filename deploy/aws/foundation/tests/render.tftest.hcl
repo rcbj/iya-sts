@@ -87,7 +87,7 @@ run "the_kek_is_a_multi_region_key" {
     error_message = "the KEK key's shape"
   }
   assert {
-    condition     = aws_kms_alias.kek.name == "alias/mock-sts-kek" && module.region["us-west-2"].kek_replica_key_arn == ""
+    condition     = aws_kms_alias.kek.name == "alias/iya-sts-kek" && module.region["us-west-2"].kek_replica_key_arn == ""
     error_message = aws_kms_alias.kek.name
   }
 }

@@ -12,7 +12,7 @@ provider "google" {
 
   default_labels = merge(var.labels, {
     project = "sts"
-    stack   = "mock-sts-foundation"
+    stack   = "iya-sts-foundation"
   })
 }
 

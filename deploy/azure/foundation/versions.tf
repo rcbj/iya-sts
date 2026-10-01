@@ -9,7 +9,7 @@
 # runs with. State at `foundation.tfstate` in the storage account
 # deploy/azure/bootstrap-state.sh made:
 #   terraform init -backend-config=storage_account_name=<account> \
-#                  -backend-config=resource_group_name=mock-sts-terraform-state
+#                  -backend-config=resource_group_name=iya-sts-terraform-state
 # ---------------------------------------------------------------------------
 terraform {
   required_version = ">= 1.11"

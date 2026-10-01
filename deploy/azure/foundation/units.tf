@@ -8,12 +8,12 @@
 # deployer by RESOURCE GROUP and a group has to exist before a role can be
 # granted on it. Per unit (locals.tf: a single-cell environment, or a cell):
 #
-#   mock-sts-<unit>              the resource group — in the unit's region,
+#   iya-sts-<unit>              the resource group — in the unit's region,
 #                                the deployer's role granted on it and on
 #                                nothing else it may write (iam_deployer.tf),
 #                                and Azure Policy's *Allowed locations* on it
 #                                holding it to that region (the region fence)
-#   mock-sts-<unit>-nodes        the managed identity every node runs as
+#   iya-sts-<unit>-nodes        the managed identity every node runs as
 #   ms<env><cell>-<hash>         the Key Vault its secrets are kept in: the
 #                                environment writes them, the nodes read them
 #     tls                        with a public name: the ACME certificate and
@@ -157,7 +157,7 @@ resource "azurerm_role_assignment" "nodes_pull" {
 resource "azurerm_role_definition" "acme_txt" {
   name        = "${var.name} ACME DNS-01 TXT writer"
   scope       = "/subscriptions/${local.subscription_id}"
-  description = "mock-sts (#96): write and remove TXT records in the public zone, for an ACME DNS-01 challenge. Nothing else."
+  description = "iya-sts (#96): write and remove TXT records in the public zone, for an ACME DNS-01 challenge. Nothing else."
 
   permissions {
     actions = [
@@ -210,7 +210,7 @@ resource "azurerm_resource_group_policy_assignment" "unit_locations" {
   name                 = "${var.name}-${each.key}-locations"
   resource_group_id    = azurerm_resource_group.unit[each.key].id
   policy_definition_id = data.azurerm_policy_definition.allowed_locations.id
-  description          = "mock-sts (#96): the region fence"
+  description          = "iya-sts (#96): the region fence"
   parameters = jsonencode({
     listOfAllowedLocations = { value = [each.value.region] }
   })
@@ -221,7 +221,7 @@ resource "azurerm_resource_group_policy_assignment" "global_locations" {
   name                 = "${var.name}-${each.key}-global-locations"
   resource_group_id    = azurerm_resource_group.global[each.key].id
   policy_definition_id = data.azurerm_policy_definition.allowed_locations.id
-  description          = "mock-sts (#96): the region fence"
+  description          = "iya-sts (#96): the region fence"
   parameters = jsonencode({
     listOfAllowedLocations = { value = each.value.regions }
   })

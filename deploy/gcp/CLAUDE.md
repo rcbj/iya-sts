@@ -16,8 +16,8 @@ need a change.
 
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
-| `bootstrap-state.sh` | once | the GCS state bucket `mock-sts-terraform-state-<project>`, versioned | an administrator |
-| `foundation/` | long-lived | the APIs, the KMS key ring and key (and the service agents' use of it), **the service's key-encryption key `mock-sts-kek` and each environment's node account's use of it (#391)**, Artifact Registry `mock-sts`, the log bucket and sink, **the public zone `gcp.iyasec.io`**, the deployer service account, **one node service account per environment**, and **one certificate secret per environment with a public name** | an administrator |
+| `bootstrap-state.sh` | once | the GCS state bucket `iya-sts-terraform-state-<project>`, versioned | an administrator |
+| `foundation/` | long-lived | the APIs, the KMS key ring and key (and the service agents' use of it), **the service's key-encryption key `iya-sts-kek` and each environment's node account's use of it (#391)**, Artifact Registry `iya-sts`, the log bucket and sink, **the public zone `gcp.iyasec.io`**, the deployer service account, **one node service account per environment**, and **one certificate secret per environment with a public name** | an administrator |
 | `dns-delegation/` | once | the NS record `gcp.iyasec.io` in **the Route 53 zone `iyasec.io`**, naming Cloud DNS's name servers | an administrator with AWS **and** GCP credentials |
 | `environment/` | per run | VPC, firewall, passthrough network load balancer, Cloud SQL primary + replica behind a Private Service Connect endpoint, secrets, three zonal managed instance groups of one VM each, the public A record | the deployer (impersonated) |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `dev` and `ci` have none | the deployer |
@@ -47,7 +47,7 @@ and the parent's signing is AWS's.
 | AWS | GCP | Why this and not the obvious alternative |
 |---|---|---|
 | ECS on Fargate, one service per AZ, desired count 1 | **One zonal managed instance group per zone, size 1**, on Container-Optimized OS; `node-a`'s group STABLE before the others are made | Cloud Run publishes HTTP(S) on one port and terminates TLS — no 389/636/88/gRPC, no client certificate. GKE publishes everything and is a cluster to keep. COS is kept current by Google, which is what Fargate bought. A group, not a bare VM, because it **autoheals** on `/healthcheck` as ECS replaced a task |
-| Task definition: `cert-init`, `schema-init`, `mock-sts` | systemd units from cloud-init: `sts-disk` → `sts-registry` → `sts-secrets` → `sts-cert` → `sts-schema` → `sts-node` | `Requires=`/`After=` is `dependsOn: SUCCESS`: a node whose certificate or schema failed does not start |
+| Task definition: `cert-init`, `schema-init`, `iya-sts` | systemd units from cloud-init: `sts-disk` → `sts-registry` → `sts-secrets` → `sts-cert` → `sts-schema` → `sts-node` | `Requires=`/`After=` is `dependsOn: SUCCESS`: a node whose certificate or schema failed does not start |
 | ECS `secrets` injection | `sts-secrets` reads Secret Manager into env files on `/run` (a tmpfs); the containers take them as `--env-file` | Nothing secret is ever in instance metadata, which anybody who can describe the VM reads. The database password is still read by the SERVICE through `common/secrets.js`'s `gcp` provider — the path #51 exists to exercise — and so is the KEK with `kek_provider = "secret"`; by default the KEK is a Cloud KMS key the service never reads (*The key-encryption key*, below) |
 | NLB, TCP passthrough, PROXY v2, client-IP preservation off | **Regional external passthrough NLB** (backend-service based), one static address, two forwarding rules | A passthrough NLB is not a connection endpoint at all — the node's TLS is the client's, so `GET /tls/sign-in` and RFC 8705 work. It **preserves the client's address and sends no PROXY header**, so the nodes run `STS_PROXY_PROTOCOL=off` and trust no proxy |
 | 443 → 8081, 80 → 8082 on the NLB | **Docker publishes them** (`-p 443:8081`, `-p 80:8082`, the rest 1:1) | A passthrough load balancer does not translate ports |
@@ -57,8 +57,8 @@ and the parent's signing is AWS's.
 | RDS PG18 primary + replica, `rds.force_ssl`, project key | **Cloud SQL PG18 primary + replica** in two zones, CMEK, `ssl_mode = ENCRYPTED_ONLY`, `GOOGLE_MANAGED_CAS_CA`, 14 daily backups with PITR | — |
 | Private subnets | A **Private Service Connect endpoint** (the private subnet's `.10`) | Private services access peers the VPC with Google's through a `servicenetworking` connection that does not tear down cleanly, and an environment is destroyed often |
 | The RDS CA bundle baked into the image | The instance's CA, written by cloud-init and read as `NODE_EXTRA_CA_CERTS`; the node dials the instance's `dns_name`, mapped to the endpoint with `--add-host` | The CA arrives with the instance, so ONE image serves every environment; `--add-host` needs no private DNS zone, which the deployer could not make without the right to delete zones |
-| Secrets Manager `mock-sts/<env>/<key>`, recovery window 0 | Secret Manager `mock-sts-<env>-<key>`, CMEK, one region | A secret id may not hold `/`. Read the bootstrap password with `gcloud secrets versions access latest --secret=mock-sts-testidp-bootstrap-admin-password` |
-| An **exportable** ACM certificate, exported by `cert-init` on every start | An **ACME certificate** (Let's Encrypt, DNS-01 in `gcp.iyasec.io`) kept in the **foundation's** secret `mock-sts-<env>-tls`; `node-a` issues or renews it, the others wait | *The certificate*, below |
+| Secrets Manager `iya-sts/<env>/<key>`, recovery window 0 | Secret Manager `iya-sts-<env>-<key>`, CMEK, one region | A secret id may not hold `/`. Read the bootstrap password with `gcloud secrets versions access latest --secret=iya-sts-testidp-bootstrap-admin-password` |
+| An **exportable** ACM certificate, exported by `cert-init` on every start | An **ACME certificate** (Let's Encrypt, DNS-01 in `gcp.iyasec.io`) kept in the **foundation's** secret `iya-sts-<env>-tls`; `node-a` issues or renews it, the others wait | *The certificate*, below |
 | The private zone for the service calling its own name (#311) | **Nothing** | A passthrough LB's address is configured locally on every backend by the guest agent, so a node dialling its public name is answered by itself |
 | EBS volume for risk uploads (#214) | A second persistent disk per VM (10 GiB, CMEK), mounted at the same container path, **emptied on every start** | A persistent disk survives a reboot where the EBS volume did not; emptying it keeps it temporary space |
 | `awslogs`, a log group in foundation | Docker's `gcplogs` driver, a sink into a 14-day CMEK log bucket in foundation | Logs are project-wide, so they outlive the environment by construction |
@@ -127,19 +127,19 @@ chooses where the KEK is, with `kek_provider`:
 
 | `kek_provider` | The node is told | What it means |
 |---|---|---|
-| **`kms`** (the default) | `STS_KEYS_KEK_PROVIDER=gcp-kms`, `STS_KEYS_KEK_REF=projects/<p>/locations/<home>/keyRings/mock-sts/cryptoKeys/mock-sts-kek` | **The key never leaves Cloud KMS.** The node asks it to wrap and unwrap each DEK (with the DEK's additional authenticated data), once per DEK at start; no KEK bytes are in the process, a secret, the state or a backup |
+| **`kms`** (the default) | `STS_KEYS_KEK_PROVIDER=gcp-kms`, `STS_KEYS_KEK_REF=projects/<p>/locations/<home>/keyRings/iya-sts/cryptoKeys/iya-sts-kek` | **The key never leaves Cloud KMS.** The node asks it to wrap and unwrap each DEK (with the DEK's additional authenticated data), once per DEK at start; no KEK bytes are in the process, a secret, the state or a backup |
 | `secret` | `STS_KEYS_KEK_PROVIDER=gcp`, `STS_KEYS_KEK_REF=<the environment's kek secret>` | #95's arrangement: 32 random bytes READ into the process. Anybody who can read the secret — the node, the deployer (`secretmanager.admin`), an owner — holds the key to everything |
 
 `kms` is the default because the project's rule is the most secure choice by
 default and the weaker one on request.
 
-**A DEDICATED KEY IN THE FOUNDATION, `mock-sts-kek`, beside `main` in the home
+**A DEDICATED KEY IN THE FOUNDATION, `iya-sts-kek`, beside `main` in the home
 ring — not `main`, and not one per environment:**
 
 * **Not `main`**: `main` is used by Google's service agents to encrypt
   storage (secrets, Cloud SQL, disks, the registry, logs). A node account
   with encrypt/decrypt on it could have the KMS decrypt what the agents
-  sealed; on `mock-sts-kek` it can only wrap and unwrap DEKs. Different
+  sealed; on `iya-sts-kek` it can only wrap and unwrap DEKs. Different
   purpose, different grantee, different rotation (`main` 90 days, the KEK
   `kek_rotation_period`, a year).
 * **Long-lived, one for the project**: a Cloud KMS key cannot be deleted —
@@ -204,7 +204,7 @@ init -backend=false`, then `terraform test`.
 
 ## Cloud SQL's names and TLS
 
-**An instance name carries a random suffix** (`mock-sts-<env>-primary-<hex>`):
+**An instance name carries a random suffix** (`iya-sts-<env>-primary-<hex>`):
 Cloud SQL will not give a deleted instance's name to a new one for up to a
 week, and an environment is rebuilt far more often.
 
@@ -291,18 +291,18 @@ Estimated from 2026 on-demand list prices in us-west1, not measured:
 
 ```bash
 GOOGLE_CLOUD_PROJECT=<project> deploy/gcp/bootstrap-state.sh           # once, administrator
-terraform -chdir=deploy/gcp/foundation init -backend-config=bucket=mock-sts-terraform-state-<project>
+terraform -chdir=deploy/gcp/foundation init -backend-config=bucket=iya-sts-terraform-state-<project>
 terraform -chdir=deploy/gcp/foundation apply -var project_id=<project> \
   -var 'deployer_members=["user:<you>"]'                                # once, administrator
-terraform -chdir=deploy/gcp/dns-delegation init -backend-config=bucket=mock-sts-terraform-state-<project>
+terraform -chdir=deploy/gcp/dns-delegation init -backend-config=bucket=iya-sts-terraform-state-<project>
 terraform -chdir=deploy/gcp/dns-delegation apply -var project_id=<project>   # AWS + GCP credentials
 
 # the three images, from the repository root
-R=us-west1-docker.pkg.dev/<project>/mock-sts/mock-sts
+R=us-west1-docker.pkg.dev/<project>/iya-sts/iya-sts
 docker build -t $R:<tag> --build-arg STS_CLOUD_SDKS="@google-cloud/secret-manager @google-cloud/kms" .
 docker build -t $R:schema-<tag> -f deploy/gcp/schema-init/Dockerfile .
 docker build -t $R:init-<tag> -f deploy/gcp/node-init/Dockerfile .
-gcloud auth print-access-token --impersonate-service-account=mock-sts-deployer@<project>.iam.gserviceaccount.com |
+gcloud auth print-access-token --impersonate-service-account=iya-sts-deployer@<project>.iam.gserviceaccount.com |
   docker login -u oauth2accesstoken --password-stdin us-west1-docker.pkg.dev
 docker push $R:<tag>; docker push $R:schema-<tag>; docker push $R:init-<tag>
 

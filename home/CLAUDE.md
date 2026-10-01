@@ -5,7 +5,7 @@ The front door. One module, two routes, one image:
 | File | What it is |
 |---|---|
 | `home.ts` | `GET /` — the page — and `GET /logo.png`, the only image this service serves. |
-| `assets/debugger-logo.png` | That image. A DERIVATIVE of the parent project's artwork, not a copy of it — see below. |
+| `assets/logo.png` | That image: this project's own logo, a byte-for-byte copy of `docs/logo.png`, the one README.md shows — see below. |
 
 It is a directory of its own rather than a route in `common/`, and the entry
 test that file states is the reason: *a file lands there because more than one
@@ -122,26 +122,13 @@ at it, so saying who you are is the entire question.
   **404 in its own words**. That last part is load-bearing for the link check in
   `tests/vendored/sts_metadata.js`, which fails on Express's `Cannot GET` and passes on an
   endpoint answering for itself.
-* **It sits on a BLACK band, and that is not a style choice.** The artwork is
-  white lettering with a dark outline, a green wordmark and a pale-blue mark,
-  drawn for a dark ground; on the card's own background the "IYA CYBER SECURITY"
-  half all but disappears. The parent project ships a black-backed copy of the
-  same artwork on its error pages for the same reason.
-* **It is a derivative and therefore NOT in `common/vendored/`.** That
-  directory's rule is that its files are byte-identical to the parent's, and two
-  of the parent's tests hold them to it. This one was produced from
-  `client/public/images/oauth2oidcdebugger+iyasec-logo-transparent.png` (2172 ×
-  724, 745 kB) with:
-
-  ```bash
-  convert <source> -resize 720x -strip PNG32:debugger-logo.png
-  convert debugger-logo.png -colors 256 PNG8:debugger-logo.png
-  optipng -o5 debugger-logo.png
-  ```
-
-  720px is twice the width it is drawn at, so it stays sharp on a 2× display,
-  and 256 colours takes it to 31 kB. Re-run those three lines if the parent's
-  artwork changes.
+* **It is this project's own logo (2026-10-01, rcbj)**: `docs/logo.png`, the
+  one README.md shows, copied byte for byte (906 × 269, opaque, 22 kB, drawn
+  at half that width so it stays sharp on a 2× display). It replaced a
+  derivative of the parent project's debugger artwork, which was white
+  lettering drawn for a black band. This one is dark lettering on an off-white
+  ground, so the band behind it is the image's own colour (`#fbfaf8`). Copy
+  `docs/logo.png` over it again if the README's logo changes.
 
 ## No script and no external resource
 

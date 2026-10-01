@@ -43,7 +43,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-IMAGE_NAME="${IMAGE_NAME:-mock-sts-terraform-azure}"
+IMAGE_NAME="${IMAGE_NAME:-iya-sts-terraform-azure}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 TF_ENV="${TF_ENV:-${1:-dev}}"
@@ -113,7 +113,7 @@ done
 echo "==> Building ${IMAGE_NAME}" >&2
 "${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" -f "${REPO_ROOT}/deploy/azure/Dockerfile" "${REPO_ROOT}" > /dev/null
 
-CONTAINER_NAME="mock-sts-terraform-azure-${TF_ENV}-$$"
+CONTAINER_NAME="iya-sts-terraform-azure-${TF_ENV}-$$"
 relay() {
   echo "==> Interrupted: telling terraform to stop cleanly and release the lock" >&2
   "${DOCKER_CMD[@]}" kill --signal INT "${CONTAINER_NAME}" > /dev/null 2>&1 || true

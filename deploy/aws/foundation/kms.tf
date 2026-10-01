@@ -48,7 +48,7 @@ data "aws_iam_policy_document" "kms" {
 }
 
 resource "aws_kms_key" "main" {
-  description             = "mock-sts (issue #51): secrets, RDS storage and backups, container logs"
+  description             = "iya-sts (issue #51): secrets, RDS storage and backups, container logs"
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.kms.json
@@ -94,7 +94,7 @@ data "aws_iam_policy_document" "global_kms" {
 }
 
 resource "aws_kms_key" "global" {
-  description             = "mock-sts (issue #98): the GLOBAL tier - global KEK and secrets, global database, image replicas; multi-region"
+  description             = "iya-sts (issue #98): the GLOBAL tier - global KEK and secrets, global database, image replicas; multi-region"
   multi_region            = true
   enable_key_rotation     = true
   deletion_window_in_days = 30
@@ -164,7 +164,7 @@ data "aws_iam_policy_document" "kek_kms" {
 }
 
 resource "aws_kms_key" "kek" {
-  description              = "mock-sts (issue #391): the KEY-ENCRYPTION KEY - wraps the service's data encryption keys; multi-region, called directly by the nodes"
+  description              = "iya-sts (issue #391): the KEY-ENCRYPTION KEY - wraps the service's data encryption keys; multi-region, called directly by the nodes"
   key_usage                = "ENCRYPT_DECRYPT"
   customer_master_key_spec = "SYMMETRIC_DEFAULT"
   multi_region             = true

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: BUSL-1.1
 #
-# iya-sts, the mock STS: every protocol family README.md lists, in one small Node
+# iya-sts, IYA STS: every protocol family README.md lists, in one small Node
 # service. See README.md.
 #
 # Pinned to Node 24.16.0 via nvm rather than an official node image, which is what

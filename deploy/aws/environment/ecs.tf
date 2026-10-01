@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
-# THREE mock-sts NODES ON FARGATE, ONE SERVICE PER AVAILABILITY ZONE.
+# THREE iya-sts NODES ON FARGATE, ONE SERVICE PER AVAILABILITY ZONE.
 #
 # WHY THREE SERVICES AND NOT ONE WITH A DESIRED COUNT OF THREE: a single
 # service spreads tasks across its subnets as best it can, and a replacement
@@ -21,7 +21,7 @@
 # EACH TASK HAS TWO CONTAINERS:
 #   schema-init  runs postgres/schema.sql as the RDS master user and exits;
 #                non-essential, so its exit does not stop the task.
-#   mock-sts     waits for schema-init to exit 0 (`dependsOn: SUCCESS`); a
+#   iya-sts     waits for schema-init to exit 0 (`dependsOn: SUCCESS`); a
 #                schema that fails to apply is a node that never starts,
 #                with the reason in the log.
 # ---------------------------------------------------------------------------
@@ -254,7 +254,7 @@ resource "aws_ecs_task_definition" "node" {
     cpu_architecture        = "X86_64"
   }
 
-  # THE SHARED VOLUME cert-init WRITES AND mock-sts READS. Ephemeral and of
+  # THE SHARED VOLUME cert-init WRITES AND iya-sts READS. Ephemeral and of
   # the task's own — no host path, no EFS: the certificate is fetched from ACM
   # on every start, so there is nothing here worth surviving the task, and a
   # private key that outlived the task would be a private key on a disk
@@ -313,7 +313,7 @@ resource "aws_ecs_task_definition" "node" {
     [
       local.schema_init_container[each.key],
       {
-        name      = "mock-sts"
+        name      = "iya-sts"
         image     = "${local.ecr_repository_url}:${var.image_tag}"
         essential = true
         # BOTH INIT CONTAINERS MUST HAVE SUCCEEDED. A node that could not get
@@ -429,7 +429,7 @@ resource "aws_ecs_service" "first" {
     for_each = local.published_ports
     content {
       target_group_arn = aws_lb_target_group.nodes[load_balancer.key].arn
-      container_name   = "mock-sts"
+      container_name   = "iya-sts"
       container_port   = load_balancer.value.container
     }
   }
@@ -518,7 +518,7 @@ resource "aws_ecs_service" "others" {
     for_each = local.published_ports
     content {
       target_group_arn = aws_lb_target_group.nodes[load_balancer.key].arn
-      container_name   = "mock-sts"
+      container_name   = "iya-sts"
       container_port   = load_balancer.value.container
     }
   }

@@ -18,7 +18,7 @@ variable "region" {
 variable "name" {
   description = "The project prefix. Must match the foundation stack's `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {
@@ -44,7 +44,7 @@ variable "state_storage_account" {
 variable "state_resource_group" {
   description = "The state storage account's resource group."
   type        = string
-  default     = "mock-sts-terraform-state"
+  default     = "iya-sts-terraform-state"
 }
 
 variable "allowed_cidrs" {
@@ -181,7 +181,7 @@ variable "tags" {
   type        = map(string)
   default = {
     ManagedBy = "terraform"
-    Stack     = "mock-sts-environment"
+    Stack     = "iya-sts-environment"
   }
 }
 

@@ -225,9 +225,9 @@ cell in `base`. `TF_STEP=<step>` runs one step alone: `aws-cell:<id>:<phase>`,
 - **AWS** (`deploy/aws/foundation/`, an administrator):
   - `permitted_regions = ["us-west-2", "ca-central-1", "eu-central-1", "ap-southeast-1"]`.
     Keep `ca-central-1`: removing it would destroy testidpna's cac1 keys.
-  - the new fifth deployer policy, `mock-sts-deploy-multicloud`: VPN, the
+  - the new fifth deployer policy, `iya-sts-deploy-multicloud`: VPN, the
     Resolver inbound endpoint and its interfaces, and records only under
-    `*.mock-sts.internal`.
+    `*.iya-sts.internal`.
   - **The one unscoped EC2 write in the deployer is
     `ec2:DeleteNetworkInterface`.** Resolver's interfaces are untagged, and an
     attached interface cannot be deleted.
@@ -259,7 +259,7 @@ Artifact Registry and the AWS ones to ECR, **under the same tag**.
 - **HA VPN interfaces at plan.** `aws_customer_gateway` reads the GCP
   gateway's interface addresses, which are unknown until it exists. If a
   plan refuses the index, apply `-target` the gateway first.
-- **BGP.** `gcloud compute routers get-status mock-sts-testidpmc-<aws cell>-vpn`
+- **BGP.** `gcloud compute routers get-status iya-sts-testidpmc-<aws cell>-vpn`
   should show four sessions up. An AWS VGW advertises only its VPC CIDR.
 - **Cloud DNS forwarding over the VPN.** It needs `35.199.192.0/19`
   advertised (done) and admitted by the resolver's security group (done).

@@ -28,8 +28,8 @@ mock_provider "google" {
   }
   mock_data "google_service_account" {
     defaults = {
-      email  = "mock-sts-env-dev@p.iam.gserviceaccount.com"
-      member = "serviceAccount:mock-sts-env-dev@p.iam.gserviceaccount.com"
+      email  = "iya-sts-env-dev@p.iam.gserviceaccount.com"
+      member = "serviceAccount:iya-sts-env-dev@p.iam.gserviceaccount.com"
     }
   }
   mock_data "google_compute_image" {
@@ -41,7 +41,7 @@ mock_provider "random" {}
 
 override_data {
   target = data.google_kms_crypto_key.kek
-  values = { id = "projects/p/locations/us-west1/keyRings/mock-sts/cryptoKeys/mock-sts-kek" }
+  values = { id = "projects/p/locations/us-west1/keyRings/iya-sts/cryptoKeys/iya-sts-kek" }
 }
 
 variables {
@@ -60,7 +60,7 @@ run "default_is_cloud_kms" {
   assert {
     condition = alltrue([for n in ["node-a", "node-b", "node-c"] :
       strcontains(google_compute_instance_template.node[n].metadata["user-data"], "STS_KEYS_KEK_PROVIDER=gcp-kms") &&
-      strcontains(google_compute_instance_template.node[n].metadata["user-data"], "STS_KEYS_KEK_REF=projects/p/locations/us-west1/keyRings/mock-sts/cryptoKeys/mock-sts-kek")
+      strcontains(google_compute_instance_template.node[n].metadata["user-data"], "STS_KEYS_KEK_REF=projects/p/locations/us-west1/keyRings/iya-sts/cryptoKeys/iya-sts-kek")
     ])
     error_message = "every node must name the Cloud KMS key"
   }

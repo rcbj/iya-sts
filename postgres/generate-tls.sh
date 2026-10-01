@@ -47,7 +47,7 @@ if [ -s "${CRT}" ] && [ -s "${KEY}" ]; then
 else
   echo "postgres-tls: generating a server key pair in ${TLS_DIR} for CN=${CN}."
   openssl req -new -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
-    -subj "/CN=${CN}/O=mock-sts" \
+    -subj "/CN=${CN}/O=iya-sts" \
     -addext "subjectAltName=DNS:${CN},DNS:localhost,IP:127.0.0.1" \
     -addext "basicConstraints=critical,CA:FALSE" \
     -addext "keyUsage=critical,digitalSignature,keyEncipherment" \

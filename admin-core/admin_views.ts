@@ -8717,6 +8717,9 @@ class AdminViews {
                  // a door that verified nothing; the AAGUID is then only the
                  // authenticator's claim, which is why it is beside it.
                  aaguid: one.aaguid || null,
+                 // ITS SIGNATURE ALGORITHM (2026-10-01): name, COSE id,
+                 // and whether it is post-quantum or insecure.
+                 algorithm: credentials.keyAlgorithm(one),
                  attestation: one.attestation || null };
       }),
       primaryKeys: mech.primaryKeys,

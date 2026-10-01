@@ -110,7 +110,7 @@ data "aws_kms_key" "global" {
 # environment's secrets, and those secrets are DELETED with it
 # (`recovery_window_in_days = 0`). So before it is destroyed,
 # deploy/aws/convert-to-cells.sh copies the four whose values the restored
-# rows depend on into one JSON secret, `mock-sts/carryover/<old env>`, and
+# rows depend on into one JSON secret, `iya-sts/carryover/<old env>`, and
 # `carryover_secret` names it here. Each, and the code that makes it matter:
 #
 #   kek                       EVERY SEALED ROW — the signing keys and their
@@ -216,7 +216,7 @@ locals {
 resource "aws_secretsmanager_secret" "global" {
   for_each                = local.replicated_secrets
   name                    = "${local.secret_path}/${each.key}"
-  description             = "mock-sts ${var.environment}: ${each.key} (global tier, replicated to every cell region)"
+  description             = "iya-sts ${var.environment}: ${each.key} (global tier, replicated to every cell region)"
   kms_key_id              = data.aws_kms_key.global.arn
   recovery_window_in_days = 0
 
@@ -247,7 +247,7 @@ resource "aws_secretsmanager_secret_version" "global" {
 
 resource "aws_secretsmanager_secret" "db_master" {
   name                    = "${local.secret_path}/global-db-master-password"
-  description             = "mock-sts ${var.environment}: the global database's master user (primary region only)"
+  description             = "iya-sts ${var.environment}: the global database's master user (primary region only)"
   kms_key_id              = data.aws_kms_key.global.arn
   recovery_window_in_days = 0
 }

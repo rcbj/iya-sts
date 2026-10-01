@@ -5,7 +5,7 @@ locals {
   tags = {
     Project     = "STS"
     Environment = var.environment
-    Stack       = "mock-sts-interconnect"
+    Stack       = "iya-sts-interconnect"
     ManagedBy   = "terraform"
   }
 }
@@ -62,7 +62,7 @@ provider "google" {
   default_labels = {
     project     = "sts"
     environment = var.environment
-    stack       = "mock-sts-interconnect"
+    stack       = "iya-sts-interconnect"
   }
 }
 

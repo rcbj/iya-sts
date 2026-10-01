@@ -3,5 +3,5 @@
 #
 # Copy to foundation.auto.tfvars (ignored by git) and fill in.
 subscription_id        = "00000000-0000-0000-0000-000000000000"
-state_storage_account  = "mockststate0000000000"
+state_storage_account  = "iyaststate0000000000"
 deployer_principal_ids = ["<the object id of the Entra ID group of deployers>"]

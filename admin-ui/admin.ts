@@ -4625,7 +4625,7 @@ class AdminConsole {
     }
     const html =
         '<aside class="side">' +
-        '<p class="brand">Mock STS admin</p>' +
+        '<p class="brand">IYA STS admin</p>' +
         // WHAT THIS SERVICE IS AND WHICH REALM YOU ARE IN, rather than the
         // WS-Trust issuer identifier that used to be here.
         //
@@ -4668,7 +4668,7 @@ class AdminConsole {
                    'is ' + config.value('wstrust.issuer') + ', which is what ' +
                    'that protocol puts in an <Issuer> element and is not the ' +
                    'name of this service.') +
-          '">Mock STS &middot; ' + this.esc(realms.current().name) + '</p>' +
+          '">IYA STS &middot; ' + this.esc(realms.current().name) + '</p>' +
         this.navBar(active, up, req) +
         '</aside>';
     log.debug("Leaving AdminConsole.sideColumn(). " + html.length + " bytes.");
@@ -4878,7 +4878,7 @@ class AdminConsole {
               (up ? up.href : "none"));
     const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
       'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
-      'initial-scale=1"><title>' + this.esc(title) + ' — mock STS ' +
+      'initial-scale=1"><title>' + this.esc(title) + ' — IYA STS ' +
       'admin</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
       '1rem;color:#222;line-height:1.45}' +
@@ -5765,7 +5765,7 @@ class AdminConsole {
       // stamped artifact or a checkout being run. That last distinction is the
       // one worth a tooltip rather than a footnote: two instances reporting
       // different build numbers mean nothing if neither was ever built.
-      '<div title="' + this.esc(APP_BUILD_INFO) + '">mock-sts version <code>' +
+      '<div title="' + this.esc(APP_BUILD_INFO) + '">iya-sts version <code>' +
       this.esc(APP_VERSION.version) + '</code>' +
       (APP_VERSION.stamped ? '' : ' (not a stamped build — this process is a ' +
        'checkout, and the build number is when it started)') + '</div>' +
@@ -10961,10 +10961,10 @@ class AdminConsole {
       // is a whole logical copy of this service — two realms' pictures are two
       // different services' pictures — and it says `default` rather than
       // nothing in the realm that has no prefix, since a hexagon labelled only
-      // `mock STS` would be silent about the one thing this box is here to say.
+      // `IYA STS` would be silent about the one thing this box is here to say.
       return {
         shape: 'sts',
-        label: 'mock STS',
+        label: 'IYA STS',
         sublabel: 'realm: ' + (node.realm ? node.realm.name : 'Default') +
                   (node.realm && !node.realm.isDefault ?
                    ' (' + node.realm.id + ')' : ''),
@@ -13906,6 +13906,9 @@ class AdminConsole {
         // both, and the cell rendered the literal characters `<code title=…>`.
         '<td>' + self.shortened(one.credentialId || '', 24) + '</td>' +
         '<td class="num">' + self.esc(String(one.signCount || 0)) + '</td>' +
+        // THE SIGNATURE ALGORITHM (2026-10-01): the one this key signs with,
+        // and so the one every sign-in with it is verified with.
+        '<td>' + self.keyAlgorithmCell(one) + '</td>' +
         '<td>' + self.attestationCell(one.attestation, one.aaguid) + '</td>' +
         '<td>' +
         self.esc(one.enrolledAt ? self.whenText(one.enrolledAt) : '—') +
@@ -13927,7 +13930,8 @@ class AdminConsole {
     const keysBlock = '<h3>Security keys (WebAuthn)</h3>' +
       (allKeys.length
         ? '<table><tr><th>Label</th><th>Role</th><th>Credential id</th>' +
-          '<th class="num">Sign count</th><th>Attestation</th>' +
+          '<th class="num">Sign count</th><th>Algorithm</th>' +
+          '<th>Attestation</th>' +
           '<th>Enrolled</th><th></th></tr>' +
           allKeys.map(keyRow).join('') + '</table>' +
           this.note('<strong>The sign count is WebAuthn\'s replay ' +
@@ -27662,6 +27666,131 @@ class AdminConsole {
     return known ? asked : '/admin/config';
   }
 
+  // ---------------------------------------------------------------------------
+  // AN ORDERED CHOICE FROM A CLOSED LIST (2026-10-01, rcbj: "explicitly
+  // choose, by checkboxes, which webauthn / ctap algorithms are requested and
+  // an order of preference"). A `csv` row marked `ordered` (only
+  // `webauthn.algorithms` today) is drawn as a table: one row per value, a
+  // checkbox that says whether it is requested and a number that says where
+  // it comes in the preference order, with the value's own note beside it.
+  // Chosen values are drawn first, in their current order, numbered 1 to N;
+  // the rest follow in the list's own order, numbered on from N + 1, so
+  // ticking one puts it last unless its number is changed.
+  //
+  // NO SCRIPT, for this console's reason: drag-and-drop or Up and Down
+  // buttons would need a script or a round trip per move, and a number per
+  // row is a whole re-ordering in one save. The fields are
+  // `<key>.pick.<value>` and `<key>.rank.<value>`, with `<key>.ordered`
+  // beside them so a save that ticks nothing is told apart from a form that
+  // does not hold this row; `foldOrderedChoices()` turns them back into the
+  // setting's one comma-separated value before the save is checked.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an ordered choice from a closed list as a table of checkboxes and
+   * order numbers.
+   *
+   * @param setting - the described setting (`ordered`, `csvValues`)
+   * @param id - the id the row's label points at, given to the first box
+   * @returns the control as HTML
+   */
+  orderedChoiceControl(setting, id) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.orderedChoiceControl().");
+    const chosen = String(setting.text || '').split(',')
+      .map(function (one) { return one.trim(); })
+      .filter(function (one) {
+        return one !== '' && setting.csvValues.indexOf(one) >= 0;
+      });
+    const rest = setting.csvValues.filter(function (one) {
+      return chosen.indexOf(one) < 0;
+    });
+    const notes = setting.csvValueNotes || {};
+    const off = setting.editable ? '' : ' disabled';
+    const key = String(setting.key);
+    const rows = chosen.concat(rest).map(function (value, n) {
+      const picked = chosen.indexOf(value) >= 0;
+      return '<tr><td><input type="checkbox" name="' +
+        self.esc(key + '.pick.' + value) + '" value="1"' +
+        (n === 0 ? ' id="' + self.esc(id) + '"' : '') +
+        (picked ? ' checked' : '') + off + ' aria-label="' +
+        self.esc('Request ' + value) + '"></td>' +
+        '<td><input type="number" name="' +
+        self.esc(key + '.rank.' + value) + '" value="' + (n + 1) +
+        '" min="1" max="' + setting.csvValues.length + '" step="1" ' +
+        'style="width:4.5em"' + off + ' aria-label="' +
+        self.esc('Preference of ' + value) + '"></td>' +
+        '<td><code>' + self.esc(value) + '</code></td>' +
+        '<td class="sub">' + self.esc(notes[value] || '') + '</td></tr>';
+    }).join('');
+    log.debug("Leaving AdminConsole.orderedChoiceControl(). " +
+              chosen.length + " chosen.");
+    return '<input type="hidden" name="' + this.esc(key + '.ordered') +
+      '" value="1">' +
+      '<table class="cfg-ordered"><tr><th>Request</th><th>Order</th>' +
+      '<th>Value</th><th></th></tr>' + rows + '</table>' +
+      this.note('Tick what is requested and number it: <strong>1 is the ' +
+        'most preferred</strong>, and an authenticator uses the first it ' +
+        'supports. A number on an unticked row is ignored; two rows with ' +
+        'the same number keep the order they are drawn in.');
+  }
+
+  // THE FOLD, for a form that drew `orderedChoiceControl()`: the ticked
+  // values sorted by their numbers (a number that does not read as one goes
+  // last; a tie keeps the order the form posted), joined into the setting's
+  // value, and the per-value fields removed so `set-many` sees only real
+  // keys. Ticking nothing is refused (STS-ADMIN-0840) rather than saved as
+  // an empty list, which the setting would silently replace with its
+  // fallback. Anything else the setting does not take is `checkWrite()`'s
+  // to refuse, as for every other row.
+  /**
+   * Folds an ordered choice's checkbox and order fields into the setting's
+   * one comma-separated value.
+   *
+   * @param body - the parsed form body, changed in place
+   * @returns a refusal, or null
+   */
+  foldOrderedChoices(body) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminConsole.foldOrderedChoices().");
+    const markers = Object.keys(body || {}).filter(function (name) {
+      return /\.ordered$/.test(name);
+    });
+    let refusal = null;
+    markers.forEach(function (marker) {
+      const key = marker.slice(0, -'.ordered'.length);
+      const picks = [];
+      Object.keys(body).forEach(function (name, n) {
+        if (name.indexOf(key + '.pick.') === 0) {
+          const value = name.slice((key + '.pick.').length);
+          const rank = Number(body[key + '.rank.' + value]);
+          picks.push({ value: value, n: n,
+                       rank: Number.isFinite(rank) ? rank : Infinity });
+        }
+      });
+      Object.keys(body).forEach(function (name) {
+        if (name === marker || name.indexOf(key + '.pick.') === 0 ||
+            name.indexOf(key + '.rank.') === 0) {
+          delete body[name];
+        }
+      });
+      if (!picks.length) {
+        refusal = refusal || errorCodes.mark({ ok: false, errors: [key +
+          ': choose at least one. A list with nothing in it is not saved; ' +
+          'the setting would fall back to a default nobody chose.'] },
+          'STS-ADMIN-0840');
+        return;
+      }
+      picks.sort(function (a, b) {
+        return a.rank - b.rank || a.n - b.n;
+      });
+      body[key] = picks.map(function (one) { return one.value; }).join(',');
+    });
+    log.debug("Leaving AdminConsole.foldOrderedChoices(). " +
+              markers.length + " folded.");
+    return refusal;
+  }
+
   /**
    * Draws one setting as a table row: its key with the description as a
    * tooltip, its control, its source and, when overridden, a Reset button.
@@ -27681,7 +27810,12 @@ class AdminConsole {
     // The control carries the description as a tooltip, at the length a tooltip
     // holds. See the comment above the return.
     const hint = this.tip(setting.description, Infinity);
-    const input = setting.type === 'enum'
+    // AN ORDERED CHOICE (2026-10-01) is a checkbox and an order number per
+    // value — `orderedChoiceControl()` — rather than a text box.
+    const input = setting.type === 'csv' && setting.ordered &&
+                  Array.isArray(setting.csvValues)
+      ? this.orderedChoiceControl(setting, id)
+      : setting.type === 'enum'
       ? '<select name="' + this.esc(setting.key) + '" id="' + this.esc(id) +
         '"' + hint +
         (setting.editable ? '' : ' disabled') + '>' +
@@ -30805,6 +30939,27 @@ class AdminConsole {
       'metadata names.');
     log.debug("Leaving AdminConsole.attestationPolicyBlock().");
     return html;
+  }
+
+  // A STORED KEY'S SIGNATURE ALGORITHM (2026-10-01), `credentials.
+  // keyAlgorithm()`'s answer: the JOSE name and COSE identifier, marked
+  // post-quantum (ML-DSA) or insecure (RS1).
+  /**
+   * Draws a stored security key's signature algorithm.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns the cell's content as HTML
+   */
+  keyAlgorithmCell(key) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminConsole.keyAlgorithmCell().");
+    const algorithm = credentials.keyAlgorithm(key);
+    log.debug("Leaving AdminConsole.keyAlgorithmCell().");
+    return '<code>' + this.esc(algorithm.text) + '</code>' +
+      (algorithm.postQuantum
+        ? ' <span class="state-valid">post-quantum</span>' : '') +
+      (algorithm.insecure
+        ? ' <span class="state-revoked">insecure</span>' : '');
   }
 
   // A key's attestation, for its row (#105): what the statement proved, or
@@ -41772,7 +41927,10 @@ class AdminConsole {
       // because this is the shape a BROWSER posts and that function is also
       // what the management API calls with an `action` taken from its own URL.
       const reset = String(req.query.reset || '').trim();
-      const result = configAction(reset
+      // An ordered choice's checkboxes and numbers, folded into its one
+      // value first (2026-10-01) — this is the shape a browser posts.
+      const folded = reset ? null : self.foldOrderedChoices(body);
+      const result = folded || configAction(reset
         ? { action: 'reset', key: reset, from: body.from }
         : body);
       // BACK TO THE PAGE THE FORM WAS ON. Every protocol page draws its own

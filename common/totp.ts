@@ -676,7 +676,7 @@ class Totp {
   //
   // **THE ISSUER DEFAULTS TO THIS REALM'S HOST** rather than to a constant.
   // Two realms of one process are two identity providers, and an
-  // authenticator showing two accounts both labelled `mock STS` is one a
+  // authenticator showing two accounts both labelled `IYA STS` is one a
   // person cannot use.
   // -------------------------------------------------------------------------
   /**
@@ -697,7 +697,7 @@ class Totp {
     let host = String(base || '').replace(/^https?:\/\//i, '')
                                  .replace(/\/.*$/, '');
     if (!host) {
-      host = 'mock STS';
+      host = 'IYA STS';
     }
     // The realm, where there is one, because the whole point of the default is
     // to tell two of them apart in a list of accounts on a phone.
@@ -720,7 +720,7 @@ class Totp {
     log.debug('Entering Totp.otpauthUri(). account=' +
               (spec && spec.account));
     const options = spec || {};
-    const issuer = String(options.issuer || 'mock STS');
+    const issuer = String(options.issuer || 'IYA STS');
     const account = String(options.account || 'user');
     const label = encodeURIComponent(issuer) + ':' +
       encodeURIComponent(account);

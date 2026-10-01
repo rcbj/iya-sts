@@ -1089,7 +1089,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_delegated_permissions_example")
-  .description("Build a delegated permission example in the mock STS's " +
+  .description("Build a delegated permission example in IYA STS's " +
       "default realm — five applications in a ring, each exposing read and " +
       "write and each granted both on the next one round — and assert the " +
       "register, the entries, the picture and the token it produces. It " +

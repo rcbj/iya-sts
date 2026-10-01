@@ -96,8 +96,8 @@ output "cloud" {
 }
 
 output "container_logs" {
-  description = "Where the nodes' container logs are: the region's Log Analytics workspace, Syslog table, tag mock-sts/<unit>/<node>."
-  value       = "${var.name}-${local.region_code} (Syslog, ProcessName mock-sts/${local.unit}/*)"
+  description = "Where the nodes' container logs are: the region's Log Analytics workspace, Syslog table, tag iya-sts/<unit>/<node>."
+  value       = "${var.name}-${local.region_code} (Syslog, ProcessName iya-sts/${local.unit}/*)"
 }
 
 # ---------------------------------------------------------------------------
@@ -160,6 +160,6 @@ output "intercell_address" {
 }
 
 output "intercell_url" {
-  description = "Where the other cells reach this one: https://nodes.<cell>.<env>.mock-sts.internal:8446; empty outside a cell."
+  description = "Where the other cells reach this one: https://nodes.<cell>.<env>.iya-sts.internal:8446; empty outside a cell."
   value       = local.multi ? "https://${local.intercell_hostname}:${local.intercell_port}" : ""
 }

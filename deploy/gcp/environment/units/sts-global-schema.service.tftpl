@@ -1,14 +1,14 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: BUSL-1.1
 #
-# mock-sts: THIS CELL'S COPY OF THE GLOBAL TIER (#97) — the schema, the
+# iya-sts: THIS CELL'S COPY OF THE GLOBAL TIER (#97) — the schema, the
 # application role made read-only, and the subscription to the RDS writer's
 # publication across the HA VPN, as the copy's master user. Idempotent, and
 # run on every start: a table the writer gained is copied from the next one
 # (deploy/aws/schema-init/apply.sh). Not the writer's schema-init, which the
 # primary AWS cell runs: a logical replica takes no DDL.
 [Unit]
-Description=mock-sts: global tier copy
+Description=iya-sts: global tier copy
 Requires=sts-secrets.service
 After=sts-secrets.service
 

@@ -12,7 +12,7 @@ output "home_region" {
 }
 
 output "registry_login_server" {
-  description = "Where images are pushed: <login server>/mock-sts:<tag>."
+  description = "Where images are pushed: <login server>/iya-sts:<tag>."
   value       = azurerm_container_registry.main.login_server
 }
 

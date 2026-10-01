@@ -5406,6 +5406,11 @@ const CODES = [
       'list\'s counts and second-factor filter asked each person\'s ' +
       'credentials one at a time instead — slower, and the same answer.',
     spec: 'none — logged' },
+  { code: 'STS-AUTHN-0294',
+    summary: 'A passkey assertion was refused because the key\'s algorithm ' +
+      'is insecure (SHA-1\'s RS1) and webauthn.insecureAlgorithms is off in ' +
+      'this realm, or the service is in product mode.',
+    spec: 'none — the sign-in screen is drawn again' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -16911,6 +16916,12 @@ const CODES = [
       'attributes, possibly after saving others; the reply names what was ' +
       'saved and each refusal.',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0840',
+    summary: 'A settings save ticked none of an ordered choice\'s values ' +
+      '(webauthn.algorithms on /admin/webauthn): an empty list is refused ' +
+      'rather than saved, because the setting would fall back to a default ' +
+      'nobody chose.',
+    spec: 'none (a console refusal, drawn on the page)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -18549,7 +18560,7 @@ function describe(code) {
 // UNREGISTERED code is still recorded — dropping it would hide the one row
 // that says the table is incomplete — and is warned about.
 // ---------------------------------------------------------------------------
-const MARK = Symbol.for('mock-sts.errorCode');
+const MARK = Symbol.for('iya-sts.errorCode');
 
 /**
  * Records on a response which condition it is about to report, for the call log

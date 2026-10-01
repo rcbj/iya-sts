@@ -25,7 +25,7 @@ set -euo pipefail
 # environment's cells are in (#98), and one bucket holds every state.
 AWS_REGION="${AWS_REGION:-us-west-2}"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-STATE_BUCKET="${STATE_BUCKET:-mock-sts-terraform-state-${ACCOUNT_ID}}"
+STATE_BUCKET="${STATE_BUCKET:-iya-sts-terraform-state-${ACCOUNT_ID}}"
 
 if aws s3api head-bucket --bucket "${STATE_BUCKET}" 2> /dev/null;
 then

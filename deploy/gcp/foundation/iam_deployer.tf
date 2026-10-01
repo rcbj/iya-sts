@@ -6,7 +6,7 @@
 #
 # deploy/aws/foundation/iam_deployer.tf's counterpart, and the one place the
 # two clouds' arrangements differ by more than names. AWS scopes the deployer
-# by NAME (`mock-sts-*`), by TAG (`Project = STS`) and by REGION, and caps
+# by NAME (`iya-sts-*`), by TAG (`Project = STS`) and by REGION, and caps
 # every role it creates with a permissions boundary. GCP has none of those
 # tools for most of what an environment makes, so the fences are:
 #
@@ -52,7 +52,7 @@
 # ---------------------------------------------------------------------------
 resource "google_service_account" "deployer" {
   account_id   = "${var.name}-deployer"
-  display_name = "mock-sts deployer"
+  display_name = "iya-sts deployer"
   description  = "Applies deploy/gcp/environment (issue #95). Impersonated; has no key."
 
   depends_on = [google_project_service.apis]

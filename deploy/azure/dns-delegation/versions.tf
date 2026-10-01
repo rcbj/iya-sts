@@ -17,7 +17,7 @@
 # STATE IN THE AZURE STATE ACCOUNT, beside the foundation's:
 #   terraform -chdir=deploy/azure/dns-delegation init \
 #     -backend-config=storage_account_name=<account> \
-#     -backend-config=resource_group_name=mock-sts-terraform-state
+#     -backend-config=resource_group_name=iya-sts-terraform-state
 #   terraform -chdir=deploy/azure/dns-delegation apply -var subscription_id=<id>
 # ---------------------------------------------------------------------------
 terraform {

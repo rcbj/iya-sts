@@ -42,6 +42,6 @@ machine_type = "e2-standard-2"
 
 labels = {
   managed-by = "terraform"
-  stack      = "mock-sts-environment"
+  stack      = "iya-sts-environment"
   lifecycle  = "long-lived"
 }

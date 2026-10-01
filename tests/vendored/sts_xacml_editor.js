@@ -234,7 +234,7 @@ var xacmlUser = null;
 async function mintTheCredential() {
   log.debug("Entering mintTheCredential().");
   xacmlUser = await credentials.mint({
-    subject: "CN=xacml-user-1,OU=xacml-users,O=mock-sts tests" });
+    subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
   const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
   assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
@@ -1732,7 +1732,7 @@ async function admitTheCertificate() {
 
 async function test() {
   log.debug("Entering test().");
-  log.info("Driving the mock STS's XACML policy editor at " + base +
+  log.info("Driving IYA STS's XACML policy editor at " + base +
            "/admin/xacml/editor");
 
   const status = await json(base + "/admin-api/status");
@@ -1797,7 +1797,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_xacml_editor")
-  .description("Drive the mock STS's guided XACML policy editor in a real " +
+  .description("Drive IYA STS's guided XACML policy editor in a real " +
       "browser: the grammar its menus offer, an edit the validator refuses, " +
       "a rule built out of form submissions, and the decision the PDP then " +
       "makes because of it.")

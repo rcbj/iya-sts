@@ -10,7 +10,7 @@ variable "aws_region" {
 variable "name" {
   description = "The project prefix. Must match the foundation stack's `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {
@@ -240,7 +240,7 @@ variable "vpc_cidr" {
 }
 
 variable "extra_environment" {
-  description = "Additional environment variables for every mock-sts container."
+  description = "Additional environment variables for every iya-sts container."
   type        = map(string)
   default     = {}
 }
@@ -295,7 +295,7 @@ variable "tags" {
   type        = map(string)
   default = {
     ManagedBy = "terraform"
-    Stack     = "mock-sts-environment"
+    Stack     = "iya-sts-environment"
     Lifecycle = "destroy-after-test-run"
   }
 }

@@ -9585,9 +9585,24 @@ function sessionStateHash(clientId, origin, browserState, salt) {
 // draft-ietf-cose-dilithium-11): kty AKP (7), `pub` at -1, and the three
 // algorithm identifiers -48, -49 and -50, verified by `pq_jose.js`, which
 // holds the one ML-DSA implementation this process uses for JOSE as well.
-// SHA-1 (RS1, -65535) is not in the table: product never uses a broken
-// algorithm (`mode.usesBrokenAlgorithms()`), and no current authenticator
-// needs it.
+// SHA-1 (RS1, -65535) is in the table MARKED `insecure` (2026-10-01, rcbj:
+// "a use insecure passkey algorithms flag that is disabled by default"):
+// `verifyCoseSignature()` refuses it unless its caller passes
+// `{ allowInsecure: true }`, which only `webauthn.insecureAlgorithms` — a
+// development-only setting, off by default — ever makes true. Product never
+// uses a broken algorithm (`mode.usesBrokenAlgorithms()`). This module stays
+// a leaf and reads no setting; the caller decides.
+//
+// **EVERY OTHER SIGNATURE ALGORITHM AN AUTHENTICATOR CAN USE (2026-10-01,
+// rcbj: "support and request every possible algorithm").** RFC 9864's FULLY
+// SPECIFIED ones — ESP256 (-9), ESP384 (-51), ESP512 (-52), Ed25519 (-19) and
+// Ed448 (-53) — and RFC 8812's ES256K (-47, secp256k1). A fully specified
+// algorithm names its curve, so `curve` (ECDSA, node's name) or `okp`
+// (EdDSA, node's key type) is CHECKED against the key: an ESP256 signature
+// under a P-384 key is a signature that does not verify, where ES256 and
+// EdDSA keep their RFC 9053 meaning of any curve the key carries. Not here,
+// besides RS1: HSS-LMS (-46), a stateful hash-based scheme no authenticator
+// implements, and the provisional brainpool and SLH-DSA registrations.
 //
 // It stays a LEAF: node's crypto, asn1js and `pq_jose.js`, all required
 // above.
@@ -9610,7 +9625,21 @@ const COSE_SIGNATURE_ALGS = {
            saltLength: 64 },
   '-48': { name: 'ML-DSA-44', family: 'pq', hash: null, kty: 'AKP' },
   '-49': { name: 'ML-DSA-65', family: 'pq', hash: null, kty: 'AKP' },
-  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' }
+  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' },
+  '-9': { name: 'ESP256', family: 'ecdsa', hash: 'sha256', kty: 'EC',
+          curve: 'prime256v1' },
+  '-51': { name: 'ESP384', family: 'ecdsa', hash: 'sha384', kty: 'EC',
+           curve: 'secp384r1' },
+  '-52': { name: 'ESP512', family: 'ecdsa', hash: 'sha512', kty: 'EC',
+           curve: 'secp521r1' },
+  '-47': { name: 'ES256K', family: 'ecdsa', hash: 'sha256', kty: 'EC',
+           curve: 'secp256k1' },
+  '-19': { name: 'Ed25519', family: 'eddsa', hash: null, kty: 'OKP',
+           okp: 'ed25519' },
+  '-53': { name: 'Ed448', family: 'eddsa', hash: null, kty: 'OKP',
+           okp: 'ed448' },
+  '-65535': { name: 'RS1', family: 'rsa-pkcs1', hash: 'sha1', kty: 'RSA',
+              insecure: true }
 };
 
 // The COSE entry for an identifier, or null.
@@ -9673,13 +9702,20 @@ function nodePublicKeyOf(key) {
  * @param key - the public key, or for ML-DSA an AKP JWK or the raw bytes
  * @param data - the bytes signed
  * @param signature - the signature
+ * @param opts - `allowInsecure`: accept an algorithm marked insecure (RS1);
+ *   refused otherwise
  * @returns true when it verifies
  */
-function verifyCoseSignature(coseAlg, key, data, signature) {
+function verifyCoseSignature(coseAlg, key, data, signature, opts) {
   log.debug("Entering verifyCoseSignature(). alg=" + coseAlg);
   const spec = coseSignatureAlg(coseAlg);
   if (!spec) {
     log.debug("Leaving verifyCoseSignature(). Unknown algorithm.");
+    return false;
+  }
+  if (spec.insecure && !(opts && opts.allowInsecure)) {
+    log.debug("Leaving verifyCoseSignature(). " + spec.name + " is insecure " +
+              "and its caller did not allow it.");
     return false;
   }
   const message = Buffer.from(data || []);
@@ -9720,6 +9756,16 @@ function verifyCoseSignature(coseAlg, key, data, signature) {
     const weak = rsaKeyProblem(publicKey, 2048);
     if (weak) {
       log.debug("Leaving verifyCoseSignature(). " + weak);
+      return false;
+    }
+    // A FULLY SPECIFIED algorithm's curve (RFC 9864), checked against the
+    // key rather than trusted from it.
+    const curve = String((/** @type {any} */ (
+      publicKey.asymmetricKeyDetails || {})).namedCurve || '');
+    if ((spec.curve && curve !== spec.curve) ||
+        (spec.okp && type !== spec.okp)) {
+      log.debug("Leaving verifyCoseSignature(). " + spec.name + " under a " +
+                (curve || type) + " key.");
       return false;
     }
     let ok = false;

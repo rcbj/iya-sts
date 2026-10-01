@@ -275,7 +275,7 @@ const SCHEMAS: Record<string, any> = {
   // RFC 9635 section 2 (plus RFC 9767 section 4's existing_access_token).
   grantRequest: {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:mock-sts:gnap:grant-request',
+    $id: 'urn:iya-sts:gnap:grant-request',
     type: 'object', maxProperties: 64,
     properties: {
       access_token: { $ref: '#/$defs/accessToken' },
@@ -292,7 +292,7 @@ const SCHEMAS: Record<string, any> = {
   // Section 5.1: nothing, or the interaction reference.
   continuation: {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:mock-sts:gnap:continuation',
+    $id: 'urn:iya-sts:gnap:continuation',
     type: 'object',
     properties: { interact_ref: { type: 'string', maxLength: 256,
                                   pattern: '^[A-Za-z0-9._~-]*$' } },
@@ -302,7 +302,7 @@ const SCHEMAS: Record<string, any> = {
   // Section 5.3.
   modification: {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:mock-sts:gnap:modification',
+    $id: 'urn:iya-sts:gnap:modification',
     type: 'object', maxProperties: 64,
     properties: {
       access_token: { $ref: '#/$defs/accessToken' },
@@ -316,7 +316,7 @@ const SCHEMAS: Record<string, any> = {
   // Section 6.1.1.
   rotation: {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:mock-sts:gnap:rotation',
+    $id: 'urn:iya-sts:gnap:rotation',
     type: 'object', maxProperties: 4,
     properties: { key: { $ref: '#/$defs/key' } },
     additionalProperties: true,
@@ -325,7 +325,7 @@ const SCHEMAS: Record<string, any> = {
   // RFC 9767 section 3.3.
   introspection: {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:mock-sts:gnap:introspection',
+    $id: 'urn:iya-sts:gnap:introspection',
     type: 'object', maxProperties: 32,
     properties: {
       access_token: { $ref: '#/$defs/tokenValue' },
@@ -339,7 +339,7 @@ const SCHEMAS: Record<string, any> = {
   // RFC 9767 section 3.4.
   registration: {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:mock-sts:gnap:registration',
+    $id: 'urn:iya-sts:gnap:registration',
     type: 'object', maxProperties: 32,
     properties: {
       access: { $ref: '#/$defs/access' },

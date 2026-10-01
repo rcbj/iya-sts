@@ -4,7 +4,7 @@
 locals {
   subscription_id = data.azurerm_client_config.current.subscription_id
 
-  # `mock-sts-<env>-global`: every name here, and the foundation's resource
+  # `iya-sts-<env>-global`: every name here, and the foundation's resource
   # group of the same name, in the primary cell's region.
   prefix         = "${var.name}-${var.environment}-global"
   resource_group = "${var.name}-${var.environment}-global"
@@ -99,7 +99,7 @@ data "azurerm_resource_group" "global" {
   name = local.resource_group
 }
 
-# THE FOUNDATION'S PER-REGION PARTS the global tier uses: the `mock-sts` key
+# THE FOUNDATION'S PER-REGION PARTS the global tier uses: the `iya-sts` key
 # (the global tier is what every region may hold) and the identity a server
 # reads it as — in each cell's region, because a server's key must be in its
 # own region.

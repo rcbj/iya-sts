@@ -18,7 +18,7 @@
 # environment's VPC; that runner was removed that day.)
 #
 # Built from the repository root:
-#   docker build -t mock-sts-terraform -f deploy/aws/Dockerfile .
+#   docker build -t iya-sts-terraform -f deploy/aws/Dockerfile .
 # ---------------------------------------------------------------------------
 FROM ubuntu:latest
 

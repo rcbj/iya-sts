@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # File: deploy/azure/node-init/Dockerfile
 #
-# WHAT AN AZURE NODE RUNS BEFORE mock-sts STARTS (issue #96): two commands,
+# WHAT AN AZURE NODE RUNS BEFORE iya-sts STARTS (issue #96): two commands,
 # one image — deploy/gcp/node-init/'s, against Key Vault and Azure DNS.
 #
 #   sts-secrets   Key Vault → a KEY=VALUE env file on the VM's tmpfs, which
@@ -20,7 +20,7 @@
 # its `azuredns` provider writes the DNS-01 record with the same identity.
 #
 # Build from the repository root:
-#   docker build -f deploy/azure/node-init/Dockerfile -t <registry>/mock-sts:init-<sha> .
+#   docker build -f deploy/azure/node-init/Dockerfile -t <registry>/iya-sts:init-<sha> .
 # ---------------------------------------------------------------------------
 FROM mirror.gcr.io/library/debian:bookworm-slim
 

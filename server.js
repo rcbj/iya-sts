@@ -286,7 +286,7 @@ function announce() {
   // record was stamped at build time or computed just now, which is the
   // difference between an artifact and a checkout and is not guessable from the
   // number.
-  log.info('mock-sts version ' + APP_VERSION.version + ' (' +
+  log.info('iya-sts version ' + APP_VERSION.version + ' (' +
            version.buildInfo(APP_VERSION) + ').');
   log.info('WS-Trust STS mock listening on ' + (useHttps ? 'https' : 'http') +
            '://' + HOST + ':' + PORT +

@@ -10,7 +10,7 @@
 # the AWS one. Terraform is pinned to AWS's version, so the two stacks'
 # locks and plans agree about the language.
 #
-#   docker build -f deploy/gcp/Dockerfile -t mock-sts-terraform-gcp .
+#   docker build -f deploy/gcp/Dockerfile -t iya-sts-terraform-gcp .
 #
 # terraform-local.sh builds and runs it; the credentials are the host's
 # application-default ones, handed over through a private env file, and the

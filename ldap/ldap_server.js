@@ -3468,7 +3468,7 @@ function seed() {
     description: mode.verifiesCredentials()
       ? 'The STS directory. A simple bind is verified against the entry\'s ' +
         'userPassword.'
-      : 'The mock STS directory. Every bind succeeds; nothing here ' +
+      : 'IYA STS directory. Every bind succeeds; nothing here ' +
         'is a real account.'
   }, { origin: 'seed' });
   putEntry(usersDn(), {
@@ -15306,7 +15306,7 @@ server.search('', function (req, res, next) {
           // exactly what it always held.
           namingcontexts: namingContexts(),
           supportedldapversion: ['3'],
-          vendorname: ['mock STS (ldapjs, unmodified, pinned as a submodule)'],
+          vendorname: ['IYA STS (ldapjs, unmodified, pinned as a submodule)'],
           // supportedControl, supportedExtension and supportedSASLMechanisms
           // are absent rather than empty, and the difference is the point: an
           // LDAP attribute always has at least one value (RFC 4511 section

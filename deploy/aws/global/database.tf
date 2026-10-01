@@ -31,7 +31,7 @@
 resource "aws_db_parameter_group" "global" {
   name        = "${local.prefix}-pg18"
   family      = "postgres18"
-  description = "mock-sts ${var.environment}: the global database, TLS required"
+  description = "iya-sts ${var.environment}: the global database, TLS required"
 
   parameter {
     name         = "rds.force_ssl"

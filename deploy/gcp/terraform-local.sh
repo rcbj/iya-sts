@@ -41,7 +41,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-IMAGE_NAME="${IMAGE_NAME:-mock-sts-terraform-gcp}"
+IMAGE_NAME="${IMAGE_NAME:-iya-sts-terraform-gcp}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 TF_ENV="${TF_ENV:-${1:-dev}}"
@@ -95,14 +95,14 @@ then
   TF_VARS=(-e "TF_VAR_image_tag=${IMAGE_TAG}" -e "TF_VAR_allowed_cidrs=[${ALLOWED_JSON}]")
 fi
 
-for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy TF_IMPORT_ADDRESS TF_IMPORT_ID MOCK_STS_DEPLOYER; do
+for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy TF_IMPORT_ADDRESS TF_IMPORT_ID IYA_STS_DEPLOYER; do
   [ -z "${!v:-}" ] || TF_VARS+=(-e "${v}=${!v}")
 done
 
 echo "==> Building ${IMAGE_NAME}" >&2
 "${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" -f "${REPO_ROOT}/deploy/gcp/Dockerfile" "${REPO_ROOT}" > /dev/null
 
-CONTAINER_NAME="mock-sts-terraform-gcp-${TF_ENV}-$$"
+CONTAINER_NAME="iya-sts-terraform-gcp-${TF_ENV}-$$"
 relay() {
   echo "==> Interrupted: telling terraform to stop cleanly and release the lock" >&2
   "${DOCKER_CMD[@]}" kill --signal INT "${CONTAINER_NAME}" > /dev/null 2>&1 || true

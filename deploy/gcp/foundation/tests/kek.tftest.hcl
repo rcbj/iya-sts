@@ -33,15 +33,15 @@ mock_provider "google-beta" {}
 # the other.
 override_resource {
   target = google_service_account.deployer
-  values = { member = "serviceAccount:mock-sts-deployer@p.iam.gserviceaccount.com", name = "projects/p/serviceAccounts/mock-sts-deployer@p.iam.gserviceaccount.com" }
+  values = { member = "serviceAccount:iya-sts-deployer@p.iam.gserviceaccount.com", name = "projects/p/serviceAccounts/iya-sts-deployer@p.iam.gserviceaccount.com" }
 }
 override_resource {
   target = google_service_account.environment
-  values = { member = "serviceAccount:mock-sts-env@p.iam.gserviceaccount.com", name = "projects/p/serviceAccounts/mock-sts-env@p.iam.gserviceaccount.com" }
+  values = { member = "serviceAccount:iya-sts-env@p.iam.gserviceaccount.com", name = "projects/p/serviceAccounts/iya-sts-env@p.iam.gserviceaccount.com" }
 }
 override_resource {
   target = google_service_account.cell
-  values = { member = "serviceAccount:mock-sts-cell@p.iam.gserviceaccount.com", name = "projects/p/serviceAccounts/mock-sts-cell@p.iam.gserviceaccount.com" }
+  values = { member = "serviceAccount:iya-sts-cell@p.iam.gserviceaccount.com", name = "projects/p/serviceAccounts/iya-sts-cell@p.iam.gserviceaccount.com" }
 }
 
 variables {
@@ -53,7 +53,7 @@ variables {
 run "a_dedicated_kek_with_two_grants_per_environment" {
   command = apply
   assert {
-    condition     = google_kms_crypto_key.kek.name == "mock-sts-kek" && google_kms_crypto_key.kek.key_ring == google_kms_key_ring.main.id && google_kms_crypto_key.kek.name != google_kms_crypto_key.main.name
+    condition     = google_kms_crypto_key.kek.name == "iya-sts-kek" && google_kms_crypto_key.kek.key_ring == google_kms_key_ring.main.id && google_kms_crypto_key.kek.name != google_kms_crypto_key.main.name
     error_message = "the KEK is its own key in the home ring"
   }
   assert {

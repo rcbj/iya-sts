@@ -41,7 +41,7 @@ provider "aws" {
     tags = {
       Project   = "STS"
       ManagedBy = "terraform"
-      Stack     = "mock-sts-gcp-dns-delegation"
+      Stack     = "iya-sts-gcp-dns-delegation"
     }
   }
 }
