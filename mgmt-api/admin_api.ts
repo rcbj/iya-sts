@@ -15098,12 +15098,22 @@ class AdminApi {
         // resource looks an application up in `issued` by identifier and a
         // reply holding one page would answer "not there" about page two.
         // `admin-ui/pki_admin.ts`'s `keyPairPaging()` argues it.
-        parameters: this.pagingParameters().filter(function (one) {
-          return one.name === 'per';
-        }).concat(this.detailPagingParameters([
+        // FIVE ROWS A PAGE, AND A CEILING (2026-09-30): `per` here may
+        // shorten every list and cannot lengthen one, so its schema says five
+        // rather than the console's MAX_ROWS. And each list has a search,
+        // applied before it is paged. The `as any` below is a WIDENING, not
+        // a library's wrong type: TypeScript takes the array's element type
+        // from this first row's integer schema, and the two search rows
+        // concatenated after it carry a string one.
+        parameters: [
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 5 } as any,
+            description: 'Rows per page, SHARED by every paged list in the ' +
+                         'reply: five by default and at most five.' }
+        ].concat(this.detailPagingParameters([
           { name: 'issued',
-            description: 'The Applications table on /admin/pki, twenty-five ' +
-                         'rows by default. `issued` itself is the WHOLE list ' +
+            description: 'The Applications table on /admin/pki, five rows ' +
+                         'a page. `issued` itself is the WHOLE list ' +
                          'whatever page is asked for; `issuedPaging` says ' +
                          'which rows the page drew.' },
           { name: 'persons',
@@ -15112,7 +15122,22 @@ class AdminApi {
                          '`persons` and two rows on the page. `persons` is ' +
                          'the WHOLE list; `personsPaging` says which people ' +
                          'the page drew.' }
-        ])),
+        ]), [
+          { name: 'issuedq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 200 },
+            description: 'Narrows the Applications table before it is ' +
+                         'paged: a case-insensitive substring of the ' +
+                         'identifier, the profile, the key handle or a ' +
+                         'declared issuer. `issuedPaging.total` is then the ' +
+                         'count that matched, and `issuedSearch` echoes it.' },
+          { name: 'personsq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 200 },
+            description: 'Narrows the People table before it is paged: a ' +
+                         'case-insensitive substring of the username, either ' +
+                         'key handle or an issuer either profile asserts as. ' +
+                         '`personsPaging.total` is then the count that ' +
+                         'matched, and `personsSearch` echoes it.' }
+        ]),
         responseDescription: 'The hierarchy, the algorithm vocabularies, the ' +
                              'two assertion profiles, one row per ' +
                              'application per profile for those holding an ' +
@@ -15120,12 +15145,19 @@ class AdminApi {
                              '`personsPaging` beside the two lists, and each ' +
                              'authority\'s revocation lists as pages (#370): ' +
                              '`issued` and `revokedNotIssued` on each ' +
-                             'authority are one page each, twenty-five by ' +
-                             'default with `per`, on the query parameters ' +
+                             'authority are one page each, five rows at ' +
+                             'most, on the query parameters ' +
                              '`ca-<scope segment>-<ca>-issuedPage` and ' +
-                             '`…-orphansPage`, with `issuedPaging`, ' +
-                             '`orphansPaging`, `issuedTotal`, `revokedTotal` ' +
-                             'and `revokedNotIssuedTotal` beside them.',
+                             '`…-orphansPage`, each narrowed first by ' +
+                             '`ca-<scope segment>-<ca>-issuedq` and ' +
+                             '`…-orphansq` (a case-insensitive substring of ' +
+                             'the serial, the subject, the name or reason), ' +
+                             'with `issuedPaging`, `orphansPaging` (whose ' +
+                             '`total` is the count that matched), ' +
+                             '`issuedSearch`, `orphansSearch`, ' +
+                             '`issuedTotal`, `revokedTotal` and ' +
+                             '`revokedNotIssuedTotal` ' +
+                             'beside them.',
         handler: function (req, res) {
           log.debug("Entering the management API PKI endpoint.");
           self.sendJson(res, 200, pkiAdmin.pkiView(req));

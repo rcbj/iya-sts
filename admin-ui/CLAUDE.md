@@ -1927,10 +1927,28 @@ is this file's:
 ### THE TWO KEY-PAIR TABLES ARE PAGED (2026-09-13)
 
 *Applications* and *People* drew every row they had. They page now, separately,
-on `issuedPage` and `personsPage` with one shared `per` (twenty-five by default,
-not the console's fifty, because this page carries eight sections), with one
-*Rows per table* control under the Applications heading. `keyPairPaging()` in
+on `issuedPage` and `personsPage` with one shared `per`. `keyPairPaging()` in
 `pki_admin.ts` is the one slice both the page and the JSON use.
+
+**FIVE ROWS A PAGE, AS A CEILING (rcbj, 2026-09-30)** — it was twenty-five.
+`PKI_MAX_PER_PAGE` is every paged list's default AND its maximum, through
+`pagingOf()`'s `maxPer`: `?per=` can shorten a list and cannot lengthen one,
+and `GET /admin-api/pki` declares `per` with a maximum of five. **So the page
+has no *Rows per table* control any more** — every size it offered was above
+five and would have been clamped back, a select whose choices all do nothing.
+
+**EVERY PAGED LIST HAS A SEARCH BOX (2026-09-30)**, the console's
+`sectionSearchForm()` (exported for this page): `issuedq` and `personsq` here,
+`ca-<…>-issuedq` and `…-orphansq` per authority below. A search narrows its
+list BEFORE it is paged (`searchRows()`, a case-insensitive substring over
+fields the row already holds, so it parses no certificate), so the paging's
+`total` is the count that MATCHED; the reply echoes the term as
+`issuedSearch` / `personsSearch` (and on each authority `issuedSearch` /
+`orphansSearch`), the tiles and `issuedTotal` still count the whole lists, and
+`issued` / `persons` stay whole. Every box carries the other lists' pages and
+searches and drops its own page, so a new search starts at page 1.
+`keyPairListView()` carries a search only trimmed, non-empty and at most 200
+characters.
 
 * **THE NAMES ARE THE JSON MEMBERS'** — `issued` and `persons` with `Page` on
   the end, answered by `issuedPaging` and `personsPaging` — which is
@@ -1943,8 +1961,9 @@ not the console's fifty, because this page carries eight sections), with one
   count them, and `sts_jwt_bearer_grant.js` looks its client up in `issued` by
   identifier.
 * **EVERY TAKE-OFF BUTTON CARRIES BOTH TABLES' STATE AS `back`**, and
-  `pkiReturnTo()` rebuilds it — the three names, positive integers only — into a
-  303 to the same pages at `#pki-applications` or `#pki-people`. A control that
+  `pkiReturnTo()` rebuilds it — the page names as positive integers, the
+  searches as above — into a 303 to the same pages at `#pki-applications` or
+  `#pki-people`. A control that
   carries no `back` (Build, the pane) still gets the bare page.
 
 ### EACH AUTHORITY'S LISTS IN THE REVOCATION PANE ARE PAGED (#370, 2026-09-30)
@@ -1954,7 +1973,8 @@ and the revoked serials with no certificate left grow with every issue and
 every rotation, and the pane drew them whole. Each is now a list paged on a
 parameter of its own, `ca-<scope segment>-<ca>-issuedPage` and
 `…-orphansPage` (`listNameOf()`; `REVOCATION_LIST_PARAM` is the only shape
-`keyPairListView()` carries), sharing the page's `per`, twenty-five by default.
+`keyPairListView()` carries), sharing the page's `per`, five at most, each
+with a search of its own (above).
 
 * **PAGE BEFORE PER-ROW WORK** (#352's rule). `revocationModel()` reads each
   authority's issued list and revocation list once, sorts nothing new, slices,
@@ -1969,9 +1989,12 @@ parameter of its own, `ca-<scope segment>-<ca>-issuedPage` and
   A caller revoking a certificate names its serial and does not need the list;
   the jobs that pick one pick the first, which is on page 1.
 * **EVERY REVOKE AND RELEASE FORM CARRIES `back` AND `list`**, and
-  `pkiReturnTo()` sends the reader to that page of that list (`#list-<param>`,
-  the pager's own anchor) — `list` only when `REVOCATION_LIST_PARAM` accepts
-  it, since it ends up in a `Location` header.
+  `pkiReturnTo()` sends the reader to that page of that list — `list` only
+  when `REVOCATION_LIST_PARAM` accepts it, since it ends up in a `Location`
+  header. **It lands on the list's search box, `#find-<…>-issuedq`** (since
+  2026-09-30): it was `#list-<param>`, the pager's anchor, which `pageNavPair()`
+  draws only when a list runs to a second page — so a Revoke in a one-page
+  list returned to an anchor that did not exist, at the top of the page.
 
 `tests/pki_revocation_paging.js` counts it against 5,000 issued certificates
 and 1,200 revocations.

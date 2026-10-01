@@ -201,12 +201,32 @@ interface PkiAdminDeps {
 // in it by identifier; a reply that silently held one page would answer
 // "not there" about an application on page two.
 //
-// Twenty-five rows rather than the console's fifty because this page carries
-// eight sections, and fifty rows apiece puts the People heading out of reach
-// of anything but the scrollbar. `?per=` overrides it for both.
+// **FIVE ROWS A PAGE, AND NO MORE (rcbj, 2026-09-30)** — it was twenty-five,
+// which already undercut the console's fifty because this page carries eight
+// sections, and twenty-five rows apiece still put the People heading and the
+// revocation pane screens below the controls. Five is a CEILING as well as
+// the default (`PKI_MAX_PER_PAGE`, `pagingOf()`'s `maxPer`): `?per=` can
+// shorten every list on the page and cannot lengthen one. What replaces
+// scrolling a long page is the search box over each list, below.
+//
+// EVERY PAGED LIST HAS A SEARCH BOX OF ITS OWN (2026-09-30), the console's
+// `sectionSearchForm()` — one box per list, under its own heading, on a
+// parameter named after the list with `q` on the end (`issuedq`, `personsq`,
+// and `ca-…-issuedq` / `ca-…-orphansq` for the authorities below), the
+// arrangement `/admin/delegation` has. A search narrows the list BEFORE it is
+// paged, so `issuedPaging.total` is the number that matched and the page
+// numbers are pages of the matches; the tiles still count the whole lists.
+// What each box matches is `searchRows()`'s caller's to say, and every field
+// it reads is one the row already carries, so a search costs no certificate
+// parse (#352's rule).
 // ---------------------------------------------------------------------------
-const KEY_PAIR_PER_PAGE = 25;
-const KEY_PAIR_LIST_PARAMS = ['per', 'issuedPage', 'personsPage'];
+const PKI_MAX_PER_PAGE = 5;
+const KEY_PAIR_PER_PAGE = PKI_MAX_PER_PAGE;
+const KEY_PAIR_LIST_PARAMS = ['per', 'issuedPage', 'personsPage', 'issuedq',
+                              'personsq'];
+// The longest search a link carries. A term longer than any field it could
+// match is dropped rather than echoed into every link on the page.
+const SEARCH_MAX_LENGTH = 200;
 
 // ---------------------------------------------------------------------------
 // EACH AUTHORITY'S TWO LISTS IN THE REVOCATION PANE ARE PAGED TOO (#370,
@@ -227,10 +247,13 @@ const KEY_PAIR_LIST_PARAMS = ['per', 'issuedPage', 'personsPage'];
 // A parameter looks like `ca-default-jose-issuedPage`: the scope segment and
 // the CA id, restricted to `[a-z0-9_-]`, then the list. `listNameOf()` makes
 // the name and `REVOCATION_LIST_PARAM` is what `keyPairListView()` accepts,
-// so a link can carry only names this file writes.
+// so a link can carry only names this file writes. Each list's search is the
+// same name with `q` in place of `Page` (2026-09-30), and five rows a page
+// for the key-pair tables' reason.
 // ---------------------------------------------------------------------------
-const REVOCATION_PER_PAGE = 25;
-const REVOCATION_LIST_PARAM = /^ca-[a-z0-9_-]{1,120}-(issued|orphans)Page$/;
+const REVOCATION_PER_PAGE = PKI_MAX_PER_PAGE;
+const REVOCATION_LIST_PARAM =
+  /^ca-[a-z0-9_-]{1,120}-(issued|orphans)(Page|q)$/;
 
 // The actions this page's form can post. The refusal sentence names every one
 // of them and the count comes from this list rather than being written out —
@@ -376,13 +399,15 @@ class PkiAdmin {
   // The two tables' paging state out of a query, and ONLY those names: what
   // comes out of here is put into every paging link and every Take-off button's
   // `back`, so the set of names is one this file wrote. A repeated parameter is
-  // its first value, and a value that is not a positive integer is dropped
-  // rather than carried — `pagingOf()` would clamp it anyway, and a link has no
-  // business repeating it.
+  // its first value, and a page or `per` that is not a positive integer is
+  // dropped rather than carried — `pagingOf()` would clamp it anyway, and a
+  // link has no business repeating it. A SEARCH (a name ending in `q`) is
+  // carried trimmed, when it is not empty and not longer than
+  // `SEARCH_MAX_LENGTH`; the links escape it like every other value.
   private keyPairListView(query: Json) {
     const { log } = this.deps;
     log.debug("Entering PkiAdmin.keyPairListView().");
-    const out = {};
+    const out: Json = {};
     // The key-pair tables' names, and every authority list's (#370): only
     // names this file writes, so a link carries nothing a browser made up.
     const names = KEY_PAIR_LIST_PARAMS.concat(Object.keys(query || {})
@@ -393,7 +418,12 @@ class PkiAdmin {
       const raw = (query || {})[name];
       const first = Array.isArray(raw) ? raw[0] : raw;
       const value = first == null ? '' : String(first);
-      if (/^[1-9][0-9]{0,5}$/.test(value)) {
+      if (/q$/.test(name)) {
+        const term = value.trim();
+        if (term && term.length <= SEARCH_MAX_LENGTH) {
+          out[name] = term;
+        }
+      } else if (/^[1-9][0-9]{0,5}$/.test(value)) {
         out[name] = value;
       }
     });
@@ -432,18 +462,64 @@ class PkiAdmin {
   // Both tables' slices and paging, from one query. Called by `pkiJson()` for
   // the two paging members and by `renderPki()` for the rows, over the same two
   // arrays, so the page and `personsPaging` cannot describe different slices.
+  //
+  // EACH TABLE IS SEARCHED BEFORE IT IS PAGED (2026-09-30). The Applications
+  // box matches the application's identifier, the profile, the key handle and
+  // every declared issuer; the People box the username, both handles and every
+  // issuer either profile asserts as — what the table's own columns show, so a
+  // match is a row the reader can see the reason for.
   private keyPairPaging(query: Json, json: Json) {
     const { log, adminViews } = this.deps;
+    const self = this;
     log.debug("Entering PkiAdmin.keyPairPaging().");
-    const q = query || {};
+    const q: Json = self.keyPairListView(query || {});
+    const applications = self.searchRows(q.issuedq, json.issued || [],
+      function (one: Json) {
+        return [one.identifier, one.purposeLabel, one.handle]
+          .concat(one.assertionIssuers || []);
+      });
+    const people = self.searchRows(q.personsq, json.persons || [],
+      function (one: Json) {
+        const saml = one.saml || {};
+        return [one.username, one.kid, saml.thumbprint]
+          .concat(one.issuers || [], saml.issuers || []);
+      });
     const out = {
-      applications: adminViews.pagedRows(q, json.issued || [],
+      applications: adminViews.pagedRows(q, applications,
         { name: 'issued', noun: 'application rows',
-          defaultPer: KEY_PAIR_PER_PAGE }),
-      people: adminViews.pagedRows(q, json.persons || [],
-        { name: 'persons', noun: 'people', defaultPer: KEY_PAIR_PER_PAGE })
+          defaultPer: KEY_PAIR_PER_PAGE, maxPer: PKI_MAX_PER_PAGE }),
+      people: adminViews.pagedRows(q, people,
+        { name: 'persons', noun: 'people', defaultPer: KEY_PAIR_PER_PAGE,
+          maxPer: PKI_MAX_PER_PAGE }),
+      search: { issued: q.issuedq || null, persons: q.personsq || null }
     };
     log.debug("Leaving PkiAdmin.keyPairPaging().");
+    return out;
+  }
+
+  // ONE SEARCH OVER ONE LIST: a case-insensitive substring of any of the
+  // strings `textOf(row)` answers. No term is every row, in its order. The
+  // matching is deliberately the plainest there is — the same as
+  // `/admin/delegation`'s boxes — because a serial pasted out of a log, part
+  // of a DN or part of an identifier are all substrings, and a cleverer match
+  // would be one the reader has to learn.
+  private searchRows(term: Json, rows: Json[],
+                     textOf: (row: Json) => Json[]): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering PkiAdmin.searchRows().");
+    const needle = String(term || '').trim().toLowerCase();
+    if (!needle) {
+      log.debug("Leaving PkiAdmin.searchRows(). No search.");
+      return rows;
+    }
+    const out = rows.filter(function (row) {
+      return textOf(row).some(function (text) {
+        return text != null &&
+          String(text).toLowerCase().indexOf(needle) >= 0;
+      });
+    });
+    log.debug("Leaving PkiAdmin.searchRows(). " + out.length + " of " +
+              rows.length + " matched.");
     return out;
   }
 
@@ -974,11 +1050,16 @@ class PkiAdmin {
     const paged = self.keyPairPaging(req && req.query, json);
     json.issuedPaging = adminViews.pagingJson(paged.applications.paging);
     json.personsPaging = adminViews.pagingJson(paged.people.paging);
+    // The searches the two pages were narrowed by (2026-09-30), null for
+    // none: `issuedPaging.total` is the count that MATCHED, and a reader of
+    // the reply needs to know that is what it is.
+    json.issuedSearch = paged.search.issued;
+    json.personsSearch = paged.search.persons;
     // ---------------------------------------------------------------------
     // PAGE, THEN READ THE CERTIFICATES (#352, 2026-09-29). `pqc` is the one
     // member of a key-pair row that costs a certificate parse, and it was
     // computed for every application and every person before either table
-    // was paged. The page draws twenty-five of each, so it asks for those
+    // was paged. The page draws five of each, so it asks for those
     // (`shownOnly`); the JSON carries both lists whole and so asks for every
     // row, through `certificateViews.pqcOf()`, which parses a certificate
     // once and remembers the answer. Added in place, as the LAST member of
@@ -4086,7 +4167,7 @@ class PkiAdmin {
     // not there.
     const scopes = [pki.PROCESS_SCOPE, self.currentRealmScope()]
       .filter(function (id, i, all) { return all.indexOf(id) === i; });
-    const q = query || {};
+    const q = self.keyPairListView(query || {});
     let totalRevoked = 0;
     const authorities = pkiRevocation.authorities(scopes).map(function (one) {
       const points = pkiRevocation.distributionPoints(one.scope, one.ca);
@@ -4119,12 +4200,28 @@ class PkiAdmin {
       const orphansAll = revokedAll.filter(function (entry) {
         return !issuedSerials[pkiRevocation.normalSerial(entry.serialHex)];
       });
-      const issuedPage = adminViews.pagedRows(q, issuedAll,
+      // EACH LIST SEARCHED, THEN PAGED (2026-09-30), over what the stored
+      // records already say: the serial, the subject and what the register
+      // calls the certificate for the issued list; the serial, the subject as
+      // recorded, the reason and the note for the orphans. Nothing here is
+      // decorated first, so a search is no dearer than a page.
+      const issuedSearch = q[listName + '-issuedq'] || null;
+      const orphansSearch = q[listName + '-orphansq'] || null;
+      const issuedMatched = self.searchRows(issuedSearch, issuedAll,
+        function (cert: Json) {
+          return [cert.serialHex, cert.subject, cert.label, cert.kind];
+        });
+      const orphansMatched = self.searchRows(orphansSearch, orphansAll,
+        function (entry: Json) {
+          return [entry.serialHex, pkiRevocation.normalSerial(entry.serialHex),
+                  entry.subject, entry.reason, entry.note];
+        });
+      const issuedPage = adminViews.pagedRows(q, issuedMatched,
         { name: listName + '-issued', noun: 'certificates',
-          defaultPer: REVOCATION_PER_PAGE });
-      const orphansPage = adminViews.pagedRows(q, orphansAll,
+          defaultPer: REVOCATION_PER_PAGE, maxPer: PKI_MAX_PER_PAGE });
+      const orphansPage = adminViews.pagedRows(q, orphansMatched,
         { name: listName + '-orphans', noun: 'revoked serials',
-          defaultPer: REVOCATION_PER_PAGE });
+          defaultPer: REVOCATION_PER_PAGE, maxPer: PKI_MAX_PER_PAGE });
       // WHAT IT SIGNED, THE PAGE OF IT, each row carrying whether it is
       // already on the list — computed HERE rather than by the renderer,
       // because "is this revoked" is a statement about the register and a
@@ -4150,6 +4247,10 @@ class PkiAdmin {
         issued: issued,
         issuedTotal: issuedAll.length,
         issuedPaging: adminViews.pagingJson(issuedPage.paging),
+        // What each list was narrowed by, null for nothing; the two pagings'
+        // `total` is the count that matched (2026-09-30).
+        issuedSearch: issuedSearch,
+        orphansSearch: orphansSearch,
         // THE REVOCATIONS THE PAGE'S ROWS CARRY, described — the whole list
         // is `revokedTotal` long and is the CRL's to publish, not this
         // reply's (#370).
@@ -4169,7 +4270,8 @@ class PkiAdmin {
       };
       // The paging objects the renderer builds its links from; not published.
       Object.defineProperty(out, 'pagingRaw', {
-        value: { issued: issuedPage.paging, orphans: orphansPage.paging },
+        value: { issued: issuedPage.paging, orphans: orphansPage.paging,
+                 listName: listName },
         enumerable: false });
       return out;
     });
@@ -4225,6 +4327,11 @@ class PkiAdmin {
       log.debug("Leaving PkiAdmin.issuedRevocationRows().");
       return '<tr><td colspan="4"><em>This authority has issued nothing this ' +
              'process can still see.</em></td></tr>';
+    }
+    if (!authority.issued.length) {
+      log.debug("Leaving PkiAdmin.issuedRevocationRows(). Nothing matched.");
+      return '<tr><td colspan="4"><em>No certificate this authority issued ' +
+             'matches the search above.</em></td></tr>';
     }
     log.debug("Leaving PkiAdmin.issuedRevocationRows().");
     return authority.issued.map(function (cert) {
@@ -4295,10 +4402,26 @@ class PkiAdmin {
                                         authority.pagingRaw.issued);
     const orphansNav = admin.pageNavPair('/admin/pki', listView,
                                          authority.pagingRaw.orphans);
+    // `list` names the list's SEARCH parameter, because its box is the one
+    // thing in the list that is always drawn: the pager's anchor exists only
+    // when the list runs to a second page, and a return to an anchor nothing
+    // carries lands at the top of the page (2026-09-30).
+    const listName = authority.pagingRaw.listName;
     const carry = '<input type="hidden" name="back" value="' +
       esc(adminViews.queryWith(listView, {})) + '">' +
       '<input type="hidden" name="list" value="' +
-      esc(authority.pagingRaw.issued.param) + '">';
+      esc(listName + '-issuedq') + '">';
+    const search = function (list: string, label: string,
+                             placeholder: string): string {
+      log.debug("Entering search().");
+      log.debug("Leaving search().");
+      return admin.sectionSearchForm({
+        path: '/admin/pki', query: listView,
+        param: listName + '-' + list + 'q',
+        pageParam: listName + '-' + list + 'Page',
+        label: label, placeholder: placeholder
+      });
+    };
     const orphans = authority.revokedNotIssuedTotal
       ? admin.note(
           '<p><strong>' + authority.revokedNotIssuedTotal + ' serial(s) on ' +
@@ -4309,7 +4432,12 @@ class PkiAdmin {
           'with nothing left to point at. RFC 5280 does not ask a CA to ' +
           'still hold what it signed in order to revoke it &mdash; and a ' +
           'validator checking one of these is checking exactly the ' +
-          'certificate it was meant to.</p>' + orphansNav.head + '<table ' +
+          'certificate it was meant to.</p>' +
+          search('orphans', 'Search these serials',
+                 'a serial, part of a subject, a reason') +
+          (!authority.revokedNotIssued.length
+            ? '<p><em>No revoked serial here matches the search.</em></p>'
+            : orphansNav.head + '<table ' +
           'class="grid"><thead><tr><th>Serial</th><th>Revoked</th>' +
           '<th>Reason</th><th>Subject ' +
           'as recorded</th></tr></thead><tbody>' +
@@ -4320,7 +4448,7 @@ class PkiAdmin {
                    (entry.note ? '<br><span class="muted">' + esc(entry.note) +
                                  '</span>' : '') + '</td>' +
                    '<td>' + esc(entry.subject || '—') + '</td></tr>';
-          }).join('') + '</tbody></table>' + orphansNav.foot,
+          }).join('') + '</tbody></table>' + orphansNav.foot),
           authority.revokedNotIssuedTotal + ' revoked serial(s) with no ' +
           'certificate left to show')
       : '';
@@ -4335,7 +4463,12 @@ class PkiAdmin {
       '<code>' + esc(authority.crl.ldap) + '</code> (LDAP) or ' +
       '<code>' + esc(authority.ocsp) + '</code> (OCSP). ' +
       'Every certificate this authority signs names all three inside ' +
-      'itself.</p>' + issuedNav.head +
+      'itself.</p>' +
+      (authority.issuedTotal
+        ? search('issued', 'Search what it issued',
+                 'a serial, part of a subject or a name')
+        : '') +
+      issuedNav.head +
       '<table class="grid"><thead><tr><th>Serial</th><th>Subject</th>' +
       '<th>Status</th><th></th></tr></thead><tbody>' +
       self.issuedRevocationRows(authority, carry) +
@@ -4465,6 +4598,18 @@ class PkiAdmin {
                                         paged.people.paging);
     const carryBack = '<input type="hidden" name="back" value="' +
       esc(adminViews.queryWith(listView, {})) + '">';
+    // Each table's search box (2026-09-30), over the list view so it carries
+    // the other tables' pages and searches and nothing else.
+    const applicationsSearch = admin.sectionSearchForm({
+      path: '/admin/pki', query: listView, param: 'issuedq',
+      pageParam: 'issuedPage', label: 'Search applications',
+      placeholder: 'an identifier, a profile, a handle or an issuer'
+    });
+    const peopleSearch = admin.sectionSearchForm({
+      path: '/admin/pki', query: listView, param: 'personsq',
+      pageParam: 'personsPage', label: 'Search people',
+      placeholder: 'a username, a handle or an issuer'
+    });
 
     const tiles = '<div class="tiles">' +
       admin.tile(chain ? 'yes' : 'no', 'hierarchy built') +
@@ -4698,7 +4843,9 @@ class PkiAdmin {
         // A ROW PER PROFILE A PERSON HOLDS OR DECLARES (2026-09-13), for the
         // applications table's reason: every fact on the row — the handle, the
         // expiry, the declared issuer and the Take-off button — is per profile.
-        ? peopleNav.head +
+        ? peopleSearch + (!paged.people.shown.length
+          ? '<p><em>Nobody matches the search.</em></p>'
+          : peopleNav.head +
           '<table><thead><tr><th>Person</th><th>Profile</th>' +
           '<th>Key handle</th><th>Source</th><th>Expires</th>' +
           '<th>Asserts as</th><th></th></tr></thead><tbody>' +
@@ -4740,11 +4887,13 @@ class PkiAdmin {
                 '</tr>');
             });
             return rows;
-          }, []).join('') + '</tbody></table>' + peopleNav.foot
+          }, []).join('') + '</tbody></table>' + peopleNav.foot)
         : '<p>Nobody in this realm holds an assertion key pair.</p>');
 
     const issuedRows = json.issued.length
-      ? applicationsNav.head +
+      ? applicationsSearch + (!paged.applications.shown.length
+        ? '<p><em>No application row matches the search.</em></p>'
+        : applicationsNav.head +
         '<table><thead><tr><th>Application</th><th>Profile</th>' +
         '<th>Key handle</th><th>Expires</th>' +
         '<th>Declared issuer</th><th>Own keys</th><th></th></tr>' +
@@ -4778,7 +4927,7 @@ class PkiAdmin {
                 '<button type="submit">Take this key pair off</button></form>'
               : '') + '</td>' +
             '</tr>';
-        }).join('') + '</tbody></table>' + applicationsNav.foot
+        }).join('') + '</tbody></table>' + applicationsNav.foot)
       : '<p>No application in this realm holds a key pair issued here, and ' +
         'none declares an assertion issuer.</p>';
 
@@ -4879,11 +5028,11 @@ class PkiAdmin {
                            self.pemBlocks(chain) : '') +
                   buildForm + issueForm +
                   '<h3 id="pki-applications">Applications</h3>' + twoActs +
-                  (json.issued.length || json.persons.length
-                    ? admin.perPageForm('/admin/pki', 'issuedPage', '1',
-                        paged.applications.paging.perPage,
-                        'That is this table and the People table below it.')
-                    : '') +
+                  // NO *Rows per table* CONTROL (2026-09-30). Every size it
+                  // offered is above this page's ceiling of five and would be
+                  // clamped back to it, and a select whose choices all do
+                  // nothing is a control that lies about the page. `?per=`
+                  // still shortens every list, by hand.
                   issuedRows +
                   personForm +
                   '<h3 id="pki-people">People</h3>' + personRows +
@@ -4943,11 +5092,15 @@ class PkiAdmin {
                 "table.");
       // A Revoke or Release button in an authority's list (#370) names that
       // list, and goes back to it — the name only when it is one this file
-      // writes, since it ends up in a `Location` header.
+      // writes, since it ends up in a `Location` header. It lands on the
+      // list's search box, `find-<its search parameter>`, which is drawn
+      // whether or not the list runs to a second page; the pager's own
+      // anchor is not, and until 2026-09-30 a return into a one-page list
+      // named an element that did not exist and landed at the top.
       const list = String(body.list || '');
       return '/admin/pki' +
              adminViews.queryWith(self.keyPairListViewFromBack(body.back), {}) +
-             (REVOCATION_LIST_PARAM.test(list) ? '#list-' + list
+             (REVOCATION_LIST_PARAM.test(list) ? '#find-' + list
                : String(body.target || '') === 'person' ? '#pki-people'
                                                          : '#pki-applications');
     }

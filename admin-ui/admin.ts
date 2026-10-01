@@ -46860,6 +46860,9 @@ const consoleExports = {
   // (2026-09-13) — the same control every multi-list page here draws.
   perPageForm: slot.forward('perPageForm'),
   perPageOptions: slot.forward('perPageOptions'),
+  // For the same page's four kinds of section (2026-09-30): a search box over
+  // each paged list, the one every multi-list page here draws.
+  sectionSearchForm: slot.forward('sectionSearchForm'),
   queryWith: queryWith,
   // Filled by spiffe_server.js at its require time, for the reason beside the
   // requires at the top: this file must not require that module.

@@ -2774,8 +2774,8 @@ class AdminViews {
    *
    * @param query - the query
    * @param total - how many rows the list has
-   * @param options - the list's name, when a page has several, and its default
-   *   rows per page
+   * @param options - the list's name, when a page has several, its default
+   *   rows per page and, optionally, its most rows per page
    * @returns the paging
    */
   pagingOf(query, total, options?) {
@@ -2786,9 +2786,14 @@ class AdminViews {
     log.debug("Entering AdminViews.pagingOf(). total=" + total + ", param=" +
               param);
     const askedPer = parseInt(String(query.per || ''), 10);
+    // `options.maxPer` is a list's own ceiling under MAX_ROWS, for a page
+    // whose owner has said how long a section may be (Protocols → PKI's five,
+    // 2026-09-30): a hand-typed `?per=` can shorten such a list and never
+    // lengthen it.
+    const ceiling = Math.min(MAX_ROWS, opts.maxPer || MAX_ROWS);
     const perPage = (isFinite(askedPer) && askedPer > 0)
-      ? Math.min(askedPer, MAX_ROWS)
-      : (opts.defaultPer || DEFAULT_PER_PAGE);
+      ? Math.min(askedPer, ceiling)
+      : Math.min(opts.defaultPer || DEFAULT_PER_PAGE, ceiling);
     // At least one page even when nothing matched, so "page 1 of 1" is what an
     // empty list says rather than "page 1 of 0".
     const pages = Math.max(1, Math.ceil(total / perPage));

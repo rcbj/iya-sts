@@ -14,16 +14,21 @@
 // population much larger than a page, never a time:
 //
 //   A. The model: with 5,000 issued certificates and 1,200 revocations on one
-//      authority, the page holds 25 issued rows and 25 orphans, with the
+//      authority, the page holds 5 issued rows and 5 orphans, with the
 //      totals and the paging beside them; `describeEntry()` runs for the
 //      rows of the page only; `issuedHere()` — a rebuild of the issued list —
 //      is never called; `issuedList()` and `listFor()` once per authority.
 //   B. The revocation state on each row of the page is the register's:
 //      revoked, held, or good, and a page past the end is the last page.
-//   C. Each authority pages on its own parameter, and `per` is shared.
-//   D. The pane draws the page's rows and a pager per list, and every Revoke
-//      form carries `back` and the list it is in; `pkiReturnTo()` sends the
-//      reader back to that list, and only to a name this file writes.
+//   C. Each authority pages on its own parameter, and `per` is shared — and
+//      can shorten a list below five, never lengthen it past five
+//      (2026-09-30).
+//   D. The pane draws the page's rows, a pager and a search box per list,
+//      and every Revoke form carries `back` and the list it is in;
+//      `pkiReturnTo()` sends the reader back to that list's search box, and
+//      only to a name this file writes.
+//   E. Each list's search narrows it before it is paged, on a parameter of
+//      its own, and leaves the other lists alone (2026-09-30).
 //
 // The revocation register and the tree are stand-ins handed to a PkiAdmin of
 // this file's own, because what is counted is what the page asks of them;
@@ -42,7 +47,7 @@ const log = require('bunyan').createLogger({
 const ISSUED = 5000;
 const REVOKED_ISSUED = 400;
 const ORPHANS = 800;
-const PER = 25;
+const PER = 5;
 
 function hex(n) {
   log.debug("Entering hex().");
@@ -200,7 +205,7 @@ async function run(t) {
 
   t.log.info('=== C. one parameter per list, `per` shared ===');
   const moved = admin['revocationModel']({ 'ca-default-jose-issuedPage': '3',
-                                           per: '10' });
+                                           per: '3' });
   const movedJose = moved.authorities.filter(function (one) {
     return one.ca === 'jose';
   })[0];
@@ -208,12 +213,17 @@ async function run(t) {
     return one.ca === 'root';
   })[0];
   t.equal(movedJose.issuedPaging.page, 3, 'the jose list moved to page 3');
-  t.equal(movedJose.issued[0].serialHex, r.issued.jose[20].serialHex,
-          'and page 3 of 10 starts at the 21st certificate');
+  t.equal(movedJose.issued[0].serialHex, r.issued.jose[6].serialHex,
+          'and page 3 of 3 starts at the 7th certificate');
   t.equal(movedJose.orphansPaging.page, 1,
           'its orphans list stayed on page 1');
   t.equal(movedRoot.issuedPaging.page, 1, 'the root list stayed on page 1');
-  t.equal(movedRoot.issuedPaging.perPage, 10, 'per is shared by every list');
+  t.equal(movedRoot.issuedPaging.perPage, 3, 'per is shared by every list');
+  const longer = admin['revocationModel']({ per: '50' });
+  t.check(longer.authorities.every(function (one) {
+    return one.issuedPaging.perPage === PER &&
+      one.orphansPaging.perPage === PER && one.issued.length <= PER;
+  }), 'a `per` above five is held to five on every list');
 
   t.log.info('=== D. the pane and the way back ===');
   const query = { 'ca-default-jose-issuedPage': '2', personsPage: '4',
@@ -246,18 +256,74 @@ async function run(t) {
           'each of the big authority\'s lists has a pager');
   t.check(html.indexOf('ca-default-jose-issuedPage=3') >= 0,
           'the pager links to the next page of that list');
-  t.check(/name="list" value="ca-default-jose-issuedPage"/.test(html) &&
+  t.check(html.indexOf('id="find-ca-default-jose-issuedq"') >= 0 &&
+          html.indexOf('id="find-ca-default-jose-orphansq"') >= 0 &&
+          html.indexOf('id="find-ca-process-root-issuedq"') >= 0,
+          'every list has a search box, the one-page list as well');
+  t.check(/name="list" value="ca-default-jose-issuedq"/.test(html) &&
           /name="back" value="\?[^"]*ca-default-jose-issuedPage=2/.test(html),
           'every form carries the list it is in and the page it is on');
   t.equal(admin.pkiReturnTo({ back: '?ca-default-jose-issuedPage=2',
-                              list: 'ca-default-jose-issuedPage' }),
+                              list: 'ca-default-jose-issuedq' }),
           '/admin/pki?ca-default-jose-issuedPage=2' +
-          '#list-ca-default-jose-issuedPage',
-          'a revoke goes back to that page of that list');
+          '#find-ca-default-jose-issuedq',
+          'a revoke goes back to that page of that list, at its search box, ' +
+          'which is drawn however short the list is');
   t.equal(admin.pkiReturnTo({ back: '?ca-default-jose-issuedPage=2',
                               list: 'https://evil.example/' }),
           '/admin/pki?ca-default-jose-issuedPage=2#pki-applications',
           'and a list name this file does not write is not echoed');
+
+  t.log.info('=== E. each list searched before it is paged ===');
+  const searched = admin['revocationModel'](
+    { 'ca-default-jose-issuedq': 'LEAF 0012',
+      'ca-default-jose-orphansq': 'gone 79', 'ca-default-jose-orphansPage': '3',
+      'ca-process-root-issuedPage': '1' });
+  const sJose = searched.authorities.filter(function (one) {
+    return one.ca === 'jose';
+  })[0];
+  const sRoot = searched.authorities.filter(function (one) {
+    return one.ca === 'root';
+  })[0];
+  t.equal(sJose.issuedPaging.total, 10,
+          'a case-insensitive substring of the subject matched ten of ' +
+          ISSUED);
+  t.equal(sJose.issuedPaging.pages, 2, 'two pages of five');
+  t.check(sJose.issued.every(function (row) {
+    return /^CN=leaf 0012\d$/.test(row.subject);
+  }), 'and the page holds only matches');
+  t.equal(sJose.issuedTotal, ISSUED, 'the whole count is still beside it');
+  t.equal(sJose.issuedSearch, 'LEAF 0012', 'the reply echoes the search');
+  t.equal(sJose.orphansPaging.total, 11,
+          'the orphans are searched on their own parameter (79, 790–799)');
+  t.equal(sJose.orphansPaging.page, 3, 'and page 3 of three is the last');
+  t.equal(sRoot.issuedPaging.total, 3, 'the other authority is not narrowed');
+  t.equal(sRoot.issuedSearch, null, 'and says so');
+  const bySerialHex = admin['revocationModel'](
+    { 'ca-default-jose-issuedq': hex(4321) });
+  t.equal(bySerialHex.authorities.filter(function (one) {
+    return one.ca === 'jose';
+  })[0].issued[0].serialHex, hex(4321), 'a serial finds its certificate');
+  const nothing = { revocation: admin['revocationModel'](
+    { 'ca-default-jose-issuedq': 'no such thing' }) };
+  const nothingView = admin['keyPairListView'](
+    { 'ca-default-jose-issuedq': 'no such thing',
+      'ca-default-jose-issuedPage': '4', personsPage: '2' });
+  const nothingHtml = admin['revocationPane'](nothing, nothingView);
+  t.check(nothingHtml.indexOf('matches the search above') >= 0,
+          'a search that matches nothing says so');
+  const form = (nothingHtml.match(
+    /<form method="get" id="find-ca-default-jose-issuedq"[\s\S]*?<\/form>/) ||
+    [''])[0];
+  t.check(form.indexOf('value="no such thing"') >= 0 &&
+          form.indexOf('name="personsPage" value="2"') >= 0 &&
+          form.indexOf('name="ca-default-jose-issuedPage"') < 0,
+          'the box re-shows its term, carries the other lists\' state and ' +
+          'starts its own list at page 1', form);
+  t.check(admin['keyPairListView'](
+    { 'ca-default-jose-issuedq': 'x'.repeat(201) })[
+    'ca-default-jose-issuedq'] === undefined,
+          'a search longer than any field is not carried');
   log.debug("Leaving run().");
 }
 
