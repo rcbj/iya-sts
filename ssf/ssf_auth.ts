@@ -127,6 +127,13 @@ interface Decision {
   errorCode?: string;
   anonymous?: boolean;
   note?: string;
+  // WHAT KIND OF PARTY THE PRINCIPAL IS (#336, 2026-09-28), for a stream's
+  // owner:
+  // `client` (a client's own token), `person` (a token issued to a client
+  // FOR a person, whose `sub` it carries), `basic` (a name and password) or
+  // `gnap` (a GNAP application). `ssf_streams.ts` narrows a person's stream
+  // to that person; see "A PERSON'S STREAM IS ABOUT THAT PERSON" there.
+  owner?: { kind: string; sub?: string; client?: string; name?: string };
 }
 
 // The request members this gate reads.
@@ -504,11 +511,19 @@ class SsfAuth {
                 "declares the scope.");
       return withdrawn;
     }
+    const principal = SsfAuth.principalOfClaims(claims);
+    const clientId = String(claims.client_id || '');
     log.debug("Leaving SsfAuth.attemptOAuth(). Accepted.");
     return { ok: true, status: 200, scheme: presented.scheme === 'dpop'
       ? 'dpop' : 'bearer',
-      principal: SsfAuth.principalOfClaims(claims),
-      scopes: scopes, err: '', description: '', headers: {} };
+      principal: principal,
+      scopes: scopes, err: '', description: '', headers: {},
+      // A token whose principal is not its own client was issued FOR a
+      // person: principalOfClaims() answers the client_id only for a
+      // client's own token.
+      owner: principal && principal !== clientId
+        ? { kind: 'person', sub: principal, client: clientId }
+        : { kind: 'client', client: clientId } };
   }
 
   // -------------------------------------------------------------------------
@@ -707,6 +722,7 @@ class SsfAuth {
     return { ok: true, status: 200, scheme: 'gnap',
       principal: String(record.instanceId || ''),
       scopes: granted.join(' '), err: '', description: '', headers: {},
+      owner: { kind: 'gnap' },
       note: 'GNAP access token (' + record.format + ', proofed by ' +
             presented.method + ')' };
   }
@@ -796,6 +812,8 @@ class SsfAuth {
       scopes: this.scopeRead() + ' ' + this.scopeWrite(), err: '',
       description: '',
       headers: {},
+      // A person only if the directory holds `user`; ssf_streams.ts asks.
+      owner: { kind: 'basic', name: user },
       // An app password is said so (#101).
       note: checked.reason === 'app-password' && checked.appPassword
         ? 'HTTP Basic (an app password, "' + checked.appPassword.name +

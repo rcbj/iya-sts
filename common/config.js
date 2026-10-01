@@ -11104,14 +11104,35 @@ const SETTINGS = [
     label: 'What an empty subject list means',
     env: 'STS_SSF_DEFAULT_SUBJECTS', type: 'enum',
     enumValues: ['ALL', 'NONE'], dflt: 'ALL', runtime: true,
-    description: 'Published as default_subjects and it decides the OPPOSITE ' +
-                 'of what it sounds like it decides: with ALL, a stream ' +
-                 'that names no subjects is about EVERYBODY and adding one ' +
-                 'narrows nothing; with NONE it is about nobody until a ' +
+    description: 'Published as default_subjects, and it decides what an ' +
+                 'EMPTY subject list means: with ALL, a stream that names ' +
+                 'no subjects is about EVERYBODY, naming one narrows it to ' +
+                 'the named subjects, and removing the last one widens it ' +
+                 'back to everybody; with NONE it is about nobody until a ' +
                  'subject is added. A receiver that guesses wrong gets ' +
                  'every event in the estate or gets none, and both look ' +
                  'like a broken transmitter — which is why SSF makes it ' +
-                 'discoverable rather than leaving it to be inferred.' },
+                 'discoverable rather than leaving it to be inferred. A ' +
+                 'stream a person owns is about that person whatever this ' +
+                 'says (ssf.personStreamsSelfOnly).' },
+
+  { key: 'ssf.personStreamsSelfOnly', group: 'SSF',
+    label: 'A person\'s own stream carries only their events',
+    env: 'STS_SSF_PERSON_STREAMS_SELF_ONLY', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'A stream created with a PERSON\'S credential — an access ' +
+                 'token a client obtained for them, or their own name and ' +
+                 'password over Basic — is about that person alone: events ' +
+                 'about anybody else are not delivered to it, whatever its ' +
+                 'subject list and default_subjects say, and Add Subject ' +
+                 'refuses to name anybody else (403). SSF 1.0 section 10.1 ' +
+                 'requires that only authorized parties access the shared ' +
+                 'signals, and a person is one for their own. Off, a ' +
+                 'person\'s stream is treated like a client\'s and, under ' +
+                 'default_subjects ALL, is sent every event in the realm. ' +
+                 'A client\'s own stream (client credentials), a GNAP ' +
+                 'application\'s and this service\'s own receivers are not ' +
+                 'affected.' },
 
   { key: 'ssf.streamStatusOnCreate', group: 'SSF',
     label: 'Status a new stream is created in',

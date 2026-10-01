@@ -394,6 +394,16 @@ RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
 # true by accident; it is now true on purpose, and this string did not have to
 # change.
 ENV CONFIG_FILE=./env/local.js
+# NODE_ENV=production, IN EVERY MODE (#355, 2026-09-29), and it is NOT this
+# service's development/product switch — that is `global.mode`
+# (common/mode.js), and nothing here reads NODE_ENV. Of every package in the
+# image only express and its finalhandler do: outside production, an error
+# that reaches Express's final handler is answered with its STACK TRACE in the
+# page. With it set, the page says "Internal Server Error" and the stack stays
+# in the log. Its other effect, express's `view cache`, touches nothing: no
+# route calls res.render(). The embedded debugger's api child does not
+# inherit it — its environment is an allow-list (debugger_api_process.ts).
+ENV NODE_ENV=production
 
 # 8081 is the HTTP service. Most of the rest are the listeners that are NOT HTTP
 # and so are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected

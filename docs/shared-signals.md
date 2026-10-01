@@ -217,6 +217,15 @@ username.
   other value is refused. An update may carry `aud`, or any other
   Transmitter-Supplied member (`iss`, `events_supported`, `events_delivered`,
   `min_verification_interval`, `inactivity_timeout`), only unchanged.
+* **A person's stream is about that person.** A stream created with a
+  person's own credential is theirs, and it carries only events about them.
+  That credential is an access token a client obtained for them (for example
+  by the authorization code grant), or their directory name and password over
+  Basic. Events about anybody else are not delivered to it, whatever its
+  subject list and `ssf.defaultSubjects` say, and an Add Subject naming
+  anybody else answers `403 access_denied`. A relying party that needs events
+  about everybody creates its stream with its own client credentials token.
+  `ssf.personStreamsSelfOnly` turns this off.
 * **`ssf.maxStreams` is per receiver.** Creating a stream past it answers 403.
 * **The console's and portal's own streams belong to no remote receiver** and
   are managed only on `/admin/ssf` and through `/admin-api`.
@@ -238,8 +247,20 @@ complex subject inside another is refused as well. The pre-RFC names
 
 A stream that names a **person** covers a complex subject naming one of that
 person's sessions. `ssf.defaultSubjects` controls what a stream with no
-subjects covers. With `ALL`, the default, it covers everybody. With `NONE` it
-covers nobody until a subject is added.
+subjects covers. With `ALL`, the default, it covers everybody, and naming a
+subject narrows it to the named subjects. Removing the last subject widens it
+back to everybody. With `NONE` it covers nobody until a subject is added.
+
+A stream a person owns covers only subjects that name that person, in any of
+these forms:
+
+* an `iss_sub` with their subject, including the `sub` a pairwise client is
+  told;
+* an `email`, `phone_number` or `account` subject for their account;
+* an `aliases` subject in which any alias names them;
+* a complex subject whose `user` member names them.
+
+A complex subject with no `user` member names nobody on such a stream.
 
 ### Push and poll delivery
 
@@ -520,7 +541,8 @@ types from what a stream may ask for.
 | `ssf.signingAlgorithm` | `STS_SSF_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm every SET is signed with, post-quantum ones included. |
 | `ssf.setCertificateHeader` | `STS_SSF_SET_CERTIFICATE_HEADER` | `x5u` | yes | Whether a SET names its signing key's certificate chain: `none`, `x5c`, `x5u` or `both`. |
 | `ssf.deliveryMethods` | `STS_SSF_DELIVERY_METHODS` | `urn:ietf:rfc:8935,urn:ietf:rfc:8936` | yes | Which delivery methods the service agrees to. `push` and `poll` are accepted as shorthand. |
-| `ssf.defaultSubjects` | `STS_SSF_DEFAULT_SUBJECTS` | `ALL` | yes | What a stream with no subjects covers: everybody (`ALL`) or nobody (`NONE`). |
+| `ssf.defaultSubjects` | `STS_SSF_DEFAULT_SUBJECTS` | `ALL` | yes | What a stream with no subjects covers: everybody (`ALL`) or nobody (`NONE`). With `ALL`, naming a subject narrows the stream to the named subjects, and removing the last one widens it back to everybody. |
+| `ssf.personStreamsSelfOnly` | `STS_SSF_PERSON_STREAMS_SELF_ONLY` | `true` | yes | A stream created with a person's own credential (an access token a client obtained for them, or their name and password over Basic) carries only events about that person, whatever its subject list and `ssf.defaultSubjects` say, and Add Subject naming anybody else is refused with 403. Off, such a stream is treated like a client's. |
 | `ssf.streamStatusOnCreate` | `STS_SSF_STREAM_STATUS_ON_CREATE` | `enabled` | yes | The status a new stream starts in. `paused` makes the receiver enable its own stream. |
 | `ssf.minVerificationInterval` | `STS_SSF_MIN_VERIFICATION_INTERVAL` | `60` | yes | The `min_verification_interval` the service publishes. A stream that asks for less is refused. |
 | `ssf.verificationRateLimit` | `STS_SSF_VERIFICATION_RATE_LIMIT` | `false` | yes | Answers 429 to a verification request that comes sooner than the published interval. |
