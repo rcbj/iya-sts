@@ -175,6 +175,14 @@ interface IssuanceQuestion {
   // carries no device attribute, and every device rule is inapplicable.
   device?: any;
   deviceRequirement?: string[];
+  // THE PROTOCOL DECLARATION (2026-10-01): the families this issuance
+  // satisfies, the families the application is declared for, and the realm's
+  // mode — named by the gate only where the application is declared for
+  // something. Absent, no protocol attribute is sent and the rule does not
+  // apply.
+  protocolFamilies?: string[];
+  declaredProtocols?: string[];
+  mode?: string;
   // WHAT THE REQUEST CARRIES (#304, part C of #88): the scope values asked
   // for, the client it came through, the grant type and the protocol — sent
   // to the policy on every issuance question where the caller names them.
@@ -255,6 +263,9 @@ interface IssuanceAnswer {
   // The device rule that denied (#164 phase 6): `compromised` or
   // `not-compliant`.
   device?: { refusal: string } | null;
+  // The protocol rule that denied (2026-10-01): the declaration and the
+  // families this issuance satisfies.
+  protocolRefused?: { declared: string[]; families: string[] } | null;
   // The per-scope verdicts, for a scope question (#304).
   scopes?: ScopeVerdict[];
   // The verdict on a transfer question (#98): `hold` / `relay`, `serve` /
@@ -294,7 +305,8 @@ interface XacmlRolePepDeps {
   heldFactors?: (username: string) => string[];
   templates: { build(id: string, answers: any, options: any): any;
                ISSUANCE_ATTRIBUTE: Record<string, string>;
-               DEVICE_ATTRIBUTE?: Record<string, string> };
+               DEVICE_ATTRIBUTE?: Record<string, string>;
+               PROTOCOL_ATTRIBUTE?: Record<string, string> };
 }
 
 const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
@@ -310,6 +322,9 @@ const DELEGATION_ATTRIBUTE = {
 const RISK = templates.RISK_ATTRIBUTE;
 // #164 phase 6: the registered device an issuance came from.
 const DEVICE = templates.DEVICE_ATTRIBUTE;
+// The protocol families an issuance satisfies and the application's
+// declaration (2026-10-01).
+const PROTOCOL = templates.PROTOCOL_ATTRIBUTE;
 // #64: the authentication a session stands on.
 const AUTHN = templates.AUTHN_ATTRIBUTE;
 
@@ -625,6 +640,18 @@ class XacmlRolePep {
     this.riskAttributes(req, asked.risk, String(subject.name || ''));
     this.authenticationAttributes(req, asked.authentication);
     this.deviceAttributes(req, asked);
+    // THE PROTOCOL DECLARATION, only where the gate named both halves: the
+    // declaration on the resource (it is a fact about the application), the
+    // families and the mode in the environment (facts about this request).
+    const declared = asked.declaredProtocols || [];
+    const families = asked.protocolFamilies || [];
+    if (declared.length && families.length) {
+      req.resource(PROTOCOL.DECLARED, declared);
+      req.environment(PROTOCOL.FAMILY, families);
+      if (asked.mode) {
+        req.mode(asked.mode);
+      }
+    }
     log.debug('Leaving XacmlRolePep.requestFor().');
     return req;
   }
@@ -997,6 +1024,47 @@ class XacmlRolePep {
         held, required, answer);
       refusal.device = { refusal: deviceDeny };
       log.debug('Leaving XacmlRolePep.decideNow(). Deny on the device.');
+      return refusal;
+    }
+
+    // -----------------------------------------------------------------------
+    // A DENY ABOUT THE PROTOCOL (2026-10-01) — the policy's protocol
+    // obligation says so: in product mode, an issuance through a family the
+    // application is not declared for. Final like the device's, asked before
+    // risk so it is never turned into a step-up, and enforced where the role
+    // question was waived, because it is not about roles. The rule fires only
+    // in product, so development is never refused here.
+    // -----------------------------------------------------------------------
+    const protocolDeny = answer.decision === model.DECISION.DENY &&
+      (answer.obligations || []).some(function (o) {
+        return o && o.id === PROTOCOL.OBLIGATION;
+      });
+    if (protocolDeny) {
+      const protocolWhy = 'The application "' +
+        String(asked.application || '') + '" is declared for ' +
+        (asked.declaredProtocols || []).join(', ') + ', and this ' +
+        (asked.kind || 'issuance') + ' belongs to ' +
+        (asked.protocolFamilies || []).join(' or ') + '.';
+      if (!dryRun) {
+        audit.audit({
+          action: 'xacml.issuance.refused', errorCode: 'STS-XACML-0084',
+          actor: subject.name || '', protocol: 'XACML',
+          detail: 'Deny on the protocol for ' +
+                  (asked.kind || 'an issuance') + ': ' + protocolWhy
+        });
+      }
+      log.info(errorCodes.tag('STS-XACML-0084') + 'xacml: ' +
+               (dryRun ? 'a dry run would have REFUSED ' : 'REFUSED ') +
+               (asked.kind || 'an issuance') + ' to "' +
+               (subject.name || 'nobody') + '" on the protocol — ' +
+               protocolWhy);
+      const refusal = this.refused('The application is not configured for ' +
+        'this protocol.', answer.decision, held, required, answer);
+      refusal.protocolRefused = {
+        declared: asked.declaredProtocols || [],
+        families: asked.protocolFamilies || []
+      };
+      log.debug('Leaving XacmlRolePep.decideNow(). Deny on the protocol.');
       return refusal;
     }
 

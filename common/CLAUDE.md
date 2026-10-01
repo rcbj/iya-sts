@@ -3542,13 +3542,20 @@ with `Cannot find module` naming a file the operator never mentioned.
    which is the `EDITABLE` line above applied to a pair that would otherwise
    look like a duplicate to anybody tidying up.
 
-   **DECLARING A FAMILY GRANTS AND REFUSES NOTHING, and the sentence to change
-   if that ever stops being true is the one in `PROTOCOLS`'s header rather than
-   a page's.** No endpoint reads the attribute: an application declared for
-   `saml2` alone is still issued an access token, because a mock that refused a
-   protocol would remove a test case rather than add one. It is a record of
-   intent, exactly as being in this registry at all is — the same claim
-   `/admin/applications`'s caveat already makes about the whole entry.
+   **DECLARING A FAMILY GRANTS NOTHING, AND IN PRODUCT MODE IT REFUSES THE
+   REST (2026-10-01); the sentence to change if that stops being true is the
+   one in `PROTOCOLS`'s header rather than a page's.** The issuance gate
+   (`issuance_gate.js`'s `protocolFactsOf()`) reads the declaration off the
+   entry and the families the issuance satisfies (`FAMILIES_OF_KIND`, or the
+   caller's own `protocolFamilies` — the SAML and GNAP sites pass theirs), and
+   the issuance policy's `protocol-not-declared` rule refuses, in product
+   mode, an issuance whose families and the declaration share none
+   (`STS-XACML-0084`; `mode.issuesThroughUndeclaredProtocols()`). An access
+   token is OAuth 2.0's, OpenID Connect's, OpenID4VCI's and mutual TLS's; an
+   ID Token is OpenID Connect's alone. An application declared for nothing is
+   refused nothing in either mode; in development the declaration is a record
+   of intent. `xacml/CLAUDE.md` and `tests/protocol_declaration.js` carry the
+   rule.
 
    **EVERY PROTOCOL FAMILY NOW NAMES THE ATTRIBUTES ITS CONFIGURATION LANDS
    ON**, and that is what removed the KIND select from the create form rather

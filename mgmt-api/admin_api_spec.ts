@@ -2400,11 +2400,12 @@ const SCHEMAS = {
                      'labels in `protocols`, because a federation partner is ' +
                      'recorded under the protocol its relationship speaks ' +
                      'and by label is indistinguishable from an ordinary ' +
-                     'client. **DECLARING GRANTS AND REFUSES NOTHING**: no ' +
-                     'endpoint reads this attribute, and an application ' +
-                     'declared for one family may still use every other, ' +
-                     'because a mock that refused a protocol would remove a ' +
-                     'test case rather than add one.',
+                     'client. **DECLARING GRANTS NOTHING**, and in product ' +
+                     'mode the issuance policy refuses an issuance through ' +
+                     'a family the application is not declared for ' +
+                     '(STS-XACML-0084); in development, or for an ' +
+                     'application declared for nothing, nothing is ' +
+                     'refused.',
         items: openObject('One protocol family.', {})
       },
       declarations: {

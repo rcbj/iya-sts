@@ -15663,6 +15663,13 @@ const CODES = [
       'ADMIN_WRITE) to one member type; it holds people and applications ' +
       'both (#93).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0084',
+    summary: 'In product mode the issuance policy refused an issuance to an ' +
+      'application through a protocol family it is not declared for ' +
+      '(appAllowedProtocol): an ID Token to an application declared for ' +
+      'OAuth 2.0 alone, a SAML assertion to one declared for OpenID Connect.',
+    spec: 'each protocol\'s own refusal (access_denied, a SAML Responder ' +
+      'status, KDC_ERR_POLICY, a WS-Trust fault)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

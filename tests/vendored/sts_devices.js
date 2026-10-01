@@ -693,7 +693,7 @@ async function test() {
            client(MDM, ["oauth2"], ["device:compliance"]),
            "registered an MDM feed that declares device:compliance");
   await ok(api + "/applications/create",
-           client(NOT_MDM, ["oauth2"], ["openid"]),
+           client(NOT_MDM, ["oauth2", "oidc"], ["openid"]),
            "registered a client that does not declare it");
   const tokenOf = async function (identifier, scope, resource) {
     log.debug("Entering tokenOf(). " + identifier);

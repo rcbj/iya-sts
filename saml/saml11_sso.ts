@@ -1926,6 +1926,8 @@ class Saml11Sso {
     const roleAnswer = gate.check({
       application: rpId,
       kind: gate.ISSUANCE.SAML_ASSERTION,
+      // The family, for the protocol-declaration rule.
+      protocolFamilies: ['saml11'],
       // WHETHER ANYBODY AUTHENTICATED, READ OFF THE SESSION (2026-09-05).
       //
       // This was the constant `true` until unauthenticated sessions existed,

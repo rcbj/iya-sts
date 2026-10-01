@@ -1048,14 +1048,18 @@ deduped rather than one field per family because three families name
 `oauthClientId` and two name `samlEntityId`: two boxes writing one attribute
 would be a form that silently kept whichever was filled in second.
 
-**THE DECLARATION GRANTS NOTHING AND THE PAGE SAYS SO THREE TIMES.** Nothing in
-this service reads `appAllowedProtocol`: an application declared for SAML 2.0
-alone is still issued an access token at `/oauth2/token`. That is the same
-sentence `APPLICATIONS_CAVEAT` already makes about the entry as a whole, and it
-is repeated here because a page of checkboxes headed *protocol families it is
-declared for* is the single most likely thing in this console to be read as a
-permission. The argument for it not being one is `applications.js`'s: a mock
-that refused a protocol would remove a test case rather than add one.
+**THE DECLARATION GRANTS NOTHING, AND IN PRODUCT MODE IT REFUSES THE REST
+(2026-10-01).** The issuance policy's `protocol-not-declared` rule refuses, in
+product mode, an issuance through a family the application is not declared for
+(`STS-XACML-0084`); in development the declaration refuses nothing, and an
+application declared for nothing is refused nothing in either mode.
+`common/CLAUDE.md` (beside `PROTOCOLS`) argues it. **And the application's own
+page shows only what its declaration covers**: the field grid draws a field
+only for a declared family (or one every family shares), a family's
+configuration tab goes when it is unticked, and the Credentials, Software
+statements and Permissions tabs need an OAuth family, Shared Signals `ssf`, and
+SP metadata `saml2`. Values already stored on an undeclared family's attributes
+stay on the entry and in the Directory entry tab.
 
 Three things about it are decisions rather than mechanics:
 

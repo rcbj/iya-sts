@@ -453,7 +453,7 @@ async function test() {
            "the WS-Trust intermediary's application entry");
   for (const client of [MID, MID2]) {
     await ok(realmApi + "/applications/create",
-             { identifier: client, protocols: ["oauth2"],
+             { identifier: client, protocols: ["oauth2", "oidc"],
                fields: { oauthClientId: [client], oauthClientSecret: SECRET,
                          oauthTokenEndpointAuthMethod: "client_secret_post",
                          oauthGrantType: ["client_credentials", EXCHANGE],

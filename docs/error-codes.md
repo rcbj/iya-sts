@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3892** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3893** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -82,7 +82,7 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 83
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 84
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 215
 * [Management API (`STS-API`)](#sts-api) — 75
@@ -3742,6 +3742,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0081` | A role write named a member type that is not user or application (#93). | none (a console or management API refusal, HTTP 400) |
 | `STS-XACML-0082` | A role write gave the role a member of a kind its member types exclude: a person or group on an applications-only role, or an application on a people-only one (#93). | none (a console or management API refusal, HTTP 400) |
 | `STS-XACML-0083` | A role write tried to restrict a console role (ADMIN_READ, ADMIN_WRITE) to one member type; it holds people and applications both (#93). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0084` | In product mode the issuance policy refused an issuance to an application through a protocol family it is not declared for (appAllowedProtocol): an ID Token to an application declared for OAuth 2.0 alone, a SAML assertion to one declared for OpenID Connect. | each protocol's own refusal (access_denied, a SAML Responder status, KDC_ERR_POLICY, a WS-Trust fault) |
 
 ## STS-XPEP
 

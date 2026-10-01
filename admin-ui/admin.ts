@@ -1826,12 +1826,12 @@ const SECTIONS = [
                'else, and the <em>New application</em> button beside it, ' +
                'where the PROTOCOL FAMILIES the entry is declared for are ' +
                'ticked from a closed list and its per-protocol identifiers ' +
-               'and redirect URIs are typed. The declaration is a RECORD OF ' +
-               'INTENT and nothing reads it — an application declared for ' +
-               'SAML 2.0 alone is still issued an access token, because ' +
-               'refusing would remove a test case rather than add one — but ' +
-               'the redirect URIs and the secret beside it are what RFC 9700 ' +
-               'mode judges the next request against.' },
+               'and redirect URIs are typed. In product mode the ' +
+               'declaration is enforced — an application is issued nothing ' +
+               'through a family it is not declared for — and in ' +
+               'development it is a record of intent; the redirect URIs and ' +
+               'the secret beside it are what RFC 9700 mode judges the next ' +
+               'request against.' },
       // DEVICES (#164, #218, 2026-09-26): the register itself, in Directory
       // because its store is — every device is an entry under `ou=devices`,
       // owned by a person or an application entry. A destination, with a
@@ -18099,17 +18099,15 @@ class AdminConsole {
     const declared = draft && draft.protocolsPresent
       ? this.listField(req, draft, 'protocol')
       : [].concat(row.allowedProtocols || []);
-    const holds = function (one) {
-      return (values[one.attribute] || []).some(function (v) {
-        return String(v).trim() !== '';
-      });
-    };
-    // A FIELD IS SHOWN when it belongs to every family, to a family this
-    // application is declared for, or already holds a value. Decided here
-    // rather than by the create page's `:has()` rules, because each group is
-    // a form of its own and the family checkboxes are in another.
+    // A FIELD IS SHOWN when it belongs to every family or to a family this
+    // application is declared for, and to no other (rcbj, 2026-10-01): a
+    // value an undeclared family's field still holds is inert — product mode
+    // refuses that family's requests — and stays visible on the Directory
+    // entry tab. Decided here rather than by the create page's `:has()`
+    // rules, because each group is a form of its own and the family
+    // checkboxes are in another.
     const shown = rows.filter(function (one) {
-      return one.everyFamily || holds(one) || one.families.some(function (f) {
+      return one.everyFamily || one.families.some(function (f) {
         return declared.indexOf(f) >= 0;
       });
     });
@@ -18138,8 +18136,9 @@ class AdminConsole {
     const familiesPanel = '<div class="subpanel first" id="cfg-families">' +
       '<h3>Protocol families it is declared for</h3>' +
       this.note('Tick the families this application speaks and press Save. ' +
-      'A family ticked here adds its tab of fields beside this one; a ' +
-      'field that already holds a value keeps its tab whatever is ticked.') +
+      'A family ticked here adds its tab of fields beside this one, and its ' +
+      'tab goes when it is unticked. In product mode a request through a ' +
+      'family that is not ticked is refused.') +
       formOpen('families', null,
                '<input type="hidden" name="protocolsPresent" value="1">') +
       '<div class="fg-protos" role="group" ' +
@@ -19758,6 +19757,15 @@ class AdminConsole {
     // THE PAGE IS TABS (2026-10-01), one per section that has something to
     // show, so a reader is not scrolling past a dozen sections to reach one.
     // `tabbedPanels()` argues the mechanism: no script, the fragment decides.
+    // A TAB FOR A PROTOCOL THIS APPLICATION IS NOT DECLARED FOR IS NOT
+    // DRAWN (rcbj, 2026-10-01): the page offers what its protocols use.
+    const declaredHere = [].concat(row.allowedProtocols || []);
+    const forFamilies = function (families, html) {
+      return families.some(function (one) {
+        return declaredHere.indexOf(one) >= 0;
+      }) ? html : '';
+    };
+    const OAUTH = ['oauth2', 'oidc', 'oid4vci', 'mtls'];
     const panels = [
       { id: 'tab-overview', label: 'Overview',
         html: '<h3>What it is</h3>' +
@@ -19797,14 +19805,16 @@ class AdminConsole {
       { id: 'tab-config', label: 'Configuration',
         html: this.applicationFieldsSection(req, row, carryBack, state) },
       { id: 'tab-credentials', label: 'Credentials',
-        html: this.applicationCredentialsSection(req, view, carryBack) },
+        html: forFamilies(OAUTH,
+          this.applicationCredentialsSection(req, view, carryBack)) },
       { id: 'tab-origins', label: 'Browser origins',
         html: this.applicationCorsSection(row, carryBack) },
       { id: 'tab-signals', label: 'Shared Signals',
-        html: this.applicationSignalsSection(view, carryBack,
-                                             this.mayWrite(req)) },
+        html: forFamilies(['ssf'], this.applicationSignalsSection(view,
+          carryBack, this.mayWrite(req))) },
       { id: 'tab-statements', label: 'Software statements',
-        html: this.applicationSoftwareStatementSection(req, view, carryBack) },
+        html: forFamilies(OAUTH, this.applicationSoftwareStatementSection(req,
+          view, carryBack)) },
       { id: 'tab-addresses', label: 'Return addresses',
         html: this.applicationObservedAddressesSection(req, view, carryBack) },
       // AFTER the generic attribute editor in the page this was. The editor
@@ -19813,7 +19823,8 @@ class AdminConsole {
       // section is a second DOOR onto it and not a second place it lives,
       // which is the one-store rule /admin/token-lifetimes' header argues.
       { id: 'tab-permissions', label: 'Permissions',
-        html: this.applicationPermissionsSection(req, row, carryBack) },
+        html: forFamilies(OAUTH,
+          this.applicationPermissionsSection(req, row, carryBack)) },
       // AND WHAT IT MAY DO AS ITSELF (#93): the roles it holds.
       { id: 'tab-roles', label: 'Roles',
         html: this.applicationRolesSection(row, view.rolesState, carryBack) },
@@ -19821,7 +19832,7 @@ class AdminConsole {
       // this machine, drawn only for an application that names a URL — see
       // sp_metadata.ts.
       { id: 'tab-metadata', label: 'SP metadata',
-        html:       (this.firstFieldValue(row, 'samlSpMetadataUrl')
+        html: !forFamilies(['saml2'], 'x') ? '' : (this.firstFieldValue(row, 'samlSpMetadataUrl')
         ? '<h2>Service provider metadata</h2>' +
           this.note('Fetches <code>' +
                     this.esc(this.firstFieldValue(row, 'samlSpMetadataUrl')) +
@@ -45566,15 +45577,15 @@ const SAML_KEY_SOURCE_FIELDS = [
 let NEW_APPLICATION_NOTES: string;
 WIRE_STEPS.push(function (instance: AdminConsole): void {
   NEW_APPLICATION_NOTES =
-    instance.note('<strong>Declaring a protocol family grants nothing ' +
-    'and refuses nothing.</strong> No endpoint in this service reads ' +
-    '<code>appAllowedProtocol</code>: an application declared for SAML 2.0 ' +
-    'alone is still issued an access token at <code>/oauth2/token</code>, ' +
-    'and one declared for nothing at all is treated exactly as it would have ' +
-    'been. It is a RECORD OF INTENT on the entry &mdash; what this ' +
-    'application is FOR, said before it has connected &mdash; and it is ' +
-    'deliberately not a permission, because a mock that refused a protocol ' +
-    'would remove a test case rather than add one. The configuration that ' +
+    instance.note('<strong>Declaring a protocol family grants nothing, ' +
+    'and in product mode it refuses the rest.</strong> The issuance ' +
+    'policy refuses, in product mode, an issuance through a family the ' +
+    'application is not declared for: an application declared for SAML 2.0 ' +
+    'alone is refused an access token at <code>/oauth2/token</code>. In ' +
+    'development the declaration is a RECORD OF INTENT &mdash; what this ' +
+    'application is FOR &mdash; and refuses nothing, and an application ' +
+    'declared for nothing at all is refused nothing in either mode. The ' +
+    'configuration that ' +
     'DOES take effect is the attributes underneath: give the entry its ' +
     'redirect URIs, its grant types and its secret from <a ' +
     'href="/admin/applications">Applications</a>, and ' +

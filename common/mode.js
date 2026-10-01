@@ -1215,6 +1215,27 @@ function grantsUndeclaredScopes() {
   return !isProduct();
 }
 
+// Is something issued to an application through a protocol family it is not
+// declared for (2026-10-01)? Development says yes: a client is exercised by
+// whatever protocol a tester points at it, and `appAllowedProtocol` is a
+// description there. Product says no: the declaration is the administrator's
+// statement of which protocols the application speaks, and the issuance
+// policy's `protocol-not-declared` rule refuses the rest. An application
+// declared for nothing is not refused in either mode. `issuance_gate.js`
+// asks it, to decide whether the policy must be asked where the role
+// question is switched off.
+/**
+ * Tells whether an issuance through a protocol family the application is not
+ * declared for goes ahead.
+ *
+ * @returns true in development mode
+ */
+function issuesThroughUndeclaredProtocols() {
+  log.debug("Entering issuesThroughUndeclaredProtocols().");
+  log.debug("Leaving issuesThroughUndeclaredProtocols().");
+  return !isProduct();
+}
+
 // Is a delegated permission the client has NOT been granted honoured anyway
 // (#110, 2026-09-22)? Development says yes unless
 // `oauth2.delegatedPermissionsEnforced` is set, because a client is exercised
@@ -2054,6 +2075,19 @@ const REQUIREMENTS = [
              'rules.',
     where: 'common/scope_policy.ts, oauth-oidc/oauth2.ts, ' +
            'gnap/gnap_grants.ts' },
+  { id: 'declared-protocols',
+    what: 'An application is issued nothing through a protocol it is not ' +
+          'declared for',
+    development: 'appAllowedProtocol is a description: a token, assertion ' +
+                 'or ticket is issued whichever protocol asked.',
+    product: 'The issuance policy\'s protocol-not-declared rule refuses an ' +
+             'issuance through a protocol family the application is not ' +
+             'declared for (STS-XACML-0084): an ID Token to an application ' +
+             'declared for OAuth 2.0 alone, a SAML assertion to one ' +
+             'declared for OpenID Connect. An application declared for ' +
+             'nothing is not refused.',
+    where: 'common/issuance_gate.js, xacml/xacml_role_pep.ts, ' +
+           'xacml/xacml_templates.ts' },
   { id: 'delegated-permissions',
     what: 'A delegated permission is issued only to a client granted it',
     development: 'An ungranted permission is honoured and recorded as ' +
@@ -3544,6 +3578,7 @@ module.exports = {
   exchangesUnverifiedTokens: exchangesUnverifiedTokens,
   authorizesDelegation: authorizesDelegation,
   grantsUndeclaredScopes: grantsUndeclaredScopes,
+  issuesThroughUndeclaredProtocols: issuesThroughUndeclaredProtocols,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,

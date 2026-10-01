@@ -3406,6 +3406,9 @@ class Saml2Sso {
     const roleAnswer = gate.check({
       application: spEntityId,
       kind: gate.ISSUANCE.SAML_ASSERTION,
+      // The family, for the protocol-declaration rule: a SAML assertion is
+      // either version's unless the caller says which.
+      protocolFamilies: ['saml2'],
       // WHETHER ANYBODY AUTHENTICATED, READ OFF THE SESSION (2026-09-05).
       //
       // This was the constant `true` until unauthenticated sessions existed,
@@ -3620,6 +3623,9 @@ class Saml2Sso {
     const roleAnswer = gate.check({
       application: spEntityId,
       kind: gate.ISSUANCE.SAML_ASSERTION,
+      // The family, for the protocol-declaration rule: a SAML assertion is
+      // either version's unless the caller says which.
+      protocolFamilies: ['saml2'],
       subject: { kind: 'user', name: String((session.user || {}).username ||
                                             ''),
                  authenticated: session.authenticated !== false },
@@ -3831,6 +3837,9 @@ class Saml2Sso {
     const roleAnswer = gate.check({
       application: spEntityId,
       kind: gate.ISSUANCE.SAML_ASSERTION,
+      // The family, for the protocol-declaration rule: a SAML assertion is
+      // either version's unless the caller says which.
+      protocolFamilies: ['saml2'],
       subject: { kind: 'user',
                  name: String((session.user || {}).username || ''),
                  authenticated: session.authenticated !== false },

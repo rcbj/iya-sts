@@ -1127,6 +1127,8 @@ class GnapGrants {
       const username = grant.ro ? grant.ro.username : null;
       const allowed = gate.check({
         application: grant.client.identifier, kind: gate.ISSUANCE.ACCESS_TOKEN,
+        // GNAP's, not OAuth 2.0's, for the protocol-declaration rule.
+        protocolFamilies: ['gnap'],
             subject: username ? { kind: 'user', name: username, authenticated:
                                   true } : { kind: 'application', name:
                                              grant.client.identifier,
@@ -1333,6 +1335,7 @@ class GnapGrants {
       const kind = format === 'id_token' ? gate.ISSUANCE.ID_TOKEN :
                    gate.ISSUANCE.SAML_ASSERTION;
       return gate.check({ application: grant.client.identifier, kind: kind,
+                          protocolFamilies: ['gnap'],
                           subject: { kind: 'user', name: grant.ro.username,
                                      authenticated: true },
                           claims: null,

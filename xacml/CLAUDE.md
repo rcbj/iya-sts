@@ -1500,6 +1500,32 @@ decides on them. There is no `if` at an issuance site.
 * **`decideDevices: no`** builds a document with neither rule, as
   `decideRisk: no` builds one with no risk rules.
 
+### The protocol an application is declared for (2026-10-01)
+
+`protocol-not-declared`, a Deny right after the two device rules: **in product
+mode**, an issuance whose protocol families share none with the application's
+`appAllowedProtocol` is refused. Two bags carry it — the declaration on the
+RESOURCE (`PROTOCOL_ATTRIBUTE.DECLARED`, a fact about the application) and the
+families the issuance satisfies in the ENVIRONMENT (`FAMILY`), with the realm's
+mode beside them — and the rule fires only when both hold something, so an
+application declared for nothing and a session are never refused by it.
+
+* **The gate supplies both** (`common/issuance_gate.js`'s `protocolFactsOf()`):
+  the families from `FAMILIES_OF_KIND` or the caller's `protocolFamilies` (the
+  SAML 2.0, SAML 1.1 and GNAP sites name theirs), the declaration off the entry
+  (a Kerberos service also as `<name>@<krb5.realm>`, since the KDC names it
+  without its realm). In product it makes the policy asked past the
+  `roles.enforceIssuance` shortcut, as risk and the device do.
+* **The PEP enforces the obligation** (`PROTOCOL_ATTRIBUTE.OBLIGATION`) before
+  risk and where the role question was waived, as the device's: it is not about
+  roles, and a step-up cannot answer it. `STS-XACML-0084` on the audit row; the
+  client is told the application is not configured for the protocol.
+* **`decideProtocols: no`** builds the policy without it; development is never
+  refused because the rule reads the mode (`mode.issuesThroughUndeclaredProtocols()`
+  is the gate's half of the same question).
+* `tests/protocol_declaration.js` holds the rule, the request and the gate;
+  no over-HTTP job asserts a refusal yet.
+
 ## THE FOURTEENTH DEFECT: TWO CONTAINERS CLAIMING A PAGE THAT WAS NEVER WRITTEN
 
 `xacml_store.ts` and `xacml_pep_registry.ts` each carry a `SCHEMA` whose comment

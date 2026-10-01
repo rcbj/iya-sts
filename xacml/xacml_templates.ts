@@ -407,6 +407,32 @@ const DEVICE_ATTRIBUTE = {
   REFUSAL: 'urn:sts:xacml:device-refusal'
 };
 
+// ---------------------------------------------------------------------------
+// THE PROTOCOL FAMILIES (2026-10-01): an application is declared for some
+// protocol families (`appAllowedProtocol`), and an issuance belongs to some.
+// `xacml_role_pep.ts` sends both — the declaration as a RESOURCE attribute,
+// because it is a fact about the application, and the families this issuance
+// would satisfy as an ENVIRONMENT one, because it is a fact about the request
+// — and the issuance policy refuses, in product mode, an issuance through a
+// family the application was not declared for. An application declared for
+// nothing is not refused: most entries the service seeds or learns declare
+// nothing, and the declaration is what an administrator opts in with.
+// ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers the protocol-declaration rule reads.
+ */
+const PROTOCOL_ATTRIBUTE = {
+  // A BAG on the resource: the family ids the application is declared for.
+  DECLARED: 'urn:sts:xacml:application-declared-protocol',
+  // A BAG in the environment: the family ids this issuance would satisfy —
+  // an access token is one of OAuth 2.0's, OpenID Connect's, OpenID4VCI's
+  // and mutual TLS's; an ID Token is OpenID Connect's alone.
+  FAMILY: 'urn:sts:xacml:protocol-family',
+  // The obligation on the rule's Deny, so the PEP can tell it from a Deny
+  // about roles and refuse it even where the role question was waived.
+  OBLIGATION: 'urn:sts:xacml:obligation:protocol'
+};
+
 /**
  * The attribute identifiers describing a sign-in's risk assessment (#62).
  *
@@ -838,6 +864,16 @@ const TEMPLATES: TemplateRow[] = [
               'application\'s) compliant, uncompromised device, attested ' +
               'too where devices.compliantDeviceAttested says so. No builds ' +
               'the policy with no device rule at all.' },
+      { name: 'decideProtocols',
+        label: 'Refuse a protocol the application is not declared for',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, in product mode, an issuance to an ' +
+              'application through a protocol family it is not declared ' +
+              'for (appAllowedProtocol) is refused: an ID Token to an ' +
+              'application declared for OAuth 2.0 alone, a SAML assertion ' +
+              'to one declared for OpenID Connect. An application declared ' +
+              'for nothing is never refused by it. Development mode is not ' +
+              'refused. No builds the policy without the rule.' },
       { name: 'deviceExempt',
         label: 'Applications the compliant-device rule never refuses',
         dflt: 'sts-admin-console, sts-user-portal', type: 'string',
@@ -867,6 +903,7 @@ const TEMPLATES: TemplateRow[] = [
       const decideRisk = B.yes(given.decideRisk, true);
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
       const decideDevices = B.yes(given.decideDevices, true);
+      const decideProtocols = B.yes(given.decideProtocols, true);
       const decideScopes = B.yes(given.decideScopes, true);
       const decideTransfers = B.yes(given.decideTransfers, true);
       const deviceExempt = B.listOf(given.deviceExempt === undefined
@@ -1270,6 +1307,43 @@ const TEMPLATES: TemplateRow[] = [
         log.debug("Leaving and().");
         return B.apply(F1 + 'and', args);
       };
+      // -------------------------------------------------------------------
+      // THE PROTOCOL-DECLARATION RULE (2026-10-01). In product mode, refuse
+      // an issuance whose protocol families and the application's declared
+      // ones share no member — and only when BOTH bags hold something: an
+      // application declared for nothing, and a question that names no
+      // family (a session), are not about a declaration. After the device
+      // rules and before risk, so its obligation is the first Deny read and
+      // a refusal here is never turned into a step-up.
+      // -------------------------------------------------------------------
+      const holdsSome = function (category: string, id: string): any {
+        log.debug("Entering holdsSome().");
+        log.debug("Leaving holdsSome().");
+        return B.apply(F1 + 'integer-greater-than', [
+          B.apply(F1 + 'string-bag-size', [
+            B.designator(category, id, TYPE.STRING)]),
+          B.value(TYPE.INTEGER, '0')]);
+      };
+      const protocolRules: any[] = decideProtocols ? [{
+        id: options.idBase + ':rule:protocol-not-declared',
+        effect: model.EFFECT.DENY,
+        description: 'In product mode, refuse an issuance to an ' +
+                     'application through a protocol family it is not ' +
+                     'declared for (appAllowedProtocol). An application ' +
+                     'declared for nothing is not refused.',
+        target: null,
+        condition: and([
+          inProduct,
+          holdsSome(R, PROTOCOL_ATTRIBUTE.DECLARED),
+          holdsSome(model.CATEGORY.ENVIRONMENT, PROTOCOL_ATTRIBUTE.FAMILY),
+          not(B.apply(F1 + 'string-at-least-one-member-of', [
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         PROTOCOL_ATTRIBUTE.FAMILY, TYPE.STRING),
+            B.designator(R, PROTOCOL_ATTRIBUTE.DECLARED, TYPE.STRING)]))]),
+        obligations: [{ id: PROTOCOL_ATTRIBUTE.OBLIGATION,
+                        on: model.EFFECT.DENY, assignments: [] }],
+        advice: []
+      }] : [];
       // ONE RULE PER STAGE for the refusals #110 makes: an endpoint still
       // talking to the client REFUSES (`request`), and the backstop every
       // grant mints through DROPS (`mint`) — today's two answers, now each
@@ -1513,7 +1587,8 @@ const TEMPLATES: TemplateRow[] = [
 
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
-                ' device rule(s).');
+                ' device rule(s), ' + protocolRules.length +
+                ' protocol rule(s).');
       return {
         kind: 'Policy',
         id: options.idBase,
@@ -1561,6 +1636,12 @@ const TEMPLATES: TemplateRow[] = [
                             ? ' (never for ' + deviceExempt.join(', ') + ')'
                             : '') + '.'
                         : '') +
+                     (decideProtocols
+                        ? ' AND ON THE PROTOCOL: in product mode, an ' +
+                          'issuance through a protocol family the ' +
+                          'application is not declared for is refused, ' +
+                          'unless it is declared for none.'
+                        : '') +
                      (decideScopes
                         ? ' AND ON EACH REQUESTED SCOPE (#304, #305): the ' +
                           'client\'s declared scopes (#110) — refused where ' +
@@ -1582,7 +1663,7 @@ const TEMPLATES: TemplateRow[] = [
                           'reader here only on the same terms.'
                         : ''),
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
-                        decideScopes || decideTransfers
+                        decideProtocols || decideScopes || decideTransfers
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
@@ -1593,7 +1674,8 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: deviceRules.concat(riskRules).concat(scopeRules)
+        rules: deviceRules.concat(protocolRules).concat(riskRules)
+          .concat(scopeRules)
           .concat(transferRules)
           .concat(decideRisk &&
                                                      protectedApp ? [{
@@ -2559,6 +2641,7 @@ class XacmlTemplates {
    * The device attribute identifiers.
    */
   static readonly DEVICE_ATTRIBUTE = DEVICE_ATTRIBUTE;
+  static readonly PROTOCOL_ATTRIBUTE = PROTOCOL_ATTRIBUTE;
   /**
    * The transfer questions' action-ids and attribute identifiers (#98).
    */
@@ -2735,6 +2818,7 @@ export = {
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
+  PROTOCOL_ATTRIBUTE: XacmlTemplates.PROTOCOL_ATTRIBUTE,
   TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,

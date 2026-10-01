@@ -435,10 +435,16 @@ answers that question. Five families — LDAP, SCIM, SPIFFE, mutual TLS and
 OpenID4VCI — have no kind at all, because this service records no application
 identifier in them; those rows say *never recorded here* rather than *no*.
 
-**Declaring a family grants nothing, and with one exception refuses nothing.**
-An application declared for SAML 2.0 alone is still issued an access token at
-`/oauth2/token`, and one declared for nothing is treated exactly as it would
-otherwise be. The exception is SAML 2.0 in product mode: the per-service-provider
+**Declaring a family grants nothing, and in product mode it refuses the
+rest.** In product mode the issuance policy refuses an issuance through a
+family the application is not declared for: an application declared for SAML
+2.0 alone is refused an access token at `/oauth2/token`, and one declared for
+OAuth 2.0 alone is refused an ID Token (an access token is OAuth 2.0's, OpenID
+Connect's, OpenID4VCI's and mutual TLS's; an ID Token is OpenID Connect's
+alone). In development nothing is refused, and an application declared for
+nothing is refused nothing in either mode. The issuance policy's
+`decideProtocols` answer turns the rule off. Separately, SAML 2.0 in product
+mode: the per-service-provider
 paths `/saml2/metadata/{sp}`, `/saml2/sso/{sp}` and `/saml2/slo/{sp}` answer
 only for a registered service provider — an entry of that kind, or one declared
 for SAML 2.0 (#112) — see [SAML 2.0 Web Browser SSO](saml2-sso.md). What

@@ -290,14 +290,18 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // where this service has no application identifier to record and therefore
 // nothing to give it a kind from.
 //
-// **DECLARING A FAMILY GRANTS AND REFUSES NOTHING**, and this is the sentence
-// to change if that ever stops being true rather than a page's. No endpoint in
-// this service reads this attribute: an application declared for SAML 2.0 alone
-// is still issued an access token at /oauth2/token, because that is what this
-// service is for and a mock that refused would remove a test case rather than
-// add one. It is a record of INTENT, which is the same claim the applications
-// page already makes about the entry as a whole ("an entry here grants
-// nothing") narrowed to one attribute.
+// **DECLARING A FAMILY GRANTS NOTHING, AND IN PRODUCT MODE IT REFUSES THE
+// REST (2026-10-01).** The issuance policy's `protocol-not-declared` rule
+// (`xacml/xacml_templates.ts`, fed by `common/issuance_gate.js`) refuses, in
+// product mode, an issuance through a family the application is not declared
+// for: an application declared for SAML 2.0 alone is refused an access token
+// at /oauth2/token there (STS-XACML-0084). In development it is a record of
+// INTENT and refuses nothing, because a client is exercised by whatever
+// protocol a tester points at it. An application declared for NOTHING is
+// refused nothing in either mode — most entries this service seeds or learns
+// declare nothing, and the declaration is what an administrator opts in with.
+// This is the sentence to change if that stops being true, rather than a
+// page's.
 //
 // **FIFTEEN ATTRIBUTES DO MORE THAN DECLARE, AND ALL ARE FAMILY-SCOPED.**
 // `oauthTokenExchangeRefreshToken` changes what the token endpoint issues;
@@ -391,8 +395,9 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
  * The declared protocol vocabulary: each family an application may be declared
  * for, with its identifier, redirect, logout and secret attributes.
  *
- * Declaring one grants nothing; the console, the API and the create all read
- * this one table.
+ * Declaring one grants nothing and, in product mode, refuses an issuance
+ * through any family not declared; the console, the API and the create all
+ * read this one table.
  */
 const PROTOCOLS = [
   { id: 'oauth2', label: 'OAuth 2.0', kind: 'oauth2-client',
@@ -886,11 +891,12 @@ const SCHEMA = {
             'be read as one thing: that attribute is what has happened and ' +
             'cannot be edited, this one is what somebody said the ' +
             'application is for and is ticked on /admin/applications/new ' +
-            'before it has ever connected. NOTHING IN THIS SERVICE READS IT ' +
-            '— an application declared for SAML 2.0 alone is still issued an ' +
-            'access token, because a mock that refused would remove a test ' +
-            'case rather than add one — so it grants nothing and refuses ' +
-            'nothing, exactly as being in this registry at all does.' },
+            'before it has ever connected. It grants nothing. In PRODUCT ' +
+            'mode the issuance policy refuses an issuance through a family ' +
+            'it does not name — an application declared for SAML 2.0 alone ' +
+            'is refused an access token (STS-XACML-0084); in development it ' +
+            'refuses nothing. Declared for nothing, nothing is refused in ' +
+            'either mode.' },
     { name: 'appAuthorizationServer', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'WHICH AUTHORIZATION SERVERS this client has used, by the name ' +
             'in their paths — one value per server it has been seen at. This ' +
@@ -3853,6 +3859,20 @@ function declaredFamiliesOf(record) {
   return valuesOf((record && record.fields || {}).appAllowedProtocol)
     .map(function (one) { return String(one).trim().toLowerCase(); })
     .filter(function (one) { return !!one; });
+}
+
+/**
+ * Returns the protocol families the application with this identifier is
+ * declared for, or none when it is unknown.
+ *
+ * @param identifier - the application's identifier
+ * @returns the family ids
+ */
+function declaredFamiliesFor(identifier) {
+  log.debug("Entering declaredFamiliesFor().");
+  const loaded = load(identifier);
+  log.debug("Leaving declaredFamiliesFor().");
+  return loaded.known ? declaredFamiliesOf(loaded.record) : [];
 }
 
 // '' when the write is allowed, and the sentence to refuse it with otherwise.
@@ -14243,6 +14263,7 @@ module.exports = {
   // editableAttributes() itself exists for. Both halves come off the SCHEMA
   // row's `families` member.
   declaredFamiliesOf: declaredFamiliesOf,
+  declaredFamiliesFor: declaredFamiliesFor,
   familyRefusal: familyRefusal,
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,
