@@ -258,6 +258,37 @@ function childMain() {
       note(!('protocolEndpoints' in JSON.parse(other.body)),
            'and not for a page drawn under that page\'s tab with a path of ' +
            'its own');
+
+      // --- D2. A Copy button beside every endpoint, and the one script ---
+      // (2026-10-01): drawn hidden, revealed by /admin/copy.js, which the
+      // page is served script-src 'self' for — frame-ancestors and
+      // base-uri kept — and only a page that draws a button.
+      const drawn = fakeRes();
+      admin.respond(fakeReq('/admin/saml2'), drawn, { page: '/admin/saml2' },
+                    'SAML 2.0', '/admin/saml2', '<h2>Its settings</h2>');
+      const html = String(drawn.body || '');
+      const csp = String(drawn.headers['Content-Security-Policy'] || '');
+      const buttons = html.split('class="copybtn" hidden data-copy="')
+        .length - 1;
+      note(buttons === answered.protocolEndpoints.length &&
+           html.split('<script').length - 1 === 1 &&
+           html.indexOf('<script src="/admin/copy.js" defer></script>') >= 0,
+           'D2a. the Endpoints section draws a hidden Copy button per ' +
+           'endpoint and the page carries exactly one script, ' +
+           '/admin/copy.js', buttons + ' button(s) for ' +
+           answered.protocolEndpoints.length + ' endpoint(s)');
+      note(/script-src 'self'/.test(csp) && !/unsafe-inline/.test(
+             csp.replace(/style-src[^;]*/, '')) &&
+           /frame-ancestors 'none'/.test(csp) && /base-uri 'none'/.test(csp),
+           'D2b. that page is served script-src \'self\', never ' +
+           'unsafe-inline, with frame-ancestors and base-uri kept', csp);
+      const plain = fakeRes();
+      admin.respond(fakeReq('/admin/users'), plain, { page: '/admin/users' },
+                    'Users', '/admin/users', '<h2>People</h2>');
+      note(plain.headers['Content-Security-Policy'] === undefined &&
+           String(plain.body || '').indexOf('<script') < 0,
+           'D2c. a page with no Copy button gets no script and no relaxed ' +
+           'policy');
     });
 
     // --- E. the management API's mirror answers the same --------------------

@@ -554,6 +554,12 @@ const SURVEY = `
   return {
     title: document.title,
     scripts: document.scripts.length,
+    scriptSrcs: Array.from(document.scripts).map(function (one) {
+      return one.getAttribute('src') || '';
+    }),
+    copyButtons: document.querySelectorAll('button.copybtn').length,
+    copyButtonsShown: Array.from(document.querySelectorAll('button.copybtn'))
+      .filter(function (one) { return !one.hidden; }).length,
     forms: Array.from(document.forms).map(function (f, i) {
       return {
         index: i,
@@ -1308,8 +1314,26 @@ async function everyPageIsDrawn(driver, pages) {
         "and it should have a title; it has " + JSON.stringify(page.title));
     });
     const scripted = SCRIPTED_PAGES[path];
+    // A PROTOCOLS PAGE DRAWS A COPY BUTTON BESIDE EACH ENDPOINT (2026-10-01),
+    // and that is the one other script this console may carry: /admin/copy.js,
+    // which reveals the buttons and copies a value. The page is the page with
+    // the script blocked — the buttons stay hidden — so the test is that the
+    // page names exactly that one resource, is served `script-src 'self'` and
+    // nothing looser, and that the script really ran (every button shown).
+    const copying = !scripted && page.copyButtons > 0;
     check(path + " keeps the policy", function () {
-      if (scripted) {
+      if (copying) {
+        assert.ok(/script-src\s+'self'/.test(csp),
+          path + " draws " + page.copyButtons + " Copy button(s) and must be " +
+          "served `script-src 'self'` for /admin/copy.js. Its policy is: " +
+          csp);
+        assert.ok(!/unsafe-inline/.test(csp.replace(/style-src[^;]*/, "")),
+          path + " must NOT relax anything to 'unsafe-inline'. Its policy " +
+          "is: " + csp);
+        assert.ok(!/connect-src/.test(csp),
+          path + " needs no `connect-src`: copying calls nothing. Its " +
+          "policy is: " + csp);
+      } else if (scripted) {
         // THE EXCEPTION IS CHECKED HARDER THAN THE RULE. A page allowed to
         // relax `script-src` must relax exactly that, to exactly `'self'`, and
         // must never reach `'unsafe-inline'` — which is the clause that would
@@ -1349,8 +1373,21 @@ async function everyPageIsDrawn(driver, pages) {
       assert.ok(/base-uri\s+'none'/.test(csp),
         path + " must be served with `base-uri 'none'`. Its policy is: " + csp);
     });
-    check(path + (scripted ? " carries exactly its own script"
-                           : " has no script on it"), function () {
+    check(path + (scripted || copying ? " carries exactly its own script"
+                                      : " has no script on it"), function () {
+      if (copying) {
+        // A realm's page names it under the realm prefix, which app.js adds.
+        assert.ok(page.scriptSrcs.length === 1 &&
+                  /^(\/realm\/[^/]+)?\/admin\/copy\.js$/
+                    .test(page.scriptSrcs[0]),
+          path + " should carry exactly one <script>, /admin/copy.js; the " +
+          "browser built " + JSON.stringify(page.scriptSrcs) + ".");
+        assert.strictEqual(page.copyButtonsShown, page.copyButtons,
+          path + " should show every Copy button once the script has run; " +
+          page.copyButtonsShown + " of " + page.copyButtons + " are shown, " +
+          "so /admin/copy.js did not run.");
+        return;
+      }
       if (scripted) {
         // `document.scripts.length` is the browser's own answer, which is why
         // this walk is worth doing in a browser at all: ONE script, and the
@@ -1364,7 +1401,8 @@ async function everyPageIsDrawn(driver, pages) {
       assert.strictEqual(page.scripts, 0,
         path + " has " + page.scripts + " <script> element(s) in the DOM the " +
         "browser built. The console has no JavaScript on any page but the " +
-        "one named in SCRIPTED_PAGES, which is what makes the family of " +
+        "one named in SCRIPTED_PAGES and the Protocols pages' copy " +
+        "script, which is what makes the family of " +
         "reflected-content problems moot here rather than merely unlikely — " +
         "and a page that carries one is relying on the header to save it.");
     });

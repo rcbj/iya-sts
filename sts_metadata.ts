@@ -4752,10 +4752,17 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin/api-explorer/explorer.js', group: 'Admin',
     name: 'API explorer script', specs: [],
     what:
-      'NON-SPEC. The explorer\'s script, and the only script this service ' +
-          'serves. A separate resource rather than an inline block precisely ' +
-          'so that script-src \'self\' suffices and \'unsafe-inline\' is ' +
-          'never needed.' },
+      'NON-SPEC. The explorer\'s script. A separate resource rather than an ' +
+          'inline block precisely so that script-src \'self\' suffices and ' +
+          '\'unsafe-inline\' is never needed.' },
+  { path: '/admin/copy.js', group: 'Admin',
+    name: 'Copy button script', specs: [],
+    what:
+      'NON-SPEC. The script behind the Copy buttons beside every endpoint ' +
+          'on the Protocols pages: it reveals the hidden buttons and copies ' +
+          'a value to the clipboard (the asynchronous clipboard, or a ' +
+          'selected text area with execCommand where there is none). Loaded ' +
+          'with script-src \'self\' only by a page that draws a Copy button.' },
   { path: '/admin/sts-metadata', group: 'Admin', name: 'This page',
     specs: [],
     what: 'NON-SPEC. Every protocol this service speaks, every endpoint it ' +

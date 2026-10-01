@@ -6226,6 +6226,19 @@ Four decisions belong to this file:
   headed *Endpoints*, and it describes operations by path under `/scim/v2`
   rather than the realm's addresses.
 
+**A COPY BUTTON BESIDE EVERY ENDPOINT (2026-10-01).** `copyButton(value)`
+draws `<button type="button" class="copybtn" hidden data-copy="…">`, and
+GNAP's own table uses it too. `respond()` sees a page carrying one, serves it
+`script-src 'self'` through `app.contentSecurityPolicy()` (so `frame-ancestors`
+and `base-uri` stay) and appends `<script src="/admin/copy.js" defer>`; a page
+with none is untouched. The script is the parent project's `copyField()`:
+`navigator.clipboard.writeText()`, falling back to a selected hidden textarea
+and `execCommand('copy')` outside a secure context. The buttons are `hidden`
+until it runs, so with script blocked the page is what it was and the URL is
+still selectable text. The argument for the script is the root `CLAUDE.md`'s
+row; `tests/protocol_endpoints.js` section D2 and `sts_admin_console.js`'s page
+walk hold it.
+
 `protocolEndpointDrift()` is exported for `tests/protocol_endpoints.js`, which
 fails on a Protocols page with neither a row nor an exemption and on a row
 naming a page not under Protocols. **A new page under Protocols therefore owes

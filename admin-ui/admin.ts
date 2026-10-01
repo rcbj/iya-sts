@@ -3077,6 +3077,56 @@ type RouteApp = typeof app;
 // The tabs of an application's page, in the order they are drawn: the ids
 // `applicationDetailPage()` gives its panels, named here because the
 // stylesheet marks the tab being read by its id.
+// THE COPY BUTTONS' SCRIPT (rcbj, 2026-10-01), served at /admin/copy.js:
+// the parent project's copyField() (client/src/tool_panes.js) — the
+// asynchronous clipboard where the browser offers it, and a selected text
+// area with execCommand('copy') where it does not, since navigator.clipboard
+// is undefined outside a secure context. It reveals the hidden buttons, so a
+// page whose script is blocked is the page it was. Browser code, served as
+// data: the code style's Entering/Leaving rule does not reach it.
+const COPY_SCRIPT = [
+  '(function () {',
+  '  "use strict";',
+  '  function fallback(text) {',
+  '    var area = document.createElement("textarea");',
+  '    area.value = text;',
+  '    area.setAttribute("readonly", "");',
+  '    area.style.position = "fixed";',
+  '    area.style.opacity = "0";',
+  '    document.body.appendChild(area);',
+  '    area.focus();',
+  '    area.select();',
+  '    var ok = false;',
+  '    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }',
+  '    document.body.removeChild(area);',
+  '    return ok;',
+  '  }',
+  '  function copied(button, ok) {',
+  '    var label = button.textContent;',
+  '    button.textContent = ok ? "Copied" : "Copy failed";',
+  '    setTimeout(function () { button.textContent = label; }, 1500);',
+  '  }',
+  '  function copy(button) {',
+  '    var text = button.getAttribute("data-copy") || "";',
+  '    if (navigator.clipboard && navigator.clipboard.writeText) {',
+  '      navigator.clipboard.writeText(text).then(function () {',
+  '        copied(button, true);',
+  '      }, function () {',
+  '        copied(button, fallback(text));',
+  '      });',
+  '      return;',
+  '    }',
+  '    copied(button, fallback(text));',
+  '  }',
+  '  var buttons = document.querySelectorAll("button.copybtn[data-copy]");',
+  '  Array.prototype.forEach.call(buttons, function (button) {',
+  '    button.hidden = false;',
+  '    button.addEventListener("click", function () { copy(button); });',
+  '  });',
+  '})();',
+  ''
+].join('\n');
+
 const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
   'tab-origins', 'tab-signals', 'tab-statements', 'tab-addresses',
   'tab-permissions', 'tab-roles', 'tab-metadata', 'tab-entry', 'tab-remove'];
@@ -5416,6 +5466,9 @@ class AdminConsole {
       // download control has to be an <a download> — these pages run no
       // script, so nothing else can hand a browser a file — and a
       // control that saves a document should not read as a sentence.
+      // The copy buttons (2026-10-01): small, beside the value they copy.
+      'button.copybtn{padding:1px 7px;margin-left:6px;font-size:.8em;' +
+      'vertical-align:baseline}' +
       'a.btn{display:inline-block;padding:5px 10px;border-radius:5px;' +
       'border:1px solid #12107c;background:#12107c;color:#fff;font-size:.8em;' +
       'text-decoration:none}' +
@@ -5868,7 +5921,29 @@ class AdminConsole {
   // the lead notes and warnings that say what the page is, before the first
   // section of what it holds. A page with no heading gets it at the foot.
   // ---------------------------------------------------------------------------
+    // A COPY BUTTON BESIDE A VALUE (rcbj, 2026-10-01), first beside every
+  // endpoint in a Protocols page's Endpoints section. The button is drawn
+  // HIDDEN and carries the value it copies: `/admin/copy.js` reveals it and
+  // copies on a click. With the script blocked the page is exactly what it
+  // was, and the value beside it can still be selected by hand. `respond()`
+  // sees the attribute and is what adds the script and relaxes the policy,
+  // for that page only.
   /**
+   * Draws a hidden Copy button for a value, which `/admin/copy.js` reveals.
+   *
+   * @param value - the text the button copies
+   * @returns the markup
+   */
+  copyButton(value) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.copyButton().");
+    log.debug("Leaving AdminConsole.copyButton().");
+    return ' <button type="button" class="copybtn" hidden data-copy="' +
+      this.esc(String(value == null ? '' : value)) + '" title="Copy ' +
+      'to the clipboard">Copy</button>';
+  }
+
+/**
    * Draws the Endpoints section of a Protocols page.
    *
    * @param rows - the endpoint rows protocol_endpoints.ts lists
@@ -5883,7 +5958,7 @@ class AdminConsole {
                   (row.transport || '');
       return '<tr><th>' + self.esc(row.name) + '</th><td><code>' +
              self.esc(row.url) +
-        '</code>' +
+        '</code>' + self.copyButton(row.url) +
         (how ? ' <span class="sub">' + self.esc(how) + '</span>' : '') +
         (row.registered === false ?
          ' <span class="sub">— not registered in this process</span>' : '') +
@@ -6003,6 +6078,16 @@ class AdminConsole {
          .send(JSON.stringify(json, null, 2));
       log.debug("Leaving AdminConsole.respond(). Answered JSON.");
       return;
+    }
+    // A PAGE WITH A COPY BUTTON CARRIES ONE SCRIPT (2026-10-01):
+    // `/admin/copy.js`, named by `script-src 'self'` through
+    // `app.contentSecurityPolicy()` so `frame-ancestors` and `base-uri`
+    // stay, and never inline. Every other page stays `script-src 'none'`.
+    // See copyButton().
+    if (String(html || '').indexOf('class="copybtn"') >= 0) {
+      res.set('Content-Security-Policy', app.contentSecurityPolicy({
+        'script-src': "'self'" }));
+      html = String(html) + '<script src="/admin/copy.js" defer></script>';
     }
     res.status(200).type('text/html').send(
       this.withCsrf(req,
@@ -38901,6 +38986,21 @@ class AdminConsole {
       self.respondToApplicationAction(req, res, body, result);
     });
 
+    // THE COPY BUTTONS' SCRIPT (rcbj, 2026-10-01). The parent project's
+    // `copyField()` (client/src/tool_panes.js): the asynchronous clipboard
+    // where there is one, and a selected text area with execCommand('copy')
+    // where there is not — `navigator.clipboard` is undefined outside a
+    // secure context, which a console reached over plain http is. A separate
+    // resource, never inline, so `script-src 'self'` is enough; it reveals
+    // the hidden buttons, so with it blocked nothing on the page changes.
+    // Browser code: no log lines (the code style's exemption).
+    app.get('/admin/copy.js', function (req, res) {
+      log.debug("Entering the admin copy script.");
+      res.set('Cache-Control', 'no-store');
+      res.status(200).type('application/javascript').send(COPY_SCRIPT);
+      log.debug("Leaving the admin copy script.");
+    });
+
     app.get('/admin/applications', function (req, res) {
       log.debug("Entering the admin applications page.");
       const view = self.applicationsView(req);
@@ -48150,6 +48250,7 @@ const consoleExports = {
   // application's page too — see applicationReturnTo().
   applicationReturnTo: slot.forward('applicationReturnTo'),
   enrollmentReturnTo: slot.forward('enrollmentReturnTo'),
+  copyButton: slot.forward('copyButton'),
   userReturnTo: slot.forward('userReturnTo'),
   // And the trail a page drawn there hangs under, so the one-time key page an
   // issue from a person's own page answers with is `Users › Signing key pair`
