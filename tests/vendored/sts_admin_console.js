@@ -3490,6 +3490,7 @@ async function theHandlersNothingEverPressed(driver) {
   await theKerberosPrincipalsPageCreatesAndDeletes(driver);
   await theCredentialsSectionIsPressed(driver);
   await thePersonCredentialsSectionIsPressed(driver);
+  await theFieldGridIsPressed(driver);
 
   log.debug("Leaving theHandlersNothingEverPressed().");
 }
@@ -4263,6 +4264,314 @@ async function theCredentialsSectionIsPressed(driver) {
            "this realm holding the uploaded certificate, and Take off " +
            "cleared it.");
   log.debug("Leaving theCredentialsSectionIsPressed().");
+}
+
+// ---------------------------------------------------------------------------
+// THE FIELD GRID, PRESSED ON BOTH PAGES (2026-10-01).
+//
+// `/admin/applications/new` and an application's own page draw one typed grid:
+// a list is one box per value with a "+" and a trash can, a boolean three
+// radios, and the create page has a simplified and an advanced view. None of
+// it has a script, so every one of those buttons is a SUBMIT with a
+// `formaction` that redraws the page — and what has to be true is that each
+// press keeps everything else that was typed. That is a property of the
+// redraw, which only a real round trip can show; the in-process test holds the
+// catalogue and nothing else.
+//
+// On the create page: the view switch keeps the identifier and the ticked
+// family; "+" adds an empty box and keeps the value beside it; the trash can
+// takes one value away and keeps the other; a create with an empty box is
+// refused with every box kept and nothing created; the create that follows
+// writes exactly the one URI and the boolean. On the application page: "+"
+// redraws and writes nothing; Save adds the new value; the trash can and a
+// radio moved to false save as one write; an empty box is refused and changes
+// nothing; the radio's third choice clears the attribute.
+// ---------------------------------------------------------------------------
+async function theFieldGridIsPressed(driver) {
+  log.debug("Entering theFieldGridIsPressed().");
+  log.info("=== The application field grid: +, the trash can, the view " +
+           "switch, Create and Save ===");
+  const stamp = names.runStamp().toLowerCase().replace(/[^a-z0-9]/g, "")
+    .slice(0, 8);
+  const APP = "console-grid-" + stamp;
+  const URI_A = "https://grid-a-" + stamp + ".example/cb";
+  const URI_B = "https://grid-b-" + stamp + ".example/cb";
+  const URI_C = "https://grid-c-" + stamp + ".example/cb";
+  const BOOL = "oauthRequirePushedAuthorizationRequests";
+  const REDIRECT = "oauthRedirectUri";
+
+  // Presses the first VISIBLE-TO-A-PERSON button the css and the text pick,
+  // having first set `values` in that button's form. A real click, then a
+  // wait for the page it replaces, as fillAndPress() does.
+  const press = async function (css, text, values) {
+    log.debug("Entering press(). " + css + " " + (text || ""));
+    const button = await driver.executeScript(`
+      const css = arguments[0];
+      const text = arguments[1];
+      return Array.from(document.querySelectorAll(css)).filter(function (b) {
+        return b.getAttribute('aria-hidden') !== 'true' &&
+          (!text || (b.textContent || '').indexOf(text) >= 0);
+      })[0] || null;
+    `, css, text || "");
+    assert.ok(button, "no button matching " + css + " " + (text || "") +
+              " on " + (await driver.getCurrentUrl()));
+    await driver.executeScript(`
+      const f = arguments[0].form;
+      const values = arguments[1];
+      Object.keys(values).forEach(function (name) {
+        const control = f.elements[name];
+        if (!control) { return; }
+        const list = (control.length !== undefined && !control.tagName)
+          ? Array.from(control) : [control];
+        list.forEach(function (e) {
+          if (e.type === 'radio' || e.type === 'checkbox') {
+            e.checked = String(e.value) === String(values[name]);
+          } else {
+            e.value = String(values[name]);
+          }
+        });
+      });
+      for (let d = arguments[0].closest('details'); d;
+           d = d.parentElement && d.parentElement.closest('details')) {
+        d.open = true;
+      }
+    `, button, values || {});
+    const from = mark();
+    const leaving = await driver.findElement(By.css("html"));
+    await button.click();
+    await driver.wait(until.stalenessOf(leaving), 20000);
+    await settleAfterSubmit(driver, from, "POST");
+    log.debug("Leaving press().");
+  };
+  // What the page's grid form holds now, by control name.
+  const state = async function () {
+    log.debug("Entering state().");
+    const read = await driver.executeScript(`
+      const out = { boxes: [], radio: null, checked: [], text: '',
+                    cells: document.querySelectorAll('.fg-cell').length };
+      Array.from(document.querySelectorAll(
+          "input[name^='field.${REDIRECT}.']")).forEach(function (e) {
+        out.boxes.push(e.value);
+      });
+      const r = document.querySelector(
+          "input[type=radio][name='field.${BOOL}']:checked");
+      out.radio = r ? r.value : null;
+      out.hasRadio = !!document.querySelector(
+          "input[type=radio][name='field.${BOOL}']");
+      Array.from(document.querySelectorAll(
+          "input[type=checkbox][name=protocol]:checked")).forEach(function (e) {
+        out.checked.push(e.value);
+      });
+      const id = document.querySelector("input[name=identifier]");
+      out.identifier = id ? id.value : null;
+      out.text = document.body ? document.body.innerText : '';
+      return out;
+    `);
+    log.debug("Leaving state().");
+    return read;
+  };
+  const entryOf = async function () {
+    log.debug("Entering entryOf().");
+    const reply = await apiJson("/realm/" + REALM +
+                                "/admin-api/applications?application=" +
+                                encodeURIComponent(APP));
+    log.debug("Leaving entryOf().");
+    return reply.status === 200 && reply.body && reply.body.fields
+      ? reply.body.fields : null;
+  };
+  const listOf = function (fields, name) {
+    log.debug("Entering listOf().");
+    log.debug("Leaving listOf().");
+    return fields && fields[name] !== undefined
+      ? [].concat(fields[name]).map(String) : [];
+  };
+  const onThePath = async function (path) {
+    log.debug("Entering onThePath().");
+    const u = new URL(await driver.getCurrentUrl());
+    log.debug("Leaving onThePath().");
+    return u.pathname === "/realm/" + REALM + path;
+  };
+  const GROW = "button.fg-grow[value='" + REDIRECT + "']";
+  const dropOf = function (n) {
+    return "button.fg-drop[value='" + REDIRECT + "." + n + "']";
+  };
+
+  // --- The create page -------------------------------------------------------
+  await open(driver, realm("/admin/applications/new"));
+  const simple = await state();
+  check("the create page opens in the simplified view, with a + for the " +
+        "redirect URIs and no boxes", function () {
+    assert.ok(/Simplified view/.test(simple.text),
+      "the page does not say it is the simplified view");
+    assert.ok(simple.cells > 0, "the page draws no field grid");
+    assert.strictEqual(simple.boxes.length, 0,
+      "a new application's redirect URI list should be no boxes; it is " +
+      JSON.stringify(simple.boxes));
+  });
+  // The identifier is TYPED, so one control on this page goes through real
+  // key events, as every other form in this file has one.
+  const idBox = await driver.findElement(By.css("input[name=identifier]"));
+  await idBox.clear();
+  await idBox.sendKeys(APP);
+  await press("button[name=switchview]", "", { protocol: "oauth2",
+                                               name: "Console grid app" });
+  const advanced = await state();
+  check("the view switch draws every field and keeps what was typed and " +
+        "ticked", function () {
+    assert.ok(/Advanced view/.test(advanced.text),
+      "the switch did not reach the advanced view");
+    assert.ok(advanced.cells > simple.cells,
+      "the advanced view draws " + advanced.cells + " fields and the " +
+      "simplified one " + simple.cells);
+    assert.strictEqual(advanced.identifier, APP,
+      "the identifier typed before the switch was lost: " +
+      JSON.stringify(advanced.identifier));
+    assert.deepStrictEqual(advanced.checked, ["oauth2"],
+      "the ticked family was lost: " + JSON.stringify(advanced.checked));
+    assert.ok(advanced.hasRadio, "the advanced view draws no radios for " +
+              BOOL);
+  });
+
+  await press(GROW, "", {});
+  const grown = await state();
+  const grownOnNew = await onThePath("/admin/applications/new");
+  check("+ on the create page adds one empty box and creates nothing",
+        function () {
+    assert.deepStrictEqual(grown.boxes, [""], JSON.stringify(grown.boxes));
+    assert.ok(grownOnNew, "+ left the create page");
+  });
+  assert.strictEqual(await entryOf(), null,
+    "+ created the application " + APP);
+  await press(GROW, "", { ["field." + REDIRECT + ".0"]: URI_A });
+  const twice = await state();
+  check("a second + keeps the value typed in the first box", function () {
+    assert.deepStrictEqual(twice.boxes, [URI_A, ""],
+      JSON.stringify(twice.boxes));
+    assert.strictEqual(twice.identifier, APP, "the identifier was lost");
+  });
+  await press(dropOf(0), "", { ["field." + REDIRECT + ".1"]: URI_B });
+  const dropped = await state();
+  check("the trash can takes the first value away and keeps the second",
+        function () {
+    assert.deepStrictEqual(dropped.boxes, [URI_B],
+      JSON.stringify(dropped.boxes));
+  });
+
+  await press(GROW, "", { ["field." + BOOL]: "TRUE" });
+  await press("form.newapp .formrow > button[type=submit]",
+              "Create the application", {});
+  const refusedCreate = await state();
+  check("a create with an empty box is REFUSED, every box and the radio " +
+        "kept, and nothing created", function () {
+    assert.ok(/must hold a value/.test(refusedCreate.text),
+      "the page does not say the empty box was refused");
+    assert.deepStrictEqual(refusedCreate.boxes, [URI_B, ""],
+      JSON.stringify(refusedCreate.boxes));
+    assert.strictEqual(refusedCreate.radio, "TRUE",
+      "the radio set before the refusal was lost");
+    assert.strictEqual(refusedCreate.identifier, APP);
+  });
+  assert.strictEqual(await entryOf(), null,
+    "the refused create made the application anyway");
+
+  await press(dropOf(1), "", {});
+  await press("form.newapp .formrow > button[type=submit]",
+              "Create the application", {});
+  const created = await entryOf();
+  const landed = new URL(await driver.getCurrentUrl());
+  check("the create writes exactly the one URI left and the boolean, and " +
+        "lands on the application", function () {
+    assert.ok(created, "no application " + APP + " after Create");
+    assert.deepStrictEqual(listOf(created, REDIRECT), [URI_B],
+      JSON.stringify(listOf(created, REDIRECT)));
+    assert.deepStrictEqual(listOf(created, BOOL), ["TRUE"],
+      JSON.stringify(listOf(created, BOOL)));
+    assert.strictEqual(landed.searchParams.get("application"), APP,
+      "the create landed on " + landed.href);
+  });
+
+  // --- The application's own page --------------------------------------------
+  const pageUrl = realm("/admin/applications?application=" +
+                        encodeURIComponent(APP));
+  await open(driver, pageUrl);
+  const shown = await state();
+  check("the application page's grid holds what the entry holds",
+        function () {
+    assert.deepStrictEqual(shown.boxes, [URI_B], JSON.stringify(shown.boxes));
+    assert.strictEqual(shown.radio, "TRUE");
+  });
+  await press(GROW, "", {});
+  const editGrown = await state();
+  const grownOnEdit = await onThePath("/admin/applications/edit");
+  check("+ on the application page redraws with an empty box and writes " +
+        "nothing", function () {
+    assert.ok(grownOnEdit,
+      "+ did not redraw through /admin/applications/edit");
+    assert.deepStrictEqual(editGrown.boxes, [URI_B, ""],
+      JSON.stringify(editGrown.boxes));
+  });
+  assert.deepStrictEqual(listOf(await entryOf(), REDIRECT), [URI_B],
+    "+ on the application page wrote to the entry");
+  const SAVE = "form.appgrid .formrow > button[type=submit]";
+  await press(SAVE, "Save", { ["field." + REDIRECT + ".1"]: URI_C });
+  const savedTwo = await entryOf();
+  const u = new URL(await driver.getCurrentUrl());
+  check("Save adds the value typed in the new box and lands on the grid",
+        function () {
+    assert.deepStrictEqual(listOf(savedTwo, REDIRECT), [URI_B, URI_C],
+      JSON.stringify(listOf(savedTwo, REDIRECT)));
+    assert.strictEqual(outcomeOf(u.href, "error"), "",
+      "the save was refused: " + outcomeOf(u.href, "error"));
+    assert.ok(u.searchParams.get("application") === APP &&
+              u.hash === "#fields", "Save landed on " + u.href);
+  });
+
+  await press(dropOf(0), "", { ["field." + BOOL]: "FALSE" });
+  const editDropped = await state();
+  check("the trash can on the application page keeps the other value and " +
+        "the radio just moved", function () {
+    assert.deepStrictEqual(editDropped.boxes, [URI_C],
+      JSON.stringify(editDropped.boxes));
+    assert.strictEqual(editDropped.radio, "FALSE");
+  });
+  await press(SAVE, "Save", {});
+  const savedOne = await entryOf();
+  check("Save writes the removal and the radio together", function () {
+    assert.deepStrictEqual(listOf(savedOne, REDIRECT), [URI_C],
+      JSON.stringify(listOf(savedOne, REDIRECT)));
+    assert.deepStrictEqual(listOf(savedOne, BOOL), ["FALSE"],
+      JSON.stringify(listOf(savedOne, BOOL)));
+  });
+
+  await press(GROW, "", {});
+  await press(SAVE, "Save", {});
+  const refusedSave = await state();
+  const afterRefusedSave = listOf(await entryOf(), REDIRECT);
+  check("a Save with an empty box is refused, says why, and changes nothing",
+        function () {
+    assert.ok(/must hold a value/.test(refusedSave.text),
+      "the page does not say the empty box was refused");
+    assert.deepStrictEqual(refusedSave.boxes, [URI_C, ""],
+      JSON.stringify(refusedSave.boxes));
+    assert.deepStrictEqual(afterRefusedSave, [URI_C],
+      "the refused save changed the entry");
+  });
+
+  await press(dropOf(1), "", { ["field." + BOOL]: "" });
+  await press(SAVE, "Save", {});
+  const cleared = await entryOf();
+  check("the radio's default choice clears the attribute", function () {
+    assert.deepStrictEqual(listOf(cleared, BOOL), [],
+      JSON.stringify(listOf(cleared, BOOL)));
+    assert.deepStrictEqual(listOf(cleared, REDIRECT), [URI_C]);
+  });
+  log.info("[field grid] OK — on the create page the view switch, + and the " +
+           "trash can kept every other value, an empty box was refused with " +
+           "nothing created, and Create wrote one URI and the boolean; on " +
+           "the application page + wrote nothing, Save added and removed " +
+           "values and moved the radio, an empty box was refused, and the " +
+           "default radio cleared the attribute.");
+  log.debug("Leaving theFieldGridIsPressed().");
 }
 
 // ---------------------------------------------------------------------------
