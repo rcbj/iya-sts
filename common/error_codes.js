@@ -9639,6 +9639,22 @@ const CODES = [
       'relationship maps it onto an attribute no partner may write (a ' +
       'mapping written before #94, or by an ldapmodify) (#94).',
     spec: 'none (logged; the sign-in proceeds without it)' },
+  { code: 'STS-FED-0154',
+    summary: 'A federation relationship\'s Shared Signals credential ' +
+      '(fedSignalsClientSecret or fedSignalsBearer) could not be sealed ' +
+      'under the key-encryption key where keys persist, so it was not ' +
+      'written (#373).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0155',
+    summary: 'A federated sign-in was started through an ssf relationship, ' +
+      'which only sends Shared Signals and signs nobody in (#374).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0156',
+    summary: 'A federated sign-in was refused because the partner\'s own ' +
+      'Shared Signals (a verified account-disabled) blocked its sign-ins of ' +
+      'this person; its account-enabled, or an administrator, lifts it ' +
+      '(#373).',
+    spec: 'HTTP 403 page' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -13301,53 +13317,57 @@ const CODES = [
       'nothing kept; the rotation itself stands.',
     spec: 'none — logged; nothing is sent to a receiver' },
   { code: 'STS-SSF-0113',
-    summary: 'A foreign SSF transmitter act was refused: an ' +
-      'unknown action, a bad or taken id, the realm\'s limit, no federation ' +
-      'relationship, an unsupported delivery, no credential, or no stream ' +
-      'yet (#153).',
+    summary: 'A Shared Signals act on a federation relationship was ' +
+      'refused: an unknown signals-* action, no such service-provider-side ' +
+      'relationship, no issuer or credential configured, an unsupported ' +
+      'delivery, a stream already held, a bad status or subject, or no ' +
+      'stream yet (#153, #373).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-SSF-0114',
-    summary: 'A foreign transmitter could not be registered: its ' +
+    summary: 'A federation partner\'s Shared Signals configuration could ' +
+      'not be discovered: the SSF issuer is not a URL, its ' +
       '/.well-known/ssf-configuration could not be read or does not name ' +
       'the issuer, a jwks_uri and a configuration_endpoint, or its jwks_uri ' +
-      'could not be read (#153).',
+      'could not be read (#153, #373).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-SSF-0115',
-    summary: 'A foreign transmitter refused a stream act — create, ' +
+    summary: 'A federation partner refused a stream act — create, ' +
       'read, update, delete, status, a subject or verification — or could ' +
-      'not be reached (#153).',
+      'not be reached (#153, #373).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-SSF-0116',
-    summary: 'Polling a foreign transmitter (RFC 8936) failed ' +
-      '(#153).',
+    summary: 'Polling a federation partner\'s Shared Signals stream ' +
+      '(RFC 8936) failed (#153, #373).',
     spec: 'none (logged; the job tries again)' },
   { code: 'STS-SSF-0117',
-    summary: 'A push to /ssf/transmitters/{id}/push named no push ' +
-      'stream here, or its Authorization header is not the one this realm ' +
-      'gave the transmitter (#153).',
+    summary: 'A push to /federation/signals/{id} named no relationship ' +
+      'receiving by push here (none, disabled, its signals off, or no push ' +
+      'stream), or its Authorization header is not the one this realm gave ' +
+      'the partner (#153, #373).',
     spec: 'HTTP 404 or 401 {err}' },
   { code: 'STS-SSF-0118',
-    summary: 'A Security Event Token from a foreign transmitter ' +
+    summary: 'A Security Event Token from a federation partner ' +
       'was malformed: not a compact JWS, typ not secevent+jwt, or no jti or ' +
-      'events (#153).',
+      'events (#153, #373).',
     spec: 'HTTP 400 {err: invalid_request}, or a poll setErrs entry' },
   { code: 'STS-SSF-0119',
-    summary: 'A foreign SET\'s iss is not the transmitter\'s issuer ' +
-      '(#153).',
+    summary: 'A federation partner\'s SET names an iss that is not the ' +
+      'SSF issuer its configuration was discovered for (#153, #373).',
     spec: 'HTTP 400 {err: invalid_issuer}, or a poll setErrs entry' },
   { code: 'STS-SSF-0120',
-    summary: 'A foreign SET\'s aud does not name this realm\'s ' +
-      'stream audience (#153).',
+    summary: 'A federation partner\'s SET\'s aud does not name this ' +
+      'realm\'s stream audience (#153, #373).',
     spec: 'HTTP 400 {err: invalid_audience}, or a poll setErrs entry' },
   { code: 'STS-SSF-0121',
-    summary: 'A foreign SET\'s signature does not verify against ' +
-      'the transmitter\'s keys, and it was refused (product mode, or ' +
-      'ssf.receiveRequireSignature) (#153).',
+    summary: 'A federation partner\'s SET\'s signature does not verify ' +
+      'against the keys its SSF configuration names, and it was refused ' +
+      '(product mode, or ssf.receiveRequireSignature) (#153, #373).',
     spec: 'HTTP 400 {err: invalid_key}, or a poll setErrs entry' },
   { code: 'STS-SSF-0122',
-    summary: 'Acting on a verified event from a foreign ' +
-      'transmitter — ending a person\'s sessions, disabling or enabling ' +
-      'their account — failed; the SET is recorded (#153).',
+    summary: 'Acting on a verified event from a federation partner — ' +
+      'ending sessions, blocking or unblocking its sign-ins of a person, ' +
+      'disabling or enabling their account — failed; the SET is recorded ' +
+      '(#153, #373).',
     spec: 'none (logged)' },
   { code: 'STS-SSF-0123',
     summary: 'A key event of this service\'s own (federation-key-rotated, ' +
@@ -13365,6 +13385,11 @@ const CODES = [
       'somebody other than that person, and ssf.personStreamsSelfOnly is ' +
       'on. A person\'s stream carries events only about them.',
     spec: 'HTTP 403 access_denied' },
+  { code: 'STS-SSF-0132',
+    summary: 'A Shared Signals act on a federation relationship whose ' +
+      'signals are off (fedSignalsEnabled), or an unblock of a person the ' +
+      'relationship has not blocked (#373).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

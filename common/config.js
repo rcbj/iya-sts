@@ -11586,46 +11586,43 @@ const SETTINGS = [
                  'ONLY: product mode refuses an unverified SET at every ' +
                  'receiver whatever this says (#117).' },
 
-  // FOREIGN TRANSMITTERS (#153): `ssf/ssf_transmitters.ts`, this realm as
-  // the receiver of another identity service's Shared Signals.
+  // A FEDERATION PARTNER'S SHARED SIGNALS (#153, #373): `ssf/ssf_transmitters.ts`,
+  // this realm as the receiver of its partners' Shared Signals. Each stream
+  // is configured on its relationship (`fedSignals*`); these bound them all.
   { key: 'ssf.foreignPollS', group: 'SSF',
-    label: 'Foreign transmitter poll interval (s)',
+    label: 'Partner signals poll interval (s)',
     env: 'STS_SSF_FOREIGN_POLL_S', type: 'int', dflt: 30,
     min: 1, max: 86400, runtime: true,
     description: 'How often the ssf.foreign-poll scheduler job polls every ' +
-                 'foreign transmitter this realm registered with a poll ' +
-                 'stream (RFC 8936) (#153).' },
+                 'federation relationship whose partner\'s Shared Signals ' +
+                 'stream is a poll stream (RFC 8936) (#153, #373).' },
   { key: 'ssf.foreignPollMaxEvents', group: 'SSF',
-    label: 'Events asked per foreign poll',
+    label: 'Events asked per partner poll',
     env: 'STS_SSF_FOREIGN_POLL_MAX_EVENTS', type: 'int', dflt: 50,
     min: 1, max: 1000, runtime: true,
-    description: 'The maxEvents this realm asks a foreign transmitter for in ' +
+    description: 'The maxEvents this realm asks a federation partner for in ' +
                  'one RFC 8936 poll.' },
   { key: 'ssf.foreignPollMaxRounds', group: 'SSF',
-    label: 'Foreign poll rounds',
+    label: 'Partner poll rounds',
     env: 'STS_SSF_FOREIGN_POLL_MAX_ROUNDS', type: 'int', dflt: 5,
     min: 1, max: 100, runtime: true,
-    description: 'How many polls one run makes while the transmitter says ' +
+    description: 'How many polls one run makes while the partner says ' +
                  'moreAvailable, before leaving the rest to the next run; ' +
                  'one more acknowledges what the last received.' },
-  { key: 'ssf.foreignMaxTransmitters', group: 'SSF',
-    label: 'Foreign transmitters per realm',
-    env: 'STS_SSF_FOREIGN_MAX_TRANSMITTERS', type: 'int', dflt: 20,
-    min: 1, max: 1000, runtime: true,
-    description: 'The most foreign transmitters one realm may register.' },
   { key: 'ssf.foreignInboxMax', group: 'SSF',
-    label: 'Foreign SETs kept',
+    label: 'Partner SETs kept',
     env: 'STS_SSF_FOREIGN_INBOX_MAX', type: 'int', dflt: 500,
     min: 10, max: 100000, runtime: true,
-    description: 'The most Security Event Tokens from foreign transmitters ' +
+    description: 'The most Security Event Tokens from federation partners ' +
                  'kept per realm, the oldest dropped first. What is kept is ' +
                  'also what a replayed jti is recognised by.' },
   { key: 'ssf.foreignTimeoutMs', group: 'SSF',
-    label: 'Foreign transmitter timeout (ms)',
+    label: 'Partner signals timeout (ms)',
     env: 'STS_SSF_FOREIGN_TIMEOUT_MS', type: 'int', dflt: 10000,
     min: 500, max: 120000, runtime: true,
-    description: 'How long one request to a foreign transmitter — discovery, ' +
-                 'its token endpoint, stream management, a poll — may take.' },
+    description: 'How long one request to a federation partner\'s Shared ' +
+                 'Signals — discovery, its token endpoint, stream ' +
+                 'management, a poll — may take.' },
 
   { key: 'ssf.actOnSignalsInDevelopment', group: 'SSF',
     label: 'The console and portal act on received signals in development',
@@ -11634,8 +11631,9 @@ const SETTINGS = [
     description: 'Product mode always does what the signal-response policy ' +
                  'permits with a verified event this service\'s own console ' +
                  'or portal receives — ends that surface\'s own sessions for ' +
-                 'the person it names (#62). Development records what it ' +
-                 'would have done and ends nothing, unless this is on. An ' +
+                 'the person it names (#62) — or a federation partner ' +
+                 'sends (#373, #374). Development records what it would ' +
+                 'have done and does nothing, unless this is on. An ' +
                  'unverified event is never acted on, whatever this says.' },
 
   { key: 'ssf.legacySubClaim', group: 'SSF',

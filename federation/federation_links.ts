@@ -94,6 +94,11 @@ export = class FederationLinks {
    * The directory attribute a link is stored in.
    */
   static readonly ATTRIBUTE = 'federationLink';
+  /**
+   * The issuer an `ssf` relationship's link carries for an SSF `opaque`
+   * subject (#374), which has no issuer of its own.
+   */
+  static readonly OPAQUE = 'opaque';
 
   // -------------------------------------------------------------------------
   // WHY A LINK CANNOT BE WRITTEN, or ''. Whitespace in the id or the issuer
@@ -288,7 +293,11 @@ export = class FederationLinks {
     const issuer = String(a.issuer == null || a.issuer === '' ? peer
                                                                 : a.issuer)
       .trim();
-    if (peer && issuer !== peer) {
+    // A SIGNALS-ONLY PARTNER (#374) verifies no assertion, so its links are
+    // how an administrator says who its subjects are: the issuer is the
+    // `iss` its iss_sub subjects carry — often not its own — or `opaque` for
+    // an opaque one (FederationLinks.OPAQUE).
+    if (peer && issuer !== peer && record.fedProtocol !== 'ssf') {
       log.debug("Leaving FederationLinks.resolveRequest(). Wrong issuer.");
       return errorCodes.mark({ ok: false, code: 'STS-FED-0106',
         why: 'The relationship "' + id + '" verifies responses from "' +

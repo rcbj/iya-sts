@@ -908,6 +908,9 @@ interface AdminActionsDeps {
   federation: typeof federation;
   fedLinks: typeof fedLinks;
   fedEncryption: typeof fedEncryption;
+  // A federation partner's Shared Signals (#373), lazily: the receiver
+  // registers a scheduler job when built, which is not admin-core's to start.
+  loadSignals: () => any;
   spiffeCa: typeof spiffeCa;
   spiffeRegistry: typeof spiffeRegistry;
   spiffeIdLib: typeof spiffeIdLib;
@@ -992,6 +995,9 @@ class AdminActions {
       federation: federation,
       fedLinks: fedLinks,
       fedEncryption: fedEncryption,
+      loadSignals: function () {
+        return require('../ssf/ssf_transmitters');
+      },
       spiffeCa: spiffeCa,
       spiffeRegistry: spiffeRegistry,
       spiffeIdLib: spiffeIdLib,
@@ -7288,20 +7294,36 @@ class AdminActions {
   // create (the relationship's encryption key is issued with it), `set` of
   // `fedEncryptionKeyType` (a key of the new type), and `rotate-key`.
   // Issuing is `pki.js`'s, and it awaits. Both callers take the promise.
+  //
+  // **A PARTNER'S SHARED SIGNALS ARE ACTS ON THE RELATIONSHIP SINCE #373**:
+  // every `signals-*` action is handed to `ssf/ssf_transmitters.ts`, which
+  // decides everything about it — the same division as above. A delete forgets
+  // the relationship's stream there first, while the entry it reads still
+  // exists.
   /**
    * Creates, changes, enables, disables or deletes a federation relationship,
-   * or rotates its encryption key.
+   * rotates its encryption key, or acts on its partner's Shared Signals.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param ctx - `via`, `actor` and `base`, for a Shared Signals act's audit
+   *   row and a push stream's address
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  async federationAction(body) {
-    const { log, federation, fedEncryption } = this.deps;
+  async federationAction(body, ctx?) {
+    const { log, federation, fedEncryption, loadSignals } = this.deps;
     log.debug("Entering AdminActions.federationAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
     const id = String(body.id || body.relationship || '').trim();
+    const context = ctx || { via: 'console', actor: '', base: '' };
+
+    if (action.indexOf('signals-') === 0) {
+      const result = await loadSignals().act(body, context);
+      log.debug("Leaving AdminActions.federationAction(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return result;
+    }
 
     if (action === 'create') {
       const result = federation.create({
@@ -7408,6 +7430,12 @@ class AdminActions {
     }
 
     if (action === 'delete') {
+      // ITS SHARED SIGNALS FIRST (#373): the stream at the partner, and what
+      // this realm minted for it, go while the entry still says where.
+      const doomed = federation.get(id);
+      if (doomed && doomed.fedRole === 'service-provider') {
+        await loadSignals().forget(doomed, context);
+      }
       const result = federation.remove(id);
       log.debug("Leaving AdminActions.federationAction(). delete " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -7418,7 +7446,8 @@ class AdminActions {
     return this.refused('STS-ADMIN-0500', { ok: false,
              errors: ['Unknown action "' + action + '". The eight are: ' +
                            'create, set, add-value, remove-value, enable, ' +
-                           'disable, rotate-key, delete.'] });
+                           'disable, rotate-key, delete — and the Shared ' +
+                           'Signals acts, each signals-*.'] });
   }
 
   /**

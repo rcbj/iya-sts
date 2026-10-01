@@ -6,20 +6,25 @@
 // File: sts_ssf_foreign_receiver.js
 //
 // ---------------------------------------------------------------------------
-// THIS REALM AS THE RECEIVER OF A FOREIGN SSF TRANSMITTER (#153,
-// 2026-09-26), over HTTP. Two throwaway realms: A is the "foreign" identity
-// service — this service's own transmitter, in a realm of its own — and B
-// receives from it.
+// A FEDERATION PARTNER'S SHARED SIGNALS (#153, #373, #374), over HTTP. Two
+// throwaway realms: A is the partner identity service — this service's own
+// transmitter, in a realm of its own — and B receives from it through
+// federation relationships.
 //
-//   1. B registers A by its issuer (discovery through the inserted-path
-//      well-known form, A's jwks_uri) and creates a poll stream there with
-//      client credentials A issued.
+//   1. B's relationship with A, its signals turned on with client
+//      credentials A issued: the configuration discovered from fedPeer
+//      (the inserted-path well-known form, A's jwks_uri) and a poll stream
+//      created there.
 //   2. Verification: B asks, A sends, B's poll records it.
-//   3. A disables its person (RISC account-disabled, subject iss_sub); B's
-//      poll maps the subject through B's federation link and disables B's
-//      person — and A's account-enabled enables them again.
-//   4. Push: a second stream, pushed by A to /ssf/transmitters/{id}/push,
-//      disables another linked person.
+//   3. A disables its person (RISC account-disabled, subject iss_sub): B's
+//      poll maps the subject through B's federation link and BLOCKS that
+//      partner's sign-ins of B's person — the account stays enabled — and
+//      A's account-enabled lifts the block.
+//   4. A signals-only (`ssf`) relationship with the same partner (#374): the
+//      same event names the person through an administrator's link, and is
+//      recorded and does nothing.
+//   5. Push: a second relationship pushed by A to /federation/signals/{id}
+//      blocks another linked person; a header B did not give is refused.
 //
 // OWNED HERE (local: true): this repository's transmitter, receiver and API.
 // ---------------------------------------------------------------------------
@@ -66,6 +71,8 @@ const apiB = baseB + "/admin-api";
 const SECRET = "sfr-" + crypto.randomBytes(9).toString("base64url");
 const CLIENT = "realm-b-receiver";
 const REL = "partner-a";
+const REL_PUSH = "partner-a-push";
+const REL_ONLY = "partner-a-signals";
 const PASSWORD = "Sf-" + crypto.randomBytes(9).toString("base64url") + "-Aa1!";
 const A1 = names.usernameFor("sf-a1");
 const B1 = names.usernameFor("sf-b1");
@@ -235,14 +242,15 @@ async function reportB() {
   return r.json;
 }
 
-// Polls B's view until `until` holds; `poll` asks B to poll A first.
+// Polls B's view until `until` holds; `poll` names the relationships B
+// polls A through first.
 async function waitFor(what, until, poll) {
   log.debug("Entering waitFor(). " + what);
   let last = null;
   for (let i = 0; i < 40; i++) {
-    if (poll) {
-      await hop(null, "POST", apiB + "/ssf/transmitters/poll-now",
-                { json: { id: poll } });
+    for (const id of [].concat(poll || [])) {
+      await hop(null, "POST", apiB + "/federation/signals-poll-now",
+                { json: { id: id } });
     }
     last = await reportB();
     if (last && until(last)) {
@@ -256,6 +264,14 @@ async function waitFor(what, until, poll) {
                   JSON.stringify(last).slice(0, 2000));
 }
 
+function blocked(report, relationship, username) {
+  log.debug("Entering blocked().");
+  log.debug("Leaving blocked().");
+  return (report.blocks || []).some(function (b) {
+    return b.relationship === relationship && b.username === username;
+  });
+}
+
 function locked(report, username) {
   log.debug("Entering locked().");
   log.debug("Leaving locked().");
@@ -263,6 +279,31 @@ function locked(report, username) {
     return l.username === username;
   });
 }
+
+// A relationship of B's with A, its signals on with A's client credentials.
+async function relationship(id, protocol, delivery) {
+  log.debug("Entering relationship(). " + id);
+  const made = await hop(null, "POST", apiB + "/federation/create", {
+    json: { id: id, role: "service-provider", protocol: protocol,
+            peer: ISSUER } });
+  assert.ok(made.json && made.json.ok, "the relationship " + id + ": " +
+            made.text.slice(0, 300));
+  const fields = [["fedSignalsTokenUrl", baseA + "/oauth2/token"],
+                  ["fedSignalsClientId", CLIENT],
+                  ["fedSignalsClientSecret", SECRET],
+                  ["fedSignalsDelivery", delivery]];
+  if (protocol !== "ssf") {
+    fields.push(["fedSignalsEnabled", "TRUE"]);
+  }
+  for (const [field, value] of fields) {
+    await ok(apiB + "/federation/set", { id: id, field: field, value: value },
+             "set " + field + " on " + id);
+  }
+  await ok(apiB + "/federation/enable", { id: id }, "enabled " + id);
+  log.debug("Leaving relationship().");
+}
+
+let ISSUER = "";
 
 // THIS SERVICE'S ROOT AS EACH REALM'S OUTBOUND CA (2026-09-27). The two
 // realms dial each other at this service's own address, whose certificate is
@@ -360,43 +401,43 @@ async function test() {
   }
   const conf = (await hop(null, "GET", root +
     "/.well-known/ssf-configuration/realm/" + REALM_A)).json;
-  const ISS = conf.issuer;
-  const made = await hop(null, "POST", apiB + "/federation/create", {
-    json: { id: REL, role: "service-provider", protocol: "oidc",
-            peer: ISS } });
-  assert.ok(made.json && made.json.ok, "the relationship: " +
-            made.text.slice(0, 300));
-  for (const [a, b] of [[A1, B1], [A2, B2]]) {
-    await ok(apiB + "/users/federation-link", { user: b, relationship: REL,
-      subject: await subjectOf(apiA, a) }, "linked " + b + " to " + a);
-  }
+  ISSUER = conf.issuer;
+  await relationship(REL, "oidc", "poll");
+  await relationship(REL_ONLY, "ssf", "poll");
+  await ok(apiB + "/users/federation-link", { user: B1, relationship: REL,
+    subject: await subjectOf(apiA, A1) }, "linked " + B1 + " to " + A1);
+  // A signals-only partner's people are linked by an administrator, under
+  // the iss its iss_sub subjects carry (#374).
+  await ok(apiB + "/users/federation-link", { user: B1,
+    relationship: REL_ONLY, issuer: ISSUER,
+    subject: await subjectOf(apiA, A1) }, "linked " + B1 + " for " +
+    REL_ONLY);
 
-  log.info("=== 1. registration and a poll stream ===");
-  const tokenEndpoint = baseA + "/oauth2/token";
-  const added = await hop(null, "POST", apiB + "/ssf/transmitters/add", {
-    json: { id: "a-poll", issuer: ISS, federationId: REL, delivery: "poll",
-            tokenEndpoint: tokenEndpoint, clientId: CLIENT,
-            clientSecret: SECRET } });
+  log.info("=== 1. discovery and a poll stream ===");
   const stream = await hop(null, "POST",
-                           apiB + "/ssf/transmitters/create-stream",
-                           { json: { id: "a-poll" } });
-  check("B registers A by its issuer and creates a poll stream there",
-        function () {
-    assert.strictEqual(added.status, 200, added.text.slice(0, 400));
-    assert.strictEqual(added.json.transmitter.config.issuer, ISS);
+                           apiB + "/federation/signals-create-stream",
+                           { json: { id: REL } });
+  const only = await hop(null, "POST",
+                         apiB + "/federation/signals-create-stream",
+                         { json: { id: REL_ONLY } });
+  check("B discovers A from the relationship's fedPeer and creates a poll " +
+        "stream there", function () {
     assert.strictEqual(stream.status, 200, stream.text.slice(0, 400));
-    assert.ok(stream.json.transmitter.streamId);
-    assert.ok(stream.json.transmitter.pollEndpoint);
+    assert.strictEqual(stream.json.signals.config.issuer, ISSUER);
+    assert.ok(stream.json.signals.streamId);
+    assert.ok(stream.json.signals.pollEndpoint);
+    assert.strictEqual(only.status, 200, only.text.slice(0, 400));
+    assert.strictEqual(only.json.signals.kind, "signals-only");
   });
 
   log.info("=== 2. verification ===");
-  await ok(apiB + "/ssf/transmitters/verify", { id: "a-poll" },
+  await ok(apiB + "/federation/signals-verify", { id: REL },
            "asked for verification");
   await waitFor("the verification event", function (r) {
-    return r.transmitters.some(function (t) {
-      return t.id === "a-poll" && t.verifiedAt;
+    return r.relationships.some(function (t) {
+      return t.relationship === REL && t.verifiedAt;
     });
-  }, "a-poll");
+  }, REL);
   check("the verification A sent is received, verified and matched",
         function () {
     assert.ok(true);
@@ -405,66 +446,89 @@ async function test() {
   log.info("=== 3. account-disabled and account-enabled, by poll ===");
   await ok(apiA + "/risc/emit", { type: "account-disabled", account_id: A1,
     reason_admin: "sts_ssf_foreign_receiver" }, "A: account-disabled");
-  const disabled = await waitFor("B1 disabled", function (r) {
-    return locked(r, B1);
-  }, "a-poll");
-  check("A's account-disabled, mapped through B's link, disables B's person",
+  const disabled = await waitFor("B1 blocked through " + REL, function (r) {
+    return blocked(r, REL, B1);
+  }, [REL, REL_ONLY]);
+  check("A's account-disabled, mapped through B's link, blocks A's " +
+        "sign-ins of B's person and leaves the account enabled",
         function () {
     const row = disabled.received.filter(function (x) {
-      return x.person === B1 && x.verified;
+      return x.relationship === REL && x.person === B1 && x.verified;
     })[0];
     assert.ok(row, JSON.stringify(disabled.received).slice(0, 800));
+    assert.ok(!locked(disabled, B1), JSON.stringify(disabled.locks));
   });
+
+  log.info("=== 4. the same event, from a signals-only relationship ===");
+  const recorded = await waitFor("the event through " + REL_ONLY,
+    function (r) {
+      return r.received.some(function (x) {
+        return x.relationship === REL_ONLY && x.person === B1 &&
+               x.verified && (x.events || []).some(function (e) {
+                 return /account-disabled$/.test(e);
+               });
+      });
+    }, REL_ONLY);
+  check("a signals-only partner's account-disabled names the person and " +
+        "is recorded, and does nothing (#374)", function () {
+    const row = recorded.received.filter(function (x) {
+      return x.relationship === REL_ONLY && x.person === B1;
+    })[0];
+    assert.ok(!(row.reactions || []).some(function (x) {
+      return x.done;
+    }), JSON.stringify(row));
+    assert.ok(!blocked(recorded, REL_ONLY, B1));
+  });
+
   await ok(apiA + "/risc/emit", { type: "account-enabled", account_id: A1,
     reason_admin: "sts_ssf_foreign_receiver" }, "A: account-enabled");
-  await waitFor("B1 enabled", function (r) {
-    return !locked(r, B1);
-  }, "a-poll");
-  check("A's account-enabled enables them again", function () {
+  await waitFor("B1 unblocked", function (r) {
+    return !blocked(r, REL, B1);
+  }, REL);
+  check("A's account-enabled lifts the block", function () {
     assert.ok(true);
   });
 
-  log.info("=== 4. push ===");
-  const pushAdded = await hop(null, "POST", apiB + "/ssf/transmitters/add", {
-    json: { id: "a-push", issuer: ISS, federationId: REL, delivery: "push",
-            tokenEndpoint: tokenEndpoint, clientId: CLIENT,
-            clientSecret: SECRET } });
+  log.info("=== 5. push ===");
+  await relationship(REL_PUSH, "oidc", "push");
+  await ok(apiB + "/users/federation-link", { user: B2,
+    relationship: REL_PUSH, subject: await subjectOf(apiA, A2) },
+    "linked " + B2 + " to " + A2);
   const pushStream = await hop(null, "POST",
-    apiB + "/ssf/transmitters/create-stream", { json: { id: "a-push" } });
+    apiB + "/federation/signals-create-stream", { json: { id: REL_PUSH } });
   check("a push stream is created with B's endpoint", function () {
-    assert.strictEqual(pushAdded.status, 200, pushAdded.text.slice(0, 300));
     assert.strictEqual(pushStream.status, 200,
                        pushStream.text.slice(0, 300));
-    assert.ok(pushStream.json.transmitter.pushEndpointSet);
+    assert.ok(pushStream.json.signals.pushEndpointSet);
   });
   await ok(apiA + "/risc/emit", { type: "account-disabled", account_id: A2,
     reason_admin: "sts_ssf_foreign_receiver" }, "A: account-disabled (A2)");
-  const pushed = await waitFor("B2 disabled by a push", function (r) {
+  const pushed = await waitFor("B2 blocked by a push", function (r) {
     return r.received.some(function (x) {
-      return x.transmitter === "a-push" && x.person === B2 && x.verified;
+      return x.relationship === REL_PUSH && x.person === B2 && x.verified;
     });
   });
   check("A pushes to B, and B acts on it", function () {
-    assert.ok(locked(pushed, B2), JSON.stringify(pushed.locks));
+    assert.ok(blocked(pushed, REL_PUSH, B2), JSON.stringify(pushed.blocks));
   });
 
-  const bad = await hop(null, "POST", baseB + "/ssf/transmitters/a-push/push",
-    { headers: { Authorization: "Bearer not-it",
-                 "Content-Type": "application/secevent+jwt" } });
+  const bad = await hop(null, "POST", baseB + "/federation/signals/" +
+    REL_PUSH, { headers: { Authorization: "Bearer not-it",
+                           "Content-Type": "application/secevent+jwt" } });
   check("the push endpoint refuses an Authorization header it did not give",
         function () {
     assert.strictEqual(bad.status, 401, bad.text.slice(0, 200));
   });
 
-  assert.ok(checks >= 7, "only " + checks + " checks ran");
+  assert.ok(checks >= 8, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
 }
 
 new Command()
-  .description("SSF: a realm receiving from a foreign transmitter (#153), " +
-    "over HTTP.")
+  .description("SSF: a realm receiving its federation partners' Shared " +
+    "Signals (#153, #373, #374), over HTTP.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

@@ -492,6 +492,9 @@ interface AdminViewsDeps {
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
   fedEncryption: typeof fedEncryption;
+  // A federation partner's Shared Signals (#373), lazily: the receiver
+  // registers a scheduler job when built.
+  loadSignals: () => any;
   fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
@@ -593,6 +596,9 @@ class AdminViews {
       authorizationServers: authorizationServers,
       federation: federation,
       fedEncryption: fedEncryption,
+      loadSignals: function () {
+        return require('../ssf/ssf_transmitters');
+      },
       fedLinks: fedLinks,
       signals: signals,
       spiffeRegistry: spiffeRegistry,
@@ -7289,8 +7295,16 @@ class AdminViews {
     const jwks = row.protocol === 'oidc' && row.role === 'service-provider'
       ? base + federation.PATHS.jwks + '/' + encodeURIComponent(row.id)
       : null;
-    const setFields = federation.fieldsForRole(row.role, 'set')
+    // THE PARTNER'S SHARED SIGNALS (#373, #374) are drawn in a section of
+    // their own, so their fields leave the general lists below; and an `ssf`
+    // relationship's fields are its signals alone (fieldsForRole() narrows
+    // by protocol).
+    const signalFields = federation.SIGNAL_FIELDS;
+    const setFields = federation.fieldsForRole(row.role, 'set', row.protocol)
                                 .filter(function (field) {
+      if (signalFields.indexOf(field.name) >= 0) {
+        return false;
+      }
       // The four booleans get their own two-button control below, because a
       // text box a person types TRUE into is a text box a person types "true",
       // "yes" and "1" into — and one of those is how a relationship stays
@@ -7308,7 +7322,37 @@ class AdminViews {
          ['fedEncryptionKeyType', 'fedKeyManagementAlgorithm',
           'fedContentEncryptionAlgorithm'].indexOf(field.name) === -1);
     });
-    const multiFields = federation.fieldsForRole(row.role, 'multi');
+    const multiFields = federation.fieldsForRole(row.role, 'multi',
+                                                 row.protocol)
+      .filter(function (field) {
+        return signalFields.indexOf(field.name) < 0;
+      });
+    // The signals section's own fields — settings, the two switches, and the
+    // event list — and what the receiver holds for this relationship.
+    const signalSetFields = row.role === 'service-provider'
+      ? federation.fieldsForRole(row.role, 'set', row.protocol)
+          .filter(function (field) {
+            return signalFields.indexOf(field.name) >= 0 &&
+                   ['fedSignalsEnabled', 'fedSignalEmailMatch']
+                     .indexOf(field.name) < 0;
+          })
+      : [];
+    let signals = null;
+    let arrivals = [];
+    let outbound = null;
+    try {
+      const receiver = this.deps.loadSignals();
+      if (row.role === 'service-provider') {
+        signals = receiver.view(record);
+        arrivals = receiver.arrivals(record.fedId, 10);
+      } else {
+        outbound = receiver.outboundFor(record);
+      }
+    } catch (e) {
+      log.debug("Caught in AdminViews.federationDetailJson(): " +
+                ((e && e.message) || e));
+      signals = null;
+    }
     // THE PEOPLE THIS PARTNER'S SUBJECTS ARE LINKED TO (#109), paged — a
     // relationship with ten thousand linked people is an ordinary one, and a
     // page drawing all of them is not. Service-provider side only: an
@@ -7341,7 +7385,8 @@ class AdminViews {
       encryption: encryption,
       signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
-      unmapped: unmapped,
+      unmapped: unmapped, signalSetFields: signalSetFields,
+      signals: signals, arrivals: arrivals, outbound: outbound,
       json: (function () {
       return Object.assign({ found: true }, row, {
           endpoints: Object.assign({
@@ -7369,8 +7414,14 @@ class AdminViews {
             });
             return out;
           })(),
-          editable: federation.fieldsForRole(row.role),
+          editable: federation.fieldsForRole(row.role, '', row.protocol),
           unmappedAttributes: unmapped,
+          // A partner's Shared Signals (#373): the stream's state and the
+          // latest arrivals; for an identity-provider-side relationship,
+          // what this service sends that partner instead.
+          signals: signals,
+          signalArrivals: arrivals,
+          outboundSignals: outbound,
           encryption: encryption,
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.
@@ -7432,6 +7483,10 @@ class AdminViews {
       ready: readiness.ready,
       missing: readiness.missing,
       usable: federation.isEnabled(record) && readiness.ready,
+      // Whether it signs anybody in, and whether its partner's Shared
+      // Signals are received (#373, #374).
+      signsIn: federation.signsIn(record),
+      signalsEnabled: federation.signalsEnabled(record),
       releases: (record.fedRelease || []).slice(0),
       mappings: (record.fedAttributeMap || []).slice(0),
       authentications: parseInt(record.fedAuthentications, 10) || 0,

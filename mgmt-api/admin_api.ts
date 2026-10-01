@@ -2278,7 +2278,8 @@ class AdminApi {
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
             loadAttributeSourcesApi,
-            loadProviderCommandsApi, loadSsfTransmittersApi } = this.deps;
+            loadProviderCommandsApi, loadSsfTransmittersApi,
+            federation } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const closed = this.closedLists();
@@ -9951,7 +9952,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API federation action endpoint.");
           const body = parseBody(req);
-          adminActions.federationAction(self.withAction(req, body))
+          adminActions.federationAction(self.withAction(req, body),
+            { via: 'api', actor: 'admin-api', base: baseUrlOf(req) })
             .then(function (result) {
               if (!result.ok) {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
@@ -10007,10 +10009,12 @@ class AdminApi {
                                      'and this service consumes what it ' +
                                      'issues.' },
                 protocol: { type: 'string',
-                            enum: ['saml2', 'saml11', 'wsfed', 'oidc',
-                                   'oauth2'],
+                            enum: federation.PROTOCOL_IDS.slice(),
                             description:
-                              'The protocol the relationship runs in.' },
+                              'The protocol the relationship runs in. ' +
+                              '`ssf` (#374) is a partner that signs nobody ' +
+                              'in and only sends Shared Signals; it takes ' +
+                              'the service-provider role.' },
                 name: { type: 'string',
                         description:
                           'What to call the partner on a page. The ' +
@@ -10218,6 +10222,101 @@ class AdminApi {
             },
             responseDescription: 'The new key\'s kid, and the relationship ' +
                                  'as it now stands.' },
+
+          // A PARTNER'S SHARED SIGNALS (#373, #374): the relationship page's
+          // Shared Signals buttons, each handed to ssf/ssf_transmitters.ts.
+          ...[
+            ['signals-discover', 'discoverFederationSignals',
+             'Discover the partner\'s Shared Signals configuration',
+             'Fetches `/.well-known/ssf-configuration` under the SSF issuer ' +
+             '(`fedSignalsIssuer`, else `fedPeer`; SSF 1.0 section 7), which ' +
+             'must name that issuer, a `jwks_uri` and a ' +
+             '`configuration_endpoint`, and fetches the keys. Every address ' +
+             'dialled afterwards is one that document named. Audited.'],
+            ['signals-create-stream', 'createFederationSignalsStream',
+             'Create this realm\'s stream at the partner',
+             'SSF 1.0 section 8.1.1, discovering first where needed: a poll ' +
+             'stream, or — `fedSignalsDelivery` push — a push stream to ' +
+             '`/federation/signals/{id}` with an authorization header only ' +
+             'this realm and the partner know. Asks for `fedSignalsEvents`. ' +
+             'Audited.'],
+            ['signals-read-stream', 'readFederationSignalsStream',
+             'Read the stream\'s configuration from the partner',
+             'Refreshes what is held: audience, events, delivery.'],
+            ['signals-update-stream', 'updateFederationSignalsStream',
+             'Send fedSignalsEvents to the stream',
+             'A PATCH of `events_requested` to the relationship\'s ' +
+             '`fedSignalsEvents`. Audited.'],
+            ['signals-delete-stream', 'deleteFederationSignalsStream',
+             'Delete the stream at the partner', 'Audited.'],
+            ['signals-verify', 'verifyFederationSignalsStream',
+             'Ask the partner for a verification event',
+             'SSF 1.0 section 8.1.4.2: its state is checked when the event ' +
+             'arrives.'],
+            ['signals-poll-now', 'pollFederationSignals',
+             'Poll the partner now', 'RFC 8936, as the ssf.foreign-poll job ' +
+             'does.']
+          ].map(function (one: string[]) {
+            return { action: one[0], operationId: one[1], summary: one[2],
+                     description: one[3], requestBodyRequired: true,
+                     requestBody: { type: 'object',
+                       properties: { id: { type: 'string',
+                         description: 'The relationship.' } },
+                       required: ['id'], examples: [{ id: 'partner' }],
+                       additionalProperties: false },
+                     responseDescription: 'The relationship\'s Shared ' +
+                                          'Signals as they stand.' };
+          }),
+          { action: 'signals-set-status',
+            operationId: 'setFederationSignalsStatus',
+            summary: 'Enable, pause or disable the stream at the partner',
+            description: 'SSF 1.0 section 8.1.2. Audited.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              id: { type: 'string', description: 'The relationship.' },
+              status: { type: 'string', enum: ['enabled', 'paused',
+                                               'disabled'] },
+              reason: { type: 'string', maxLength: 512 } },
+              required: ['id', 'status'],
+              examples: [{ id: 'partner', status: 'paused' }],
+              additionalProperties: false },
+            responseDescription: 'The relationship\'s Shared Signals as ' +
+                                 'they stand.' },
+          ...[['signals-add-subject', 'addFederationSignalsSubject',
+               'Add a subject to the stream at the partner',
+               'SSF 1.0 section 8.1.3.2. Audited.'],
+              ['signals-remove-subject', 'removeFederationSignalsSubject',
+               'Remove a subject from the stream at the partner',
+               'SSF 1.0 section 8.1.3.3. Audited.']
+          ].map(function (one: string[]) {
+            return { action: one[0], operationId: one[1], summary: one[2],
+                     description: one[3], requestBodyRequired: true,
+                     requestBody: { type: 'object', properties: {
+                       id: { type: 'string', description: 'The relationship.' },
+                       subject: { type: 'object', additionalProperties: true } },
+                       required: ['id', 'subject'],
+                       examples: [{ id: 'partner', subject: {
+                         format: 'iss_sub', iss: 'https://idp.example',
+                         sub: '248289761001' } }],
+                       additionalProperties: false },
+                     responseDescription: 'The relationship\'s Shared ' +
+                                          'Signals as they stand.' };
+          }),
+          { action: 'signals-unblock', operationId: 'unblockFederationSignals',
+            summary: 'Lift a partner\'s block on a person\'s sign-ins',
+            description: 'A verified `account-disabled` from a sign-in ' +
+                         'partner blocks its sign-ins of the person until its ' +
+                         '`account-enabled` (#373). This lifts the block by ' +
+                         'hand. Audited.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              id: { type: 'string', description: 'The relationship.' },
+              user: { type: 'string', description: 'The person.' } },
+              required: ['id', 'user'],
+              examples: [{ id: 'partner', user: 'alice' }],
+              additionalProperties: false },
+            responseDescription: 'The relationship\'s Shared Signals as ' +
+                                 'they stand.' },
 
           { action: 'delete', operationId: 'deleteFederationRelationship',
             summary: 'Delete a relationship',
@@ -19599,7 +19698,8 @@ class AdminApi {
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,
-      // FOREIGN SSF TRANSMITTERS (#153): /admin/ssf/transmitters' twin.
+      // FEDERATION PARTNERS' SHARED SIGNALS (#153, #373): the monitoring
+      // page's twin. The acts are federation's (`signals-*` below).
       ...loadSsfTransmittersApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");

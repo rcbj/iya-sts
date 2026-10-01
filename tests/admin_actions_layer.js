@@ -492,10 +492,6 @@ function checkNothingRequiresItEarly(t) {
                    // acted — required LAZILY in the request; the page is
                    // 18o, after the console.
                    'oauth-oidc/provider_commands_admin.ts',
-                   // The foreign SSF transmitters page (#153, 2026-09-26),
-                   // for the gate state only — who acted — required LAZILY
-                   // in the request; the page is 18p, after the console.
-                   'ssf/ssf_transmitters_admin.ts',
                    // The Cells page (#98, 2026-09-28), for the gate state
                    // only — who moved a person's home — required LAZILY in
                    // the request; the page is 18k-ii, after the console.

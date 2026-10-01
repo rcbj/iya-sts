@@ -4169,15 +4169,17 @@ const ENDPOINTS: EndpointEntry[] = [
           '(min_verification_interval) is not enforced unless ' +
           'ssf.verificationRateLimit is on, which is what makes the 429 ' +
           'reachable.' },
-  { path: '/ssf/transmitters/:id/push', group: 'Shared Signals',
-    name: 'Push endpoint for a foreign transmitter (RFC 8935)',
+  { path: '/federation/signals/:id', group: 'Shared Signals',
+    name: 'Push endpoint for a federation partner\'s Shared Signals ' +
+          '(RFC 8935)',
     specs: ['ssf', 'rfc8935', 'rfc8417'],
-    what: 'Where a foreign transmitter this realm registered pushes a ' +
-          'Security Event Token (#153): the Authorization header this realm ' +
-          'gave it when the stream was created, then the SET, verified ' +
-          'against the transmitter\'s keys and acted on as the ' +
-          'signal-response policy permits. 202, or 400 with {err, ' +
-          'description}.' },
+    what: 'Where the partner of a federation relationship pushes a ' +
+          'Security Event Token (#153, #373): the relationship must be ' +
+          'enabled with its signals on, then the Authorization header this ' +
+          'realm gave the partner when the stream was created, then the ' +
+          'SET, verified against the keys its SSF configuration names and ' +
+          'acted on as the signal-response policy permits. 202, or 400 ' +
+          'with {err, description}.' },
   { path: '/ssf/poll', group: 'Shared Signals',
     name: 'Poll delivery (RFC 8936)',
     specs: ['rfc8936', 'rfc8417'],
@@ -5303,12 +5305,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'the shared outbound queue, by kind, with each dead letter\'s ' +
           'code and a Retry.' },
   { path: '/admin/ssf/transmitters', group: 'Admin',
-    name: 'Foreign SSF transmitters',
+    name: 'Signals from partners',
     specs: ['ssf', 'rfc8935', 'rfc8936'],
-    what: 'The transmitters this realm receives Shared Signals from (#153): ' +
-          'register one by its issuer, its stream there and every stream ' +
-          'act, what arrived, whether it verified, the person it named and ' +
-          'what it led to.' },
+    what: 'NON-SPEC PAGE, under Monitoring (#153, #373): every federation ' +
+          'relationship whose partner\'s Shared Signals this realm ' +
+          'receives, its stream there, what arrived, whether it verified, ' +
+          'the person it named, what it led to, and the sign-ins partners ' +
+          'have blocked. Read only: the acts are on the relationship\'s ' +
+          'page.' },
   { path: '/admin/ssf/dead-letters', group: 'Admin', name: 'Dead letters',
     specs: ['ssf', 'rfc8417', 'rfc8935'],
     what: 'NON-SPEC PAGE (2026-09-14), under Monitoring → Shared Signals: ' +
@@ -8170,14 +8174,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'samples is absent and a 100% success rate on nothing is the most ' +
           'misleading figure this reply could carry.' },
   { path: '/admin-api/ssf/transmitters', group: 'Management API',
-    name: 'Foreign SSF transmitters', specs: ['openapi', 'ssf'],
-    what: 'GET /admin/ssf/transmitters over JSON (#153).' },
-  { path: '/admin-api/ssf/transmitters/:action', group: 'Management API',
-    name: 'Register a foreign transmitter, or act on its stream',
-    specs: ['openapi', 'ssf'],
-    what: 'add, create-stream, read-stream, update-stream, delete-stream, ' +
-          'set-status, add-subject, remove-subject, verify, poll-now and ' +
-          'remove: the console\'s acts (#153).' },
+    name: 'Signals from partners', specs: ['openapi', 'ssf'],
+    what: 'GET /admin/ssf/transmitters over JSON (#153, #373). The acts are ' +
+          'POST /admin-api/federation/signals-*.' },
   { path: '/admin-api/ssf', group: 'Management API', name: 'Shared Signals',
     specs: ['openapi', 'ssf', 'rfc8417'],
     what: 'GET /admin/ssf over JSON: the streams, their subjects, their ' +
@@ -9062,7 +9061,11 @@ const ENDPOINTS: EndpointEntry[] = [
     effect: 'the same seven writes the console\'s forms make, and this API ' +
             'is NOT GATED',
     what: 'NON-SPEC. create, set, add-value, remove-value, enable, disable, ' +
-          'delete — calling admin.js\'s federationAction(), which is the ' +
+          'rotate-key, delete, and the partner\'s Shared Signals acts ' +
+          '(signals-discover, -create-stream, -read-stream, -update-stream, ' +
+          '-delete-stream, -set-status, -add-subject, -remove-subject, ' +
+          '-verify, -poll-now and -unblock, #373) — calling ' +
+          'federationAction(), which is the ' +
           'same function the console posts to. **It is how a test configures ' +
           'a federation partner with no browser at all**, which is the only ' +
           'way this feature can be exercised automatically. The honest ' +

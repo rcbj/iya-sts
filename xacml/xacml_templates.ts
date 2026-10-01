@@ -498,12 +498,17 @@ const SIGNAL_ATTRIBUTE = {
   // `caep`, `risc` or `ssf`: the namespace the event's URI is in.
   FAMILY: 'urn:sts:xacml:signal-family',
   // Which of this service's surfaces received it: `admin-console` or
-  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES) — or, since #153,
-  // `foreign:<id>`, a FOREIGN transmitter this realm registered
+  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES) — or, since #373,
+  // `federation:<id>`, a federation relationship whose partner transmits
   // (`ssf/ssf_transmitters.ts`).
   SURFACE: 'urn:sts:xacml:signal-surface',
   // A risk or assurance event's `current_level`, where it carries one.
-  LEVEL: 'urn:sts:xacml:signal-current-level'
+  LEVEL: 'urn:sts:xacml:signal-current-level',
+  // WHAT KIND OF PARTNER SENT IT (#373, #374), for a federation surface
+  // only: `sign-in` — a partner people sign in through, whose statements
+  // are about the sign-ins it vouches for — or `signals-only`, an `ssf`
+  // relationship (an MDM, an EDR, an HR feed) that signs nobody in.
+  KIND: 'urn:sts:xacml:signal-relationship-kind'
 };
 
 // What a received signal can lead to, one question per reaction as
@@ -518,16 +523,27 @@ const SIGNAL_RESPONSE = {
   // provider's — a receiver acts on what it holds, and what the provider
   // holds is the transmitter's to end.
   END_SESSIONS: 'signal-end-sessions',
-  // FROM A FOREIGN TRANSMITTER (#153): this realm is the provider the person
-  // signs in to, and the event is another identity service's statement
-  // about the same person (mapped through a federation relationship). End
-  // the person's sessions HERE — every one, as a global sign-out does.
+  // FROM A FEDERATION PARTNER (#373): end the sessions THIS RELATIONSHIP
+  // started for the person — the one a `complex` subject's session names,
+  // else every one — as the partner's own sign-out does (#167). A local
+  // sign-in and other partners' sessions are untouched.
+  END_PARTNER_SESSIONS: 'signal-end-partner-sessions',
+  // Refuse the person's sign-ins THROUGH THIS RELATIONSHIP
+  // (`federation/federation_blocks.ts`), and lift that again — the latter
+  // only for a block this relationship's own event put there.
+  BLOCK_RELATIONSHIP: 'signal-block-relationship',
+  UNBLOCK_RELATIONSHIP: 'signal-unblock-relationship',
+  // End EVERY session the person holds here, as a global sign-out does —
+  // for a signals-only partner, which started none (#374), or wherever an
+  // operator's policy says a partner's word reaches that far.
   END_PERSON_SESSIONS: 'signal-end-person-sessions',
   // Disable the person's account here (the administrative lock), and enable
-  // it again — the latter only for a lock that transmitter's own
-  // account-disabled put there, which the receiver checks, not the policy.
+  // it again — the latter only for a lock that relationship's own event put
+  // there, which the receiver checks, not the policy. OFF by default (#374).
   DISABLE_ACCOUNT: 'signal-disable-account',
-  ENABLE_ACCOUNT: 'signal-enable-account'
+  ENABLE_ACCOUNT: 'signal-enable-account',
+  // CAEP device-compliance-change, onto the device register (#164, #374).
+  SET_DEVICE_COMPLIANCE: 'signal-set-device-compliance'
 };
 
 // ---------------------------------------------------------------------------
@@ -1805,16 +1821,18 @@ const TEMPLATES: TemplateRow[] = [
     // relax.
     // -----------------------------------------------------------------------
     id: 'signal-response',
-    label: 'Signal response (this service\'s own receivers)',
-    blurb: 'What this service\'s own console and portal do with a CAEP or ' +
-           'RISC event they receive: end their own sessions for the person ' +
-           'it names when the event says their sessions, credentials or ' +
-           'account can no longer be trusted, or their risk went HIGH.',
-    what: 'Produces Permit rules for the action-id signal-end-sessions ' +
-          'under deny-unless-permit: one for the listed event types, one ' +
-          'for a risk-level-change at the listed levels. The embedded PEP ' +
-          'asks with the received event\'s short name, namespace, receiving ' +
-          'surface and current_level as the environment.',
+    label: 'Signal response (received CAEP and RISC events)',
+    blurb: 'What a verified CAEP or RISC event leads to. This service\'s ' +
+           'own console and portal end their own sessions for the person ' +
+           'it names. A federation partner\'s events end the sessions that ' +
+           'partner started and block its sign-ins of the person, and a ' +
+           'signals-only partner\'s are recorded — except a device\'s ' +
+           'compliance, which is set.',
+    what: 'Produces Permit rules under deny-unless-permit, one per ' +
+          'reaction and list. The embedded PEP asks once per reaction with ' +
+          'the received event\'s short name, namespace, receiving surface, ' +
+          'current_level and — from a federation partner — the ' +
+          'relationship kind (sign-in or signals-only) as the environment.',
     parameters: [
       { name: 'endSessionEvents',
         label: 'Events that end the receiving surface\'s sessions',
@@ -1822,7 +1840,8 @@ const TEMPLATES: TemplateRow[] = [
               'account-purged, account-credential-change-required, ' +
               'sessions-revoked, credential-compromise',
         type: 'string',
-        help: 'Comma separated short names. CAEP session-revoked and ' +
+        help: 'This service\'s own console and portal receivers only. ' +
+              'Comma separated short names. CAEP session-revoked and ' +
               'credential-change; RISC account-disabled, account-purged, ' +
               'account-credential-change-required, sessions-revoked and ' +
               'credential-compromise.' },
@@ -1831,45 +1850,82 @@ const TEMPLATES: TemplateRow[] = [
         dflt: 'HIGH', type: 'string',
         help: 'Comma separated current_level values of CAEP ' +
               'risk-level-change. Empty builds no such rule.' },
-      // FOREIGN TRANSMITTERS (#153): events another identity service sent
-      // about a person this realm maps through a federation relationship.
-      { name: 'foreignEndSessionEvents',
-        label: 'Foreign events that end the person\'s sessions here',
+      // A FEDERATION PARTNER THAT SIGNS PEOPLE IN (#373): its word is about
+      // the sign-ins it vouches for.
+      { name: 'partnerEndSessionEvents',
+        label: 'A partner\'s events that end the sessions it started',
         dflt: 'session-revoked, credential-change, sessions-revoked, ' +
               'credential-compromise, account-purged',
         type: 'string',
-        help: 'Comma separated short names, from a foreign transmitter ' +
-              'only. Empty builds no such rule.' },
-      { name: 'foreignDisableEvents',
-        label: 'Foreign events that disable the account here',
+        help: 'Comma separated short names, from a sign-in relationship. ' +
+              'The sessions that relationship started for the person end ' +
+              '— the one a complex subject\'s session names, else every ' +
+              'one; a local sign-in is untouched. Empty builds no such ' +
+              'rule.' },
+      { name: 'partnerBlockEvents',
+        label: 'A partner\'s events that block its sign-ins of the person',
         dflt: 'account-disabled', type: 'string',
-        help: 'Comma separated short names. Empty: a foreign transmitter ' +
-              'never disables anybody here.' },
-      { name: 'foreignEnableEvents',
-        label: 'Foreign events that enable it again',
+        help: 'Comma separated short names. The person\'s sign-ins through ' +
+              'that relationship are refused until it lifts them; other ' +
+              'ways of signing in are unaffected.' },
+      { name: 'partnerUnblockEvents',
+        label: 'A partner\'s events that lift that block',
         dflt: 'account-enabled', type: 'string',
-        help: 'Comma separated short names. An account is enabled only if ' +
-              'the same transmitter\'s event disabled it.' }
+        help: 'Comma separated short names. Only a block the same ' +
+              'relationship\'s event put there is lifted.' },
+      { name: 'partnerGlobalSignOutEvents',
+        label: 'A partner\'s events that end EVERY session the person holds',
+        dflt: '', type: 'string',
+        help: 'Comma separated short names. Empty — the default — lets no ' +
+              'partner end a sign-in it did not start.' },
+      // A PARTNER THAT SIGNS NOBODY IN (#374): an MDM, an EDR, an HR feed.
+      // rcbj's decision: record only, by default.
+      { name: 'signalsOnlyEndSessionEvents',
+        label: 'A signals-only partner\'s events that end every session',
+        dflt: '', type: 'string',
+        help: 'Comma separated short names, from an ssf relationship. ' +
+              'Empty — the default — records them and ends nothing.' },
+      { name: 'signalsOnlyDisableEvents',
+        label: 'A signals-only partner\'s events that disable the account',
+        dflt: '', type: 'string',
+        help: 'Comma separated short names. Empty — the default — lets no ' +
+              'such partner disable anybody here.' },
+      { name: 'signalsOnlyEnableEvents',
+        label: 'A signals-only partner\'s events that enable it again',
+        dflt: 'account-enabled', type: 'string',
+        help: 'Comma separated short names. Only a lock the same ' +
+              'relationship\'s event put there is lifted.' },
+      { name: 'deviceComplianceEvents',
+        label: 'Events that set a device\'s compliance',
+        dflt: 'device-compliance-change', type: 'string',
+        help: 'From any federation relationship: the device the subject ' +
+              'names is marked as the partner says (#164). Empty builds no ' +
+              'such rule.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildSignalResponse().');
       const given = answers || {};
-      const endOn = B.listOf(given.endSessionEvents === undefined
-        ? 'session-revoked, credential-change, account-disabled, ' +
-          'account-purged, account-credential-change-required, ' +
-          'sessions-revoked, credential-compromise'
-        : given.endSessionEvents);
-      const riskLevels = B.listOf(given.endSessionsOnRiskLevels ===
-                                  undefined ? 'HIGH'
-                                            : given.endSessionsOnRiskLevels);
-      const foreignEnd = B.listOf(given.foreignEndSessionEvents === undefined
-        ? 'session-revoked, credential-change, sessions-revoked, ' +
-          'credential-compromise, account-purged'
-        : given.foreignEndSessionEvents);
-      const foreignDisable = B.listOf(given.foreignDisableEvents ===
-        undefined ? 'account-disabled' : given.foreignDisableEvents);
-      const foreignEnable = B.listOf(given.foreignEnableEvents === undefined
-        ? 'account-enabled' : given.foreignEnableEvents);
+      const listed = function (name: string, dflt: string): string[] {
+        log.debug("Entering listed(). " + name);
+        log.debug("Leaving listed().");
+        return B.listOf(given[name] === undefined ? dflt : given[name]);
+      };
+      const endOn = listed('endSessionEvents',
+        'session-revoked, credential-change, account-disabled, ' +
+        'account-purged, account-credential-change-required, ' +
+        'sessions-revoked, credential-compromise');
+      const riskLevels = listed('endSessionsOnRiskLevels', 'HIGH');
+      const partnerEnd = listed('partnerEndSessionEvents',
+        'session-revoked, credential-change, sessions-revoked, ' +
+        'credential-compromise, account-purged');
+      const partnerBlock = listed('partnerBlockEvents', 'account-disabled');
+      const partnerUnblock = listed('partnerUnblockEvents', 'account-enabled');
+      const partnerGlobal = listed('partnerGlobalSignOutEvents', '');
+      const onlyEnd = listed('signalsOnlyEndSessionEvents', '');
+      const onlyDisable = listed('signalsOnlyDisableEvents', '');
+      const onlyEnable = listed('signalsOnlyEnableEvents', 'account-enabled');
+      const devices = listed('deviceComplianceEvents',
+                             'device-compliance-change');
       const env = model.CATEGORY.ENVIRONMENT;
       const bagOf = function (values: string[]): any {
         log.debug("Entering bagOf().");
@@ -1885,10 +1941,6 @@ const TEMPLATES: TemplateRow[] = [
           { kind: 'function', functionId: F1 + 'string-equal' },
           B.designator(env, id, TYPE.STRING), bagOf(values)]);
       };
-      const endSessions = B.apply(F1 + 'string-is-in', [
-        B.value(TYPE.STRING, SIGNAL_RESPONSE.END_SESSIONS),
-        B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
-                     TYPE.STRING)]);
       const rule = function (slug: string, description: string,
                              conjuncts: any[]): any {
         log.debug("Entering rule().");
@@ -1907,43 +1959,73 @@ const TEMPLATES: TemplateRow[] = [
           B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
                        TYPE.STRING)]);
       };
-      // A foreign transmitter's surface is `foreign:<id>`; this service's
+      // A federation partner's surface is `federation:<id>`; this service's
       // own receivers never match, so their rules and these never mix.
-      const fromForeign = B.apply(F3 + 'string-starts-with', [
-        B.value(TYPE.STRING, 'foreign:'),
+      const fromPartner = B.apply(F3 + 'string-starts-with', [
+        B.value(TYPE.STRING, 'federation:'),
         B.apply(F1 + 'string-one-and-only', [
           B.designator(env, SIGNAL_ATTRIBUTE.SURFACE, TYPE.STRING)])]);
+      const kindIs = function (kind: string): any {
+        log.debug("Entering kindIs(). " + kind);
+        log.debug("Leaving kindIs().");
+        return anyIn(SIGNAL_ATTRIBUTE.KIND, [kind]);
+      };
       const rules: any[] = [];
-      if (endOn.length) {
-        rules.push(rule('end-sessions', 'End the receiving surface\'s own ' +
-          'sessions for the person on ' + endOn.join(', ') + '.',
-          [endSessions, anyIn(SIGNAL_ATTRIBUTE.EVENT, endOn)]));
-      }
+      const add = function (slug: string, description: string,
+                            values: string[], conjuncts: any[]): void {
+        log.debug("Entering add(). " + slug);
+        if (values.length) {
+          rules.push(rule(slug, description + ' on ' + values.join(', ') +
+                          '.', conjuncts.concat(
+                            [anyIn(SIGNAL_ATTRIBUTE.EVENT, values)])));
+        }
+        log.debug("Leaving add().");
+      };
+      // THIS SERVICE'S OWN RECEIVERS ONLY: a partner's surface asks about
+      // its own reactions, and a Permit it never acts on would be a rule
+      // that says one thing and means another.
+      const ownSurface = B.apply(F1 + 'not', [fromPartner]);
+      add('end-sessions', 'End the receiving surface\'s own sessions for ' +
+          'the person', endOn,
+          [actionIs(SIGNAL_RESPONSE.END_SESSIONS), ownSurface]);
       if (riskLevels.length) {
         rules.push(rule('end-sessions-on-risk', 'End them on a ' +
           'risk-level-change to ' + riskLevels.join(', ') + '.',
-          [endSessions, anyIn(SIGNAL_ATTRIBUTE.EVENT, ['risk-level-change']),
+          [actionIs(SIGNAL_RESPONSE.END_SESSIONS), ownSurface,
+           anyIn(SIGNAL_ATTRIBUTE.EVENT, ['risk-level-change']),
            anyIn(SIGNAL_ATTRIBUTE.LEVEL, riskLevels)]));
       }
-      if (foreignEnd.length) {
-        rules.push(rule('foreign-end-sessions', 'From a foreign ' +
-          'transmitter, end the person\'s sessions here on ' +
-          foreignEnd.join(', ') + '.',
-          [actionIs(SIGNAL_RESPONSE.END_PERSON_SESSIONS), fromForeign,
-           anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignEnd)]));
-      }
-      if (foreignDisable.length) {
-        rules.push(rule('foreign-disable', 'From a foreign transmitter, ' +
-          'disable the account on ' + foreignDisable.join(', ') + '.',
-          [actionIs(SIGNAL_RESPONSE.DISABLE_ACCOUNT), fromForeign,
-           anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignDisable)]));
-      }
-      if (foreignEnable.length) {
-        rules.push(rule('foreign-enable', 'From a foreign transmitter, ' +
-          'enable it again on ' + foreignEnable.join(', ') + '.',
-          [actionIs(SIGNAL_RESPONSE.ENABLE_ACCOUNT), fromForeign,
-           anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignEnable)]));
-      }
+      add('partner-end-sessions', 'From a sign-in partner, end the ' +
+          'sessions it started for the person', partnerEnd,
+          [actionIs(SIGNAL_RESPONSE.END_PARTNER_SESSIONS), fromPartner,
+           kindIs('sign-in')]);
+      add('partner-block', 'From a sign-in partner, block its sign-ins of ' +
+          'the person', partnerBlock,
+          [actionIs(SIGNAL_RESPONSE.BLOCK_RELATIONSHIP), fromPartner,
+           kindIs('sign-in')]);
+      add('partner-unblock', 'From a sign-in partner, lift its own block',
+          partnerUnblock,
+          [actionIs(SIGNAL_RESPONSE.UNBLOCK_RELATIONSHIP), fromPartner,
+           kindIs('sign-in')]);
+      add('partner-global-sign-out', 'From a sign-in partner, end every ' +
+          'session the person holds', partnerGlobal,
+          [actionIs(SIGNAL_RESPONSE.END_PERSON_SESSIONS), fromPartner,
+           kindIs('sign-in')]);
+      add('signals-only-end-sessions', 'From a signals-only partner, end ' +
+          'every session the person holds', onlyEnd,
+          [actionIs(SIGNAL_RESPONSE.END_PERSON_SESSIONS), fromPartner,
+           kindIs('signals-only')]);
+      add('signals-only-disable', 'From a signals-only partner, disable the ' +
+          'account', onlyDisable,
+          [actionIs(SIGNAL_RESPONSE.DISABLE_ACCOUNT), fromPartner,
+           kindIs('signals-only')]);
+      add('signals-only-enable', 'From a signals-only partner, enable it ' +
+          'again (its own lock only)', onlyEnable,
+          [actionIs(SIGNAL_RESPONSE.ENABLE_ACCOUNT), fromPartner,
+           kindIs('signals-only')]);
+      add('device-compliance', 'From a federation partner, set the ' +
+          'device\'s compliance', devices,
+          [actionIs(SIGNAL_RESPONSE.SET_DEVICE_COMPLIANCE), fromPartner]);
       log.debug('Leaving buildSignalResponse(). ' + rules.length +
                 ' rule(s).');
       return {
@@ -1951,14 +2033,11 @@ const TEMPLATES: TemplateRow[] = [
         id: options.idBase,
         version: '1.0',
         description: 'THE SIGNAL RESPONSE POLICY. The embedded PEP asks it ' +
-                     'when this service\'s own console or portal receives ' +
-                     'a verified CAEP or RISC event. It ends the receiving ' +
-                     'surface\'s own sessions for the person named' +
-                     (endOn.length ? ' on ' + endOn.join(', ') : '') +
-                     (riskLevels.length ? (endOn.length ? ', and' : '') +
-                      ' on a risk-level-change to ' + riskLevels.join(', ')
-                      : '') +
-                     '. Anything no rule permits does not happen.',
+                     'when this service\'s own console or portal, or a ' +
+                     'federation relationship whose partner transmits, ' +
+                     'receives a verified CAEP or RISC event — once per ' +
+                     'reaction. ' + rules.length + ' rule(s) permit one; ' +
+                     'anything no rule permits does not happen.',
         combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
         target: null,
         variables: {},
