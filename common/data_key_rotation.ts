@@ -39,6 +39,21 @@
 //                                 longer and that has been superseded for
 //                                 `keys.dataKeyRetireAfterDays`.
 //
+// AND TWO MORE SINCE P5:
+//
+//   `keys.data-key-count`         daily, and by hand. Counts the values
+//                                 sealed under EVERY data key in one pass of
+//                                 the store and keeps each count on its key's
+//                                 record (`keystore.recordCounts()`), so the
+//                                 console's figure is the same on every node.
+//                                 Off where the store cannot count.
+//   `keys.kek-rotate-now`         manual only: a new version of the
+//                                 key-encryption key in its key management
+//                                 service, and every data key re-wrapped under
+//                                 it. Refused (STS-KEYS-0104) where the key is
+//                                 read into the process: its successor is
+//                                 bytes an operator has to supply.
+//
 // WHERE NOTHING IS STORED THERE IS NOTHING TO DO. In development mode, and
 // anywhere the key-encryption key does not outlive the process, a DEK is
 // DERIVED from the key per run and never written, so the jobs are off and
@@ -70,6 +85,10 @@ const ROTATE_NOW_JOB = 'keys.data-key-rotate-now';
  * The hourly re-encryption and destruction job's id.
  */
 const REENCRYPT_JOB = 'keys.data-key-reencrypt';
+// What is sealed under each data key, counted once a day and by hand (#391 P5).
+const COUNT_JOB = 'keys.data-key-count';
+// The key-encryption key rotated in its key management service, by hand.
+const KEK_ROTATE_JOB = 'keys.kek-rotate-now';
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
 // How many rows of each table one pass re-seals per DEK. A pass that leaves
@@ -310,6 +329,9 @@ class DataKeyRotation {
         return ks.reseal(cipher);
       }, { limit: RESEAL_BATCH });
       counts = await store.count(ids);
+      // The superseded keys' counts were taken anyway; the console shows
+      // them until the daily count replaces them.
+      ks.recordCounts(counts, { at: now() });
     } catch (e) {
       const why = (e && (e as Error).message) || String(e);
       log.error(errorCodes.tag('STS-KEYS-0099') + 'data keys: the ' +
@@ -441,6 +463,206 @@ class DataKeyRotation {
   }
 
   /**
+   * Why counting is off, or '' when the store can count.
+   *
+   * @returns the reason
+   */
+  countOffReason(): string {
+    const { log, keystore } = this.deps;
+    log.debug("Entering DataKeyRotation.countOffReason().");
+    const off = this.offReason();
+    if (off) {
+      log.debug("Leaving DataKeyRotation.countOffReason(). Off.");
+      return off;
+    }
+    const store = keystore().sealedStore();
+    if (!store || typeof store.countAll !== 'function') {
+      log.debug("Leaving DataKeyRotation.countOffReason(). Cannot count.");
+      return 'this store cannot count what is sealed under a key (only ' +
+             'PostgreSQL can)';
+    }
+    log.debug("Leaving DataKeyRotation.countOffReason(). On.");
+    return '';
+  }
+
+  /**
+   * Why the key-encryption key cannot be rotated from here, or ''.
+   *
+   * @returns the reason
+   */
+  kekRotateOffReason(): string {
+    const { log, keystore } = this.deps;
+    log.debug("Entering DataKeyRotation.kekRotateOffReason().");
+    const off = this.offReason();
+    if (off) {
+      log.debug("Leaving DataKeyRotation.kekRotateOffReason(). Off.");
+      return off;
+    }
+    const report = keystore().report();
+    if (!report.kekInKms) {
+      log.debug("Leaving DataKeyRotation.kekRotateOffReason(). Read in.");
+      return 'the key-encryption key is read into this process, so its ' +
+             'successor has to be configured: put the new key where ' +
+             'keys.kek* reads, the old one in keys.previousKek*, and ' +
+             'restart every node';
+    }
+    log.debug("Leaving DataKeyRotation.kekRotateOffReason(). On.");
+    return '';
+  }
+
+  /**
+   * The count job: every data key's values, in one pass of the store,
+   * recorded on the keys.
+   *
+   * @param ctx - the scheduler's run context
+   * @returns `{ keys, values, summary }`
+   */
+  async countAll(ctx: Json): Promise<Json> {
+    const { log, keystore, errorCodes, now } = this.deps;
+    log.debug("Entering DataKeyRotation.countAll().");
+    const ks = keystore();
+    const store = ks.sealedStore();
+    if (!store || typeof store.countAll !== 'function') {
+      log.debug("Leaving DataKeyRotation.countAll(). Cannot count.");
+      return { keys: 0, values: null, summary: this.countOffReason() };
+    }
+    let counts: Json;
+    try {
+      // Everything queued first, so a value sealed a moment ago is counted.
+      await ks.settleAll();
+      counts = await store.countAll();
+    } catch (e) {
+      const why = (e && (e as Error).message) || String(e);
+      log.error(errorCodes.tag('STS-KEYS-0106') + 'data keys: counting ' +
+                'what is sealed under them failed: ' + why);
+      log.debug("Leaving DataKeyRotation.countAll(). Failed.");
+      throw errorCodes.mark(new Error('the count failed: ' + why),
+                            'STS-KEYS-0106');
+    }
+    const keys = ks.recordCounts(counts, { at: now(), complete: true });
+    await ks.settleDeks();
+    const values = Object.keys(counts).reduce(function (sum: number,
+                                                        id: string): number {
+      return sum + (Number(counts[id]) || 0);
+    }, 0);
+    log.debug("Leaving DataKeyRotation.countAll(). " + keys + " key(s).");
+    return { keys: keys, values: values,
+             trigger: String((ctx && ctx.trigger) || ''),
+             summary: values + ' value(s) under ' + keys + ' data ' +
+                      'encryption key(s)' };
+  }
+
+  /**
+   * The KEK rotation job: a new version in the key management service, and
+   * the data keys re-wrapped under it.
+   *
+   * @param params - the run's parameters (`requestedBy`, `channel`)
+   * @returns `{ version, rewrapped, summary }`
+   */
+  async rotateKek(params: Json): Promise<Json> {
+    const { log, keystore, errorCodes } = this.deps;
+    log.debug("Entering DataKeyRotation.rotateKek().");
+    const p = params || {};
+    let done: Json;
+    try {
+      done = await keystore().rotateKek();
+    } catch (e) {
+      const why = (e && (e as Error).message) || String(e);
+      log.error(errorCodes.tag('STS-KEYS-0105') + 'keys: the key ' +
+                'management service did not rotate the key-encryption key: ' +
+                why);
+      this.deps.audit().record({
+        action: 'keys.kek-rotate', protocol: 'Keys',
+        channel: String(p.channel || 'console'), outcome: 'failure',
+        realm: '', username: String(p.requestedBy || ''),
+        errorCode: 'STS-KEYS-0105',
+        summary: 'The key-encryption key was not rotated: ' + why
+      });
+      log.debug("Leaving DataKeyRotation.rotateKek(). Failed.");
+      throw errorCodes.mark(new Error('the key management service did not ' +
+                                      'rotate the key: ' + why),
+                            'STS-KEYS-0105');
+    }
+    if (!done.ok) {
+      log.debug("Leaving DataKeyRotation.rotateKek(). Refused.");
+      throw errorCodes.mark(new Error(done.why), 'STS-KEYS-0104');
+    }
+    await keystore().settleDeks();
+    this.deps.audit().record({
+      action: 'keys.kek-rotate', protocol: 'Keys',
+      channel: String(p.channel || 'console'), outcome: 'success', realm: '',
+      username: String(p.requestedBy || ''),
+      summary: 'The key-encryption key (' + done.provider + ') was rotated' +
+               (done.version ? ' to version ' + done.version : '') + '; ' +
+               done.rewrapped + ' data encryption key(s) re-wrapped',
+      detail: { provider: done.provider, version: done.version,
+                rewrapped: done.rewrapped, via: String(p.via || '') }
+    });
+    log.debug("Leaving DataKeyRotation.rotateKek().");
+    return { version: done.version, rewrapped: done.rewrapped,
+             summary: 'rotated' + (done.version ? ' to ' + done.version : '') +
+                      '; ' + done.rewrapped + ' data key(s) re-wrapped' +
+                      (done.note ? '. ' + done.note : '') };
+  }
+
+  /**
+   * Queues a count of every data key's values.
+   *
+   * @param options - `{ requestedBy, via, channel }`
+   * @returns `{ ok, runId }`, or a refusal
+   */
+  requestCount(options: Json): Json {
+    const { log, scheduler } = this.deps;
+    const o = options || {};
+    log.debug("Entering DataKeyRotation.requestCount().");
+    const off = this.countOffReason();
+    if (off) {
+      log.debug("Leaving DataKeyRotation.requestCount(). Off.");
+      return { ok: false, errorCode: 'STS-KEYS-0100', status: 400,
+               why: 'Nothing to count: ' + off + '.' };
+    }
+    const answer = scheduler().requestRun(COUNT_JOB, {
+      requestedBy: String(o.requestedBy || ''), via: String(o.via || ''),
+      channel: String(o.channel || 'console') });
+    log.debug("Leaving DataKeyRotation.requestCount().");
+    return answer.ok
+      ? { ok: true, runId: answer.runId, alreadyQueued: !!answer.alreadyQueued }
+      : { ok: false, errorCode: answer.errorCode, status: answer.status || 400,
+          why: answer.why };
+  }
+
+  /**
+   * Queues a rotation of the key-encryption key in its key management
+   * service.
+   *
+   * @param options - `{ requestedBy, via, channel }`
+   * @returns `{ ok, runId }`, or a refusal (STS-KEYS-0104)
+   */
+  requestKekRotation(options: Json): Json {
+    const { log, scheduler } = this.deps;
+    const o = options || {};
+    log.debug("Entering DataKeyRotation.requestKekRotation().");
+    const off = this.kekRotateOffReason();
+    if (off) {
+      log.debug("Leaving DataKeyRotation.requestKekRotation(). Off.");
+      return { ok: false, errorCode: 'STS-KEYS-0104', status: 400,
+               why: 'The key-encryption key cannot be rotated from here: ' +
+                    off + '.' };
+    }
+    const params = { requestedBy: String(o.requestedBy || ''),
+                     via: String(o.via || ''),
+                     channel: String(o.channel || 'console') };
+    const answer = scheduler().requestRun(KEK_ROTATE_JOB,
+                                          Object.assign({ params: params },
+                                                        params));
+    log.debug("Leaving DataKeyRotation.requestKekRotation().");
+    return answer.ok
+      ? { ok: true, runId: answer.runId, alreadyQueued: !!answer.alreadyQueued }
+      : { ok: false, errorCode: answer.errorCode, status: answer.status || 400,
+          why: answer.why };
+  }
+
+  /**
    * What `/admin/encryption` and `GET /admin-api/encryption` draw of the
    * lifecycle: whether the jobs run and on what settings.
    *
@@ -459,7 +681,12 @@ class DataKeyRotation {
         'keys.dataKeyActivationLeadSeconds')),
       retireAfterDays: Number(config.value('keys.dataKeyRetireAfterDays')),
       directoryCipher: String(config.value('keys.directoryCipher')),
-      jobs: [ROTATE_JOB, ROTATE_NOW_JOB, REENCRYPT_JOB]
+      counting: this.countOffReason() === '',
+      countOffReason: this.countOffReason(),
+      kekRotation: this.kekRotateOffReason() === '',
+      kekRotationOffReason: this.kekRotateOffReason(),
+      jobs: [ROTATE_JOB, ROTATE_NOW_JOB, REENCRYPT_JOB, COUNT_JOB,
+             KEK_ROTATE_JOB]
     };
     log.debug("Leaving DataKeyRotation.lifecycleView().");
     return view;
@@ -539,6 +766,41 @@ class DataKeyRotation {
         return self.reencrypt(ctx);
       }
     });
+    s.register({
+      id: COUNT_JOB,
+      title: 'Data encryption key value counts',
+      describe: 'Counts the values sealed under every data encryption key, ' +
+                'in one pass of the store, and keeps each count on its key ' +
+                'for /admin/encryption.',
+      owner: 'common/data_key_rotation.ts',
+      kind: 'cluster', scope: 'service',
+      everyMs: function (): number {
+        return DAY_MS;
+      },
+      off: function (): string {
+        return self.countOffReason();
+      },
+      manual: true,
+      timeoutS: 1800,
+      run: function (ctx: Json): Promise<Json> {
+        return self.countAll(ctx);
+      }
+    });
+    s.register({
+      id: KEK_ROTATE_JOB,
+      title: 'Key-encryption key rotation, by hand',
+      describe: 'Makes a new version of the key-encryption key in its key ' +
+                'management service and re-wraps every data encryption key ' +
+                'under it. Only for a key in a KMS.',
+      owner: 'common/data_key_rotation.ts',
+      kind: 'cluster', scope: 'service', manualOnly: true, manual: true,
+      off: function (): string {
+        return self.kekRotateOffReason();
+      },
+      run: function (ctx: Json): Promise<Json> {
+        return self.rotateKek(ctx.params || {});
+      }
+    });
     log.debug("Leaving DataKeyRotation.registerJobs().");
     return true;
   }
@@ -582,5 +844,9 @@ export = {
   reencrypt: slot.forward('reencrypt'),
   requestRotation: slot.forward('requestRotation'),
   requestReencryption: slot.forward('requestReencryption'),
-  lifecycleView: slot.forward('lifecycleView')
+  lifecycleView: slot.forward('lifecycleView'),
+  requestCount: slot.forward('requestCount'),
+  requestKekRotation: slot.forward('requestKekRotation'),
+  countAll: slot.forward('countAll'),
+  rotateKek: slot.forward('rotateKek')
 };

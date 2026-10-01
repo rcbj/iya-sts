@@ -2561,6 +2561,13 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           return driver.countSealed(dekIds);
         }
         : undefined,
+      countAllSealed: typeof driver.countAllSealed === 'function'
+        ? function () {
+          log.debug("Entering countAllSealed().");
+          log.debug("Leaving countAllSealed().");
+          return driver.countAllSealed();
+        }
+        : undefined,
       resealSealed: typeof driver.resealSealed === 'function'
         ? function (dekIds, reseal, options) {
           log.debug("Entering resealSealed().");

@@ -16,11 +16,18 @@
 //
 //   * WHERE DATA KEYS ARE DERIVED PER RUN (development, or nothing durable):
 //     the report says so, and both acts answer 400 STS-KEYS-0100 naming why;
+//   * EVERYWHERE: the key-encryption key is named and never shown, and its
+//     rotation from here is refused where it is read into the process (every
+//     stack here) and queued where it is in a key management service (#391
+//     P5);
 //   * WHERE THEY ARE STORED (product): a rotation of one realm's one class
 //     answers 202, its run succeeds, and the report then holds a SECOND key
 //     for that slot, waiting to be used while the first stays current; a
 //     re-encryption pass answers 202 and succeeds, destroying nothing that
-//     is still current; and a rotation naming a realm no key serves is 400.
+//     is still current; a rotation naming a realm no key serves is 400; and
+//     a count (#391 P5) answers 202, succeeds, and leaves every current key
+//     with a count and the time it was taken — or is refused where the store
+//     cannot count.
 //
 // It never prints a key: the report carries none, and it is asserted to.
 // ===========================================================================
@@ -132,8 +139,8 @@ async function main() {
   check("and no key material", function () {
     dk.keys.forEach(function (k) {
       assert.deepStrictEqual(Object.keys(k).sort(),
-        ["activateAt", "alg", "cls", "createdAt", "id", "realm", "scope",
-         "state"],
+        ["activateAt", "ageDays", "alg", "cls", "countedAt", "createdAt",
+         "id", "realm", "scope", "state", "values"],
         JSON.stringify(k));
     });
   });
@@ -141,8 +148,34 @@ async function main() {
   check("an unknown action is 400 naming both", function () {
     assert.strictEqual(unknown.status, 400, unknown.text.slice(0, 300));
     assert.ok(/rotate-data-keys/.test(unknown.text) &&
-              /reencrypt-data-keys/.test(unknown.text), unknown.text);
+              /reencrypt-data-keys/.test(unknown.text) &&
+              /count-data-keys/.test(unknown.text) &&
+              /rotate-kek/.test(unknown.text), unknown.text);
   });
+  check("the key-encryption key is named, never shown", function () {
+    assert.ok(first.key && typeof first.key.inKms === "boolean",
+              JSON.stringify(first.key));
+    assert.ok(!/BEGIN|"kek"\s*:\s*"[A-Za-z0-9+/=]{40,}"/
+      .test(JSON.stringify(first.key)), JSON.stringify(first.key));
+  });
+  // A KEY READ INTO THE PROCESS (every stack here) is rotated by deploying
+  // its successor, so the act is refused; one in a KMS is queued.
+  const kek = await api("POST", "/admin-api/encryption/rotate-kek", {});
+  if (dk.lifecycle.kekRotation) {
+    check("a key-encryption key in a KMS: its rotation is queued", function () {
+      assert.strictEqual(kek.status, 202, kek.text.slice(0, 300));
+    });
+    const kekRun = await finished(kek.body.runId);
+    check("and the rotation run succeeds", function () {
+      assert.strictEqual(kekRun.state, "succeeded", JSON.stringify(kekRun));
+    });
+  } else {
+    check("a key-encryption key read into the process is not rotated from " +
+          "here, and the refusal says how", function () {
+      assert.strictEqual(kek.status, 400, kek.text.slice(0, 300));
+      assert.ok(/previousKek|derived per run/.test(kek.text), kek.text);
+    });
+  }
 
   if (!dk.lifecycle.on) {
     log.info("=== 2. data keys derived per run here ===");
@@ -155,6 +188,10 @@ async function main() {
     });
     check("and so is a re-encryption pass", function () {
       assert.strictEqual(re.status, 400, re.text.slice(0, 300));
+    });
+    const cnt = await api("POST", "/admin-api/encryption/count-data-keys", {});
+    check("and so is a count", function () {
+      assert.strictEqual(cnt.status, 400, cnt.text.slice(0, 300));
     });
     log.info("sts_data_keys: " + checks + " check(s) passed (data keys are " +
              "derived here: " + dk.lifecycle.offReason + ").");
@@ -218,6 +255,58 @@ async function main() {
       }
     });
   });
+
+  log.info("=== 4. a count of what is sealed under each key ===");
+  // The keys that exist BEFORE the count; one made after it has no count yet.
+  const before = (await report()).dataKeys.keys.filter(function (k) {
+    return k.state === "current";
+  }).map(function (k) {
+    return k.id;
+  });
+  const cnt = await api("POST", "/admin-api/encryption/count-data-keys", {});
+  if (!dk.lifecycle.counting) {
+    check("where the store cannot count, a count is refused 400", function () {
+      assert.strictEqual(cnt.status, 400, cnt.text.slice(0, 300));
+    });
+  } else {
+    check("a count answers 202", function () {
+      assert.strictEqual(cnt.status, 202, cnt.text.slice(0, 300));
+    });
+    const cntRun = await finished(cnt.body.runId);
+    check("and its run succeeds", function () {
+      assert.strictEqual(cntRun.state, "succeeded", JSON.stringify(cntRun));
+    });
+    // On a cluster the report may come from a node that has not yet adopted
+    // the leader's counts through the change log, so it is asked again.
+    const counted = await until("every current key to carry a count",
+                                async function () {
+      const got = (await report()).dataKeys;
+      const current = got.keys.filter(function (k) {
+        return before.indexOf(k.id) >= 0;
+      });
+      return current.length && current.every(function (k) {
+        return typeof k.values === "number";
+      }) ? got : null;
+    }, 60000);
+    check("every current key then carries a count and when it was taken",
+          function () {
+      const current = counted.keys.filter(function (k) {
+        return before.indexOf(k.id) >= 0;
+      });
+      assert.ok(current.length, JSON.stringify(counted.counts));
+      current.forEach(function (k) {
+        assert.ok(typeof k.values === "number" && k.values >= 0 &&
+                  k.countedAt, JSON.stringify(k));
+      });
+      assert.ok(counted.lastCounted, JSON.stringify(counted.lastCounted));
+    });
+    check("and something is sealed under the default realm's keys",
+          function () {
+      assert.ok(counted.keys.some(function (k) {
+        return k.realm === "default" && k.values > 0;
+      }), JSON.stringify(counted.keys.slice(0, 5)));
+    });
+  }
 
   log.info("sts_data_keys: " + checks + " check(s) passed.");
   log.debug("Leaving main().");

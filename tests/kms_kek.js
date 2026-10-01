@@ -48,6 +48,10 @@
 //      the AAD digest the wrap carries, a new version re-wrapping, a key
 //      under 3072 bits refusing the start.
 //   I. a Managed HSM oct-HSM key: A256GCM with the AAD, a moved row refused.
+//   K. (#391 P5) the key-encryption key rotated FROM HERE in each KMS: a new
+//      version made (Transit, Cloud KMS, Key Vault) and every data key
+//      re-wrapped at once, without a restart; AWS on demand, behind the same
+//      key id, re-wrapping nothing.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -110,14 +114,18 @@ function childMain() {
       if (req.headers['x-vault-token'] !== 'test-token') {
         return reply(403, { errors: ['permission denied'] });
       }
-      const m = /^\/v1\/transit\/(keys|encrypt|decrypt)\/([^/]+)$/
+      const m = /^\/v1\/transit\/(keys|encrypt|decrypt)\/([^/]+)(\/rotate)?$/
         .exec(req.url);
       const k = m ? transit.keys[decodeURIComponent(m[2])] : null;
       if (!k) {
         return reply(404, { errors: ['no such key'] });
       }
       const json = body ? JSON.parse(body) : {};
-      transit.calls.push({ op: m[1], json: json });
+      transit.calls.push({ op: m[3] ? 'rotate' : m[1], json: json });
+      if (m[3]) {
+        k.versions.push(nodeCrypto.randomBytes(32));
+        return reply(200, {});
+      }
       if (m[1] === 'keys') {
         return reply(200, { data: { name: m[2], type: k.type,
                                     latest_version: k.versions.length,
@@ -186,6 +194,9 @@ function childMain() {
     KMSClient: function () {
       this.send = async function (c) {
         kms.calls.push({ name: c.name, input: c.input });
+        if (c.name === 'RotateKeyOnDemand') {
+          return { KeyId: c.input.KeyId };
+        }
         if (c.name === 'DescribeKey') {
           return { KeyMetadata: { KeyId: 'k-1', Arn: 'arn:aws:kms:x:1:key/k-1',
                                   KeyUsage: 'ENCRYPT_DECRYPT',
@@ -211,7 +222,8 @@ function childMain() {
     DescribeKeyCommand: cmd('DescribeKey'),
     EncryptCommand: cmd('Encrypt'),
     DecryptCommand: cmd('Decrypt'),
-    GetKeyRotationStatusCommand: cmd('GetKeyRotationStatus')
+    GetKeyRotationStatusCommand: cmd('GetKeyRotationStatus'),
+    RotateKeyOnDemandCommand: cmd('RotateKeyOnDemand')
   };
 
   // ------------------------------------------------------------- CLOUD KMS
@@ -238,6 +250,17 @@ function childMain() {
                          r.additionalAuthenticatedData);
         return [{ name: r.name + '/cryptoKeyVersions/' + v,
                   ciphertext: Buffer.concat([Buffer.from([v]), blob]) }];
+      };
+      this.createCryptoKeyVersion = async function (r) {
+        gkms.calls.push({ op: 'createCryptoKeyVersion', r: r });
+        gkms.versions.push(nodeCrypto.randomBytes(32));
+        return [{ name: r.parent + '/cryptoKeyVersions/' +
+                        gkms.versions.length, state: 'ENABLED' }];
+      };
+      this.updateCryptoKeyPrimaryVersion = async function (r) {
+        gkms.calls.push({ op: 'updateCryptoKeyPrimaryVersion', r: r });
+        gkms.primary = Number(r.cryptoKeyVersionId);
+        return [{ name: r.name }];
       };
       this.decrypt = async function (r) {
         gkms.calls.push({ op: 'decrypt', r: r });
@@ -275,6 +298,12 @@ function childMain() {
                  oaepHash: 'sha256' };
   const fakeAzureKeys = {
     KeyClient: function (vault) {
+      this.rotateKey = async function (name) {
+        akv.calls.push({ op: 'rotateKey', vault: vault, name: name });
+        akvVersion();
+        return { name: name, properties: {
+          version: akv.versions[akv.versions.length - 1].id } };
+      };
       this.getKey = async function (name) {
         akv.calls.push({ op: 'getKey', vault: vault, name: name });
         const cur = akv.versions[akv.versions.length - 1];
@@ -442,6 +471,18 @@ function childMain() {
     await restart();
     note(keystore.open(v1, 'minted-rows') === 'alpha',
          'B2. and the values still open');
+    // ROTATED FROM HERE (#391 P5): a new version, re-wrapped live.
+    const kRot = await keystore.rotateKek();
+    await keystore.settleDeks();
+    const kRow = rows.get('dek:service:default') || '';
+    note(kRot.ok && kRot.version === 'v3' && kRot.rewrapped >= 1 &&
+         /vault:v3:/.test(kRow) && !/vault:v2:/.test(kRow) &&
+         transit.calls.some(function (c) { return c.op === 'rotate'; }),
+         'K1. Transit: a rotation from here makes version 3 and re-wraps ' +
+         'every data key at once, without a restart', JSON.stringify(kRot));
+    await restart();
+    note(keystore.open(v1, 'minted-rows') === 'alpha',
+         'K2. and after a restart the values open');
 
     // ------------------------------------------------------------ C
     transitKey('rsa-key', 'rsa-2048');
@@ -487,6 +528,11 @@ function childMain() {
     }), 'D1. AWS KMS is handed the data key\'s AAD as its context');
     note(kms.calls.some(function (c) { return c.name === 'Decrypt'; }),
          'D2. and a restart asks it to unwrap');
+    const aRot = await keystore.rotateKek();
+    note(aRot.ok && aRot.rewrapped === 0 && /same key id/.test(aRot.note) &&
+         kms.calls.some(function (c) { return c.name === 'RotateKeyOnDemand'; }),
+         'K3. AWS KMS: a rotation from here is on demand, behind the same ' +
+         'key id, and re-wraps nothing', JSON.stringify(aRot));
     // A wrapped data key moved onto another realm's row: its AAD names the
     // realm, so the KMS refuses it and the start stops.
     // The default realm's row is taken away, so the moved copy is the only
@@ -571,6 +617,13 @@ function childMain() {
     await restart();
     note(keystore.open(g1, 'minted-rows') === 'gamma',
          'G5. and the values still open');
+    const gRot = await keystore.rotateKek();
+    await keystore.settleDeks();
+    const gRow3 = rows.get('dek:service:default') || '';
+    note(gRot.ok && gRot.version === '3' && gkms.primary === 3 &&
+         /\$3:/.test(gRow3) && !/\$2:/.test(gRow3),
+         'K4. Cloud KMS: a rotation from here makes version 3 primary and ' +
+         're-wraps every data key under it', JSON.stringify(gRot));
     const gMoved = await movedRefusal();
     note(/STS-KEYS-0091/.test(gMoved),
          'G6. a wrapped key moved to another realm\'s row is refused by the ' +
@@ -617,6 +670,16 @@ function childMain() {
     note(hRotated.indexOf('$' + akv.versions[1].id + ':') > 0 &&
          hRotated.indexOf('$' + akv.versions[0].id + ':') < 0,
          'H4. a new key version: every data key is re-wrapped under it');
+    const hRot = await keystore.rotateKek();
+    await keystore.settleDeks();
+    const hNew = akv.versions[akv.versions.length - 1].id;
+    note(hRot.ok && hRot.version === hNew &&
+         (rows.get('dek:service:default') || '').indexOf('$' + hNew + ':') > 0,
+         'K5. Key Vault: a rotation from here makes a new version and ' +
+         're-wraps every data key under it', JSON.stringify(hRot));
+    await restart();
+    note(keystore.open(h1, 'minted-rows') === 'eta',
+         'K6. and after a restart the values open');
     akv.bits = 2048;
     akvVersion();
     const hWeak = await refusal();

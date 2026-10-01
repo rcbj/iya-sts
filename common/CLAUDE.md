@@ -6010,6 +6010,42 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
 * **The settings are per process** (`perProcess`): the jobs run once for the
   service, and a realm cannot carry them.
 
+### WHAT THE CONSOLE AND THE API SHOW AND DO (#391 P5)
+
+rcbj's P5 list: the KEK provider (never the key), every DEK's id, scope,
+class, state, age and value count, and the rotate acts on both surfaces (rule
+7). `admin-ui/encryption_admin.ts` draws it; `GET /admin-api/encryption`
+returns the same model; `POST /admin-api/encryption/:action` and the page's
+forms go through one `dataKeysAction()` with FOUR acts (`ACTIONS`):
+`rotate-data-keys`, `reencrypt-data-keys`, `count-data-keys`, `rotate-kek`.
+
+* **A VALUE COUNT IS A JOB, NEVER A PAGE VIEW.** `countSealed()` is a pattern
+  scan per key; `countAllSealed()` (postgres) is ONE pass per table that pulls
+  every DEK id out with `regexp_matches()` and groups — a count of VALUES, so
+  a row holding two counts two. `keys.data-key-count` runs it daily and by
+  hand and records each count ON THE KEY (`keystore.recordCounts()`: `values`
+  and `countedAt` on the record and its row, merged newest-count-wins in
+  `unionDekRows()` and `adoptDekRow()`), so every node draws the same figure.
+  A key nobody counted shows `—`, never 0. The re-encryption pass records the
+  superseded keys' counts it took anyway. Off where the store cannot count
+  (`countOffReason()`). Only this process's own scopes are recorded: another
+  cell's values are in a database this one did not count.
+* **THE KEK IS ROTATED FROM HERE ONLY WHERE IT IS IN A KMS.** Each KMS handle
+  has `rotate()` (Transit's `/keys/<k>/rotate`; Cloud KMS a new version made
+  primary; Key Vault `rotateKey`; AWS `RotateKeyOnDemand`, behind the same
+  key id, re-wrapping nothing); `keystore.rotateKek()` then runs
+  `rewrapRotated()`, which re-wraps every DEK `isStale()` names and writes the
+  rows LIVE — no restart; the other nodes adopt the newer wrap through the
+  row's merge, and their own new DEKs are wrapped by the KMS under its newest
+  version anyway. The job is `keys.kek-rotate-now` (manual only). A KEK READ
+  into the process is refused (`STS-KEYS-0104`, with the previousKek* way to
+  do it): its successor is bytes an operator supplies, and this service never
+  writes a KEK. A KMS that refuses (the deployments here grant use, not
+  rotation, and rotate on the KMS's own schedule) fails the run
+  (`STS-KEYS-0105`), audited `keys.kek-rotate`.
+* **`key.kmsKey`** is the KMS key's NAME (its handle's label). A KMS key has
+  no bytes this process could show, which is why it is safe to print.
+
 #### A key-encryption key per realm — NOT IMPLEMENTED
 
 Written down so the cost is not re-derived. Genuine independence per realm

@@ -3220,6 +3220,12 @@ async function adoptDekRow(rowKey, text, fatal) {
         held.wrappedAt = Number(one.wrappedAt) || 0;
         held.needsWrap = false;
       }
+      // A NEWER COUNT of what is sealed under it (#391 P5) replaces the
+      // older, whoever counted.
+      if ((Number(one.countedAt) || 0) > (Number(held.countedAt) || 0)) {
+        held.values = Number(one.values) || 0;
+        held.countedAt = Number(one.countedAt) || 0;
+      }
       continue;
     }
     const rec = { id: String(one.id), scope: row.scope, realm: row.realm,
@@ -3231,6 +3237,8 @@ async function adoptDekRow(rowKey, text, fatal) {
                   wrapped: String(one.wrapped || ''), key: null,
                   alg: one.alg === 'aes-256-siv' ? 'aes-256-siv'
                                                  : 'aes-256-gcm',
+                  values: Number(one.values) || 0,
+                  countedAt: Number(one.countedAt) || 0,
                   derived: false, rewrap: false };
     const wk = rec.status === 'destroyed' ? null : wrappingKeyOf(rec.scope);
     if (wk) {
@@ -3279,11 +3287,16 @@ function dekRowText(scope, realm) {
   deks.forEach(function (rec) {
     if (rec.scope === scope && rec.realm === realm && !rec.derived &&
         (rec.wrapped || rec.status === 'destroyed')) {
-      list.push({ id: rec.id, cls: rec.cls, createdAt: rec.createdAt,
-                  alg: rec.alg || 'aes-256-gcm',
-                  activateAt: activationOf(rec),
-                  wrappedAt: rec.wrappedAt || 0, status: rec.status,
-                  wrapped: rec.status === 'destroyed' ? '' : rec.wrapped });
+      const item = { id: rec.id, cls: rec.cls, createdAt: rec.createdAt,
+                     alg: rec.alg || 'aes-256-gcm',
+                     activateAt: activationOf(rec),
+                     wrappedAt: rec.wrappedAt || 0, status: rec.status,
+                     wrapped: rec.status === 'destroyed' ? '' : rec.wrapped };
+      if (rec.countedAt) {
+        item.values = rec.values || 0;
+        item.countedAt = rec.countedAt;
+      }
+      list.push(item);
     }
   });
   list.sort(function (a, b) {
@@ -3326,11 +3339,18 @@ function unionDekRows(current, mine) {
       theirs.status = 'destroyed';
       theirs.wrapped = '';
       changed = true;
-    } else if ((Number(one.wrappedAt) || 0) >
-               (Number(theirs.wrappedAt) || 0)) {
-      theirs.wrapped = one.wrapped;
-      theirs.wrappedAt = one.wrappedAt;
-      changed = true;
+    } else {
+      if ((Number(one.wrappedAt) || 0) > (Number(theirs.wrappedAt) || 0)) {
+        theirs.wrapped = one.wrapped;
+        theirs.wrappedAt = one.wrappedAt;
+        changed = true;
+      }
+      // The newer count of what is sealed under it (#391 P5).
+      if ((Number(one.countedAt) || 0) > (Number(theirs.countedAt) || 0)) {
+        theirs.values = Number(one.values) || 0;
+        theirs.countedAt = one.countedAt;
+        changed = true;
+      }
     }
   });
   if (!changed) {
@@ -3568,6 +3588,8 @@ function dataKeys() {
                                          : 'aes-256-gcm'),
                 createdAt: rec.createdAt, status: rec.status,
                 wrappedAt: rec.wrappedAt || 0,
+                values: rec.countedAt ? (rec.values || 0) : null,
+                countedAt: rec.countedAt || 0,
                 derived: !!rec.derived, held: !!rec.key,
                 activateAt: activationOf(rec),
                 active: !!rec.key && rec.status !== 'destroyed' &&
@@ -3721,11 +3743,15 @@ function rewrapRotated() {
   log.debug("Entering rewrapRotated().");
   const rows = new Set();
   let count = 0;
+  let previous = 0;
   deks.forEach(function (rec) {
     if (!rec.key || rec.status === 'destroyed' || rec.derived) {
       return;
     }
     const wk = wrappingKeyOf(rec.scope);
+    if (rec.rewrap) {
+      previous += 1;
+    }
     // A KMS key rotated INSIDE the KMS (a new Transit version): the DEK
     // unwraps, and is moved to the newest version.
     if (!rec.rewrap && isRemote(wk) && typeof wk.isStale === 'function' &&
@@ -3757,16 +3783,124 @@ function rewrapRotated() {
     queueWrite(dekRowKey(parts[0], parts[1]),
                { scope: parts[0], realm: parts[1] }, writeDekRow);
   });
-  if (count) {
-    rewrapped += count;
-    log.warn(errorCodes.tag('STS-KEYS-0096') + 'keystore: ' + count +
+  if (previous) {
+    log.warn(errorCodes.tag('STS-KEYS-0096') + 'keystore: ' + previous +
              ' data encryption key(s) were wrapped under the PREVIOUS ' +
              'key-encryption key and have been re-wrapped under the current ' +
              'one. Once every node has started with the current key, ' +
              'keys.previousKekProvider can be set back to none.');
   }
+  if (count > previous) {
+    log.info('keystore: ' + (count - previous) + ' data encryption key(s) ' +
+             'were wrapped under an older version of the key-encryption key ' +
+             'in its key management service and are being re-wrapped under ' +
+             'the current version.');
+  }
+  rewrapped += count;
   log.debug("Leaving rewrapRotated(). " + count + " re-wrapped.");
   return count;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT IS SEALED UNDER EACH DATA KEY, COUNTED (#391 P5). Counting walks the
+// store, so it is a scheduler job (`keys.data-key-count`,
+// `common/data_key_rotation.ts`) and never a page view; the count is kept ON
+// THE DATA KEY'S OWN RECORD with the time it was taken, written to its row and
+// merged newest-count-wins, so whichever node draws `/admin/encryption` shows
+// the same figure.
+// ---------------------------------------------------------------------------
+/**
+ * Records counts of the values sealed under data keys, and writes the rows of
+ * the keys whose count changed.
+ *
+ * @param counts - `{ <dek id>: <values> }`; a stored key this process holds
+ *   and the map does not name is recorded as 0 when `complete` is set
+ * @param options - `{ at, complete }`: when it was counted (now by default),
+ *   and whether the map covers every key (a count of the whole store)
+ * @returns how many keys' counts were recorded
+ */
+function recordCounts(counts, options) {
+  log.debug("Entering recordCounts().");
+  const opts = options || {};
+  const at = Number(opts.at) || Date.now();
+  const map = counts || {};
+  const rows = new Set();
+  let recorded = 0;
+  deks.forEach(function (rec) {
+    // Only this process's own scopes: another cell's keys are held unopened,
+    // and its values are in a database this one did not count.
+    if (rec.derived || rec.status === 'destroyed' ||
+        !wrappingKeyOf(rec.scope)) {
+      return;
+    }
+    const has = Object.prototype.hasOwnProperty.call(map, rec.id);
+    if (!has && !opts.complete) {
+      return;
+    }
+    const n = has ? Math.max(0, Number(map[rec.id]) || 0) : 0;
+    // Later than the count it replaces, as `wrappedAt` is.
+    rec.countedAt = Math.max(at, (Number(rec.countedAt) || 0) + 1);
+    rec.values = n;
+    rows.add(rec.scope + '\n' + rec.realm);
+    recorded += 1;
+  });
+  rows.forEach(function (both) {
+    const parts = both.split('\n');
+    queueWrite(dekRowKey(parts[0], parts[1]),
+               { scope: parts[0], realm: parts[1] }, writeDekRow);
+  });
+  log.debug("Leaving recordCounts(). " + recorded + " recorded.");
+  return recorded;
+}
+
+// ---------------------------------------------------------------------------
+// ROTATING A KEY-ENCRYPTION KEY THAT IS IN A KEY MANAGEMENT SERVICE, NOW
+// (#391 P5). The KMS makes a new version (`handle.rotate()`), and every data
+// key wrapped under an older one is re-wrapped under it here, live, and its
+// row written; the other nodes adopt the newer wrap through the row's merge.
+// A key READ into this process cannot be rotated from here — its successor is
+// bytes somebody has to put where `keys.kek*` reads, and `keys.previousKek*`
+// beside it — so that is refused with the way to do it.
+// ---------------------------------------------------------------------------
+/**
+ * Rotates the key-encryption key inside its key management service and
+ * re-wraps every data key under the new version.
+ *
+ * @returns `{ ok, provider, version, rewrapped }`, or `{ ok: false, why }`
+ */
+async function rotateKek() {
+  log.debug("Entering rotateKek().");
+  const wk = wrappingKeyOf('service');
+  if (!deksStored() || !isRemote(wk)) {
+    log.debug("Leaving rotateKek(). Not in a KMS.");
+    return { ok: false,
+             why: !deksStored()
+               ? 'Data encryption keys are derived per run here, so there ' +
+                 'is no key-encryption key that wraps a stored one.'
+               : 'The key-encryption key is read into this process (' +
+                 secrets.describe().provider + '), so this service cannot ' +
+                 'make its successor: put the new key where keys.kek* ' +
+                 'reads, the old one in keys.previousKek*, and restart ' +
+                 'every node. Only a key in a key management service ' +
+                 '(vault-transit, aws-kms, gcp-kms, azure-keys) is rotated ' +
+                 'from here.' };
+  }
+  if (typeof wk.rotate !== 'function') {
+    log.debug("Leaving rotateKek(). No rotate().");
+    return { ok: false, why: 'The ' + wk.provider + ' provider cannot ' +
+                             'rotate its key from here.' };
+  }
+  const done = await wk.rotate();
+  const count = rewrapRotated();
+  log.info('keystore: the key-encryption key (' + wk.label + ') was rotated ' +
+           'in its key management service' +
+           (done && done.version ? ' to version ' + done.version : '') +
+           '; ' + count + ' data encryption key(s) are being re-wrapped ' +
+           'under it.');
+  log.debug("Leaving rotateKek(). " + count + " re-wrapped.");
+  return { ok: true, provider: wk.provider,
+           version: done && done.version ? String(done.version) : '',
+           note: (done && done.note) || '', rewrapped: count };
 }
 
 /**
@@ -4026,7 +4160,9 @@ function sealedStore() {
   const ok = !!store && typeof store.countSealed === 'function' &&
              typeof store.resealSealed === 'function';
   log.debug("Leaving sealedStore().");
-  return ok ? { count: store.countSealed, reseal: store.resealSealed } : null;
+  return ok ? { count: store.countSealed, reseal: store.resealSealed,
+                countAll: typeof store.countAllSealed === 'function'
+                  ? store.countAllSealed : null } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -5552,6 +5688,8 @@ module.exports = {
   dataKeys: dataKeys,
   // THE DEK LIFECYCLE (#391 P2), for `common/data_key_rotation.ts`.
   rotateDeks: rotateDeks,
+  recordCounts: recordCounts,
+  rotateKek: rotateKek,
   rotationDue: rotationDue,
   supersededDeks: supersededDeks,
   reseal: reseal,

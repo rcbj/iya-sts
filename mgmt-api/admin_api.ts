@@ -2507,12 +2507,16 @@ class AdminApi {
         responseDescription: 'The whole report.',
         responseSchema: { type: 'object',
           description: 'The encryption report: `mode`, `key` (present, ' +
-                       'durable or ephemeral, and which provider), ' +
+                       'durable or ephemeral, which provider, and ' +
+                       '`kmsKey`, the key\'s name in its key management ' +
+                       'service, never a key), ' +
                        '`algorithm` (read from common/crypto.js\'s own ' +
                        'table), `store`, `classes` (what is sealed and what ' +
                        'is not, each with its counts), `dataKeys` (every ' +
-                       'data encryption key held — id, realm, class, scope ' +
-                       'and state, never a key — paged, with the rotation ' +
+                       'data encryption key held — id, realm, class, scope, ' +
+                       'state, `ageDays`, and `values` with `countedAt`, ' +
+                       'the last count of what is sealed under it, never a ' +
+                       'key — paged, with the rotation ' +
                        'settings and whether its jobs run), `accounting` (the ' +
                        'totals and the breakdown by label), `unclassified` ' +
                        '(labels counted that the page has no row for, ' +
@@ -2527,8 +2531,8 @@ class AdminApi {
           log.debug("Leaving the management API encryption report endpoint.");
         } },
 
-      // THE DATA-KEY ACTS (#391 P2): `/admin/encryption/data-keys`'s two
-      // forms, through the one function they post to. Each QUEUES a run of
+      // THE DATA-KEY ACTS (#391 P2, P5): `/admin/encryption/data-keys`'s
+      // four forms, through the one function they post to. Each QUEUES a run of
       // `common/data_key_rotation.ts`'s jobs and answers 202.
       { method: 'POST', route: BASE + '/encryption/:action', tag: 'Service',
         mirrors: 'POST /admin/encryption/data-keys',
@@ -2588,6 +2592,38 @@ class AdminApi {
                          'sealed under any longer, superseded for ' +
                          '`keys.dataKeyRetireAfterDays`, is destroyed. 400 ' +
                          '(STS-KEYS-0100) where data keys are not stored.',
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false },
+            responseDescription: 'The queued run, as for ' +
+                                 '`rotate-data-keys`.' },
+          { action: 'count-data-keys', operationId: 'countDataKeys',
+            summary: 'Count what is sealed under every data key now',
+            description: 'Queues a run of `keys.data-key-count` and answers ' +
+                         '**202**: the values sealed under every data ' +
+                         'encryption key are counted in one pass of the ' +
+                         'store and kept on each key, where ' +
+                         '`GET /admin-api/encryption` reports them as ' +
+                         '`values` and `countedAt` (#391). 400 ' +
+                         '(STS-KEYS-0100) where data keys are not stored or ' +
+                         'the store cannot count (only PostgreSQL can).',
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false },
+            responseDescription: 'The queued run, as for ' +
+                                 '`rotate-data-keys`.' },
+          { action: 'rotate-kek', operationId: 'rotateKek',
+            summary: 'Rotate the key-encryption key in its key management ' +
+                     'service',
+            description: 'Queues a run of `keys.kek-rotate-now` and answers ' +
+                         '**202**: the key management service makes a new ' +
+                         'version of the key-encryption key (Transit, Cloud ' +
+                         'KMS and Key Vault; AWS KMS rotates on demand ' +
+                         'behind the same key id) and every data encryption ' +
+                         'key is re-wrapped under it. The run fails ' +
+                         '(STS-KEYS-0105) where the identity this service ' +
+                         'runs as may use the key but not rotate it. 400 ' +
+                         '(STS-KEYS-0104) where the key is read into the ' +
+                         'process: its successor is configured with ' +
+                         '`keys.previousKek*` and a restart.',
             requestBody: { type: 'object', properties: {},
                            additionalProperties: false },
             responseDescription: 'The queued run, as for ' +

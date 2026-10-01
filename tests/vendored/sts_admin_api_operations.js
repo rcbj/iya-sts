@@ -5080,7 +5080,14 @@ const NOT_DRIVEN_HERE = {
   "POST /encryption/rotate-data-keys": "sts_data_keys.js drives it and " +
     "follows the run to the new keys",
   "POST /encryption/reencrypt-data-keys": "sts_data_keys.js drives it and " +
-    "follows the run"
+    "follows the run",
+  // #391 P5: a count queues a run whose result is read off GET /encryption,
+  // and a rotation of the key-encryption key is a 400 on every stack here
+  // (the key is read into the process) and would change the key where not.
+  "POST /encryption/count-data-keys": "sts_data_keys.js drives it and " +
+    "reads the counts it left",
+  "POST /encryption/rotate-kek": "sts_data_keys.js asserts the 400 every " +
+    "stack here gives, and follows the run where the key is in a KMS"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

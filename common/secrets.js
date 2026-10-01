@@ -1012,7 +1012,8 @@ const vaultProvider = {
 //     wrap(dek, aad) -> Promise<string>,   // `$dekkms$1$<provider>$...`
 //     unwrap(text, aad) -> Promise<Buffer>,
 //     owns(text) -> boolean,               // its provider and its key
-//     isStale(text) -> boolean }           // wrapped under an older version
+//     isStale(text) -> boolean,            // wrapped under an older version
+//     rotate() -> Promise<{ version, note }> }  // a new version (#391 P5)
 //
 // THE AAD IS THE DATA KEY'S OWN (`keystore.js`'s `dekAad()`: its id, scope,
 // realm and class), as Transit's `associated_data`, AWS's encryption
@@ -1194,6 +1195,18 @@ const transitProvider = {
         const v = parts ? /^vault:v(\d+):/.exec(parts.ciphertext) : null;
         log.debug('Leaving transit isStale().');
         return !!v && Number(v[1]) < latest;
+      },
+      // A new version, made in Transit (#391 P5); the caller re-wraps.
+      rotate: async function () {
+        log.debug('Entering transit rotate().');
+        await call('/keys/' + encodeURIComponent(name) + '/rotate', 'POST',
+                   null);
+        const now = await call('/keys/' + encodeURIComponent(name), 'GET',
+                               null);
+        latest = Math.max(latest, Number(now && now.data &&
+                                         now.data.latest_version) || 0);
+        log.debug('Leaving transit rotate(). v' + latest);
+        return { version: 'v' + latest };
       }
     };
     log.info('secrets: ' + secret.label + ' is the Transit key "' + mount +
@@ -1301,6 +1314,16 @@ const awsKmsProvider = {
         log.debug('Entering aws-kms isStale().');
         log.debug('Leaving aws-kms isStale(). Never.');
         return false;
+      },
+      // An on-demand rotation (#391 P5): AWS keeps the earlier key material
+      // behind the same key id and decrypts with it, so nothing is re-wrapped.
+      rotate: async function () {
+        log.debug('Entering aws-kms rotate().');
+        await client.send(new sdk.RotateKeyOnDemandCommand({ KeyId: keyId }));
+        log.debug('Leaving aws-kms rotate().');
+        return { version: '',
+                 note: 'AWS KMS keeps the earlier key material behind the ' +
+                       'same key id, so no data key needs re-wrapping.' };
       }
     };
     log.info('secrets: ' + secret.label + ' is the AWS KMS key "' +
@@ -1438,6 +1461,23 @@ const gcpKmsProvider = {
         const v = parts ? /^(\d+):/.exec(parts.ciphertext) : null;
         log.debug('Leaving gcp-kms isStale().');
         return !!v && !!latest && v[1] !== latest;
+      },
+      // A new version made primary (#391 P5); the caller re-wraps, and the
+      // earlier version stays enabled for the nodes that have not.
+      rotate: async function () {
+        log.debug('Entering gcp-kms rotate().');
+        const [made] = await client.createCryptoKeyVersion({
+          parent: name, cryptoKeyVersion: {} });
+        const version = gcpVersionOf(made && made.name);
+        if (!version) {
+          throw errorCodes.mark(new Error('Cloud KMS made no new version'),
+                                'STS-KEYS-0103');
+        }
+        await client.updateCryptoKeyPrimaryVersion({
+          name: name, cryptoKeyVersionId: version });
+        latest = version;
+        log.debug('Leaving gcp-kms rotate(). ' + version);
+        return { version: version };
       }
     };
     log.info('secrets: ' + secret.label + ' is the Cloud KMS key "' + name +
@@ -1651,6 +1691,21 @@ const azureKeysProvider = {
         const v = parts ? /^([A-Za-z0-9]+):/.exec(parts.ciphertext) : null;
         log.debug('Leaving azure-keys isStale().');
         return !!v && !!latest && v[1] !== latest;
+      },
+      // A new version, made in the vault (#391 P5); the caller re-wraps,
+      // and the earlier version stays enabled.
+      rotate: async function () {
+        log.debug('Entering azure-keys rotate().');
+        const made = await keyClient.rotateKey(name);
+        const version = String((made && made.properties &&
+                                made.properties.version) || '');
+        if (!version) {
+          throw errorCodes.mark(new Error('Key Vault made no new version'),
+                                'STS-KEYS-0103');
+        }
+        latest = version;
+        log.debug('Leaving azure-keys rotate(). ' + version);
+        return { version: version };
       }
     };
     log.info('secrets: ' + secret.label + ' is the Key Vault key "' + keyRef +

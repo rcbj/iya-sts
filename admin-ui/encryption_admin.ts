@@ -422,6 +422,13 @@ class EncryptionAdmin {
   static readonly DATA_CLASSES = DATA_CLASSES;
 
   /**
+   * The four acts of `POST /admin/encryption/data-keys` and
+   * `POST /admin-api/encryption/:action` (rule 7).
+   */
+  static readonly ACTIONS = ['rotate-data-keys', 'reencrypt-data-keys',
+                             'count-data-keys', 'rotate-kek'];
+
+  /**
    * Builds an instance over the modules it depends on.
    *
    * @param deps - the console, settings, crypto, the keystore and the mode
@@ -534,6 +541,10 @@ class EncryptionAdmin {
         ephemeral: !!report.kekRead && !report.persisting,
         provider: report.kek.provider,
         providerLabel: report.kek.label,
+        // THE KEY IN A KEY MANAGEMENT SERVICE (#391 P5): its name there, never
+        // a key — a KMS key has no bytes this process could show.
+        inKms: !!report.kekInKms,
+        kmsKey: report.kekKms ? String(report.kekKms.label || '') : null,
         providerKnown: !!report.kek.known,
         where: report.kek.where,
         providers: report.kek.providers,
@@ -832,18 +843,28 @@ class EncryptionAdmin {
     const now = Date.now();
     const counts = { current: 0, pending: 0, superseded: 0, destroyed: 0,
                      derived: 0 };
+    let counted = 0;
     const rows = keystore.dataKeys().map(function (d: Json): Json {
       const state = d.status === 'destroyed' ? 'destroyed'
         : d.derived ? 'derived'
           : d.active ? 'current'
             : (d.activateAt > now ? 'pending' : 'superseded');
       counts[state] += 1;
+      counted = Math.max(counted, Number(d.countedAt) || 0);
+      // AGE is from creation; VALUES is the last count of what is sealed
+      // under it (`keys.data-key-count`), null where it was never counted.
       return { id: d.id, realm: d.realm, cls: d.cls, scope: d.scope,
                alg: d.alg || 'aes-256-gcm', state: state,
                createdAt: d.createdAt
                  ? new Date(d.createdAt).toISOString() : null,
                activateAt: d.activateAt
-                 ? new Date(d.activateAt).toISOString() : null };
+                 ? new Date(d.activateAt).toISOString() : null,
+               ageDays: d.createdAt
+                 ? Math.max(0, Math.floor((now - d.createdAt) / 86400000))
+                 : null,
+               values: d.values === undefined ? null : d.values,
+               countedAt: d.countedAt
+                 ? new Date(d.countedAt).toISOString() : null };
     });
     let lifecycle: Json = null;
     try {
@@ -857,6 +878,7 @@ class EncryptionAdmin {
                                          { name: 'dataKeys', noun: 'keys' });
     const out = {
       lifecycle: lifecycle, counts: counts, total: rows.length,
+      lastCounted: counted ? new Date(counted).toISOString() : null,
       keys: paged.shown,
       paging: adminViews().pagingJson(paged.paging),
       note: 'One data encryption key per realm and data class seals every ' +
@@ -893,11 +915,11 @@ class EncryptionAdmin {
     log.debug('Entering EncryptionAdmin.dataKeysAction().');
     const b = body || {};
     const action = String(b.action || '').trim();
-    if (action !== 'rotate-data-keys' && action !== 'reencrypt-data-keys') {
+    if (EncryptionAdmin.ACTIONS.indexOf(action) < 0) {
       log.debug('Leaving EncryptionAdmin.dataKeysAction(). Unknown action.');
       return { ok: false, errorCode: 'STS-ADMIN-0012', status: 400,
                errors: ['Unknown action "' + action + '". The actions here ' +
-                        'are: rotate-data-keys, reencrypt-data-keys.'] };
+                        'are: ' + EncryptionAdmin.ACTIONS.join(', ') + '.'] };
     }
     let actor = '';
     try {
@@ -912,12 +934,15 @@ class EncryptionAdmin {
     const realm = b.realm === undefined || b.realm === null ||
       String(b.realm).trim() === '' ? undefined : String(b.realm).trim();
     const cls = String(b.cls || '').trim() || undefined;
+    const who = { requestedBy: actor, via: via, channel: channel };
     const answer = action === 'rotate-data-keys'
-      ? dataKeyRotation().requestRotation({ realm: realm, cls: cls,
-                                            requestedBy: actor, via: via,
-                                            channel: channel })
-      : dataKeyRotation().requestReencryption({ requestedBy: actor, via: via,
-                                                channel: channel });
+      ? dataKeyRotation().requestRotation(Object.assign({ realm: realm,
+                                                          cls: cls }, who))
+      : action === 'reencrypt-data-keys'
+        ? dataKeyRotation().requestReencryption(who)
+        : action === 'count-data-keys'
+          ? dataKeyRotation().requestCount(who)
+          : dataKeyRotation().requestKekRotation(who);
     if (!answer.ok) {
       log.debug('Leaving EncryptionAdmin.dataKeysAction(). Refused.');
       return { ok: false, errorCode: answer.errorCode,
@@ -933,7 +958,11 @@ class EncryptionAdmin {
             ? ' of the realm "' + realm + '"' : '') +
             (cls ? ' for the class "' + cls + '"' : '')
           : 'every data encryption key')
-        : 'A re-encryption pass') +
+        : action === 'reencrypt-data-keys' ? 'A re-encryption pass'
+          : action === 'count-data-keys'
+            ? 'A count of the values under every data encryption key'
+            : 'A rotation of the key-encryption key in its key management ' +
+              'service') +
         ' was queued as run ' + answer.runId + '. It runs on the ' +
         'scheduler\'s leader at its next tick.'
     };
@@ -964,7 +993,14 @@ class EncryptionAdmin {
       ' Data stored in the directory is sealed with <code>' +
       admin.esc(life.directoryCipher) + '</code> ' +
       '(<code>keys.directoryCipher</code>); everything else with ' +
-      '<code>aes-256-gcm</code>.</p>';
+      '<code>aes-256-gcm</code>.</p>' +
+      (life.on ? '<p>' + (life.counting
+        ? 'What is sealed under each key is counted once a day ' +
+          '(<code>keys.data-key-count</code>)' + (dk.lastCounted
+            ? ', last at ' + admin.esc(dk.lastCounted) : ', and has not ' +
+              'been counted yet') + '.'
+        : 'Values are not counted: ' + admin.esc(life.countOffReason) +
+          '.') + '</p>' : '');
     const tiles = '<div class="tiles">' +
       admin.tile(String(dk.counts.current), 'current') +
       admin.tile(String(dk.counts.pending), 'waiting to be used') +
@@ -977,7 +1013,7 @@ class EncryptionAdmin {
     const table = dk.keys.length
       ? nav.head + '<table class="grid"><thead><tr><th>Realm</th>' +
         '<th>Class</th><th>Cipher</th><th>State</th><th>Created</th>' +
-        '<th>Used from</th>' +
+        '<th>Used from</th><th>Age (days)</th><th>Values</th>' +
         '<th>Key id</th></tr></thead><tbody>' +
         dk.keys.map(function (k: Json): string {
           return '<tr><td><code>' + admin.esc(k.realm) + '</code></td>' +
@@ -986,6 +1022,12 @@ class EncryptionAdmin {
             '<td>' + admin.esc(k.state) + '</td>' +
             '<td>' + admin.esc(k.createdAt || '—') + '</td>' +
             '<td>' + admin.esc(k.activateAt || '—') + '</td>' +
+            '<td>' + admin.esc(k.ageDays === null ? '—'
+                                                  : String(k.ageDays)) +
+            '</td>' +
+            '<td' + (k.countedAt ? ' title="counted ' +
+                     admin.esc(k.countedAt) + '"' : '') + '>' +
+            admin.esc(k.values === null ? '—' : String(k.values)) + '</td>' +
             '<td>' + admin.clipped(k.id, 40) + '</td></tr>';
         }).join('') + '</tbody></table>' + nav.foot
       : '<p class="muted">No data encryption key is held yet: one is made ' +
@@ -1009,7 +1051,28 @@ class EncryptionAdmin {
         '<button type="submit" id="data-keys-reencrypt">Re-encrypt now' +
         '</button> — re-seals what is still under a superseded key, and ' +
         'destroys a superseded key nothing is sealed under that has been ' +
-        'superseded long enough.</form>';
+        'superseded long enough.</form>' +
+        (life.counting
+          ? '<form method="post" action="/admin/encryption/data-keys">' +
+            '<input type="hidden" name="action" value="count-data-keys">' +
+            '<button type="submit" id="data-keys-count">Count now</button> ' +
+            '&mdash; counts what is sealed under every key, in one pass of ' +
+            'the store.</form>'
+          : '') +
+        '<h4>Rotate the key-encryption key</h4>' +
+        (life.kekRotation
+          ? '<form method="post" action="/admin/encryption/data-keys">' +
+            '<input type="hidden" name="action" value="rotate-kek">' +
+            '<button type="submit" id="kek-rotate">Rotate the ' +
+            'key-encryption key</button> &mdash; the key management ' +
+            'service makes a new version, and every data key is re-wrapped ' +
+            'under it. The earlier version stays: data keys other nodes ' +
+            'wrapped under it still unwrap. The identity this service runs ' +
+            'as must be allowed to rotate the key, which the deployments ' +
+            'here do not grant: they rotate it on the KMS\'s own ' +
+            'schedule.</form>'
+          : '<p class="muted">Not from here: ' +
+            admin.esc(life.kekRotationOffReason) + '.</p>');
     }
     log.debug('Leaving EncryptionAdmin.renderDataKeys().');
     return status + tiles + '<p class="muted">' + admin.esc(dk.note) +
@@ -1047,17 +1110,23 @@ class EncryptionAdmin {
       'key, an authenticator&rsquo;s shared secret or somebody&rsquo;s ' +
       'recovery codes, and printing either half of one would hand over ' +
       'exactly what the sealing exists to protect. Its only controls rotate ' +
-      'the data encryption keys and re-seal what they sealed, and show ' +
-      'nothing: rotating the key-encryption key is a deployment act &mdash; ' +
-      'this service reads one and never writes one &mdash; and a <em>decrypt ' +
-      'this</em> button would be the one door onto material no door is ' +
-      'supposed to have.</p>',
+      'the data encryption keys, re-seal and count what they sealed, and ' +
+      'rotate a key-encryption key that is in a key management service ' +
+      '(which makes the new version itself), and they show nothing. A ' +
+      'key-encryption key READ into this process is rotated by deploying ' +
+      'its successor &mdash; this service reads one and never writes one ' +
+      '&mdash; and a <em>decrypt this</em> button would be the one door ' +
+      'onto material no door is supposed to have.</p>',
       'What this page is, and the two things it deliberately has not got');
 
     const keyBlock = admin.note(
       '<p>The key-encryption key is read by <code>common/secrets.js</code> ' +
       'from <strong>' + admin.esc(json.key.providerLabel) + '</strong> ' +
-      '(<code>' + admin.esc(json.key.provider) + '</code>), once, at startup ' +
+      '(<code>' + admin.esc(json.key.provider) + '</code>)' +
+      (json.key.kmsKey ? ' &mdash; <strong>' + admin.esc(json.key.kmsKey) +
+        '</strong>, which never leaves it: the service holds a handle, ' +
+        'not the key, and asks it to wrap and unwrap each data key' : '') +
+      ', once, at startup ' +
       'and before the listener binds. <code>file</code> is the default ' +
       'because it needs nothing: Kubernetes mounts a Secret as a file, ' +
       'Docker mounts a secret as a file, and every other provider here is ' +

@@ -5879,6 +5879,38 @@ function create(options) {
       });
     },
 
+    // EVERY DATA KEY'S COUNT AT ONCE (#391 P5), for the console's figure:
+    // one pass over each table, the DEK id pulled out of every sealed value by
+    // a regular expression and grouped, rather than `countSealed()`'s pass
+    // per key. A row holding two values under one key counts two: it is a
+    // count of VALUES, which is what re-encryption has to re-seal.
+    countAllSealed: function () {
+      log.debug("Entering countAllSealed().");
+      const pattern = '\\$aes(?:gcm|siv)\\$2\\$([A-Za-z0-9_.-]+)\\$';
+      const one = function (table, column, where) {
+        log.debug("Entering countAllSealed.one().");
+        log.debug("Leaving countAllSealed.one().");
+        return 'SELECT m[1] AS id, count(*) AS n FROM ' + table + ', ' +
+               'regexp_matches(' + column + ', $1, \'g\') AS m' +
+               (where ? ' WHERE ' + where : '') + ' GROUP BY 1';
+      };
+      log.debug("Leaving countAllSealed().");
+      return pool.query(
+        'SELECT id, sum(n)::bigint AS n FROM (' +
+        one('sts_keys', 'material', 'realm NOT LIKE \'dek:%\'') +
+        ' UNION ALL ' + one('sts_minted', 'body') +
+        ' UNION ALL ' + one('sts_ldap_entries', 'attrs::text') +
+        ' UNION ALL ' + one('sts_cluster_secrets', 'material') +
+        ') t GROUP BY id', [pattern]
+      ).then(function (r) {
+        const out = {};
+        (r.rows || []).forEach(function (row) {
+          out[String(row.id)] = Number(row.n) || 0;
+        });
+        return out;
+      });
+    },
+
     resealSealed: function (dekIds, reseal, options) {
       log.debug("Entering resealSealed().");
       const ids = (dekIds || []).map(String);

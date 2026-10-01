@@ -479,6 +479,10 @@ const ACTIONS = [
   { action: 'keys.data-key-destroy', category: 'service',
     label: 'Superseded data encryption keys nothing is sealed under were ' +
            'destroyed' },
+  // THE KEY-ENCRYPTION KEY ROTATED IN ITS KMS, BY HAND (#391 P5).
+  { action: 'keys.kek-rotate', category: 'admin',
+    label: 'The key-encryption key was rotated in its key management ' +
+           'service and the data keys re-wrapped' },
   // A PINNED SIGNING KEY (#263): an operator's key pinned as a realm's signer
   // for one algorithm, and unpinned. `common/signing_rotation.ts`.
   { action: 'keys.pin', category: 'admin',

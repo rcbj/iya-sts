@@ -32,6 +32,10 @@
 //      by hand is refused STS-KEYS-0100;
 //   H. a keyed digest is made under a stored digest key, so it is the same
 //      after the KEK is rotated, and that key is never rotated.
+//   J. (#391 P5) the count job records every key's values on the key, the
+//      row carries them across a restart and its merge keeps the newer
+//      count; a KEK read into the process is not rotated from here
+//      (STS-KEYS-0104); a store that cannot count turns the job off.
 //   I. `keys.directoryCipher=aes-256-siv` seals the directory's classes with
 //      AES-256-SIV and nothing else; changing it back makes the class due a
 //      rotation, and the re-encryption moves the value to AES-256-GCM.
@@ -112,6 +116,17 @@ function childMain() {
           if (v.indexOf('$2$' + id + '$') >= 0) {
             out[id] += 1;
           }
+        });
+      });
+      return Promise.resolve(out);
+    },
+    // One pass, every key: postgres's `countAllSealed()` (#391 P5).
+    countAllSealed: function () {
+      const out = {};
+      table.forEach(function (v) {
+        (v.match(SEALED) || []).forEach(function (one) {
+          const id = one.split('$')[3];
+          out[id] = (out[id] || 0) + 1;
         });
       });
       return Promise.resolve(out);
@@ -352,6 +367,76 @@ function childMain() {
          'I6. and the re-encryption moves the value to AES-256-GCM',
          JSON.stringify(back));
     delete process.env.STS_KEYS_DIRECTORY_CIPHER;
+
+    // ---------------------------------------------------------------- J
+    // WHAT IS SEALED UNDER EACH KEY, COUNTED (#391 P5).
+    await keystore.settleDeks();
+    const expected = {};
+    table.forEach(function (v) {
+      (v.match(SEALED) || []).forEach(function (one) {
+        const id = one.split('$')[3];
+        expected[id] = (expected[id] || 0) + 1;
+      });
+    });
+    const tally = await job().countAll({ trigger: 'test' });
+    const stored = keystore.dataKeys().filter(function (d) {
+      return !d.derived && d.status !== 'destroyed';
+    });
+    note(tally.keys === stored.length && stored.every(function (d) {
+      return d.values === (expected[d.id] || 0) && d.countedAt > 0;
+    }), 'J1. the count job records every stored key\'s values, 0 for a ' +
+        'key nothing is sealed under', JSON.stringify({ tally: tally,
+        expected: expected }));
+    await keystore.settleDeks();
+    note(/"values":\d+,"countedAt":\d+/.test(rows.get('dek:service:default') ||
+                                            ''),
+         'J2. and the counts are written on the keys\' row');
+    await restart();
+    note(keystore.dataKeys().filter(function (d) {
+      return !d.derived && d.status !== 'destroyed';
+    }).every(function (d) {
+      return d.values === (expected[d.id] || 0);
+    }), 'J3. a restart reads them back from the row');
+    // A newer count in the store, from another node, is kept when this one
+    // writes the row with an older one.
+    const rowNow = JSON.parse(rows.get('dek:service:default'));
+    const target = rowNow.deks.filter(function (d) {
+      return d.status !== 'destroyed' && d.countedAt;
+    })[0];
+    target.values = 4242;
+    target.countedAt = Date.now() + 10 * DAY;
+    rows.set('dek:service:default', JSON.stringify(rowNow));
+    const other = rowNow.deks.filter(function (d) {
+      return d.id !== target.id && d.status !== 'destroyed';
+    })[0];
+    const one = {};
+    one[other.id] = 7;
+    keystore.recordCounts(one, {});
+    await keystore.settleDeks();
+    const merged = JSON.parse(rows.get('dek:service:default')).deks;
+    note(merged.some(function (d) {
+      return d.id === target.id && d.values === 4242;
+    }) && merged.some(function (d) {
+      return d.id === other.id && d.values === 7;
+    }), 'J4. the row\'s merge keeps the newer count of each key',
+         JSON.stringify(merged.map(function (d) {
+           return [d.id, d.values, d.countedAt];
+         })));
+    const kekAsk = job().requestKekRotation({ requestedBy: 'test' });
+    note(!kekAsk.ok && kekAsk.errorCode === 'STS-KEYS-0104' &&
+         /previousKek/.test(kekAsk.why),
+         'J5. a key-encryption key read into the process is not rotated ' +
+         'from here (STS-KEYS-0104), and the refusal says how',
+         JSON.stringify(kekAsk));
+    const noCount = rotation.DataKeyRotation.defaultDeps();
+    noCount.keystore = function () {
+      return Object.assign({}, keystore,
+                           { sealedStore: function () { return null; } });
+    };
+    note(/PostgreSQL/.test(new rotation.DataKeyRotation(noCount)
+      .countOffReason()),
+         'J6. where the store cannot count, the count job is off and says ' +
+         'why');
 
     // ---------------------------------------------------------------- G
     const deps = rotation.DataKeyRotation.defaultDeps();

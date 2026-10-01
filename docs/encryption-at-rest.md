@@ -173,8 +173,15 @@ also rotate them now — every key, one realm's, or one kind of data's — from
 > in the key table. That is safe, and it means a rotation there does not
 > remove an old key from the store.
 
-The page lists every data key by realm, kind and state (current, waiting to
-be used, superseded, destroyed). It never shows a key.
+The page lists every data key with its realm, kind of data, cipher, state
+(current, waiting to be used, superseded, destroyed), age, and how many values
+are sealed under it. It never shows a key.
+
+**Value counts** come from the scheduler job `keys.data-key-count`, which
+runs daily. Run it now with **Count now** or
+`POST /admin-api/encryption/count-data-keys`. Counting reads the whole store,
+so the page shows the last count and when it was taken; a key not yet counted
+shows `—`. Only the PostgreSQL store can count.
 
 ### Rotating the key-encryption key
 
@@ -192,6 +199,17 @@ re-encrypt the store.
 
 A node started with only the new key, before step 2 has run anywhere, refuses
 to start (`STS-KEYS-0091`): it cannot unwrap the data keys.
+
+**A key in a key management service** can also be rotated from **Monitoring →
+Encryption** (**Rotate the key-encryption key**, Admin Write) or with
+`POST /admin-api/encryption/rotate-kek`. The key service makes a new version,
+and every data key is re-wrapped under it at once, with no restart. AWS KMS
+rotates on demand behind the same key ID, so nothing is re-wrapped. The
+identity the service runs as needs permission to rotate the key (for example
+`kms:RotateKeyOnDemand`, or Key Vault Crypto Officer). The AWS, GCP and Azure
+deployments in this repository grant only use of the key, and rotate it on
+the key service's own schedule. A key read into the process cannot be
+rotated this way: its successor has to be supplied, as above.
 
 The keyed digests behind the cell routing index and the cell locator tags are
 made under a **stored digest key**, wrapped like the data keys, so a rotated
