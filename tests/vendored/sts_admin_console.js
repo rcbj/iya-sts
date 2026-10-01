@@ -725,9 +725,19 @@ async function fillAndPress(driver, formIndex, values, options) {
   // device `submitButtonOf()` below already uses for the same reason.
   if (typed.firstText && values && values[typed.firstText] !== undefined &&
       !opts.noTyping && typed.firstTextIndex >= 0) {
+    // A FIELD IN A CLOSED <details> IS OPENED FIRST, AS A PERSON WOULD
+    // (2026-10-01). Protocols -> PKI draws a search box per authority inside
+    // that authority's fold (1ed634c8), and Chrome will not type into a
+    // control it does not display: `ElementNotInteractableError` on a page
+    // that works. Every closed ancestor fold is opened, innermost to outer.
     const field = await driver.executeScript(`
       const f = document.forms[arguments[0]];
-      return f ? Array.from(f.elements)[arguments[1]] : null;
+      const el = f ? Array.from(f.elements)[arguments[1]] : null;
+      for (let d = el && el.closest('details'); d;
+           d = d.parentElement && d.parentElement.closest('details')) {
+        d.open = true;
+      }
+      return el;
     `, formIndex, typed.firstTextIndex).catch(function (e) {
       // No such element: the typing below is skipped and the press goes on.
       log.debug("Caught finding the field to type into: " +
