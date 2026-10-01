@@ -377,6 +377,16 @@ const ACTIONS = [
            'was being spent' },
   { action: 'portal.activate.mfa.refused', category: 'authentication',
     label: 'An authenticator app was not confirmed during activation' },
+  // And a security key's ceremony inside an activation (2026-10-01), for the
+  // same reason: the link authorised it, not a session.
+  { action: 'portal.activate.key.started', category: 'authentication',
+    label: 'A security key ceremony was started while an activation link ' +
+           'was being spent' },
+  { action: 'portal.activate.key.enrolled', category: 'authentication',
+    label: 'A security key was registered while an activation link was ' +
+           'being spent' },
+  { action: 'portal.activate.key.refused', category: 'authentication',
+    label: 'A security key was not registered during activation' },
 
   { action: 'session.start', category: 'session',
     label: 'A sign-on session was created' },

@@ -17497,6 +17497,23 @@ const CODES = [
     summary: 'Adopting a live admin console session on /portal threw; the ' +
       'portal signs in the ordinary way.',
     spec: 'none (the portal runs its own sign-in)' },
+  { code: 'STS-PORTAL-0100',
+    summary: 'A security key was chosen during an activation beside a ' +
+      'password and its enrolment could not be started; the activation ' +
+      'went on without it.',
+    spec: '' },
+  { code: 'STS-PORTAL-0101',
+    summary: 'A security key was chosen during an activation instead of a ' +
+      'password and its enrolment could not be started (the mechanism or ' +
+      'role is off, or the authentication policy refuses it), so the ' +
+      'activation was refused rather than finished with no way in.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0102',
+    summary: 'An activation\'s security key step did not register a key — ' +
+      'the enrolment had expired, the browser ran no ceremony, the RP ID ' +
+      'did not fit, or the registration did not verify — and the step was ' +
+      'drawn again.',
+    spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

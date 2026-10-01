@@ -821,6 +821,149 @@ async function theLostKeyIsRemovedWithoutAnOperator(first, second) {
   log.debug("Leaving theLostKeyIsRemovedWithoutAnOperator().");
 }
 
+// ---------------------------------------------------------------------------
+// 5. A KEY INSTEAD OF A PASSWORD, SET UP BY AN ACTIVATION LINK (2026-10-01).
+//
+// Reported by rcbj: a new person following their registration link chose to
+// use a passkey as their primary sign-in and still had to set a password.
+// `/portal/activate`'s `key_role` radio enrolled nothing — it spent the link
+// and sent the person to the sign-in screen to enrol on first use, which
+// product mode refuses. The key is registered on the activation page now,
+// authorised by the link, and this drives that whole road: no password typed
+// anywhere, the key on the entry in the `primary` role, the link spent only
+// once the key is registered, and a passwordless sign-in with it afterwards.
+// ---------------------------------------------------------------------------
+var NEWCOMER = usernameFor("passkey-newcomer");
+
+async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
+  log.debug("Entering aKeyInsteadOfAPasswordAtActivation().");
+  log.info("=== 5. a key instead of a password, at activation ===");
+  const created = await apiPost("/users/create",
+    { username: NEWCOMER, invent: false, credential: "none",
+      attributes: personAttributes(NEWCOMER) });
+  assert.ok(created.status === 200 || created.status === 201,
+    "creating " + NEWCOMER + " answered " + created.status + " " +
+    String(created.raw).slice(0, 300));
+  const issued = await apiPost("/users/issue-activation",
+                               { username: NEWCOMER });
+  assert.strictEqual(issued.status, 200,
+    "issuing an activation link answered " + issued.status + " " +
+    String(issued.raw).slice(0, 300));
+  const url = issued.body.activationUrl || issued.body.url || "";
+  assert.ok(url,
+            "no activation URL came back: " + String(issued.raw).slice(0, 300));
+
+  const b = browser();
+  const setup = await b.go("GET", url);
+  const token = hidden(setup.text, "token");
+  assert.ok(token, "the setup form carries no token: " +
+    String(setup.text).slice(0, 300));
+
+  // NO PASSWORD FIELD IS SENT AT ALL — what a person who leaves both boxes
+  // empty posts is the same as this.
+  const armed = await b.go("POST", "/portal/activate",
+    form({ user: NEWCOMER, token: token, key_role: "primary", kind: "any" }));
+  check("CHOOSING A KEY INSTEAD OF A PASSWORD DRAWS THE CEREMONY rather than " +
+        "finishing — the activation page registers the key, authorised by " +
+        "the link, with script-src relaxed to 'self' and frame-ancestors " +
+        "kept", function () {
+    assert.strictEqual(armed.status, 200,
+      "it answered " + armed.status + " " + String(armed.text).slice(0, 400));
+    assert.strictEqual(attr(armed.text, "data-mode"), "create",
+      "no registration ceremony on the page: " +
+      String(armed.text).slice(0, 400));
+    assert.ok(attr(armed.text, "data-challenge"), "no challenge on the page.");
+    assert.ok(!/Your account is ready/.test(armed.text),
+      "the activation finished before any key was registered.");
+    assert.ok(/script-src 'self'/.test(armed.csp),
+      "the policy does not allow the ceremony script: " + armed.csp);
+    assert.ok(/frame-ancestors/.test(armed.csp),
+      "the framing clause is gone: " + armed.csp);
+  });
+
+  // THE BROWSER RAN NO CEREMONY: the real button under the script. The step
+  // is drawn again with a fresh challenge and the link is not spent.
+  const noCeremony = await b.go("POST", "/portal/activate",
+    form({ user: NEWCOMER, token: token, key_role: "primary",
+           step: "key", enrolment_id: hidden(armed.text, "enrolment_id"),
+           credential: "" }));
+  check("a `key` step with no credential is answered by saying why, and the " +
+        "ceremony is drawn again rather than the account finished",
+        function () {
+    assert.strictEqual(noCeremony.status, 400,
+      "it answered " + noCeremony.status);
+    assert.ok(/did not run the ceremony/.test(noCeremony.text),
+      "not for the reason expected: " + String(noCeremony.text).slice(0, 300));
+    assert.strictEqual(attr(noCeremony.text, "data-mode"), "create",
+      "the ceremony was not drawn again.");
+    assert.notStrictEqual(attr(noCeremony.text, "data-challenge"),
+      attr(armed.text, "data-challenge"), "the challenge was not fresh.");
+  });
+
+  const done = await b.go("POST", "/portal/activate",
+    form({ user: NEWCOMER, token: token, key_role: "primary", step: "key",
+           enrolment_id: hidden(noCeremony.text, "enrolment_id"),
+           credential: JSON.stringify(authenticator.register(
+             attr(noCeremony.text, "data-challenge"))) }));
+  check("A REAL CEREMONY FINISHES THE ACTIVATION, and the page says the key " +
+        "is how they sign in", function () {
+    assert.strictEqual(done.status, 200,
+      "it answered " + done.status + " " + String(done.text).slice(0, 400));
+    assert.ok(/Your account is ready/.test(done.text),
+      "not the account-ready page: " + String(done.text).slice(0, 400));
+    assert.ok(/registered and is how you sign in/.test(done.text),
+      "the page does not say the key is registered.");
+  });
+
+  const factors = await factorsFor(NEWCOMER);
+  check("THE ENTRY HOLDS ONE `primary` KEY AND NO PASSWORD — the reported " +
+        "defect was a password still being required", function () {
+    assert.strictEqual(factors.primaryKeys, 1,
+      "the entry holds " + factors.primaryKeys + " primary key(s): " +
+      JSON.stringify(factors.keys));
+    assert.strictEqual(factors.password, false,
+      "a password was set, and none was asked for.");
+  });
+
+  const again = await b.go("GET", url);
+  check("and the link is spent only now, once the key is registered",
+        function () {
+    assert.strictEqual(again.status, 400,
+      "re-opening the link answered " + again.status);
+  });
+
+  // A PASSWORDLESS SIGN-IN WITH THE KEY: the box ticked, no password.
+  const s = browser();
+  let r = await s.go("GET", PORTAL_DOOR);
+  r = await s.go("GET", r.location);
+  r = await s.go("GET", r.location);
+  const authnId = hidden(r.text, "authn_id");
+  assert.ok(authnId, "the sign-in screen carries no authn_id.");
+  r = await s.go("POST", "/authn/login",
+                 form({ authn_id: authnId, username: NEWCOMER,
+                        webauthn_only: "1", action: "login",
+                        csrf_token: csrfOf(r.text) }));
+  const mode = attr(r.text, "data-mode");
+  check("THE SIGN-IN SCREEN ASKS FOR THE KEY THEY HOLD rather than enrolling " +
+        "one or asking for a password", function () {
+    assert.strictEqual(r.status, 200,
+      "the passwordless sign-in answered " + r.status + " " +
+      String(r.text).slice(0, 400));
+    assert.strictEqual(mode, "get",
+      "the ceremony is not an assertion: " + mode);
+  });
+  r = await s.go("POST", "/authn/webauthn",
+                 form({ mfa_id: hidden(r.text, "mfa_id"), mode: mode,
+                        credential: JSON.stringify(authenticator.assert(
+                          attr(r.text, "data-challenge"))) }));
+  check("and the key alone signs them in", function () {
+    assert.ok(r.status === 303 || r.status === 302,
+      "the assertion answered " + r.status + " " +
+      String(r.text).slice(0, 400));
+  });
+  log.debug("Leaving aKeyInsteadOfAPasswordAtActivation().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving " + base + " as " + PERSON +
@@ -833,11 +976,12 @@ async function test() {
   await aSecondKeyIsABackupAndTheSameOneIsNot(first, second);
   await eitherKeySignsThemIn(first, second);
   await theLostKeyIsRemovedWithoutAnOperator(first, second);
+  await aKeyInsteadOfAPasswordAtActivation(makeAuthenticator("my passkey"));
 
   // A FLOOR ON THE CHECK COUNT, for `sts_roles.js`'s reason: a section that
   // stops being called takes its assertions with it and the run still says
   // "passed".
-  assert.ok(checks >= 12,
+  assert.ok(checks >= 19,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

@@ -398,14 +398,26 @@ origin from `webauthn.allowedOrigins` where it is set. The `finish` action asks
 both rather than `authn.originOf(base)`, so a key enrolled here and a key used
 at `/authn/webauthn` are held to one answer. `authn/CLAUDE.md` argues them.
 
-### What is still not done
+### `/portal/activate` runs the same ceremony (2026-10-01)
 
-**`/portal/activate`'s `key_role` radio still enrols nothing.** Choosing *a
-security key instead of a password* spends the link, says "your account is
-ready" and writes an audit row about a credential that does not exist — leaving
-an account nobody can sign in to. It needs this same ceremony on an
-UNAUTHENTICATED page, where the link is the credential that authorises it, and
-that is the next piece of work rather than a decision.
+**Until this day the activation page's `key_role` radio enrolled nothing.**
+Choosing *a security key instead of a password* spent the link, said "your
+account is ready" and sent the person to the sign-in screen to enrol on first
+use — which product mode refuses (`STS-AUTHN-0206`), so the only way through
+was to go back and set a password. Reported by rcbj as exactly that.
+
+The key is registered on the activation page now, between the password and the
+authenticator app, as a `key` step: `beginKeyEnrolment()` with the role and the
+`kind` the first page chose (`kindChoice()` is drawn there too), the ceremony
+drawn by `activationKeyForm()`, `confirmKeyEnrolment()` on the POST. **What
+authorises it is the activation link**, re-checked and claimed on that POST like
+every other; the link is spent only when the activation FINISHES, so a key that
+will not register leaves a usable link. Every failure draws a fresh ceremony
+(`STS-PORTAL-0102`). A key that cannot be started is REFUSED where it was the
+only way in (`STS-PORTAL-0101`) and skipped with a warning beside a password
+(`STS-PORTAL-0100`), the authenticator app's rule. **It is a scripted page while
+the step is drawn**, for this page's argument, through `sendKeysPage()`, with
+the same resource and a real button under it — its own row in the root table.
 
 ## THE ACTIVATION FLOW LEARNED IT TOO, AND THE LINK IS STILL SPENT LAST
 
@@ -424,9 +436,9 @@ opening it again with the box unticked completes the account. The over-HTTP job
 asserts that by RE-OPENING the link rather than by reading a flag, because what
 somebody in that state actually does is open the link a second time.
 
-**`finishActivation()` is one function because there are three ways in now** — a
-plain setup, an authenticator confirmed on the second POST, and an authenticator
-that could not be started — and each has to spend the link, write the audit row
+**`finishActivation()` is one function because there are several ways in now** —
+a plain setup, a security key registered on a second POST, an authenticator
+confirmed on a later one, and either that could not be started — and each has to spend the link, write the audit row
 and draw the same page. Three copies of that is two chances for one of them to
 leave a spent-looking link that still works.
 

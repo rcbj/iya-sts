@@ -652,7 +652,7 @@ repository where failing to open something stops the process.
 ## `frame-ancestors` is the one CSP clause a page may not drop
 
 RFC 9700 section 4.14. `app.js` sets the policy on every response, and a
-growing number of routes relax it — the twelve kinds of scripted page below, and others
+growing number of routes relax it — the thirteen kinds of scripted page below, and others
 that widen `img-src`, `style-src`, `frame-src` or `connect-src` — by SETTING
 THE WHOLE HEADER, so each of them could lose the framing clause with nothing
 failing: the page works, the script runs, and the protection is gone.
@@ -687,11 +687,11 @@ argues it.
 silently.
 
 
-## Twelve kinds of page here have a script on them, and each is the same exception
+## Thirteen kinds of page here have a script on them, and each is the same exception
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. Twelve kinds of page need a script and each takes the SAME shape of
+than merely unlikely. Thirteen kinds of page need a script and each takes the SAME shape of
 exception — `script-src 'self'` naming one resource, never `'unsafe-inline'` —
 and **each but the OP iframe and the Copy buttons carries a REAL SUBMIT BUTTON
 as well**, because with the script blocked the button is the whole mechanism.
@@ -707,6 +707,7 @@ button submits nothing either; their arguments are their rows.
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
 | `/portal/keys` | `/authn/webauthn.js` — the SAME resource, not a copy | `portal/CLAUDE.md` |
+| `/portal/activate`, **only while the security key step is drawn** (2026-10-01) | `/authn/webauthn.js` in `create` mode — the registration a key instead of a password needs, authorised by the activation link; no other state of the page runs a script | `portal/CLAUDE.md` |
 | `/portal/devices`, **only while a WebAuthn link ceremony is armed** (#164 phase 2) | `/authn/webauthn.js` in `get` mode — a fresh assertion links a platform credential to a device; the page's key-proof form beside it runs no script | `portal/CLAUDE.md` |
 | `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | the sign-in screen `/authn/login`, **only while `risk.fingerprinting` is on in the realm** (#62 P6, off by default) | `/authn/fingerprint.js` — FingerprintJS (MIT, served with its notice) computing a browser identifier, which no markup can; the form works with it blocked, the field simply empty | `authn/CLAUDE.md`, `risk/CLAUDE.md` |
