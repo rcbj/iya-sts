@@ -83,25 +83,85 @@ certificates. The rules:
 else in the realm; `/admin/est` gives the reason for each. An unknown label is
 404. `est.allowedProfiles` narrows the nine further per realm.
 
-## Authenticating
+## Configuring EST
 
-* **HTTP Basic with a person's directory password** — checked in product mode;
-  development mode accepts any password for a person who exists. In product a
-  person who holds or must hold a second factor — an administrator enrolling
-  for somebody else included — is refused their own password with the `401` a
-  wrong one gets, and uses an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `est`, or a certificate.
-* **HTTP Basic with an application's `client_id` and `client_secret`** — the
-  secret is required in product mode.
-* **A TLS client certificate this realm issued** (for example one enrolled over
-  EST with the `tls-client` profile), mapped to its entry by the
-  `urn:sts:person:` or `urn:sts:application:` name in it. It must still be on
-  the entry and unrevoked; a certificate from another realm is refused.
+### For the realm: Protocols → Cert issuance → EST
 
-A Basic username is looked up as a **person first**, then as an application's
-`client_id`. A request with no credential gets `401` with
-`WWW-Authenticate: Basic realm="EST"`.
+The EST page of the console (`/admin/est`) holds the realm's server: the
+endpoints and every profile's labelled URLs, the EST Issuing CA, the
+profiles, the credentials EST accepts, **Issue a certificate with a
+server-generated key**, the **certificate host names**, the enrolled
+certificates (each with a **Revoke**), and the `est.*` settings (see
+[Configuration](#configuration)). Viewing it needs Admin Read; changing
+anything needs Admin Write. A realm's own administrators manage their realm's
+page. **Monitoring → Cert issuance → EST enrollments** shows what the server
+has done.
 
-In **product** mode a request that did not arrive over TLS is refused.
+To get a client running:
+
+1. Turn the server on (`est.enabled`, on by default), narrow
+   `est.allowedProfiles` if needed, and choose which credentials it accepts
+   (`est.basicAuthentication`, `est.certificateAuthentication`).
+2. Register the host names an entry may be issued under **Certificate host
+   names** (a dNSName or iPAddress it does not own refuses the request).
+3. Give the client a credential (see below) and the EST URL. A client that
+   can name only one label reaches a realm through the label (see above).
+
+### For one application
+
+An application's own rules are set on its page, **Directory → Applications →
+<the application>**:
+
+1. On the **Configuration** tab, **Protocol families** sub-tab, tick
+   **EST** and press **Save**. In **product** mode an application is
+   issued a certificate over EST only when it is ticked here; the
+   refusal is `STS-ENROLL-0094`. In development nothing is refused, and an
+   application with no families ticked is not refused in either mode.
+2. On the **Certificate enrollment** sub-tab, set any of the overrides
+   below and press **Save**. A field left empty takes the realm's value.
+
+The same attributes can be written with
+`POST /admin-api/applications/update-fields` or `/admin-api/applications/set`.
+
+| Attribute | Overrides | What it does for this application |
+|---|---|---|
+| `estAllowedProfiles` | `est.allowedProfiles` | The profiles it may be issued. It narrows the realm's list and never widens it. A request for another is refused (HTTP 403). |
+| `estDefaultProfile` | `est.defaultProfile` | The profile of an unlabelled request. Used only when it is also allowed. |
+| `estCertificateLifetimeDays` | `est.certificateLifetimeDays` | The certificate lifetime. The shorter of this and the realm's value is used. |
+| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold across ACME, EST and SCEP. The lower of the two is used. |
+| `estBasicAuthentication` | `est.basicAuthentication` | FALSE refuses the application's own `client_id` and secret (HTTP 403, `STS-ENROLL-0096`). |
+| `estCertificateAuthentication` | `est.certificateAuthentication` | FALSE refuses the application's own TLS client certificate. |
+| `estServerKeyGeneration` | `est.serverKeyGeneration` | FALSE refuses `/serverkeygen` for its certificates, whoever asks. |
+
+The three switches only turn a method off for this application. They cannot
+turn on a method the realm has turned off. The two authentication switches
+apply when the application authenticates as itself; an administrator
+enrolling for the application is not affected by them.
+
+## Authenticating the caller
+
+`/cacerts` and `/csrattrs` are not authenticated. `/simpleenroll`,
+`/simplereenroll` and `/serverkeygen` accept three credentials, all ones the
+service already has; EST has none of its own:
+
+| Credential | Who | Checked |
+|---|---|---|
+| **HTTP Basic, a person's directory password** | a person | In product, verified. In development, any password is accepted for a person who exists. In product a person who holds, or must hold, a second factor is refused their own password (with the same 401 a wrong one gets) and uses an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `est` instead. |
+| **HTTP Basic, an application's `client_id` and `client_secret`** | an application | In product, the secret is verified. In development, it is not. |
+| **A TLS client certificate this realm issued** | a person or an application | Always verified: issued by this realm (for example over EST with `tls-client`), still on the entry it names and not revoked. A certificate from another realm is refused. Mapped to its entry by its `urn:sts:person:` or `urn:sts:application:` name. |
+
+* A Basic username is looked up as a **person first**, then as an
+  application's `client_id`.
+* No other Authorization scheme is accepted. A request with no credential
+  gets `401` with `WWW-Authenticate: Basic realm="EST"`.
+* `est.basicAuthentication` and `est.certificateAuthentication` turn each
+  method off for the realm.
+* `/simplereenroll` with no Basic credential needs the certificate being
+  renewed.
+* A person may enroll only for themselves and an application only for
+  itself. A holder of **Admin Write** may enroll for any person or
+  application in the realm.
+* In **product** mode a request that did not arrive over TLS is refused.
 
 ## Requesting a certificate with curl and openssl
 
@@ -247,7 +307,7 @@ request asked for. The lifetime is `est.certificateLifetimeDays`.
 
 ## Configuration
 
-Every `est.*` setting is runtime and per trust realm, on **Protocols → EST**
+Every `est.*` setting is runtime and per trust realm, on **Protocols → Cert issuance → EST**
 (`/admin/est`).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
@@ -311,11 +371,11 @@ value resolves and where it is changed — the console page, or
 
 ## Console and management API
 
-* **Protocols → EST** (`/admin/est`): the endpoints and every profile's
+* **Protocols → Cert issuance → EST** (`/admin/est`): the endpoints and every profile's
   labelled URLs, the EST Issuing CA, the credentials EST accepts, issuing with a
   server-generated key, certificate host names, the enrolled certificates with a
   Revoke on each, and the `est.*` settings.
-* **Monitoring → EST enrollments** (`/admin/est/monitor`): requests, issuances
+* **Monitoring → Cert issuance → EST enrollments** (`/admin/est/monitor`): requests, issuances
   and refusals by operation, profile, principal, error code and status.
 * `GET /admin-api/est`, `GET /admin-api/est/monitor`, and
   `POST /admin-api/est/{issue-server-key,revoke-certificate,add-host-name,remove-host-name}`.

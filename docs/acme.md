@@ -59,7 +59,7 @@ An EAB key is issued for ONE entry:
 
 * **by the person themselves**, on the user portal;
 * **by an administrator, for any person or application in the realm** — on
-  **Protocols → ACME** (`/admin/acme`), or through the management API:
+  **Protocols → Cert issuance → ACME** (`/admin/acme`), or through the management API:
 
 ```bash
 curl -s -H "Authorization: Bearer $ADMIN_API_TOKEN" \
@@ -101,6 +101,77 @@ curl -s -H "Authorization: Bearer $ADMIN_API_TOKEN" \
 
 A registered `*.example.com` authorizes that wildcard, and only when written so.
 The same registration serves EST and SCEP.
+
+## Configuring ACME
+
+### For the realm: Protocols → Cert issuance → ACME
+
+The ACME page of the console (`/admin/acme`) holds everything about the
+realm's server: the directory URL, the endpoints, the ACME Issuing CA, the
+profiles, the **External Account Binding keys** (create one for a person or an
+application, delete one), the accounts, the certificates issued (each with a
+**Revoke**), the **registered host names**, and the `acme.*` settings (see
+[Configuration](#configuration)). Viewing it needs Admin Read; changing
+anything needs Admin Write. A realm's own administrators manage their realm's
+page. **Monitoring → Cert issuance → ACME enrollments** shows what the server
+has done.
+
+To get a client running, for any entry:
+
+1. Turn the server on (`acme.enabled`, on by default) and narrow
+   `acme.allowedProfiles` if needed.
+2. Register the host names the entry may be issued under **Registered host
+   names** (a `dns` or `ip` identifier is refused otherwise).
+3. Create an EAB key for the entry under **External Account Binding keys**,
+   and hand the `kid` and HMAC key to whoever runs the client.
+
+### For one application
+
+An application's own rules are set on its page, **Directory → Applications →
+<the application>**:
+
+1. On the **Configuration** tab, **Protocol families** sub-tab, tick
+   **ACME** and press **Save**. In **product** mode an application is
+   issued a certificate over ACME only when it is ticked here; the
+   refusal is `STS-ENROLL-0094`. In development nothing is refused, and an
+   application with no families ticked is not refused in either mode.
+2. On the **Certificate enrollment** sub-tab, set any of the overrides
+   below and press **Save**. A field left empty takes the realm's value.
+
+The same attributes can be written with
+`POST /admin-api/applications/update-fields` or `/admin-api/applications/set`.
+
+| Attribute | Overrides | What it does for this application |
+|---|---|---|
+| `acmeAllowedProfiles` | `acme.allowedProfiles` | The profiles it may be issued. It narrows the realm's list and never widens it. An order naming another profile is refused `invalidProfile`. |
+| `acmeDefaultProfile` | `acme.defaultProfile` | The profile of an order that names none. Used only when it is also allowed. |
+| `acmeCertificateLifetimeDays` | `acme.certificateLifetimeDays` | The certificate lifetime. The shorter of this and the realm's value is used. |
+| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold across ACME, EST and SCEP. The lower of the two is used. |
+
+An application's account is made the same way as anybody's: an administrator
+creates an EAB key for the application on the ACME page and hands it to the
+client. Its host names are registered there too.
+
+## Authenticating the caller
+
+ACME has no passwords and no bearer tokens. Every request that changes
+anything is a **JWS** (RFC 8555 section 6.2) signed by a key the server knows,
+and the account behind that key is bound to one directory entry.
+
+| What | How the caller is authenticated |
+|---|---|
+| `GET /directory`, `HEAD`/`GET /new-nonce`, `GET /renewal-info/{id}` | Not authenticated. |
+| Creating an account (`new-account`) | A JWS signed by the new account key (a `jwk` header), carrying a **required External Account Binding**: an inner JWS over that key, MAC'd with the EAB key's HMAC secret (HS256, HS384 or HS512). The EAB key was made for one person or application, by that person on `/portal/certificates` or by an administrator. It binds one account, once, within `acme.eabLifetimeS`. That entry is the account's for life. |
+| Finding an existing account (`new-account` with `onlyReturnExisting`) | A JWS signed by that account's key; no EAB. |
+| Every other request (orders, finalize, authorizations, certificate download, account update) | A JWS signed by the **account key**, naming the account by its URL (a `kid` header). Each carries a fresh `Replay-Nonce` (accepted once) and its own URL. |
+| Changing the account key (`key-change`) | An outer JWS signed by the current account key, around an inner JWS signed by the new key. |
+| Revoking a certificate (`revoke-cert`) | Either an account bound to the certificate's entry (`kid`), or the **certificate's own private key** (`jwk`). |
+
+An account key may be RSA (2048 bits or more; RS256 to RS512, PS256 to
+PS512), ECDSA (P-256, P-384, P-521) or Ed25519. A post-quantum account key is
+refused: it has no RFC 7638 thumbprint. In **product** mode every request must
+arrive over TLS. Refused requests are rate-limited per account or EAB key
+(`acme.attemptsPerIdentity`) and per address (`acme.attemptsPerAddress`).
 
 ## Using a real client
 
@@ -237,8 +308,8 @@ past, which tells a client to renew now.
 
 ## Configuration
 
-Every `acme.*` setting is runtime and per trust realm, on **Protocols → ACME**
-(`/admin/acme`). **Monitoring → ACME enrollments** shows what the server has
+Every `acme.*` setting is runtime and per trust realm, on **Protocols → Cert issuance → ACME**
+(`/admin/acme`). **Monitoring → Cert issuance → ACME enrollments** shows what the server has
 done.
 
 | Setting | Environment variable | Default | Runtime? | What it does |
