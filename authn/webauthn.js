@@ -201,7 +201,8 @@ function cborDecodeFirst(buf, offset) {
 /**
  * COSE elliptic curve identifiers mapped to their JOSE curve names.
  */
-const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519' };
+const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519',
+                      7: 'Ed448', 8: 'secp256k1' };
 // PS256/384/512 are RFC 8230's RSASSA-PSS, which TPM authenticators commonly
 // use (#105). ML-DSA-44/65/87 are RFC 9964's (published May 2026 from
 // draft-ietf-cose-dilithium-11): key type AKP (7), the public key at label
@@ -209,6 +210,13 @@ const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519' };
 // `verifyCoseSignature()`, so a copy of this file loaded ON ITS OWN (see the
 // header) recognises them and refuses their signatures rather than
 // misreading them — it has no RSASSA-PSS salt rule and no ML-DSA.
+//
+// AND EVERY OTHER SIGNATURE ALGORITHM AN AUTHENTICATOR CAN USE (2026-10-01):
+// RFC 9864's fully specified ESP256 (-9), ESP384 (-51), ESP512 (-52),
+// Ed25519 (-19) and Ed448 (-53), and RFC 8812's ES256K (-47, secp256k1, COSE
+// curve 8; Ed448 is curve 7). Their curve is part of the algorithm and is
+// checked in `verifyCoseSignature()`, so they too are refused by a copy
+// loaded on its own rather than checked without that rule.
 /**
  * The COSE algorithm identifiers this relying party accepts, mapped to their
  * JOSE names (ECDSA, EdDSA, RSASSA-PKCS1-v1_5, RSASSA-PSS and ML-DSA).
@@ -218,6 +226,8 @@ const COSE_ALGS = {
   '-257': 'RS256', '-258': 'RS384', '-259': 'RS512',
   '-37': 'PS256', '-38': 'PS384', '-39': 'PS512',
   '-48': 'ML-DSA-44', '-49': 'ML-DSA-65', '-50': 'ML-DSA-87',
+  '-9': 'ESP256', '-51': 'ESP384', '-52': 'ESP512', '-47': 'ES256K',
+  '-19': 'Ed25519', '-53': 'Ed448',
 };
 // COSE key type AKP (RFC 9964 section 4) and its `pub` label.
 /**

@@ -135,6 +135,15 @@ function run(t) {
     return verifiable.indexOf(name) >= 0;
   }), 'every algorithm offered by default is one the verifier can check',
   policy.algorithmsOffered().join(', '));
+  // AND EVERY ONE IS OFFERED, ML-DSA FIRST (2026-10-01, rcbj: "support and
+  // request every possible algorithm", the PQC three in particular).
+  const ids = policy.algorithmIds();
+  t.check(verifiable.every(function (name) {
+    return policy.algorithmsOffered().indexOf(name) >= 0;
+  }) && ids.slice(0, 3).join(',') === '-48,-49,-50' &&
+          ids.indexOf(-65535) < 0,
+  'the default requests EVERY algorithm the verifier checks, ML-DSA-44, ' +
+  '-65 and -87 (-48, -49, -50) first, and never RS1', ids.join(', '));
 
   t.check(config.setOverride('webauthn.algorithms', 'ES256,NOSUCHALG').ok ===
           false,

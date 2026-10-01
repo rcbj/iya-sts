@@ -9202,6 +9202,17 @@ function sessionStateHash(clientId, origin, browserState, salt) {
 // algorithm (`mode.usesBrokenAlgorithms()`), and no current authenticator
 // needs it.
 //
+// **EVERY OTHER SIGNATURE ALGORITHM AN AUTHENTICATOR CAN USE (2026-10-01,
+// rcbj: "support and request every possible algorithm").** RFC 9864's FULLY
+// SPECIFIED ones — ESP256 (-9), ESP384 (-51), ESP512 (-52), Ed25519 (-19) and
+// Ed448 (-53) — and RFC 8812's ES256K (-47, secp256k1). A fully specified
+// algorithm names its curve, so `curve` (ECDSA, node's name) or `okp`
+// (EdDSA, node's key type) is CHECKED against the key: an ESP256 signature
+// under a P-384 key is a signature that does not verify, where ES256 and
+// EdDSA keep their RFC 9053 meaning of any curve the key carries. Not here,
+// besides RS1: HSS-LMS (-46), a stateful hash-based scheme no authenticator
+// implements, and the provisional brainpool and SLH-DSA registrations.
+//
 // It stays a LEAF: node's crypto, asn1js and `pq_jose.js`, all required
 // above.
 // ===========================================================================
@@ -9223,7 +9234,19 @@ const COSE_SIGNATURE_ALGS = {
            saltLength: 64 },
   '-48': { name: 'ML-DSA-44', family: 'pq', hash: null, kty: 'AKP' },
   '-49': { name: 'ML-DSA-65', family: 'pq', hash: null, kty: 'AKP' },
-  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' }
+  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' },
+  '-9': { name: 'ESP256', family: 'ecdsa', hash: 'sha256', kty: 'EC',
+          curve: 'prime256v1' },
+  '-51': { name: 'ESP384', family: 'ecdsa', hash: 'sha384', kty: 'EC',
+           curve: 'secp384r1' },
+  '-52': { name: 'ESP512', family: 'ecdsa', hash: 'sha512', kty: 'EC',
+           curve: 'secp521r1' },
+  '-47': { name: 'ES256K', family: 'ecdsa', hash: 'sha256', kty: 'EC',
+           curve: 'secp256k1' },
+  '-19': { name: 'Ed25519', family: 'eddsa', hash: null, kty: 'OKP',
+           okp: 'ed25519' },
+  '-53': { name: 'Ed448', family: 'eddsa', hash: null, kty: 'OKP',
+           okp: 'ed448' }
 };
 
 // The COSE entry for an identifier, or null.
@@ -9333,6 +9356,16 @@ function verifyCoseSignature(coseAlg, key, data, signature) {
     const weak = rsaKeyProblem(publicKey, 2048);
     if (weak) {
       log.debug("Leaving verifyCoseSignature(). " + weak);
+      return false;
+    }
+    // A FULLY SPECIFIED algorithm's curve (RFC 9864), checked against the
+    // key rather than trusted from it.
+    const curve = String((/** @type {any} */ (
+      publicKey.asymmetricKeyDetails || {})).namedCurve || '');
+    if ((spec.curve && curve !== spec.curve) ||
+        (spec.okp && type !== spec.okp)) {
+      log.debug("Leaving verifyCoseSignature(). " + spec.name + " under a " +
+                (curve || type) + " key.");
       return false;
     }
     let ok = false;

@@ -1763,6 +1763,14 @@ header; what a maintainer of THIS directory needs is where it sits:
   JWK now carries `alg`**, so an assertion is checked with the credential's own
   hash and padding; a key stored before has none and is read by key type — which
   fixed ES384 and ES512 keys, checked with SHA-256 until then.
+* **EVERY ALGORITHM, REQUESTED BY DEFAULT (2026-10-01, rcbj).** The verifier
+  also checks RFC 9864's fully specified ESP256/384/512 (-9/-51/-52) and
+  Ed25519/Ed448 (-19/-53), whose curve is checked against the key, and RFC
+  8812's ES256K (-47) — nineteen in all, and a standalone copy refuses the
+  six new ones too. `webauthn.algorithms` now defaults to all nineteen, ML-DSA
+  first (-48, -49, -50), where it was `ES256,RS256`; an authenticator takes
+  the first it supports. Never RS1 (SHA-1). `tests/webauthn_attestation.js`
+  section B registers and asserts every one.
 * **Both ceremony doors ask it, AFTER the ceremony's checks and BEFORE the
   credential id is claimed**: the sign-in screen (`authn.ts`, in the async
   registration tail) and `credentials.checkKeyEnrolment()` (`/portal/keys`). A
